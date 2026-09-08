@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="StoryPlatform.API/StoryPlatform.API.csproj" />
+  <Project Path="StoryPlatform.BLL/StoryPlatform.BLL.csproj" />
+  <Project Path="StoryPlatform.DAL/StoryPlatform.DAL.csproj" />
+</Solution>

@@ -5,9 +5,9 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-336791?style=flat&logo=postgresql)](https://www.postgresql.org/)
 [![Entity Framework Core](https://img.shields.io/badge/EF%20Core-8.0-blue)](https://docs.microsoft.com/ef/core/)
 [![JWT Authentication](https://img.shields.io/badge/Auth-JWT%20%2B%20RBAC-green)](https://jwt.io/)
-[![Swagger](https://img.shields.io/badge/Docs-Swagger%20OpenAPI-85EA2D?style=flat&logo=swagger)](http://localhost:5000)
+[![Swagger](https://img.shields.io/badge/Docs-Swagger%20OpenAPI-85EA2D?style=flat&logo=swagger)](http://localhost:5259)
 
-Dự án Capstone Project: **Nền tảng kể chuyện thông minh cho trẻ em (AI Storytelling Platform for Children)**. Kho lưu trữ (repository) này chứa mã nguồn **Backend Web API** được phát triển trên nền tảng **.NET 8**, áp dụng **Kiến trúc 3 lớp (3-Tier Architecture)** kết hợp **Modular Business Logic Layer (BLL)** và **Generic Repository & Unit of Work Pattern**.
+Dự án Capstone Project: **Nền tảng kể chuyện thông minh cho trẻ em (AI Storytelling Platform for Children)**. Repository chứa hai process .NET 8 có thể triển khai độc lập: **Core Backend** sở hữu nghiệp vụ/dữ liệu và **AI Generation Service** sở hữu pipeline gọi LLM, prompt, đánh giá và refinement. Hai process giao tiếp qua DTO trong `StoryPlatform.Contracts`.
 
 ---
 
@@ -56,7 +56,7 @@ Xây dựng nền tảng kể chuyện thông minh trên nền tảng Web kết 
 ## 3. Công nghệ & Kỹ thuật áp dụng (Technology Stack)
 
 - **Ngôn ngữ & Nền tảng:** C# (.NET 8.0 SDK, ASP.NET Core Web API).
-- **Kiến trúc:** 3-Tier Architecture kết hợp Feature-based Modular Business Logic Layer (BLL), Generic Repository Pattern & Unit of Work Pattern.
+- **Kiến trúc:** Modular Clean Architecture trong monorepo; Core và AI là hai architectural boundary độc lập, dùng Contracts chung.
 - **Cơ sở dữ liệu:** PostgreSQL (kết nối qua Npgsql.EntityFrameworkCore.PostgreSQL).
 - **ORM & Quản lý Schema:** Entity Framework Core 8, EF Core Code-First Migrations, Design-Time Factory.
 - **Xác thực & Ủy quyền:** JWT (JSON Web Tokens) với ASP.NET Core Authentication & Role-Based Authorization.
@@ -80,36 +80,26 @@ Xây dựng nền tảng kể chuyện thông minh trên nền tảng Web kết 
 
 ## 5. Kiến trúc mã nguồn Backend (Backend Architecture)
 
-Backend được tổ chức thành 3 dự án độc lập theo chuẩn Clean / 3-Tier:
+Backend được tổ chức theo hai boundary triển khai độc lập. Core không gọi OpenAI trực tiếp và AI không tham chiếu Domain/Infrastructure của Core:
 
 ```text
 AI_Storytelling_Backend/
 ├── StoryPlatform.sln
 ├── StoryPlatform.slnx
-├── .gitignore                                   # Cấu hình bỏ qua bin, obj, .vs, appsettings*.json
-│
-├── StoryPlatform.DAL/                           # [LAYER 3: DATA ACCESS LAYER]
-│   ├── Configurations/                          # Cấu hình Fluent API cho Entity (Story, UserAccount...)
-│   ├── Context/                                 # ApplicationDbContext & DesignTimeDbContextFactory
-│   ├── Entities/                                # Domain Entities (Story, UserAccount, BaseEntity, Enums)
-│   ├── Interfaces/                              # IGenericRepository<T>, IUnitOfWork
-│   ├── Repositories/                            # GenericRepository<T>, UnitOfWork
-│   ├── Migrations/                              # EF Core Code-First Migrations
-│   ├── ConnectionStringHelper.cs                # Quản lý ConnectionString linh hoạt
-│   └── DependencyInjection.cs                   # AddDataAccessLayer()
-│
-├── StoryPlatform.BLL/                           # [LAYER 2: MODULAR BUSINESS LOGIC LAYER]
-│   ├── Common/                                  # Exceptions (AppException), Models (ApiResponse, PagedResult), Security
-│   ├── Modules/                                 # Phân rã nghiệp vụ theo từng mô-đun độc lập
-│   │   ├── Auth/                                # DTOs, Interfaces, AuthService
-│   │   └── Story/                               # DTOs, Interfaces, StoryService
-│   └── DependencyInjection.cs                   # AddBusinessLogicLayer()
-│
-└── StoryPlatform.API/                           # [LAYER 1: PRESENTATION / WEB API]
-    ├── Controllers/                             # BaseApiController, AuthController, StoryController
-    ├── Middlewares/                             # ExceptionHandlingMiddleware (Global Handler)
-    ├── Extensions/                              # ServiceExtensions (JWT, Swagger, CORS)
-    └── Program.cs                               # Điểm khởi động và cấu hình HTTP request pipeline
+├── src/
+│   ├── Core/
+│   │   ├── StoryPlatform.Api/                   # HTTP, JWT, controllers, middleware
+│   │   ├── StoryPlatform.Application/           # Use cases và abstraction ports
+│   │   ├── StoryPlatform.Domain/                # Business entities và enums
+│   │   └── StoryPlatform.Infrastructure/        # EF Core, repository, Core → AI HTTP client
+│   ├── AI/
+│   │   ├── StoryPlatform.AI.Api/                # Internal AI HTTP API
+│   │   ├── StoryPlatform.AI.Application/        # Generation/evaluation/refinement orchestration
+│   │   ├── StoryPlatform.AI.Domain/             # AI-specific domain model
+│   │   └── StoryPlatform.AI.Infrastructure/     # OpenAI adapter, prompt catalog, evaluators
+│   └── Shared/
+│       └── StoryPlatform.Contracts/              # Core ↔ AI request/response contracts
+└── tests/                                        # Core/AI unit và integration tests
 ```
 
 ---
@@ -122,7 +112,7 @@ AI_Storytelling_Backend/
 - [Git](https://git-scm.com/)
 
 ### 6.2. Cấu hình ứng dụng
-Tạo file cấu hình local `StoryPlatform.API/appsettings.json` (file này đã được chặn bởi `.gitignore`, không đưa lên repository để đảm bảo bảo mật):
+Tạo file cấu hình local `src/Core/StoryPlatform.Api/appsettings.json` (file này đã được chặn bởi `.gitignore`):
 ```json
 {
   "Logging": {
@@ -142,24 +132,42 @@ Tạo file cấu hình local `StoryPlatform.API/appsettings.json` (file này đ�
     "Audience": "StoryPlatformClient",
     "ExpiryMinutes": 120,
     "RefreshTokenExpiryDays": 7
+  },
+  "AIService": {
+    "BaseUrl": "http://localhost:5260",
+    "InternalApiKey": "local-internal-key"
   }
 }
+```
+
+AI Service đọc cấu hình nhạy cảm từ environment variables:
+
+```powershell
+$env:AI__InternalApiKey = "local-internal-key"
+$env:AI__OpenAI__ApiKey = "your-api-key"
+$env:AI__OpenAI__Model = "gpt-5-mini"
 ```
 
 ### 6.3. Cập nhật Cơ sở dữ liệu (EF Core Migration)
 Chạy lệnh migration để tự động sinh cấu trúc bảng trên PostgreSQL:
 ```powershell
-dotnet ef database update --project StoryPlatform.DAL/StoryPlatform.DAL.csproj --startup-project StoryPlatform.API/StoryPlatform.API.csproj
+dotnet ef database update --project src/Core/StoryPlatform.Infrastructure/StoryPlatform.Infrastructure.csproj --startup-project src/Core/StoryPlatform.Api/StoryPlatform.Api.csproj
 ```
 
 ### 6.4. Khởi chạy Web API
 Khởi động dự án Web API:
 ```powershell
-dotnet run --project StoryPlatform.API/StoryPlatform.API.csproj
+dotnet run --project src/Core/StoryPlatform.Api/StoryPlatform.Api.csproj
+```
+
+Chạy AI API ở terminal riêng:
+
+```powershell
+dotnet run --project src/AI/StoryPlatform.AI.Api/StoryPlatform.AI.Api.csproj
 ```
 
 Sau khi ứng dụng khởi chạy thành công, truy cập Swagger UI để kiểm thử API:
-- URL: `http://localhost:5000/swagger` (hoặc cổng HTTPS tương ứng hiển thị trên terminal).
+- URL: `http://localhost:5259/` (Swagger UI đang được cấu hình tại route gốc).
 
 ---
 

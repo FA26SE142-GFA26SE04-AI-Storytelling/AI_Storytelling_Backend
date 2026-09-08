@@ -1,0 +1,6 @@
+@StoryPlatform_Api_HostAddress = http://localhost:5259
+
+GET {{StoryPlatform_Api_HostAddress}}/api/v1/story?pageIndex=1&pageSize=10
+Accept: application/json
+
+###

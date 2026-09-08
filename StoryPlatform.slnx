@@ -1,5 +1,19 @@
 <Solution>
-  <Project Path="StoryPlatform.API/StoryPlatform.API.csproj" />
-  <Project Path="StoryPlatform.BLL/StoryPlatform.BLL.csproj" />
-  <Project Path="StoryPlatform.DAL/StoryPlatform.DAL.csproj" />
+  <Folder Name="/src/">
+    <Folder Name="/src/AI/">
+      <Project Path="src/AI/StoryPlatform.AI.Api/StoryPlatform.AI.Api.csproj" />
+      <Project Path="src/AI/StoryPlatform.AI.Application/StoryPlatform.AI.Application.csproj" />
+      <Project Path="src/AI/StoryPlatform.AI.Domain/StoryPlatform.AI.Domain.csproj" />
+      <Project Path="src/AI/StoryPlatform.AI.Infrastructure/StoryPlatform.AI.Infrastructure.csproj" />
+    </Folder>
+    <Folder Name="/src/Core/">
+      <Project Path="src/Core/StoryPlatform.Api/StoryPlatform.Api.csproj" />
+      <Project Path="src/Core/StoryPlatform.Application/StoryPlatform.Application.csproj" />
+      <Project Path="src/Core/StoryPlatform.Domain/StoryPlatform.Domain.csproj" />
+      <Project Path="src/Core/StoryPlatform.Infrastructure/StoryPlatform.Infrastructure.csproj" />
+    </Folder>
+    <Folder Name="/src/Shared/">
+      <Project Path="src/Shared/StoryPlatform.Contracts/StoryPlatform.Contracts.csproj" />
+    </Folder>
+  </Folder>
 </Solution>

@@ -16,4 +16,10 @@
       <Project Path="src/Shared/StoryPlatform.Contracts/StoryPlatform.Contracts.csproj" />
     </Folder>
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/StoryPlatform.AI.IntegrationTests/StoryPlatform.AI.IntegrationTests.csproj" />
+    <Project Path="tests/StoryPlatform.AI.UnitTests/StoryPlatform.AI.UnitTests.csproj" />
+    <Project Path="tests/StoryPlatform.IntegrationTests/StoryPlatform.IntegrationTests.csproj" />
+    <Project Path="tests/StoryPlatform.UnitTests/StoryPlatform.UnitTests.csproj" />
+  </Folder>
 </Solution>

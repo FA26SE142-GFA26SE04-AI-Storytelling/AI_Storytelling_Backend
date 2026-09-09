@@ -1,13 +1,13 @@
 # AI Storytelling Platform for Children
 ### Nền tảng kể chuyện thông minh cho trẻ em
 
-[![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4?style=flat&logo=dotnet)](https://dotnet.microsoft.com/)
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?style=flat&logo=dotnet)](https://dotnet.microsoft.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-336791?style=flat&logo=postgresql)](https://www.postgresql.org/)
 [![Entity Framework Core](https://img.shields.io/badge/EF%20Core-8.0-blue)](https://docs.microsoft.com/ef/core/)
 [![JWT Authentication](https://img.shields.io/badge/Auth-JWT%20%2B%20RBAC-green)](https://jwt.io/)
 [![Swagger](https://img.shields.io/badge/Docs-Swagger%20OpenAPI-85EA2D?style=flat&logo=swagger)](http://localhost:5259)
 
-Dự án Capstone Project: **Nền tảng kể chuyện thông minh cho trẻ em (AI Storytelling Platform for Children)**. Repository chứa hai process .NET 8 có thể triển khai độc lập: **Core Backend** sở hữu nghiệp vụ/dữ liệu và **AI Generation Service** sở hữu pipeline gọi LLM, prompt, đánh giá và refinement. Hai process giao tiếp qua DTO trong `StoryPlatform.Contracts`.
+Dự án Capstone Project: **Nền tảng kể chuyện thông minh cho trẻ em (AI Storytelling Platform for Children)**. Repository chứa hai process .NET 10 có thể triển khai độc lập: **Core Backend** sở hữu nghiệp vụ/dữ liệu và **AI Generation Service** sở hữu pipeline gọi LLM, prompt, đánh giá và refinement. Hai process giao tiếp qua DTO trong `StoryPlatform.Contracts`.
 
 ---
 
@@ -55,7 +55,7 @@ Xây dựng nền tảng kể chuyện thông minh trên nền tảng Web kết 
 
 ## 3. Công nghệ & Kỹ thuật áp dụng (Technology Stack)
 
-- **Ngôn ngữ & Nền tảng:** C# (.NET 8.0 SDK, ASP.NET Core Web API).
+- **Ngôn ngữ & Nền tảng:** C# (.NET 10.0 SDK, ASP.NET Core Web API).
 - **Kiến trúc:** Modular Clean Architecture trong monorepo; Core và AI là hai architectural boundary độc lập, dùng Contracts chung.
 - **Cơ sở dữ liệu:** PostgreSQL (kết nối qua Npgsql.EntityFrameworkCore.PostgreSQL).
 - **ORM & Quản lý Schema:** Entity Framework Core 8, EF Core Code-First Migrations, Design-Time Factory.
@@ -107,7 +107,7 @@ AI_Storytelling_Backend/
 ## 6. Hướng dẫn cài đặt & Khởi chạy (Getting Started)
 
 ### 6.1. Yêu cầu môi trường (Prerequisites)
-- [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- [.NET 10.0 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 - [PostgreSQL](https://www.postgresql.org/download/) (phiên bản 14 trở lên)
 - [Git](https://git-scm.com/)
 

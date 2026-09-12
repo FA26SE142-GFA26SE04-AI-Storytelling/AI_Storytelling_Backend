@@ -22,12 +22,12 @@ public class AuthController : BaseApiController
     /// </summary>
     [HttpPost("register")]
     [AllowAnonymous]
-    public async Task<ActionResult<ApiResponse<AuthResponseDto>>> Register(
+    public async Task<ActionResult<ApiResponse<object?>>> Register(
         [FromBody] RegisterRequestDto request, 
         CancellationToken cancellationToken)
     {
-        var result = await _authService.RegisterAsync(request, cancellationToken);
-        return HandleResult(result, "Đăng ký tài khoản thành công.");
+        await _authService.RegisterAsync(request, cancellationToken);
+        return HandleResult<object?>(null, "Đăng ký thành công. Vui lòng kiểm tra email để lấy mã xác thực trước khi đăng nhập.");
     }
 
     /// <summary>
@@ -44,6 +44,73 @@ public class AuthController : BaseApiController
     }
 
     /// <summary>
+    /// Xác thực email bằng mã đã gửi lúc đăng ký — bắt buộc trước khi đăng nhập lần đầu.
+    /// </summary>
+    [HttpPost("verify-email")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<object?>>> VerifyEmail(
+        [FromBody] VerifyEmailRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        await _authService.VerifyEmailAsync(request, cancellationToken);
+        return HandleResult<object?>(null, "Xác thực email thành công. Bạn có thể đăng nhập ngay bây giờ.");
+    }
+
+    /// <summary>
+    /// Yêu cầu đặt lại mật khẩu — nếu email tồn tại, hệ thống sẽ gửi token đặt lại mật khẩu.
+    /// Luôn trả về cùng 1 thông điệp bất kể email có tồn tại hay không (tránh dò quét email).
+    /// </summary>
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<object?>>> ForgotPassword(
+        [FromBody] ForgotPasswordRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        await _authService.ForgotPasswordAsync(request, cancellationToken);
+        return HandleResult<object?>(null, "Nếu email tồn tại trong hệ thống, hướng dẫn đặt lại mật khẩu đã được gửi.");
+    }
+
+    /// <summary>
+    /// Đặt lại mật khẩu bằng token nhận được từ bước Quên mật khẩu
+    /// </summary>
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<object?>>> ResetPassword(
+        [FromBody] ResetPasswordRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        await _authService.ResetPasswordAsync(request, cancellationToken);
+        return HandleResult<object?>(null, "Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại.");
+    }
+
+    /// <summary>
+    /// Đổi mật khẩu cho tài khoản đang đăng nhập
+    /// </summary>
+    [HttpPost("change-password")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<object?>>> ChangePassword(
+        [FromBody] ChangePasswordRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        await _authService.ChangePasswordAsync(userId, request, cancellationToken);
+        return HandleResult<object?>(null, "Đổi mật khẩu thành công. Vui lòng đăng nhập lại.");
+    }
+
+    /// <summary>
+    /// Làm mới Access Token bằng Refresh Token còn hiệu lực (xoay vòng: refresh token cũ sẽ bị vô hiệu hoá)
+    /// </summary>
+    [HttpPost("refresh-token")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<AuthResponseDto>>> RefreshToken(
+        [FromBody] RefreshTokenRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _authService.RefreshTokenAsync(request, cancellationToken);
+        return HandleResult(result, "Làm mới token thành công.");
+    }
+
+    /// <summary>
     /// Lấy thông tin hồ sơ của tài khoản đang đăng nhập
     /// </summary>
     [HttpGet("me")]
@@ -53,5 +120,17 @@ public class AuthController : BaseApiController
         var userId = GetCurrentUserId();
         var profile = await _authService.GetCurrentUserProfileAsync(userId, cancellationToken);
         return HandleResult(profile, "Lấy thông tin tài khoản thành công.");
+    }
+
+    /// <summary>
+    /// Đăng xuất — vô hiệu hoá refresh token hiện tại của tài khoản đang đăng nhập
+    /// </summary>
+    [HttpPost("logout")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<object?>>> Logout(CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        await _authService.LogoutAsync(userId, cancellationToken);
+        return HandleResult<object?>(null, "Đăng xuất thành công.");
     }
 }

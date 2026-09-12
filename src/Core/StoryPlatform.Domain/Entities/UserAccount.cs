@@ -19,6 +19,10 @@ public class UserAccount : BaseEntity
     public AccountStatus Status { get; set; } = AccountStatus.Registered;
     public string? ResetTokenHash { get; set; }
     public DateTime? ResetTokenExpiresAt { get; set; }
+    public string? RefreshTokenHash { get; set; }
+    public DateTime? RefreshTokenExpiresAt { get; set; }
+    public string? EmailVerificationTokenHash { get; set; }
+    public DateTime? EmailVerificationTokenExpiresAt { get; set; }
     public DateTime? LastLoginAt { get; set; }
 
     // Navigation properties

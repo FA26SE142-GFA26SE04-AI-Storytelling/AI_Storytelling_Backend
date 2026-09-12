@@ -60,7 +60,7 @@ public static class ServiceExtensions
                 Scheme = "Bearer",
                 BearerFormat = "JWT",
                 In = ParameterLocation.Header,
-                Description = "Nhập JWT Token của bạn theo dạng: Bearer {token}"
+                Description = "Nhập JWT Token của bạn: {token}"
             });
 
             c.AddSecurityRequirement(new OpenApiSecurityRequirement

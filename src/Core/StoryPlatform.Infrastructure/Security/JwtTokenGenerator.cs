@@ -64,5 +64,10 @@ public class JwtTokenGenerator : IJwtTokenGenerator
         return DateTime.UtcNow.AddMinutes(_options.ExpiryMinutes);
     }
 
+    public DateTime GetRefreshTokenExpirationDate()
+    {
+        return DateTime.UtcNow.AddDays(_options.RefreshTokenExpiryDays);
+    }
+
     public long ExpiresInSeconds => _options.ExpiryMinutes * 60L;
 }

@@ -37,6 +37,12 @@ public class UserAccountConfiguration : IEntityTypeConfiguration<UserAccount>
         builder.Property(u => u.ResetTokenHash)
             .HasMaxLength(255);
 
+        builder.Property(u => u.RefreshTokenHash)
+            .HasMaxLength(64); // SHA-256 hex = 64 ký tự
+
+        builder.Property(u => u.EmailVerificationTokenHash)
+            .HasMaxLength(64); // SHA-256 hex = 64 ký tự
+
         builder.Property(u => u.Role)
             .HasConversion<string>()
             .HasMaxLength(30)

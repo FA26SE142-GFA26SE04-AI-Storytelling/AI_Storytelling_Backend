@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
     <ProjectReference Include="..\StoryPlatform.Application\StoryPlatform.Application.csproj" />
@@ -18,6 +18,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>bc3aa764-c36d-4b0b-8294-855759620ad8</UserSecretsId>
   </PropertyGroup>
 
 </Project>

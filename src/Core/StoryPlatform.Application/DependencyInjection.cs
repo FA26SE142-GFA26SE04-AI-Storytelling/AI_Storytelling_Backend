@@ -1,8 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
-using StoryPlatform.Application.Auth.Interfaces;
-using StoryPlatform.Application.Auth.Services;
-using StoryPlatform.Application.Stories.Interfaces;
-using StoryPlatform.Application.Stories.Services;
+using StoryPlatform.Application.Features.Auth.Interfaces;
+using StoryPlatform.Application.Features.Auth.Services;
+using StoryPlatform.Application.Features.Stories.Interfaces;
+using StoryPlatform.Application.Features.Stories.Services;
 
 namespace StoryPlatform.Application;
 

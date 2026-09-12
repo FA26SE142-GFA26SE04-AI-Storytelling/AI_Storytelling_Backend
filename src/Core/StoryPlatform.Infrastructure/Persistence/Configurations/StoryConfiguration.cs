@@ -52,6 +52,12 @@ public class StoryConfiguration : IEntityTypeConfiguration<Story>
             .HasForeignKey(s => s.AuthorUserId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        // Foreign key to ChildProfile (owner of the story)
+        builder.HasOne(s => s.ChildProfile)
+            .WithMany()
+            .HasForeignKey(s => s.ChildProfileId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         // Soft delete global filter
         builder.HasQueryFilter(s => !s.IsDeleted);
     }

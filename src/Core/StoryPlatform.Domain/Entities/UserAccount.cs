@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using StoryPlatform.Domain.Entities.Enums;
+using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Domain.Entities;
 
@@ -23,4 +23,5 @@ public class UserAccount : BaseEntity
 
     // Navigation properties
     public virtual ICollection<Story> Stories { get; set; } = new List<Story>();
+    public virtual ICollection<ChildProfile> ChildProfiles { get; set; } = new List<ChildProfile>();
 }

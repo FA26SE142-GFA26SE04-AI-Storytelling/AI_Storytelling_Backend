@@ -1,0 +1,301 @@
+**Kế hoạch triển khai Phase 1 Input cho AI Storytelling**
+
+Tài liệu giao việc cho coding agent — phiên bản 1 — ngày 12 tháng 9 năm 2026.
+
+Hãy triển khai Phase 1 Input của Luồng 2 nhánh AI trong repository được giao. Bắt đầu bằng việc kiểm tra source và database, sau đó thực hiện 10 bước bên dưới, kiểm thử và báo cáo kết quả. Phạm vi kết thúc tại việc ghi nhận yêu cầu hợp lệ và bàn giao bền vững sang Generate Outline.
+
+
+Người thực hiện tạo truyện là Parent hoặc Teacher có quyền trên child cụ thể. Child là đối tượng nhận nội dung cá nhân hóa. Mỗi yêu cầu trong phase này xác định một child; việc phân phối truyện cho nhiều trẻ hoặc lớp thuộc luồng khác.
+
+Phần được triển khai gồm form nhập, context mặc định, phân quyền, kiểm tra dữ liệu, Story draft, Generation Request, Input Guardrail, thông báo lỗi, chống gửi trùng, thử lại và handoff sang Phase 2. Việc sinh hoặc duyệt outline, sinh content, quiz, vocabulary, discussion, ảnh, TTS và xuất bản thuộc các phase sau. Giữ tương thích với phần đã có nhưng không mở rộng nhiệm vụ sang các phần đó.
+
+Tên trạng thái và contract bên dưới mô tả ý nghĩa cần đạt. Ánh xạ chúng vào source hiện có trước khi thêm enum, bảng hoặc API.
+
+**Các quy tắc nghiệp vụ cần giữ xuyên suốt**
+
+| Mã | Quy tắc |
+|---|---|
+| BR01 | Mở form hoặc tải context không tạo Story, Generation Request hoặc job AI. |
+| BR02 | Tạo truyện cần tài khoản hợp lệ, child active và quyền trên child đó. Role Parent hoặc Teacher riêng lẻ chưa đủ. |
+| BR03 | Backend kiểm tra lại quyền khi submit, retry và trước khi chấp nhận handoff; FE không quyết định quyền. |
+| BR04 | Thiếu quyền hoặc dữ liệu cơ bản không hợp lệ thì không tạo Story, Generation Request hay job mới. Audit tối thiểu theo cơ chế sẵn có vẫn được phép. |
+| BR05 | Lần submit hợp lệ đầu tiên tạo Story với source ai và status draft. Các request sửa lại liên quan dùng cùng Story draft. |
+| BR06 | Backend xác định người tạo, source, context child và chính sách áp dụng. Không tin những giá trị này do client tự gửi. |
+| BR07 | Target Length là mục tiêu, Maximum Length là mức trần. Vượt trần phải báo lỗi; không âm thầm cắt giá trị đầu vào. |
+| BR08 | Chỉ kết quả guardrail Allow rõ ràng mới cho phép bàn giao. Block, thiếu kết quả hoặc lỗi không được coi là Allow. |
+| BR09 | Story vẫn draft khi input được chấp nhận, bị chặn hoặc kiểm tra thất bại. Phase 1 không tạo StoryVersion. |
+| BR10 | Thay đổi ý tưởng tạo request mới; retry kỹ thuật giữ request cũ; gửi trùng không tạo thêm request hoặc job. |
+| BR11 | Kết quả, lý do và fallback gắn với đúng request. Fallback không được lưu như nội dung truyện. |
+| BR12 | Phase 2 nhận đúng snapshot đầu vào đã kiểm tra. Không đọc lại form đang thay đổi hoặc toàn bộ hồ sơ child để thay thế snapshot. |
+| BR13 | Quyền tạo truyện không tự mang theo quyền duyệt, giao bài hoặc sửa thiết lập an toàn. |
+| BR14 | Không có lời gọi sinh outline/content trước khi Input Guardrail đạt. Lời gọi mô hình kiểm duyệt, nếu có, được ghi nhận riêng. |
+
+1. **Khảo sát repository và thiết lập đường cơ sở.**
+
+   Đọc AGENTS.md áp dụng, README, solution/project, cấu hình runtime và tài liệu module. Dùng rg hoặc rg --files để tìm code liên quan. Kiểm tra git status trước khi sửa; giữ nguyên thay đổi của người dùng.
+
+   Với backend .NET/C#, xác định SDK và target framework thực tế, solution được repo sử dụng, cách tổ chức các lớp, cơ chế DI, truy cập database, validation, response lỗi và kiểm thử. Không tự đổi SDK, hợp nhất solution hoặc thêm kiến trúc chỉ để thực hiện nhiệm vụ này.
+
+   Rà soát controller/handler tạo truyện hoặc GenerateOutline, AiGenerationModule nếu có, child profiles, supervision, permission, safety settings, Story, StoryVersion, Generation Request, AI logs, job/outbox và FE form hiện có. Xác định tất cả lối gọi outline để bổ sung gate mà không để lại endpoint bypass.
+
+   Tạo bản ánh xạ ngắn trong tài liệu dự án theo quy ước repo:
+
+   | Khái niệm nghiệp vụ | Thành phần tìm được | Phần còn thiếu | Vị trí sẽ sửa |
+   |---|---|---|---|
+   | Quyền tạo truyện cho child | Điền từ source | Điền sau khảo sát | Đường dẫn thật |
+   | Context và safety policy | Điền từ source | Điền sau khảo sát | Đường dẫn thật |
+   | Story và Generation Request | Điền từ schema | Điền sau khảo sát | Đường dẫn thật |
+   | Guardrail | Điền từ source/config | Điền sau khảo sát | Đường dẫn thật |
+   | Handoff outline | Điền từ source | Điền sau khảo sát | Đường dẫn thật |
+   | Form và API client | Điền từ source | Điền sau khảo sát | Đường dẫn thật |
+
+   Chạy build và bộ kiểm thử liên quan sẵn có để nhận diện lỗi nền. Ghi lại lỗi đã có trước thay đổi. Không sửa lan sang phần không liên quan.
+
+   Đầu ra của bước này là bản đồ thay đổi theo source thực tế và kết quả đường cơ sở. Sau khi có đủ thông tin, tiếp tục triển khai; không dừng chỉ để xin duyệt một kế hoạch chung.
+
+2. **Chốt contract đầu vào và cách lấy cấu hình có hiệu lực.**
+
+   Tái sử dụng DTO và validator nếu phù hợp. Phân biệt dữ liệu người dùng nhập với dữ liệu backend xác định.
+
+   | Thông tin | Nguồn và quy tắc cho phiên bản đầu |
+   |---|---|
+   | Child Profile | Client chọn ID; backend tải, kiểm tra quyền và trạng thái. |
+   | Age Band | Backend lấy từ hồ sơ; form hiển thị chỉ đọc. |
+   | Reading Level | Lấy mức đọc hiện tại đã được xác nhận theo source nghiệp vụ. Không sửa hồ sơ mức đọc trong form này. |
+   | Vocabulary Level | Có giá trị rõ ràng; client chỉ được chọn trong các mức cấu hình hợp lệ. |
+   | Language | Mặc định theo hồ sơ; cho chọn ngôn ngữ được hỗ trợ và được phép. |
+   | Topic | Bắt buộc; chọn danh mục hoặc nhập văn bản có giới hạn. |
+   | Genre | Chọn danh mục; có thể dùng mặc định được cấu hình. |
+   | Character | Chế độ người dùng chỉ định hoặc AI đề xuất. Chế độ chỉ định yêu cầu mô tả hợp lệ. |
+   | Setting | Chế độ người dùng chỉ định hoặc AI đề xuất. Chế độ chỉ định yêu cầu mô tả hợp lệ. |
+   | Lesson | Bắt buộc theo đề xuất Phase 1 đã thảo luận; dùng danh mục hoặc văn bản có giới hạn. |
+   | Target Length | Giá trị hoặc preset được chuẩn hóa thành giới hạn mục tiêu cụ thể. |
+   | Maximum Length | Backend lấy từ chính sách có hiệu lực; người dùng không tự nâng mức trần. |
+   | Required Approval Mode | Backend giải quyết từ chính sách; nếu bắt buộc Manual thì không cho client hạ xuống Auto. |
+   | Người tạo và source | Lấy principal đăng nhập; source luôn ai. |
+   | Existing Story | Chỉ dùng khi tiếp tục đúng Story draft của context đã kiểm tra. |
+
+   Dùng danh mục, đơn vị đo và giá trị mặc định đã có. Nếu thiếu, bổ sung cấu hình được tài liệu hóa; không tự tuyên bố một số từ hay mức đọc là chuẩn giáo dục. Thiếu giá trị bắt buộc mà không có mặc định hợp lệ thì trả lỗi cần bổ sung, không để AI tự đoán.
+
+   Chuẩn hóa khoảng trắng, dữ liệu danh mục và cấu trúc lựa chọn theo một cách ổn định; giữ nguyên dấu tiếng Việt và ý nghĩa. Xác định rõ cách đếm độ dài và phần văn bản mà giới hạn áp dụng. Maximum story length không phải giới hạn token API.
+
+   Áp dụng policy resolver sẵn có. Chính sách child không được làm yếu giới hạn bắt buộc toàn hệ thống. Khi nhiều mức trần cùng áp dụng, dùng mức trần hạn chế hơn. Không tự xây cây kế thừa chính sách lớp/trường nếu repo chưa có yêu cầu đó.
+
+   Context hiệu lực phải có snapshot hoặc tham chiếu phiên bản đủ để truy vết. Nếu dữ liệu hiện có chưa version hóa, lưu các giá trị thực tế cần thiết; không bịa policyVersion.
+
+   Đầu ra của bước này là contract có tài liệu, validator, cấu hình liên quan và bảng ánh xạ nghiệp vụ vào schema.
+
+3. **Chuẩn bị persistence và ràng buộc dữ liệu tối thiểu.**
+
+   Tái sử dụng Story, Generation Request và log/job hiện có. Chỉ thêm các trường hoặc bản ghi cần thiết. Không tạo một bảng cho mỗi trạng thái xử lý.
+
+   Thông tin logic cần biểu diễn:
+
+   | Nhóm | Thông tin cần ghi nhận |
+   |---|---|
+   | Story | Người tạo, child, source ai, status draft và các metadata phù hợp schema. Title chờ outline; không tạo content giả để lấp trường bắt buộc. |
+   | Generation Request | Story, người gửi, context, fingerprint đầu vào, khóa chống gửi trùng, trạng thái bước input, thời điểm và phiên bản/nhãn concurrency phù hợp repo. |
+   | Context snapshot | Age band, reading level, vocabulary level, language, target/max length, chính sách và chế độ duyệt thực sự áp dụng. |
+   | Accepted input snapshot | Đầu vào sáng tác đã được guardrail chấp nhận, gắn với đúng request; không sửa đè sau khi accepted. |
+   | Guardrail result | Decision, reason codes, check/provider version thực có, thời điểm, số lần thử, khả năng retry và fallback đã làm sạch. |
+   | Handoff | Command/job ID, request ID, snapshot ID hoặc fingerprint, trạng thái bàn giao và thời điểm theo cơ chế đang dùng. |
+
+   Dùng kiểu khóa và quy ước tên của database hiện tại. Các thông tin trên có thể nằm trong entity/JSON/log đang có; đây không phải yêu cầu tạo từng cột riêng.
+
+   Chống gửi trùng bằng ràng buộc ở persistence với phạm vi ít nhất bao gồm người thực hiện và loại thao tác. Key tồn tại phải được kiểm tra lại quyền trước khi trả kết quả. Client dùng cùng key cho payload khác phải nhận conflict.
+
+   Phiên bản đầu chỉ cho một request input đang chạy hoặc đã accepted chờ outline trên cùng Story. Request mới sau Block hoặc lỗi đã kết thúc có thể dùng lại Story draft. Khi có request đang chạy, trả conflict thay vì tạo cuộc đua giữa hai request.
+
+   Migration phải bổ sung có kiểm soát theo công cụ sẵn có. Không drop/recreate dữ liệu nghiệp vụ. Chỉ chạy migration trên môi trường phát triển hoặc kiểm thử đã được giao; báo rõ những migration cần áp dụng ở môi trường khác.
+
+   Đầu ra của bước này là mapping, migration nếu cần và các ràng buộc giúp giữ đúng Story/request/job khi có concurrency.
+
+4. **Triển khai tải context và phân quyền theo tài nguyên.**
+
+   Dùng service/policy có sẵn để kiểm tra tài khoản, child active, supervision đang có hiệu lực và hành động tạo truyện. Không chỉ kiểm tra role. Tách quyền tạo với approve_story hoặc assign_activity; không dùng một quyền khác thay thế nếu chưa có quy tắc nghiệp vụ.
+
+   Nếu source chưa định nghĩa quyền tạo AI story, ghi rõ khoảng trống và thực hiện các phần độc lập. Không âm thầm cấp quyền cho mọi Parent/Teacher hoặc tắt authorization để demo chạy.
+
+   Endpoint tải context chỉ đọc và trả dữ liệu tối thiểu để dựng form: child được chọn, các giá trị mặc định, danh mục lựa chọn, giới hạn và chế độ duyệt hiệu lực. Không trả dữ liệu nhạy cảm không cần thiết hoặc toàn bộ cấu hình nội bộ.
+
+   Áp dụng cùng nguyên tắc resource authorization cho submit, đọc request, retry và tiếp tục Story draft. Hành vi 403/404 theo convention bảo vệ tài nguyên của repo.
+
+   Cách kiểm tra này phù hợp với authorization dựa trên tài nguyên của ASP.NET Core; chọn API theo target framework thật, không nâng framework để sao chép ví dụ. [Microsoft resource based authorization](https://learn.microsoft.com/en-us/aspnet/core/security/authorization/resource-based)
+
+   Đầu ra của bước này là context API hoạt động, authorization được dùng thống nhất và không có ghi dữ liệu khi mở form.
+
+5. **Triển khai submit và tạo draft có chống gửi trùng.**
+
+   Thực hiện theo thứ tự:
+
+   - Xác thực và kiểm tra tài nguyên; kiểm tra existing Story nếu được cung cấp.
+   - Nhận diện thao tác gửi trùng đã tồn tại theo quy ước idempotency và quyền hiện tại.
+   - Với thao tác mới, resolve context hiện hành và validate đầu vào cơ bản.
+   - Chuẩn hóa đầu vào; xác định fingerprint ổn định của ý định người dùng. Ghi riêng snapshot context do server tính, không dùng context mới để làm một retry mạng vô tình biến thành request khác.
+   - Trong transaction ngắn, tạo hoặc dùng lại Story draft và tạo Generation Request ở trạng thái pending/checking input. Reservation chống gửi trùng và các bản ghi này phải nhất quán.
+   - Kết thúc transaction trước khi gọi bất kỳ dịch vụ kiểm duyệt nào.
+   - Thực hiện guardrail, sau đó ghi kết quả theo bước 6 đến 8.
+
+   Không giữ DB transaction hoặc khóa hàng xuyên suốt lời gọi mô hình. Dùng cơ chế concurrency của repo để đảm bảo một attempt hợp lệ thực hiện bước kiểm tra.
+
+   Các giá trị readonly do client gửi trái contract phải được reject hoặc loại bỏ theo convention; giá trị sử dụng cuối cùng luôn do backend lấy. Không để DTO binding ghi đè owner, source, status hoặc policy.
+
+   Không tạo StoryVersion. Nếu schema đang bắt buộc trường chỉ xuất hiện ở Phase 2, xử lý mapping/migration hợp lý thay vì ghi nội dung placeholder.
+
+   Đầu ra của bước này là submit tạo đúng một draft/request, validation chạy trước ghi dữ liệu và các lần gửi đồng thời không tạo bản ghi trùng.
+
+6. **Triển khai Input Guardrail và vòng đời dữ liệu đầu vào.**
+
+   Tạo hoặc mở rộng abstraction theo cách tổ chức module hiện có. Không bắt buộc tách AI thành một dịch vụ triển khai riêng. Kết quả trả về phải có kiểu rõ ràng, không để business handler tự diễn giải văn bản tự do của mô hình thành Allow.
+
+   Phạm vi đánh giá: chủ đề được phép/bị chặn, phù hợp độ tuổi, dữ liệu cá nhân không cần thiết, chỉ dẫn yêu cầu bỏ qua quy tắc và mâu thuẫn với cấu hình. Kiểm tra các trường Topic, Character, Setting, Lesson và các trường tự do có thực trong form.
+
+   Chỉ dẫn hệ thống và dữ liệu sáng tác được tổ chức riêng. Kiểm tra theo ngữ cảnh; không mặc định chặn bài học chống bắt nạt chỉ vì xuất hiện một từ khóa. Guardrail là lớp kiểm tra đầu vào, không thay thế kiểm tra output ở các phase sau. [OWASP input screening and structured prompts](https://cheatsheetseries.owasp.org/cheatsheets/LLM_Prompt_Injection_Prevention_Cheat_Sheet.html)
+
+   | Kết quả nội bộ | Trạng thái input đề xuất | Hành vi |
+   |---|---|---|
+   | Allow | input_accepted | Được lưu accepted snapshot và bàn giao, sau khi recheck ở bước 8. |
+   | Block | input_blocked | Lưu reason/fallback, giữ draft, không bàn giao. |
+   | Không đủ cơ sở kết luận | input_check_failed | Ghi reason riêng, không gán nhãn nội dung nguy hiểm; hướng dẫn bổ sung/sửa yêu cầu. |
+   | Lỗi kỹ thuật hoặc response không hợp lệ | input_check_failed | Ghi reason riêng; chỉ retry tự động với lỗi tạm thời theo policy. |
+
+   Mọi check bắt buộc phải có kết quả hợp lệ. Response thiếu trường, enum không nhận diện, điểm không hợp lệ, timeout hoặc provider không sẵn sàng không được mặc định thành Allow.
+
+   Tái sử dụng provider và cấu hình đã có. Nếu chế độ môi trường yêu cầu mô hình kiểm duyệt mà cấu hình chưa đủ, trả kết quả chưa thể kiểm tra. Test double chỉ dùng trong test hoặc môi trường phát triển được khai báo; không dùng always-pass làm cơ chế runtime mặc định.
+
+   Để nhất quán giữa việc không lưu raw input chưa kiểm tra và khả năng retry, phiên bản đầu dùng cách sau nếu repo chưa có giải pháp tương đương:
+
+   - Guardrail chạy trong vòng đời submit với timeout hữu hạn, ngoài transaction; chỉ handoff outline là công việc tiếp theo.
+   - Raw free text được giữ trong bộ nhớ xử lý. Trước Allow, lưu metadata, context cần thiết và fingerprint; không lưu nguyên văn free text chưa được chấp nhận vào bảng request, log, outbox hoặc error trace.
+   - Sau Allow mới lưu snapshot đầu vào được chấp nhận theo quyền truy cập của request.
+   - Block chỉ lưu lý do và thông tin đã che cần thiết. Người dùng sửa nội dung còn trên form và gửi request mới.
+   - Nếu process mất dữ liệu trước khi hoàn tất, request đang kiểm tra hết lease được kết thúc bằng lỗi cần gửi lại đầu vào. Không tự requeue một request không còn payload.
+   - Retry do người dùng thực hiện phải gửi lại cùng input để backend đối chiếu fingerprint và context. Không tái tạo prompt từ log hoặc hồ sơ hiện tại.
+
+   Nếu repo đã có pipeline guardrail async cùng nơi giữ payload tạm thời được kiểm soát, có thể dùng lại sau khi xác minh access, thời hạn lưu và xóa dữ liệu. Không tự thêm broker hoặc kho raw input chỉ để tránh thiết kế vòng đời payload.
+
+   Tắt hoặc làm sạch body logging ở endpoint liên quan. Dữ liệu raw cũng không được lọt qua exception, telemetry hoặc log SDK.
+
+   Đầu ra của bước này là guardrail adapter có xử lý Allow/Block/không kết luận/lỗi, fallback rõ ràng và vòng đời payload có thể phục hồi đúng.
+
+7. **Triển khai trạng thái, retry và đọc tiến độ.**
+
+   Trạng thái dưới đây thuộc bước kiểm tra input, không thay cho toàn bộ lifecycle của Generation Request nếu request đang theo dõi nhiều phase:
+
+   | Trạng thái hiện tại | Sự kiện | Trạng thái tiếp theo |
+   |---|---|---|
+   | pending_input | Một attempt được nhận xử lý | checking_input |
+   | checking_input | Guardrail Allow và finalize hợp lệ | input_accepted |
+   | checking_input | Policy Block | input_blocked |
+   | checking_input | Kiểm tra không hoàn tất, không kết luận hoặc context không còn hợp lệ | input_check_failed với reason riêng |
+   | input_check_failed | Retry hợp lệ, cùng input/context và còn ngân sách | checking_input |
+   | input_blocked | Người dùng sửa nội dung | Request mới pending_input trên cùng Story draft |
+
+   input_accepted không có nghĩa toàn bộ pipeline đã thành công. Story luôn draft trong các chuyển trạng thái của phase này.
+
+   Gửi trùng cùng key và cùng payload trả về cùng storyId/requestId cùng trạng thái hiện tại, không tự khởi động lại guardrail. Retry kỹ thuật là thao tác rõ ràng; nó giữ requestId, có mã thao tác retry riêng để tránh retry bị gửi trùng và tăng attempt theo quy ước.
+
+   Phải xác định cấu hình là maxAttempts hay maxRetries và giải thích có tính lần đầu hay không. Chỉ một lớp điều phối sở hữu ngân sách retry; nếu SDK đã retry, tính vào giới hạn chung hoặc cấu hình để tránh nhân số lần gọi.
+
+   Retry tự động chỉ dành cho lỗi tạm thời, có khoảng chờ, timeout tổng và điểm dừng. Policy Block không được tự động gửi lặp cùng prompt để tìm một lần Allow. [Microsoft Retry pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/retry)
+
+   Khi retry bằng input gửi lại, đối chiếu fingerprint, child/Story binding và snapshot context/policy. Nếu context/policy đã đổi, trả lỗi INPUT_CONTEXT_CHANGED và yêu cầu request mới trên Story draft, không tiếp tục với snapshot cũ.
+
+   Dùng attempt token, row version hoặc cơ chế tương đương để loại bỏ kết quả đến muộn từ attempt đã timeout. Request pending/checking quá hạn phải có cơ chế hồi phục bằng lỗi rõ ràng hoặc worker recovery sẵn có, không nằm chờ vĩnh viễn.
+
+   Endpoint đọc tiến độ trả status, reasonCode công khai, fallback đã làm sạch, canRetry, thời điểm và trạng thái handoff cần thiết. Không trả raw moderation response, prompt hệ thống hoặc dữ liệu hồ sơ không liên quan.
+
+   Đầu ra của bước này là retry có giới hạn, đọc trạng thái có phân quyền và không bị kết quả muộn ghi đè.
+
+8. **Bàn giao bền vững sang Generate Outline.**
+
+   Trước khi finalize Allow, kiểm tra lại request/attempt vẫn có quyền cập nhật, Story vẫn draft và chưa archive, child/quyền tạo vẫn có hiệu lực và context/policy chưa thay đổi. Có thay đổi thì kết thúc với reason phù hợp; không bàn giao theo quyền hoặc chính sách cũ.
+
+   Phối hợp concurrency/transaction của repo để kiểm tra và ghi nhận quyết định nhất quán. Nếu policy resolver ở ngoài database, dùng version check theo cơ chế hiện có; không tuyên bố có tính nguyên tử xuyên dịch vụ khi không có.
+
+   Trong một transaction nội bộ, lưu accepted snapshot, ghi input_accepted và tạo ý định bàn giao bền vững. Dùng outbox hoặc bảng job hiện có. Nếu chưa có, bổ sung bản ghi pending dispatch tối thiểu cùng cơ chế đọc lại theo hạ tầng repo; không thêm Kafka, RabbitMQ hay dịch vụ mới mặc định.
+
+   Không chỉ publish một event trong bộ nhớ rồi trả thành công. Nếu có bước dispatch sau commit, việc process dừng giữa commit và dispatch phải có thể phục hồi mà không mất yêu cầu.
+
+   Contract handoff cần chứa storyId, generationRequestId, accepted snapshot reference, dấu nhận diện/version snapshot thật và correlation/job ID. Payload sinh outline lấy từ snapshot này. Không gửi userId, childId hoặc toàn bộ child profile vào prompt nếu chúng không phục vụ sáng tác.
+
+   Handoff dùng request/job ID làm khóa nhận diện để consumer không xử lý lặp khi thông điệp được giao lại. Thiết kế theo giao có thể lặp và xử lý idempotent; không hứa bảo đảm gọi nhà cung cấp đúng một lần trong mọi tình huống lỗi mạng.
+
+   Phân biệt pending_dispatch với enqueued nếu hạ tầng có hai trạng thái. Chỉ nói đã enqueued khi có bằng chứng tương ứng. Phase 1 hoàn tất ở quyết định input và ý định bàn giao đã lưu, không chờ outline được sinh xong.
+
+   Nối với consumer Phase 2 nếu đã có. Nếu chưa có, cung cấp contract và pending command thực, ghi rõ consumer chưa được triển khai; không dùng no-op đánh dấu job completed và không tự viết toàn bộ Phase 2.
+
+   Đầu ra của bước này là handoff không mất khi process dừng, có chống xử lý lặp và không tạo StoryVersion trong code của Phase 1.
+
+9. **Tích hợp API và màn hình nhập.**
+
+   Ưu tiên mở rộng route/handler/API client hiện có. Không tạo endpoint song song bỏ mặc lối GenerateOutline cũ chưa có kiểm tra.
+
+   Nếu repo chưa có contract tương ứng, dùng bảng dưới làm gợi ý rồi chỉnh theo convention:
+
+   | Mục đích | Route gợi ý | Hành vi |
+   |---|---|---|
+   | Lấy context | GET /children/{childId}/ai-story-input-context | Chỉ đọc, có resource authorization. |
+   | Gửi input | POST /stories/ai-generation-requests | Nhận input, existingStoryId nếu có và idempotency key. |
+   | Đọc tiến độ | GET /stories/{storyId}/generation-requests/{requestId} | Trả tiến độ đã làm sạch, kiểm tra request thuộc Story và quyền tài nguyên. |
+   | Retry kiểm tra | POST /stories/{storyId}/generation-requests/{requestId}/retry-input | Gửi lại input, khóa retry riêng; kiểm tra fingerprint, context và quyền. |
+
+   Route trên là đề xuất, không phải API khẳng định đã có. Giữ request/response envelope và kiểu ID theo repo. Nếu chưa có quy ước HTTP: dùng 400 cho input cơ bản sai, 401/403/404 theo auth convention, 409 cho conflict, 422 cho policy block, 503 cho dịch vụ kiểm tra tạm thời không sẵn sàng và 202 khi đã chấp nhận để xử lý tiếp. Kết quả không kết luận cần mã nghiệp vụ riêng để FE không gọi đó là nội dung bị cấm.
+
+   Response cần đủ storyId, requestId, inputStatus, handoffStatus nếu có, fieldErrors, public reasonCode, fallbackMessage và canRetry. Không trả ID nếu lỗi xảy ra trước khi tạo bản ghi.
+
+   FE phải có các trạng thái nhập, đang kiểm tra, bị chặn, kiểm tra lỗi, chờ bàn giao và chờ outline. Disable nút khi đang gửi giúp trải nghiệm; chống trùng thực sự vẫn do backend đảm bảo.
+
+   FE giữ cùng idempotency key khi gửi lại cùng thao tác do lỗi mạng. Thay đổi ý tưởng hoặc bắt đầu request mới dùng key mới, giữ storyId draft đã biết. Nếu response submit bị mất, gửi lại thao tác gốc để nhận đúng request thay vì tạo Story khác.
+
+   Hiển thị Age Band/Reading Level và giới hạn do server trả; cho phép lựa chọn Character/Setting là AI đề xuất. Báo lỗi tại trường, giữ giá trị đang nhập và hiển thị fallback dễ hiểu.
+
+   Không nói đang sinh outline khi request chỉ đang kiểm tra input hoặc consumer chưa chạy. Không ghi raw form vào URL hoặc localStorage mặc định.
+
+   Nếu FE ở repo khác chưa được cung cấp, hoàn thành backend và contract, ghi rõ phần FE chưa thực hiện cùng hướng dẫn nối API. Không tạo một ứng dụng FE mới ngoài phạm vi để thay thế source chưa có.
+
+   Đầu ra của bước này là API nhất quán và form được tích hợp trong source có sẵn, hoặc một bàn giao FE cụ thể nếu chưa có source.
+
+10. **Kiểm thử, rà soát thay đổi và bàn giao kết quả.**
+
+   Ưu tiên kiểm thử authorization, state, persistence, retry và handoff vì lỗi ở đây có thể tạo dữ liệu sai hoặc cho phép gọi AI ngoài điều kiện. Dùng test framework và DB test hiện có. Kiểm thử uniqueness/transaction/concurrency bằng database phù hợp, không chỉ bằng repository mock.
+
+   Dùng test double cho dịch vụ kiểm duyệt để tái hiện kết quả và lỗi; không cần gọi AI có phí cho từng test. Nếu chưa kiểm tra được adapter thật do thiếu cấu hình, ghi rõ giới hạn này trong báo cáo.
+
+   | Mã | Tình huống | Kết quả phải kiểm chứng |
+   |---|---|---|
+   | T01 | Mở form/tải context | Không phát sinh Story, Generation Request hoặc job AI. |
+   | T02 | Chưa đăng nhập hoặc đúng role nhưng không có quan hệ/quyền với child | Bị từ chối; không tạo dữ liệu hay gọi mô hình. |
+   | T03 | Child inactive hoặc quyền bị thu hồi sau khi form mở | Submit bị từ chối theo trạng thái hiện hành. |
+   | T04 | Target vượt trần, vocabulary/language không hợp lệ hoặc thiếu Topic/Lesson | Lỗi đúng trường; không ghi Story/request mới. |
+   | T05 | Client giả source, owner, status hoặc approval mode | Giá trị giả không được áp dụng. |
+   | T06 | Character/Setting chọn AI đề xuất | Không bị coi là thiếu mô tả; snapshot giữ đúng chế độ. |
+   | T07 | Request hợp lệ và guardrail Allow | Có đúng một Story draft, một request, accepted snapshot và một ý định handoff; Phase 1 không tạo StoryVersion. |
+   | T08 | Guardrail Block | Giữ draft, lưu reason/fallback, không accepted snapshot hoặc handoff, không gọi generator. |
+   | T09 | Timeout, response sai schema, decision lạ hoặc không đủ kết luận | Không Allow; reason và hướng xử lý đúng loại lỗi. |
+   | T10 | Cấu hình yêu cầu moderation provider nhưng provider chưa sẵn sàng | Không tự chuyển sang always-pass hoặc bỏ check. |
+   | T11 | Hai submit đồng thời cùng key/payload | Chỉ một Story/request và một tiến trình xử lý hợp lệ. |
+   | T12 | Dùng lại key với payload khác hoặc cố dùng key của người khác | Conflict hoặc từ chối theo quyền; không lộ request khác. |
+   | T13 | Mất response rồi gửi lại cùng thao tác | Trả lại đúng request; không sinh công việc mới. |
+   | T14 | Retry kỹ thuật và retry bị gửi trùng | Giữ request, giới hạn attempt đúng; không chạy đồng thời hai attempt. |
+   | T15 | Sửa request đã Block | Request mới trên cùng Story draft; lịch sử request trước giữ nguyên. |
+   | T16 | Input gửi lại không khớp fingerprint hoặc policy/context đổi | Không retry theo dữ liệu cũ; hướng dẫn request mới. |
+   | T17 | Quyền/child/Story/policy thay đổi trong khi guardrail đang chạy | Không finalize Allow hoặc tạo handoff theo context hết hiệu lực. |
+   | T18 | Attempt cũ trả kết quả sau timeout hoặc process restart | Không ghi đè attempt hiện tại; request quá hạn có đường phục hồi rõ ràng. |
+   | T19 | Commit finalize thất bại hoặc process chết trước dispatch | Không tồn tại accepted mà thiếu ý định bàn giao; pending handoff có thể được phục hồi. |
+   | T20 | Dispatcher giao lại cùng command | Không tạo hai công việc logic sinh outline cho một request. |
+   | T21 | Input chứa dữ liệu nhạy cảm và lỗi provider | Raw text không lọt vào DB trước Allow, log, outbox, exception/telemetry hoặc fallback. |
+   | T22 | Người dùng có quyền tạo nhưng không có quyền duyệt | Phase 1 không tự cấp quyền duyệt và không chuyển Story approved/ready. |
+   | T23 | FE hiển thị lỗi, retry và trạng thái chờ | Form giữ dữ liệu, thông báo đúng giai đoạn; double-click không tạo request trùng. |
+
+   Chạy lại build, test liên quan, kiểm tra migration và lint/typecheck FE nếu đã sửa FE. Rà soát diff để tìm thay đổi ngoài phạm vi, dữ liệu giả, secret, raw request logging hoặc đường bypass còn sót.
+
+   Bàn giao báo cáo ngắn gồm: hành vi đã triển khai; file thực sự thay đổi và lý do; migration/cấu hình cần áp dụng; command kiểm thử và kết quả thực tế; phần chưa xác minh; tình trạng adapter guardrail, FE và consumer Phase 2.
+
+   Không báo hoàn tất toàn bộ tính năng nếu phần nào mới có interface hoặc test double. Nếu còn thiếu source, cấu hình hoặc quy tắc quyền, ghi rõ phần bị ảnh hưởng và hoàn thành các phần độc lập đã được giao.
+
+**Điều kiện kết thúc công việc của agent**
+
+Agent kết thúc khi các thay đổi trong phạm vi có source đã được triển khai và kiểm chứng, hoặc khi đã hoàn thành phần độc lập và chỉ còn vướng một đầu vào thực sự thiếu. Không dừng ở bản đề xuất chung nếu repository có đủ điều kiện thực hiện.
+
+Kết quả Phase 1 phải truy vết được từ người gửi và child đến request, quyết định guardrail và handoff. Với mọi nhánh lỗi, backend không được tự coi input là đạt. Với nhánh thành công, Stage tiếp theo nhận đúng dữ liệu đã kiểm tra và Story vẫn draft.

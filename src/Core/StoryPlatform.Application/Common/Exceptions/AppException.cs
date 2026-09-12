@@ -18,7 +18,7 @@ public class NotFoundException : AppException
     {
     }
 
-    public NotFoundException(string entityName, object key) 
+    public NotFoundException(string entityName, object key)
         : base($"Không tìm thấy {entityName} với mã định danh [{key}].", 404)
     {
     }
@@ -41,6 +41,13 @@ public class UnauthorizedException : AppException
 public class ForbiddenException : AppException
 {
     public ForbiddenException(string message = "Bạn không có quyền truy cập tài nguyên này.") : base(message, 403)
+    {
+    }
+}
+
+public class ConflictException : AppException
+{
+    public ConflictException(string message) : base(message, 409)
     {
     }
 }

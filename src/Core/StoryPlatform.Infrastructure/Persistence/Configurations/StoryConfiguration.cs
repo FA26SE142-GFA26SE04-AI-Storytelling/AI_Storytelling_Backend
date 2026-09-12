@@ -13,7 +13,6 @@ public class StoryConfiguration : IEntityTypeConfiguration<Story>
         builder.HasKey(s => s.Id);
 
         builder.Property(s => s.Title)
-            .IsRequired()
             .HasMaxLength(200);
 
         builder.Property(s => s.Description)
@@ -22,6 +21,9 @@ public class StoryConfiguration : IEntityTypeConfiguration<Story>
         builder.Property(s => s.AgeBand)
             .HasMaxLength(20)
             .IsRequired();
+
+        builder.Property(s => s.VocabularyLevel)
+            .HasMaxLength(20);
 
         builder.Property(s => s.Genre)
             .HasMaxLength(50);

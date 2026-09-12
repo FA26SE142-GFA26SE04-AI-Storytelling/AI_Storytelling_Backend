@@ -40,6 +40,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<StoryCategory> StoryCategories => Set<StoryCategory>();
     public DbSet<StoryVersion> StoryVersions => Set<StoryVersion>();
     public DbSet<StoryGenerationJob> StoryGenerationJobs => Set<StoryGenerationJob>();
+    public DbSet<StoryGenerationRequest> StoryGenerationRequests => Set<StoryGenerationRequest>();
     public DbSet<StoryVocabulary> StoryVocabularies => Set<StoryVocabulary>();
     public DbSet<QuizItem> QuizItems => Set<QuizItem>();
     public DbSet<DiscussionQuestion> DiscussionQuestions => Set<DiscussionQuestion>();

@@ -7,13 +7,15 @@ namespace StoryPlatform.Domain.Entities;
 /// </summary>
 public class Story : BaseEntity
 {
-    public string Title { get; set; } = string.Empty;
+    public string? Title { get; set; }
     public string? Description { get; set; }
     public string? Content { get; set; }
     public string? CoverImageUrl { get; set; }
     public string? Genre { get; set; }
     public string? MoralLesson { get; set; }
     public string AgeBand { get; set; } = "6-8"; // e.g., 6-8, 9-12
+    public int? ReadingLevel { get; set; }
+    public string? VocabularyLevel { get; set; }
     public string Language { get; set; } = "vi";
     public StorySource Source { get; set; } = StorySource.Ai;
     public StoryStatus Status { get; set; } = StoryStatus.Draft;

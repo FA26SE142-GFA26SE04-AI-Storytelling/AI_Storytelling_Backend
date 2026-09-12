@@ -8,5 +8,6 @@ public enum Permission
     ReceiveReport = 4,
     ApproveReadingLevel = 5,
     ApproveStory = 6,
-    ManageSafetySettings = 7
+    ManageSafetySettings = 7,
+    GenerateStory = 8
 }

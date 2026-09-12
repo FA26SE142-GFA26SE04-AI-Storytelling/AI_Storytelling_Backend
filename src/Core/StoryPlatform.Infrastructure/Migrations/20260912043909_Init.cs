@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -72,10 +72,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     Status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
                     ResetTokenHash = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
                     ResetTokenExpiresAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    RefreshTokenHash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
-                    RefreshTokenExpiresAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    EmailVerificationTokenHash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
-                    EmailVerificationTokenExpiresAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     LastLoginAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),

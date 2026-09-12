@@ -4,12 +4,25 @@ using Microsoft.Extensions.Hosting;
 using StoryPlatform.Api.Extensions;
 using StoryPlatform.Api.Middleware;
 using StoryPlatform.Application;
+using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // 1. Cấu hình Controllers và JSON options
 builder.Services.AddControllers();
+builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var errors = context.ModelState.Values
+            .SelectMany(value => value.Errors)
+            .Select(error => string.IsNullOrWhiteSpace(error.ErrorMessage) ? "Dữ liệu đầu vào không hợp lệ." : error.ErrorMessage)
+            .ToList();
+        return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(
+            ApiResponse<object>.Fail("Dữ liệu đầu vào không hợp lệ.", errors));
+    };
+});
 
 // 2. Cấu hình Swagger với JWT Bearer
 builder.Services.AddSwaggerWithJwt();

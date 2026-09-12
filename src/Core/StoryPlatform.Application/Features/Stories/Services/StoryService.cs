@@ -32,7 +32,7 @@ public class StoryService : IStoryService
             (!filter.AuthorUserId.HasValue || s.AuthorUserId == filter.AuthorUserId.Value) &&
             (string.IsNullOrEmpty(filter.Genre) || s.Genre == filter.Genre) &&
             (string.IsNullOrEmpty(filter.AgeBand) || s.AgeBand == filter.AgeBand) &&
-            (string.IsNullOrEmpty(filter.SearchTerm) || s.Title.Contains(filter.SearchTerm) || s.Description != null && s.Description.Contains(filter.SearchTerm));
+            (string.IsNullOrEmpty(filter.SearchTerm) || s.Title != null && s.Title.Contains(filter.SearchTerm) || s.Description != null && s.Description.Contains(filter.SearchTerm));
 
         var storyRepo = _unitOfWork.Repository<DomainStory>();
 
@@ -182,7 +182,7 @@ public class StoryService : IStoryService
         return new StoryDto
         {
             Id = story.Id,
-            Title = story.Title,
+            Title = story.Title ?? string.Empty,
             Description = story.Description,
             Content = story.Content,
             CoverImageUrl = story.CoverImageUrl,

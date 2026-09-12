@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kiểm chứng Luồng 2 theo profile trẻ và hình ảnh từng đoạn</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #f5f7fb;
+      --surface: #ffffff;
+      --surface-soft: #f0f4fa;
+      --text: #172033;
+      --muted: #5e687c;
+      --border: #d9e0eb;
+      --accent: #2457c5;
+      --accent-soft: #e8efff;
+      --success: #16794c;
+      --success-soft: #e7f6ee;
+      --warning: #9a5b00;
+      --warning-soft: #fff2d8;
+      --danger: #b42318;
+      --danger-soft: #ffebe9;
+      --info-soft: #e9f3ff;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 38px 0 56px;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { max-width: 900px; margin-bottom: 8px; font-size: clamp(28px, 4vw, 44px); line-height: 1.12; }
+    h2 { margin-bottom: 14px; font-size: 24px; }
+    h3 { margin-bottom: 6px; font-size: 16px; }
+    p { margin-bottom: 0; }
+
+    .eyebrow {
+      margin-bottom: 10px;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 750;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .lead { max-width: 850px; color: var(--muted); font-size: 17px; }
+    .section { margin-top: 30px; }
+
+    .summary {
+      display: grid;
+      grid-template-columns: minmax(0, 1.65fr) minmax(280px, .75fr);
+      gap: 18px;
+      margin-top: 24px;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .panel-body { padding: 18px; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 25px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .notice {
+      margin-top: 22px;
+      padding: 15px 17px;
+      border: 1px solid var(--border);
+      border-left-width: 5px;
+      border-radius: 10px;
+      background: var(--surface);
+    }
+
+    .notice strong { display: block; margin-bottom: 4px; }
+    .notice.warning { border-left-color: var(--warning); background: var(--warning-soft); }
+    .notice.danger { border-left-color: var(--danger); background: var(--danger-soft); }
+    .notice.info { border-left-color: var(--accent); background: var(--info-soft); }
+
+    .flow-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 11px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 10px;
+      padding: 13px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+    }
+
+    .step.primary { background: var(--accent-soft); }
+
+    .step-number {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--surface-soft);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .step.primary .step-number { background: var(--accent); color: #fff; }
+    .step strong { display: block; margin-bottom: 3px; }
+    .step span { color: var(--muted); font-size: 13px; }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .stat {
+      padding: 10px;
+      border-radius: 9px;
+      text-align: center;
+    }
+
+    .stat strong { display: block; font-size: 28px; line-height: 1.15; }
+    .stat span { color: var(--muted); font-size: 12px; }
+    .stat.success { background: var(--success-soft); color: var(--success); }
+    .stat.warning { background: var(--warning-soft); color: var(--warning); }
+    .stat.danger { background: var(--danger-soft); color: var(--danger); }
+
+    .stack { display: grid; gap: 14px; }
+
+    .boundary-list {
+      display: grid;
+      gap: 9px;
+      margin: 0;
+      padding-left: 19px;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }
+
+    th, td {
+      padding: 11px 13px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+      font-size: 13px;
+    }
+
+    th { background: var(--surface-soft); font-weight: 750; }
+    tr:last-child td { border-bottom: 0; }
+
+    .status {
+      display: inline-block;
+      min-width: 76px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .status.done { background: var(--success-soft); color: var(--success); }
+    .status.partial { background: var(--warning-soft); color: var(--warning); }
+    .status.missing { background: var(--danger-soft); color: var(--danger); }
+
+    .two-column {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .field-list {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .field-list li {
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+
+    .field-list li:last-child { padding-bottom: 0; border-bottom: 0; }
+
+    .rules {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .rule {
+      padding: 13px 4px 4px;
+      border-top: 3px solid var(--border);
+    }
+
+    .rule:first-child { border-top-color: var(--accent); }
+    .rule p { color: var(--muted); font-size: 13px; }
+
+    footer {
+      margin-top: 30px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @media (max-width: 850px) {
+      .summary, .two-column { grid-template-columns: 1fr; }
+      .flow-grid, .rules { grid-template-columns: 1fr; }
+    }
+
+    @media print {
+      body { background: #fff; }
+      main { width: 100%; padding: 0; }
+      .panel, .table-wrap, .notice { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="eyebrow">Architecture verification</div>
+      <h1>Kiểm chứng Luồng 2 theo profile trẻ và hình ảnh từng đoạn</h1>
+      <p class="lead">Đối chiếu sơ đồ mục tiêu trong <code>diagram_2.solve.txt</code> với source Core, Shared Contracts và AI Service hiện tại.</p>
+    </header>
+
+    <aside class="notice warning">
+      <strong>Kết luận kiểm chứng</strong>
+      Sơ đồ đi đúng hướng về ownership và approval-before-media, nhưng source chưa chạy end-to-end. AI hiện sinh được story package; Core chưa cấp profile snapshot, chưa quản lý outline approval/version/job, và toàn bộ scene segmentation, image generation, TTS cùng media gate vẫn chưa tồn tại.
+    </aside>
+
+    <section class="summary">
+      <article class="panel">
+        <div class="panel-header"><span>Luồng đích đã hiệu chỉnh</span><span class="badge">Target</span></div>
+        <div class="panel-body flow-grid">
+          <div class="step primary"><div class="step-number">1</div><div><strong>Core dựng ProfileGenerationContext</strong><span>Đọc Child/Learning/Safety profile, kiểm tra Active và permission; loại bỏ PII không cần thiết.</span></div></div>
+          <div class="step"><div class="step-number">2</div><div><strong>Guardrail cho cả AI và Manual</strong><span>Kiểm category policy, blocked terms và maximum length trước generation hoặc lưu draft.</span></div></div>
+          <div class="step"><div class="step-number">3</div><div><strong>Outline có version và approval</strong><span>AI sinh outline; Core lưu V1 và chỉ expand khi approved outline version hợp lệ.</span></div></div>
+          <div class="step primary"><div class="step-number">4</div><div><strong>Sinh StoryPackage hoàn chỉnh</strong><span>Sections, lesson, vocabulary, ba quiz type và discussion phải sinh trước quality gate.</span></div></div>
+          <div class="step"><div class="step-number">5</div><div><strong>Evaluate → Refine → Evaluate lại</strong><span>Mỗi refined output là attempt/version mới; safety block không được refine để lách policy.</span></div></div>
+          <div class="step"><div class="step-number">6</div><div><strong>Human content approval</strong><span>Core quyết định Edit, Regenerate, Approve hoặc Archive; AI không tự set Approved.</span></div></div>
+          <div class="step primary"><div class="step-number">7</div><div><strong>Scene plan từ approved version</strong><span>Mỗi scene trỏ đúng StoryVersion và đoạn text; tạo visual description nhất quán.</span></div></div>
+          <div class="step"><div class="step-number">8</div><div><strong>Async Image và TTS jobs</strong><span>Image model nhận scene prompt; TTS nhận narration text; media assets lưu theo scene/version.</span></div></div>
+          <div class="step"><div class="step-number">9</div><div><strong>Ready gate</strong><span>Core chỉ chuyển Ready khi policy, approval và media hoặc text-only fallback đều đạt.</span></div></div>
+        </div>
+      </article>
+
+      <div class="stack">
+        <article class="panel">
+          <div class="panel-header">Độ bao phủ hiện tại</div>
+          <div class="panel-body">
+            <div class="stats">
+              <div class="stat success"><strong>2</strong><span>Đã có</span></div>
+              <div class="stat warning"><strong>4</strong><span>Một phần</span></div>
+              <div class="stat danger"><strong>7</strong><span>Thiếu</span></div>
+            </div>
+          </div>
+        </article>
+
+        <aside class="notice danger" style="margin-top:0">
+          <strong>Ba lỗi logic trong sơ đồ</strong>
+          Manual đang bỏ qua Input Guardrail; Vocabulary/Quiz/Discussion đang đặt sau PASS; AI Refine chưa quay lại Evaluation.
+        </aside>
+
+        <article class="panel">
+          <div class="panel-header">Boundary bắt buộc</div>
+          <div class="panel-body">
+            <ul class="boundary-list">
+              <li><strong>Core:</strong> profile, permission, Story, StoryVersion, job, approval và media state.</li>
+              <li><strong>Text LLM:</strong> outline, story package, visual description và image prompt.</li>
+              <li><strong>Image model:</strong> render ảnh từ scene prompt, không quyết định business state.</li>
+              <li><strong>Queue/worker:</strong> retry, idempotency, timeout và cập nhật MediaAsset.</li>
+            </ul>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Ma trận kiểm chứng source</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Capability</th><th>Trạng thái</th><th>Bằng chứng hoặc khoảng trống</th></tr></thead>
+          <tbody>
+            <tr><td>Profile và permission</td><td><span class="status missing">Thiếu</span></td><td>Core chưa có ChildProfile, LearningProfile, SafetyPolicy hoặc supervision permission.</td></tr>
+            <tr><td>Profile snapshot Core → AI</td><td><span class="status missing">Thiếu</span></td><td>Request có field profile rời rạc nhưng chưa có Core use case lấy dữ liệu đáng tin cậy.</td></tr>
+            <tr><td>Story lifecycle</td><td><span class="status partial">Một phần</span></td><td>Có Story và StoryStatus; chưa có state orchestration theo generation job.</td></tr>
+            <tr><td>AI và Manual branch</td><td><span class="status partial">Một phần</span></td><td>Có StorySource và CRUD manual; manual chưa qua cùng guardrail/evaluation pipeline.</td></tr>
+            <tr><td>Input guardrail</td><td><span class="status partial">Một phần</span></td><td>AI chặn blocked terms và maximum words; chưa dùng category policy hoặc permission từ Core.</td></tr>
+            <tr><td>Generate outline</td><td><span class="status done">Đã có</span></td><td>Có structured title và outline Opening/Development/Ending.</td></tr>
+            <tr><td>Outline review/approval</td><td><span class="status missing">Thiếu</span></td><td>Không có persisted outline state hoặc endpoint approve trước expansion.</td></tr>
+            <tr><td>Generate full story</td><td><span class="status done">Đã có</span></td><td>Có sections, lesson, vocabulary, quiz và discussion questions.</td></tr>
+            <tr><td>Evaluation và refine</td><td><span class="status partial">Một phần</span></td><td>Có quality gate và bounded refine; chưa persist version/attempt ở Core.</td></tr>
+            <tr><td>StoryVersion và GenerationJob</td><td><span class="status missing">Thiếu</span></td><td>Chưa có entity, repository hoặc workflow state tương ứng.</td></tr>
+            <tr><td>Scene segmentation</td><td><span class="status missing">Thiếu</span></td><td>Không có story_scenes, scene contract hoặc liên kết tới approved StoryVersion.</td></tr>
+            <tr><td>Image prompt và image model</td><td><span class="status missing">Thiếu</span></td><td>Không có visual bible, scene prompt, provider abstraction hoặc image job.</td></tr>
+            <tr><td>TTS, media assets và Ready gate</td><td><span class="status missing">Thiếu</span></td><td>Không có queue/media entity; Core chưa chặn Ready theo trạng thái asset.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section two-column">
+      <article>
+        <h2>Context đúng theo profile trẻ</h2>
+        <p class="lead">AI không gọi ngược Core để lấy entity. Core tạo snapshot bất biến cho một generation request và chỉ gửi dữ liệu tối thiểu.</p>
+        <div class="panel" style="margin-top:14px">
+          <div class="panel-header">ProfileGenerationContextDto</div>
+          <div class="panel-body">
+            <ul class="field-list">
+              <li>ageBand · language · readingLevel · vocabularyLevel</li>
+              <li>interests · learningGoals · allowed/restricted/blocked categories</li>
+              <li>maximumWords · approvalMode · promptCatalogVersion</li>
+              <li>requestId · policySnapshotVersion</li>
+              <li><strong>Không gửi:</strong> tên thật, email, raw voice hoặc dữ liệu nhận dạng không cần thiết.</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <article>
+        <h2>Context hình ảnh nhất quán</h2>
+        <p class="lead">Tạo một visual bible cho toàn truyện, sau đó tạo prompt riêng cho từng scene để giảm lệch nhân vật và bối cảnh.</p>
+        <div class="panel" style="margin-top:14px">
+          <div class="panel-header">SceneIllustrationPlanDto</div>
+          <div class="panel-body">
+            <ul class="field-list">
+              <li><strong>StoryVisualBible:</strong> art style, character appearance, palette, safety rules, negative prompt.</li>
+              <li><strong>Scene:</strong> sceneId, storyVersionId, sectionOrder, paragraphIndex, narrationText.</li>
+              <li><strong>Prompt:</strong> visualDescription, charactersPresent, setting, action, mood, continuity anchors.</li>
+              <li><strong>Output:</strong> provider, model, seed/reference, asset URL, status, retry count.</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="section">
+      <h2>Giới hạn độ dài theo Reading Level</h2>
+      <p class="lead">Đơn vị là số từ. Khoảng mục tiêu hướng dẫn LLM tạo nội dung; Hard Maximum là ngưỡng tuyệt đối mà guardrail và output evaluation không được cho vượt qua.</p>
+      <div class="table-wrap" style="margin-top:14px">
+        <table>
+          <thead>
+            <tr><th>Reading Level</th><th>Khoảng mục tiêu</th><th>Hard Maximum</th><th>Cách áp dụng</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>Level 1</strong></td><td>400–600 từ</td><td>700 từ</td><td>Prompt nhắm 400–600; từ 601–700 cần cảnh báo/review; trên 700 phải reject hoặc refine.</td></tr>
+            <tr><td><strong>Level 2</strong></td><td>600–900 từ</td><td>1.100 từ</td><td>Prompt nhắm 600–900; từ 901–1.100 cần cảnh báo/review; trên 1.100 phải reject hoặc refine.</td></tr>
+            <tr><td><strong>Level 3</strong></td><td>900–1.300 từ</td><td>1.600 từ</td><td>Prompt nhắm 900–1.300; từ 1.301–1.600 cần cảnh báo/review; trên 1.600 phải reject hoặc refine.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <aside class="notice info">
+        <strong>Quy tắc ưu tiên</strong>
+        Core lấy Reading Level từ Child Profile và gửi snapshot sang AI. Giá trị <code>SafetyPolicy.maximumWords</code> vẫn có quyền siết chặt hơn: effectiveHardMaximum = min(Level Hard Maximum, SafetyPolicy.maximumWords). Frontend không được tự nâng giới hạn này.
+      </aside>
+    </section>
+
+    <section class="section">
+      <h2>Điều kiện dữ liệu và trạng thái</h2>
+      <div class="rules">
+        <div class="rule"><h3>Khi content đổi</h3><p>Tạo StoryVersion mới, vô hiệu scene/media cũ và chạy lại evaluation trước approval.</p></div>
+        <div class="rule"><h3>Khi chỉ regenerate ảnh</h3><p>Giữ StoryVersion và Scene; tạo MediaAsset attempt mới, không tạo version nội dung.</p></div>
+        <div class="rule"><h3>Khi media lỗi</h3><p>Retry hữu hạn; nếu policy cho phép thì Ready text-only, nếu không giữ MediaProcessing hoặc Failed.</p></div>
+      </div>
+    </section>
+
+    <aside class="notice info">
+      <strong>Thứ tự triển khai khuyến nghị</strong>
+      1) Core profile/policy snapshot và permission; 2) StoryVersion, GenerationJob và outline approval; 3) scene contract và visual bible; 4) image/TTS provider abstractions; 5) async worker, media assets và Ready gate. Không tạo media trước approval.
+    </aside>
+
+    <footer>Nguồn kiểm chứng: diagram_2.solve.txt và source AI Storytelling Backend hiện tại.</footer>
+  </main>
+</body>
+</html>

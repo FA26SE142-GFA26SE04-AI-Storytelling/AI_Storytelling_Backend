@@ -1,0 +1,118 @@
+Parent / Teacher
+      │
+      ▼
+Chọn Child Profile
+      │
+      ▼
+Kiểm tra
+user_accounts
+child_profiles
+Safety Policy / Permission
+      │
+      ▼
+┌──────────────────────────────┐
+│       CREATE STORY           │
+│ stories                     │
+│ status = draft              │
+│ source = AI / Manual        │
+└──────────────┬───────────────┘
+               │
+               ▼
+        Chọn nguồn tạo
+        ┌──────┴───────┐
+        │              │
+       AI            Manual
+        │              │
+        ▼              ▼
+Generation Job     User nhập Story
+        │              │
+        ▼              │
+Input Guardrail        │
+        │              │
+        ▼              │
+Generate Outline       │
+        │              │
+        ▼              │
+ StoryVersion V1       │
+ ├─ title              │
+ ├─ opening            │
+ ├─ development        │
+ ├─ ending             │
+ └─ content = null     │
+        │              │
+        ▼              │
+Parent/Teacher         │
+review Outline         │
+        │              │
+        ▼              │
+Approve Outline        │
+        │              │
+        ▼              │
+Generate Full Story    │
+        │              │
+        └──────┬───────┘
+               ▼
+        StoryVersion
+        hoàn chỉnh
+               │
+      ┌────────┼────────┐
+      ▼        ▼        ▼
+   Content   Lesson   Evaluation
+                       │
+                  Safety
+                  Readability
+                       │
+                       ▼
+                    PASS?
+                  ┌────┴────┐
+                 NO         YES
+                  │          │
+              AI Refine      │
+                  │          │
+            Version mới      │
+                  └────┬─────┘
+                       ▼
+              Vocabulary / Quiz
+              / Discussion
+                       │
+            ┌──────────┼──────────┐
+            ▼          ▼          ▼
+     story_vocabulary quiz_items discussion_questions
+                       │
+                       ▼
+             Parent / Teacher
+               Content Review
+                       │
+         ┌─────────────┼────────────┐
+         ▼             ▼            ▼
+       Edit        Regenerate     Approve
+         │             │            │
+         ▼             ▼            │
+     Version mới   Version mới      │
+                                    ▼
+                             Approved Version
+                                    │
+                                    ▼
+                            Scene Segmentation
+                                    │
+                                    ▼
+                              story_scenes
+                      ┌─────────────┼─────────────┐
+                      ▼             ▼             ▼
+                   Scene 1        Scene 2        Scene 3
+                   Text           Text           Text
+                   Visual Desc    Visual Desc    Visual Desc
+                      │             │             │
+                   ┌──┴──┐       ┌──┴──┐       ┌──┴──┐
+                   ▼     ▼       ▼     ▼       ▼     ▼
+                 Image  TTS    Image  TTS    Image  TTS
+                   │     │       │     │       │     │
+                   └──┬──┘       └──┬──┘       └──┬──┘
+                      ▼             ▼             ▼
+                           media_assets
+                                │
+                                ▼
+                         Story status = ready
+                                │
+                                ▼
+                       Child có thể đọc

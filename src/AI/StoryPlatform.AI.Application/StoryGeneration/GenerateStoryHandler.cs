@@ -33,15 +33,18 @@ public sealed class GenerateStoryHandler
 
     public async Task<GenerateStoryResponse> HandleAsync(GenerateStoryRequest request, CancellationToken cancellationToken = default)
     {
-        RequestGuard.Validate(request.RequestId, request.StoryParameters, request.Constraints);
+        RequestGuard.Validate(request);
         var template = _promptProvider.GetActive(PromptType.Story, request.Language, request.AgeBand);
         var result = await GenerateAsync(PromptComposer.Compose(template, request), cancellationToken);
+        var attempts = new List<GenerationAttemptMetadataDto> { result.ToAttempt("story_generation") };
+        var promptVersions = new List<string> { template.Version };
         var promptVersion = template.Version;
-        var story = DeserializeStory(result.Content);
+        var story = EnrichStory(DeserializeStory(result.Content), request, promptVersion);
         var evaluation = await _evaluationService.EvaluateAsync(story, request.Constraints, cancellationToken);
+        story = story with { ReadabilityMetrics = evaluation.ReadabilityMetrics };
         var refinementCount = 0;
 
-        while (!evaluation.Passed && refinementCount < _maxRefinementAttempts)
+        while (!evaluation.Passed && evaluation.SafetyPassed && refinementCount < _maxRefinementAttempts)
         {
             refinementCount++;
             var refineTemplate = _promptProvider.GetActive(PromptType.Refinement, request.Language, request.AgeBand);
@@ -50,12 +53,18 @@ public sealed class GenerateStoryHandler
             {
                 RequestId = request.RequestId,
                 Story = story,
+                Language = request.Language,
+                ReadingLevel = request.ReadingLevel,
+                VocabularyLevel = request.VocabularyLevel,
                 Reasons = evaluation.Issues,
                 Constraints = request.Constraints
             };
             result = await GenerateAsync(PromptComposer.Compose(refineTemplate, refineInput), cancellationToken);
-            story = DeserializeStory(result.Content);
+            attempts.Add(result.ToAttempt("story_refinement"));
+            promptVersions.Add(refineTemplate.Version);
+            story = EnrichStory(DeserializeStory(result.Content), request, refineTemplate.Version);
             evaluation = await _evaluationService.EvaluateAsync(story, request.Constraints, cancellationToken);
+            story = story with { ReadabilityMetrics = evaluation.ReadabilityMetrics };
         }
 
         return new GenerateStoryResponse
@@ -64,7 +73,7 @@ public sealed class GenerateStoryHandler
             GenerationId = Guid.NewGuid().ToString("N"),
             Story = story,
             Evaluation = evaluation,
-            Metadata = result.ToMetadata(promptVersion, refinementCount)
+            Metadata = result.ToMetadata(promptVersion, refinementCount, attempts, promptVersions)
         };
     }
 
@@ -74,4 +83,17 @@ public sealed class GenerateStoryHandler
     private static StoryPackageDto DeserializeStory(string content) =>
         JsonSerializer.Deserialize<StoryPackageDto>(content, JsonDefaults.Options)
         ?? throw new InvalidOperationException("The LLM returned an empty story package.");
+
+    private static StoryPackageDto EnrichStory(
+        StoryPackageDto story,
+        GenerateStoryRequest request,
+        string generationVersion) => story with
+    {
+        Source = "ai",
+        AgeBand = request.AgeBand,
+        ReadingLevel = request.ReadingLevel,
+        VocabularyLevel = request.VocabularyLevel,
+        Outline = request.Outline,
+        GenerationVersion = generationVersion
+    };
 }

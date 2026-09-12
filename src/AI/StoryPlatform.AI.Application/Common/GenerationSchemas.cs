@@ -24,7 +24,7 @@ internal static class GenerationSchemas
             "storySections":{"type":"array","items":{"type":"object","properties":{"order":{"type":"integer"},"heading":{"type":"string"},"content":{"type":"string"}},"required":["order","heading","content"],"additionalProperties":false}},
             "lesson":{"type":"string"},
             "vocabulary":{"type":"array","items":{"type":"object","properties":{"word":{"type":"string"},"meaning":{"type":"string"},"example":{"type":"string"}},"required":["word","meaning","example"],"additionalProperties":false}},
-            "quiz":{"type":"array","items":{"type":"object","properties":{"question":{"type":"string"},"options":{"type":"array","items":{"type":"string"}},"correctOptionIndex":{"type":"integer"},"explanation":{"type":"string"}},"required":["question","options","correctOptionIndex","explanation"],"additionalProperties":false}},
+            "quiz":{"type":"array","minItems":3,"items":{"type":"object","properties":{"type":{"type":"string","enum":["multiple_choice","true_false","short_answer"]},"question":{"type":"string"},"options":{"type":"array","items":{"type":"string"}},"correctOptionIndex":{"type":"integer"},"correctAnswer":{"type":"string"},"explanation":{"type":"string"}},"required":["type","question","options","correctOptionIndex","correctAnswer","explanation"],"additionalProperties":false}},
             "discussionQuestions":{"type":"array","items":{"type":"object","properties":{"question":{"type":"string"}},"required":["question"],"additionalProperties":false}}
           },
           "required":["title","ageBand","readingLevel","vocabularyLevel","storySections","lesson","vocabulary","quiz","discussionQuestions"],

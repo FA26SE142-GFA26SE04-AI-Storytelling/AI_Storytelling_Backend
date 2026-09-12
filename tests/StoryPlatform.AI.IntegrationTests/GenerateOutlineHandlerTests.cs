@@ -21,6 +21,8 @@ public sealed class GenerateOutlineHandlerTests
         {
             RequestId = "req-1",
             AgeBand = "6-8",
+            ReadingLevel = "beginner",
+            VocabularyLevel = "basic",
             StoryParameters = new StoryParametersDto { Topic = "sharing", RequestedLength = 500 },
             Constraints = new GenerationConstraintsDto { MaximumWords = 800 }
         };
@@ -43,6 +45,9 @@ public sealed class GenerateOutlineHandlerTests
         var request = new GenerateOutlineRequest
         {
             RequestId = "req-2",
+            AgeBand = "6-8",
+            ReadingLevel = "beginner",
+            VocabularyLevel = "basic",
             StoryParameters = new StoryParametersDto { Topic = "weapons", RequestedLength = 500 },
             Constraints = new GenerationConstraintsDto { MaximumWords = 800, BlockedTopics = ["weapon"] }
         };

@@ -22,7 +22,7 @@ public sealed class GenerateOutlineHandler
 
     public async Task<GenerateOutlineResponse> HandleAsync(GenerateOutlineRequest request, CancellationToken cancellationToken = default)
     {
-        RequestGuard.Validate(request.RequestId, request.StoryParameters, request.Constraints);
+        RequestGuard.Validate(request);
         var template = _promptProvider.GetActive(PromptType.Outline, request.Language, request.AgeBand);
         var prompt = PromptComposer.Compose(template, request);
         var result = await _llmClient.GenerateStructuredAsync(prompt, "story_outline", GenerationSchemas.Outline, cancellationToken);

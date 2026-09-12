@@ -26,12 +26,24 @@ public sealed class RefineStoryHandler
     public async Task<RefineStoryResponse> HandleAsync(RefineStoryRequest request, CancellationToken cancellationToken = default)
     {
         RequestGuard.Validate(request.RequestId, null, request.Constraints);
-        var template = _promptProvider.GetActive(PromptType.Refinement, "vi", request.Story.AgeBand);
+        var template = _promptProvider.GetActive(PromptType.Refinement, request.Language, request.Story.AgeBand);
         var result = await _llmClient.GenerateStructuredAsync(
             PromptComposer.Compose(template, request), "refined_story_package", GenerationSchemas.StoryPackage, cancellationToken);
+
         var story = JsonSerializer.Deserialize<StoryPackageDto>(result.Content, JsonDefaults.Options)
                     ?? throw new InvalidOperationException("The LLM returned an empty refined story package.");
+
+        story = story with
+        {
+            Source = request.Story.Source,
+            AgeBand = request.Story.AgeBand,
+            ReadingLevel = string.IsNullOrWhiteSpace(request.ReadingLevel) ? request.Story.ReadingLevel : request.ReadingLevel,
+            VocabularyLevel = string.IsNullOrWhiteSpace(request.VocabularyLevel) ? request.Story.VocabularyLevel : request.VocabularyLevel,
+            Outline = request.Story.Outline,
+            GenerationVersion = template.Version
+        };
         var evaluation = await _evaluationService.EvaluateAsync(story, request.Constraints, cancellationToken);
+        story = story with { ReadabilityMetrics = evaluation.ReadabilityMetrics };
 
         return new RefineStoryResponse
         {

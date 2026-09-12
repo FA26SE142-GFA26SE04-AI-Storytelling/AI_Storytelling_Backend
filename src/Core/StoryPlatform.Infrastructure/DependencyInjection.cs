@@ -4,7 +4,9 @@ using Microsoft.Extensions.DependencyInjection;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Security;
+using StoryPlatform.Application.Abstractions.Communication;
 using StoryPlatform.Infrastructure.AI;
+using StoryPlatform.Infrastructure.Communication;
 using StoryPlatform.Infrastructure.Persistence;
 using StoryPlatform.Infrastructure.Persistence.Repositories;
 using StoryPlatform.Infrastructure.Security;
@@ -32,6 +34,8 @@ public static class DependencyInjection
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
+        services.Configure<ResendOptions>(configuration.GetSection(ResendOptions.SectionName));
+        services.AddHttpClient<IEmailSender, ResendEmailSender>();
 
         services.Configure<AIServiceOptions>(configuration.GetSection(AIServiceOptions.SectionName));
         services.AddHttpClient<IAIStoryGenerationClient, AIStoryGenerationClient>();

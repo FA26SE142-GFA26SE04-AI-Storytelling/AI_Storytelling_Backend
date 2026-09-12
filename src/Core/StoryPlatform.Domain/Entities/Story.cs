@@ -1,4 +1,4 @@
-using StoryPlatform.Domain.Entities.Enums;
+using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Domain.Entities;
 
@@ -22,4 +22,8 @@ public class Story : BaseEntity
     // Khóa ngoại tác giả / người khởi tạo
     public int AuthorUserId { get; set; }
     public virtual UserAccount? Author { get; set; }
+
+    // Khóa ngoại tới ChildProfile sở hữu câu chuyện (theo DBML: stories.child_profile_id)
+    public int ChildProfileId { get; set; }
+    public virtual ChildProfile? ChildProfile { get; set; }
 }

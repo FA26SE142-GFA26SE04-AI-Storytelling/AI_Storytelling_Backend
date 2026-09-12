@@ -3,8 +3,8 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
-using StoryPlatform.Application.Stories.DTOs;
-using StoryPlatform.Application.Stories.Interfaces;
+using StoryPlatform.Application.Features.Stories.DTOs;
+using StoryPlatform.Application.Features.Stories.Interfaces;
 
 namespace StoryPlatform.Api.Controllers;
 

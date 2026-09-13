@@ -486,3 +486,6 @@ $RECYCLE.BIN/
 
 #codex
 .codex
+
+#appsettings
+.appsettings.*.json

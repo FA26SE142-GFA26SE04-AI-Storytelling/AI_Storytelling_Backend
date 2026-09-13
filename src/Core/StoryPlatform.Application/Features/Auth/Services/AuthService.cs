@@ -34,6 +34,9 @@ public class AuthService : IAuthService
 
     public async Task<AuthResponseDto> LoginAsync(LoginRequestDto request, CancellationToken cancellationToken = default)
     {
+        const int MaxFailedLoginAttempts = 5;
+        const int LockoutMinutes = 15;
+
         var userRepo = _unitOfWork.Repository<UserAccount>();
 
         // Cho phép đăng nhập bằng cả Email hoặc Username
@@ -42,8 +45,27 @@ public class AuthService : IAuthService
             u => u.Email.ToLower() == normalizedIdentifier || u.Username.ToLower() == normalizedIdentifier,
             cancellationToken: cancellationToken);
 
-        if (user == null || !_passwordHasher.VerifyPassword(request.Password, user.PasswordHash))
+        if (user == null)
         {
+            throw new BadRequestException("Tên đăng nhập hoặc mật khẩu không chính xác.");
+        }
+
+        if (user.LockedUntil.HasValue && user.LockedUntil.Value > DateTime.UtcNow)
+        {
+            throw new ForbiddenException($"Tài khoản tạm thời bị khoá do đăng nhập sai quá {MaxFailedLoginAttempts} lần. Vui lòng thử lại sau {LockoutMinutes} phút.");
+        }
+
+        if (!_passwordHasher.VerifyPassword(request.Password, user.PasswordHash))
+        {
+            user.FailedLoginAttempts += 1;
+            if (user.FailedLoginAttempts >= MaxFailedLoginAttempts)
+            {
+                user.LockedUntil = DateTime.UtcNow.AddMinutes(LockoutMinutes);
+                user.FailedLoginAttempts = 0;
+            }
+            userRepo.Update(user);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
             throw new BadRequestException("Tên đăng nhập hoặc mật khẩu không chính xác.");
         }
 
@@ -57,6 +79,8 @@ public class AuthService : IAuthService
             throw new ForbiddenException("Vui lòng xác thực email trước khi đăng nhập. Kiểm tra hộp thư của bạn để lấy mã xác thực.");
         }
 
+        user.FailedLoginAttempts = 0;
+        user.LockedUntil = null;
         user.Status = AccountStatus.LoggedIn;
         user.LastLoginAt = DateTime.UtcNow;
 
@@ -66,28 +90,42 @@ public class AuthService : IAuthService
     public async Task<AuthResponseDto> RefreshTokenAsync(RefreshTokenRequestDto request, CancellationToken cancellationToken = default)
     {
         var hashedToken = TokenHasher.Hash(request.RefreshToken);
-        var userRepo = _unitOfWork.Repository<UserAccount>();
+        var refreshTokenRepo = _unitOfWork.Repository<RefreshToken>();
 
-        var user = await userRepo.FirstOrDefaultAsync(
-            u => u.RefreshTokenHash == hashedToken,
-            cancellationToken: cancellationToken);
+        var tokenRow = await refreshTokenRepo.FirstOrDefaultAsync(
+            rt => rt.TokenHash == hashedToken && rt.RevokedAt == null,
+            "UserAccount",
+            cancellationToken);
 
-        if (user == null || user.RefreshTokenExpiresAt == null || user.RefreshTokenExpiresAt < DateTime.UtcNow)
+        if (tokenRow == null || tokenRow.UserAccount == null || tokenRow.RevokedAt != null
+            || tokenRow.ExpiresAt <= DateTime.UtcNow || tokenRow.UserAccount.IsDeleted
+            || tokenRow.SessionScope == SessionScope.Child)
         {
             throw new UnauthorizedException("Refresh token không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại.");
         }
 
+        var user = tokenRow.UserAccount;
+
         // Tài khoản bị khoá sau khi đã đăng nhập không được phép làm mới phiên.
-        if (user.Status == AccountStatus.Suspended)
+        if (user.Status == AccountStatus.Suspended || user.Status == AccountStatus.Registered)
         {
             throw new UnauthorizedException("Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.");
         }
+
+        // Xoay vòng: thu hồi dòng refresh token cũ trước khi cấp dòng mới.
+        tokenRow.RevokedAt = DateTime.UtcNow;
+        refreshTokenRepo.Update(tokenRow);
 
         return await GenerateAuthResponseAsync(user, cancellationToken);
     }
 
     public async Task RegisterAsync(RegisterRequestDto request, CancellationToken cancellationToken = default)
     {
+        if (request.Role != UserRole.Parent && request.Role != UserRole.Teacher)
+        {
+            throw new BadRequestException("Chỉ có thể tự đăng ký tài khoản với vai trò Parent hoặc Teacher.");
+        }
+
         if (request.Password != request.ConfirmPassword)
         {
             throw new BadRequestException("Mật khẩu xác nhận không khớp.");
@@ -118,7 +156,7 @@ public class AuthService : IAuthService
             FullName = request.FullName.Trim(),
             PhoneNumber = request.PhoneNumber,
             PasswordHash = _passwordHasher.HashPassword(request.Password),
-            Role = UserRole.Parent, // Mặc định người dùng đăng ký là phụ huynh
+            Role = request.Role,
             Status = AccountStatus.Registered,
             EmailVerificationTokenHash = TokenHasher.Hash(rawVerificationToken),
             EmailVerificationTokenExpiresAt = DateTime.UtcNow.AddHours(24),
@@ -142,7 +180,7 @@ public class AuthService : IAuthService
         return MapToUserProfileDto(user);
     }
 
-    public async Task LogoutAsync(int userId, CancellationToken cancellationToken = default)
+    public async Task LogoutAsync(int userId, LogoutRequestDto request, CancellationToken cancellationToken = default)
     {
         var userRepo = _unitOfWork.Repository<UserAccount>();
         var user = await userRepo.GetByIdAsync(userId, cancellationToken);
@@ -151,9 +189,46 @@ public class AuthService : IAuthService
             throw new NotFoundException("Tài khoản", userId);
         }
 
+        var hashedToken = TokenHasher.Hash(request.RefreshToken);
+        var refreshTokenRepo = _unitOfWork.Repository<RefreshToken>();
+        var tokenRow = await refreshTokenRepo.FirstOrDefaultAsync(
+            rt => rt.TokenHash == hashedToken && rt.UserAccountId == userId,
+            cancellationToken: cancellationToken);
+
+        // Đăng xuất là hành động idempotent — nếu token đã bị thu hồi/không xác định,
+        // vẫn chuyển trạng thái tài khoản về LoggedOut thay vì báo lỗi.
+        if (tokenRow != null && tokenRow.RevokedAt == null)
+        {
+            tokenRow.RevokedAt = DateTime.UtcNow;
+            refreshTokenRepo.Update(tokenRow);
+        }
+
+        // Không hạ cấp trạng thái Suspended — tài khoản bị khoá phải giữ nguyên trạng thái khoá.
+        if (user.Status != AccountStatus.Suspended)
+        {
+            user.Status = AccountStatus.LoggedOut;
+        }
+        userRepo.Update(user);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task LogoutAllDevicesAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        var userRepo = _unitOfWork.Repository<UserAccount>();
+        var user = await userRepo.GetByIdAsync(userId, cancellationToken);
+        if (user == null)
+        {
+            throw new NotFoundException("Tài khoản", userId);
+        }
+
+        await RevokeRefreshTokensAsync(userId, cancellationToken);
         user.RefreshTokenHash = null;
         user.RefreshTokenExpiresAt = null;
-        // Không hạ cấp trạng thái Suspended — tài khoản bị khoá phải giữ nguyên trạng thái khoá.
+        await WriteAuthAuditAsync(user.Id, "LOGOUT_ALL_DEVICES", cancellationToken);
+
+        // JWT đã phát hành sẽ bị từ chối ở request tiếp theo khi version không còn khớp.
+        user.TokenVersion += 1;
         if (user.Status != AccountStatus.Suspended)
         {
             user.Status = AccountStatus.LoggedOut;
@@ -250,6 +325,9 @@ public class AuthService : IAuthService
         // Vô hiệu hoá phiên đăng nhập hiện tại — buộc đăng nhập lại bằng mật khẩu mới ở mọi thiết bị.
         user.RefreshTokenHash = null;
         user.RefreshTokenExpiresAt = null;
+        user.TokenVersion += 1;
+        await RevokeRefreshTokensAsync(user.Id, cancellationToken);
+        await WriteAuthAuditAsync(user.Id, "RESET_PASSWORD", cancellationToken);
         // Không hạ cấp trạng thái Suspended — đặt lại mật khẩu không được dùng để tự mở khoá tài khoản.
         if (user.Status != AccountStatus.Suspended)
         {
@@ -292,6 +370,9 @@ public class AuthService : IAuthService
         user.PasswordHash = _passwordHasher.HashPassword(request.NewPassword);
         user.RefreshTokenHash = null;
         user.RefreshTokenExpiresAt = null;
+        user.TokenVersion += 1;
+        await RevokeRefreshTokensAsync(user.Id, cancellationToken);
+        await WriteAuthAuditAsync(user.Id, "CHANGE_PASSWORD", cancellationToken);
         user.UpdatedAt = DateTime.UtcNow;
 
         userRepo.Update(user);
@@ -302,19 +383,19 @@ public class AuthService : IAuthService
     {
         var accessToken = _jwtTokenGenerator.GenerateAccessToken(user);
         var rawRefreshToken = _jwtTokenGenerator.GenerateRefreshToken();
+        var refreshTokenExpiresAt = _jwtTokenGenerator.GetRefreshTokenExpirationDate();
 
-        user.RefreshTokenHash = TokenHasher.Hash(rawRefreshToken);
-        user.RefreshTokenExpiresAt = _jwtTokenGenerator.GetRefreshTokenExpirationDate();
-
-        // Chỉ gọi Update() cho tài khoản ĐÃ tồn tại (Id != 0, được fetch bằng
-        // FirstOrDefaultAsync AsNoTracking() nên cần Attach lại thủ công).
-        // Với tài khoản MỚI (RegisterAsync, Id == 0), entity đã được AddAsync() tracking
-        // sẵn ở trạng thái Added — gọi Update() lúc này sẽ đổi nhầm trạng thái thành
-        // Modified và khiến EF Core phát UPDATE thay vì INSERT, gây lỗi khi lưu.
-        if (user.Id != 0)
+        await _unitOfWork.Repository<RefreshToken>().AddAsync(new RefreshToken
         {
-            _unitOfWork.Repository<UserAccount>().Update(user);
-        }
+            UserAccountId = user.Id,
+            TokenHash = TokenHasher.Hash(rawRefreshToken),
+            SessionScope = user.Role == UserRole.Administrator ? SessionScope.Admin : SessionScope.Supervisor,
+            IssuedAt = DateTime.UtcNow,
+            ExpiresAt = refreshTokenExpiresAt
+        }, cancellationToken);
+
+        // Login và refresh chỉ cấp phiên cho tài khoản đã tồn tại.
+        _unitOfWork.Repository<UserAccount>().Update(user);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -326,6 +407,32 @@ public class AuthService : IAuthService
             ExpiresInSeconds = _jwtTokenGenerator.ExpiresInSeconds,
             User = MapToUserProfileDto(user)
         };
+    }
+
+    private async Task RevokeRefreshTokensAsync(int userId, CancellationToken cancellationToken)
+    {
+        var repository = _unitOfWork.Repository<RefreshToken>();
+        var tokens = await repository.FindAsync(
+            token => token.UserAccountId == userId && token.RevokedAt == null,
+            cancellationToken: cancellationToken);
+        var now = DateTime.UtcNow;
+        foreach (var token in tokens)
+        {
+            token.RevokedAt = now;
+            repository.Update(token);
+        }
+    }
+
+    private async Task WriteAuthAuditAsync(int userId, string action, CancellationToken cancellationToken)
+    {
+        await _unitOfWork.Repository<AuditLog>().AddAsync(new AuditLog
+        {
+            ActorUserId = userId,
+            Action = action,
+            EntityType = nameof(UserAccount),
+            EntityId = userId,
+            OccurredAt = DateTime.UtcNow
+        }, cancellationToken);
     }
 
     private static UserProfileDto MapToUserProfileDto(UserAccount user)

@@ -8,7 +8,7 @@ using StoryPlatform.Application.Features.AIStoryInput.Interfaces;
 namespace StoryPlatform.Api.Controllers;
 
 [ApiController]
-[Authorize]
+[Authorize(Roles = "Parent,Teacher")]
 [Route("api/v1/ai-story-input")]
 public sealed class AIStoryInputController : ControllerBase
 {

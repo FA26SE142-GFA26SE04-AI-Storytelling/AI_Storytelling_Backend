@@ -1247,3 +1247,201 @@ GenerateOutlineCommand
              PHASE 3
 ──────────────────────────────────
 ```
+
+---
+
+## 40. Approved Decisions (2026-09-12)
+
+### Decision Matrix
+
+| # | Vấn đề | Quyết định | Notes |
+|---|---------|-------------|-------|
+| 1 | Trigger Mechanism | **Auto-trigger** sau khi Phase 1 `input_accepted` | Seamless flow |
+| 2 | Worker Architecture | **Async Background Job** | IHostedService, no Kafka/RabbitMQ |
+| 3 | Output Safety | **Hybrid Rule-based + AI Moderation** | Layer 1: Rule-based fast check; Layer 2: AI semantic check |
+| 4 | Retry Configuration | **MaxAttempts = 3**, exponential backoff (2s, 4s, 8s) | Balanced reliability |
+| 5 | Generate Endpoint | **Không cần** trong normal flow | Auto-trigger, chỉ cần cho manual/retry |
+| 6 | Concurrency | **Chỉ một operation active** | BR-P2-05 enforcement |
+| 7 | Auto-approve Outline | **Không** — luôn Human Review | BR-P2-15 confirmed |
+| 8 | Job Stages | **Có đầy đủ** Pending/Generating/Generated/Failed/Approved | Full visibility |
+| 9 | Max Versions | **Không giới hạn cứng** | Audit trail, rate limiting có thể add sau |
+| 10 | Version Comparison | **Không bắt buộc** cho MVP | Add sau nếu cần |
+
+### Detailed Decision: Trigger & Worker
+
+```
+Phase 1 Complete (input_accepted)
+      ↓
+Tự động tạo StoryGenerationJob
+với stage = OutlinePending
+      ↓
+Background Worker poll jobs
+      ↓
+Worker picks up → stage = OutlineGenerating
+      ↓
+Call AI Module → Generate Outline
+      ↓
+┌─────────────────────────────────────┐
+│ ON SUCCESS:                         │
+│ - Create StoryVersion                │
+│ - stage = OutlineGenerated          │
+│ - Story.status = OutlineReview     │
+└─────────────────────────────────────┘
+      ↓
+┌─────────────────────────────────────┐
+│ ON FAILURE (after 3 retries):       │
+│ - stage = OutlineFailed            │
+│ - Save error reason                │
+└─────────────────────────────────────┘
+```
+
+### Detailed Decision: Output Safety
+
+```
+AI Output
+    ↓
+Layer 1: Rule-based Check (Fast, No Cost)
+├── PII Detection (Email, Phone)
+├── Blocked Keywords
+├── Prompt Leakage
+└── Basic Validation
+    ↓ Pass?
+    ├── No → Block, Return Error
+    └── Yes → Continue
+            ↓
+Layer 2: AI Semantic Moderation (Accurate)
+├── OpenAI Moderation API / Azure Content Safety
+└── Semantic Analysis
+    ↓ Pass?
+    ├── No → Block, Return Error
+    └── Yes → Return to User
+```
+
+### Detailed Decision: Retry Policy
+
+| Error Type | Retry? | Reason |
+|------------|--------|--------|
+| LLM Timeout | ✅ Yes | Transient |
+| Rate Limit (429) | ✅ Yes (after backoff) | Transient |
+| Invalid JSON | ✅ Yes | May succeed |
+| Schema Validation Fail | ❌ No | Will fail again |
+| Blocked Content | ❌ No | Will fail again |
+| Server Error (5xx) | ✅ Yes | Transient |
+| Auth Error (401/403) | ❌ No | Config issue |
+
+### Detailed Decision: Job Stages
+
+```csharp
+public enum OutlineJobStage
+{
+    OutlinePending = 10,      // Job created, waiting for worker
+    OutlineGenerating = 11,  // Worker picked up, calling AI
+    OutlineGenerated = 12,   // Success, outline ready for review
+    OutlineApproved = 13,    // User approved
+    OutlineFailed = 14,       // All retries exhausted
+    OutlineRejected = 15      // User rejected
+}
+```
+
+### Detailed Decision: Concurrency
+
+```
+User clicks Regenerate
+      ↓
+Check: Có job nào đang active không?
+      ↓
+├── Có → 409 Conflict "Đang có thao tác khác"
+└── Không → Tạo job mới
+              ↓
+         stage = OutlinePending
+              ↓
+         Background worker pick up
+```
+
+---
+
+## 41. Implementation Roadmap
+
+### Phase 2A: Foundation (Day 1-2)
+- [ ] Database Migration: Thêm JobStage values
+- [ ] Create Output Guardrail Interface
+- [ ] Create Rule-based Output Guardrail
+- [ ] Create AI Moderation Adapter (optional for MVP)
+- [ ] Create DTOs
+
+### Phase 2B: Background Worker (Day 3-4)
+- [ ] Implement `OutlineGenerationWorker` (IHostedService)
+- [ ] Implement job polling logic
+- [ ] Implement retry with exponential backoff
+- [ ] Add late response protection
+
+### Phase 2C: Core Service (Day 5-7)
+- [ ] Implement `IOutlineService`
+- [ ] GenerateOutline orchestration
+- [ ] EditOutline with validation
+- [ ] RegenerateOutline with stale check
+- [ ] ApproveOutline with authorization
+- [ ] RejectOutline
+
+### Phase 2D: API Layer (Day 8-9)
+- [ ] GET `/stories/{id}/outline`
+- [ ] GET `/stories/{id}/outline/versions`
+- [ ] GET `/stories/{id}/outline/versions/{v}`
+- [ ] PUT `/stories/{id}/outline/versions/{v}`
+- [ ] POST `/stories/{id}/outline/versions/{v}/regenerate`
+- [ ] POST `/stories/{id}/outline/versions/{v}/approve`
+- [ ] POST `/stories/{id}/outline/versions/{v}/reject`
+
+### Phase 2E: Testing & Integration (Day 10-12)
+- [ ] Unit tests cho OutlineService
+- [ ] Unit tests cho Output Guardrail
+- [ ] Integration tests cho Background Worker
+- [ ] API integration tests
+- [ ] End-to-end flow test
+
+---
+
+## 42. Files to Create/Modify
+
+### Create
+
+```
+src/Core/StoryPlatform.Application/
+├── Features/Outline/
+│   ├── DTOs/
+│   │   ├── OutlineProgressDto.cs
+│   │   ├── OutlineVersionDto.cs
+│   │   ├── EditOutlineRequestDto.cs
+│   │   ├── ApproveOutlineRequestDto.cs
+│   │   └── RejectOutlineRequestDto.cs
+│   ├── Interfaces/
+│   │   └── IOutlineService.cs
+│   ├── Services/
+│   │   └── OutlineService.cs
+│   └── Guardrails/
+│       ├── IOutputGuardrail.cs
+│       └── RuleBasedOutputGuardrail.cs
+├── BackgroundServices/
+│   └── OutlineGenerationWorker.cs
+
+src/Core/StoryPlatform.Api/
+└── Controllers/
+    └── OutlineController.cs
+```
+
+### Modify
+
+```
+src/Core/StoryPlatform.Domain/Enums/
+├── JobStage.cs           # Thêm OutlinePending, OutlineGenerating, etc.
+└── VersionEditType.cs    # Thêm AiRegenerated
+
+src/Core/StoryPlatform.Infrastructure/
+└── Persistence/ApplicationDbContext.cs  # Configure enums
+```
+
+---
+
+**Document Version:** 1.1  
+**Last Updated:** 2026-09-12  
+**Status:** Decisions Approved - Ready for Implementation

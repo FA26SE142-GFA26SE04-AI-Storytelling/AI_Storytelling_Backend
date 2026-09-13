@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Script nay ket noi toi PostgreSQL da cai san tren may (dung psql.exe) va chay 1 file .sql
-    chua cac cau lenh INSERT cho 48 bang, theo dung thu tu phu thuoc khoa ngoai (FK).
+    chua cac cau lenh INSERT cho 55 bang, theo dung thu tu phu thuoc khoa ngoai (FK).
     Moi INSERT dung "ON CONFLICT (\"Id\") DO NOTHING" nen co the chay lai nhieu lan an toan.
     Sau khi insert xong, script se reset lai cac sequence (identity) cho tung bang de cac
     ban ghi moi do ung dung tao ra sau nay khong bi trung Id.
@@ -76,66 +76,77 @@ INSERT INTO user_accounts (
     "Id", "Username", "Email", "PasswordHash", "FullName", "PhoneNumber", 
     "AvatarUrl", "Role", "Status", "ResetTokenHash", "ResetTokenExpiresAt", 
     "RefreshTokenHash", "RefreshTokenExpiresAt", "LastLoginAt", 
+    "FailedLoginAttempts", "LockedUntil", "MfaSecret", "MfaEnabled", "TokenVersion", "RoleBeforeAdmin",
     "CreatedAt", "UpdatedAt", "IsDeleted"
 )
 VALUES
     (1, 'admin_demo', 'admin@example.com', '$2a$11$uQ6RWu9dJN87HUij5gy3RedTZUibH1T4BB/QZBmvLntZBvkjQIR0S', 'Nguyen Van Admin', '0900000001', 
      'https://ui-avatars.com/api/?name=Admin+Demo&background=0D8ABC&color=fff', 'Administrator', 'LoggedIn', NULL, NULL, 
      encode(sha256('demo-refresh-token-admin'::bytea), 'hex'), NOW() + INTERVAL '7 days', NOW() - INTERVAL '2 hours', 
+     0, NULL, NULL, true, 1, NULL,
      NOW() - INTERVAL '60 days', NOW() - INTERVAL '2 hours', false),
 
     (2, 'parent_demo1', 'parent1@example.com', '$2a$11$uQ6RWu9dJN87HUij5gy3RedTZUibH1T4BB/QZBmvLntZBvkjQIR0S', 'Tran Thi Hoa', '0900000002', 
      'https://ui-avatars.com/api/?name=Hoa+Tran&background=F39C12&color=fff', 'Parent', 'EmailVerified', NULL, NULL, 
      NULL, NULL, NOW() - INTERVAL '5 days', 
+     0, NULL, NULL, false, 1, NULL,
      NOW() - INTERVAL '55 days', NOW() - INTERVAL '5 days', false),
 
     (3, 'parent_demo2', 'parent2@example.com', '$2a$11$uQ6RWu9dJN87HUij5gy3RedTZUibH1T4BB/QZBmvLntZBvkjQIR0S', 'Nguyen Van Binh', '0900000003', 
      'https://ui-avatars.com/api/?name=Binh+Nguyen&background=27AE60&color=fff', 'Parent', 'LoggedIn', NULL, NULL, 
      encode(sha256('demo-refresh-token-parent2'::bytea), 'hex'), NOW() + INTERVAL '6 days', NOW() - INTERVAL '1 day', 
+     0, NULL, NULL, false, 1, NULL,
      NOW() - INTERVAL '52 days', NOW() - INTERVAL '1 day', false),
 
     (4, 'parent_demo3', 'parent3@example.com', '$2a$11$uQ6RWu9dJN87HUij5gy3RedTZUibH1T4BB/QZBmvLntZBvkjQIR0S', 'Le Thi Cuc', '0900000004', 
      'https://ui-avatars.com/api/?name=Cuc+Le&background=8E44AD&color=fff', 'Parent', 'EmailVerified', NULL, NULL, 
      NULL, NULL, NOW() - INTERVAL '10 days', 
+     0, NULL, NULL, false, 1, NULL,
      NOW() - INTERVAL '50 days', NOW() - INTERVAL '10 days', false),
 
     (5, 'parent_demo4', 'parent4@example.com', '$2a$11$uQ6RWu9dJN87HUij5gy3RedTZUibH1T4BB/QZBmvLntZBvkjQIR0S', 'Pham Van Dung', '0900000005', 
      NULL, 'Parent', 'Suspended', NULL, NULL, 
      NULL, NULL, NOW() - INTERVAL '30 days', 
+     0, NULL, NULL, false, 1, NULL,
      NOW() - INTERVAL '48 days', NOW() - INTERVAL '20 days', false),
 
     (6, 'parent_demo5', 'parent5@example.com', '$2a$11$uQ6RWu9dJN87HUij5gy3RedTZUibH1T4BB/QZBmvLntZBvkjQIR0S', 'Hoang Thi Em', '0900000006', 
      NULL, 'Parent', 'Registered', NULL, NULL, 
      NULL, NULL, NULL, 
+     0, NULL, NULL, false, 1, NULL,
      NOW() - INTERVAL '46 days', NULL, false),
 
     (7, 'teacher_demo1', 'teacher1@example.com', '$2a$11$uQ6RWu9dJN87HUij5gy3RedTZUibH1T4BB/QZBmvLntZBvkjQIR0S', 'Vu Van Phong', '0900000007', 
      'https://ui-avatars.com/api/?name=Phong+Vu&background=2980B9&color=fff', 'Teacher', 'LoggedIn', NULL, NULL, 
      encode(sha256('demo-refresh-token-teacher1'::bytea), 'hex'), NOW() + INTERVAL '7 days', NOW() - INTERVAL '3 hours', 
+     0, NULL, NULL, false, 1, NULL,
      NOW() - INTERVAL '45 days', NOW() - INTERVAL '3 hours', false),
 
     (8, 'teacher_demo2', 'teacher2@example.com', '$2a$11$uQ6RWu9dJN87HUij5gy3RedTZUibH1T4BB/QZBmvLntZBvkjQIR0S', 'Do Thi Giang', '0900000008', 
      'https://ui-avatars.com/api/?name=Giang+Do&background=E74C3C&color=fff', 'Teacher', 'EmailVerified', NULL, NULL, 
      NULL, NULL, NOW() - INTERVAL '3 days', 
+     0, NULL, NULL, false, 1, NULL,
      NOW() - INTERVAL '44 days', NOW() - INTERVAL '3 days', false),
 
     (9, 'teacher_demo3', 'teacher3@example.com', '$2a$11$uQ6RWu9dJN87HUij5gy3RedTZUibH1T4BB/QZBmvLntZBvkjQIR0S', 'Bui Van Hai', '0900000009', 
      NULL, 'Teacher', 'PasswordResetPending', encode(sha256('demo-reset-token-teacher3'::bytea), 'hex'), NOW() + INTERVAL '1 hour', 
      NULL, NULL, NOW() - INTERVAL '2 days', 
+     0, NULL, NULL, false, 1, NULL,
      NOW() - INTERVAL '43 days', NOW() - INTERVAL '1 hour', false),
 
     (10, 'teacher_demo4', 'teacher4@example.com', '$2a$11$uQ6RWu9dJN87HUij5gy3RedTZUibH1T4BB/QZBmvLntZBvkjQIR0S', 'Dang Thi Kim', '0900000010', 
      'https://ui-avatars.com/api/?name=Kim+Dang&background=34495E&color=fff', 'Teacher', 'LoggedOut', NULL, NULL, 
      NULL, NULL, NOW() - INTERVAL '12 hours', 
+     0, NULL, NULL, false, 1, NULL,
      NOW() - INTERVAL '42 days', NOW() - INTERVAL '6 hours', false)
 ON CONFLICT ("Id") DO NOTHING;
 
 -- 2. organizations (3 - moi to chuc chi duoc phep co 1 template nen khong day them cho du 10)
-INSERT INTO organizations ("Id", "Name", "Address", "ContactEmail", "CreatedByUserId", "VerificationStatus", "VerifiedByAdminId", "CreatedAt", "IsDeleted")
+INSERT INTO organizations ("Id", "Name", "Address", "ContactEmail", "CreatedByUserId", "VerificationStatus", "VerifiedByAdminId", "RejectionReason", "ReactivatedAt", "ReactivatedByAdminId", "ClosureRequestedAt", "ClosedAt", "CreatedAt", "IsDeleted")
 VALUES
-    (1, 'Truong Tieu Hoc Demo A', '123 Duong ABC, Quan 1, TP.HCM', 'contact.a@truongdemo.edu.vn', 1, 'Active', 1, NOW() - INTERVAL '58 days', false),
-    (2, 'Truong Tieu Hoc Demo B', '456 Duong XYZ, Quan 3, TP.HCM', 'contact.b@truongdemo.edu.vn', 1, 'Active', 1, NOW() - INTERVAL '56 days', false),
-    (3, 'Trung Tam Giao Duc Demo C', '789 Duong DEF, Quan 7, TP.HCM', 'contact.c@trungtamdemo.edu.vn', 1, 'PendingVerification', NULL, NOW() - INTERVAL '20 days', false)
+    (1, 'Truong Tieu Hoc Demo A', '123 Duong ABC, Quan 1, TP.HCM', 'contact.a@truongdemo.edu.vn', 1, 'Active', 1, NULL, NULL, NULL, NULL, NULL, NOW() - INTERVAL '58 days', false),
+    (2, 'Truong Tieu Hoc Demo B', '456 Duong XYZ, Quan 3, TP.HCM', 'contact.b@truongdemo.edu.vn', 1, 'Active', 1, NULL, NULL, NULL, NULL, NULL, NOW() - INTERVAL '56 days', false),
+    (3, 'Trung Tam Giao Duc Demo C', '789 Duong DEF, Quan 7, TP.HCM', 'contact.c@trungtamdemo.edu.vn', 1, 'PendingVerification', NULL, NULL, NULL, NULL, NULL, NULL, NOW() - INTERVAL '20 days', false)
 ON CONFLICT ("Id") DO NOTHING;
 
 -- 3. content_categories (6)
@@ -186,18 +197,18 @@ VALUES
 ON CONFLICT ("Id") DO NOTHING;
 
 -- 7. child_profiles (10)
-INSERT INTO child_profiles ("Id", "OwnerUserId", "OrganizationId", "Nickname", "AgeBand", "Language", "Scope", "Status", "CreatedAt", "IsDeleted")
+INSERT INTO child_profiles ("Id", "OwnerUserId", "OrganizationId", "Nickname", "AgeBand", "DateOfBirth", "Language", "Scope", "Status", "CreatedAt", "IsDeleted")
 VALUES
-    (1, 2, NULL, 'Be An', 'Age_6_8', 'vi', 'Personal', 'Active', NOW() - INTERVAL '40 days', false),
-    (2, 2, 1, 'Be Binh', 'Age_9_12', 'vi', 'Organization', 'Active', NOW() - INTERVAL '39 days', false),
-    (3, 3, NULL, 'Be Chi', 'Age_6_8', 'vi', 'Personal', 'Active', NOW() - INTERVAL '38 days', false),
-    (4, 3, 2, 'Be Dat', 'Age_9_12', 'vi', 'Organization', 'Active', NOW() - INTERVAL '37 days', false),
-    (5, 4, NULL, 'Be Em', 'Age_6_8', 'vi', 'Personal', 'PendingParentConsent', NOW() - INTERVAL '36 days', false),
-    (6, 4, 1, 'Be Phuc', 'Age_9_12', 'vi', 'Organization', 'Active', NOW() - INTERVAL '35 days', false),
-    (7, 5, NULL, 'Be Giang', 'Age_6_8', 'vi', 'Personal', 'Active', NOW() - INTERVAL '34 days', false),
-    (8, 5, 2, 'Be Hanh', 'Age_9_12', 'vi', 'Organization', 'Active', NOW() - INTERVAL '33 days', false),
-    (9, 6, NULL, 'Be Y', 'Age_6_8', 'vi', 'Personal', 'Draft', NOW() - INTERVAL '32 days', false),
-    (10, 6, 3, 'Be Khang', 'Age_9_12', 'vi', 'Organization', 'PendingSupervision', NOW() - INTERVAL '18 days', false)
+    (1, 2, NULL, 'Be An', 'Age_6_8', (NOW() - INTERVAL '7 years')::date, 'vi', 'Personal', 'Active', NOW() - INTERVAL '40 days', false),
+    (2, 2, 1, 'Be Binh', 'Age_9_12', (NOW() - INTERVAL '10 years')::date, 'vi', 'Organization', 'Active', NOW() - INTERVAL '39 days', false),
+    (3, 3, NULL, 'Be Chi', 'Age_6_8', (NOW() - INTERVAL '7 years')::date, 'vi', 'Personal', 'Active', NOW() - INTERVAL '38 days', false),
+    (4, 3, 2, 'Be Dat', 'Age_9_12', (NOW() - INTERVAL '10 years')::date, 'vi', 'Organization', 'Active', NOW() - INTERVAL '37 days', false),
+    (5, 4, NULL, 'Be Em', 'Age_6_8', (NOW() - INTERVAL '6 years')::date, 'vi', 'Personal', 'PendingParentConsent', NOW() - INTERVAL '36 days', false),
+    (6, 4, 1, 'Be Phuc', 'Age_9_12', (NOW() - INTERVAL '11 years')::date, 'vi', 'Organization', 'Active', NOW() - INTERVAL '35 days', false),
+    (7, 5, NULL, 'Be Giang', 'Age_6_8', (NOW() - INTERVAL '8 years')::date, 'vi', 'Personal', 'Active', NOW() - INTERVAL '34 days', false),
+    (8, 5, 2, 'Be Hanh', 'Age_9_12', (NOW() - INTERVAL '10 years')::date, 'vi', 'Organization', 'Active', NOW() - INTERVAL '33 days', false),
+    (9, 6, NULL, 'Be Y', 'Age_6_8', (NOW() - INTERVAL '7 years')::date, 'vi', 'Personal', 'Draft', NOW() - INTERVAL '32 days', false),
+    (10, 6, 3, 'Be Khang', 'Age_9_12', (NOW() - INTERVAL '9 years')::date, 'vi', 'Organization', 'PendingSupervision', NOW() - INTERVAL '18 days', false)
 ON CONFLICT ("Id") DO NOTHING;
 
 -- 8. org_safety_policy_categories (8)
@@ -224,18 +235,18 @@ VALUES
 ON CONFLICT ("Id") DO NOTHING;
 
 -- 10. safety_policies (10 - unique theo ChildProfileId)
-INSERT INTO safety_policies ("Id", "ChildProfileId", "MaxStoryLength", "ParentalGateEnabled", "ConsentRecorded", "ConsentRecordedAt", "RequiredApprovalMode", "CreatedAt", "IsDeleted")
+INSERT INTO safety_policies ("Id", "ChildProfileId", "MaxStoryLength", "ParentalGateEnabled", "ConsentRecorded", "ConsentRecordedAt", "RequiredApprovalMode", "ConsentPolicyVersion", "SafetyScoreThreshold", "ReadabilityScoreThreshold", "ComprehensionThresholdPercent", "ComprehensionWindowSize", "CreatedAt", "IsDeleted")
 VALUES
-    (1, 1, 1500, true, true, NOW() - INTERVAL '40 days', 'AlwaysManual', NOW() - INTERVAL '40 days', false),
-    (2, 2, 1800, true, true, NOW() - INTERVAL '39 days', 'AutoPublishOnThreshold', NOW() - INTERVAL '39 days', false),
-    (3, 3, 1500, true, true, NOW() - INTERVAL '38 days', 'AlwaysManual', NOW() - INTERVAL '38 days', false),
-    (4, 4, 2000, true, true, NOW() - INTERVAL '37 days', 'AutoPublishOnThreshold', NOW() - INTERVAL '37 days', false),
-    (5, 5, 1200, true, false, NULL, 'AlwaysManual', NOW() - INTERVAL '36 days', false),
-    (6, 6, 1800, true, true, NOW() - INTERVAL '35 days', 'AlwaysManual', NOW() - INTERVAL '35 days', false),
-    (7, 7, 1500, true, true, NOW() - INTERVAL '34 days', 'AlwaysManual', NOW() - INTERVAL '34 days', false),
-    (8, 8, 2000, true, true, NOW() - INTERVAL '33 days', 'AutoPublishOnThreshold', NOW() - INTERVAL '33 days', false),
-    (9, 9, 1000, false, false, NULL, 'AlwaysManual', NOW() - INTERVAL '32 days', false),
-    (10, 10, 1800, true, false, NULL, 'AlwaysManual', NOW() - INTERVAL '18 days', false)
+    (1, 1, 1500, true, true, NOW() - INTERVAL '40 days', 'AlwaysManual', 1, NULL, NULL, 70.00, 3, NOW() - INTERVAL '40 days', false),
+    (2, 2, 1800, true, true, NOW() - INTERVAL '39 days', 'AutoPublishOnThreshold', 1, 85.00, 70.00, 75.00, 3, NOW() - INTERVAL '39 days', false),
+    (3, 3, 1500, true, true, NOW() - INTERVAL '38 days', 'AlwaysManual', 1, NULL, NULL, 70.00, 3, NOW() - INTERVAL '38 days', false),
+    (4, 4, 2000, true, true, NOW() - INTERVAL '37 days', 'AutoPublishOnThreshold', 1, 88.00, 72.00, 70.00, 3, NOW() - INTERVAL '37 days', false),
+    (5, 5, 1200, true, false, NULL, 'AlwaysManual', 1, NULL, NULL, 70.00, 3, NOW() - INTERVAL '36 days', false),
+    (6, 6, 1800, true, true, NOW() - INTERVAL '35 days', 'AlwaysManual', 1, NULL, NULL, 70.00, 3, NOW() - INTERVAL '35 days', false),
+    (7, 7, 1500, true, true, NOW() - INTERVAL '34 days', 'AlwaysManual', 1, NULL, NULL, 70.00, 3, NOW() - INTERVAL '34 days', false),
+    (8, 8, 2000, true, true, NOW() - INTERVAL '33 days', 'AutoPublishOnThreshold', 1, 90.00, 75.00, 80.00, 3, NOW() - INTERVAL '33 days', false),
+    (9, 9, 1000, false, false, NULL, 'AlwaysManual', 1, NULL, NULL, 70.00, 3, NOW() - INTERVAL '32 days', false),
+    (10, 10, 1800, true, false, NULL, 'AlwaysManual', 1, NULL, NULL, 70.00, 3, NOW() - INTERVAL '18 days', false)
 ON CONFLICT ("Id") DO NOTHING;
 
 -- 11. safety_policy_categories (10)
@@ -309,18 +320,18 @@ VALUES
 ON CONFLICT ("Id") DO NOTHING;
 
 -- 16. stories (10)
-INSERT INTO stories ("Id", "Title", "Description", "Content", "CoverImageUrl", "Genre", "MoralLesson", "Language", "AgeBand", "Status", "Source", "IsPublished", "AuthorUserId", "ChildProfileId", "CreatedAt", "IsDeleted")
+INSERT INTO stories ("Id", "Title", "Description", "Content", "CoverImageUrl", "Genre", "MoralLesson", "Language", "AgeBand", "Status", "Source", "IsPublished", "ChildVisibleAt", "ArchivedReason", "AuthorUserId", "ChildProfileId", "CreatedAt", "IsDeleted")
 VALUES
-    (1, 'Chu Tho Thong Minh', 'Cau chuyen ve chu tho biet dung tri thong minh de thoat hiem', 'Ngay xua, co mot chu tho rat thong minh song trong khu rung...', 'https://example.com/covers/story1.png', 'Ngu ngon', 'Su thong minh giup vuot qua kho khan', 'vi', 'Age_6_8', 'Ready', 'Manual', true, 2, 1, NOW() - INTERVAL '30 days', false),
-    (2, 'Rung Xanh Ky Dieu', 'Hanh trinh kham pha khu rung day mau sac', 'Trong khu rung xanh co rat nhieu dieu ky dieu dang cho duoc kham pha...', 'https://example.com/covers/story2.png', 'Phieu luu', 'Tran trong thien nhien', 'vi', 'Age_9_12', 'Draft', 'Ai', false, 7, 2, NOW() - INTERVAL '28 days', false),
-    (3, 'Vuong Quoc Co Tich', 'Mot vuong quoc noi phep thuat va long tot ngu tri', 'Ngay xua o mot vuong quoc xa xoi...', 'https://example.com/covers/story3.png', 'Co tich', 'Long tot se duoc den dap', 'vi', 'Age_6_8', 'Ready', 'Manual', true, 3, 3, NOW() - INTERVAL '26 days', false),
-    (4, 'Hanh Trinh Vu Tru', 'Chuyen phieu luu cua mot nha du hanh nho tuoi', 'Mot ngay no, ban nho quyet dinh du hanh len vu tru...', 'https://example.com/covers/story4.png', 'Khoa hoc vien tuong', 'Kham pha va hoc hoi khong ngung', 'vi', 'Age_9_12', 'ContentReview', 'Ai', false, 8, 4, NOW() - INTERVAL '24 days', false),
-    (5, 'Nguoi Ban Tot', 'Cau chuyen ve tinh ban chan thanh giua hai dua tre', 'Hai nguoi ban than thiet cung nhau vuot qua kho khan...', 'https://example.com/covers/story5.png', 'Doi thuong', 'Tinh ban chan thanh la vo gia', 'vi', 'Age_6_8', 'Approved', 'Manual', false, 4, 5, NOW() - INTERVAL '22 days', false),
-    (6, 'Bi Mat Dai Duong', 'Kham pha the gioi ky dieu duoi day dai duong', 'Sau lop song bien xanh la ca mot the gioi ky dieu...', 'https://example.com/covers/story6.png', 'Phieu luu', 'Bao ve moi truong bien', 'vi', 'Age_9_12', 'Ready', 'Ai', true, 9, 6, NOW() - INTERVAL '20 days', false),
-    (7, 'Gia Dinh Hanh Phuc', 'Nhung khoanh khac am ap trong mot gia dinh nho', 'Moi buoi toi, ca gia dinh quay quan ben nhau...', 'https://example.com/covers/story7.png', 'Doi thuong', 'Yeu thuong gia dinh', 'vi', 'Age_6_8', 'Draft', 'Manual', false, 5, 7, NOW() - INTERVAL '19 days', false),
-    (8, 'Sieu Nhan Ti Hon', 'Cau be co suc manh dac biet bao ve xom lang', 'Trong mot ngoi lang nho, co mot cau be so huu suc manh dac biet...', 'https://example.com/covers/story8.png', 'Sieu anh hung', 'Dung cam bao ve nguoi yeu the', 'vi', 'Age_9_12', 'OutlineReview', 'Ai', false, 10, 8, NOW() - INTERVAL '17 days', false),
-    (9, 'Chuyen Phieu Luu Rung Ram', 'Nhom ban cung nhau kham pha khu rung bi an', 'Bon nguoi ban quyet dinh kham pha khu rung phia sau lang...', 'https://example.com/covers/story9.png', 'Phieu luu', 'Doan ket tao nen suc manh', 'vi', 'Age_6_8', 'Rejected', 'Manual', false, 6, 9, NOW() - INTERVAL '15 days', false),
-    (10, 'Tran Bong Da Dang Nho', 'Bai hoc ve tinh than the thao va fair-play', 'Tran chung ket bong da cua truong dien ra day kich tinh...', 'https://example.com/covers/story10.png', 'The thao', 'Tinh than fair-play trong the thao', 'vi', 'Age_9_12', 'Ready', 'Ai', true, 7, 10, NOW() - INTERVAL '13 days', false)
+    (1, 'Chu Tho Thong Minh', 'Cau chuyen ve chu tho biet dung tri thong minh de thoat hiem', 'Ngay xua, co mot chu tho rat thong minh song trong khu rung...', 'https://example.com/covers/story1.png', 'Ngu ngon', 'Su thong minh giup vuot qua kho khan', 'vi', 'Age_6_8', 'Ready', 'Manual', true, NOW() - INTERVAL '30 days' + INTERVAL '2 hours', NULL, 2, 1, NOW() - INTERVAL '30 days', false),
+    (2, 'Rung Xanh Ky Dieu', 'Hanh trinh kham pha khu rung day mau sac', 'Trong khu rung xanh co rat nhieu dieu ky dieu dang cho duoc kham pha...', 'https://example.com/covers/story2.png', 'Phieu luu', 'Tran trong thien nhien', 'vi', 'Age_9_12', 'Draft', 'Ai', false, NULL, NULL, 7, 2, NOW() - INTERVAL '28 days', false),
+    (3, 'Vuong Quoc Co Tich', 'Mot vuong quoc noi phep thuat va long tot ngu tri', 'Ngay xua o mot vuong quoc xa xoi...', 'https://example.com/covers/story3.png', 'Co tich', 'Long tot se duoc den dap', 'vi', 'Age_6_8', 'Ready', 'Manual', true, NOW() - INTERVAL '26 days' + INTERVAL '2 hours', NULL, 3, 3, NOW() - INTERVAL '26 days', false),
+    (4, 'Hanh Trinh Vu Tru', 'Chuyen phieu luu cua mot nha du hanh nho tuoi', 'Mot ngay no, ban nho quyet dinh du hanh len vu tru...', 'https://example.com/covers/story4.png', 'Khoa hoc vien tuong', 'Kham pha va hoc hoi khong ngung', 'vi', 'Age_9_12', 'ContentReview', 'Ai', false, NULL, NULL, 8, 4, NOW() - INTERVAL '24 days', false),
+    (5, 'Nguoi Ban Tot', 'Cau chuyen ve tinh ban chan thanh giua hai dua tre', 'Hai nguoi ban than thiet cung nhau vuot qua kho khan...', 'https://example.com/covers/story5.png', 'Doi thuong', 'Tinh ban chan thanh la vo gia', 'vi', 'Age_6_8', 'Approved', 'Manual', false, NOW() - INTERVAL '22 days' + INTERVAL '2 hours', NULL, 4, 5, NOW() - INTERVAL '22 days', false),
+    (6, 'Bi Mat Dai Duong', 'Kham pha the gioi ky dieu duoi day dai duong', 'Sau lop song bien xanh la ca mot the gioi ky dieu...', 'https://example.com/covers/story6.png', 'Phieu luu', 'Bao ve moi truong bien', 'vi', 'Age_9_12', 'Ready', 'Ai', true, NOW() - INTERVAL '20 days' + INTERVAL '2 hours', NULL, 9, 6, NOW() - INTERVAL '20 days', false),
+    (7, 'Gia Dinh Hanh Phuc', 'Nhung khoanh khac am ap trong mot gia dinh nho', 'Moi buoi toi, ca gia dinh quay quan ben nhau...', 'https://example.com/covers/story7.png', 'Doi thuong', 'Yeu thuong gia dinh', 'vi', 'Age_6_8', 'Draft', 'Manual', false, NULL, NULL, 5, 7, NOW() - INTERVAL '19 days', false),
+    (8, 'Sieu Nhan Ti Hon', 'Cau be co suc manh dac biet bao ve xom lang', 'Trong mot ngoi lang nho, co mot cau be so huu suc manh dac biet...', 'https://example.com/covers/story8.png', 'Sieu anh hung', 'Dung cam bao ve nguoi yeu the', 'vi', 'Age_9_12', 'OutlineReview', 'Ai', false, NULL, NULL, 10, 8, NOW() - INTERVAL '17 days', false),
+    (9, 'Chuyen Phieu Luu Rung Ram', 'Nhom ban cung nhau kham pha khu rung bi an', 'Bon nguoi ban quyet dinh kham pha khu rung phia sau lang...', 'https://example.com/covers/story9.png', 'Phieu luu', 'Doan ket tao nen suc manh', 'vi', 'Age_6_8', 'Rejected', 'Manual', false, NULL, NULL, 6, 9, NOW() - INTERVAL '15 days', false),
+    (10, 'Tran Bong Da Dang Nho', 'Bai hoc ve tinh than the thao va fair-play', 'Tran chung ket bong da cua truong dien ra day kich tinh...', 'https://example.com/covers/story10.png', 'The thao', 'Tinh than fair-play trong the thao', 'vi', 'Age_9_12', 'Ready', 'Ai', true, NOW() - INTERVAL '13 days' + INTERVAL '2 hours', NULL, 7, 10, NOW() - INTERVAL '13 days', false)
 ON CONFLICT ("Id") DO NOTHING;
 
 -- 17. story_categories (10)
@@ -384,18 +395,18 @@ VALUES
 ON CONFLICT ("Id") DO NOTHING;
 
 -- 21. media_assets (10)
-INSERT INTO media_assets ("Id", "StoryVersionId", "Type", "Url", "Status", "SceneIndex", "CreatedAt", "IsDeleted")
+INSERT INTO media_assets ("Id", "StoryVersionId", "Type", "Url", "Status", "SceneIndex", "WordTimings", "CreatedAt", "IsDeleted")
 VALUES
-    (1, 1, 'Illustration', 'https://example.com/media/story1-scene1.png', 'Ready', 1, NOW() - INTERVAL '30 days', false),
-    (2, 2, 'TtsAudio', 'https://example.com/media/story2-audio1.mp3', 'Ready', 1, NOW() - INTERVAL '28 days', false),
-    (3, 3, 'Illustration', 'https://example.com/media/story3-scene1.png', 'Ready', 1, NOW() - INTERVAL '26 days', false),
-    (4, 4, 'Illustration', 'https://example.com/media/story4-scene1.png', 'Processing', 1, NOW() - INTERVAL '24 days', false),
-    (5, 5, 'TtsAudio', 'https://example.com/media/story5-audio1.mp3', 'Ready', 1, NOW() - INTERVAL '22 days', false),
-    (6, 6, 'Illustration', 'https://example.com/media/story6-scene1.png', 'Ready', 1, NOW() - INTERVAL '20 days', false),
-    (7, 7, 'TtsAudio', 'https://example.com/media/story7-audio1.mp3', 'Queued', 1, NOW() - INTERVAL '19 days', false),
-    (8, 8, 'Illustration', 'https://example.com/media/story8-scene1.png', 'Ready', 1, NOW() - INTERVAL '17 days', false),
-    (9, 9, 'Illustration', 'https://example.com/media/story9-scene1.png', 'Failed', 1, NOW() - INTERVAL '15 days', false),
-    (10, 10, 'TtsAudio', 'https://example.com/media/story10-audio1.mp3', 'Ready', 1, NOW() - INTERVAL '13 days', false)
+    (1, 1, 'Illustration', 'https://example.com/media/story1-scene1.png', 'Ready', 1, NULL, NOW() - INTERVAL '30 days', false),
+    (2, 2, 'TtsAudio', 'https://example.com/media/story2-audio1.mp3', 'Ready', 1, '[{"word":"Trong","start":0.0,"end":0.4},{"word":"khu","start":0.5,"end":0.8},{"word":"rung","start":0.9,"end":1.2}]', NOW() - INTERVAL '28 days', false),
+    (3, 3, 'Illustration', 'https://example.com/media/story3-scene1.png', 'Ready', 1, NULL, NOW() - INTERVAL '26 days', false),
+    (4, 4, 'Illustration', 'https://example.com/media/story4-scene1.png', 'Processing', 1, NULL, NOW() - INTERVAL '24 days', false),
+    (5, 5, 'TtsAudio', 'https://example.com/media/story5-audio1.mp3', 'Ready', 1, '[{"word":"Hai","start":0.0,"end":0.3},{"word":"nguoi","start":0.4,"end":0.7},{"word":"ban","start":0.8,"end":1.1}]', NOW() - INTERVAL '22 days', false),
+    (6, 6, 'Illustration', 'https://example.com/media/story6-scene1.png', 'Ready', 1, NULL, NOW() - INTERVAL '20 days', false),
+    (7, 7, 'TtsAudio', 'https://example.com/media/story7-audio1.mp3', 'Queued', 1, '[{"word":"Moi","start":0.0,"end":0.3},{"word":"buoi","start":0.4,"end":0.7},{"word":"toi","start":0.8,"end":1.0}]', NOW() - INTERVAL '19 days', false),
+    (8, 8, 'Illustration', 'https://example.com/media/story8-scene1.png', 'Ready', 1, NULL, NOW() - INTERVAL '17 days', false),
+    (9, 9, 'Illustration', 'https://example.com/media/story9-scene1.png', 'Failed', 1, NULL, NOW() - INTERVAL '15 days', false),
+    (10, 10, 'TtsAudio', 'https://example.com/media/story10-audio1.mp3', 'Ready', 1, '[{"word":"Tran","start":0.0,"end":0.3},{"word":"chung","start":0.4,"end":0.7},{"word":"ket","start":0.8,"end":1.1}]', NOW() - INTERVAL '13 days', false)
 ON CONFLICT ("Id") DO NOTHING;
 
 -- 22. story_vocabulary (10)
@@ -454,18 +465,18 @@ VALUES
 ON CONFLICT ("Id") DO NOTHING;
 
 -- 26. assignment_recipients (10)
-INSERT INTO assignment_recipients ("Id", "AssignmentId", "ChildProfileId", "Status", "CompletedAt", "CreatedAt", "IsDeleted")
+INSERT INTO assignment_recipients ("Id", "AssignmentId", "ChildProfileId", "Status", "CompletedAt", "CancelledByUserId", "CancelledAt", "CreatedAt", "IsDeleted")
 VALUES
-    (1, 1, 2, 'Pending', NULL, NOW() - INTERVAL '15 days', false),
-    (2, 2, 4, 'Accepted', NULL, NOW() - INTERVAL '14 days', false),
-    (3, 3, 10, 'Completed', NOW() - INTERVAL '10 days', NOW() - INTERVAL '13 days', false),
-    (4, 4, 6, 'Revoked', NULL, NOW() - INTERVAL '12 days', false),
-    (5, 5, 8, 'Pending', NULL, NOW() - INTERVAL '11 days', false),
-    (6, 6, 2, 'Accepted', NULL, NOW() - INTERVAL '10 days', false),
-    (7, 7, 4, 'Completed', NOW() - INTERVAL '8 days', NOW() - INTERVAL '9 days', false),
-    (8, 8, 6, 'Pending', NULL, NOW() - INTERVAL '8 days', false),
-    (9, 9, 8, 'Accepted', NULL, NOW() - INTERVAL '7 days', false),
-    (10, 10, 10, 'Completed', NOW() - INTERVAL '5 days', NOW() - INTERVAL '6 days', false)
+    (1, 1, 2, 'Pending', NULL, NULL, NULL, NOW() - INTERVAL '15 days', false),
+    (2, 2, 4, 'Accepted', NULL, NULL, NULL, NOW() - INTERVAL '14 days', false),
+    (3, 3, 10, 'Completed', NOW() - INTERVAL '10 days', NULL, NULL, NOW() - INTERVAL '13 days', false),
+    (4, 4, 6, 'Revoked', NULL, NULL, NULL, NOW() - INTERVAL '12 days', false),
+    (5, 5, 8, 'Pending', NULL, NULL, NULL, NOW() - INTERVAL '11 days', false),
+    (6, 6, 2, 'Accepted', NULL, NULL, NULL, NOW() - INTERVAL '10 days', false),
+    (7, 7, 4, 'Completed', NOW() - INTERVAL '8 days', NULL, NULL, NOW() - INTERVAL '9 days', false),
+    (8, 8, 6, 'Pending', NULL, NULL, NULL, NOW() - INTERVAL '8 days', false),
+    (9, 9, 8, 'Accepted', NULL, NULL, NULL, NOW() - INTERVAL '7 days', false),
+    (10, 10, 10, 'Completed', NOW() - INTERVAL '5 days', NULL, NULL, NOW() - INTERVAL '6 days', false)
 ON CONFLICT ("Id") DO NOTHING;
 
 -- 27. reading_sessions (10)
@@ -589,18 +600,18 @@ VALUES
 ON CONFLICT ("Id") DO NOTHING;
 
 -- 35. recommendations (10)
-INSERT INTO recommendations ("Id", "ChildProfileId", "LearningInsightId", "Category", "CurrentState", "ProposedChange", "Evidence", "Status", "CreatedAt", "IsDeleted")
+INSERT INTO recommendations ("Id", "ChildProfileId", "LearningInsightId", "Category", "CurrentState", "ProposedChange", "Evidence", "Status", "ExpiresAt", "CreatedAt", "IsDeleted")
 VALUES
-    (1, 1, 1, 'ReadingDifficulty', 'Dang o muc do 2', 'De xuat nang len muc do 3', 'Diem quiz dat 90% trong 3 lan gan nhat', 'AwaitingReview', NOW() - INTERVAL '8 days', false),
-    (2, 2, 2, 'LearningFocus', 'Tap trung vao doc hieu', 'De xuat tap trung on tu vung', 'Ty le tra loi dung tu vung giam con 60%', 'Detected', NOW() - INTERVAL '7 days', false),
-    (3, 3, 3, 'ContentPersonalization', 'Noi dung da the loai', 'De xuat uu tien noi dung co tich', 'Da doc 5 truyen co tich trong tuan', 'Approved', NOW() - INTERVAL '6 days', false),
-    (4, 4, 4, 'ReadingDifficulty', 'Dang o muc do 4', 'De xuat giu nguyen muc do', 'Tra loi dung 90% cau hoi suy luan', 'Applied', NOW() - INTERVAL '5 days', false),
-    (5, 5, 5, 'LearningIntervention', 'Hoan thanh bai giao thap', 'De xuat can thiep, nhac nho phu huynh', 'Chi hoan thanh 2/5 bai duoc giao', 'RecommendationCreated', NOW() - INTERVAL '4 days', false),
-    (6, 6, 6, 'ReadingDifficulty', 'Dang o muc do 3', 'De xuat nang len muc do 4', 'Toc do doc tang 30% trong thang', 'Validated', NOW() - INTERVAL '3 days', false),
-    (7, 7, 7, 'LearningIntervention', 'Nhieu loi phat am', 'De xuat bo sung bai luyen phat am', 'Ghi nhan nhieu loi phat am trong AsrWordResult', 'Modified', NOW() - INTERVAL '2 days', false),
-    (8, 8, 8, 'ContentPersonalization', 'Tich cuc thao luan', 'De xuat them cau hoi thao luan nang cao', 'Tra loi 100% cau hoi thao luan', 'Monitoring', NOW() - INTERVAL '1 days', false),
-    (9, 9, 9, 'LearningIntervention', 'Giam tuong tac', 'De xuat gui nhac nho hang ngay', 'So phien doc giam 50% so voi thang truoc', 'ObserveMore', NOW() - INTERVAL '1 days', false),
-    (10, 10, 10, 'ContentPersonalization', 'Thich the thao, phieu luu', 'De xuat uu tien truyen the thao', 'Da doc va danh dau yeu thich 4 truyen the thao', 'ReassessmentRequired', NOW() - INTERVAL '1 days', false)
+    (1, 1, 1, 'ReadingDifficulty', 'Dang o muc do 2', 'De xuat nang len muc do 3', 'Diem quiz dat 90% trong 3 lan gan nhat', 'AwaitingReview', NOW() - INTERVAL '8 days' + INTERVAL '14 days', NOW() - INTERVAL '8 days', false),
+    (2, 2, 2, 'LearningFocus', 'Tap trung vao doc hieu', 'De xuat tap trung on tu vung', 'Ty le tra loi dung tu vung giam con 60%', 'Detected', NULL, NOW() - INTERVAL '7 days', false),
+    (3, 3, 3, 'ContentPersonalization', 'Noi dung da the loai', 'De xuat uu tien noi dung co tich', 'Da doc 5 truyen co tich trong tuan', 'Approved', NULL, NOW() - INTERVAL '6 days', false),
+    (4, 4, 4, 'ReadingDifficulty', 'Dang o muc do 4', 'De xuat giu nguyen muc do', 'Tra loi dung 90% cau hoi suy luan', 'Applied', NULL, NOW() - INTERVAL '5 days', false),
+    (5, 5, 5, 'LearningIntervention', 'Hoan thanh bai giao thap', 'De xuat can thiep, nhac nho phu huynh', 'Chi hoan thanh 2/5 bai duoc giao', 'RecommendationCreated', NULL, NOW() - INTERVAL '4 days', false),
+    (6, 6, 6, 'ReadingDifficulty', 'Dang o muc do 3', 'De xuat nang len muc do 4', 'Toc do doc tang 30% trong thang', 'Validated', NULL, NOW() - INTERVAL '3 days', false),
+    (7, 7, 7, 'LearningIntervention', 'Nhieu loi phat am', 'De xuat bo sung bai luyen phat am', 'Ghi nhan nhieu loi phat am trong AsrWordResult', 'Modified', NULL, NOW() - INTERVAL '2 days', false),
+    (8, 8, 8, 'ContentPersonalization', 'Tich cuc thao luan', 'De xuat them cau hoi thao luan nang cao', 'Tra loi 100% cau hoi thao luan', 'Monitoring', NULL, NOW() - INTERVAL '1 days', false),
+    (9, 9, 9, 'LearningIntervention', 'Giam tuong tac', 'De xuat gui nhac nho hang ngay', 'So phien doc giam 50% so voi thang truoc', 'ObserveMore', NULL, NOW() - INTERVAL '1 days', false),
+    (10, 10, 10, 'ContentPersonalization', 'Thich the thao, phieu luu', 'De xuat uu tien truyen the thao', 'Da doc va danh dau yeu thich 4 truyen the thao', 'ReassessmentRequired', NULL, NOW() - INTERVAL '1 days', false)
 ON CONFLICT ("Id") DO NOTHING;
 
 -- 36. recommendation_reviews (10)
@@ -649,18 +660,18 @@ VALUES
 ON CONFLICT ("Id") DO NOTHING;
 
 -- 39. o2o_assessments (10)
-INSERT INTO o2o_assessments ("Id", "AssignmentId", "ChildProfileId", "TeacherUserId", "BonusPoints", "Notes", "AssessedAt", "CreatedAt", "IsDeleted")
+INSERT INTO o2o_assessments ("Id", "AssignmentRecipientId", "TeacherUserId", "BonusPoints", "Notes", "AssessedAt", "CreatedAt", "IsDeleted")
 VALUES
-    (1, 1, 2, 7, 10, 'Hoan thanh bai tap tot, can khich le them', NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days', false),
-    (2, 2, 4, 8, 5, 'Can co gang hon o phan doc hieu', NOW() - INTERVAL '4 days', NOW() - INTERVAL '4 days', false),
-    (3, 3, 10, 9, 15, 'Xuat sac, hoan thanh truoc thoi han', NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days', false),
-    (4, 4, 6, 10, 0, 'Chua nop bai dung han', NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days', false),
-    (5, 5, 8, 7, 8, 'Tien bo ro ret so voi lan truoc', NOW() - INTERVAL '1 days', NOW() - INTERVAL '1 days', false),
-    (6, 6, 2, 8, 12, 'Tra loi tot cac cau hoi thao luan', NOW() - INTERVAL '1 days', NOW() - INTERVAL '1 days', false),
-    (7, 7, 4, 9, 7, 'Hoan thanh dung han, chat luong on', NOW() - INTERVAL '1 days', NOW() - INTERVAL '1 days', false),
-    (8, 8, 6, 10, 9, 'Co su sang tao trong cau tra loi', NOW() - INTERVAL '1 days', NOW() - INTERVAL '1 days', false),
-    (9, 9, 8, 7, 6, 'Can luyen tap them ve tu vung', NOW() - INTERVAL '1 days', NOW() - INTERVAL '1 days', false),
-    (10, 10, 10, 8, 20, 'Xuat sac toan dien, danh dau la hoc sinh tieu bieu', NOW() - INTERVAL '1 days', NOW() - INTERVAL '1 days', false)
+    (1, 1, 7, 10, 'Hoan thanh bai tap tot, can khich le them', NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days', false),
+    (2, 2, 8, 5, 'Can co gang hon o phan doc hieu', NOW() - INTERVAL '4 days', NOW() - INTERVAL '4 days', false),
+    (3, 3, 9, 15, 'Xuat sac, hoan thanh truoc thoi han', NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days', false),
+    (4, 4, 10, 0, 'Chua nop bai dung han', NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days', false),
+    (5, 5, 7, 8, 'Tien bo ro ret so voi lan truoc', NOW() - INTERVAL '1 days', NOW() - INTERVAL '1 days', false),
+    (6, 6, 8, 12, 'Tra loi tot cac cau hoi thao luan', NOW() - INTERVAL '1 days', NOW() - INTERVAL '1 days', false),
+    (7, 7, 9, 7, 'Hoan thanh dung han, chat luong on', NOW() - INTERVAL '1 days', NOW() - INTERVAL '1 days', false),
+    (8, 8, 10, 9, 'Co su sang tao trong cau tra loi', NOW() - INTERVAL '1 days', NOW() - INTERVAL '1 days', false),
+    (9, 9, 7, 6, 'Can luyen tap them ve tu vung', NOW() - INTERVAL '1 days', NOW() - INTERVAL '1 days', false),
+    (10, 10, 8, 20, 'Xuat sac toan dien, danh dau la hoc sinh tieu bieu', NOW() - INTERVAL '1 days', NOW() - INTERVAL '1 days', false)
 ON CONFLICT ("Id") DO NOTHING;
 
 -- 40. shared_stories (10)
@@ -748,18 +759,18 @@ VALUES
 ON CONFLICT ("Id") DO NOTHING;
 
 -- 45. data_requests (10)
-INSERT INTO data_requests ("Id", "ChildProfileId", "RequestedByUserId", "RequestType", "Status", "ResolvedAt", "CreatedAt", "IsDeleted")
+INSERT INTO data_requests ("Id", "ChildProfileId", "RequestedByUserId", "RequestType", "Status", "DeletionMethod", "LegalBasisNote", "ResolvedByUserId", "ResolvedAt", "CreatedAt", "IsDeleted")
 VALUES
-    (1, 1, 2, 'Export', 'Resolved', NOW() - INTERVAL '1 days', NOW() - INTERVAL '2 days', false),
-    (2, 2, 2, 'Delete', 'Pending', NULL, NOW() - INTERVAL '2 days', false),
-    (3, 3, 3, 'Export', 'Resolved', NOW() - INTERVAL '3 days', NOW() - INTERVAL '4 days', false),
-    (4, 4, 3, 'Delete', 'Pending', NULL, NOW() - INTERVAL '3 days', false),
-    (5, 5, 4, 'Export', 'Resolved', NOW() - INTERVAL '4 days', NOW() - INTERVAL '5 days', false),
-    (6, 6, 4, 'Export', 'Pending', NULL, NOW() - INTERVAL '4 days', false),
-    (7, 7, 5, 'Delete', 'Resolved', NOW() - INTERVAL '5 days', NOW() - INTERVAL '6 days', false),
-    (8, 8, 5, 'Export', 'Pending', NULL, NOW() - INTERVAL '5 days', false),
-    (9, 9, 6, 'Delete', 'Resolved', NOW() - INTERVAL '6 days', NOW() - INTERVAL '7 days', false),
-    (10, 10, 6, 'Export', 'Pending', NULL, NOW() - INTERVAL '2 days', false)
+    (1, 1, 2, 'Export', 'Resolved', NULL, NULL, 1, NOW() - INTERVAL '1 days', NOW() - INTERVAL '2 days', false),
+    (2, 2, 2, 'Delete', 'Pending', 'Anonymize', NULL, NULL, NULL, NOW() - INTERVAL '2 days', false),
+    (3, 3, 3, 'Export', 'Resolved', NULL, NULL, 1, NOW() - INTERVAL '3 days', NOW() - INTERVAL '4 days', false),
+    (4, 4, 3, 'Delete', 'Pending', 'Anonymize', NULL, NULL, NULL, NOW() - INTERVAL '3 days', false),
+    (5, 5, 4, 'Export', 'Resolved', NULL, NULL, 1, NOW() - INTERVAL '4 days', NOW() - INTERVAL '5 days', false),
+    (6, 6, 4, 'Export', 'Pending', NULL, NULL, NULL, NULL, NOW() - INTERVAL '4 days', false),
+    (7, 7, 5, 'Delete', 'Resolved', 'Anonymize', NULL, 1, NOW() - INTERVAL '5 days', NOW() - INTERVAL '6 days', false),
+    (8, 8, 5, 'Export', 'Pending', NULL, NULL, NULL, NULL, NOW() - INTERVAL '5 days', false),
+    (9, 9, 6, 'Delete', 'Resolved', 'Anonymize', NULL, 1, NOW() - INTERVAL '6 days', NOW() - INTERVAL '7 days', false),
+    (10, 10, 6, 'Export', 'Pending', NULL, NULL, NULL, NULL, NOW() - INTERVAL '2 days', false)
 ON CONFLICT ("Id") DO NOTHING;
 
 -- 46. audit_logs (10)
@@ -807,6 +818,78 @@ VALUES
     (10, NOW() - INTERVAL '1 day', 1200, 95.500, 3.200, 1.100, 92.000, NOW() - INTERVAL '1 day', false)
 ON CONFLICT ("Id") DO NOTHING;
 
+-- 49. refresh_tokens (5)
+INSERT INTO refresh_tokens ("Id", "UserAccountId", "TokenHash", "SessionScope", "IssuedAt", "ExpiresAt", "RevokedAt", "CreatedAt", "IsDeleted")
+VALUES
+    (1, 1, encode(sha256('demo-rt-admin-1'::bytea), 'hex'), 'Supervisor', NOW() - INTERVAL '2 hours', NOW() + INTERVAL '7 days', NULL, NOW() - INTERVAL '2 hours', false),
+    (2, 2, encode(sha256('demo-rt-parent1-1'::bytea), 'hex'), 'Supervisor', NOW() - INTERVAL '5 days', NOW() + INTERVAL '7 days', NULL, NOW() - INTERVAL '5 days', false),
+    (3, 3, encode(sha256('demo-rt-parent2-1'::bytea), 'hex'), 'Supervisor', NOW() - INTERVAL '1 day', NOW() + INTERVAL '6 days', NULL, NOW() - INTERVAL '1 day', false),
+    (4, 7, encode(sha256('demo-rt-teacher1-1'::bytea), 'hex'), 'Supervisor', NOW() - INTERVAL '3 hours', NOW() + INTERVAL '7 days', NULL, NOW() - INTERVAL '3 hours', false),
+    (5, 1, encode(sha256('demo-rt-admin-old'::bytea), 'hex'), 'Admin', NOW() - INTERVAL '10 days', NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days', NOW() - INTERVAL '10 days', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- 50. notifications (10)
+INSERT INTO notifications ("Id", "RecipientUserId", "Type", "Payload", "Status", "ReadAt", "CreatedAt", "IsDeleted")
+VALUES
+    (1, 2, 'SupervisionInvite', '{"childProfileId":1}', 'Read', NOW() - INTERVAL '39 days', NOW() - INTERVAL '40 days', false),
+    (2, 3, 'StoryShared', '{"storyId":3,"classGroupId":3}', 'Unread', NULL, NOW() - INTERVAL '13 days', false),
+    (3, 4, 'HoldModeAlert', '{"childProfileId":5}', 'Read', NOW() - INTERVAL '3 days', NOW() - INTERVAL '4 days', false),
+    (4, 7, 'AssignmentCancelled', '{"assignmentId":4}', 'Unread', NULL, NOW() - INTERVAL '12 days', false),
+    (5, 4, 'RecommendationAwaitingReview', '{"recommendationId":1}', 'Read', NOW() - INTERVAL '7 days', NOW() - INTERVAL '8 days', false),
+    (6, 7, 'OrgTeacherInvite', '{"organizationId":3}', 'Unread', NULL, NOW() - INTERVAL '19 days', false),
+    (7, 5, 'OrgConsentRequest', '{"childProfileId":8,"organizationId":2}', 'Unread', NULL, NOW() - INTERVAL '33 days', false),
+    (8, 6, 'DataRequestSlaWarning', '{"dataRequestId":9}', 'Read', NOW() - INTERVAL '6 days', NOW() - INTERVAL '6 days', false),
+    (9, 1, 'AdminRoleChanged', '{"userId":1}', 'Read', NOW() - INTERVAL '58 days', NOW() - INTERVAL '58 days', false),
+    (10, 7, 'ContentReported', '{"storyId":9}', 'Unread', NULL, NOW() - INTERVAL '15 days', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- 51. child_access_credentials (5)
+INSERT INTO child_access_credentials ("Id", "ChildProfileId", "AvatarId", "PinHash", "FailedAttempts", "LockedUntil", "CreatedByUserId", "CreatedAt", "IsDeleted")
+VALUES
+    (1, 1, 'avatar-rabbit', encode(sha256('1234'::bytea), 'hex'), 0, NULL, 2, NOW() - INTERVAL '39 days', false),
+    (2, 3, 'avatar-bear', encode(sha256('5678'::bytea), 'hex'), 0, NULL, 3, NOW() - INTERVAL '37 days', false),
+    (3, 5, 'avatar-cat', encode(sha256('1111'::bytea), 'hex'), 2, NULL, 4, NOW() - INTERVAL '35 days', false),
+    (4, 7, 'avatar-fox', encode(sha256('2222'::bytea), 'hex'), 0, NULL, 5, NOW() - INTERVAL '33 days', false),
+    (5, 9, 'avatar-owl', encode(sha256('9999'::bytea), 'hex'), 5, NOW() + INTERVAL '10 minutes', 6, NOW() - INTERVAL '31 days', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- 52. content_reports (5)
+INSERT INTO content_reports ("Id", "StoryId", "ReporterUserId", "Reason", "Description", "Status", "ReviewedByUserId", "ReviewedAt", "CreatedAt", "IsDeleted")
+VALUES
+    (1, 9, 7, 'SafetyConcern', 'Noi dung co the gay so hai cho tre nho', 'ReviewedArchived', 1, NOW() - INTERVAL '14 days', NOW() - INTERVAL '15 days', false),
+    (2, 2, 8, 'WrongAgeBand', 'Do kho khong phu hop voi do tuoi 9-12', 'Pending', NULL, NULL, NOW() - INTERVAL '13 days', false),
+    (3, 9, 9, 'Inappropriate', 'Mot so tu ngu chua phu hop', 'ReviewedArchived', 1, NOW() - INTERVAL '14 days', NOW() - INTERVAL '14 days', false),
+    (4, 4, 10, 'Other', 'Can xem lai thong tin khoa hoc trong truyen', 'ReviewedDismissed', 8, NOW() - INTERVAL '20 days', NOW() - INTERVAL '22 days', false),
+    (5, 8, 7, 'SafetyConcern', 'Canh bao ve hanh vi bao luc nhe', 'Pending', NULL, NULL, NOW() - INTERVAL '5 days', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- 53. subscription_plans (2)
+INSERT INTO subscription_plans ("Id", "Name", "ApplicableScope", "PriceVnd", "QuotaAmount", "IsActive", "CreatedAt", "IsDeleted")
+VALUES
+    (1, 'Goi Personal', 'Personal', 49000, 50, true, NOW() - INTERVAL '60 days', false),
+    (2, 'Goi Organization', 'Organization', 99000, 150, true, NOW() - INTERVAL '60 days', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- 54. token_quota_configs (5)
+INSERT INTO token_quota_configs ("Id", "Scope", "OrganizationId", "ChildProfileId", "QuotaLimit", "QuotaUsed", "PeriodStart", "PeriodEnd", "CreatedAt", "IsDeleted")
+VALUES
+    (1, 'System', NULL, NULL, 10000, 3200, DATE_TRUNC('month', NOW())::date, (DATE_TRUNC('month', NOW()) + INTERVAL '1 month' - INTERVAL '1 day')::date, NOW() - INTERVAL '10 days', false),
+    (2, 'Organization', 1, NULL, 200, 45, DATE_TRUNC('month', NOW())::date, (DATE_TRUNC('month', NOW()) + INTERVAL '1 month' - INTERVAL '1 day')::date, NOW() - INTERVAL '10 days', false),
+    (3, 'Organization', 2, NULL, 200, 120, DATE_TRUNC('month', NOW())::date, (DATE_TRUNC('month', NOW()) + INTERVAL '1 month' - INTERVAL '1 day')::date, NOW() - INTERVAL '10 days', false),
+    (4, 'Child', NULL, 1, 50, 12, DATE_TRUNC('month', NOW())::date, (DATE_TRUNC('month', NOW()) + INTERVAL '1 month' - INTERVAL '1 day')::date, NOW() - INTERVAL '10 days', false),
+    (5, 'Child', NULL, 9, 50, 50, DATE_TRUNC('month', NOW())::date, (DATE_TRUNC('month', NOW()) + INTERVAL '1 month' - INTERVAL '1 day')::date, NOW() - INTERVAL '10 days', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- 55. payment_transactions (5)
+INSERT INTO payment_transactions ("Id", "PlanId", "PayerUserId", "OrganizationId", "TransactionCode", "Amount", "Status", "SepayTransactionId", "QrCodeUrl", "CreatedAt", "ExpiresAt", "PaidAt", "IsDeleted")
+VALUES
+    (1, 1, 2, NULL, 'TOPUP-DEMO-0001', 49000, 'Paid', 'SEPAY-TX-0001', 'https://example.com/qr/1.png', NOW() - INTERVAL '9 days', NOW() - INTERVAL '9 days' + INTERVAL '15 minutes', NOW() - INTERVAL '9 days' + INTERVAL '3 minutes', false),
+    (2, 2, 1, 1, 'TOPUP-DEMO-0002', 99000, 'Paid', 'SEPAY-TX-0002', 'https://example.com/qr/2.png', NOW() - INTERVAL '9 days', NOW() - INTERVAL '9 days' + INTERVAL '15 minutes', NOW() - INTERVAL '9 days' + INTERVAL '5 minutes', false),
+    (3, 1, 3, NULL, 'TOPUP-DEMO-0003', 49000, 'Pending', NULL, 'https://example.com/qr/3.png', NOW() - INTERVAL '10 minutes', NOW() + INTERVAL '5 minutes', NULL, false),
+    (4, 2, 1, 2, 'TOPUP-DEMO-0004', 99000, 'Expired', NULL, 'https://example.com/qr/4.png', NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days' + INTERVAL '15 minutes', NULL, false),
+    (5, 1, 4, NULL, 'TOPUP-DEMO-0005', 45000, 'MismatchAmount', 'SEPAY-TX-0005', 'https://example.com/qr/5.png', NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days' + INTERVAL '15 minutes', NULL, false)
+ON CONFLICT ("Id") DO NOTHING;
+
 -- ---------------------------------------------------------------------------
 -- Reset lai cac sequence (identity) de tranh trung Id khi ung dung insert tiep
 -- ---------------------------------------------------------------------------
@@ -826,7 +909,9 @@ DECLARE
         'recommendations','recommendation_reviews','child_profile_version_history',
         'intervention_cases','o2o_assessments','shared_stories','shared_story_recipients',
         'supervision_invitations','supervision_relationships','supervision_permissions',
-        'data_requests','audit_logs','business_reports','ai_governance_metrics'
+        'data_requests','audit_logs','business_reports','ai_governance_metrics',
+        'refresh_tokens','notifications','child_access_credentials','content_reports',
+        'subscription_plans','token_quota_configs','payment_transactions'
     ];
     seq text;
 BEGIN
@@ -854,7 +939,7 @@ try {
     & $psqlPath -h $PgHost -p $Port -U $Username -d $Database -v ON_ERROR_STOP=1 -f $tempFile
 
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "Insert du lieu mau thanh cong cho toan bo 48 bang." -ForegroundColor Green
+        Write-Host "Insert du lieu mau thanh cong cho toan bo 55 bang." -ForegroundColor Green
     } else {
         Write-Error "psql tra ve loi (exit code $LASTEXITCODE). Xem log ben tren de biet chi tiet."
     }

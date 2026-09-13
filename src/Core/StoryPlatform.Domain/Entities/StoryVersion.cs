@@ -23,4 +23,8 @@ public class StoryVersion : BaseEntity
     public decimal? ReadabilityFre { get; set; }
     public decimal? SafetyScore { get; set; }
     public bool IsCurrent { get; set; } = false;
+
+    public int? OutlineApprovedByUserId { get; set; }
+    public virtual UserAccount? OutlineApprovedByUser { get; set; }
+    public DateTime? OutlineApprovedAt { get; set; }
 }

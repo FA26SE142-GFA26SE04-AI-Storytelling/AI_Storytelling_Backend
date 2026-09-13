@@ -11,4 +11,5 @@ public class MediaAsset : BaseEntity
     public MediaStatus Status { get; set; } = MediaStatus.Queued;
     public int? SceneIndex { get; set; }
     public string? Url { get; set; }
+    public string? WordTimings { get; set; }
 }

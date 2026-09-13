@@ -48,6 +48,10 @@ public class StoryConfiguration : IEntityTypeConfiguration<Story>
             .HasMaxLength(30)
             .IsRequired();
 
+        builder.Property(s => s.ArchivedReason)
+            .HasConversion<string>()
+            .HasMaxLength(30);
+
         // Foreign key to UserAccount (Author)
         builder.HasOne(s => s.Author)
             .WithMany(u => u.Stories)

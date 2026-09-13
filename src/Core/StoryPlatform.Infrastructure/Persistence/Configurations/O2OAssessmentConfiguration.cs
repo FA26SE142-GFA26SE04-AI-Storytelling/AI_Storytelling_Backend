@@ -15,14 +15,9 @@ public class O2OAssessmentConfiguration : IEntityTypeConfiguration<O2OAssessment
         builder.Property(x => x.Notes)
             .HasColumnType("text");
 
-        builder.HasOne(x => x.Assignment)
+        builder.HasOne(x => x.AssignmentRecipient)
             .WithMany()
-            .HasForeignKey(x => x.AssignmentId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        builder.HasOne(x => x.ChildProfile)
-            .WithMany()
-            .HasForeignKey(x => x.ChildProfileId)
+            .HasForeignKey(x => x.AssignmentRecipientId)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne(x => x.TeacherUser)

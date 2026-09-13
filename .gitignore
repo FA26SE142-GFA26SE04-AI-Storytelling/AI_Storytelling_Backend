@@ -6,6 +6,9 @@
 # dotenv files
 .env
 
+# Local documentation
+/docs/
+
 # AppSettings
 appsettings*.json
 
@@ -489,6 +492,3 @@ $RECYCLE.BIN/
 
 #appsettings
 .appsettings.*.json
-
-#claude
-.claude

@@ -13,4 +13,7 @@ public class AssignmentRecipient : BaseEntity
 
     public AssignmentStatus Status { get; set; } = AssignmentStatus.Assigned;
     public DateTime? CompletedAt { get; set; }
+    public int? CancelledByUserId { get; set; }
+    public virtual UserAccount? CancelledByUser { get; set; }
+    public DateTime? CancelledAt { get; set; }
 }

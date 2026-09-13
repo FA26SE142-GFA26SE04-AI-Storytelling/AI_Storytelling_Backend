@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.Extensions.Options;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Contracts.AI.Requests;
@@ -41,8 +42,26 @@ public sealed class AIStoryGenerationClient : IAIStoryGenerationClient
         CancellationToken cancellationToken)
     {
         using var response = await _httpClient.PostAsJsonAsync(path, request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            AIErrorResponse? error = null;
+            try
+            {
+                error = await response.Content.ReadFromJsonAsync<AIErrorResponse>(cancellationToken: cancellationToken);
+            }
+            catch (JsonException)
+            {
+                // Preserve a stable Core-side error when an upstream proxy returns a non-JSON body.
+            }
+
+            throw new AIServiceRequestException(
+                (int)response.StatusCode,
+                string.IsNullOrWhiteSpace(error?.ErrorCode) ? "AI_SERVICE_REQUEST_FAILED" : error.ErrorCode,
+                string.IsNullOrWhiteSpace(error?.Error) ? "AI service request failed." : error.Error);
+        }
         return await response.Content.ReadFromJsonAsync<TResponse>(cancellationToken: cancellationToken)
                ?? throw new InvalidOperationException($"AI service returned an empty response for '{path}'.");
     }
+
+    private sealed record AIErrorResponse(string? ErrorCode, string? Error);
 }

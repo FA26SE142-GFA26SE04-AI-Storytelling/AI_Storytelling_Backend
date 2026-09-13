@@ -361,7 +361,14 @@ public sealed class AIStoryInputService : IAIStoryInputService
         var handoff = new StoryGenerationJob
         {
             StoryId = story.Id,
-            Stage = JobStage.InputValidated,
+            GenerationRequestId = request.Id,
+            RequestedByUserId = request.SubmittedByUserId,
+            OperationKey = request.IdempotencyKey,
+            Operation = GenerationJobOperation.GenerateOutline,
+            Stage = JobStage.OutlinePending,
+            Status = GenerationJobStatus.Pending,
+            AttemptNo = 0,
+            MaxAttempts = 3,
             GuardrailResult = GuardrailResult.Passed,
             StartedAt = DateTime.UtcNow
         };
@@ -567,6 +574,17 @@ public sealed class AIStoryInputService : IAIStoryInputService
         }
 
         var categoryRules = MergeCategoryRules(personalCategories, organizationCategories);
+        var categoryNames = personalCategories
+            .Where(item => item.ContentCategory is { IsActive: true })
+            .Select(item => (item.ContentCategory!.Code, item.ContentCategory.DisplayName))
+            .Concat(organizationCategories
+                .Where(item => item.ContentCategory is { IsActive: true })
+                .Select(item => (item.ContentCategory!.Code, item.ContentCategory.DisplayName)))
+            .GroupBy(item => item.Code, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First().DisplayName, StringComparer.OrdinalIgnoreCase);
+        var allowedTerms = Terms(categoryRules, categoryNames, PolicyRule.Allowed);
+        var restrictedTerms = Terms(categoryRules, categoryNames, PolicyRule.Restricted);
+        var blockedTerms = Terms(categoryRules, categoryNames, PolicyRule.Blocked);
         var topics = await _unitOfWork.Repository<LearningProfileTopic>().FindAsync(
             item => item.LearningProfileId == learning.Id && item.Relation == TopicRelation.FavoriteTopic,
             cancellationToken: cancellationToken);
@@ -583,15 +601,10 @@ public sealed class AIStoryInputService : IAIStoryInputService
             interests,
             categoryRules.Where(item => item.Value == PolicyRule.Allowed).Select(item => item.Key).Order().ToArray(),
             categoryRules.Where(item => item.Value == PolicyRule.Restricted).Select(item => item.Key).Order().ToArray(),
-            categoryRules.Where(item => item.Value == PolicyRule.Blocked).Select(item => item.Key).Order().ToArray());
-
-        var termsByRule = personalCategories
-            .Where(item => item.ContentCategory is { IsActive: true })
-            .Select(item => (item.Rule, item.ContentCategory!.Code, item.ContentCategory.DisplayName))
-            .Concat(organizationCategories
-                .Where(item => item.ContentCategory is { IsActive: true })
-                .Select(item => (item.Rule, item.ContentCategory!.Code, item.ContentCategory.DisplayName)))
-            .ToArray();
+            categoryRules.Where(item => item.Value == PolicyRule.Blocked).Select(item => item.Key).Order().ToArray(),
+            allowedTerms,
+            restrictedTerms,
+            blockedTerms);
 
         return new EffectiveContext(
             child.Nickname,
@@ -603,8 +616,8 @@ public sealed class AIStoryInputService : IAIStoryInputService
             approvalMode,
             snapshot,
             Fingerprint(snapshot),
-            Terms(termsByRule, PolicyRule.Blocked),
-            Terms(termsByRule, PolicyRule.Restricted));
+            blockedTerms,
+            restrictedTerms);
     }
 
     private async Task EnsureGeneratePermissionAsync(int userId, int childProfileId, CancellationToken cancellationToken)
@@ -657,10 +670,13 @@ public sealed class AIStoryInputService : IAIStoryInputService
     }
 
     private static IReadOnlyList<string> Terms(
-        IEnumerable<(PolicyRule Rule, string Code, string DisplayName)> source,
-        PolicyRule rule) => source
-        .Where(item => item.Rule == rule)
-        .SelectMany(item => new[] { item.Code, item.DisplayName })
+        IReadOnlyDictionary<string, PolicyRule> rules,
+        IReadOnlyDictionary<string, string> displayNames,
+        PolicyRule rule) => rules
+        .Where(item => item.Value == rule)
+        .SelectMany(item => displayNames.TryGetValue(item.Key, out var displayName)
+            ? new[] { item.Key, displayName }
+            : new[] { item.Key })
         .Where(item => !string.IsNullOrWhiteSpace(item))
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .ToArray();

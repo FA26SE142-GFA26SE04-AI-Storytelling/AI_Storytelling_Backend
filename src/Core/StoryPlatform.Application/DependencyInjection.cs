@@ -6,6 +6,9 @@ using StoryPlatform.Application.Features.AIStoryInput.Interfaces;
 using StoryPlatform.Application.Features.AIStoryInput.Services;
 using StoryPlatform.Application.Features.Stories.Interfaces;
 using StoryPlatform.Application.Features.Stories.Services;
+using StoryPlatform.Application.Features.Outline.Guardrails;
+using StoryPlatform.Application.Features.Outline.Interfaces;
+using StoryPlatform.Application.Features.Outline.Services;
 
 namespace StoryPlatform.Application;
 
@@ -17,6 +20,10 @@ public static class DependencyInjection
         services.AddScoped<IStoryService, StoryService>();
         services.AddScoped<IAIStoryInputService, AIStoryInputService>();
         services.AddSingleton<IInputGuardrail, RuleBasedInputGuardrail>();
+        services.AddScoped<OutlineService>();
+        services.AddScoped<IOutlineService>(provider => provider.GetRequiredService<OutlineService>());
+        services.AddScoped<IOutlineJobProcessor>(provider => provider.GetRequiredService<OutlineService>());
+        services.AddSingleton<IOutlineReviewGuardrail, RuleBasedOutlineReviewGuardrail>();
 
         return services;
     }

@@ -17,6 +17,16 @@ public class SafetyPolicyConfiguration : IEntityTypeConfiguration<SafetyPolicy>
             .HasMaxLength(30)
             .IsRequired();
 
+        builder.Property(x => x.SafetyScoreThreshold)
+            .HasColumnType("decimal(5,2)");
+
+        builder.Property(x => x.ReadabilityScoreThreshold)
+            .HasColumnType("decimal(5,2)");
+
+        builder.Property(x => x.ComprehensionThresholdPercent)
+            .HasColumnType("decimal(5,2)")
+            .HasDefaultValue(70m);
+
         builder.HasOne(x => x.ChildProfile)
             .WithMany()
             .HasForeignKey(x => x.ChildProfileId)

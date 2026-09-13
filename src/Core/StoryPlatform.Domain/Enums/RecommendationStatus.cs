@@ -12,5 +12,6 @@ public enum RecommendationStatus
     Applied = 8,
     Monitoring = 9,
     Validated = 10,
-    ReassessmentRequired = 11
+    ReassessmentRequired = 11,
+    Stale = 12
 }

@@ -45,6 +45,11 @@ public class OrganizationConfiguration : IEntityTypeConfiguration<Organization>
             .HasForeignKey(x => x.SuspendedByAdminId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(x => x.ReactivatedByAdmin)
+            .WithMany()
+            .HasForeignKey(x => x.ReactivatedByAdminId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.HasQueryFilter(x => !x.IsDeleted);
     }
 }

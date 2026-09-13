@@ -53,6 +53,10 @@ public class UserAccountConfiguration : IEntityTypeConfiguration<UserAccount>
             .HasMaxLength(30)
             .IsRequired();
 
+        builder.Property(u => u.RoleBeforeAdmin)
+            .HasConversion<string>()
+            .HasMaxLength(30);
+
         builder.HasIndex(u => u.Email)
             .IsUnique();
 

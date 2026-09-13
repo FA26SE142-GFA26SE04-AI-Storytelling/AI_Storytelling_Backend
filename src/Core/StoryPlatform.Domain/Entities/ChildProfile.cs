@@ -10,6 +10,7 @@ public class ChildProfile : BaseEntity
 
     public string Nickname { get; set; } = string.Empty;
     public AgeBand AgeBand { get; set; }
+    public DateOnly? DateOfBirth { get; set; }
     public string Language { get; set; } = "vi";
     public ChildProfileStatus Status { get; set; } = ChildProfileStatus.Draft;
     public ProfileScope Scope { get; set; } = ProfileScope.Personal;

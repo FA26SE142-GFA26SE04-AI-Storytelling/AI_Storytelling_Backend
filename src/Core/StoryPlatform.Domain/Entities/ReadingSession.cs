@@ -19,4 +19,15 @@ public class ReadingSession : BaseEntity
     public DateTime? CompletedAt { get; set; }
     public int TimeSpentSeconds { get; set; } = 0;
     public int PagesCompleted { get; set; } = 0;
+
+    public int? StoryVersionId { get; set; }
+    public virtual StoryVersion? StoryVersion { get; set; }
+
+    public int? ChildAccessCredentialId { get; set; }
+    public virtual ChildAccessCredential? ChildAccessCredential { get; set; }
+
+    public int? SupervisorSessionId { get; set; }
+    public virtual RefreshToken? SupervisorSession { get; set; }
+
+    public DateTime? ForceExitRequestedAt { get; set; }
 }

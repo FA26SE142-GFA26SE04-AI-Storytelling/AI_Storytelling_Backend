@@ -21,4 +21,11 @@ public class Organization : BaseEntity
 
     public DateTime? SuspendedAt { get; set; }
     public string? SuspensionReason { get; set; }
+
+    public string? RejectionReason { get; set; }
+    public DateTime? ReactivatedAt { get; set; }
+    public int? ReactivatedByAdminId { get; set; }
+    public virtual UserAccount? ReactivatedByAdmin { get; set; }
+    public DateTime? ClosureRequestedAt { get; set; }
+    public DateTime? ClosedAt { get; set; }
 }

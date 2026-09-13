@@ -20,6 +20,8 @@ public class Story : BaseEntity
     public StorySource Source { get; set; } = StorySource.Ai;
     public StoryStatus Status { get; set; } = StoryStatus.Draft;
     public bool IsPublished { get; set; } = false;
+    public DateTime? ChildVisibleAt { get; set; }
+    public ArchivedReason? ArchivedReason { get; set; }
 
     // Khóa ngoại tác giả / người khởi tạo
     public int AuthorUserId { get; set; }

@@ -25,6 +25,13 @@ public class UserAccount : BaseEntity
     public DateTime? EmailVerificationTokenExpiresAt { get; set; }
     public DateTime? LastLoginAt { get; set; }
 
+    public int FailedLoginAttempts { get; set; } = 0;
+    public DateTime? LockedUntil { get; set; }
+    public string? MfaSecret { get; set; }
+    public bool MfaEnabled { get; set; } = false;
+    public int TokenVersion { get; set; } = 1;
+    public UserRole? RoleBeforeAdmin { get; set; }
+
     // Navigation properties
     public virtual ICollection<Story> Stories { get; set; } = new List<Story>();
     public virtual ICollection<ChildProfile> ChildProfiles { get; set; } = new List<ChildProfile>();

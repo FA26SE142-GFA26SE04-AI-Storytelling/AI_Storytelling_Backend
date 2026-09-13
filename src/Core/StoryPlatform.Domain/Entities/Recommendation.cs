@@ -15,4 +15,5 @@ public class Recommendation : BaseEntity
     public string ProposedChange { get; set; } = string.Empty;
     public string Evidence { get; set; } = string.Empty;
     public RecommendationStatus Status { get; set; } = RecommendationStatus.RecommendationCreated;
+    public DateTime? ExpiresAt { get; set; }
 }

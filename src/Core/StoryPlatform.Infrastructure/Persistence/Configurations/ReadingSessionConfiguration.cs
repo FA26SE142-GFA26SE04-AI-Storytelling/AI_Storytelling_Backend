@@ -32,6 +32,21 @@ public class ReadingSessionConfiguration : IEntityTypeConfiguration<ReadingSessi
             .HasForeignKey(x => x.AssignmentRecipientId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(x => x.StoryVersion)
+            .WithMany()
+            .HasForeignKey(x => x.StoryVersionId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(x => x.ChildAccessCredential)
+            .WithMany()
+            .HasForeignKey(x => x.ChildAccessCredentialId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(x => x.SupervisorSession)
+            .WithMany()
+            .HasForeignKey(x => x.SupervisorSessionId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.HasQueryFilter(x => !x.IsDeleted);
     }
 }

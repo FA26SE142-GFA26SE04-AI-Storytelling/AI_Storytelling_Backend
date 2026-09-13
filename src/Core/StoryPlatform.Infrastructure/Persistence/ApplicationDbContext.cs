@@ -13,6 +13,8 @@ public class ApplicationDbContext : DbContext
     }
 
     public DbSet<UserAccount> Users => Set<UserAccount>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<Story> Stories => Set<Story>();
 
     // Child profile & supervision
@@ -25,6 +27,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<SupervisionInvitation> SupervisionInvitations => Set<SupervisionInvitation>();
     public DbSet<SupervisionRelationship> SupervisionRelationships => Set<SupervisionRelationship>();
     public DbSet<SupervisionPermission> SupervisionPermissions => Set<SupervisionPermission>();
+    public DbSet<ChildAccessCredential> ChildAccessCredentials => Set<ChildAccessCredential>();
 
     // Classroom / organization
     public DbSet<ClassGroup> ClassGroups => Set<ClassGroup>();
@@ -46,6 +49,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<DiscussionQuestion> DiscussionQuestions => Set<DiscussionQuestion>();
     public DbSet<MediaAsset> MediaAssets => Set<MediaAsset>();
     public DbSet<PromptCatalogVersion> PromptCatalogVersions => Set<PromptCatalogVersion>();
+    public DbSet<ContentReport> ContentReports => Set<ContentReport>();
 
     // Reading & engagement
     public DbSet<ReadingSession> ReadingSessions => Set<ReadingSession>();
@@ -73,6 +77,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<Recommendation> Recommendations => Set<Recommendation>();
     public DbSet<RecommendationReview> RecommendationReviews => Set<RecommendationReview>();
     public DbSet<ChildProfileVersionHistory> ChildProfileVersionHistories => Set<ChildProfileVersionHistory>();
+    public DbSet<TokenQuotaConfig> TokenQuotaConfigs => Set<TokenQuotaConfig>();
+    public DbSet<SubscriptionPlan> SubscriptionPlans => Set<SubscriptionPlan>();
+    public DbSet<PaymentTransaction> PaymentTransactions => Set<PaymentTransaction>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

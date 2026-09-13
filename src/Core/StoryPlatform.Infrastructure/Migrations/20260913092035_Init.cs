@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -57,6 +57,26 @@ namespace StoryPlatform.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "subscription_plans",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    Name = table.Column<string>(type: "character varying(150)", maxLength: 150, nullable: false),
+                    ApplicableScope = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    PriceVnd = table.Column<int>(type: "integer", nullable: false),
+                    QuotaAmount = table.Column<int>(type: "integer", nullable: false),
+                    IsActive = table.Column<bool>(type: "boolean", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_subscription_plans", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "user_accounts",
                 columns: table => new
                 {
@@ -72,7 +92,17 @@ namespace StoryPlatform.Infrastructure.Migrations
                     Status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
                     ResetTokenHash = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
                     ResetTokenExpiresAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    RefreshTokenHash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
+                    RefreshTokenExpiresAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    EmailVerificationTokenHash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
+                    EmailVerificationTokenExpiresAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     LastLoginAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    FailedLoginAttempts = table.Column<int>(type: "integer", nullable: false),
+                    LockedUntil = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    MfaSecret = table.Column<string>(type: "text", nullable: true),
+                    MfaEnabled = table.Column<bool>(type: "boolean", nullable: false),
+                    TokenVersion = table.Column<int>(type: "integer", nullable: false),
+                    RoleBeforeAdmin = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
@@ -136,6 +166,32 @@ namespace StoryPlatform.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "notifications",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    RecipientUserId = table.Column<int>(type: "integer", nullable: false),
+                    Type = table.Column<string>(type: "character varying(40)", maxLength: 40, nullable: false),
+                    Payload = table.Column<string>(type: "jsonb", nullable: true),
+                    Status = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    ReadAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_notifications", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_notifications_user_accounts_RecipientUserId",
+                        column: x => x.RecipientUserId,
+                        principalTable: "user_accounts",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "organizations",
                 columns: table => new
                 {
@@ -150,6 +206,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                     SuspendedByAdminId = table.Column<int>(type: "integer", nullable: true),
                     SuspendedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     SuspensionReason = table.Column<string>(type: "text", nullable: true),
+                    RejectionReason = table.Column<string>(type: "text", nullable: true),
+                    ReactivatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    ReactivatedByAdminId = table.Column<int>(type: "integer", nullable: true),
+                    ClosureRequestedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    ClosedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
@@ -160,6 +221,12 @@ namespace StoryPlatform.Infrastructure.Migrations
                     table.ForeignKey(
                         name: "FK_organizations_user_accounts_CreatedByUserId",
                         column: x => x.CreatedByUserId,
+                        principalTable: "user_accounts",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_organizations_user_accounts_ReactivatedByAdminId",
+                        column: x => x.ReactivatedByAdminId,
                         principalTable: "user_accounts",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
@@ -205,6 +272,33 @@ namespace StoryPlatform.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "refresh_tokens",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    UserAccountId = table.Column<int>(type: "integer", nullable: false),
+                    TokenHash = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
+                    SessionScope = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    IssuedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    ExpiresAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    RevokedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_refresh_tokens", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_refresh_tokens_user_accounts_UserAccountId",
+                        column: x => x.UserAccountId,
+                        principalTable: "user_accounts",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "child_profiles",
                 columns: table => new
                 {
@@ -213,6 +307,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                     OwnerUserId = table.Column<int>(type: "integer", nullable: false),
                     Nickname = table.Column<string>(type: "character varying(150)", maxLength: 150, nullable: false),
                     AgeBand = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    DateOfBirth = table.Column<DateOnly>(type: "date", nullable: true),
                     Language = table.Column<string>(type: "character varying(10)", maxLength: 10, nullable: false),
                     Status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
                     Scope = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
@@ -333,6 +428,49 @@ namespace StoryPlatform.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "payment_transactions",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    PlanId = table.Column<int>(type: "integer", nullable: false),
+                    PayerUserId = table.Column<int>(type: "integer", nullable: false),
+                    OrganizationId = table.Column<int>(type: "integer", nullable: true),
+                    TransactionCode = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    Amount = table.Column<int>(type: "integer", nullable: false),
+                    Status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    SepayTransactionId = table.Column<string>(type: "text", nullable: true),
+                    QrCodeUrl = table.Column<string>(type: "text", nullable: true),
+                    ExpiresAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    PaidAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_payment_transactions", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_payment_transactions_organizations_OrganizationId",
+                        column: x => x.OrganizationId,
+                        principalTable: "organizations",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_payment_transactions_subscription_plans_PlanId",
+                        column: x => x.PlanId,
+                        principalTable: "subscription_plans",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_payment_transactions_user_accounts_PayerUserId",
+                        column: x => x.PayerUserId,
+                        principalTable: "user_accounts",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "achievements",
                 columns: table => new
                 {
@@ -381,6 +519,39 @@ namespace StoryPlatform.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "child_access_credentials",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ChildProfileId = table.Column<int>(type: "integer", nullable: false),
+                    AvatarId = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    PinHash = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
+                    FailedAttempts = table.Column<int>(type: "integer", nullable: false),
+                    LockedUntil = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    CreatedByUserId = table.Column<int>(type: "integer", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_child_access_credentials", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_child_access_credentials_child_profiles_ChildProfileId",
+                        column: x => x.ChildProfileId,
+                        principalTable: "child_profiles",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_child_access_credentials_user_accounts_CreatedByUserId",
+                        column: x => x.CreatedByUserId,
+                        principalTable: "user_accounts",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "data_requests",
                 columns: table => new
                 {
@@ -391,6 +562,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     RequestType = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
                     Status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
                     ResolvedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    DeletionMethod = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: true, defaultValue: "Anonymize"),
+                    LegalBasisNote = table.Column<string>(type: "text", nullable: true),
+                    ResolvedByUserId = table.Column<int>(type: "integer", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
@@ -407,6 +581,12 @@ namespace StoryPlatform.Infrastructure.Migrations
                     table.ForeignKey(
                         name: "FK_data_requests_user_accounts_RequestedByUserId",
                         column: x => x.RequestedByUserId,
+                        principalTable: "user_accounts",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_data_requests_user_accounts_ResolvedByUserId",
+                        column: x => x.ResolvedByUserId,
                         principalTable: "user_accounts",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
@@ -513,6 +693,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                     ParentalGateEnabled = table.Column<bool>(type: "boolean", nullable: false),
                     ConsentRecorded = table.Column<bool>(type: "boolean", nullable: false),
                     ConsentRecordedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    ConsentPolicyVersion = table.Column<int>(type: "integer", nullable: false),
+                    SafetyScoreThreshold = table.Column<decimal>(type: "numeric(5,2)", nullable: true),
+                    ReadabilityScoreThreshold = table.Column<decimal>(type: "numeric(5,2)", nullable: true),
+                    ComprehensionThresholdPercent = table.Column<decimal>(type: "numeric(5,2)", nullable: false, defaultValue: 70m),
+                    ComprehensionWindowSize = table.Column<int>(type: "integer", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
@@ -534,17 +719,21 @@ namespace StoryPlatform.Infrastructure.Migrations
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    Title = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    Title = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
                     Description = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
                     Content = table.Column<string>(type: "text", nullable: true),
                     CoverImageUrl = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
                     Genre = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
                     MoralLesson = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
                     AgeBand = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    ReadingLevel = table.Column<int>(type: "integer", nullable: true),
+                    VocabularyLevel = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: true),
                     Language = table.Column<string>(type: "character varying(10)", maxLength: 10, nullable: false),
                     Source = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
                     Status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
                     IsPublished = table.Column<bool>(type: "boolean", nullable: false),
+                    ChildVisibleAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    ArchivedReason = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: true),
                     AuthorUserId = table.Column<int>(type: "integer", nullable: false),
                     ChildProfileId = table.Column<int>(type: "integer", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
@@ -606,6 +795,40 @@ namespace StoryPlatform.Infrastructure.Migrations
                         name: "FK_supervision_invitations_user_accounts_InviterUserId",
                         column: x => x.InviterUserId,
                         principalTable: "user_accounts",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "token_quota_configs",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    Scope = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    OrganizationId = table.Column<int>(type: "integer", nullable: true),
+                    ChildProfileId = table.Column<int>(type: "integer", nullable: true),
+                    QuotaLimit = table.Column<int>(type: "integer", nullable: false),
+                    QuotaUsed = table.Column<int>(type: "integer", nullable: false),
+                    PeriodStart = table.Column<DateOnly>(type: "date", nullable: false),
+                    PeriodEnd = table.Column<DateOnly>(type: "date", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_token_quota_configs", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_token_quota_configs_child_profiles_ChildProfileId",
+                        column: x => x.ChildProfileId,
+                        principalTable: "child_profiles",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_token_quota_configs_organizations_OrganizationId",
+                        column: x => x.OrganizationId,
+                        principalTable: "organizations",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
                 });
@@ -713,6 +936,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                     ProposedChange = table.Column<string>(type: "text", nullable: false),
                     Evidence = table.Column<string>(type: "text", nullable: false),
                     Status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    ExpiresAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
@@ -829,6 +1053,46 @@ namespace StoryPlatform.Infrastructure.Migrations
                     table.ForeignKey(
                         name: "FK_assignments_user_accounts_AssignedByUserId",
                         column: x => x.AssignedByUserId,
+                        principalTable: "user_accounts",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "content_reports",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    StoryId = table.Column<int>(type: "integer", nullable: false),
+                    ReporterUserId = table.Column<int>(type: "integer", nullable: false),
+                    Reason = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    Description = table.Column<string>(type: "text", nullable: true),
+                    Status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    ReviewedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    ReviewedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_content_reports", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_content_reports_stories_StoryId",
+                        column: x => x.StoryId,
+                        principalTable: "stories",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_content_reports_user_accounts_ReporterUserId",
+                        column: x => x.ReporterUserId,
+                        principalTable: "user_accounts",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_content_reports_user_accounts_ReviewedByUserId",
+                        column: x => x.ReviewedByUserId,
                         principalTable: "user_accounts",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
@@ -1187,6 +1451,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                     ChildProfileId = table.Column<int>(type: "integer", nullable: false),
                     Status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
                     CompletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    CancelledByUserId = table.Column<int>(type: "integer", nullable: true),
+                    CancelledAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
@@ -1206,42 +1472,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                         principalTable: "child_profiles",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "o2o_assessments",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    AssignmentId = table.Column<int>(type: "integer", nullable: false),
-                    ChildProfileId = table.Column<int>(type: "integer", nullable: false),
-                    TeacherUserId = table.Column<int>(type: "integer", nullable: false),
-                    BonusPoints = table.Column<int>(type: "integer", nullable: false),
-                    Notes = table.Column<string>(type: "text", nullable: true),
-                    AssessedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_o2o_assessments", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_o2o_assessments_assignments_AssignmentId",
-                        column: x => x.AssignmentId,
-                        principalTable: "assignments",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_o2o_assessments_child_profiles_ChildProfileId",
-                        column: x => x.ChildProfileId,
-                        principalTable: "child_profiles",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_o2o_assessments_user_accounts_TeacherUserId",
-                        column: x => x.TeacherUserId,
+                        name: "FK_assignment_recipients_user_accounts_CancelledByUserId",
+                        column: x => x.CancelledByUserId,
                         principalTable: "user_accounts",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
@@ -1273,6 +1506,60 @@ namespace StoryPlatform.Infrastructure.Migrations
                     table.ForeignKey(
                         name: "FK_shared_story_recipients_user_accounts_RecipientUserId",
                         column: x => x.RecipientUserId,
+                        principalTable: "user_accounts",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "story_generation_requests",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    StoryId = table.Column<int>(type: "integer", nullable: false),
+                    SubmittedByUserId = table.Column<int>(type: "integer", nullable: false),
+                    IdempotencyKey = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    InputFingerprint = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    ContextFingerprint = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    ContextSnapshotJson = table.Column<string>(type: "jsonb", nullable: false),
+                    AcceptedInputJson = table.Column<string>(type: "jsonb", nullable: true),
+                    Status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    AttemptCount = table.Column<int>(type: "integer", nullable: false),
+                    MaxAttempts = table.Column<int>(type: "integer", nullable: false),
+                    ConcurrencyToken = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
+                    LastRetryKey = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    AttemptStartedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    GuardrailDecision = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: true),
+                    ReasonCode = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    FallbackMessage = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    CanRetry = table.Column<bool>(type: "boolean", nullable: false),
+                    GuardrailCheckVersion = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    GuardrailCheckedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    HandoffJobId = table.Column<int>(type: "integer", nullable: true),
+                    HandoffCreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_story_generation_requests", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_story_generation_requests_stories_StoryId",
+                        column: x => x.StoryId,
+                        principalTable: "stories",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_story_generation_requests_story_generation_jobs_HandoffJobId",
+                        column: x => x.HandoffJobId,
+                        principalTable: "story_generation_jobs",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_story_generation_requests_user_accounts_SubmittedByUserId",
+                        column: x => x.SubmittedByUserId,
                         principalTable: "user_accounts",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
@@ -1313,6 +1600,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                     Status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
                     SceneIndex = table.Column<int>(type: "integer", nullable: true),
                     Url = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    WordTimings = table.Column<string>(type: "text", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
@@ -1402,6 +1690,38 @@ namespace StoryPlatform.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "o2o_assessments",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    AssignmentRecipientId = table.Column<int>(type: "integer", nullable: false),
+                    TeacherUserId = table.Column<int>(type: "integer", nullable: false),
+                    BonusPoints = table.Column<int>(type: "integer", nullable: false),
+                    Notes = table.Column<string>(type: "text", nullable: true),
+                    AssessedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_o2o_assessments", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_o2o_assessments_assignment_recipients_AssignmentRecipientId",
+                        column: x => x.AssignmentRecipientId,
+                        principalTable: "assignment_recipients",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_o2o_assessments_user_accounts_TeacherUserId",
+                        column: x => x.TeacherUserId,
+                        principalTable: "user_accounts",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "reading_sessions",
                 columns: table => new
                 {
@@ -1415,6 +1735,10 @@ namespace StoryPlatform.Infrastructure.Migrations
                     CompletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     TimeSpentSeconds = table.Column<int>(type: "integer", nullable: false),
                     PagesCompleted = table.Column<int>(type: "integer", nullable: false),
+                    StoryVersionId = table.Column<int>(type: "integer", nullable: true),
+                    ChildAccessCredentialId = table.Column<int>(type: "integer", nullable: true),
+                    SupervisorSessionId = table.Column<int>(type: "integer", nullable: true),
+                    ForceExitRequestedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
@@ -1429,15 +1753,33 @@ namespace StoryPlatform.Infrastructure.Migrations
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
+                        name: "FK_reading_sessions_child_access_credentials_ChildAccessCreden~",
+                        column: x => x.ChildAccessCredentialId,
+                        principalTable: "child_access_credentials",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
                         name: "FK_reading_sessions_child_profiles_ChildProfileId",
                         column: x => x.ChildProfileId,
                         principalTable: "child_profiles",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
+                        name: "FK_reading_sessions_refresh_tokens_SupervisorSessionId",
+                        column: x => x.SupervisorSessionId,
+                        principalTable: "refresh_tokens",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
                         name: "FK_reading_sessions_stories_StoryId",
                         column: x => x.StoryId,
                         principalTable: "stories",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_reading_sessions_story_versions_StoryVersionId",
+                        column: x => x.StoryVersionId,
+                        principalTable: "story_versions",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
                 });
@@ -1542,6 +1884,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_assignment_recipients_CancelledByUserId",
+                table: "assignment_recipients",
+                column: "CancelledByUserId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_assignment_recipients_ChildProfileId",
                 table: "assignment_recipients",
                 column: "ChildProfileId");
@@ -1575,6 +1922,17 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "IX_badges_ChildProfileId",
                 table: "badges",
                 column: "ChildProfileId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_child_access_credentials_ChildProfileId",
+                table: "child_access_credentials",
+                column: "ChildProfileId",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_child_access_credentials_CreatedByUserId",
+                table: "child_access_credentials",
+                column: "CreatedByUserId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_child_profile_version_history_AppliedByUserId",
@@ -1634,6 +1992,21 @@ namespace StoryPlatform.Infrastructure.Migrations
                 column: "CreatedByAdminId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_content_reports_ReporterUserId",
+                table: "content_reports",
+                column: "ReporterUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_content_reports_ReviewedByUserId",
+                table: "content_reports",
+                column: "ReviewedByUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_content_reports_StoryId",
+                table: "content_reports",
+                column: "StoryId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_data_requests_ChildProfileId",
                 table: "data_requests",
                 column: "ChildProfileId");
@@ -1642,6 +2015,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "IX_data_requests_RequestedByUserId",
                 table: "data_requests",
                 column: "RequestedByUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_data_requests_ResolvedByUserId",
+                table: "data_requests",
+                column: "ResolvedByUserId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_discussion_questions_StoryVersionId",
@@ -1685,14 +2063,14 @@ namespace StoryPlatform.Infrastructure.Migrations
                 column: "StoryVersionId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_o2o_assessments_AssignmentId",
-                table: "o2o_assessments",
-                column: "AssignmentId");
+                name: "IX_notifications_RecipientUserId",
+                table: "notifications",
+                column: "RecipientUserId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_o2o_assessments_ChildProfileId",
+                name: "IX_o2o_assessments_AssignmentRecipientId",
                 table: "o2o_assessments",
-                column: "ChildProfileId");
+                column: "AssignmentRecipientId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_o2o_assessments_TeacherUserId",
@@ -1764,6 +2142,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                 column: "CreatedByUserId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_organizations_ReactivatedByAdminId",
+                table: "organizations",
+                column: "ReactivatedByAdminId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_organizations_SuspendedByAdminId",
                 table: "organizations",
                 column: "SuspendedByAdminId");
@@ -1772,6 +2155,27 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "IX_organizations_VerifiedByAdminId",
                 table: "organizations",
                 column: "VerifiedByAdminId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_payment_transactions_OrganizationId",
+                table: "payment_transactions",
+                column: "OrganizationId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_payment_transactions_PayerUserId",
+                table: "payment_transactions",
+                column: "PayerUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_payment_transactions_PlanId",
+                table: "payment_transactions",
+                column: "PlanId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_payment_transactions_TransactionCode",
+                table: "payment_transactions",
+                column: "TransactionCode",
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_prompt_catalog_versions_CreatedByAdminId",
@@ -1810,6 +2214,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                 column: "AssignmentRecipientId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_reading_sessions_ChildAccessCredentialId",
+                table: "reading_sessions",
+                column: "ChildAccessCredentialId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_reading_sessions_ChildProfileId",
                 table: "reading_sessions",
                 column: "ChildProfileId");
@@ -1818,6 +2227,16 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "IX_reading_sessions_StoryId",
                 table: "reading_sessions",
                 column: "StoryId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_reading_sessions_StoryVersionId",
+                table: "reading_sessions",
+                column: "StoryVersionId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_reading_sessions_SupervisorSessionId",
+                table: "reading_sessions",
+                column: "SupervisorSessionId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_recommendation_reviews_RecommendationId",
@@ -1838,6 +2257,17 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "IX_recommendations_LearningInsightId",
                 table: "recommendations",
                 column: "LearningInsightId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_refresh_tokens_TokenHash",
+                table: "refresh_tokens",
+                column: "TokenHash",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_refresh_tokens_UserAccountId",
+                table: "refresh_tokens",
+                column: "UserAccountId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_safety_policies_ChildProfileId",
@@ -1919,6 +2349,25 @@ namespace StoryPlatform.Infrastructure.Migrations
                 column: "StoryId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_story_generation_requests_HandoffJobId",
+                table: "story_generation_requests",
+                column: "HandoffJobId",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_story_generation_requests_StoryId",
+                table: "story_generation_requests",
+                column: "StoryId",
+                unique: true,
+                filter: "\"Status\" IN ('PendingInput', 'CheckingInput', 'InputAccepted') AND \"IsDeleted\" = false");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_story_generation_requests_SubmittedByUserId_IdempotencyKey",
+                table: "story_generation_requests",
+                columns: new[] { "SubmittedByUserId", "IdempotencyKey" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_story_versions_EditorUserId",
                 table: "story_versions",
                 column: "EditorUserId");
@@ -1985,6 +2434,16 @@ namespace StoryPlatform.Infrastructure.Migrations
                 column: "ReadingSessionId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_token_quota_configs_ChildProfileId",
+                table: "token_quota_configs",
+                column: "ChildProfileId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_token_quota_configs_OrganizationId",
+                table: "token_quota_configs",
+                column: "OrganizationId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_user_accounts_Email",
                 table: "user_accounts",
                 column: "Email",
@@ -2033,6 +2492,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "class_group_members");
 
             migrationBuilder.DropTable(
+                name: "content_reports");
+
+            migrationBuilder.DropTable(
                 name: "data_requests");
 
             migrationBuilder.DropTable(
@@ -2048,6 +2510,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "media_assets");
 
             migrationBuilder.DropTable(
+                name: "notifications");
+
+            migrationBuilder.DropTable(
                 name: "o2o_assessments");
 
             migrationBuilder.DropTable(
@@ -2058,6 +2523,9 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "organization_permissions");
+
+            migrationBuilder.DropTable(
+                name: "payment_transactions");
 
             migrationBuilder.DropTable(
                 name: "quiz_attempts");
@@ -2078,13 +2546,16 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "story_categories");
 
             migrationBuilder.DropTable(
-                name: "story_generation_jobs");
+                name: "story_generation_requests");
 
             migrationBuilder.DropTable(
                 name: "supervision_permissions");
 
             migrationBuilder.DropTable(
                 name: "telemetry_logs");
+
+            migrationBuilder.DropTable(
+                name: "token_quota_configs");
 
             migrationBuilder.DropTable(
                 name: "vocabulary_notebook_entries");
@@ -2097,6 +2568,9 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "organization_memberships");
+
+            migrationBuilder.DropTable(
+                name: "subscription_plans");
 
             migrationBuilder.DropTable(
                 name: "quiz_items");
@@ -2114,7 +2588,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "content_categories");
 
             migrationBuilder.DropTable(
-                name: "prompt_catalog_versions");
+                name: "story_generation_jobs");
 
             migrationBuilder.DropTable(
                 name: "supervision_relationships");
@@ -2129,10 +2603,19 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "learning_insights");
 
             migrationBuilder.DropTable(
+                name: "prompt_catalog_versions");
+
+            migrationBuilder.DropTable(
                 name: "supervision_invitations");
 
             migrationBuilder.DropTable(
                 name: "assignment_recipients");
+
+            migrationBuilder.DropTable(
+                name: "child_access_credentials");
+
+            migrationBuilder.DropTable(
+                name: "refresh_tokens");
 
             migrationBuilder.DropTable(
                 name: "story_versions");

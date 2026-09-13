@@ -4,11 +4,8 @@ namespace StoryPlatform.Domain.Entities;
 
 public class O2OAssessment : BaseEntity
 {
-    public int AssignmentId { get; set; }
-    public virtual Assignment? Assignment { get; set; }
-
-    public int ChildProfileId { get; set; }
-    public virtual ChildProfile? ChildProfile { get; set; }
+    public int AssignmentRecipientId { get; set; }
+    public virtual AssignmentRecipient? AssignmentRecipient { get; set; }
 
     public int TeacherUserId { get; set; }
     public virtual UserAccount? TeacherUser { get; set; }

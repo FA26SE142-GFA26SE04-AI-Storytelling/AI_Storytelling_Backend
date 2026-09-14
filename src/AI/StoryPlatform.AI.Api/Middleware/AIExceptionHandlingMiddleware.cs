@@ -1,4 +1,5 @@
 using System.Net;
+using StoryPlatform.AI.Application.OutlineGeneration;
 
 namespace StoryPlatform.AI.Api.Middleware;
 
@@ -18,6 +19,11 @@ public sealed class AIExceptionHandlingMiddleware
         try
         {
             await _next(context);
+        }
+        catch (OutlineRejectedException exception)
+        {
+            _logger.LogWarning(exception, "Generated outline failed output safety validation: {ReasonCode}.", exception.ReasonCode);
+            await WriteErrorAsync(context, HttpStatusCode.UnprocessableEntity, exception.Message, exception.ReasonCode);
         }
         catch (ArgumentException exception)
         {
@@ -41,9 +47,13 @@ public sealed class AIExceptionHandlingMiddleware
         }
     }
 
-    private static async Task WriteErrorAsync(HttpContext context, HttpStatusCode statusCode, string message)
+    private static async Task WriteErrorAsync(
+        HttpContext context,
+        HttpStatusCode statusCode,
+        string message,
+        string? errorCode = null)
     {
         context.Response.StatusCode = (int)statusCode;
-        await context.Response.WriteAsJsonAsync(new { error = message });
+        await context.Response.WriteAsJsonAsync(new { errorCode, error = message });
     }
 }

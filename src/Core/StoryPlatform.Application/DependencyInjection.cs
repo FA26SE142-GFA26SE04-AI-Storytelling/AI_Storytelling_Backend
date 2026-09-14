@@ -6,6 +6,9 @@ using StoryPlatform.Application.Features.AIStoryInput.Interfaces;
 using StoryPlatform.Application.Features.AIStoryInput.Services;
 using StoryPlatform.Application.Features.Stories.Interfaces;
 using StoryPlatform.Application.Features.Stories.Services;
+using StoryPlatform.Application.Features.Outline.Guardrails;
+using StoryPlatform.Application.Features.Outline.Interfaces;
+using StoryPlatform.Application.Features.Outline.Services;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Services;
 using StoryPlatform.Application.Features.ChildProfiles.ClassGroups.Interfaces;
@@ -36,6 +39,10 @@ public static class DependencyInjection
         services.AddScoped<IClassGroupService, ClassGroupService>();
         services.AddScoped<IChildAccessCredentialService, ChildAccessCredentialService>();
         services.AddSingleton<IInputGuardrail, RuleBasedInputGuardrail>();
+        services.AddScoped<OutlineService>();
+        services.AddScoped<IOutlineService>(provider => provider.GetRequiredService<OutlineService>());
+        services.AddScoped<IOutlineJobProcessor>(provider => provider.GetRequiredService<OutlineService>());
+        services.AddSingleton<IOutlineReviewGuardrail, RuleBasedOutlineReviewGuardrail>();
 
         return services;
     }

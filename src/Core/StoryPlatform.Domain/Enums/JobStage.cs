@@ -9,5 +9,11 @@ public enum JobStage
     Approved = 5,
     MediaProcessing = 6,
     Ready = 7,
-    Rejected = 8
+    Rejected = 8,
+    OutlinePending = 10,
+    OutlineGenerating = 11,
+    OutlineGenerated = 12,
+    OutlineFailed = 14,
+    OutlineRejected = 15,
+    ContentPending = 20
 }

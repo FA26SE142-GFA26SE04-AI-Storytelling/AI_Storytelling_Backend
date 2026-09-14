@@ -41,6 +41,16 @@ public class StoryVersionConfiguration : IEntityTypeConfiguration<StoryVersion>
             .HasForeignKey(x => x.EditorUserId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(x => x.OutlineApprovedByUser)
+            .WithMany()
+            .HasForeignKey(x => x.OutlineApprovedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(x => new { x.StoryId, x.VersionNo }).IsUnique();
+        builder.HasIndex(x => x.StoryId)
+            .IsUnique()
+            .HasFilter("\"IsCurrent\" = true AND \"IsDeleted\" = false");
+
         builder.HasQueryFilter(x => !x.IsDeleted);
     }
 }

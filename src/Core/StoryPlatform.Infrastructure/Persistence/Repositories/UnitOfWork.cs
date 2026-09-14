@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.EntityFrameworkCore;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Infrastructure.Persistence;
 
@@ -40,6 +41,20 @@ public class UnitOfWork : IUnitOfWork
             return;
         }
         _currentTransaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+    }
+
+    public async Task AcquireTransactionLockAsync(int resourceId, CancellationToken cancellationToken = default)
+    {
+        if (_currentTransaction is null)
+        {
+            throw new InvalidOperationException("A transaction must be active before acquiring a workflow lock.");
+        }
+
+        const long storyLockNamespace = 0x53544F5200000000L;
+        var lockKey = storyLockNamespace | (uint)resourceId;
+        await _context.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock({lockKey})",
+            cancellationToken);
     }
 
     public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)

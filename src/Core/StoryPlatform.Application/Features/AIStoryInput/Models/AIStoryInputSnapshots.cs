@@ -29,4 +29,7 @@ public sealed record AIStoryInputContextSnapshot(
     IReadOnlyList<string> Interests,
     IReadOnlyList<string> AllowedCategoryCodes,
     IReadOnlyList<string> RestrictedCategoryCodes,
-    IReadOnlyList<string> BlockedCategoryCodes);
+    IReadOnlyList<string> BlockedCategoryCodes,
+    IReadOnlyList<string>? AllowedCategoryTerms = null,
+    IReadOnlyList<string>? RestrictedCategoryTerms = null,
+    IReadOnlyList<string>? BlockedCategoryTerms = null);

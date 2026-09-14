@@ -10,3 +10,16 @@ public interface IAIStoryGenerationClient
     Task<RefineStoryResponse> RefineStoryAsync(RefineStoryRequest request, CancellationToken cancellationToken = default);
     Task<EvaluateStoryResponse> EvaluateStoryAsync(EvaluateStoryRequest request, CancellationToken cancellationToken = default);
 }
+
+public sealed class AIServiceRequestException : Exception
+{
+    public AIServiceRequestException(int statusCode, string errorCode, string message)
+        : base(message)
+    {
+        StatusCode = statusCode;
+        ErrorCode = errorCode;
+    }
+
+    public int StatusCode { get; }
+    public string ErrorCode { get; }
+}

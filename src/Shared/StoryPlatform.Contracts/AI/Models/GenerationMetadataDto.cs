@@ -9,6 +9,7 @@ public sealed record GenerationMetadataDto
     public int InputTokens { get; init; }
     public int OutputTokens { get; init; }
     public long LatencyMs { get; init; }
+    public int AttemptCount { get; init; } = 1;
     public int RefinementCount { get; init; }
     public IReadOnlyList<string> PromptVersions { get; init; } = [];
     public IReadOnlyList<GenerationAttemptMetadataDto> Attempts { get; init; } = [];

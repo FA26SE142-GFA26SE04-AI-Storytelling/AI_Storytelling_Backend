@@ -5,7 +5,9 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Application.Abstractions.Communication;
+using StoryPlatform.Application.Features.Outline.Interfaces;
 using StoryPlatform.Infrastructure.AI;
+using StoryPlatform.Infrastructure.BackgroundServices;
 using StoryPlatform.Infrastructure.Communication;
 using StoryPlatform.Infrastructure.Persistence;
 using StoryPlatform.Infrastructure.Persistence.Repositories;
@@ -39,6 +41,9 @@ public static class DependencyInjection
 
         services.Configure<AIServiceOptions>(configuration.GetSection(AIServiceOptions.SectionName));
         services.AddHttpClient<IAIStoryGenerationClient, AIStoryGenerationClient>();
+        services.Configure<OutlineWorkerOptions>(configuration.GetSection(OutlineWorkerOptions.SectionName));
+        services.AddSingleton<IOutlineJobFailureFinalizer, OutlineJobFailureFinalizer>();
+        services.AddHostedService<OutlineGenerationWorker>();
 
         return services;
     }

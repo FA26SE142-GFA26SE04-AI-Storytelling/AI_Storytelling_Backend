@@ -17,15 +17,18 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ISupervisionAccessGuard _accessGuard;
     private readonly IPasswordHasher _passwordHasher;
+    private readonly IJwtTokenGenerator _jwtTokenGenerator;
 
     public ChildAccessCredentialService(
         IUnitOfWork unitOfWork,
         ISupervisionAccessGuard accessGuard,
-        IPasswordHasher passwordHasher)
+        IPasswordHasher passwordHasher,
+        IJwtTokenGenerator jwtTokenGenerator)
     {
         _unitOfWork = unitOfWork;
         _accessGuard = accessGuard;
         _passwordHasher = passwordHasher;
+        _jwtTokenGenerator = jwtTokenGenerator;
     }
 
     public async Task SetPinAsync(
@@ -111,7 +114,9 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
         return new ChildSessionDto
         {
             ChildProfileId = credential.ChildProfileId,
-            AvatarId = credential.AvatarId
+            AvatarId = credential.AvatarId,
+            AccessToken = _jwtTokenGenerator.GenerateChildAccessToken(credential.ChildProfileId),
+            ExpiresInSeconds = _jwtTokenGenerator.ChildTokenExpiresInSeconds
         };
     }
 
@@ -150,6 +155,24 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
             credentialRepo.Delete(credential);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
         }
+    }
+
+    public async Task<ChildSessionProfileDto> GetMySessionProfileAsync(
+        int childProfileId, CancellationToken cancellationToken = default)
+    {
+        var profile = await _unitOfWork.Repository<ChildProfile>()
+            .GetByIdAsync(childProfileId, cancellationToken);
+        if (profile == null)
+        {
+            throw new NotFoundException("Hồ sơ trẻ", childProfileId);
+        }
+
+        return new ChildSessionProfileDto
+        {
+            ChildProfileId = profile.Id,
+            Nickname = profile.Nickname,
+            AgeBand = profile.AgeBand.ToString()
+        };
     }
 
     private static void ValidateCredential(string avatarId, string pin)

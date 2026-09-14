@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Linq.Expressions;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -30,6 +31,18 @@ public class AuthAuthorizationTests
         Assert.Equal("7", jwt.Claims.Single(c => c.Type == "token_version").Value);
     }
 
+    [Fact]
+    public void GenerateChildAccessToken_ContainsProfileIdAndTokenTypeWithoutAdultClaims()
+    {
+        var generator = new JwtTokenGenerator(Options.Create(new JwtOptions()));
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(generator.GenerateChildAccessToken(42));
+
+        Assert.Equal("42", jwt.Claims.Single(claim => claim.Type == JwtRegisteredClaimNames.NameId).Value);
+        Assert.Equal("child", jwt.Claims.Single(claim => claim.Type == "token_type").Value);
+        Assert.DoesNotContain(jwt.Claims, claim => claim.Type == ClaimTypes.Role);
+        Assert.DoesNotContain(jwt.Claims, claim => claim.Type == "token_version");
+    }
+
     [Theory]
     [InlineData("1", "2", AccountStatus.LoggedIn, false, true)]
     [InlineData("1", "1", AccountStatus.LoggedIn, false, false)]
@@ -58,6 +71,83 @@ public class AuthAuthorizationTests
     {
         var user = new UserAccount { Id = 1, TokenVersion = 2, Status = AccountStatus.LoggedIn, Role = UserRole.Teacher };
         await AssertValidationAsync(user, "1", "2", UserRole.Parent, false);
+    }
+
+    [Theory]
+    [InlineData(ChildProfileStatus.Active, false, true)]
+    [InlineData(ChildProfileStatus.Archived, false, false)]
+    [InlineData(ChildProfileStatus.Active, true, false)]
+    public async Task TokenValidation_ChildToken_ValidatesAgainstChildProfileNotUserAccount(
+        ChildProfileStatus status, bool deleted, bool accepted)
+    {
+        var childProfile = new ChildProfile { Id = 42, Status = status, IsDeleted = deleted };
+        var childProfileRepository = new Mock<IGenericRepository<ChildProfile>>();
+        childProfileRepository.Setup(repository => repository.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<ChildProfile, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(childProfile);
+        var userRepository = new Mock<IGenericRepository<UserAccount>>();
+        var unitOfWork = new Mock<IUnitOfWork>();
+        unitOfWork.Setup(work => work.Repository<ChildProfile>()).Returns(childProfileRepository.Object);
+        unitOfWork.Setup(work => work.Repository<UserAccount>()).Returns(userRepository.Object);
+
+        var context = CreateTokenValidatedContext(unitOfWork.Object, new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, "42"),
+            new("token_type", "child")
+        });
+
+        await context.Options.Events.TokenValidated(context);
+
+        Assert.Equal(accepted, context.Result?.Failure == null);
+        userRepository.Verify(repository => repository.FirstOrDefaultAsync(
+            It.IsAny<Expression<Func<UserAccount, bool>>>(), null,
+            It.IsAny<CancellationToken>()), Times.Never);
+        (context.HttpContext.RequestServices as IDisposable)?.Dispose();
+    }
+
+    [Fact]
+    public async Task TokenValidation_ChildToken_MissingProfile_RejectsToken()
+    {
+        var childProfileRepository = new Mock<IGenericRepository<ChildProfile>>();
+        childProfileRepository.Setup(repository => repository.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<ChildProfile, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ChildProfile?)null);
+        var unitOfWork = new Mock<IUnitOfWork>();
+        unitOfWork.Setup(work => work.Repository<ChildProfile>()).Returns(childProfileRepository.Object);
+
+        var context = CreateTokenValidatedContext(unitOfWork.Object, new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, "999"),
+            new("token_type", "child")
+        });
+
+        await context.Options.Events.TokenValidated(context);
+
+        Assert.NotNull(context.Result?.Failure);
+        (context.HttpContext.RequestServices as IDisposable)?.Dispose();
+    }
+
+    private static TokenValidatedContext CreateTokenValidatedContext(
+        IUnitOfWork unitOfWork, IEnumerable<Claim> claims)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(unitOfWork);
+        services.AddJwtAuthentication(new ConfigurationBuilder().Build());
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
+            .Get(JwtBearerDefaults.AuthenticationScheme);
+
+        return new TokenValidatedContext(
+            new DefaultHttpContext { RequestServices = provider },
+            new AuthenticationScheme(
+                JwtBearerDefaults.AuthenticationScheme, null, typeof(JwtBearerHandler)),
+            options)
+        {
+            Principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "Bearer"))
+        };
     }
 
     private static async Task AssertValidationAsync(UserAccount? user, string userId, string? version, UserRole role, bool accepted)

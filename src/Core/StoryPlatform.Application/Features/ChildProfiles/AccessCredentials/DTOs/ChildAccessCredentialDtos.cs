@@ -17,6 +17,8 @@ public class ChildSessionDto
 {
     public int ChildProfileId { get; set; }
     public string AvatarId { get; set; } = string.Empty;
+    public string AccessToken { get; set; } = string.Empty;
+    public long ExpiresInSeconds { get; set; }
 }
 
 public class ChildAccessCredentialDto
@@ -33,4 +35,11 @@ public class LoginWithPinRequestDto
     [Required(ErrorMessage = "PIN không được để trống.")]
     [RegularExpression(@"^\d{4,6}$", ErrorMessage = "PIN phải gồm 4-6 chữ số.")]
     public string Pin { get; set; } = string.Empty;
+}
+
+public class ChildSessionProfileDto
+{
+    public int ChildProfileId { get; set; }
+    public string Nickname { get; set; } = string.Empty;
+    public string AgeBand { get; set; } = string.Empty;
 }

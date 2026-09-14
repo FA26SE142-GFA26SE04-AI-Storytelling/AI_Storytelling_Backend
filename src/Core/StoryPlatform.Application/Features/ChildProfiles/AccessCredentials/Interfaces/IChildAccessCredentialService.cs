@@ -17,4 +17,7 @@ public interface IChildAccessCredentialService
 
     Task RevokeCredentialAsync(
         int childProfileId, int currentUserId, CancellationToken cancellationToken = default);
+
+    Task<ChildSessionProfileDto> GetMySessionProfileAsync(
+        int childProfileId, CancellationToken cancellationToken = default);
 }

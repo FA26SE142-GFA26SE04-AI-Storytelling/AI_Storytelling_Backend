@@ -53,6 +53,19 @@ public class ResendEmailSender : IEmailSender
         return SendAsync(toEmail, subject, html, cancellationToken);
     }
 
+    public Task SendSupervisionInvitationEmailAsync(string toEmail, string inviterName, string invitationCode, CancellationToken cancellationToken = default)
+    {
+        const string subject = "Lời mời giám sát hồ sơ trẻ";
+        var html = $"""
+            <p>Xin chào,</p>
+            <p>{inviterName} vừa mời bạn trở thành người giám sát bổ sung cho một hồ sơ trẻ trên AI Storytelling Platform. Mã mời của bạn là:</p>
+            <p style="font-size:22px;font-weight:bold;letter-spacing:2px;">{invitationCode}</p>
+            <p>Vui lòng đăng nhập và dùng mã này để chấp nhận lời mời. Nếu bạn không mong đợi email này, vui lòng bỏ qua.</p>
+            """;
+
+        return SendAsync(toEmail, subject, html, cancellationToken);
+    }
+
     private async Task SendAsync(string toEmail, string subject, string html, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(_options.ApiKey))

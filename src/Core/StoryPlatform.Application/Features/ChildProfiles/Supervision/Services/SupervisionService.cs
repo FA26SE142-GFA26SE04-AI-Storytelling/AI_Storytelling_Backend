@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Abstractions.Communication;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Application.Common.Exceptions;
@@ -13,15 +14,18 @@ public class SupervisionService : ISupervisionService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ISupervisionAccessGuard _accessGuard;
     private readonly IJwtTokenGenerator _tokenGenerator;
+    private readonly IEmailSender _emailSender;
 
     public SupervisionService(
         IUnitOfWork unitOfWork,
         ISupervisionAccessGuard accessGuard,
-        IJwtTokenGenerator tokenGenerator)
+        IJwtTokenGenerator tokenGenerator,
+        IEmailSender emailSender)
     {
         _unitOfWork = unitOfWork;
         _accessGuard = accessGuard;
         _tokenGenerator = tokenGenerator;
+        _emailSender = emailSender;
     }
 
     public async Task<InvitationDto> CreateInvitationAsync(
@@ -57,6 +61,15 @@ public class SupervisionService : ISupervisionService
         await _unitOfWork.Repository<SupervisionInvitation>()
             .AddAsync(invitation, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        if (email != null)
+        {
+            var inviter = await _unitOfWork.Repository<UserAccount>()
+                .GetByIdAsync(inviterUserId, cancellationToken);
+            var inviterName = inviter?.FullName ?? "Một người dùng AI Storytelling Platform";
+            await _emailSender.SendSupervisionInvitationEmailAsync(
+                email, inviterName, invitation.InvitationCode!, cancellationToken);
+        }
 
         return MapInvitation(invitation);
     }
@@ -305,6 +318,11 @@ public class SupervisionService : ISupervisionService
         }
 
         await _accessGuard.EnsureOwnerAsync(target.ChildProfileId, currentUserId, cancellationToken);
+
+        if (target.SupervisorRole == SupervisorRole.Owner)
+        {
+            return Enum.GetValues<Permission>().Select(permission => permission.ToString()).ToList();
+        }
 
         var permissions = await _unitOfWork.Repository<SupervisionPermission>().FindAsync(
             value => value.SupervisionRelationshipId == supervisionRelationshipId, cancellationToken: cancellationToken);

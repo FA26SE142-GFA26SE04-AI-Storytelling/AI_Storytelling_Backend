@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using Moq;
+using StoryPlatform.Application.Abstractions.Communication;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Application.Common.Exceptions;
@@ -22,6 +23,7 @@ public class SupervisionServiceTests
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<ISupervisionAccessGuard> _guard = new();
     private readonly Mock<IJwtTokenGenerator> _tokenGenerator = new();
+    private readonly Mock<IEmailSender> _emailSender = new();
     private readonly SupervisionService _sut;
 
     public SupervisionServiceTests()
@@ -32,7 +34,8 @@ public class SupervisionServiceTests
         _unitOfWork.Setup(u => u.Repository<UserAccount>()).Returns(_userRepo.Object);
         _unitOfWork.Setup(u => u.Repository<ChildProfile>()).Returns(_profileRepo.Object);
         _tokenGenerator.Setup(t => t.GenerateRefreshToken()).Returns("RANDOM-CODE-0001");
-        _sut = new SupervisionService(_unitOfWork.Object, _guard.Object, _tokenGenerator.Object);
+        _sut = new SupervisionService(
+            _unitOfWork.Object, _guard.Object, _tokenGenerator.Object, _emailSender.Object);
     }
 
     [Fact]
@@ -69,6 +72,46 @@ public class SupervisionServiceTests
         Assert.True(added.ExpiresAt > DateTime.UtcNow.AddDays(6));
         Assert.Equal("Pending", result.Status);
         _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateInvitationAsync_WithInviteeEmail_SendsInvitationEmail()
+    {
+        AllowSupervision();
+        _userRepo.Setup(r => r.GetByIdAsync(2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserAccount { Id = 2, FullName = "Nguyễn Văn A" });
+        _invitationRepo.Setup(r => r.AddAsync(
+                It.IsAny<SupervisionInvitation>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SupervisionInvitation invitation, CancellationToken _) => invitation);
+
+        await _sut.CreateInvitationAsync(1, 2, new CreateInvitationRequestDto
+        {
+            InviteeEmail = "someone@example.com",
+            ExpiresInDays = 7
+        });
+
+        _emailSender.Verify(sender => sender.SendSupervisionInvitationEmailAsync(
+            "someone@example.com", "Nguyễn Văn A", "RANDOM-CODE-0001",
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateInvitationAsync_WithoutInviteeEmail_DoesNotSendEmail()
+    {
+        AllowSupervision();
+        _invitationRepo.Setup(r => r.AddAsync(
+                It.IsAny<SupervisionInvitation>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SupervisionInvitation invitation, CancellationToken _) => invitation);
+
+        await _sut.CreateInvitationAsync(1, 2, new CreateInvitationRequestDto
+        {
+            InviteeEmail = null,
+            ExpiresInDays = 7
+        });
+
+        _emailSender.Verify(sender => sender.SendSupervisionInvitationEmailAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -345,6 +388,29 @@ public class SupervisionServiceTests
 
         Assert.Single(result);
         Assert.Equal("ViewProgress", result[0]);
+    }
+
+    [Fact]
+    public async Task ListPermissionsAsync_TargetIsOwnerRelationship_ReturnsAllSystemPermissions()
+    {
+        var target = new SupervisionRelationship
+        {
+            Id = 20,
+            ChildProfileId = 1,
+            SupervisorUserId = 2,
+            SupervisorRole = SupervisorRole.Owner
+        };
+        _relationshipRepo.Setup(r => r.GetByIdAsync(20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(target);
+        AllowOwner();
+
+        var result = await _sut.ListPermissionsAsync(20, 2);
+
+        var expected = Enum.GetValues<Permission>().Select(permission => permission.ToString()).ToList();
+        Assert.Equal(expected, result);
+        _permissionRepo.Verify(r => r.FindAsync(
+            It.IsAny<Expression<Func<SupervisionPermission, bool>>>(), null,
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     private void AllowSupervision() => _guard

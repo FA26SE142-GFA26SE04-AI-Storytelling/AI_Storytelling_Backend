@@ -11,7 +11,8 @@ public interface IAuthService
     Task VerifyEmailAsync(VerifyEmailRequestDto request, CancellationToken cancellationToken = default);
     Task<AuthResponseDto> RefreshTokenAsync(RefreshTokenRequestDto request, CancellationToken cancellationToken = default);
     Task<UserProfileDto> GetCurrentUserProfileAsync(int userId, CancellationToken cancellationToken = default);
-    Task LogoutAsync(int userId, CancellationToken cancellationToken = default);
+    Task LogoutAsync(int userId, LogoutRequestDto request, CancellationToken cancellationToken = default);
+    Task LogoutAllDevicesAsync(int userId, CancellationToken cancellationToken = default);
     Task ForgotPasswordAsync(ForgotPasswordRequestDto request, CancellationToken cancellationToken = default);
     Task ResetPasswordAsync(ResetPasswordRequestDto request, CancellationToken cancellationToken = default);
     Task ChangePasswordAsync(int userId, ChangePasswordRequestDto request, CancellationToken cancellationToken = default);

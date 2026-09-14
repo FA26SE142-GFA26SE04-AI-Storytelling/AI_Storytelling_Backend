@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.Auth.DTOs;
 
@@ -34,6 +35,7 @@ public class RegisterRequestDto
     public string ConfirmPassword { get; set; } = string.Empty;
 
     public string? PhoneNumber { get; set; }
+    public UserRole Role { get; set; } = UserRole.Parent;
 }
 
 public class UserProfileDto
@@ -100,6 +102,12 @@ public class ChangePasswordRequestDto
     [Required(ErrorMessage = "Xác nhận mật khẩu mới không được để trống.")]
     [Compare(nameof(NewPassword), ErrorMessage = "Mật khẩu xác nhận không khớp.")]
     public string ConfirmPassword { get; set; } = string.Empty;
+}
+
+public class LogoutRequestDto
+{
+    [Required(ErrorMessage = "Refresh token không được để trống.")]
+    public string RefreshToken { get; set; } = string.Empty;
 }
 
 public class VerifyEmailRequestDto

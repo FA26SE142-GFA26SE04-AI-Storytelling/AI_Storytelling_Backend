@@ -3,6 +3,7 @@ using StoryPlatform.AI.Application.Evaluation;
 using StoryPlatform.AI.Application.OutlineGeneration;
 using StoryPlatform.AI.Application.Refinement;
 using StoryPlatform.AI.Application.StoryGeneration;
+using StoryPlatform.AI.Application.ContentGeneration;
 
 namespace StoryPlatform.AI.Application;
 
@@ -15,6 +16,13 @@ public static class DependencyInjection
         services.AddScoped<GenerateStoryHandler>();
         services.AddScoped<RefineStoryHandler>();
         services.AddScoped<EvaluateStoryHandler>();
+        services.AddScoped<StoryContentGenerationExecutor>();
+        services.AddScoped<GenerateStoryContentHandler>();
+        services.AddScoped<RefineStoryContentHandler>();
+        services.AddScoped<GenerateVocabularyHandler>();
+        services.AddScoped<GenerateQuizHandler>();
+        services.AddScoped<GenerateDiscussionHandler>();
+        services.AddScoped<EvaluateContentSafetyHandler>();
         return services;
     }
 }

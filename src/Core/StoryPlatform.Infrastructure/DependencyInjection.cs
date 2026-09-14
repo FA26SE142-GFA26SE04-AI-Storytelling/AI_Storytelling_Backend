@@ -6,6 +6,8 @@ using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Application.Abstractions.Communication;
 using StoryPlatform.Application.Features.Outline.Interfaces;
+using StoryPlatform.Application.Features.ContentGeneration.Interfaces;
+using StoryPlatform.Application.Features.ContentGeneration;
 using StoryPlatform.Infrastructure.AI;
 using StoryPlatform.Infrastructure.BackgroundServices;
 using StoryPlatform.Infrastructure.Communication;
@@ -44,6 +46,12 @@ public static class DependencyInjection
         services.Configure<OutlineWorkerOptions>(configuration.GetSection(OutlineWorkerOptions.SectionName));
         services.AddSingleton<IOutlineJobFailureFinalizer, OutlineJobFailureFinalizer>();
         services.AddHostedService<OutlineGenerationWorker>();
+        services.Configure<ContentGenerationWorkerOptions>(configuration.GetSection(ContentGenerationWorkerOptions.SectionName));
+        var contentOptions = new ContentGenerationOptions();
+        configuration.GetSection(ContentGenerationOptions.SectionName).Bind(contentOptions);
+        services.AddSingleton(contentOptions);
+        services.AddSingleton<IContentGenerationJobFailureFinalizer, ContentGenerationJobFailureFinalizer>();
+        services.AddHostedService<ContentGenerationWorker>();
 
         return services;
     }

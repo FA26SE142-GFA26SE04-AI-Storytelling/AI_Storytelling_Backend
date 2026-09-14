@@ -127,10 +127,23 @@ public class AuthController : BaseApiController
     /// </summary>
     [HttpPost("logout")]
     [Authorize]
-    public async Task<ActionResult<ApiResponse<object?>>> Logout(CancellationToken cancellationToken)
+    public async Task<ActionResult<ApiResponse<object?>>> Logout(
+        [FromBody] LogoutRequestDto request,
+        CancellationToken cancellationToken)
     {
         var userId = GetCurrentUserId();
-        await _authService.LogoutAsync(userId, cancellationToken);
+        await _authService.LogoutAsync(userId, request, cancellationToken);
         return HandleResult<object?>(null, "Đăng xuất thành công.");
+    }
+
+    /// <summary>
+    /// Đăng xuất khỏi mọi thiết bị và thu hồi toàn bộ token của tài khoản.
+    /// </summary>
+    [HttpPost("logout-all-devices")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<object?>>> LogoutAllDevices(CancellationToken cancellationToken)
+    {
+        await _authService.LogoutAllDevicesAsync(GetCurrentUserId(), cancellationToken);
+        return HandleResult<object?>(null, "Đã đăng xuất khỏi mọi thiết bị.");
     }
 }

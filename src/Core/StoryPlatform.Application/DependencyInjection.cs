@@ -18,6 +18,10 @@ using StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.Services;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.Services;
+using StoryPlatform.Application.Features.ContentCategories.Interfaces;
+using StoryPlatform.Application.Features.ContentCategories.Services;
+using StoryPlatform.Application.Features.Notifications.Interfaces;
+using StoryPlatform.Application.Features.Notifications.Services;
 
 namespace StoryPlatform.Application;
 
@@ -35,6 +39,8 @@ public static class DependencyInjection
         services.AddScoped<ISupervisionService, SupervisionService>();
         services.AddScoped<IClassGroupService, ClassGroupService>();
         services.AddScoped<IChildAccessCredentialService, ChildAccessCredentialService>();
+        services.AddScoped<IContentCategoryService, ContentCategoryService>();
+        services.AddScoped<INotificationService, NotificationService>();
         services.AddSingleton<IInputGuardrail, RuleBasedInputGuardrail>();
 
         return services;

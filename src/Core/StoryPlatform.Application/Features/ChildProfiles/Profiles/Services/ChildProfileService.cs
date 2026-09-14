@@ -116,7 +116,7 @@ public class ChildProfileService : IChildProfileService
         if (!hasLearningProfile)
         {
             throw new BadRequestException(
-                "Hồ sơ trẻ chưa có Learning Profile (Bước 1.3) — không thể kích hoạt.");
+                "Hồ sơ trẻ chưa có Learning Profile không thể kích hoạt.");
         }
 
         var hasSafetyPolicy = await _unitOfWork.Repository<SafetyPolicy>()
@@ -124,7 +124,7 @@ public class ChildProfileService : IChildProfileService
         if (!hasSafetyPolicy)
         {
             throw new BadRequestException(
-                "Hồ sơ trẻ chưa có Safety Policy (Bước 1.4) — không thể kích hoạt.");
+                "Hồ sơ trẻ chưa có Safety Policy — không thể kích hoạt.");
         }
 
         // BR-1.9 áp dụng thống nhất cho mọi scope: phải có ít nhất một Parent đang giám sát.

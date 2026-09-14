@@ -34,6 +34,22 @@ public class SafetyPolicyController : BaseApiController
     }
 
     /// <summary>
+    /// Tạo mới Safety Policy của một hồ sơ trẻ (dùng cùng logic upsert với PUT) — yêu cầu quyền ManageSafetySettings.
+    /// </summary>
+    [HttpPost("{childProfileId:int}")]
+    [Authorize(Roles = "Parent,Teacher")]
+    public async Task<ActionResult<ApiResponse<SafetyPolicyDto>>> CreateSafetyPolicy(
+        int childProfileId,
+        [FromBody] SetSafetyPolicyRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _safetyPolicyService.SetSafetyPolicyAsync(
+            childProfileId, GetCurrentUserId(), request, cancellationToken);
+
+        return HandleResult(result, "Tạo Safety Policy thành công.");
+    }
+
+    /// <summary>
     /// Lấy Safety Policy hiện tại của hồ sơ trẻ.
     /// </summary>
     [HttpGet("{childProfileId:int}")]

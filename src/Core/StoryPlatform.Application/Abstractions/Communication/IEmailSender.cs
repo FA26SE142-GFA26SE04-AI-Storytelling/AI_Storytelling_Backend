@@ -7,4 +7,5 @@ public interface IEmailSender
 {
     Task SendPasswordResetEmailAsync(string toEmail, string toName, string rawResetToken, CancellationToken cancellationToken = default);
     Task SendEmailVerificationEmailAsync(string toEmail, string toName, string rawVerificationToken, CancellationToken cancellationToken = default);
+    Task SendSupervisionInvitationEmailAsync(string toEmail, string inviterName, string invitationCode, CancellationToken cancellationToken = default);
 }

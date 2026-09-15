@@ -13,6 +13,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\AI\StoryPlatform.AI.Application\StoryPlatform.AI.Application.csproj" />
+    <ProjectReference Include="..\..\src\AI\StoryPlatform.AI.Infrastructure\StoryPlatform.AI.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Shared\StoryPlatform.Contracts\StoryPlatform.Contracts.csproj" />
   </ItemGroup>
 </Project>

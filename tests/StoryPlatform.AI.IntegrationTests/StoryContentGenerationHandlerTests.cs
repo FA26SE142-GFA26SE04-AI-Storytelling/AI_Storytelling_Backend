@@ -49,5 +49,10 @@ public sealed class StoryContentGenerationHandlerTests
     {
         public PromptTemplate GetActive(PromptType promptType, string language, string ageBand) =>
             new("story-content-test-v1", "Generate {{context}}");
+
+        public PromptTemplate GetActiveForOutline(
+            GenerateOutlineRequest request,
+            PromptType promptType = PromptType.Outline) =>
+            GetActive(promptType, request.Language, request.AgeBand);
     }
 }

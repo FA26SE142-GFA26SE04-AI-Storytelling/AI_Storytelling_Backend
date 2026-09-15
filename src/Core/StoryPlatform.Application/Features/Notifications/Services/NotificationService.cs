@@ -73,6 +73,32 @@ public class NotificationService : INotificationService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task MarkAllAsReadAsync(
+        int currentUserId, CancellationToken cancellationToken = default)
+    {
+        var repository = _unitOfWork.Repository<Notification>();
+        var unread = await repository.FindAsync(
+            notification => notification.RecipientUserId == currentUserId
+                            && notification.Status != NotificationReadStatus.Read,
+            cancellationToken: cancellationToken);
+
+        if (unread.Count == 0)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        foreach (var notification in unread)
+        {
+            notification.Status = NotificationReadStatus.Read;
+            notification.ReadAt = now;
+            notification.UpdatedAt = now;
+            repository.Update(notification);
+        }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task DeleteAsync(
         int notificationId, int currentUserId, CancellationToken cancellationToken = default)
     {

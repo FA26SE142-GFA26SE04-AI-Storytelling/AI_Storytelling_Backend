@@ -6,7 +6,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using StoryPlatform.Infrastructure.Security;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -16,10 +15,25 @@ namespace StoryPlatform.Api.Extensions;
 
 public static class ServiceExtensions
 {
+    private const int MinimumJwtSecretKeyLength = 32;
+
     public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)
     {
-        var jwtOptions = configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
-        var key = Encoding.UTF8.GetBytes(jwtOptions.SecretKey);
+        var secretKey = configuration["JwtSettings:SecretKey"];
+        if (string.IsNullOrWhiteSpace(secretKey)
+            || secretKey.Length < MinimumJwtSecretKeyLength)
+        {
+            throw new InvalidOperationException(
+                $"'JwtSettings:SecretKey' phải có ít nhất {MinimumJwtSecretKeyLength} ký tự và không được để trống.");
+        }
+
+        var issuer = GetRequiredJwtSetting(configuration, "Issuer");
+        var audience = GetRequiredJwtSetting(configuration, "Audience");
+        ValidatePositiveJwtInteger(configuration, "ExpiryMinutes");
+        ValidatePositiveJwtInteger(configuration, "RefreshTokenExpiryDays");
+        ValidatePositiveJwtInteger(configuration, "ChildTokenExpiryMinutes");
+
+        var key = Encoding.UTF8.GetBytes(secretKey);
 
         services.AddAuthentication(options =>
         {
@@ -35,9 +49,9 @@ public static class ServiceExtensions
                 ValidateIssuerSigningKey = true,
                 IssuerSigningKey = new SymmetricSecurityKey(key),
                 ValidateIssuer = true,
-                ValidIssuer = jwtOptions.Issuer,
+                ValidIssuer = issuer,
                 ValidateAudience = true,
-                ValidAudience = jwtOptions.Audience,
+                ValidAudience = audience,
                 ValidateLifetime = true,
                 ClockSkew = TimeSpan.Zero
             };
@@ -106,6 +120,27 @@ public static class ServiceExtensions
         });
 
         return services;
+    }
+
+    private static string GetRequiredJwtSetting(IConfiguration configuration, string settingName)
+    {
+        var key = $"JwtSettings:{settingName}";
+        var value = configuration[key];
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException($"Thiếu cấu hình bắt buộc '{key}'.");
+        }
+
+        return value;
+    }
+
+    private static void ValidatePositiveJwtInteger(IConfiguration configuration, string settingName)
+    {
+        var key = $"JwtSettings:{settingName}";
+        if (!int.TryParse(configuration[key], out var value) || value <= 0)
+        {
+            throw new InvalidOperationException($"'{key}' phải là số nguyên dương.");
+        }
     }
 
     public static IServiceCollection AddSwaggerWithJwt(this IServiceCollection services)

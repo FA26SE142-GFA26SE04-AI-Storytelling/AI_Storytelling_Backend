@@ -9,7 +9,6 @@ namespace StoryPlatform.Api.Controllers;
 /// <summary>
 /// Quản lý danh mục nội dung dùng chung.
 /// </summary>
-[Authorize(Roles = "Administrator")]
 public class ContentCategoryController : BaseApiController
 {
     private readonly IContentCategoryService _contentCategoryService;
@@ -23,6 +22,7 @@ public class ContentCategoryController : BaseApiController
     /// Tạo mới một danh mục nội dung.
     /// </summary>
     [HttpPost]
+    [Authorize(Roles = "Administrator")]
     public async Task<ActionResult<ApiResponse<ContentCategoryDto>>> CreateContentCategory(
         [FromBody] CreateContentCategoryRequestDto request, CancellationToken cancellationToken)
     {
@@ -35,6 +35,7 @@ public class ContentCategoryController : BaseApiController
     /// Cập nhật tên hiển thị và trạng thái hoạt động của danh mục nội dung.
     /// </summary>
     [HttpPut("{contentCategoryId:int}")]
+    [Authorize(Roles = "Administrator")]
     public async Task<ActionResult<ApiResponse<ContentCategoryDto>>> UpdateContentCategory(
         int contentCategoryId, [FromBody] UpdateContentCategoryRequestDto request,
         CancellationToken cancellationToken)
@@ -47,6 +48,7 @@ public class ContentCategoryController : BaseApiController
     /// Xoá hẳn một danh mục nội dung.
     /// </summary>
     [HttpDelete("{contentCategoryId:int}")]
+    [Authorize(Roles = "Administrator")]
     public async Task<ActionResult<ApiResponse<object?>>> DeleteContentCategory(
         int contentCategoryId, CancellationToken cancellationToken)
     {
@@ -58,6 +60,7 @@ public class ContentCategoryController : BaseApiController
     /// Lấy chi tiết một danh mục nội dung theo mã định danh.
     /// </summary>
     [HttpGet("{contentCategoryId:int}")]
+    [Authorize]
     public async Task<ActionResult<ApiResponse<ContentCategoryDto>>> GetContentCategory(
         int contentCategoryId, CancellationToken cancellationToken)
     {
@@ -69,6 +72,7 @@ public class ContentCategoryController : BaseApiController
     /// Lấy danh sách toàn bộ danh mục nội dung.
     /// </summary>
     [HttpGet]
+    [Authorize]
     public async Task<ActionResult<ApiResponse<List<ContentCategoryDto>>>> ListContentCategories(
         CancellationToken cancellationToken)
     {

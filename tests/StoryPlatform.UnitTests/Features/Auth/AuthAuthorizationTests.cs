@@ -21,10 +21,12 @@ namespace StoryPlatform.UnitTests.Features.Auth;
 
 public class AuthAuthorizationTests
 {
+    private const string TestJwtSecretKey = "UnitTestJwtSecretKeyValue1234567890ABCDE";
+
     [Fact]
     public void GenerateAccessToken_ContainsCurrentTokenVersion()
     {
-        var generator = new JwtTokenGenerator(Options.Create(new JwtOptions()));
+        var generator = new JwtTokenGenerator(BuildValidJwtConfiguration());
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(generator.GenerateAccessToken(
             new UserAccount { Id = 1, TokenVersion = 7, Role = UserRole.Teacher }));
 
@@ -34,7 +36,7 @@ public class AuthAuthorizationTests
     [Fact]
     public void GenerateChildAccessToken_ContainsProfileIdAndTokenTypeWithoutAdultClaims()
     {
-        var generator = new JwtTokenGenerator(Options.Create(new JwtOptions()));
+        var generator = new JwtTokenGenerator(BuildValidJwtConfiguration());
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(generator.GenerateChildAccessToken(42));
 
         Assert.Equal("42", jwt.Claims.Single(claim => claim.Type == JwtRegisteredClaimNames.NameId).Value);
@@ -135,7 +137,7 @@ public class AuthAuthorizationTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(unitOfWork);
-        services.AddJwtAuthentication(new ConfigurationBuilder().Build());
+        services.AddJwtAuthentication(BuildValidJwtConfiguration());
         var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
             .Get(JwtBearerDefaults.AuthenticationScheme);
@@ -161,7 +163,7 @@ public class AuthAuthorizationTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(unitOfWork.Object);
-        services.AddJwtAuthentication(new ConfigurationBuilder().Build());
+        services.AddJwtAuthentication(BuildValidJwtConfiguration());
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>().Get(JwtBearerDefaults.AuthenticationScheme);
         var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, userId), new(ClaimTypes.Role, role.ToString()) };
@@ -213,4 +215,17 @@ public class AuthAuthorizationTests
             Assert.NotEmpty(typeof(StoryController).GetMethod(action)!.GetCustomAttributes(typeof(AllowAnonymousAttribute), true));
         }
     }
+
+    private static IConfiguration BuildValidJwtConfiguration() =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["JwtSettings:SecretKey"] = TestJwtSecretKey,
+                ["JwtSettings:Issuer"] = "StoryPlatform",
+                ["JwtSettings:Audience"] = "StoryPlatformClient",
+                ["JwtSettings:ExpiryMinutes"] = "120",
+                ["JwtSettings:RefreshTokenExpiryDays"] = "7",
+                ["JwtSettings:ChildTokenExpiryMinutes"] = "240"
+            })
+            .Build();
 }

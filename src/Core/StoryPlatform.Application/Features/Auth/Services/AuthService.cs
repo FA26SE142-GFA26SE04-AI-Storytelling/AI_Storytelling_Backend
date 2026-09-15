@@ -297,6 +297,46 @@ public class AuthService : IAuthService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task ResendVerificationEmailAsync(
+        ResendVerificationEmailRequestDto request, CancellationToken cancellationToken = default)
+    {
+        const int CooldownSeconds = 60;
+
+        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+        var userRepo = _unitOfWork.Repository<UserAccount>();
+        var user = await userRepo.FirstOrDefaultAsync(
+            account => account.Email.ToLower() == normalizedEmail,
+            cancellationToken: cancellationToken);
+
+        // Luôn im lặng bỏ qua để không tiết lộ email có tồn tại hoặc đã xác thực hay chưa.
+        if (user == null || user.Status != AccountStatus.Registered)
+        {
+            return;
+        }
+
+        var cooldownStart = DateTime.UtcNow.AddSeconds(-CooldownSeconds);
+        var sentRecently = await _unitOfWork.Repository<AuditLog>().ExistsAsync(
+            log => log.EntityType == nameof(UserAccount)
+                   && log.EntityId == user.Id
+                   && log.Action == "RESEND_VERIFICATION_EMAIL"
+                   && log.OccurredAt > cooldownStart,
+            cancellationToken);
+        if (sentRecently)
+        {
+            return;
+        }
+
+        var rawVerificationToken = _jwtTokenGenerator.GenerateRefreshToken();
+        user.EmailVerificationTokenHash = TokenHasher.Hash(rawVerificationToken);
+        user.EmailVerificationTokenExpiresAt = DateTime.UtcNow.AddHours(24);
+        userRepo.Update(user);
+        await WriteAuthAuditAsync(user.Id, "RESEND_VERIFICATION_EMAIL", cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _emailSender.SendEmailVerificationEmailAsync(
+            user.Email, user.FullName, rawVerificationToken, cancellationToken);
+    }
+
     public async Task ResetPasswordAsync(ResetPasswordRequestDto request, CancellationToken cancellationToken = default)
     {
         if (request.NewPassword != request.ConfirmPassword)
@@ -376,6 +416,46 @@ public class AuthService : IAuthService
         user.UpdatedAt = DateTime.UtcNow;
 
         userRepo.Update(user);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<List<SessionDto>> ListSessionsAsync(
+        int userId, CancellationToken cancellationToken = default)
+    {
+        var tokens = await _unitOfWork.Repository<RefreshToken>().FindAsync(
+            token => token.UserAccountId == userId
+                     && token.RevokedAt == null
+                     && token.ExpiresAt > DateTime.UtcNow,
+            cancellationToken: cancellationToken);
+
+        return tokens
+            .OrderByDescending(token => token.IssuedAt)
+            .Select(token => new SessionDto
+            {
+                Id = token.Id,
+                IssuedAt = token.IssuedAt,
+                ExpiresAt = token.ExpiresAt
+            })
+            .ToList();
+    }
+
+    public async Task RevokeSessionAsync(
+        int userId, int sessionId, CancellationToken cancellationToken = default)
+    {
+        var repository = _unitOfWork.Repository<RefreshToken>();
+        var token = await repository.GetByIdAsync(sessionId, cancellationToken);
+        if (token == null || token.UserAccountId != userId)
+        {
+            throw new NotFoundException("Phiên đăng nhập", sessionId);
+        }
+
+        if (token.RevokedAt != null)
+        {
+            return;
+        }
+
+        token.RevokedAt = DateTime.UtcNow;
+        repository.Update(token);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 

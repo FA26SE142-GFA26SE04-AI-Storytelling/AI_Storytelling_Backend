@@ -23,6 +23,7 @@ public class ChildProfileServiceTests
     private readonly Mock<IGenericRepository<ClassGroupMember>> _memberRepo = new();
     private readonly Mock<IGenericRepository<LearningProfile>> _learningProfileRepo = new();
     private readonly Mock<IGenericRepository<SafetyPolicy>> _safetyPolicyRepo = new();
+    private readonly Mock<IGenericRepository<AuditLog>> _auditLogRepo = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<ISupervisionAccessGuard> _accessGuard = new();
     private readonly ChildProfileService _sut;
@@ -37,11 +38,12 @@ public class ChildProfileServiceTests
         _unitOfWork.Setup(u => u.Repository<ClassGroupMember>()).Returns(_memberRepo.Object);
         _unitOfWork.Setup(u => u.Repository<LearningProfile>()).Returns(_learningProfileRepo.Object);
         _unitOfWork.Setup(u => u.Repository<SafetyPolicy>()).Returns(_safetyPolicyRepo.Object);
+        _unitOfWork.Setup(u => u.Repository<AuditLog>()).Returns(_auditLogRepo.Object);
         _sut = new ChildProfileService(_unitOfWork.Object, _accessGuard.Object);
     }
 
     [Fact]
-    public async Task CreateChildProfileAsync_PersonalScope_CreatesDraftProfileAndOwnerSupervisionInOneSave()
+    public async Task CreateChildProfileAsync_PersonalScope_CreatesDraftProfileOwnerSupervisionAndAudit()
     {
         SetupOwner();
         ChildProfile? profile = null;
@@ -75,7 +77,12 @@ public class ChildProfileServiceTests
         Assert.Equal("Draft", result.Status);
         Assert.Equal("Personal", result.Scope);
         _memberRepo.Verify(r => r.AddAsync(It.IsAny<ClassGroupMember>(), It.IsAny<CancellationToken>()), Times.Never);
-        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _auditLogRepo.Verify(repository => repository.AddAsync(
+            It.Is<AuditLog>(log => log.ActorUserId == 2
+                                   && log.Action == "CREATE_CHILD_PROFILE"
+                                   && log.EntityType == nameof(ChildProfile)),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Fact]
@@ -203,7 +210,7 @@ public class ChildProfileServiceTests
     }
 
     [Fact]
-    public async Task CreateChildProfileAsync_OrganizationScope_CreatesAllEntitiesInOneSave()
+    public async Task CreateChildProfileAsync_OrganizationScope_CreatesAllEntitiesAndAudit()
     {
         var classGroup = ActiveClassGroup();
         SetupOrganizationBranch(classGroup);
@@ -230,7 +237,7 @@ public class ChildProfileServiceTests
         Assert.True(member.JoinedAt <= DateTime.UtcNow);
         Assert.Equal("Organization", result.Scope);
         Assert.Equal(1, result.OrganizationId);
-        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Theory]
@@ -300,6 +307,11 @@ public class ChildProfileServiceTests
         Assert.Equal(expectedStatus, profile.Status);
         Assert.Equal(expectedStatus.ToString(), result.Status);
         _profileRepo.Verify(r => r.Update(profile), Times.Once);
+        _auditLogRepo.Verify(repository => repository.AddAsync(
+            It.Is<AuditLog>(log => log.ActorUserId == 2
+                                   && log.Action == "ACTIVATE_CHILD_PROFILE"
+                                   && log.EntityId == 1),
+            It.IsAny<CancellationToken>()), Times.Once);
         _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -411,6 +423,11 @@ public class ChildProfileServiceTests
         Assert.Equal(AgeBand.Age_9_12, profile.AgeBand);
         Assert.Equal("Bé Mới", result.Nickname);
         _profileRepo.Verify(r => r.Update(profile), Times.Once);
+        _auditLogRepo.Verify(repository => repository.AddAsync(
+            It.Is<AuditLog>(log => log.ActorUserId == 2
+                                   && log.Action == "UPDATE_CHILD_PROFILE"
+                                   && log.EntityId == 1),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -434,6 +451,11 @@ public class ChildProfileServiceTests
         await _sut.ArchiveChildProfileAsync(1, 2);
 
         Assert.Equal(ChildProfileStatus.Archived, profile.Status);
+        _auditLogRepo.Verify(repository => repository.AddAsync(
+            It.Is<AuditLog>(log => log.ActorUserId == 2
+                                   && log.Action == "ARCHIVE_CHILD_PROFILE"
+                                   && log.EntityId == 1),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

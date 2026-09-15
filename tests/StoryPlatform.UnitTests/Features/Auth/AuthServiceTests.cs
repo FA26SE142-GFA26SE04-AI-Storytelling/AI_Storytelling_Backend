@@ -1031,4 +1031,127 @@ public class AuthServiceTests
         await Assert.ThrowsAsync<BadRequestException>(() => _sut.RegisterAsync(new RegisterRequestDto { Role = (UserRole)999 }));
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    [Fact]
+    public async Task ResendVerificationEmailAsync_RegisteredUnverifiedUser_SendsNewTokenAndWritesAuditLog()
+    {
+        var user = CreateUser();
+        user.Status = AccountStatus.Registered;
+        _userRepoMock.Setup(repo => repo.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<UserAccount, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+        _auditLogRepoMock.Setup(repo => repo.ExistsAsync(
+                It.IsAny<Expression<Func<AuditLog, bool>>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        await _sut.ResendVerificationEmailAsync(new ResendVerificationEmailRequestDto { Email = user.Email });
+
+        _emailSenderMock.Verify(sender => sender.SendEmailVerificationEmailAsync(
+            user.Email, user.FullName, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        _auditLogRepoMock.Verify(repo => repo.AddAsync(
+            It.Is<AuditLog>(log => log.Action == "RESEND_VERIFICATION_EMAIL" && log.EntityId == user.Id),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _unitOfWorkMock.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ResendVerificationEmailAsync_AlreadyVerifiedUser_SilentlyDoesNothing()
+    {
+        var user = CreateUser();
+        _userRepoMock.Setup(repo => repo.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<UserAccount, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+
+        await _sut.ResendVerificationEmailAsync(new ResendVerificationEmailRequestDto { Email = user.Email });
+
+        _emailSenderMock.Verify(sender => sender.SendEmailVerificationEmailAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _unitOfWorkMock.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ResendVerificationEmailAsync_WithinCooldown_SilentlyDoesNothing()
+    {
+        var user = CreateUser();
+        user.Status = AccountStatus.Registered;
+        _userRepoMock.Setup(repo => repo.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<UserAccount, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+        _auditLogRepoMock.Setup(repo => repo.ExistsAsync(
+                It.IsAny<Expression<Func<AuditLog, bool>>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        await _sut.ResendVerificationEmailAsync(new ResendVerificationEmailRequestDto { Email = user.Email });
+
+        _emailSenderMock.Verify(sender => sender.SendEmailVerificationEmailAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _unitOfWorkMock.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ListSessionsAsync_ReturnsOnlyActiveNonExpiredTokensOfCurrentUser()
+    {
+        var now = DateTime.UtcNow;
+        var tokens = new[]
+        {
+            new RefreshToken { Id = 1, UserAccountId = 1, IssuedAt = now.AddDays(-1), ExpiresAt = now.AddDays(6) },
+            new RefreshToken { Id = 2, UserAccountId = 1, IssuedAt = now.AddDays(-2), ExpiresAt = now.AddDays(-1) },
+            new RefreshToken
+            {
+                Id = 3, UserAccountId = 1, IssuedAt = now.AddDays(-3),
+                ExpiresAt = now.AddDays(4), RevokedAt = now
+            },
+            new RefreshToken { Id = 4, UserAccountId = 2, IssuedAt = now, ExpiresAt = now.AddDays(6) },
+            new RefreshToken { Id = 5, UserAccountId = 1, IssuedAt = now, ExpiresAt = now.AddDays(6) }
+        };
+        _refreshTokenRepoMock.Setup(repo => repo.FindAsync(
+                It.IsAny<Expression<Func<RefreshToken, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Expression<Func<RefreshToken, bool>> predicate, string? _, CancellationToken _) =>
+                tokens.Where(predicate.Compile()).ToList());
+
+        var result = await _sut.ListSessionsAsync(1);
+
+        Assert.Equal(new[] { 5, 1 }, result.Select(session => session.Id));
+    }
+
+    [Fact]
+    public async Task RevokeSessionAsync_TokenBelongsToAnotherUser_ThrowsNotFoundException()
+    {
+        _refreshTokenRepoMock.Setup(repo => repo.GetByIdAsync(10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RefreshToken { Id = 10, UserAccountId = 999 });
+
+        await Assert.ThrowsAsync<NotFoundException>(() => _sut.RevokeSessionAsync(1, 10));
+    }
+
+    [Fact]
+    public async Task RevokeSessionAsync_ValidOwnedToken_SetsRevokedAtAndSaves()
+    {
+        var token = new RefreshToken { Id = 10, UserAccountId = 1 };
+        _refreshTokenRepoMock.Setup(repo => repo.GetByIdAsync(10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(token);
+
+        await _sut.RevokeSessionAsync(1, 10);
+
+        Assert.NotNull(token.RevokedAt);
+        _refreshTokenRepoMock.Verify(repo => repo.Update(token), Times.Once);
+        _unitOfWorkMock.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RevokeSessionAsync_AlreadyRevokedToken_IsIdempotent()
+    {
+        var token = new RefreshToken
+        {
+            Id = 10,
+            UserAccountId = 1,
+            RevokedAt = DateTime.UtcNow.AddMinutes(-1)
+        };
+        _refreshTokenRepoMock.Setup(repo => repo.GetByIdAsync(10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(token);
+
+        await _sut.RevokeSessionAsync(1, 10);
+
+        _refreshTokenRepoMock.Verify(repo => repo.Update(It.IsAny<RefreshToken>()), Times.Never);
+        _unitOfWorkMock.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
 }

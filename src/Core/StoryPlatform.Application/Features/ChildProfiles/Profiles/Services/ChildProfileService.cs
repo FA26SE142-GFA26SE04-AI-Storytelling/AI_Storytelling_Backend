@@ -84,8 +84,12 @@ public class ChildProfileService : IChildProfileService
                 cancellationToken);
         }
 
-        // EF Core bọc một lần SaveChangesAsync trong transaction: profile, quyền Owner
-        // và membership cùng thành công hoặc cùng rollback.
+        // Lưu profile, quyền Owner và membership cùng nhau trước để EF cấp ChildProfile.Id.
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // AuditLog dùng EntityId thường, không có navigation tới ChildProfile, nên cần lưu riêng sau khi có Id.
+        await WriteChildProfileAuditAsync(
+            ownerUserId, "CREATE_CHILD_PROFILE", childProfile.Id, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return MapToChildProfileDto(childProfile);
@@ -141,6 +145,8 @@ public class ChildProfileService : IChildProfileService
             : ChildProfileStatus.PendingParentConsent;
         profile.UpdatedAt = DateTime.UtcNow;
         profileRepo.Update(profile);
+        await WriteChildProfileAuditAsync(
+            currentUserId, "ACTIVATE_CHILD_PROFILE", childProfileId, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return MapToChildProfileDto(profile);
@@ -200,6 +206,8 @@ public class ChildProfileService : IChildProfileService
         profile.Language = string.IsNullOrWhiteSpace(request.Language) ? "vi" : request.Language.Trim();
         profile.UpdatedAt = DateTime.UtcNow;
         profileRepo.Update(profile);
+        await WriteChildProfileAuditAsync(
+            currentUserId, "UPDATE_CHILD_PROFILE", childProfileId, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return MapToChildProfileDto(profile);
@@ -227,7 +235,22 @@ public class ChildProfileService : IChildProfileService
         profile.Status = ChildProfileStatus.Archived;
         profile.UpdatedAt = DateTime.UtcNow;
         profileRepo.Update(profile);
+        await WriteChildProfileAuditAsync(
+            currentUserId, "ARCHIVE_CHILD_PROFILE", childProfileId, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task WriteChildProfileAuditAsync(
+        int actorUserId, string action, int childProfileId, CancellationToken cancellationToken)
+    {
+        await _unitOfWork.Repository<AuditLog>().AddAsync(new AuditLog
+        {
+            ActorUserId = actorUserId,
+            Action = action,
+            EntityType = nameof(ChildProfile),
+            EntityId = childProfileId,
+            OccurredAt = DateTime.UtcNow
+        }, cancellationToken);
     }
 
     private async Task<ClassGroup> ValidateOrganizationScopeAsync(

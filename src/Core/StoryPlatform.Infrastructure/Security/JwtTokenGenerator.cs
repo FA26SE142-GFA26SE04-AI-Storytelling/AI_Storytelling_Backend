@@ -4,7 +4,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Domain.Entities;
@@ -13,17 +13,34 @@ namespace StoryPlatform.Infrastructure.Security;
 
 public class JwtTokenGenerator : IJwtTokenGenerator
 {
-    private readonly JwtOptions _options;
+    private const int MinimumJwtSecretKeyLength = 32;
+    private readonly string _secretKey;
+    private readonly string _issuer;
+    private readonly string _audience;
+    private readonly int _expiryMinutes;
+    private readonly int _refreshTokenExpiryDays;
+    private readonly int _childTokenExpiryMinutes;
 
-    public JwtTokenGenerator(IOptions<JwtOptions> options)
+    public JwtTokenGenerator(IConfiguration configuration)
     {
-        _options = options?.Value ?? new JwtOptions();
+        _secretKey = GetRequiredSetting(configuration, "SecretKey");
+        if (_secretKey.Length < MinimumJwtSecretKeyLength)
+        {
+            throw new InvalidOperationException(
+                $"'JwtSettings:SecretKey' phải có ít nhất {MinimumJwtSecretKeyLength} ký tự.");
+        }
+
+        _issuer = GetRequiredSetting(configuration, "Issuer");
+        _audience = GetRequiredSetting(configuration, "Audience");
+        _expiryMinutes = GetRequiredPositiveInteger(configuration, "ExpiryMinutes");
+        _refreshTokenExpiryDays = GetRequiredPositiveInteger(configuration, "RefreshTokenExpiryDays");
+        _childTokenExpiryMinutes = GetRequiredPositiveInteger(configuration, "ChildTokenExpiryMinutes");
     }
 
     public string GenerateAccessToken(UserAccount user)
     {
         var tokenHandler = new JwtSecurityTokenHandler();
-        var key = Encoding.UTF8.GetBytes(_options.SecretKey);
+        var key = Encoding.UTF8.GetBytes(_secretKey);
 
         var claims = new List<Claim>
         {
@@ -41,8 +58,8 @@ public class JwtTokenGenerator : IJwtTokenGenerator
         {
             Subject = new ClaimsIdentity(claims),
             Expires = GetExpirationDate(),
-            Issuer = _options.Issuer,
-            Audience = _options.Audience,
+            Issuer = _issuer,
+            Audience = _audience,
             SigningCredentials = new SigningCredentials(
                 new SymmetricSecurityKey(key),
                 SecurityAlgorithms.HmacSha256Signature)
@@ -55,7 +72,7 @@ public class JwtTokenGenerator : IJwtTokenGenerator
     public string GenerateChildAccessToken(int childProfileId)
     {
         var tokenHandler = new JwtSecurityTokenHandler();
-        var key = Encoding.UTF8.GetBytes(_options.SecretKey);
+        var key = Encoding.UTF8.GetBytes(_secretKey);
         var childProfileIdValue = childProfileId.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
         var claims = new List<Claim>
@@ -69,9 +86,9 @@ public class JwtTokenGenerator : IJwtTokenGenerator
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Subject = new ClaimsIdentity(claims),
-            Expires = DateTime.UtcNow.AddMinutes(_options.ChildTokenExpiryMinutes),
-            Issuer = _options.Issuer,
-            Audience = _options.Audience,
+            Expires = DateTime.UtcNow.AddMinutes(_childTokenExpiryMinutes),
+            Issuer = _issuer,
+            Audience = _audience,
             SigningCredentials = new SigningCredentials(
                 new SymmetricSecurityKey(key),
                 SecurityAlgorithms.HmacSha256Signature)
@@ -91,15 +108,38 @@ public class JwtTokenGenerator : IJwtTokenGenerator
 
     public DateTime GetExpirationDate()
     {
-        return DateTime.UtcNow.AddMinutes(_options.ExpiryMinutes);
+        return DateTime.UtcNow.AddMinutes(_expiryMinutes);
     }
 
     public DateTime GetRefreshTokenExpirationDate()
     {
-        return DateTime.UtcNow.AddDays(_options.RefreshTokenExpiryDays);
+        return DateTime.UtcNow.AddDays(_refreshTokenExpiryDays);
     }
 
-    public long ExpiresInSeconds => _options.ExpiryMinutes * 60L;
+    public long ExpiresInSeconds => _expiryMinutes * 60L;
 
-    public long ChildTokenExpiresInSeconds => _options.ChildTokenExpiryMinutes * 60L;
+    public long ChildTokenExpiresInSeconds => _childTokenExpiryMinutes * 60L;
+
+    private static string GetRequiredSetting(IConfiguration configuration, string settingName)
+    {
+        var key = $"JwtSettings:{settingName}";
+        var value = configuration[key];
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException($"Thiếu cấu hình bắt buộc '{key}'.");
+        }
+
+        return value;
+    }
+
+    private static int GetRequiredPositiveInteger(IConfiguration configuration, string settingName)
+    {
+        var key = $"JwtSettings:{settingName}";
+        if (!int.TryParse(configuration[key], out var value) || value <= 0)
+        {
+            throw new InvalidOperationException($"'{key}' phải là số nguyên dương.");
+        }
+
+        return value;
+    }
 }

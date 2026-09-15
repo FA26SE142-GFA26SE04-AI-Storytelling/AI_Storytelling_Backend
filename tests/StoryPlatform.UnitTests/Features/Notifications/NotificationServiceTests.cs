@@ -110,4 +110,36 @@ public class NotificationServiceTests
         _repository.Verify(repository => repository.Delete(notification), Times.Once);
         _unitOfWork.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task MarkAllAsReadAsync_HasUnreadNotifications_MarksAllReadAndSaves()
+    {
+        var unread = new List<Notification>
+        {
+            new() { Id = 1, RecipientUserId = 1, Status = NotificationReadStatus.Unread },
+            new() { Id = 2, RecipientUserId = 1, Status = NotificationReadStatus.Unread }
+        };
+        _repository.Setup(repo => repo.FindAsync(
+                It.IsAny<Expression<Func<Notification, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(unread);
+
+        await _sut.MarkAllAsReadAsync(1);
+
+        Assert.All(unread, notification => Assert.Equal(NotificationReadStatus.Read, notification.Status));
+        Assert.All(unread, notification => Assert.NotNull(notification.ReadAt));
+        _repository.Verify(repo => repo.Update(It.IsAny<Notification>()), Times.Exactly(2));
+        _unitOfWork.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task MarkAllAsReadAsync_NoUnreadNotifications_DoesNotCallSaveChanges()
+    {
+        _repository.Setup(repo => repo.FindAsync(
+                It.IsAny<Expression<Func<Notification, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Notification>());
+
+        await _sut.MarkAllAsReadAsync(1);
+
+        _unitOfWork.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
 }

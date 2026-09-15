@@ -120,4 +120,17 @@ public class VerifyEmailRequestDto
     public string Token { get; set; } = string.Empty;
 }
 
+public class ResendVerificationEmailRequestDto
+{
+    [Required(ErrorMessage = "Email không được để trống.")]
+    [EmailAddress(ErrorMessage = "Email không đúng định dạng.")]
+    public string Email { get; set; } = string.Empty;
+}
+
+public class SessionDto
+{
+    public int Id { get; set; }
+    public DateTime IssuedAt { get; set; }
+    public DateTime ExpiresAt { get; set; }
+}
 

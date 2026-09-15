@@ -32,8 +32,8 @@ public sealed class GenerateOutlineHandler
     public async Task<GenerateOutlineResponse> HandleAsync(GenerateOutlineRequest request, CancellationToken cancellationToken = default)
     {
         RequestGuard.Validate(request);
-        var template = _promptProvider.GetActive(PromptType.Outline, request.Language, request.AgeBand);
-        var prompt = PromptComposer.Compose(template, request);
+        var template = _promptProvider.GetActiveForOutline(request, Domain.Enums.PromptType.Outline);
+        var prompt = template.Template;
         var maxAttempts = Math.Clamp(_options.MaxAttempts, 1, 3);
         Exception? lastError = null;
         for (var attempt = 1; attempt <= maxAttempts; attempt++)

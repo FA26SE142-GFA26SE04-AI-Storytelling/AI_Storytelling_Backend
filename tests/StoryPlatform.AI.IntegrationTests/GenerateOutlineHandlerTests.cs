@@ -110,5 +110,13 @@ public sealed class GenerateOutlineHandlerTests
     {
         public PromptTemplate GetActive(PromptType promptType, string language, string ageBand) =>
             new("outline-test-v1", "Generate from {{context}}");
+
+        public PromptTemplate GetActiveForOutline(GenerateOutlineRequest request, PromptType promptType = PromptType.Outline)
+        {
+            // Return a template that includes request data for test assertions
+            var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web) { PropertyNameCaseInsensitive = true };
+            var contextJson = JsonSerializer.Serialize(request, jsonOptions);
+            return new PromptTemplate("outline-test-v1", $"Generate from context: {contextJson}");
+        }
     }
 }

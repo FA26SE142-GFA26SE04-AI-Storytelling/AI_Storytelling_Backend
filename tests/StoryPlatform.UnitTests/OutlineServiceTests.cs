@@ -20,6 +20,20 @@ namespace StoryPlatform.UnitTests;
 public sealed class OutlineServiceTests
 {
     [Fact]
+    public async Task Approved_outline_cannot_be_edited_or_regenerated_after_content_handoff()
+    {
+        var db = Seed();
+        var service = Service(db);
+        await service.ProcessNextAsync();
+        await service.ApproveAsync(1, 1, 1, new ApproveOutlineRequestDto { ApprovalKey = "approval-pinned-1" });
+        await Assert.ThrowsAsync<ConflictException>(() => service.EditAsync(1, 1, 1,
+            new EditOutlineRequestDto { Title = "Changed", Opening = "Opening", Development = "Development", Ending = "Ending" }));
+        await Assert.ThrowsAsync<ConflictException>(() => service.RegenerateAsync(1, 1, 1,
+            new RegenerateOutlineRequestDto { OperationKey = "regenerate-pinned-1" }));
+        Assert.Single(db.Items<StoryVersion>());
+    }
+
+    [Fact]
     public async Task Worker_creates_only_one_current_outline_version()
     {
         var unitOfWork = Seed();
@@ -205,7 +219,7 @@ public sealed class OutlineServiceTests
         new(unitOfWork, aiClient ?? new FakeAIClient(), new RuleBasedOutlineReviewGuardrail(),
             failureFinalizer ?? new FakeFailureFinalizer(unitOfWork));
 
-    private static FakeUnitOfWork Seed(bool includeApprovePermission = true)
+    internal static FakeUnitOfWork Seed(bool includeApprovePermission = true)
     {
         var unitOfWork = new FakeUnitOfWork();
         unitOfWork.Seed(new UserAccount { Id = 1, Role = UserRole.Parent, Status = AccountStatus.LoggedIn });
@@ -287,7 +301,7 @@ public sealed class OutlineServiceTests
         public Task<EvaluateStoryResponse> EvaluateStoryAsync(EvaluateStoryRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
-    private sealed class FakeUnitOfWork : IUnitOfWork
+    internal sealed class FakeUnitOfWork : IUnitOfWork
     {
         private readonly Dictionary<Type, object> _repositories = [];
         public int LockCount { get; private set; }

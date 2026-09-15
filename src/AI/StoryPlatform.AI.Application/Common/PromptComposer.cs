@@ -3,6 +3,14 @@ using StoryPlatform.AI.Application.Abstractions.Prompting;
 
 namespace StoryPlatform.AI.Application.Common;
 
+public static class JsonDefaults
+{
+    public static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true
+    };
+}
+
 internal static class PromptComposer
 {
     public static string Compose<T>(PromptTemplate template, T input)
@@ -10,12 +18,4 @@ internal static class PromptComposer
         var context = JsonSerializer.Serialize(input, JsonDefaults.Options);
         return template.Template.Replace("{{context}}", context, StringComparison.Ordinal);
     }
-}
-
-internal static class JsonDefaults
-{
-    public static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
-    {
-        PropertyNameCaseInsensitive = true
-    };
 }

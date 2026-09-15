@@ -73,6 +73,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
             var story = await LoadAuthorizedStoryAsync(userId, storyId, Permission.GenerateStory, cancellationToken);
             EnsureReviewState(story);
             var current = await LoadCurrentVersionAsync(storyId, versionNo, cancellationToken);
+            EnsureOutlineNotApproved(current);
             await EnsureNoActiveOutlineJobAsync(storyId, cancellationToken);
             var context = await LoadAcceptedContextAsync(storyId, cancellationToken);
             var safety = _guardrail.Validate(
@@ -105,6 +106,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
             var story = await LoadAuthorizedStoryAsync(userId, storyId, Permission.GenerateStory, cancellationToken);
             EnsureReviewState(story);
             var current = await LoadCurrentVersionAsync(storyId, versionNo, cancellationToken);
+            EnsureOutlineNotApproved(current);
             var key = input.OperationKey.Trim();
             var existing = await _unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(
                 item => item.RequestedByUserId == userId &&
@@ -296,6 +298,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
             EnsureReviewState(story);
             var version = await LoadCurrentVersionAsync(storyId, versionNo, cancellationToken);
             await EnsureNoActiveOutlineJobAsync(storyId, cancellationToken);
+            EnsureOutlineNotApproved(version);
             var job = await _unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(
                 item => item.StoryVersionId == version.Id &&
                         (item.Operation == GenerationJobOperation.GenerateOutline ||
@@ -610,6 +613,12 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         {
             throw new ConflictException("Đang có một thao tác outline khác hoạt động cho Story này.");
         }
+    }
+
+    private static void EnsureOutlineNotApproved(StoryVersion version)
+    {
+        if (version.OutlineApprovedAt.HasValue || version.Content is not null)
+            throw new ConflictException("Outline đã duyệt và bàn giao; không thể chỉnh sửa trong Phase 2.");
     }
 
     private static void EnsureReviewState(Story story)

@@ -89,7 +89,8 @@ public sealed class OutlineServiceTests
         Assert.NotNull(version.OutlineApprovedAt);
         var handoff = Assert.Single(unitOfWork.Items<StoryGenerationJob>(),
             item => item.Operation == GenerationJobOperation.GenerateContent);
-        Assert.Equal(version.Id, handoff.StoryVersionId);
+        Assert.Equal(version.Id, handoff.BaseStoryVersionId);
+        Assert.Null(handoff.StoryVersionId);
         Assert.Equal(JobStage.ContentPending, handoff.Stage);
         Assert.Equal(GenerationJobStatus.Pending, handoff.Status);
         Assert.True(unitOfWork.LockCount > 0);

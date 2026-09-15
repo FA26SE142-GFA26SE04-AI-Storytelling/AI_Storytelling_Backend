@@ -231,7 +231,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
                 cancellationToken: cancellationToken);
             if (existing is not null)
             {
-                if (existing.StoryId != storyId || existing.StoryVersionId != version.Id)
+                if (existing.StoryId != storyId || (existing.BaseStoryVersionId ?? existing.StoryVersionId) != version.Id)
                 {
                     throw new ConflictException("Approval key đã được sử dụng cho StoryVersion khác.");
                 }
@@ -239,7 +239,8 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
             }
 
             if (version.OutlineApprovedAt.HasValue || await _unitOfWork.Repository<StoryGenerationJob>().ExistsAsync(
-                    item => item.Operation == GenerationJobOperation.GenerateContent && item.StoryVersionId == version.Id,
+                    item => item.Operation == GenerationJobOperation.GenerateContent &&
+                            (item.BaseStoryVersionId == version.Id || item.StoryVersionId == version.Id),
                     cancellationToken))
             {
                 throw new ConflictException("StoryVersion này đã được approve bằng một approval key khác.");
@@ -250,7 +251,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
             {
                 StoryId = storyId,
                 GenerationRequestId = generationRequest.Id,
-                StoryVersionId = version.Id,
+                BaseStoryVersionId = version.Id,
                 RequestedByUserId = userId,
                 OperationKey = key,
                 Operation = GenerationJobOperation.GenerateContent,

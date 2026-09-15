@@ -27,6 +27,15 @@ public sealed record QuizItemDto
 
 public sealed record DiscussionQuestionDto(string Question);
 
+public sealed record StoryContentDto
+{
+    public string Title { get; init; } = string.Empty;
+    public IReadOnlyList<StorySectionDto> StorySections { get; init; } = [];
+    public string Lesson { get; init; } = string.Empty;
+}
+
+public sealed record GeneratedVocabularyItemDto(string Term, string Definition);
+
 public sealed record StoryPackageDto
 {
     public string Source { get; init; } = "ai";

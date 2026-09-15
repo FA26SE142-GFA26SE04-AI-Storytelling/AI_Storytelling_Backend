@@ -36,6 +36,24 @@ public sealed class AIStoryGenerationClient : IAIStoryGenerationClient
     public Task<EvaluateStoryResponse> EvaluateStoryAsync(EvaluateStoryRequest request, CancellationToken cancellationToken = default) =>
         PostAsync<EvaluateStoryRequest, EvaluateStoryResponse>("api/ai/evaluate", request, cancellationToken);
 
+    public Task<GenerateStoryContentResponse> GenerateStoryContentAsync(GenerateStoryContentRequest request, CancellationToken cancellationToken = default) =>
+        PostAsync<GenerateStoryContentRequest, GenerateStoryContentResponse>("api/ai/story-content/content", request, cancellationToken);
+
+    public Task<RefineStoryContentResponse> RefineStoryContentAsync(RefineStoryContentRequest request, CancellationToken cancellationToken = default) =>
+        PostAsync<RefineStoryContentRequest, RefineStoryContentResponse>("api/ai/story-content/content/refine", request, cancellationToken);
+
+    public Task<GenerateVocabularyResponse> GenerateVocabularyAsync(GenerateVocabularyRequest request, CancellationToken cancellationToken = default) =>
+        PostAsync<GenerateVocabularyRequest, GenerateVocabularyResponse>("api/ai/story-content/vocabulary", request, cancellationToken);
+
+    public Task<GenerateQuizResponse> GenerateQuizAsync(GenerateQuizRequest request, CancellationToken cancellationToken = default) =>
+        PostAsync<GenerateQuizRequest, GenerateQuizResponse>("api/ai/story-content/quiz", request, cancellationToken);
+
+    public Task<GenerateDiscussionResponse> GenerateDiscussionAsync(GenerateDiscussionRequest request, CancellationToken cancellationToken = default) =>
+        PostAsync<GenerateDiscussionRequest, GenerateDiscussionResponse>("api/ai/story-content/discussion", request, cancellationToken);
+
+    public Task<EvaluateContentSafetyResponse> EvaluateContentSafetyAsync(EvaluateContentSafetyRequest request, CancellationToken cancellationToken = default) =>
+        PostAsync<EvaluateContentSafetyRequest, EvaluateContentSafetyResponse>("api/ai/story-content/content/safety", request, cancellationToken);
+
     private async Task<TResponse> PostAsync<TRequest, TResponse>(
         string path,
         TRequest request,

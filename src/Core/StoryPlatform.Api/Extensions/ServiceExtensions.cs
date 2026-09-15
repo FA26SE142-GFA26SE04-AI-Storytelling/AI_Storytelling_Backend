@@ -56,8 +56,35 @@ public static class ServiceExtensions
                 },
                 OnTokenValidated = async context =>
                 {
+                    var tokenType = context.Principal?.FindFirst("token_type")?.Value;
+                    var subjectClaim = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+                    if (tokenType == "child")
+                    {
+                        if (!int.TryParse(subjectClaim, out var childProfileId))
+                        {
+                            context.Fail("Token không hợp lệ.");
+                            return;
+                        }
+
+                        var childUnitOfWork = context.HttpContext.RequestServices
+                            .GetRequiredService<IUnitOfWork>();
+                        var childProfile = await childUnitOfWork.Repository<ChildProfile>()
+                            .FirstOrDefaultAsync(
+                                profile => profile.Id == childProfileId,
+                                cancellationToken: context.HttpContext.RequestAborted);
+                        if (childProfile == null
+                            || childProfile.IsDeleted
+                            || childProfile.Status == ChildProfileStatus.Archived)
+                        {
+                            context.Fail("Phiên của trẻ không còn hợp lệ.");
+                        }
+
+                        return;
+                    }
+
                     var versionClaim = context.Principal?.FindFirst("token_version")?.Value;
-                    var userIdClaim = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                    var userIdClaim = subjectClaim;
                     if (!int.TryParse(versionClaim, out var version) || !int.TryParse(userIdClaim, out var userId))
                     {
                         context.Fail("Token không hợp lệ.");

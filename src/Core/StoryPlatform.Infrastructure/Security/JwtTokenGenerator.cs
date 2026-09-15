@@ -52,6 +52,35 @@ public class JwtTokenGenerator : IJwtTokenGenerator
         return tokenHandler.WriteToken(token);
     }
 
+    public string GenerateChildAccessToken(int childProfileId)
+    {
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var key = Encoding.UTF8.GetBytes(_options.SecretKey);
+        var childProfileIdValue = childProfileId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, childProfileIdValue),
+            new(ClaimTypes.NameIdentifier, childProfileIdValue),
+            new("token_type", "child"),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+        };
+
+        var tokenDescriptor = new SecurityTokenDescriptor
+        {
+            Subject = new ClaimsIdentity(claims),
+            Expires = DateTime.UtcNow.AddMinutes(_options.ChildTokenExpiryMinutes),
+            Issuer = _options.Issuer,
+            Audience = _options.Audience,
+            SigningCredentials = new SigningCredentials(
+                new SymmetricSecurityKey(key),
+                SecurityAlgorithms.HmacSha256Signature)
+        };
+
+        var token = tokenHandler.CreateToken(tokenDescriptor);
+        return tokenHandler.WriteToken(token);
+    }
+
     public string GenerateRefreshToken()
     {
         var randomNumber = new byte[32];
@@ -71,4 +100,6 @@ public class JwtTokenGenerator : IJwtTokenGenerator
     }
 
     public long ExpiresInSeconds => _options.ExpiryMinutes * 60L;
+
+    public long ChildTokenExpiresInSeconds => _options.ChildTokenExpiryMinutes * 60L;
 }

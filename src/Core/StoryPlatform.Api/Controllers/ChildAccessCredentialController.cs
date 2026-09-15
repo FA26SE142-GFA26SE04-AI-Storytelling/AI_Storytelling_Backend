@@ -72,4 +72,17 @@ public class ChildAccessCredentialController : BaseApiController
 
         return HandleResult(result, "Đăng nhập Child Session thành công.");
     }
+
+    /// <summary>
+    /// Trẻ đã đăng nhập bằng Child Access Token tự lấy thông tin hồ sơ của mình.
+    /// </summary>
+    [HttpGet("me")]
+    [Authorize(Policy = "ChildSession")]
+    public async Task<ActionResult<ApiResponse<ChildSessionProfileDto>>> GetMySession(
+        CancellationToken cancellationToken)
+    {
+        var result = await _childAccessCredentialService.GetMySessionProfileAsync(
+            GetCurrentUserId(), cancellationToken);
+        return HandleResult(result, "Lấy thông tin phiên của trẻ thành công.");
+    }
 }

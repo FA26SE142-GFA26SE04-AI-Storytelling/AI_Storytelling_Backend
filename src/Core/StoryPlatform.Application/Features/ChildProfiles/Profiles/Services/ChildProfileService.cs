@@ -150,7 +150,8 @@ public class ChildProfileService : IChildProfileService
         int ownerUserId, CancellationToken cancellationToken = default)
     {
         var profiles = await _unitOfWork.Repository<ChildProfile>().FindAsync(
-            value => value.OwnerUserId == ownerUserId,
+            value => value.OwnerUserId == ownerUserId
+                     && value.Status != ChildProfileStatus.Archived,
             cancellationToken: cancellationToken);
 
         return profiles.Select(MapToChildProfileDto).ToList();

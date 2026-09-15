@@ -9,4 +9,5 @@ public class JwtOptions
     public string Audience { get; set; } = "StoryPlatformClient";
     public int ExpiryMinutes { get; set; } = 120;
     public int RefreshTokenExpiryDays { get; set; } = 7;
+    public int ChildTokenExpiryMinutes { get; set; } = 240;
 }

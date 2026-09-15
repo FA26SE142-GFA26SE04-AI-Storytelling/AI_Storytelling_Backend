@@ -16,16 +16,20 @@ namespace StoryPlatform.UnitTests.Features.ChildProfiles.AccessCredentials;
 public class ChildAccessCredentialServiceTests
 {
     private readonly Mock<IGenericRepository<ChildAccessCredential>> _credentialRepo = new();
+    private readonly Mock<IGenericRepository<ChildProfile>> _profileRepo = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<ISupervisionAccessGuard> _guard = new();
     private readonly Mock<IPasswordHasher> _passwordHasher = new();
+    private readonly Mock<IJwtTokenGenerator> _jwtTokenGenerator = new();
     private readonly ChildAccessCredentialService _sut;
 
     public ChildAccessCredentialServiceTests()
     {
         _unitOfWork.Setup(u => u.Repository<ChildAccessCredential>()).Returns(_credentialRepo.Object);
+        _unitOfWork.Setup(u => u.Repository<ChildProfile>()).Returns(_profileRepo.Object);
+        _jwtTokenGenerator.Setup(generator => generator.ChildTokenExpiresInSeconds).Returns(14400);
         _sut = new ChildAccessCredentialService(
-            _unitOfWork.Object, _guard.Object, _passwordHasher.Object);
+            _unitOfWork.Object, _guard.Object, _passwordHasher.Object, _jwtTokenGenerator.Object);
     }
 
     [Fact]
@@ -100,13 +104,53 @@ public class ChildAccessCredentialServiceTests
         credential.FailedAttempts = 2;
         SetupCredential(credential);
         _passwordHasher.Setup(p => p.VerifyPassword("1234", "hashed-pin")).Returns(true);
+        _jwtTokenGenerator.Setup(generator => generator.GenerateChildAccessToken(1))
+            .Returns("child-jwt-token");
 
         var result = await _sut.LoginWithPinAsync(1, "1234");
 
         Assert.Equal(1, result.ChildProfileId);
         Assert.Equal("avatar-fox", result.AvatarId);
+        Assert.Equal("child-jwt-token", result.AccessToken);
+        Assert.Equal(14400, result.ExpiresInSeconds);
         Assert.Equal(0, credential.FailedAttempts);
         Assert.Null(credential.LockedUntil);
+    }
+
+    [Fact]
+    public async Task LoginWithPinAsync_WrongPin_DoesNotGenerateToken()
+    {
+        var credential = Credential();
+        SetupCredential(credential);
+        _passwordHasher.Setup(hasher => hasher.VerifyPassword("0000", "hashed-pin"))
+            .Returns(false);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.LoginWithPinAsync(1, "0000"));
+
+        _jwtTokenGenerator.Verify(
+            generator => generator.GenerateChildAccessToken(It.IsAny<int>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetMySessionProfileAsync_NotFound_ThrowsNotFound()
+    {
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ChildProfile?)null);
+
+        await Assert.ThrowsAsync<NotFoundException>(() => _sut.GetMySessionProfileAsync(1));
+    }
+
+    [Fact]
+    public async Task GetMySessionProfileAsync_Exists_ReturnsNicknameAndAgeBand()
+    {
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChildProfile { Id = 1, Nickname = "Bé An", AgeBand = AgeBand.Age_6_8 });
+
+        var result = await _sut.GetMySessionProfileAsync(1);
+
+        Assert.Equal(1, result.ChildProfileId);
+        Assert.Equal("Bé An", result.Nickname);
+        Assert.Equal("Age_6_8", result.AgeBand);
     }
 
     [Fact]

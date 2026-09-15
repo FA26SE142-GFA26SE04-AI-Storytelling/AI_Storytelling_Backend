@@ -35,7 +35,10 @@ builder.Services.AddCorsPolicy();
 
 // 4. Cấu hình Authentication & JWT Token
 builder.Services.AddJwtAuthentication(builder.Configuration);
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("ChildSession", policy => policy.RequireClaim("token_type", "child"));
+});
 
 // 5. Đăng ký Application use cases và Infrastructure adapters
 builder.Services.AddApplication();

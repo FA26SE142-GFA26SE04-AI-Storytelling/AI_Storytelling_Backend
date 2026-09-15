@@ -6,16 +6,22 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
+using StoryPlatform.Application.Features.AuditLogs.DTOs;
+using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 
 namespace StoryPlatform.Api.Controllers;
 
 public class ChildProfileController : BaseApiController
 {
     private readonly IChildProfileService _childProfileService;
+    private readonly IAuditLogQueryService _auditLogQueryService;
 
-    public ChildProfileController(IChildProfileService childProfileService)
+    public ChildProfileController(
+        IChildProfileService childProfileService,
+        IAuditLogQueryService auditLogQueryService)
     {
         _childProfileService = childProfileService;
+        _auditLogQueryService = auditLogQueryService;
     }
 
     /// <summary>
@@ -56,6 +62,19 @@ public class ChildProfileController : BaseApiController
     {
         var result = await _childProfileService.GetChildProfileByIdAsync(id, GetCurrentUserId(), cancellationToken);
         return HandleResult(result, "Lấy chi tiết hồ sơ trẻ thành công.");
+    }
+
+    /// <summary>
+    /// Lịch sử thay đổi hồ sơ trẻ; chỉ supervisor còn hiệu lực được xem.
+    /// </summary>
+    [HttpGet("{id:int}/audit-log")]
+    [Authorize(Roles = "Parent,Teacher")]
+    public async Task<ActionResult<ApiResponse<PagedResult<AuditLogDto>>>> GetChildProfileAuditLog(
+        int id, [FromQuery] PageRequest pageRequest, CancellationToken cancellationToken)
+    {
+        var result = await _auditLogQueryService.GetChildProfileAuditLogAsync(
+            id, GetCurrentUserId(), pageRequest, cancellationToken);
+        return HandleResult(result, "Lấy lịch sử thay đổi hồ sơ trẻ thành công.");
     }
 
     /// <summary>

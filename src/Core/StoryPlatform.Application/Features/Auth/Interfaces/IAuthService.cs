@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using StoryPlatform.Application.Features.Auth.DTOs;
@@ -9,6 +10,7 @@ public interface IAuthService
     Task<AuthResponseDto> LoginAsync(LoginRequestDto request, CancellationToken cancellationToken = default);
     Task RegisterAsync(RegisterRequestDto request, CancellationToken cancellationToken = default);
     Task VerifyEmailAsync(VerifyEmailRequestDto request, CancellationToken cancellationToken = default);
+    Task ResendVerificationEmailAsync(ResendVerificationEmailRequestDto request, CancellationToken cancellationToken = default);
     Task<AuthResponseDto> RefreshTokenAsync(RefreshTokenRequestDto request, CancellationToken cancellationToken = default);
     Task<UserProfileDto> GetCurrentUserProfileAsync(int userId, CancellationToken cancellationToken = default);
     Task LogoutAsync(int userId, LogoutRequestDto request, CancellationToken cancellationToken = default);
@@ -16,4 +18,6 @@ public interface IAuthService
     Task ForgotPasswordAsync(ForgotPasswordRequestDto request, CancellationToken cancellationToken = default);
     Task ResetPasswordAsync(ResetPasswordRequestDto request, CancellationToken cancellationToken = default);
     Task ChangePasswordAsync(int userId, ChangePasswordRequestDto request, CancellationToken cancellationToken = default);
+    Task<List<SessionDto>> ListSessionsAsync(int userId, CancellationToken cancellationToken = default);
+    Task RevokeSessionAsync(int userId, int sessionId, CancellationToken cancellationToken = default);
 }

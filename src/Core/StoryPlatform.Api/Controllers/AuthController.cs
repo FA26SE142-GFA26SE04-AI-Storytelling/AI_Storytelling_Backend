@@ -5,16 +5,20 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.Auth.DTOs;
 using StoryPlatform.Application.Features.Auth.Interfaces;
+using StoryPlatform.Application.Features.AuditLogs.DTOs;
+using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 
 namespace StoryPlatform.Api.Controllers;
 
 public class AuthController : BaseApiController
 {
     private readonly IAuthService _authService;
+    private readonly IAuditLogQueryService _auditLogQueryService;
 
-    public AuthController(IAuthService authService)
+    public AuthController(IAuthService authService, IAuditLogQueryService auditLogQueryService)
     {
         _authService = authService;
+        _auditLogQueryService = auditLogQueryService;
     }
 
     /// <summary>
@@ -54,6 +58,20 @@ public class AuthController : BaseApiController
     {
         await _authService.VerifyEmailAsync(request, cancellationToken);
         return HandleResult<object?>(null, "Xác thực email thành công. Bạn có thể đăng nhập ngay bây giờ.");
+    }
+
+    /// <summary>
+    /// Gửi lại mã xác thực email mới và vô hiệu hóa mã cũ.
+    /// </summary>
+    [HttpPost("resend-verification-email")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<object?>>> ResendVerificationEmail(
+        [FromBody] ResendVerificationEmailRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        await _authService.ResendVerificationEmailAsync(request, cancellationToken);
+        return HandleResult<object?>(
+            null, "Nếu email tồn tại và chưa xác thực, mã xác thực mới đã được gửi.");
     }
 
     /// <summary>
@@ -145,5 +163,43 @@ public class AuthController : BaseApiController
     {
         await _authService.LogoutAllDevicesAsync(GetCurrentUserId(), cancellationToken);
         return HandleResult<object?>(null, "Đã đăng xuất khỏi mọi thiết bị.");
+    }
+
+    /// <summary>
+    /// Danh sách refresh-token session còn hiệu lực của tài khoản hiện tại.
+    /// </summary>
+    [HttpGet("sessions")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<List<SessionDto>>>> ListSessions(
+        CancellationToken cancellationToken)
+    {
+        var result = await _authService.ListSessionsAsync(GetCurrentUserId(), cancellationToken);
+        return HandleResult(result, "Lấy danh sách phiên đăng nhập thành công.");
+    }
+
+    /// <summary>
+    /// Thu hồi refresh token của một phiên thuộc tài khoản hiện tại.
+    /// Access token đã cấp cho phiên đó vẫn có hiệu lực đến khi hết hạn.
+    /// </summary>
+    [HttpDelete("sessions/{id:int}")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<object?>>> RevokeSession(
+        int id, CancellationToken cancellationToken)
+    {
+        await _authService.RevokeSessionAsync(GetCurrentUserId(), id, cancellationToken);
+        return HandleResult<object?>(null, "Thu hồi phiên đăng nhập thành công.");
+    }
+
+    /// <summary>
+    /// Lịch sử hoạt động do tài khoản hiện tại thực hiện.
+    /// </summary>
+    [HttpGet("me/audit-log")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<PagedResult<AuditLogDto>>>> GetMyAuditLog(
+        [FromQuery] PageRequest pageRequest, CancellationToken cancellationToken)
+    {
+        var result = await _auditLogQueryService.GetMyAuditLogAsync(
+            GetCurrentUserId(), pageRequest, cancellationToken);
+        return HandleResult(result, "Lấy lịch sử hoạt động thành công.");
     }
 }

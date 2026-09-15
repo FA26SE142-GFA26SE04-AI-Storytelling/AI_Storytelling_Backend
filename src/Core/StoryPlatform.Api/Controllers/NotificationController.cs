@@ -42,6 +42,17 @@ public class NotificationController : BaseApiController
     }
 
     /// <summary>
+    /// Đánh dấu toàn bộ thông báo chưa đọc của người dùng hiện tại là đã đọc.
+    /// </summary>
+    [HttpPut("read-all")]
+    public async Task<ActionResult<ApiResponse<object?>>> MarkAllAsRead(
+        CancellationToken cancellationToken)
+    {
+        await _notificationService.MarkAllAsReadAsync(GetCurrentUserId(), cancellationToken);
+        return HandleResult<object?>(null, "Đánh dấu tất cả thông báo đã đọc thành công.");
+    }
+
+    /// <summary>
     /// Xoá một thông báo của người dùng hiện tại.
     /// </summary>
     [HttpDelete("{notificationId:int}")]

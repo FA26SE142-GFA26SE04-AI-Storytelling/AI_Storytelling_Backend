@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.Auth.DTOs;
 
@@ -35,7 +34,6 @@ public class RegisterRequestDto
     public string ConfirmPassword { get; set; } = string.Empty;
 
     public string? PhoneNumber { get; set; }
-    public UserRole Role { get; set; } = UserRole.Parent;
 }
 
 public class UserProfileDto
@@ -48,6 +46,33 @@ public class UserProfileDto
     public string? AvatarUrl { get; set; }
     public string Role { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+}
+
+public class CreatedAccountDto
+{
+    public int Id { get; set; }
+    public string Username { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+}
+
+public class CreateParentAccountRequestDto
+{
+    [Required(ErrorMessage = "Tên đăng nhập không được để trống.")]
+    [StringLength(50, MinimumLength = 3, ErrorMessage = "Tên đăng nhập từ 3 đến 50 ký tự.")]
+    public string Username { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Email không được để trống.")]
+    [EmailAddress(ErrorMessage = "Email không đúng định dạng.")]
+    public string Email { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Họ và tên không được để trống.")]
+    [StringLength(100, ErrorMessage = "Họ và tên tối đa 100 ký tự.")]
+    public string FullName { get; set; } = string.Empty;
+
+    public string? PhoneNumber { get; set; }
 }
 
 public class AuthResponseDto

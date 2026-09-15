@@ -39,6 +39,7 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
+        services.AddScoped<IUserProvisioningService, UserProvisioningService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IStoryService, StoryService>();
         services.AddScoped<IAIStoryInputService, AIStoryInputService>();

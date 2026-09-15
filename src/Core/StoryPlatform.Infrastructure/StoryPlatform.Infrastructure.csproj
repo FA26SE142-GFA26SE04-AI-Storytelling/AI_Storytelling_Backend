@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+    <PackageReference Include="ClosedXML" Version="0.105.1" />
     <ProjectReference Include="..\StoryPlatform.Application\StoryPlatform.Application.csproj" />
     <ProjectReference Include="..\StoryPlatform.Domain\StoryPlatform.Domain.csproj" />
   </ItemGroup>

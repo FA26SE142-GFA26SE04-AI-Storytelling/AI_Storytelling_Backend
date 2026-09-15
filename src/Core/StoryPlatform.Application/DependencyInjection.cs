@@ -32,6 +32,10 @@ using StoryPlatform.Application.Features.Organizations.Interfaces;
 using StoryPlatform.Application.Features.Organizations.Services;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.AuditLogs.Services;
+using StoryPlatform.Application.Features.Administration.Interfaces;
+using StoryPlatform.Application.Features.Administration.Services;
+using StoryPlatform.Application.Features.DataRequests.Interfaces;
+using StoryPlatform.Application.Features.DataRequests.Services;
 
 namespace StoryPlatform.Application;
 
@@ -53,6 +57,9 @@ public static class DependencyInjection
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IOrganizationService, OrganizationService>();
         services.AddScoped<IAuditLogQueryService, AuditLogQueryService>();
+        services.AddScoped<IAuditLogWriter, AuditLogWriter>();
+        services.AddScoped<IAdminAccountService, AdminAccountService>();
+        services.AddScoped<IDataRequestService, DataRequestService>();
         services.AddSingleton<IInputGuardrail, RuleBasedInputGuardrail>();
         services.AddScoped<OutlineService>();
         services.AddScoped<IOutlineService>(provider => provider.GetRequiredService<OutlineService>());

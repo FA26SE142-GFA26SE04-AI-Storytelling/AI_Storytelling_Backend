@@ -12,6 +12,15 @@ public class LoginRequestDto
     public string Password { get; set; } = string.Empty;
 }
 
+public class VerifyMfaRequestDto
+{
+    [Required(ErrorMessage = "ChallengeToken không được để trống.")]
+    public string ChallengeToken { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Mã xác thực không được để trống.")]
+    public string Code { get; set; } = string.Empty;
+}
+
 public class RegisterRequestDto
 {
     [Required(ErrorMessage = "Tên đăng nhập không được để trống.")]
@@ -57,6 +66,23 @@ public class AuthResponseDto
     public string TokenType { get; set; } = "Bearer";
     public long ExpiresInSeconds { get; set; }
     public UserProfileDto User { get; set; } = null!;
+
+    /// <summary>
+    /// True nếu tài khoản (Administrator) đã bật MFA và cần nhập mã TOTP trước khi hoàn tất đăng nhập.
+    /// Khi true, AccessToken/RefreshToken/User ở trên chưa có giá trị thật.
+    /// </summary>
+    public bool MfaRequired { get; set; }
+
+    /// <summary>
+    /// True nếu đây là lần đăng nhập Administrator đầu tiên và cần thiết lập MFA trước khi tiếp tục.
+    /// </summary>
+    public bool MfaSetupRequired { get; set; }
+
+    /// <summary>Token ngắn hạn (5 phút) dùng cho bước xác thực MFA tiếp theo.</summary>
+    public string? MfaChallengeToken { get; set; }
+
+    /// <summary>Chuỗi otpauth:// để FE dựng QR khi MfaSetupRequired = true.</summary>
+    public string? MfaProvisioningUri { get; set; }
 }
 
 public class RefreshTokenRequestDto

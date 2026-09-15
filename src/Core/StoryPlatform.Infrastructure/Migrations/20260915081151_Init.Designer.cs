@@ -12,7 +12,7 @@ using StoryPlatform.Infrastructure.Persistence;
 namespace StoryPlatform.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260915073914_Init")]
+    [Migration("20260915081151_Init")]
     partial class Init
     {
         /// <inheritdoc />

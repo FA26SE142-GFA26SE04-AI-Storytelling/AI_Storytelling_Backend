@@ -12,7 +12,7 @@ using StoryPlatform.Infrastructure.Persistence;
 namespace StoryPlatform.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260913092035_Init")]
+    [Migration("20260915073914_Init")]
     partial class Init
     {
         /// <inheritdoc />
@@ -2149,14 +2149,36 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<int>("AttemptNo")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("BaseStoryVersionId")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<string>("FallbackMessage")
                         .HasColumnType("text");
+
+                    b.Property<string>("GenerationMetadataJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<int?>("GenerationRequestId")
+                        .HasColumnType("integer");
 
                     b.Property<string>("GuardrailResult")
                         .HasMaxLength(30)
@@ -2165,7 +2187,25 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<DateTime?>("LeaseExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("MaxAttempts")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("OperationKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<int?>("PromptCatalogVersionId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("RequestedByUserId")
                         .HasColumnType("integer");
 
                     b.Property<string>("Stage")
@@ -2176,7 +2216,15 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<DateTime>("StartedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
                     b.Property<int>("StoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("StoryVersionId")
                         .HasColumnType("integer");
 
                     b.Property<DateTime?>("UpdatedAt")
@@ -2184,9 +2232,27 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("BaseStoryVersionId");
+
+                    b.HasIndex("GenerationRequestId");
+
                     b.HasIndex("PromptCatalogVersionId");
 
-                    b.HasIndex("StoryId");
+                    b.HasIndex("StoryId")
+                        .IsUnique()
+                        .HasFilter("\"Operation\" IN ('GenerateOutline', 'RegenerateOutline') AND \"Status\" IN ('Pending', 'Processing') AND \"IsDeleted\" = false");
+
+                    b.HasIndex("StoryVersionId");
+
+                    b.HasIndex("Operation", "StoryVersionId")
+                        .IsUnique()
+                        .HasFilter("\"StoryVersionId\" IS NOT NULL AND \"IsDeleted\" = false");
+
+                    b.HasIndex("RequestedByUserId", "Operation", "OperationKey")
+                        .IsUnique()
+                        .HasFilter("\"RequestedByUserId\" IS NOT NULL AND \"OperationKey\" IS NOT NULL AND \"IsDeleted\" = false");
+
+                    b.HasIndex("Status", "Stage", "LeaseExpiresAt");
 
                     b.ToTable("story_generation_jobs", (string)null);
                 });
@@ -2334,6 +2400,12 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<string>("Lesson")
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("OutlineApprovedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("OutlineApprovedByUserId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("OutlineDevelopment")
                         .HasColumnType("text");
 
@@ -2370,7 +2442,14 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasIndex("EditorUserId");
 
-                    b.HasIndex("StoryId");
+                    b.HasIndex("OutlineApprovedByUserId");
+
+                    b.HasIndex("StoryId")
+                        .IsUnique()
+                        .HasFilter("\"IsCurrent\" = true AND \"IsDeleted\" = false");
+
+                    b.HasIndex("StoryId", "VersionNo")
+                        .IsUnique();
 
                     b.ToTable("story_versions", (string)null);
                 });
@@ -3626,9 +3705,24 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryGenerationJob", b =>
                 {
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryVersion", "BaseStoryVersion")
+                        .WithMany()
+                        .HasForeignKey("BaseStoryVersionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryGenerationRequest", "GenerationRequest")
+                        .WithMany()
+                        .HasForeignKey("GenerationRequestId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("StoryPlatform.Domain.Entities.PromptCatalogVersion", "PromptCatalogVersion")
                         .WithMany()
                         .HasForeignKey("PromptCatalogVersionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "RequestedByUser")
+                        .WithMany()
+                        .HasForeignKey("RequestedByUserId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("StoryPlatform.Domain.Entities.Story", "Story")
@@ -3637,9 +3731,22 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryVersion", "StoryVersion")
+                        .WithMany()
+                        .HasForeignKey("StoryVersionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("BaseStoryVersion");
+
+                    b.Navigation("GenerationRequest");
+
                     b.Navigation("PromptCatalogVersion");
 
+                    b.Navigation("RequestedByUser");
+
                     b.Navigation("Story");
+
+                    b.Navigation("StoryVersion");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryGenerationRequest", b =>
@@ -3675,6 +3782,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasForeignKey("EditorUserId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "OutlineApprovedByUser")
+                        .WithMany()
+                        .HasForeignKey("OutlineApprovedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("StoryPlatform.Domain.Entities.Story", "Story")
                         .WithMany()
                         .HasForeignKey("StoryId")
@@ -3682,6 +3794,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("EditorUser");
+
+                    b.Navigation("OutlineApprovedByUser");
 
                     b.Navigation("Story");
                 });

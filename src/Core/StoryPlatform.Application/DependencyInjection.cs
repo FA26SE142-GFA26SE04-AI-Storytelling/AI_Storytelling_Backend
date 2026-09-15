@@ -36,6 +36,10 @@ using StoryPlatform.Application.Features.Administration.Interfaces;
 using StoryPlatform.Application.Features.Administration.Services;
 using StoryPlatform.Application.Features.DataRequests.Interfaces;
 using StoryPlatform.Application.Features.DataRequests.Services;
+using StoryPlatform.Application.Features.BusinessReports.Interfaces;
+using StoryPlatform.Application.Features.BusinessReports.Services;
+using StoryPlatform.Application.Features.Payments.Interfaces;
+using StoryPlatform.Application.Features.Payments.Services;
 
 namespace StoryPlatform.Application;
 
@@ -60,6 +64,9 @@ public static class DependencyInjection
         services.AddScoped<IAuditLogWriter, AuditLogWriter>();
         services.AddScoped<IAdminAccountService, AdminAccountService>();
         services.AddScoped<IDataRequestService, DataRequestService>();
+        services.AddScoped<IBusinessReportService, BusinessReportService>();
+        services.AddScoped<IPaymentService, PaymentService>();
+        services.AddScoped<IPaymentExpirySweepService, PaymentExpirySweepService>();
         services.AddSingleton<IInputGuardrail, RuleBasedInputGuardrail>();
         services.AddScoped<OutlineService>();
         services.AddScoped<IOutlineService>(provider => provider.GetRequiredService<OutlineService>());

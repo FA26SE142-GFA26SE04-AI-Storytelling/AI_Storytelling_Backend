@@ -6,6 +6,7 @@ using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Application.Abstractions.Communication;
 using StoryPlatform.Application.Abstractions.Export;
+using StoryPlatform.Application.Abstractions.Payments;
 using StoryPlatform.Application.Features.Outline.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration;
@@ -13,6 +14,7 @@ using StoryPlatform.Infrastructure.AI;
 using StoryPlatform.Infrastructure.BackgroundServices;
 using StoryPlatform.Infrastructure.Communication;
 using StoryPlatform.Infrastructure.Export;
+using StoryPlatform.Infrastructure.Payments;
 using StoryPlatform.Infrastructure.Persistence;
 using StoryPlatform.Infrastructure.Persistence.Repositories;
 using StoryPlatform.Infrastructure.Security;
@@ -55,6 +57,13 @@ public static class DependencyInjection
         services.AddSingleton(contentOptions);
         services.AddSingleton<IContentGenerationJobFailureFinalizer, ContentGenerationJobFailureFinalizer>();
         services.AddHostedService<ContentGenerationWorker>();
+
+        services.Configure<SePayOptions>(configuration.GetSection(SePayOptions.SectionName));
+        services.AddSingleton<ISePayQrUrlBuilder, SePayQrUrlBuilder>();
+        services.AddSingleton<ISePayWebhookAuthenticator, SePayWebhookAuthenticator>();
+        services.Configure<PaymentExpirySweepWorkerOptions>(
+            configuration.GetSection(PaymentExpirySweepWorkerOptions.SectionName));
+        services.AddHostedService<PaymentExpirySweepWorker>();
 
         return services;
     }

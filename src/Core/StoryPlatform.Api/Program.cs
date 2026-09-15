@@ -2,9 +2,12 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using StoryPlatform.Api.Extensions;
+using StoryPlatform.Api.Hubs;
 using StoryPlatform.Api.Middleware;
+using StoryPlatform.Api.Realtime;
 using StoryPlatform.Application;
 using StoryPlatform.Application.Common.Models;
+using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -38,6 +41,10 @@ builder.Services.AddAuthorization();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
+// 6. SignalR cho thông báo real-time
+builder.Services.AddSignalR();
+builder.Services.AddScoped<INotificationRealtimePublisher, SignalRNotificationPublisher>();
+
 var app = builder.Build();
 
 // Pipeline xử lý HTTP Request
@@ -61,5 +68,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<NotificationHub>("/hubs/notifications");
 
 app.Run();

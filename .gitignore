@@ -6,8 +6,10 @@
 # dotenv files
 .env
 
-# Local documentation
-/docs/
+# Local documentation (except Superpowers plans, which need to stay tracked
+# so tools like Codex's @-mention file picker can find them)
+/docs/*
+!/docs/superpowers/
 
 # AppSettings
 appsettings*.json

@@ -34,6 +34,22 @@ public class LearningProfileController : BaseApiController
     }
 
     /// <summary>
+    /// Tạo mới Learning Profile của một hồ sơ trẻ (dùng cùng logic upsert với PUT).
+    /// </summary>
+    [HttpPost("{childProfileId:int}")]
+    [Authorize(Roles = "Parent,Teacher")]
+    public async Task<ActionResult<ApiResponse<LearningProfileDto>>> CreateLearningProfile(
+        int childProfileId,
+        [FromBody] SetLearningProfileRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _learningProfileService.SetLearningProfileAsync(
+            childProfileId, GetCurrentUserId(), request, cancellationToken);
+
+        return HandleResult(result, "Tạo Learning Profile thành công.");
+    }
+
+    /// <summary>
     /// Lấy Learning Profile hiện tại của hồ sơ trẻ.
     /// </summary>
     [HttpGet("{childProfileId:int}")]

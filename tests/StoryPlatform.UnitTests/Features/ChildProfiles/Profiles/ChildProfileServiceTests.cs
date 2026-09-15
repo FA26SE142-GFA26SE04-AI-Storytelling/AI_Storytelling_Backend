@@ -339,6 +339,38 @@ public class ChildProfileServiceTests
     }
 
     [Fact]
+    public async Task ListMyChildProfilesAsync_FiltersOutArchivedProfiles()
+    {
+        Expression<Func<ChildProfile, bool>>? capturedPredicate = null;
+        _profileRepo.Setup(repository => repository.FindAsync(
+                It.IsAny<Expression<Func<ChildProfile, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .Callback<Expression<Func<ChildProfile, bool>>, string?, CancellationToken>(
+                (predicate, _, _) => capturedPredicate = predicate)
+            .ReturnsAsync(new List<ChildProfile>());
+
+        await _sut.ListMyChildProfilesAsync(2);
+
+        Assert.NotNull(capturedPredicate);
+        var compiled = capturedPredicate!.Compile();
+        Assert.True(compiled(new ChildProfile
+        {
+            OwnerUserId = 2,
+            Status = ChildProfileStatus.Active
+        }));
+        Assert.False(compiled(new ChildProfile
+        {
+            OwnerUserId = 2,
+            Status = ChildProfileStatus.Archived
+        }));
+        Assert.False(compiled(new ChildProfile
+        {
+            OwnerUserId = 3,
+            Status = ChildProfileStatus.Active
+        }));
+    }
+
+    [Fact]
     public async Task GetChildProfileByIdAsync_NoActiveSupervision_ThrowsForbidden()
     {
         _profileRepo.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))

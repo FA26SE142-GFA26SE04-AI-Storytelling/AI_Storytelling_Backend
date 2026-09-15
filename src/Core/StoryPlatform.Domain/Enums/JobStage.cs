@@ -15,5 +15,12 @@ public enum JobStage
     OutlineGenerated = 12,
     OutlineFailed = 14,
     OutlineRejected = 15,
-    ContentPending = 20
+    ContentPending = 20,
+    ContentGenerating = 21,
+    ContentStable = 22,
+    ContentArtifactPending = 23,
+    ContentArtifactGenerating = 24,
+    ContentArtifactCompleted = 25,
+    ContentPackageCompleted = 26,
+    ContentFailed = 29
 }

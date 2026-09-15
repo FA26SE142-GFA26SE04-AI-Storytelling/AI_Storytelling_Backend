@@ -6,5 +6,6 @@ public enum VersionEditType
     Edit = 2,
     Regenerate = 3,
     HumanEdited = 4,
-    AiRegenerated = 5
+    AiRegenerated = 5,
+    AiRefined = 6
 }

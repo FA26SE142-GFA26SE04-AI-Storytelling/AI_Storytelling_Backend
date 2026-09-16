@@ -201,6 +201,34 @@ public class AuthServiceTests
         await Assert.ThrowsAsync<BadRequestException>(() => _sut.RegisterAsync(request));
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("not-an-email")]
+    public async Task RegisterAsync_InvalidEmail_DoesNotPersistOrSendVerificationEmail(string email)
+    {
+        var request = new RegisterRequestDto
+        {
+            Username = "parent_invalid_email",
+            Email = email,
+            FullName = "Invalid Email User",
+            Password = "Password@123",
+            ConfirmPassword = "Password@123"
+        };
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.RegisterAsync(request));
+
+        _userRepoMock.Verify(r => r.ExistsAsync(
+            It.IsAny<Expression<Func<UserAccount, bool>>>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+        _userRepoMock.Verify(r => r.AddAsync(
+            It.IsAny<UserAccount>(), It.IsAny<CancellationToken>()), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(
+            It.IsAny<CancellationToken>()), Times.Never);
+        _emailSenderMock.Verify(e => e.SendEmailVerificationEmailAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     [Fact]
     public async Task CreateParentAccountAsync_ValidRequest_CreatesAccountAndSendsProvisioningEmail()
     {

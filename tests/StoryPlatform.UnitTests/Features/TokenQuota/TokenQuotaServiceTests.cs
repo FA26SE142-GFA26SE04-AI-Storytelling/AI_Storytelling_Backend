@@ -3,6 +3,7 @@ using Moq;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
+using StoryPlatform.Application.Features.TokenQuota.DTOs;
 using StoryPlatform.Application.Features.TokenQuota.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -278,5 +279,136 @@ public class TokenQuotaServiceTests
         Assert.Equal(250, existing.QuotaLimit);
         Assert.True(existing.PeriodEnd >= DateOnly.FromDateTime(DateTime.UtcNow));
         _configRepository.Verify(r => r.Update(existing), Times.AtLeast(2));
+    }
+
+    // ---------- SetConfigAsync ----------
+
+    [Fact]
+    public async Task SetConfigAsync_InvalidScopeString_ThrowsBadRequest()
+    {
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.SetConfigAsync(1, new SetTokenQuotaConfigRequestDto
+        {
+            Scope = "not-a-scope", QuotaLimit = 10,
+            PeriodStart = DateOnly.FromDateTime(DateTime.UtcNow),
+            PeriodEnd = DateOnly.FromDateTime(DateTime.UtcNow).AddMonths(1)
+        }));
+    }
+
+    [Fact]
+    public async Task SetConfigAsync_OrganizationScopeMissingOrganizationId_ThrowsBadRequest()
+    {
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.SetConfigAsync(1, new SetTokenQuotaConfigRequestDto
+        {
+            Scope = "Organization", QuotaLimit = 10,
+            PeriodStart = DateOnly.FromDateTime(DateTime.UtcNow),
+            PeriodEnd = DateOnly.FromDateTime(DateTime.UtcNow).AddMonths(1)
+        }));
+    }
+
+    [Fact]
+    public async Task SetConfigAsync_PeriodEndBeforeStart_ThrowsBadRequest()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.SetConfigAsync(1, new SetTokenQuotaConfigRequestDto
+        {
+            Scope = "System", QuotaLimit = 10, PeriodStart = today, PeriodEnd = today.AddDays(-1)
+        }));
+    }
+
+    [Fact]
+    public async Task SetConfigAsync_NoExistingConfig_CreatesNewAndWritesAudit()
+    {
+        SetupConfigLookup();
+        StoryPlatform.Domain.Entities.TokenQuotaConfig? added = null;
+        _configRepository
+            .Setup(r => r.AddAsync(It.IsAny<StoryPlatform.Domain.Entities.TokenQuotaConfig>(), It.IsAny<CancellationToken>()))
+            .Callback<StoryPlatform.Domain.Entities.TokenQuotaConfig, CancellationToken>((entity, _) =>
+            {
+                entity.Id = 42;
+                added = entity;
+            })
+            .ReturnsAsync((StoryPlatform.Domain.Entities.TokenQuotaConfig entity, CancellationToken _) => entity);
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var result = await _sut.SetConfigAsync(99, new SetTokenQuotaConfigRequestDto
+        {
+            Scope = "System", QuotaLimit = 1000, PeriodStart = today, PeriodEnd = today.AddMonths(1)
+        });
+
+        Assert.NotNull(added);
+        Assert.Equal("System", result.Scope);
+        Assert.Equal(1000, result.QuotaLimit);
+        _auditLogWriter.Verify(w => w.LogAsync(
+            99, "TokenQuotaConfigSet", nameof(StoryPlatform.Domain.Entities.TokenQuotaConfig), 42,
+            It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ---------- ListConfigsAsync ----------
+
+    [Fact]
+    public async Task ListConfigsAsync_ReturnsAllConfigsMapped()
+    {
+        var configs = new[]
+        {
+            MakeConfig(TokenQuotaScope.System, quotaLimit: 1000, quotaUsed: 1),
+            MakeConfig(TokenQuotaScope.Child, quotaLimit: 5, quotaUsed: 0, childProfileId: 3)
+        };
+        _configRepository
+            .Setup(r => r.FindAsync(
+                It.IsAny<Expression<Func<StoryPlatform.Domain.Entities.TokenQuotaConfig, bool>>>(),
+                null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Expression<Func<StoryPlatform.Domain.Entities.TokenQuotaConfig, bool>> predicate, string? _, CancellationToken _) =>
+                configs.Where(predicate.Compile()).ToList());
+
+        var result = await _sut.ListConfigsAsync();
+
+        Assert.Equal(2, result.Count);
+    }
+
+    // ---------- GetStatusForChildAsync ----------
+
+    [Fact]
+    public async Task GetStatusForChildAsync_NonOwnerNonSupervisorNonAdmin_ThrowsForbidden()
+    {
+        SetupChild(MakePersonalChild(ownerUserId: 1));
+        _userRepository.Setup(r => r.GetByIdAsync(2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserAccount { Id = 2, Role = UserRole.Parent });
+        _supervisionRepository
+            .Setup(r => r.ExistsAsync(It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.GetStatusForChildAsync(2, 1));
+    }
+
+    [Fact]
+    public async Task GetStatusForChildAsync_Administrator_AllowedRegardlessOfSupervision()
+    {
+        SetupChild(MakePersonalChild(ownerUserId: 1));
+        _userRepository.Setup(r => r.GetByIdAsync(99, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserAccount { Id = 99, Role = UserRole.Administrator });
+        SetupConfigLookup();
+
+        var result = await _sut.GetStatusForChildAsync(99, 1);
+
+        Assert.True(result.IsUnlimited);
+    }
+
+    [Fact]
+    public async Task GetStatusForChildAsync_ActiveSupervisor_ReturnsStatus()
+    {
+        SetupChild(MakePersonalChild(ownerUserId: 1));
+        _userRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserAccount { Id = 1, Role = UserRole.Parent });
+        _supervisionRepository
+            .Setup(r => r.ExistsAsync(It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        SetupConfigLookup(MakeConfig(TokenQuotaScope.Child, quotaLimit: 10, quotaUsed: 4, childProfileId: 1));
+
+        var result = await _sut.GetStatusForChildAsync(1, 1);
+
+        Assert.False(result.IsUnlimited);
+        Assert.Equal(10, result.QuotaLimit);
+        Assert.Equal(4, result.QuotaUsed);
+        Assert.Equal(6, result.Remaining);
     }
 }

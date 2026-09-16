@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
@@ -47,16 +48,144 @@ public class TokenQuotaService : ITokenQuotaService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
-    public Task<TokenQuotaConfigDto> SetConfigAsync(
-        int adminUserId, SetTokenQuotaConfigRequestDto request, CancellationToken cancellationToken = default) =>
-        throw new NotImplementedException("Implemented in Task 4.");
+    public async Task<TokenQuotaConfigDto> SetConfigAsync(
+        int adminUserId, SetTokenQuotaConfigRequestDto request, CancellationToken cancellationToken = default)
+    {
+        if (!Enum.TryParse<TokenQuotaScope>(request.Scope, ignoreCase: true, out var scope))
+        {
+            throw new BadRequestException($"Scope '{request.Scope}' không hợp lệ.");
+        }
 
-    public Task<List<TokenQuotaConfigDto>> ListConfigsAsync(CancellationToken cancellationToken = default) =>
-        throw new NotImplementedException("Implemented in Task 4.");
+        if (request.PeriodEnd < request.PeriodStart)
+        {
+            throw new BadRequestException("PeriodEnd phải >= PeriodStart.");
+        }
 
-    public Task<TokenQuotaStatusDto> GetStatusForChildAsync(
-        int requestingUserId, int childProfileId, CancellationToken cancellationToken = default) =>
-        throw new NotImplementedException("Implemented in Task 4.");
+        // Validate scope-specific required fields
+        if (scope == TokenQuotaScope.Organization && !request.OrganizationId.HasValue)
+        {
+            throw new BadRequestException("OrganizationId là bắt buộc cho Organization scope.");
+        }
+        if (scope == TokenQuotaScope.Child && !request.ChildProfileId.HasValue)
+        {
+            throw new BadRequestException("ChildProfileId là bắt buộc cho Child scope.");
+        }
+        if (scope == TokenQuotaScope.Personal && !request.UserId.HasValue)
+        {
+            throw new BadRequestException("UserId là bắt buộc cho Personal scope.");
+        }
+
+        var repo = _unitOfWork.Repository<TokenQuotaConfig>();
+
+        // Try to find existing config
+        TokenQuotaConfig? existing = null;
+        if (scope == TokenQuotaScope.System)
+        {
+            existing = await repo.FirstOrDefaultAsync(c => c.Scope == TokenQuotaScope.System, cancellationToken: cancellationToken);
+        }
+        else if (scope == TokenQuotaScope.Organization)
+        {
+            existing = await repo.FirstOrDefaultAsync(
+                c => c.Scope == TokenQuotaScope.Organization && c.OrganizationId == request.OrganizationId,
+                cancellationToken: cancellationToken);
+        }
+        else if (scope == TokenQuotaScope.Child)
+        {
+            existing = await repo.FirstOrDefaultAsync(
+                c => c.Scope == TokenQuotaScope.Child && c.ChildProfileId == request.ChildProfileId,
+                cancellationToken: cancellationToken);
+        }
+        else if (scope == TokenQuotaScope.Personal)
+        {
+            existing = await repo.FirstOrDefaultAsync(
+                c => c.Scope == TokenQuotaScope.Personal && c.UserId == request.UserId,
+                cancellationToken: cancellationToken);
+        }
+
+        TokenQuotaConfig config;
+        if (existing == null)
+        {
+            config = new TokenQuotaConfig
+            {
+                Scope = scope,
+                OrganizationId = request.OrganizationId,
+                ChildProfileId = request.ChildProfileId,
+                UserId = request.UserId,
+                QuotaLimit = request.QuotaLimit,
+                QuotaUsed = 0,
+                PeriodStart = request.PeriodStart,
+                PeriodEnd = request.PeriodEnd
+            };
+            await repo.AddAsync(config, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            await _auditLogWriter.LogAsync(
+                adminUserId, "TokenQuotaConfigSet", nameof(TokenQuotaConfig), config.Id,
+                null, cancellationToken);
+        }
+        else
+        {
+            var beforeState = new { existing.QuotaLimit, PeriodStart = existing.PeriodStart.ToString(), PeriodEnd = existing.PeriodEnd.ToString() };
+
+            existing.QuotaLimit = request.QuotaLimit;
+            existing.PeriodStart = request.PeriodStart;
+            existing.PeriodEnd = request.PeriodEnd;
+            repo.Update(existing);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            await _auditLogWriter.LogAsync(
+                adminUserId, "TokenQuotaConfigSet", nameof(TokenQuotaConfig), existing.Id,
+                beforeState, cancellationToken);
+
+            config = existing;
+        }
+
+        return MapToDto(config);
+    }
+
+    public async Task<List<TokenQuotaConfigDto>> ListConfigsAsync(CancellationToken cancellationToken = default)
+    {
+        var configs = await _unitOfWork.Repository<TokenQuotaConfig>().FindAsync(
+            c => true, cancellationToken: cancellationToken);
+        return configs.Select(MapToDto).ToList();
+    }
+
+    public async Task<TokenQuotaStatusDto> GetStatusForChildAsync(
+        int requestingUserId, int childProfileId, CancellationToken cancellationToken = default)
+    {
+        var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(childProfileId, cancellationToken)
+                    ?? throw new NotFoundException("Hồ sơ trẻ", childProfileId);
+
+        var requester = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(requestingUserId, cancellationToken);
+        var isAdministrator = requester?.Role == UserRole.Administrator;
+        if (!isAdministrator)
+        {
+            var hasActiveSupervision = await _unitOfWork.Repository<SupervisionRelationship>().ExistsAsync(
+                r => r.ChildProfileId == childProfileId && r.SupervisorUserId == requestingUserId && r.RevokedAt == null,
+                cancellationToken);
+            if (!hasActiveSupervision)
+            {
+                throw new ForbiddenException("Bạn không có quyền xem quota của hồ sơ trẻ này.");
+            }
+        }
+
+        var config = await ResolveApplicableConfigAsync(child, cancellationToken);
+        if (config == null)
+        {
+            return new TokenQuotaStatusDto { IsUnlimited = true };
+        }
+
+        return new TokenQuotaStatusDto
+        {
+            IsUnlimited = false,
+            Scope = config.Scope.ToString(),
+            QuotaLimit = config.QuotaLimit,
+            QuotaUsed = config.QuotaUsed,
+            Remaining = Math.Max(config.QuotaLimit - config.QuotaUsed, 0),
+            PeriodStart = config.PeriodStart,
+            PeriodEnd = config.PeriodEnd
+        };
+    }
 
     public async Task CreditAsync(
         ProfileScope planScope, int payerUserId, int? organizationId, int quotaAmount,
@@ -167,4 +296,17 @@ public class TokenQuotaService : ITokenQuotaService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return config;
     }
+
+    private static TokenQuotaConfigDto MapToDto(TokenQuotaConfig config) => new()
+    {
+        Id = config.Id,
+        Scope = config.Scope.ToString(),
+        OrganizationId = config.OrganizationId,
+        ChildProfileId = config.ChildProfileId,
+        UserId = config.UserId,
+        QuotaLimit = config.QuotaLimit,
+        QuotaUsed = config.QuotaUsed,
+        PeriodStart = config.PeriodStart,
+        PeriodEnd = config.PeriodEnd
+    };
 }

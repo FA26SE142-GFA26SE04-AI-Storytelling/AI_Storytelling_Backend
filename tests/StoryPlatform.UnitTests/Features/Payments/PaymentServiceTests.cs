@@ -387,6 +387,115 @@ public class PaymentServiceTests
     }
 
     [Fact]
+    public async Task HandleWebhookAsync_AmountMatches_CreditAsyncThrows_StaysPaidAndWritesAuditLog()
+    {
+        // Regression test: a CreditAsync failure (e.g. BadRequestException on missing
+        // OrganizationId, or any transient error) must not be silently lost. The transaction is
+        // already committed as Paid before CreditAsync runs (SePay will not retry a transaction it
+        // already saw succeed), so the failure must be recorded via audit log instead of thrown.
+        var transaction = MakeTransaction(1, "SEPAYFAIL01", 49000);
+        _transactionRepository.Setup(repo => repo.FindAsync(
+                It.IsAny<Expression<Func<PaymentTransaction, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { transaction });
+        _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakePlan(1, ProfileScope.Personal, 49000));
+        _tokenQuotaService
+            .Setup(q => q.CreditAsync(
+                It.IsAny<ProfileScope>(), It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new BadRequestException("OrganizationId là bắt buộc."));
+
+        await _sut.HandleWebhookAsync("valid", new SePayWebhookPayloadDto
+        {
+            Content = $"chuyen tien {transaction.TransactionCode} thanh toan",
+            TransferAmount = 49000,
+            ReferenceCode = "FT2600999999"
+        });
+
+        Assert.Equal(PaymentStatus.Paid, transaction.Status);
+        _notificationService.Verify(service => service.CreateAsync(
+            transaction.PayerUserId, NotificationType.PaymentConfirmed, It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        _auditLogWriter.Verify(writer => writer.LogAsync(
+            null, "PaymentCreditFailed", nameof(PaymentTransaction), transaction.Id,
+            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleWebhookAsync_AmountMatches_PlanNotFound_StaysPaidAndWritesAuditLog()
+    {
+        // A missing SubscriptionPlan must not silently skip crediting: it is treated the same as
+        // a credit failure for audit purposes.
+        var transaction = MakeTransaction(1, "SEPAYNOPLAN1", 49000);
+        _transactionRepository.Setup(repo => repo.FindAsync(
+                It.IsAny<Expression<Func<PaymentTransaction, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { transaction });
+        _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SubscriptionPlan?)null);
+
+        await _sut.HandleWebhookAsync("valid", new SePayWebhookPayloadDto
+        {
+            Content = $"chuyen tien {transaction.TransactionCode} thanh toan",
+            TransferAmount = 49000
+        });
+
+        Assert.Equal(PaymentStatus.Paid, transaction.Status);
+        _tokenQuotaService.Verify(q => q.CreditAsync(
+            It.IsAny<ProfileScope>(), It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _auditLogWriter.Verify(writer => writer.LogAsync(
+            null, "PaymentCreditFailed", nameof(PaymentTransaction), transaction.Id,
+            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task MarkPaidManuallyAsync_CreditAsyncThrows_StaysPaidReturnsDtoAndWritesAuditLog()
+    {
+        // Same "payment confirmed but nothing credited" bug as the webhook path, via the manual
+        // mark-paid admin action. The transaction is already Paid and cannot be retried (Paid
+        // transactions are refused), so a CreditAsync failure must be recorded via audit log, and
+        // MarkPaidManuallyAsync must still return a valid DTO (using the plan that was found).
+        var transaction = MakeTransaction(1, "M4", 49000, PaymentStatus.MismatchAmount);
+        _transactionRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(transaction);
+        _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakePlan(1, ProfileScope.Personal, 49000));
+        _tokenQuotaService
+            .Setup(q => q.CreditAsync(
+                It.IsAny<ProfileScope>(), It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new BadRequestException("boom"));
+
+        var result = await _sut.MarkPaidManuallyAsync(99, 1);
+
+        Assert.Equal(PaymentStatus.Paid, transaction.Status);
+        Assert.Equal("Paid", result.Status);
+        Assert.Equal("Personal", result.PlanName);
+        _auditLogWriter.Verify(writer => writer.LogAsync(
+            99, "PaymentCreditFailed", nameof(PaymentTransaction), transaction.Id,
+            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task MarkPaidManuallyAsync_PlanNotFound_StaysPaidReturnsEmptyPlanNameAndWritesAuditLog()
+    {
+        var transaction = MakeTransaction(1, "M5", 49000, PaymentStatus.Pending);
+        _transactionRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(transaction);
+        _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SubscriptionPlan?)null);
+
+        var result = await _sut.MarkPaidManuallyAsync(99, 1);
+
+        Assert.Equal(PaymentStatus.Paid, transaction.Status);
+        Assert.Equal(string.Empty, result.PlanName);
+        _tokenQuotaService.Verify(q => q.CreditAsync(
+            It.IsAny<ProfileScope>(), It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _auditLogWriter.Verify(writer => writer.LogAsync(
+            99, "PaymentCreditFailed", nameof(PaymentTransaction), transaction.Id,
+            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task HandleWebhookAsync_AmountMismatch_DoesNotCreditQuota()
     {
         var transaction = MakeTransaction(1, "SEPAYXYZ999", 49000);

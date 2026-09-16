@@ -22,11 +22,20 @@ public class TokenQuotaService : ITokenQuotaService
 
     public async Task EnsureWithinQuotaAsync(int childProfileId, CancellationToken cancellationToken = default)
     {
+        // Pure read: never attach/persist a rollover here. If a rollover is actually due it is
+        // performed exactly once, later, by IncrementUsageAsync — attaching the same config row
+        // from both this method and IncrementUsageAsync within one SubmitAsync flow is what
+        // caused the EF identity-map "instance already tracked" conflict.
         var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(childProfileId, cancellationToken)
                     ?? throw new NotFoundException("Hồ sơ trẻ", childProfileId);
-        var config = await ResolveApplicableConfigAsync(child, cancellationToken);
+        var config = await ResolveApplicableConfigRawAsync(child, cancellationToken);
+        if (config == null)
+        {
+            return;
+        }
 
-        if (config != null && config.QuotaUsed >= config.QuotaLimit)
+        var effective = ComputeEffectiveView(config, DateOnly.FromDateTime(DateTime.UtcNow));
+        if (effective.QuotaUsed >= effective.QuotaLimit)
         {
             throw new ConflictException(
                 "Đã hết lượt sinh truyện AI trong chu kỳ hiện tại. Vui lòng mua thêm quota hoặc chờ tới kỳ reset tiếp theo.");
@@ -35,14 +44,18 @@ public class TokenQuotaService : ITokenQuotaService
 
     public async Task IncrementUsageAsync(int childProfileId, CancellationToken cancellationToken = default)
     {
+        // The only place in the Ensure->Increment flow that actually persists a rollover. Rollover
+        // (if due) and the usage increment are applied in-memory together, then attached/saved in a
+        // single Update/SaveChanges call — at most one attach per config row.
         var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(childProfileId, cancellationToken)
                     ?? throw new NotFoundException("Hồ sơ trẻ", childProfileId);
-        var config = await ResolveApplicableConfigAsync(child, cancellationToken);
+        var config = await ResolveApplicableConfigRawAsync(child, cancellationToken);
         if (config == null)
         {
             return;
         }
 
+        ApplyRolloverIfExpired(config, DateOnly.FromDateTime(DateTime.UtcNow));
         config.QuotaUsed += 1;
         _unitOfWork.Repository<TokenQuotaConfig>().Update(config);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -157,21 +170,24 @@ public class TokenQuotaService : ITokenQuotaService
             }
         }
 
-        var config = await ResolveApplicableConfigAsync(child, cancellationToken);
+        // GET-style read: no persisted rollover side effect. Show what the status would be
+        // as-if a rollover happened, without attaching/saving anything.
+        var config = await ResolveApplicableConfigRawAsync(child, cancellationToken);
         if (config == null)
         {
             return new TokenQuotaStatusDto { IsUnlimited = true };
         }
 
+        var effective = ComputeEffectiveView(config, DateOnly.FromDateTime(DateTime.UtcNow));
         return new TokenQuotaStatusDto
         {
             IsUnlimited = false,
             Scope = config.Scope.ToString(),
-            QuotaLimit = config.QuotaLimit,
-            QuotaUsed = config.QuotaUsed,
-            Remaining = Math.Max(config.QuotaLimit - config.QuotaUsed, 0),
-            PeriodStart = config.PeriodStart,
-            PeriodEnd = config.PeriodEnd
+            QuotaLimit = effective.QuotaLimit,
+            QuotaUsed = effective.QuotaUsed,
+            Remaining = Math.Max(effective.QuotaLimit - effective.QuotaUsed, 0),
+            PeriodStart = effective.PeriodStart,
+            PeriodEnd = effective.PeriodEnd
         };
     }
 
@@ -226,7 +242,13 @@ public class TokenQuotaService : ITokenQuotaService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task<TokenQuotaConfig?> ResolveApplicableConfigAsync(ChildProfile child, CancellationToken cancellationToken)
+    /// <summary>
+    /// Resolves the applicable config for a child by scope hierarchy (Child -> Organization/Personal
+    /// -> System) as a pure read — never rolls over or persists anything. Callers decide whether they
+    /// need a real (persisted) rollover (<see cref="IncrementUsageAsync"/>) or just an as-if-rolled-over
+    /// view (<see cref="EnsureWithinQuotaAsync"/>, <see cref="GetStatusForChildAsync"/>).
+    /// </summary>
+    private async Task<TokenQuotaConfig?> ResolveApplicableConfigRawAsync(ChildProfile child, CancellationToken cancellationToken)
     {
         var repo = _unitOfWork.Repository<TokenQuotaConfig>();
 
@@ -235,7 +257,7 @@ public class TokenQuotaService : ITokenQuotaService
             cancellationToken: cancellationToken);
         if (childConfig != null)
         {
-            return await RolloverIfExpiredAsync(childConfig, cancellationToken);
+            return childConfig;
         }
 
         if (child.Scope == ProfileScope.Organization && child.OrganizationId.HasValue)
@@ -245,41 +267,92 @@ public class TokenQuotaService : ITokenQuotaService
                 cancellationToken: cancellationToken);
             if (orgConfig != null)
             {
-                return await RolloverIfExpiredAsync(orgConfig, cancellationToken);
+                return orgConfig;
             }
         }
-        else
+        else if (child.Scope == ProfileScope.Personal)
         {
             var personalConfig = await repo.FirstOrDefaultAsync(
                 c => c.Scope == TokenQuotaScope.Personal && c.UserId == child.OwnerUserId,
                 cancellationToken: cancellationToken);
             if (personalConfig != null)
             {
-                return await RolloverIfExpiredAsync(personalConfig, cancellationToken);
+                return personalConfig;
             }
         }
+        // Any other/malformed case (e.g. Scope == Organization with a null OrganizationId, which
+        // violates the data invariant) intentionally falls through to the System-scope lookup below
+        // instead of silently resolving against the owner's unrelated Personal config.
 
-        var systemConfig = await repo.FirstOrDefaultAsync(
+        return await repo.FirstOrDefaultAsync(
             c => c.Scope == TokenQuotaScope.System, cancellationToken: cancellationToken);
-        return systemConfig != null ? await RolloverIfExpiredAsync(systemConfig, cancellationToken) : null;
     }
 
+    /// <summary>
+    /// Computes what a config's period/usage would look like if a rollover happened right now,
+    /// without mutating <paramref name="config"/> or persisting anything.
+    /// </summary>
+    private static (int QuotaLimit, int QuotaUsed, DateOnly PeriodStart, DateOnly PeriodEnd) ComputeEffectiveView(
+        TokenQuotaConfig config, DateOnly today)
+    {
+        if (!TryComputeRolledOverPeriod(config.PeriodStart, config.PeriodEnd, today, out var newStart, out var newEnd))
+        {
+            return (config.QuotaLimit, config.QuotaUsed, config.PeriodStart, config.PeriodEnd);
+        }
+
+        return (config.QuotaLimit, 0, newStart, newEnd);
+    }
+
+    /// <summary>
+    /// In-memory-only mutation: if the config's period has expired, advances it to the current
+    /// period and resets QuotaUsed to 0. Does not attach or save — callers are responsible for
+    /// persisting (or not) alongside whatever else they mutate in the same call.
+    /// </summary>
+    private static bool ApplyRolloverIfExpired(TokenQuotaConfig config, DateOnly today)
+    {
+        if (!TryComputeRolledOverPeriod(config.PeriodStart, config.PeriodEnd, today, out var newStart, out var newEnd))
+        {
+            return false;
+        }
+
+        config.PeriodStart = newStart;
+        config.PeriodEnd = newEnd;
+        config.QuotaUsed = 0;
+        return true;
+    }
+
+    private static bool TryComputeRolledOverPeriod(
+        DateOnly periodStart, DateOnly periodEnd, DateOnly today, out DateOnly newPeriodStart, out DateOnly newPeriodEnd)
+    {
+        newPeriodStart = periodStart;
+        newPeriodEnd = periodEnd;
+        if (periodEnd >= today)
+        {
+            return false;
+        }
+
+        while (newPeriodEnd < today)
+        {
+            var spanDays = Math.Max(newPeriodEnd.DayNumber - newPeriodStart.DayNumber, 1);
+            newPeriodStart = newPeriodEnd.AddDays(1);
+            newPeriodEnd = newPeriodStart.AddDays(spanDays);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The persisted rollover used only by <see cref="CreditAsync"/>'s top-up-existing-config branch,
+    /// which is not paired with any other attach of the same row in that method.
+    /// </summary>
     private async Task<TokenQuotaConfig> RolloverIfExpiredAsync(TokenQuotaConfig config, CancellationToken cancellationToken)
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        if (config.PeriodEnd >= today)
+        if (!ApplyRolloverIfExpired(config, today))
         {
             return config;
         }
 
-        while (config.PeriodEnd < today)
-        {
-            var spanDays = Math.Max(config.PeriodEnd.DayNumber - config.PeriodStart.DayNumber, 1);
-            config.PeriodStart = config.PeriodEnd.AddDays(1);
-            config.PeriodEnd = config.PeriodStart.AddDays(spanDays);
-        }
-
-        config.QuotaUsed = 0;
         _unitOfWork.Repository<TokenQuotaConfig>().Update(config);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return config;

@@ -154,13 +154,7 @@ public class PaymentService : IPaymentService
                 transaction.PayerUserId, NotificationType.PaymentConfirmed,
                 JsonSerializer.Serialize(new { transactionId = transaction.Id }), cancellationToken);
 
-            var plan = await _unitOfWork.Repository<SubscriptionPlan>().GetByIdAsync(transaction.PlanId, cancellationToken);
-            if (plan != null)
-            {
-                await _tokenQuotaService.CreditAsync(
-                    plan.ApplicableScope, transaction.PayerUserId, transaction.OrganizationId, plan.QuotaAmount,
-                    cancellationToken);
-            }
+            await CreditQuotaSafelyAsync(transaction, actorUserId: null, cancellationToken);
         }
         else
         {
@@ -206,15 +200,54 @@ public class PaymentService : IPaymentService
             transaction.PayerUserId, NotificationType.PaymentConfirmed,
             JsonSerializer.Serialize(new { transactionId = transaction.Id }), cancellationToken);
 
+        var plan = await CreditQuotaSafelyAsync(transaction, actorUserId: adminUserId, cancellationToken);
+
+        return MapToDto(transaction, plan?.Name ?? string.Empty);
+    }
+
+    /// <summary>
+    /// Fetches the transaction's plan and credits token quota, with the transaction already
+    /// committed as Paid. A missing plan or a failure from <see cref="ITokenQuotaService.CreditAsync"/>
+    /// (e.g. missing OrganizationId, transient error) is recorded as an audit log entry for an
+    /// operator to act on rather than propagated — SePay will not retry a transaction it already
+    /// saw succeed, and a manual mark-paid refuses an already-Paid transaction, so failing this step
+    /// must never roll back or fail the surrounding payment-confirmation flow.
+    /// </summary>
+    private async Task<SubscriptionPlan?> CreditQuotaSafelyAsync(
+        PaymentTransaction transaction, int? actorUserId, CancellationToken cancellationToken)
+    {
         var plan = await _unitOfWork.Repository<SubscriptionPlan>().GetByIdAsync(transaction.PlanId, cancellationToken);
-        if (plan != null)
+        if (plan == null)
+        {
+            await _auditLogWriter.LogAsync(
+                actorUserId, "PaymentCreditFailed", nameof(PaymentTransaction), transaction.Id,
+                null, new { reason = "SubscriptionPlanNotFound", planId = transaction.PlanId }, cancellationToken);
+            return null;
+        }
+
+        try
         {
             await _tokenQuotaService.CreditAsync(
                 plan.ApplicableScope, transaction.PayerUserId, transaction.OrganizationId, plan.QuotaAmount,
                 cancellationToken);
         }
+        catch (Exception ex)
+        {
+            await _auditLogWriter.LogAsync(
+                actorUserId, "PaymentCreditFailed", nameof(PaymentTransaction), transaction.Id,
+                null,
+                new
+                {
+                    reason = "CreditAsyncThrew",
+                    planId = plan.Id,
+                    planScope = plan.ApplicableScope.ToString(),
+                    quotaAmount = plan.QuotaAmount,
+                    error = ex.Message
+                },
+                cancellationToken);
+        }
 
-        return MapToDto(transaction, plan?.Name ?? string.Empty);
+        return plan;
     }
 
     private static string GenerateTransactionCode() =>

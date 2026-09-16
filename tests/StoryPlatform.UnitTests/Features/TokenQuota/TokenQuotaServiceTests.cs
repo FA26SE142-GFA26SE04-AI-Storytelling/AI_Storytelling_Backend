@@ -148,8 +148,12 @@ public class TokenQuotaServiceTests
     }
 
     [Fact]
-    public async Task EnsureWithinQuotaAsync_ExpiredPeriod_RollsOverResetsUsageAndAllows()
+    public async Task EnsureWithinQuotaAsync_ExpiredPeriod_TreatedAsNotExceeded_WithoutPersistingRollover()
     {
+        // EnsureWithinQuotaAsync must be a pure read: an expired period can never be "exceeded"
+        // (the effective QuotaUsed after an as-if rollover is always 0), and no rollover is
+        // attached/saved here — that is IncrementUsageAsync's job, and doing it in both places is
+        // what caused the EF identity-map double-attach bug.
         SetupChild(MakePersonalChild());
         var yesterday = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1);
         var config = MakeConfig(
@@ -159,9 +163,49 @@ public class TokenQuotaServiceTests
 
         await _sut.EnsureWithinQuotaAsync(1);
 
-        Assert.Equal(0, config.QuotaUsed);
+        Assert.Equal(5, config.QuotaUsed);
+        Assert.Equal(yesterday, config.PeriodEnd);
+        _configRepository.Verify(r => r.Update(It.IsAny<StoryPlatform.Domain.Entities.TokenQuotaConfig>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task EnsureThenIncrement_ExpiredPeriod_DoesNotThrow_AndEndsWithQuotaUsedOne()
+    {
+        // Regression test for the EF identity-map "instance already tracked" conflict: with a real
+        // DbContext, EnsureWithinQuotaAsync attaching a rolled-over config and IncrementUsageAsync
+        // then re-resolving and attaching a second, distinct untracked instance for the same row
+        // throws InvalidOperationException. Moq's mocked IGenericRepository has no identity map, so
+        // it cannot reproduce that exception directly — instead this pins the corrected behavior and
+        // call-count contract: Ensure performs zero attaches, and Increment performs exactly one
+        // (rollover + increment collapsed into a single Update), for a total of one Update call
+        // across the whole Ensure -> Increment flow.
+        SetupChild(MakePersonalChild());
+        var yesterday = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1);
+        var config = MakeConfig(
+            TokenQuotaScope.Child, quotaLimit: 5, quotaUsed: 5, childProfileId: 1,
+            periodStart: yesterday.AddDays(-30), periodEnd: yesterday);
+        SetupConfigLookup(config);
+
+        await _sut.EnsureWithinQuotaAsync(1);
+        await _sut.IncrementUsageAsync(1);
+
+        Assert.Equal(1, config.QuotaUsed);
         Assert.True(config.PeriodEnd >= DateOnly.FromDateTime(DateTime.UtcNow));
         _configRepository.Verify(r => r.Update(config), Times.Once);
+    }
+
+    [Fact]
+    public async Task EnsureWithinQuotaAsync_MalformedOrganizationChildWithNullOrganizationId_DoesNotFallBackToPersonalConfig()
+    {
+        // A data-invariant-violating Organization-scope child with a null OrganizationId must not
+        // silently resolve against the owner's unrelated Personal config.
+        var child = new ChildProfile { Id = 1, OwnerUserId = 7, Scope = ProfileScope.Organization, OrganizationId = null };
+        SetupChild(child);
+        SetupConfigLookup(MakeConfig(TokenQuotaScope.Personal, quotaLimit: 1, quotaUsed: 1, userId: 7));
+
+        // Falls through to the System-scope lookup instead (none configured here) => no applicable
+        // config => does not throw, even though the exhausted Personal config exists.
+        await _sut.EnsureWithinQuotaAsync(1);
     }
 
     // ---------- IncrementUsageAsync ----------

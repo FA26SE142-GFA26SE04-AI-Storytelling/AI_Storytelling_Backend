@@ -6,6 +6,7 @@ using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Application.Features.Payments.DTOs;
 using StoryPlatform.Application.Features.Payments.Interfaces;
+using StoryPlatform.Application.Features.TokenQuota.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -20,19 +21,22 @@ public class PaymentService : IPaymentService
     private readonly INotificationService _notificationService;
     private readonly ISePayQrUrlBuilder _qrUrlBuilder;
     private readonly ISePayWebhookAuthenticator _webhookAuthenticator;
+    private readonly ITokenQuotaService _tokenQuotaService;
 
     public PaymentService(
         IUnitOfWork unitOfWork,
         IAuditLogWriter auditLogWriter,
         INotificationService notificationService,
         ISePayQrUrlBuilder qrUrlBuilder,
-        ISePayWebhookAuthenticator webhookAuthenticator)
+        ISePayWebhookAuthenticator webhookAuthenticator,
+        ITokenQuotaService tokenQuotaService)
     {
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
         _notificationService = notificationService;
         _qrUrlBuilder = qrUrlBuilder;
         _webhookAuthenticator = webhookAuthenticator;
+        _tokenQuotaService = tokenQuotaService;
     }
 
     public async Task<List<SubscriptionPlanDto>> ListActivePlansAsync(CancellationToken cancellationToken = default)
@@ -149,6 +153,14 @@ public class PaymentService : IPaymentService
             await _notificationService.CreateAsync(
                 transaction.PayerUserId, NotificationType.PaymentConfirmed,
                 JsonSerializer.Serialize(new { transactionId = transaction.Id }), cancellationToken);
+
+            var plan = await _unitOfWork.Repository<SubscriptionPlan>().GetByIdAsync(transaction.PlanId, cancellationToken);
+            if (plan != null)
+            {
+                await _tokenQuotaService.CreditAsync(
+                    plan.ApplicableScope, transaction.PayerUserId, transaction.OrganizationId, plan.QuotaAmount,
+                    cancellationToken);
+            }
         }
         else
         {
@@ -194,7 +206,15 @@ public class PaymentService : IPaymentService
             transaction.PayerUserId, NotificationType.PaymentConfirmed,
             JsonSerializer.Serialize(new { transactionId = transaction.Id }), cancellationToken);
 
-        return MapToDto(transaction, transaction.Plan?.Name ?? string.Empty);
+        var plan = await _unitOfWork.Repository<SubscriptionPlan>().GetByIdAsync(transaction.PlanId, cancellationToken);
+        if (plan != null)
+        {
+            await _tokenQuotaService.CreditAsync(
+                plan.ApplicableScope, transaction.PayerUserId, transaction.OrganizationId, plan.QuotaAmount,
+                cancellationToken);
+        }
+
+        return MapToDto(transaction, plan?.Name ?? string.Empty);
     }
 
     private static string GenerateTransactionCode() =>

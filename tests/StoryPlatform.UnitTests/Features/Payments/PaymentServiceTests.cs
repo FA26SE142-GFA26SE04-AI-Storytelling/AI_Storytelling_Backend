@@ -8,6 +8,7 @@ using StoryPlatform.Application.Features.Notifications.DTOs;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Application.Features.Payments.DTOs;
 using StoryPlatform.Application.Features.Payments.Services;
+using StoryPlatform.Application.Features.TokenQuota.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using Xunit;
@@ -25,6 +26,7 @@ public class PaymentServiceTests
     private readonly Mock<INotificationService> _notificationService = new();
     private readonly Mock<ISePayQrUrlBuilder> _qrUrlBuilder = new();
     private readonly Mock<ISePayWebhookAuthenticator> _webhookAuthenticator = new();
+    private readonly Mock<ITokenQuotaService> _tokenQuotaService = new();
     private readonly PaymentService _sut;
 
     public PaymentServiceTests()
@@ -44,7 +46,7 @@ public class PaymentServiceTests
 
         _sut = new PaymentService(
             _unitOfWork.Object, _auditLogWriter.Object, _notificationService.Object,
-            _qrUrlBuilder.Object, _webhookAuthenticator.Object);
+            _qrUrlBuilder.Object, _webhookAuthenticator.Object, _tokenQuotaService.Object);
     }
 
     private static SubscriptionPlan MakePlan(int id, ProfileScope scope, int price, bool isActive = true) => new()
@@ -261,6 +263,8 @@ public class PaymentServiceTests
         _transactionRepository.Setup(repo => repo.FindAsync(
                 It.IsAny<Expression<Func<PaymentTransaction, bool>>>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { transaction });
+        _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakePlan(1, ProfileScope.Personal, 49000));
 
         await _sut.HandleWebhookAsync("valid", new SePayWebhookPayloadDto
         {
@@ -274,6 +278,9 @@ public class PaymentServiceTests
         Assert.Equal("FT2600123456", transaction.SepayTransactionId);
         _notificationService.Verify(service => service.CreateAsync(
             transaction.PayerUserId, NotificationType.PaymentConfirmed, It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        _tokenQuotaService.Verify(q => q.CreditAsync(
+            ProfileScope.Personal, transaction.PayerUserId, null, 50, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -357,8 +364,11 @@ public class PaymentServiceTests
     public async Task MarkPaidManuallyAsync_Valid_SetsPaidWritesAuditAndNotifies()
     {
         var transaction = MakeTransaction(1, "M3", 49000, PaymentStatus.MismatchAmount);
+        transaction.OrganizationId = 5;
         _transactionRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(transaction);
+        _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakePlan(1, ProfileScope.Organization, 99000));
 
         var result = await _sut.MarkPaidManuallyAsync(99, 1);
 
@@ -371,5 +381,26 @@ public class PaymentServiceTests
         _notificationService.Verify(service => service.CreateAsync(
             transaction.PayerUserId, NotificationType.PaymentConfirmed, It.IsAny<string?>(), It.IsAny<CancellationToken>()),
             Times.Once);
+        _tokenQuotaService.Verify(q => q.CreditAsync(
+            ProfileScope.Organization, transaction.PayerUserId, 5, 50, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleWebhookAsync_AmountMismatch_DoesNotCreditQuota()
+    {
+        var transaction = MakeTransaction(1, "SEPAYXYZ999", 49000);
+        _transactionRepository.Setup(repo => repo.FindAsync(
+                It.IsAny<Expression<Func<PaymentTransaction, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { transaction });
+
+        await _sut.HandleWebhookAsync("valid", new SePayWebhookPayloadDto
+        {
+            Content = $"chuyen tien {transaction.TransactionCode}", TransferAmount = 40000
+        });
+
+        _tokenQuotaService.Verify(q => q.CreditAsync(
+            It.IsAny<ProfileScope>(), It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 }

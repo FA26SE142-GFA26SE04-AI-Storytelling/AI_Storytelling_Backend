@@ -6,6 +6,7 @@ using StoryPlatform.Application.Features.AIStoryInput.DTOs;
 using StoryPlatform.Application.Features.AIStoryInput.Guardrails;
 using StoryPlatform.Application.Features.AIStoryInput.Models;
 using StoryPlatform.Application.Features.AIStoryInput.Services;
+using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration;
 using StoryPlatform.Application.Features.ContentGeneration.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration.Quality;
@@ -16,6 +17,8 @@ using StoryPlatform.Application.Features.Outline.Interfaces;
 using StoryPlatform.Application.Features.Outline.Services;
 using StoryPlatform.Application.Features.StoryReview.DTOs;
 using StoryPlatform.Application.Features.StoryReview.Services;
+using StoryPlatform.Application.Features.TokenQuota.Interfaces;
+using StoryPlatform.Application.Features.TokenQuota.Services;
 using StoryPlatform.Contracts.AI.Models;
 using StoryPlatform.Contracts.AI.Requests;
 using StoryPlatform.Contracts.AI.Responses;
@@ -38,7 +41,7 @@ public sealed class Phase1To4SequentialWorkflowTests
         var ai = new WorkflowAIClient();
 
         // Phase 1: resolve child profile/safety context and accept input.
-        var inputService = new AIStoryInputService(store, new RuleBasedInputGuardrail());
+        var inputService = new AIStoryInputService(store, new RuleBasedInputGuardrail(), CreateTokenQuotaService(store));
         var inputResult = await inputService.SubmitAsync(1, ValidInput());
         var story = Assert.Single(store.Items<Story>());
         Assert.Equal("input_accepted", inputResult.InputStatus);
@@ -141,7 +144,7 @@ public sealed class Phase1To4SequentialWorkflowTests
     public async Task Blocked_phase1_input_does_not_enter_phase2_or_create_downstream_artifacts()
     {
         var store = CreateEligibleStore(blockedTerm: "bạo lực");
-        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail());
+        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), CreateTokenQuotaService(store));
 
         var result = await service.SubmitAsync(1, ValidInput(topic: "Một câu chuyện bạo lực"));
 
@@ -158,7 +161,7 @@ public sealed class Phase1To4SequentialWorkflowTests
     public async Task Repeated_phase1_submission_is_idempotent_and_creates_one_outline_handoff()
     {
         var store = CreateEligibleStore();
-        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail());
+        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), CreateTokenQuotaService(store));
         var input = ValidInput();
 
         var first = await service.SubmitAsync(1, input);
@@ -307,7 +310,7 @@ public sealed class Phase1To4SequentialWorkflowTests
         WorkflowUnitOfWork store,
         WorkflowAIClient ai)
     {
-        var inputService = new AIStoryInputService(store, new RuleBasedInputGuardrail());
+        var inputService = new AIStoryInputService(store, new RuleBasedInputGuardrail(), CreateTokenQuotaService(store));
         await inputService.SubmitAsync(1, ValidInput());
         var story = store.Items<Story>().Single();
         var outlineService = new OutlineService(
@@ -356,6 +359,17 @@ public sealed class Phase1To4SequentialWorkflowTests
         SettingMode = "ai_suggested",
         TargetLength = 500
     };
+
+    private static ITokenQuotaService CreateTokenQuotaService(WorkflowUnitOfWork store) =>
+        new TokenQuotaService(store, new NoopAuditLogWriter());
+
+    private sealed class NoopAuditLogWriter : IAuditLogWriter
+    {
+        public Task LogAsync(
+            int? actorUserId, string action, string entityType, int entityId,
+            object? beforeState, object? afterState, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+    }
 
     private static WorkflowUnitOfWork CreateEligibleStore(bool includeApprovePermission = true, string? blockedTerm = null)
     {

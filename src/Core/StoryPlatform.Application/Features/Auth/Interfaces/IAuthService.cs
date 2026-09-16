@@ -8,6 +8,7 @@ namespace StoryPlatform.Application.Features.Auth.Interfaces;
 public interface IAuthService
 {
     Task<AuthResponseDto> LoginAsync(LoginRequestDto request, CancellationToken cancellationToken = default);
+    Task<AuthResponseDto> VerifyMfaAsync(VerifyMfaRequestDto request, CancellationToken cancellationToken = default);
     Task RegisterAsync(RegisterRequestDto request, CancellationToken cancellationToken = default);
     Task<CreatedAccountDto> CreateParentAccountAsync(
         int creatorTeacherUserId, CreateParentAccountRequestDto request,

@@ -494,3 +494,6 @@ $RECYCLE.BIN/
 
 #appsettings
 .appsettings.*.json
+
+#git worktrees (superpowers subagent-driven-development scratch workspaces)
+.worktrees/

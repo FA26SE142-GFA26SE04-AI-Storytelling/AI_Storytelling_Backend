@@ -9,8 +9,8 @@ INSERT INTO user_accounts (
 VALUES
     (1, 'admin_demo', 'admin@example.com', '$2a$11$uQ6RWu9dJN87HUij5gy3RedTZUibH1T4BB/QZBmvLntZBvkjQIR0S', 'Nguyen Van Admin', '0900000001', 
      'https://ui-avatars.com/api/?name=Admin+Demo&background=0D8ABC&color=fff', 'Administrator', 'LoggedIn', NULL, NULL, 
-     encode(sha256('demo-refresh-token-admin'::bytea), 'hex'), NOW() + INTERVAL '7 days', NOW() - INTERVAL '2 hours', 
-     0, NULL, NULL, true, 1, NULL,
+     encode(sha256('demo-refresh-token-admin'::bytea), 'hex'), NOW() + INTERVAL '7 days', NOW() - INTERVAL '2 hours',
+     0, NULL, NULL, false, 1, NULL,
      NOW() - INTERVAL '60 days', NOW() - INTERVAL '2 hours', false),
 
     (2, 'parent_demo1', 'parent1@example.com', '$2a$11$uQ6RWu9dJN87HUij5gy3RedTZUibH1T4BB/QZBmvLntZBvkjQIR0S', 'Tran Thi Hoa', '0900000002', 

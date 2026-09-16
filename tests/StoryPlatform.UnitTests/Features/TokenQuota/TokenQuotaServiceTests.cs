@@ -340,7 +340,24 @@ public class TokenQuotaServiceTests
         Assert.Equal(1000, result.QuotaLimit);
         _auditLogWriter.Verify(w => w.LogAsync(
             99, "TokenQuotaConfigSet", nameof(StoryPlatform.Domain.Entities.TokenQuotaConfig), 42,
-            It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SetConfigAsync_ExistingConfigForSameTarget_UpdatesInPlace()
+    {
+        var existing = MakeConfig(TokenQuotaScope.Child, quotaLimit: 5, quotaUsed: 2, childProfileId: 3);
+        SetupConfigLookup(existing);
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var result = await _sut.SetConfigAsync(99, new SetTokenQuotaConfigRequestDto
+        {
+            Scope = "Child", ChildProfileId = 3, QuotaLimit = 20, PeriodStart = today, PeriodEnd = today.AddMonths(1)
+        });
+
+        Assert.Equal(20, existing.QuotaLimit);
+        Assert.Equal(20, result.QuotaLimit);
+        _configRepository.Verify(r => r.Update(existing), Times.Once);
     }
 
     // ---------- ListConfigsAsync ----------

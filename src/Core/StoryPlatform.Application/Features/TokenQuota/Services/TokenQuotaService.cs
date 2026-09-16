@@ -53,59 +53,53 @@ public class TokenQuotaService : ITokenQuotaService
     {
         if (!Enum.TryParse<TokenQuotaScope>(request.Scope, ignoreCase: true, out var scope))
         {
-            throw new BadRequestException($"Scope '{request.Scope}' không hợp lệ.");
+            throw new BadRequestException("Scope phải là 'System', 'Organization', 'Child' hoặc 'Personal'.");
         }
 
-        if (request.PeriodEnd < request.PeriodStart)
+        if (request.PeriodEnd <= request.PeriodStart)
         {
-            throw new BadRequestException("PeriodEnd phải >= PeriodStart.");
+            throw new BadRequestException("PeriodEnd phải sau PeriodStart.");
         }
 
-        // Validate scope-specific required fields
+        if (request.QuotaLimit < 0)
+        {
+            throw new BadRequestException("QuotaLimit không được âm.");
+        }
+
         if (scope == TokenQuotaScope.Organization && !request.OrganizationId.HasValue)
         {
-            throw new BadRequestException("OrganizationId là bắt buộc cho Organization scope.");
+            throw new BadRequestException("OrganizationId là bắt buộc cho scope Organization.");
         }
+
         if (scope == TokenQuotaScope.Child && !request.ChildProfileId.HasValue)
         {
-            throw new BadRequestException("ChildProfileId là bắt buộc cho Child scope.");
+            throw new BadRequestException("ChildProfileId là bắt buộc cho scope Child.");
         }
+
         if (scope == TokenQuotaScope.Personal && !request.UserId.HasValue)
         {
-            throw new BadRequestException("UserId là bắt buộc cho Personal scope.");
+            throw new BadRequestException("UserId là bắt buộc cho scope Personal.");
         }
+
+        Expression<Func<TokenQuotaConfig, bool>> matchPredicate = scope switch
+        {
+            TokenQuotaScope.System => c => c.Scope == TokenQuotaScope.System,
+            TokenQuotaScope.Organization => c => c.Scope == TokenQuotaScope.Organization && c.OrganizationId == request.OrganizationId,
+            TokenQuotaScope.Child => c => c.Scope == TokenQuotaScope.Child && c.ChildProfileId == request.ChildProfileId,
+            TokenQuotaScope.Personal => c => c.Scope == TokenQuotaScope.Personal && c.UserId == request.UserId,
+            _ => throw new BadRequestException("Scope không hợp lệ.")
+        };
 
         var repo = _unitOfWork.Repository<TokenQuotaConfig>();
+        var existing = await repo.FirstOrDefaultAsync(matchPredicate, cancellationToken: cancellationToken);
 
-        // Try to find existing config
-        TokenQuotaConfig? existing = null;
-        if (scope == TokenQuotaScope.System)
-        {
-            existing = await repo.FirstOrDefaultAsync(c => c.Scope == TokenQuotaScope.System, cancellationToken: cancellationToken);
-        }
-        else if (scope == TokenQuotaScope.Organization)
-        {
-            existing = await repo.FirstOrDefaultAsync(
-                c => c.Scope == TokenQuotaScope.Organization && c.OrganizationId == request.OrganizationId,
-                cancellationToken: cancellationToken);
-        }
-        else if (scope == TokenQuotaScope.Child)
-        {
-            existing = await repo.FirstOrDefaultAsync(
-                c => c.Scope == TokenQuotaScope.Child && c.ChildProfileId == request.ChildProfileId,
-                cancellationToken: cancellationToken);
-        }
-        else if (scope == TokenQuotaScope.Personal)
-        {
-            existing = await repo.FirstOrDefaultAsync(
-                c => c.Scope == TokenQuotaScope.Personal && c.UserId == request.UserId,
-                cancellationToken: cancellationToken);
-        }
+        object beforeState = existing == null
+            ? new { existed = false }
+            : new { existing.QuotaLimit, PeriodStart = existing.PeriodStart.ToString(), PeriodEnd = existing.PeriodEnd.ToString() };
 
-        TokenQuotaConfig config;
         if (existing == null)
         {
-            config = new TokenQuotaConfig
+            existing = new TokenQuotaConfig
             {
                 Scope = scope,
                 OrganizationId = request.OrganizationId,
@@ -116,31 +110,25 @@ public class TokenQuotaService : ITokenQuotaService
                 PeriodStart = request.PeriodStart,
                 PeriodEnd = request.PeriodEnd
             };
-            await repo.AddAsync(config, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-            await _auditLogWriter.LogAsync(
-                adminUserId, "TokenQuotaConfigSet", nameof(TokenQuotaConfig), config.Id,
-                null, cancellationToken);
+            await repo.AddAsync(existing, cancellationToken);
         }
         else
         {
-            var beforeState = new { existing.QuotaLimit, PeriodStart = existing.PeriodStart.ToString(), PeriodEnd = existing.PeriodEnd.ToString() };
-
             existing.QuotaLimit = request.QuotaLimit;
             existing.PeriodStart = request.PeriodStart;
             existing.PeriodEnd = request.PeriodEnd;
             repo.Update(existing);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-            await _auditLogWriter.LogAsync(
-                adminUserId, "TokenQuotaConfigSet", nameof(TokenQuotaConfig), existing.Id,
-                beforeState, cancellationToken);
-
-            config = existing;
         }
 
-        return MapToDto(config);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _auditLogWriter.LogAsync(
+            adminUserId, "TokenQuotaConfigSet", nameof(TokenQuotaConfig), existing.Id,
+            beforeState,
+            new { existing.QuotaLimit, PeriodStart = existing.PeriodStart.ToString(), PeriodEnd = existing.PeriodEnd.ToString() },
+            cancellationToken);
+
+        return MapToDto(existing);
     }
 
     public async Task<List<TokenQuotaConfigDto>> ListConfigsAsync(CancellationToken cancellationToken = default)

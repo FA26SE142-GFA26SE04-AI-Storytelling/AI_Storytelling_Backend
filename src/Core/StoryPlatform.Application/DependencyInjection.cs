@@ -6,6 +6,8 @@ using StoryPlatform.Application.Features.AIStoryInput.Interfaces;
 using StoryPlatform.Application.Features.AIStoryInput.Services;
 using StoryPlatform.Application.Features.Stories.Interfaces;
 using StoryPlatform.Application.Features.Stories.Services;
+using StoryPlatform.Application.Features.StoryReview.Interfaces;
+using StoryPlatform.Application.Features.StoryReview.Services;
 using StoryPlatform.Application.Features.Outline.Guardrails;
 using StoryPlatform.Application.Features.Outline.Interfaces;
 using StoryPlatform.Application.Features.Outline.Services;
@@ -63,6 +65,11 @@ public static class DependencyInjection
         services.AddScoped<IContentGenerationService>(provider => provider.GetRequiredService<ContentGenerationService>());
         services.AddScoped<IContentGenerationJobProcessor>(provider => provider.GetRequiredService<ContentGenerationService>());
         services.AddSingleton<IContentQualityEvaluator, RuleBasedContentQualityEvaluator>();
+
+        // Story Review
+        services.AddSingleton<IProposalCache, InMemoryProposalCache>();
+        services.AddScoped<IStoryReviewService, StoryReviewService>();
+        services.AddScoped<IProposalService, ProposalService>();
 
         return services;
     }

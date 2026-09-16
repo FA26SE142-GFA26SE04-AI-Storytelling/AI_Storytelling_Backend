@@ -35,6 +35,23 @@ public class AuthController : BaseApiController
     }
 
     /// <summary>
+    /// Giáo viên tạo tài khoản Phụ huynh. Phụ huynh dùng mã gửi qua email với endpoint
+    /// reset-password để thiết lập mật khẩu đăng nhập lần đầu.
+    /// </summary>
+    [HttpPost("parents")]
+    [Authorize(Roles = "Teacher")]
+    public async Task<ActionResult<ApiResponse<CreatedAccountDto>>> CreateParentAccount(
+        [FromBody] CreateParentAccountRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _authService.CreateParentAccountAsync(
+            GetCurrentUserId(), request, cancellationToken);
+        return StatusCode(
+            StatusCodes.Status201Created,
+            ApiResponse<CreatedAccountDto>.Ok(result, "Tạo tài khoản phụ huynh thành công."));
+    }
+
+    /// <summary>
     /// Đăng nhập hệ thống (hỗ trợ cả Email hoặc Username)
     /// </summary>
     [HttpPost("login")]

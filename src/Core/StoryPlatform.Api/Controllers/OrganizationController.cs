@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
+using StoryPlatform.Application.Features.Auth.DTOs;
 using StoryPlatform.Application.Features.Organizations.DTOs;
 using StoryPlatform.Application.Features.Organizations.Interfaces;
 
@@ -16,17 +17,36 @@ public class OrganizationController : BaseApiController
     }
 
     /// <summary>
-    /// Tạo tổ chức mới. Người tạo trở thành SchoolAdmin; tổ chức chờ Administrator duyệt.
+    /// Administrator tạo tổ chức mới kèm tài khoản quản trị tổ chức (SchoolAdmin).
+    /// Tổ chức được kích hoạt ngay vì Administrator trực tiếp tạo và xác thực.
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = "Teacher")]
-    public async Task<ActionResult<ApiResponse<OrganizationDto>>> CreateOrganization(
+    [Authorize(Roles = "Administrator")]
+    public async Task<ActionResult<ApiResponse<CreateOrganizationResponseDto>>> CreateOrganization(
         [FromBody] CreateOrganizationRequestDto request, CancellationToken cancellationToken)
     {
         var result = await _organizationService.CreateOrganizationAsync(
             GetCurrentUserId(), request, cancellationToken);
-        return StatusCode(StatusCodes.Status201Created,
-            ApiResponse<OrganizationDto>.Ok(result, "Tạo tổ chức thành công."));
+        return StatusCode(
+            StatusCodes.Status201Created,
+            ApiResponse<CreateOrganizationResponseDto>.Ok(
+                result, "Tạo tổ chức và tài khoản quản trị tổ chức thành công."));
+    }
+
+    /// <summary>
+    /// Quản trị tổ chức (SchoolAdmin) tạo tài khoản Giáo viên cho tổ chức của mình.
+    /// </summary>
+    [HttpPost("{id:int}/teachers")]
+    [Authorize(Roles = "Teacher")]
+    public async Task<ActionResult<ApiResponse<CreatedAccountDto>>> CreateTeacherAccount(
+        int id, [FromBody] CreateTeacherAccountRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _organizationService.CreateTeacherAccountAsync(
+            id, GetCurrentUserId(), request, cancellationToken);
+        return StatusCode(
+            StatusCodes.Status201Created,
+            ApiResponse<CreatedAccountDto>.Ok(result, "Tạo tài khoản giáo viên thành công."));
     }
 
     /// <summary>

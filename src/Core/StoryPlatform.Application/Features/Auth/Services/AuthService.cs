@@ -19,17 +19,20 @@ public class AuthService : IAuthService
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
     private readonly IEmailSender _emailSender;
+    private readonly IUserProvisioningService _userProvisioningService;
 
     public AuthService(
         IUnitOfWork unitOfWork,
         IPasswordHasher passwordHasher,
         IJwtTokenGenerator jwtTokenGenerator,
-        IEmailSender emailSender)
+        IEmailSender emailSender,
+        IUserProvisioningService userProvisioningService)
     {
         _unitOfWork = unitOfWork;
         _passwordHasher = passwordHasher;
         _jwtTokenGenerator = jwtTokenGenerator;
         _emailSender = emailSender;
+        _userProvisioningService = userProvisioningService;
     }
 
     public async Task<AuthResponseDto> LoginAsync(LoginRequestDto request, CancellationToken cancellationToken = default)
@@ -79,6 +82,12 @@ public class AuthService : IAuthService
             throw new ForbiddenException("Vui lòng xác thực email trước khi đăng nhập. Kiểm tra hộp thư của bạn để lấy mã xác thực.");
         }
 
+        if (user.Status == AccountStatus.PasswordResetPending)
+        {
+            throw new ForbiddenException(
+                "Vui lòng thiết lập mật khẩu bằng mã đã được gửi qua email trước khi đăng nhập.");
+        }
+
         user.FailedLoginAttempts = 0;
         user.LockedUntil = null;
         user.Status = AccountStatus.LoggedIn;
@@ -107,9 +116,15 @@ public class AuthService : IAuthService
         var user = tokenRow.UserAccount;
 
         // Tài khoản bị khoá sau khi đã đăng nhập không được phép làm mới phiên.
-        if (user.Status == AccountStatus.Suspended || user.Status == AccountStatus.Registered)
+        if (user.Status is AccountStatus.Suspended or AccountStatus.Registered)
         {
             throw new UnauthorizedException("Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.");
+        }
+
+        if (user.Status == AccountStatus.PasswordResetPending)
+        {
+            throw new UnauthorizedException(
+                "Tài khoản đang chờ thiết lập mật khẩu và không thể làm mới phiên đăng nhập.");
         }
 
         // Xoay vòng: thu hồi dòng refresh token cũ trước khi cấp dòng mới.
@@ -121,11 +136,6 @@ public class AuthService : IAuthService
 
     public async Task RegisterAsync(RegisterRequestDto request, CancellationToken cancellationToken = default)
     {
-        if (request.Role != UserRole.Parent && request.Role != UserRole.Teacher)
-        {
-            throw new BadRequestException("Chỉ có thể tự đăng ký tài khoản với vai trò Parent hoặc Teacher.");
-        }
-
         if (request.Password != request.ConfirmPassword)
         {
             throw new BadRequestException("Mật khẩu xác nhận không khớp.");
@@ -156,7 +166,9 @@ public class AuthService : IAuthService
             FullName = request.FullName.Trim(),
             PhoneNumber = request.PhoneNumber,
             PasswordHash = _passwordHasher.HashPassword(request.Password),
-            Role = request.Role,
+            // Public self-registration only creates Parent accounts. Teacher and SchoolAdmin
+            // accounts must be provisioned by an authorized higher-level account.
+            Role = UserRole.Parent,
             Status = AccountStatus.Registered,
             EmailVerificationTokenHash = TokenHasher.Hash(rawVerificationToken),
             EmailVerificationTokenExpiresAt = DateTime.UtcNow.AddHours(24),
@@ -167,6 +179,36 @@ public class AuthService : IAuthService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await _emailSender.SendEmailVerificationEmailAsync(newUser.Email, newUser.FullName, rawVerificationToken, cancellationToken);
+    }
+
+    public async Task<CreatedAccountDto> CreateParentAccountAsync(
+        int creatorTeacherUserId, CreateParentAccountRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        var creator = await _unitOfWork.Repository<UserAccount>()
+            .GetByIdAsync(creatorTeacherUserId, cancellationToken);
+        if (creator == null)
+        {
+            throw new NotFoundException("Tài khoản", creatorTeacherUserId);
+        }
+
+        var (account, rawSetPasswordToken) = await _userProvisioningService.CreatePendingAccountAsync(
+            request.Username, request.Email, request.FullName, request.PhoneNumber,
+            UserRole.Parent, cancellationToken);
+
+        // AuditLog.EntityId is a scalar rather than a relationship, so the generated account id
+        // must be persisted before the audit entry can reference it.
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await WriteAuthAuditAsync(
+            creatorTeacherUserId, "PROVISION_PARENT_ACCOUNT", account.Id, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _emailSender.SendAccountProvisionedEmailAsync(
+            account.Email, account.FullName, creator.FullName, "Phụ huynh (Parent)",
+            rawSetPasswordToken, cancellationToken);
+
+        return MapToCreatedAccountDto(account);
     }
 
     public async Task<UserProfileDto> GetCurrentUserProfileAsync(int userId, CancellationToken cancellationToken = default)
@@ -225,7 +267,7 @@ public class AuthService : IAuthService
         await RevokeRefreshTokensAsync(userId, cancellationToken);
         user.RefreshTokenHash = null;
         user.RefreshTokenExpiresAt = null;
-        await WriteAuthAuditAsync(user.Id, "LOGOUT_ALL_DEVICES", cancellationToken);
+        await WriteAuthAuditAsync(user.Id, "LOGOUT_ALL_DEVICES", user.Id, cancellationToken);
 
         // JWT đã phát hành sẽ bị từ chối ở request tiếp theo khi version không còn khớp.
         user.TokenVersion += 1;
@@ -330,7 +372,7 @@ public class AuthService : IAuthService
         user.EmailVerificationTokenHash = TokenHasher.Hash(rawVerificationToken);
         user.EmailVerificationTokenExpiresAt = DateTime.UtcNow.AddHours(24);
         userRepo.Update(user);
-        await WriteAuthAuditAsync(user.Id, "RESEND_VERIFICATION_EMAIL", cancellationToken);
+        await WriteAuthAuditAsync(user.Id, "RESEND_VERIFICATION_EMAIL", user.Id, cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         await _emailSender.SendEmailVerificationEmailAsync(
@@ -367,7 +409,7 @@ public class AuthService : IAuthService
         user.RefreshTokenExpiresAt = null;
         user.TokenVersion += 1;
         await RevokeRefreshTokensAsync(user.Id, cancellationToken);
-        await WriteAuthAuditAsync(user.Id, "RESET_PASSWORD", cancellationToken);
+        await WriteAuthAuditAsync(user.Id, "RESET_PASSWORD", user.Id, cancellationToken);
         // Không hạ cấp trạng thái Suspended — đặt lại mật khẩu không được dùng để tự mở khoá tài khoản.
         if (user.Status != AccountStatus.Suspended)
         {
@@ -412,7 +454,7 @@ public class AuthService : IAuthService
         user.RefreshTokenExpiresAt = null;
         user.TokenVersion += 1;
         await RevokeRefreshTokensAsync(user.Id, cancellationToken);
-        await WriteAuthAuditAsync(user.Id, "CHANGE_PASSWORD", cancellationToken);
+        await WriteAuthAuditAsync(user.Id, "CHANGE_PASSWORD", user.Id, cancellationToken);
         user.UpdatedAt = DateTime.UtcNow;
 
         userRepo.Update(user);
@@ -503,17 +545,28 @@ public class AuthService : IAuthService
         }
     }
 
-    private async Task WriteAuthAuditAsync(int userId, string action, CancellationToken cancellationToken)
+    private async Task WriteAuthAuditAsync(
+        int actorUserId, string action, int entityId, CancellationToken cancellationToken)
     {
         await _unitOfWork.Repository<AuditLog>().AddAsync(new AuditLog
         {
-            ActorUserId = userId,
+            ActorUserId = actorUserId,
             Action = action,
             EntityType = nameof(UserAccount),
-            EntityId = userId,
+            EntityId = entityId,
             OccurredAt = DateTime.UtcNow
         }, cancellationToken);
     }
+
+    private static CreatedAccountDto MapToCreatedAccountDto(UserAccount user) => new()
+    {
+        Id = user.Id,
+        Username = user.Username,
+        Email = user.Email,
+        FullName = user.FullName,
+        Role = user.Role.ToString(),
+        Status = user.Status.ToString()
+    };
 
     private static UserProfileDto MapToUserProfileDto(UserAccount user)
     {

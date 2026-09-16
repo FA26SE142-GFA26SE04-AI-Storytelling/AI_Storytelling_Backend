@@ -1,5 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Linq.Expressions;
+using System.Reflection;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -12,6 +13,7 @@ using Moq;
 using StoryPlatform.Api.Controllers;
 using StoryPlatform.Api.Extensions;
 using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Features.Auth.DTOs;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.Infrastructure.Security;
@@ -214,6 +216,30 @@ public class AuthAuthorizationTests
         {
             Assert.NotEmpty(typeof(StoryController).GetMethod(action)!.GetCustomAttributes(typeof(AllowAnonymousAttribute), true));
         }
+    }
+
+    [Fact]
+    public void AccountProvisioningRoutes_DeclareExpectedRoleBoundaries()
+    {
+        var register = typeof(AuthController).GetMethod(nameof(AuthController.Register))!;
+        Assert.NotEmpty(register.GetCustomAttributes(typeof(AllowAnonymousAttribute), true));
+        Assert.Null(typeof(RegisterRequestDto).GetProperty("Role"));
+
+        var createParent = typeof(AuthController).GetMethod(nameof(AuthController.CreateParentAccount))!;
+        var createOrganization = typeof(OrganizationController)
+            .GetMethod(nameof(OrganizationController.CreateOrganization))!;
+        var createTeacher = typeof(OrganizationController)
+            .GetMethod(nameof(OrganizationController.CreateTeacherAccount))!;
+
+        Assert.Equal(
+            "Teacher",
+            Assert.Single(createParent.GetCustomAttributes<AuthorizeAttribute>(true)).Roles);
+        Assert.Equal(
+            "Administrator",
+            Assert.Single(createOrganization.GetCustomAttributes<AuthorizeAttribute>(true)).Roles);
+        Assert.Equal(
+            "Teacher",
+            Assert.Single(createTeacher.GetCustomAttributes<AuthorizeAttribute>(true)).Roles);
     }
 
     private static IConfiguration BuildValidJwtConfiguration() =>

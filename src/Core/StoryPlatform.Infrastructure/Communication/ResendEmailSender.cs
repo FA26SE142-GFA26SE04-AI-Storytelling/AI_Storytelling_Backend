@@ -66,6 +66,22 @@ public class ResendEmailSender : IEmailSender
         return SendAsync(toEmail, subject, html, cancellationToken);
     }
 
+    public Task SendAccountProvisionedEmailAsync(
+        string toEmail, string toName, string creatorName, string roleLabel, string rawSetPasswordToken,
+        CancellationToken cancellationToken = default)
+    {
+        const string subject = "Tài khoản của bạn đã được tạo trên AI Storytelling Platform";
+        var html = $"""
+            <p>Chào {toName},</p>
+            <p>{creatorName} vừa tạo cho bạn một tài khoản với vai trò <strong>{roleLabel}</strong> trên AI Storytelling Platform.</p>
+            <p>Vui lòng dùng mã bên dưới tại trang "Đặt lại mật khẩu" để thiết lập mật khẩu đăng nhập lần đầu:</p>
+            <p style="font-size:22px;font-weight:bold;letter-spacing:2px;">{rawSetPasswordToken}</p>
+            <p>Mã này có hiệu lực trong 7 ngày. Nếu bạn không mong đợi email này, vui lòng bỏ qua.</p>
+            """;
+
+        return SendAsync(toEmail, subject, html, cancellationToken);
+    }
+
     private async Task SendAsync(string toEmail, string subject, string html, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(_options.ApiKey))

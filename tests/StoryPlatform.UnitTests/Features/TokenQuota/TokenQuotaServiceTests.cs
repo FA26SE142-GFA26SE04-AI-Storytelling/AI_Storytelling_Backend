@@ -249,4 +249,34 @@ public class TokenQuotaServiceTests
         await Assert.ThrowsAsync<BadRequestException>(() =>
             _sut.CreditAsync(ProfileScope.Organization, payerUserId: 7, organizationId: null, quotaAmount: 150));
     }
+
+    [Fact]
+    public async Task CreditAsync_OrganizationScope_ExistingConfig_TopsUpWithoutResettingUsage()
+    {
+        var existing = MakeConfig(TokenQuotaScope.Organization, quotaLimit: 150, quotaUsed: 50, organizationId: 10);
+        SetupConfigLookup(existing);
+
+        await _sut.CreditAsync(ProfileScope.Organization, payerUserId: 7, organizationId: 10, quotaAmount: 150);
+
+        Assert.Equal(300, existing.QuotaLimit);
+        Assert.Equal(50, existing.QuotaUsed);
+        _configRepository.Verify(r => r.Update(existing), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreditAsync_RollsOverExpiredPeriodBeforeTopUp()
+    {
+        var yesterday = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1);
+        var existing = MakeConfig(
+            TokenQuotaScope.Personal, quotaLimit: 100, quotaUsed: 50, userId: 7,
+            periodStart: yesterday.AddDays(-30), periodEnd: yesterday);
+        SetupConfigLookup(existing);
+
+        await _sut.CreditAsync(ProfileScope.Personal, payerUserId: 7, organizationId: null, quotaAmount: 150);
+
+        Assert.Equal(0, existing.QuotaUsed);
+        Assert.Equal(250, existing.QuotaLimit);
+        Assert.True(existing.PeriodEnd >= DateOnly.FromDateTime(DateTime.UtcNow));
+        _configRepository.Verify(r => r.Update(existing), Times.AtLeast(2));
+    }
 }

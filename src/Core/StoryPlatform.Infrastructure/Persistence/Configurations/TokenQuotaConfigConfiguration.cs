@@ -27,6 +27,11 @@ public class TokenQuotaConfigConfiguration : IEntityTypeConfiguration<TokenQuota
             .HasForeignKey(x => x.ChildProfileId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(x => x.User)
+            .WithMany()
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.HasQueryFilter(x => !x.IsDeleted);
     }
 }

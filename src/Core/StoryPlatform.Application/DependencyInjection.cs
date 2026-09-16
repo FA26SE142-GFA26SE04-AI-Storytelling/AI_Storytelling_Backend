@@ -34,6 +34,16 @@ using StoryPlatform.Application.Features.Organizations.Interfaces;
 using StoryPlatform.Application.Features.Organizations.Services;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.AuditLogs.Services;
+using StoryPlatform.Application.Features.Administration.Interfaces;
+using StoryPlatform.Application.Features.Administration.Services;
+using StoryPlatform.Application.Features.DataRequests.Interfaces;
+using StoryPlatform.Application.Features.DataRequests.Services;
+using StoryPlatform.Application.Features.BusinessReports.Interfaces;
+using StoryPlatform.Application.Features.BusinessReports.Services;
+using StoryPlatform.Application.Features.Payments.Interfaces;
+using StoryPlatform.Application.Features.Payments.Services;
+using StoryPlatform.Application.Features.TokenQuota.Interfaces;
+using StoryPlatform.Application.Features.TokenQuota.Services;
 
 namespace StoryPlatform.Application;
 
@@ -56,6 +66,13 @@ public static class DependencyInjection
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IOrganizationService, OrganizationService>();
         services.AddScoped<IAuditLogQueryService, AuditLogQueryService>();
+        services.AddScoped<IAuditLogWriter, AuditLogWriter>();
+        services.AddScoped<IAdminAccountService, AdminAccountService>();
+        services.AddScoped<IDataRequestService, DataRequestService>();
+        services.AddScoped<IBusinessReportService, BusinessReportService>();
+        services.AddScoped<IPaymentService, PaymentService>();
+        services.AddScoped<ITokenQuotaService, TokenQuotaService>();
+        services.AddScoped<IPaymentExpirySweepService, PaymentExpirySweepService>();
         services.AddSingleton<IInputGuardrail, RuleBasedInputGuardrail>();
         services.AddScoped<OutlineService>();
         services.AddScoped<IOutlineService>(provider => provider.GetRequiredService<OutlineService>());

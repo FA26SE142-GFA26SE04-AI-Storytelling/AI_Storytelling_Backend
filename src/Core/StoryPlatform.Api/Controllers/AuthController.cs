@@ -65,6 +65,19 @@ public class AuthController : BaseApiController
     }
 
     /// <summary>
+    /// Bước 2 của đăng nhập Administrator: xác thực mã TOTP (Mục 9 — MFA bắt buộc cho Administrator).
+    /// </summary>
+    [HttpPost("mfa/verify")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<AuthResponseDto>>> VerifyMfa(
+        [FromBody] VerifyMfaRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _authService.VerifyMfaAsync(request, cancellationToken);
+        return HandleResult(result, "Xác thực MFA thành công.");
+    }
+
+    /// <summary>
     /// Xác thực email bằng mã đã gửi lúc đăng ký — bắt buộc trước khi đăng nhập lần đầu.
     /// </summary>
     [HttpPost("verify-email")]

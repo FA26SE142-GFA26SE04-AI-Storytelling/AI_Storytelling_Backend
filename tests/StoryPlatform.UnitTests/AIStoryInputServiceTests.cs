@@ -6,6 +6,9 @@ using StoryPlatform.Application.Features.AIStoryInput.DTOs;
 using StoryPlatform.Application.Features.AIStoryInput.Guardrails;
 using StoryPlatform.Application.Features.AIStoryInput.Models;
 using StoryPlatform.Application.Features.AIStoryInput.Services;
+using StoryPlatform.Application.Features.AuditLogs.Interfaces;
+using StoryPlatform.Application.Features.TokenQuota.Interfaces;
+using StoryPlatform.Application.Features.TokenQuota.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using Xunit;
@@ -18,7 +21,7 @@ public sealed class AIStoryInputServiceTests
     public async Task Loading_context_does_not_create_business_records()
     {
         var unitOfWork = CreateEligibleUnitOfWork();
-        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail());
+        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
 
         var context = await service.GetContextAsync(1, 1);
 
@@ -32,7 +35,7 @@ public sealed class AIStoryInputServiceTests
     public async Task Missing_generate_permission_creates_nothing()
     {
         var unitOfWork = CreateEligibleUnitOfWork(includePermission: false);
-        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail());
+        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
 
         await Assert.ThrowsAsync<ForbiddenException>(() => service.SubmitAsync(1, ValidRequest()));
 
@@ -45,7 +48,7 @@ public sealed class AIStoryInputServiceTests
     public async Task Target_above_policy_maximum_creates_nothing()
     {
         var unitOfWork = CreateEligibleUnitOfWork();
-        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail());
+        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
 
         await Assert.ThrowsAsync<BadRequestException>(() => service.SubmitAsync(1, ValidRequest(targetLength: 701)));
 
@@ -86,7 +89,7 @@ public sealed class AIStoryInputServiceTests
             ContentCategory = category,
             Rule = PolicyRule.Blocked
         });
-        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail());
+        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
 
         var context = await service.GetContextAsync(1, 1);
 
@@ -100,7 +103,7 @@ public sealed class AIStoryInputServiceTests
     public async Task Allow_creates_one_draft_request_snapshot_and_handoff()
     {
         var unitOfWork = CreateEligibleUnitOfWork();
-        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail());
+        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
 
         var result = await service.SubmitAsync(1, ValidRequest());
 
@@ -123,7 +126,7 @@ public sealed class AIStoryInputServiceTests
     public async Task Block_keeps_draft_without_snapshot_or_handoff()
     {
         var unitOfWork = CreateEligibleUnitOfWork(blockedTerm: "bạo lực");
-        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail());
+        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
 
         var result = await service.SubmitAsync(1, ValidRequest(topic: "Một câu chuyện bạo lực"));
 
@@ -139,7 +142,7 @@ public sealed class AIStoryInputServiceTests
     public async Task Same_idempotency_key_and_payload_returns_existing_request()
     {
         var unitOfWork = CreateEligibleUnitOfWork();
-        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail());
+        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
         var input = ValidRequest();
 
         var first = await service.SubmitAsync(1, input);
@@ -155,7 +158,7 @@ public sealed class AIStoryInputServiceTests
     public async Task Reusing_idempotency_key_for_changed_payload_is_conflict()
     {
         var unitOfWork = CreateEligibleUnitOfWork();
-        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail());
+        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
         await service.SubmitAsync(1, ValidRequest());
 
         await Assert.ThrowsAsync<ConflictException>(() =>
@@ -168,13 +171,13 @@ public sealed class AIStoryInputServiceTests
     public async Task Technical_failure_can_retry_same_request_without_new_story()
     {
         var unitOfWork = CreateEligibleUnitOfWork();
-        var failingService = new AIStoryInputService(unitOfWork, new ThrowingGuardrail());
+        var failingService = new AIStoryInputService(unitOfWork, new ThrowingGuardrail(), CreateTokenQuotaService(unitOfWork));
 
         var failed = await failingService.SubmitAsync(1, ValidRequest());
         Assert.Equal("input_check_failed", failed.InputStatus);
         Assert.True(failed.CanRetry);
 
-        var retryService = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail());
+        var retryService = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
         var accepted = await retryService.RetryAsync(1, failed.StoryId, failed.RequestId, ValidRetry());
 
         Assert.Equal("input_accepted", accepted.InputStatus);
@@ -182,6 +185,54 @@ public sealed class AIStoryInputServiceTests
         Assert.Single(unitOfWork.Items<Story>());
         Assert.Single(unitOfWork.Items<StoryGenerationRequest>());
         Assert.Single(unitOfWork.Items<StoryGenerationJob>());
+    }
+
+    [Fact]
+    public async Task Quota_exceeded_blocks_submission_and_creates_nothing()
+    {
+        var unitOfWork = CreateEligibleUnitOfWork();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        unitOfWork.Seed(new StoryPlatform.Domain.Entities.TokenQuotaConfig
+        {
+            Id = 1,
+            Scope = StoryPlatform.Domain.Enums.TokenQuotaScope.Child,
+            ChildProfileId = 1,
+            QuotaLimit = 1,
+            QuotaUsed = 1,
+            PeriodStart = today,
+            PeriodEnd = today.AddMonths(1)
+        });
+        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
+
+        await Assert.ThrowsAsync<ConflictException>(() => service.SubmitAsync(1, ValidRequest()));
+
+        Assert.Empty(unitOfWork.Items<Story>());
+        Assert.Empty(unitOfWork.Items<StoryGenerationRequest>());
+    }
+
+    [Fact]
+    public async Task Successful_submission_increments_quota_once_and_idempotent_retry_does_not_double_count()
+    {
+        var unitOfWork = CreateEligibleUnitOfWork();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var config = new StoryPlatform.Domain.Entities.TokenQuotaConfig
+        {
+            Id = 1,
+            Scope = StoryPlatform.Domain.Enums.TokenQuotaScope.Child,
+            ChildProfileId = 1,
+            QuotaLimit = 5,
+            QuotaUsed = 0,
+            PeriodStart = today,
+            PeriodEnd = today.AddMonths(1)
+        };
+        unitOfWork.Seed(config);
+        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
+        var input = ValidRequest();
+
+        await service.SubmitAsync(1, input);
+        await service.SubmitAsync(1, input); // same idempotency key -> must not consume a second lượt
+
+        Assert.Equal(1, config.QuotaUsed);
     }
 
     private static SubmitAIStoryInputRequestDto ValidRequest(string topic = "Tình bạn", int targetLength = 500) => new()
@@ -261,6 +312,17 @@ public sealed class AIStoryInputServiceTests
         }
 
         return unitOfWork;
+    }
+
+    private static ITokenQuotaService CreateTokenQuotaService(FakeUnitOfWork unitOfWork) =>
+        new TokenQuotaService(unitOfWork, new NoopAuditLogWriter());
+
+    private sealed class NoopAuditLogWriter : IAuditLogWriter
+    {
+        public Task LogAsync(
+            int? actorUserId, string action, string entityType, int entityId,
+            object? beforeState, object? afterState, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 
     private sealed class ThrowingGuardrail : IInputGuardrail

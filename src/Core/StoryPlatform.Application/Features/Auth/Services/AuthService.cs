@@ -15,10 +15,13 @@ namespace StoryPlatform.Application.Features.Auth.Services;
 
 public class AuthService : IAuthService
 {
+    private const string MfaIssuer = "AI Storytelling Platform";
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
     private readonly IEmailSender _emailSender;
+    private readonly ITotpService _totpService;
     private readonly IUserProvisioningService _userProvisioningService;
 
     public AuthService(
@@ -26,12 +29,14 @@ public class AuthService : IAuthService
         IPasswordHasher passwordHasher,
         IJwtTokenGenerator jwtTokenGenerator,
         IEmailSender emailSender,
+        ITotpService totpService,
         IUserProvisioningService userProvisioningService)
     {
         _unitOfWork = unitOfWork;
         _passwordHasher = passwordHasher;
         _jwtTokenGenerator = jwtTokenGenerator;
         _emailSender = emailSender;
+        _totpService = totpService;
         _userProvisioningService = userProvisioningService;
     }
 
@@ -88,12 +93,68 @@ public class AuthService : IAuthService
                 "Vui lòng thiết lập mật khẩu bằng mã đã được gửi qua email trước khi đăng nhập.");
         }
 
+        if (user.Role == UserRole.Administrator)
+        {
+            return await BuildMfaChallengeResponseAsync(user, cancellationToken);
+        }
+
         user.FailedLoginAttempts = 0;
         user.LockedUntil = null;
         user.Status = AccountStatus.LoggedIn;
         user.LastLoginAt = DateTime.UtcNow;
 
         return await GenerateAuthResponseAsync(user, cancellationToken);
+    }
+
+    public async Task<AuthResponseDto> VerifyMfaAsync(VerifyMfaRequestDto request, CancellationToken cancellationToken = default)
+    {
+        if (!_jwtTokenGenerator.TryValidateMfaChallengeToken(request.ChallengeToken, out var userId))
+        {
+            throw new UnauthorizedException("Challenge token không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại.");
+        }
+
+        var userRepo = _unitOfWork.Repository<UserAccount>();
+        var user = await userRepo.GetByIdAsync(userId, cancellationToken)
+                   ?? throw new UnauthorizedException("Challenge token không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại.");
+
+        if (string.IsNullOrEmpty(user.MfaSecret) || !_totpService.VerifyCode(user.MfaSecret, request.Code))
+        {
+            throw new BadRequestException("Mã xác thực không đúng.");
+        }
+
+        user.MfaEnabled = true;
+        user.FailedLoginAttempts = 0;
+        user.LockedUntil = null;
+        user.Status = AccountStatus.LoggedIn;
+        user.LastLoginAt = DateTime.UtcNow;
+
+        return await GenerateAuthResponseAsync(user, cancellationToken);
+    }
+
+    private async Task<AuthResponseDto> BuildMfaChallengeResponseAsync(UserAccount user, CancellationToken cancellationToken)
+    {
+        if (user.MfaEnabled)
+        {
+            return new AuthResponseDto
+            {
+                MfaRequired = true,
+                MfaChallengeToken = _jwtTokenGenerator.GenerateMfaChallengeToken(user.Id)
+            };
+        }
+
+        if (string.IsNullOrEmpty(user.MfaSecret))
+        {
+            user.MfaSecret = _totpService.GenerateSecret();
+            _unitOfWork.Repository<UserAccount>().Update(user);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+
+        return new AuthResponseDto
+        {
+            MfaSetupRequired = true,
+            MfaChallengeToken = _jwtTokenGenerator.GenerateMfaChallengeToken(user.Id),
+            MfaProvisioningUri = _totpService.BuildProvisioningUri(user.MfaSecret, user.Email, MfaIssuer)
+        };
     }
 
     public async Task<AuthResponseDto> RefreshTokenAsync(RefreshTokenRequestDto request, CancellationToken cancellationToken = default)

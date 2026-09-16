@@ -26,6 +26,7 @@ public class AuthServiceTests
     private readonly Mock<IPasswordHasher> _passwordHasherMock = new();
     private readonly Mock<IJwtTokenGenerator> _jwtGeneratorMock = new();
     private readonly Mock<IEmailSender> _emailSenderMock = new();
+    private readonly Mock<ITotpService> _totpServiceMock = new();
     private readonly Mock<IUserProvisioningService> _userProvisioningServiceMock = new();
     private readonly AuthService _sut;
 
@@ -43,7 +44,7 @@ public class AuthServiceTests
 
         _sut = new AuthService(
             _unitOfWorkMock.Object, _passwordHasherMock.Object, _jwtGeneratorMock.Object,
-            _emailSenderMock.Object, _userProvisioningServiceMock.Object);
+            _emailSenderMock.Object, _totpServiceMock.Object, _userProvisioningServiceMock.Object);
     }
 
     private static UserAccount CreateUser(string password = "hashed-password") => new()
@@ -1246,5 +1247,113 @@ public class AuthServiceTests
 
         _refreshTokenRepoMock.Verify(repo => repo.Update(It.IsAny<RefreshToken>()), Times.Never);
         _unitOfWorkMock.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // ---------- Administrator MFA (Muc 9) ----------
+
+    private static UserAccount CreateAdminUser(bool mfaEnabled, string? mfaSecret = null) => new()
+    {
+        Id = 7,
+        Username = "admin_demo",
+        Email = "admin@example.com",
+        PasswordHash = "hashed-password",
+        FullName = "Admin Demo",
+        Role = UserRole.Administrator,
+        Status = AccountStatus.EmailVerified,
+        MfaEnabled = mfaEnabled,
+        MfaSecret = mfaSecret
+    };
+
+    [Fact]
+    public async Task LoginAsync_AdministratorWithMfaEnabled_ReturnsMfaRequiredWithoutTokens()
+    {
+        var admin = CreateAdminUser(mfaEnabled: true, mfaSecret: "JBSWY3DPEHPK3PXP");
+        _userRepoMock
+            .Setup(r => r.FirstOrDefaultAsync(It.IsAny<Expression<Func<UserAccount, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(admin);
+        _passwordHasherMock.Setup(p => p.VerifyPassword("Demo@123", admin.PasswordHash)).Returns(true);
+        _jwtGeneratorMock.Setup(j => j.GenerateMfaChallengeToken(admin.Id)).Returns("challenge-token");
+
+        var result = await _sut.LoginAsync(new LoginRequestDto { Identifier = admin.Email, Password = "Demo@123" });
+
+        Assert.True(result.MfaRequired);
+        Assert.False(result.MfaSetupRequired);
+        Assert.Equal("challenge-token", result.MfaChallengeToken);
+        Assert.Empty(result.AccessToken);
+        _unitOfWorkMock.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task LoginAsync_AdministratorWithoutMfaSetup_GeneratesSecretAndReturnsSetupRequired()
+    {
+        var admin = CreateAdminUser(mfaEnabled: false, mfaSecret: null);
+        _userRepoMock
+            .Setup(r => r.FirstOrDefaultAsync(It.IsAny<Expression<Func<UserAccount, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(admin);
+        _passwordHasherMock.Setup(p => p.VerifyPassword("Demo@123", admin.PasswordHash)).Returns(true);
+        _totpServiceMock.Setup(t => t.GenerateSecret()).Returns("NEWSECRET234567");
+        _totpServiceMock.Setup(t => t.BuildProvisioningUri("NEWSECRET234567", admin.Email, It.IsAny<string>()))
+            .Returns("otpauth://totp/fake");
+        _jwtGeneratorMock.Setup(j => j.GenerateMfaChallengeToken(admin.Id)).Returns("setup-challenge-token");
+
+        var result = await _sut.LoginAsync(new LoginRequestDto { Identifier = admin.Email, Password = "Demo@123" });
+
+        Assert.True(result.MfaSetupRequired);
+        Assert.Equal("otpauth://totp/fake", result.MfaProvisioningUri);
+        Assert.Equal("setup-challenge-token", result.MfaChallengeToken);
+        Assert.Equal("NEWSECRET234567", admin.MfaSecret);
+        Assert.False(admin.MfaEnabled);
+        _unitOfWorkMock.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task VerifyMfaAsync_InvalidChallengeToken_ThrowsUnauthorized()
+    {
+        _jwtGeneratorMock.Setup(j => j.TryValidateMfaChallengeToken("bad", out It.Ref<int>.IsAny)).Returns(false);
+
+        await Assert.ThrowsAsync<UnauthorizedException>(() => _sut.VerifyMfaAsync(
+            new VerifyMfaRequestDto { ChallengeToken = "bad", Code = "123456" }));
+    }
+
+    private delegate bool TryValidateCallback(string token, out int userId);
+
+    [Fact]
+    public async Task VerifyMfaAsync_WrongCode_ThrowsBadRequest()
+    {
+        var admin = CreateAdminUser(mfaEnabled: true, mfaSecret: "JBSWY3DPEHPK3PXP");
+        _jwtGeneratorMock
+            .Setup(j => j.TryValidateMfaChallengeToken("token", out It.Ref<int>.IsAny))
+            .Returns(new TryValidateCallback((string _, out int userId) =>
+            {
+                userId = admin.Id;
+                return true;
+            }));
+        _userRepoMock.Setup(r => r.GetByIdAsync(admin.Id, It.IsAny<CancellationToken>())).ReturnsAsync(admin);
+        _totpServiceMock.Setup(t => t.VerifyCode(admin.MfaSecret!, "000000")).Returns(false);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.VerifyMfaAsync(
+            new VerifyMfaRequestDto { ChallengeToken = "token", Code = "000000" }));
+    }
+
+    [Fact]
+    public async Task VerifyMfaAsync_ValidCodeFirstTimeSetup_EnablesMfaAndReturnsTokens()
+    {
+        var admin = CreateAdminUser(mfaEnabled: false, mfaSecret: "NEWSECRET234567");
+        _jwtGeneratorMock
+            .Setup(j => j.TryValidateMfaChallengeToken("token", out It.Ref<int>.IsAny))
+            .Returns(new TryValidateCallback((string _, out int userId) =>
+            {
+                userId = admin.Id;
+                return true;
+            }));
+        _userRepoMock.Setup(r => r.GetByIdAsync(admin.Id, It.IsAny<CancellationToken>())).ReturnsAsync(admin);
+        _totpServiceMock.Setup(t => t.VerifyCode(admin.MfaSecret!, "654321")).Returns(true);
+
+        var result = await _sut.VerifyMfaAsync(new VerifyMfaRequestDto { ChallengeToken = "token", Code = "654321" });
+
+        Assert.True(admin.MfaEnabled);
+        Assert.Equal("fake-access-token", result.AccessToken);
+        Assert.False(result.MfaRequired);
+        Assert.False(result.MfaSetupRequired);
     }
 }

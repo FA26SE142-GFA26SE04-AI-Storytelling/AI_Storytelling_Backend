@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel.DataAnnotations;
 using System.Threading;
 using System.Threading.Tasks;
 using StoryPlatform.Application.Abstractions.Communication;
@@ -202,9 +203,14 @@ public class AuthService : IAuthService
             throw new BadRequestException("Mật khẩu xác nhận không khớp.");
         }
 
-        var userRepo = _unitOfWork.Repository<UserAccount>();
+        var normalizedEmail = request.Email?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalizedEmail)
+            || !new EmailAddressAttribute().IsValid(normalizedEmail))
+        {
+            throw new BadRequestException("Email không đúng định dạng.");
+        }
 
-        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+        var userRepo = _unitOfWork.Repository<UserAccount>();
         var emailExists = await userRepo.ExistsAsync(u => u.Email.ToLower() == normalizedEmail, cancellationToken);
         if (emailExists)
         {

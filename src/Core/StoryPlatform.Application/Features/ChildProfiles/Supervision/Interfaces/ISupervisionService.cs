@@ -17,6 +17,10 @@ public interface ISupervisionService
         int supervisionRelationshipId, int revokerUserId,
         CancellationToken cancellationToken = default);
 
+    Task<SupervisionRelationshipDto> TransferOwnershipAsync(
+        int childProfileId, int currentOwnerUserId, TransferOwnershipRequestDto request,
+        CancellationToken cancellationToken = default);
+
     Task GrantPermissionAsync(
         int supervisionRelationshipId, int ownerUserId, Permission permission,
         CancellationToken cancellationToken = default);

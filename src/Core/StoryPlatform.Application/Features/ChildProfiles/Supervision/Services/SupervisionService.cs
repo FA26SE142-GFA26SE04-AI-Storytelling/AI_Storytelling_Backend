@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using StoryPlatform.Application.Abstractions.Communication;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Abstractions.Security;
@@ -46,6 +47,11 @@ public class SupervisionService : ISupervisionService
         if (email?.Length > 150)
         {
             throw new BadRequestException("Email người được mời tối đa 150 ký tự.");
+        }
+
+        if (email != null && !new EmailAddressAttribute().IsValid(email))
+        {
+            throw new BadRequestException("Email người được mời không đúng định dạng.");
         }
 
         var invitation = new SupervisionInvitation
@@ -217,6 +223,93 @@ public class SupervisionService : ISupervisionService
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<SupervisionRelationshipDto> TransferOwnershipAsync(
+        int childProfileId, int currentOwnerUserId, TransferOwnershipRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        if (currentOwnerUserId == request.TargetSupervisorUserId)
+        {
+            throw new BadRequestException("Không thể chuyển nhượng quyền Owner cho chính mình.");
+        }
+
+        SupervisionRelationship? targetRelationship = null;
+
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await _unitOfWork.AcquireTransactionLockAsync(childProfileId, cancellationToken);
+
+            var ownerRelationship = await _accessGuard.EnsureActiveSupervisionAsync(
+                childProfileId, currentOwnerUserId, cancellationToken);
+            if (ownerRelationship.SupervisorRole != SupervisorRole.Owner)
+            {
+                throw new ForbiddenException("Chỉ Owner mới có quyền thực hiện thao tác này.");
+            }
+
+            var relationshipRepo = _unitOfWork.Repository<SupervisionRelationship>();
+            targetRelationship = await relationshipRepo.FirstOrDefaultAsync(
+                value => value.ChildProfileId == childProfileId
+                         && value.SupervisorUserId == request.TargetSupervisorUserId
+                         && value.SupervisorRole == SupervisorRole.AdditionalSupervisor
+                         && value.RevokedAt == null,
+                cancellationToken: cancellationToken);
+            if (targetRelationship == null)
+            {
+                throw new BadRequestException(
+                    "Người nhận phải là một Additional Supervisor đang hoạt động của hồ sơ trẻ này.");
+            }
+
+            // Đổi role trên đúng hai quan hệ đang xét. Không revoke quan hệ nào nên BR-1.9
+            // vẫn được giữ nguyên: mọi quan hệ Parent đang active vẫn active sau thao tác.
+            ownerRelationship.SupervisorRole = SupervisorRole.AdditionalSupervisor;
+            targetRelationship.SupervisorRole = SupervisorRole.Owner;
+            relationshipRepo.Update(ownerRelationship);
+            relationshipRepo.Update(targetRelationship);
+
+            // Owner mới mặc định có toàn quyền và không được có permission riêng lẻ.
+            var permissionRepo = _unitOfWork.Repository<SupervisionPermission>();
+            var staleTargetPermissions = await permissionRepo.FindAsync(
+                value => value.SupervisionRelationshipId == targetRelationship.Id,
+                cancellationToken: cancellationToken);
+            permissionRepo.DeleteRange(staleTargetPermissions);
+
+            // Owner cũ trở thành Additional Supervisor với quyền xem mặc định.
+            var ownerHasViewResults = await permissionRepo.ExistsAsync(
+                value => value.SupervisionRelationshipId == ownerRelationship.Id
+                         && value.Permission == Permission.ViewResults,
+                cancellationToken);
+            if (!ownerHasViewResults)
+            {
+                await permissionRepo.AddAsync(new SupervisionPermission
+                {
+                    SupervisionRelationshipId = ownerRelationship.Id,
+                    Permission = Permission.ViewResults
+                }, cancellationToken);
+            }
+
+            // Đồng bộ bản sao denormalized của Owner trong cùng transaction.
+            var childProfileRepo = _unitOfWork.Repository<ChildProfile>();
+            var childProfile = await childProfileRepo.GetByIdAsync(childProfileId, cancellationToken);
+            if (childProfile == null)
+            {
+                throw new NotFoundException("Hồ sơ trẻ", childProfileId);
+            }
+
+            childProfile.OwnerUserId = request.TargetSupervisorUserId;
+            childProfile.UpdatedAt = DateTime.UtcNow;
+            childProfileRepo.Update(childProfile);
+
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            throw;
+        }
+
+        return MapRelationship(targetRelationship!);
     }
 
     public async Task GrantPermissionAsync(

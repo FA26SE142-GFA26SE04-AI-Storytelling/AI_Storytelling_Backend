@@ -103,6 +103,24 @@ public class SupervisionController : BaseApiController
     }
 
     /// <summary>
+    /// Chuyển nhượng quyền Owner cho một Additional Supervisor đang hoạt động (BR-1.10).
+    /// Chỉ Owner hiện tại được gọi; Owner cũ tự động trở thành Additional Supervisor
+    /// với quyền xem kết quả mặc định.
+    /// </summary>
+    [HttpPost("{childProfileId:int}/transfer-ownership")]
+    [Authorize(Roles = "Parent,Teacher")]
+    public async Task<ActionResult<ApiResponse<SupervisionRelationshipDto>>> TransferOwnership(
+        int childProfileId,
+        [FromBody] TransferOwnershipRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _supervisionService.TransferOwnershipAsync(
+            childProfileId, GetCurrentUserId(), request, cancellationToken);
+
+        return HandleResult(result, "Chuyển nhượng quyền Owner thành công.");
+    }
+
+    /// <summary>
     /// Danh sách permission đã cấp cho 1 Additional Supervisor. Chỉ Owner xem được.
     /// </summary>
     [HttpGet("relationships/{relationshipId:int}/permissions")]

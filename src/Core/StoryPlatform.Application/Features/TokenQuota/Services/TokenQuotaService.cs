@@ -58,10 +58,56 @@ public class TokenQuotaService : ITokenQuotaService
         int requestingUserId, int childProfileId, CancellationToken cancellationToken = default) =>
         throw new NotImplementedException("Implemented in Task 4.");
 
-    public Task CreditAsync(
+    public async Task CreditAsync(
         ProfileScope planScope, int payerUserId, int? organizationId, int quotaAmount,
-        CancellationToken cancellationToken = default) =>
-        throw new NotImplementedException("Implemented in Task 3.");
+        CancellationToken cancellationToken = default)
+    {
+        var repo = _unitOfWork.Repository<TokenQuotaConfig>();
+        var scope = planScope == ProfileScope.Personal ? TokenQuotaScope.Personal : TokenQuotaScope.Organization;
+
+        TokenQuotaConfig? config;
+        if (scope == TokenQuotaScope.Personal)
+        {
+            config = await repo.FirstOrDefaultAsync(
+                c => c.Scope == TokenQuotaScope.Personal && c.UserId == payerUserId,
+                cancellationToken: cancellationToken);
+        }
+        else
+        {
+            if (!organizationId.HasValue)
+            {
+                throw new BadRequestException("OrganizationId là bắt buộc để cộng quota cho gói Organization.");
+            }
+
+            config = await repo.FirstOrDefaultAsync(
+                c => c.Scope == TokenQuotaScope.Organization && c.OrganizationId == organizationId,
+                cancellationToken: cancellationToken);
+        }
+
+        if (config == null)
+        {
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            config = new TokenQuotaConfig
+            {
+                Scope = scope,
+                UserId = scope == TokenQuotaScope.Personal ? payerUserId : null,
+                OrganizationId = scope == TokenQuotaScope.Organization ? organizationId : null,
+                QuotaLimit = quotaAmount,
+                QuotaUsed = 0,
+                PeriodStart = today,
+                PeriodEnd = today.AddMonths(1)
+            };
+            await repo.AddAsync(config, cancellationToken);
+        }
+        else
+        {
+            config = await RolloverIfExpiredAsync(config, cancellationToken);
+            config.QuotaLimit += quotaAmount;
+            repo.Update(config);
+        }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
 
     private async Task<TokenQuotaConfig?> ResolveApplicableConfigAsync(ChildProfile child, CancellationToken cancellationToken)
     {

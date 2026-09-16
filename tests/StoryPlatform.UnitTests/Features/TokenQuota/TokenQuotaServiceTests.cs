@@ -188,4 +188,65 @@ public class TokenQuotaServiceTests
         Assert.Equal(3, config.QuotaUsed);
         _configRepository.Verify(r => r.Update(config), Times.Once);
     }
+
+    // ---------- CreditAsync ----------
+
+    [Fact]
+    public async Task CreditAsync_PersonalScope_NoExistingConfig_CreatesNewConfigWithFullAmount()
+    {
+        SetupConfigLookup();
+        StoryPlatform.Domain.Entities.TokenQuotaConfig? added = null;
+        _configRepository
+            .Setup(r => r.AddAsync(It.IsAny<StoryPlatform.Domain.Entities.TokenQuotaConfig>(), It.IsAny<CancellationToken>()))
+            .Callback<StoryPlatform.Domain.Entities.TokenQuotaConfig, CancellationToken>((entity, _) => added = entity)
+            .ReturnsAsync((StoryPlatform.Domain.Entities.TokenQuotaConfig entity, CancellationToken _) => entity);
+
+        await _sut.CreditAsync(ProfileScope.Personal, payerUserId: 7, organizationId: null, quotaAmount: 50);
+
+        Assert.NotNull(added);
+        Assert.Equal(TokenQuotaScope.Personal, added!.Scope);
+        Assert.Equal(7, added.UserId);
+        Assert.Null(added.OrganizationId);
+        Assert.Equal(50, added.QuotaLimit);
+        Assert.Equal(0, added.QuotaUsed);
+    }
+
+    [Fact]
+    public async Task CreditAsync_PersonalScope_ExistingConfig_TopsUpWithoutResettingUsage()
+    {
+        var existing = MakeConfig(TokenQuotaScope.Personal, quotaLimit: 50, quotaUsed: 30, userId: 7);
+        SetupConfigLookup(existing);
+
+        await _sut.CreditAsync(ProfileScope.Personal, payerUserId: 7, organizationId: null, quotaAmount: 50);
+
+        Assert.Equal(100, existing.QuotaLimit);
+        Assert.Equal(30, existing.QuotaUsed);
+        _configRepository.Verify(r => r.Update(existing), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreditAsync_OrganizationScope_NoExistingConfig_CreatesNewConfigForOrganization()
+    {
+        SetupConfigLookup();
+        StoryPlatform.Domain.Entities.TokenQuotaConfig? added = null;
+        _configRepository
+            .Setup(r => r.AddAsync(It.IsAny<StoryPlatform.Domain.Entities.TokenQuotaConfig>(), It.IsAny<CancellationToken>()))
+            .Callback<StoryPlatform.Domain.Entities.TokenQuotaConfig, CancellationToken>((entity, _) => added = entity)
+            .ReturnsAsync((StoryPlatform.Domain.Entities.TokenQuotaConfig entity, CancellationToken _) => entity);
+
+        await _sut.CreditAsync(ProfileScope.Organization, payerUserId: 7, organizationId: 10, quotaAmount: 150);
+
+        Assert.NotNull(added);
+        Assert.Equal(TokenQuotaScope.Organization, added!.Scope);
+        Assert.Equal(10, added.OrganizationId);
+        Assert.Null(added.UserId);
+        Assert.Equal(150, added.QuotaLimit);
+    }
+
+    [Fact]
+    public async Task CreditAsync_OrganizationScope_MissingOrganizationId_ThrowsBadRequest()
+    {
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.CreditAsync(ProfileScope.Organization, payerUserId: 7, organizationId: null, quotaAmount: 150));
+    }
 }

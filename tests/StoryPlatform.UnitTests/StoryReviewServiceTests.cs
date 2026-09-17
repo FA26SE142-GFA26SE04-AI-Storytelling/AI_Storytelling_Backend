@@ -441,6 +441,11 @@ public sealed class StoryReviewServiceTests
 
         var story = unitOfWork.Items<Story>().First();
         Assert.Equal(StoryStatus.Approved, story.Status);
+        var mediaJob = Assert.Single(unitOfWork.Items<StoryGenerationJob>(), job =>
+            job.Operation == GenerationJobOperation.GenerateMediaPackage);
+        Assert.Equal(1, mediaJob.StoryVersionId);
+        Assert.Equal("p5:1:1", mediaJob.OperationKey);
+        Assert.Equal(JobStage.MediaPending, mediaJob.Stage);
     }
 
     [Fact]
@@ -450,6 +455,53 @@ public sealed class StoryReviewServiceTests
         var service = Service(unitOfWork);
 
         await Assert.ThrowsAsync<BadRequestException>(() => service.ApproveAsync(1, 1));
+    }
+
+    [Fact]
+    public async Task Approve_WithoutStoryPermission_ThrowsForbidden()
+    {
+        var unitOfWork = SeedContentReviewWithAllArtifacts();
+        unitOfWork.Items<Story>().Single().AuthorUserId = 99;
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => Service(unitOfWork).ApproveAsync(2, 1));
+        Assert.Empty(unitOfWork.Items<StoryGenerationJob>());
+    }
+
+    [Fact]
+    public async Task Approve_SupervisorWithApproveStoryPermission_Succeeds()
+    {
+        var unitOfWork = SeedContentReviewWithAllArtifacts();
+        unitOfWork.Items<Story>().Single().AuthorUserId = 99;
+        unitOfWork.Seed(new SupervisionRelationship
+        {
+            Id = 2, ChildProfileId = 1, SupervisorUserId = 2, SupervisorRole = SupervisorRole.AdditionalSupervisor
+        });
+        unitOfWork.Seed(new SupervisionPermission
+        {
+            Id = 2, SupervisionRelationshipId = 2, Permission = Permission.ApproveStory
+        });
+
+        var result = await Service(unitOfWork).ApproveAsync(2, 1);
+
+        Assert.True(result.Success);
+    }
+
+    [Fact]
+    public async Task Approve_WhenMediaJobAlreadyExists_ThrowsConflictWithoutDuplicate()
+    {
+        var unitOfWork = SeedContentReviewWithAllArtifacts();
+        unitOfWork.Seed(new StoryGenerationJob
+        {
+            Id = 10, StoryId = 1, StoryVersionId = 1,
+            Operation = GenerationJobOperation.GenerateMediaPackage,
+            Status = GenerationJobStatus.Pending
+        });
+
+        var exception = await Assert.ThrowsAsync<ConflictException>(() => Service(unitOfWork).ApproveAsync(1, 1));
+
+        Assert.Equal("MEDIA_JOB_ALREADY_EXISTS", exception.Message);
+        Assert.Single(unitOfWork.Items<StoryGenerationJob>());
+        Assert.Equal(StoryStatus.ContentReview, unitOfWork.Items<Story>().Single().Status);
     }
 
     [Fact]
@@ -465,6 +517,18 @@ public sealed class StoryReviewServiceTests
 
         var story = unitOfWork.Items<Story>().First();
         Assert.Equal(StoryStatus.Archived, story.Status);
+    }
+
+    [Fact]
+    public async Task Archive_WithoutStoryPermission_ThrowsForbidden()
+    {
+        var unitOfWork = SeedContentReview();
+        unitOfWork.Items<Story>().Single().AuthorUserId = 99;
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            Service(unitOfWork).ArchiveAsync(2, 1, new ArchiveRequestDto { Reason = "No access" }));
+
+        Assert.Equal(StoryStatus.ContentReview, unitOfWork.Items<Story>().Single().Status);
     }
 
     #endregion

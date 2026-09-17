@@ -10,6 +10,8 @@ using StoryPlatform.Application.Abstractions.Payments;
 using StoryPlatform.Application.Features.Outline.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration;
+using StoryPlatform.Application.Features.MediaGeneration;
+using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Infrastructure.AI;
 using StoryPlatform.Infrastructure.BackgroundServices;
 using StoryPlatform.Infrastructure.Communication;
@@ -58,6 +60,17 @@ public static class DependencyInjection
         services.AddSingleton(contentOptions);
         services.AddSingleton<IContentGenerationJobFailureFinalizer, ContentGenerationJobFailureFinalizer>();
         services.AddHostedService<ContentGenerationWorker>();
+
+        var mediaOptions = new MediaGenerationOptions();
+        configuration.GetSection(MediaGenerationOptions.SectionName).Bind(mediaOptions);
+        services.AddSingleton(mediaOptions);
+        services.AddSingleton<IImageGenerationProvider, UnavailableImageGenerationProvider>();
+        services.AddSingleton<ITtsProvider, UnavailableTtsProvider>();
+        services.AddSingleton<FailClosedMediaEvaluator>();
+        services.AddSingleton<IMediaAlignmentEvaluator>(provider => provider.GetRequiredService<FailClosedMediaEvaluator>());
+        services.AddSingleton<IMediaSafetyEvaluator>(provider => provider.GetRequiredService<FailClosedMediaEvaluator>());
+        services.AddSingleton<IMediaGenerationJobFailureFinalizer, MediaGenerationJobFailureFinalizer>();
+        services.AddHostedService<MediaGenerationWorker>();
 
         services.Configure<SePayOptions>(configuration.GetSection(SePayOptions.SectionName));
         services.AddSingleton<ISePayQrUrlBuilder, SePayQrUrlBuilder>();

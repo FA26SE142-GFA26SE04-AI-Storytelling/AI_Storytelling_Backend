@@ -22,5 +22,12 @@ public enum JobStage
     ContentArtifactGenerating = 24,
     ContentArtifactCompleted = 25,
     ContentPackageCompleted = 26,
-    ContentFailed = 29
+    ContentFailed = 29,
+    MediaPending = 30,
+    MediaContextBuilding = 31,
+    MediaSegmenting = 32,
+    MediaGenerating = 33,
+    MediaFinalizing = 34,
+    MediaCompleted = 35,
+    MediaFailed = 39
 }

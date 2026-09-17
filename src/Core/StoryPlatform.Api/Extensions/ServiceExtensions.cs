@@ -156,6 +156,10 @@ public static class ServiceExtensions
                 Version = "v1"
             });
 
+            // DTO names may repeat across feature namespaces. Use the qualified type
+            // name so each OpenAPI component receives a stable, unique schema ID.
+            c.CustomSchemaIds(type => (type.FullName ?? type.Name).Replace('+', '.'));
+
             // Cấu hình JWT Bearer trong Swagger UI
             c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
             {

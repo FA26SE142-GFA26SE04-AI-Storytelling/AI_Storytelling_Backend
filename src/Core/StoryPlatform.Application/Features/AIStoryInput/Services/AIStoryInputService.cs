@@ -8,6 +8,7 @@ using StoryPlatform.Application.Features.AIStoryInput.DTOs;
 using StoryPlatform.Application.Features.AIStoryInput.Guardrails;
 using StoryPlatform.Application.Features.AIStoryInput.Interfaces;
 using StoryPlatform.Application.Features.AIStoryInput.Models;
+using StoryPlatform.Application.Features.TokenQuota.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -24,11 +25,13 @@ public sealed class AIStoryInputService : IAIStoryInputService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IInputGuardrail _inputGuardrail;
+    private readonly ITokenQuotaService _tokenQuotaService;
 
-    public AIStoryInputService(IUnitOfWork unitOfWork, IInputGuardrail inputGuardrail)
+    public AIStoryInputService(IUnitOfWork unitOfWork, IInputGuardrail inputGuardrail, ITokenQuotaService tokenQuotaService)
     {
         _unitOfWork = unitOfWork;
         _inputGuardrail = inputGuardrail;
+        _tokenQuotaService = tokenQuotaService;
     }
 
     public async Task<AIStoryInputContextDto> GetContextAsync(
@@ -75,6 +78,8 @@ public sealed class AIStoryInputService : IAIStoryInputService
 
             return await RecoverIfStaleAsync(existing, cancellationToken);
         }
+
+        await _tokenQuotaService.EnsureWithinQuotaAsync(request.ChildProfileId, cancellationToken);
 
         Story story;
         if (request.ExistingStoryId.HasValue)
@@ -133,6 +138,7 @@ public sealed class AIStoryInputService : IAIStoryInputService
             }
 
             await requestRepository.AddAsync(generationRequest, cancellationToken);
+            await _tokenQuotaService.IncrementUsageAsync(request.ChildProfileId, cancellationToken);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
         }
         catch

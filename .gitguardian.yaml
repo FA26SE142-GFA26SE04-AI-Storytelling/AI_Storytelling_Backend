@@ -1,0 +1,9 @@
+version: 2
+
+secret:
+  # Values below are confirmed false positives, not real credentials.
+  # Ignoring by exact secret hash (not by path) so a genuine secret accidentally
+  # committed to a test or seed file in the future is still caught.
+  ignored-matches:
+    - name: "Demo@123 - shared demo password for all seeded accounts (Database/Seed/01_user_accounts.sql) and its mocks in tests/StoryPlatform.UnitTests/Features/Auth/AuthServiceTests.cs, tests/StoryPlatform.IntegrationTests/Security/PasswordHasherTests.cs"
+      match: ff96673205dc722320598ebf8f88325b2ac56922d5a2164b5765868274bc0d73

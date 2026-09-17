@@ -9,6 +9,7 @@ using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Common.Security;
 using StoryPlatform.Application.Features.Auth.DTOs;
+using StoryPlatform.Application.Features.Auth.Interfaces;
 using StoryPlatform.Application.Features.Auth.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -25,6 +26,8 @@ public class AuthServiceTests
     private readonly Mock<IPasswordHasher> _passwordHasherMock = new();
     private readonly Mock<IJwtTokenGenerator> _jwtGeneratorMock = new();
     private readonly Mock<IEmailSender> _emailSenderMock = new();
+    private readonly Mock<ITotpService> _totpServiceMock = new();
+    private readonly Mock<IUserProvisioningService> _userProvisioningServiceMock = new();
     private readonly AuthService _sut;
 
     public AuthServiceTests()
@@ -39,7 +42,9 @@ public class AuthServiceTests
         _jwtGeneratorMock.Setup(j => j.GetRefreshTokenExpirationDate()).Returns(DateTime.UtcNow.AddDays(7));
         _jwtGeneratorMock.Setup(j => j.ExpiresInSeconds).Returns(7200L);
 
-        _sut = new AuthService(_unitOfWorkMock.Object, _passwordHasherMock.Object, _jwtGeneratorMock.Object, _emailSenderMock.Object);
+        _sut = new AuthService(
+            _unitOfWorkMock.Object, _passwordHasherMock.Object, _jwtGeneratorMock.Object,
+            _emailSenderMock.Object, _totpServiceMock.Object, _userProvisioningServiceMock.Object);
     }
 
     private static UserAccount CreateUser(string password = "hashed-password") => new()
@@ -99,6 +104,31 @@ public class AuthServiceTests
     }
 
     [Fact]
+    public async Task LoginAsync_PasswordResetPendingAccount_ThrowsForbiddenException()
+    {
+        var user = CreateUser();
+        user.Status = AccountStatus.PasswordResetPending;
+        _userRepoMock
+            .Setup(r => r.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<UserAccount, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+        _passwordHasherMock.Setup(p => p.VerifyPassword(
+                It.IsAny<string>(), It.IsAny<string>()))
+            .Returns(true);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.LoginAsync(new LoginRequestDto
+            {
+                Identifier = user.Email,
+                Password = "discarded-initial-password"
+            }));
+
+        _refreshTokenRepoMock.Verify(
+            r => r.AddAsync(It.IsAny<RefreshToken>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task RegisterAsync_NewEmail_CreatesUserAndSendsVerificationEmail()
     {
         _userRepoMock.Setup(r => r.ExistsAsync(It.IsAny<Expression<Func<UserAccount, bool>>>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
@@ -133,6 +163,31 @@ public class AuthServiceTests
     }
 
     [Fact]
+    public async Task RegisterAsync_AlwaysCreatesParentRoleAccount()
+    {
+        _userRepoMock.Setup(r => r.ExistsAsync(
+                It.IsAny<Expression<Func<UserAccount, bool>>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        _passwordHasherMock.Setup(p => p.HashPassword(It.IsAny<string>())).Returns("hashed-password");
+        UserAccount? addedUser = null;
+        _userRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<UserAccount>(), It.IsAny<CancellationToken>()))
+            .Callback<UserAccount, CancellationToken>((u, _) => addedUser = u)
+            .ReturnsAsync((UserAccount u, CancellationToken _) => u);
+
+        await _sut.RegisterAsync(new RegisterRequestDto
+        {
+            Username = "parent_new2",
+            Email = "new2@example.com",
+            FullName = "Nguoi Dung Moi Hai",
+            Password = "Demo@123",
+            ConfirmPassword = "Demo@123"
+        });
+
+        Assert.Equal(UserRole.Parent, addedUser!.Role);
+    }
+
+    [Fact]
     public async Task RegisterAsync_PasswordMismatch_ThrowsBadRequestException()
     {
         var request = new RegisterRequestDto
@@ -145,6 +200,89 @@ public class AuthServiceTests
         };
 
         await Assert.ThrowsAsync<BadRequestException>(() => _sut.RegisterAsync(request));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not-an-email")]
+    public async Task RegisterAsync_InvalidEmail_DoesNotPersistOrSendVerificationEmail(string email)
+    {
+        var request = new RegisterRequestDto
+        {
+            Username = "parent_invalid_email",
+            Email = email,
+            FullName = "Invalid Email User",
+            Password = "Password@123",
+            ConfirmPassword = "Password@123"
+        };
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.RegisterAsync(request));
+
+        _userRepoMock.Verify(r => r.ExistsAsync(
+            It.IsAny<Expression<Func<UserAccount, bool>>>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+        _userRepoMock.Verify(r => r.AddAsync(
+            It.IsAny<UserAccount>(), It.IsAny<CancellationToken>()), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(
+            It.IsAny<CancellationToken>()), Times.Never);
+        _emailSenderMock.Verify(e => e.SendEmailVerificationEmailAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateParentAccountAsync_ValidRequest_CreatesAccountAndSendsProvisioningEmail()
+    {
+        var teacher = new UserAccount { Id = 3, FullName = "Co Giao Lan", Role = UserRole.Teacher };
+        _userRepoMock.Setup(r => r.GetByIdAsync(3, It.IsAny<CancellationToken>())).ReturnsAsync(teacher);
+        var parentAccount = new UserAccount
+        {
+            Id = 10,
+            Username = "parent_x",
+            Email = "parentx@example.com",
+            FullName = "Tran Van C",
+            Role = UserRole.Parent,
+            Status = AccountStatus.PasswordResetPending
+        };
+        _userProvisioningServiceMock
+            .Setup(s => s.CreatePendingAccountAsync(
+                "parent_x", "parentx@example.com", "Tran Van C", null, UserRole.Parent,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((parentAccount, "raw-parent-set-token"));
+
+        var result = await _sut.CreateParentAccountAsync(3, new CreateParentAccountRequestDto
+        {
+            Username = "parent_x",
+            Email = "parentx@example.com",
+            FullName = "Tran Van C"
+        });
+
+        Assert.Equal(10, result.Id);
+        Assert.Equal("Parent", result.Role);
+        _auditLogRepoMock.Verify(r => r.AddAsync(
+            It.Is<AuditLog>(log =>
+                log.ActorUserId == 3
+                && log.Action == "PROVISION_PARENT_ACCOUNT"
+                && log.EntityId == 10),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _emailSenderMock.Verify(e => e.SendAccountProvisionedEmailAsync(
+            "parentx@example.com", "Tran Van C", "Co Giao Lan", "Phụ huynh (Parent)",
+            "raw-parent-set-token", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateParentAccountAsync_UnknownCreator_ThrowsNotFoundException()
+    {
+        _userRepoMock.Setup(r => r.GetByIdAsync(999, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((UserAccount?)null);
+
+        await Assert.ThrowsAsync<NotFoundException>(() => _sut.CreateParentAccountAsync(
+            999, new CreateParentAccountRequestDto
+            {
+                Username = "parent_x",
+                Email = "parentx@example.com",
+                FullName = "Parent X"
+            }));
     }
 
     [Fact]
@@ -379,6 +517,38 @@ public class AuthServiceTests
         Assert.Null(token.RevokedAt);
         _refreshTokenRepoMock.Verify(r => r.AddAsync(It.IsAny<RefreshToken>(), It.IsAny<CancellationToken>()), Times.Never);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RefreshTokenAsync_PasswordResetPendingAccount_ThrowsUnauthorizedException()
+    {
+        var user = CreateUser();
+        user.Status = AccountStatus.PasswordResetPending;
+        var token = new RefreshToken
+        {
+            UserAccountId = user.Id,
+            UserAccount = user,
+            TokenHash = TokenHasher.Hash("still-valid-raw-token"),
+            ExpiresAt = DateTime.UtcNow.AddDays(1),
+            SessionScope = SessionScope.Supervisor
+        };
+        _refreshTokenRepoMock
+            .Setup(r => r.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<RefreshToken, bool>>>(), "UserAccount",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(token);
+
+        await Assert.ThrowsAsync<UnauthorizedException>(() =>
+            _sut.RefreshTokenAsync(new RefreshTokenRequestDto
+            {
+                RefreshToken = "still-valid-raw-token"
+            }));
+
+        Assert.Null(token.RevokedAt);
+        _refreshTokenRepoMock.Verify(
+            r => r.AddAsync(It.IsAny<RefreshToken>(), It.IsAny<CancellationToken>()), Times.Never);
+        _unitOfWorkMock.Verify(
+            u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -863,47 +1033,6 @@ public class AuthServiceTests
     }
 
     [Fact]
-    public async Task RegisterAsync_TeacherRole_CreatesUserWithTeacherRole()
-    {
-        _userRepoMock.Setup(r => r.ExistsAsync(It.IsAny<Expression<Func<UserAccount, bool>>>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
-        _passwordHasherMock.Setup(p => p.HashPassword(It.IsAny<string>())).Returns("hashed-password");
-        UserAccount? addedUser = null;
-        _userRepoMock
-            .Setup(r => r.AddAsync(It.IsAny<UserAccount>(), It.IsAny<CancellationToken>()))
-            .Callback<UserAccount, CancellationToken>((u, _) => addedUser = u)
-            .ReturnsAsync((UserAccount u, CancellationToken _) => u);
-
-        await _sut.RegisterAsync(new RegisterRequestDto
-        {
-            Username = "teacher_new",
-            Email = "teacher.new@example.com",
-            FullName = "Giao Vien Moi",
-            Password = "Demo@123",
-            ConfirmPassword = "Demo@123",
-            Role = UserRole.Teacher
-        });
-
-        Assert.NotNull(addedUser);
-        Assert.Equal(UserRole.Teacher, addedUser!.Role);
-    }
-
-    [Fact]
-    public async Task RegisterAsync_AdministratorRole_ThrowsBadRequestException()
-    {
-        var request = new RegisterRequestDto
-        {
-            Username = "fake_admin",
-            Email = "fake.admin@example.com",
-            FullName = "Fake Admin",
-            Password = "Demo@123",
-            ConfirmPassword = "Demo@123",
-            Role = UserRole.Administrator
-        };
-
-        await Assert.ThrowsAsync<BadRequestException>(() => _sut.RegisterAsync(request));
-    }
-
-    [Fact]
     public async Task RegisterAsync_NoRoleSpecified_DefaultsToParent()
     {
         _userRepoMock.Setup(r => r.ExistsAsync(It.IsAny<Expression<Func<UserAccount, bool>>>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
@@ -1023,13 +1152,6 @@ public class AuthServiceTests
         await Assert.ThrowsAsync<UnauthorizedException>(() => _sut.RefreshTokenAsync(new RefreshTokenRequestDto { RefreshToken = "token" }));
 
         _refreshTokenRepoMock.Verify(r => r.AddAsync(It.IsAny<RefreshToken>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task RegisterAsync_UndefinedRole_RejectsBeforeSaving()
-    {
-        await Assert.ThrowsAsync<BadRequestException>(() => _sut.RegisterAsync(new RegisterRequestDto { Role = (UserRole)999 }));
-        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -1153,5 +1275,113 @@ public class AuthServiceTests
 
         _refreshTokenRepoMock.Verify(repo => repo.Update(It.IsAny<RefreshToken>()), Times.Never);
         _unitOfWorkMock.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // ---------- Administrator MFA (Muc 9) ----------
+
+    private static UserAccount CreateAdminUser(bool mfaEnabled, string? mfaSecret = null) => new()
+    {
+        Id = 7,
+        Username = "admin_demo",
+        Email = "admin@example.com",
+        PasswordHash = "hashed-password",
+        FullName = "Admin Demo",
+        Role = UserRole.Administrator,
+        Status = AccountStatus.EmailVerified,
+        MfaEnabled = mfaEnabled,
+        MfaSecret = mfaSecret
+    };
+
+    [Fact]
+    public async Task LoginAsync_AdministratorWithMfaEnabled_ReturnsMfaRequiredWithoutTokens()
+    {
+        var admin = CreateAdminUser(mfaEnabled: true, mfaSecret: "JBSWY3DPEHPK3PXP");
+        _userRepoMock
+            .Setup(r => r.FirstOrDefaultAsync(It.IsAny<Expression<Func<UserAccount, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(admin);
+        _passwordHasherMock.Setup(p => p.VerifyPassword("Demo@123", admin.PasswordHash)).Returns(true);
+        _jwtGeneratorMock.Setup(j => j.GenerateMfaChallengeToken(admin.Id)).Returns("challenge-token");
+
+        var result = await _sut.LoginAsync(new LoginRequestDto { Identifier = admin.Email, Password = "Demo@123" });
+
+        Assert.True(result.MfaRequired);
+        Assert.False(result.MfaSetupRequired);
+        Assert.Equal("challenge-token", result.MfaChallengeToken);
+        Assert.Empty(result.AccessToken);
+        _unitOfWorkMock.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task LoginAsync_AdministratorWithoutMfaSetup_GeneratesSecretAndReturnsSetupRequired()
+    {
+        var admin = CreateAdminUser(mfaEnabled: false, mfaSecret: null);
+        _userRepoMock
+            .Setup(r => r.FirstOrDefaultAsync(It.IsAny<Expression<Func<UserAccount, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(admin);
+        _passwordHasherMock.Setup(p => p.VerifyPassword("Demo@123", admin.PasswordHash)).Returns(true);
+        _totpServiceMock.Setup(t => t.GenerateSecret()).Returns("NEWSECRET234567");
+        _totpServiceMock.Setup(t => t.BuildProvisioningUri("NEWSECRET234567", admin.Email, It.IsAny<string>()))
+            .Returns("otpauth://totp/fake");
+        _jwtGeneratorMock.Setup(j => j.GenerateMfaChallengeToken(admin.Id)).Returns("setup-challenge-token");
+
+        var result = await _sut.LoginAsync(new LoginRequestDto { Identifier = admin.Email, Password = "Demo@123" });
+
+        Assert.True(result.MfaSetupRequired);
+        Assert.Equal("otpauth://totp/fake", result.MfaProvisioningUri);
+        Assert.Equal("setup-challenge-token", result.MfaChallengeToken);
+        Assert.Equal("NEWSECRET234567", admin.MfaSecret);
+        Assert.False(admin.MfaEnabled);
+        _unitOfWorkMock.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task VerifyMfaAsync_InvalidChallengeToken_ThrowsUnauthorized()
+    {
+        _jwtGeneratorMock.Setup(j => j.TryValidateMfaChallengeToken("bad", out It.Ref<int>.IsAny)).Returns(false);
+
+        await Assert.ThrowsAsync<UnauthorizedException>(() => _sut.VerifyMfaAsync(
+            new VerifyMfaRequestDto { ChallengeToken = "bad", Code = "123456" }));
+    }
+
+    private delegate bool TryValidateCallback(string token, out int userId);
+
+    [Fact]
+    public async Task VerifyMfaAsync_WrongCode_ThrowsBadRequest()
+    {
+        var admin = CreateAdminUser(mfaEnabled: true, mfaSecret: "JBSWY3DPEHPK3PXP");
+        _jwtGeneratorMock
+            .Setup(j => j.TryValidateMfaChallengeToken("token", out It.Ref<int>.IsAny))
+            .Returns(new TryValidateCallback((string _, out int userId) =>
+            {
+                userId = admin.Id;
+                return true;
+            }));
+        _userRepoMock.Setup(r => r.GetByIdAsync(admin.Id, It.IsAny<CancellationToken>())).ReturnsAsync(admin);
+        _totpServiceMock.Setup(t => t.VerifyCode(admin.MfaSecret!, "000000")).Returns(false);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.VerifyMfaAsync(
+            new VerifyMfaRequestDto { ChallengeToken = "token", Code = "000000" }));
+    }
+
+    [Fact]
+    public async Task VerifyMfaAsync_ValidCodeFirstTimeSetup_EnablesMfaAndReturnsTokens()
+    {
+        var admin = CreateAdminUser(mfaEnabled: false, mfaSecret: "NEWSECRET234567");
+        _jwtGeneratorMock
+            .Setup(j => j.TryValidateMfaChallengeToken("token", out It.Ref<int>.IsAny))
+            .Returns(new TryValidateCallback((string _, out int userId) =>
+            {
+                userId = admin.Id;
+                return true;
+            }));
+        _userRepoMock.Setup(r => r.GetByIdAsync(admin.Id, It.IsAny<CancellationToken>())).ReturnsAsync(admin);
+        _totpServiceMock.Setup(t => t.VerifyCode(admin.MfaSecret!, "654321")).Returns(true);
+
+        var result = await _sut.VerifyMfaAsync(new VerifyMfaRequestDto { ChallengeToken = "token", Code = "654321" });
+
+        Assert.True(admin.MfaEnabled);
+        Assert.Equal("fake-access-token", result.AccessToken);
+        Assert.False(result.MfaRequired);
+        Assert.False(result.MfaSetupRequired);
     }
 }

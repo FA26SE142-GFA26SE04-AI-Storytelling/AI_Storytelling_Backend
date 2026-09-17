@@ -35,6 +35,23 @@ public class AuthController : BaseApiController
     }
 
     /// <summary>
+    /// Giáo viên tạo tài khoản Phụ huynh. Phụ huynh dùng mã gửi qua email với endpoint
+    /// reset-password để thiết lập mật khẩu đăng nhập lần đầu.
+    /// </summary>
+    [HttpPost("parents")]
+    [Authorize(Roles = "Teacher")]
+    public async Task<ActionResult<ApiResponse<CreatedAccountDto>>> CreateParentAccount(
+        [FromBody] CreateParentAccountRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _authService.CreateParentAccountAsync(
+            GetCurrentUserId(), request, cancellationToken);
+        return StatusCode(
+            StatusCodes.Status201Created,
+            ApiResponse<CreatedAccountDto>.Ok(result, "Tạo tài khoản phụ huynh thành công."));
+    }
+
+    /// <summary>
     /// Đăng nhập hệ thống (hỗ trợ cả Email hoặc Username)
     /// </summary>
     [HttpPost("login")]
@@ -45,6 +62,19 @@ public class AuthController : BaseApiController
     {
         var result = await _authService.LoginAsync(request, cancellationToken);
         return HandleResult(result, "Đăng nhập thành công.");
+    }
+
+    /// <summary>
+    /// Bước 2 của đăng nhập Administrator: xác thực mã TOTP (Mục 9 — MFA bắt buộc cho Administrator).
+    /// </summary>
+    [HttpPost("mfa/verify")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<AuthResponseDto>>> VerifyMfa(
+        [FromBody] VerifyMfaRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _authService.VerifyMfaAsync(request, cancellationToken);
+        return HandleResult(result, "Xác thực MFA thành công.");
     }
 
     /// <summary>

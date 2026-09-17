@@ -98,6 +98,77 @@ public class JwtTokenGenerator : IJwtTokenGenerator
         return tokenHandler.WriteToken(token);
     }
 
+    private const string MfaChallengeTokenType = "mfa_challenge";
+    private static readonly TimeSpan MfaChallengeTokenTtl = TimeSpan.FromMinutes(5);
+
+    public string GenerateMfaChallengeToken(int userId)
+    {
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var key = Encoding.UTF8.GetBytes(_secretKey);
+        var userIdValue = userId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, userIdValue),
+            new("token_type", MfaChallengeTokenType),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+        };
+
+        var tokenDescriptor = new SecurityTokenDescriptor
+        {
+            Subject = new ClaimsIdentity(claims),
+            Expires = DateTime.UtcNow.Add(MfaChallengeTokenTtl),
+            Issuer = _issuer,
+            Audience = _audience,
+            SigningCredentials = new SigningCredentials(
+                new SymmetricSecurityKey(key),
+                SecurityAlgorithms.HmacSha256Signature)
+        };
+
+        var token = tokenHandler.CreateToken(tokenDescriptor);
+        return tokenHandler.WriteToken(token);
+    }
+
+    public bool TryValidateMfaChallengeToken(string token, out int userId)
+    {
+        userId = 0;
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var key = Encoding.UTF8.GetBytes(_secretKey);
+
+        try
+        {
+            var principal = tokenHandler.ValidateToken(token, new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidIssuer = _issuer,
+                ValidateAudience = true,
+                ValidAudience = _audience,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(key),
+                ClockSkew = TimeSpan.Zero
+            }, out _);
+
+            var tokenType = principal.FindFirst("token_type")?.Value;
+            var subject = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (tokenType != MfaChallengeTokenType || !int.TryParse(subject, out userId))
+            {
+                userId = 0;
+                return false;
+            }
+
+            return true;
+        }
+        catch (SecurityTokenException)
+        {
+            return false;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
     public string GenerateRefreshToken()
     {
         var randomNumber = new byte[32];

@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.Auth.DTOs;
 
@@ -10,6 +9,15 @@ public class LoginRequestDto
 
     [Required(ErrorMessage = "Mật khẩu không được để trống.")]
     public string Password { get; set; } = string.Empty;
+}
+
+public class VerifyMfaRequestDto
+{
+    [Required(ErrorMessage = "ChallengeToken không được để trống.")]
+    public string ChallengeToken { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Mã xác thực không được để trống.")]
+    public string Code { get; set; } = string.Empty;
 }
 
 public class RegisterRequestDto
@@ -35,7 +43,6 @@ public class RegisterRequestDto
     public string ConfirmPassword { get; set; } = string.Empty;
 
     public string? PhoneNumber { get; set; }
-    public UserRole Role { get; set; } = UserRole.Parent;
 }
 
 public class UserProfileDto
@@ -50,6 +57,33 @@ public class UserProfileDto
     public string Status { get; set; } = string.Empty;
 }
 
+public class CreatedAccountDto
+{
+    public int Id { get; set; }
+    public string Username { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+}
+
+public class CreateParentAccountRequestDto
+{
+    [Required(ErrorMessage = "Tên đăng nhập không được để trống.")]
+    [StringLength(50, MinimumLength = 3, ErrorMessage = "Tên đăng nhập từ 3 đến 50 ký tự.")]
+    public string Username { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Email không được để trống.")]
+    [EmailAddress(ErrorMessage = "Email không đúng định dạng.")]
+    public string Email { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Họ và tên không được để trống.")]
+    [StringLength(100, ErrorMessage = "Họ và tên tối đa 100 ký tự.")]
+    public string FullName { get; set; } = string.Empty;
+
+    public string? PhoneNumber { get; set; }
+}
+
 public class AuthResponseDto
 {
     public string AccessToken { get; set; } = string.Empty;
@@ -57,6 +91,23 @@ public class AuthResponseDto
     public string TokenType { get; set; } = "Bearer";
     public long ExpiresInSeconds { get; set; }
     public UserProfileDto User { get; set; } = null!;
+
+    /// <summary>
+    /// True nếu tài khoản (Administrator) đã bật MFA và cần nhập mã TOTP trước khi hoàn tất đăng nhập.
+    /// Khi true, AccessToken/RefreshToken/User ở trên chưa có giá trị thật.
+    /// </summary>
+    public bool MfaRequired { get; set; }
+
+    /// <summary>
+    /// True nếu đây là lần đăng nhập Administrator đầu tiên và cần thiết lập MFA trước khi tiếp tục.
+    /// </summary>
+    public bool MfaSetupRequired { get; set; }
+
+    /// <summary>Token ngắn hạn (5 phút) dùng cho bước xác thực MFA tiếp theo.</summary>
+    public string? MfaChallengeToken { get; set; }
+
+    /// <summary>Chuỗi otpauth:// để FE dựng QR khi MfaSetupRequired = true.</summary>
+    public string? MfaProvisioningUri { get; set; }
 }
 
 public class RefreshTokenRequestDto

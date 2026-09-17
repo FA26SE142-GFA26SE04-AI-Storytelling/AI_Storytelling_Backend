@@ -12,8 +12,8 @@ using StoryPlatform.Infrastructure.Persistence;
 namespace StoryPlatform.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260915081602_IntiatalDatabase")]
-    partial class IntiatalDatabase
+    [Migration("20260915081151_Init")]
+    partial class Init
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

@@ -2620,6 +2620,30 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("subscription_plans", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            ApplicableScope = "Personal",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            IsDeleted = false,
+                            Name = "Personal",
+                            PriceVnd = 49000,
+                            QuotaAmount = 50
+                        },
+                        new
+                        {
+                            Id = 2,
+                            ApplicableScope = "Organization",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            IsDeleted = false,
+                            Name = "Organization",
+                            PriceVnd = 99000,
+                            QuotaAmount = 150
+                        });
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.SupervisionInvitation", b =>
@@ -2844,11 +2868,16 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int?>("UserId")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ChildProfileId");
 
                     b.HasIndex("OrganizationId");
+
+                    b.HasIndex("UserId");
 
                     b.ToTable("token_quota_configs", (string)null);
                 });
@@ -4024,9 +4053,16 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasForeignKey("OrganizationId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("ChildProfile");
 
                     b.Navigation("Organization");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.VocabularyNotebookEntry", b =>

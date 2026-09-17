@@ -35,3 +35,9 @@ public class AcceptInvitationRequestDto
     [Required(ErrorMessage = "Mã mời không được để trống.")]
     public string InvitationCode { get; set; } = string.Empty;
 }
+
+public class TransferOwnershipRequestDto
+{
+    [Required(ErrorMessage = "Vui lòng chọn người nhận quyền Owner.")]
+    public int TargetSupervisorUserId { get; set; }
+}

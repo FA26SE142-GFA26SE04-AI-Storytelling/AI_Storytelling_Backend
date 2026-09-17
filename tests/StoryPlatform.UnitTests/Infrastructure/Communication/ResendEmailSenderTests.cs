@@ -69,6 +69,23 @@ public class ResendEmailSenderTests
     }
 
     [Fact]
+    public async Task SendAccountProvisionedEmailAsync_ValidRequest_PostsCorrectRequestToResendApi()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var sender = CreateSender(handler);
+
+        await sender.SendAccountProvisionedEmailAsync(
+            "teacher1@example.com", "Le Thi B", "Hieu Truong", "Giáo viên (Teacher)", "raw-set-password-token-789");
+
+        Assert.NotNull(handler.LastRequest);
+        Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+        Assert.Equal("https://api.resend.com/emails", handler.LastRequest.RequestUri!.ToString());
+        Assert.Contains("raw-set-password-token-789", handler.LastRequestBody);
+        Assert.Contains("teacher1@example.com", handler.LastRequestBody);
+        Assert.Contains("Hieu Truong", handler.LastRequestBody);
+    }
+
+    [Fact]
     public async Task SendEmailVerificationEmailAsync_ValidRequest_PostsCorrectRequestToResendApi()
     {
         var handler = new FakeHttpMessageHandler();

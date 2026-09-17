@@ -48,6 +48,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<QuizItem> QuizItems => Set<QuizItem>();
     public DbSet<DiscussionQuestion> DiscussionQuestions => Set<DiscussionQuestion>();
     public DbSet<MediaAsset> MediaAssets => Set<MediaAsset>();
+    public DbSet<StoryScene> StoryScenes => Set<StoryScene>();
+    public DbSet<MediaContext> MediaContexts => Set<MediaContext>();
     public DbSet<PromptCatalogVersion> PromptCatalogVersions => Set<PromptCatalogVersion>();
     public DbSet<ContentReport> ContentReports => Set<ContentReport>();
 

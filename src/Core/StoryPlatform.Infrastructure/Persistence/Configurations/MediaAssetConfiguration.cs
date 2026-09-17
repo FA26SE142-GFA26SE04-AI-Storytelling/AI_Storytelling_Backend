@@ -30,6 +30,15 @@ public class MediaAssetConfiguration : IEntityTypeConfiguration<MediaAsset>
             .HasForeignKey(x => x.StoryVersionId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(x => x.StoryScene)
+            .WithMany()
+            .HasForeignKey(x => x.StorySceneId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(x => new { x.StoryVersionId, x.StorySceneId, x.Type })
+            .IsUnique()
+            .HasFilter("\"StorySceneId\" IS NOT NULL AND \"IsDeleted\" = false");
+
         builder.HasQueryFilter(x => !x.IsDeleted);
     }
 }

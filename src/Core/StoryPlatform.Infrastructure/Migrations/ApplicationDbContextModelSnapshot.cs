@@ -955,6 +955,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
 
+                    b.Property<int?>("StorySceneId")
+                        .HasColumnType("integer");
+
                     b.Property<int>("StoryVersionId")
                         .HasColumnType("integer");
 
@@ -975,9 +978,51 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("StoryVersionId");
+                    b.HasIndex("StorySceneId");
+
+                    b.HasIndex("StoryVersionId", "StorySceneId", "Type")
+                        .IsUnique()
+                        .HasFilter("\"StorySceneId\" IS NOT NULL AND \"IsDeleted\" = false");
 
                     b.ToTable("media_assets", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.MediaContext", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ContextJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("StoryVersionId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StoryVersionId", "Revision")
+                        .IsUnique();
+
+                    b.ToTable("media_contexts", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_media_contexts_revision", "\"Revision\" > 0");
+                        });
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.Notification", b =>
@@ -2366,6 +2411,55 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("story_generation_requests", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryScene", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("SceneIndex")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SceneText")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("StoryVersionId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TextRangeEnd")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TextRangeStart")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("VisualDescription")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StoryVersionId", "SceneIndex")
+                        .IsUnique();
+
+                    b.ToTable("story_scenes", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_story_scenes_scene_index", "\"SceneIndex\" >= 0");
+
+                            t.HasCheckConstraint("CK_story_scenes_text_range", "\"TextRangeStart\" >= 0 AND \"TextRangeEnd\" > \"TextRangeStart\"");
+                        });
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryVersion", b =>
                 {
                     b.Property<int>("Id")
@@ -3226,6 +3320,24 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.MediaAsset", b =>
                 {
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryScene", "StoryScene")
+                        .WithMany()
+                        .HasForeignKey("StorySceneId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryVersion", "StoryVersion")
+                        .WithMany()
+                        .HasForeignKey("StoryVersionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("StoryScene");
+
+                    b.Navigation("StoryVersion");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.MediaContext", b =>
+                {
                     b.HasOne("StoryPlatform.Domain.Entities.StoryVersion", "StoryVersion")
                         .WithMany()
                         .HasForeignKey("StoryVersionId")
@@ -3770,6 +3882,17 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("Story");
 
                     b.Navigation("SubmittedByUser");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryScene", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryVersion", "StoryVersion")
+                        .WithMany()
+                        .HasForeignKey("StoryVersionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("StoryVersion");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryVersion", b =>

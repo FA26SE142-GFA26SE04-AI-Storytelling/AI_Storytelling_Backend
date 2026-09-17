@@ -7,7 +7,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace StoryPlatform.Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public partial class Init : Migration
+    public partial class IntiatalDatabase : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -1206,40 +1206,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "story_generation_jobs",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    StoryId = table.Column<int>(type: "integer", nullable: false),
-                    PromptCatalogVersionId = table.Column<int>(type: "integer", nullable: true),
-                    Stage = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
-                    GuardrailResult = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: true),
-                    FallbackMessage = table.Column<string>(type: "text", nullable: true),
-                    StartedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    CompletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_story_generation_jobs", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_story_generation_jobs_prompt_catalog_versions_PromptCatalog~",
-                        column: x => x.PromptCatalogVersionId,
-                        principalTable: "prompt_catalog_versions",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_story_generation_jobs_stories_StoryId",
-                        column: x => x.StoryId,
-                        principalTable: "stories",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "story_versions",
                 columns: table => new
                 {
@@ -1259,6 +1225,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                     ReadabilityFre = table.Column<decimal>(type: "numeric(6,3)", nullable: true),
                     SafetyScore = table.Column<decimal>(type: "numeric(6,3)", nullable: true),
                     IsCurrent = table.Column<bool>(type: "boolean", nullable: false),
+                    OutlineApprovedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    OutlineApprovedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
@@ -1275,6 +1243,12 @@ namespace StoryPlatform.Infrastructure.Migrations
                     table.ForeignKey(
                         name: "FK_story_versions_user_accounts_EditorUserId",
                         column: x => x.EditorUserId,
+                        principalTable: "user_accounts",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_story_versions_user_accounts_OutlineApprovedByUserId",
+                        column: x => x.OutlineApprovedByUserId,
                         principalTable: "user_accounts",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
@@ -1506,60 +1480,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     table.ForeignKey(
                         name: "FK_shared_story_recipients_user_accounts_RecipientUserId",
                         column: x => x.RecipientUserId,
-                        principalTable: "user_accounts",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "story_generation_requests",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    StoryId = table.Column<int>(type: "integer", nullable: false),
-                    SubmittedByUserId = table.Column<int>(type: "integer", nullable: false),
-                    IdempotencyKey = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
-                    InputFingerprint = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
-                    ContextFingerprint = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
-                    ContextSnapshotJson = table.Column<string>(type: "jsonb", nullable: false),
-                    AcceptedInputJson = table.Column<string>(type: "jsonb", nullable: true),
-                    Status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
-                    AttemptCount = table.Column<int>(type: "integer", nullable: false),
-                    MaxAttempts = table.Column<int>(type: "integer", nullable: false),
-                    ConcurrencyToken = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
-                    LastRetryKey = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
-                    AttemptStartedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    GuardrailDecision = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: true),
-                    ReasonCode = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
-                    FallbackMessage = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
-                    CanRetry = table.Column<bool>(type: "boolean", nullable: false),
-                    GuardrailCheckVersion = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
-                    GuardrailCheckedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    HandoffJobId = table.Column<int>(type: "integer", nullable: true),
-                    HandoffCreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_story_generation_requests", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_story_generation_requests_stories_StoryId",
-                        column: x => x.StoryId,
-                        principalTable: "stories",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_story_generation_requests_story_generation_jobs_HandoffJobId",
-                        column: x => x.HandoffJobId,
-                        principalTable: "story_generation_jobs",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_story_generation_requests_user_accounts_SubmittedByUserId",
-                        column: x => x.SubmittedByUserId,
                         principalTable: "user_accounts",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
@@ -1867,6 +1787,125 @@ namespace StoryPlatform.Infrastructure.Migrations
                         name: "FK_telemetry_logs_reading_sessions_ReadingSessionId",
                         column: x => x.ReadingSessionId,
                         principalTable: "reading_sessions",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "story_generation_jobs",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    StoryId = table.Column<int>(type: "integer", nullable: false),
+                    PromptCatalogVersionId = table.Column<int>(type: "integer", nullable: true),
+                    GenerationRequestId = table.Column<int>(type: "integer", nullable: true),
+                    StoryVersionId = table.Column<int>(type: "integer", nullable: true),
+                    BaseStoryVersionId = table.Column<int>(type: "integer", nullable: true),
+                    RequestedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    OperationKey = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    Operation = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    Stage = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    Status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    AttemptNo = table.Column<int>(type: "integer", nullable: false),
+                    MaxAttempts = table.Column<int>(type: "integer", nullable: false),
+                    ConcurrencyToken = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
+                    LeaseExpiresAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    GuardrailResult = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: true),
+                    FallbackMessage = table.Column<string>(type: "text", nullable: true),
+                    ErrorCode = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    GenerationMetadataJson = table.Column<string>(type: "jsonb", nullable: true),
+                    StartedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CompletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_story_generation_jobs", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_story_generation_jobs_prompt_catalog_versions_PromptCatalog~",
+                        column: x => x.PromptCatalogVersionId,
+                        principalTable: "prompt_catalog_versions",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_story_generation_jobs_stories_StoryId",
+                        column: x => x.StoryId,
+                        principalTable: "stories",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_story_generation_jobs_story_versions_BaseStoryVersionId",
+                        column: x => x.BaseStoryVersionId,
+                        principalTable: "story_versions",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_story_generation_jobs_story_versions_StoryVersionId",
+                        column: x => x.StoryVersionId,
+                        principalTable: "story_versions",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_story_generation_jobs_user_accounts_RequestedByUserId",
+                        column: x => x.RequestedByUserId,
+                        principalTable: "user_accounts",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "story_generation_requests",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    StoryId = table.Column<int>(type: "integer", nullable: false),
+                    SubmittedByUserId = table.Column<int>(type: "integer", nullable: false),
+                    IdempotencyKey = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    InputFingerprint = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    ContextFingerprint = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    ContextSnapshotJson = table.Column<string>(type: "jsonb", nullable: false),
+                    AcceptedInputJson = table.Column<string>(type: "jsonb", nullable: true),
+                    Status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    AttemptCount = table.Column<int>(type: "integer", nullable: false),
+                    MaxAttempts = table.Column<int>(type: "integer", nullable: false),
+                    ConcurrencyToken = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
+                    LastRetryKey = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    AttemptStartedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    GuardrailDecision = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: true),
+                    ReasonCode = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    FallbackMessage = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    CanRetry = table.Column<bool>(type: "boolean", nullable: false),
+                    GuardrailCheckVersion = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    GuardrailCheckedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    HandoffJobId = table.Column<int>(type: "integer", nullable: true),
+                    HandoffCreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_story_generation_requests", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_story_generation_requests_stories_StoryId",
+                        column: x => x.StoryId,
+                        principalTable: "stories",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_story_generation_requests_story_generation_jobs_HandoffJobId",
+                        column: x => x.HandoffJobId,
+                        principalTable: "story_generation_jobs",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_story_generation_requests_user_accounts_SubmittedByUserId",
+                        column: x => x.SubmittedByUserId,
+                        principalTable: "user_accounts",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
                 });
@@ -2339,14 +2378,50 @@ namespace StoryPlatform.Infrastructure.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_story_generation_jobs_BaseStoryVersionId",
+                table: "story_generation_jobs",
+                column: "BaseStoryVersionId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_story_generation_jobs_GenerationRequestId",
+                table: "story_generation_jobs",
+                column: "GenerationRequestId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_story_generation_jobs_Operation_StoryVersionId",
+                table: "story_generation_jobs",
+                columns: new[] { "Operation", "StoryVersionId" },
+                unique: true,
+                filter: "\"StoryVersionId\" IS NOT NULL AND \"IsDeleted\" = false");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_story_generation_jobs_PromptCatalogVersionId",
                 table: "story_generation_jobs",
                 column: "PromptCatalogVersionId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_story_generation_jobs_RequestedByUserId_Operation_Operation~",
+                table: "story_generation_jobs",
+                columns: new[] { "RequestedByUserId", "Operation", "OperationKey" },
+                unique: true,
+                filter: "\"RequestedByUserId\" IS NOT NULL AND \"OperationKey\" IS NOT NULL AND \"IsDeleted\" = false");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_story_generation_jobs_Status_Stage_LeaseExpiresAt",
+                table: "story_generation_jobs",
+                columns: new[] { "Status", "Stage", "LeaseExpiresAt" });
+
+            migrationBuilder.CreateIndex(
                 name: "IX_story_generation_jobs_StoryId",
                 table: "story_generation_jobs",
-                column: "StoryId");
+                column: "StoryId",
+                unique: true,
+                filter: "\"Operation\" IN ('GenerateOutline', 'RegenerateOutline') AND \"Status\" IN ('Pending', 'Processing') AND \"IsDeleted\" = false");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_story_generation_jobs_StoryVersionId",
+                table: "story_generation_jobs",
+                column: "StoryVersionId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_story_generation_requests_HandoffJobId",
@@ -2373,9 +2448,22 @@ namespace StoryPlatform.Infrastructure.Migrations
                 column: "EditorUserId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_story_versions_OutlineApprovedByUserId",
+                table: "story_versions",
+                column: "OutlineApprovedByUserId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_story_versions_StoryId",
                 table: "story_versions",
-                column: "StoryId");
+                column: "StoryId",
+                unique: true,
+                filter: "\"IsCurrent\" = true AND \"IsDeleted\" = false");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_story_versions_StoryId_VersionNo",
+                table: "story_versions",
+                columns: new[] { "StoryId", "VersionNo" },
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_story_vocabulary_StoryVersionId",
@@ -2465,11 +2553,75 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "IX_vocabulary_notebook_entries_StoryVocabularyId",
                 table: "vocabulary_notebook_entries",
                 column: "StoryVocabularyId");
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_story_generation_jobs_story_generation_requests_GenerationR~",
+                table: "story_generation_jobs",
+                column: "GenerationRequestId",
+                principalTable: "story_generation_requests",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.Restrict);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropForeignKey(
+                name: "FK_stories_child_profiles_ChildProfileId",
+                table: "stories");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_prompt_catalog_versions_user_accounts_CreatedByAdminId",
+                table: "prompt_catalog_versions");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_stories_user_accounts_AuthorUserId",
+                table: "stories");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_story_generation_jobs_user_accounts_RequestedByUserId",
+                table: "story_generation_jobs");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_story_generation_requests_user_accounts_SubmittedByUserId",
+                table: "story_generation_requests");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_story_versions_user_accounts_EditorUserId",
+                table: "story_versions");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_story_versions_user_accounts_OutlineApprovedByUserId",
+                table: "story_versions");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_story_generation_jobs_stories_StoryId",
+                table: "story_generation_jobs");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_story_generation_requests_stories_StoryId",
+                table: "story_generation_requests");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_story_versions_stories_StoryId",
+                table: "story_versions");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_story_generation_jobs_story_versions_BaseStoryVersionId",
+                table: "story_generation_jobs");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_story_generation_jobs_story_versions_StoryVersionId",
+                table: "story_generation_jobs");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_story_generation_jobs_prompt_catalog_versions_PromptCatalog~",
+                table: "story_generation_jobs");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_story_generation_jobs_story_generation_requests_GenerationR~",
+                table: "story_generation_jobs");
+
             migrationBuilder.DropTable(
                 name: "achievements");
 
@@ -2546,9 +2698,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "story_categories");
 
             migrationBuilder.DropTable(
-                name: "story_generation_requests");
-
-            migrationBuilder.DropTable(
                 name: "supervision_permissions");
 
             migrationBuilder.DropTable(
@@ -2588,9 +2737,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "content_categories");
 
             migrationBuilder.DropTable(
-                name: "story_generation_jobs");
-
-            migrationBuilder.DropTable(
                 name: "supervision_relationships");
 
             migrationBuilder.DropTable(
@@ -2601,9 +2747,6 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "learning_insights");
-
-            migrationBuilder.DropTable(
-                name: "prompt_catalog_versions");
 
             migrationBuilder.DropTable(
                 name: "supervision_invitations");
@@ -2618,16 +2761,10 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "refresh_tokens");
 
             migrationBuilder.DropTable(
-                name: "story_versions");
-
-            migrationBuilder.DropTable(
                 name: "assignments");
 
             migrationBuilder.DropTable(
                 name: "class_groups");
-
-            migrationBuilder.DropTable(
-                name: "stories");
 
             migrationBuilder.DropTable(
                 name: "child_profiles");
@@ -2637,6 +2774,21 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "user_accounts");
+
+            migrationBuilder.DropTable(
+                name: "stories");
+
+            migrationBuilder.DropTable(
+                name: "story_versions");
+
+            migrationBuilder.DropTable(
+                name: "prompt_catalog_versions");
+
+            migrationBuilder.DropTable(
+                name: "story_generation_requests");
+
+            migrationBuilder.DropTable(
+                name: "story_generation_jobs");
         }
     }
 }

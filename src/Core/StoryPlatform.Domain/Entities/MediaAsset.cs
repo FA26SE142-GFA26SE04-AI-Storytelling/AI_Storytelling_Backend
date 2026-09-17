@@ -7,6 +7,9 @@ public class MediaAsset : BaseEntity
     public int StoryVersionId { get; set; }
     public virtual StoryVersion? StoryVersion { get; set; }
 
+    public int? StorySceneId { get; set; }
+    public virtual StoryScene? StoryScene { get; set; }
+
     public MediaType Type { get; set; }
     public MediaStatus Status { get; set; } = MediaStatus.Queued;
     public int? SceneIndex { get; set; }

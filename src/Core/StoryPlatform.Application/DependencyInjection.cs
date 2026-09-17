@@ -14,6 +14,9 @@ using StoryPlatform.Application.Features.Outline.Services;
 using StoryPlatform.Application.Features.ContentGeneration.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration.Quality;
 using StoryPlatform.Application.Features.ContentGeneration.Services;
+using StoryPlatform.Application.Features.MediaGeneration;
+using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
+using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Services;
 using StoryPlatform.Application.Features.ChildProfiles.ClassGroups.Interfaces;
@@ -64,6 +67,14 @@ public static class DependencyInjection
         services.AddScoped<IContentGenerationService>(provider => provider.GetRequiredService<ContentGenerationService>());
         services.AddScoped<IContentGenerationJobProcessor>(provider => provider.GetRequiredService<ContentGenerationService>());
         services.AddSingleton<IContentQualityEvaluator, RuleBasedContentQualityEvaluator>();
+        services.AddSingleton<IStoryBlockParser, StoryBlockParser>();
+        services.AddSingleton<ISceneCoverageValidator, SceneCoverageValidator>();
+        services.AddSingleton<IMediaContextBuilder, MediaContextBuilder>();
+        services.AddSingleton<ISceneSegmentationProvider, ParagraphSceneSegmentationProvider>();
+        services.AddSingleton<ISceneSpecificationBuilder, SceneSpecificationBuilder>();
+        services.AddScoped<MediaGenerationService>();
+        services.AddScoped<IMediaGenerationService>(provider => provider.GetRequiredService<MediaGenerationService>());
+        services.AddScoped<IMediaGenerationJobProcessor>(provider => provider.GetRequiredService<MediaGenerationService>());
 
         // Story Review
         services.AddSingleton<IProposalCache, InMemoryProposalCache>();

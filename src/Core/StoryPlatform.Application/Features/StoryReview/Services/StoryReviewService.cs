@@ -657,18 +657,75 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<ApproveResponseDto> ApproveAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        var storyForAuthorization = await _storyRepo.FirstOrDefaultAsync(
+            s => s.Id == storyId, cancellationToken: cancellationToken)
+            ?? throw new NotFoundException("Story");
+        await EnsureReviewPermissionAsync(storyForAuthorization, userId, cancellationToken);
+        if (storyForAuthorization.Status != StoryStatus.ContentReview)
+            throw new ConflictException("INVALID_STORY_STATUS");
+
         var validation = await ValidateAsync(userId, storyId, cancellationToken);
         if (!validation.CanApprove)
         {
             throw new BadRequestException($"Cannot approve: {string.Join(", ", validation.Issues)}");
         }
 
-        var story = await _storyRepo.FirstOrDefaultAsync(s => s.Id == storyId, cancellationToken: cancellationToken)
-            ?? throw new NotFoundException("Story");
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
+            var lockedValidation = await ValidateAsync(userId, storyId, cancellationToken);
+            if (!lockedValidation.CanApprove)
+                throw new BadRequestException($"Cannot approve: {string.Join(", ", lockedValidation.Issues)}");
+            var story = await _storyRepo.FirstOrDefaultAsync(s => s.Id == storyId, cancellationToken: cancellationToken)
+                ?? throw new NotFoundException("Story");
+            await EnsureReviewPermissionAsync(story, userId, cancellationToken);
+            if (story.Status != StoryStatus.ContentReview)
+                throw new ConflictException("INVALID_STORY_STATUS");
+            var approvedVersion = await _versionRepo.FirstOrDefaultAsync(
+                v => v.StoryId == storyId && v.IsCurrent && v.Content != null,
+                cancellationToken: cancellationToken)
+                ?? throw new BadRequestException("Cannot approve without a current canonical story version.");
 
-        story.Status = StoryStatus.Approved;
-        _storyRepo.Update(story);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+            var jobs = _unitOfWork.Repository<StoryGenerationJob>();
+            if (await jobs.ExistsAsync(j =>
+                    j.StoryId == storyId &&
+                    j.Operation == GenerationJobOperation.GenerateMediaPackage,
+                    cancellationToken))
+                throw new ConflictException("MEDIA_JOB_ALREADY_EXISTS");
+
+            var sourceJob = (await jobs.FindAsync(j =>
+                    j.StoryId == storyId && j.StoryVersionId == approvedVersion.Id &&
+                    j.GenerationRequestId != null,
+                    cancellationToken: cancellationToken))
+                .OrderByDescending(j => j.Id)
+                .FirstOrDefault();
+            await jobs.AddAsync(new StoryGenerationJob
+            {
+                StoryId = storyId,
+                GenerationRequestId = sourceJob?.GenerationRequestId,
+                StoryVersionId = approvedVersion.Id,
+                BaseStoryVersionId = approvedVersion.Id,
+                RequestedByUserId = userId,
+                OperationKey = $"p5:{storyId}:{approvedVersion.Id}",
+                Operation = GenerationJobOperation.GenerateMediaPackage,
+                Stage = JobStage.MediaPending,
+                Status = GenerationJobStatus.Pending,
+                AttemptNo = 0,
+                MaxAttempts = 3,
+                StartedAt = DateTime.UtcNow
+            }, cancellationToken);
+
+            story.Status = StoryStatus.Approved;
+            _storyRepo.Update(story);
+
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            throw;
+        }
 
         return new ApproveResponseDto
         {
@@ -681,12 +738,23 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<ArchiveResponseDto> ArchiveAsync(int userId, int storyId, ArchiveRequestDto input, CancellationToken cancellationToken = default)
     {
-        var story = await _storyRepo.FirstOrDefaultAsync(s => s.Id == storyId, cancellationToken: cancellationToken)
-            ?? throw new NotFoundException("Story");
-
-        story.Status = StoryStatus.Archived;
-        _storyRepo.Update(story);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
+            var story = await _storyRepo.FirstOrDefaultAsync(
+                s => s.Id == storyId, cancellationToken: cancellationToken)
+                ?? throw new NotFoundException("Story");
+            await EnsureReviewPermissionAsync(story, userId, cancellationToken);
+            story.Status = StoryStatus.Archived;
+            _storyRepo.Update(story);
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            throw;
+        }
 
         return new ArchiveResponseDto
         {
@@ -694,6 +762,23 @@ public sealed class StoryReviewService : IStoryReviewService
             StoryId = storyId,
             Status = "Archived"
         };
+    }
+
+    private async Task EnsureReviewPermissionAsync(
+        Story story, int userId, CancellationToken cancellationToken)
+    {
+        if (story.AuthorUserId == userId) return;
+        var relationship = await _unitOfWork.Repository<SupervisionRelationship>().FirstOrDefaultAsync(
+            value => value.ChildProfileId == story.ChildProfileId &&
+                     value.SupervisorUserId == userId && value.RevokedAt == null,
+            cancellationToken: cancellationToken);
+        if (relationship is null) throw new ForbiddenException();
+        if (relationship.SupervisorRole == SupervisorRole.Owner) return;
+        var allowed = await _unitOfWork.Repository<SupervisionPermission>().ExistsAsync(
+            value => value.SupervisionRelationshipId == relationship.Id &&
+                     value.Permission == Permission.ApproveStory,
+            cancellationToken);
+        if (!allowed) throw new ForbiddenException("Bạn không có quyền duyệt hoặc lưu trữ Story này.");
     }
 
     private static bool IsValidQuizItem(QuizItem item)

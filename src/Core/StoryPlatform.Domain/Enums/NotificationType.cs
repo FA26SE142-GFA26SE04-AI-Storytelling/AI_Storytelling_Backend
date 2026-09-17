@@ -15,5 +15,11 @@ public enum NotificationType
     DataRequestSlaWarning = 11,
     AdminRoleChanged = 12,
     ContentReported = 13,
-    PaymentConfirmed = 14
+    PaymentConfirmed = 14,
+    PermissionRequestCreated = 15,
+    PermissionRequestAccepted = 16,
+    PermissionRequestRejected = 17,
+    OwnershipTransferRequested = 18,
+    OwnershipTransferAccepted = 19,
+    OwnershipTransferRejected = 20
 }

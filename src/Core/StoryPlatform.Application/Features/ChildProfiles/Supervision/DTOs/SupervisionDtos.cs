@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.ChildProfiles.Supervision.DTOs;
 
@@ -38,6 +39,41 @@ public class AcceptInvitationRequestDto
 
 public class TransferOwnershipRequestDto
 {
-    [Required(ErrorMessage = "Vui lòng chọn người nhận quyền Owner.")]
+    /// <summary>
+    /// User ở phía đối diện: Additional Supervisor khi người gửi là Owner,
+    /// hoặc Owner hiện tại khi người gửi là Additional Supervisor.
+    /// </summary>
+    [Required(ErrorMessage = "Vui lòng chọn người nhận yêu cầu đổi quyền Owner.")]
     public int TargetSupervisorUserId { get; set; }
+}
+
+public class CreatePermissionRequestRequestDto
+{
+    [Required(ErrorMessage = "Vui lòng chọn ít nhất 1 quyền cần xin.")]
+    [MinLength(1, ErrorMessage = "Vui lòng chọn ít nhất 1 quyền cần xin.")]
+    public List<Permission> Permissions { get; set; } = new();
+}
+
+public class PermissionRequestDto
+{
+    public int Id { get; set; }
+    public int SupervisionRelationshipId { get; set; }
+    public int RequesterUserId { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public List<string> Permissions { get; set; } = new();
+    public DateTime CreatedAt { get; set; }
+    public DateTime? RespondedAt { get; set; }
+}
+
+public class OwnershipTransferRequestDto
+{
+    public int Id { get; set; }
+    public int ChildProfileId { get; set; }
+    public int CurrentOwnerUserId { get; set; }
+    public int TargetSupervisorUserId { get; set; }
+    public int RequesterUserId { get; set; }
+    public int ResponderUserId { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+    public DateTime? RespondedAt { get; set; }
 }

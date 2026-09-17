@@ -1349,6 +1349,51 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("organization_permissions", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.OwnershipTransferRequest", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ChildProfileId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CurrentOwnerUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("RespondedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<int>("TargetSupervisorUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChildProfileId");
+
+                    b.HasIndex("CurrentOwnerUserId");
+
+                    b.HasIndex("TargetSupervisorUserId");
+
+                    b.ToTable("ownership_transfer_requests", (string)null);
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.PaymentTransaction", b =>
                 {
                     b.Property<int>("Id")
@@ -2646,6 +2691,83 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("supervision_permissions", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.SupervisionPermissionRequest", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("RequesterUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("RespondedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("RespondedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<int>("SupervisionRelationshipId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RequesterUserId");
+
+                    b.HasIndex("RespondedByUserId");
+
+                    b.HasIndex("SupervisionRelationshipId");
+
+                    b.ToTable("supervision_permission_requests", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.SupervisionPermissionRequestItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Permission")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<int>("SupervisionPermissionRequestId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SupervisionPermissionRequestId");
+
+                    b.ToTable("supervision_permission_request_items", (string)null);
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.SupervisionRelationship", b =>
                 {
                     b.Property<int>("Id")
@@ -3426,6 +3548,33 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("OrganizationMembership");
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.OwnershipTransferRequest", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
+                        .WithMany()
+                        .HasForeignKey("ChildProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "CurrentOwnerUser")
+                        .WithMany()
+                        .HasForeignKey("CurrentOwnerUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "TargetSupervisorUser")
+                        .WithMany()
+                        .HasForeignKey("TargetSupervisorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ChildProfile");
+
+                    b.Navigation("CurrentOwnerUser");
+
+                    b.Navigation("TargetSupervisorUser");
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.PaymentTransaction", b =>
                 {
                     b.HasOne("StoryPlatform.Domain.Entities.Organization", "Organization")
@@ -3874,6 +4023,43 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("SupervisionRelationship");
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.SupervisionPermissionRequest", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "RequesterUser")
+                        .WithMany()
+                        .HasForeignKey("RequesterUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "RespondedByUser")
+                        .WithMany()
+                        .HasForeignKey("RespondedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.SupervisionRelationship", "SupervisionRelationship")
+                        .WithMany()
+                        .HasForeignKey("SupervisionRelationshipId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("RequesterUser");
+
+                    b.Navigation("RespondedByUser");
+
+                    b.Navigation("SupervisionRelationship");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.SupervisionPermissionRequestItem", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.SupervisionPermissionRequest", "SupervisionPermissionRequest")
+                        .WithMany("Items")
+                        .HasForeignKey("SupervisionPermissionRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("SupervisionPermissionRequest");
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.SupervisionRelationship", b =>
                 {
                     b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
@@ -3959,6 +4145,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("ChildProfile");
 
                     b.Navigation("StoryVocabulary");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.SupervisionPermissionRequest", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.UserAccount", b =>

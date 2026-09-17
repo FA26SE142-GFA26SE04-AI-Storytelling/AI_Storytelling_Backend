@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Script nay ket noi toi PostgreSQL da cai san tren may (dung psql.exe) va chay 1 file .sql
-    chua cac cau lenh INSERT cho 56 bang, theo dung thu tu phu thuoc khoa ngoai (FK).
+    chua cac cau lenh INSERT cho 59 bang, theo dung thu tu phu thuoc khoa ngoai (FK).
     Moi INSERT dung "ON CONFLICT (\"Id\") DO NOTHING" nen co the chay lai nhieu lan an toan.
     Sau khi insert xong, script se reset lai cac sequence (identity) cho tung bang de cac
     ban ghi moi do ung dung tao ra sau nay khong bi trung Id.
@@ -65,7 +65,7 @@ if (-not $psqlPath) {
 
 Write-Host "Dung psql tai: $psqlPath" -ForegroundColor Cyan
 # ---------------------------------------------------------------------------
-# Noi dung SQL seed - doc va ghep 56 file trong thu muc .\Seed theo dung
+# Noi dung SQL seed - doc va ghep 59 file trong thu muc .\Seed theo dung
 # thu tu phu thuoc khoa ngoai (FK). Moi file la 1 bang, dat ten dang
 # "<STT hai chu so>_<ten_bang>.sql" (vi du: 01_user_accounts.sql).
 # ---------------------------------------------------------------------------
@@ -95,6 +95,7 @@ DECLARE
         'recommendations','recommendation_reviews','child_profile_version_history',
         'intervention_cases','o2o_assessments','shared_stories','shared_story_recipients',
         'supervision_invitations','supervision_relationships','supervision_permissions',
+        'supervision_permission_requests','supervision_permission_request_items','ownership_transfer_requests',
         'data_requests','audit_logs','business_reports','ai_governance_metrics',
         'refresh_tokens','notifications','child_access_credentials','content_reports',
         'subscription_plans','token_quota_configs','payment_transactions'
@@ -137,7 +138,7 @@ try {
     & $psqlPath -h $PgHost -p $Port -U $Username -d $Database -v ON_ERROR_STOP=1 -f $tempFile
 
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "Insert du lieu mau thanh cong cho toan bo 56 bang." -ForegroundColor Green
+        Write-Host "Insert du lieu mau thanh cong cho toan bo 59 bang." -ForegroundColor Green
     } else {
         Write-Error "psql tra ve loi (exit code $LASTEXITCODE). Xem log ben tren de biet chi tiet."
     }

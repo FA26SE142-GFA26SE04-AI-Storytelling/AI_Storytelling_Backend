@@ -4,6 +4,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
+#pragma warning disable CA1814 // Prefer jagged arrays over multidimensional
+
 namespace StoryPlatform.Infrastructure.Migrations
 {
     /// <inheritdoc />
@@ -682,6 +684,44 @@ namespace StoryPlatform.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "ownership_transfer_requests",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ChildProfileId = table.Column<int>(type: "integer", nullable: false),
+                    CurrentOwnerUserId = table.Column<int>(type: "integer", nullable: false),
+                    TargetSupervisorUserId = table.Column<int>(type: "integer", nullable: false),
+                    Status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    RespondedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ownership_transfer_requests", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_ownership_transfer_requests_child_profiles_ChildProfileId",
+                        column: x => x.ChildProfileId,
+                        principalTable: "child_profiles",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_ownership_transfer_requests_user_accounts_CurrentOwnerUserId",
+                        column: x => x.CurrentOwnerUserId,
+                        principalTable: "user_accounts",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_ownership_transfer_requests_user_accounts_TargetSupervisorU~",
+                        column: x => x.TargetSupervisorUserId,
+                        principalTable: "user_accounts",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "safety_policies",
                 columns: table => new
                 {
@@ -808,6 +848,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                     Scope = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
                     OrganizationId = table.Column<int>(type: "integer", nullable: true),
                     ChildProfileId = table.Column<int>(type: "integer", nullable: true),
+                    UserId = table.Column<int>(type: "integer", nullable: true),
                     QuotaLimit = table.Column<int>(type: "integer", nullable: false),
                     QuotaUsed = table.Column<int>(type: "integer", nullable: false),
                     PeriodStart = table.Column<DateOnly>(type: "date", nullable: false),
@@ -829,6 +870,12 @@ namespace StoryPlatform.Infrastructure.Migrations
                         name: "FK_token_quota_configs_organizations_OrganizationId",
                         column: x => x.OrganizationId,
                         principalTable: "organizations",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_token_quota_configs_user_accounts_UserId",
+                        column: x => x.UserId,
+                        principalTable: "user_accounts",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
                 });
@@ -1587,6 +1634,44 @@ namespace StoryPlatform.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "supervision_permission_requests",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    SupervisionRelationshipId = table.Column<int>(type: "integer", nullable: false),
+                    RequesterUserId = table.Column<int>(type: "integer", nullable: false),
+                    Status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    RespondedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    RespondedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_supervision_permission_requests", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_supervision_permission_requests_supervision_relationships_S~",
+                        column: x => x.SupervisionRelationshipId,
+                        principalTable: "supervision_relationships",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_supervision_permission_requests_user_accounts_RequesterUser~",
+                        column: x => x.RequesterUserId,
+                        principalTable: "user_accounts",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_supervision_permission_requests_user_accounts_RespondedByUs~",
+                        column: x => x.RespondedByUserId,
+                        principalTable: "user_accounts",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "supervision_permissions",
                 columns: table => new
                 {
@@ -1730,6 +1815,29 @@ namespace StoryPlatform.Infrastructure.Migrations
                         name: "FK_vocabulary_notebook_entries_story_vocabulary_StoryVocabular~",
                         column: x => x.StoryVocabularyId,
                         principalTable: "story_vocabulary",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "supervision_permission_request_items",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    SupervisionPermissionRequestId = table.Column<int>(type: "integer", nullable: false),
+                    Permission = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_supervision_permission_request_items", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_supervision_permission_request_items_supervision_permission~",
+                        column: x => x.SupervisionPermissionRequestId,
+                        principalTable: "supervision_permission_requests",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
                 });
@@ -1908,6 +2016,15 @@ namespace StoryPlatform.Infrastructure.Migrations
                         principalTable: "user_accounts",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.InsertData(
+                table: "subscription_plans",
+                columns: new[] { "Id", "ApplicableScope", "CreatedAt", "IsActive", "IsDeleted", "Name", "PriceVnd", "QuotaAmount", "UpdatedAt" },
+                values: new object[,]
+                {
+                    { 1, "Personal", new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc), true, false, "Personal", 49000, 50, null },
+                    { 2, "Organization", new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc), true, false, "Organization", 99000, 150, null }
                 });
 
             migrationBuilder.CreateIndex(
@@ -2194,6 +2311,21 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "IX_organizations_VerifiedByAdminId",
                 table: "organizations",
                 column: "VerifiedByAdminId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ownership_transfer_requests_ChildProfileId",
+                table: "ownership_transfer_requests",
+                column: "ChildProfileId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ownership_transfer_requests_CurrentOwnerUserId",
+                table: "ownership_transfer_requests",
+                column: "CurrentOwnerUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ownership_transfer_requests_TargetSupervisorUserId",
+                table: "ownership_transfer_requests",
+                column: "TargetSupervisorUserId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_payment_transactions_OrganizationId",
@@ -2492,6 +2624,26 @@ namespace StoryPlatform.Infrastructure.Migrations
                 column: "InviterUserId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_supervision_permission_request_items_SupervisionPermissionR~",
+                table: "supervision_permission_request_items",
+                column: "SupervisionPermissionRequestId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_supervision_permission_requests_RequesterUserId",
+                table: "supervision_permission_requests",
+                column: "RequesterUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_supervision_permission_requests_RespondedByUserId",
+                table: "supervision_permission_requests",
+                column: "RespondedByUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_supervision_permission_requests_SupervisionRelationshipId",
+                table: "supervision_permission_requests",
+                column: "SupervisionRelationshipId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_supervision_permissions_SupervisionRelationshipId",
                 table: "supervision_permissions",
                 column: "SupervisionRelationshipId");
@@ -2530,6 +2682,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "IX_token_quota_configs_OrganizationId",
                 table: "token_quota_configs",
                 column: "OrganizationId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_token_quota_configs_UserId",
+                table: "token_quota_configs",
+                column: "UserId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_user_accounts_Email",
@@ -2677,6 +2834,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "organization_permissions");
 
             migrationBuilder.DropTable(
+                name: "ownership_transfer_requests");
+
+            migrationBuilder.DropTable(
                 name: "payment_transactions");
 
             migrationBuilder.DropTable(
@@ -2696,6 +2856,9 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "story_categories");
+
+            migrationBuilder.DropTable(
+                name: "supervision_permission_request_items");
 
             migrationBuilder.DropTable(
                 name: "supervision_permissions");
@@ -2737,7 +2900,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "content_categories");
 
             migrationBuilder.DropTable(
-                name: "supervision_relationships");
+                name: "supervision_permission_requests");
 
             migrationBuilder.DropTable(
                 name: "reading_sessions");
@@ -2749,7 +2912,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "learning_insights");
 
             migrationBuilder.DropTable(
-                name: "supervision_invitations");
+                name: "supervision_relationships");
 
             migrationBuilder.DropTable(
                 name: "assignment_recipients");
@@ -2759,6 +2922,9 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "refresh_tokens");
+
+            migrationBuilder.DropTable(
+                name: "supervision_invitations");
 
             migrationBuilder.DropTable(
                 name: "assignments");

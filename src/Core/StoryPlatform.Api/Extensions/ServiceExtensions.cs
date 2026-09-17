@@ -148,6 +148,8 @@ public static class ServiceExtensions
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen(c =>
         {
+            c.CustomSchemaIds(type => type.FullName?.Replace("+", "."));
+
             c.SwaggerDoc("v1", new OpenApiInfo
             {
                 Title = "StoryPlatform API (AI Storytelling Platform)",

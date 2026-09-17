@@ -17,9 +17,20 @@ public interface ISupervisionService
         int supervisionRelationshipId, int revokerUserId,
         CancellationToken cancellationToken = default);
 
-    Task<SupervisionRelationshipDto> TransferOwnershipAsync(
-        int childProfileId, int currentOwnerUserId, TransferOwnershipRequestDto request,
+    Task<OwnershipTransferRequestDto> RequestOwnershipTransferAsync(
+        int childProfileId, int requesterUserId, TransferOwnershipRequestDto request,
         CancellationToken cancellationToken = default);
+
+    Task<SupervisionRelationshipDto> AcceptOwnershipTransferAsync(
+        int ownershipTransferRequestId, int accepterUserId,
+        CancellationToken cancellationToken = default);
+
+    Task<OwnershipTransferRequestDto> RejectOwnershipTransferAsync(
+        int ownershipTransferRequestId, int rejecterUserId,
+        CancellationToken cancellationToken = default);
+
+    Task<List<OwnershipTransferRequestDto>> ListOwnershipTransferRequestsAsync(
+        int childProfileId, int currentUserId, CancellationToken cancellationToken = default);
 
     Task GrantPermissionAsync(
         int supervisionRelationshipId, int ownerUserId, Permission permission,
@@ -39,5 +50,18 @@ public interface ISupervisionService
         int childProfileId, int currentUserId, CancellationToken cancellationToken = default);
 
     Task<List<string>> ListPermissionsAsync(
+        int supervisionRelationshipId, int currentUserId, CancellationToken cancellationToken = default);
+
+    Task<PermissionRequestDto> CreatePermissionRequestAsync(
+        int supervisionRelationshipId, int requesterUserId, CreatePermissionRequestRequestDto request,
+        CancellationToken cancellationToken = default);
+
+    Task<PermissionRequestDto> AcceptPermissionRequestAsync(
+        int permissionRequestId, int ownerUserId, CancellationToken cancellationToken = default);
+
+    Task<PermissionRequestDto> RejectPermissionRequestAsync(
+        int permissionRequestId, int ownerUserId, CancellationToken cancellationToken = default);
+
+    Task<List<PermissionRequestDto>> ListPermissionRequestsAsync(
         int supervisionRelationshipId, int currentUserId, CancellationToken cancellationToken = default);
 }

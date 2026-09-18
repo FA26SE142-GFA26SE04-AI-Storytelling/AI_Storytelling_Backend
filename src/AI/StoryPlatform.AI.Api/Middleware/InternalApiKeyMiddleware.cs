@@ -20,7 +20,9 @@ public sealed class InternalApiKeyMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (context.Request.Path.StartsWithSegments("/health") || string.IsNullOrWhiteSpace(_apiKey))
+        if (context.Request.Path.StartsWithSegments("/health") ||
+            context.Request.Path.StartsWithSegments("/swagger") ||
+            string.IsNullOrWhiteSpace(_apiKey))
         {
             await _next(context);
             return;

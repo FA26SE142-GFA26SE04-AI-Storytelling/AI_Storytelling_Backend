@@ -10,6 +10,7 @@
 # so tools like Codex's @-mention file picker can find them)
 /docs/*
 !/docs/superpowers/
+!/docs/HUONG_DAN_SU_DUNG_API_LUONG_2.md
 
 # AppSettings
 appsettings*.json

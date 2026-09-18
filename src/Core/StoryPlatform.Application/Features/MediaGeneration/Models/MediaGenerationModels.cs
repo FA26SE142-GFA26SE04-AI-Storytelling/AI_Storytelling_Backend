@@ -31,9 +31,6 @@ public sealed record SceneSpecification(
     IReadOnlyList<string> MustShow,
     IReadOnlyList<string> MustNotContradict);
 
-public sealed record GeneratedIllustration(string Url, string? ProviderMetadataJson = null);
-public sealed record GeneratedAudio(string Url, string? WordTimingsJson = null, string? ProviderMetadataJson = null);
-
 public enum MediaEvaluationDecision { Pass = 1, Fail = 2, Uncertain = 3 }
 
 public sealed record MediaEvaluationResult(MediaEvaluationDecision Decision, string? Reason = null)

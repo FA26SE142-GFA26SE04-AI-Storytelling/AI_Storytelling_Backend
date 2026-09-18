@@ -7,6 +7,7 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.Services;
+using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using Xunit;
@@ -18,12 +19,15 @@ public class SupervisionServiceTests
     private readonly Mock<IGenericRepository<SupervisionInvitation>> _invitationRepo = new();
     private readonly Mock<IGenericRepository<SupervisionRelationship>> _relationshipRepo = new();
     private readonly Mock<IGenericRepository<SupervisionPermission>> _permissionRepo = new();
+    private readonly Mock<IGenericRepository<SupervisionPermissionRequest>> _permissionRequestRepo = new();
+    private readonly Mock<IGenericRepository<OwnershipTransferRequest>> _ownershipTransferRequestRepo = new();
     private readonly Mock<IGenericRepository<UserAccount>> _userRepo = new();
     private readonly Mock<IGenericRepository<ChildProfile>> _profileRepo = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<ISupervisionAccessGuard> _guard = new();
     private readonly Mock<IJwtTokenGenerator> _tokenGenerator = new();
     private readonly Mock<IEmailSender> _emailSender = new();
+    private readonly Mock<INotificationService> _notificationService = new();
     private readonly SupervisionService _sut;
 
     public SupervisionServiceTests()
@@ -31,11 +35,14 @@ public class SupervisionServiceTests
         _unitOfWork.Setup(u => u.Repository<SupervisionInvitation>()).Returns(_invitationRepo.Object);
         _unitOfWork.Setup(u => u.Repository<SupervisionRelationship>()).Returns(_relationshipRepo.Object);
         _unitOfWork.Setup(u => u.Repository<SupervisionPermission>()).Returns(_permissionRepo.Object);
+        _unitOfWork.Setup(u => u.Repository<SupervisionPermissionRequest>()).Returns(_permissionRequestRepo.Object);
+        _unitOfWork.Setup(u => u.Repository<OwnershipTransferRequest>()).Returns(_ownershipTransferRequestRepo.Object);
         _unitOfWork.Setup(u => u.Repository<UserAccount>()).Returns(_userRepo.Object);
         _unitOfWork.Setup(u => u.Repository<ChildProfile>()).Returns(_profileRepo.Object);
         _tokenGenerator.Setup(t => t.GenerateRefreshToken()).Returns("RANDOM-CODE-0001");
         _sut = new SupervisionService(
-            _unitOfWork.Object, _guard.Object, _tokenGenerator.Object, _emailSender.Object);
+            _unitOfWork.Object, _guard.Object, _tokenGenerator.Object, _emailSender.Object,
+            _notificationService.Object);
     }
 
     [Fact]
@@ -435,22 +442,313 @@ public class SupervisionServiceTests
     }
 
     [Fact]
-    public async Task TransferOwnershipAsync_CurrentOwnerAndActiveAdditionalSupervisor_SwapsRolesAndSyncsChildProfileOwner()
+    public async Task CreatePermissionRequestAsync_CallerNotRelationshipOwner_ThrowsForbidden()
     {
+        _relationshipRepo.Setup(r => r.GetByIdAsync(20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AdditionalSupervisor());
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.CreatePermissionRequestAsync(
+            20, 999, new CreatePermissionRequestRequestDto
+            {
+                Permissions = new List<Permission> { Permission.ViewProgress }
+            }));
+    }
+
+    [Fact]
+    public async Task CreatePermissionRequestAsync_TargetIsOwnerRelationship_ThrowsBadRequest()
+    {
+        var relationship = AdditionalSupervisor();
+        relationship.SupervisorRole = SupervisorRole.Owner;
+        _relationshipRepo.Setup(r => r.GetByIdAsync(20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(relationship);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.CreatePermissionRequestAsync(
+            20, 5, new CreatePermissionRequestRequestDto
+            {
+                Permissions = new List<Permission> { Permission.ViewProgress }
+            }));
+    }
+
+    [Fact]
+    public async Task CreatePermissionRequestAsync_EmptyPermissionList_ThrowsBadRequest()
+    {
+        _relationshipRepo.Setup(r => r.GetByIdAsync(20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AdditionalSupervisor());
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.CreatePermissionRequestAsync(
+            20, 5, new CreatePermissionRequestRequestDto()));
+    }
+
+    [Fact]
+    public async Task CreatePermissionRequestAsync_Valid_CreatesPendingDistinctPermissionsAndNotifiesOwner()
+    {
+        _relationshipRepo.Setup(r => r.GetByIdAsync(20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AdditionalSupervisor());
+        _profileRepo.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChildProfile { Id = 1, OwnerUserId = 2 });
+        SupervisionPermissionRequest? added = null;
+        _permissionRequestRepo.Setup(r => r.AddAsync(
+                It.IsAny<SupervisionPermissionRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<SupervisionPermissionRequest, CancellationToken>((value, _) => added = value)
+            .ReturnsAsync((SupervisionPermissionRequest value, CancellationToken _) => value);
+
+        var result = await _sut.CreatePermissionRequestAsync(
+            20, 5, new CreatePermissionRequestRequestDto
+            {
+                Permissions = new List<Permission>
+                {
+                    Permission.ViewProgress,
+                    Permission.ViewProgress,
+                    Permission.ViewResults
+                }
+            });
+
+        Assert.Equal(PermissionRequestStatus.Pending, added!.Status);
+        Assert.Equal(5, added.RequesterUserId);
+        Assert.Equal(2, added.Items.Count);
+        Assert.Equal(2, result.Permissions.Count);
+        _notificationService.Verify(n => n.CreateAsync(
+            2, NotificationType.PermissionRequestCreated, It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task AcceptPermissionRequestAsync_NotOwner_ThrowsForbidden()
+    {
+        var request = PendingPermissionRequest();
+        SetupPermissionRequest(request);
+        _relationshipRepo.Setup(r => r.GetByIdAsync(20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AdditionalSupervisor());
+        _guard.Setup(g => g.EnsureOwnerAsync(1, 9, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ForbiddenException("Không phải Owner."));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.AcceptPermissionRequestAsync(30, 9));
+    }
+
+    [Fact]
+    public async Task AcceptPermissionRequestAsync_AlreadyResponded_ThrowsBadRequest()
+    {
+        var request = PendingPermissionRequest();
+        request.Status = PermissionRequestStatus.Accepted;
+        SetupPermissionRequest(request);
+        _relationshipRepo.Setup(r => r.GetByIdAsync(20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AdditionalSupervisor());
+        AllowOwner();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.AcceptPermissionRequestAsync(30, 2));
+    }
+
+    [Fact]
+    public async Task AcceptPermissionRequestAsync_Valid_GrantsAllIdempotentlyAndNotifiesRequester()
+    {
+        var request = PendingPermissionRequest();
+        SetupPermissionRequest(request);
+        _relationshipRepo.Setup(r => r.GetByIdAsync(20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AdditionalSupervisor());
+        AllowOwner();
+        _permissionRepo.Setup(r => r.ExistsAsync(
+                It.IsAny<Expression<Func<SupervisionPermission, bool>>>(),
+                It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        var result = await _sut.AcceptPermissionRequestAsync(30, 2);
+
+        Assert.Equal("Accepted", result.Status);
+        Assert.Equal(PermissionRequestStatus.Accepted, request.Status);
+        Assert.Equal(2, request.RespondedByUserId);
+        _permissionRepo.Verify(r => r.AddAsync(
+            It.IsAny<SupervisionPermission>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        _notificationService.Verify(n => n.CreateAsync(
+            5, NotificationType.PermissionRequestAccepted, It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RejectPermissionRequestAsync_Valid_SetsRejectedAndNotifiesRequester()
+    {
+        var request = PendingPermissionRequest();
+        SetupPermissionRequest(request);
+        _relationshipRepo.Setup(r => r.GetByIdAsync(20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AdditionalSupervisor());
+        AllowOwner();
+
+        var result = await _sut.RejectPermissionRequestAsync(30, 2);
+
+        Assert.Equal("Rejected", result.Status);
+        Assert.Equal(PermissionRequestStatus.Rejected, request.Status);
+        _notificationService.Verify(n => n.CreateAsync(
+            5, NotificationType.PermissionRequestRejected, It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ListPermissionRequestsAsync_Valid_ReturnsRequestsForRelationship()
+    {
+        _relationshipRepo.Setup(r => r.GetByIdAsync(20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AdditionalSupervisor());
+        AllowSupervision();
+        _permissionRequestRepo.Setup(r => r.FindAsync(
+                It.IsAny<Expression<Func<SupervisionPermissionRequest, bool>>>(), "Items",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<SupervisionPermissionRequest> { PendingPermissionRequest() });
+
+        var result = await _sut.ListPermissionRequestsAsync(20, 2);
+
+        Assert.Single(result);
+    }
+
+    [Fact]
+    public async Task RequestOwnershipTransferAsync_TargetIsSameAsActor_ThrowsBadRequestException()
+    {
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.RequestOwnershipTransferAsync(
+            1, 2, new TransferOwnershipRequestDto { TargetSupervisorUserId = 2 }));
+
+        _guard.Verify(g => g.EnsureActiveSupervisionAsync(
+            It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RequestOwnershipTransferAsync_AdditionalSupervisor_TargetNotOwner_ThrowsBadRequest()
+    {
+        _guard.Setup(g => g.EnsureActiveSupervisionAsync(1, 3, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SupervisionRelationship
+            {
+                Id = 20,
+                ChildProfileId = 1,
+                SupervisorUserId = 3,
+                SupervisorRole = SupervisorRole.AdditionalSupervisor
+            });
+        _relationshipRepo.Setup(r => r.ExistsAsync(
+                It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(),
+                It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.RequestOwnershipTransferAsync(
+            1, 3, new TransferOwnershipRequestDto { TargetSupervisorUserId = 999 }));
+
+        _ownershipTransferRequestRepo.Verify(r => r.AddAsync(
+            It.IsAny<OwnershipTransferRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RequestOwnershipTransferAsync_TargetNotActiveAdditionalSupervisor_ThrowsBadRequestException()
+    {
+        SetupOwnerRelationship();
+        _relationshipRepo.Setup(r => r.ExistsAsync(
+                It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(),
+                It.IsAny<CancellationToken>())).ReturnsAsync(false);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.RequestOwnershipTransferAsync(
+            1, 2, new TransferOwnershipRequestDto { TargetSupervisorUserId = 3 }));
+
+        _ownershipTransferRequestRepo.Verify(r => r.AddAsync(
+            It.IsAny<OwnershipTransferRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RequestOwnershipTransferAsync_Valid_CreatesPendingRequestAndNotifiesTarget()
+    {
+        SetupOwnerRelationship();
+        _relationshipRepo.Setup(r => r.ExistsAsync(
+                It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(),
+                It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        OwnershipTransferRequest? added = null;
+        _ownershipTransferRequestRepo.Setup(r => r.AddAsync(
+                It.IsAny<OwnershipTransferRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<OwnershipTransferRequest, CancellationToken>((value, _) => added = value)
+            .ReturnsAsync((OwnershipTransferRequest value, CancellationToken _) => value);
+
+        var result = await _sut.RequestOwnershipTransferAsync(
+            1, 2, new TransferOwnershipRequestDto { TargetSupervisorUserId = 3 });
+
+        Assert.Equal(OwnershipTransferRequestStatus.Pending, added!.Status);
+        Assert.Equal(2, added.CurrentOwnerUserId);
+        Assert.Equal(3, added.TargetSupervisorUserId);
+        Assert.Equal("Pending", result.Status);
+        Assert.Equal(2, result.RequesterUserId);
+        Assert.Equal(3, result.ResponderUserId);
+        _notificationService.Verify(n => n.CreateAsync(
+            3, NotificationType.OwnershipTransferRequested, It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RequestOwnershipTransferAsync_AdditionalSupervisor_CreatesRequestForOwnerResponse()
+    {
+        _guard.Setup(g => g.EnsureActiveSupervisionAsync(1, 3, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SupervisionRelationship
+            {
+                Id = 20,
+                ChildProfileId = 1,
+                SupervisorUserId = 3,
+                SupervisorRole = SupervisorRole.AdditionalSupervisor
+            });
+        _relationshipRepo.Setup(r => r.ExistsAsync(
+                It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(),
+                It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        OwnershipTransferRequest? added = null;
+        _ownershipTransferRequestRepo.Setup(r => r.AddAsync(
+                It.IsAny<OwnershipTransferRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<OwnershipTransferRequest, CancellationToken>((value, _) => added = value)
+            .ReturnsAsync((OwnershipTransferRequest value, CancellationToken _) => value);
+
+        var result = await _sut.RequestOwnershipTransferAsync(
+            1, 3, new TransferOwnershipRequestDto { TargetSupervisorUserId = 2 });
+
+        Assert.Equal(OwnershipTransferRequestStatus.PendingOwnerResponse, added!.Status);
+        Assert.Equal(2, added.CurrentOwnerUserId);
+        Assert.Equal(3, added.TargetSupervisorUserId);
+        Assert.Equal("Pending", result.Status);
+        Assert.Equal(3, result.RequesterUserId);
+        Assert.Equal(2, result.ResponderUserId);
+        _notificationService.Verify(n => n.CreateAsync(
+            2, NotificationType.OwnershipTransferRequested, It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task AcceptOwnershipTransferAsync_NotTargetUser_ThrowsForbidden()
+    {
+        _ownershipTransferRequestRepo.Setup(r => r.GetByIdAsync(50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(PendingTransferRequest());
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.AcceptOwnershipTransferAsync(50, 999));
+    }
+
+    [Fact]
+    public async Task AcceptOwnershipTransferAsync_RequestNotPending_ThrowsBadRequest()
+    {
+        var transferRequest = PendingTransferRequest();
+        transferRequest.Status = OwnershipTransferRequestStatus.Accepted;
+        _ownershipTransferRequestRepo.Setup(r => r.GetByIdAsync(50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(transferRequest);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.AcceptOwnershipTransferAsync(50, 3));
+
+        _unitOfWork.Verify(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AcceptOwnershipTransferAsync_Valid_SwapsRolesSyncsOwnerAndNotifiesPreviousOwner()
+    {
+        var transferRequest = PendingTransferRequest();
+        _ownershipTransferRequestRepo.Setup(r => r.GetByIdAsync(50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(transferRequest);
         var ownerRelationship = new SupervisionRelationship
         {
             Id = 10, ChildProfileId = 1, SupervisorUserId = 2, SupervisorRole = SupervisorRole.Owner
         };
-        _guard.Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(ownerRelationship);
         var targetRelationship = new SupervisionRelationship
         {
             Id = 20, ChildProfileId = 1, SupervisorUserId = 3,
             SupervisorRole = SupervisorRole.AdditionalSupervisor
         };
-        _relationshipRepo.Setup(r => r.FirstOrDefaultAsync(
+        _relationshipRepo.SetupSequence(r => r.FirstOrDefaultAsync(
                 It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(), null,
                 It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ownerRelationship)
             .ReturnsAsync(targetRelationship);
         _permissionRepo.Setup(r => r.FindAsync(
                 It.IsAny<Expression<Func<SupervisionPermission, bool>>>(), null,
@@ -458,8 +756,7 @@ public class SupervisionServiceTests
             .ReturnsAsync(new List<SupervisionPermission>());
         _permissionRepo.Setup(r => r.ExistsAsync(
                 It.IsAny<Expression<Func<SupervisionPermission, bool>>>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
+                It.IsAny<CancellationToken>())).ReturnsAsync(false);
         var childProfile = new ChildProfile
         {
             Id = 1, OwnerUserId = 2, Status = ChildProfileStatus.Active
@@ -467,116 +764,157 @@ public class SupervisionServiceTests
         _profileRepo.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(childProfile);
 
-        var result = await _sut.TransferOwnershipAsync(
-            1, 2, new TransferOwnershipRequestDto { TargetSupervisorUserId = 3 });
+        var result = await _sut.AcceptOwnershipTransferAsync(50, 3);
 
         Assert.Equal("Owner", result.SupervisorRole);
         Assert.Equal(3, result.SupervisorUserId);
         Assert.Equal(SupervisorRole.AdditionalSupervisor, ownerRelationship.SupervisorRole);
         Assert.Equal(SupervisorRole.Owner, targetRelationship.SupervisorRole);
         Assert.Equal(3, childProfile.OwnerUserId);
-        _permissionRepo.Verify(r => r.AddAsync(
-            It.Is<SupervisionPermission>(p => p.SupervisionRelationshipId == 10
-                                              && p.Permission == Permission.ViewResults),
-            It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Equal(OwnershipTransferRequestStatus.Accepted, transferRequest.Status);
         _unitOfWork.Verify(u => u.AcquireTransactionLockAsync(
             1, It.IsAny<CancellationToken>()), Times.Once);
         _unitOfWork.Verify(u => u.CommitTransactionAsync(
             It.IsAny<CancellationToken>()), Times.Once);
         _unitOfWork.Verify(u => u.RollbackTransactionAsync(
             It.IsAny<CancellationToken>()), Times.Never);
+        _notificationService.Verify(n => n.CreateAsync(
+            2, NotificationType.OwnershipTransferAccepted, It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task TransferOwnershipAsync_TargetAlreadyHadPermissionRows_DeletesThemBecauseOwnerNeedsNone()
+    public async Task AcceptOwnershipTransferAsync_AdditionalRequested_OwnerAcceptsAndRequesterBecomesOwner()
     {
+        var transferRequest = PendingOwnerResponseTransferRequest();
+        _ownershipTransferRequestRepo.Setup(r => r.GetByIdAsync(50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(transferRequest);
         var ownerRelationship = new SupervisionRelationship
         {
             Id = 10, ChildProfileId = 1, SupervisorUserId = 2, SupervisorRole = SupervisorRole.Owner
         };
-        _guard.Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(ownerRelationship);
         var targetRelationship = new SupervisionRelationship
         {
             Id = 20, ChildProfileId = 1, SupervisorUserId = 3,
             SupervisorRole = SupervisorRole.AdditionalSupervisor
         };
-        _relationshipRepo.Setup(r => r.FirstOrDefaultAsync(
+        _relationshipRepo.SetupSequence(r => r.FirstOrDefaultAsync(
                 It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(), null,
                 It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ownerRelationship)
             .ReturnsAsync(targetRelationship);
-        var staleTargetPermissions = new List<SupervisionPermission>
-        {
-            new() { Id = 99, SupervisionRelationshipId = 20, Permission = Permission.ViewProgress }
-        };
         _permissionRepo.Setup(r => r.FindAsync(
                 It.IsAny<Expression<Func<SupervisionPermission, bool>>>(), null,
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(staleTargetPermissions);
+            .ReturnsAsync(new List<SupervisionPermission>());
         _permissionRepo.Setup(r => r.ExistsAsync(
                 It.IsAny<Expression<Func<SupervisionPermission, bool>>>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
+                It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        var childProfile = new ChildProfile
+        {
+            Id = 1, OwnerUserId = 2, Status = ChildProfileStatus.Active
+        };
         _profileRepo.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ChildProfile
-            {
-                Id = 1, OwnerUserId = 2, Status = ChildProfileStatus.Active
-            });
+            .ReturnsAsync(childProfile);
 
-        await _sut.TransferOwnershipAsync(
-            1, 2, new TransferOwnershipRequestDto { TargetSupervisorUserId = 3 });
+        var result = await _sut.AcceptOwnershipTransferAsync(50, 2);
 
-        _permissionRepo.Verify(r => r.DeleteRange(staleTargetPermissions), Times.Once);
-    }
-
-    [Fact]
-    public async Task TransferOwnershipAsync_ActorNotCurrentOwner_ThrowsForbiddenExceptionAndRollsBack()
-    {
-        _guard.Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new SupervisionRelationship
-            {
-                Id = 10, ChildProfileId = 1, SupervisorUserId = 2,
-                SupervisorRole = SupervisorRole.AdditionalSupervisor
-            });
-
-        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.TransferOwnershipAsync(
-            1, 2, new TransferOwnershipRequestDto { TargetSupervisorUserId = 3 }));
-
-        _unitOfWork.Verify(u => u.RollbackTransactionAsync(
+        Assert.Equal("Owner", result.SupervisorRole);
+        Assert.Equal(3, result.SupervisorUserId);
+        Assert.Equal(3, childProfile.OwnerUserId);
+        Assert.Equal(OwnershipTransferRequestStatus.AcceptedByOwner, transferRequest.Status);
+        _notificationService.Verify(n => n.CreateAsync(
+            3, NotificationType.OwnershipTransferAccepted, It.IsAny<string>(),
             It.IsAny<CancellationToken>()), Times.Once);
-        _unitOfWork.Verify(u => u.CommitTransactionAsync(
-            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
-    public async Task TransferOwnershipAsync_TargetNotActiveAdditionalSupervisor_ThrowsBadRequestException()
+    public async Task AcceptOwnershipTransferAsync_RequesterNoLongerOwner_ThrowsBadRequestAndRollsBack()
     {
-        _guard.Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new SupervisionRelationship
-            {
-                Id = 10, ChildProfileId = 1, SupervisorUserId = 2,
-                SupervisorRole = SupervisorRole.Owner
-            });
+        var transferRequest = PendingTransferRequest();
+        _ownershipTransferRequestRepo.Setup(r => r.GetByIdAsync(50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(transferRequest);
         _relationshipRepo.Setup(r => r.FirstOrDefaultAsync(
                 It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(), null,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync((SupervisionRelationship?)null);
 
-        await Assert.ThrowsAsync<BadRequestException>(() => _sut.TransferOwnershipAsync(
-            1, 2, new TransferOwnershipRequestDto { TargetSupervisorUserId = 3 }));
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.AcceptOwnershipTransferAsync(50, 3));
 
-        _unitOfWork.Verify(u => u.RollbackTransactionAsync(
+        Assert.Equal(OwnershipTransferRequestStatus.Pending, transferRequest.Status);
+        _unitOfWork.Verify(u => u.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _unitOfWork.Verify(u => u.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task AcceptOwnershipTransferAsync_TargetNoLongerActiveAdditionalSupervisor_ThrowsBadRequestAndRollsBack()
+    {
+        var transferRequest = PendingTransferRequest();
+        _ownershipTransferRequestRepo.Setup(r => r.GetByIdAsync(50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(transferRequest);
+        var ownerRelationship = new SupervisionRelationship
+        {
+            Id = 10, ChildProfileId = 1, SupervisorUserId = 2, SupervisorRole = SupervisorRole.Owner
+        };
+        _relationshipRepo.SetupSequence(r => r.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ownerRelationship)
+            .ReturnsAsync((SupervisionRelationship?)null);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.AcceptOwnershipTransferAsync(50, 3));
+
+        Assert.Equal(OwnershipTransferRequestStatus.Pending, transferRequest.Status);
+        _unitOfWork.Verify(u => u.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _unitOfWork.Verify(u => u.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RejectOwnershipTransferAsync_Valid_SetsRejectedAndNotifiesRequester()
+    {
+        var transferRequest = PendingTransferRequest();
+        _ownershipTransferRequestRepo.Setup(r => r.GetByIdAsync(50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(transferRequest);
+
+        var result = await _sut.RejectOwnershipTransferAsync(50, 3);
+
+        Assert.Equal("Rejected", result.Status);
+        Assert.Equal(OwnershipTransferRequestStatus.Rejected, transferRequest.Status);
+        _notificationService.Verify(n => n.CreateAsync(
+            2, NotificationType.OwnershipTransferRejected, It.IsAny<string>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task TransferOwnershipAsync_TargetIsSameAsActor_ThrowsBadRequestException()
+    public async Task RejectOwnershipTransferAsync_AdditionalRequested_OwnerRejectsAndNotifiesAdditional()
     {
-        await Assert.ThrowsAsync<BadRequestException>(() => _sut.TransferOwnershipAsync(
-            1, 2, new TransferOwnershipRequestDto { TargetSupervisorUserId = 2 }));
+        var transferRequest = PendingOwnerResponseTransferRequest();
+        _ownershipTransferRequestRepo.Setup(r => r.GetByIdAsync(50, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(transferRequest);
 
-        _guard.Verify(g => g.EnsureActiveSupervisionAsync(
-            It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+        var result = await _sut.RejectOwnershipTransferAsync(50, 2);
+
+        Assert.Equal("Rejected", result.Status);
+        Assert.Equal(OwnershipTransferRequestStatus.RejectedByOwner, transferRequest.Status);
+        Assert.Equal(3, result.RequesterUserId);
+        Assert.Equal(2, result.ResponderUserId);
+        _notificationService.Verify(n => n.CreateAsync(
+            3, NotificationType.OwnershipTransferRejected, It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ListOwnershipTransferRequestsAsync_Valid_ReturnsRequestsForChild()
+    {
+        AllowSupervision();
+        _ownershipTransferRequestRepo.Setup(r => r.FindAsync(
+                It.IsAny<Expression<Func<OwnershipTransferRequest, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<OwnershipTransferRequest> { PendingTransferRequest() });
+
+        var result = await _sut.ListOwnershipTransferRequestsAsync(1, 2);
+
+        Assert.Single(result);
     }
 
     private void AllowSupervision() => _guard
@@ -615,6 +953,22 @@ public class SupervisionServiceTests
         AllowOwner();
     }
 
+    private void SetupPermissionRequest(SupervisionPermissionRequest request) =>
+        _permissionRequestRepo.Setup(r => r.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<SupervisionPermissionRequest, bool>>>(), "Items",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(request);
+
+    private void SetupOwnerRelationship() => _guard
+        .Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
+        .ReturnsAsync(new SupervisionRelationship
+        {
+            Id = 10,
+            ChildProfileId = 1,
+            SupervisorUserId = 2,
+            SupervisorRole = SupervisorRole.Owner
+        });
+
     private static SupervisionInvitation Invitation(DateTime expiresAt) => new()
     {
         Id = 1,
@@ -630,5 +984,36 @@ public class SupervisionServiceTests
         ChildProfileId = 1,
         SupervisorUserId = 5,
         SupervisorRole = SupervisorRole.AdditionalSupervisor
+    };
+
+    private static SupervisionPermissionRequest PendingPermissionRequest() => new()
+    {
+        Id = 30,
+        SupervisionRelationshipId = 20,
+        RequesterUserId = 5,
+        Status = PermissionRequestStatus.Pending,
+        Items = new List<SupervisionPermissionRequestItem>
+        {
+            new() { Permission = Permission.ViewProgress },
+            new() { Permission = Permission.ViewResults }
+        }
+    };
+
+    private static OwnershipTransferRequest PendingTransferRequest() => new()
+    {
+        Id = 50,
+        ChildProfileId = 1,
+        CurrentOwnerUserId = 2,
+        TargetSupervisorUserId = 3,
+        Status = OwnershipTransferRequestStatus.Pending
+    };
+
+    private static OwnershipTransferRequest PendingOwnerResponseTransferRequest() => new()
+    {
+        Id = 50,
+        ChildProfileId = 1,
+        CurrentOwnerUserId = 2,
+        TargetSupervisorUserId = 3,
+        Status = OwnershipTransferRequestStatus.PendingOwnerResponse
     };
 }

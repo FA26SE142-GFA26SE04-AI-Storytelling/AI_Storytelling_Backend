@@ -4,9 +4,8 @@
 
 .DESCRIPTION
     Script nay ket noi toi PostgreSQL da cai san tren may (dung psql.exe) va chay 1 file .sql
-    chua cac cau lenh INSERT cho 58 bang, theo dung thu tu phu thuoc khoa ngoai (FK).
-    Moi INSERT xu ly "ON CONFLICT (\"Id\")" nen co the chay lai nhieu lan an toan;
-    du lieu Phase 5 duoc cap nhat de sua cac ban seed cu da ton tai.
+    chua cac cau lenh INSERT cho cac bang theo dung thu tu phu thuoc khoa ngoai (FK).
+    Moi INSERT xu ly "ON CONFLICT (\"Id\")" nen co the chay lai nhieu lan an toan.
     Sau khi insert xong, script se reset lai cac sequence (identity) cho tung bang de cac
     ban ghi moi do ung dung tao ra sau nay khong bi trung Id.
 
@@ -23,13 +22,13 @@
     Ten dang nhap PostgreSQL. Mac dinh: postgres
 
 .PARAMETER Password
-    Mat khau PostgreSQL local. Mac dinh: 123@123
+    Mat khau PostgreSQL. Mac dinh: doc tu bien moi truong PGPASSWORD neu khong truyen tham so.
 
 .EXAMPLE
     ./Seed-Database.ps1
 
 .EXAMPLE
-    ./Seed-Database.ps1 -PgHost "localhost" -Port 5432 -Database "AIStorytellingDB" -Username "postgres" -Password "123@123"
+    ./Seed-Database.ps1 -PgHost "localhost" -Port 5432 -Database "AIStorytellingDB" -Username "postgres" -Password "your_password"
 #>
 
 [CmdletBinding()]
@@ -38,7 +37,7 @@ param(
     [int]$Port = 5432,
     [string]$Database = "AIStorytellingDB",
     [string]$Username = "postgres",
-    [string]$Password = "123@123"
+    [string]$Password = $env:PGPASSWORD
 )
 
 $ErrorActionPreference = "Stop"
@@ -66,9 +65,9 @@ if (-not $psqlPath) {
 
 Write-Host "Dung psql tai: $psqlPath" -ForegroundColor Cyan
 # ---------------------------------------------------------------------------
-# Noi dung SQL seed - doc va ghep 58 file trong thu muc .\Seed theo dung
+# Noi dung SQL seed - doc va ghep cac file trong thu muc .\Seed theo dung
 # thu tu phu thuoc khoa ngoai (FK). Moi file la 1 bang, dat ten dang
-# "<STT>_<ten_bang>.sql" (vi du: 01_user_accounts.sql). Hau to a/b duoc
+# "<STT>_<ten_bang>.sql" (vi du: 01_user_accounts.sql). Hau to a/b/c duoc
 # dung khi chen bang moi vao giua thu tu FK ma khong doi ten cac file cu.
 # ---------------------------------------------------------------------------
 $sqlHeader = @'
@@ -97,6 +96,7 @@ DECLARE
         'recommendations','recommendation_reviews','child_profile_version_history',
         'intervention_cases','o2o_assessments','shared_stories','shared_story_recipients',
         'supervision_invitations','supervision_relationships','supervision_permissions',
+        'supervision_permission_requests','supervision_permission_request_items','ownership_transfer_requests',
         'data_requests','audit_logs','business_reports','ai_governance_metrics',
         'refresh_tokens','notifications','child_access_credentials','content_reports',
         'subscription_plans','token_quota_configs','payment_transactions'
@@ -133,13 +133,15 @@ $tempFile = Join-Path $env:TEMP "seed-data-$(Get-Date -Format 'yyyyMMddHHmmss').
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($tempFile, $sql, $utf8NoBom)
 
-$env:PGPASSWORD = $Password
+if (-not [string]::IsNullOrEmpty($Password)) {
+    $env:PGPASSWORD = $Password
+}
 try {
     Write-Host "Ket noi toi PostgreSQL: Host=$PgHost Port=$Port Database=$Database Username=$Username" -ForegroundColor Cyan
     & $psqlPath -h $PgHost -p $Port -U $Username -d $Database -v ON_ERROR_STOP=1 -f $tempFile
 
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "Insert du lieu mau thanh cong cho toan bo 58 bang." -ForegroundColor Green
+        Write-Host "Insert du lieu mau thanh cong cho toan bo $($seedFiles.Count) bang." -ForegroundColor Green
     } else {
         Write-Error "psql tra ve loi (exit code $LASTEXITCODE). Xem log ben tren de biet chi tiet."
     }

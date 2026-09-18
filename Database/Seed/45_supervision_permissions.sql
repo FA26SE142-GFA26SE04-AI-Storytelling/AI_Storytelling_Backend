@@ -19,5 +19,9 @@ VALUES
     (16, 6, 'GenerateStory', NOW() - INTERVAL '34 days', false),
     (17, 7, 'GenerateStory', NOW() - INTERVAL '34 days', false),
     (18, 8, 'GenerateStory', NOW() - INTERVAL '32 days', false),
-    (19, 10, 'GenerateStory', NOW() - INTERVAL '17 days', false)
+    (19, 10, 'GenerateStory', NOW() - INTERVAL '17 days', false),
+    (20, 12, 'ViewProgress', NOW() - INTERVAL '2 days', false),
+    (21, 12, 'ReceiveReport', NOW() - INTERVAL '2 days', false),
+    (22, 15, 'ViewResults', NOW() - INTERVAL '6 hours', false),
+    (23, 17, 'ViewResults', NOW() - INTERVAL '3 hours', false)
 ON CONFLICT ("Id") DO NOTHING;

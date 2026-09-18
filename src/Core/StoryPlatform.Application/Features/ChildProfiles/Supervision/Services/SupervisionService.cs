@@ -1,10 +1,12 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 using StoryPlatform.Application.Abstractions.Communication;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -16,17 +18,20 @@ public class SupervisionService : ISupervisionService
     private readonly ISupervisionAccessGuard _accessGuard;
     private readonly IJwtTokenGenerator _tokenGenerator;
     private readonly IEmailSender _emailSender;
+    private readonly INotificationService _notificationService;
 
     public SupervisionService(
         IUnitOfWork unitOfWork,
         ISupervisionAccessGuard accessGuard,
         IJwtTokenGenerator tokenGenerator,
-        IEmailSender emailSender)
+        IEmailSender emailSender,
+        INotificationService notificationService)
     {
         _unitOfWork = unitOfWork;
         _accessGuard = accessGuard;
         _tokenGenerator = tokenGenerator;
         _emailSender = emailSender;
+        _notificationService = notificationService;
     }
 
     public async Task<InvitationDto> CreateInvitationAsync(
@@ -225,57 +230,169 @@ public class SupervisionService : ISupervisionService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<SupervisionRelationshipDto> TransferOwnershipAsync(
-        int childProfileId, int currentOwnerUserId, TransferOwnershipRequestDto request,
+    public async Task<OwnershipTransferRequestDto> RequestOwnershipTransferAsync(
+        int childProfileId, int requesterUserId, TransferOwnershipRequestDto request,
         CancellationToken cancellationToken = default)
     {
-        if (currentOwnerUserId == request.TargetSupervisorUserId)
+        if (requesterUserId == request.TargetSupervisorUserId)
         {
             throw new BadRequestException("Không thể chuyển nhượng quyền Owner cho chính mình.");
         }
+
+        var requesterRelationship = await _accessGuard.EnsureActiveSupervisionAsync(
+            childProfileId, requesterUserId, cancellationToken);
+        var relationshipRepo = _unitOfWork.Repository<SupervisionRelationship>();
+
+        int currentOwnerUserId;
+        int targetSupervisorUserId;
+        int responderUserId;
+        OwnershipTransferRequestStatus status;
+
+        switch (requesterRelationship.SupervisorRole)
+        {
+            case SupervisorRole.Owner:
+                var targetExists = await relationshipRepo.ExistsAsync(
+                    value => value.ChildProfileId == childProfileId
+                             && value.SupervisorUserId == request.TargetSupervisorUserId
+                             && value.SupervisorRole == SupervisorRole.AdditionalSupervisor
+                             && value.RevokedAt == null,
+                    cancellationToken);
+                if (!targetExists)
+                {
+                    throw new BadRequestException(
+                        "Người nhận phải là một Additional Supervisor đang hoạt động của hồ sơ trẻ này.");
+                }
+
+                currentOwnerUserId = requesterUserId;
+                targetSupervisorUserId = request.TargetSupervisorUserId;
+                responderUserId = targetSupervisorUserId;
+                status = OwnershipTransferRequestStatus.Pending;
+                break;
+
+            case SupervisorRole.AdditionalSupervisor:
+                var targetIsOwner = await relationshipRepo.ExistsAsync(
+                    value => value.ChildProfileId == childProfileId
+                             && value.SupervisorUserId == request.TargetSupervisorUserId
+                             && value.SupervisorRole == SupervisorRole.Owner
+                             && value.RevokedAt == null,
+                    cancellationToken);
+                if (!targetIsOwner)
+                {
+                    throw new BadRequestException(
+                        "Người nhận phải là Owner đang hoạt động của hồ sơ trẻ này.");
+                }
+
+                currentOwnerUserId = request.TargetSupervisorUserId;
+                targetSupervisorUserId = requesterUserId;
+                responderUserId = currentOwnerUserId;
+                status = OwnershipTransferRequestStatus.PendingOwnerResponse;
+                break;
+
+            // SupervisorRole chỉ có 2 giá trị hợp lệ; nhánh này chỉ còn lại phòng khi
+            // enum bị mở rộng trong tương lai hoặc dữ liệu bị ép kiểu sai.
+            default:
+                throw new ForbiddenException(
+                    "Chỉ Owner hoặc Additional Supervisor đang hoạt động mới có thể tạo yêu cầu đổi quyền Owner.");
+        }
+
+        var transferRequest = new OwnershipTransferRequest
+        {
+            ChildProfileId = childProfileId,
+            CurrentOwnerUserId = currentOwnerUserId,
+            TargetSupervisorUserId = targetSupervisorUserId,
+            Status = status
+        };
+
+        await _unitOfWork.Repository<OwnershipTransferRequest>()
+            .AddAsync(transferRequest, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _notificationService.CreateAsync(
+            responderUserId, NotificationType.OwnershipTransferRequested,
+            JsonSerializer.Serialize(new
+            {
+                ownershipTransferRequestId = transferRequest.Id,
+                childProfileId,
+                requesterUserId,
+                responderUserId
+            }), cancellationToken);
+
+        return MapOwnershipTransferRequest(transferRequest);
+    }
+
+    public async Task<SupervisionRelationshipDto> AcceptOwnershipTransferAsync(
+        int ownershipTransferRequestId, int accepterUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var requestRepo = _unitOfWork.Repository<OwnershipTransferRequest>();
+        var transferRequest = await requestRepo.GetByIdAsync(
+            ownershipTransferRequestId, cancellationToken);
+        if (transferRequest == null)
+        {
+            throw new NotFoundException(
+                "Yêu cầu chuyển nhượng quyền Owner", ownershipTransferRequestId);
+        }
+
+        if (!IsPendingOwnershipTransfer(transferRequest.Status))
+        {
+            throw new BadRequestException(
+                "Yêu cầu chuyển nhượng quyền Owner đã được xử lý trước đó.");
+        }
+
+        var responderUserId = GetOwnershipTransferResponderUserId(transferRequest);
+        if (accepterUserId != responderUserId)
+        {
+            throw new ForbiddenException(
+                "Chỉ người nhận yêu cầu đổi quyền Owner mới có thể chấp nhận yêu cầu này.");
+        }
+
+        var requesterUserId = GetOwnershipTransferRequesterUserId(transferRequest);
+        var ownerResponds = IsOwnerResponseOwnershipTransfer(transferRequest.Status);
 
         SupervisionRelationship? targetRelationship = null;
 
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
-            await _unitOfWork.AcquireTransactionLockAsync(childProfileId, cancellationToken);
-
-            var ownerRelationship = await _accessGuard.EnsureActiveSupervisionAsync(
-                childProfileId, currentOwnerUserId, cancellationToken);
-            if (ownerRelationship.SupervisorRole != SupervisorRole.Owner)
-            {
-                throw new ForbiddenException("Chỉ Owner mới có quyền thực hiện thao tác này.");
-            }
+            await _unitOfWork.AcquireTransactionLockAsync(
+                transferRequest.ChildProfileId, cancellationToken);
 
             var relationshipRepo = _unitOfWork.Repository<SupervisionRelationship>();
+            var ownerRelationship = await relationshipRepo.FirstOrDefaultAsync(
+                value => value.ChildProfileId == transferRequest.ChildProfileId
+                         && value.SupervisorUserId == transferRequest.CurrentOwnerUserId
+                         && value.SupervisorRole == SupervisorRole.Owner
+                         && value.RevokedAt == null,
+                cancellationToken: cancellationToken);
+            if (ownerRelationship == null)
+            {
+                throw new BadRequestException(
+                    "Yêu cầu chuyển nhượng không còn hợp lệ vì Owner trong yêu cầu không còn giữ quyền Owner của hồ sơ này.");
+            }
+
             targetRelationship = await relationshipRepo.FirstOrDefaultAsync(
-                value => value.ChildProfileId == childProfileId
-                         && value.SupervisorUserId == request.TargetSupervisorUserId
+                value => value.ChildProfileId == transferRequest.ChildProfileId
+                         && value.SupervisorUserId == transferRequest.TargetSupervisorUserId
                          && value.SupervisorRole == SupervisorRole.AdditionalSupervisor
                          && value.RevokedAt == null,
                 cancellationToken: cancellationToken);
             if (targetRelationship == null)
             {
                 throw new BadRequestException(
-                    "Người nhận phải là một Additional Supervisor đang hoạt động của hồ sơ trẻ này.");
+                    "Additional Supervisor trong yêu cầu không còn hoạt động trên hồ sơ trẻ này.");
             }
 
-            // Đổi role trên đúng hai quan hệ đang xét. Không revoke quan hệ nào nên BR-1.9
-            // vẫn được giữ nguyên: mọi quan hệ Parent đang active vẫn active sau thao tác.
             ownerRelationship.SupervisorRole = SupervisorRole.AdditionalSupervisor;
             targetRelationship.SupervisorRole = SupervisorRole.Owner;
             relationshipRepo.Update(ownerRelationship);
             relationshipRepo.Update(targetRelationship);
 
-            // Owner mới mặc định có toàn quyền và không được có permission riêng lẻ.
             var permissionRepo = _unitOfWork.Repository<SupervisionPermission>();
             var staleTargetPermissions = await permissionRepo.FindAsync(
                 value => value.SupervisionRelationshipId == targetRelationship.Id,
                 cancellationToken: cancellationToken);
             permissionRepo.DeleteRange(staleTargetPermissions);
 
-            // Owner cũ trở thành Additional Supervisor với quyền xem mặc định.
             var ownerHasViewResults = await permissionRepo.ExistsAsync(
                 value => value.SupervisionRelationshipId == ownerRelationship.Id
                          && value.Permission == Permission.ViewResults,
@@ -289,17 +406,23 @@ public class SupervisionService : ISupervisionService
                 }, cancellationToken);
             }
 
-            // Đồng bộ bản sao denormalized của Owner trong cùng transaction.
             var childProfileRepo = _unitOfWork.Repository<ChildProfile>();
-            var childProfile = await childProfileRepo.GetByIdAsync(childProfileId, cancellationToken);
+            var childProfile = await childProfileRepo.GetByIdAsync(
+                transferRequest.ChildProfileId, cancellationToken);
             if (childProfile == null)
             {
-                throw new NotFoundException("Hồ sơ trẻ", childProfileId);
+                throw new NotFoundException("Hồ sơ trẻ", transferRequest.ChildProfileId);
             }
 
-            childProfile.OwnerUserId = request.TargetSupervisorUserId;
+            childProfile.OwnerUserId = transferRequest.TargetSupervisorUserId;
             childProfile.UpdatedAt = DateTime.UtcNow;
             childProfileRepo.Update(childProfile);
+
+            transferRequest.Status = ownerResponds
+                ? OwnershipTransferRequestStatus.AcceptedByOwner
+                : OwnershipTransferRequestStatus.Accepted;
+            transferRequest.RespondedAt = DateTime.UtcNow;
+            requestRepo.Update(transferRequest);
 
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
         }
@@ -309,7 +432,74 @@ public class SupervisionService : ISupervisionService
             throw;
         }
 
+        await _notificationService.CreateAsync(
+            requesterUserId, NotificationType.OwnershipTransferAccepted,
+            JsonSerializer.Serialize(new
+            {
+                ownershipTransferRequestId = transferRequest.Id,
+                childProfileId = transferRequest.ChildProfileId,
+                newOwnerUserId = transferRequest.TargetSupervisorUserId
+            }), cancellationToken);
+
         return MapRelationship(targetRelationship!);
+    }
+
+    public async Task<OwnershipTransferRequestDto> RejectOwnershipTransferAsync(
+        int ownershipTransferRequestId, int rejecterUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var requestRepo = _unitOfWork.Repository<OwnershipTransferRequest>();
+        var transferRequest = await requestRepo.GetByIdAsync(
+            ownershipTransferRequestId, cancellationToken);
+        if (transferRequest == null)
+        {
+            throw new NotFoundException(
+                "Yêu cầu chuyển nhượng quyền Owner", ownershipTransferRequestId);
+        }
+
+        if (!IsPendingOwnershipTransfer(transferRequest.Status))
+        {
+            throw new BadRequestException(
+                "Yêu cầu chuyển nhượng quyền Owner đã được xử lý trước đó.");
+        }
+
+        var responderUserId = GetOwnershipTransferResponderUserId(transferRequest);
+        if (rejecterUserId != responderUserId)
+        {
+            throw new ForbiddenException(
+                "Chỉ người nhận yêu cầu đổi quyền Owner mới có thể từ chối yêu cầu này.");
+        }
+
+        var requesterUserId = GetOwnershipTransferRequesterUserId(transferRequest);
+        transferRequest.Status = IsOwnerResponseOwnershipTransfer(transferRequest.Status)
+            ? OwnershipTransferRequestStatus.RejectedByOwner
+            : OwnershipTransferRequestStatus.Rejected;
+        transferRequest.RespondedAt = DateTime.UtcNow;
+        requestRepo.Update(transferRequest);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _notificationService.CreateAsync(
+            requesterUserId, NotificationType.OwnershipTransferRejected,
+            JsonSerializer.Serialize(new
+            {
+                ownershipTransferRequestId = transferRequest.Id,
+                childProfileId = transferRequest.ChildProfileId
+            }), cancellationToken);
+
+        return MapOwnershipTransferRequest(transferRequest);
+    }
+
+    public async Task<List<OwnershipTransferRequestDto>> ListOwnershipTransferRequestsAsync(
+        int childProfileId, int currentUserId, CancellationToken cancellationToken = default)
+    {
+        await _accessGuard.EnsureActiveSupervisionAsync(
+            childProfileId, currentUserId, cancellationToken);
+
+        var requests = await _unitOfWork.Repository<OwnershipTransferRequest>().FindAsync(
+            value => value.ChildProfileId == childProfileId,
+            cancellationToken: cancellationToken);
+
+        return requests.Select(MapOwnershipTransferRequest).ToList();
     }
 
     public async Task GrantPermissionAsync(
@@ -423,6 +613,208 @@ public class SupervisionService : ISupervisionService
         return permissions.Select(p => p.Permission.ToString()).ToList();
     }
 
+    public async Task<PermissionRequestDto> CreatePermissionRequestAsync(
+        int supervisionRelationshipId, int requesterUserId, CreatePermissionRequestRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        var relationship = await _unitOfWork.Repository<SupervisionRelationship>()
+            .GetByIdAsync(supervisionRelationshipId, cancellationToken);
+        if (relationship == null)
+        {
+            throw new NotFoundException("Quan hệ giám sát", supervisionRelationshipId);
+        }
+
+        if (relationship.SupervisorUserId != requesterUserId)
+        {
+            throw new ForbiddenException(
+                "Bạn chỉ có thể tạo yêu cầu xin quyền cho chính quan hệ giám sát của mình.");
+        }
+
+        if (relationship.RevokedAt.HasValue)
+        {
+            throw new BadRequestException(
+                "Không thể tạo yêu cầu xin quyền cho quan hệ giám sát đã bị thu hồi.");
+        }
+
+        if (relationship.SupervisorRole == SupervisorRole.Owner)
+        {
+            throw new BadRequestException(
+                "Owner đã có toàn quyền nên không cần tạo yêu cầu xin quyền.");
+        }
+
+        var permissions = (request.Permissions ?? new List<Permission>()).Distinct().ToList();
+        if (permissions.Count == 0)
+        {
+            throw new BadRequestException("Vui lòng chọn ít nhất 1 quyền cần xin.");
+        }
+
+        if (permissions.Any(permission => !Enum.IsDefined(permission)))
+        {
+            throw new BadRequestException("Danh sách quyền chứa giá trị không hợp lệ.");
+        }
+
+        var permissionRequest = new SupervisionPermissionRequest
+        {
+            SupervisionRelationshipId = supervisionRelationshipId,
+            RequesterUserId = requesterUserId,
+            Status = PermissionRequestStatus.Pending,
+            Items = permissions.Select(permission => new SupervisionPermissionRequestItem
+            {
+                Permission = permission
+            }).ToList()
+        };
+
+        await _unitOfWork.Repository<SupervisionPermissionRequest>()
+            .AddAsync(permissionRequest, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        var childProfile = await _unitOfWork.Repository<ChildProfile>()
+            .GetByIdAsync(relationship.ChildProfileId, cancellationToken);
+        if (childProfile != null)
+        {
+            await _notificationService.CreateAsync(
+                childProfile.OwnerUserId, NotificationType.PermissionRequestCreated,
+                JsonSerializer.Serialize(new
+                {
+                    permissionRequestId = permissionRequest.Id,
+                    supervisionRelationshipId,
+                    permissions = permissions.Select(permission => permission.ToString())
+                }), cancellationToken);
+        }
+
+        return MapPermissionRequest(permissionRequest);
+    }
+
+    public async Task<PermissionRequestDto> AcceptPermissionRequestAsync(
+        int permissionRequestId, int ownerUserId, CancellationToken cancellationToken = default)
+    {
+        var permissionRequest = await LoadPermissionRequestOrThrowAsync(
+            permissionRequestId, cancellationToken);
+
+        var relationship = await _unitOfWork.Repository<SupervisionRelationship>()
+            .GetByIdAsync(permissionRequest.SupervisionRelationshipId, cancellationToken);
+        if (relationship == null)
+        {
+            throw new NotFoundException(
+                "Quan hệ giám sát", permissionRequest.SupervisionRelationshipId);
+        }
+
+        await _accessGuard.EnsureOwnerAsync(
+            relationship.ChildProfileId, ownerUserId, cancellationToken);
+
+        if (permissionRequest.Status != PermissionRequestStatus.Pending)
+        {
+            throw new BadRequestException("Yêu cầu xin quyền đã được xử lý trước đó.");
+        }
+
+        var permissionRepo = _unitOfWork.Repository<SupervisionPermission>();
+        foreach (var item in permissionRequest.Items)
+        {
+            var alreadyGranted = await permissionRepo.ExistsAsync(
+                value => value.SupervisionRelationshipId == relationship.Id
+                         && value.Permission == item.Permission,
+                cancellationToken);
+            if (!alreadyGranted)
+            {
+                await permissionRepo.AddAsync(new SupervisionPermission
+                {
+                    SupervisionRelationshipId = relationship.Id,
+                    Permission = item.Permission
+                }, cancellationToken);
+            }
+        }
+
+        permissionRequest.Status = PermissionRequestStatus.Accepted;
+        permissionRequest.RespondedAt = DateTime.UtcNow;
+        permissionRequest.RespondedByUserId = ownerUserId;
+        _unitOfWork.Repository<SupervisionPermissionRequest>().Update(permissionRequest);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _notificationService.CreateAsync(
+            permissionRequest.RequesterUserId, NotificationType.PermissionRequestAccepted,
+            JsonSerializer.Serialize(new
+            {
+                permissionRequestId = permissionRequest.Id,
+                permissions = permissionRequest.Items.Select(item => item.Permission.ToString())
+            }), cancellationToken);
+
+        return MapPermissionRequest(permissionRequest);
+    }
+
+    public async Task<PermissionRequestDto> RejectPermissionRequestAsync(
+        int permissionRequestId, int ownerUserId, CancellationToken cancellationToken = default)
+    {
+        var permissionRequest = await LoadPermissionRequestOrThrowAsync(
+            permissionRequestId, cancellationToken);
+
+        var relationship = await _unitOfWork.Repository<SupervisionRelationship>()
+            .GetByIdAsync(permissionRequest.SupervisionRelationshipId, cancellationToken);
+        if (relationship == null)
+        {
+            throw new NotFoundException(
+                "Quan hệ giám sát", permissionRequest.SupervisionRelationshipId);
+        }
+
+        await _accessGuard.EnsureOwnerAsync(
+            relationship.ChildProfileId, ownerUserId, cancellationToken);
+
+        if (permissionRequest.Status != PermissionRequestStatus.Pending)
+        {
+            throw new BadRequestException("Yêu cầu xin quyền đã được xử lý trước đó.");
+        }
+
+        permissionRequest.Status = PermissionRequestStatus.Rejected;
+        permissionRequest.RespondedAt = DateTime.UtcNow;
+        permissionRequest.RespondedByUserId = ownerUserId;
+        _unitOfWork.Repository<SupervisionPermissionRequest>().Update(permissionRequest);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _notificationService.CreateAsync(
+            permissionRequest.RequesterUserId, NotificationType.PermissionRequestRejected,
+            JsonSerializer.Serialize(new { permissionRequestId = permissionRequest.Id }),
+            cancellationToken);
+
+        return MapPermissionRequest(permissionRequest);
+    }
+
+    public async Task<List<PermissionRequestDto>> ListPermissionRequestsAsync(
+        int supervisionRelationshipId, int currentUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var relationship = await _unitOfWork.Repository<SupervisionRelationship>()
+            .GetByIdAsync(supervisionRelationshipId, cancellationToken);
+        if (relationship == null)
+        {
+            throw new NotFoundException("Quan hệ giám sát", supervisionRelationshipId);
+        }
+
+        await _accessGuard.EnsureActiveSupervisionAsync(
+            relationship.ChildProfileId, currentUserId, cancellationToken);
+
+        var requests = await _unitOfWork.Repository<SupervisionPermissionRequest>().FindAsync(
+            value => value.SupervisionRelationshipId == supervisionRelationshipId,
+            includeProperties: "Items",
+            cancellationToken: cancellationToken);
+
+        return requests.Select(MapPermissionRequest).ToList();
+    }
+
+    private async Task<SupervisionPermissionRequest> LoadPermissionRequestOrThrowAsync(
+        int permissionRequestId, CancellationToken cancellationToken)
+    {
+        var permissionRequest = await _unitOfWork.Repository<SupervisionPermissionRequest>()
+            .FirstOrDefaultAsync(
+                value => value.Id == permissionRequestId,
+                includeProperties: "Items",
+                cancellationToken: cancellationToken);
+        if (permissionRequest == null)
+        {
+            throw new NotFoundException("Yêu cầu xin quyền", permissionRequestId);
+        }
+
+        return permissionRequest;
+    }
+
     private async Task<SupervisionRelationship> GetPermissionTargetAsync(
         int relationshipId, int ownerUserId, Permission permission,
         CancellationToken cancellationToken)
@@ -473,5 +865,59 @@ public class SupervisionService : ISupervisionService
         ChildProfileId = relationship.ChildProfileId,
         SupervisorUserId = relationship.SupervisorUserId,
         SupervisorRole = relationship.SupervisorRole.ToString()
+    };
+
+    private static PermissionRequestDto MapPermissionRequest(
+        SupervisionPermissionRequest request) => new()
+    {
+        Id = request.Id,
+        SupervisionRelationshipId = request.SupervisionRelationshipId,
+        RequesterUserId = request.RequesterUserId,
+        Status = request.Status.ToString(),
+        Permissions = request.Items.Select(item => item.Permission.ToString()).ToList(),
+        CreatedAt = request.CreatedAt,
+        RespondedAt = request.RespondedAt
+    };
+
+    private static bool IsPendingOwnershipTransfer(OwnershipTransferRequestStatus status) =>
+        status is OwnershipTransferRequestStatus.Pending
+            or OwnershipTransferRequestStatus.PendingOwnerResponse;
+
+    private static bool IsOwnerResponseOwnershipTransfer(OwnershipTransferRequestStatus status) =>
+        status is OwnershipTransferRequestStatus.PendingOwnerResponse
+            or OwnershipTransferRequestStatus.AcceptedByOwner
+            or OwnershipTransferRequestStatus.RejectedByOwner;
+
+    private static int GetOwnershipTransferRequesterUserId(OwnershipTransferRequest request) =>
+        IsOwnerResponseOwnershipTransfer(request.Status)
+            ? request.TargetSupervisorUserId
+            : request.CurrentOwnerUserId;
+
+    private static int GetOwnershipTransferResponderUserId(OwnershipTransferRequest request) =>
+        IsOwnerResponseOwnershipTransfer(request.Status)
+            ? request.CurrentOwnerUserId
+            : request.TargetSupervisorUserId;
+
+    private static string GetOwnershipTransferPublicStatus(OwnershipTransferRequestStatus status) =>
+        status switch
+        {
+            OwnershipTransferRequestStatus.PendingOwnerResponse => "Pending",
+            OwnershipTransferRequestStatus.AcceptedByOwner => "Accepted",
+            OwnershipTransferRequestStatus.RejectedByOwner => "Rejected",
+            _ => status.ToString()
+        };
+
+    private static OwnershipTransferRequestDto MapOwnershipTransferRequest(
+        OwnershipTransferRequest request) => new()
+    {
+        Id = request.Id,
+        ChildProfileId = request.ChildProfileId,
+        CurrentOwnerUserId = request.CurrentOwnerUserId,
+        TargetSupervisorUserId = request.TargetSupervisorUserId,
+        RequesterUserId = GetOwnershipTransferRequesterUserId(request),
+        ResponderUserId = GetOwnershipTransferResponderUserId(request),
+        Status = GetOwnershipTransferPublicStatus(request.Status),
+        CreatedAt = request.CreatedAt,
+        RespondedAt = request.RespondedAt
     };
 }

@@ -103,21 +103,64 @@ public class SupervisionController : BaseApiController
     }
 
     /// <summary>
-    /// Chuyển nhượng quyền Owner cho một Additional Supervisor đang hoạt động (BR-1.10).
-    /// Chỉ Owner hiện tại được gọi; Owner cũ tự động trở thành Additional Supervisor
-    /// với quyền xem kết quả mặc định.
+    /// Owner hoặc Additional Supervisor khởi tạo yêu cầu đổi quyền Owner (BR-1.10).
+    /// Bên còn lại phải accept/reject; role chỉ được đổi sau khi accept.
     /// </summary>
     [HttpPost("{childProfileId:int}/transfer-ownership")]
     [Authorize(Roles = "Parent,Teacher")]
-    public async Task<ActionResult<ApiResponse<SupervisionRelationshipDto>>> TransferOwnership(
+    public async Task<ActionResult<ApiResponse<OwnershipTransferRequestDto>>> RequestOwnershipTransfer(
         int childProfileId,
         [FromBody] TransferOwnershipRequestDto request,
         CancellationToken cancellationToken)
     {
-        var result = await _supervisionService.TransferOwnershipAsync(
+        var result = await _supervisionService.RequestOwnershipTransferAsync(
             childProfileId, GetCurrentUserId(), request, cancellationToken);
 
-        return HandleResult(result, "Chuyển nhượng quyền Owner thành công.");
+        return StatusCode(StatusCodes.Status201Created,
+            ApiResponse<OwnershipTransferRequestDto>.Ok(
+                result, "Tạo yêu cầu chuyển nhượng quyền Owner thành công."));
+    }
+
+    /// <summary>
+    /// Danh sách yêu cầu chuyển nhượng quyền Owner của một hồ sơ trẻ.
+    /// </summary>
+    [HttpGet("{childProfileId:int}/ownership-transfers")]
+    [Authorize(Roles = "Parent,Teacher")]
+    public async Task<ActionResult<ApiResponse<List<OwnershipTransferRequestDto>>>> ListOwnershipTransfers(
+        int childProfileId, CancellationToken cancellationToken)
+    {
+        var result = await _supervisionService.ListOwnershipTransferRequestsAsync(
+            childProfileId, GetCurrentUserId(), cancellationToken);
+        return HandleResult(
+            result, "Lấy danh sách yêu cầu chuyển nhượng quyền Owner thành công.");
+    }
+
+    /// <summary>
+    /// Người được đề nghị chấp nhận yêu cầu chuyển nhượng quyền Owner — thực hiện đổi role ngay.
+    /// </summary>
+    [HttpPost("ownership-transfers/{ownershipTransferRequestId:int}/accept")]
+    [Authorize(Roles = "Parent,Teacher")]
+    public async Task<ActionResult<ApiResponse<SupervisionRelationshipDto>>> AcceptOwnershipTransfer(
+        int ownershipTransferRequestId, CancellationToken cancellationToken)
+    {
+        var result = await _supervisionService.AcceptOwnershipTransferAsync(
+            ownershipTransferRequestId, GetCurrentUserId(), cancellationToken);
+
+        return HandleResult(result, "Chấp nhận chuyển nhượng quyền Owner thành công.");
+    }
+
+    /// <summary>
+    /// Người được đề nghị từ chối yêu cầu chuyển nhượng quyền Owner.
+    /// </summary>
+    [HttpPost("ownership-transfers/{ownershipTransferRequestId:int}/reject")]
+    [Authorize(Roles = "Parent,Teacher")]
+    public async Task<ActionResult<ApiResponse<OwnershipTransferRequestDto>>> RejectOwnershipTransfer(
+        int ownershipTransferRequestId, CancellationToken cancellationToken)
+    {
+        var result = await _supervisionService.RejectOwnershipTransferAsync(
+            ownershipTransferRequestId, GetCurrentUserId(), cancellationToken);
+
+        return HandleResult(result, "Từ chối chuyển nhượng quyền Owner thành công.");
     }
 
     /// <summary>

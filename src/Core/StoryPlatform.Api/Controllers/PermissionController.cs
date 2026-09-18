@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
+using StoryPlatform.Application.Features.ChildProfiles.Supervision.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
 using StoryPlatform.Domain.Enums;
 
@@ -66,5 +67,63 @@ public class PermissionController : BaseApiController
         await _supervisionService.RevokePermissionAsync(
             relationshipId, GetCurrentUserId(), permission, cancellationToken);
         return HandleResult<object?>(null, "Thu hồi quyền thành công.");
+    }
+
+    /// <summary>
+    /// Tạo yêu cầu xin cấp quyền cho quan hệ giám sát của chính Additional Supervisor.
+    /// </summary>
+    [HttpPost("relationships/{relationshipId:int}/requests")]
+    [Authorize(Roles = "Parent,Teacher")]
+    public async Task<ActionResult<ApiResponse<PermissionRequestDto>>> CreatePermissionRequest(
+        int relationshipId,
+        [FromBody] CreatePermissionRequestRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _supervisionService.CreatePermissionRequestAsync(
+            relationshipId, GetCurrentUserId(), request, cancellationToken);
+
+        return StatusCode(StatusCodes.Status201Created,
+            ApiResponse<PermissionRequestDto>.Ok(result, "Tạo yêu cầu xin quyền thành công."));
+    }
+
+    /// <summary>
+    /// Danh sách yêu cầu xin quyền của một quan hệ giám sát.
+    /// </summary>
+    [HttpGet("relationships/{relationshipId:int}/requests")]
+    [Authorize(Roles = "Parent,Teacher")]
+    public async Task<ActionResult<ApiResponse<List<PermissionRequestDto>>>> ListPermissionRequests(
+        int relationshipId, CancellationToken cancellationToken)
+    {
+        var result = await _supervisionService.ListPermissionRequestsAsync(
+            relationshipId, GetCurrentUserId(), cancellationToken);
+        return HandleResult(result, "Lấy danh sách yêu cầu xin quyền thành công.");
+    }
+
+    /// <summary>
+    /// Owner chấp nhận yêu cầu xin quyền — cấp toàn bộ permission trong yêu cầu.
+    /// </summary>
+    [HttpPost("requests/{permissionRequestId:int}/accept")]
+    [Authorize(Roles = "Parent,Teacher")]
+    public async Task<ActionResult<ApiResponse<PermissionRequestDto>>> AcceptPermissionRequest(
+        int permissionRequestId, CancellationToken cancellationToken)
+    {
+        var result = await _supervisionService.AcceptPermissionRequestAsync(
+            permissionRequestId, GetCurrentUserId(), cancellationToken);
+
+        return HandleResult(result, "Chấp nhận yêu cầu xin quyền thành công.");
+    }
+
+    /// <summary>
+    /// Owner từ chối yêu cầu xin quyền.
+    /// </summary>
+    [HttpPost("requests/{permissionRequestId:int}/reject")]
+    [Authorize(Roles = "Parent,Teacher")]
+    public async Task<ActionResult<ApiResponse<PermissionRequestDto>>> RejectPermissionRequest(
+        int permissionRequestId, CancellationToken cancellationToken)
+    {
+        var result = await _supervisionService.RejectPermissionRequestAsync(
+            permissionRequestId, GetCurrentUserId(), cancellationToken);
+
+        return HandleResult(result, "Từ chối yêu cầu xin quyền thành công.");
     }
 }

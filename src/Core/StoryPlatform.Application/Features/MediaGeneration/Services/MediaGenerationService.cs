@@ -4,6 +4,7 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
+using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -19,6 +20,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
     private readonly ISceneSpecificationBuilder _specificationBuilder;
     private readonly IImageGenerationProvider _imageProvider;
     private readonly ITtsProvider _ttsProvider;
+    private readonly IMediaStorage _mediaStorage;
     private readonly IMediaAlignmentEvaluator _alignmentEvaluator;
     private readonly IMediaSafetyEvaluator _safetyEvaluator;
     private readonly IMediaGenerationJobFailureFinalizer _failureFinalizer;
@@ -34,6 +36,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         ISceneSpecificationBuilder specificationBuilder,
         IImageGenerationProvider imageProvider,
         ITtsProvider ttsProvider,
+        IMediaStorage mediaStorage,
         IMediaAlignmentEvaluator alignmentEvaluator,
         IMediaSafetyEvaluator safetyEvaluator,
         IMediaGenerationJobFailureFinalizer failureFinalizer,
@@ -47,6 +50,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         _specificationBuilder = specificationBuilder;
         _imageProvider = imageProvider;
         _ttsProvider = ttsProvider;
+        _mediaStorage = mediaStorage;
         _alignmentEvaluator = alignmentEvaluator;
         _safetyEvaluator = safetyEvaluator;
         _failureFinalizer = failureFinalizer;
@@ -161,9 +165,9 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
             var specification = _specificationBuilder.Build(
                 state.Version.Id, scene.Id, scene.SceneIndex, scene.SceneText,
                 scene.VisualDescription, mediaContext.ContextJson);
-            await EnsureIllustrationAsync(state.Job.Id, claimedToken, state.Version.Id, mediaContext.Id,
+            await EnsureIllustrationAsync(state.Job.Id, claimedToken, state.Job.StoryId, state.Version.Id, mediaContext.Id,
                 scene, specification, cancellationToken);
-            await EnsureAudioAsync(state.Job.Id, claimedToken, state.Version.Id, mediaContext.Id,
+            await EnsureAudioAsync(state.Job.Id, claimedToken, state.Job.StoryId, state.Version.Id, mediaContext.Id,
                 scene, cancellationToken);
         }
         await UpdateStageAsync(state.Job.Id, claimedToken, JobStage.MediaFinalizing, cancellationToken);
@@ -233,7 +237,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
     }
 
     private async Task EnsureIllustrationAsync(
-        int jobId, string claimedToken, int versionId, int mediaContextId,
+        int jobId, string claimedToken, int storyId, int versionId, int mediaContextId,
         StoryScene scene, SceneSpecification specification, CancellationToken cancellationToken)
     {
         var asset = await GetOrCreateAssetAsync(versionId, scene, MediaType.Illustration, cancellationToken);
@@ -254,7 +258,11 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
                 if (!alignment.Passed || !safety.Passed)
                     throw new InvalidOperationException(!alignment.Passed ? "IMAGE_ALIGNMENT_FAILED" : "IMAGE_SAFETY_FAILED");
                 await AssertFreshAsync(jobId, claimedToken, versionId, mediaContextId, cancellationToken);
-                asset.Url = illustration.Url;
+                var storagePath = $"{storyId}/scene-{scene.SceneIndex}{illustration.SuggestedExtension}";
+                await using var content = illustration.OpenReadStream();
+                asset.Url = await _mediaStorage.UploadAsync(
+                    storagePath, content, illustration.MimeType, cancellationToken);
+                await AssertFreshAsync(jobId, claimedToken, versionId, mediaContextId, cancellationToken);
                 asset.Status = MediaStatus.Ready;
                 _unitOfWork.Repository<MediaAsset>().Update(asset);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -272,7 +280,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
     }
 
     private async Task EnsureAudioAsync(
-        int jobId, string claimedToken, int versionId, int mediaContextId,
+        int jobId, string claimedToken, int storyId, int versionId, int mediaContextId,
         StoryScene scene, CancellationToken cancellationToken)
     {
         var asset = await GetOrCreateAssetAsync(versionId, scene, MediaType.TtsAudio, cancellationToken);
@@ -290,8 +298,12 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
                 var audio = await _ttsProvider.GenerateAsync(scene.SceneText, cancellationToken);
                 // Verify freshness again after generation before persisting
                 await AssertFreshAsync(jobId, claimedToken, versionId, mediaContextId, cancellationToken);
-                asset.Url = audio.Url;
-                asset.WordTimings = audio.WordTimingsJson;
+                var storagePath = $"{storyId}/audio-{scene.SceneIndex}{audio.SuggestedExtension}";
+                await using var content = audio.OpenReadStream();
+                asset.Url = await _mediaStorage.UploadAsync(
+                    storagePath, content, audio.MimeType, cancellationToken);
+                await AssertFreshAsync(jobId, claimedToken, versionId, mediaContextId, cancellationToken);
+                asset.WordTimings = audio.GetMetadata("wordTimingsJson");
                 asset.Status = MediaStatus.Ready;
                 _unitOfWork.Repository<MediaAsset>().Update(asset);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);

@@ -1,4 +1,5 @@
 using StoryPlatform.Application.Features.MediaGeneration.Models;
+using StoryPlatform.Application.Features.MediaStorage.Models;
 
 namespace StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 
@@ -33,24 +34,24 @@ public interface ISceneSpecificationBuilder
 
 public interface IImageGenerationProvider
 {
-    Task<GeneratedIllustration> GenerateAsync(SceneSpecification specification, CancellationToken cancellationToken = default);
+    Task<GeneratedMedia> GenerateAsync(SceneSpecification specification, CancellationToken cancellationToken = default);
 }
 
 public interface ITtsProvider
 {
-    Task<GeneratedAudio> GenerateAsync(string exactSceneText, CancellationToken cancellationToken = default);
+    Task<GeneratedMedia> GenerateAsync(string exactSceneText, CancellationToken cancellationToken = default);
 }
 
 public interface IMediaAlignmentEvaluator
 {
     Task<MediaEvaluationResult> EvaluateAsync(
-        SceneSpecification specification, GeneratedIllustration illustration, CancellationToken cancellationToken = default);
+        SceneSpecification specification, GeneratedMedia illustration, CancellationToken cancellationToken = default);
 }
 
 public interface IMediaSafetyEvaluator
 {
     Task<MediaEvaluationResult> EvaluateAsync(
-        SceneSpecification specification, GeneratedIllustration illustration, CancellationToken cancellationToken = default);
+        SceneSpecification specification, GeneratedMedia illustration, CancellationToken cancellationToken = default);
 }
 
 public interface IMediaGenerationService

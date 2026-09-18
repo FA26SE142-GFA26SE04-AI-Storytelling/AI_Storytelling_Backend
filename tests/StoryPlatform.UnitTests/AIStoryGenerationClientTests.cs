@@ -11,24 +11,69 @@ namespace StoryPlatform.UnitTests;
 public sealed class AIStoryGenerationClientTests
 {
     [Fact]
-    public async Task Outline_safety_error_preserves_reason_code()
+    public async Task GenerateOutline_with_valid_response_returns_outline()
     {
-        var handler = new StubHandler(new HttpResponseMessage(HttpStatusCode.UnprocessableEntity)
+        // Arrange
+        var handler = new StubHandler(new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(
-                """{"errorCode":"OUTLINE_BLOCKED_CONTENT","error":"Generated outline was blocked."}""",
+                """
+                {
+                    "candidates": [{
+                        "content": {
+                            "parts": [{
+                                "text": "{\"title\":\"Test Story\",\"opening\":\"Once upon a time\",\"development\":\"Something happened\",\"ending\":\"The end\"}"
+                            }]
+                        }
+                    }]
+                }
+                """,
                 Encoding.UTF8,
                 "application/json")
         });
-        var client = new AIStoryGenerationClient(
+
+        var client = new GeminiDirectClient(
             new HttpClient(handler),
-            Options.Create(new AIServiceOptions { BaseUrl = "http://localhost" }));
+            Options.Create(new AIServiceOptions { ApiKey = "test-key" }));
 
-        var exception = await Assert.ThrowsAsync<AIServiceRequestException>(() =>
-            client.GenerateOutlineAsync(new GenerateOutlineRequest { RequestId = "request-1" }));
+        // Act
+        var result = await client.GenerateOutlineAsync(new GenerateOutlineRequest
+        {
+            RequestId = "request-1",
+            AgeBand = "6-8",
+            Language = "vi"
+        });
 
-        Assert.Equal(422, exception.StatusCode);
-        Assert.Equal("OUTLINE_BLOCKED_CONTENT", exception.ErrorCode);
+        // Assert
+        Assert.Equal("request-1", result.RequestId);
+        Assert.Equal("Test Story", result.Title);
+        Assert.Equal("Once upon a time", result.Outline.Opening);
+    }
+
+    [Fact]
+    public async Task GenerateOutline_with_invalid_api_key_throws_exception()
+    {
+        // Arrange
+        var handler = new StubHandler(new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        {
+            Content = new StringContent(
+                """{"error": "Invalid API key"}""",
+                Encoding.UTF8,
+                "application/json")
+        });
+
+        var client = new GeminiDirectClient(
+            new HttpClient(handler),
+            Options.Create(new AIServiceOptions { ApiKey = "invalid-key" }));
+
+        // Act & Assert
+        await Assert.ThrowsAsync<AIServiceRequestException>(() =>
+            client.GenerateOutlineAsync(new GenerateOutlineRequest
+            {
+                RequestId = "request-1",
+                AgeBand = "6-8",
+                Language = "vi"
+            }));
     }
 
     private sealed class StubHandler(HttpResponseMessage response) : HttpMessageHandler

@@ -7,6 +7,7 @@ using StoryPlatform.Application.Features.ContentGeneration.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration;
 using StoryPlatform.Application.Features.ContentGeneration.Quality;
 using StoryPlatform.Application.Features.ContentGeneration.Services;
+using StoryPlatform.Application.Features.ExistingStories.Interfaces;
 using StoryPlatform.Contracts.AI.Models;
 using StoryPlatform.Contracts.AI.Requests;
 using StoryPlatform.Contracts.AI.Responses;
@@ -50,6 +51,32 @@ public sealed class ContentGenerationServiceTests
     }
 
     [Fact]
+    public async Task Existing_story_reaches_content_review_after_artifact_chain_completes()
+    {
+        var store = Seed();
+        var story = store.Items<Story>().Single();
+        story.Source = StorySource.Manual;
+        story.Status = StoryStatus.Draft;
+        var version = store.Items<StoryVersion>().Single();
+        version.Content = "Lan và Minh cùng chia sẻ một quyển sách.";
+        version.Lesson = "Biết chia sẻ";
+        var job = store.Items<StoryGenerationJob>().Single();
+        job.Operation = GenerationJobOperation.GenerateVocabulary;
+        job.Stage = JobStage.ContentArtifactPending;
+        job.StoryVersionId = version.Id;
+        job.BaseStoryVersionId = version.Id;
+        var service = Service(store, new FakeAIClient());
+
+        Assert.True(await service.ProcessNextAsync());
+        Assert.True(await service.ProcessNextAsync());
+        Assert.True(await service.ProcessNextAsync());
+
+        Assert.Equal(StoryStatus.ContentReview, story.Status);
+        Assert.DoesNotContain(store.Items<StoryGenerationJob>(), item =>
+            item.Status is GenerationJobStatus.Pending or GenerationJobStatus.Processing);
+    }
+
+    [Fact]
     public async Task Invalid_vocabulary_retries_only_vocabulary()
     {
         var store = Seed();
@@ -69,7 +96,7 @@ public sealed class ContentGenerationServiceTests
     {
         var store = Seed();
         var ai = new FakeAIClient();
-        var service = new ContentGenerationService(store, ai, new FailOnceQualityEvaluator(), new FakeFailureFinalizer(store), new ContentGenerationOptions());
+        var service = new ContentGenerationService(store, ai, new FailOnceQualityEvaluator(), new FakeFailureFinalizer(store), new RecordingHandoffService(store), new ContentGenerationOptions());
 
         Assert.True(await service.ProcessNextAsync());
 
@@ -128,7 +155,7 @@ public sealed class ContentGenerationServiceTests
         store.Items<StoryGenerationJob>().Single(item => item.Status == GenerationJobStatus.Pending);
 
     private static ContentGenerationService Service(FakeUnitOfWork store, IAIStoryGenerationClient ai) =>
-        new(store, ai, new PassingQualityEvaluator(), new FakeFailureFinalizer(store), new ContentGenerationOptions());
+        new(store, ai, new PassingQualityEvaluator(), new FakeFailureFinalizer(store), new RecordingHandoffService(store), new ContentGenerationOptions());
 
     private static FakeUnitOfWork Seed()
     {
@@ -316,5 +343,47 @@ public sealed class ContentGenerationServiceTests
         public Task<int> CountAsync(Expression<Func<T, bool>>? predicate = null, CancellationToken cancellationToken = default) => Task.FromResult(predicate is null ? Items.Count : Items.Count(predicate.Compile()));
         public Task<bool> ExistsAsync(Expression<Func<T, bool>> predicate, CancellationToken cancellationToken = default) => Task.FromResult(Items.Any(predicate.Compile()));
         public IQueryable<T> Query() => Items.AsQueryable();
+    }
+
+    /// <summary>
+    /// Stub cho IStableVersionArtifactHandoffService - giả lập việc tạo job Vocabulary.
+    /// Đảm bảo idempotency và khớp với behavior thật của handoff service.
+    /// </summary>
+    private sealed class RecordingHandoffService(FakeUnitOfWork store) : IStableVersionArtifactHandoffService
+    {
+        public List<(int StoryId, int VersionId, int? GenerationRequestId)> Calls { get; } = [];
+
+        public async Task<int> QueueArtifactsAsync(
+            int storyId, int storyVersionId, int requestedByUserId,
+            int? generationRequestId, CancellationToken cancellationToken = default)
+        {
+            Calls.Add((storyId, storyVersionId, generationRequestId));
+
+            // Idempotent: nếu đã có job cho (story, version, GenerateVocabulary), trả về job đó.
+            var existing = store.Items<StoryGenerationJob>().FirstOrDefault(job =>
+                job.StoryId == storyId
+                && job.Operation == GenerationJobOperation.GenerateVocabulary
+                && job.StoryVersionId == storyVersionId);
+            if (existing is not null) return existing.Id;
+
+            // Tạo job mới tương tự StableVersionArtifactHandoffService.
+            var jobEntity = new StoryGenerationJob
+            {
+                StoryId = storyId,
+                GenerationRequestId = generationRequestId,
+                StoryVersionId = storyVersionId,
+                BaseStoryVersionId = storyVersionId,
+                RequestedByUserId = requestedByUserId,
+                OperationKey = $"existing:p3:{storyId}:v{storyVersionId}:op4",
+                Operation = GenerationJobOperation.GenerateVocabulary,
+                Stage = JobStage.ContentArtifactPending,
+                Status = GenerationJobStatus.Pending,
+                AttemptNo = 0,
+                MaxAttempts = 3,
+                StartedAt = DateTime.UtcNow
+            };
+            await store.Repository<StoryGenerationJob>().AddAsync(jobEntity, cancellationToken);
+            return jobEntity.Id;
+        }
     }
 }

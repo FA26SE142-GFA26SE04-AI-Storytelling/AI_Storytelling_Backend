@@ -76,7 +76,7 @@ public sealed class StoryReviewServiceTests
         var unitOfWork = SeedContentReview();
         var service = Service(unitOfWork);
 
-        await service.UpdateStoryAsync(1, 1, new UpdateStoryRequestDto
+        var result = await service.UpdateStoryAsync(1, 1, new UpdateStoryRequestDto
         {
             VersionId = 1,
             Title = "New Title",
@@ -84,9 +84,12 @@ public sealed class StoryReviewServiceTests
             Lesson = "New Lesson"
         });
 
-        var version = unitOfWork.Items<StoryVersion>().First();
-        Assert.Equal(1, version.EditorUserId);
-        Assert.Equal(VersionEditType.HumanEdited, version.EditType);
+        // Sau khi update: phải có version mới (id khác 1) với EditorUserId=1 và EditType=HumanEdited.
+        var newVersion = unitOfWork.Items<StoryVersion>().Single(version => version.Id == result.VersionId);
+        Assert.Equal(1, newVersion.EditorUserId);
+        Assert.Equal(VersionEditType.HumanEdited, newVersion.EditType);
+        Assert.True(newVersion.IsCurrent);
+        Assert.False(unitOfWork.Items<StoryVersion>().Single(version => version.Id == 1).IsCurrent);
     }
 
     [Fact]
@@ -105,7 +108,7 @@ public sealed class StoryReviewServiceTests
 
         var current = unitOfWork.Items<StoryVersion>().Single(version => version.Id == result.VersionId);
         Assert.True(current.IsCurrent);
-        Assert.Equal(1, current.VersionNo);
+        Assert.Equal(2, current.VersionNo); // Version mới phải là v2 (v1 cũ bị IsCurrent=false)
         Assert.Single(unitOfWork.Items<StoryVersion>(), version => version.IsCurrent);
     }
 

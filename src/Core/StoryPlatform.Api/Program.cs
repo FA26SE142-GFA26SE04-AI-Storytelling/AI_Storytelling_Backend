@@ -14,6 +14,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // 1. Cấu hình Controllers và JSON options
 builder.Services.AddControllers();
+builder.Services.AddHealthChecks();
 builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options =>
 {
     options.InvalidModelStateResponseFactory = context =>
@@ -55,7 +56,7 @@ var app = builder.Build();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 // Swagger UI
-if (app.Environment.IsDevelopment() || true)
+if (app.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("Swagger:Enabled"))
 {
     app.UseSwagger();
     app.UseSwaggerUI(c =>
@@ -71,6 +72,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHealthChecks("/health");
 app.MapHub<NotificationHub>("/hubs/notifications");
 
 app.Run();

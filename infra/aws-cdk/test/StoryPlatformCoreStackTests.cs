@@ -52,4 +52,15 @@ public class StoryPlatformCoreStackTests
             ["PubliclyAccessible"] = false
         });
     }
+
+    [Fact]
+    public void Stack_CreatesEcrRepositoryWithLifecycleRule()
+    {
+        var template = SynthTemplate();
+        template.ResourceCountIs("AWS::ECR::Repository", 1);
+        template.HasResourceProperties("AWS::ECR::Repository", new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["RepositoryName"] = "storyplatform-core-api"
+        });
+    }
 }

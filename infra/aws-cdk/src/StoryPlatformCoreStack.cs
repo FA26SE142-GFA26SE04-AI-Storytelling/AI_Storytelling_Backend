@@ -1,5 +1,6 @@
 using Amazon.CDK;
 using Amazon.CDK.AWS.EC2;
+using Amazon.CDK.AWS.ECR;
 using Amazon.CDK.AWS.RDS;
 using Constructs;
 
@@ -9,6 +10,7 @@ public sealed class StoryPlatformCoreStack : Stack
 {
     public IVpc Vpc { get; }
     public DatabaseInstance Database { get; }
+    public Repository EcrRepository { get; }
 
     public StoryPlatformCoreStack(Construct scope, string id, IStackProps? props = null)
         : base(scope, id, props)
@@ -44,6 +46,21 @@ public sealed class StoryPlatformCoreStack : Stack
             PubliclyAccessible = false,
             RemovalPolicy = RemovalPolicy.DESTROY,
             DeletionProtection = false
+        });
+
+        EcrRepository = new Repository(this, "CoreApiRepository", new RepositoryProps
+        {
+            RepositoryName = "storyplatform-core-api",
+            RemovalPolicy = RemovalPolicy.DESTROY,
+            EmptyOnDelete = true,
+            LifecycleRules = new[]
+            {
+                new LifecycleRule
+                {
+                    MaxImageCount = 10,
+                    Description = "Keep only the last 10 images"
+                }
+            }
         });
     }
 }

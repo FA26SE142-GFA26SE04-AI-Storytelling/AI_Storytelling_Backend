@@ -1,0 +1,11 @@
+# .dockerignore
+**/bin/
+**/obj/
+**/.vs/
+**/node_modules/
+**/*.user
+.git/
+docs/
+infra/
+tests/
+*.docx

@@ -162,6 +162,61 @@ public class StoryPlatformCoreStackTests
     }
 
     [Fact]
+    public void Stack_AppRunnerServiceIncludesPlainJwtSettingsEnvVars()
+    {
+        // appsettings.json is gitignored and not part of the image built from a clean checkout,
+        // so JwtSettings (required by ServiceExtensions.AddJwtAuthentication at startup, or the
+        // app throws InvalidOperationException and crash-loops) must come entirely from App
+        // Runner's plain runtime env vars. These are non-secret config (issuer/audience/expiry
+        // durations), not credentials, so they belong in RuntimeEnvironmentVariables rather than
+        // RuntimeEnvironmentSecrets.
+        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["includeAppRunnerService"] = true
+        });
+        template.HasResourceProperties("AWS::AppRunner::Service", new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["SourceConfiguration"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["ImageRepository"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                {
+                    ["ImageConfiguration"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                    {
+                        ["RuntimeEnvironmentVariables"] = Match.ArrayWith(new object[]
+                        {
+                            Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                            {
+                                ["Name"] = "JwtSettings__Issuer",
+                                ["Value"] = "StoryPlatform"
+                            }),
+                            Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                            {
+                                ["Name"] = "JwtSettings__Audience",
+                                ["Value"] = "StoryPlatformClient"
+                            }),
+                            Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                            {
+                                ["Name"] = "JwtSettings__ExpiryMinutes",
+                                ["Value"] = "120"
+                            }),
+                            Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                            {
+                                ["Name"] = "JwtSettings__RefreshTokenExpiryDays",
+                                ["Value"] = "7"
+                            }),
+                            Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                            {
+                                ["Name"] = "JwtSettings__ChildTokenExpiryMinutes",
+                                ["Value"] = "240"
+                            })
+                        })
+                    })
+                })
+            })
+        });
+    }
+
+    [Fact]
     public void Stack_CreatesGitHubOidcProviderAndScopedCiRole()
     {
         var template = SynthTemplate();

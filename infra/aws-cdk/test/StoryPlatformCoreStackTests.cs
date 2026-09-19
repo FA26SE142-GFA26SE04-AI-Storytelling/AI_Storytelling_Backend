@@ -39,4 +39,17 @@ public class StoryPlatformCoreStackTests
         template.ResourceCountIs("AWS::EC2::Subnet", 2);
         template.ResourceCountIs("AWS::EC2::InternetGateway", 0);
     }
+
+    [Fact]
+    public void Stack_CreatesPrivateRdsPostgresInstance()
+    {
+        var template = SynthTemplate();
+        template.ResourceCountIs("AWS::RDS::DBInstance", 1);
+        template.HasResourceProperties("AWS::RDS::DBInstance", new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["Engine"] = "postgres",
+            ["DBInstanceClass"] = "db.t4g.micro",
+            ["PubliclyAccessible"] = false
+        });
+    }
 }

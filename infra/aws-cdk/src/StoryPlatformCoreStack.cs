@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using Amazon.CDK;
 using Amazon.CDK.AWS.EC2;
 using Amazon.CDK.AWS.ECR;
+using Amazon.CDK.AWS.IAM;
 using Amazon.CDK.AWS.RDS;
 using Amazon.CDK.AWS.SecretsManager;
 using Constructs;
@@ -18,6 +19,7 @@ public sealed class StoryPlatformCoreStack : Stack
     public Secret JwtSecret { get; }
     public Secret ResendApiKeySecret { get; }
     public Secret SePayApiKeySecret { get; }
+    public Role AppRunnerInstanceRole { get; }
 
     public StoryPlatformCoreStack(Construct scope, string id, IStackProps? props = null)
         : base(scope, id, props)
@@ -103,6 +105,16 @@ public sealed class StoryPlatformCoreStack : Stack
             SecretStringValue = SecretValue.UnsafePlainText("REPLACE_ME_POST_DEPLOY"),
             RemovalPolicy = RemovalPolicy.DESTROY
         });
+
+        AppRunnerInstanceRole = new Role(this, "AppRunnerInstanceRole", new RoleProps
+        {
+            AssumedBy = new ServicePrincipal("tasks.apprunner.amazonaws.com")
+        });
+
+        DbConnectionSecret.GrantRead(AppRunnerInstanceRole);
+        JwtSecret.GrantRead(AppRunnerInstanceRole);
+        ResendApiKeySecret.GrantRead(AppRunnerInstanceRole);
+        SePayApiKeySecret.GrantRead(AppRunnerInstanceRole);
     }
 
     private static string GenerateRandomSecret(int byteLength = 48)

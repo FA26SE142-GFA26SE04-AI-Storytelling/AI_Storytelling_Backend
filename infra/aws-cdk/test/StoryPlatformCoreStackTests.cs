@@ -88,4 +88,40 @@ public class StoryPlatformCoreStackTests
             ["Name"] = "storyplatform/core/sepay-api-key"
         });
     }
+
+    [Fact]
+    public void Stack_CreatesAppRunnerInstanceRoleScopedToSecrets()
+    {
+        var template = SynthTemplate();
+        template.HasResourceProperties("AWS::IAM::Role", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["AssumeRolePolicyDocument"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["Statement"] = Match.ArrayWith(new object[]
+                {
+                    Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                    {
+                        ["Principal"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                        {
+                            ["Service"] = "tasks.apprunner.amazonaws.com"
+                        })
+                    })
+                })
+            })
+        }));
+
+        template.HasResourceProperties("AWS::IAM::Policy", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["PolicyDocument"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["Statement"] = Match.ArrayWith(new object[]
+                {
+                    Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                    {
+                        ["Action"] = Match.ArrayWith(new object[] { "secretsmanager:GetSecretValue" })
+                    })
+                })
+            })
+        }));
+    }
 }

@@ -22,6 +22,7 @@ public sealed class StoryPlatformCoreStack : Stack
     public Secret SePayApiKeySecret { get; }
     public Role AppRunnerInstanceRole { get; }
     public CfnVpcConnector VpcConnector { get; }
+    public CfnService? AppRunnerService { get; private set; }
 
     public StoryPlatformCoreStack(Construct scope, string id, IStackProps? props = null)
         : base(scope, id, props)
@@ -133,6 +134,77 @@ public sealed class StoryPlatformCoreStack : Stack
             Subnets = Vpc.SelectSubnets(new SubnetSelection { SubnetType = SubnetType.PRIVATE_ISOLATED }).SubnetIds,
             SecurityGroups = new[] { vpcConnectorSecurityGroup.SecurityGroupId }
         });
+
+        // Bootstrap gating: on the very first `cdk deploy`, the ECR repo above is empty
+        // (no image has been pushed yet, since you can't push before the repo exists).
+        // Creating the App Runner Service unconditionally in that same deploy would make
+        // CloudFormation fail to find the image and roll back the ENTIRE stack, deleting
+        // the VPC/RDS/ECR/Secrets that succeeded too. So App Runner Service creation is
+        // gated behind this context flag (default false); Task 13 deploys twice: once
+        // with the flag off, pushes the first image, then deploys again with it on.
+        var includeAppRunnerServiceContext = Node.TryGetContext("includeAppRunnerService");
+        var includeAppRunnerService = includeAppRunnerServiceContext switch
+        {
+            bool b => b,
+            string s => bool.Parse(s),
+            _ => false
+        };
+
+        if (includeAppRunnerService)
+        {
+            var appRunnerEcrAccessRole = new Role(this, "AppRunnerEcrAccessRole", new RoleProps
+            {
+                AssumedBy = new ServicePrincipal("build.apprunner.amazonaws.com")
+            });
+            EcrRepository.GrantPull(appRunnerEcrAccessRole);
+
+            AppRunnerService = new CfnService(this, "CoreApiService", new CfnServiceProps
+            {
+                ServiceName = "storyplatform-core-api",
+                SourceConfiguration = new CfnService.SourceConfigurationProperty
+                {
+                    AutoDeploymentsEnabled = true,
+                    AuthenticationConfiguration = new CfnService.AuthenticationConfigurationProperty
+                    {
+                        AccessRoleArn = appRunnerEcrAccessRole.RoleArn
+                    },
+                    ImageRepository = new CfnService.ImageRepositoryProperty
+                    {
+                        ImageIdentifier = $"{EcrRepository.RepositoryUri}:latest",
+                        ImageRepositoryType = "ECR",
+                        ImageConfiguration = new CfnService.ImageConfigurationProperty
+                        {
+                            Port = "8080",
+                            RuntimeEnvironmentVariables = new[]
+                            {
+                                new CfnService.KeyValuePairProperty { Name = "ASPNETCORE_ENVIRONMENT", Value = "Production" }
+                            },
+                            RuntimeEnvironmentSecrets = new[]
+                            {
+                                new CfnService.KeyValuePairProperty { Name = "ConnectionStrings__DefaultConnection", Value = DbConnectionSecret.SecretArn },
+                                new CfnService.KeyValuePairProperty { Name = "JwtSettings__SecretKey", Value = JwtSecret.SecretArn },
+                                new CfnService.KeyValuePairProperty { Name = "ResendSettings__ApiKey", Value = ResendApiKeySecret.SecretArn },
+                                new CfnService.KeyValuePairProperty { Name = "SePaySettings__ApiKey", Value = SePayApiKeySecret.SecretArn }
+                            }
+                        }
+                    }
+                },
+                InstanceConfiguration = new CfnService.InstanceConfigurationProperty
+                {
+                    Cpu = "1024",
+                    Memory = "2048",
+                    InstanceRoleArn = AppRunnerInstanceRole.RoleArn
+                },
+                NetworkConfiguration = new CfnService.NetworkConfigurationProperty
+                {
+                    EgressConfiguration = new CfnService.EgressConfigurationProperty
+                    {
+                        EgressType = "VPC",
+                        VpcConnectorArn = VpcConnector.AttrVpcConnectorArn
+                    }
+                }
+            });
+        }
     }
 
     private static string GenerateRandomSecret(int byteLength = 48)

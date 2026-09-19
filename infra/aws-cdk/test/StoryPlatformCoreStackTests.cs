@@ -136,4 +136,28 @@ public class StoryPlatformCoreStackTests
             ["ToPort"] = 5432
         });
     }
+
+    [Fact]
+    public void Stack_OmitsAppRunnerServiceByDefault()
+    {
+        var template = SynthTemplate();
+        template.ResourceCountIs("AWS::AppRunner::Service", 0);
+    }
+
+    [Fact]
+    public void Stack_CreatesAppRunnerServiceWithAutoDeploy_WhenContextFlagEnabled()
+    {
+        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["includeAppRunnerService"] = true
+        });
+        template.ResourceCountIs("AWS::AppRunner::Service", 1);
+        template.HasResourceProperties("AWS::AppRunner::Service", new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["SourceConfiguration"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["AutoDeploymentsEnabled"] = true
+            })
+        });
+    }
 }

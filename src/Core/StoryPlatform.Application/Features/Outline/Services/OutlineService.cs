@@ -360,6 +360,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         }
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
+            Console.Error.WriteLine($"[OutlineJob {job.Id} Error] {exception}");
             await _failureFinalizer.MarkFailedAsync(
                 job.Id,
                 claimedToken,
@@ -393,7 +394,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         if (job.Operation == GenerationJobOperation.RegenerateOutline)
         {
             baseVersion = job.BaseStoryVersionId.HasValue
-                ? await _unitOfWork.Repository<StoryVersion>().GetByIdAsync(job.BaseStoryVersionId.Value, cancellationToken)
+                ? await _unitOfWork.Repository<StoryVersion>().FirstOrDefaultAsync(item => item.Id == job.BaseStoryVersionId.Value, cancellationToken: cancellationToken)
                 : null;
             if (story.Status != StoryStatus.OutlineReview || baseVersion is null || !baseVersion.IsCurrent)
             {
@@ -691,6 +692,9 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         "STORY_STATE_CHANGED" => "STORY_STATE_CHANGED",
         "OUTLINE_BLOCKED_CONTENT" => "OUTLINE_BLOCKED_CONTENT",
         "OUTLINE_RESTRICTED_CONTENT" => "OUTLINE_RESTRICTED_CONTENT",
+        "OUTLINE_SCHEMA_INVALID" => "OUTLINE_SCHEMA_INVALID",
+        "OUTLINE_CONTAINS_PII" => "OUTLINE_CONTAINS_PII",
+        "OUTLINE_PROMPT_LEAKAGE" => "OUTLINE_PROMPT_LEAKAGE",
         _ when exception is AIServiceRequestException aiServiceException => aiServiceException.ErrorCode,
         _ => "OUTLINE_GENERATION_FAILED"
     };

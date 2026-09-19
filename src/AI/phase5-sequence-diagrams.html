@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phase 5 Sequence Diagrams — AI Storytelling</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #eef2f7;
+      --surface: #ffffff;
+      --surface-2: #f1f5f9;
+      --text: #0f172a;
+      --muted: #475569;
+      --line: #b8c4d1;
+      --core: #075985;
+      --core-soft: #e0f2fe;
+      --ai: #6b21a8;
+      --ai-soft: #f3e8ff;
+      --ok: #047857;
+      --ok-soft: #d1fae5;
+      --media: #0f766e;
+      --media-soft: #ccfbf1;
+      --shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--text);
+      font: 16px/1.65 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    main { max-width: 1680px; margin: 0 auto; padding: 40px 32px 64px; }
+    h1 { margin: 0 0 8px; font-size: clamp(30px, 4vw, 42px); line-height: 1.2; letter-spacing: -0.025em; }
+    h2 { margin: 44px 0 16px; font-size: 24px; border-bottom: 2px solid var(--line); padding-bottom: 10px; }
+    h3 { margin: 24px 0 12px; font-size: 18px; }
+    p { color: var(--muted); margin: 0 0 16px; }
+
+    .eyebrow {
+      display: inline-flex;
+      margin-bottom: 12px;
+      padding: 5px 10px;
+      border: 1px solid #7dd3fc;
+      border-radius: 999px;
+      background: #e0f2fe;
+      color: #075985;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .diagram-container {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 28px;
+      margin-bottom: 36px;
+      overflow-x: visible;
+      overflow-y: visible;
+      box-shadow: var(--shadow);
+      scrollbar-color: #94a3b8 #e2e8f0;
+    }
+
+    .diagram-container pre.mermaid {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    /* Scale SVG to fit container width */
+    .diagram-container .mermaid svg {
+      display: block;
+      width: 100% !important;
+      max-width: 100% !important;
+      height: auto !important;
+      margin: 0 auto;
+      shape-rendering: geometricPrecision;
+      text-rendering: geometricPrecision;
+    }
+
+    .diagram-container .mermaid svg text,
+    .diagram-container .mermaid svg .messageText,
+    .diagram-container .mermaid svg .noteText,
+    .diagram-container .mermaid svg .labelText,
+    .diagram-container .mermaid svg .loopText {
+      fill: #0f172a !important;
+      color: #0f172a !important;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif !important;
+      font-size: 16px !important;
+      font-weight: 600 !important;
+    }
+
+    .diagram-container .mermaid svg .actor > text,
+    .diagram-container .mermaid svg text.actor {
+      font-weight: 800 !important;
+    }
+
+    .diagram-container .mermaid svg .actor-line,
+    .diagram-container .mermaid svg .messageLine0,
+    .diagram-container .mermaid svg .messageLine1 {
+      stroke: #334155 !important;
+      stroke-width: 1.6px !important;
+    }
+
+    .scroll-hint {
+      margin: -6px 0 12px;
+      color: #64748b;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .info-box {
+      background: var(--surface);
+      border: 1px solid var(--core);
+      border-left: 6px solid var(--core);
+      padding: 18px 22px;
+      margin: 24px 0;
+      border-radius: 10px;
+      box-shadow: var(--shadow);
+    }
+    .info-box h3 { margin: 0 0 8px; color: var(--core); }
+    .info-box p { margin: 0; }
+
+    .flow-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin: 24px 0;
+    }
+    .flow-step {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      padding: 18px;
+      border-radius: 10px;
+      text-align: center;
+      box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05);
+    }
+    .flow-step .number {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 12px;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .flow-step.core .number { background: var(--core-soft); color: var(--core); }
+    .flow-step.ai .number { background: var(--ai-soft); color: var(--ai); }
+    .flow-step.media .number { background: var(--media-soft); color: var(--media); }
+    .flow-step h4 { margin: 0 0 4px; font-size: 15px; color: var(--text); }
+    .flow-step p { margin: 0; font-size: 13px; color: var(--muted); }
+
+    .legend {
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+      padding: 16px;
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      margin-bottom: 24px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 650;
+    }
+    .legend-color {
+      width: 16px;
+      height: 16px;
+      border-radius: 3px;
+    }
+    .legend-color.core { background: var(--core); }
+    .legend-color.ai { background: var(--ai); }
+    .legend-color.media { background: var(--media); }
+    .legend-color.external { background: #666; }
+
+    footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+
+    @media print {
+      body { background: #fff; }
+      .diagram-container { break-inside: avoid; }
+      .diagram-container .mermaid svg { min-width: 0; max-width: 100% !important; }
+      .scroll-hint { display: none; }
+    }
+
+    @media (max-width: 720px) {
+      main { padding: 24px 16px 48px; }
+      .diagram-container { padding: 18px; }
+      h2 { font-size: 21px; }
+    }
+  </style>
+</head>
+<body>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    securityLevel: 'loose',
+    themeVariables: {
+      fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+      fontSize: '16px',
+      background: '#ffffff',
+      primaryColor: '#e0f2fe',
+      primaryTextColor: '#0f172a',
+      primaryBorderColor: '#075985',
+      lineColor: '#334155',
+      actorBkg: '#e0f2fe',
+      actorBorder: '#075985',
+      actorTextColor: '#0f172a',
+      actorLineColor: '#64748b',
+      signalColor: '#1e293b',
+      signalTextColor: '#0f172a',
+      labelBoxBkgColor: '#f8fafc',
+      labelBoxBorderColor: '#64748b',
+      labelTextColor: '#0f172a',
+      noteBkgColor: '#fef3c7',
+      noteBorderColor: '#b45309',
+      noteTextColor: '#0f172a',
+      activationBkgColor: '#dbeafe',
+      activationBorderColor: '#1d4ed8',
+      sequenceNumberColor: '#ffffff'
+    },
+    sequence: {
+      useMaxWidth: true,
+      diagramMarginX: 20,
+      diagramMarginY: 24,
+      actorMargin: 50,
+      width: 150,
+      height: 50,
+      boxMargin: 8,
+      messageMargin: 32,
+      noteMargin: 14,
+      mirrorActors: false
+    }
+  });
+</script>
+
+<main>
+  <div class="eyebrow">Architecture · Phase 5</div>
+  <h1>Phase 5 Sequence Diagrams</h1>
+  <p>Chi tiết luồng hoạt động của Media Generation với Story Continuity. Sơ đồ hiển thị full view, co giãn theo chiều rộng trang.</p>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-color core"></div> Core (Backend/Worker)</div>
+    <div class="legend-item"><div class="legend-color ai"></div> AI Service</div>
+    <div class="legend-item"><div class="legend-color media"></div> Media Service</div>
+    <div class="legend-item"><div class="legend-color external"></div> External (DB/Storage)</div>
+  </div>
+
+  <!-- ==================== OVERVIEW FLOW ==================== -->
+  <h2>1. Tổng quan luồng Phase 5</h2>
+
+  <div class="diagram-container">
+    <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant W as Worker
+    participant MG as MediaGenerationService
+    participant DB as Database
+    participant BP as BlockParser
+    participant SS as SceneSegmentation
+    participant SV as SceneValidator
+    participant IP as ImageProvider
+    participant TP as TtsProvider
+    participant ST as SupabaseStorage
+
+    Note over W,ST: Phase 5: Media Generation với Story Continuity
+
+    W->>MG: ProcessNextAsync()
+    MG->>DB: Poll MediaPending job
+    DB-->>MG: Job found (Story: Approved)
+
+    MG->>DB: BeginTransaction + AcquireLock
+    MG->>DB: Load StoryVersion (IsCurrent=true, ApprovedAt set)
+    MG->>DB: Update Job to Processing + RotateToken
+
+    Note over MG: Step 5.3: Build MediaContext
+    MG->>MG: MediaContextBuilder.Build()
+    MG->>DB: GetOrCreate MediaContext
+
+    Note over MG: Step 5.4-5.6: Block Parsing & Scene Segmentation
+    MG->>BP: Parse(StoryVersion.Content)
+    BP-->>MG: List&lt;StoryBlock&gt; (P1, P2, P3...)
+    MG->>SS: SegmentAsync(request)
+    SS-->>MG: List&lt;SceneSelection&gt;
+    MG->>SV: ValidateAndAssemble(content, blocks, selections)
+    SV-->>MG: List&lt;StoryScene&gt;
+
+    Note over MG: Step 5.7-5.9: Per-Scene Media Generation
+    loop For each Scene (ordered by SceneIndex)
+        MG->>MG: SceneSpecificationBuilder.Build()
+        MG->>IP: GenerateAsync(specification)
+        IP-->>MG: GeneratedMedia(bytes, mimeType)
+        MG->>ST: UploadAsync(path, stream, mimeType)
+        ST-->>MG: StoragePath
+        MG->>DB: Save MediaAsset (Illustration)
+
+        MG->>TP: GenerateAsync(sceneText)
+        TP-->>MG: GeneratedMedia(bytes, mimeType)
+        MG->>ST: UploadAsync(path, stream, mimeType)
+        ST-->>MG: StoragePath
+        MG->>DB: Save MediaAsset (Audio)
+    end
+
+    Note over MG: Step 5.12A: Finalize
+    MG->>DB: Update Story.Status = Ready
+    MG->>DB: Update Job.Status = Completed
+    MG->>DB: CommitTransaction
+    MG-->>W: MediaJobProcessResult.Completed
+    </pre>
+  </div>
+
+  <!-- ==================== BLOCK PARSING DETAIL ==================== -->
+  <h2>2. Chi tiết Block Parsing & Scene Segmentation</h2>
+
+  <div class="diagram-container">
+    <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant MG as MediaGenerationService
+    participant P as StoryBlockParser
+    participant SS as ParagraphSceneSegmentationProvider
+    participant SV as SceneCoverageValidator
+    participant DB as Database
+
+    Note over P,SV: Story Continuity: Từ Content đến Scenes
+
+    MG->>P: Parse(canonicalContent)
+    Note right of P: Tách story thành paragraphs
+    P->>P: Split by "\n\n"
+    P-->>MG: List&lt;StoryBlock&gt;
+    Note left of P: BlockId: "P1", "P2", "P3"...<br/>StartOffset, EndOffset<br/>Text (exact content)
+
+    MG->>SS: SegmentAsync(request)
+    Note right of SS: Gom nhóm blocks thành scenes
+    SS-->>MG: List&lt;SceneSelection&gt;
+    Note left of SS: SceneIndex, BlockIds[], Focus
+
+    MG->>SV: ValidateAndAssemble(content, blocks, selections)
+    SV->>SV: Verify all blocks covered
+    SV->>SV: Verify no duplicates
+    SV->>SV: Verify correct order
+    SV->>SV: Verify contiguous ranges
+    SV-->>MG: List&lt;StoryScene&gt;
+    Note left of SV: SceneIndex<br/>TextRangeStart, TextRangeEnd<br/>SceneText (canonical)<br/>VisualDescription
+
+    MG->>DB: Save StoryScenes
+
+    Note over MG,SV: Validation Rules:
+    Note over MG,SV: - Every block belongs to exactly one scene
+    Note over MG,SV: - No block appears in multiple scenes
+    Note over MG,SV: - Scenes ordered by SceneIndex
+    Note over MG,SV: - TextRangeStart/End are exact character positions
+    </pre>
+  </div>
+
+  <!-- ==================== PER-SCENE MEDIA GENERATION ==================== -->
+  <h2>3. Per-Scene Media Generation</h2>
+
+  <div class="diagram-container">
+    <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant MG as MediaGenerationService
+    participant SB as SceneSpecificationBuilder
+    participant IP as ImageGenerationProvider
+    participant TP as TtsProvider
+    participant AE as AlignmentEvaluator
+    participant SE as SafetyEvaluator
+    participant ST as SupabaseStorage
+    participant DB as Database
+
+    Note over MG,DB: Per-Scene Media Generation Loop
+
+    MG->>SB: Build(versionId, sceneId, sceneIndex, sceneText, visualFocus, context)
+    SB-->>MG: SceneSpecification
+    Note right of SB: SceneText (exact from canonical)<br/>VisualDescription<br/>MediaContext (story facts)
+
+    rect rgba(230, 240, 250, 0.3)
+    Note over MG,DB: Illustration Generation
+
+    MG->>IP: GenerateAsync(specification)
+    IP-->>MG: GeneratedMedia(bytes, "image/png")
+
+    MG->>AE: EvaluateAsync(specification, illustration)
+    alt Alignment Failed
+        AE-->>MG: Decision.Fail
+        MG->>MG: Retry (max 3 attempts)
+    else Safety Failed
+        MG->>SE: EvaluateAsync(specification, illustration)
+        SE-->>MG: Decision.Fail
+        MG->>MG: Retry (max 3 attempts)
+    else Passed
+        AE-->>MG: Decision.Pass
+    end
+
+    MG->>ST: UploadAsync(f"{storyId}/scene-{sceneIndex}.webp", stream, "image/webp")
+    ST-->>MG: StoragePath
+    MG->>DB: Save MediaAsset (Type=Illustration, Status=Ready, Url=StoragePath)
+    end
+
+    rect rgba(230, 250, 240, 0.3)
+    Note over MG,DB: TTS Audio Generation
+
+    MG->>TP: GenerateAsync(sceneText)
+    TP-->>MG: GeneratedMedia(bytes, "audio/mpeg")
+
+    MG->>ST: UploadAsync(f"{storyId}/audio-{sceneIndex}.mp3", stream, "audio/mpeg")
+    ST-->>MG: StoragePath
+    MG->>DB: Save MediaAsset (Type=TtsAudio, Status=Ready, Url=StoragePath)
+    end
+    </pre>
+  </div>
+
+  <!-- ==================== STALE DETECTION ==================== -->
+  <h2>4. Stale Result Detection & Freshness Checks</h2>
+
+  <div class="diagram-container">
+    <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant MG as MediaGenerationService
+    participant DB as Database
+
+    Note over MG,DB: AssertFresh: Kiểm tra trước mỗi persist
+
+    MG->>DB: RequireClaimedJob(jobId, token)
+    DB-->>MG: Job (with current ConcurrencyToken)
+
+    MG->>DB: Get Story(job.StoryId)
+    alt Story status changed
+        DB-->>MG: Story.Status != MediaProcessing
+        MG->>MG: throw InvalidOperationException("STALE_MEDIA_RESULT")
+    end
+
+    MG->>DB: Get StoryVersion(job.StoryVersionId)
+    alt Version not current
+        DB-->>MG: Version.IsCurrent == false
+        MG->>MG: throw InvalidOperationException("STALE_MEDIA_RESULT")
+    end
+
+    MG->>DB: Get latest MediaContext
+    alt Context changed/deleted
+        DB-->>MG: Context.Id != expected
+        MG->>MG: throw InvalidOperationException("STALE_MEDIA_RESULT")
+    end
+
+    Note over MG,DB: Freshness validated - proceed with persist
+
+    MG->>DB: Save changes
+    MG->>DB: CommitTransaction
+    </pre>
+  </div>
+
+  <!-- ==================== FAILURE HANDLING ==================== -->
+  <h2>5. Failure Handling & Retry Logic</h2>
+
+  <div class="diagram-container">
+    <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant W as Worker
+    participant MG as MediaGenerationService
+    participant F as FailureFinalizer
+    participant DB as Database
+
+    W->>MG: ProcessNextAsync()
+    MG->>MG: ProcessClaimedAsync()
+
+    rect rgb(255, 230, 230)
+    Note over MG: Permanent Failure (không retry)
+
+    alt Unconfigured Provider
+        MG->>MG: throw PermanentMediaGenerationException("IMAGE_PROVIDER_NOT_CONFIGURED")
+    else Invalid State
+        MG->>MG: throw InvalidOperationException("STALE_MEDIA_HANDOFF")
+    else Coverage Error
+        MG->>MG: throw InvalidOperationException("INVALID_PERSISTED_SCENE_COVERAGE")
+    end
+
+    MG->>F: MarkFailedAsync(jobId, token, errorCode, permanent=true)
+    F->>DB: Update Job.Status = Failed
+    F->>DB: Set ErrorCode + Increment AttemptNo
+    MG-->>W: Result.Failed(isPermanent=true)
+    end
+
+    rect rgb(255, 245, 220)
+    Note over MG: Transient Failure (retry được)
+
+    alt Timeout
+        MG->>MG: throw TimeoutException()
+    else Network Error
+        MG->>MG: throw HttpRequestException()
+    else Stale Result
+        MG->>MG: throw InvalidOperationException("STALE_MEDIA_RESULT")
+    end
+
+    MG->>F: MarkFailedAsync(jobId, token, errorCode, permanent=false)
+    F->>DB: Update Job.Status = Failed
+    MG-->>W: Result.Failed(isPermanent=false)
+    Note over W: Retry sau delay ngắn (5s)
+    end
+    </pre>
+  </div>
+
+  <!-- ==================== COVERAGE VALIDATOR ==================== -->
+  <h2>6. Scene Coverage Validator Logic</h2>
+
+  <div class="diagram-container">
+    <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant C as Caller (MediaGenerationService)
+    participant V as SceneCoverageValidator
+    participant B as StoryBlock (from Parser)
+
+    C->>V: ValidateAndAssemble(content, blocks, selections)
+
+    Note over V: 1. Verify block coverage
+    loop For each SceneSelection
+        V->>V: Verify all BlockIds exist in blocks
+        V->>V: Verify blocks are in ascending order
+        V->>V: Verify blocks are contiguous
+        alt Block missing
+            V->>V: throw "MISSING_BLOCK"
+        end
+        alt Out of order
+            V->>V: throw "OUT_OF_ORDER_BLOCKS"
+        end
+        alt Non-contiguous
+            V->>V: throw "NON_CONTIGUOUS_BLOCKS"
+        end
+    end
+
+    Note over V: 2. Verify no duplicates
+    V->>V: Collect all BlockIds across scenes
+    alt Duplicate BlockId found
+        V->>V: throw "DUPLICATE_BLOCK"
+    end
+
+    Note over V: 3. Verify complete coverage
+    alt Not all blocks assigned
+        V->>V: throw "INCOMPLETE_COVERAGE"
+    end
+
+    Note over V: 4. Assemble StoryScenes
+    loop For each SceneSelection
+        V->>V: Calculate TextRangeStart from first block
+        V->>V: Calculate TextRangeEnd from last block
+        V->>V: Extract SceneText from content
+        V->>V: Generate VisualDescription
+        V->>V: Create StoryScene record
+    end
+
+    V-->>C: List&lt;StoryScene&gt; (validated)
+    </pre>
+  </div>
+
+  <!-- ==================== SUMMARY ==================== -->
+  <h2>7. Tóm tắt luồng</h2>
+
+  <div class="flow-summary">
+    <div class="flow-step core">
+      <div class="number">1</div>
+      <h4>Poll Job</h4>
+      <p>Worker poll MediaPending job</p>
+    </div>
+    <div class="flow-step core">
+      <div class="number">2</div>
+      <h4>Claim & Lock</h4>
+      <p>Acquire concurrency token + transaction</p>
+    </div>
+    <div class="flow-step core">
+      <div class="number">3</div>
+      <h4>MediaContext</h4>
+      <p>Build immutable context JSON</p>
+    </div>
+    <div class="flow-step core">
+      <div class="number">4</div>
+      <h4>Block Parse</h4>
+      <p>Parse content → P1, P2, P3...</p>
+    </div>
+    <div class="flow-step ai">
+      <div class="number">5</div>
+      <h4>Segmentation</h4>
+      <p>Group blocks into scenes</p>
+    </div>
+    <div class="flow-step core">
+      <div class="number">6</div>
+      <h4>Validation</h4>
+      <p>Coverage, no duplicates, order</p>
+    </div>
+    <div class="flow-step media">
+      <div class="number">7</div>
+      <h4>Spec Build</h4>
+      <p>Scene specification per scene</p>
+    </div>
+    <div class="flow-step ai">
+      <div class="number">8</div>
+      <h4>Generate</h4>
+      <p>Image + TTS per scene</p>
+    </div>
+    <div class="flow-step media">
+      <div class="number">9</div>
+      <h4>Storage</h4>
+      <p>Upload to Supabase Storage</p>
+    </div>
+    <div class="flow-step core">
+      <div class="number">10</div>
+      <h4>Persist</h4>
+      <p>Save MediaAssets to DB</p>
+    </div>
+    <div class="flow-step core">
+      <div class="number">11</div>
+      <h4>Complete</h4>
+      <p>Story: Ready, Job: Completed</p>
+    </div>
+  </div>
+
+  <div class="info-box">
+    <h3>Story Continuity Guarantee</h3>
+    <p>
+      Mỗi <code>MediaAsset</code> được link với <code>StoryScene</code> cụ thể,
+      và mỗi <code>StoryScene</code> chứa <code>TextRangeStart</code>/<code>TextRangeEnd</code>
+      trỏ chính xác vào vị trí trong <code>StoryVersion.Content</code>.
+      Điều này đảm bảo illustration và audio luôn đồng bộ với nội dung gốc.
+    </p>
+  </div>
+
+  <footer>
+    Phase 5 Sequence Diagrams — AI Storytelling<br>
+    Generated: 17/09/2026
+  </footer>
+</main>
+</body>
+</html>

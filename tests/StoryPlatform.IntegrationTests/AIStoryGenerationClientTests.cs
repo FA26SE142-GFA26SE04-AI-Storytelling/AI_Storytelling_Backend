@@ -10,20 +10,72 @@ namespace StoryPlatform.IntegrationTests;
 public sealed class AIStoryGenerationClientTests
 {
     [Fact]
-    public async Task GenerateOutline_UsesInternalEndpointAndDeserializesContract()
+    public async Task GenerateOutline_DeserializesGeminiResponse()
     {
+        // Arrange - Gemini API response format
         var handler = new StubHandler("""
-            {"requestId":"req-1","generationId":"gen-1","title":"A safe story","outline":{"opening":"A","development":"B","ending":"C"},"metadata":{}}
+            {
+                "candidates": [{
+                    "content": {
+                        "parts": [{
+                            "text": "{\"title\":\"A safe story\",\"opening\":\"A\",\"development\":\"B\",\"ending\":\"C\"}"
+                        }]
+                    }
+                }]
+            }
             """);
-        var client = new AIStoryGenerationClient(
+        var client = new GeminiDirectClient(
             new HttpClient(handler),
-            Options.Create(new AIServiceOptions { BaseUrl = "http://ai-service", InternalApiKey = "test-key" }));
+            Options.Create(new AIServiceOptions { ApiKey = "test-key", Model = "gemini-2.5-flash" }));
 
-        var response = await client.GenerateOutlineAsync(new GenerateOutlineRequest { RequestId = "req-1" });
+        // Act
+        var response = await client.GenerateOutlineAsync(new GenerateOutlineRequest
+        {
+            RequestId = "req-1",
+            AgeBand = "6-8",
+            Language = "vi"
+        });
 
+        // Assert
         Assert.Equal("A safe story", response.Title);
-        Assert.Equal("/api/ai/outline", handler.RequestUri?.AbsolutePath);
-        Assert.Equal("test-key", handler.ApiKey);
+        Assert.Equal("A", response.Outline.Opening);
+        Assert.Equal("B", response.Outline.Development);
+        Assert.Equal("C", response.Outline.Ending);
+    }
+
+    [Fact]
+    public async Task GenerateStory_DeserializesGeminiResponse()
+    {
+        // Arrange - Gemini API response format
+        var handler = new StubHandler("""
+            {
+                "candidates": [{
+                    "content": {
+                        "parts": [{
+                            "text": "{\"title\":\"My Story\",\"storySections\":[{\"order\":1,\"heading\":\"Chapter 1\",\"content\":\"Content here\"}],\"lesson\":\"Be kind\"}"
+                        }]
+                    }
+                }]
+            }
+            """);
+        var client = new GeminiDirectClient(
+            new HttpClient(handler),
+            Options.Create(new AIServiceOptions { ApiKey = "test-key", Model = "gemini-2.5-flash" }));
+
+        // Act
+        var response = await client.GenerateStoryAsync(new GenerateStoryRequest
+        {
+            RequestId = "req-1",
+            AgeBand = "6-8",
+            Language = "vi",
+            Outline = new StoryPlatform.Contracts.AI.Models.StoryOutlineDto("A", "B", "C")
+        });
+
+        // Assert
+        Assert.Equal("My Story", response.Story.Title);
+        Assert.Single(response.Story.StorySections);
+        Assert.Equal("Chapter 1", response.Story.StorySections[0].Heading);
+        Assert.Equal("Be kind", response.Story.Lesson);
     }
 
     private sealed class StubHandler(string responseBody) : HttpMessageHandler
@@ -34,7 +86,6 @@ public sealed class AIStoryGenerationClientTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestUri = request.RequestUri;
-            ApiKey = request.Headers.GetValues("X-Internal-Api-Key").Single();
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(responseBody, Encoding.UTF8, "application/json")

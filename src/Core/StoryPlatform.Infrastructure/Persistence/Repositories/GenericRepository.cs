@@ -121,16 +121,53 @@ public class GenericRepository<T> : IGenericRepository<T> where T : class
 
     public virtual void Update(T entity)
     {
-        _dbSet.Attach(entity);
-        _context.Entry(entity).State = EntityState.Modified;
+        var entry = _context.Entry(entity);
+        if (entry.State == EntityState.Detached)
+        {
+            var entityType = _context.Model.FindEntityType(typeof(T));
+            var primaryKey = entityType?.FindPrimaryKey();
+            if (primaryKey != null)
+            {
+                var keyProperties = primaryKey.Properties;
+                var keyValues = keyProperties.Select(p => p.GetGetter().GetClrValue(entity)).ToArray();
+                var tracked = _context.ChangeTracker.Entries<T>()
+                    .FirstOrDefault(e => e.Entity != null && keyProperties.All(p => Equals(p.GetGetter().GetClrValue(e.Entity), p.GetGetter().GetClrValue(entity))));
+                if (tracked != null)
+                {
+                    tracked.CurrentValues.SetValues(entity);
+                    tracked.State = EntityState.Modified;
+                    return;
+                }
+            }
+
+            _dbSet.Attach(entity);
+        }
+
+        entry.State = EntityState.Modified;
     }
 
     public virtual void Delete(T entity)
     {
         if (_context.Entry(entity).State == EntityState.Detached)
         {
+            var entityType = _context.Model.FindEntityType(typeof(T));
+            var primaryKey = entityType?.FindPrimaryKey();
+            if (primaryKey != null)
+            {
+                var keyProperties = primaryKey.Properties;
+                var keyValues = keyProperties.Select(p => p.GetGetter().GetClrValue(entity)).ToArray();
+                var tracked = _context.ChangeTracker.Entries<T>()
+                    .FirstOrDefault(e => e.Entity != null && keyProperties.All(p => Equals(p.GetGetter().GetClrValue(e.Entity), p.GetGetter().GetClrValue(entity))));
+                if (tracked != null)
+                {
+                    _dbSet.Remove(tracked.Entity);
+                    return;
+                }
+            }
+
             _dbSet.Attach(entity);
         }
+
         _dbSet.Remove(entity);
     }
 

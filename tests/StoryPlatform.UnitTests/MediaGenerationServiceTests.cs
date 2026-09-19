@@ -2,6 +2,8 @@ using StoryPlatform.Application.Features.MediaGeneration;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
+using StoryPlatform.Application.Features.MediaStorage.Interfaces;
+using StoryPlatform.Application.Features.MediaStorage.Models;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.Infrastructure.AI;
@@ -16,7 +18,8 @@ public sealed class MediaGenerationServiceTests
     {
         var uow = Seed();
         var tts = new RecordingTtsProvider();
-        var service = Create(uow, tts: tts);
+        var storage = new RecordingMediaStorage();
+        var service = Create(uow, tts: tts, storage: storage);
 
         var result = await service.ProcessNextAsync();
         Assert.True(result.Success);
@@ -29,6 +32,10 @@ public sealed class MediaGenerationServiceTests
         Assert.All(scenes, scene => Assert.Equal(2,
             uow.Items<MediaAsset>().Count(asset => asset.StorySceneId == scene.Id && asset.Status == MediaStatus.Ready)));
         Assert.Equal(scenes.Select(x => x.SceneText), tts.Inputs);
+        Assert.Equal(
+            new[] { "1/scene-0.png", "1/audio-0.mp3", "1/scene-1.png", "1/audio-1.mp3" },
+            storage.UploadedPaths);
+        Assert.All(uow.Items<MediaAsset>(), asset => Assert.DoesNotContain("://", asset.Url));
     }
 
     [Fact]
@@ -153,6 +160,7 @@ public sealed class MediaGenerationServiceTests
         StoryReviewServiceTests.FakeUnitOfWork uow,
         IImageGenerationProvider? image = null,
         ITtsProvider? tts = null,
+        IMediaStorage? storage = null,
         IMediaAlignmentEvaluator? evaluator = null,
         RecordingFinalizer? finalizer = null) => new(
         uow,
@@ -163,6 +171,7 @@ public sealed class MediaGenerationServiceTests
         new SceneSpecificationBuilder(),
         image ?? new PassingImageProvider(),
         tts ?? new RecordingTtsProvider(),
+        storage ?? new RecordingMediaStorage(),
         evaluator ?? new PassingEvaluator(),
         evaluator as IMediaSafetyEvaluator ?? new PassingEvaluator(),
         finalizer ?? new RecordingFinalizer(),
@@ -187,18 +196,18 @@ public sealed class MediaGenerationServiceTests
 
     private sealed class PassingImageProvider : IImageGenerationProvider
     {
-        public Task<GeneratedIllustration> GenerateAsync(SceneSpecification specification, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new GeneratedIllustration($"https://media.test/{specification.StorySceneId}.png"));
+        public Task<GeneratedMedia> GenerateAsync(SceneSpecification specification, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new GeneratedMedia([1, 2, 3], "image/png"));
     }
 
     private sealed class FlakyImageProvider : IImageGenerationProvider
     {
         public int Calls { get; private set; }
-        public Task<GeneratedIllustration> GenerateAsync(SceneSpecification specification, CancellationToken cancellationToken = default)
+        public Task<GeneratedMedia> GenerateAsync(SceneSpecification specification, CancellationToken cancellationToken = default)
         {
             Calls++;
             if (Calls == 1) throw new InvalidOperationException("temporary");
-            return Task.FromResult(new GeneratedIllustration($"https://media.test/{specification.StorySceneId}.png"));
+            return Task.FromResult(new GeneratedMedia([1, 2, 3], "image/png"));
         }
     }
 
@@ -207,18 +216,18 @@ public sealed class MediaGenerationServiceTests
         private readonly StoryReviewServiceTests.FakeUnitOfWork _unitOfWork;
         public ContextRemovingImageProvider(StoryReviewServiceTests.FakeUnitOfWork unitOfWork) => _unitOfWork = unitOfWork;
 
-        public Task<GeneratedIllustration> GenerateAsync(
+        public Task<GeneratedMedia> GenerateAsync(
             SceneSpecification specification, CancellationToken cancellationToken = default)
         {
             var context = _unitOfWork.Items<MediaContext>().Single();
             _unitOfWork.Repository<MediaContext>().Delete(context);
-            return Task.FromResult(new GeneratedIllustration("https://media.test/stale.png"));
+            return Task.FromResult(new GeneratedMedia([1, 2, 3], "image/png"));
         }
     }
 
     private sealed class AlwaysTransientImageProvider : IImageGenerationProvider
     {
-        public Task<GeneratedIllustration> GenerateAsync(
+        public Task<GeneratedMedia> GenerateAsync(
             SceneSpecification specification, CancellationToken cancellationToken = default) =>
             throw new TimeoutException("temporary provider timeout");
     }
@@ -226,25 +235,44 @@ public sealed class MediaGenerationServiceTests
     private sealed class RecordingTtsProvider : ITtsProvider
     {
         public List<string> Inputs { get; } = [];
-        public Task<GeneratedAudio> GenerateAsync(string exactSceneText, CancellationToken cancellationToken = default)
+        public Task<GeneratedMedia> GenerateAsync(string exactSceneText, CancellationToken cancellationToken = default)
         {
             Inputs.Add(exactSceneText);
-            return Task.FromResult(new GeneratedAudio($"https://media.test/{Inputs.Count}.mp3"));
+            return Task.FromResult(new GeneratedMedia([4, 5, 6], "audio/mpeg"));
         }
     }
 
     private sealed class PassingEvaluator : IMediaAlignmentEvaluator, IMediaSafetyEvaluator
     {
         public Task<MediaEvaluationResult> EvaluateAsync(
-            SceneSpecification specification, GeneratedIllustration illustration, CancellationToken cancellationToken = default) =>
+            SceneSpecification specification, GeneratedMedia illustration, CancellationToken cancellationToken = default) =>
             Task.FromResult(new MediaEvaluationResult(MediaEvaluationDecision.Pass));
     }
 
     private sealed class RejectingEvaluator : IMediaAlignmentEvaluator, IMediaSafetyEvaluator
     {
         public Task<MediaEvaluationResult> EvaluateAsync(
-            SceneSpecification specification, GeneratedIllustration illustration, CancellationToken cancellationToken = default) =>
+            SceneSpecification specification, GeneratedMedia illustration, CancellationToken cancellationToken = default) =>
             Task.FromResult(new MediaEvaluationResult(MediaEvaluationDecision.Fail, "wrong scene"));
+    }
+
+    private sealed class RecordingMediaStorage : IMediaStorage
+    {
+        public List<string> UploadedPaths { get; } = [];
+
+        public Task<string> UploadAsync(string storagePath, Stream content, string mimeType,
+            CancellationToken cancellationToken = default)
+        {
+            UploadedPaths.Add(storagePath);
+            return Task.FromResult(storagePath);
+        }
+
+        public Task<string> GetSignedUrlAsync(string storagePath, TimeSpan expiry,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult($"https://media.test/{storagePath}?token=test");
+
+        public Task DeleteAsync(string storagePath, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 
     private sealed class RecordingFinalizer : IMediaGenerationJobFailureFinalizer

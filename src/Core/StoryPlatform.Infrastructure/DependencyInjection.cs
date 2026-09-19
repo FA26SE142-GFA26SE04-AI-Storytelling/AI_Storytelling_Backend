@@ -20,6 +20,8 @@ using StoryPlatform.Infrastructure.Payments;
 using StoryPlatform.Infrastructure.Persistence;
 using StoryPlatform.Infrastructure.Persistence.Repositories;
 using StoryPlatform.Infrastructure.Security;
+using StoryPlatform.Infrastructure.Storage;
+using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 
 namespace StoryPlatform.Infrastructure;
 
@@ -50,7 +52,7 @@ public static class DependencyInjection
         services.AddHttpClient<IEmailSender, ResendEmailSender>();
 
         services.Configure<AIServiceOptions>(configuration.GetSection(AIServiceOptions.SectionName));
-        services.AddHttpClient<IAIStoryGenerationClient, AIStoryGenerationClient>();
+        services.AddHttpClient<IAIStoryGenerationClient, GeminiDirectClient>();
         services.Configure<OutlineWorkerOptions>(configuration.GetSection(OutlineWorkerOptions.SectionName));
         services.AddSingleton<IOutlineJobFailureFinalizer, OutlineJobFailureFinalizer>();
         services.AddHostedService<OutlineGenerationWorker>();
@@ -71,6 +73,18 @@ public static class DependencyInjection
         services.AddSingleton<IMediaSafetyEvaluator>(provider => provider.GetRequiredService<FailClosedMediaEvaluator>());
         services.AddSingleton<IMediaGenerationJobFailureFinalizer, MediaGenerationJobFailureFinalizer>();
         services.AddHostedService<MediaGenerationWorker>();
+
+        var storageOptions = new SupabaseStorageOptions();
+        configuration.GetSection(SupabaseStorageOptions.SectionName).Bind(storageOptions);
+        storageOptions.Url = configuration["SUPABASE_URL"] ?? storageOptions.Url;
+        storageOptions.SecretKey = configuration["SUPABASE_SECRET_KEY"] ?? storageOptions.SecretKey;
+        storageOptions.Bucket = configuration["SUPABASE_MEDIA_BUCKET"] ?? storageOptions.Bucket;
+        services.AddSingleton(storageOptions);
+        services.AddTransient<SupabaseStorageHttpClientHandler>();
+        services.AddHttpClient<SupabaseMediaStorage>(client =>
+                client.Timeout = TimeSpan.FromMinutes(2))
+            .AddHttpMessageHandler<SupabaseStorageHttpClientHandler>();
+        services.AddScoped<IMediaStorage>(provider => provider.GetRequiredService<SupabaseMediaStorage>());
 
         services.Configure<SePayOptions>(configuration.GetSection(SePayOptions.SectionName));
         services.AddSingleton<ISePayQrUrlBuilder, SePayQrUrlBuilder>();

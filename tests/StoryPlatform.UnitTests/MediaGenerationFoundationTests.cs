@@ -1,6 +1,7 @@
 using System.Text.Json;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
+using StoryPlatform.Application.Features.MediaStorage.Models;
 using StoryPlatform.Infrastructure.AI;
 using Xunit;
 
@@ -131,7 +132,7 @@ public sealed class MediaGenerationFoundationTests
         var specification = new SceneSpecification(1, 2, 0, "text", null, "{}", [], []);
 
         var result = await evaluator.EvaluateAsync(
-            specification, new GeneratedIllustration("https://media.test/image.png"));
+            specification, new GeneratedMedia([1, 2, 3], "image/png"));
 
         Assert.Equal(MediaEvaluationDecision.Fail, result.Decision);
         Assert.False(result.Passed);

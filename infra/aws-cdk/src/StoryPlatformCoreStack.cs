@@ -34,6 +34,12 @@ public sealed class StoryPlatformCoreStack : Stack
             {
                 new SubnetConfiguration
                 {
+                    Name = "Isolated",
+                    SubnetType = SubnetType.PRIVATE_ISOLATED,
+                    CidrMask = 24
+                },
+                new SubnetConfiguration
+                {
                     Name = "Public",
                     SubnetType = SubnetType.PUBLIC,
                     CidrMask = 24
@@ -42,12 +48,6 @@ public sealed class StoryPlatformCoreStack : Stack
                 {
                     Name = "Private",
                     SubnetType = SubnetType.PRIVATE_WITH_EGRESS,
-                    CidrMask = 24
-                },
-                new SubnetConfiguration
-                {
-                    Name = "Isolated",
-                    SubnetType = SubnetType.PRIVATE_ISOLATED,
                     CidrMask = 24
                 }
             }

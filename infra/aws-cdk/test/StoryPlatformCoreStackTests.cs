@@ -63,4 +63,29 @@ public class StoryPlatformCoreStackTests
             ["RepositoryName"] = "storyplatform-core-api"
         });
     }
+
+    [Fact]
+    public void Stack_CreatesFourApplicationSecrets()
+    {
+        var template = SynthTemplate();
+        // 5 total: 1 auto-created by Database's Credentials.FromGeneratedSecret (Task 3)
+        // + 4 app secrets created in this task (db-connection-string, jwt, resend, sepay).
+        template.ResourceCountIs("AWS::SecretsManager::Secret", 5);
+        template.HasResourceProperties("AWS::SecretsManager::Secret", new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["Name"] = "storyplatform/core/jwt-secret-key"
+        });
+        template.HasResourceProperties("AWS::SecretsManager::Secret", new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["Name"] = "storyplatform/core/db-connection-string"
+        });
+        template.HasResourceProperties("AWS::SecretsManager::Secret", new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["Name"] = "storyplatform/core/resend-api-key"
+        });
+        template.HasResourceProperties("AWS::SecretsManager::Secret", new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["Name"] = "storyplatform/core/sepay-api-key"
+        });
+    }
 }

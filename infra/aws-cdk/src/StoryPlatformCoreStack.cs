@@ -1,7 +1,10 @@
+using System;
+using System.Security.Cryptography;
 using Amazon.CDK;
 using Amazon.CDK.AWS.EC2;
 using Amazon.CDK.AWS.ECR;
 using Amazon.CDK.AWS.RDS;
+using Amazon.CDK.AWS.SecretsManager;
 using Constructs;
 
 namespace StoryPlatform.Infra;
@@ -11,6 +14,10 @@ public sealed class StoryPlatformCoreStack : Stack
     public IVpc Vpc { get; }
     public DatabaseInstance Database { get; }
     public Repository EcrRepository { get; }
+    public Secret DbConnectionSecret { get; }
+    public Secret JwtSecret { get; }
+    public Secret ResendApiKeySecret { get; }
+    public Secret SePayApiKeySecret { get; }
 
     public StoryPlatformCoreStack(Construct scope, string id, IStackProps? props = null)
         : base(scope, id, props)
@@ -62,5 +69,45 @@ public sealed class StoryPlatformCoreStack : Stack
                 }
             }
         });
+
+        var dbUsername = Database.Secret!.SecretValueFromJson("username").UnsafeUnwrap();
+        var dbPassword = Database.Secret!.SecretValueFromJson("password").UnsafeUnwrap();
+        var connectionString =
+            $"Host={Database.DbInstanceEndpointAddress};Port={Database.DbInstanceEndpointPort};" +
+            $"Database=storyplatform;Username={dbUsername};Password={dbPassword}";
+
+        DbConnectionSecret = new Secret(this, "DbConnectionSecret", new SecretProps
+        {
+            SecretName = "storyplatform/core/db-connection-string",
+            SecretStringValue = SecretValue.UnsafePlainText(connectionString),
+            RemovalPolicy = RemovalPolicy.DESTROY
+        });
+
+        JwtSecret = new Secret(this, "JwtSecret", new SecretProps
+        {
+            SecretName = "storyplatform/core/jwt-secret-key",
+            SecretStringValue = SecretValue.UnsafePlainText(GenerateRandomSecret()),
+            RemovalPolicy = RemovalPolicy.DESTROY
+        });
+
+        ResendApiKeySecret = new Secret(this, "ResendApiKeySecret", new SecretProps
+        {
+            SecretName = "storyplatform/core/resend-api-key",
+            SecretStringValue = SecretValue.UnsafePlainText("REPLACE_ME_POST_DEPLOY"),
+            RemovalPolicy = RemovalPolicy.DESTROY
+        });
+
+        SePayApiKeySecret = new Secret(this, "SePayApiKeySecret", new SecretProps
+        {
+            SecretName = "storyplatform/core/sepay-api-key",
+            SecretStringValue = SecretValue.UnsafePlainText("REPLACE_ME_POST_DEPLOY"),
+            RemovalPolicy = RemovalPolicy.DESTROY
+        });
+    }
+
+    private static string GenerateRandomSecret(int byteLength = 48)
+    {
+        var bytes = RandomNumberGenerator.GetBytes(byteLength);
+        return Convert.ToBase64String(bytes);
     }
 }

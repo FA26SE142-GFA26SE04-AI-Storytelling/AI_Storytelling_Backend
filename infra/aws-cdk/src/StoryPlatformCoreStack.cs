@@ -1,6 +1,7 @@
 using System;
 using System.Security.Cryptography;
 using Amazon.CDK;
+using Amazon.CDK.AWS.AppRunner;
 using Amazon.CDK.AWS.EC2;
 using Amazon.CDK.AWS.ECR;
 using Amazon.CDK.AWS.IAM;
@@ -20,6 +21,7 @@ public sealed class StoryPlatformCoreStack : Stack
     public Secret ResendApiKeySecret { get; }
     public Secret SePayApiKeySecret { get; }
     public Role AppRunnerInstanceRole { get; }
+    public CfnVpcConnector VpcConnector { get; }
 
     public StoryPlatformCoreStack(Construct scope, string id, IStackProps? props = null)
         : base(scope, id, props)
@@ -115,6 +117,22 @@ public sealed class StoryPlatformCoreStack : Stack
         JwtSecret.GrantRead(AppRunnerInstanceRole);
         ResendApiKeySecret.GrantRead(AppRunnerInstanceRole);
         SePayApiKeySecret.GrantRead(AppRunnerInstanceRole);
+
+        var vpcConnectorSecurityGroup = new SecurityGroup(this, "VpcConnectorSecurityGroup", new SecurityGroupProps
+        {
+            Vpc = Vpc,
+            Description = "Security group for the App Runner VPC Connector",
+            AllowAllOutbound = true
+        });
+
+        Database.Connections.AllowFrom(vpcConnectorSecurityGroup, Port.Tcp(5432), "Allow App Runner VPC Connector to reach RDS");
+
+        VpcConnector = new CfnVpcConnector(this, "AppRunnerVpcConnector", new CfnVpcConnectorProps
+        {
+            VpcConnectorName = "storyplatform-core-connector",
+            Subnets = Vpc.SelectSubnets(new SubnetSelection { SubnetType = SubnetType.PRIVATE_ISOLATED }).SubnetIds,
+            SecurityGroups = new[] { vpcConnectorSecurityGroup.SecurityGroupId }
+        });
     }
 
     private static string GenerateRandomSecret(int byteLength = 48)

@@ -124,4 +124,16 @@ public class StoryPlatformCoreStackTests
             })
         }));
     }
+
+    [Fact]
+    public void Stack_CreatesVpcConnectorAllowedIntoRds()
+    {
+        var template = SynthTemplate();
+        template.ResourceCountIs("AWS::AppRunner::VpcConnector", 1);
+        template.HasResourceProperties("AWS::EC2::SecurityGroupIngress", new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["FromPort"] = 5432,
+            ["ToPort"] = 5432
+        });
+    }
 }

@@ -8,7 +8,10 @@ public static class Program
     {
         var app = new App();
 
-        Amazon.CDK.Tags.Of(app).Add("Project", "StoryPlatform");
+        Amazon.CDK.Tags.Of(app).Add("Project", "StoryPlatform", new Amazon.CDK.TagProps
+        {
+            ExcludeResourceTypes = new[] { "AWS::AppRunner::Service" }
+        });
 
         new StoryPlatformCoreStack(app, "StoryPlatformCoreStack", new StackProps
         {

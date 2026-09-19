@@ -104,8 +104,8 @@ public class StoryService : IStoryService
     {
         var storyRepo = _unitOfWork.Repository<DomainStory>();
         var story = await storyRepo.FirstOrDefaultAsync(
-            s => s.Id == id, 
-            includeProperties: "Author", 
+            s => s.Id == id,
+            includeProperties: "Author",
             cancellationToken: cancellationToken);
 
         if (story == null)
@@ -118,14 +118,28 @@ public class StoryService : IStoryService
             throw new ForbiddenException("Bạn không có quyền chỉnh sửa câu chuyện của người khác.");
         }
 
-        story.Title = request.Title.Trim();
-        story.Description = request.Description?.Trim();
-        story.Content = request.Content;
-        story.CoverImageUrl = request.CoverImageUrl;
-        story.Genre = request.Genre;
-        story.MoralLesson = request.MoralLesson;
-        story.AgeBand = request.AgeBand;
-        story.Language = request.Language;
+        // Chỉ cho phép cập nhật metadata (Title/Description/CoverImageUrl) và metadata an toàn.
+        // Content/MoralLesson là canonical của StoryVersion hiện tại - KHÔNG được sửa trực tiếp.
+        // Supervisor phải dùng Review API (tạo version mới) hoặc ExistingStories API.
+        if (request.Content != null && story.Source == StorySource.Manual)
+        {
+            throw new BadRequestException(
+                "Không thể cập nhật trực tiếp content của Story nhập tay. Hãy dùng API /existing/content để tạo version mới.");
+        }
+        if (request.MoralLesson != null && story.Source == StorySource.Manual)
+        {
+            throw new BadRequestException(
+                "Không thể cập nhật trực tiếp MoralLesson của Story nhập tay. Hãy dùng API /existing/content.");
+        }
+
+        if (request.Title != null) story.Title = request.Title.Trim();
+        if (request.Description != null) story.Description = request.Description.Trim();
+        if (request.CoverImageUrl != null) story.CoverImageUrl = request.CoverImageUrl;
+        if (request.Genre != null) story.Genre = request.Genre;
+        if (request.Content != null && story.Source == StorySource.Ai) story.Content = request.Content;
+        if (request.MoralLesson != null && story.Source == StorySource.Ai) story.MoralLesson = request.MoralLesson;
+        if (request.AgeBand != null) story.AgeBand = request.AgeBand;
+        if (request.Language != null) story.Language = request.Language;
 
         storyRepo.Update(story);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -167,6 +181,14 @@ public class StoryService : IStoryService
         if (story.AuthorUserId != currentUserId)
         {
             throw new ForbiddenException("Bạn không có quyền phát hành câu chuyện này.");
+        }
+
+        // Existing Story KHÔNG được dùng endpoint này.
+        // Existing Story phải đi qua ContentReview → Approved → MediaProcessing → Ready.
+        if (story.Source == StorySource.Manual)
+        {
+            throw new ConflictException(
+                "EXISTING_STORY_CANNOT_BYPASS_REVIEW: Story nhập tay phải qua Review/Approval trước khi Ready.");
         }
 
         story.IsPublished = true;

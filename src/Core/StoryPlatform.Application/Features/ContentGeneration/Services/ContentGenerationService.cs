@@ -7,6 +7,7 @@ using StoryPlatform.Application.Features.ContentGeneration;
 using StoryPlatform.Application.Features.ContentGeneration.DTOs;
 using StoryPlatform.Application.Features.ContentGeneration.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration.Quality;
+using StoryPlatform.Application.Features.ExistingStories.Interfaces;
 using StoryPlatform.Contracts.AI.Models;
 using StoryPlatform.Contracts.AI.Requests;
 using StoryPlatform.Contracts.AI.Responses;
@@ -22,6 +23,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
     private readonly IAIStoryGenerationClient _aiClient;
     private readonly IContentQualityEvaluator _qualityEvaluator;
     private readonly IContentGenerationJobFailureFinalizer _failureFinalizer;
+    private readonly IStableVersionArtifactHandoffService _artifactHandoff;
     private readonly int _maxRefinementAttempts;
     private readonly int _artifactMaxAttempts;
     private readonly TimeSpan _jobLease;
@@ -31,12 +33,14 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
         IAIStoryGenerationClient aiClient,
         IContentQualityEvaluator qualityEvaluator,
         IContentGenerationJobFailureFinalizer failureFinalizer,
+        IStableVersionArtifactHandoffService artifactHandoff,
         ContentGenerationOptions options)
     {
         _unitOfWork = unitOfWork;
         _aiClient = aiClient;
         _qualityEvaluator = qualityEvaluator;
         _failureFinalizer = failureFinalizer;
+        _artifactHandoff = artifactHandoff;
         _maxRefinementAttempts = Math.Clamp(options.MaxContentRefinementAttempts, 0, 2);
         _artifactMaxAttempts = Math.Clamp(options.ArtifactMaxAttempts, 1, 3);
         _jobLease = TimeSpan.FromMinutes(Math.Clamp(options.JobLeaseMinutes, 1, 30));
@@ -442,7 +446,16 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             job.LeaseExpiresAt = null;
             RotateToken(job);
             _unitOfWork.Repository<StoryGenerationJob>().Update(job);
-            await EnsureNextJobAsync(job, stable.Id, GenerationJobOperation.GenerateVocabulary, cancellationToken);
+
+            // Handoff sang chuỗi Vocabulary → Quiz → Discussion qua entry point duy nhất.
+            // StableVersionArtifactHandoffService idempotency: nếu job đã có cho (story, version)
+            // thì trả về job hiện có, không tạo trùng.
+            await _artifactHandoff.QueueArtifactsAsync(
+                storyId: job.StoryId,
+                storyVersionId: stable.Id,
+                requestedByUserId: job.RequestedByUserId ?? story.AuthorUserId,
+                generationRequestId: job.GenerationRequestId,
+                cancellationToken: cancellationToken);
             return true;
         }, cancellationToken);
     }

@@ -4,6 +4,8 @@ using StoryPlatform.Application.Features.Auth.Services;
 using StoryPlatform.Application.Features.AIStoryInput.Guardrails;
 using StoryPlatform.Application.Features.AIStoryInput.Interfaces;
 using StoryPlatform.Application.Features.AIStoryInput.Services;
+using StoryPlatform.Application.Features.ExistingStories.Interfaces;
+using StoryPlatform.Application.Features.ExistingStories.Services;
 using StoryPlatform.Application.Features.Stories.Interfaces;
 using StoryPlatform.Application.Features.Stories.Services;
 using StoryPlatform.Application.Features.StoryReview.Interfaces;
@@ -98,6 +100,12 @@ public static class DependencyInjection
         services.AddSingleton<IProposalCache, InMemoryProposalCache>();
         services.AddScoped<IStoryReviewService, StoryReviewService>();
         services.AddScoped<IProposalService, ProposalService>();
+
+        // Existing Story (Luồng 2)
+        services.AddScoped<IStableVersionArtifactHandoffService, StableVersionArtifactHandoffService>();
+        services.AddSingleton<IExistingStoryEvaluationCache, InMemoryExistingStoryEvaluationCache>();
+        services.AddScoped<IExistingStoryEvaluationService, ExistingStoryEvaluationService>();
+        services.AddScoped<IExistingStoryService, ExistingStoryService>();
 
         return services;
     }

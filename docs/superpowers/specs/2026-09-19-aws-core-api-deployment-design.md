@@ -65,8 +65,9 @@ All resources live in a single CDK stack: `StoryPlatformCoreStack`, deployed to 
 
 ### 5.1 VPC
 - New dedicated VPC, 2 AZs.
-- **Only `PRIVATE_ISOLATED` subnets** (no public subnets, no NAT Gateway). App Runner does not run "inside" the VPC directly — its VPC Connector creates ENIs in the specified subnets purely to reach RDS. Isolated subnets are sufficient since RDS needs no outbound internet access.
-- Rationale: avoids NAT Gateway cost (~$32/month), which is unjustified for this scope.
+- ~~**Only `PRIVATE_ISOLATED` subnets** (no public subnets, no NAT Gateway). App Runner does not run "inside" the VPC directly — its VPC Connector creates ENIs in the specified subnets purely to reach RDS. Isolated subnets are sufficient since RDS needs no outbound internet access.~~
+- ~~Rationale: avoids NAT Gateway cost (~$32/month), which is unjustified for this scope.~~
+- **Superseded (post-final-review fix, see §13 decision log):** the VPC now also has a `PUBLIC` subnet group and a `PRIVATE_WITH_EGRESS` subnet group with a single shared NAT Gateway (`NatGateways = 1`, one NAT for both AZs to bound cost). The App Runner VPC Connector's ENIs sit in the `PRIVATE_WITH_EGRESS` subnets so the deployed app has outbound internet access. RDS stays in `PRIVATE_ISOLATED` subnets, unchanged — it still needs no internet access itself.
 
 ### 5.2 RDS PostgreSQL
 - Instance class: `db.t4g.micro` (or `db.t3.micro` if Graviton unavailable in AZ) — within 12-month free tier.
@@ -150,7 +151,7 @@ No explicit "deploy" step — App Runner's `AutoDeploymentsEnabled` picks up the
 - RDS `db.t4g.micro`: free tier eligible for 12 months, then ~$12–15/month.
 - App Runner: pay-per-use, roughly $5–25/month depending on min instance/traffic — can configure to scale to a low minimum.
 - ECR storage: negligible for a handful of images with lifecycle cleanup.
-- No NAT Gateway (saves ~$32/month vs. a public-subnet design).
+- ~~No NAT Gateway (saves ~$32/month vs. a public-subnet design).~~ **Revised (post-final-review fix, see §13):** a single NAT Gateway was added (~$32/month base + data transfer charges), since the app's external integrations (Resend, Gemini, SePay, Supabase) require outbound internet access that a NAT-less VPC could not provide.
 - AWS Secrets Manager: ~$0.40/secret/month × 4 secrets = ~$1.6/month (switched from SSM Parameter Store — see §13; CFN cannot natively create SecureString parameters).
 
 ## 12. Testing / validation plan
@@ -172,6 +173,8 @@ No explicit "deploy" step — App Runner's `AutoDeploymentsEnabled` picks up the
 | Environment topology | Single shared environment for both branches | User explicitly chose this over separate dev/prod stacks, accepting the risk of dev pushes affecting the demo instance |
 | CI AWS auth | GitHub OIDC + scoped IAM Role | User chose over long-lived access keys in GitHub Secrets |
 | Compute | App Runner (not EC2) | Fully managed, no OS/patching burden, native ECR auto-deploy integration matches the CI design; EC2 rejected as unnecessary operational overhead for this scope |
+| NAT Gateway (added after initial deploy) | Add 1 shared NAT Gateway + `PUBLIC`/`PRIVATE_WITH_EGRESS` subnets; VPC Connector moved from `PRIVATE_ISOLATED` to `PRIVATE_WITH_EGRESS` | A final whole-branch code review (2026-09-19, post-deploy) found the original NAT-less design (§5.1, §11) gave the deployed app ZERO outbound internet access, breaking its dependencies on Resend (email), Gemini (AI generation), SePay (payment QR), and Supabase (media storage) — all of which require egress the isolated-subnet-only VPC could not provide. User approved adding a NAT Gateway to restore functionality, accepting the ~$32/month + data-transfer cost this reintroduces (see revised §11). RDS stays in `PRIVATE_ISOLATED`, unaffected. |
+| JWT secret generation | Secrets Manager's own `GenerateSecretString` (server-side) instead of C# `RandomNumberGenerator` + `SecretValue.UnsafePlainText` | Same final review found `UnsafePlainText(GenerateRandomSecret())` embedded the generated plaintext secret directly into the synthesized CloudFormation template (readable by anyone with template/asset-bucket access), and regenerated a new value on every `cdk synth`. Switching to `GenerateSecretString` keeps the value out of the template and stable across synths/deploys, matching how the other 3 secrets already behave. |
 
 ## 14. Follow-up work (not in this task)
 

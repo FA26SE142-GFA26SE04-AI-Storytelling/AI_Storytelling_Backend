@@ -1,5 +1,3 @@
-using System;
-using System.Security.Cryptography;
 using Amazon.CDK;
 using Amazon.CDK.AWS.AppRunner;
 using Amazon.CDK.AWS.EC2;
@@ -31,9 +29,21 @@ public sealed class StoryPlatformCoreStack : Stack
         Vpc = new Vpc(this, "CoreVpc", new VpcProps
         {
             MaxAzs = 2,
-            NatGateways = 0,
+            NatGateways = 1,
             SubnetConfiguration = new[]
             {
+                new SubnetConfiguration
+                {
+                    Name = "Public",
+                    SubnetType = SubnetType.PUBLIC,
+                    CidrMask = 24
+                },
+                new SubnetConfiguration
+                {
+                    Name = "Private",
+                    SubnetType = SubnetType.PRIVATE_WITH_EGRESS,
+                    CidrMask = 24
+                },
                 new SubnetConfiguration
                 {
                     Name = "Isolated",
@@ -92,7 +102,11 @@ public sealed class StoryPlatformCoreStack : Stack
         JwtSecret = new Secret(this, "JwtSecret", new SecretProps
         {
             SecretName = "storyplatform/core/jwt-secret-key",
-            SecretStringValue = SecretValue.UnsafePlainText(GenerateRandomSecret()),
+            GenerateSecretString = new SecretStringGenerator
+            {
+                PasswordLength = 64,
+                ExcludePunctuation = true
+            },
             RemovalPolicy = RemovalPolicy.DESTROY
         });
 
@@ -132,7 +146,7 @@ public sealed class StoryPlatformCoreStack : Stack
         VpcConnector = new CfnVpcConnector(this, "AppRunnerVpcConnector", new CfnVpcConnectorProps
         {
             VpcConnectorName = "storyplatform-core-connector",
-            Subnets = Vpc.SelectSubnets(new SubnetSelection { SubnetType = SubnetType.PRIVATE_ISOLATED }).SubnetIds,
+            Subnets = Vpc.SelectSubnets(new SubnetSelection { SubnetType = SubnetType.PRIVATE_WITH_EGRESS }).SubnetIds,
             SecurityGroups = new[] { vpcConnectorSecurityGroup.SecurityGroupId }
         });
 
@@ -245,6 +259,15 @@ public sealed class StoryPlatformCoreStack : Stack
                     Memory = "2048",
                     InstanceRoleArn = AppRunnerInstanceRole.RoleArn
                 },
+                HealthCheckConfiguration = new CfnService.HealthCheckConfigurationProperty
+                {
+                    Protocol = "HTTP",
+                    Path = "/index.html",
+                    Interval = 10,
+                    Timeout = 5,
+                    HealthyThreshold = 1,
+                    UnhealthyThreshold = 5
+                },
                 NetworkConfiguration = new CfnService.NetworkConfigurationProperty
                 {
                     EgressConfiguration = new CfnService.EgressConfigurationProperty
@@ -255,11 +278,5 @@ public sealed class StoryPlatformCoreStack : Stack
                 }
             });
         }
-    }
-
-    private static string GenerateRandomSecret(int byteLength = 48)
-    {
-        var bytes = RandomNumberGenerator.GetBytes(byteLength);
-        return Convert.ToBase64String(bytes);
     }
 }

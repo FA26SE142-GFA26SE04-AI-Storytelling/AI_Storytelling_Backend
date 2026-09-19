@@ -24,20 +24,20 @@ public class StoryPlatformCoreStackTests
     }
 
     [Fact]
-    public void Stack_CreatesVpcWithNoNatGateways()
+    public void Stack_CreatesVpcWithSingleNatGatewayForEgress()
     {
         var template = SynthTemplate();
         template.ResourceCountIs("AWS::EC2::VPC", 1);
-        template.ResourceCountIs("AWS::EC2::NatGateway", 0);
+        template.ResourceCountIs("AWS::EC2::NatGateway", 1);
+        template.ResourceCountIs("AWS::EC2::InternetGateway", 1);
     }
 
     [Fact]
-    public void Stack_VpcHasTwoIsolatedSubnetsOnly()
+    public void Stack_VpcHasPublicPrivateAndIsolatedSubnets()
     {
         var template = SynthTemplate();
-        // 2 AZs x 1 isolated subnet each, no public subnets
-        template.ResourceCountIs("AWS::EC2::Subnet", 2);
-        template.ResourceCountIs("AWS::EC2::InternetGateway", 0);
+        // 2 AZs x 3 subnet groups (Public, Private-with-egress, Isolated) = 6 subnets
+        template.ResourceCountIs("AWS::EC2::Subnet", 6);
     }
 
     [Fact]
@@ -229,10 +229,42 @@ public class StoryPlatformCoreStackTests
                 {
                     Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
                     {
-                        ["Action"] = "sts:AssumeRoleWithWebIdentity"
+                        ["Action"] = "sts:AssumeRoleWithWebIdentity",
+                        ["Condition"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                        {
+                            ["StringEquals"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                            {
+                                ["token.actions.githubusercontent.com:aud"] = "sts.amazonaws.com"
+                            }),
+                            ["StringLike"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                            {
+                                ["token.actions.githubusercontent.com:sub"] = Match.ArrayWith(new object[]
+                                {
+                                    "repo:FA26SE142-GFA26SE04-AI-Storytelling/AI_Storytelling_Backend:ref:refs/heads/dev",
+                                    "repo:FA26SE142-GFA26SE04-AI-Storytelling/AI_Storytelling_Backend:ref:refs/heads/main"
+                                })
+                            })
+                        })
                     })
                 })
             })
         }));
+    }
+
+    [Fact]
+    public void Stack_AppRunnerServiceHasHealthCheckConfiguration()
+    {
+        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["includeAppRunnerService"] = true
+        });
+        template.HasResourceProperties("AWS::AppRunner::Service", new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["HealthCheckConfiguration"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["Protocol"] = "HTTP",
+                ["Path"] = "/index.html"
+            })
+        });
     }
 }

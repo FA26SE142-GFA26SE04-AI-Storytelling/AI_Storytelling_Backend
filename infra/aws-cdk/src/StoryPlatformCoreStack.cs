@@ -134,7 +134,7 @@ public sealed class StoryPlatformCoreStack : Stack
         ResendApiKeySecret.GrantRead(AppRunnerInstanceRole);
         SePayApiKeySecret.GrantRead(AppRunnerInstanceRole);
 
-        var vpcConnectorSecurityGroup = new SecurityGroup(this, "VpcConnectorSecurityGroup", new SecurityGroupProps
+        var vpcConnectorSecurityGroup = new SecurityGroup(this, "VpcConnectorSecurityGroupV2", new SecurityGroupProps
         {
             Vpc = Vpc,
             Description = "Security group for the App Runner VPC Connector",

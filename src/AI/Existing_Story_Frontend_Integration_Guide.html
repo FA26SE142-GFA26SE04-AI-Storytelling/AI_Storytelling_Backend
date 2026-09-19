@@ -1,0 +1,799 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hướng dẫn Frontend tích hợp hai luồng tạo câu chuyện</title>
+  <style>
+    :root {
+      --ink: #18212f;
+      --muted: #5d6978;
+      --paper: #f6f4ee;
+      --surface: #ffffff;
+      --line: #dce1e7;
+      --brand: #255f55;
+      --brand-soft: #e4f2ed;
+      --accent: #d7653b;
+      --warning: #fff5d9;
+      --danger: #fce8e6;
+      --code: #15212c;
+      --shadow: 0 12px 34px rgba(35, 47, 62, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.65;
+    }
+
+    a { color: var(--brand); }
+    code, pre { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
+    code { font-size: 0.92em; }
+    h1, h2, h3 { line-height: 1.22; letter-spacing: -0.025em; }
+    h2 { margin-top: 3rem; padding-top: 0.5rem; }
+    h3 { margin-top: 2rem; }
+
+    .hero {
+      color: #f8fffc;
+      background:
+        radial-gradient(circle at 85% 15%, rgba(255,255,255,.14), transparent 28%),
+        linear-gradient(125deg, #153d37, #27695d 60%, #3e7563);
+      padding: 4.5rem max(1.25rem, calc((100vw - 1180px) / 2));
+    }
+    .eyebrow { text-transform: uppercase; letter-spacing: .14em; font-size: .78rem; font-weight: 800; opacity: .8; }
+    .hero h1 { max-width: 850px; margin: .7rem 0 1rem; font-size: clamp(2.1rem, 5vw, 4.2rem); }
+    .hero p { max-width: 760px; font-size: 1.1rem; color: #dcece7; }
+    .meta { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1.7rem; }
+    .pill { border: 1px solid rgba(255,255,255,.25); border-radius: 999px; padding: .38rem .8rem; font-size: .86rem; }
+
+    .layout { max-width: 1180px; margin: 0 auto; padding: 2rem 1.25rem 5rem; display: grid; grid-template-columns: 245px minmax(0, 1fr); gap: 2.4rem; }
+    nav { position: sticky; top: 1rem; align-self: start; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 1rem; box-shadow: var(--shadow); }
+    nav strong { display: block; margin: .1rem .5rem .6rem; }
+    nav a { display: block; color: var(--muted); text-decoration: none; border-radius: 8px; padding: .42rem .5rem; font-size: .9rem; }
+    nav a:hover { background: var(--brand-soft); color: var(--brand); }
+    main { min-width: 0; }
+
+    .notice, .callout { border-radius: 14px; padding: 1rem 1.15rem; margin: 1.2rem 0; border-left: 5px solid var(--accent); background: var(--warning); }
+    .notice strong, .callout strong { display: block; margin-bottom: .25rem; }
+    .danger { background: var(--danger); border-left-color: #b9382f; }
+    .success { background: var(--brand-soft); border-left-color: var(--brand); }
+
+    .flow { display: grid; grid-template-columns: repeat(6, 1fr); gap: .7rem; margin: 1.4rem 0; }
+    .flow-step { position: relative; min-height: 105px; padding: .85rem; background: var(--surface); border: 1px solid var(--line); border-radius: 13px; box-shadow: var(--shadow); }
+    .flow-step b { display: block; color: var(--brand); font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; }
+    .flow-step span { display: block; margin-top: .35rem; font-weight: 700; }
+    .flow-step:not(:last-child)::after { content: "→"; position: absolute; right: -.58rem; top: 39%; color: var(--accent); font-weight: 900; z-index: 2; }
+
+    .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 1rem; box-shadow: var(--shadow); }
+    .card h3 { margin: 0 0 .5rem; font-size: 1.05rem; }
+    .card p { margin: 0; color: var(--muted); }
+
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+    table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+    th, td { padding: .78rem .9rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    th { color: var(--brand); background: #f1f7f5; font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; }
+    tr:last-child td { border-bottom: 0; }
+    .method { display: inline-block; min-width: 52px; text-align: center; color: white; background: var(--brand); border-radius: 5px; padding: .1rem .35rem; font-weight: 800; font-size: .73rem; }
+    .method.put { background: #805b19; }
+    .method.get { background: #275f97; }
+
+    pre { overflow-x: auto; margin: 1rem 0; padding: 1rem 1.1rem; color: #e7f0f6; background: var(--code); border-radius: 13px; font-size: .86rem; line-height: 1.55; tab-size: 2; }
+    .file-label { display: inline-block; margin-bottom: -.65rem; padding: .22rem .55rem; color: #d8e8e3; background: #263844; border-radius: 6px 6px 0 0; font: .76rem "Cascadia Code", monospace; }
+    .checklist { padding-left: 0; list-style: none; }
+    .checklist li { margin: .55rem 0; padding-left: 1.7rem; position: relative; }
+    .checklist li::before { content: "✓"; position: absolute; left: 0; color: var(--brand); font-weight: 900; }
+    .state { display: inline-block; border-radius: 999px; padding: .12rem .5rem; background: var(--brand-soft); color: var(--brand); font-weight: 700; font-size: .82rem; }
+    footer { color: var(--muted); border-top: 1px solid var(--line); margin-top: 3rem; padding-top: 1.5rem; font-size: .9rem; }
+
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+      nav { position: static; columns: 2; }
+      nav strong { column-span: all; }
+      .flow { grid-template-columns: repeat(3, 1fr); }
+      .flow-step:nth-child(3)::after { display: none; }
+    }
+    @media (max-width: 650px) {
+      .hero { padding-top: 3rem; padding-bottom: 3rem; }
+      nav { columns: 1; }
+      .flow, .cards { grid-template-columns: 1fr; }
+      .flow-step::after { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="eyebrow">AI Storytelling · Frontend Integration</div>
+    <h1>Hướng dẫn kết nối API hai luồng tạo câu chuyện</h1>
+    <p>Tài liệu triển khai cả nhánh tạo truyện bằng AI và nhánh truyện do Parent/Teacher tự nhập hoặc tải tệp TXT, từ dữ liệu đầu vào tới học liệu, review, media và trạng thái Ready.</p>
+    <div class="meta">
+      <span class="pill">Cập nhật: 19/09/2026</span>
+      <span class="pill">API prefix: /api/v1</span>
+      <span class="pill">Luồng A: AI-generated</span>
+      <span class="pill">Luồng B: User-uploaded</span>
+      <span class="pill">Roles: Parent, Teacher</span>
+      <span class="pill">JSON: camelCase</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav aria-label="Mục lục">
+      <strong>Mục lục</strong>
+      <a href="#important">Lưu ý trước khi tích hợp</a>
+      <a href="#overview">Luồng tổng thể</a>
+      <a href="#dual-flow">So sánh hai luồng</a>
+      <a href="#contract">Quy ước API</a>
+      <a href="#types">TypeScript types</a>
+      <a href="#endpoints">Danh sách endpoint</a>
+      <a href="#ai-flow">Luồng A — Tạo bằng AI</a>
+      <a href="#steps">Luồng B — Người dùng tải lên</a>
+      <a href="#client">API client mẫu</a>
+      <a href="#state-machine">State machine</a>
+      <a href="#errors">Xử lý lỗi</a>
+      <a href="#checklist">Checklist nghiệm thu</a>
+    </nav>
+
+    <main>
+      <section id="important">
+        <h2>Lưu ý trước khi tích hợp</h2>
+        <div class="notice danger">
+          <strong>Backend Luồng 2 phải được triển khai trước.</strong>
+          Tại thời điểm tạo tài liệu, working tree đang ở <code>main</code> và chưa chứa <code>ExistingStoriesController</code>. Hợp đồng dưới đây được đối chiếu từ commit <code>436da8b</code>. Nếu gọi endpoint import trên backend chưa có commit này, frontend sẽ nhận 404.
+        </div>
+        <div class="notice">
+          <strong>Điểm dễ bỏ sót nhất</strong>
+          <code>POST /evaluate</code> chỉ đánh giá và trả quyết định, không tự queue học liệu. Nếu truyện import được đánh giá <code>Suitable</code>, frontend phải gọi <code>keep-original</code> để bắt đầu Vocabulary → Quiz → Discussion.
+        </div>
+      </section>
+
+      <section id="overview">
+        <h2>1. Luồng tổng thể</h2>
+        <div class="flow" aria-label="Luồng xử lý">
+          <div class="flow-step"><b>Bước 1</b><span>Chọn nguồn truyện</span></div>
+          <div class="flow-step"><b>Bước 2</b><span>Creative Input / Import</span></div>
+          <div class="flow-step"><b>Bước 3</b><span>Guardrail / Evaluate</span></div>
+          <div class="flow-step"><b>Bước 4</b><span>Outline / Adapt</span></div>
+          <div class="flow-step"><b>Bước 5</b><span>Content &amp; học liệu</span></div>
+          <div class="flow-step"><b>Bước 6</b><span>Review → Media → Ready</span></div>
+        </div>
+
+        <p>Ba quyết định dưới đây áp dụng riêng cho nhánh truyện do người dùng nhập hoặc tải lên:</p>
+        <div class="cards">
+          <article class="card">
+            <h3>Suitable</h3>
+            <p>Hiển thị “Dùng bản gốc”, gọi <code>keep-original</code>, sau đó chuyển sang màn hình tiến độ.</p>
+          </article>
+          <article class="card">
+            <h3>AdaptRecommended</h3>
+            <p>Cho chọn AI Adapt, chỉnh tay, giữ nguyên có lý do, hoặc lưu trữ.</p>
+          </article>
+          <article class="card">
+            <h3>Blocked</h3>
+            <p>Không cho giữ nguyên, adapt hay queue học liệu. Chỉ hiển thị lý do và hành động archive.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="dual-flow">
+        <h2>2. Hai nhánh tạo truyện và điểm hội tụ</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Tiêu chí</th><th>Luồng A — AI tạo truyện</th><th>Luồng B — Người dùng tải lên</th></tr></thead>
+            <tbody>
+              <tr><td>Nguồn Story</td><td><code>Ai</code></td><td><code>Manual</code></td></tr>
+              <tr><td>Đầu vào</td><td>Topic, genre, nhân vật, bối cảnh, bài học, độ dài.</td><td>Nội dung truyện có sẵn từ paste hoặc tệp TXT.</td></tr>
+              <tr><td>Safety đầu vào</td><td>Guardrail kiểm tra trước khi tạo outline.</td><td>Evaluation kiểm tra nội dung đã nhập và profile fit.</td></tr>
+              <tr><td>Outline</td><td>Có: sinh, sửa/regenerate, duyệt outline.</td><td>Bỏ qua hoàn toàn.</td></tr>
+              <tr><td>Nội dung truyện</td><td>AI sinh sau khi outline được duyệt.</td><td>Dùng bản gốc, AI adapt hoặc người dùng sửa tay.</td></tr>
+              <tr><td>Học liệu</td><td colspan="2">Cùng hội tụ tại Vocabulary → Quiz → Discussion.</td></tr>
+              <tr><td>Hoàn tất</td><td colspan="2">ContentReview → Review/Validation → Approved → MediaProcessing → Ready.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Sơ đồ trạng thái chung</h3>
+        <pre><code>LUỒNG A — AI
+Input → Guardrail → Draft → Generate Outline → OutlineReview
+      → Approve Outline → Generate Content → Vocabulary → Quiz → Discussion
+      → ContentReview → Approve → MediaProcessing → Ready
+
+LUỒNG B — USER UPLOAD
+Paste/TXT → Draft → Evaluate
+          ├─ Suitable ───────────────→ Keep Original ─┐
+          ├─ AdaptRecommended → Adapt/Edit/Keep ──────┼→ Vocabulary → Quiz → Discussion
+          └─ Blocked ────────────────→ Archive        │
+                                                     └→ ContentReview → Approve → MediaProcessing → Ready</code></pre>
+        <div class="callout success">
+          <strong>Điểm hội tụ frontend</strong>
+          Sau khi AI content ổn định hoặc Existing Story được chấp nhận, cả hai nhánh dùng chung màn hình Generation Progress, Review Package, Validation, Approval và Media Progress.
+        </div>
+      </section>
+
+      <section id="contract">
+        <h2>3. Quy ước API chung</h2>
+        <p>Mọi request được bảo vệ phải gửi JWT access token:</p>
+        <pre><code>Authorization: Bearer &lt;accessToken&gt;
+Content-Type: application/json</code></pre>
+
+        <p>Response thành công và thất bại đều dùng envelope:</p>
+        <pre><code>{
+  "success": true,
+  "message": "Thao tác thành công.",
+  "data": {},
+  "errors": null
+}</code></pre>
+        <div class="callout success">
+          <strong>Frontend phải kiểm tra cả HTTP status và <code>success</code>.</strong>
+          Không đọc payload nghiệp vụ trực tiếp từ response root; dữ liệu luôn nằm trong <code>data</code>.
+        </div>
+        <p>Điều kiện dùng hai luồng:</p>
+        <ul>
+          <li>Người dùng đăng nhập với role <code>Parent</code> hoặc <code>Teacher</code>.</li>
+          <li>Child Profile đang ở trạng thái Active.</li>
+          <li>Người dùng có quyền <code>GenerateStory</code> trên Child Profile.</li>
+          <li>Nội dung import không vượt 20.000 từ.</li>
+        </ul>
+      </section>
+
+      <section id="types">
+        <h2>4. TypeScript types dùng chung</h2>
+        <div class="file-label">types/existing-story.ts</div>
+        <pre><code>export interface ApiResponse&lt;T&gt; {
+  success: boolean;
+  message: string;
+  data: T | null;
+  errors: string[] | null;
+}
+
+export interface ImportStoryRequest {
+  inputMethod: 'paste' | 'txt';
+  content: string;
+  title?: string;
+  childProfileId: number;
+  language: string;
+  idempotencyKey?: string;
+}
+
+export interface ImportStoryResult {
+  storyId: number;
+  storyVersionId: number;
+  storyStatus: string;
+  editType: string;
+  contentLength: number | null;
+  warnings: string[];
+}
+
+export type ExistingStoryDecision =
+  | 'Suitable'
+  | 'AdaptRecommended'
+  | 'Blocked';
+
+export interface EvaluationIssue {
+  code: string;
+  message: string;
+}
+
+export interface ExistingStoryEvaluation {
+  storyId: number;
+  storyVersionId: number;
+  decision: 1 | 2 | 3; // enum backend mặc định serialize thành số
+  decisionText: ExistingStoryDecision;
+  hardSafetyIssues: EvaluationIssue[];
+  profileFitIssues: EvaluationIssue[];
+  recommendedAgeBand: number | null;
+  readabilityFkgl: number | null;
+  readabilityFre: number | null;
+  wordCount: number | null;
+  canKeepOriginal: boolean;
+}
+
+export interface VersionMutationResult {
+  storyId: number;
+  storyVersionId: number;
+  storyStatus: string;
+  editType: string;
+  decision: ExistingStoryDecision | null;
+}
+
+export interface GenerationProgress {
+  storyId: number;
+  storyStatus: string;
+  currentStep: string;
+  content: string;
+  vocabulary: string;
+  quiz: string;
+  discussion: string;
+  isComplete: boolean;
+  lastErrorCode: string | null;
+  stableStoryVersionId: number | null;
+}
+
+export interface AIStoryInputContext {
+  childProfileId: number;
+  childNickname: string;
+  ageBand: string;
+  readingLevel: number;
+  defaultVocabularyLevel: string;
+  availableVocabularyLevels: string[];
+  defaultLanguage: string;
+  availableLanguages: string[];
+  maximumLength: number;
+  requiredApprovalMode: string;
+  interests: string[];
+  characterModes: Array&lt;'specified' | 'ai_suggested'&gt;;
+  settingModes: Array&lt;'specified' | 'ai_suggested'&gt;;
+}
+
+export interface SubmitAIStoryInput {
+  childProfileId: number;
+  topic: string;
+  genre?: string;
+  characterMode: 'specified' | 'ai_suggested';
+  characters: string[];
+  settingMode: 'specified' | 'ai_suggested';
+  setting?: string;
+  lesson: string;
+  vocabularyLevel: `level_${1 | 2 | 3 | 4 | 5}`;
+  language?: string;
+  targetLength: number;
+  idempotencyKey: string;
+}
+
+export interface AIStoryInputProgress {
+  storyId: number;
+  requestId: number;
+  inputStatus:
+    | 'checking_input'
+    | 'input_accepted'
+    | 'input_blocked'
+    | 'input_check_failed';
+  handoffStatus: string;
+  handoffJobId: number | null;
+  attemptCount: number;
+  maxAttempts: number;
+  reasonCode: string | null;
+  fallbackMessage: string | null;
+  canRetry: boolean;
+}
+
+export interface OutlineProgress {
+  storyId: number;
+  storyStatus: string;
+  currentVersion: null | {
+    id: number;
+    versionNo: number;
+    title: string;
+    opening: string;
+    development: string;
+    ending: string;
+    isCurrent: boolean;
+    outlineApprovedAt: string | null;
+  };
+  activeOperation: string | null;
+  activeJobStatus: string | null;
+  lastErrorCode: string | null;
+}</code></pre>
+        <div class="callout">
+          <strong>Khuyến nghị</strong>
+          Điều hướng theo <code>decisionText</code>, không theo số <code>decision</code>, để code frontend dễ đọc và ít phụ thuộc thứ tự enum.
+        </div>
+      </section>
+
+      <section id="endpoints">
+        <h2>5. Danh sách endpoint</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Method</th><th>Endpoint</th><th>Mục đích</th></tr></thead>
+            <tbody>
+              <tr><td><span class="method get">GET</span></td><td><code>/api/v1/ai-story-input/children/{childProfileId}/context</code></td><td>Lấy policy/profile và option cho form AI.</td></tr>
+              <tr><td><span class="method">POST</span></td><td><code>/api/v1/ai-story-input/requests</code></td><td>Submit yêu cầu tạo truyện AI và chạy input guardrail.</td></tr>
+              <tr><td><span class="method get">GET</span></td><td><code>/api/v1/ai-story-input/stories/{storyId}/requests/{requestId}</code></td><td>Poll kiểm tra input AI.</td></tr>
+              <tr><td><span class="method">POST</span></td><td><code>/api/v1/ai-story-input/stories/{storyId}/requests/{requestId}/retry</code></td><td>Retry input check khi backend cho phép.</td></tr>
+              <tr><td><span class="method get">GET</span></td><td><code>/api/v1/stories/{storyId}/outline</code></td><td>Poll/lấy outline hiện tại.</td></tr>
+              <tr><td><span class="method put">PUT</span></td><td><code>/api/v1/stories/{storyId}/outline/versions/{versionNo}</code></td><td>Sửa outline và tạo version mới.</td></tr>
+              <tr><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/outline/versions/{versionNo}/regenerate</code></td><td>Yêu cầu AI tạo lại outline.</td></tr>
+              <tr><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/outline/versions/{versionNo}/approve</code></td><td>Duyệt outline và queue sinh content.</td></tr>
+              <tr><td><span class="method">POST</span></td><td><code>/api/v1/stories/import</code></td><td>Tạo Story Manual và StoryVersion v1.</td></tr>
+              <tr><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/existing/evaluate</code></td><td>Chạy lại đánh giá safety/profile fit.</td></tr>
+              <tr><td><span class="method get">GET</span></td><td><code>/api/v1/stories/{storyId}/existing/evaluation?storyVersionId=...</code></td><td>Lấy kết quả cache mới nhất; cache miss sẽ evaluate.</td></tr>
+              <tr><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/existing/adapt</code></td><td>AI chỉnh truyện, tạo version mới, evaluate lại.</td></tr>
+              <tr><td><span class="method put">PUT</span></td><td><code>/api/v1/stories/{storyId}/existing/content</code></td><td>Chỉnh tay, tạo version mới, evaluate lại.</td></tr>
+              <tr><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/existing/keep-original</code></td><td>Giữ version hiện tại và queue học liệu.</td></tr>
+              <tr><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/existing/archive</code></td><td>Lưu trữ truyện.</td></tr>
+              <tr><td><span class="method get">GET</span></td><td><code>/api/v1/stories/{storyId}/generation/progress</code></td><td>Theo dõi Vocabulary → Quiz → Discussion.</td></tr>
+              <tr><td><span class="method get">GET</span></td><td><code>/api/v1/stories/{storyId}/review</code></td><td>Lấy review package đầy đủ.</td></tr>
+              <tr><td><span class="method get">GET</span></td><td><code>/api/v1/stories/{storyId}/review/validation</code></td><td>Kiểm tra điều kiện phê duyệt.</td></tr>
+              <tr><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/review/approve</code></td><td>Phê duyệt và queue media.</td></tr>
+              <tr><td><span class="method get">GET</span></td><td><code>/api/v1/stories/{storyId}/media/progress</code></td><td>Theo dõi media cho tới Ready.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="ai-flow">
+        <h2>6. Luồng A — Tạo câu chuyện bằng AI</h2>
+
+        <h3>6.1 Tải context trước khi render form</h3>
+        <pre><code>GET /api/v1/ai-story-input/children/42/context</code></pre>
+        <p>Dùng response để khóa đúng <code>maximumLength</code>, language, vocabulary level, character/setting mode và hiển thị policy. Không hard-code option nếu backend đã trả chúng.</p>
+
+        <h3>6.2 Submit creative input</h3>
+        <pre><code>POST /api/v1/ai-story-input/requests
+
+{
+  "childProfileId": 42,
+  "topic": "Tình bạn trong khu rừng",
+  "genre": "Adventure",
+  "characterMode": "specified",
+  "characters": ["Lan", "Minh"],
+  "settingMode": "specified",
+  "setting": "Một khu rừng xanh sau cơn mưa",
+  "lesson": "Biết chia sẻ và giúp đỡ bạn bè",
+  "vocabularyLevel": "level_2",
+  "language": "vi",
+  "targetLength": 600,
+  "idempotencyKey": "ai-input-42-550e8400-e29b-41d4-a716-446655440000"
+}</code></pre>
+        <p>Backend thường trả HTTP <code>202 Accepted</code>. Lưu <code>storyId</code> và <code>requestId</code> ngay cả khi input còn ở <code>checking_input</code>.</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>inputStatus</th><th>HTTP thường gặp</th><th>Frontend xử lý</th></tr></thead>
+            <tbody>
+              <tr><td><code>checking_input</code></td><td>202</td><td>Poll progress theo storyId/requestId.</td></tr>
+              <tr><td><code>input_accepted</code></td><td>202</td><td>Chuyển sang màn hình Outline Progress.</td></tr>
+              <tr><td><code>input_blocked</code></td><td>422</td><td>Hiển thị reason/fallback; không đi tiếp.</td></tr>
+              <tr><td><code>input_check_failed</code></td><td>409/422/503</td><td>Chỉ hiện Retry nếu <code>canRetry</code> là true.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>6.3 Poll và review outline</h3>
+        <pre><code>GET /api/v1/stories/123/outline</code></pre>
+        <p>Poll cho đến khi <code>currentVersion</code> có dữ liệu hoặc <code>lastErrorCode</code> xuất hiện. Tại <code>OutlineReview</code>, người dùng có thể:</p>
+        <ul>
+          <li>Sửa trực tiếp bằng <code>PUT .../outline/versions/{versionNo}</code>.</li>
+          <li>Regenerate bằng một <code>operationKey</code> duy nhất, tối thiểu 8 ký tự.</li>
+          <li>Reject với lý do rõ ràng.</li>
+          <li>Approve bằng một <code>approvalKey</code> duy nhất, tối thiểu 8 ký tự.</li>
+        </ul>
+        <pre><code>POST /api/v1/stories/123/outline/versions/2/approve
+
+{ "approvalKey": "approve-outline-123-v2" }</code></pre>
+
+        <h3>6.4 Sinh content và học liệu</h3>
+        <p>Sau approve, backend chạy tuần tự:</p>
+        <pre><code>GenerateContent → Safety/Quality → Vocabulary → Quiz → Discussion</code></pre>
+        <p>Frontend dùng chung <code>GET /api/v1/stories/{storyId}/generation/progress</code>. Khác với Existing Story, trường <code>content</code> của luồng AI ban đầu sẽ ở trạng thái pending/processing rồi mới thành <code>stable</code>.</p>
+
+        <h3>6.5 Hội tụ vào Review và Media</h3>
+        <p>Khi <code>isComplete</code> là true, chuyển sang các bước Review → Validation → Approve → Media giống mục 7.5 và 7.6 bên dưới.</p>
+      </section>
+
+      <section id="steps">
+        <h2>7. Luồng B — Người dùng nhập hoặc tải truyện có sẵn</h2>
+
+        <div class="callout">
+          <strong>TXT không được upload dạng multipart.</strong>
+          Frontend đọc tệp TXT dưới dạng UTF-8 bằng <code>File.text()</code>, đưa chuỗi vào trường <code>content</code>, đặt <code>inputMethod: "txt"</code>, rồi gửi JSON giống thao tác paste.
+        </div>
+
+        <h3>7.1 Import truyện</h3>
+        <pre><code>POST /api/v1/stories/import
+
+{
+  "inputMethod": "paste",
+  "content": "Ngày xưa, trong một khu rừng...",
+  "title": "Lan và khu rừng",
+  "childProfileId": 42,
+  "language": "vi",
+  "idempotencyKey": "import-42-550e8400-e29b-41d4-a716-446655440000"
+}</code></pre>
+        <p>Lưu ngay <code>storyId</code> và <code>storyVersionId</code> từ response. Dùng UUID làm <code>idempotencyKey</code> và giữ nguyên key khi retry cùng một thao tác để tránh tạo bản trùng.</p>
+
+        <h3>7.2 Evaluate version hiện tại</h3>
+        <pre><code>POST /api/v1/stories/123/existing/evaluate
+
+{ "storyVersionId": 456 }</code></pre>
+        <p>Render hai nhóm lỗi riêng:</p>
+        <ul>
+          <li><code>hardSafetyIssues</code>: lỗi cứng, không cho override.</li>
+          <li><code>profileFitIssues</code>: chưa phù hợp độ tuổi/độ khó, có thể adapt hoặc sửa tay.</li>
+        </ul>
+
+        <h3>7.3 Xử lý theo quyết định</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>decisionText</th><th>UI được phép</th><th>API tiếp theo</th></tr></thead>
+            <tbody>
+              <tr><td><span class="state">Suitable</span></td><td>Dùng bản gốc hoặc archive.</td><td><code>keep-original</code> để queue artifact.</td></tr>
+              <tr><td><span class="state">AdaptRecommended</span></td><td>AI Adapt, sửa tay, giữ nguyên nếu <code>canKeepOriginal</code>, hoặc archive.</td><td><code>adapt</code>, <code>content</code>, <code>keep-original</code> hoặc <code>archive</code>.</td></tr>
+              <tr><td><span class="state">Blocked</span></td><td>Chỉ xem lỗi cứng và archive.</td><td><code>archive</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p><strong>AI Adapt:</strong></p>
+        <pre><code>POST /api/v1/stories/123/existing/adapt
+
+{
+  "storyId": 123,
+  "baseStoryVersionId": 456,
+  "guideline": "Rút gọn câu và dùng từ phù hợp trẻ 6-8 tuổi."
+}</code></pre>
+        <p>Response trả version mới và <code>decision</code> sau khi backend tự evaluate. Nếu decision là <code>Suitable</code>, backend đã queue artifact; chuyển thẳng sang polling.</p>
+
+        <p><strong>Sửa tay:</strong></p>
+        <pre><code>PUT /api/v1/stories/123/existing/content
+
+{
+  "storyId": 123,
+  "baseStoryVersionId": 456,
+  "title": "Lan và khu rừng",
+  "content": "Nội dung đã chỉnh...",
+  "lesson": "Biết giúp đỡ bạn bè."
+}</code></pre>
+        <p>Luôn thay <code>baseStoryVersionId</code> bằng version mới nhất. Nếu nhận <code>STALE_BASE_VERSION</code>, tải lại dữ liệu và yêu cầu người dùng đối chiếu trước khi gửi lại.</p>
+
+        <p><strong>Giữ bản hiện tại và bắt đầu sinh học liệu:</strong></p>
+        <pre><code>POST /api/v1/stories/123/existing/keep-original
+
+{
+  "storyId": 123,
+  "storyVersionId": 456,
+  "overrideReason": "Nội dung đã phù hợp và được phụ huynh xác nhận."
+}</code></pre>
+        <div class="callout danger">
+          <strong>Không gọi <code>keep-original</code> khi Blocked.</strong>
+          Chỉ render nút khi <code>canKeepOriginal === true</code>. Frontend phải giữ guard này ngay cả khi backend có thêm validation sau này.
+        </div>
+
+        <h3>7.4 Poll tiến độ học liệu</h3>
+        <pre><code>GET /api/v1/stories/123/generation/progress
+
+{
+  "success": true,
+  "data": {
+    "storyId": 123,
+    "storyStatus": "Draft",
+    "currentStep": "generating_vocabulary",
+    "content": "stable",
+    "vocabulary": "processing",
+    "quiz": "not_started",
+    "discussion": "not_started",
+    "isComplete": false,
+    "lastErrorCode": null,
+    "stableStoryVersionId": 456
+  }
+}</code></pre>
+        <ul>
+          <li>Poll mỗi 2–3 giây khi tab đang visible.</li>
+          <li>Dừng khi <code>isComplete === true</code>; lúc này Story đã ở <code>ContentReview</code>.</li>
+          <li>Dừng và hiển thị retry/support khi <code>lastErrorCode</code> khác null.</li>
+          <li>Hủy request/poll khi component unmount hoặc đổi story.</li>
+        </ul>
+
+        <h3>7.5 Review và phê duyệt — dùng chung hai luồng</h3>
+        <p>Lấy package bằng <code>GET /api/v1/stories/{storyId}/review</code>. Khi chỉnh bất kỳ artifact nào, gửi đúng <code>versionId</code> hiện tại:</p>
+        <pre><code>PUT /api/v1/stories/123/review/story
+PUT /api/v1/stories/123/review/vocabulary
+PUT /api/v1/stories/123/review/quiz
+PUT /api/v1/stories/123/review/discussion</code></pre>
+        <p>Trước khi bật nút Approve:</p>
+        <pre><code>GET /api/v1/stories/123/review/validation
+
+// Chỉ bật Approve khi data.canApprove === true
+POST /api/v1/stories/123/review/approve</code></pre>
+        <p>Các endpoint <code>*/complete</code> hiện chỉ kiểm tra dữ liệu và trả <code>true</code>, không lưu một trạng thái completion riêng; frontend không nên phụ thuộc chúng để xác định có thể approve.</p>
+
+        <h3>7.6 Theo dõi media tới Ready — dùng chung hai luồng</h3>
+        <pre><code>GET /api/v1/stories/123/media/progress
+
+{
+  "storyId": 123,
+  "approvedStoryVersionId": 456,
+  "storyStatus": "MediaProcessing",
+  "jobStatus": "Processing",
+  "sceneCount": 5,
+  "readyIllustrations": 3,
+  "readyAudio": 5,
+  "isReady": false,
+  "errorCode": null
+}</code></pre>
+        <p>Poll cho tới <code>isReady === true</code> và <code>storyStatus === "Ready"</code>. Khi đó frontend có thể điều hướng sang trang đọc dành cho trẻ.</p>
+      </section>
+
+      <section id="client">
+        <h2>8. API client mẫu</h2>
+        <div class="file-label">lib/api.ts</div>
+        <pre><code>const API_URL = import.meta.env.VITE_CORE_API_URL;
+
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+    public errors: string[] = [],
+    public data: unknown | null = null,
+  ) { super(message); }
+}
+
+export async function api&lt;T&gt;(
+  path: string,
+  init: RequestInit = {},
+): Promise&lt;T&gt; {
+  const accessToken = authStore.getState().accessToken;
+  const response = await fetch(`${API_URL}${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...init.headers,
+    },
+  });
+
+  const envelope = await response.json() as ApiResponse&lt;T&gt;;
+  if (!response.ok || !envelope.success || envelope.data === null) {
+    throw new ApiError(
+      response.status,
+      envelope.message,
+      envelope.errors ?? [],
+      envelope.data,
+    );
+  }
+  return envelope.data;
+}</code></pre>
+
+        <div class="file-label">services/ai-story.ts</div>
+        <pre><code>export const aiStoryApi = {
+  getContext: (childProfileId: number) =&gt;
+    api&lt;AIStoryInputContext&gt;(
+      `/api/v1/ai-story-input/children/${childProfileId}/context`,
+    ),
+
+  submit: (input: SubmitAIStoryInput) =&gt;
+    api&lt;AIStoryInputProgress&gt;('/api/v1/ai-story-input/requests', {
+      method: 'POST', body: JSON.stringify(input),
+    }),
+
+  inputProgress: (storyId: number, requestId: number) =&gt;
+    api&lt;AIStoryInputProgress&gt;(
+      `/api/v1/ai-story-input/stories/${storyId}/requests/${requestId}`,
+    ),
+
+  outline: (storyId: number) =&gt;
+    api&lt;OutlineProgress&gt;(`/api/v1/stories/${storyId}/outline`),
+
+  approveOutline: (storyId: number, versionNo: number, approvalKey: string) =&gt;
+    api&lt;OutlineProgress&gt;(
+      `/api/v1/stories/${storyId}/outline/versions/${versionNo}/approve`,
+      { method: 'POST', body: JSON.stringify({ approvalKey }) },
+    ),
+};
+
+// Với HTTP 409/422/503 từ AI Input, ApiError.data vẫn chứa
+// AIStoryInputProgress để UI đọc reasonCode, fallbackMessage và canRetry.</code></pre>
+
+        <div class="file-label">services/existing-story.ts</div>
+        <pre><code>export const existingStoryApi = {
+  import: (input: ImportStoryRequest) =&gt;
+    api&lt;ImportStoryResult&gt;('/api/v1/stories/import', {
+      method: 'POST', body: JSON.stringify(input),
+    }),
+
+  evaluate: (storyId: number, storyVersionId: number) =&gt;
+    api&lt;ExistingStoryEvaluation&gt;(
+      `/api/v1/stories/${storyId}/existing/evaluate`,
+      { method: 'POST', body: JSON.stringify({ storyVersionId }) },
+    ),
+
+  keepOriginal: (storyId: number, storyVersionId: number, reason: string) =&gt;
+    api&lt;VersionMutationResult&gt;(
+      `/api/v1/stories/${storyId}/existing/keep-original`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ storyId, storyVersionId, overrideReason: reason }),
+      },
+    ),
+
+  progress: (storyId: number) =&gt;
+    api&lt;GenerationProgress&gt;(`/api/v1/stories/${storyId}/generation/progress`),
+};</code></pre>
+      </section>
+
+      <section id="state-machine">
+        <h2>9. State machine phía Frontend</h2>
+        <pre><code>type ExistingStoryUiState =
+  | { step: 'editing-import' }
+  | { step: 'evaluating'; storyId: number; versionId: number }
+  | { step: 'decision'; result: ExistingStoryEvaluation }
+  | { step: 'mutating'; action: 'adapt' | 'manual' | 'keep' | 'archive' }
+  | { step: 'generating'; storyId: number }
+  | { step: 'review'; storyId: number }
+  | { step: 'media'; storyId: number }
+  | { step: 'ready'; storyId: number }
+  | { step: 'failed'; message: string; retryable: boolean };
+
+type AIStoryUiState =
+  | { step: 'creative-input' }
+  | { step: 'checking-input'; storyId: number; requestId: number }
+  | { step: 'outline'; storyId: number; versionNo?: number }
+  | { step: 'generating'; storyId: number }
+  | { step: 'review'; storyId: number }
+  | { step: 'media'; storyId: number }
+  | { step: 'ready'; storyId: number }
+  | { step: 'failed'; message: string; retryable: boolean };
+
+function nextAfterEvaluation(result: ExistingStoryEvaluation) {
+  switch (result.decisionText) {
+    case 'Suitable':
+      return { showKeepOriginal: true, showEdit: false, showArchive: true };
+    case 'AdaptRecommended':
+      return {
+        showKeepOriginal: result.canKeepOriginal,
+        showEdit: true,
+        showArchive: true,
+      };
+    case 'Blocked':
+      return { showKeepOriginal: false, showEdit: false, showArchive: true };
+  }
+}</code></pre>
+        <p>Không suy ra trạng thái chỉ từ URL hay local state. Sau refresh trang, khôi phục bằng IDs đã lưu và gọi GET evaluation/progress/review tương ứng.</p>
+      </section>
+
+      <section id="errors">
+        <h2>10. Xử lý lỗi và concurrency</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>HTTP</th><th>Ý nghĩa thường gặp</th><th>Hành vi frontend</th></tr></thead>
+            <tbody>
+              <tr><td>400</td><td>Body thiếu/sai, content rỗng, version không thuộc story.</td><td>Hiển thị message cạnh form; không retry tự động.</td></tr>
+              <tr><td>401</td><td>Access token thiếu hoặc hết hạn.</td><td>Refresh token một lần, replay request một lần; thất bại thì logout.</td></tr>
+              <tr><td>403</td><td>Sai role hoặc thiếu quyền trên child.</td><td>Ẩn action và hiển thị thông báo quyền truy cập.</td></tr>
+              <tr><td>404</td><td>Story/version/child không tồn tại; hoặc backend chưa deploy Luồng 2.</td><td>Phân biệt endpoint 404 với entity 404; về danh sách nếu entity mất.</td></tr>
+              <tr><td>409</td><td><code>STALE_BASE_VERSION</code>, trạng thái story không hợp lệ, request chưa accepted.</td><td>Tải lại version/progress; không gửi lại mutation mù quáng.</td></tr>
+              <tr><td>500</td><td>Lỗi nội bộ hoặc AI/provider.</td><td>Thông báo chung, ghi correlation info nếu có, cho retry có kiểm soát.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <ul>
+          <li>Disable nút submit trong lúc request đang chạy.</li>
+          <li>Dùng AbortController để hủy evaluate/adapt khi rời trang.</li>
+          <li>Không tự retry mutation POST/PUT nếu không có idempotency key.</li>
+          <li>Khi sửa/adapt thành công, thay version cũ bằng <code>storyVersionId</code> mới từ response.</li>
+          <li>Không dùng endpoint publish chung cho Existing Story; phải đi qua Review → Approve → Media → Ready.</li>
+        </ul>
+      </section>
+
+      <section id="checklist">
+        <h2>11. Checklist nghiệm thu Frontend</h2>
+        <ul class="checklist">
+          <li>JWT được gửi cho mọi endpoint AI Input, Outline, Existing Story, Generation, Review và Media.</li>
+          <li>Form AI lấy option và giới hạn từ Context API trước khi submit.</li>
+          <li>AI input xử lý đúng các HTTP 202, 409, 422 và 503.</li>
+          <li>Outline edit/regenerate luôn dùng version hiện tại và operation key mới.</li>
+          <li>Chỉ queue GenerateContent sau khi người dùng approve outline.</li>
+          <li>Import retry dùng lại cùng <code>idempotencyKey</code>.</li>
+          <li>Frontend lưu cả <code>storyId</code> và version ID hiện tại.</li>
+          <li>UI rẽ nhánh bằng <code>decisionText</code> và tôn trọng <code>canKeepOriginal</code>.</li>
+          <li>Suitable gọi <code>keep-original</code> trước khi bắt đầu polling.</li>
+          <li>Blocked không thể gọi keep/adapt/manual edit từ UI.</li>
+          <li>Polling dừng khi complete/error và được hủy lúc unmount.</li>
+          <li>Review luôn dùng <code>versionId</code> mới nhất.</li>
+          <li>Approve chỉ bật khi validation trả <code>canApprove: true</code>.</li>
+          <li>Chỉ mở trang đọc khi media trả <code>isReady: true</code>.</li>
+          <li>Đã test 400, 401, 403, 404, 409, 500 và double-click submit.</li>
+          <li>Đã test reload trình duyệt ở màn hình decision, generation, review và media.</li>
+        </ul>
+      </section>
+
+      <footer>
+        Nguồn hợp đồng: AI Story workflow trên <code>main</code>, Existing Story API tại commit <code>436da8b</code>, kết hợp Content Generation, Story Review và Media Generation API. Tài liệu này không chứa secret; cấu hình frontend chỉ nên nhận base URL qua biến môi trường công khai.
+      </footer>
+    </main>
+  </div>
+</body>
+</html>

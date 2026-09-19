@@ -141,11 +141,13 @@ public sealed class StoryPlatformCoreStack : Stack
         // (the version pinned by this project), the L2 construct provisions the provider via a
         // Lambda-backed custom resource (Custom::AWSCDKOpenIdConnectProvider) instead of the native
         // CloudFormation resource type, which the test for this task asserts on directly.
+        // ThumbprintList is intentionally omitted: it is optional on AWS::IAM::OIDCProvider, and when
+        // omitted, IAM automatically retrieves and uses the correct thumbprint from the provider's TLS
+        // certificate chain — avoiding a hardcoded value that could be malformed or go stale.
         var githubOidcProvider = new CfnOIDCProvider(this, "GitHubOidcProvider", new CfnOIDCProviderProps
         {
             Url = "https://token.actions.githubusercontent.com",
-            ClientIdList = new[] { "sts.amazonaws.com" },
-            ThumbprintList = new[] { "6938fd4d98bab03faadb97b34396831e3780aea" }
+            ClientIdList = new[] { "sts.amazonaws.com" }
         });
 
         const string githubRepo = "FA26SE142-GFA26SE04-AI-Storytelling/AI_Storytelling_Backend"; // confirmed via `git remote -v` (origin)

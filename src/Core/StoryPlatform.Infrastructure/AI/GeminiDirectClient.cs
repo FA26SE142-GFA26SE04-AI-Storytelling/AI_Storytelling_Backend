@@ -400,7 +400,6 @@ Chỉ trả về JSON.";
     {
         var story = request.Story;
         var content = string.Join("\n", story.StorySections.Select(s => s.Content));
-        var questionCount = GetQuestionCount(request.AgeBand);
 
         return $@"Tạo câu hỏi quiz từ truyện thiếu nhi.
 
@@ -409,21 +408,39 @@ NỘI DUNG: {content}
 
 YÊU CẦU:
 - Độ tuổi: {request.AgeBand} tuổi
-- Số câu: {questionCount["min"]}-{questionCount["max"]} câu
 - Ngôn ngữ: {request.Language}
-
-Tạo câu hỏi trắc nghiệm với 4 lựa chọn.
+- BẮT BUỘC tạo đúng 3 câu hỏi với 3 loại (type) khác nhau:
+  1. ""multiple_choice"": câu hỏi trắc nghiệm 4 lựa chọn (options có 4 đáp án, correctOptionIndex là 0-3, correctAnswer là đáp án đúng nằm trong options).
+  2. ""true_false"": câu hỏi đúng/sai (options là [""Đúng"", ""Sai""], correctAnswer là ""true"" hoặc ""false"", correctOptionIndex là 0 nếu đúng, 1 nếu sai).
+  3. ""short_answer"": câu hỏi trả lời ngắn (options là [], correctOptionIndex là 0, correctAnswer là câu trả lời ngắn gọn).
+- Câu hỏi PHẢI chứa tên nhân vật hoặc chi tiết trực tiếp trong truyện.
 
 Trả lời JSON:
 {{
     ""quiz"": [
         {{
             ""type"": ""multiple_choice"",
-            ""question"": ""Câu hỏi"",
-            ""options"": [""A"", ""B"", ""C"", ""D""],
+            ""question"": ""Câu hỏi trắc nghiệm liên quan đến truyện?"",
+            ""options"": [""Đáp án A"", ""Đáp án B"", ""Đáp án C"", ""Đáp án D""],
             ""correctOptionIndex"": 0,
-            ""correctAnswer"": ""Đáp án"",
-            ""explanation"": ""Giải thích""
+            ""correctAnswer"": ""Đáp án A"",
+            ""explanation"": ""Giải thích ngắn gọn""
+        }},
+        {{
+            ""type"": ""true_false"",
+            ""question"": ""Câu hỏi đúng sai liên quan đến sự việc trong truyện?"",
+            ""options"": [""Đúng"", ""Sai""],
+            ""correctOptionIndex"": 0,
+            ""correctAnswer"": ""true"",
+            ""explanation"": ""Giải thích ngắn gọn""
+        }},
+        {{
+            ""type"": ""short_answer"",
+            ""question"": ""Câu hỏi trả lời ngắn về nhân vật hoặc hành động trong truyện?"",
+            ""options"": [],
+            ""correctOptionIndex"": 0,
+            ""correctAnswer"": ""Câu trả lời ngắn"",
+            ""explanation"": ""Giải thích ngắn gọn""
         }}
     ]
 }}
@@ -445,6 +462,7 @@ YÊU CẦU:
 - Độ tuổi: {request.AgeBand} tuổi
 - Số câu hỏi: 3
 - Ngôn ngữ: {request.Language}
+- Các câu hỏi PHẢI nhắc đến các nhân vật và sự việc trực tiếp trong truyện.
 
 TẠO CÂU HỎI:
 1. Hiểu câu chuyện
@@ -454,9 +472,9 @@ TẠO CÂU HỎI:
 Trả lời JSON:
 {{
     ""discussionQuestions"": [
-        {{ ""question"": ""Câu hỏi 1"" }},
-        {{ ""question"": ""Câu hỏi 2"" }},
-        {{ ""question"": ""Câu hỏi 3"" }}
+        {{ ""question"": ""Câu hỏi 1 nhắc đến nhân vật trong truyện?"" }},
+        {{ ""question"": ""Câu hỏi 2 liên hệ bài học câu chuyện với bản thân em?"" }},
+        {{ ""question"": ""Câu hỏi 3 về hành động của nhân vật trong truyện?"" }}
     ]
 }}
 

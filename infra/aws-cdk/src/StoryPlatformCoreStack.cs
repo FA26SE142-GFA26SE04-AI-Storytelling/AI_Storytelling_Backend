@@ -145,7 +145,6 @@ public sealed class StoryPlatformCoreStack : Stack
 
         VpcConnector = new CfnVpcConnector(this, "AppRunnerVpcConnector", new CfnVpcConnectorProps
         {
-            VpcConnectorName = "storyplatform-core-connector",
             Subnets = Vpc.SelectSubnets(new SubnetSelection { SubnetType = SubnetType.PRIVATE_WITH_EGRESS }).SubnetIds,
             SecurityGroups = new[] { vpcConnectorSecurityGroup.SecurityGroupId }
         });

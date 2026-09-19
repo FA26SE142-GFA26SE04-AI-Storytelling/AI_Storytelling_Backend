@@ -22,4 +22,21 @@ public class StoryPlatformCoreStackTests
         var template = SynthTemplate();
         Assert.NotNull(template);
     }
+
+    [Fact]
+    public void Stack_CreatesVpcWithNoNatGateways()
+    {
+        var template = SynthTemplate();
+        template.ResourceCountIs("AWS::EC2::VPC", 1);
+        template.ResourceCountIs("AWS::EC2::NatGateway", 0);
+    }
+
+    [Fact]
+    public void Stack_VpcHasTwoIsolatedSubnetsOnly()
+    {
+        var template = SynthTemplate();
+        // 2 AZs x 1 isolated subnet each, no public subnets
+        template.ResourceCountIs("AWS::EC2::Subnet", 2);
+        template.ResourceCountIs("AWS::EC2::InternetGateway", 0);
+    }
 }

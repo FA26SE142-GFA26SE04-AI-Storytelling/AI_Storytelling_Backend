@@ -47,7 +47,7 @@ public sealed class StoryPlatformCoreStack : Stack
         {
             Engine = DatabaseInstanceEngine.Postgres(new PostgresInstanceEngineProps
             {
-                Version = PostgresEngineVersion.VER_16_4
+                Version = PostgresEngineVersion.Of("16.9", "16")
             }),
             InstanceType = Amazon.CDK.AWS.EC2.InstanceType.Of(InstanceClass.BURSTABLE4_GRAVITON, InstanceSize.MICRO),
             Vpc = Vpc,

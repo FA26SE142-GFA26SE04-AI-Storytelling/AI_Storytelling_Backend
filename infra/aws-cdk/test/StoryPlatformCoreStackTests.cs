@@ -160,4 +160,24 @@ public class StoryPlatformCoreStackTests
             })
         });
     }
+
+    [Fact]
+    public void Stack_CreatesGitHubOidcProviderAndScopedCiRole()
+    {
+        var template = SynthTemplate();
+        template.ResourceCountIs("AWS::IAM::OIDCProvider", 1);
+        template.HasResourceProperties("AWS::IAM::Role", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["AssumeRolePolicyDocument"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["Statement"] = Match.ArrayWith(new object[]
+                {
+                    Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                    {
+                        ["Action"] = "sts:AssumeRoleWithWebIdentity"
+                    })
+                })
+            })
+        }));
+    }
 }

@@ -23,6 +23,7 @@ public sealed class StoryPlatformCoreStack : Stack
     public Role AppRunnerInstanceRole { get; }
     public CfnVpcConnector VpcConnector { get; }
     public CfnService? AppRunnerService { get; private set; }
+    public Role CiRole { get; }
 
     public StoryPlatformCoreStack(Construct scope, string id, IStackProps? props = null)
         : base(scope, id, props)
@@ -133,6 +134,48 @@ public sealed class StoryPlatformCoreStack : Stack
             VpcConnectorName = "storyplatform-core-connector",
             Subnets = Vpc.SelectSubnets(new SubnetSelection { SubnetType = SubnetType.PRIVATE_ISOLATED }).SubnetIds,
             SecurityGroups = new[] { vpcConnectorSecurityGroup.SecurityGroupId }
+        });
+
+        // Note: deliberately using the L1 CfnOIDCProvider (not the L2 OpenIdConnectProvider) so the
+        // synthesized template contains a native AWS::IAM::OIDCProvider resource. In aws-cdk-lib 2.170.0
+        // (the version pinned by this project), the L2 construct provisions the provider via a
+        // Lambda-backed custom resource (Custom::AWSCDKOpenIdConnectProvider) instead of the native
+        // CloudFormation resource type, which the test for this task asserts on directly.
+        var githubOidcProvider = new CfnOIDCProvider(this, "GitHubOidcProvider", new CfnOIDCProviderProps
+        {
+            Url = "https://token.actions.githubusercontent.com",
+            ClientIdList = new[] { "sts.amazonaws.com" },
+            ThumbprintList = new[] { "6938fd4d98bab03faadb97b34396831e3780aea" }
+        });
+
+        const string githubRepo = "FA26SE142-GFA26SE04-AI-Storytelling/AI_Storytelling_Backend"; // confirmed via `git remote -v` (origin)
+
+        CiRole = new Role(this, "GitHubActionsCiRole", new RoleProps
+        {
+            RoleName = "storyplatform-core-api-ci",
+            AssumedBy = new WebIdentityPrincipal(githubOidcProvider.Ref, new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["StringEquals"] = new System.Collections.Generic.Dictionary<string, object>
+                {
+                    ["token.actions.githubusercontent.com:aud"] = "sts.amazonaws.com"
+                },
+                ["StringLike"] = new System.Collections.Generic.Dictionary<string, object>
+                {
+                    ["token.actions.githubusercontent.com:sub"] = new[]
+                    {
+                        $"repo:{githubRepo}:ref:refs/heads/dev",
+                        $"repo:{githubRepo}:ref:refs/heads/main"
+                    }
+                }
+            })
+        });
+
+        EcrRepository.GrantPullPush(CiRole);
+
+        new CfnOutput(this, "CiRoleArnOutput", new CfnOutputProps
+        {
+            Value = CiRole.RoleArn,
+            Description = "Paste this ARN into the GitHub Actions workflow's role-to-assume input"
         });
 
         // Bootstrap gating: on the very first `cdk deploy`, the ECR repo above is empty

@@ -390,6 +390,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
                     ?? throw new InvalidOperationException("ACCEPTED_INPUT_MISSING");
         var context = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(request.ContextSnapshotJson, JsonOptions)
                       ?? throw new InvalidOperationException("CONTEXT_SNAPSHOT_MISSING");
+        ValidateConsentContext(context);
         StoryVersion? baseVersion = null;
         if (job.Operation == GenerationJobOperation.RegenerateOutline)
         {
@@ -415,6 +416,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
             Language = context.Language,
             Source = "ai",
             Interests = context.Interests,
+            ComprehensionGoal = context.ComprehensionGoal,
             StoryParameters = new StoryParametersDto
             {
                 Genre = input.Genre,
@@ -574,8 +576,16 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
     private async Task<AIStoryInputContextSnapshot> LoadAcceptedContextAsync(int storyId, CancellationToken cancellationToken)
     {
         var request = await LoadAcceptedRequestAsync(storyId, cancellationToken);
-        return JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(request.ContextSnapshotJson, JsonOptions)
-               ?? throw new ConflictException("Context Snapshot không hợp lệ.");
+        var context = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(request.ContextSnapshotJson, JsonOptions)
+                      ?? throw new ConflictException("Context Snapshot không hợp lệ.");
+        ValidateConsentContext(context);
+        return context;
+    }
+
+    private static void ValidateConsentContext(AIStoryInputContextSnapshot context)
+    {
+        if (!context.ConsentRecordedAt.HasValue || context.ConsentPolicyVersion <= 0)
+            throw new InvalidOperationException("CONSENT_REQUIRED");
     }
 
     private async Task<StoryVersion> LoadCurrentVersionAsync(int storyId, int versionNo, CancellationToken cancellationToken)

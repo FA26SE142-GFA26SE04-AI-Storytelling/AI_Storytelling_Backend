@@ -140,7 +140,7 @@ public sealed class Phase1To4SequentialWorkflowTests
         });
 
         var afterReview = await reviewService.ValidateAsync(1, story.Id);
-        Assert.True(afterReview.CanApprove);
+        Assert.True(afterReview.CanApprove, string.Join("; ", afterReview.Issues));
         var approval = await reviewService.ApproveAsync(1, story.Id);
         Assert.True(approval.Success);
         Assert.Equal(StoryStatus.Approved, story.Status);
@@ -398,7 +398,10 @@ public sealed class Phase1To4SequentialWorkflowTests
             Id = 1,
             ChildProfileId = 1,
             MaxStoryLength = 700,
-            RequiredApprovalMode = ApprovalMode.AlwaysManual
+            RequiredApprovalMode = ApprovalMode.AlwaysManual,
+            ConsentRecorded = true,
+            ConsentRecordedAt = DateTime.UtcNow,
+            ConsentPolicyVersion = 1
         });
         store.Seed(new SupervisionRelationship
         {

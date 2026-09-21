@@ -38,6 +38,8 @@ public sealed class ContentGenerationServiceTests
         var stable = store.Items<StoryVersion>().Single(item => item.Content is not null);
         Assert.Equal(StoryStatus.ContentReview, story.Status);
         Assert.True(stable.IsCurrent);
+        Assert.NotNull(stable.ReadabilityFkgl);
+        Assert.NotNull(stable.ReadabilityFre);
         Assert.False(store.Items<StoryVersion>().Single(item => item.Content is null).IsCurrent);
         Assert.Single(store.Items<StoryVocabulary>());
         Assert.Equal(3, store.Items<QuizItem>().Count);
@@ -151,13 +153,27 @@ public sealed class ContentGenerationServiceTests
         Assert.False(store.Items<StoryVersion>().Single(item => item.Content is not null).IsCurrent);
     }
 
+    [Fact]
+    public async Task Safety_score_below_profile_threshold_stops_before_vocabulary()
+    {
+        var store = Seed(safetyScoreThreshold: 90m);
+        var ai = new FakeAIClient(safetyScore: 75d);
+
+        Assert.True(await Service(store, ai).ProcessNextAsync());
+
+        var job = store.Items<StoryGenerationJob>().Single();
+        Assert.Equal(GenerationJobStatus.Failed, job.Status);
+        Assert.Equal("CONTENT_SAFETY_SCORE_NOT_MET", job.ErrorCode);
+        Assert.DoesNotContain(store.Items<StoryGenerationJob>(), item => item.Operation == GenerationJobOperation.GenerateVocabulary);
+    }
+
     private static StoryGenerationJob PendingJob(FakeUnitOfWork store) =>
         store.Items<StoryGenerationJob>().Single(item => item.Status == GenerationJobStatus.Pending);
 
     private static ContentGenerationService Service(FakeUnitOfWork store, IAIStoryGenerationClient ai) =>
         new(store, ai, new PassingQualityEvaluator(), new FakeFailureFinalizer(store), new RecordingHandoffService(store), new ContentGenerationOptions());
 
-    private static FakeUnitOfWork Seed()
+    private static FakeUnitOfWork Seed(decimal? safetyScoreThreshold = null)
     {
         var store = new FakeUnitOfWork();
         store.Seed(new Story { Id = 1, AuthorUserId = 1, ChildProfileId = 1, Source = StorySource.Ai, Status = StoryStatus.OutlineReview });
@@ -170,7 +186,12 @@ public sealed class ContentGenerationServiceTests
         store.Seed(outline);
         var input = new AcceptedAIStoryInputSnapshot("Tình bạn", null, "ai_suggested", [], "ai_suggested", null,
             "Biết chia sẻ", "level_2", "vi", 500);
-        var context = new AIStoryInputContextSnapshot(1, "6-8", 2, "level_2", "vi", 700, "always_manual", [], [], [], []);
+        var context = new AIStoryInputContextSnapshot(1, "6-8", 2, "level_2", "vi", 700, "always_manual", [], [], [], [])
+        {
+            SafetyScoreThreshold = safetyScoreThreshold,
+            ConsentRecordedAt = DateTime.UtcNow,
+            ConsentPolicyVersion = 1
+        };
         store.Seed(new StoryGenerationRequest
         {
             Id = 1, StoryId = 1, SubmittedByUserId = 1, IdempotencyKey = "input-key", Status = GenerationInputStatus.InputAccepted,
@@ -210,7 +231,10 @@ public sealed class ContentGenerationServiceTests
         }
     }
 
-    private sealed class FakeAIClient(bool invalidFirstVocabulary = false, bool blockSafety = false) : IAIStoryGenerationClient
+    private sealed class FakeAIClient(
+        bool invalidFirstVocabulary = false,
+        bool blockSafety = false,
+        double? safetyScore = null) : IAIStoryGenerationClient
     {
         private int _vocabularyCalls;
         public List<string> Calls { get; } = [];
@@ -268,6 +292,7 @@ public sealed class ContentGenerationServiceTests
             {
                 RequestId = request.RequestId,
                 IsAllowed = !blockSafety,
+                SafetyScore = safetyScore,
                 CanRefine = false,
                 ReasonCode = blockSafety ? "CONTENT_SAFETY_BLOCKED" : "CONTENT_SAFETY_ALLOWED"
             });

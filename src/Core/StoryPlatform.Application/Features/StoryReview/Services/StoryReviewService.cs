@@ -3,6 +3,7 @@ using System.Linq;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
+using StoryPlatform.Application.Features.ContentGeneration.Quality;
 using StoryPlatform.Application.Features.StoryReview.DTOs;
 using StoryPlatform.Application.Features.StoryReview.Interfaces;
 using StoryPlatform.Contracts.AI.Models;
@@ -51,6 +52,7 @@ public sealed class StoryReviewService : IStoryReviewService
         var vocabCount = await _vocabRepo.CountAsync(v => v.StoryVersionId == version.Id, cancellationToken);
         var quizCount = await _quizRepo.CountAsync(q => q.StoryVersionId == version.Id, cancellationToken);
         var discussionCount = await _discussionRepo.CountAsync(d => d.StoryVersionId == version.Id, cancellationToken);
+        var readability = ReadabilityCalculator.Calculate(version.Content, story.Language);
 
         return new ReviewPackageDto
         {
@@ -60,6 +62,9 @@ public sealed class StoryReviewService : IStoryReviewService
             Title = version.Title,
             Content = version.Content ?? string.Empty,
             Lesson = version.Lesson ?? string.Empty,
+            ReadabilityAlgorithm = readability.Algorithm,
+            ReadabilityFkgl = version.ReadabilityFkgl ?? readability.Fkgl,
+            ReadabilityFre = version.ReadabilityFre ?? readability.Fre,
             Vocabulary = new ArtifactStatusDto { State = vocabCount > 0 ? "completed" : "pending", ItemCount = vocabCount },
             Quiz = new ArtifactStatusDto { State = quizCount > 0 ? "completed" : "pending", ItemCount = quizCount },
             Discussion = new ArtifactStatusDto { State = discussionCount > 0 ? "completed" : "pending", ItemCount = discussionCount },
@@ -75,8 +80,11 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<StoryReviewDto> GetStoryForReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
+                    ?? throw new NotFoundException("Story");
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
+        var readability = ReadabilityCalculator.Calculate(version.Content, story.Language);
 
         return new StoryReviewDto
         {
@@ -84,7 +92,10 @@ public sealed class StoryReviewService : IStoryReviewService
             VersionId = version.Id,
             Title = version.Title,
             Content = version.Content ?? string.Empty,
-            Lesson = version.Lesson ?? string.Empty
+            Lesson = version.Lesson ?? string.Empty,
+            ReadabilityAlgorithm = readability.Algorithm,
+            ReadabilityFkgl = version.ReadabilityFkgl ?? readability.Fkgl,
+            ReadabilityFre = version.ReadabilityFre ?? readability.Fre
         };
     }
 
@@ -118,6 +129,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
             currentVersion.IsCurrent = false;
             _versionRepo.Update(currentVersion);
+            var readability = ReadabilityCalculator.Calculate(input.Content, story.Language);
 
             var newVersion = new StoryVersion
             {
@@ -131,8 +143,8 @@ public sealed class StoryReviewService : IStoryReviewService
                 OutlineOpening = currentVersion.OutlineOpening,
                 OutlineDevelopment = currentVersion.OutlineDevelopment,
                 OutlineEnding = currentVersion.OutlineEnding,
-                ReadabilityFkgl = currentVersion.ReadabilityFkgl,
-                ReadabilityFre = currentVersion.ReadabilityFre,
+                ReadabilityFkgl = readability.Fkgl,
+                ReadabilityFre = readability.Fre,
                 IsCurrent = true,
                 OutlineApprovedAt = currentVersion.OutlineApprovedAt,
                 OutlineApprovedByUserId = currentVersion.OutlineApprovedByUserId
@@ -159,7 +171,10 @@ public sealed class StoryReviewService : IStoryReviewService
                 VersionId = newVersion.Id,
                 Title = newVersion.Title,
                 Content = newVersion.Content,
-                Lesson = newVersion.Lesson
+                Lesson = newVersion.Lesson,
+                ReadabilityAlgorithm = readability.Algorithm,
+                ReadabilityFkgl = newVersion.ReadabilityFkgl,
+                ReadabilityFre = newVersion.ReadabilityFre
             };
         }
         catch
@@ -655,6 +670,13 @@ public sealed class StoryReviewService : IStoryReviewService
         var checks = new List<ValidationCheckDto>();
         var issues = new List<string>();
 
+        var story = await _storyRepo.FirstOrDefaultAsync(s => s.Id == storyId, cancellationToken: cancellationToken);
+        if (story == null)
+        {
+            checks.Add(new ValidationCheckDto { Name = "story_exists", Passed = false, Message = "Story not found" });
+            return new ValidationResultDto { CanApprove = false, Checks = checks, Issues = ["Story not found"] };
+        }
+
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken);
         if (version == null)
         {
@@ -669,6 +691,28 @@ public sealed class StoryReviewService : IStoryReviewService
                          !string.IsNullOrWhiteSpace(version.Lesson);
         checks.Add(new ValidationCheckDto { Name = "story_complete", Passed = storyValid, Message = storyValid ? null : "Title, Content, or Lesson is empty" });
         if (!storyValid) issues.Add("Story content is incomplete");
+
+        var safetyPolicy = await _unitOfWork.Repository<SafetyPolicy>().FirstOrDefaultAsync(
+            policy => policy.ChildProfileId == story.ChildProfileId,
+            cancellationToken: cancellationToken);
+        var readability = ReadabilityCalculator.EvaluateForProfile(
+            version.Content,
+            story.Language,
+            story.ReadingLevel ?? 2,
+            safetyPolicy?.ReadabilityScoreThreshold);
+        checks.Add(new ValidationCheckDto
+        {
+            Name = "readability_valid",
+            Passed = readability.Passed,
+            Message = $"{readability.Metrics.Algorithm}: grade={readability.Metrics.Fkgl:F2}, ease={readability.Metrics.Fre:F2}"
+        });
+        if (!readability.Passed)
+        {
+            issues.Add($"Readability does not match Reading Level {story.ReadingLevel ?? 2} " +
+                       $"(grade {readability.Metrics.Fkgl:F2}/{readability.MaximumGradeLevel:F2}, " +
+                       $"ease {readability.Metrics.Fre:F2}/{readability.MinimumEaseScore:F2}, " +
+                       $"average words {readability.Metrics.AverageWordsPerSentence:F2}/{readability.MaximumAverageWordsPerSentence:F2})");
+        }
 
         // Check vocabulary
         var vocabularyItems = await _vocabRepo.FindAsync(v => v.StoryVersionId == version.Id, cancellationToken: cancellationToken);
@@ -696,7 +740,7 @@ public sealed class StoryReviewService : IStoryReviewService
         checks.Add(new ValidationCheckDto { Name = "discussion_valid", Passed = discussionValid, Message = $"{discussionItems.Count} questions" });
         if (!discussionValid) issues.Add($"Discussion needs at least 2 non-empty questions including the moral lesson (current: {discussionItems.Count})");
 
-        var canApprove = storyValid && vocabValid && quizPassed && discussionValid;
+        var canApprove = storyValid && readability.Passed && vocabValid && quizPassed && discussionValid;
         return new ValidationResultDto
         {
             CanApprove = canApprove,

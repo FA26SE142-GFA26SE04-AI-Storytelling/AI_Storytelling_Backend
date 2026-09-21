@@ -196,18 +196,29 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
                     BlockedTopics = PolicyTerms(handoff.Context.BlockedCategoryTerms, handoff.Context.BlockedCategoryCodes),
                     RestrictedTopics = PolicyTerms(handoff.Context.RestrictedCategoryTerms, handoff.Context.RestrictedCategoryCodes)
                 }, cancellationToken);
-                if (!semanticSafety.IsAllowed)
+                var safetyScore = (decimal)(semanticSafety.SafetyScore ?? (semanticSafety.IsAllowed ? 100d : 0d));
+                var meetsThreshold = !handoff.Context.SafetyScoreThreshold.HasValue ||
+                                     safetyScore >= handoff.Context.SafetyScoreThreshold.Value;
+                if (!semanticSafety.IsAllowed || !meetsThreshold)
                 {
                     var violations = semanticSafety.Violations.Count > 0
                         ? semanticSafety.Violations
-                        : ["Semantic safety evaluation rejected the generated story."];
+                        : [!meetsThreshold
+                            ? $"Safety score {safetyScore:F2} thấp hơn ngưỡng {handoff.Context.SafetyScoreThreshold:F2}."
+                            : "Semantic safety evaluation rejected the generated story."];
                     quality = quality with
                     {
                         IsPassed = false,
+                        SafetyScore = safetyScore,
                         Safety = new ContentQualityGate(false, semanticSafety.CanRefine,
+                            !meetsThreshold ? "CONTENT_SAFETY_SCORE_NOT_MET" :
                             string.IsNullOrWhiteSpace(semanticSafety.ReasonCode) ? "CONTENT_SAFETY_BLOCKED" : semanticSafety.ReasonCode,
                             violations)
                     };
+                }
+                else
+                {
+                    quality = quality with { SafetyScore = safetyScore };
                 }
             }
             var candidate = persistedCandidate ?? await PersistCandidateAsync(
@@ -221,7 +232,10 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             }
 
             if (!quality.Safety.Passed && !quality.Safety.CanRefine)
-                throw new InvalidOperationException("CONTENT_SAFETY_BLOCKED");
+                throw new InvalidOperationException(
+                    string.IsNullOrWhiteSpace(quality.Safety.ReasonCode)
+                        ? "CONTENT_SAFETY_BLOCKED"
+                        : quality.Safety.ReasonCode);
             if (refinement >= _maxRefinementAttempts || quality.RefinementReasons.Count == 0)
                 throw new InvalidOperationException("CONTENT_QUALITY_NOT_MET");
 
@@ -290,6 +304,8 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             {
                 RequestId = $"quiz-job-{jobId}-attempt-{attempt}", Story = ToContent(state.Version), AgeBand = state.Context.AgeBand,
                 Language = state.Context.Language,
+                ComprehensionGoal = state.Context.ComprehensionGoal,
+                ComprehensionThresholdPercent = state.Context.ComprehensionThresholdPercent,
                 Vocabulary = vocabulary.Select(item => new GeneratedVocabularyItemDto(item.Term, item.Definition)).ToArray()
             }, cancellationToken);
             try
@@ -325,7 +341,8 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             response = await _aiClient.GenerateDiscussionAsync(new GenerateDiscussionRequest
             {
                 RequestId = $"discussion-job-{jobId}-attempt-{attempt}", Story = ToContent(state.Version), AgeBand = state.Context.AgeBand,
-                Language = state.Context.Language
+                Language = state.Context.Language,
+                ComprehensionGoal = state.Context.ComprehensionGoal
             }, cancellationToken);
             questions = response.Items.Select(item => item.Question.Trim()).Where(item => item.Length > 0)
                 .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -388,7 +405,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             var versions = await _unitOfWork.Repository<StoryVersion>().FindAsync(
                 item => item.StoryId == handoff.Job.StoryId, cancellationToken: cancellationToken);
             var storyText = Flatten(content);
-            var readability = EnglishReadability(storyText, handoff.Context.Language);
+            var readability = ReadabilityCalculator.Calculate(storyText, handoff.Context.Language);
             var candidate = new StoryVersion
             {
                 StoryId = handoff.Job.StoryId,
@@ -402,7 +419,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
                 Lesson = content.Lesson.Trim(),
                 ReadabilityFkgl = readability.Fkgl,
                 ReadabilityFre = readability.Fre,
-                SafetyScore = quality.Safety.Passed ? 1m : 0m,
+                SafetyScore = quality.SafetyScore ?? (quality.Safety.Passed ? 1m : 0m),
                 IsCurrent = false
             };
             await _unitOfWork.Repository<StoryVersion>().AddAsync(candidate, cancellationToken);
@@ -503,6 +520,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
                     ?? throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
         var context = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(request.ContextSnapshotJson, JsonOptions)
                       ?? throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
+        ValidateConsentContext(context);
         return new ContentHandoff(job, request, baseVersion, input, context);
     }
 
@@ -518,7 +536,14 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
         var context = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(request.ContextSnapshotJson, JsonOptions)
                       ?? throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
+        ValidateConsentContext(context);
         return new ArtifactState(job, version, context);
+    }
+
+    private static void ValidateConsentContext(AIStoryInputContextSnapshot context)
+    {
+        if (!context.ConsentRecordedAt.HasValue || context.ConsentPolicyVersion <= 0)
+            throw new InvalidOperationException("CONSENT_REQUIRED");
     }
 
     private async Task<StoryGenerationJob> RequireClaimedJobAsync(
@@ -565,6 +590,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
         RequestId = $"content-job-{job.Id}", ApprovedOutlineReference = $"story-version-{version.Id}",
         Outline = ToOutline(version), AgeBand = context.AgeBand, ReadingLevel = context.ReadingLevel.ToString(),
         VocabularyLevel = context.VocabularyLevel, Language = context.Language,
+        ComprehensionGoal = context.ComprehensionGoal,
         StoryParameters = new StoryParametersDto
         {
             Genre = input.Genre, CharacterMode = input.CharacterMode, Characters = input.Characters,
@@ -675,35 +701,6 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             .Where(item => item.Length >= 4)
             .ToArray();
         return terms.Length == 0 || terms.Any(item => source.Contains(item, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static (decimal? Fkgl, decimal? Fre) EnglishReadability(string content, string language)
-    {
-        if (!language.StartsWith("en", StringComparison.OrdinalIgnoreCase)) return (null, null);
-        var words = content.Split([' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
-            .Select(item => new string(item.Where(char.IsLetter).ToArray())).Where(item => item.Length > 0).ToArray();
-        if (words.Length == 0) return (null, null);
-        var sentences = Math.Max(1, content.Count(character => character is '.' or '!' or '?'));
-        var syllables = words.Sum(EnglishSyllables);
-        var wordsPerSentence = (double)words.Length / sentences;
-        var syllablesPerWord = (double)syllables / words.Length;
-        var fkgl = 0.39 * wordsPerSentence + 11.8 * syllablesPerWord - 15.59;
-        var fre = 206.835 - 1.015 * wordsPerSentence - 84.6 * syllablesPerWord;
-        return ((decimal)Math.Round(fkgl, 2), (decimal)Math.Round(fre, 2));
-    }
-
-    private static int EnglishSyllables(string word)
-    {
-        var count = 0;
-        var previousVowel = false;
-        foreach (var character in word.ToLowerInvariant())
-        {
-            var vowel = "aeiouy".Contains(character);
-            if (vowel && !previousVowel) count++;
-            previousVowel = vowel;
-        }
-        if (word.EndsWith('e') && count > 1) count--;
-        return Math.Max(1, count);
     }
 
     private sealed record ContentHandoff(StoryGenerationJob Job, StoryGenerationRequest Request, StoryVersion BaseVersion,

@@ -38,6 +38,31 @@ After phase 2 succeeds, the flag is persisted in `cdk.json` (`"includeAppRunnerS
 so future `cdk deploy` runs (CI or manual) don't need the `--context` flag and won't
 accidentally omit — and thereby delete — the running App Runner service.
 
+## CI/CD deploy flow (as of 2026-09-21)
+
+Every push to `dev` or `main` touching `src/Core/**`, `src/Shared/**`, `Dockerfile`, or the workflow
+file itself runs `.github/workflows/deploy-core-api.yml`:
+
+1. **`test` job** — `dotnet build`/`dotnet test` on `StoryPlatform.sln`. A failing test stops the
+   pipeline here; nothing is built or deployed.
+2. **`build-and-push` job** (`needs: test`) — builds the image from the root `Dockerfile`
+   (`--target core-api`, the same target `docker compose` uses locally), pushes `:sha` and `:latest`
+   to ECR, then explicitly calls `aws apprunner start-deployment` and polls
+   `aws apprunner describe-service` until the service reports `RUNNING` (success) or a
+   `ROLLBACK_*`/`CREATE_FAILED` status (failure — the GitHub Actions job fails too, so a bad deploy
+   is never silent).
+
+App Runner's `AutoDeploymentsEnabled` is **disabled** — pushing a new `:latest` tag to ECR no longer
+triggers anything by itself. The `start-deployment` call above is the only way a deploy happens.
+
+**Database migrations are applied automatically** by the container itself at startup
+(`Program.cs` calls `ApplicationDbContext.Database.Migrate()`), not by CI — GitHub-hosted runners
+cannot reach RDS (`PRIVATE_ISOLATED` subnet), but the App Runner container already can via its VPC
+Connector. If a migration is bad, the container fails its `/health` check and App Runner
+automatically keeps serving the last good revision — no manual rollback needed, but also no
+automatic *schema* rollback (migrations are forward-only; write a corrective migration instead of
+trying to revert one already applied to the shared environment).
+
 ## Full teardown-and-redeploy caveat
 
 `cdk destroy` deletes the stack's resources, but the 5 Secrets Manager secrets (4 app

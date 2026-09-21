@@ -95,28 +95,78 @@ public sealed class StoryReviewService : IStoryReviewService
             throw new BadRequestException("Title, content and lesson are required.");
         }
 
-        var version = await _versionRepo.FirstOrDefaultAsync(
-                v => v.Id == input.VersionId && v.StoryId == storyId && v.IsCurrent,
-                cancellationToken: cancellationToken)
-            ?? throw new NotFoundException("StoryVersion");
+        // Phase 4 hardening: KHÔNG ghi đè current version.
+        // Mọi chỉnh sửa phải tạo StoryVersion mới (EditType = HumanEdited) để bảo toàn audit trail.
+        var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
+                    ?? throw new NotFoundException("Story");
+        await EnsureReviewPermissionAsync(story, userId, cancellationToken);
 
-        version.Title = input.Title.Trim();
-        version.Content = input.Content.Trim();
-        version.Lesson = input.Lesson.Trim();
-        version.EditorUserId = userId;
-        version.EditType = VersionEditType.HumanEdited;
-
-        _versionRepo.Update(version);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        return new StoryReviewDto
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
         {
-            StoryId = storyId,
-            VersionId = version.Id,
-            Title = version.Title,
-            Content = version.Content,
-            Lesson = version.Lesson
-        };
+            await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
+
+            var currentVersion = await _versionRepo.FirstOrDefaultAsync(
+                    v => v.Id == input.VersionId && v.StoryId == storyId && v.IsCurrent,
+                    cancellationToken: cancellationToken)
+                ?? throw new NotFoundException("StoryVersion");
+
+            // Tạo version mới với EditType = HumanEdited, version_no = current + 1.
+            var versions = await _versionRepo.FindAsync(
+                v => v.StoryId == storyId, cancellationToken: cancellationToken);
+            var nextVersionNo = versions.Select(v => v.VersionNo).DefaultIfEmpty().Max() + 1;
+
+            currentVersion.IsCurrent = false;
+            _versionRepo.Update(currentVersion);
+
+            var newVersion = new StoryVersion
+            {
+                StoryId = storyId,
+                VersionNo = nextVersionNo,
+                EditType = VersionEditType.HumanEdited,
+                EditorUserId = userId,
+                Title = input.Title.Trim(),
+                Content = input.Content.Trim(),
+                Lesson = input.Lesson.Trim(),
+                OutlineOpening = currentVersion.OutlineOpening,
+                OutlineDevelopment = currentVersion.OutlineDevelopment,
+                OutlineEnding = currentVersion.OutlineEnding,
+                ReadabilityFkgl = currentVersion.ReadabilityFkgl,
+                ReadabilityFre = currentVersion.ReadabilityFre,
+                IsCurrent = true,
+                OutlineApprovedAt = currentVersion.OutlineApprovedAt,
+                OutlineApprovedByUserId = currentVersion.OutlineApprovedByUserId
+            };
+            await _versionRepo.AddAsync(newVersion, cancellationToken);
+
+            // Đồng bộ Story header cho khớp với current version.
+            story.Title = newVersion.Title;
+            story.Content = newVersion.Content;
+            story.MoralLesson = newVersion.Lesson;
+            _storyRepo.Update(story);
+
+            // Artifact revalidation: vocab/quiz/discussion đã sinh cho version cũ không
+            // còn phù hợp -> đánh dấu job cũ là stale. Phase 3 worker sẽ tự skip job cũ
+            // (qua StoryVersionId != current), và controller Phase 4 sẽ yêu cầu revalidate.
+            // Ở đây ta KHÔNG xoá artifact cũ để giữ audit trail; chỉ đảm bảo chúng
+            // không được dùng lại cho version mới (worker đã check version.IsCurrent).
+
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+            return new StoryReviewDto
+            {
+                StoryId = storyId,
+                VersionId = newVersion.Id,
+                Title = newVersion.Title,
+                Content = newVersion.Content,
+                Lesson = newVersion.Lesson
+            };
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            throw;
+        }
     }
 
     public async Task<CreateProposalResponseDto> CreateProposalAsync(int userId, int storyId, PartialEditRequestDto input, CancellationToken cancellationToken = default)

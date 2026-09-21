@@ -1,0 +1,106 @@
+name: story-platform-backend
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    init: true
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-AIStorytellingDB}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - backend
+
+  core-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: core-api
+    image: story-platform/core-api:local
+    init: true
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-AIStorytellingDB};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD}
+      JwtSettings__SecretKey: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env}
+      JwtSettings__Issuer: ${JWT_ISSUER:-StoryPlatform}
+      JwtSettings__Audience: ${JWT_AUDIENCE:-StoryPlatform.Client}
+      JwtSettings__ExpiryMinutes: ${JWT_EXPIRY_MINUTES:-60}
+      JwtSettings__RefreshTokenExpiryDays: ${JWT_REFRESH_TOKEN_EXPIRY_DAYS:-7}
+      JwtSettings__ChildTokenExpiryMinutes: ${JWT_CHILD_TOKEN_EXPIRY_MINUTES:-120}
+      Swagger__Enabled: ${SWAGGER_ENABLED:-true}
+      AIService__ApiKey: ${GEMINI_API_KEY:-}
+      AIService__Model: ${GEMINI_MODEL:-gemini-2.5-flash}
+      AIService__TimeoutSeconds: ${GEMINI_TIMEOUT_SECONDS:-150}
+      AI__MediaGeneration__WorkerEnabled: ${MEDIA_WORKER_ENABLED:-false}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-}
+      SUPABASE_MEDIA_BUCKET: ${SUPABASE_MEDIA_BUCKET:-story-media}
+      ResendSettings__ApiKey: ${RESEND_API_KEY:-}
+      ResendSettings__FromEmail: ${RESEND_FROM_EMAIL:-onboarding@resend.dev}
+      ResendSettings__FromName: ${RESEND_FROM_NAME:-AI Storytelling Platform}
+      SePaySettings__BankAccountNumber: ${SEPAY_BANK_ACCOUNT_NUMBER:-}
+      SePaySettings__BankCode: ${SEPAY_BANK_CODE:-}
+      SePaySettings__AccountName: ${SEPAY_ACCOUNT_NAME:-}
+      SePaySettings__WebhookApiKey: ${SEPAY_WEBHOOK_API_KEY:-}
+    ports:
+      - "${CORE_API_PORT:-5259}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - backend
+
+  ai-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: ai-api
+    image: story-platform/ai-api:local
+    init: true
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      Swagger__Enabled: ${SWAGGER_ENABLED:-true}
+      AI__Provider: ${AI_PROVIDER:-Gemini}
+      AI__InternalApiKey: ${AI_INTERNAL_API_KEY:?Set AI_INTERNAL_API_KEY in .env}
+      AI__Gemini__ApiKey: ${GEMINI_API_KEY:-}
+      AI__Gemini__Model: ${GEMINI_MODEL:-gemini-2.5-flash}
+      AI__Gemini__TimeoutSeconds: ${GEMINI_TIMEOUT_SECONDS:-120}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    ports:
+      - "${AI_API_PORT:-5260}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - backend
+
+volumes:
+  postgres-data:
+
+networks:
+  backend:
+    driver: bridge

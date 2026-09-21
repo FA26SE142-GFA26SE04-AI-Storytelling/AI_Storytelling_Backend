@@ -263,7 +263,11 @@ public class StoryPlatformCoreStackTests
             ["HealthCheckConfiguration"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
             {
                 ["Protocol"] = "HTTP",
-                ["Path"] = "/health"
+                ["Path"] = "/health",
+                // Regression guard: a live deploy on 2026-09-21 found the old UnhealthyThreshold=5
+                // (50s budget) too tight for the startup path added by ApplyPendingMigrations
+                // (RDS connection + migration-history check over the VPC Connector, ~40s observed).
+                ["UnhealthyThreshold"] = 15
             })
         });
     }

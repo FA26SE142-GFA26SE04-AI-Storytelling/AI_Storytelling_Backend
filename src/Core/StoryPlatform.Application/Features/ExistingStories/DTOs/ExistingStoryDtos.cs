@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 
 namespace StoryPlatform.Application.Features.ExistingStories.DTOs;
 
@@ -6,12 +7,11 @@ namespace StoryPlatform.Application.Features.ExistingStories.DTOs;
 
 /// <summary>
 /// Request nhập nội dung truyện từ Parent/Teacher.
-/// Hỗ trợ giai đoạn đầu: paste (text) và txt (UTF-8).
-/// DOCX sẽ bổ sung sau khi Paste/TXT ổn định.
+/// Hỗ trợ paste, TXT UTF-8 và DOCX.
 /// </summary>
 public sealed class ImportStoryRequestDto
 {
-    /// <summary>Loại đầu vào. Hiện hỗ trợ: <c>paste</c>, <c>txt</c>.</summary>
+    /// <summary>Loại đầu vào: <c>paste</c>, <c>txt</c> hoặc <c>docx</c>.</summary>
     public string InputMethod { get; set; } = "paste";
 
     /// <summary>Nội dung truyện thô (paste) hoặc nội dung file txt.</summary>
@@ -30,6 +30,17 @@ public sealed class ImportStoryRequestDto
     public string? IdempotencyKey { get; set; }
 }
 
+public sealed class ImportStoryDocumentRequestDto
+{
+    public Stream Content { get; set; } = Stream.Null;
+    public string FileName { get; set; } = string.Empty;
+    public string? ContentType { get; set; }
+    public string? Title { get; set; }
+    public int ChildProfileId { get; set; }
+    public string Language { get; set; } = "vi";
+    public string? IdempotencyKey { get; set; }
+}
+
 public sealed class ImportStoryResponseDto
 {
     public int StoryId { get; set; }
@@ -37,6 +48,10 @@ public sealed class ImportStoryResponseDto
     public string StoryStatus { get; set; } = string.Empty;
     public string EditType { get; set; } = string.Empty;
     public int? ContentLength { get; set; }
+    public string InputStatus { get; set; } = string.Empty;
+    public string? ReasonCode { get; set; }
+    public string? FallbackMessage { get; set; }
+    public bool CanProceed { get; set; }
     public IReadOnlyList<string> Warnings { get; set; } = new List<string>();
 }
 
@@ -62,6 +77,7 @@ public sealed class ExistingStoryEvaluationDto
     public int? RecommendedAgeBand { get; set; }
     public decimal? ReadabilityFkgl { get; set; }
     public decimal? ReadabilityFre { get; set; }
+    public decimal? SafetyScore { get; set; }
     public int? WordCount { get; set; }
     public bool CanKeepOriginal { get; set; }
 }

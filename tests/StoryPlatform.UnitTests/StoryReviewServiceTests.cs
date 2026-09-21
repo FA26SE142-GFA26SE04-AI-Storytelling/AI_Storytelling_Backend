@@ -3,6 +3,7 @@ using System.Text.Json;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
+using StoryPlatform.Application.Features.ContentGeneration.Quality;
 using StoryPlatform.Application.Features.StoryReview.DTOs;
 using StoryPlatform.Application.Features.StoryReview.Interfaces;
 using StoryPlatform.Application.Features.StoryReview.Services;
@@ -50,6 +51,34 @@ public sealed class StoryReviewServiceTests
     #endregion
 
     #region Story Review Tests
+
+    [Fact]
+    public async Task UpdateStory_RecalculatesVietnameseReadabilityAndReturnsMetrics()
+    {
+        var unitOfWork = SeedContentReview();
+        var oldVersion = unitOfWork.Items<StoryVersion>().Single();
+        oldVersion.ReadabilityFkgl = 99m;
+        oldVersion.ReadabilityFre = 1m;
+        const string updatedContent = "Lan gặp Minh trong rừng. Hai bạn cùng đọc sách và giúp đỡ nhau.";
+
+        var result = await Service(unitOfWork).UpdateStoryAsync(1, 1, new UpdateStoryRequestDto
+        {
+            VersionId = oldVersion.Id,
+            Title = oldVersion.Title,
+            Content = updatedContent,
+            Lesson = oldVersion.Lesson!
+        });
+
+        var expected = ReadabilityCalculator.Calculate(updatedContent, "vi");
+        var current = unitOfWork.Items<StoryVersion>().Single(version => version.IsCurrent);
+        Assert.Equal("VI_READABILITY_V1", result.ReadabilityAlgorithm);
+        Assert.Equal(expected.Fkgl, current.ReadabilityFkgl);
+        Assert.Equal(expected.Fre, current.ReadabilityFre);
+        Assert.Equal(current.ReadabilityFkgl, result.ReadabilityFkgl);
+        Assert.Equal(current.ReadabilityFre, result.ReadabilityFre);
+        Assert.NotEqual(99m, current.ReadabilityFkgl);
+        Assert.NotEqual(1m, current.ReadabilityFre);
+    }
 
     [Fact]
     public async Task UpdateStory_Success()
@@ -649,7 +678,7 @@ public sealed class StoryReviewServiceTests
             StoryId = 1,
             VersionNo = 1,
             Title = "Cáo nhỏ tốt bụng",
-            Content = "Đây là nội dung truyện mới trong rừng về chuyến phiêu lưu cùng bạn bè.",
+            Content = "Đây là nội dung truyện mới trong rừng. Cáo nhỏ có chuyến phiêu lưu cùng bạn bè.",
             Lesson = "Biết chia sẻ với bạn bè",
             IsCurrent = true,
             EditType = VersionEditType.Initial

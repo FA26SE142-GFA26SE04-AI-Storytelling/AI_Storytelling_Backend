@@ -11,6 +11,7 @@ public sealed record GenerateOutlineRequest
     public string Language { get; init; } = "vi";
     public string Source { get; init; } = "ai";
     public IReadOnlyList<string> Interests { get; init; } = [];
+    public string? ComprehensionGoal { get; init; }
     public StoryParametersDto StoryParameters { get; init; } = new();
     public GenerationConstraintsDto Constraints { get; init; } = new();
 }
@@ -24,6 +25,7 @@ public sealed record GenerateStoryRequest
     public string Language { get; init; } = "vi";
     public string Source { get; init; } = "ai";
     public string ApprovedOutlineReference { get; init; } = string.Empty;
+    public string? ComprehensionGoal { get; init; }
     public StoryOutlineDto Outline { get; init; } = new(string.Empty, string.Empty, string.Empty);
     public StoryParametersDto StoryParameters { get; init; } = new();
     public GenerationConstraintsDto Constraints { get; init; } = new();
@@ -55,6 +57,7 @@ public sealed record GenerateStoryContentRequest
     public string VocabularyLevel { get; init; } = string.Empty;
     public string Language { get; init; } = "vi";
     public string ApprovedOutlineReference { get; init; } = string.Empty;
+    public string? ComprehensionGoal { get; init; }
     public StoryOutlineDto Outline { get; init; } = new(string.Empty, string.Empty, string.Empty);
     public StoryParametersDto StoryParameters { get; init; } = new();
     public GenerationConstraintsDto Constraints { get; init; } = new();
@@ -91,6 +94,8 @@ public sealed record GenerateQuizRequest
     public IReadOnlyList<GeneratedVocabularyItemDto> Vocabulary { get; init; } = [];
     public string AgeBand { get; init; } = string.Empty;
     public string Language { get; init; } = "vi";
+    public string? ComprehensionGoal { get; init; }
+    public decimal? ComprehensionThresholdPercent { get; init; }
 }
 
 public sealed record GenerateDiscussionRequest
@@ -99,6 +104,7 @@ public sealed record GenerateDiscussionRequest
     public StoryContentDto Story { get; init; } = new();
     public string AgeBand { get; init; } = string.Empty;
     public string Language { get; init; } = "vi";
+    public string? ComprehensionGoal { get; init; }
 }
 
 public sealed record EvaluateContentSafetyRequest

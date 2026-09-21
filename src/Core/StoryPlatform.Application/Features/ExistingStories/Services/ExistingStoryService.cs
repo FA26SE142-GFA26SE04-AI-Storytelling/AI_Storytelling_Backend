@@ -7,6 +7,7 @@ using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
+using StoryPlatform.Application.Features.AIStoryInput.Guardrails;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
 using StoryPlatform.Application.Features.ExistingStories.DTOs;
 using StoryPlatform.Application.Features.ExistingStories.Helpers;
@@ -36,22 +37,72 @@ public sealed class ExistingStoryService : IExistingStoryService
     private readonly IAIStoryGenerationClient _aiClient;
     private readonly IStableVersionArtifactHandoffService _handoff;
     private readonly IAuditLogWriter _auditLog;
+    private readonly IInputGuardrail _fullContentGuardrail;
 
     public ExistingStoryService(
         IUnitOfWork unitOfWork,
         ISupervisionAccessGuard accessGuard,
         IAIStoryGenerationClient aiClient,
         IStableVersionArtifactHandoffService handoff,
-        IAuditLogWriter auditLog)
+        IAuditLogWriter auditLog,
+        IInputGuardrail? fullContentGuardrail = null)
     {
         _unitOfWork = unitOfWork;
         _accessGuard = accessGuard;
         _aiClient = aiClient;
         _handoff = handoff;
         _auditLog = auditLog;
+        _fullContentGuardrail = fullContentGuardrail ?? new RuleBasedInputGuardrail();
     }
 
     #region Import
+
+    public async Task<ImportStoryResponseDto> ImportDocumentAsync(
+        int userId, ImportStoryDocumentRequestDto request, CancellationToken cancellationToken = default)
+    {
+        if (request is null || request.Content == Stream.Null || !request.Content.CanRead)
+            throw new BadRequestException("File upload không hợp lệ.");
+        if (request.ChildProfileId <= 0)
+            throw new BadRequestException("ChildProfileId không hợp lệ.");
+        if (request.Content.CanSeek && request.Content.Length > 5_000_000)
+            throw new BadRequestException("File upload vượt quá giới hạn 5 MB.");
+
+        var extension = Path.GetExtension(request.FileName).ToLowerInvariant();
+        string content;
+        string inputMethod;
+        if (extension == ".docx")
+        {
+            content = DocxTextExtractor.Extract(request.Content);
+            inputMethod = "docx";
+        }
+        else if (extension == ".txt")
+        {
+            using var reader = new StreamReader(
+                request.Content, new System.Text.UTF8Encoding(false, true), detectEncodingFromByteOrderMarks: true,
+                bufferSize: 4096, leaveOpen: true);
+            content = await reader.ReadToEndAsync(cancellationToken);
+            if (content.Length > 200_000)
+                throw new BadRequestException("Nội dung trích xuất từ TXT vượt quá 200000 ký tự.");
+            inputMethod = "txt";
+        }
+        else
+        {
+            throw new BadRequestException("Chỉ hỗ trợ file .txt hoặc .docx.");
+        }
+
+        if (string.IsNullOrWhiteSpace(content))
+            throw new BadRequestException("Không trích xuất được nội dung văn bản từ file.");
+
+        return await ImportAsync(userId, new ImportStoryRequestDto
+        {
+            InputMethod = inputMethod,
+            Content = content,
+            Title = request.Title,
+            ChildProfileId = request.ChildProfileId,
+            Language = request.Language,
+            IdempotencyKey = request.IdempotencyKey
+        }, cancellationToken);
+    }
 
     public async Task<ImportStoryResponseDto> ImportAsync(
         int userId, ImportStoryRequestDto request, CancellationToken cancellationToken = default)
@@ -71,10 +122,22 @@ public sealed class ExistingStoryService : IExistingStoryService
             throw new BadRequestException("ChildProfile chưa ở trạng thái Active.");
         await _accessGuard.EnsurePermissionAsync(child.Id, userId, Permission.GenerateStory, cancellationToken);
 
-        // Pre-import safety scan: nếu nội dung quá dài so với policy -> reject sớm.
+        var learning = await _unitOfWork.Repository<LearningProfile>().FirstOrDefaultAsync(
+            item => item.ChildProfileId == child.Id, cancellationToken: cancellationToken)
+            ?? throw new BadRequestException("Child Profile chưa có Learning Profile hợp lệ.");
+        if (learning.ReadingLevel is < 1 or > 5)
+            throw new BadRequestException("Reading Level của Child Profile phải nằm trong thang 1-5.");
+
+        var policyContext = await LoadSafetyContextAsync(child, cancellationToken);
+        var language = string.IsNullOrWhiteSpace(request.Language)
+            ? child.Language.Trim().ToLowerInvariant()
+            : request.Language.Trim().ToLowerInvariant();
+        if (!string.Equals(language, child.Language.Trim().ToLowerInvariant(), StringComparison.Ordinal))
+            throw new BadRequestException("Ngôn ngữ truyện không khớp cấu hình Child Profile.");
+
         var wordCount = StoryContentNormalizer.CountWords(normalized);
-        if (wordCount > 20000)
-            throw new BadRequestException("Nội dung vượt quá giới hạn cho phép (20000 từ).");
+        if (wordCount > policyContext.MaximumLength)
+            throw new BadRequestException($"Nội dung vượt Maximum Story Length {policyContext.MaximumLength} từ Safety Policy.");
 
         // Idempotency: nếu cùng user + child + content hash đã import -> trả về bản gốc.
         var idempotencyKey = !string.IsNullOrWhiteSpace(request.IdempotencyKey)
@@ -98,13 +161,18 @@ public sealed class ExistingStoryService : IExistingStoryService
                     StoryVersionId = existingVersion.Id,
                     StoryStatus = existingStory.Status.ToString(),
                     EditType = existingVersion.EditType.ToString(),
-                    ContentLength = existingVersion.Content?.Length
+                    ContentLength = existingVersion.Content?.Length,
+                    InputStatus = ToInputStatus(existingRequest.Status),
+                    ReasonCode = existingRequest.ReasonCode,
+                    FallbackMessage = existingRequest.FallbackMessage,
+                    CanProceed = existingRequest.Status == GenerationInputStatus.InputAccepted
                 };
             }
         }
 
         Story story = null!;
         StoryVersion v1 = null!;
+        StoryGenerationRequest genRequest = null!;
 
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
@@ -117,8 +185,9 @@ public sealed class ExistingStoryService : IExistingStoryService
                 Genre = null,
                 MoralLesson = null,
                 AgeBand = MapAgeBand(child.AgeBand),
-                Language = string.IsNullOrWhiteSpace(request.Language) ? "vi" : request.Language,
-                VocabularyLevel = "level_2",
+                Language = language,
+                ReadingLevel = learning.ReadingLevel,
+                VocabularyLevel = $"level_{learning.ReadingLevel}",
                 Source = StorySource.Manual,
                 Status = StoryStatus.Draft,
                 IsPublished = false,
@@ -142,7 +211,7 @@ public sealed class ExistingStoryService : IExistingStoryService
             };
             await _unitOfWork.Repository<StoryVersion>().AddAsync(v1, cancellationToken);
 
-            var genRequest = new StoryGenerationRequest
+            genRequest = new StoryGenerationRequest
             {
                 StoryId = story.Id,
                 SubmittedByUserId = userId,
@@ -154,15 +223,19 @@ public sealed class ExistingStoryService : IExistingStoryService
                     childProfileId = child.Id,
                     ageBand = story.AgeBand,
                     language = story.Language,
+                    readingLevel = learning.ReadingLevel,
+                    comprehensionGoal = learning.ComprehensionGoal,
+                    parentalGateEnabled = policyContext.Policy.ParentalGateEnabled,
+                    safetyScoreThreshold = policyContext.Policy.SafetyScoreThreshold,
+                    comprehensionThresholdPercent = policyContext.Policy.ComprehensionThresholdPercent,
                     source = "existing_story_import"
                 }, JsonOptions),
                 AcceptedInputJson = JsonSerializer.Serialize(new { title = story.Title, length = normalized.Length }, JsonOptions),
-                Status = GenerationInputStatus.InputAccepted,
+                Status = GenerationInputStatus.CheckingInput,
                 AttemptCount = 0,
                 MaxAttempts = 1,
-                GuardrailDecision = "Allow",
-                GuardrailCheckVersion = "existing-story-import/v1",
-                GuardrailCheckedAt = DateTime.UtcNow,
+                AttemptStartedAt = DateTime.UtcNow,
+                GuardrailDecision = null,
                 CanRetry = false
             };
             await _unitOfWork.Repository<StoryGenerationRequest>().AddAsync(genRequest, cancellationToken);
@@ -174,6 +247,44 @@ public sealed class ExistingStoryService : IExistingStoryService
             await _unitOfWork.RollbackTransactionAsync(cancellationToken);
             throw;
         }
+
+        InputGuardrailResult guardrail;
+        try
+        {
+            guardrail = await _fullContentGuardrail.CheckAsync(new InputGuardrailRequest(
+                normalized, [], null, string.Empty, policyContext.BlockedTerms, policyContext.RestrictedTerms),
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            guardrail = new InputGuardrailResult(
+                InputGuardrailDecision.Error,
+                "FULL_CONTENT_GUARDRAIL_ERROR",
+                "Không thể kiểm tra toàn bộ nội dung lúc này. Vui lòng thử lại.",
+                true,
+                RuleBasedInputGuardrail.Version);
+        }
+
+        var inputStatus = guardrail.Decision switch
+        {
+            InputGuardrailDecision.Allow => GenerationInputStatus.InputAccepted,
+            InputGuardrailDecision.Block => GenerationInputStatus.InputBlocked,
+            _ => GenerationInputStatus.InputCheckFailed
+        };
+        genRequest.Status = inputStatus;
+        genRequest.GuardrailDecision = guardrail.Decision.ToString();
+        genRequest.ReasonCode = guardrail.ReasonCode;
+        genRequest.FallbackMessage = guardrail.FallbackMessage;
+        genRequest.GuardrailCheckVersion = guardrail.CheckVersion;
+        genRequest.GuardrailCheckedAt = DateTime.UtcNow;
+        genRequest.AttemptStartedAt = null;
+        genRequest.CanRetry = guardrail.CanRetry;
+        _unitOfWork.Repository<StoryGenerationRequest>().Update(genRequest);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await _auditLog.LogAsync(
             userId, "ExistingStory.Import", nameof(Story), story.Id,
@@ -187,6 +298,10 @@ public sealed class ExistingStoryService : IExistingStoryService
             StoryStatus = story.Status.ToString(),
             EditType = v1.EditType.ToString(),
             ContentLength = normalized.Length,
+            InputStatus = ToInputStatus(inputStatus),
+            ReasonCode = guardrail.ReasonCode,
+            FallbackMessage = guardrail.FallbackMessage,
+            CanProceed = inputStatus == GenerationInputStatus.InputAccepted,
             Warnings = warnings
         };
     }
@@ -197,8 +312,8 @@ public sealed class ExistingStoryService : IExistingStoryService
         if (request.ChildProfileId <= 0)
             throw new BadRequestException("ChildProfileId không hợp lệ.");
         var method = request.InputMethod?.Trim().ToLowerInvariant();
-        if (method is not ("paste" or "txt"))
-            throw new BadRequestException("InputMethod không được hỗ trợ (chỉ 'paste' hoặc 'txt').");
+        if (method is not ("paste" or "txt" or "docx"))
+            throw new BadRequestException("InputMethod không được hỗ trợ (chỉ 'paste', 'txt' hoặc 'docx').");
         if (string.IsNullOrWhiteSpace(request.Content))
             throw new BadRequestException("Nội dung truyện rỗng.");
         if (request.Content!.Length > 200_000)
@@ -220,6 +335,79 @@ public sealed class ExistingStoryService : IExistingStoryService
         return Convert.ToHexString(hash, 0, 16).ToLowerInvariant();
     }
 
+    private async Task<ExistingStorySafetyContext> LoadSafetyContextAsync(
+        ChildProfile child, CancellationToken cancellationToken)
+    {
+        var policy = await _unitOfWork.Repository<SafetyPolicy>().FirstOrDefaultAsync(
+            item => item.ChildProfileId == child.Id, cancellationToken: cancellationToken)
+            ?? throw new BadRequestException("Child Profile chưa có Safety Policy.");
+        if (!policy.ConsentRecorded || !policy.ConsentRecordedAt.HasValue || policy.ConsentPolicyVersion <= 0)
+            throw new BadRequestException("CONSENT_REQUIRED: Child Profile chưa có consent hợp lệ để sử dụng AI.");
+        if (policy.SafetyScoreThreshold is < 0m or > 100m)
+            throw new BadRequestException("Safety Score Threshold phải nằm trong khoảng 0 đến 100.");
+        if (policy.ComprehensionThresholdPercent is < 0m or > 100m || policy.ComprehensionWindowSize <= 0)
+            throw new BadRequestException("Cấu hình comprehension của Safety Policy không hợp lệ.");
+
+        var personal = await _unitOfWork.Repository<SafetyPolicyCategory>().FindAsync(
+            item => item.SafetyPolicyId == policy.Id,
+            includeProperties: "ContentCategory", cancellationToken: cancellationToken);
+        OrgSafetyPolicyTemplate? organizationPolicy = null;
+        IReadOnlyList<OrgSafetyPolicyCategory> organization = [];
+        if (child.Scope == ProfileScope.Organization && child.OrganizationId.HasValue)
+        {
+            organizationPolicy = await _unitOfWork.Repository<OrgSafetyPolicyTemplate>().FirstOrDefaultAsync(
+                item => item.OrganizationId == child.OrganizationId.Value, cancellationToken: cancellationToken);
+            if (organizationPolicy is not null)
+            {
+                organization = await _unitOfWork.Repository<OrgSafetyPolicyCategory>().FindAsync(
+                    item => item.OrgSafetyPolicyTemplateId == organizationPolicy.Id,
+                    includeProperties: "ContentCategory", cancellationToken: cancellationToken);
+            }
+        }
+
+        var maximums = new[] { policy.MaxStoryLength, organizationPolicy?.MaxStoryLengthBaseline ?? 0 }
+            .Where(value => value > 0).ToArray();
+        if (maximums.Length == 0)
+            throw new BadRequestException("Safety Policy chưa có Maximum Story Length hợp lệ.");
+
+        var rules = new Dictionary<string, (PolicyRule Rule, string Name)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in personal
+                     .Where(item => item.ContentCategory is { IsActive: true })
+                     .Select(item => (item.ContentCategory!.Code, item.ContentCategory.DisplayName, item.Rule))
+                     .Concat(organization
+                         .Where(item => item.ContentCategory is { IsActive: true })
+                         .Select(item => (item.ContentCategory!.Code, item.ContentCategory.DisplayName, item.Rule))))
+        {
+            if (!rules.TryGetValue(item.Code, out var current) || item.Rule > current.Rule)
+                rules[item.Code] = (item.Rule, item.DisplayName);
+        }
+
+        static string[] Terms(Dictionary<string, (PolicyRule Rule, string Name)> values, PolicyRule rule) => values
+            .Where(item => item.Value.Rule == rule)
+            .SelectMany(item => new[] { item.Key, item.Value.Name })
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return new ExistingStorySafetyContext(
+            policy, maximums.Min(), Terms(rules, PolicyRule.Blocked), Terms(rules, PolicyRule.Restricted));
+    }
+
+    private static string ToInputStatus(GenerationInputStatus status) => status switch
+    {
+        GenerationInputStatus.InputAccepted => "input_accepted",
+        GenerationInputStatus.InputBlocked => "input_blocked",
+        GenerationInputStatus.InputCheckFailed => "input_check_failed",
+        GenerationInputStatus.CheckingInput => "checking_input",
+        _ => "pending_input"
+    };
+
+    private sealed record ExistingStorySafetyContext(
+        SafetyPolicy Policy,
+        int MaximumLength,
+        IReadOnlyList<string> BlockedTerms,
+        IReadOnlyList<string> RestrictedTerms);
+
     #endregion
 
     #region Adapt
@@ -236,6 +424,7 @@ public sealed class ExistingStoryService : IExistingStoryService
         if (story.Source != StorySource.Manual)
             throw new BadRequestException("Story không thuộc nhánh Existing.");
         await _accessGuard.EnsurePermissionAsync(story.ChildProfileId, userId, Permission.GenerateStory, cancellationToken);
+        await EnsureImportedContentAcceptedAsync(story.Id, cancellationToken);
 
         StoryVersion? created = null;
         int? newVersionId = null;
@@ -349,6 +538,7 @@ public sealed class ExistingStoryService : IExistingStoryService
         if (story.Source != StorySource.Manual)
             throw new BadRequestException("Story không thuộc nhánh Existing.");
         await _accessGuard.EnsurePermissionAsync(story.ChildProfileId, userId, Permission.GenerateStory, cancellationToken);
+        await EnsureImportedContentAcceptedAsync(story.Id, cancellationToken);
 
         StoryVersion? created = null;
         int newVersionId = 0;
@@ -429,6 +619,7 @@ public sealed class ExistingStoryService : IExistingStoryService
         if (story.Source != StorySource.Manual)
             throw new BadRequestException("Story không thuộc nhánh Existing.");
         await _accessGuard.EnsurePermissionAsync(story.ChildProfileId, userId, Permission.GenerateStory, cancellationToken);
+        await EnsureImportedContentAcceptedAsync(story.Id, cancellationToken);
 
         var version = await _unitOfWork.Repository<StoryVersion>().GetByIdAsync(request.StoryVersionId, cancellationToken)
                       ?? throw new NotFoundException("StoryVersion", request.StoryVersionId);
@@ -496,4 +687,13 @@ public sealed class ExistingStoryService : IExistingStoryService
     }
 
     #endregion
+
+    private async Task EnsureImportedContentAcceptedAsync(int storyId, CancellationToken cancellationToken)
+    {
+        var requests = await _unitOfWork.Repository<StoryGenerationRequest>().FindAsync(
+            item => item.StoryId == storyId, cancellationToken: cancellationToken);
+        var latest = requests.OrderByDescending(item => item.Id).FirstOrDefault();
+        if (latest is not null && latest.Status != GenerationInputStatus.InputAccepted)
+            throw new ConflictException("HARD_SAFETY_BLOCKED: nội dung gốc chưa vượt qua Full-content Guardrail.");
+    }
 }

@@ -14,6 +14,12 @@ public sealed class AIStoryInputContextDto
     public IReadOnlyList<string> AvailableLanguages { get; init; } = [];
     public int MaximumLength { get; init; }
     public string RequiredApprovalMode { get; init; } = string.Empty;
+    public bool ParentalGateEnabled { get; init; }
+    public decimal? SafetyScoreThreshold { get; init; }
+    public decimal? ReadabilityScoreThreshold { get; init; }
+    public string? ComprehensionGoal { get; init; }
+    public decimal? ComprehensionThresholdPercent { get; init; }
+    public int ComprehensionWindowSize { get; init; }
     public IReadOnlyList<string> Interests { get; init; } = [];
     public IReadOnlyList<string> AllowedCategoryCodes { get; init; } = [];
     public IReadOnlyList<string> RestrictedCategoryCodes { get; init; } = [];

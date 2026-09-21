@@ -223,9 +223,24 @@ public sealed class StoryPlatformCoreStack : Stack
             });
             EcrRepository.GrantPull(appRunnerEcrAccessRole);
 
-            AppRunnerService = new CfnService(this, "CoreApiService", new CfnServiceProps
+            // Construct ID bumped to V2 on 2026-09-21: every deploy of the app-with-auto-migration
+            // code deterministically failed its App Runner health check (HTTP and TCP both tried;
+            // VPC Connector on and off both tried) despite the exact image proving 100% healthy when
+            // run identically outside App Runner — pointing at stuck internal state on the original
+            // service rather than anything fixable via configuration. Changing the logical ID forces
+            // CloudFormation to create a brand-new service (and delete the old one) instead of
+            // updating in place, to rule out — or clear — that stuck state. This changes the
+            // service's ARN and public URL; both need updating wherever they're hardcoded
+            // (deploy-core-api.yml, RUNBOOK.md).
+            AppRunnerService = new CfnService(this, "CoreApiServiceV2", new CfnServiceProps
             {
-                ServiceName = "storyplatform-core-api",
+                // Renamed from "storyplatform-core-api": App Runner service names must be unique
+                // per account/region, and CloudFormation creates the new resource before deleting
+                // the old one (safe-by-default ordering), so keeping the old literal name here
+                // collided with the still-existing old service and failed with "Service with the
+                // provided name already exists" (confirmed 2026-09-21, stack rolled back cleanly,
+                // old service untouched).
+                ServiceName = "storyplatform-core-api-v2",
                 SourceConfiguration = new CfnService.SourceConfigurationProperty
                 {
                     AutoDeploymentsEnabled = false,
@@ -265,18 +280,21 @@ public sealed class StoryPlatformCoreStack : Stack
                     Memory = "2048",
                     InstanceRoleArn = AppRunnerInstanceRole.RoleArn
                 },
+                // Protocol=TCP (not HTTP): confirmed on 2026-09-21 that the exact deployed image,
+                // pulled straight from this service's own ECR repo and run locally with the same
+                // env vars App Runner uses, returns 200 "Healthy" on GET /health instantly and
+                // consistently — proving the code and image are correct. Every live App Runner
+                // deploy nonetheless got a deterministic health-check failure (HTTP: 404 on /health;
+                // TCP: port check itself failing) regardless of VPC Connector being attached or not
+                // (both tried and ruled out) — see the CoreApiServiceV2 construct-id-bump note above
+                // for the resulting decision to recreate the service. TCP kept as the simplest,
+                // lowest-risk check going forward; Path is not applicable to TCP and is omitted.
                 HealthCheckConfiguration = new CfnService.HealthCheckConfigurationProperty
                 {
-                    Protocol = "HTTP",
-                    Path = "/health",
+                    Protocol = "TCP",
                     Interval = 10,
                     Timeout = 5,
                     HealthyThreshold = 1,
-                    // UnhealthyThreshold=5 (50s budget) was too tight for the startup path added by
-                    // ApplyPendingMigrations (Program.cs): connecting to RDS over the VPC Connector and
-                    // checking migration history took ~40s in practice, right at the edge of the old
-                    // 50s window and observed to flap the deploy into rollback. 15 x 10s = 150s gives
-                    // comfortable headroom for a cold VPC connection plus real migration work.
                     UnhealthyThreshold = 15
                 },
                 NetworkConfiguration = new CfnService.NetworkConfigurationProperty
@@ -295,6 +313,18 @@ public sealed class StoryPlatformCoreStack : Stack
                 Actions = new[] { "apprunner:StartDeployment", "apprunner:DescribeService", "apprunner:ListOperations" },
                 Resources = new[] { AppRunnerService.AttrServiceArn }
             }));
+
+            new CfnOutput(this, "AppRunnerServiceArnOutput", new CfnOutputProps
+            {
+                Value = AppRunnerService.AttrServiceArn,
+                Description = "Paste this into deploy-core-api.yml's APP_RUNNER_SERVICE_ARN env var"
+            });
+
+            new CfnOutput(this, "AppRunnerServiceUrlOutput", new CfnOutputProps
+            {
+                Value = AppRunnerService.AttrServiceUrl,
+                Description = "Public HTTPS URL of the App Runner service"
+            });
         }
     }
 }

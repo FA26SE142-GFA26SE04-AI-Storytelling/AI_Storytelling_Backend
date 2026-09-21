@@ -163,7 +163,9 @@ public sealed class StoryPlatformCoreStack : Stack
             ClientIdList = new[] { "sts.amazonaws.com" }
         });
 
-        const string githubRepo = "FA26SE142-GFA26SE04-AI-Storytelling/AI_Storytelling_Backend"; // confirmed via `git remote -v` (origin)
+        const string githubRepoOwner = "FA26SE142-GFA26SE04-AI-Storytelling"; // confirmed via `git remote -v` (origin)
+        const string githubRepoName = "AI_Storytelling_Backend";
+        const string githubRepo = $"{githubRepoOwner}/{githubRepoName}";
 
         CiRole = new Role(this, "GitHubActionsCiRole", new RoleProps
         {
@@ -179,7 +181,12 @@ public sealed class StoryPlatformCoreStack : Stack
                     ["token.actions.githubusercontent.com:sub"] = new[]
                     {
                         $"repo:{githubRepo}:ref:refs/heads/dev",
-                        $"repo:{githubRepo}:ref:refs/heads/main"
+                        $"repo:{githubRepo}:ref:refs/heads/main",
+                        // GitHub emits an immutable-ID-qualified subject (owner@ownerId/repo@repoId)
+                        // instead of the plain owner/repo form once an org or repo has been renamed;
+                        // match both so CI keeps working (confirmed via CloudTrail on the live AccessDenied).
+                        $"repo:{githubRepoOwner}@*/{githubRepoName}@*:ref:refs/heads/dev",
+                        $"repo:{githubRepoOwner}@*/{githubRepoName}@*:ref:refs/heads/main"
                     }
                 }
             })

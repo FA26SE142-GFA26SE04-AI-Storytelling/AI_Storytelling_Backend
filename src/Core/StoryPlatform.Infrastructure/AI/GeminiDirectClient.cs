@@ -189,6 +189,7 @@ YÊU CẦU:
 - Chủ đề: {storyParams.Topic}
 - Độ tuổi: {request.AgeBand} tuổi
 - Cấp độ đọc: {request.ReadingLevel}
+- Mục tiêu đọc hiểu: {request.ComprehensionGoal ?? "Phù hợp hồ sơ đọc hiện tại"}
 - Ngôn ngữ: {request.Language}
 {(!string.IsNullOrEmpty(storyParams.Genre) ? $"- Thể loại: {storyParams.Genre}" : "")}
 {(!string.IsNullOrEmpty(storyParams.Lesson) ? $"- Bài học: {storyParams.Lesson}" : "")}
@@ -265,6 +266,7 @@ YÊU CẦU VIẾT:
 - Độ tuổi: {request.AgeBand} tuổi
 - Cấp độ đọc: {request.ReadingLevel}
 - Ngôn ngữ: {request.Language}
+- Mục tiêu đọc hiểu: {request.ComprehensionGoal ?? "Phù hợp hồ sơ đọc hiện tại"}
 - Độ phức tạp: {ageSettings["complexity"]}
 {(!string.IsNullOrEmpty(storyParams.Genre) ? $"- Thể loại: {storyParams.Genre}" : "")}
 {(!string.IsNullOrEmpty(storyParams.Lesson) ? $"- Bài học: {storyParams.Lesson}" : "")}
@@ -327,6 +329,7 @@ Chỉ trả về JSON.";
             VocabularyLevel = request.VocabularyLevel,
             Language = request.Language,
             ApprovedOutlineReference = request.ApprovedOutlineReference,
+            ComprehensionGoal = request.ComprehensionGoal,
             Outline = request.Outline,
             StoryParameters = request.StoryParameters,
             Constraints = request.Constraints
@@ -409,6 +412,8 @@ NỘI DUNG: {content}
 YÊU CẦU:
 - Độ tuổi: {request.AgeBand} tuổi
 - Ngôn ngữ: {request.Language}
+- Mục tiêu đọc hiểu: {request.ComprehensionGoal ?? "Hiểu nội dung chính của truyện"}
+{(request.ComprehensionThresholdPercent.HasValue ? $"- Ngưỡng đọc hiểu mục tiêu: {request.ComprehensionThresholdPercent.Value:F0}%" : "")}
 - BẮT BUỘC tạo đúng 3 câu hỏi với 3 loại (type) khác nhau:
   1. ""multiple_choice"": câu hỏi trắc nghiệm 4 lựa chọn (options có 4 đáp án, correctOptionIndex là 0-3, correctAnswer là đáp án đúng nằm trong options).
   2. ""true_false"": câu hỏi đúng/sai (options là [""Đúng"", ""Sai""], correctAnswer là ""true"" hoặc ""false"", correctOptionIndex là 0 nếu đúng, 1 nếu sai).
@@ -462,6 +467,7 @@ YÊU CẦU:
 - Độ tuổi: {request.AgeBand} tuổi
 - Số câu hỏi: 3
 - Ngôn ngữ: {request.Language}
+- Mục tiêu đọc hiểu: {request.ComprehensionGoal ?? "Hiểu và liên hệ nội dung truyện"}
 - Các câu hỏi PHẢI nhắc đến các nhân vật và sự việc trực tiếp trong truyện.
 
 TẠO CÂU HỎI:
@@ -502,10 +508,12 @@ YÊU CẦU:
 2. Yếu tố kinh dị
 3. Ngôn ngữ không phù hợp
 4. Nội dung nhạy cảm
+- Chấm safetyScore theo thang 0-100; 100 là hoàn toàn an toàn cho hồ sơ trẻ.
 
 Trả lời JSON:
 {{
     ""isAllowed"": true,
+    ""safetyScore"": 100.0,
     ""canRefine"": false,
     ""reasonCode"": ""CONTENT_SAFETY_ALLOWED"",
     ""violations"": []
@@ -810,6 +818,10 @@ Chỉ trả về JSON.";
             {
                 RequestId = requestId,
                 IsAllowed = GetBool(root, "isAllowed"),
+                SafetyScore = TryGetPropertyCaseInsensitive(root, "safetyScore", out var scoreElement) &&
+                              scoreElement.TryGetDouble(out var score)
+                    ? Math.Clamp(score, 0d, 100d)
+                    : null,
                 CanRefine = GetBool(root, "canRefine"),
                 ReasonCode = GetString(root, "reasonCode"),
                 Violations = GetStringArray(root, "violations")

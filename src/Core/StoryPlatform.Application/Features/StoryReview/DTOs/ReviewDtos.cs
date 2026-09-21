@@ -217,3 +217,26 @@ public sealed record ApplyDiscardResponseDto
 }
 
 #endregion
+
+#region Learning Artifacts Generation
+
+public sealed record GenerateArtifactsRequestDto
+{
+    public int? StoryVersionId { get; init; }
+    public bool IncludeVocabulary { get; init; } = true;
+    public bool IncludeQuiz { get; init; } = true;
+    public bool IncludeDiscussion { get; init; } = true;
+}
+
+public sealed record ArtifactGenerationResultDto
+{
+    public int StoryId { get; init; }
+    public int StoryVersionId { get; init; }
+    public int VocabularyCount { get; init; }
+    public int QuizCount { get; init; }
+    public int DiscussionCount { get; init; }
+    public bool Success { get; init; }
+    public string Message { get; init; } = string.Empty;
+}
+
+#endregion

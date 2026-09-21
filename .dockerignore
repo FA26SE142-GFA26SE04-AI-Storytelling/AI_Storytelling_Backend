@@ -1,3 +1,4 @@
+# .dockerignore
 .git
 .gitignore
 .vs
@@ -11,6 +12,7 @@ docs
 **/bin
 **/obj
 **/TestResults
+**/node_modules
 **/*.user
 **/*.suo
 **/*.log
@@ -18,6 +20,8 @@ docs
 .env.*
 **/appsettings*.json
 Database
+infra
 tests
+*.docx
 src/AI/*.html
 src/AI/*.md

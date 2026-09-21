@@ -1,0 +1,107 @@
+# .github/workflows/deploy-core-api.yml
+name: Deploy Core API
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - 'src/Core/**'
+      - 'src/Shared/**'
+      - 'Dockerfile'
+      - 'infra/aws-cdk/**'
+      - '.github/workflows/deploy-core-api.yml'
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ap-southeast-1
+  ECR_REPOSITORY: storyplatform-core-api
+  APP_RUNNER_SERVICE_ARN: arn:aws:apprunner:ap-southeast-1:028718096070:service/storyplatform-core-api/fda923da69b54ce4b6f7f37d67f9cdcf
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore StoryPlatform.sln
+
+      - name: Build
+        run: dotnet build StoryPlatform.sln --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test StoryPlatform.sln --no-build --configuration Release --verbosity normal
+
+      - name: Test CDK stack
+        run: dotnet test infra/aws-cdk/test/StoryPlatform.Infra.Tests.csproj --configuration Release
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::028718096070:role/storyplatform-core-api-ci
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build \
+            --file Dockerfile \
+            --target core-api \
+            --tag "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" \
+            --tag "$ECR_REGISTRY/$ECR_REPOSITORY:latest" \
+            .
+          docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          docker push "$ECR_REGISTRY/$ECR_REPOSITORY:latest"
+
+      - name: Trigger App Runner deployment
+        id: deploy
+        run: |
+          OP_ID=$(aws apprunner start-deployment \
+            --service-arn "$APP_RUNNER_SERVICE_ARN" \
+            --region "$AWS_REGION" \
+            --query 'OperationId' --output text)
+          echo "operation-id=$OP_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for App Runner deployment to finish
+        run: |
+          OP_ID="${{ steps.deploy.outputs.operation-id }}"
+          for i in $(seq 1 40); do
+            STATUS=$(aws apprunner list-operations \
+              --service-arn "$APP_RUNNER_SERVICE_ARN" \
+              --region "$AWS_REGION" \
+              --query "OperationSummaryList[?Id=='$OP_ID'].Status | [0]" --output text)
+            echo "Deployment operation status: $STATUS"
+            if [ "$STATUS" = "SUCCEEDED" ]; then
+              echo "Deployment succeeded."
+              exit 0
+            fi
+            if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "ROLLBACK_SUCCEEDED" ] || [ "$STATUS" = "ROLLBACK_FAILED" ]; then
+              echo "Deployment failed, App Runner reported operation status: $STATUS"
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "Timed out after 10 minutes waiting for App Runner deployment to finish."
+          exit 1

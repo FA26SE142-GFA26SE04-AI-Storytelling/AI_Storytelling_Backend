@@ -52,6 +52,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<DiscussionQuestion> DiscussionQuestions => Set<DiscussionQuestion>();
     public DbSet<MediaAsset> MediaAssets => Set<MediaAsset>();
     public DbSet<StoryScene> StoryScenes => Set<StoryScene>();
+    public DbSet<StorySegment> StorySegments => Set<StorySegment>();
     public DbSet<MediaContext> MediaContexts => Set<MediaContext>();
     public DbSet<PromptCatalogVersion> PromptCatalogVersions => Set<PromptCatalogVersion>();
     public DbSet<ContentReport> ContentReports => Set<ContentReport>();

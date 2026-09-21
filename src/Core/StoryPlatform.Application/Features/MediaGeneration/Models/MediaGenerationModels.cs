@@ -29,7 +29,17 @@ public sealed record SceneSpecification(
     string? VisualDescription,
     string MediaContextJson,
     IReadOnlyList<string> MustShow,
-    IReadOnlyList<string> MustNotContradict);
+    IReadOnlyList<string> MustNotContradict,
+    string? PromptFeedback = null)
+{
+    /// <summary>
+    /// Returns a new SceneSpecification with prompt feedback appended for failure-aware regeneration.
+    /// Pass null to indicate first attempt (no feedback).
+    /// </summary>
+    public SceneSpecification WithFeedback(string? feedback) =>
+        new(StoryVersionId, StorySceneId, SceneIndex, SceneText, VisualDescription,
+            MediaContextJson, MustShow, MustNotContradict, feedback);
+}
 
 public enum MediaEvaluationDecision { Pass = 1, Fail = 2, Uncertain = 3 }
 

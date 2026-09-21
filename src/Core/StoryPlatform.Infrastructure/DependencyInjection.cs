@@ -1,3 +1,4 @@
+using System.IO;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,6 +13,7 @@ using StoryPlatform.Application.Features.ContentGeneration.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration;
 using StoryPlatform.Application.Features.MediaGeneration;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
+using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Infrastructure.AI;
 using StoryPlatform.Infrastructure.BackgroundServices;
 using StoryPlatform.Infrastructure.Communication;
@@ -63,14 +65,43 @@ public static class DependencyInjection
         services.AddSingleton<IContentGenerationJobFailureFinalizer, ContentGenerationJobFailureFinalizer>();
         services.AddHostedService<ContentGenerationWorker>();
 
+        services.Configure<MediaGenerationOptions>(configuration.GetSection(MediaGenerationOptions.SectionName));
         var mediaOptions = new MediaGenerationOptions();
         configuration.GetSection(MediaGenerationOptions.SectionName).Bind(mediaOptions);
         services.AddSingleton(mediaOptions);
-        services.AddSingleton<IImageGenerationProvider, UnavailableImageGenerationProvider>();
-        services.AddSingleton<ITtsProvider, UnavailableTtsProvider>();
-        services.AddSingleton<FailClosedMediaEvaluator>();
-        services.AddSingleton<IMediaAlignmentEvaluator>(provider => provider.GetRequiredService<FailClosedMediaEvaluator>());
-        services.AddSingleton<IMediaSafetyEvaluator>(provider => provider.GetRequiredService<FailClosedMediaEvaluator>());
+
+        // Gemini options
+        services.Configure<GeminiOptions>(configuration.GetSection(GeminiOptions.SectionName));
+        services.Configure<ImageGenerationOptions>(configuration.GetSection(ImageGenerationOptions.SectionName));
+        services.Configure<TtsServiceOptions>(configuration.GetSection(TtsServiceOptions.SectionName));
+        services.Configure<MediaEvaluationOptions>(configuration.GetSection(MediaEvaluationOptions.SectionName));
+
+        // TextToSpeech client factory — lazy; only throws when a TTS call is actually made
+        services.AddSingleton<Google.Cloud.TextToSpeech.V1Beta1.TextToSpeechClient>(sp =>
+        {
+            var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<TtsServiceOptions>>().Value;
+            var builder = new Google.Cloud.TextToSpeech.V1Beta1.TextToSpeechClientBuilder();
+            if (!string.IsNullOrWhiteSpace(opts.CredentialsFilePath) && File.Exists(opts.CredentialsFilePath))
+                builder.CredentialsPath = opts.CredentialsFilePath;
+            return builder.Build();
+        });
+
+        // Gemini REST providers — AddHttpClient registers the type with the HttpClient factory
+        services.AddHttpClient<GeminiImageGenerationProvider>(client => client.Timeout = TimeSpan.FromMinutes(2));
+        services.AddHttpClient<GeminiMediaAlignmentEvaluator>(client => client.Timeout = TimeSpan.FromMinutes(2));
+        services.AddHttpClient<GeminiMediaSafetyEvaluator>(client => client.Timeout = TimeSpan.FromMinutes(2));
+        services.AddHttpClient<GeminiSemanticSceneSegmentationProvider>(client => client.Timeout = TimeSpan.FromMinutes(2));
+        services.AddHttpClient<GeminiMediaContextExtractor>(client => client.Timeout = TimeSpan.FromMinutes(2));
+
+        // Application-layer interfaces → Infrastructure implementations
+        services.AddSingleton<IImageGenerationProvider>(sp => sp.GetRequiredService<GeminiImageGenerationProvider>());
+        services.AddSingleton<ITtsProvider>(sp => sp.GetRequiredService<GoogleCloudTtsProvider>());
+        services.AddSingleton<IMediaAlignmentEvaluator>(sp => sp.GetRequiredService<GeminiMediaAlignmentEvaluator>());
+        services.AddSingleton<IMediaSafetyEvaluator>(sp => sp.GetRequiredService<GeminiMediaSafetyEvaluator>());
+        services.AddSingleton<ISemanticSceneSegmentationProvider>(sp => sp.GetRequiredService<GeminiSemanticSceneSegmentationProvider>());
+        services.AddSingleton<IParagraphSceneSegmentationProvider>(sp => sp.GetRequiredService<ParagraphSceneSegmentationProvider>());
+        services.AddSingleton<IMediaContextExtractor>(sp => sp.GetRequiredService<GeminiMediaContextExtractor>());
+        services.AddSingleton<IAudioQualityGate, BinaryAudioQualityGate>();
         services.AddSingleton<IMediaGenerationJobFailureFinalizer, MediaGenerationJobFailureFinalizer>();
         services.AddHostedService<MediaGenerationWorker>();
 

@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using StoryPlatform.Application.Features.MediaStorage.Interfaces;
+using StoryPlatform.Infrastructure.AI;
 
 namespace StoryPlatform.Infrastructure.Storage;
 
@@ -41,11 +42,14 @@ public sealed class SupabaseMediaStorage : IMediaStorage
         var normalizedPath = NormalizePath(storagePath);
         using var buffer = new MemoryStream();
         await content.CopyToAsync(buffer, cancellationToken);
+        var bytes = buffer.ToArray();
+        ValidateContentMatchesMime(bytes, mimeType);
+
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
             BuildStorageUri($"object/{EncodePath(_options.Bucket)}/{EncodePath(normalizedPath)}"));
         request.Headers.TryAddWithoutValidation("x-upsert", "true");
-        request.Content = new ByteArrayContent(buffer.ToArray());
+        request.Content = new ByteArrayContent(bytes);
         request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mimeType);
 
         using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
@@ -53,6 +57,30 @@ public sealed class SupabaseMediaStorage : IMediaStorage
         _logger.LogInformation("Uploaded media object {StoragePath} to Supabase bucket {Bucket}",
             normalizedPath, _options.Bucket);
         return normalizedPath;
+    }
+
+    private static void ValidateContentMatchesMime(byte[] bytes, string mimeType)
+    {
+        if (mimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            var result = MagicByteValidators.ValidateImage(bytes);
+            if (!result.IsValid || !string.Equals(result.DetectedMime, mimeType, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException(
+                    $"Media binary signature does not match expected image MIME '{mimeType}'. Detected: '{result.DetectedMime}'. Reason: {result.Reason}",
+                    nameof(mimeType));
+            }
+        }
+        else if (mimeType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase))
+        {
+            var result = MagicByteValidators.ValidateAudio(bytes);
+            if (!result.IsValid || !string.Equals(result.DetectedMime, mimeType, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException(
+                    $"Media binary signature does not match expected audio MIME '{mimeType}'. Detected: '{result.DetectedMime}'. Reason: {result.Reason}",
+                    nameof(mimeType));
+            }
+        }
     }
 
     public async Task<string> GetSignedUrlAsync(

@@ -90,7 +90,9 @@ public static class DependencyInjection
         services.AddSingleton<IStoryBlockParser, StoryBlockParser>();
         services.AddSingleton<ISceneCoverageValidator, SceneCoverageValidator>();
         services.AddSingleton<IMediaContextBuilder, MediaContextBuilder>();
-        services.AddSingleton<ISceneSegmentationProvider, ParagraphSceneSegmentationProvider>();
+        services.AddSingleton<IStorySegmentService, StorySegmentService>();
+        services.AddSingleton<SemanticSceneSegmentationService>(); // Orchestrator: primary (LLM) + fallback (paragraph)
+        services.AddSingleton<ISceneSegmentationProvider>(sp => sp.GetRequiredService<SemanticSceneSegmentationService>());
         services.AddSingleton<ISceneSpecificationBuilder, SceneSpecificationBuilder>();
         services.AddScoped<MediaGenerationService>();
         services.AddScoped<IMediaGenerationService>(provider => provider.GetRequiredService<MediaGenerationService>());

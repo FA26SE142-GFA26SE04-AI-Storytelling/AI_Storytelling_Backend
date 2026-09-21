@@ -1,3 +1,7 @@
 {
-  "dotnet.defaultSolution": "StoryPlatform.sln"
+  "dotnet.defaultSolution": "StoryPlatform.sln",
+  "csharp-dev-tools.solutionViewer.selectedWorkspaceSolutions": [
+    "StoryPlatform.sln",
+    "StoryPlatform.slnx"
+  ]
 }

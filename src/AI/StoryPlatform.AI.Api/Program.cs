@@ -40,7 +40,7 @@ builder.Services.AddAIInfrastructure(builder.Configuration);
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("Swagger:Enabled"))
 {
     app.UseSwagger();
     app.UseSwaggerUI(options =>

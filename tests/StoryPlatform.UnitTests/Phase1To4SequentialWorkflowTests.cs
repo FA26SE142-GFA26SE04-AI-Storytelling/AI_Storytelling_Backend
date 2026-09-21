@@ -11,6 +11,7 @@ using StoryPlatform.Application.Features.ContentGeneration;
 using StoryPlatform.Application.Features.ContentGeneration.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration.Quality;
 using StoryPlatform.Application.Features.ContentGeneration.Services;
+using StoryPlatform.Application.Features.ExistingStories.Interfaces;
 using StoryPlatform.Application.Features.Outline.DTOs;
 using StoryPlatform.Application.Features.Outline.Guardrails;
 using StoryPlatform.Application.Features.Outline.Interfaces;
@@ -70,13 +71,18 @@ public sealed class Phase1To4SequentialWorkflowTests
             job.Operation == GenerationJobOperation.GenerateContent && job.Status == GenerationJobStatus.Pending);
 
         // Phase 3: generate content, vocabulary, quiz and discussion sequentially.
+        var artifactHandoff = new RecordingArtifactHandoff(store);
         var contentService = new ContentGenerationService(
             store,
             ai,
             new PassingContentQualityEvaluator(),
             new ContentFailureFinalizer(store),
+            artifactHandoff,
             new ContentGenerationOptions());
         Assert.True(await contentService.ProcessNextAsync());
+        Assert.Equal(
+            store.Items<StoryGenerationRequest>().Single().Id,
+            Assert.Single(artifactHandoff.Calls).GenerationRequestId);
         Assert.True(await contentService.ProcessNextAsync());
         Assert.True(await contentService.ProcessNextAsync());
         Assert.True(await contentService.ProcessNextAsync());
@@ -346,6 +352,7 @@ public sealed class Phase1To4SequentialWorkflowTests
             ai,
             new PassingContentQualityEvaluator(),
             new ContentFailureFinalizer(store),
+            new RecordingArtifactHandoff(store),
             new ContentGenerationOptions());
 
     private static SubmitAIStoryInputRequestDto ValidInput(string topic = "Tình bạn") => new()
@@ -578,6 +585,41 @@ public sealed class Phase1To4SequentialWorkflowTests
                 job.ErrorCode = errorCode;
             }
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingArtifactHandoff(WorkflowUnitOfWork store) : IStableVersionArtifactHandoffService
+    {
+        public List<(int StoryId, int VersionId, int? GenerationRequestId)> Calls { get; } = [];
+
+        public async Task<int> QueueArtifactsAsync(
+            int storyId, int storyVersionId, int requestedByUserId,
+            int? generationRequestId, CancellationToken cancellationToken = default)
+        {
+            Calls.Add((storyId, storyVersionId, generationRequestId));
+            var existing = store.Items<StoryGenerationJob>().FirstOrDefault(job =>
+                job.StoryId == storyId
+                && job.Operation == GenerationJobOperation.GenerateVocabulary
+                && job.StoryVersionId == storyVersionId);
+            if (existing is not null) return existing.Id;
+
+            var jobEntity = new StoryGenerationJob
+            {
+                StoryId = storyId,
+                GenerationRequestId = generationRequestId,
+                StoryVersionId = storyVersionId,
+                BaseStoryVersionId = storyVersionId,
+                RequestedByUserId = requestedByUserId,
+                OperationKey = $"existing:p3:{storyId}:v{storyVersionId}:op4",
+                Operation = GenerationJobOperation.GenerateVocabulary,
+                Stage = JobStage.ContentArtifactPending,
+                Status = GenerationJobStatus.Pending,
+                AttemptNo = 0,
+                MaxAttempts = 3,
+                StartedAt = DateTime.UtcNow
+            };
+            await store.Repository<StoryGenerationJob>().AddAsync(jobEntity, cancellationToken);
+            return jobEntity.Id;
         }
     }
 

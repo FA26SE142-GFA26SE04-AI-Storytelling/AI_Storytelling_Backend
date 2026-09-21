@@ -223,7 +223,16 @@ public sealed class StoryPlatformCoreStack : Stack
             });
             EcrRepository.GrantPull(appRunnerEcrAccessRole);
 
-            AppRunnerService = new CfnService(this, "CoreApiService", new CfnServiceProps
+            // Construct ID bumped to V2 on 2026-09-21: every deploy of the app-with-auto-migration
+            // code deterministically failed its App Runner health check (HTTP and TCP both tried;
+            // VPC Connector on and off both tried) despite the exact image proving 100% healthy when
+            // run identically outside App Runner — pointing at stuck internal state on the original
+            // service rather than anything fixable via configuration. Changing the logical ID forces
+            // CloudFormation to create a brand-new service (and delete the old one) instead of
+            // updating in place, to rule out — or clear — that stuck state. This changes the
+            // service's ARN and public URL; both need updating wherever they're hardcoded
+            // (deploy-core-api.yml, RUNBOOK.md).
+            AppRunnerService = new CfnService(this, "CoreApiServiceV2", new CfnServiceProps
             {
                 ServiceName = "storyplatform-core-api",
                 SourceConfiguration = new CfnService.SourceConfigurationProperty
@@ -269,13 +278,11 @@ public sealed class StoryPlatformCoreStack : Stack
                 // pulled straight from this service's own ECR repo and run locally with the same
                 // env vars App Runner uses, returns 200 "Healthy" on GET /health instantly and
                 // consistently — proving the code and image are correct. Every live App Runner
-                // deploy nonetheless got a deterministic 404 on that same path from its internal
-                // health checker (confirmed via CloudWatch request logs: sub-millisecond 404s, not
-                // timeouts), isolating the problem to App Runner's own HTTP health-check path
-                // (likely an interaction with the VPC Connector egress config) rather than anything
-                // in this app. A TCP check only verifies the port accepts connections — sidesteps
-                // that layer entirely, and Kestrel binding to port 8080 has been 100% reliable
-                // across every attempt today. Path is not applicable to TCP and is omitted.
+                // deploy nonetheless got a deterministic health-check failure (HTTP: 404 on /health;
+                // TCP: port check itself failing) regardless of VPC Connector being attached or not
+                // (both tried and ruled out) — see the CoreApiServiceV2 construct-id-bump note above
+                // for the resulting decision to recreate the service. TCP kept as the simplest,
+                // lowest-risk check going forward; Path is not applicable to TCP and is omitted.
                 HealthCheckConfiguration = new CfnService.HealthCheckConfigurationProperty
                 {
                     Protocol = "TCP",
@@ -300,6 +307,18 @@ public sealed class StoryPlatformCoreStack : Stack
                 Actions = new[] { "apprunner:StartDeployment", "apprunner:DescribeService", "apprunner:ListOperations" },
                 Resources = new[] { AppRunnerService.AttrServiceArn }
             }));
+
+            new CfnOutput(this, "AppRunnerServiceArnOutput", new CfnOutputProps
+            {
+                Value = AppRunnerService.AttrServiceArn,
+                Description = "Paste this into deploy-core-api.yml's APP_RUNNER_SERVICE_ARN env var"
+            });
+
+            new CfnOutput(this, "AppRunnerServiceUrlOutput", new CfnOutputProps
+            {
+                Value = AppRunnerService.AttrServiceUrl,
+                Description = "Public HTTPS URL of the App Runner service"
+            });
         }
     }
 }

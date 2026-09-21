@@ -98,6 +98,8 @@ public static class DependencyInjection
 
         // Story Review
         services.AddSingleton<IProposalCache, InMemoryProposalCache>();
+        services.AddSingleton<IReviewCompletionStore, InMemoryReviewCompletionStore>();
+        services.AddScoped<ILearningArtifactService, LearningArtifactService>();
         services.AddScoped<IStoryReviewService, StoryReviewService>();
         services.AddScoped<IProposalService, ProposalService>();
 

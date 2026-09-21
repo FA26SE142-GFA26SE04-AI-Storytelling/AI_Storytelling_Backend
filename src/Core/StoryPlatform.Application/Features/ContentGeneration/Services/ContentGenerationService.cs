@@ -8,6 +8,7 @@ using StoryPlatform.Application.Features.ContentGeneration.DTOs;
 using StoryPlatform.Application.Features.ContentGeneration.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration.Quality;
 using StoryPlatform.Application.Features.ExistingStories.Interfaces;
+using StoryPlatform.Application.Features.StoryReview.Interfaces;
 using StoryPlatform.Contracts.AI.Models;
 using StoryPlatform.Contracts.AI.Requests;
 using StoryPlatform.Contracts.AI.Responses;
@@ -24,6 +25,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
     private readonly IContentQualityEvaluator _qualityEvaluator;
     private readonly IContentGenerationJobFailureFinalizer _failureFinalizer;
     private readonly IStableVersionArtifactHandoffService _artifactHandoff;
+    private readonly IStoryReviewService? _reviewService;
     private readonly int _maxRefinementAttempts;
     private readonly int _artifactMaxAttempts;
     private readonly TimeSpan _jobLease;
@@ -34,13 +36,15 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
         IContentQualityEvaluator qualityEvaluator,
         IContentGenerationJobFailureFinalizer failureFinalizer,
         IStableVersionArtifactHandoffService artifactHandoff,
-        ContentGenerationOptions options)
+        ContentGenerationOptions options,
+        IStoryReviewService? reviewService = null)
     {
         _unitOfWork = unitOfWork;
         _aiClient = aiClient;
         _qualityEvaluator = qualityEvaluator;
         _failureFinalizer = failureFinalizer;
         _artifactHandoff = artifactHandoff;
+        _reviewService = reviewService;
         _maxRefinementAttempts = Math.Clamp(options.MaxContentRefinementAttempts, 0, 2);
         _artifactMaxAttempts = Math.Clamp(options.ArtifactMaxAttempts, 1, 3);
         _jobLease = TimeSpan.FromMinutes(Math.Clamp(options.JobLeaseMinutes, 1, 30));
@@ -390,6 +394,18 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             }
             return true;
         }, cancellationToken);
+
+        if (!nextOperation.HasValue && _reviewService is not null)
+        {
+            try
+            {
+                await _reviewService.EvaluateAndApplyAutoPublishAsync(state.Job.StoryId, cancellationToken);
+            }
+            catch
+            {
+                // Fallback to ContentReview if auto-publish encounters an issue or validation fails
+            }
+        }
     }
 
     private async Task<StoryVersion> PersistCandidateAsync(

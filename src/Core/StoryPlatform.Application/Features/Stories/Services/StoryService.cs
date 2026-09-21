@@ -183,16 +183,16 @@ public class StoryService : IStoryService
             throw new ForbiddenException("Bạn không có quyền phát hành câu chuyện này.");
         }
 
-        // Existing Story KHÔNG được dùng endpoint này.
-        // Existing Story phải đi qua ContentReview → Approved → MediaProcessing → Ready.
-        if (story.Source == StorySource.Manual)
+        // Đóng lỗ hổng bypass Approval/Media:
+        // Không một story nào (kể cả AI hay Manual) được publish nếu chưa qua Approval (Phase 4) và hoàn tất Media (Phase 5).
+        // Story chỉ có thể publish khi đã đạt trạng thái Ready.
+        if (story.Status != StoryStatus.Ready)
         {
             throw new ConflictException(
-                "EXISTING_STORY_CANNOT_BYPASS_REVIEW: Story nhập tay phải qua Review/Approval trước khi Ready.");
+                $"CANNOT_BYPASS_APPROVAL_MEDIA: Không thể phát hành câu chuyện khi chưa hoàn tất phê duyệt và tạo Media (trạng thái hiện tại: {story.Status}).");
         }
 
         story.IsPublished = true;
-        story.Status = StoryStatus.Ready;
         storyRepo.Update(story);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 

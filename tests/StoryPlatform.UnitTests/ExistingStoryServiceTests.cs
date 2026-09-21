@@ -352,6 +352,35 @@ public sealed class ExistingStoryServiceTests
         Assert.Equal("KeepOriginal", result.Decision);
     }
 
+    [Fact]
+    public async Task KeepOriginal_ThrowsConflictException_WhenEvaluationIsBlocked()
+    {
+        var store = SeedStoryWithV1();
+        var cache = new InMemoryExistingStoryEvaluationCache();
+        cache.Set(new ExistingStoryEvaluationDto
+        {
+            StoryId = 1,
+            StoryVersionId = 1,
+            Decision = ExistingStoryDecision.Blocked,
+            CanKeepOriginal = false,
+            SafetyScore = 0m,
+            HardSafetyIssues = [new StoryPlatform.Application.Features.ExistingStories.DTOs.EvaluationIssueDto { Code = "VIOLENCE", Message = "Violence" }]
+        });
+        var service = new ExistingStoryService(
+            store,
+            new PassThroughAccessGuard(store),
+            new FakeAIClientForExisting(),
+            new NoopHandoffService(),
+            new RecordingAuditLogWriter(),
+            evaluationCache: cache);
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => service.KeepOriginalAsync(1,
+            new KeepOriginalRequestDto { StoryId = 1, StoryVersionId = 1, OverrideReason = "Muốn giữ" },
+            CancellationToken.None));
+
+        Assert.Contains("HARD_SAFETY_BLOCKED", ex.Message);
+    }
+
     #endregion
 
     #region Archive tests

@@ -38,6 +38,8 @@ public sealed class ExistingStoryService : IExistingStoryService
     private readonly IStableVersionArtifactHandoffService _handoff;
     private readonly IAuditLogWriter _auditLog;
     private readonly IInputGuardrail _fullContentGuardrail;
+    private readonly IExistingStoryEvaluationService? _evaluationService;
+    private readonly IExistingStoryEvaluationCache? _evaluationCache;
 
     public ExistingStoryService(
         IUnitOfWork unitOfWork,
@@ -45,7 +47,9 @@ public sealed class ExistingStoryService : IExistingStoryService
         IAIStoryGenerationClient aiClient,
         IStableVersionArtifactHandoffService handoff,
         IAuditLogWriter auditLog,
-        IInputGuardrail? fullContentGuardrail = null)
+        IInputGuardrail? fullContentGuardrail = null,
+        IExistingStoryEvaluationService? evaluationService = null,
+        IExistingStoryEvaluationCache? evaluationCache = null)
     {
         _unitOfWork = unitOfWork;
         _accessGuard = accessGuard;
@@ -53,6 +57,8 @@ public sealed class ExistingStoryService : IExistingStoryService
         _handoff = handoff;
         _auditLog = auditLog;
         _fullContentGuardrail = fullContentGuardrail ?? new RuleBasedInputGuardrail();
+        _evaluationService = evaluationService;
+        _evaluationCache = evaluationCache;
     }
 
     #region Import
@@ -627,6 +633,27 @@ public sealed class ExistingStoryService : IExistingStoryService
             throw new BadRequestException("StoryVersion không thuộc Story.");
         if (!version.IsCurrent)
             throw new BadRequestException("StoryVersion không phải current.");
+
+        // Chặn Keep Original khi evaluation là Blocked
+        if (_evaluationService is not null)
+        {
+            var evaluation = await _evaluationService.GetLatestAsync(userId, story.Id, version.Id, cancellationToken);
+            if (evaluation.Decision == ExistingStoryDecision.Blocked || !evaluation.CanKeepOriginal)
+            {
+                throw new ConflictException("HARD_SAFETY_BLOCKED: StoryVersion có trạng thái đánh giá Blocked, không thể Keep Original.");
+            }
+        }
+        else if (_evaluationCache?.Get(story.Id, version.Id) is { } cachedEval)
+        {
+            if (cachedEval.Decision == ExistingStoryDecision.Blocked || !cachedEval.CanKeepOriginal)
+            {
+                throw new ConflictException("HARD_SAFETY_BLOCKED: StoryVersion có trạng thái đánh giá Blocked, không thể Keep Original.");
+            }
+        }
+        else if (version.SafetyScore.HasValue && version.SafetyScore.Value <= 0)
+        {
+            throw new ConflictException("HARD_SAFETY_BLOCKED: StoryVersion có trạng thái đánh giá Blocked, không thể Keep Original.");
+        }
 
         // Audit log đầy đủ cho keep-original.
         await _auditLog.LogAsync(

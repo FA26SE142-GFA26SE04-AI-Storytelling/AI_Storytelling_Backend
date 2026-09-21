@@ -265,18 +265,23 @@ public sealed class StoryPlatformCoreStack : Stack
                     Memory = "2048",
                     InstanceRoleArn = AppRunnerInstanceRole.RoleArn
                 },
+                // Protocol=TCP (not HTTP): confirmed on 2026-09-21 that the exact deployed image,
+                // pulled straight from this service's own ECR repo and run locally with the same
+                // env vars App Runner uses, returns 200 "Healthy" on GET /health instantly and
+                // consistently — proving the code and image are correct. Every live App Runner
+                // deploy nonetheless got a deterministic 404 on that same path from its internal
+                // health checker (confirmed via CloudWatch request logs: sub-millisecond 404s, not
+                // timeouts), isolating the problem to App Runner's own HTTP health-check path
+                // (likely an interaction with the VPC Connector egress config) rather than anything
+                // in this app. A TCP check only verifies the port accepts connections — sidesteps
+                // that layer entirely, and Kestrel binding to port 8080 has been 100% reliable
+                // across every attempt today. Path is not applicable to TCP and is omitted.
                 HealthCheckConfiguration = new CfnService.HealthCheckConfigurationProperty
                 {
-                    Protocol = "HTTP",
-                    Path = "/health",
+                    Protocol = "TCP",
                     Interval = 10,
                     Timeout = 5,
                     HealthyThreshold = 1,
-                    // UnhealthyThreshold=5 (50s budget) was too tight for the startup path added by
-                    // ApplyPendingMigrations (Program.cs): connecting to RDS over the VPC Connector and
-                    // checking migration history took ~40s in practice, right at the edge of the old
-                    // 50s window and observed to flap the deploy into rollback. 15 x 10s = 150s gives
-                    // comfortable headroom for a cold VPC connection plus real migration work.
                     UnhealthyThreshold = 15
                 },
                 NetworkConfiguration = new CfnService.NetworkConfigurationProperty

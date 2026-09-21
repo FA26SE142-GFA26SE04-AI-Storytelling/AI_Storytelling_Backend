@@ -81,5 +81,6 @@ public sealed record EvaluateContentSafetyResponse
     public bool CanRefine { get; init; }
     public string ReasonCode { get; init; } = "CONTENT_SAFETY_ALLOWED";
     public IReadOnlyList<string> Violations { get; init; } = [];
+    public double? SafetyScore { get; init; }
     public GenerationMetadataDto Metadata { get; init; } = new();
 }

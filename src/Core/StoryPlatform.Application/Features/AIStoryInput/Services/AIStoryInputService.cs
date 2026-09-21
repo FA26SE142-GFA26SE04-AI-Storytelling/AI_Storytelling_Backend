@@ -532,6 +532,18 @@ public sealed class AIStoryInputService : IAIStoryInputService
             item => item.ChildProfileId == childProfileId,
             cancellationToken: cancellationToken)
             ?? throw new BadRequestException("Child Profile chưa có Safety Policy.");
+        if (!safety.ConsentRecorded || !safety.ConsentRecordedAt.HasValue || safety.ConsentPolicyVersion <= 0)
+        {
+            throw new BadRequestException("CONSENT_REQUIRED: Child Profile chưa có consent hợp lệ để sử dụng AI.");
+        }
+        if (safety.SafetyScoreThreshold is < 0m or > 100m)
+        {
+            throw new BadRequestException("Safety Score Threshold phải nằm trong khoảng 0 đến 100.");
+        }
+        if (safety.ComprehensionThresholdPercent is < 0m or > 100m || safety.ComprehensionWindowSize <= 0)
+        {
+            throw new BadRequestException("Cấu hình comprehension của Safety Policy không hợp lệ.");
+        }
 
         var personalCategories = await _unitOfWork.Repository<SafetyPolicyCategory>().FindAsync(
             item => item.SafetyPolicyId == safety.Id,
@@ -560,7 +572,8 @@ public sealed class AIStoryInputService : IAIStoryInputService
             throw new BadRequestException("Safety Policy chưa có Maximum Story Length hợp lệ.");
         }
 
-        var approvalMode = safety.RequiredApprovalMode == ApprovalMode.AlwaysManual ||
+        var approvalMode = safety.ParentalGateEnabled ||
+                           safety.RequiredApprovalMode == ApprovalMode.AlwaysManual ||
                            organizationPolicy?.RequiredApprovalModeDefault == ApprovalMode.AlwaysManual
             ? ApprovalMode.AlwaysManual
             : ApprovalMode.AutoPublishOnThreshold;
@@ -610,7 +623,15 @@ public sealed class AIStoryInputService : IAIStoryInputService
             categoryRules.Where(item => item.Value == PolicyRule.Blocked).Select(item => item.Key).Order().ToArray(),
             allowedTerms,
             restrictedTerms,
-            blockedTerms);
+            blockedTerms,
+            safety.ReadabilityScoreThreshold,
+            safety.ParentalGateEnabled,
+            safety.SafetyScoreThreshold,
+            learning.ComprehensionGoal,
+            safety.ComprehensionThresholdPercent,
+            safety.ComprehensionWindowSize,
+            safety.ConsentPolicyVersion,
+            safety.ConsentRecordedAt);
 
         return new EffectiveContext(
             child.Nickname,
@@ -782,6 +803,12 @@ public sealed class AIStoryInputService : IAIStoryInputService
         AvailableLanguages = [context.Language],
         MaximumLength = context.MaximumLength,
         RequiredApprovalMode = ToApprovalModeValue(context.ApprovalMode),
+        ParentalGateEnabled = context.Snapshot.ParentalGateEnabled,
+        SafetyScoreThreshold = context.Snapshot.SafetyScoreThreshold,
+        ReadabilityScoreThreshold = context.Snapshot.ReadabilityScoreThreshold,
+        ComprehensionGoal = context.Snapshot.ComprehensionGoal,
+        ComprehensionThresholdPercent = context.Snapshot.ComprehensionThresholdPercent,
+        ComprehensionWindowSize = context.Snapshot.ComprehensionWindowSize,
         Interests = context.Snapshot.Interests,
         AllowedCategoryCodes = context.Snapshot.AllowedCategoryCodes,
         RestrictedCategoryCodes = context.Snapshot.RestrictedCategoryCodes,

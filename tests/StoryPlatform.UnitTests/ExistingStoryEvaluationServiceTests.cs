@@ -27,6 +27,8 @@ public sealed class ExistingStoryEvaluationServiceTests
 
         Assert.Equal(ExistingStoryDecision.Suitable, result.Decision);
         Assert.Empty(result.HardSafetyIssues);
+        Assert.NotNull(result.ReadabilityFkgl);
+        Assert.NotNull(result.ReadabilityFre);
     }
 
     [Fact]
@@ -90,6 +92,7 @@ public sealed class ExistingStoryEvaluationServiceTests
         unitOfWork.Setup(store => store.Repository<Story>()).Returns(storyRepository.Object);
         unitOfWork.Setup(store => store.Repository<StoryVersion>()).Returns(versionRepository.Object);
         unitOfWork.Setup(store => store.Repository<ContentCategory>()).Returns(categoryRepository.Object);
+        unitOfWork.Setup(store => store.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
 
         var accessGuard = new Mock<ISupervisionAccessGuard>();
         accessGuard.Setup(guard => guard.EnsurePermissionAsync(
@@ -102,6 +105,9 @@ public sealed class ExistingStoryEvaluationServiceTests
             {
                 ChildProfileId = 1,
                 MaxStoryLength = 5000,
+                ConsentRecorded = true,
+                ConsentRecordedAt = DateTime.UtcNow,
+                ConsentPolicyVersion = 1,
                 Categories =
                 [
                     new SafetyPolicyCategoryDto

@@ -11,7 +11,8 @@ public sealed record ContentQualityResult(
     ContentQualityGate Length,
     ContentQualityGate Safety,
     ContentQualityGate Readability,
-    ContentQualityGate VocabularyCompliance)
+    ContentQualityGate VocabularyCompliance,
+    decimal? SafetyScore = null)
 {
     public IReadOnlyList<string> RefinementReasons =>
         new[] { OutlineConsistency, Length, Safety, Readability, VocabularyCompliance }

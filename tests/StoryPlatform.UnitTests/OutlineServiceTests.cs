@@ -152,7 +152,7 @@ public sealed class OutlineServiceTests
         await Service(unitOfWork).ProcessNextAsync();
         var context = new AIStoryInputContextSnapshot(
             1, "6-8", 2, "level_2", "vi", 700, "always_manual", [], [], [], ["violence"],
-            BlockedCategoryTerms: ["bạo lực"]);
+            BlockedCategoryTerms: ["bạo lực"], ConsentRecordedAt: DateTime.UtcNow);
         unitOfWork.Items<StoryGenerationRequest>().Single().ContextSnapshotJson =
             JsonSerializer.Serialize(context, new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
@@ -247,7 +247,8 @@ public sealed class OutlineServiceTests
             "Tình bạn", null, "ai_suggested", [], "ai_suggested", null,
             "Biết chia sẻ", "level_2", "vi", 500);
         var context = new AIStoryInputContextSnapshot(
-            1, "6-8", 2, "level_2", "vi", 700, "always_manual", [], [], [], []);
+            1, "6-8", 2, "level_2", "vi", 700, "always_manual", [], [], [], [],
+            ConsentRecordedAt: DateTime.UtcNow);
         unitOfWork.Seed(new StoryGenerationRequest
         {
             Id = 1,

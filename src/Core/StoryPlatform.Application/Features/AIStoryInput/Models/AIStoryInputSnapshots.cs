@@ -32,4 +32,12 @@ public sealed record AIStoryInputContextSnapshot(
     IReadOnlyList<string> BlockedCategoryCodes,
     IReadOnlyList<string>? AllowedCategoryTerms = null,
     IReadOnlyList<string>? RestrictedCategoryTerms = null,
-    IReadOnlyList<string>? BlockedCategoryTerms = null);
+    IReadOnlyList<string>? BlockedCategoryTerms = null,
+    decimal? ReadabilityScoreThreshold = null,
+    bool ParentalGateEnabled = true,
+    decimal? SafetyScoreThreshold = null,
+    string? ComprehensionGoal = null,
+    decimal? ComprehensionThresholdPercent = null,
+    int ComprehensionWindowSize = 3,
+    int ConsentPolicyVersion = 1,
+    DateTime? ConsentRecordedAt = null);

@@ -51,6 +51,32 @@ public sealed class ExistingStoriesController : BaseApiController
         return Ok(ApiResponse<ImportStoryResponseDto>.Ok(result, "Import truyện thành công."));
     }
 
+    [HttpPost("import-file")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(5_250_000)]
+    public async Task<ActionResult<ApiResponse<ImportStoryResponseDto>>> ImportFile(
+        [FromForm] ImportExistingStoryFileForm form,
+        CancellationToken cancellationToken)
+    {
+        if (form.File is null || form.File.Length == 0)
+            return BadRequest(ApiResponse<object>.Fail("File upload không được để trống."));
+        if (form.File.Length > 5_000_000)
+            return BadRequest(ApiResponse<object>.Fail("File upload vượt quá giới hạn 5 MB."));
+
+        await using var stream = form.File.OpenReadStream();
+        var result = await _existingStory.ImportDocumentAsync(GetCurrentUserId(), new ImportStoryDocumentRequestDto
+        {
+            Content = stream,
+            FileName = form.File.FileName,
+            ContentType = form.File.ContentType,
+            Title = form.Title,
+            ChildProfileId = form.ChildProfileId,
+            Language = form.Language,
+            IdempotencyKey = form.IdempotencyKey
+        }, cancellationToken);
+        return Ok(ApiResponse<ImportStoryResponseDto>.Ok(result, "Import file truyện thành công."));
+    }
+
     #endregion
 
     #region Evaluation
@@ -160,4 +186,13 @@ public sealed class ExistingStoriesController : BaseApiController
 public sealed class EvaluateExistingStoryRequestDto
 {
     public int StoryVersionId { get; set; }
+}
+
+public sealed class ImportExistingStoryFileForm
+{
+    public IFormFile File { get; set; } = null!;
+    public string? Title { get; set; }
+    public int ChildProfileId { get; set; }
+    public string Language { get; set; } = "vi";
+    public string? IdempotencyKey { get; set; }
 }

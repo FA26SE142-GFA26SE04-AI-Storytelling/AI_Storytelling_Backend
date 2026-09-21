@@ -32,6 +32,42 @@ public sealed class AIStoryInputServiceTests
     }
 
     [Fact]
+    public async Task Missing_consent_blocks_context_before_story_creation()
+    {
+        var unitOfWork = CreateEligibleUnitOfWork();
+        var policy = unitOfWork.Items<SafetyPolicy>().Single();
+        policy.ConsentRecorded = false;
+        policy.ConsentRecordedAt = null;
+        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
+
+        var error = await Assert.ThrowsAsync<BadRequestException>(() => service.GetContextAsync(1, 1));
+
+        Assert.Contains("CONSENT_REQUIRED", error.Message);
+        Assert.Empty(unitOfWork.Items<Story>());
+    }
+
+    [Fact]
+    public async Task Parental_gate_forces_manual_approval_and_exposes_learning_config()
+    {
+        var unitOfWork = CreateEligibleUnitOfWork();
+        var policy = unitOfWork.Items<SafetyPolicy>().Single();
+        policy.RequiredApprovalMode = ApprovalMode.AutoPublishOnThreshold;
+        policy.ParentalGateEnabled = true;
+        policy.SafetyScoreThreshold = 90m;
+        policy.ComprehensionThresholdPercent = 80m;
+        unitOfWork.Items<LearningProfile>().Single().ComprehensionGoal = "Kể lại được ý chính";
+        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
+
+        var context = await service.GetContextAsync(1, 1);
+
+        Assert.Equal("always_manual", context.RequiredApprovalMode);
+        Assert.True(context.ParentalGateEnabled);
+        Assert.Equal(90m, context.SafetyScoreThreshold);
+        Assert.Equal(80m, context.ComprehensionThresholdPercent);
+        Assert.Equal("Kể lại được ý chính", context.ComprehensionGoal);
+    }
+
+    [Fact]
     public async Task Missing_generate_permission_creates_nothing()
     {
         var unitOfWork = CreateEligibleUnitOfWork(includePermission: false);
@@ -103,6 +139,7 @@ public sealed class AIStoryInputServiceTests
     public async Task Allow_creates_one_draft_request_snapshot_and_handoff()
     {
         var unitOfWork = CreateEligibleUnitOfWork();
+        unitOfWork.Items<SafetyPolicy>().Single().ReadabilityScoreThreshold = 61m;
         var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
 
         var result = await service.SubmitAsync(1, ValidRequest());
@@ -116,6 +153,8 @@ public sealed class AIStoryInputServiceTests
         Assert.NotNull(request.AcceptedInputJson);
         var snapshot = JsonSerializer.Deserialize<AcceptedAIStoryInputSnapshot>(request.AcceptedInputJson, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         Assert.Equal("Tình bạn", snapshot!.Topic);
+        var context = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(request.ContextSnapshotJson, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.Equal(61m, context!.ReadabilityScoreThreshold);
         Assert.Single(unitOfWork.Items<StoryGenerationJob>());
         Assert.Empty(unitOfWork.Items<StoryVersion>());
         Assert.Equal("input_accepted", result.InputStatus);
@@ -278,7 +317,10 @@ public sealed class AIStoryInputServiceTests
             Id = 1,
             ChildProfileId = 1,
             MaxStoryLength = 700,
-            RequiredApprovalMode = ApprovalMode.AlwaysManual
+            RequiredApprovalMode = ApprovalMode.AlwaysManual,
+            ConsentRecorded = true,
+            ConsentRecordedAt = DateTime.UtcNow,
+            ConsentPolicyVersion = 1
         });
         unitOfWork.Seed(new SupervisionRelationship
         {

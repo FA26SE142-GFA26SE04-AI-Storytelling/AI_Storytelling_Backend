@@ -66,6 +66,8 @@ public class SafetyPolicyServiceTests
         var result = await _sut.SetSafetyPolicyAsync(1, 2, ValidRequest());
 
         Assert.Equal(1500, added!.MaxStoryLength);
+        Assert.Equal(60m, added.ReadabilityScoreThreshold);
+        Assert.Equal(60m, result.ReadabilityScoreThreshold);
         Assert.True(added.ConsentRecorded);
         Assert.NotNull(added.ConsentRecordedAt);
         Assert.Single(result.Categories);
@@ -116,6 +118,17 @@ public class SafetyPolicyServiceTests
     }
 
     [Fact]
+    public async Task SetSafetyPolicyAsync_ReadabilityThresholdOutsideRange_ThrowsBadRequest()
+    {
+        AllowPermission();
+        var request = ValidRequest();
+        request.ReadabilityScoreThreshold = 101m;
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.SetSafetyPolicyAsync(1, 2, request));
+    }
+
+    [Fact]
     public async Task GetSafetyPolicyAsync_NotYetSet_ThrowsNotFound()
     {
         _guard.Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
@@ -132,7 +145,11 @@ public class SafetyPolicyServiceTests
     {
         _guard.Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SupervisionRelationship());
-        var policy = new SafetyPolicy { Id = 5, ChildProfileId = 1, MaxStoryLength = 1500, ConsentRecorded = true };
+        var policy = new SafetyPolicy
+        {
+            Id = 5, ChildProfileId = 1, MaxStoryLength = 1500, ConsentRecorded = true,
+            ReadabilityScoreThreshold = 62m
+        };
         _policyRepo.Setup(r => r.FirstOrDefaultAsync(
                 It.IsAny<Expression<Func<SafetyPolicy, bool>>>(), null,
                 It.IsAny<CancellationToken>())).ReturnsAsync(policy);
@@ -144,6 +161,7 @@ public class SafetyPolicyServiceTests
         var result = await _sut.GetSafetyPolicyAsync(1, 2);
 
         Assert.Equal(1500, result.MaxStoryLength);
+        Assert.Equal(62m, result.ReadabilityScoreThreshold);
         Assert.Single(result.Categories);
     }
 
@@ -183,6 +201,7 @@ public class SafetyPolicyServiceTests
     {
         MaxStoryLength = 1500,
         ConsentRecorded = true,
+        ReadabilityScoreThreshold = 60m,
         Categories = new List<SetSafetyPolicyCategoryRequestDto>
         {
             new() { ContentCategoryId = 1, Rule = PolicyRule.Blocked }

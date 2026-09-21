@@ -31,6 +31,7 @@ All within the existing **single shared environment** topology (both `dev` and `
 - **RDS is not reachable from GitHub Actions runners**: `Vpc` subnet for RDS is `PRIVATE_ISOLATED`, `PubliclyAccessible = false` (`StoryPlatformCoreStack.cs`). This rules out running `dotnet ef database update` directly from a GitHub-hosted runner — confirmed during this session's design discussion, changes the original plan from "run migration in the pipeline" to "run migration at app startup inside the VPC."
 - **Health check path mismatch found**: CDK's `HealthCheckConfiguration.Path` is `/index.html` (`StoryPlatformCoreStack.cs:264`), which only returns 200 because Swashbuckle's Swagger UI middleware happens to serve its own `index.html` at the configured `RoutePrefix` (empty string here) — see `Program.cs:59-67`, gated behind `Swagger:Enabled` config in Production. `Program.cs:75` already registers a real ASP.NET Core health endpoint (`app.MapHealthChecks("/health")`) that is currently unused by App Runner. This matters directly for this task: the auto-migration design (§5.2) relies on App Runner's health-check-triggered rollback as its safety net, and that safety net is fragile while wired to an incidental Swagger route instead of the dedicated health endpoint.
 - CI role (`storyplatform-core-api-ci`) currently has only `EcrRepository.GrantPullPush` — no App Runner API permissions.
+- **`AutoDeploymentsEnabled: true` is already set** (`StoryPlatformCoreStack.cs:224`) — the service already redeploys itself automatically within seconds of any `:latest` push. Adding an *explicit* `apprunner start-deployment` call on top of this (§5.3) without addressing this would race the implicit trigger: whichever fires first could leave the second call rejected with an "already in progress" error, making the explicit call's pass/fail an unreliable signal. Resolved in §5.3/§5.5 by making the explicit call the sole trigger.
 - Live App Runner service confirmed `RUNNING` (`arn:aws:apprunner:ap-southeast-1:028718096070:service/storyplatform-core-api/fda923da69b54ce4b6f7f37d67f9cdcf`).
 - `.NET 10`, `ApplicationDbContext` in `StoryPlatform.Infrastructure/Persistence/ApplicationDbContext.cs`, registered via `AddInfrastructure()` in `Program.cs:46`.
 
@@ -49,7 +50,8 @@ GitHub Actions: deploy-core-api.yml
    ▼ (needs: test)
    ├─ job: build-and-push
    │    assume CI role via OIDC → ECR login → docker build → push :sha + :latest
-   │    → aws apprunner start-deployment (explicit) → poll until RUNNING / ROLLBACK
+   │    (AutoDeploymentsEnabled now FALSE — push alone does not trigger anything)
+   │    → aws apprunner start-deployment (explicit, sole trigger) → poll until RUNNING / ROLLBACK
    │      (fails ⇒ job fails, Action shows red X — CI now KNOWS deploy failed)
    ▼
 AWS App Runner pulls new image, starts new container
@@ -77,23 +79,27 @@ Accepted risk: if App Runner ever starts more than one instance of the *same new
 ### 5.3 Explicit deploy trigger + verification (`.github/workflows/deploy-core-api.yml`)
 After `docker push`, add:
 1. `aws apprunner start-deployment --service-arn <arn>` → capture `OperationId`.
-2. Poll `aws apprunner describe-service` (or `list-operations`) every ~10s, up to a bounded timeout (e.g. 10 minutes), until the service status leaves `OPERATION_IN_PROGRESS`.
-3. If it lands on `RUNNING` ⇒ job succeeds. If it lands on `ROLLBACK_SUCCEEDED`/`ROLLBACK_FAILED` ⇒ job fails with a clear message (bad migration or bad code was caught by the health check and rolled back).
+2. Poll `aws apprunner describe-service` every 15s, up to a 10-minute timeout, until the service status leaves `OPERATION_IN_PROGRESS`.
+3. If it lands on `RUNNING` ⇒ job succeeds. If it lands on `ROLLBACK_SUCCEEDED`/`ROLLBACK_FAILED` ⇒ job fails with a clear message (bad migration or bad code was caught by the health check and rolled back). If the poll exceeds the timeout ⇒ job fails with a timeout message (does not assume success).
 
-This turns today's "fire and forget, hope App Runner notices the new tag" into a deploy step whose pass/fail is visible directly in the GitHub Actions run.
+This turns today's "fire and forget, hope App Runner notices the new tag" into a deploy step whose pass/fail is visible directly in the GitHub Actions run, and — combined with §5.5's `AutoDeploymentsEnabled: false` — makes this call the **one and only** deployment trigger (no race with an implicit ECR-triggered deploy).
 
 ### 5.4 Health check path fix (`infra/aws-cdk/src/StoryPlatformCoreStack.cs`)
 Change `HealthCheckConfiguration.Path` from `"/index.html"` to `"/health"`. One-line CDK change, requires a `cdk deploy` (manual, per §2) to take effect. Directly load-bearing for §5.2/§5.3's safety guarantees — without it, the rollback safety net is coincidentally wired to Swagger UI instead of a real health check.
 
-### 5.5 IAM — CI role additions (`infra/aws-cdk/src/StoryPlatformCoreStack.cs`)
-Inside the existing `if (includeAppRunnerService)` block (once `AppRunnerService` exists), grant `CiRole`:
-- `apprunner:StartDeployment` and `apprunner:DescribeService` (and `apprunner:ListOperations` if used for polling), scoped to `AppRunnerService.AttrServiceArn` only.
+### 5.5 IAM + config — CI role additions and disabling implicit auto-deploy (`infra/aws-cdk/src/StoryPlatformCoreStack.cs`)
+Inside the existing `if (includeAppRunnerService)` block (once `AppRunnerService` exists):
+- Set `SourceConfiguration.AutoDeploymentsEnabled = false` (currently `true`). Prevents the ECR-push-triggered implicit deploy from racing the explicit `start-deployment` call in §5.3 — the explicit call becomes the sole deployment trigger, and its poll result becomes a trustworthy signal.
+- Grant `CiRole`: `apprunner:StartDeployment` and `apprunner:DescribeService`, scoped to `AppRunnerService.AttrServiceArn` only (verified as the correct CDK-generated attribute name on `CfnService`).
 
 No change to the trust policy (already fixed this session) or to ECR permissions.
 
+### 5.6 RUNBOOK.md update (`infra/aws-cdk/RUNBOOK.md`)
+Add a short section describing the new deploy flow (test gate → explicit `start-deployment` from CI → migration-on-startup) so the runbook doesn't silently go stale and keep describing the old implicit-auto-deploy behavior. The existing two-phase bootstrap section (§"Two-phase deploy") is unaffected and stays as-is — it governs `includeAppRunnerService`, unrelated to this change.
+
 ## 6. Data flow (deploy-time, supersedes §8 of the 2026-09-19 spec)
 
-`git push (dev|main)` → GitHub Actions assumes CI role via OIDC → `dotnet test` (gate) → build image → push to ECR (`latest` + SHA tags) → explicit `apprunner start-deployment` → App Runner pulls new image, starts container → **`Database.Migrate()` runs against RDS over the VPC Connector path** → `/health` check passes → new revision goes live (or fails health check → auto-rollback, CI job reports failure via the poll in §5.3).
+`git push (dev|main)` → GitHub Actions assumes CI role via OIDC → `dotnet test` (gate) → build image → push to ECR (`latest` + SHA tags, no longer auto-triggers anything since `AutoDeploymentsEnabled=false`) → explicit `apprunner start-deployment` (sole trigger) → App Runner pulls new image, starts container → **`Database.Migrate()` runs against RDS over the VPC Connector path** → `/health` check passes → new revision goes live (or fails health check → auto-rollback, CI job reports failure via the poll in §5.3).
 
 ## 7. Error handling / rollback
 
@@ -126,6 +132,7 @@ No change to the trust policy (already fixed this session) or to ECR permissions
 | Migration strategy | Auto-migrate on App Runner startup (`Program.cs`), not a CI pipeline step | Discovered RDS is network-isolated from GitHub-hosted runners (`PRIVATE_ISOLATED`, not publicly accessible) — a CI-driven migration step cannot reach the DB at all without new VPC-attached CI infra (rejected as over-engineering for current scale) |
 | Test gate | Added before build/push | User confirmed direct pushes to `dev` currently bypass all testing; unacceptable given `dev` now auto-deploys |
 | Deploy signal | Explicit `apprunner start-deployment` + poll, instead of relying silently on implicit ECR-tag-triggered auto-deploy | User wants clear pass/fail visibility in CI, not silent hope |
+| `AutoDeploymentsEnabled` | Disabled (`false`), was `true` | Self-review found the explicit `start-deployment` call would race the existing implicit ECR-triggered auto-deploy if left enabled, making the poll result unreliable. Disabling it makes the explicit call the sole trigger — no functional loss, since CI is already the only thing that ever pushes `:latest` |
 | Health check path | Fix `/index.html` → `/health` | Found during context-gathering for this spec; directly undermines the rollback safety net this design depends on if left as-is |
 | Infra automation (`cdk deploy`) | Stays manual | User instruction this session ("hạ tầng vẫn deploy thủ công"); also independently enforced by the harness's own protected-scope IaC-apply restriction encountered earlier this session |
 

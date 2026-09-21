@@ -145,7 +145,7 @@ public class StoryPlatformCoreStackTests
     }
 
     [Fact]
-    public void Stack_CreatesAppRunnerServiceWithAutoDeploy_WhenContextFlagEnabled()
+    public void Stack_CreatesAppRunnerServiceWithAutoDeployDisabled_WhenContextFlagEnabled()
     {
         var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
         {
@@ -156,7 +156,7 @@ public class StoryPlatformCoreStackTests
         {
             ["SourceConfiguration"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
             {
-                ["AutoDeploymentsEnabled"] = true
+                ["AutoDeploymentsEnabled"] = false
             })
         });
     }
@@ -263,8 +263,38 @@ public class StoryPlatformCoreStackTests
             ["HealthCheckConfiguration"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
             {
                 ["Protocol"] = "HTTP",
-                ["Path"] = "/index.html"
+                ["Path"] = "/health"
             })
         });
+    }
+
+    [Fact]
+    public void Stack_GrantsCiRoleAppRunnerDeployPermissions_WhenContextFlagEnabled()
+    {
+        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["includeAppRunnerService"] = true
+        });
+        template.HasResourceProperties("AWS::IAM::Policy", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["PolicyDocument"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["Statement"] = Match.ArrayWith(new object[]
+                {
+                    Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                    {
+                        ["Action"] = Match.ArrayWith(new object[] { "apprunner:StartDeployment", "apprunner:DescribeService", "apprunner:ListOperations" }),
+                        ["Resource"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                        {
+                            ["Fn::GetAtt"] = Match.ArrayWith(new object[]
+                            {
+                                Match.StringLikeRegexp("^CoreApiService"),
+                                "ServiceArn"
+                            })
+                        })
+                    })
+                })
+            })
+        }));
     }
 }

@@ -51,6 +51,8 @@ builder.Services.AddScoped<INotificationRealtimePublisher, SignalRNotificationPu
 
 var app = builder.Build();
 
+app.ApplyPendingMigrations<StoryPlatform.Infrastructure.Persistence.ApplicationDbContext>();
+
 // Pipeline xử lý HTTP Request
 // Bắt ngoại lệ tập trung toàn ứng dụng
 app.UseMiddleware<ExceptionHandlingMiddleware>();

@@ -261,7 +261,15 @@ public sealed class StableVersionArtifactHandoffService : IStableVersionArtifact
                 .Select(c => c.ContentCategoryId.ToString()).ToArray() ?? Array.Empty<string>(),
             BlockedCategoryCodes: safety?.Categories?
                 .Where(c => string.Equals(c.Rule, PolicyRule.Blocked.ToString(), StringComparison.OrdinalIgnoreCase))
-                .Select(c => c.ContentCategoryId.ToString()).ToArray() ?? Array.Empty<string>());
+                .Select(c => c.ContentCategoryId.ToString()).ToArray() ?? Array.Empty<string>(),
+            ReadabilityScoreThreshold: safety?.ReadabilityScoreThreshold,
+            ParentalGateEnabled: safety?.ParentalGateEnabled ?? true,
+            SafetyScoreThreshold: safety?.SafetyScoreThreshold,
+            ComprehensionGoal: learning?.ComprehensionGoal,
+            ComprehensionThresholdPercent: safety?.ComprehensionThresholdPercent,
+            ComprehensionWindowSize: safety?.ComprehensionWindowSize ?? 3,
+            ConsentPolicyVersion: safety?.ConsentPolicyVersion ?? 1,
+            ConsentRecordedAt: safety?.ConsentRecordedAt);
     }
 
     private static string ShortHash(string value)

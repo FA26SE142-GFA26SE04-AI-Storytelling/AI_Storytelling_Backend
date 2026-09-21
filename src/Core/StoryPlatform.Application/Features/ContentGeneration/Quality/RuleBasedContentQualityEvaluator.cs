@@ -37,11 +37,16 @@ public sealed partial class RuleBasedContentQualityEvaluator : IContentQualityEv
             restricted is not null ? $"Nội dung chứa chủ đề hạn chế: {restricted}." : "Nội dung chứa dữ liệu cá nhân.";
         var safety = Gate(safetyPassed, false, "CONTENT_SAFETY_BLOCKED", safetyReason);
 
-        var sentenceCount = Math.Max(1, SentencePattern().Matches(content).Count);
-        var averageWords = wordCount == 0 ? 0 : (double)wordCount / sentenceCount;
-        var maximumAverage = context.AgeBand.Contains("6-8", StringComparison.OrdinalIgnoreCase) ? 14d : 22d;
-        var readability = Gate(averageWords <= maximumAverage, true, "CONTENT_READABILITY_NOT_MET",
-            $"Độ dài câu trung bình {averageWords:F1} vượt mức {maximumAverage:F0} từ.");
+        var readabilityResult = ReadabilityCalculator.EvaluateForProfile(
+            content,
+            context.Language,
+            context.ReadingLevel,
+            context.ReadabilityScoreThreshold);
+        var readability = Gate(readabilityResult.Passed, true, "CONTENT_READABILITY_NOT_MET",
+            $"Readability {readabilityResult.Metrics.Algorithm} chưa phù hợp Reading Level {context.ReadingLevel}: " +
+            $"grade={readabilityResult.Metrics.Fkgl:F2}/{readabilityResult.MaximumGradeLevel:F2}, " +
+            $"ease={readabilityResult.Metrics.Fre:F2}/{readabilityResult.MinimumEaseScore:F2}, " +
+            $"trung bình={readabilityResult.Metrics.AverageWordsPerSentence:F2}/{readabilityResult.MaximumAverageWordsPerSentence:F2} từ/câu.");
 
         var averageWordLength = wordCount == 0 ? 0 : WordPattern().Matches(content).Select(match => match.Value.Length).Average();
         var vocabularyLimit = context.VocabularyLevel.Contains("1", StringComparison.OrdinalIgnoreCase) ? 6.5 :
@@ -50,7 +55,7 @@ public sealed partial class RuleBasedContentQualityEvaluator : IContentQualityEv
             $"Độ dài từ trung bình {averageWordLength:F1} chưa phù hợp {context.VocabularyLevel}.");
 
         var passed = outline.Passed && length.Passed && safety.Passed && readability.Passed && vocabulary.Passed;
-        return new ContentQualityResult(passed, outline, length, safety, readability, vocabulary);
+        return new ContentQualityResult(passed, outline, length, safety, readability, vocabulary, safetyPassed ? 1m : 0m);
     }
 
     private static ContentQualityGate Gate(bool passed, bool canRefine, string code, string violation) =>
@@ -71,8 +76,6 @@ public sealed partial class RuleBasedContentQualityEvaluator : IContentQualityEv
 
     [GeneratedRegex(@"\p{L}+(?:['’-]\p{L}+)?", RegexOptions.CultureInvariant)]
     private static partial Regex WordPattern();
-    [GeneratedRegex(@"[.!?]+", RegexOptions.CultureInvariant)]
-    private static partial Regex SentencePattern();
     [GeneratedRegex(@"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex EmailPattern();
     [GeneratedRegex(@"(?<!\d)(?:\+?84|0)(?:[ .-]?\d){9,10}(?!\d)", RegexOptions.CultureInvariant)]

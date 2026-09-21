@@ -10,6 +10,7 @@ using StoryPlatform.Application.Features.ChildProfiles.Learning.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ContentGeneration.Quality;
 using StoryPlatform.Application.Features.ExistingStories.DTOs;
 using StoryPlatform.Application.Features.ExistingStories.Interfaces;
 using StoryPlatform.Domain.Entities;
@@ -72,12 +73,35 @@ public sealed class ExistingStoryEvaluationService : IExistingStoryEvaluationSer
         {
             safety = null;
         }
+        if (safety is null || !safety.ConsentRecorded || !safety.ConsentRecordedAt.HasValue || safety.ConsentPolicyVersion <= 0)
+            throw new BadRequestException("CONSENT_REQUIRED: Child Profile chưa có consent hợp lệ để sử dụng AI.");
 
         var learning = await TryLoadLearningAsync(story.ChildProfileId, userId, cancellationToken);
 
         var blockedCategories = await LoadBlockedCategoriesAsync(safety, cancellationToken);
-        var hardIssues = ScanHardSafety(version.Content!, blockedCategories);
-        var profileIssues = EvaluateProfileFit(story, version, safety, learning);
+        var hardIssues = ScanHardSafety(version.Content!, blockedCategories).ToList();
+        var safetyScore = hardIssues.Count == 0 ? 100m : 0m;
+        if (safety.SafetyScoreThreshold.HasValue && safetyScore < safety.SafetyScoreThreshold.Value &&
+            hardIssues.All(issue => issue.Code != "SAFETY_SCORE_BELOW_THRESHOLD"))
+        {
+            hardIssues.Add(new EvaluationIssueDto
+            {
+                Code = "SAFETY_SCORE_BELOW_THRESHOLD",
+                Message = $"Điểm an toàn {safetyScore:F2} thấp hơn ngưỡng {safety.SafetyScoreThreshold.Value:F2}."
+            });
+        }
+        var readability = ReadabilityCalculator.EvaluateForProfile(
+            version.Content,
+            story.Language,
+            learning.ReadingLevel ?? story.ReadingLevel ?? 2,
+            safety?.ReadabilityScoreThreshold);
+        var profileIssues = EvaluateProfileFit(story, version, safety, learning, readability);
+
+        version.ReadabilityFkgl = readability.Metrics.Fkgl;
+        version.ReadabilityFre = readability.Metrics.Fre;
+        version.SafetyScore = safetyScore;
+        _unitOfWork.Repository<StoryVersion>().Update(version);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var decision = hardIssues.Count > 0
             ? ExistingStoryDecision.Blocked
@@ -92,6 +116,9 @@ public sealed class ExistingStoryEvaluationService : IExistingStoryEvaluationSer
             Decision = decision,
             HardSafetyIssues = hardIssues,
             ProfileFitIssues = profileIssues,
+            ReadabilityFkgl = readability.Metrics.Fkgl,
+            ReadabilityFre = readability.Metrics.Fre,
+            SafetyScore = safetyScore,
             WordCount = CountWords(version.Content!),
             CanKeepOriginal = decision != ExistingStoryDecision.Blocked
         };
@@ -174,7 +201,11 @@ public sealed class ExistingStoryEvaluationService : IExistingStoryEvaluationSer
     }
 
     private static IReadOnlyList<EvaluationIssueDto> EvaluateProfileFit(
-        Story story, StoryVersion version, SafetyPolicyDto? safety, LearningProfileSnapshot learning)
+        Story story,
+        StoryVersion version,
+        SafetyPolicyDto? safety,
+        LearningProfileSnapshot learning,
+        ReadabilityProfileResult readability)
     {
         var issues = new List<EvaluationIssueDto>();
         var content = version.Content!;
@@ -213,6 +244,17 @@ public sealed class ExistingStoryEvaluationService : IExistingStoryEvaluationSer
                     Message = $"Từ vựng trung bình ({avgWordLength:F1} ký tự) cao hơn ReadingLevel {learning.ReadingLevel}."
                 });
             }
+        }
+
+        if (!readability.Passed)
+        {
+            issues.Add(new EvaluationIssueDto
+            {
+                Code = "READABILITY_PROFILE_MISMATCH",
+                Message = $"{readability.Metrics.Algorithm} chưa phù hợp ReadingLevel " +
+                          $"{learning.ReadingLevel ?? story.ReadingLevel ?? 2}: " +
+                          $"grade={readability.Metrics.Fkgl:F2}, ease={readability.Metrics.Fre:F2}."
+            });
         }
 
         // AgeBand rough check.

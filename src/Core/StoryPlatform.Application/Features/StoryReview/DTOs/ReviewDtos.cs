@@ -10,6 +10,9 @@ public sealed record ReviewPackageDto
     public string Title { get; init; } = string.Empty;
     public string Content { get; init; } = string.Empty;
     public string Lesson { get; init; } = string.Empty;
+    public string ReadabilityAlgorithm { get; init; } = string.Empty;
+    public decimal? ReadabilityFkgl { get; init; }
+    public decimal? ReadabilityFre { get; init; }
 
     // Artifact statuses
     public ArtifactStatusDto Vocabulary { get; init; } = new();
@@ -39,6 +42,9 @@ public sealed record StoryReviewDto
     public string Title { get; init; } = string.Empty;
     public string Content { get; init; } = string.Empty;
     public string Lesson { get; init; } = string.Empty;
+    public string ReadabilityAlgorithm { get; init; } = string.Empty;
+    public decimal? ReadabilityFkgl { get; init; }
+    public decimal? ReadabilityFre { get; init; }
 }
 
 public sealed record UpdateStoryRequestDto

@@ -17,6 +17,8 @@ using StoryPlatform.Contracts.AI.Responses;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using Xunit;
+using System.IO.Compression;
+using System.Text;
 
 namespace StoryPlatform.UnitTests;
 
@@ -60,7 +62,7 @@ public sealed class ExistingStoryServiceTests
         var store = SeedActiveChild();
         var service = BuildService(store);
         var req = ValidImport();
-        req.InputMethod = "docx";
+        req.InputMethod = "pdf";
 
         await Assert.ThrowsAsync<BadRequestException>(() => service.ImportAsync(1, req, CancellationToken.None));
     }
@@ -104,6 +106,69 @@ public sealed class ExistingStoryServiceTests
         Assert.Equal(first.StoryId, second.StoryId);
         Assert.Equal(first.StoryVersionId, second.StoryVersionId);
         Assert.Single(store.Items<Story>());
+    }
+
+    [Fact]
+    public async Task Import_full_content_guardrail_persists_original_but_blocks_progression()
+    {
+        var store = SeedActiveChild();
+        var category = new ContentCategory { Id = 8, Code = "violence", DisplayName = "bạo lực", IsActive = true };
+        store.Seed(category);
+        store.Seed(new SafetyPolicyCategory
+        {
+            Id = 8,
+            SafetyPolicyId = 1,
+            ContentCategoryId = category.Id,
+            ContentCategory = category,
+            Rule = PolicyRule.Blocked
+        });
+        var service = BuildService(store);
+        var request = ValidImport();
+        request.Content = "Một câu chuyện bạo lực không phù hợp.";
+
+        var result = await service.ImportAsync(1, request, CancellationToken.None);
+
+        Assert.False(result.CanProceed);
+        Assert.Equal("input_blocked", result.InputStatus);
+        Assert.Single(store.Items<Story>());
+        Assert.Single(store.Items<StoryVersion>());
+        Assert.Equal(GenerationInputStatus.InputBlocked, store.Items<StoryGenerationRequest>().Single().Status);
+        await Assert.ThrowsAsync<ConflictException>(() => service.KeepOriginalAsync(1,
+            new KeepOriginalRequestDto
+            {
+                StoryId = result.StoryId,
+                StoryVersionId = result.StoryVersionId,
+                OverrideReason = "Thử bỏ qua guardrail"
+            }, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ImportDocument_extracts_docx_paragraphs_and_runs_normal_import()
+    {
+        var store = SeedActiveChild();
+        var service = BuildService(store);
+        await using var docx = new MemoryStream();
+        using (var archive = new ZipArchive(docx, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var entry = archive.CreateEntry("word/document.xml");
+            await using var entryStream = entry.Open();
+            var xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:p><w:r><w:t>Lan vào rừng.</w:t></w:r></w:p><w:p><w:r><w:t>Lan giúp bạn.</w:t></w:r></w:p></w:body></w:document>";
+            await entryStream.WriteAsync(Encoding.UTF8.GetBytes(xml));
+        }
+        docx.Position = 0;
+
+        var result = await service.ImportDocumentAsync(1, new ImportStoryDocumentRequestDto
+        {
+            Content = docx,
+            FileName = "story.docx",
+            ContentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ChildProfileId = 1,
+            Language = "vi"
+        });
+
+        Assert.True(result.CanProceed);
+        Assert.Contains("Lan vào rừng.", store.Items<StoryVersion>().Single().Content);
+        Assert.Contains("Lan giúp bạn.", store.Items<StoryVersion>().Single().Content);
     }
 
     [Fact]
@@ -338,6 +403,26 @@ public sealed class ExistingStoryServiceTests
             AgeBand = AgeBand.Age_6_8,
             Language = "vi",
             Status = ChildProfileStatus.Active
+        });
+        store.Seed(new LearningProfile
+        {
+            Id = 1,
+            ChildProfileId = 1,
+            ReadingLevel = 2,
+            ComprehensionGoal = "Hiểu nội dung chính"
+        });
+        store.Seed(new SafetyPolicy
+        {
+            Id = 1,
+            ChildProfileId = 1,
+            MaxStoryLength = 5_000,
+            RequiredApprovalMode = ApprovalMode.AlwaysManual,
+            ParentalGateEnabled = true,
+            ConsentRecorded = true,
+            ConsentRecordedAt = DateTime.UtcNow,
+            ConsentPolicyVersion = 1,
+            ComprehensionThresholdPercent = 70m,
+            ComprehensionWindowSize = 3
         });
         store.Seed(new SupervisionRelationship
         {

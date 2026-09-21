@@ -75,6 +75,12 @@ public class SafetyPolicyService : ISafetyPolicyService
             RequiredApprovalMode = policy.RequiredApprovalMode.ToString(),
             ParentalGateEnabled = policy.ParentalGateEnabled,
             ConsentRecorded = policy.ConsentRecorded,
+            ConsentRecordedAt = policy.ConsentRecordedAt,
+            ConsentPolicyVersion = policy.ConsentPolicyVersion,
+            SafetyScoreThreshold = policy.SafetyScoreThreshold,
+            ReadabilityScoreThreshold = policy.ReadabilityScoreThreshold,
+            ComprehensionThresholdPercent = policy.ComprehensionThresholdPercent,
+            ComprehensionWindowSize = policy.ComprehensionWindowSize,
             Categories = request.Categories.Select(value => new SafetyPolicyCategoryDto
             {
                 ContentCategoryId = value.ContentCategoryId,
@@ -106,6 +112,12 @@ public class SafetyPolicyService : ISafetyPolicyService
             RequiredApprovalMode = policy.RequiredApprovalMode.ToString(),
             ParentalGateEnabled = policy.ParentalGateEnabled,
             ConsentRecorded = policy.ConsentRecorded,
+            ConsentRecordedAt = policy.ConsentRecordedAt,
+            ConsentPolicyVersion = policy.ConsentPolicyVersion,
+            SafetyScoreThreshold = policy.SafetyScoreThreshold,
+            ReadabilityScoreThreshold = policy.ReadabilityScoreThreshold,
+            ComprehensionThresholdPercent = policy.ComprehensionThresholdPercent,
+            ComprehensionWindowSize = policy.ComprehensionWindowSize,
             Categories = categories.Select(c => new SafetyPolicyCategoryDto { ContentCategoryId = c.ContentCategoryId, Rule = c.Rule.ToString() }).ToList()
         };
     }
@@ -140,8 +152,13 @@ public class SafetyPolicyService : ISafetyPolicyService
         policy.MaxStoryLength = request.MaxStoryLength;
         policy.RequiredApprovalMode = request.RequiredApprovalMode;
         policy.ParentalGateEnabled = request.ParentalGateEnabled;
+        policy.ReadabilityScoreThreshold = request.ReadabilityScoreThreshold;
+        policy.SafetyScoreThreshold = request.SafetyScoreThreshold;
+        policy.ComprehensionThresholdPercent = request.ComprehensionThresholdPercent;
+        policy.ComprehensionWindowSize = request.ComprehensionWindowSize;
         policy.ConsentRecorded = true;
         policy.ConsentRecordedAt = DateTime.UtcNow;
+        policy.ConsentPolicyVersion = request.ConsentPolicyVersion;
     }
 
     private static void ValidateRequest(SetSafetyPolicyRequestDto request)
@@ -161,6 +178,26 @@ public class SafetyPolicyService : ISafetyPolicyService
         if (!Enum.IsDefined(request.RequiredApprovalMode))
         {
             throw new BadRequestException("Chế độ phê duyệt không hợp lệ.");
+        }
+
+        if (request.ReadabilityScoreThreshold is < 0m or > 100m)
+        {
+            throw new BadRequestException("Ngưỡng readability phải nằm trong khoảng 0 đến 100.");
+        }
+
+        if (request.SafetyScoreThreshold is < 0m or > 100m)
+        {
+            throw new BadRequestException("Ngưỡng safety phải nằm trong khoảng 0 đến 100.");
+        }
+
+        if (request.ComprehensionThresholdPercent is < 0m or > 100m || request.ComprehensionWindowSize is < 1 or > 20)
+        {
+            throw new BadRequestException("Cấu hình comprehension không hợp lệ.");
+        }
+
+        if (request.ConsentPolicyVersion <= 0)
+        {
+            throw new BadRequestException("Consent policy version phải lớn hơn 0.");
         }
 
         request.Categories ??= new List<SetSafetyPolicyCategoryRequestDto>();

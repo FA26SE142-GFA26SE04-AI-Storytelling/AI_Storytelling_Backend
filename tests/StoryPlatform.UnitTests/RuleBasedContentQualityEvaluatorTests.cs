@@ -30,6 +30,18 @@ public sealed class RuleBasedContentQualityEvaluatorTests
         Assert.Equal("CONTENT_SAFETY_BLOCKED", result.Safety.ReasonCode);
     }
 
+    [Fact]
+    public void Configured_readability_threshold_is_applied_to_quality_gate()
+    {
+        var context = Context() with { ReadabilityScoreThreshold = 99m };
+        var result = new RuleBasedContentQualityEvaluator().Evaluate(
+            Story(string.Join(' ', Enumerable.Repeat("Lan và Minh cùng chia sẻ sách.", 20))),
+            new StoryOutlineDto("Lan gặp Minh", "Hai bạn chia sẻ", "Hai bạn cùng đọc sách"), Input(), context);
+
+        Assert.False(result.Readability.Passed);
+        Assert.Equal("CONTENT_READABILITY_NOT_MET", result.Readability.ReasonCode);
+    }
+
     private static StoryContentDto Story(string content) => new()
     {
         Title = "Tình bạn", Lesson = "Biết chia sẻ",

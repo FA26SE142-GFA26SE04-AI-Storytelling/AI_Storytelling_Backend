@@ -57,6 +57,20 @@ Chỉ chạy seed sau khi migration thành công:
 .\Database\Seed-Database.ps1 -Port 5433 -Password "<POSTGRES_PASSWORD>"
 ```
 
+**Lưu ý (2026-09-21):** migration `Init` đã được đổi tên từ `20260917041029_Init` thành
+`20260916000000_Init` để sửa lỗi thứ tự (`Init` phải chạy trước
+`AddPhase5MediaGenerationWorkflow`, không phải sau). Nếu bạn đã từng chạy
+`dotnet ef database update` thành công với ID migration cũ trước ngày này, bảng
+`__EFMigrationsHistory` cục bộ của bạn vẫn còn ghi `20260917041029_Init` — EF Core sẽ coi
+`20260916000000_Init` là migration mới và cố chạy lại `CreateTable`, gây lỗi
+"relation already exists". Xoá sạch volume Postgres cục bộ rồi migrate lại từ đầu:
+
+```powershell
+docker compose down --volumes
+docker compose up -d postgres
+# rồi chạy lại bước migration ở trên
+```
+
 ## 4. Theo dõi và dừng
 
 ```powershell

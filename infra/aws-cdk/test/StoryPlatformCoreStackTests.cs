@@ -283,7 +283,7 @@ public class StoryPlatformCoreStackTests
                 {
                     Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
                     {
-                        ["Action"] = Match.ArrayWith(new object[] { "apprunner:StartDeployment", "apprunner:DescribeService" }),
+                        ["Action"] = Match.ArrayWith(new object[] { "apprunner:StartDeployment", "apprunner:DescribeService", "apprunner:ListOperations" }),
                         ["Resource"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
                         {
                             ["Fn::GetAtt"] = Match.ArrayWith(new object[]

@@ -287,7 +287,7 @@ public sealed class StoryPlatformCoreStack : Stack
             CiRole.AddToPolicy(new PolicyStatement(new PolicyStatementProps
             {
                 Effect = Effect.ALLOW,
-                Actions = new[] { "apprunner:StartDeployment", "apprunner:DescribeService" },
+                Actions = new[] { "apprunner:StartDeployment", "apprunner:DescribeService", "apprunner:ListOperations" },
                 Resources = new[] { AppRunnerService.AttrServiceArn }
             }));
         }

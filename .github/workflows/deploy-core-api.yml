@@ -8,6 +8,7 @@ on:
       - 'src/Core/**'
       - 'src/Shared/**'
       - 'Dockerfile'
+      - 'infra/aws-cdk/**'
       - '.github/workflows/deploy-core-api.yml'
 
 permissions:
@@ -39,6 +40,9 @@ jobs:
 
       - name: Test
         run: dotnet test StoryPlatform.sln --no-build --configuration Release --verbosity normal
+
+      - name: Test CDK stack
+        run: dotnet test infra/aws-cdk/test/StoryPlatform.Infra.Tests.csproj --configuration Release
 
   build-and-push:
     needs: test
@@ -72,25 +76,29 @@ jobs:
           docker push "$ECR_REGISTRY/$ECR_REPOSITORY:latest"
 
       - name: Trigger App Runner deployment
+        id: deploy
         run: |
-          aws apprunner start-deployment \
+          OP_ID=$(aws apprunner start-deployment \
             --service-arn "$APP_RUNNER_SERVICE_ARN" \
-            --region "$AWS_REGION"
+            --region "$AWS_REGION" \
+            --query 'OperationId' --output text)
+          echo "operation-id=$OP_ID" >> "$GITHUB_OUTPUT"
 
       - name: Wait for App Runner deployment to finish
         run: |
+          OP_ID="${{ steps.deploy.outputs.operation-id }}"
           for i in $(seq 1 40); do
-            STATUS=$(aws apprunner describe-service \
+            STATUS=$(aws apprunner list-operations \
               --service-arn "$APP_RUNNER_SERVICE_ARN" \
               --region "$AWS_REGION" \
-              --query 'Service.Status' --output text)
-            echo "App Runner service status: $STATUS"
-            if [ "$STATUS" = "RUNNING" ]; then
+              --query "OperationSummaryList[?Id=='$OP_ID'].Status | [0]" --output text)
+            echo "Deployment operation status: $STATUS"
+            if [ "$STATUS" = "SUCCEEDED" ]; then
               echo "Deployment succeeded."
               exit 0
             fi
-            if [ "$STATUS" = "ROLLBACK_SUCCEEDED" ] || [ "$STATUS" = "ROLLBACK_FAILED" ] || [ "$STATUS" = "CREATE_FAILED" ]; then
-              echo "Deployment failed, App Runner reported status: $STATUS"
+            if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "ROLLBACK_SUCCEEDED" ] || [ "$STATUS" = "ROLLBACK_FAILED" ]; then
+              echo "Deployment failed, App Runner reported operation status: $STATUS"
               exit 1
             fi
             sleep 15

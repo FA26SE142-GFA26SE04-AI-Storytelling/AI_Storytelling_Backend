@@ -234,7 +234,13 @@ public sealed class StoryPlatformCoreStack : Stack
             // (deploy-core-api.yml, RUNBOOK.md).
             AppRunnerService = new CfnService(this, "CoreApiServiceV2", new CfnServiceProps
             {
-                ServiceName = "storyplatform-core-api",
+                // Renamed from "storyplatform-core-api": App Runner service names must be unique
+                // per account/region, and CloudFormation creates the new resource before deleting
+                // the old one (safe-by-default ordering), so keeping the old literal name here
+                // collided with the still-existing old service and failed with "Service with the
+                // provided name already exists" (confirmed 2026-09-21, stack rolled back cleanly,
+                // old service untouched).
+                ServiceName = "storyplatform-core-api-v2",
                 SourceConfiguration = new CfnService.SourceConfigurationProperty
                 {
                     AutoDeploymentsEnabled = false,

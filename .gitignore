@@ -493,6 +493,12 @@ $RECYCLE.BIN/
 #codex
 .codex
 
+# Google Cloud / GCP credentials (ADC local lives outside repo, but phòng ngừa sơ suất)
+service-account*.json
+google-credentials*.json
+gcp-credentials*.json
+*-credentials.json
+
 #appsettings
 .appsettings.*.json
 

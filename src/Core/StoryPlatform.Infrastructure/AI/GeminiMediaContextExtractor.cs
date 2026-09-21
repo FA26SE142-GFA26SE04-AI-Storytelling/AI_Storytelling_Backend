@@ -14,21 +14,25 @@ namespace StoryPlatform.Infrastructure.AI;
 
 /// <summary>
 /// Gemini text-only extraction of rich semantic context from a story version.
-/// Uses gemini-2.5-flash to extract characters, visual style guidance, and safety constraints.
+/// Routes to either Vertex AI (OAuth2 Bearer token) or the public Gemini REST API
+/// (x-goog-api-key header) based on <c>VertexOptions.UseVertex</c>.
 /// </summary>
 public sealed class GeminiMediaContextExtractor : IMediaContextExtractor
 {
     private readonly HttpClient _httpClient;
     private readonly GeminiOptions _gemini;
+    private readonly VertexOptions _vertex;
     private readonly ILogger<GeminiMediaContextExtractor> _logger;
 
     public GeminiMediaContextExtractor(
         HttpClient httpClient,
         IOptions<GeminiOptions> geminiOptions,
+        IOptions<VertexOptions> vertexOptions,
         ILogger<GeminiMediaContextExtractor> logger)
     {
         _httpClient = httpClient;
         _gemini = geminiOptions.Value;
+        _vertex = vertexOptions.Value;
         _logger = logger;
         if (_httpClient.Timeout == Timeout.InfiniteTimeSpan || _httpClient.Timeout.TotalSeconds > _gemini.TimeoutSeconds)
             _httpClient.Timeout = TimeSpan.FromSeconds(_gemini.TimeoutSeconds);
@@ -37,15 +41,14 @@ public sealed class GeminiMediaContextExtractor : IMediaContextExtractor
     public async Task<ExtractedMediaContext> ExtractAsync(
         MediaContextBuildRequest request, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(_gemini.ApiKey))
+        if (!_vertex.UseVertex && string.IsNullOrWhiteSpace(_gemini.ApiKey))
             return FallbackResult();
 
-        var prompt = BuildPrompt(request);
-        var body = BuildRequestBody(prompt);
-        HttpResponseMessage? response = null;
         try
         {
-            response = await GeminiHttpRetry.SendWithTransportRetryAsync(
+            var prompt = BuildPrompt(request);
+            var body = BuildRequestBody(prompt);
+            using var response = await GeminiHttpRetry.SendWithTransportRetryAsync(
                 () => BuildRequest(body),
                 _httpClient,
                 _gemini.TransportRetryCount,
@@ -53,10 +56,11 @@ public sealed class GeminiMediaContextExtractor : IMediaContextExtractor
                 _logger,
                 cancellationToken).ConfigureAwait(false);
 
+            var statusCode = response.StatusCode;
             var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
+            if (!IsSuccess(statusCode))
             {
-                _logger.LogWarning("Context extractor HTTP {Status}, using fallback", response.StatusCode);
+                _logger.LogWarning("Context extractor HTTP {Status}, using fallback", (int)statusCode);
                 return FallbackResult();
             }
             return ParseResponse(content);
@@ -66,10 +70,27 @@ public sealed class GeminiMediaContextExtractor : IMediaContextExtractor
             _logger.LogWarning(ex, "Context extraction failed, using fallback");
             return FallbackResult();
         }
-        finally
+    }
+
+    private static bool IsSuccess(System.Net.HttpStatusCode code)
+    {
+        var n = (int)code;
+        return n >= 200 && n < 300;
+    }
+
+    private HttpRequestMessage BuildRequest(object body)
+    {
+        var url = _vertex.UseVertex
+            ? $"https://{_vertex.Location}-aiplatform.googleapis.com/v1/projects/{_vertex.ProjectId}/locations/{_vertex.Location}/publishers/google/models/gemini-2.5-flash:generateContent"
+            : $"{_gemini.Endpoint.TrimEnd('/')}/gemini-2.5-flash:generateContent";
+
+        var msg = new HttpRequestMessage(HttpMethod.Post, url);
+        if (!_vertex.UseVertex)
         {
-            response?.Dispose();
+            msg.Headers.Add("x-goog-api-key", _gemini.ApiKey);
         }
+        msg.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        return msg;
     }
 
     private static string BuildPrompt(MediaContextBuildRequest request)
@@ -91,15 +112,6 @@ public sealed class GeminiMediaContextExtractor : IMediaContextExtractor
     {
         contents = new[] { new { role = "user", parts = new[] { new { text = prompt } } } }
     };
-
-    private HttpRequestMessage BuildRequest(object body)
-    {
-        var url = $"{_gemini.Endpoint.TrimEnd('/')}/gemini-2.5-flash:generateContent";
-        var msg = new HttpRequestMessage(HttpMethod.Post, url);
-        msg.Headers.Add("x-goog-api-key", _gemini.ApiKey);
-        msg.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-        return msg;
-    }
 
     private static ExtractedMediaContext ParseResponse(string content)
     {

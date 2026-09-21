@@ -70,28 +70,69 @@ public static class DependencyInjection
         configuration.GetSection(MediaGenerationOptions.SectionName).Bind(mediaOptions);
         services.AddSingleton(mediaOptions);
 
-        // Gemini options
+        // Gemini / Vertex AI options
         services.Configure<GeminiOptions>(configuration.GetSection(GeminiOptions.SectionName));
         services.Configure<ImageGenerationOptions>(configuration.GetSection(ImageGenerationOptions.SectionName));
         services.Configure<TtsServiceOptions>(configuration.GetSection(TtsServiceOptions.SectionName));
         services.Configure<MediaEvaluationOptions>(configuration.GetSection(MediaEvaluationOptions.SectionName));
+        services.Configure<VertexOptions>(configuration.GetSection(VertexOptions.SectionName));
 
-        // TextToSpeech client factory — lazy; only throws when a TTS call is actually made
+        // Vertex AI token provider (singleton, shared across all Vertex-authenticated HttpClients)
+        services.AddSingleton<VertexTokenProvider>();
+
+        // TextToSpeech client — uses Application Default Credentials by default, or an explicit
+        // credentials file. When Vertex AI is enabled for media, the same service-account key
+        // can be shared via VertexOptions.CredentialsPath.
         services.AddSingleton<Google.Cloud.TextToSpeech.V1Beta1.TextToSpeechClient>(sp =>
         {
-            var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<TtsServiceOptions>>().Value;
+            var ttsOpts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<TtsServiceOptions>>().Value;
+            var vertexOpts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<VertexOptions>>().Value;
             var builder = new Google.Cloud.TextToSpeech.V1Beta1.TextToSpeechClientBuilder();
-            if (!string.IsNullOrWhiteSpace(opts.CredentialsFilePath) && File.Exists(opts.CredentialsFilePath))
-                builder.CredentialsPath = opts.CredentialsFilePath;
+
+            string? credPath = null;
+            if (!string.IsNullOrWhiteSpace(ttsOpts.CredentialsFilePath) && File.Exists(ttsOpts.CredentialsFilePath))
+                credPath = ttsOpts.CredentialsFilePath;
+            else if (!string.IsNullOrWhiteSpace(vertexOpts.CredentialsPath) && File.Exists(vertexOpts.CredentialsPath))
+                credPath = vertexOpts.CredentialsPath;
+
+            if (credPath is not null)
+                builder.CredentialsPath = credPath;
             return builder.Build();
         });
 
-        // Gemini REST providers — AddHttpClient registers the type with the HttpClient factory
-        services.AddHttpClient<GeminiImageGenerationProvider>(client => client.Timeout = TimeSpan.FromMinutes(2));
-        services.AddHttpClient<GeminiMediaAlignmentEvaluator>(client => client.Timeout = TimeSpan.FromMinutes(2));
-        services.AddHttpClient<GeminiMediaSafetyEvaluator>(client => client.Timeout = TimeSpan.FromMinutes(2));
-        services.AddHttpClient<GeminiSemanticSceneSegmentationProvider>(client => client.Timeout = TimeSpan.FromMinutes(2));
-        services.AddHttpClient<GeminiMediaContextExtractor>(client => client.Timeout = TimeSpan.FromMinutes(2));
+        // Gemini REST providers — registered via HttpClient factory.
+        // When Vertex AI is enabled, the VertexAuthDelegatingHandler injects a fresh
+        // OAuth2 Bearer token on every request; otherwise x-goog-api-key is used per-provider.
+        services.AddHttpClient<GeminiImageGenerationProvider>(client => client.Timeout = TimeSpan.FromMinutes(2))
+            .ConfigurePrimaryHttpMessageHandler(services =>
+            {
+                var tokenProvider = services.GetRequiredService<VertexTokenProvider>();
+                return new VertexAuthDelegatingHandler(tokenProvider) { InnerHandler = new HttpClientHandler() };
+            });
+        services.AddHttpClient<GeminiMediaAlignmentEvaluator>(client => client.Timeout = TimeSpan.FromMinutes(2))
+            .ConfigurePrimaryHttpMessageHandler(services =>
+            {
+                var tokenProvider = services.GetRequiredService<VertexTokenProvider>();
+                return new VertexAuthDelegatingHandler(tokenProvider) { InnerHandler = new HttpClientHandler() };
+            });
+        services.AddHttpClient<GeminiMediaSafetyEvaluator>(client => client.Timeout = TimeSpan.FromMinutes(2))
+            .ConfigurePrimaryHttpMessageHandler(services =>
+            {
+                var tokenProvider = services.GetRequiredService<VertexTokenProvider>();
+                return new VertexAuthDelegatingHandler(tokenProvider) { InnerHandler = new HttpClientHandler() };
+            });
+        services.AddHttpClient<GeminiSemanticSceneSegmentationProvider>(client => client.Timeout = TimeSpan.FromMinutes(2))
+            .ConfigurePrimaryHttpMessageHandler(services =>
+            {
+                var tokenProvider = services.GetRequiredService<VertexTokenProvider>();
+                return new VertexAuthDelegatingHandler(tokenProvider) { InnerHandler = new HttpClientHandler() };
+            });
+        services.AddHttpClient<GeminiMediaContextExtractor>(client => client.Timeout = TimeSpan.FromMinutes(2))
+            .ConfigurePrimaryHttpMessageHandler(services =>
+            {
+                var tokenProvider = services.GetRequiredService<VertexTokenProvider>();
+                return new VertexAuthDelegatingHandler(tokenProvider) { InnerHandler = new HttpClientHandler() };
+            });
 
         // Application-layer interfaces → Infrastructure implementations
         services.AddSingleton<IImageGenerationProvider>(sp => sp.GetRequiredService<GeminiImageGenerationProvider>());

@@ -16,24 +16,29 @@ using StoryPlatform.Application.Features.MediaStorage.Models;
 namespace StoryPlatform.Infrastructure.AI;
 
 /// <summary>
-/// Gemini image provider — REST v1 with x-goog-api-key header, AspectRatio applied via
-/// generationConfig.responseFormat.image.aspectRatio, magic byte validation, and bounded transport retry.
+/// Image generation provider — routes to either Vertex AI (OAuth2 Bearer token) or the public
+/// Gemini REST API (x-goog-api-key header) based on <c>VertexOptions.UseVertex</c>.
+/// Uses AspectRatio applied via generationConfig.responseFormat.image.aspectRatio,
+/// validates magic bytes of the returned image, and retries transient transport errors.
 /// </summary>
 public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
 {
     private readonly HttpClient _httpClient;
     private readonly GeminiOptions _gemini;
+    private readonly VertexOptions _vertex;
     private readonly ImageGenerationOptions _image;
     private readonly ILogger<GeminiImageGenerationProvider> _logger;
 
     public GeminiImageGenerationProvider(
         HttpClient httpClient,
         IOptions<GeminiOptions> geminiOptions,
+        IOptions<VertexOptions> vertexOptions,
         IOptions<ImageGenerationOptions> imageOptions,
         ILogger<GeminiImageGenerationProvider> logger)
     {
         _httpClient = httpClient;
         _gemini = geminiOptions.Value;
+        _vertex = vertexOptions.Value;
         _image = imageOptions.Value;
         _logger = logger;
         if (_httpClient.Timeout == Timeout.InfiniteTimeSpan || _httpClient.Timeout > TimeSpan.FromSeconds(_gemini.TimeoutSeconds))
@@ -43,7 +48,7 @@ public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
     public async Task<GeneratedMedia> GenerateAsync(
         SceneSpecification specification, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(_gemini.ApiKey))
+        if (!_vertex.UseVertex && string.IsNullOrWhiteSpace(_gemini.ApiKey))
             throw new PermanentMediaGenerationException("IMAGE_PROVIDER_NOT_CONFIGURED");
 
         var prompt = BuildPrompt(specification);
@@ -71,10 +76,26 @@ public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
 
         return new GeneratedMedia(bytes, validation.DetectedMime!, new Dictionary<string, string>
         {
-            ["provider"] = "Gemini",
+            ["provider"] = _vertex.UseVertex ? "VertexAI" : "Gemini",
             ["model"] = _image.Model,
             ["aspectRatio"] = _image.AspectRatio
         });
+    }
+
+    private HttpRequestMessage BuildRequest(object body)
+    {
+        var url = _vertex.UseVertex
+            ? $"https://{_vertex.Location}-aiplatform.googleapis.com/v1/projects/{_vertex.ProjectId}/locations/{_vertex.Location}/publishers/google/models/{_image.Model}:generateContent"
+            : $"{_gemini.Endpoint.TrimEnd('/')}/{_image.Model}:generateContent";
+
+        var message = new HttpRequestMessage(HttpMethod.Post, url);
+        if (!_vertex.UseVertex)
+        {
+            message.Headers.Add("x-goog-api-key", _gemini.ApiKey);
+        }
+        // Bearer token is injected by VertexAuthDelegatingHandler in the HttpClient pipeline.
+        message.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        return message;
     }
 
     private static string BuildPrompt(SceneSpecification spec)
@@ -110,15 +131,6 @@ public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
             }
         }
     };
-
-    private HttpRequestMessage BuildRequest(object body)
-    {
-        var url = $"{_gemini.Endpoint.TrimEnd('/')}/{_image.Model}:generateContent";
-        var message = new HttpRequestMessage(HttpMethod.Post, url);
-        message.Headers.Add("x-goog-api-key", _gemini.ApiKey);
-        message.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-        return message;
-    }
 
     private static async Task<(byte[] bytes, string? mimeHint)> ExtractFirstInlineImageAsync(
         Stream responseBody, CancellationToken cancellationToken)

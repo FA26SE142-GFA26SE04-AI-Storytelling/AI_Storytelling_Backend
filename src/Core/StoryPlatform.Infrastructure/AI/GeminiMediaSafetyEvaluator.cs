@@ -13,27 +13,27 @@ using StoryPlatform.Application.Features.MediaStorage.Models;
 namespace StoryPlatform.Infrastructure.AI;
 
 /// <summary>
-/// Gemini multimodal safety evaluator — checks whether a generated illustration is safe for children
-/// aged 6-12.
-///
-/// Uses text-only Gemini model (gemini-2.5-flash) to avoid image generation cost.
-/// Reads safety decision from structured JSON response: { "isSafe": true/false, "concerns": ["..."] }
+/// Gemini safety evaluator — routes to either Vertex AI (OAuth2 Bearer token) or the public
+/// Gemini REST API (x-goog-api-key header) based on <c>VertexOptions.UseVertex</c>.
 /// </summary>
 public sealed class GeminiMediaSafetyEvaluator : IMediaSafetyEvaluator
 {
     private readonly HttpClient _httpClient;
     private readonly GeminiOptions _gemini;
+    private readonly VertexOptions _vertex;
     private readonly MediaEvaluationOptions _evalOptions;
     private readonly ILogger<GeminiMediaSafetyEvaluator> _logger;
 
     public GeminiMediaSafetyEvaluator(
         HttpClient httpClient,
         IOptions<GeminiOptions> geminiOptions,
+        IOptions<VertexOptions> vertexOptions,
         IOptions<MediaEvaluationOptions> evalOptions,
         ILogger<GeminiMediaSafetyEvaluator> logger)
     {
         _httpClient = httpClient;
         _gemini = geminiOptions.Value;
+        _vertex = vertexOptions.Value;
         _evalOptions = evalOptions.Value;
         _logger = logger;
         if (_httpClient.Timeout == Timeout.InfiniteTimeSpan || _httpClient.Timeout.TotalSeconds > _gemini.TimeoutSeconds)
@@ -44,7 +44,7 @@ public sealed class GeminiMediaSafetyEvaluator : IMediaSafetyEvaluator
         SceneSpecification specification, GeneratedMedia illustration,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(_gemini.ApiKey))
+        if (!_vertex.UseVertex && string.IsNullOrWhiteSpace(_gemini.ApiKey))
             return new MediaEvaluationResult(MediaEvaluationDecision.Fail, "EVALUATOR_NOT_CONFIGURED");
 
         var prompt = BuildPrompt(specification);
@@ -67,6 +67,21 @@ public sealed class GeminiMediaSafetyEvaluator : IMediaSafetyEvaluator
         }
 
         return ParseResponse(content);
+    }
+
+    private HttpRequestMessage BuildRequest(object body)
+    {
+        var url = _vertex.UseVertex
+            ? $"https://{_vertex.Location}-aiplatform.googleapis.com/v1/projects/{_vertex.ProjectId}/locations/{_vertex.Location}/publishers/google/models/{_evalOptions.Model}:generateContent"
+            : $"{_gemini.Endpoint.TrimEnd('/')}/{_evalOptions.Model}:generateContent";
+
+        var message = new HttpRequestMessage(HttpMethod.Post, url);
+        if (!_vertex.UseVertex)
+        {
+            message.Headers.Add("x-goog-api-key", _gemini.ApiKey);
+        }
+        message.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        return message;
     }
 
     private static bool IsSuccess(System.Net.HttpStatusCode code)
@@ -101,15 +116,6 @@ public sealed class GeminiMediaSafetyEvaluator : IMediaSafetyEvaluator
     {
         contents = new[] { new { role = "user", parts = new[] { new { text = prompt } } } }
     };
-
-    private HttpRequestMessage BuildRequest(object body)
-    {
-        var url = $"{_gemini.Endpoint.TrimEnd('/')}/{_evalOptions.Model}:generateContent";
-        var msg = new HttpRequestMessage(HttpMethod.Post, url);
-        msg.Headers.Add("x-goog-api-key", _gemini.ApiKey);
-        msg.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-        return msg;
-    }
 
     private static MediaEvaluationResult ParseResponse(string content)
     {

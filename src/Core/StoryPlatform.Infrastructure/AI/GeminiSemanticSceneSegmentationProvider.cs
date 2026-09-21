@@ -14,23 +14,26 @@ using StoryPlatform.Infrastructure.AI;
 namespace StoryPlatform.Infrastructure.AI;
 
 /// <summary>
-/// Gemini text-only semantic scene segmentation.
-/// Uses gemini-2.5-flash to decide how to group story paragraphs into coherent scenes.
+/// Gemini semantic scene segmentation provider — routes to either Vertex AI (OAuth2 Bearer token)
+/// or the public Gemini REST API (x-goog-api-key header) based on <c>VertexOptions.UseVertex</c>.
 /// </summary>
 public sealed class GeminiSemanticSceneSegmentationProvider : ISemanticSceneSegmentationProvider
 {
     private readonly HttpClient _httpClient;
     private readonly GeminiOptions _gemini;
+    private readonly VertexOptions _vertex;
     private readonly ILogger<GeminiSemanticSceneSegmentationProvider> _logger;
     private const string SemanticModel = "gemini-2.5-flash";
 
     public GeminiSemanticSceneSegmentationProvider(
         HttpClient httpClient,
         IOptions<GeminiOptions> geminiOptions,
+        IOptions<VertexOptions> vertexOptions,
         ILogger<GeminiSemanticSceneSegmentationProvider> logger)
     {
         _httpClient = httpClient;
         _gemini = geminiOptions.Value;
+        _vertex = vertexOptions.Value;
         _logger = logger;
         if (_httpClient.Timeout == Timeout.InfiniteTimeSpan || _httpClient.Timeout.TotalSeconds > _gemini.TimeoutSeconds)
             _httpClient.Timeout = TimeSpan.FromSeconds(_gemini.TimeoutSeconds);
@@ -39,38 +42,41 @@ public sealed class GeminiSemanticSceneSegmentationProvider : ISemanticSceneSegm
     public async Task<IReadOnlyList<SceneSelection>> SegmentAsync(
         SceneSegmentationRequest request, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(_gemini.ApiKey))
+        if (!_vertex.UseVertex && string.IsNullOrWhiteSpace(_gemini.ApiKey))
         {
-            _logger.LogWarning("Gemini API key not configured, returning empty — orchestrator will fallback");
+            _logger.LogWarning("Gemini API key not configured and Vertex is disabled, returning empty — orchestrator will fallback");
             return Array.Empty<SceneSelection>();
         }
 
         var prompt = BuildPrompt(request);
         var body = new { contents = new[] { new { role = "user", parts = new[] { new { text = prompt } } } } };
-        HttpResponseMessage? response = null;
-        try
-        {
-            response = await GeminiHttpRetry.SendWithTransportRetryAsync(
-                () => BuildRequest(body),
-                _httpClient,
-                _gemini.TransportRetryCount,
-                TimeSpan.FromMilliseconds(_gemini.TransportRetryBaseDelayMs),
-                _logger,
-                cancellationToken).ConfigureAwait(false);
+        using var response = await GeminiHttpRetry.SendWithTransportRetryAsync(
+            () => BuildRequest(body),
+            _httpClient,
+            _gemini.TransportRetryCount,
+            TimeSpan.FromMilliseconds(_gemini.TransportRetryBaseDelayMs),
+            _logger,
+            cancellationToken).ConfigureAwait(false);
 
-            var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger.LogWarning("Gemini semantic segmentation HTTP {Status}: {Body}", response.StatusCode, content);
-                throw new InvalidOperationException($"GEMINI_SEGMENTATION_HTTP_{(int)response.StatusCode}");
-            }
-            return ParseResponse(content);
-        }
-        finally
+        var statusCode = response.StatusCode;
+        var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (!IsSuccess(statusCode))
         {
-            response?.Dispose();
+            _logger.LogWarning("Gemini semantic segmentation HTTP {Status}: {Body}", (int)statusCode, Truncate(content, 300));
+            return Array.Empty<SceneSelection>();
         }
+        return ParseResponse(content);
     }
+
+    private static bool IsSuccess(System.Net.HttpStatusCode code)
+    {
+        var n = (int)code;
+        return n >= 200 && n < 300;
+    }
+
+    private static string Truncate(string value, int max) =>
+        string.IsNullOrEmpty(value) ? string.Empty :
+        value.Length <= max ? value : value[..max];
 
     private static string BuildPrompt(SceneSegmentationRequest request)
     {
@@ -95,9 +101,15 @@ public sealed class GeminiSemanticSceneSegmentationProvider : ISemanticSceneSegm
 
     private HttpRequestMessage BuildRequest(object body)
     {
-        var url = $"{_gemini.Endpoint.TrimEnd('/')}/{SemanticModel}:generateContent";
+        var url = _vertex.UseVertex
+            ? $"https://{_vertex.Location}-aiplatform.googleapis.com/v1/projects/{_vertex.ProjectId}/locations/{_vertex.Location}/publishers/google/models/{SemanticModel}:generateContent"
+            : $"{_gemini.Endpoint.TrimEnd('/')}/{SemanticModel}:generateContent";
+
         var msg = new HttpRequestMessage(HttpMethod.Post, url);
-        msg.Headers.Add("x-goog-api-key", _gemini.ApiKey);
+        if (!_vertex.UseVertex)
+        {
+            msg.Headers.Add("x-goog-api-key", _gemini.ApiKey);
+        }
         msg.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
         return msg;
     }

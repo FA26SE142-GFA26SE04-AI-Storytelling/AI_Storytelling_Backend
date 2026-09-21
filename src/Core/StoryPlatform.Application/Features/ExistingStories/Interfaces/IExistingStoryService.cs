@@ -24,6 +24,11 @@ public interface IExistingStoryService
         ImportStoryRequestDto request,
         CancellationToken cancellationToken = default);
 
+    Task<ImportStoryResponseDto> ImportDocumentAsync(
+        int userId,
+        ImportStoryDocumentRequestDto request,
+        CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Phase 3: Gọi AI để sinh version mới (AiRefined) từ base version.
     /// Không xoá base version. Trả về version mới hoặc throw nếu base không còn current.

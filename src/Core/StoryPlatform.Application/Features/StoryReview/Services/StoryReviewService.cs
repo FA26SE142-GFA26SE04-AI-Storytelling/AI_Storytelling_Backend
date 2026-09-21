@@ -4,6 +4,8 @@ using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ContentGeneration.Quality;
+using StoryPlatform.Application.Features.ExistingStories.DTOs;
+using StoryPlatform.Application.Features.ExistingStories.Interfaces;
 using StoryPlatform.Application.Features.StoryReview.DTOs;
 using StoryPlatform.Application.Features.StoryReview.Interfaces;
 using StoryPlatform.Contracts.AI.Models;
@@ -18,6 +20,8 @@ public sealed class StoryReviewService : IStoryReviewService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAIStoryGenerationClient _aiClient;
     private readonly IProposalCache _proposalCache;
+    private readonly IReviewCompletionStore? _reviewCompletionStore;
+    private readonly IExistingStoryEvaluationCache? _evaluationCache;
     private readonly IGenericRepository<Story> _storyRepo;
     private readonly IGenericRepository<StoryVersion> _versionRepo;
     private readonly IGenericRepository<StoryVocabulary> _vocabRepo;
@@ -27,11 +31,15 @@ public sealed class StoryReviewService : IStoryReviewService
     public StoryReviewService(
         IUnitOfWork unitOfWork,
         IAIStoryGenerationClient aiClient,
-        IProposalCache proposalCache)
+        IProposalCache proposalCache,
+        IReviewCompletionStore? reviewCompletionStore = null,
+        IExistingStoryEvaluationCache? evaluationCache = null)
     {
         _unitOfWork = unitOfWork;
         _aiClient = aiClient;
         _proposalCache = proposalCache;
+        _reviewCompletionStore = reviewCompletionStore;
+        _evaluationCache = evaluationCache;
         _storyRepo = unitOfWork.Repository<Story>();
         _versionRepo = unitOfWork.Repository<StoryVersion>();
         _vocabRepo = unitOfWork.Repository<StoryVocabulary>();
@@ -665,6 +673,50 @@ public sealed class StoryReviewService : IStoryReviewService
 
     #region Validation & Approval
 
+    public async Task<bool> CompleteStoryReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
+    {
+        var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
+                    ?? throw new NotFoundException("Story", storyId);
+        await EnsureReviewPermissionAsync(story, userId, cancellationToken);
+        var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
+                      ?? throw new NotFoundException("StoryVersion");
+        _reviewCompletionStore?.MarkStoryReviewed(storyId, version.Id, userId);
+        return true;
+    }
+
+    public async Task<bool> CompleteVocabularyReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
+    {
+        var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
+                    ?? throw new NotFoundException("Story", storyId);
+        await EnsureReviewPermissionAsync(story, userId, cancellationToken);
+        var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
+                      ?? throw new NotFoundException("StoryVersion");
+        _reviewCompletionStore?.MarkVocabularyReviewed(storyId, version.Id, userId);
+        return true;
+    }
+
+    public async Task<bool> CompleteQuizReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
+    {
+        var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
+                    ?? throw new NotFoundException("Story", storyId);
+        await EnsureReviewPermissionAsync(story, userId, cancellationToken);
+        var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
+                      ?? throw new NotFoundException("StoryVersion");
+        _reviewCompletionStore?.MarkQuizReviewed(storyId, version.Id, userId);
+        return true;
+    }
+
+    public async Task<bool> CompleteDiscussionReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
+    {
+        var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
+                    ?? throw new NotFoundException("Story", storyId);
+        await EnsureReviewPermissionAsync(story, userId, cancellationToken);
+        var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
+                      ?? throw new NotFoundException("StoryVersion");
+        _reviewCompletionStore?.MarkDiscussionReviewed(storyId, version.Id, userId);
+        return true;
+    }
+
     public async Task<ValidationResultDto> ValidateAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
         var checks = new List<ValidationCheckDto>();
@@ -685,7 +737,7 @@ public sealed class StoryReviewService : IStoryReviewService
             return new ValidationResultDto { CanApprove = false, Checks = checks, Issues = issues };
         }
 
-        // Check story completeness
+        // 1. Check story completeness
         var storyValid = !string.IsNullOrWhiteSpace(version.Title) &&
                          !string.IsNullOrWhiteSpace(version.Content) &&
                          !string.IsNullOrWhiteSpace(version.Lesson);
@@ -695,6 +747,8 @@ public sealed class StoryReviewService : IStoryReviewService
         var safetyPolicy = await _unitOfWork.Repository<SafetyPolicy>().FirstOrDefaultAsync(
             policy => policy.ChildProfileId == story.ChildProfileId,
             cancellationToken: cancellationToken);
+
+        // 2. Check Readability
         var readability = ReadabilityCalculator.EvaluateForProfile(
             version.Content,
             story.Language,
@@ -714,7 +768,79 @@ public sealed class StoryReviewService : IStoryReviewService
                        $"average words {readability.Metrics.AverageWordsPerSentence:F2}/{readability.MaximumAverageWordsPerSentence:F2})");
         }
 
-        // Check vocabulary
+        // 3. Check Safety
+        var safetyPassed = true;
+        if (version.SafetyScore.HasValue && version.SafetyScore.Value <= 0)
+        {
+            safetyPassed = false;
+            issues.Add("Story safety score indicates hard safety block.");
+        }
+        else if (safetyPolicy?.SafetyScoreThreshold.HasValue == true)
+        {
+            var threshold = safetyPolicy.SafetyScoreThreshold.Value;
+            var currentScore = version.SafetyScore ?? 0m;
+            if (currentScore < threshold)
+            {
+                safetyPassed = false;
+                issues.Add($"Điểm an toàn ({currentScore:F2}) thấp hơn ngưỡng ({threshold:F2}).");
+            }
+        }
+
+        if (safetyPolicy != null)
+        {
+            var policyCategories = await _unitOfWork.Repository<SafetyPolicyCategory>().FindAsync(
+                spc => spc.SafetyPolicyId == safetyPolicy.Id && spc.Rule == PolicyRule.Blocked,
+                cancellationToken: cancellationToken);
+            if (policyCategories.Count > 0)
+            {
+                var catIds = policyCategories.Select(pc => pc.ContentCategoryId).ToList();
+                var cats = await _unitOfWork.Repository<ContentCategory>().FindAsync(
+                    c => catIds.Contains(c.Id) && c.IsActive, cancellationToken: cancellationToken);
+                var terms = cats.SelectMany(c => new[] { c.DisplayName, c.Code })
+                    .Where(t => !string.IsNullOrWhiteSpace(t))
+                    .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                var hit = terms.FirstOrDefault(t => (version.Content ?? string.Empty).Contains(t, StringComparison.OrdinalIgnoreCase));
+                if (hit != null)
+                {
+                    safetyPassed = false;
+                    issues.Add($"Story content contains blocked term: '{hit}'.");
+                }
+            }
+        }
+        checks.Add(new ValidationCheckDto
+        {
+            Name = "safety_passed",
+            Passed = safetyPassed,
+            Message = safetyPassed ? "Safety checks passed" : "Safety requirements not met"
+        });
+
+        // 4. Check Profile Decision Resolution
+        var profilePassed = true;
+        if (story.Source == StorySource.Manual)
+        {
+            var cachedEval = _evaluationCache?.Get(storyId, version.Id);
+            if (cachedEval != null)
+            {
+                if (cachedEval.Decision == ExistingStoryDecision.Blocked || !cachedEval.CanKeepOriginal)
+                {
+                    profilePassed = false;
+                    issues.Add("Existing story evaluation decision is Blocked; safety issues must be resolved.");
+                }
+                else if (cachedEval.Decision == ExistingStoryDecision.AdaptRecommended && version.EditType == VersionEditType.Initial)
+                {
+                    profilePassed = false;
+                    issues.Add("Existing story has AdaptRecommended decision; requires adaptation or manual edit before approval.");
+                }
+            }
+        }
+        checks.Add(new ValidationCheckDto
+        {
+            Name = "profile_decision_resolved",
+            Passed = profilePassed,
+            Message = profilePassed ? "Profile decision resolved" : "Profile decision unresolved"
+        });
+
+        // 5. Check vocabulary
         var vocabularyItems = await _vocabRepo.FindAsync(v => v.StoryVersionId == version.Id, cancellationToken: cancellationToken);
         var vocabularyTerms = vocabularyItems.Select(item => item.Term.Trim()).ToArray();
         var vocabValid = vocabularyItems.Count >= 5 &&
@@ -724,7 +850,7 @@ public sealed class StoryReviewService : IStoryReviewService
         checks.Add(new ValidationCheckDto { Name = "vocabulary_valid", Passed = vocabValid, Message = $"{vocabularyItems.Count} items" });
         if (!vocabValid) issues.Add($"Vocabulary needs at least 5 unique, non-empty terms that occur in the story (current: {vocabularyItems.Count})");
 
-        // Check quiz
+        // 6. Check quiz
         var quizItems = await _quizRepo.FindAsync(q => q.StoryVersionId == version.Id, cancellationToken: cancellationToken);
         var quizValid = quizItems.Count >= 3 && quizItems.All(IsValidQuizItem);
         var hasAllTypes = Enum.GetValues<QuizType>().All(t => quizItems.Any(q => q.Type == t));
@@ -732,7 +858,7 @@ public sealed class StoryReviewService : IStoryReviewService
         checks.Add(new ValidationCheckDto { Name = "quiz_valid", Passed = quizPassed, Message = quizPassed ? $"{quizItems.Count} questions, all types" : "Missing types" });
         if (!quizPassed) issues.Add("Quiz needs at least 3 valid questions with all types and valid answers");
 
-        // Check discussion
+        // 7. Check discussion
         var discussionItems = await _discussionRepo.FindAsync(d => d.StoryVersionId == version.Id, cancellationToken: cancellationToken);
         var discussionValid = discussionItems.Count >= 2 &&
                               discussionItems.All(item => !string.IsNullOrWhiteSpace(item.Question)) &&
@@ -740,7 +866,40 @@ public sealed class StoryReviewService : IStoryReviewService
         checks.Add(new ValidationCheckDto { Name = "discussion_valid", Passed = discussionValid, Message = $"{discussionItems.Count} questions" });
         if (!discussionValid) issues.Add($"Discussion needs at least 2 non-empty questions including the moral lesson (current: {discussionItems.Count})");
 
-        var canApprove = storyValid && readability.Passed && vocabValid && quizPassed && discussionValid;
+        // 8. Check Artifact Bindings
+        var bindingsPassed = vocabularyItems.All(v => v.StoryVersionId == version.Id) &&
+                             quizItems.All(q => q.StoryVersionId == version.Id) &&
+                             discussionItems.All(d => d.StoryVersionId == version.Id);
+        checks.Add(new ValidationCheckDto
+        {
+            Name = "artifact_bindings_valid",
+            Passed = bindingsPassed,
+            Message = bindingsPassed ? "All artifacts bound to current version" : "Artifacts binding mismatch"
+        });
+        if (!bindingsPassed) issues.Add("Artifacts must be bound to the current story version.");
+
+        // 9. Check Review Complete
+        var isMarkedComplete = _reviewCompletionStore?.IsReviewCompleted(storyId, version.Id) ?? false;
+        var structurallyComplete = storyValid && vocabValid && quizPassed && discussionValid;
+        var reviewComplete = isMarkedComplete || structurallyComplete;
+        checks.Add(new ValidationCheckDto
+        {
+            Name = "review_complete",
+            Passed = reviewComplete,
+            Message = reviewComplete ? "Review completed" : "Review incomplete"
+        });
+        if (!reviewComplete) issues.Add("Required review is incomplete");
+
+        var canApprove = storyValid &&
+                         readability.Passed &&
+                         safetyPassed &&
+                         profilePassed &&
+                         vocabValid &&
+                         quizPassed &&
+                         discussionValid &&
+                         bindingsPassed &&
+                         reviewComplete;
+
         return new ValidationResultDto
         {
             CanApprove = canApprove,
@@ -828,6 +987,36 @@ public sealed class StoryReviewService : IStoryReviewService
             Status = "Approved",
             ApprovedAt = DateTime.UtcNow
         };
+    }
+
+    public async Task<ApproveResponseDto?> EvaluateAndApplyAutoPublishAsync(
+        int storyId, CancellationToken cancellationToken = default)
+    {
+        var story = await _storyRepo.FirstOrDefaultAsync(s => s.Id == storyId, cancellationToken: cancellationToken);
+        if (story is null || story.Status != StoryStatus.ContentReview)
+            return null;
+
+        var safetyPolicy = await _unitOfWork.Repository<SafetyPolicy>().FirstOrDefaultAsync(
+            policy => policy.ChildProfileId == story.ChildProfileId,
+            cancellationToken: cancellationToken);
+
+        // Nếu ParentalGateEnabled = true hoặc RequiredApprovalMode != AutoPublishOnThreshold -> fallback manual review
+        if (safetyPolicy is null ||
+            safetyPolicy.ParentalGateEnabled ||
+            safetyPolicy.RequiredApprovalMode != ApprovalMode.AutoPublishOnThreshold)
+        {
+            return null;
+        }
+
+        var validation = await ValidateAsync(story.AuthorUserId, storyId, cancellationToken);
+        if (!validation.CanApprove)
+        {
+            // Fallback manual review: giữ ContentReview
+            return null;
+        }
+
+        // Tự động phê duyệt và chuyển Phase 5 Media
+        return await ApproveAsync(story.AuthorUserId, storyId, cancellationToken);
     }
 
     public async Task<ArchiveResponseDto> ArchiveAsync(int userId, int storyId, ArchiveRequestDto input, CancellationToken cancellationToken = default)

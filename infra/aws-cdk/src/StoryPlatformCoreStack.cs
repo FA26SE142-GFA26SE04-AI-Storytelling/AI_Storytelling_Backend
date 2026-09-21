@@ -228,7 +228,7 @@ public sealed class StoryPlatformCoreStack : Stack
                 ServiceName = "storyplatform-core-api",
                 SourceConfiguration = new CfnService.SourceConfigurationProperty
                 {
-                    AutoDeploymentsEnabled = true,
+                    AutoDeploymentsEnabled = false,
                     AuthenticationConfiguration = new CfnService.AuthenticationConfigurationProperty
                     {
                         AccessRoleArn = appRunnerEcrAccessRole.RoleArn
@@ -268,7 +268,7 @@ public sealed class StoryPlatformCoreStack : Stack
                 HealthCheckConfiguration = new CfnService.HealthCheckConfigurationProperty
                 {
                     Protocol = "HTTP",
-                    Path = "/index.html",
+                    Path = "/health",
                     Interval = 10,
                     Timeout = 5,
                     HealthyThreshold = 1,
@@ -283,6 +283,13 @@ public sealed class StoryPlatformCoreStack : Stack
                     }
                 }
             });
+
+            CiRole.AddToPolicy(new PolicyStatement(new PolicyStatementProps
+            {
+                Effect = Effect.ALLOW,
+                Actions = new[] { "apprunner:StartDeployment", "apprunner:DescribeService" },
+                Resources = new[] { AppRunnerService.AttrServiceArn }
+            }));
         }
     }
 }

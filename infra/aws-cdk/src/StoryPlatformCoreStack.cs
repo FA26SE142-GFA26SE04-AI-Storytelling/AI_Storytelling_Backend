@@ -272,7 +272,12 @@ public sealed class StoryPlatformCoreStack : Stack
                     Interval = 10,
                     Timeout = 5,
                     HealthyThreshold = 1,
-                    UnhealthyThreshold = 5
+                    // UnhealthyThreshold=5 (50s budget) was too tight for the startup path added by
+                    // ApplyPendingMigrations (Program.cs): connecting to RDS over the VPC Connector and
+                    // checking migration history took ~40s in practice, right at the edge of the old
+                    // 50s window and observed to flap the deploy into rollback. 15 x 10s = 150s gives
+                    // comfortable headroom for a cold VPC connection plus real migration work.
+                    UnhealthyThreshold = 15
                 },
                 NetworkConfiguration = new CfnService.NetworkConfigurationProperty
                 {

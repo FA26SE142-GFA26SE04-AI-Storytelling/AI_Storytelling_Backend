@@ -18,7 +18,7 @@ permissions:
 env:
   AWS_REGION: ap-southeast-1
   ECR_REPOSITORY: storyplatform-core-api
-  APP_RUNNER_SERVICE_ARN: arn:aws:apprunner:ap-southeast-1:028718096070:service/storyplatform-core-api/fda923da69b54ce4b6f7f37d67f9cdcf
+  APP_RUNNER_SERVICE_ARN: arn:aws:apprunner:ap-southeast-1:028718096070:service/storyplatform-core-api-v2/7cf69f5d55ee46af8f3aa804aa398512
 
 jobs:
   test:

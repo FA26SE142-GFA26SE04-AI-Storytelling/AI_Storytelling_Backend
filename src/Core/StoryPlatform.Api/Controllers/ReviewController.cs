@@ -14,13 +14,16 @@ public sealed class ReviewController : ControllerBase
 {
     private readonly IStoryReviewService _reviewService;
     private readonly IProposalService _proposalService;
+    private readonly ILearningArtifactService _learningArtifactService;
 
     public ReviewController(
         IStoryReviewService reviewService,
-        IProposalService proposalService)
+        IProposalService proposalService,
+        ILearningArtifactService? learningArtifactService = null)
     {
         _reviewService = reviewService;
         _proposalService = proposalService;
+        _learningArtifactService = learningArtifactService!;
     }
 
     private int CurrentUserId()
@@ -37,6 +40,20 @@ public sealed class ReviewController : ControllerBase
     {
         var result = await _reviewService.GetReviewPackageAsync(CurrentUserId(), storyId, cancellationToken);
         return Ok(ApiResponse<ReviewPackageDto>.Ok(result));
+    }
+
+    #endregion
+
+    #region Learning Artifacts Generation (Phase 4)
+
+    [HttpPost("artifacts/generate")]
+    [HttpPost("~/api/v1/stories/{storyId:int}/artifacts/generate")]
+    public async Task<ActionResult<ApiResponse<ArtifactGenerationResultDto>>> GenerateArtifacts(
+        int storyId, [FromBody] GenerateArtifactsRequestDto? input, CancellationToken cancellationToken)
+    {
+        var result = await _learningArtifactService.GenerateArtifactsAsync(
+            CurrentUserId(), storyId, input, cancellationToken);
+        return Ok(ApiResponse<ArtifactGenerationResultDto>.Ok(result, "Tạo learning artifacts thành công."));
     }
 
     #endregion
@@ -71,9 +88,8 @@ public sealed class ReviewController : ControllerBase
     public async Task<ActionResult<ApiResponse<bool>>> CompleteStory(
         int storyId, CancellationToken cancellationToken)
     {
-        // Mark story review as complete - just validate it's done
-        var story = await _reviewService.GetStoryForReviewAsync(CurrentUserId(), storyId, cancellationToken);
-        return Ok(ApiResponse<bool>.Ok(true, "Story review đã hoàn tất."));
+        var result = await _reviewService.CompleteStoryReviewAsync(CurrentUserId(), storyId, cancellationToken);
+        return Ok(ApiResponse<bool>.Ok(result, "Story review đã hoàn tất."));
     }
 
     #endregion
@@ -108,8 +124,8 @@ public sealed class ReviewController : ControllerBase
     public async Task<ActionResult<ApiResponse<bool>>> CompleteVocabulary(
         int storyId, CancellationToken cancellationToken)
     {
-        var vocab = await _reviewService.GetVocabularyForReviewAsync(CurrentUserId(), storyId, cancellationToken);
-        return Ok(ApiResponse<bool>.Ok(true, "Vocabulary review đã hoàn tất."));
+        var result = await _reviewService.CompleteVocabularyReviewAsync(CurrentUserId(), storyId, cancellationToken);
+        return Ok(ApiResponse<bool>.Ok(result, "Vocabulary review đã hoàn tất."));
     }
 
     #endregion
@@ -144,8 +160,8 @@ public sealed class ReviewController : ControllerBase
     public async Task<ActionResult<ApiResponse<bool>>> CompleteQuiz(
         int storyId, CancellationToken cancellationToken)
     {
-        var quiz = await _reviewService.GetQuizForReviewAsync(CurrentUserId(), storyId, cancellationToken);
-        return Ok(ApiResponse<bool>.Ok(true, "Quiz review đã hoàn tất."));
+        var result = await _reviewService.CompleteQuizReviewAsync(CurrentUserId(), storyId, cancellationToken);
+        return Ok(ApiResponse<bool>.Ok(result, "Quiz review đã hoàn tất."));
     }
 
     #endregion
@@ -180,8 +196,8 @@ public sealed class ReviewController : ControllerBase
     public async Task<ActionResult<ApiResponse<bool>>> CompleteDiscussion(
         int storyId, CancellationToken cancellationToken)
     {
-        var discussion = await _reviewService.GetDiscussionForReviewAsync(CurrentUserId(), storyId, cancellationToken);
-        return Ok(ApiResponse<bool>.Ok(true, "Discussion review đã hoàn tất."));
+        var result = await _reviewService.CompleteDiscussionReviewAsync(CurrentUserId(), storyId, cancellationToken);
+        return Ok(ApiResponse<bool>.Ok(result, "Discussion review đã hoàn tất."));
     }
 
     #endregion
@@ -194,6 +210,18 @@ public sealed class ReviewController : ControllerBase
     {
         var result = await _reviewService.ValidateAsync(CurrentUserId(), storyId, cancellationToken);
         return Ok(ApiResponse<ValidationResultDto>.Ok(result));
+    }
+
+    [HttpPost("auto-publish-check")]
+    public async Task<ActionResult<ApiResponse<ApproveResponseDto?>>> AutoPublishCheck(
+        int storyId, CancellationToken cancellationToken)
+    {
+        var result = await _reviewService.EvaluateAndApplyAutoPublishAsync(storyId, cancellationToken);
+        return Ok(ApiResponse<ApproveResponseDto?>.Ok(
+            result,
+            result is not null
+                ? "Story đã đủ điều kiện auto-publish và được chuyển sang trạng thái Approved."
+                : "Story giữ nguyên trạng thái ContentReview để review thủ công."));
     }
 
     [HttpPost("approve")]

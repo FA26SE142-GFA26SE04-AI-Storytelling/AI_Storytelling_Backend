@@ -24,20 +24,20 @@ public class StoryPlatformCoreStackTests
     }
 
     [Fact]
-    public void Stack_CreatesVpcWithSingleNatGatewayForEgress()
+    public void Stack_CreatesVpcWithNoNatGateway()
     {
         var template = SynthTemplate();
         template.ResourceCountIs("AWS::EC2::VPC", 1);
-        template.ResourceCountIs("AWS::EC2::NatGateway", 1);
+        template.ResourceCountIs("AWS::EC2::NatGateway", 0);
         template.ResourceCountIs("AWS::EC2::InternetGateway", 1);
     }
 
     [Fact]
-    public void Stack_VpcHasPublicPrivateAndIsolatedSubnets()
+    public void Stack_VpcHasOnlyPublicAndIsolatedSubnets()
     {
         var template = SynthTemplate();
-        // 2 AZs x 3 subnet groups (Public, Private-with-egress, Isolated) = 6 subnets
-        template.ResourceCountIs("AWS::EC2::Subnet", 6);
+        // 2 AZs x 2 subnet groups (Public, Isolated) = 4 subnets — PRIVATE_WITH_EGRESS removed.
+        template.ResourceCountIs("AWS::EC2::Subnet", 4);
     }
 
     [Fact]
@@ -82,133 +82,6 @@ public class StoryPlatformCoreStackTests
     }
 
     [Fact]
-    public void Stack_CreatesAppRunnerInstanceRoleScopedToSecrets()
-    {
-        var template = SynthTemplate();
-        template.HasResourceProperties("AWS::IAM::Role", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["AssumeRolePolicyDocument"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-            {
-                ["Statement"] = Match.ArrayWith(new object[]
-                {
-                    Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                    {
-                        ["Principal"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                        {
-                            ["Service"] = "tasks.apprunner.amazonaws.com"
-                        })
-                    })
-                })
-            })
-        }));
-
-        template.HasResourceProperties("AWS::IAM::Policy", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["PolicyDocument"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-            {
-                ["Statement"] = Match.ArrayWith(new object[]
-                {
-                    Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                    {
-                        ["Action"] = Match.ArrayWith(new object[] { "secretsmanager:GetSecretValue" })
-                    })
-                })
-            })
-        }));
-    }
-
-    [Fact]
-    public void Stack_CreatesVpcConnectorAllowedIntoRds()
-    {
-        var template = SynthTemplate();
-        template.ResourceCountIs("AWS::AppRunner::VpcConnector", 1);
-        template.HasResourceProperties("AWS::EC2::SecurityGroupIngress", new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["FromPort"] = 5432,
-            ["ToPort"] = 5432
-        });
-    }
-
-    [Fact]
-    public void Stack_OmitsAppRunnerServiceByDefault()
-    {
-        var template = SynthTemplate();
-        template.ResourceCountIs("AWS::AppRunner::Service", 0);
-    }
-
-    [Fact]
-    public void Stack_CreatesAppRunnerServiceWithAutoDeployDisabled_WhenContextFlagEnabled()
-    {
-        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["includeAppRunnerService"] = true
-        });
-        template.ResourceCountIs("AWS::AppRunner::Service", 1);
-        template.HasResourceProperties("AWS::AppRunner::Service", new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["SourceConfiguration"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-            {
-                ["AutoDeploymentsEnabled"] = false
-            })
-        });
-    }
-
-    [Fact]
-    public void Stack_AppRunnerServiceIncludesPlainJwtSettingsEnvVars()
-    {
-        // appsettings.json is gitignored and not part of the image built from a clean checkout,
-        // so JwtSettings (required by ServiceExtensions.AddJwtAuthentication at startup, or the
-        // app throws InvalidOperationException and crash-loops) must come entirely from App
-        // Runner's plain runtime env vars. These are non-secret config (issuer/audience/expiry
-        // durations), not credentials, so they belong in RuntimeEnvironmentVariables rather than
-        // RuntimeEnvironmentSecrets.
-        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["includeAppRunnerService"] = true
-        });
-        template.HasResourceProperties("AWS::AppRunner::Service", new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["SourceConfiguration"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-            {
-                ["ImageRepository"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                {
-                    ["ImageConfiguration"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                    {
-                        ["RuntimeEnvironmentVariables"] = Match.ArrayWith(new object[]
-                        {
-                            Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                            {
-                                ["Name"] = "JwtSettings__Issuer",
-                                ["Value"] = "StoryPlatform"
-                            }),
-                            Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                            {
-                                ["Name"] = "JwtSettings__Audience",
-                                ["Value"] = "StoryPlatformClient"
-                            }),
-                            Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                            {
-                                ["Name"] = "JwtSettings__ExpiryMinutes",
-                                ["Value"] = "120"
-                            }),
-                            Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                            {
-                                ["Name"] = "JwtSettings__RefreshTokenExpiryDays",
-                                ["Value"] = "7"
-                            }),
-                            Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                            {
-                                ["Name"] = "JwtSettings__ChildTokenExpiryMinutes",
-                                ["Value"] = "240"
-                            })
-                        })
-                    })
-                })
-            })
-        });
-    }
-
-    [Fact]
     public void Stack_CreatesGitHubOidcProviderAndScopedCiRole()
     {
         var template = SynthTemplate();
@@ -235,57 +108,6 @@ public class StoryPlatformCoreStackTests
                                     "repo:FA26SE142-GFA26SE04-AI-Storytelling/AI_Storytelling_Backend:ref:refs/heads/dev",
                                     "repo:FA26SE142-GFA26SE04-AI-Storytelling/AI_Storytelling_Backend:ref:refs/heads/main"
                                 })
-                            })
-                        })
-                    })
-                })
-            })
-        }));
-    }
-
-    [Fact]
-    public void Stack_AppRunnerServiceHasHealthCheckConfiguration()
-    {
-        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["includeAppRunnerService"] = true
-        });
-        template.HasResourceProperties("AWS::AppRunner::Service", new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["HealthCheckConfiguration"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-            {
-                // Regression guard: live deploys on 2026-09-21 found HTTP checks against /health
-                // deterministically 404 from App Runner's own health checker despite the exact
-                // deployed image returning 200 when run locally with identical env vars — isolated
-                // to App Runner's HTTP health-check path itself. Switched to TCP (port-only) checks.
-                ["Protocol"] = "TCP",
-                ["UnhealthyThreshold"] = 15
-            })
-        });
-    }
-
-    [Fact]
-    public void Stack_GrantsCiRoleAppRunnerDeployPermissions_WhenContextFlagEnabled()
-    {
-        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["includeAppRunnerService"] = true
-        });
-        template.HasResourceProperties("AWS::IAM::Policy", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["PolicyDocument"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-            {
-                ["Statement"] = Match.ArrayWith(new object[]
-                {
-                    Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                    {
-                        ["Action"] = Match.ArrayWith(new object[] { "apprunner:StartDeployment", "apprunner:DescribeService", "apprunner:ListOperations" }),
-                        ["Resource"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                        {
-                            ["Fn::GetAtt"] = Match.ArrayWith(new object[]
-                            {
-                                Match.StringLikeRegexp("^CoreApiService"),
-                                "ServiceArn"
                             })
                         })
                     })

@@ -7,38 +7,36 @@ see `docs/superpowers/specs/2026-09-19-aws-core-api-deployment-design.md` and
 
 ## Two-phase deploy (why it exists)
 
-App Runner's `CfnService` references an image tag (`storyplatform-core-api:latest`) in
+The ECS `FargateService` references an image tag (`storyplatform-core-api:latest`) in
 the stack's own ECR repository. On a **brand-new** stack that repo is empty — no image
-has ever been pushed — so creating the App Runner service in the same deploy that
-creates the ECR repo would fail to find the image and roll back the *entire* stack
-(VPC, RDS, ECR, Secrets, IAM included). To avoid this, App Runner Service creation is
-gated behind the `includeAppRunnerService` context flag (default `false` in
-`StoryPlatformCoreStack.cs`).
+has ever been pushed — so the ECS Service is gated behind the `includeEcsService`
+context flag (default `false` in `StoryPlatformCoreStack.cs`), the same two-phase
+pattern the old App Runner setup used.
 
 **First-time bootstrap, from `infra/aws-cdk/`:**
 
 ```bash
 cdk bootstrap aws://028718096070/ap-southeast-1 --profile storyplatform
 
-# Phase 1: VPC, RDS, ECR, Secrets, IAM, OIDC — no App Runner yet
+# Phase 1: VPC, RDS, ECR, Secrets, IAM, OIDC, ECS cluster/task definition — no running service yet
 cdk deploy --profile storyplatform --require-approval broadcast
 
-# Push the first image (repo now exists)
+# Push the first image, built for ARM64 (matches the task definition's RuntimePlatform)
 aws ecr get-login-password --region ap-southeast-1 --profile storyplatform | \
   docker login --username AWS --password-stdin 028718096070.dkr.ecr.ap-southeast-1.amazonaws.com
-docker build --file src/Core/StoryPlatform.Api/Dockerfile --tag \
-  028718096070.dkr.ecr.ap-southeast-1.amazonaws.com/storyplatform-core-api:latest .
-docker push 028718096070.dkr.ecr.ap-southeast-1.amazonaws.com/storyplatform-core-api:latest
+docker buildx build --platform linux/arm64 --file Dockerfile --target core-api \
+  --tag 028718096070.dkr.ecr.ap-southeast-1.amazonaws.com/storyplatform-core-api:latest \
+  --push .
 
-# Phase 2: add App Runner now that a real image exists
-cdk deploy --profile storyplatform --context includeAppRunnerService=true --require-approval broadcast
+# Phase 2: add the ECS Service now that a real image exists
+cdk deploy --profile storyplatform --context includeEcsService=true --require-approval broadcast
 ```
 
-After phase 2 succeeds, the flag is persisted in `cdk.json` (`"includeAppRunnerService": true`)
+After phase 2 succeeds, the flag is persisted in `cdk.json` (`"includeEcsService": true`)
 so future `cdk deploy` runs (CI or manual) don't need the `--context` flag and won't
-accidentally omit — and thereby delete — the running App Runner service.
+accidentally omit — and thereby delete — the running ECS Service.
 
-## CI/CD deploy flow (as of 2026-09-21)
+## CI/CD deploy flow (as of 2026-09-22)
 
 Every push to `dev` or `main` touching `src/Core/**`, `src/Shared/**`, `Dockerfile`, or the workflow
 file itself runs `.github/workflows/deploy-core-api.yml`:
@@ -48,16 +46,33 @@ file itself runs `.github/workflows/deploy-core-api.yml`:
    is not part of the main solution, so it needs its own step). A failing test stops the pipeline
    here; nothing is built or deployed.
 2. **`build-and-push` job** (`needs: test`) — builds the image from the root `Dockerfile`
-   (`--target core-api`, the same target `docker compose` uses locally), pushes `:sha` and `:latest`
-   to ECR, then explicitly calls `aws apprunner start-deployment`, captures its `OperationId`, and
-   polls `aws apprunner list-operations` by that ID until it reports `SUCCEEDED` (success) or a
-   `FAILED`/`ROLLBACK_*` status (failure — the GitHub Actions job fails too, so a bad deploy is
-   never silent). Polling by operation ID (not just the service's overall status) avoids a race
-   where the very first poll could read the *previous* deployment's already-`RUNNING` status before
-   App Runner has even started processing the new one.
+   (`--target core-api`) **for `linux/arm64`** via `docker buildx` (cross-compiled on the
+   GitHub-hosted x86 runner, via `docker/setup-qemu-action`), pushes `:sha` and `:latest` to ECR,
+   then explicitly calls `aws ecs update-service --force-new-deployment` (re-pulls `:latest` even
+   though the task definition's image reference string doesn't change) and
+   `aws ecs wait services-stable` to block until the new task is healthy or the job fails — a bad
+   deploy is never silent.
 
-App Runner's `AutoDeploymentsEnabled` is **disabled** — pushing a new `:latest` tag to ECR no longer
-triggers anything by itself. The `start-deployment` call above is the only way a deploy happens.
+ECS has no equivalent of App Runner's `AutoDeploymentsEnabled` — pushing a new `:latest` tag to
+ECR does nothing by itself; the `update-service --force-new-deployment` call above is the only way
+a deploy happens.
+
+**Finding the running task's public IP** (for manual smoke-testing, since there's no ALB):
+
+```bash
+TASK_ARN=$(aws ecs list-tasks --cluster storyplatform-core-api-cluster \
+  --service-name storyplatform-core-api-svc --region ap-southeast-1 --profile storyplatform \
+  --query 'taskArns[0]' --output text)
+ENI_ID=$(aws ecs describe-tasks --cluster storyplatform-core-api-cluster --tasks "$TASK_ARN" \
+  --region ap-southeast-1 --profile storyplatform \
+  --query 'tasks[0].attachments[0].details[?name==`networkInterfaceId`].value' --output text)
+aws ec2 describe-network-interfaces --network-interface-ids "$ENI_ID" \
+  --region ap-southeast-1 --profile storyplatform \
+  --query 'NetworkInterfaces[0].Association.PublicIp' --output text
+```
+
+The public IP changes on every deployment (no static IP without an ALB or Elastic IP) — see the
+spec's §14 follow-up on the SePay webhook implication of this.
 
 **Database migrations are applied automatically** by the container itself at startup
 (`Program.cs` calls `ApplicationDbContext.Database.Migrate()`), not by CI — GitHub-hosted runners
@@ -116,20 +131,31 @@ cdk deploy --profile storyplatform --context includeAppRunnerService=false --req
 cdk deploy --profile storyplatform --require-approval broadcast   # picks up the persisted true
 ```
 
-## Setting the real Resend / SePay secret values post-deploy
+## Setting the real Resend / SePay / Redis secret values post-deploy
 
-The `resend-api-key` and `sepay-api-key` secrets deploy with a placeholder
-(`REPLACE_ME_POST_DEPLOY`). Set the real values manually (never commit real keys):
+`resend-api-key`, `sepay-api-key`, and `redis-connection-string` deploy as placeholder values
+(`REPLACE_ME_POST_DEPLOY`) inside the single consolidated `storyplatform/core/app-secrets` JSON
+secret. Read the current JSON, edit only the keys you need, and write the whole object back
+(Secrets Manager has no partial-JSON-key update — `put-secret-value` always replaces the entire
+secret value):
 
 ```bash
-aws secretsmanager put-secret-value --secret-id storyplatform/core/resend-api-key \
-  --secret-string "<real-resend-key>" --region ap-southeast-1 --profile storyplatform
-aws secretsmanager put-secret-value --secret-id storyplatform/core/sepay-api-key \
-  --secret-string "<real-sepay-key>" --region ap-southeast-1 --profile storyplatform
+aws secretsmanager get-secret-value --secret-id storyplatform/core/app-secrets \
+  --region ap-southeast-1 --profile storyplatform --query SecretString --output text > /tmp/app-secrets.json
+# edit /tmp/app-secrets.json: set ResendApiKey, SePayApiKey, and/or RedisConnectionString
+aws secretsmanager put-secret-value --secret-id storyplatform/core/app-secrets \
+  --secret-string "file:///tmp/app-secrets.json" --region ap-southeast-1 --profile storyplatform
+rm /tmp/app-secrets.json
 ```
 
-Then restart the App Runner service so it picks up the new values:
+`RedisConnectionString` is the `rediss://` URL (including its auth token/password) issued by the
+external provider (Upstash or Redis Cloud, spec §5.8) — created outside AWS, the same way the
+Resend/SePay keys already are.
+
+Then force a new deployment so the running task picks up the new values (ECS injects secrets at
+task start, not live):
 
 ```bash
-aws apprunner start-deployment --service-arn <arn> --region ap-southeast-1 --profile storyplatform
+aws ecs update-service --cluster storyplatform-core-api-cluster --service storyplatform-core-api-svc \
+  --force-new-deployment --region ap-southeast-1 --profile storyplatform
 ```

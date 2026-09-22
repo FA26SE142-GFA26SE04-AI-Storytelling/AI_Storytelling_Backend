@@ -120,13 +120,13 @@ aws secretsmanager delete-secret --secret-id <name-from-above> \
 ```
 
 Also note: after a full `cdk destroy`, `cdk.json`'s persisted
-`"includeAppRunnerService": true` means the **next** `cdk deploy` will again try to
-create App Runner against an empty ECR repo (same problem as the very first deploy).
+`"includeEcsService": true` means the **next** `cdk deploy` will again try to
+create the ECS Service against an empty ECR repo (same problem as the very first deploy).
 For a from-scratch redeploy after a full destroy, repeat the two-phase sequence,
 overriding the persisted flag for the first deploy only:
 
 ```bash
-cdk deploy --profile storyplatform --context includeAppRunnerService=false --require-approval broadcast
+cdk deploy --profile storyplatform --context includeEcsService=false --require-approval broadcast
 # push an image (see above)
 cdk deploy --profile storyplatform --require-approval broadcast   # picks up the persisted true
 ```

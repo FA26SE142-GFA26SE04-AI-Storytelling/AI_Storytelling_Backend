@@ -44,6 +44,13 @@ services:
       AIService__ApiKey: ${GEMINI_API_KEY:-}
       AIService__Model: ${GEMINI_MODEL:-gemini-2.5-flash}
       AIService__TimeoutSeconds: ${GEMINI_TIMEOUT_SECONDS:-150}
+      AI__Gemini__ApiKey: ${GEMINI_API_KEY:-}
+      AI__Gemini__Model: ${GEMINI_MODEL:-gemini-2.5-flash}
+      AI__Gemini__TimeoutSeconds: ${GEMINI_TIMEOUT_SECONDS:-150}
+      AI__Vertex__UseVertex: ${VERTEX_AI_ENABLED:-false}
+      AI__Vertex__ProjectId: ${VERTEX_PROJECT_ID:-}
+      AI__Vertex__Location: ${VERTEX_LOCATION:-us-central1}
+      AI__Vertex__CredentialsPath: ${VERTEX_CREDENTIALS_PATH:-}
       AI__MediaGeneration__WorkerEnabled: ${MEDIA_WORKER_ENABLED:-false}
       SUPABASE_URL: ${SUPABASE_URL:-}
       SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-}
@@ -68,6 +75,10 @@ services:
       start_period: 20s
     networks:
       - backend
+    # Mount Vertex AI service-account key as a secret (only if VERTEX_CREDENTIALS_PATH is set).
+    # Map host path from VERTEX_CREDENTIALS_HOST_PATH → VERTEX_CREDENTIALS_PATH inside container.
+    volumes:
+      - "${VERTEX_CREDENTIALS_HOST_PATH:-./secrets}:${VERTEX_CREDENTIALS_PATH:-/app/secrets}:ro"
 
   ai-api:
     build:

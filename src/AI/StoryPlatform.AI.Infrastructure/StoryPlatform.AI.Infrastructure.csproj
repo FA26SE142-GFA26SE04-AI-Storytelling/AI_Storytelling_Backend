@@ -5,6 +5,7 @@
     <ProjectReference Include="..\..\Shared\StoryPlatform.Contracts\StoryPlatform.Contracts.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Google.GenAI" Version="1.21.1" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0" />
   </ItemGroup>

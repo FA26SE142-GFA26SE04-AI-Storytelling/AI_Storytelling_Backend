@@ -13,7 +13,7 @@ public sealed class MediaContextBuilder : IMediaContextBuilder
         if (string.IsNullOrWhiteSpace(request.Content)) throw new InvalidOperationException("EMPTY_CANONICAL_CONTENT");
         return JsonSerializer.Serialize(new
         {
-            schemaVersion = 1,
+            schemaVersion = 2,
             sourceStoryVersionId = request.StoryVersionId,
             storyFacts = new
             {

@@ -1,3 +1,4 @@
+using System.IO;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,6 +13,7 @@ using StoryPlatform.Application.Features.ContentGeneration.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration;
 using StoryPlatform.Application.Features.MediaGeneration;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
+using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Infrastructure.AI;
 using StoryPlatform.Infrastructure.BackgroundServices;
 using StoryPlatform.Infrastructure.Communication;
@@ -63,14 +65,84 @@ public static class DependencyInjection
         services.AddSingleton<IContentGenerationJobFailureFinalizer, ContentGenerationJobFailureFinalizer>();
         services.AddHostedService<ContentGenerationWorker>();
 
+        services.Configure<MediaGenerationOptions>(configuration.GetSection(MediaGenerationOptions.SectionName));
         var mediaOptions = new MediaGenerationOptions();
         configuration.GetSection(MediaGenerationOptions.SectionName).Bind(mediaOptions);
         services.AddSingleton(mediaOptions);
-        services.AddSingleton<IImageGenerationProvider, UnavailableImageGenerationProvider>();
-        services.AddSingleton<ITtsProvider, UnavailableTtsProvider>();
-        services.AddSingleton<FailClosedMediaEvaluator>();
-        services.AddSingleton<IMediaAlignmentEvaluator>(provider => provider.GetRequiredService<FailClosedMediaEvaluator>());
-        services.AddSingleton<IMediaSafetyEvaluator>(provider => provider.GetRequiredService<FailClosedMediaEvaluator>());
+
+        // Gemini / Vertex AI options
+        services.Configure<GeminiOptions>(configuration.GetSection(GeminiOptions.SectionName));
+        services.Configure<ImageGenerationOptions>(configuration.GetSection(ImageGenerationOptions.SectionName));
+        services.Configure<TtsServiceOptions>(configuration.GetSection(TtsServiceOptions.SectionName));
+        services.Configure<MediaEvaluationOptions>(configuration.GetSection(MediaEvaluationOptions.SectionName));
+        services.Configure<VertexOptions>(configuration.GetSection(VertexOptions.SectionName));
+
+        // Vertex AI token provider (singleton, shared across all Vertex-authenticated HttpClients)
+        services.AddSingleton<VertexTokenProvider>();
+
+        // TextToSpeech client — uses Application Default Credentials by default, or an explicit
+        // credentials file. When Vertex AI is enabled for media, the same service-account key
+        // can be shared via VertexOptions.CredentialsPath.
+        services.AddSingleton<Google.Cloud.TextToSpeech.V1Beta1.TextToSpeechClient>(sp =>
+        {
+            var ttsOpts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<TtsServiceOptions>>().Value;
+            var vertexOpts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<VertexOptions>>().Value;
+            var builder = new Google.Cloud.TextToSpeech.V1Beta1.TextToSpeechClientBuilder();
+
+            string? credPath = null;
+            if (!string.IsNullOrWhiteSpace(ttsOpts.CredentialsFilePath) && File.Exists(ttsOpts.CredentialsFilePath))
+                credPath = ttsOpts.CredentialsFilePath;
+            else if (!string.IsNullOrWhiteSpace(vertexOpts.CredentialsPath) && File.Exists(vertexOpts.CredentialsPath))
+                credPath = vertexOpts.CredentialsPath;
+
+            if (credPath is not null)
+                builder.CredentialsPath = credPath;
+            return builder.Build();
+        });
+
+        // Gemini REST providers — registered via HttpClient factory.
+        // When Vertex AI is enabled, the VertexAuthDelegatingHandler injects a fresh
+        // OAuth2 Bearer token on every request; otherwise x-goog-api-key is used per-provider.
+        services.AddHttpClient<GeminiImageGenerationProvider>(client => client.Timeout = TimeSpan.FromMinutes(2))
+            .ConfigurePrimaryHttpMessageHandler(services =>
+            {
+                var tokenProvider = services.GetRequiredService<VertexTokenProvider>();
+                return new VertexAuthDelegatingHandler(tokenProvider) { InnerHandler = new HttpClientHandler() };
+            });
+        services.AddHttpClient<GeminiMediaAlignmentEvaluator>(client => client.Timeout = TimeSpan.FromMinutes(2))
+            .ConfigurePrimaryHttpMessageHandler(services =>
+            {
+                var tokenProvider = services.GetRequiredService<VertexTokenProvider>();
+                return new VertexAuthDelegatingHandler(tokenProvider) { InnerHandler = new HttpClientHandler() };
+            });
+        services.AddHttpClient<GeminiMediaSafetyEvaluator>(client => client.Timeout = TimeSpan.FromMinutes(2))
+            .ConfigurePrimaryHttpMessageHandler(services =>
+            {
+                var tokenProvider = services.GetRequiredService<VertexTokenProvider>();
+                return new VertexAuthDelegatingHandler(tokenProvider) { InnerHandler = new HttpClientHandler() };
+            });
+        services.AddHttpClient<GeminiSemanticSceneSegmentationProvider>(client => client.Timeout = TimeSpan.FromMinutes(2))
+            .ConfigurePrimaryHttpMessageHandler(services =>
+            {
+                var tokenProvider = services.GetRequiredService<VertexTokenProvider>();
+                return new VertexAuthDelegatingHandler(tokenProvider) { InnerHandler = new HttpClientHandler() };
+            });
+        services.AddHttpClient<GeminiMediaContextExtractor>(client => client.Timeout = TimeSpan.FromMinutes(2))
+            .ConfigurePrimaryHttpMessageHandler(services =>
+            {
+                var tokenProvider = services.GetRequiredService<VertexTokenProvider>();
+                return new VertexAuthDelegatingHandler(tokenProvider) { InnerHandler = new HttpClientHandler() };
+            });
+
+        // Application-layer interfaces → Infrastructure implementations
+        services.AddSingleton<IImageGenerationProvider>(sp => sp.GetRequiredService<GeminiImageGenerationProvider>());
+        services.AddSingleton<ITtsProvider>(sp => sp.GetRequiredService<GoogleCloudTtsProvider>());
+        services.AddSingleton<IMediaAlignmentEvaluator>(sp => sp.GetRequiredService<GeminiMediaAlignmentEvaluator>());
+        services.AddSingleton<IMediaSafetyEvaluator>(sp => sp.GetRequiredService<GeminiMediaSafetyEvaluator>());
+        services.AddSingleton<ISemanticSceneSegmentationProvider>(sp => sp.GetRequiredService<GeminiSemanticSceneSegmentationProvider>());
+        services.AddSingleton<IParagraphSceneSegmentationProvider>(sp => sp.GetRequiredService<ParagraphSceneSegmentationProvider>());
+        services.AddSingleton<IMediaContextExtractor>(sp => sp.GetRequiredService<GeminiMediaContextExtractor>());
+        services.AddSingleton<IAudioQualityGate, BinaryAudioQualityGate>();
         services.AddSingleton<IMediaGenerationJobFailureFinalizer, MediaGenerationJobFailureFinalizer>();
         services.AddHostedService<MediaGenerationWorker>();
 

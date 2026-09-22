@@ -31,9 +31,10 @@ public sealed class MediaGenerationServiceTests
         Assert.Equal(4, uow.Items<MediaAsset>().Count);
         Assert.All(scenes, scene => Assert.Equal(2,
             uow.Items<MediaAsset>().Count(asset => asset.StorySceneId == scene.Id && asset.Status == MediaStatus.Ready)));
-        Assert.Equal(scenes.Select(x => x.SceneText), tts.Inputs);
+        // Phase 5: audio is generated per-segment (one paragraph per scene → one segment per scene).
+        Assert.Equal(new[] { "A", "B" }, tts.Inputs);
         Assert.Equal(
-            new[] { "1/scene-0.png", "1/audio-0.mp3", "1/scene-1.png", "1/audio-1.mp3" },
+            new[] { "1/v1/scene-0-a1.png", "1/v1/audio-s0-1-a1.mp3", "1/v1/scene-1-a1.png", "1/v1/audio-s1-1-a1.mp3" },
             storage.UploadedPaths);
         Assert.All(uow.Items<MediaAsset>(), asset => Assert.DoesNotContain("://", asset.Url));
     }
@@ -51,6 +52,30 @@ public sealed class MediaGenerationServiceTests
         Assert.Equal(3, image.Calls); // first scene retries once, then second scene succeeds
         Assert.Equal(4, uow.Items<MediaAsset>().Count);
         Assert.Equal(4, uow.Items<MediaAsset>().Select(x => (x.StorySceneId, x.Type)).Distinct().Count());
+    }
+
+    [Fact]
+    public async Task ProcessNext_IllustrationRetry_UploadsToDistinctAttemptPath()
+    {
+        var uow = Seed();
+        var image = new FlakyImageProvider();
+        var storage = new RecordingMediaStorage();
+        var service = Create(uow, image: image, storage: storage);
+
+        var result = await service.ProcessNextAsync();
+        Assert.True(result.Success);
+
+        // First scene's attempt 0 throws "temporary" before upload (no path recorded).
+        // Attempt 1 succeeds, uploads to scene-0-a2.png.
+        // Second scene's attempt 0 succeeds, uploads to scene-1-a1.png.
+        Assert.DoesNotContain("1/v1/scene-0-a1.png", storage.UploadedPaths);
+        Assert.Contains("1/v1/scene-0-a2.png", storage.UploadedPaths);
+        Assert.Contains("1/v1/scene-1-a1.png", storage.UploadedPaths);
+
+        // Single path per scene after retry — no silent overwrite.
+        var scene0Paths = storage.UploadedPaths.Where(p => p.Contains("scene-0")).ToArray();
+        Assert.Single(scene0Paths);
+        Assert.Equal("1/v1/scene-0-a2.png", scene0Paths[0]);
     }
 
     [Fact]
@@ -156,26 +181,52 @@ public sealed class MediaGenerationServiceTests
         Assert.Equal(result.ErrorCode, finalizer.ErrorCode);
     }
 
+    [Fact]
+    public async Task ProcessNext_DeterministicAudioFailure_FailsFastWithoutRetrying()
+    {
+        var uow = Seed();
+        var tts = new RecordingTtsProvider();
+        var finalizer = new RecordingFinalizer();
+        var service = Create(uow, tts: tts, audioGate: new DeterministicFailingAudioGate(), finalizer: finalizer);
+
+        var result = await service.ProcessNextAsync();
+
+        Assert.False(result.Success);
+        Assert.True(result.IsPermanentFailure);
+        Assert.Single(tts.Inputs); // Fails fast on attempt 1 without retrying
+        var audioAsset = uow.Items<MediaAsset>().Single(x => x.Type == MediaType.TtsAudio);
+        Assert.Equal(MediaStatus.ManualReview, audioAsset.Status);
+        Assert.Equal(ValidationStatus.Failed, audioAsset.ValidationStatus);
+        Assert.Equal("TTS_RETRY_EXHAUSTED", result.ErrorCode);
+    }
+
     private static MediaGenerationService Create(
         StoryReviewServiceTests.FakeUnitOfWork uow,
         IImageGenerationProvider? image = null,
         ITtsProvider? tts = null,
         IMediaStorage? storage = null,
         IMediaAlignmentEvaluator? evaluator = null,
-        RecordingFinalizer? finalizer = null) => new(
-        uow,
-        new MediaContextBuilder(),
-        new StoryBlockParser(),
-        new ParagraphSceneSegmentationProvider(),
-        new SceneCoverageValidator(),
-        new SceneSpecificationBuilder(),
-        image ?? new PassingImageProvider(),
-        tts ?? new RecordingTtsProvider(),
-        storage ?? new RecordingMediaStorage(),
-        evaluator ?? new PassingEvaluator(),
-        evaluator as IMediaSafetyEvaluator ?? new PassingEvaluator(),
-        finalizer ?? new RecordingFinalizer(),
-        new MediaGenerationOptions { AssetMaxAttempts = 3, JobLeaseMinutes = 5 });
+        IAudioQualityGate? audioGate = null,
+        RecordingFinalizer? finalizer = null)
+    {
+        var evaluatorImpl = evaluator ?? new PassingEvaluator();
+        return new MediaGenerationService(
+            uow,
+            new MediaContextBuilder(),
+            new StoryBlockParser(),
+            new ParagraphSceneSegmentationProvider(),
+            new SceneCoverageValidator(),
+            new SceneSpecificationBuilder(),
+            image ?? new PassingImageProvider(),
+            tts ?? new RecordingTtsProvider(),
+            storage ?? new RecordingMediaStorage(),
+            (IMediaAlignmentEvaluator)evaluatorImpl,
+            (IMediaSafetyEvaluator)evaluatorImpl,
+            audioGate ?? new PassingAudioQualityGate(),
+            new StorySegmentService(),
+            finalizer ?? new RecordingFinalizer(),
+            new MediaGenerationOptions { AssetMaxAttempts = 3, JobLeaseMinutes = 5 });
+    }
 
     private static StoryReviewServiceTests.FakeUnitOfWork Seed()
     {
@@ -247,6 +298,18 @@ public sealed class MediaGenerationServiceTests
         public Task<MediaEvaluationResult> EvaluateAsync(
             SceneSpecification specification, GeneratedMedia illustration, CancellationToken cancellationToken = default) =>
             Task.FromResult(new MediaEvaluationResult(MediaEvaluationDecision.Pass));
+    }
+
+    private sealed class PassingAudioQualityGate : IAudioQualityGate
+    {
+        public AudioQualityGateResult Validate(GeneratedMedia audio, IReadOnlyList<TimingMark> expectedMarks) =>
+            AudioQualityGateResult.Pass();
+    }
+
+    private sealed class DeterministicFailingAudioGate : IAudioQualityGate
+    {
+        public AudioQualityGateResult Validate(GeneratedMedia audio, IReadOnlyList<TimingMark> expectedMarks) =>
+            AudioQualityGateResult.Fail("AUDIO_MAGIC_BYTES_INVALID: UNRECOGNIZED_AUDIO_HEADER");
     }
 
     private sealed class RejectingEvaluator : IMediaAlignmentEvaluator, IMediaSafetyEvaluator

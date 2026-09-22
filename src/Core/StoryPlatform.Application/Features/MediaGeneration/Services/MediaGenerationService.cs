@@ -1,9 +1,14 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
-using System.Data;
+using System.Text;
+using System.Text.Json;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
+using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -23,6 +28,8 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
     private readonly IMediaStorage _mediaStorage;
     private readonly IMediaAlignmentEvaluator _alignmentEvaluator;
     private readonly IMediaSafetyEvaluator _safetyEvaluator;
+    private readonly IAudioQualityGate _audioQualityGate;
+    private readonly IStorySegmentService _segmentService;
     private readonly IMediaGenerationJobFailureFinalizer _failureFinalizer;
     private readonly TimeSpan _jobLease;
     private readonly int _assetMaxAttempts;
@@ -39,6 +46,8 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         IMediaStorage mediaStorage,
         IMediaAlignmentEvaluator alignmentEvaluator,
         IMediaSafetyEvaluator safetyEvaluator,
+        IAudioQualityGate audioQualityGate,
+        IStorySegmentService segmentService,
         IMediaGenerationJobFailureFinalizer failureFinalizer,
         MediaGenerationOptions options)
     {
@@ -53,6 +62,8 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         _mediaStorage = mediaStorage;
         _alignmentEvaluator = alignmentEvaluator;
         _safetyEvaluator = safetyEvaluator;
+        _audioQualityGate = audioQualityGate;
+        _segmentService = segmentService;
         _failureFinalizer = failureFinalizer;
         _jobLease = TimeSpan.FromMinutes(Math.Clamp(options.JobLeaseMinutes, 1, 30));
         _assetMaxAttempts = Math.Clamp(options.AssetMaxAttempts, 1, 5);
@@ -96,7 +107,6 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         try
         {
             await _unitOfWork.AcquireTransactionLockAsync(job.StoryId, cancellationToken);
-            // Re-fetch and validate status after acquiring lock to prevent race condition
             var revalidatedJob = await _unitOfWork.Repository<StoryGenerationJob>().GetByIdAsync(job.Id, cancellationToken);
             if (revalidatedJob is null || revalidatedJob.ConcurrencyToken != job.ConcurrencyToken)
                 throw new InvalidOperationException("CONCURRENT_CLAIM_DETECTED");
@@ -104,7 +114,6 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
                         ?? throw new InvalidOperationException("STORY_NOT_FOUND");
             if (story.Status is not (StoryStatus.Approved or StoryStatus.MediaProcessing))
                 throw new InvalidOperationException("STALE_MEDIA_HANDOFF");
-            // Check for duplicate job: only one active/processing job per story
             var existingActiveJob = (await _unitOfWork.Repository<StoryGenerationJob>().FindAsync(
                 x => x.StoryId == story.Id &&
                      x.Operation == GenerationJobOperation.GenerateMediaPackage &&
@@ -153,23 +162,79 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         return MediaJobProcessResult.Completed;
     }
 
+    /// <summary>
+    /// Resets a scene illustration to Queued and triggers regeneration.
+    /// Used when a supervisor manually rejects an illustration.
+    /// </summary>
+    public async Task RegenerateIllustrationAsync(
+        int userId, int storyId, int sceneId, CancellationToken cancellationToken = default)
+    {
+        await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
+        var scene = await _unitOfWork.Repository<StoryScene>().GetByIdAsync(sceneId, cancellationToken)
+                    ?? throw new NotFoundException("StoryScene", sceneId);
+        var asset = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(
+            x => x.StorySceneId == sceneId && x.Type == MediaType.Illustration,
+            cancellationToken: cancellationToken);
+        if (asset is null) throw new NotFoundException("Illustration asset", sceneId);
+        asset.Status = MediaStatus.Queued;
+        asset.ValidationStatus = ValidationStatus.Pending;
+        asset.AttemptCount = 0;
+        asset.LastValidationReason = null;
+        asset.Url = null;
+        asset.CompletedAt = null;
+        _unitOfWork.Repository<MediaAsset>().Update(asset);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Resets a segment TTS audio to Queued and triggers regeneration.
+    /// Used when a supervisor manually rejects a segment's audio.
+    /// </summary>
+    public async Task RegenerateSegmentAudioAsync(
+        int userId, int storyId, int segmentId, CancellationToken cancellationToken = default)
+    {
+        await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
+        var segment = await _unitOfWork.Repository<StorySegment>().GetByIdAsync(segmentId, cancellationToken)
+                      ?? throw new NotFoundException("StorySegment", segmentId);
+        var asset = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(
+            x => x.StorySegmentId == segmentId && x.Type == MediaType.TtsAudio,
+            cancellationToken: cancellationToken);
+        if (asset is null) throw new NotFoundException("TTS audio asset", segmentId);
+        asset.Status = MediaStatus.Queued;
+        asset.ValidationStatus = ValidationStatus.Pending;
+        asset.AttemptCount = 0;
+        asset.LastValidationReason = null;
+        asset.Url = null;
+        asset.CompletedAt = null;
+        _unitOfWork.Repository<MediaAsset>().Update(asset);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
     private async Task ProcessClaimedAsync(int jobId, string claimedToken, CancellationToken cancellationToken)
     {
         var state = await LoadStateAsync(jobId, claimedToken, cancellationToken);
         var mediaContext = await GetOrCreateContextAsync(state, cancellationToken);
         var scenes = await GetOrCreateScenesAsync(state, claimedToken, mediaContext, cancellationToken);
         await UpdateStageAsync(state.Job.Id, claimedToken, JobStage.MediaGenerating, cancellationToken);
+
         foreach (var scene in scenes.OrderBy(x => x.SceneIndex))
         {
             await AssertFreshAsync(state.Job.Id, claimedToken, state.Version.Id, mediaContext.Id, cancellationToken);
             var specification = _specificationBuilder.Build(
                 state.Version.Id, scene.Id, scene.SceneIndex, scene.SceneText,
                 scene.VisualDescription, mediaContext.ContextJson);
-            await EnsureIllustrationAsync(state.Job.Id, claimedToken, state.Job.StoryId, state.Version.Id, mediaContext.Id,
+
+            // Illustration: scene-level, one asset per scene.
+            await EnsureIllustrationAsync(
+                state.Job.Id, claimedToken, state.Job.StoryId, state.Version.Id, mediaContext,
                 scene, specification, cancellationToken);
-            await EnsureAudioAsync(state.Job.Id, claimedToken, state.Job.StoryId, state.Version.Id, mediaContext.Id,
+
+            // Audio: segment-level, one asset per StorySegment.
+            await EnsureAudioSegmentsAsync(
+                state.Job.Id, claimedToken, state.Job.StoryId, state.Version.Id, mediaContext,
                 scene, cancellationToken);
         }
+
         await UpdateStageAsync(state.Job.Id, claimedToken, JobStage.MediaFinalizing, cancellationToken);
         await FinalizeAsync(state.Job.Id, claimedToken, state.Version.Id, scenes.Count, cancellationToken);
     }
@@ -196,7 +261,6 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         };
         await AssertHandoffFreshAsync(state.Job.Id, state.Job.ConcurrencyToken, state.Version.Id, cancellationToken);
         await _unitOfWork.Repository<MediaContext>().AddAsync(context, cancellationToken);
-        // Re-validate that no concurrent job created context while we were building
         await AssertHandoffFreshAsync(state.Job.Id, state.Job.ConcurrencyToken, state.Version.Id, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return context;
@@ -213,14 +277,12 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
             return existing;
         }
 
-        // Check freshness BEFORE setting intermediate stage to avoid leaving job in incomplete state
         await AssertFreshAsync(state.Job.Id, claimedToken, state.Version.Id, mediaContext.Id, cancellationToken);
         await UpdateStageAsync(state.Job.Id, claimedToken, JobStage.MediaSegmenting, cancellationToken);
         var blocks = _blockParser.Parse(state.Version.Content!);
         var selections = await _segmenter.SegmentAsync(
             new SceneSegmentationRequest(state.Version.Content!, blocks, mediaContext.ContextJson), cancellationToken);
         var validated = _coverageValidator.ValidateAndAssemble(state.Version.Content!, blocks, selections);
-        // Check freshness again after heavy operations before persisting
         await AssertFreshAsync(state.Job.Id, claimedToken, state.Version.Id, mediaContext.Id, cancellationToken);
         var scenes = validated.Select(x => new StoryScene
         {
@@ -237,102 +299,254 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
     }
 
     private async Task EnsureIllustrationAsync(
-        int jobId, string claimedToken, int storyId, int versionId, int mediaContextId,
-        StoryScene scene, SceneSpecification specification, CancellationToken cancellationToken)
+        int jobId, string claimedToken, int storyId, int versionId, MediaContext mediaContext,
+        StoryScene scene, SceneSpecification baseSpecification, CancellationToken cancellationToken)
     {
-        var asset = await GetOrCreateAssetAsync(versionId, scene, MediaType.Illustration, cancellationToken);
+        var asset = await GetOrCreateIllustrationAssetAsync(versionId, scene, cancellationToken);
         if (asset.Status == MediaStatus.Ready) return;
-        Exception? lastError = null;
+
+        // Failure-feedback history for this asset (reset when retrying).
+        var failureHistory = new List<(string Code, string Reason)>();
+
         for (var attempt = 0; attempt < _assetMaxAttempts; attempt++)
         {
             try
             {
+                await AssertFreshAsync(jobId, claimedToken, versionId, mediaContext.Id, cancellationToken);
                 asset.Status = MediaStatus.Processing;
+                asset.AttemptCount = attempt + 1;
                 _unitOfWork.Repository<MediaAsset>().Update(asset);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                // Build specification with corrective feedback from previous attempts.
+                var specification = BuildSpecificationWithFeedback(baseSpecification, failureHistory);
                 var illustration = await _imageProvider.GenerateAsync(specification, cancellationToken);
                 var alignment = await _alignmentEvaluator.EvaluateAsync(specification, illustration, cancellationToken);
                 var safety = await _safetyEvaluator.EvaluateAsync(specification, illustration, cancellationToken);
-                if (alignment.Reason == "MEDIA_EVALUATOR_NOT_CONFIGURED" || safety.Reason == "MEDIA_EVALUATOR_NOT_CONFIGURED")
-                    throw new PermanentMediaGenerationException("MEDIA_EVALUATOR_NOT_CONFIGURED");
-                if (!alignment.Passed || !safety.Passed)
-                    throw new InvalidOperationException(!alignment.Passed ? "IMAGE_ALIGNMENT_FAILED" : "IMAGE_SAFETY_FAILED");
-                await AssertFreshAsync(jobId, claimedToken, versionId, mediaContextId, cancellationToken);
-                var storagePath = $"{storyId}/scene-{scene.SceneIndex}{illustration.SuggestedExtension}";
+
+                var evalResult = BuildValidationResultJson(alignment, safety);
+                asset.ValidationResultJson = evalResult;
+
+                if (!alignment.Passed)
+                {
+                    if (alignment.Reason == "MEDIA_EVALUATOR_NOT_CONFIGURED")
+                        throw new PermanentMediaGenerationException("MEDIA_EVALUATOR_NOT_CONFIGURED");
+                    failureHistory.Add(("IMAGE_ALIGNMENT_FAILED", alignment.Reason ?? "Alignment check failed"));
+                    asset.LastValidationReason = alignment.Reason;
+                    asset.ValidationStatus = ValidationStatus.Failed;
+                    throw new InvalidOperationException("IMAGE_ALIGNMENT_FAILED");
+                }
+                if (!safety.Passed)
+                {
+                    if (safety.Reason == "MEDIA_EVALUATOR_NOT_CONFIGURED")
+                        throw new PermanentMediaGenerationException("MEDIA_EVALUATOR_NOT_CONFIGURED");
+                    failureHistory.Add(("IMAGE_SAFETY_FAILED", safety.Reason ?? "Safety check failed"));
+                    asset.LastValidationReason = safety.Reason;
+                    asset.ValidationStatus = ValidationStatus.Failed;
+                    throw new InvalidOperationException("IMAGE_SAFETY_FAILED");
+                }
+
+                await AssertFreshAsync(jobId, claimedToken, versionId, mediaContext.Id, cancellationToken);
+                var storagePath = $"{storyId}/v{mediaContext.Revision}/scene-{scene.SceneIndex}-a{attempt + 1}{illustration.SuggestedExtension}";
                 await using var content = illustration.OpenReadStream();
                 asset.Url = await _mediaStorage.UploadAsync(
                     storagePath, content, illustration.MimeType, cancellationToken);
-                await AssertFreshAsync(jobId, claimedToken, versionId, mediaContextId, cancellationToken);
+                asset.MimeType = illustration.MimeType;
+                asset.Provider = illustration.GetMetadata("provider") ?? "Gemini";
+                asset.Model = illustration.GetMetadata("model") ?? "unknown";
                 asset.Status = MediaStatus.Ready;
+                asset.ValidationStatus = ValidationStatus.Passed;
+                asset.CompletedAt = DateTime.UtcNow;
                 _unitOfWork.Repository<MediaAsset>().Update(asset);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 return;
             }
+            catch (PermanentMediaGenerationException) when (!cancellationToken.IsCancellationRequested)
+            {
+                // Permanent failure — record but break out of retry loop and rethrow.
+                asset.Status = MediaStatus.Failed;
+                _unitOfWork.Repository<MediaAsset>().Update(asset);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                throw;
+            }
             catch (Exception exception) when (!cancellationToken.IsCancellationRequested && !IsStale(exception))
             {
-                lastError = exception;
                 asset.Status = MediaStatus.Failed;
                 _unitOfWork.Repository<MediaAsset>().Update(asset);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
             }
         }
-        throw new InvalidOperationException("ILLUSTRATION_RETRY_EXHAUSTED", lastError);
+
+        // Retry exhausted — propagate original failure code so the public error reflects what went wrong.
+        asset.Status = MediaStatus.ManualReview;
+        _unitOfWork.Repository<MediaAsset>().Update(asset);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        var finalCode = failureHistory.Count > 0
+            ? failureHistory[^1].Code
+            : "ILLUSTRATION_RETRY_EXHAUSTED";
+        throw new InvalidOperationException(finalCode);
     }
 
-    private async Task EnsureAudioAsync(
-        int jobId, string claimedToken, int storyId, int versionId, int mediaContextId,
+    private async Task EnsureAudioSegmentsAsync(
+        int jobId, string claimedToken, int storyId, int versionId, MediaContext mediaContext,
         StoryScene scene, CancellationToken cancellationToken)
     {
-        var asset = await GetOrCreateAssetAsync(versionId, scene, MediaType.TtsAudio, cancellationToken);
+        // Get or create StorySegments for this scene.
+        var segments = _segmentService.CreateSegmentsForScene(scene);
+        if (segments.Count == 0) return;
+
+        // Persist segments that don't exist yet.
+        foreach (var segment in segments)
+        {
+            var existing = await _unitOfWork.Repository<StorySegment>().FirstOrDefaultAsync(
+                x => x.StorySceneId == scene.Id && x.SegmentOrder == segment.SegmentOrder,
+                cancellationToken: cancellationToken);
+            if (existing is null)
+            {
+                await _unitOfWork.Repository<StorySegment>().AddAsync(segment, cancellationToken);
+            }
+        }
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // Re-fetch persisted segments with their IDs.
+        var persistedSegments = (await _unitOfWork.Repository<StorySegment>().FindAsync(
+            x => x.StorySceneId == scene.Id, cancellationToken: cancellationToken))
+            .OrderBy(x => x.SegmentOrder).ToList();
+
+        foreach (var segment in persistedSegments)
+        {
+            await AssertFreshAsync(jobId, claimedToken, versionId, mediaContext.Id, cancellationToken);
+            await EnsureSegmentAudioAsync(jobId, claimedToken, storyId, versionId, mediaContext,
+                scene, segment, cancellationToken);
+        }
+    }
+
+    private async Task EnsureSegmentAudioAsync(
+        int jobId, string claimedToken, int storyId, int versionId, MediaContext mediaContext,
+        StoryScene scene, StorySegment segment, CancellationToken cancellationToken)
+    {
+        var asset = await GetOrCreateSegmentAudioAssetAsync(versionId, segment, cancellationToken);
         if (asset.Status == MediaStatus.Ready) return;
-        Exception? lastError = null;
+
+        var failureHistory = new List<(string Code, string Reason)>();
+
         for (var attempt = 0; attempt < _assetMaxAttempts; attempt++)
         {
             try
             {
-                // Check freshness BEFORE generating to avoid discarding generated audio on stale
-                await AssertFreshAsync(jobId, claimedToken, versionId, mediaContextId, cancellationToken);
+                await AssertFreshAsync(jobId, claimedToken, versionId, mediaContext.Id, cancellationToken);
                 asset.Status = MediaStatus.Processing;
+                asset.AttemptCount = attempt + 1;
                 _unitOfWork.Repository<MediaAsset>().Update(asset);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
-                var audio = await _ttsProvider.GenerateAsync(scene.SceneText, cancellationToken);
-                // Verify freshness again after generation before persisting
-                await AssertFreshAsync(jobId, claimedToken, versionId, mediaContextId, cancellationToken);
-                var storagePath = $"{storyId}/audio-{scene.SceneIndex}{audio.SuggestedExtension}";
+
+                var audio = await _ttsProvider.GenerateAsync(segment.TextContent, cancellationToken);
+
+                // Structural quality gate — magic bytes + word timings check.
+                var tokens = SsmlTokenizer.Tokenize(segment.TextContent);
+                var gateResult = _audioQualityGate.Validate(audio, tokens);
+                if (!gateResult.IsPass)
+                {
+                    var reason = gateResult.Reason ?? "AUDIO_QUALITY_GATE_FAILED";
+                    asset.LastValidationReason = reason;
+                    asset.ValidationStatus = ValidationStatus.Failed;
+                    failureHistory.Add(("AUDIO_QUALITY_GATE_FAILED", reason));
+
+                    if (IsDeterministicAudioFailure(reason))
+                    {
+                        asset.Status = MediaStatus.ManualReview;
+                        _unitOfWork.Repository<MediaAsset>().Update(asset);
+                        await _unitOfWork.SaveChangesAsync(cancellationToken);
+                        throw new InvalidOperationException($"AUDIO_QUALITY_GATE_DETERMINISTIC_FAILURE:{reason}");
+                    }
+
+                    asset.Status = MediaStatus.Failed;
+                    _unitOfWork.Repository<MediaAsset>().Update(asset);
+                    await _unitOfWork.SaveChangesAsync(cancellationToken);
+                    continue; // retry for transient timing / count issues
+                }
+
+                await AssertFreshAsync(jobId, claimedToken, versionId, mediaContext.Id, cancellationToken);
+                var storagePath = $"{storyId}/v{mediaContext.Revision}/audio-s{scene.SceneIndex}-{segment.SegmentOrder}-a{attempt + 1}{audio.SuggestedExtension}";
                 await using var content = audio.OpenReadStream();
                 asset.Url = await _mediaStorage.UploadAsync(
                     storagePath, content, audio.MimeType, cancellationToken);
-                await AssertFreshAsync(jobId, claimedToken, versionId, mediaContextId, cancellationToken);
+                asset.MimeType = audio.MimeType;
                 asset.WordTimings = audio.GetMetadata("wordTimingsJson");
+                asset.Provider = audio.GetMetadata("provider") ?? "GoogleCloud";
+                asset.Model = audio.GetMetadata("model") ?? "unknown";
                 asset.Status = MediaStatus.Ready;
+                asset.ValidationStatus = ValidationStatus.Passed;
+                asset.CompletedAt = DateTime.UtcNow;
                 _unitOfWork.Repository<MediaAsset>().Update(asset);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
                 return;
             }
             catch (Exception exception) when (!cancellationToken.IsCancellationRequested && !IsStale(exception))
             {
-                lastError = exception;
+                if (exception is InvalidOperationException ioe && ioe.Message.StartsWith("AUDIO_QUALITY_GATE_DETERMINISTIC_FAILURE"))
+                {
+                    throw;
+                }
+
                 asset.Status = MediaStatus.Failed;
                 _unitOfWork.Repository<MediaAsset>().Update(asset);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
             }
         }
-        throw new InvalidOperationException("TTS_RETRY_EXHAUSTED", lastError);
+
+        asset.Status = MediaStatus.ManualReview;
+        _unitOfWork.Repository<MediaAsset>().Update(asset);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        var finalReason = failureHistory.Count > 0
+            ? failureHistory[^1].Reason
+            : "TTS_SEGMENT_RETRY_EXHAUSTED";
+        throw new InvalidOperationException($"TTS_SEGMENT_RETRY_EXHAUSTED:{finalReason}");
     }
 
-    private async Task<MediaAsset> GetOrCreateAssetAsync(
-        int versionId, StoryScene scene, MediaType type, CancellationToken cancellationToken)
+    private static bool IsDeterministicAudioFailure(string reason) =>
+        reason.StartsWith("AUDIO_MAGIC_BYTES_INVALID", StringComparison.OrdinalIgnoreCase) ||
+        reason.Equals("AUDIO_CONTENT_EMPTY", StringComparison.OrdinalIgnoreCase) ||
+        reason.Contains("UNRECOGNIZED_AUDIO_HEADER", StringComparison.OrdinalIgnoreCase) ||
+        reason.Contains("CONTENT_TOO_SHORT", StringComparison.OrdinalIgnoreCase);
+
+    private async Task<MediaAsset> GetOrCreateIllustrationAssetAsync(
+        int versionId, StoryScene scene, CancellationToken cancellationToken)
     {
         var existing = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(
-            x => x.StorySceneId == scene.Id && x.Type == type, cancellationToken: cancellationToken);
+            x => x.StorySceneId == scene.Id && x.Type == MediaType.Illustration,
+            cancellationToken: cancellationToken);
         if (existing is not null) return existing;
         var asset = new MediaAsset
         {
             StoryVersionId = versionId,
             StorySceneId = scene.Id,
             SceneIndex = scene.SceneIndex,
-            Type = type,
-            Status = MediaStatus.Queued
+            Type = MediaType.Illustration,
+            Status = MediaStatus.Queued,
+            ValidationStatus = ValidationStatus.Pending
+        };
+        await _unitOfWork.Repository<MediaAsset>().AddAsync(asset, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return asset;
+    }
+
+    private async Task<MediaAsset> GetOrCreateSegmentAudioAssetAsync(
+        int versionId, StorySegment segment, CancellationToken cancellationToken)
+    {
+        var existing = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(
+            x => x.StorySegmentId == segment.Id && x.Type == MediaType.TtsAudio,
+            cancellationToken: cancellationToken);
+        if (existing is not null) return existing;
+        var asset = new MediaAsset
+        {
+            StoryVersionId = versionId,
+            StorySceneId = segment.StorySceneId,
+            StorySegmentId = segment.Id,
+            SceneIndex = null,
+            Type = MediaType.TtsAudio,
+            Status = MediaStatus.Queued,
+            ValidationStatus = ValidationStatus.Pending
         };
         await _unitOfWork.Repository<MediaAsset>().AddAsync(asset, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -348,11 +562,20 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         if (story.Status == StoryStatus.Archived) throw new InvalidOperationException("STORY_ARCHIVED");
         var scenes = await _unitOfWork.Repository<StoryScene>().FindAsync(
             x => x.StoryVersionId == versionId, cancellationToken: cancellationToken);
+        var segments = await _unitOfWork.Repository<StorySegment>().FindAsync(
+            x => scenes.Select(s => s.Id).Contains(x.StorySceneId), cancellationToken: cancellationToken);
         var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(
             x => x.StoryVersionId == versionId && x.StorySceneId != null, cancellationToken: cancellationToken);
-        var ready = sceneCount > 0 && scenes.Count == sceneCount && scenes.All(scene =>
-            assets.Count(asset => asset.StorySceneId == scene.Id && asset.Type == MediaType.Illustration && asset.Status == MediaStatus.Ready) == 1 &&
-            assets.Count(asset => asset.StorySceneId == scene.Id && asset.Type == MediaType.TtsAudio && asset.Status == MediaStatus.Ready) == 1);
+
+        // Every scene needs exactly one Ready illustration.
+        var allScenesHaveIllustration = scenes.All(scene =>
+            assets.Any(a => a.StorySceneId == scene.Id && a.Type == MediaType.Illustration && a.Status == MediaStatus.Ready));
+
+        // Every segment needs exactly one Ready TTS audio.
+        var allSegmentsHaveAudio = segments.All(seg =>
+            assets.Any(a => a.StorySegmentId == seg.Id && a.Type == MediaType.TtsAudio && a.Status == MediaStatus.Ready));
+
+        var ready = sceneCount > 0 && scenes.Count == sceneCount && allScenesHaveIllustration && allSegmentsHaveAudio;
         if (!ready) throw new InvalidOperationException("MEDIA_PACKAGE_INCOMPLETE");
 
         story.Status = StoryStatus.Ready;
@@ -364,6 +587,33 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         RotateToken(job);
         _unitOfWork.Repository<StoryGenerationJob>().Update(job);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    private static SceneSpecification BuildSpecificationWithFeedback(
+        SceneSpecification baseSpec, IReadOnlyList<(string Code, string Reason)> failureHistory)
+    {
+        if (failureHistory.Count == 0) return baseSpec;
+        var sb = new StringBuilder();
+        sb.AppendLine("IMPORTANT: Previous generation attempts had the following issues. Please correct them in this attempt:");
+        foreach (var (code, reason) in failureHistory)
+        {
+            sb.AppendLine($"- [{code}] {reason}");
+        }
+        sb.AppendLine();
+        sb.AppendLine("STRICT requirements: Apply the corrections above and do not repeat the same mistakes.");
+        return baseSpec.WithFeedback(sb.ToString());
+    }
+
+    private static string BuildValidationResultJson(MediaEvaluationResult alignment, MediaEvaluationResult safety)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            alignmentScore = alignment.Decision.ToString(),
+            alignmentReason = alignment.Reason,
+            safetyScore = safety.Decision.ToString(),
+            safetyReason = safety.Reason,
+            evaluatedAt = DateTime.UtcNow
+        });
     }
 
     private async Task AssertFreshAsync(
@@ -422,7 +672,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
     private static void ValidatePersistedScenes(string content, IReadOnlyList<StoryScene> scenes)
     {
         var ordered = scenes.OrderBy(x => x.SceneIndex).ToArray();
-        var contentPosition = 0; // Tracks character position in content, not scene index
+        var contentPosition = 0;
         for (var i = 0; i < ordered.Length; i++)
         {
             var scene = ordered[i];
@@ -451,15 +701,17 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
     {
         var permanent = FindPermanentException(exception);
         if (permanent is not null) return permanent.ErrorCode;
-        // Unwrap InnerException to get structured error codes from wrapped exceptions
         var unwrapped = UnwrapException(exception);
         return unwrapped.Message switch
         {
             "STORY_ARCHIVED" => "STORY_ARCHIVED",
             "STALE_MEDIA_RESULT" or "STALE_MEDIA_HANDOFF" or "STALE_JOB_RESULT" or
             "CONCURRENT_CLAIM_DETECTED" or "DUPLICATE_ACTIVE_JOB" => "STALE_MEDIA_RESULT",
+            "IMAGE_ALIGNMENT_FAILED" or "IMAGE_SAFETY_FAILED" or
             "ILLUSTRATION_RETRY_EXHAUSTED" => "ILLUSTRATION_RETRY_EXHAUSTED",
-            "TTS_RETRY_EXHAUSTED" => "TTS_RETRY_EXHAUSTED",
+            "TTS_SEGMENT_RETRY_EXHAUSTED" => "TTS_RETRY_EXHAUSTED",
+            _ when unwrapped.Message.StartsWith("TTS_SEGMENT_RETRY_EXHAUSTED") => "TTS_RETRY_EXHAUSTED",
+            _ when unwrapped.Message.StartsWith("AUDIO_QUALITY_GATE_DETERMINISTIC_FAILURE") => "TTS_RETRY_EXHAUSTED",
             "MEDIA_PACKAGE_INCOMPLETE" => "MEDIA_PACKAGE_INCOMPLETE",
             "INVALID_MEDIA_HANDOFF" => "INVALID_MEDIA_HANDOFF",
             _ => "MEDIA_GENERATION_FAILED"
@@ -470,13 +722,25 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
     {
         if (FindPermanentException(exception) is not null) return true;
         for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
             if (current.Message is
                 "INVALID_MEDIA_HANDOFF" or "INVALID_PERSISTED_SCENE_COVERAGE" or
                 "SCENE_COVERAGE_EMPTY" or "INVALID_SCENE_ORDER" or "UNKNOWN_SCENE_BLOCK" or
                 "NON_CONTIGUOUS_SCENE_BLOCKS" or "SCENE_TEXT_NOT_CANONICAL" or
-                "INCOMPLETE_OR_OVERLAPPING_SCENE_COVERAGE" or "IMAGE_ALIGNMENT_FAILED" or
-                "IMAGE_SAFETY_FAILED" or "STALE_MEDIA_HANDOFF" or "DUPLICATE_ACTIVE_JOB" or
-                "STORY_NOT_FOUND") return true;
+                "INCOMPLETE_OR_OVERLAPPING_SCENE_COVERAGE" or
+                "IMAGE_ALIGNMENT_FAILED" or "IMAGE_SAFETY_FAILED" or
+                "MEDIA_EVALUATOR_NOT_CONFIGURED" or
+                "STALE_MEDIA_HANDOFF" or "DUPLICATE_ACTIVE_JOB" or
+                "STORY_NOT_FOUND")
+            {
+                return true;
+            }
+            if (current.Message.StartsWith("AUDIO_QUALITY_GATE_DETERMINISTIC_FAILURE", StringComparison.Ordinal) ||
+                current.Message.StartsWith("TTS_SEGMENT_RETRY_EXHAUSTED", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
         return false;
     }
 
@@ -497,13 +761,15 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
 
     private static Exception UnwrapException(Exception exception)
     {
-        // Unwrap TargetInvocationException, AggregateException, etc.
-        // But NOT InvalidOperationException with our known error codes - those are intentional markers
-        var knownCodes = new HashSet<string>
+        // knownCodes holds exact-string markers. Prefixed-message markers
+        // (AUDIO_QUALITY_GATE_DETERMINISTIC_FAILURE:..., TTS_SEGMENT_RETRY_EXHAUSTED:...)
+        // are also intentionally kept as permanent markers; callers pattern-match
+        // on the prefix via StartsWith so we do not unwrap them either.
+        var knownCodes = new HashSet<string>(StringComparer.Ordinal)
         {
             "STORY_ARCHIVED", "STALE_MEDIA_RESULT", "STALE_MEDIA_HANDOFF", "STALE_JOB_RESULT",
             "CONCURRENT_CLAIM_DETECTED", "DUPLICATE_ACTIVE_JOB",
-            "ILLUSTRATION_RETRY_EXHAUSTED", "TTS_RETRY_EXHAUSTED",
+            "ILLUSTRATION_RETRY_EXHAUSTED", "TTS_SEGMENT_RETRY_EXHAUSTED",
             "MEDIA_PACKAGE_INCOMPLETE", "INVALID_PERSISTED_SCENE_COVERAGE",
             "INVALID_MEDIA_HANDOFF", "STORY_NOT_FOUND"
         };
@@ -513,8 +779,14 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         {
             current = current.InnerException!;
         }
-        // Only unwrap InvalidOperationException if it's NOT a known error code (those are intentional markers)
-        if (current is InvalidOperationException && current.InnerException is not null && !knownCodes.Contains(current.Message))
+        // The deterministic/retry-exhausted markers carry their root cause as a suffix
+        // (e.g. "AUDIO_QUALITY_GATE_DETERMINISTIC_FAILURE:UNRECOGNIZED_AUDIO_HEADER"),
+        // so we keep the original exception and do not peek inside.
+        if (current is InvalidOperationException &&
+            current.InnerException is not null &&
+            !knownCodes.Contains(current.Message) &&
+            !current.Message.StartsWith("AUDIO_QUALITY_GATE_DETERMINISTIC_FAILURE", StringComparison.Ordinal) &&
+            !current.Message.StartsWith("TTS_SEGMENT_RETRY_EXHAUSTED", StringComparison.Ordinal))
         {
             current = current.InnerException;
         }

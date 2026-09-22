@@ -24,6 +24,8 @@ public sealed class StoryPlatformCoreStack : Stack
     public Role AppRunnerInstanceRole { get; }
     public CfnVpcConnector VpcConnector { get; }
     public Amazon.CDK.AWS.AppRunner.CfnService? AppRunnerService { get; private set; }
+    public SecurityGroup ApiTaskSecurityGroup { get; }
+    public FargateService? ApiService { get; private set; }
     public Role CiRole { get; }
 
     public StoryPlatformCoreStack(Construct scope, string id, IStackProps? props = null)
@@ -196,6 +198,16 @@ public sealed class StoryPlatformCoreStack : Stack
             }
         });
         apiContainer.AddPortMappings(new PortMapping { ContainerPort = 8080, Protocol = Amazon.CDK.AWS.ECS.Protocol.TCP });
+
+        ApiTaskSecurityGroup = new SecurityGroup(this, "ApiTaskSecurityGroup", new SecurityGroupProps
+        {
+            Vpc = Vpc,
+            Description = "Security group for the Core API's ECS Fargate task",
+            AllowAllOutbound = true
+        });
+        ApiTaskSecurityGroup.AddIngressRule(Peer.AnyIpv4(), Port.Tcp(8080), "Public HTTP access to Core API");
+
+        Database.Connections.AllowFrom(ApiTaskSecurityGroup, Port.Tcp(5432), "Allow ECS API task to reach RDS");
 
         AppRunnerInstanceRole = new Role(this, "AppRunnerInstanceRole", new RoleProps
         {
@@ -396,6 +408,47 @@ public sealed class StoryPlatformCoreStack : Stack
                 Value = AppRunnerService.AttrServiceUrl,
                 Description = "Public HTTPS URL of the App Runner service"
             });
+        }
+
+        var includeEcsServiceContext = Node.TryGetContext("includeEcsService");
+        var includeEcsService = includeEcsServiceContext switch
+        {
+            bool b => b,
+            string s => bool.Parse(s),
+            _ => false
+        };
+
+        if (includeEcsService)
+        {
+            ApiService = new FargateService(this, "ApiService", new FargateServiceProps
+            {
+                Cluster = Cluster,
+                TaskDefinition = ApiTaskDefinition,
+                ServiceName = "storyplatform-core-api-svc",
+                DesiredCount = 1,
+                AssignPublicIp = true,
+                VpcSubnets = new SubnetSelection { SubnetType = SubnetType.PUBLIC },
+                SecurityGroups = new[] { ApiTaskSecurityGroup }
+            });
+
+            new CfnOutput(this, "EcsClusterNameOutput", new CfnOutputProps
+            {
+                Value = Cluster.ClusterName,
+                Description = "Paste this into deploy-core-api.yml's ECS_CLUSTER env var"
+            });
+
+            new CfnOutput(this, "EcsServiceNameOutput", new CfnOutputProps
+            {
+                Value = ApiService.ServiceName,
+                Description = "Paste this into deploy-core-api.yml's ECS_SERVICE env var"
+            });
+
+            CiRole.AddToPolicy(new PolicyStatement(new PolicyStatementProps
+            {
+                Effect = Effect.ALLOW,
+                Actions = new[] { "ecs:UpdateService", "ecs:DescribeServices" },
+                Resources = new[] { ApiService.ServiceArn }
+            }));
         }
     }
 }

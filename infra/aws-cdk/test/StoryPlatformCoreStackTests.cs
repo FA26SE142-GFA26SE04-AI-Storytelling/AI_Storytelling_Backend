@@ -440,4 +440,55 @@ public class StoryPlatformCoreStackTests
             ["RetentionInDays"] = 7
         });
     }
+
+    [Fact]
+    public void Stack_CreatesApiTaskSecurityGroupAllowingPublicHttpAndRdsAccess()
+    {
+        var template = SynthTemplate();
+        template.HasResourceProperties("AWS::EC2::SecurityGroup", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["SecurityGroupIngress"] = Match.ArrayWith(new object[]
+            {
+                Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                {
+                    ["FromPort"] = 8080,
+                    ["ToPort"] = 8080,
+                    ["CidrIp"] = "0.0.0.0/0"
+                })
+            })
+        }));
+        template.HasResourceProperties("AWS::EC2::SecurityGroupIngress", new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["FromPort"] = 5432,
+            ["ToPort"] = 5432
+        });
+    }
+
+    [Fact]
+    public void Stack_OmitsEcsServiceByDefault()
+    {
+        var template = SynthTemplate();
+        template.ResourceCountIs("AWS::ECS::Service", 0);
+    }
+
+    [Fact]
+    public void Stack_CreatesEcsServiceWithPublicIp_WhenContextFlagEnabled()
+    {
+        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["includeEcsService"] = true
+        });
+        template.ResourceCountIs("AWS::ECS::Service", 1);
+        template.HasResourceProperties("AWS::ECS::Service", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["DesiredCount"] = 1,
+            ["NetworkConfiguration"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["AwsvpcConfiguration"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                {
+                    ["AssignPublicIp"] = "ENABLED"
+                })
+            })
+        }));
+    }
 }

@@ -50,4 +50,18 @@ public class RedisCacheExtensionsTests
 
         Assert.Equal(1, options.ConnectRetry);
     }
+
+    [Fact]
+    public void BuildRedisConfiguration_ParsesRealisticProviderConnectionString()
+    {
+        var options = RedisCacheExtensions.BuildRedisConfiguration(
+            "cute-cat-12345.upstash.io:6379,password=sometoken,ssl=True");
+
+        var endpoint = Assert.Single(options.EndPoints);
+        var dnsEndPoint = Assert.IsType<System.Net.DnsEndPoint>(endpoint);
+        Assert.Equal("cute-cat-12345.upstash.io", dnsEndPoint.Host);
+        Assert.Equal(6379, dnsEndPoint.Port);
+        Assert.True(options.Ssl);
+        Assert.Equal("sometoken", options.Password);
+    }
 }

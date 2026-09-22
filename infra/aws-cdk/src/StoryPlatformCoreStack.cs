@@ -268,7 +268,14 @@ public sealed class StoryPlatformCoreStack : Stack
                 DesiredCount = 1,
                 AssignPublicIp = true,
                 VpcSubnets = new SubnetSelection { SubnetType = SubnetType.PUBLIC },
-                SecurityGroups = new[] { ApiTaskSecurityGroup }
+                SecurityGroups = new[] { ApiTaskSecurityGroup },
+                // Pin explicitly rather than rely on aws-cdk-lib's own default (documented as 50%
+                // for a non-daemon service, which varies by CDK version). At DesiredCount = 1, a
+                // 50% floor rounds down to 0 healthy tasks required, which would let ECS stop the
+                // old (healthy) task before the new one passes its health check. 100/200 keeps the
+                // previous task running until the new one is healthy (see design spec §9).
+                MinHealthyPercent = 100,
+                MaxHealthyPercent = 200
             });
 
             new CfnOutput(this, "EcsClusterNameOutput", new CfnOutputProps

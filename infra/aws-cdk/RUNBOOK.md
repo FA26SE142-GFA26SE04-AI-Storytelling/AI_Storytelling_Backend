@@ -7,6 +7,14 @@ see `docs/superpowers/specs/2026-09-19-aws-core-api-deployment-design.md` and
 
 ## Two-phase deploy (why it exists)
 
+**Before merging this branch to `dev`/`main`:** the two-phase `cdk deploy` sequence below must be
+run manually at least once, through phase 2 (`includeEcsService=true`), before the merge lands.
+`.github/workflows/deploy-core-api.yml` triggers on any push touching `infra/aws-cdk/**` but only
+calls `aws ecs update-service`/`aws ecs wait services-stable` — it never runs `cdk deploy`. Until
+phase 2 has been run by hand, there is no ECS cluster, no ECS service, and the CI role doesn't even
+have `ecs:UpdateService` permission (that IAM grant only exists inside the `includeEcsService`
+gate), so the first CI run after merge will fail with nothing to deploy to.
+
 The ECS `FargateService` references an image tag (`storyplatform-core-api:latest`) in
 the stack's own ECR repository. On a **brand-new** stack that repo is empty — no image
 has ever been pushed — so the ECS Service is gated behind the `includeEcsService`
@@ -76,14 +84,23 @@ spec's §14 follow-up on the SePay webhook implication of this.
 
 **Database migrations are applied automatically** by the container itself at startup
 (`Program.cs` calls `ApplicationDbContext.Database.Migrate()`), not by CI — GitHub-hosted runners
-cannot reach RDS (`PRIVATE_ISOLATED` subnet), but the App Runner container already can via its VPC
-Connector. If a migration is bad, the container fails its `/health` check and App Runner
-automatically keeps serving the last good *code* revision — no manual rollback needed for the
-running container. This does **not** mean the database is rolled back too: `Database.Migrate()`
+cannot reach RDS (`PRIVATE_ISOLATED` subnet), but the ECS task already can via a security-group
+rule from its own security group (`ApiTaskSecurityGroup` in `StoryPlatformCoreStack.cs`) — there is
+no VPC Connector in this setup. If a migration is bad, the container fails its `/health` check, but
+unlike App Runner, ECS does **not** automatically revert to the last-known-good task definition —
+it keeps retrying the new (bad) revision. Recovering requires a manual rollback:
+
+```bash
+aws ecs update-service --cluster storyplatform-core-api-cluster --service storyplatform-core-api-svc \
+  --task-definition <previous-revision-arn> --region ap-southeast-1 --profile storyplatform
+```
+
+This does **not** mean the database is rolled back too: `Database.Migrate()`
 applies pending migrations one at a time, each in its own transaction, so if migration 5 of 8
 fails (or the container is killed once the health check's ~50s unhealthy window expires), the
-first 4 are already committed. The old code revision that App Runner falls back to then runs
-against a schema partway through a change it was never built for. Two consequences:
+first 4 are already committed. The previous task definition revision you manually roll back to
+(per the command above) then runs against a schema partway through a change it was never built
+for. Two consequences:
 
 - Write migrations to be additive and backward-compatible with the *previous* revision
   (expand/contract pattern) — never drop or rename a column in the same migration that a currently
@@ -95,20 +112,14 @@ against a schema partway through a change it was never built for. Two consequenc
 
 ## Full teardown-and-redeploy caveat
 
-`cdk destroy` deletes the stack's resources, but the 5 Secrets Manager secrets (4 app
-secrets + the RDS-generated master credential) go into Secrets Manager's default
+`cdk destroy` deletes the stack's resources, but the 2 Secrets Manager secrets (1 consolidated app
+secret + the RDS-generated master credential) go into Secrets Manager's default
 **30-day deletion recovery window** rather than being purged immediately. A subsequent
 `cdk deploy` will fail with *"a secret with this name is already scheduled for
 deletion"* unless they're force-deleted first:
 
 ```bash
-aws secretsmanager delete-secret --secret-id storyplatform/core/db-connection-string \
-  --force-delete-without-recovery --region ap-southeast-1 --profile storyplatform
-aws secretsmanager delete-secret --secret-id storyplatform/core/jwt-secret-key \
-  --force-delete-without-recovery --region ap-southeast-1 --profile storyplatform
-aws secretsmanager delete-secret --secret-id storyplatform/core/resend-api-key \
-  --force-delete-without-recovery --region ap-southeast-1 --profile storyplatform
-aws secretsmanager delete-secret --secret-id storyplatform/core/sepay-api-key \
+aws secretsmanager delete-secret --secret-id storyplatform/core/app-secrets \
   --force-delete-without-recovery --region ap-southeast-1 --profile storyplatform
 
 # The RDS-generated secret has a random suffix — find it first:
@@ -148,9 +159,15 @@ aws secretsmanager put-secret-value --secret-id storyplatform/core/app-secrets \
 rm /tmp/app-secrets.json
 ```
 
-`RedisConnectionString` is the `rediss://` URL (including its auth token/password) issued by the
-external provider (Upstash or Redis Cloud, spec §5.8) — created outside AWS, the same way the
-Resend/SePay keys already are.
+`RedisConnectionString` must be in StackExchange.Redis's native connection-string format:
+`<host>:<port>,password=<token>,ssl=True,abortConnect=False` (e.g.
+`cute-cat-12345.upstash.io:6379,password=sometoken,ssl=True,abortConnect=False`), using the
+host/port/token issued by the external provider (Upstash or Redis Cloud, spec §5.8) — created
+outside AWS, the same way the Resend/SePay keys already are. StackExchange.Redis does **not**
+accept `redis://`/`rediss://` URI-scheme connection strings — the provider's dashboard may display
+one, but it must be converted to the format above before pasting it into the secret, otherwise
+`ConfigurationOptions.Parse()` silently produces a broken configuration (wrong host, port 0,
+`Ssl=False`, no password) and the cache never works.
 
 Then force a new deployment so the running task picks up the new values (ECS injects secrets at
 task start, not live):

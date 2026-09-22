@@ -2,6 +2,32 @@ using Microsoft.OpenApi.Models;
 using StoryPlatform.AI.Api.Middleware;
 using StoryPlatform.AI.Application;
 using StoryPlatform.AI.Infrastructure;
+// Load .env file if present in working directory or parents
+var currentDir = new DirectoryInfo(Directory.GetCurrentDirectory());
+while (currentDir != null)
+{
+    var potentialEnv = Path.Combine(currentDir.FullName, ".env");
+    if (File.Exists(potentialEnv))
+    {
+        foreach (var line in File.ReadAllLines(potentialEnv))
+        {
+            var trimmed = line.Trim();
+            if (string.IsNullOrWhiteSpace(trimmed) || trimmed.StartsWith('#')) continue;
+            var sep = trimmed.IndexOf('=');
+            if (sep > 0)
+            {
+                var k = trimmed[..sep].Trim();
+                var v = trimmed[(sep + 1)..].Trim();
+                if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(k)))
+                {
+                    Environment.SetEnvironmentVariable(k, v);
+                }
+            }
+        }
+        break;
+    }
+    currentDir = currentDir.Parent;
+}
 
 var builder = WebApplication.CreateBuilder(args);
 

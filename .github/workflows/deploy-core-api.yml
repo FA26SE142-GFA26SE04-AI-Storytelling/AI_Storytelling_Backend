@@ -18,7 +18,8 @@ permissions:
 env:
   AWS_REGION: ap-southeast-1
   ECR_REPOSITORY: storyplatform-core-api
-  APP_RUNNER_SERVICE_ARN: arn:aws:apprunner:ap-southeast-1:028718096070:service/storyplatform-core-api-v2/7cf69f5d55ee46af8f3aa804aa398512
+  ECS_CLUSTER: storyplatform-core-api-cluster
+  ECS_SERVICE: storyplatform-core-api-svc
 
 jobs:
   test:
@@ -61,47 +62,37 @@ jobs:
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push image
+      - name: Set up QEMU (for ARM64 cross-build)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image (ARM64)
         env:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build \
+          docker buildx build \
+            --platform linux/arm64 \
             --file Dockerfile \
             --target core-api \
             --tag "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" \
             --tag "$ECR_REGISTRY/$ECR_REPOSITORY:latest" \
+            --push \
             .
-          docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-          docker push "$ECR_REGISTRY/$ECR_REPOSITORY:latest"
 
-      - name: Trigger App Runner deployment
-        id: deploy
+      - name: Force new ECS deployment
         run: |
-          OP_ID=$(aws apprunner start-deployment \
-            --service-arn "$APP_RUNNER_SERVICE_ARN" \
-            --region "$AWS_REGION" \
-            --query 'OperationId' --output text)
-          echo "operation-id=$OP_ID" >> "$GITHUB_OUTPUT"
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_SERVICE" \
+            --force-new-deployment \
+            --region "$AWS_REGION" > /dev/null
 
-      - name: Wait for App Runner deployment to finish
+      - name: Wait for ECS service to stabilize
         run: |
-          OP_ID="${{ steps.deploy.outputs.operation-id }}"
-          for i in $(seq 1 40); do
-            STATUS=$(aws apprunner list-operations \
-              --service-arn "$APP_RUNNER_SERVICE_ARN" \
-              --region "$AWS_REGION" \
-              --query "OperationSummaryList[?Id=='$OP_ID'].Status | [0]" --output text)
-            echo "Deployment operation status: $STATUS"
-            if [ "$STATUS" = "SUCCEEDED" ]; then
-              echo "Deployment succeeded."
-              exit 0
-            fi
-            if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "ROLLBACK_SUCCEEDED" ] || [ "$STATUS" = "ROLLBACK_FAILED" ]; then
-              echo "Deployment failed, App Runner reported operation status: $STATUS"
-              exit 1
-            fi
-            sleep 15
-          done
-          echo "Timed out after 10 minutes waiting for App Runner deployment to finish."
-          exit 1
+          aws ecs wait services-stable \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --region "$AWS_REGION"

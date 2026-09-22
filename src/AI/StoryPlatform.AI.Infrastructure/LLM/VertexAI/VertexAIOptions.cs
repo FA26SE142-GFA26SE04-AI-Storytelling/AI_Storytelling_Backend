@@ -6,7 +6,7 @@ public sealed class VertexAIOptions
 
     public string AuthMode { get; set; } = "Adc";
     public string ProjectId { get; set; } = "gen-lang-client-0675088605";
-    public string Location { get; set; } = "us-central1";
-    public string Model { get; set; } = "gemini-1.5-flash-002";
+    public string Location { get; set; } = "global";
+    public string Model { get; set; } = "gemini-3.8-flash";
     public int TimeoutSeconds { get; set; } = 120;
 }

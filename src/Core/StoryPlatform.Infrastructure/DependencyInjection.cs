@@ -16,6 +16,7 @@ using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Infrastructure.AI;
 using StoryPlatform.Infrastructure.BackgroundServices;
+using StoryPlatform.Infrastructure.Caching;
 using StoryPlatform.Infrastructure.Communication;
 using StoryPlatform.Infrastructure.Export;
 using StoryPlatform.Infrastructure.Payments;
@@ -32,6 +33,8 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         var connectionString = ConnectionStringHelper.GetConnectionString(configuration);
+
+        services.AddRedisCache(configuration);
 
         services.AddDbContext<ApplicationDbContext>(options =>
         {

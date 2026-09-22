@@ -293,4 +293,151 @@ public class StoryPlatformCoreStackTests
             })
         }));
     }
+
+    [Fact]
+    public void Stack_CreatesEcsClusterInVpc()
+    {
+        var template = SynthTemplate();
+        template.ResourceCountIs("AWS::ECS::Cluster", 1);
+    }
+
+    [Fact]
+    public void Stack_CreatesApiTaskDefinitionWithArm64AndCorrectSizing()
+    {
+        var template = SynthTemplate();
+        template.ResourceCountIs("AWS::ECS::TaskDefinition", 1);
+        template.HasResourceProperties("AWS::ECS::TaskDefinition", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["Cpu"] = "256",
+            ["Memory"] = "1024",
+            ["RuntimePlatform"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["CpuArchitecture"] = "ARM64",
+                ["OperatingSystemFamily"] = "LINUX"
+            })
+        }));
+    }
+
+    [Fact]
+    public void Stack_ApiContainerListensOn8080WithHealthCheck()
+    {
+        var template = SynthTemplate();
+        template.HasResourceProperties("AWS::ECS::TaskDefinition", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["ContainerDefinitions"] = Match.ArrayWith(new object[]
+            {
+                Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                {
+                    ["PortMappings"] = Match.ArrayWith(new object[]
+                    {
+                        Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                        {
+                            ["ContainerPort"] = 8080
+                        })
+                    }),
+                    ["HealthCheck"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                    {
+                        ["Command"] = Match.ArrayWith(new object[] { "CMD-SHELL", "curl -f http://localhost:8080/health || exit 1" })
+                    })
+                })
+            })
+        }));
+    }
+
+    [Fact]
+    public void Stack_ApiContainerIncludesPlainSettingsEnvVars()
+    {
+        var template = SynthTemplate();
+        template.HasResourceProperties("AWS::ECS::TaskDefinition", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["ContainerDefinitions"] = Match.ArrayWith(new object[]
+            {
+                Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                {
+                    ["Environment"] = Match.ArrayWith(new object[]
+                    {
+                        Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                        {
+                            ["Name"] = "JwtSettings__Issuer",
+                            ["Value"] = "StoryPlatform"
+                        }),
+                        Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                        {
+                            ["Name"] = "Logging__LogLevel__Default",
+                            ["Value"] = "Warning"
+                        })
+                    })
+                })
+            })
+        }));
+    }
+
+    [Fact]
+    public void Stack_ApiContainerReadsAllFiveSecretsFromConsolidatedSecret()
+    {
+        var template = SynthTemplate();
+        template.HasResourceProperties("AWS::ECS::TaskDefinition", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["ContainerDefinitions"] = Match.ArrayWith(new object[]
+            {
+                Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                {
+                    ["Secrets"] = Match.ArrayWith(new object[]
+                    {
+                        Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                        {
+                            ["Name"] = "RedisSettings__ConnectionString"
+                        })
+                    })
+                })
+            })
+        }));
+    }
+
+    [Fact]
+    public void Stack_GrantsTaskExecutionRoleAssumedByEcsTasksAndSecretsAccess()
+    {
+        var template = SynthTemplate();
+        template.HasResourceProperties("AWS::IAM::Role", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["AssumeRolePolicyDocument"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["Statement"] = Match.ArrayWith(new object[]
+                {
+                    Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                    {
+                        ["Principal"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                        {
+                            ["Service"] = "ecs-tasks.amazonaws.com"
+                        })
+                    })
+                })
+            })
+        }));
+
+        template.HasResourceProperties("AWS::IAM::Policy", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["PolicyDocument"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["Statement"] = Match.ArrayWith(new object[]
+                {
+                    Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                    {
+                        ["Action"] = Match.ArrayWith(new object[] { "secretsmanager:GetSecretValue" })
+                    })
+                })
+            })
+        }));
+    }
+
+    [Fact]
+    public void Stack_CreatesApiLogGroupWithOneWeekRetention()
+    {
+        var template = SynthTemplate();
+        template.HasResourceProperties("AWS::Logs::LogGroup", new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["LogGroupName"] = "/ecs/storyplatform-core-api",
+            ["RetentionInDays"] = 7
+        });
+    }
 }

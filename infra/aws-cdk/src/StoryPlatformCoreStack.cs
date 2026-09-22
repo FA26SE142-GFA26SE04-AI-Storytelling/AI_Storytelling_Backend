@@ -2,7 +2,9 @@ using Amazon.CDK;
 using Amazon.CDK.AWS.AppRunner;
 using Amazon.CDK.AWS.EC2;
 using Amazon.CDK.AWS.ECR;
+using Amazon.CDK.AWS.ECS;
 using Amazon.CDK.AWS.IAM;
+using Amazon.CDK.AWS.Logs;
 using Amazon.CDK.AWS.RDS;
 using Amazon.CDK.AWS.SecretsManager;
 using Constructs;
@@ -14,10 +16,14 @@ public sealed class StoryPlatformCoreStack : Stack
     public IVpc Vpc { get; }
     public DatabaseInstance Database { get; }
     public Repository EcrRepository { get; }
-    public Secret AppSecrets { get; }
+    public Amazon.CDK.AWS.SecretsManager.Secret AppSecrets { get; }
+    public Cluster Cluster { get; }
+    public Role TaskExecutionRole { get; }
+    public LogGroup ApiLogGroup { get; }
+    public FargateTaskDefinition ApiTaskDefinition { get; }
     public Role AppRunnerInstanceRole { get; }
     public CfnVpcConnector VpcConnector { get; }
-    public CfnService? AppRunnerService { get; private set; }
+    public Amazon.CDK.AWS.AppRunner.CfnService? AppRunnerService { get; private set; }
     public Role CiRole { get; }
 
     public StoryPlatformCoreStack(Construct scope, string id, IStackProps? props = null)
@@ -107,7 +113,7 @@ public sealed class StoryPlatformCoreStack : Stack
             "\"RedisConnectionString\":\"REPLACE_ME_POST_DEPLOY\"" +
             "}";
 
-        AppSecrets = new Secret(this, "AppSecrets", new SecretProps
+        AppSecrets = new Amazon.CDK.AWS.SecretsManager.Secret(this, "AppSecrets", new SecretProps
         {
             SecretName = "storyplatform/core/app-secrets",
             GenerateSecretString = new SecretStringGenerator
@@ -119,6 +125,77 @@ public sealed class StoryPlatformCoreStack : Stack
             },
             RemovalPolicy = RemovalPolicy.DESTROY
         });
+
+        Cluster = new Cluster(this, "CoreApiCluster", new ClusterProps
+        {
+            Vpc = Vpc,
+            ClusterName = "storyplatform-core-api-cluster"
+        });
+
+        TaskExecutionRole = new Role(this, "ApiTaskExecutionRole", new RoleProps
+        {
+            AssumedBy = new ServicePrincipal("ecs-tasks.amazonaws.com"),
+            ManagedPolicies = new IManagedPolicy[]
+            {
+                ManagedPolicy.FromAwsManagedPolicyName("service-role/AmazonECSTaskExecutionRolePolicy")
+            }
+        });
+        AppSecrets.GrantRead(TaskExecutionRole);
+
+        ApiLogGroup = new LogGroup(this, "ApiLogGroup", new LogGroupProps
+        {
+            LogGroupName = "/ecs/storyplatform-core-api",
+            Retention = RetentionDays.ONE_WEEK,
+            RemovalPolicy = RemovalPolicy.DESTROY
+        });
+
+        ApiTaskDefinition = new FargateTaskDefinition(this, "ApiTaskDefinition", new FargateTaskDefinitionProps
+        {
+            Cpu = 256,
+            MemoryLimitMiB = 1024,
+            RuntimePlatform = new RuntimePlatform
+            {
+                CpuArchitecture = CpuArchitecture.ARM64,
+                OperatingSystemFamily = OperatingSystemFamily.LINUX
+            },
+            ExecutionRole = TaskExecutionRole
+        });
+
+        var apiContainer = ApiTaskDefinition.AddContainer("ApiContainer", new ContainerDefinitionOptions
+        {
+            Image = ContainerImage.FromEcrRepository(EcrRepository, "latest"),
+            Logging = LogDriver.AwsLogs(new AwsLogDriverProps { StreamPrefix = "api", LogGroup = ApiLogGroup }),
+            Environment = new System.Collections.Generic.Dictionary<string, string>
+            {
+                ["ASPNETCORE_ENVIRONMENT"] = "Production",
+                ["Swagger__Enabled"] = "true",
+                ["JwtSettings__Issuer"] = "StoryPlatform",
+                ["JwtSettings__Audience"] = "StoryPlatformClient",
+                ["JwtSettings__ExpiryMinutes"] = "120",
+                ["JwtSettings__RefreshTokenExpiryDays"] = "7",
+                ["JwtSettings__ChildTokenExpiryMinutes"] = "240",
+                ["Logging__LogLevel__Default"] = "Warning"
+            },
+            Secrets = new System.Collections.Generic.Dictionary<string, Amazon.CDK.AWS.ECS.Secret>
+            {
+                ["ConnectionStrings__DefaultConnection"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "DbConnectionString"),
+                ["JwtSettings__SecretKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "JwtSecretKey"),
+                ["ResendSettings__ApiKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "ResendApiKey"),
+                ["SePaySettings__ApiKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "SePayApiKey"),
+                ["RedisSettings__ConnectionString"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "RedisConnectionString")
+            },
+            // Root Dockerfile's runtime stage already installs curl (confirmed by inspection),
+            // so this works without any Dockerfile change.
+            HealthCheck = new Amazon.CDK.AWS.ECS.HealthCheck
+            {
+                Command = new[] { "CMD-SHELL", "curl -f http://localhost:8080/health || exit 1" },
+                Interval = Duration.Seconds(30),
+                Timeout = Duration.Seconds(5),
+                Retries = 3,
+                StartPeriod = Duration.Seconds(30)
+            }
+        });
+        apiContainer.AddPortMappings(new PortMapping { ContainerPort = 8080, Protocol = Amazon.CDK.AWS.ECS.Protocol.TCP });
 
         AppRunnerInstanceRole = new Role(this, "AppRunnerInstanceRole", new RoleProps
         {
@@ -225,7 +302,7 @@ public sealed class StoryPlatformCoreStack : Stack
             // updating in place, to rule out — or clear — that stuck state. This changes the
             // service's ARN and public URL; both need updating wherever they're hardcoded
             // (deploy-core-api.yml, RUNBOOK.md).
-            AppRunnerService = new CfnService(this, "CoreApiServiceV2", new CfnServiceProps
+            AppRunnerService = new Amazon.CDK.AWS.AppRunner.CfnService(this, "CoreApiServiceV2", new Amazon.CDK.AWS.AppRunner.CfnServiceProps
             {
                 // Renamed from "storyplatform-core-api": App Runner service names must be unique
                 // per account/region, and CloudFormation creates the new resource before deleting
@@ -234,41 +311,41 @@ public sealed class StoryPlatformCoreStack : Stack
                 // provided name already exists" (confirmed 2026-09-21, stack rolled back cleanly,
                 // old service untouched).
                 ServiceName = "storyplatform-core-api-v2",
-                SourceConfiguration = new CfnService.SourceConfigurationProperty
+                SourceConfiguration = new Amazon.CDK.AWS.AppRunner.CfnService.SourceConfigurationProperty
                 {
                     AutoDeploymentsEnabled = false,
-                    AuthenticationConfiguration = new CfnService.AuthenticationConfigurationProperty
+                    AuthenticationConfiguration = new Amazon.CDK.AWS.AppRunner.CfnService.AuthenticationConfigurationProperty
                     {
                         AccessRoleArn = appRunnerEcrAccessRole.RoleArn
                     },
-                    ImageRepository = new CfnService.ImageRepositoryProperty
+                    ImageRepository = new Amazon.CDK.AWS.AppRunner.CfnService.ImageRepositoryProperty
                     {
                         ImageIdentifier = $"{EcrRepository.RepositoryUri}:latest",
                         ImageRepositoryType = "ECR",
-                        ImageConfiguration = new CfnService.ImageConfigurationProperty
+                        ImageConfiguration = new Amazon.CDK.AWS.AppRunner.CfnService.ImageConfigurationProperty
                         {
                             Port = "8080",
                             RuntimeEnvironmentVariables = new[]
                             {
-                                new CfnService.KeyValuePairProperty { Name = "ASPNETCORE_ENVIRONMENT", Value = "Production" },
-                                new CfnService.KeyValuePairProperty { Name = "Swagger__Enabled", Value = "true" },
-                                new CfnService.KeyValuePairProperty { Name = "JwtSettings__Issuer", Value = "StoryPlatform" },
-                                new CfnService.KeyValuePairProperty { Name = "JwtSettings__Audience", Value = "StoryPlatformClient" },
-                                new CfnService.KeyValuePairProperty { Name = "JwtSettings__ExpiryMinutes", Value = "120" },
-                                new CfnService.KeyValuePairProperty { Name = "JwtSettings__RefreshTokenExpiryDays", Value = "7" },
-                                new CfnService.KeyValuePairProperty { Name = "JwtSettings__ChildTokenExpiryMinutes", Value = "240" }
+                                new Amazon.CDK.AWS.AppRunner.CfnService.KeyValuePairProperty { Name = "ASPNETCORE_ENVIRONMENT", Value = "Production" },
+                                new Amazon.CDK.AWS.AppRunner.CfnService.KeyValuePairProperty { Name = "Swagger__Enabled", Value = "true" },
+                                new Amazon.CDK.AWS.AppRunner.CfnService.KeyValuePairProperty { Name = "JwtSettings__Issuer", Value = "StoryPlatform" },
+                                new Amazon.CDK.AWS.AppRunner.CfnService.KeyValuePairProperty { Name = "JwtSettings__Audience", Value = "StoryPlatformClient" },
+                                new Amazon.CDK.AWS.AppRunner.CfnService.KeyValuePairProperty { Name = "JwtSettings__ExpiryMinutes", Value = "120" },
+                                new Amazon.CDK.AWS.AppRunner.CfnService.KeyValuePairProperty { Name = "JwtSettings__RefreshTokenExpiryDays", Value = "7" },
+                                new Amazon.CDK.AWS.AppRunner.CfnService.KeyValuePairProperty { Name = "JwtSettings__ChildTokenExpiryMinutes", Value = "240" }
                             },
                             RuntimeEnvironmentSecrets = new[]
                             {
-                                new CfnService.KeyValuePairProperty { Name = "ConnectionStrings__DefaultConnection", Value = $"{AppSecrets.SecretArn}:DbConnectionString::" },
-                                new CfnService.KeyValuePairProperty { Name = "JwtSettings__SecretKey", Value = $"{AppSecrets.SecretArn}:JwtSecretKey::" },
-                                new CfnService.KeyValuePairProperty { Name = "ResendSettings__ApiKey", Value = $"{AppSecrets.SecretArn}:ResendApiKey::" },
-                                new CfnService.KeyValuePairProperty { Name = "SePaySettings__ApiKey", Value = $"{AppSecrets.SecretArn}:SePayApiKey::" }
+                                new Amazon.CDK.AWS.AppRunner.CfnService.KeyValuePairProperty { Name = "ConnectionStrings__DefaultConnection", Value = $"{AppSecrets.SecretArn}:DbConnectionString::" },
+                                new Amazon.CDK.AWS.AppRunner.CfnService.KeyValuePairProperty { Name = "JwtSettings__SecretKey", Value = $"{AppSecrets.SecretArn}:JwtSecretKey::" },
+                                new Amazon.CDK.AWS.AppRunner.CfnService.KeyValuePairProperty { Name = "ResendSettings__ApiKey", Value = $"{AppSecrets.SecretArn}:ResendApiKey::" },
+                                new Amazon.CDK.AWS.AppRunner.CfnService.KeyValuePairProperty { Name = "SePaySettings__ApiKey", Value = $"{AppSecrets.SecretArn}:SePayApiKey::" }
                             }
                         }
                     }
                 },
-                InstanceConfiguration = new CfnService.InstanceConfigurationProperty
+                InstanceConfiguration = new Amazon.CDK.AWS.AppRunner.CfnService.InstanceConfigurationProperty
                 {
                     Cpu = "1024",
                     Memory = "2048",
@@ -283,7 +360,7 @@ public sealed class StoryPlatformCoreStack : Stack
                 // (both tried and ruled out) — see the CoreApiServiceV2 construct-id-bump note above
                 // for the resulting decision to recreate the service. TCP kept as the simplest,
                 // lowest-risk check going forward; Path is not applicable to TCP and is omitted.
-                HealthCheckConfiguration = new CfnService.HealthCheckConfigurationProperty
+                HealthCheckConfiguration = new Amazon.CDK.AWS.AppRunner.CfnService.HealthCheckConfigurationProperty
                 {
                     Protocol = "TCP",
                     Interval = 10,
@@ -291,9 +368,9 @@ public sealed class StoryPlatformCoreStack : Stack
                     HealthyThreshold = 1,
                     UnhealthyThreshold = 15
                 },
-                NetworkConfiguration = new CfnService.NetworkConfigurationProperty
+                NetworkConfiguration = new Amazon.CDK.AWS.AppRunner.CfnService.NetworkConfigurationProperty
                 {
-                    EgressConfiguration = new CfnService.EgressConfigurationProperty
+                    EgressConfiguration = new Amazon.CDK.AWS.AppRunner.CfnService.EgressConfigurationProperty
                     {
                         EgressType = "VPC",
                         VpcConnectorArn = VpcConnector.AttrVpcConnectorArn

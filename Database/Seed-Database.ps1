@@ -89,7 +89,7 @@ DECLARE
         'org_safety_policy_categories','org_consent_records','safety_policies',
         'safety_policy_categories','learning_profiles','learning_profile_topics',
         'class_groups','class_group_members','stories','story_categories','story_versions',
-        'media_contexts','story_scenes','discussion_questions','quiz_items','media_assets','story_vocabulary',
+        'media_contexts','story_scenes','story_segments','discussion_questions','quiz_items','media_assets','story_vocabulary',
         'prompt_catalog_versions','story_generation_requests','story_generation_jobs','assignments','assignment_recipients',
         'reading_sessions','reading_progress','quiz_attempts','telemetry_logs',
         'vocabulary_notebook_entries','achievements','badges','learning_insights',

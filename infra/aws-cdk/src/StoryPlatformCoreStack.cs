@@ -14,10 +14,7 @@ public sealed class StoryPlatformCoreStack : Stack
     public IVpc Vpc { get; }
     public DatabaseInstance Database { get; }
     public Repository EcrRepository { get; }
-    public Secret DbConnectionSecret { get; }
-    public Secret JwtSecret { get; }
-    public Secret ResendApiKeySecret { get; }
-    public Secret SePayApiKeySecret { get; }
+    public Secret AppSecrets { get; }
     public Role AppRunnerInstanceRole { get; }
     public CfnVpcConnector VpcConnector { get; }
     public CfnService? AppRunnerService { get; private set; }
@@ -92,35 +89,34 @@ public sealed class StoryPlatformCoreStack : Stack
             $"Host={Database.DbInstanceEndpointAddress};Port={Database.DbInstanceEndpointPort};" +
             $"Database=storyplatform;Username={dbUsername};Password={dbPassword}";
 
-        DbConnectionSecret = new Secret(this, "DbConnectionSecret", new SecretProps
-        {
-            SecretName = "storyplatform/core/db-connection-string",
-            SecretStringValue = SecretValue.UnsafePlainText(connectionString),
-            RemovalPolicy = RemovalPolicy.DESTROY
-        });
+        // Consolidated into 1 secret (was 4 separate ones) to cut Secrets Manager cost from
+        // ~$1.60/month to ~$0.40/month — Secrets Manager bills per secret, not per JSON key.
+        // GenerateStringKey lets Secrets Manager generate JwtSecretKey server-side (it never
+        // appears in the synthesized CloudFormation template) and merge it into this JSON
+        // template, so DbConnectionString stays composed from RDS's own generated credentials
+        // exactly as before; only Resend/SePay/Redis need a manual
+        // `aws secretsmanager put-secret-value` after deploy. RDS's generated password is
+        // excluded from quote/backslash characters by Secrets Manager's own default
+        // ExcludeCharacters, so embedding it in this hand-built JSON string is safe without
+        // extra escaping.
+        var appSecretsTemplate =
+            "{" +
+            $"\"DbConnectionString\":\"{connectionString}\"," +
+            "\"ResendApiKey\":\"REPLACE_ME_POST_DEPLOY\"," +
+            "\"SePayApiKey\":\"REPLACE_ME_POST_DEPLOY\"," +
+            "\"RedisConnectionString\":\"REPLACE_ME_POST_DEPLOY\"" +
+            "}";
 
-        JwtSecret = new Secret(this, "JwtSecret", new SecretProps
+        AppSecrets = new Secret(this, "AppSecrets", new SecretProps
         {
-            SecretName = "storyplatform/core/jwt-secret-key",
+            SecretName = "storyplatform/core/app-secrets",
             GenerateSecretString = new SecretStringGenerator
             {
-                PasswordLength = 64,
-                ExcludePunctuation = true
+                SecretStringTemplate = appSecretsTemplate,
+                GenerateStringKey = "JwtSecretKey",
+                ExcludePunctuation = true,
+                PasswordLength = 64
             },
-            RemovalPolicy = RemovalPolicy.DESTROY
-        });
-
-        ResendApiKeySecret = new Secret(this, "ResendApiKeySecret", new SecretProps
-        {
-            SecretName = "storyplatform/core/resend-api-key",
-            SecretStringValue = SecretValue.UnsafePlainText("REPLACE_ME_POST_DEPLOY"),
-            RemovalPolicy = RemovalPolicy.DESTROY
-        });
-
-        SePayApiKeySecret = new Secret(this, "SePayApiKeySecret", new SecretProps
-        {
-            SecretName = "storyplatform/core/sepay-api-key",
-            SecretStringValue = SecretValue.UnsafePlainText("REPLACE_ME_POST_DEPLOY"),
             RemovalPolicy = RemovalPolicy.DESTROY
         });
 
@@ -129,10 +125,7 @@ public sealed class StoryPlatformCoreStack : Stack
             AssumedBy = new ServicePrincipal("tasks.apprunner.amazonaws.com")
         });
 
-        DbConnectionSecret.GrantRead(AppRunnerInstanceRole);
-        JwtSecret.GrantRead(AppRunnerInstanceRole);
-        ResendApiKeySecret.GrantRead(AppRunnerInstanceRole);
-        SePayApiKeySecret.GrantRead(AppRunnerInstanceRole);
+        AppSecrets.GrantRead(AppRunnerInstanceRole);
 
         var vpcConnectorSecurityGroup = new SecurityGroup(this, "VpcConnectorSecurityGroupV2", new SecurityGroupProps
         {
@@ -267,10 +260,10 @@ public sealed class StoryPlatformCoreStack : Stack
                             },
                             RuntimeEnvironmentSecrets = new[]
                             {
-                                new CfnService.KeyValuePairProperty { Name = "ConnectionStrings__DefaultConnection", Value = DbConnectionSecret.SecretArn },
-                                new CfnService.KeyValuePairProperty { Name = "JwtSettings__SecretKey", Value = JwtSecret.SecretArn },
-                                new CfnService.KeyValuePairProperty { Name = "ResendSettings__ApiKey", Value = ResendApiKeySecret.SecretArn },
-                                new CfnService.KeyValuePairProperty { Name = "SePaySettings__ApiKey", Value = SePayApiKeySecret.SecretArn }
+                                new CfnService.KeyValuePairProperty { Name = "ConnectionStrings__DefaultConnection", Value = $"{AppSecrets.SecretArn}:DbConnectionString::" },
+                                new CfnService.KeyValuePairProperty { Name = "JwtSettings__SecretKey", Value = $"{AppSecrets.SecretArn}:JwtSecretKey::" },
+                                new CfnService.KeyValuePairProperty { Name = "ResendSettings__ApiKey", Value = $"{AppSecrets.SecretArn}:ResendApiKey::" },
+                                new CfnService.KeyValuePairProperty { Name = "SePaySettings__ApiKey", Value = $"{AppSecrets.SecretArn}:SePayApiKey::" }
                             }
                         }
                     }

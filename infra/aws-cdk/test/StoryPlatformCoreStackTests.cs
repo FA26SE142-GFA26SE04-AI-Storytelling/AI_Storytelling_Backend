@@ -65,27 +65,19 @@ public class StoryPlatformCoreStackTests
     }
 
     [Fact]
-    public void Stack_CreatesFourApplicationSecrets()
+    public void Stack_CreatesOneConsolidatedAppSecret()
     {
         var template = SynthTemplate();
-        // 5 total: 1 auto-created by Database's Credentials.FromGeneratedSecret (Task 3)
-        // + 4 app secrets created in this task (db-connection-string, jwt, resend, sepay).
-        template.ResourceCountIs("AWS::SecretsManager::Secret", 5);
+        // 2 total: 1 auto-created by Database's Credentials.FromGeneratedSecret (unchanged)
+        // + 1 consolidated app secret (was 4 separate ones) created in this task.
+        template.ResourceCountIs("AWS::SecretsManager::Secret", 2);
         template.HasResourceProperties("AWS::SecretsManager::Secret", new System.Collections.Generic.Dictionary<string, object>
         {
-            ["Name"] = "storyplatform/core/jwt-secret-key"
-        });
-        template.HasResourceProperties("AWS::SecretsManager::Secret", new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["Name"] = "storyplatform/core/db-connection-string"
-        });
-        template.HasResourceProperties("AWS::SecretsManager::Secret", new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["Name"] = "storyplatform/core/resend-api-key"
-        });
-        template.HasResourceProperties("AWS::SecretsManager::Secret", new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["Name"] = "storyplatform/core/sepay-api-key"
+            ["Name"] = "storyplatform/core/app-secrets",
+            ["GenerateSecretString"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["GenerateStringKey"] = "JwtSecretKey"
+            })
         });
     }
 

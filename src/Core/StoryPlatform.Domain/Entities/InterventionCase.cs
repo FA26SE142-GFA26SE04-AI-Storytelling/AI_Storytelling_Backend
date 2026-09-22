@@ -16,8 +16,18 @@ public class InterventionCase : BaseEntity
     public string? SkillGapNotes { get; set; }
     public DateTime OpenedAt { get; set; }
 
+    public int? TriggeringStoryId { get; set; }
+    public virtual Story? TriggeringStory { get; set; }
+
+    public InterventionResolutionType? ResolutionType { get; set; }
+
     public int? ResolvedByUserId { get; set; }
     public virtual UserAccount? ResolvedByUser { get; set; }
 
     public DateTime? ResolvedAt { get; set; }
+
+    public int? NotesAddedByUserId { get; set; }
+    public virtual UserAccount? NotesAddedByUser { get; set; }
+
+    public DateTime? NotesAddedAt { get; set; }
 }

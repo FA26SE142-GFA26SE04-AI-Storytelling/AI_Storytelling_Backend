@@ -1398,8 +1398,12 @@ namespace StoryPlatform.Infrastructure.Migrations
                     Status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
                     SkillGapNotes = table.Column<string>(type: "text", nullable: true),
                     OpenedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    TriggeringStoryId = table.Column<int>(type: "integer", nullable: true),
+                    ResolutionType = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: true),
                     ResolvedByUserId = table.Column<int>(type: "integer", nullable: true),
                     ResolvedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    NotesAddedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    NotesAddedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
@@ -1417,6 +1421,18 @@ namespace StoryPlatform.Infrastructure.Migrations
                         name: "FK_intervention_cases_recommendations_RecommendationId",
                         column: x => x.RecommendationId,
                         principalTable: "recommendations",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_intervention_cases_stories_TriggeringStoryId",
+                        column: x => x.TriggeringStoryId,
+                        principalTable: "stories",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_intervention_cases_user_accounts_NotesAddedByUserId",
+                        column: x => x.NotesAddedByUserId,
+                        principalTable: "user_accounts",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
@@ -1557,26 +1573,24 @@ namespace StoryPlatform.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "media_assets",
+                name: "media_contexts",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     StoryVersionId = table.Column<int>(type: "integer", nullable: false),
-                    Type = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
-                    Status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
-                    SceneIndex = table.Column<int>(type: "integer", nullable: true),
-                    Url = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
-                    WordTimings = table.Column<string>(type: "text", nullable: true),
+                    Revision = table.Column<int>(type: "integer", nullable: false),
+                    ContextJson = table.Column<string>(type: "jsonb", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_media_assets", x => x.Id);
+                    table.PrimaryKey("PK_media_contexts", x => x.Id);
+                    table.CheckConstraint("CK_media_contexts_revision", "\"Revision\" > 0");
                     table.ForeignKey(
-                        name: "FK_media_assets_story_versions_StoryVersionId",
+                        name: "FK_media_contexts_story_versions_StoryVersionId",
                         column: x => x.StoryVersionId,
                         principalTable: "story_versions",
                         principalColumn: "Id",
@@ -1603,6 +1617,35 @@ namespace StoryPlatform.Infrastructure.Migrations
                     table.PrimaryKey("PK_quiz_items", x => x.Id);
                     table.ForeignKey(
                         name: "FK_quiz_items_story_versions_StoryVersionId",
+                        column: x => x.StoryVersionId,
+                        principalTable: "story_versions",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "story_scenes",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    StoryVersionId = table.Column<int>(type: "integer", nullable: false),
+                    SceneIndex = table.Column<int>(type: "integer", nullable: false),
+                    TextRangeStart = table.Column<int>(type: "integer", nullable: false),
+                    TextRangeEnd = table.Column<int>(type: "integer", nullable: false),
+                    SceneText = table.Column<string>(type: "text", nullable: false),
+                    VisualDescription = table.Column<string>(type: "text", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_story_scenes", x => x.Id);
+                    table.CheckConstraint("CK_story_scenes_scene_index", "\"SceneIndex\" >= 0");
+                    table.CheckConstraint("CK_story_scenes_text_range", "\"TextRangeStart\" >= 0 AND \"TextRangeEnd\" > \"TextRangeStart\"");
+                    table.ForeignKey(
+                        name: "FK_story_scenes_story_versions_StoryVersionId",
                         column: x => x.StoryVersionId,
                         principalTable: "story_versions",
                         principalColumn: "Id",
@@ -1790,6 +1833,34 @@ namespace StoryPlatform.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "story_segments",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    StorySceneId = table.Column<int>(type: "integer", nullable: false),
+                    SegmentOrder = table.Column<int>(type: "integer", nullable: false),
+                    StartOffset = table.Column<int>(type: "integer", nullable: false),
+                    EndOffset = table.Column<int>(type: "integer", nullable: false),
+                    TextContent = table.Column<string>(type: "text", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_story_segments", x => x.Id);
+                    table.CheckConstraint("CK_story_segments_offsets", "\"StartOffset\" >= 0 AND \"EndOffset\" > \"StartOffset\"");
+                    table.CheckConstraint("CK_story_segments_segment_order", "\"SegmentOrder\" >= 1");
+                    table.ForeignKey(
+                        name: "FK_story_segments_story_scenes_StorySceneId",
+                        column: x => x.StorySceneId,
+                        principalTable: "story_scenes",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "vocabulary_notebook_entries",
                 columns: table => new
                 {
@@ -1895,6 +1966,61 @@ namespace StoryPlatform.Infrastructure.Migrations
                         name: "FK_telemetry_logs_reading_sessions_ReadingSessionId",
                         column: x => x.ReadingSessionId,
                         principalTable: "reading_sessions",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "media_assets",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    StoryVersionId = table.Column<int>(type: "integer", nullable: false),
+                    StorySceneId = table.Column<int>(type: "integer", nullable: true),
+                    StorySegmentId = table.Column<int>(type: "integer", nullable: true),
+                    Type = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    Status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    ValidationStatus = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    SceneIndex = table.Column<int>(type: "integer", nullable: true),
+                    Url = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    WordTimings = table.Column<string>(type: "text", nullable: true),
+                    MimeType = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    Provider = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    Model = table.Column<string>(type: "character varying(120)", maxLength: 120, nullable: true),
+                    ProviderRequestId = table.Column<string>(type: "character varying(120)", maxLength: 120, nullable: true),
+                    ProviderAssetId = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
+                    ValidationResultJson = table.Column<string>(type: "text", nullable: true),
+                    ReferenceImageAssetId = table.Column<int>(type: "integer", nullable: true),
+                    AttemptCount = table.Column<int>(type: "integer", nullable: false),
+                    CompletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    LastValidationReason = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_media_assets", x => x.Id);
+                    table.CheckConstraint("CK_media_assets_attempt_count", "\"AttemptCount\" >= 0");
+                    table.CheckConstraint("CK_media_assets_segment_must_be_null_for_illustration", "\"Type\" <> 'Illustration' OR \"StorySegmentId\" IS NULL");
+                    table.CheckConstraint("CK_media_assets_segment_required_for_audio", "\"Type\" <> 'TtsAudio' OR \"StorySegmentId\" IS NOT NULL");
+                    table.ForeignKey(
+                        name: "FK_media_assets_story_scenes_StorySceneId",
+                        column: x => x.StorySceneId,
+                        principalTable: "story_scenes",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_media_assets_story_segments_StorySegmentId",
+                        column: x => x.StorySegmentId,
+                        principalTable: "story_segments",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_media_assets_story_versions_StoryVersionId",
+                        column: x => x.StoryVersionId,
+                        principalTable: "story_versions",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
                 });
@@ -2188,6 +2314,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                 column: "ChildProfileId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_intervention_cases_NotesAddedByUserId",
+                table: "intervention_cases",
+                column: "NotesAddedByUserId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_intervention_cases_RecommendationId",
                 table: "intervention_cases",
                 column: "RecommendationId");
@@ -2196,6 +2327,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "IX_intervention_cases_ResolvedByUserId",
                 table: "intervention_cases",
                 column: "ResolvedByUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_intervention_cases_TriggeringStoryId",
+                table: "intervention_cases",
+                column: "TriggeringStoryId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_learning_insights_ChildProfileId",
@@ -2214,9 +2350,29 @@ namespace StoryPlatform.Infrastructure.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_media_assets_StorySceneId_Type",
+                table: "media_assets",
+                columns: new[] { "StorySceneId", "Type" },
+                unique: true,
+                filter: "\"StorySceneId\" IS NOT NULL AND \"StorySegmentId\" IS NULL AND \"IsDeleted\" = false");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_media_assets_StorySegmentId_Type",
+                table: "media_assets",
+                columns: new[] { "StorySegmentId", "Type" },
+                unique: true,
+                filter: "\"StorySegmentId\" IS NOT NULL AND \"IsDeleted\" = false");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_media_assets_StoryVersionId",
                 table: "media_assets",
                 column: "StoryVersionId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_media_contexts_StoryVersionId_Revision",
+                table: "media_contexts",
+                columns: new[] { "StoryVersionId", "Revision" },
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_notifications_RecipientUserId",
@@ -2575,6 +2731,18 @@ namespace StoryPlatform.Infrastructure.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_story_scenes_StoryVersionId_SceneIndex",
+                table: "story_scenes",
+                columns: new[] { "StoryVersionId", "SceneIndex" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_story_segments_StorySceneId_SegmentOrder",
+                table: "story_segments",
+                columns: new[] { "StorySceneId", "SegmentOrder" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_story_versions_EditorUserId",
                 table: "story_versions",
                 column: "EditorUserId");
@@ -2819,6 +2987,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "media_assets");
 
             migrationBuilder.DropTable(
+                name: "media_contexts");
+
+            migrationBuilder.DropTable(
                 name: "notifications");
 
             migrationBuilder.DropTable(
@@ -2876,6 +3047,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "learning_profiles");
 
             migrationBuilder.DropTable(
+                name: "story_segments");
+
+            migrationBuilder.DropTable(
                 name: "org_safety_policy_templates");
 
             migrationBuilder.DropTable(
@@ -2907,6 +3081,9 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "story_vocabulary");
+
+            migrationBuilder.DropTable(
+                name: "story_scenes");
 
             migrationBuilder.DropTable(
                 name: "learning_insights");

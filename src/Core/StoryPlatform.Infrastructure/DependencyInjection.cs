@@ -54,7 +54,7 @@ public static class DependencyInjection
         services.AddHttpClient<IEmailSender, ResendEmailSender>();
 
         services.Configure<AIServiceOptions>(configuration.GetSection(AIServiceOptions.SectionName));
-        services.AddHttpClient<IAIStoryGenerationClient, GeminiDirectClient>();
+        services.AddHttpClient<IAIStoryGenerationClient, AIStoryGenerationClient>();
         services.Configure<OutlineWorkerOptions>(configuration.GetSection(OutlineWorkerOptions.SectionName));
         services.AddSingleton<IOutlineJobFailureFinalizer, OutlineJobFailureFinalizer>();
         services.AddHostedService<OutlineGenerationWorker>();
@@ -136,10 +136,12 @@ public static class DependencyInjection
 
         // Application-layer interfaces → Infrastructure implementations
         services.AddSingleton<IImageGenerationProvider>(sp => sp.GetRequiredService<GeminiImageGenerationProvider>());
+        services.AddSingleton<GoogleCloudTtsProvider>();
         services.AddSingleton<ITtsProvider>(sp => sp.GetRequiredService<GoogleCloudTtsProvider>());
         services.AddSingleton<IMediaAlignmentEvaluator>(sp => sp.GetRequiredService<GeminiMediaAlignmentEvaluator>());
         services.AddSingleton<IMediaSafetyEvaluator>(sp => sp.GetRequiredService<GeminiMediaSafetyEvaluator>());
         services.AddSingleton<ISemanticSceneSegmentationProvider>(sp => sp.GetRequiredService<GeminiSemanticSceneSegmentationProvider>());
+        services.AddSingleton<ParagraphSceneSegmentationProvider>();
         services.AddSingleton<IParagraphSceneSegmentationProvider>(sp => sp.GetRequiredService<ParagraphSceneSegmentationProvider>());
         services.AddSingleton<IMediaContextExtractor>(sp => sp.GetRequiredService<GeminiMediaContextExtractor>());
         services.AddSingleton<IAudioQualityGate, BinaryAudioQualityGate>();

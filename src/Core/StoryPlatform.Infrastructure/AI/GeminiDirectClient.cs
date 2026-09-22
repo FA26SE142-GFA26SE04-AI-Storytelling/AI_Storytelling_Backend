@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -21,8 +22,8 @@ public sealed class GeminiDirectClient : IAIStoryGenerationClient
     // Gemini API base URL
     private const string GeminiBaseUrl = "https://generativelanguage.googleapis.com/v1beta/models/";
 
-    // Model mặc định - gemini-2.5-flash free tier
-    private const string DefaultModel = "gemini-2.5-flash";
+    // Model mặc định - gemini-3.5-flash-lite
+    private const string DefaultModel = "gemini-3.5-flash-lite";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -128,50 +129,75 @@ public sealed class GeminiDirectClient : IAIStoryGenerationClient
 
     private async Task<string> GenerateContentAsync(string prompt, CancellationToken cancellationToken)
     {
-        var endpoint = $"{GeminiBaseUrl}{_model}:generateContent?key={_apiKey}";
+        var modelsToTry = new List<string> { _model };
+        if (!modelsToTry.Contains("gemini-3.5-flash-lite", StringComparer.OrdinalIgnoreCase))
+            modelsToTry.Add("gemini-3.5-flash-lite");
+        if (!modelsToTry.Contains("gemini-3.1-flash-lite", StringComparer.OrdinalIgnoreCase))
+            modelsToTry.Add("gemini-3.1-flash-lite");
 
-        var requestBody = new GeminiRequest
+        AIServiceRequestException? lastException = null;
+
+        foreach (var model in modelsToTry)
         {
-            Contents = new[]
+            var endpoint = $"{GeminiBaseUrl}{model}:generateContent?key={_apiKey}";
+
+            var requestBody = new GeminiRequest
             {
-                new GeminiContent
+                Contents = new[]
                 {
-                    Parts = new[] { new GeminiPart { Text = prompt } }
+                    new GeminiContent
+                    {
+                        Parts = new[] { new GeminiPart { Text = prompt } }
+                    }
+                },
+                GenerationConfig = new GeminiGenerationConfig
+                {
+                    Temperature = 0.7,
+                    MaxOutputTokens = 8192,
+                    TopP = 0.95,
+                    TopK = 40
                 }
-            },
-            GenerationConfig = new GeminiGenerationConfig
+            };
+
+            var json = JsonSerializer.Serialize(requestBody, JsonOptions);
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var response = await _httpClient.PostAsync(endpoint, content, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
             {
-                Temperature = 0.7,
-                MaxOutputTokens = 8192,
-                TopP = 0.95,
-                TopK = 40
+                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                lastException = new AIServiceRequestException(
+                    (int)response.StatusCode,
+                    "GEMINI_API_ERROR",
+                    $"Gemini API error ({model}): {response.StatusCode} - {errorBody}");
+
+                // If model is busy (503 ServiceUnavailable) or rate-limited (429) or not found (404), try fallback model
+                if (response.StatusCode is HttpStatusCode.ServiceUnavailable or HttpStatusCode.TooManyRequests or HttpStatusCode.NotFound)
+                {
+                    continue;
+                }
+
+                throw lastException;
             }
-        };
 
-        var json = JsonSerializer.Serialize(requestBody, JsonOptions);
+            var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
+            var geminiResponse = JsonSerializer.Deserialize<GeminiResponse>(responseJson, JsonOptions)
+                ?? throw new InvalidOperationException("Failed to parse Gemini response");
 
-        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            // Extract text from response
+            var text = geminiResponse.Candidates?.FirstOrDefault()?.Content?.Parts?.FirstOrDefault()?.Text
+                ?? string.Empty;
 
-        var response = await _httpClient.PostAsync(endpoint, content, cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new AIServiceRequestException(
-                (int)response.StatusCode,
-                "GEMINI_API_ERROR",
-                $"Gemini API error: {response.StatusCode} - {errorBody}");
+            return text;
         }
 
-        var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
-        var geminiResponse = JsonSerializer.Deserialize<GeminiResponse>(responseJson, JsonOptions)
-            ?? throw new InvalidOperationException("Failed to parse Gemini response");
+        if (lastException is not null)
+        {
+            throw lastException;
+        }
 
-        // Extract text from response
-        var text = geminiResponse.Candidates?.FirstOrDefault()?.Content?.Parts?.FirstOrDefault()?.Text
-            ?? string.Empty;
-
-        return text;
+        throw new InvalidOperationException("Failed to generate content with available Gemini models.");
     }
 
     #endregion

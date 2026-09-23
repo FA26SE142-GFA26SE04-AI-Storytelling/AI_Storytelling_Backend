@@ -13,6 +13,10 @@ public interface IClassGroupService
         int classGroupId, int childProfileId, int currentUserId,
         CancellationToken cancellationToken = default);
 
+    Task<BulkEnrollResultDto> BulkEnrollAsync(
+        int classGroupId, int currentUserId, byte[] csvFileBytes,
+        CancellationToken cancellationToken = default);
+
     Task<ClassGroupDto> GetClassGroupByIdAsync(
         int classGroupId, int currentUserId, CancellationToken cancellationToken = default);
 

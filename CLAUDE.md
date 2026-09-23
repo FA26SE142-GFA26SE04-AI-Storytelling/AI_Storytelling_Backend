@@ -2,7 +2,7 @@
 
 ## 1. Project goal
 
-This repository is the backend for the AI Storytelling project — an AI-assisted story generation and reading platform for children (ages ~6–12), supervised by parents/teachers and monitored by an administrator. Core domains include: profile & supervision management, an AI story-generation pipeline (outline → content → human approval → media), the child reading experience (TTS/ASR, quizzes, EXP/vocabulary tracking), distribution/O2O intervention, adaptive learning recommendations, and admin/AI governance.
+This repository is the backend for the AI Storytelling project — an AI-assisted story generation and reading platform for children (ages ~6–12), supervised by parents/teachers and monitored by an administrator. Core domains include: profile & supervision management (including independent child sign-in via PIN/EasyLogin QR code, and a Parental Gate challenge that blocks a Child Session from reaching the Guardian Management Area), an AI story-generation pipeline (outline → content → human approval → media), the child reading experience (TTS/ASR, quizzes, EXP/vocabulary tracking), distribution/O2O intervention, adaptive learning recommendations, and admin/AI governance.
 
 Every child-facing story or content change must remain human-approved before it reaches a child, and safety/guardrail logic must never be bypassed — treat this as a hard constraint on top of ordinary scope discipline.
 

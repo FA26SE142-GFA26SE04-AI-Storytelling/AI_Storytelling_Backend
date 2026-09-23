@@ -12,6 +12,10 @@ public class ChildAccessCredential : BaseEntity
     public int FailedAttempts { get; set; } = 0;
     public DateTime? LockedUntil { get; set; }
 
+    public string? EasyLoginCode { get; set; }
+    public DateTime? EasyLoginExpiresAt { get; set; }
+    public DateTime? EasyLoginUsedAt { get; set; }
+
     public int CreatedByUserId { get; set; }
     public virtual UserAccount? CreatedByUser { get; set; }
 }

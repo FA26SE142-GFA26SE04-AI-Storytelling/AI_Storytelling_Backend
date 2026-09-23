@@ -371,6 +371,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
             }
             catch (Exception exception) when (!cancellationToken.IsCancellationRequested && !IsStale(exception))
             {
+                if (exception is TransientMediaGenerationException) throw;
                 asset.Status = MediaStatus.Failed;
                 _unitOfWork.Repository<MediaAsset>().Update(asset);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -484,6 +485,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
             }
             catch (Exception exception) when (!cancellationToken.IsCancellationRequested && !IsStale(exception))
             {
+                if (exception is TransientMediaGenerationException) throw;
                 if (exception is InvalidOperationException ioe && ioe.Message.StartsWith("AUDIO_QUALITY_GATE_DETERMINISTIC_FAILURE"))
                 {
                     throw;
@@ -699,6 +701,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
 
     private static string PublicErrorCode(Exception exception)
     {
+        if (exception is TransientMediaGenerationException transient) return transient.ErrorCode;
         var permanent = FindPermanentException(exception);
         if (permanent is not null) return permanent.ErrorCode;
         var unwrapped = UnwrapException(exception);

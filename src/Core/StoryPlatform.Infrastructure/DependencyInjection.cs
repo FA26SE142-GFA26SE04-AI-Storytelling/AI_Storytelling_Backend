@@ -16,6 +16,7 @@ using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Infrastructure.AI;
 using StoryPlatform.Infrastructure.BackgroundServices;
+using StoryPlatform.Infrastructure.Caching;
 using StoryPlatform.Infrastructure.Communication;
 using StoryPlatform.Infrastructure.Export;
 using StoryPlatform.Infrastructure.Payments;
@@ -32,6 +33,8 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         var connectionString = ConnectionStringHelper.GetConnectionString(configuration);
+
+        services.AddRedisCache(configuration);
 
         services.AddDbContext<ApplicationDbContext>(options =>
         {
@@ -152,11 +155,13 @@ public static class DependencyInjection
 
         // Application-layer interfaces → Infrastructure implementations
         services.AddSingleton<IImageGenerationProvider>(sp => sp.GetRequiredService<GeminiImageGenerationProvider>());
-        services.AddSingleton<ITtsProvider>(sp => sp.GetRequiredService<GeminiTtsProvider>());
+        services.AddSingleton<GoogleCloudTtsProvider>();
+        services.AddSingleton<ITtsProvider>(sp => sp.GetRequiredService<GoogleCloudTtsProvider>());
         services.AddSingleton<IMediaAlignmentEvaluator>(sp => sp.GetRequiredService<GeminiMediaAlignmentEvaluator>());
         services.AddSingleton<IMediaSafetyEvaluator>(sp => sp.GetRequiredService<GeminiMediaSafetyEvaluator>());
         services.AddSingleton<ISemanticSceneSegmentationProvider>(sp => sp.GetRequiredService<GeminiSemanticSceneSegmentationProvider>());
-        services.AddSingleton<IParagraphSceneSegmentationProvider, ParagraphSceneSegmentationProvider>();
+        services.AddSingleton<ParagraphSceneSegmentationProvider>();
+        services.AddSingleton<IParagraphSceneSegmentationProvider>(sp => sp.GetRequiredService<ParagraphSceneSegmentationProvider>());
         services.AddSingleton<IMediaContextExtractor>(sp => sp.GetRequiredService<GeminiMediaContextExtractor>());
         services.AddSingleton<IAudioQualityGate, BinaryAudioQualityGate>();
         services.AddSingleton<IMediaGenerationJobFailureFinalizer, MediaGenerationJobFailureFinalizer>();

@@ -1,5 +1,7 @@
 using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Application.Common.Exceptions;
+using StoryPlatform.Application.Features.ChildProfiles.ClassGroups.BulkEnrollment;
 using StoryPlatform.Application.Features.ChildProfiles.ClassGroups.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.ClassGroups.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.DTOs;
@@ -11,10 +13,12 @@ namespace StoryPlatform.Application.Features.ChildProfiles.ClassGroups.Services;
 public class ClassGroupService : IClassGroupService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IJwtTokenGenerator _tokenGenerator;
 
-    public ClassGroupService(IUnitOfWork unitOfWork)
+    public ClassGroupService(IUnitOfWork unitOfWork, IJwtTokenGenerator tokenGenerator)
     {
         _unitOfWork = unitOfWork;
+        _tokenGenerator = tokenGenerator;
     }
 
     public async Task<ClassGroupDto> CreateClassGroupAsync(
@@ -116,6 +120,121 @@ public class ClassGroupService : IClassGroupService
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<BulkEnrollResultDto> BulkEnrollAsync(
+        int classGroupId, int currentUserId, byte[] csvFileBytes,
+        CancellationToken cancellationToken = default)
+    {
+        var classGroup = await _unitOfWork.Repository<ClassGroup>()
+            .GetByIdAsync(classGroupId, cancellationToken);
+        if (classGroup == null)
+        {
+            throw new NotFoundException("Class Group", classGroupId);
+        }
+
+        if (classGroup.TeacherUserId != currentUserId)
+        {
+            throw new ForbiddenException(
+                "Chỉ giáo viên phụ trách lớp mới có quyền import hàng loạt.");
+        }
+
+        if (classGroup.Status != ClassGroupStatus.Active)
+        {
+            throw new BadRequestException("Không thể import hàng loạt vào Class Group đã lưu trữ.");
+        }
+
+        var csvRows = CsvBulkEnrollmentParser.Parse(csvFileBytes);
+        var childProfileRepo = _unitOfWork.Repository<ChildProfile>();
+        var supervisionRelationshipRepo = _unitOfWork.Repository<SupervisionRelationship>();
+        var memberRepo = _unitOfWork.Repository<ClassGroupMember>();
+        var invitationRepo = _unitOfWork.Repository<SupervisionInvitation>();
+        var result = new BulkEnrollResultDto { TotalRows = csvRows.Count };
+        var successfulRows = new List<(BulkEnrollRowResultDto Result, ChildProfile Profile)>();
+
+        foreach (var row in csvRows)
+        {
+            if (string.IsNullOrWhiteSpace(row.Nickname) || row.Nickname.Length > 100)
+            {
+                result.Rows.Add(new BulkEnrollRowResultDto
+                {
+                    RowNumber = row.RowNumber,
+                    Success = false,
+                    ErrorMessage = "Nickname phải từ 1 đến 100 ký tự."
+                });
+                continue;
+            }
+
+            if (!Enum.TryParse<AgeBand>(row.AgeBandRaw, ignoreCase: true, out var ageBand))
+            {
+                result.Rows.Add(new BulkEnrollRowResultDto
+                {
+                    RowNumber = row.RowNumber,
+                    Success = false,
+                    ErrorMessage = $"AgeBand '{row.AgeBandRaw}' không hợp lệ. Giá trị cho phép: Age_6_8, Age_9_12."
+                });
+                continue;
+            }
+
+            var childProfile = new ChildProfile
+            {
+                OwnerUserId = currentUserId,
+                Nickname = row.Nickname,
+                AgeBand = ageBand,
+                Language = string.IsNullOrWhiteSpace(row.Language) ? "vi" : row.Language,
+                Status = ChildProfileStatus.Draft,
+                Scope = classGroup.OrganizationId.HasValue ? ProfileScope.Organization : ProfileScope.Personal,
+                OrganizationId = classGroup.OrganizationId
+            };
+            await childProfileRepo.AddAsync(childProfile, cancellationToken);
+
+            await supervisionRelationshipRepo.AddAsync(new SupervisionRelationship
+            {
+                ChildProfile = childProfile,
+                SupervisorUserId = currentUserId,
+                SupervisorRole = SupervisorRole.Owner,
+                RevokedAt = null
+            }, cancellationToken);
+
+            await memberRepo.AddAsync(new ClassGroupMember
+            {
+                ClassGroup = classGroup,
+                ChildProfile = childProfile,
+                JoinedAt = DateTime.UtcNow
+            }, cancellationToken);
+
+            var invitation = new SupervisionInvitation
+            {
+                ChildProfile = childProfile,
+                InviterUserId = currentUserId,
+                InvitationCode = _tokenGenerator.GenerateRefreshToken(),
+                InviteeEmail = string.IsNullOrWhiteSpace(row.InviteeEmail) ? null : row.InviteeEmail,
+                Status = InvitationStatus.Pending,
+                ExpiresAt = DateTime.UtcNow.AddDays(30)
+            };
+            await invitationRepo.AddAsync(invitation, cancellationToken);
+
+            var rowResult = new BulkEnrollRowResultDto
+            {
+                RowNumber = row.RowNumber,
+                Success = true,
+                InvitationCode = invitation.InvitationCode
+            };
+            result.Rows.Add(rowResult);
+            successfulRows.Add((rowResult, childProfile));
+        }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // Database-generated IDs are populated only after SaveChanges completes.
+        foreach (var successfulRow in successfulRows)
+        {
+            successfulRow.Result.ChildProfileId = successfulRow.Profile.Id;
+        }
+
+        result.SuccessCount = result.Rows.Count(row => row.Success);
+        result.FailureCount = result.Rows.Count(row => !row.Success);
+        return result;
     }
 
     public async Task<ClassGroupDto> GetClassGroupByIdAsync(

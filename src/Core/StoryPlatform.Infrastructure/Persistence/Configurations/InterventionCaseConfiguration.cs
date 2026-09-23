@@ -25,6 +25,10 @@ public class InterventionCaseConfiguration : IEntityTypeConfiguration<Interventi
         builder.Property(x => x.SkillGapNotes)
             .HasColumnType("text");
 
+        builder.Property(x => x.ResolutionType)
+            .HasConversion<string>()
+            .HasMaxLength(30);
+
         builder.HasOne(x => x.ChildProfile)
             .WithMany()
             .HasForeignKey(x => x.ChildProfileId)
@@ -35,9 +39,19 @@ public class InterventionCaseConfiguration : IEntityTypeConfiguration<Interventi
             .HasForeignKey(x => x.RecommendationId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(x => x.TriggeringStory)
+            .WithMany()
+            .HasForeignKey(x => x.TriggeringStoryId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.HasOne(x => x.ResolvedByUser)
             .WithMany()
             .HasForeignKey(x => x.ResolvedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(x => x.NotesAddedByUser)
+            .WithMany()
+            .HasForeignKey(x => x.NotesAddedByUserId)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasQueryFilter(x => !x.IsDeleted);

@@ -703,8 +703,10 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
     {
         var active = jobs.Where(item => item.Status is GenerationJobStatus.Pending or GenerationJobStatus.Processing)
             .OrderByDescending(item => item.CreatedAt).FirstOrDefault();
-        var failed = jobs.Where(item => item.Status == GenerationJobStatus.Failed)
-            .OrderByDescending(item => item.CompletedAt).FirstOrDefault();
+        var latestFinished = jobs.Where(item => item.Status is GenerationJobStatus.Completed or GenerationJobStatus.Failed)
+            .OrderByDescending(item => item.CompletedAt ?? item.CreatedAt).FirstOrDefault();
+        var lastErrorCode = latestFinished?.Status == GenerationJobStatus.Failed ? latestFinished.ErrorCode : null;
+
         return new OutlineProgressDto
         {
             StoryId = story.Id,
@@ -712,7 +714,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
             CurrentVersion = current is null ? null : ToDto(current),
             ActiveOperation = active is null ? null : ToSnake(active.Operation.ToString()),
             ActiveJobStatus = active is null ? null : ToSnake(active.Status.ToString()),
-            LastErrorCode = failed?.ErrorCode
+            LastErrorCode = lastErrorCode
         };
     }
 

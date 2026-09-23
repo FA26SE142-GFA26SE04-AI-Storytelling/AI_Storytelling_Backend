@@ -24,20 +24,20 @@ public class StoryPlatformCoreStackTests
     }
 
     [Fact]
-    public void Stack_CreatesVpcWithSingleNatGatewayForEgress()
+    public void Stack_CreatesVpcWithNoNatGateway()
     {
         var template = SynthTemplate();
         template.ResourceCountIs("AWS::EC2::VPC", 1);
-        template.ResourceCountIs("AWS::EC2::NatGateway", 1);
+        template.ResourceCountIs("AWS::EC2::NatGateway", 0);
         template.ResourceCountIs("AWS::EC2::InternetGateway", 1);
     }
 
     [Fact]
-    public void Stack_VpcHasPublicPrivateAndIsolatedSubnets()
+    public void Stack_VpcHasOnlyPublicAndIsolatedSubnets()
     {
         var template = SynthTemplate();
-        // 2 AZs x 3 subnet groups (Public, Private-with-egress, Isolated) = 6 subnets
-        template.ResourceCountIs("AWS::EC2::Subnet", 6);
+        // 2 AZs x 2 subnet groups (Public, Isolated) = 4 subnets — PRIVATE_WITH_EGRESS removed.
+        template.ResourceCountIs("AWS::EC2::Subnet", 4);
     }
 
     [Fact]
@@ -65,153 +65,18 @@ public class StoryPlatformCoreStackTests
     }
 
     [Fact]
-    public void Stack_CreatesFourApplicationSecrets()
+    public void Stack_CreatesOneConsolidatedAppSecret()
     {
         var template = SynthTemplate();
-        // 5 total: 1 auto-created by Database's Credentials.FromGeneratedSecret (Task 3)
-        // + 4 app secrets created in this task (db-connection-string, jwt, resend, sepay).
-        template.ResourceCountIs("AWS::SecretsManager::Secret", 5);
+        // 2 total: 1 auto-created by Database's Credentials.FromGeneratedSecret (unchanged)
+        // + 1 consolidated app secret (was 4 separate ones) created in this task.
+        template.ResourceCountIs("AWS::SecretsManager::Secret", 2);
         template.HasResourceProperties("AWS::SecretsManager::Secret", new System.Collections.Generic.Dictionary<string, object>
         {
-            ["Name"] = "storyplatform/core/jwt-secret-key"
-        });
-        template.HasResourceProperties("AWS::SecretsManager::Secret", new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["Name"] = "storyplatform/core/db-connection-string"
-        });
-        template.HasResourceProperties("AWS::SecretsManager::Secret", new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["Name"] = "storyplatform/core/resend-api-key"
-        });
-        template.HasResourceProperties("AWS::SecretsManager::Secret", new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["Name"] = "storyplatform/core/sepay-api-key"
-        });
-    }
-
-    [Fact]
-    public void Stack_CreatesAppRunnerInstanceRoleScopedToSecrets()
-    {
-        var template = SynthTemplate();
-        template.HasResourceProperties("AWS::IAM::Role", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["AssumeRolePolicyDocument"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            ["Name"] = "storyplatform/core/app-secrets",
+            ["GenerateSecretString"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
             {
-                ["Statement"] = Match.ArrayWith(new object[]
-                {
-                    Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                    {
-                        ["Principal"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                        {
-                            ["Service"] = "tasks.apprunner.amazonaws.com"
-                        })
-                    })
-                })
-            })
-        }));
-
-        template.HasResourceProperties("AWS::IAM::Policy", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["PolicyDocument"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-            {
-                ["Statement"] = Match.ArrayWith(new object[]
-                {
-                    Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                    {
-                        ["Action"] = Match.ArrayWith(new object[] { "secretsmanager:GetSecretValue" })
-                    })
-                })
-            })
-        }));
-    }
-
-    [Fact]
-    public void Stack_CreatesVpcConnectorAllowedIntoRds()
-    {
-        var template = SynthTemplate();
-        template.ResourceCountIs("AWS::AppRunner::VpcConnector", 1);
-        template.HasResourceProperties("AWS::EC2::SecurityGroupIngress", new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["FromPort"] = 5432,
-            ["ToPort"] = 5432
-        });
-    }
-
-    [Fact]
-    public void Stack_OmitsAppRunnerServiceByDefault()
-    {
-        var template = SynthTemplate();
-        template.ResourceCountIs("AWS::AppRunner::Service", 0);
-    }
-
-    [Fact]
-    public void Stack_CreatesAppRunnerServiceWithAutoDeployDisabled_WhenContextFlagEnabled()
-    {
-        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["includeAppRunnerService"] = true
-        });
-        template.ResourceCountIs("AWS::AppRunner::Service", 1);
-        template.HasResourceProperties("AWS::AppRunner::Service", new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["SourceConfiguration"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-            {
-                ["AutoDeploymentsEnabled"] = false
-            })
-        });
-    }
-
-    [Fact]
-    public void Stack_AppRunnerServiceIncludesPlainJwtSettingsEnvVars()
-    {
-        // appsettings.json is gitignored and not part of the image built from a clean checkout,
-        // so JwtSettings (required by ServiceExtensions.AddJwtAuthentication at startup, or the
-        // app throws InvalidOperationException and crash-loops) must come entirely from App
-        // Runner's plain runtime env vars. These are non-secret config (issuer/audience/expiry
-        // durations), not credentials, so they belong in RuntimeEnvironmentVariables rather than
-        // RuntimeEnvironmentSecrets.
-        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["includeAppRunnerService"] = true
-        });
-        template.HasResourceProperties("AWS::AppRunner::Service", new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["SourceConfiguration"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-            {
-                ["ImageRepository"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                {
-                    ["ImageConfiguration"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                    {
-                        ["RuntimeEnvironmentVariables"] = Match.ArrayWith(new object[]
-                        {
-                            Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                            {
-                                ["Name"] = "JwtSettings__Issuer",
-                                ["Value"] = "StoryPlatform"
-                            }),
-                            Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                            {
-                                ["Name"] = "JwtSettings__Audience",
-                                ["Value"] = "StoryPlatformClient"
-                            }),
-                            Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                            {
-                                ["Name"] = "JwtSettings__ExpiryMinutes",
-                                ["Value"] = "120"
-                            }),
-                            Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                            {
-                                ["Name"] = "JwtSettings__RefreshTokenExpiryDays",
-                                ["Value"] = "7"
-                            }),
-                            Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                            {
-                                ["Name"] = "JwtSettings__ChildTokenExpiryMinutes",
-                                ["Value"] = "240"
-                            })
-                        })
-                    })
-                })
+                ["GenerateStringKey"] = "JwtSecretKey"
             })
         });
     }
@@ -252,33 +117,126 @@ public class StoryPlatformCoreStackTests
     }
 
     [Fact]
-    public void Stack_AppRunnerServiceHasHealthCheckConfiguration()
+    public void Stack_CreatesEcsClusterInVpc()
     {
-        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["includeAppRunnerService"] = true
-        });
-        template.HasResourceProperties("AWS::AppRunner::Service", new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["HealthCheckConfiguration"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-            {
-                // Regression guard: live deploys on 2026-09-21 found HTTP checks against /health
-                // deterministically 404 from App Runner's own health checker despite the exact
-                // deployed image returning 200 when run locally with identical env vars — isolated
-                // to App Runner's HTTP health-check path itself. Switched to TCP (port-only) checks.
-                ["Protocol"] = "TCP",
-                ["UnhealthyThreshold"] = 15
-            })
-        });
+        var template = SynthTemplate();
+        template.ResourceCountIs("AWS::ECS::Cluster", 1);
     }
 
     [Fact]
-    public void Stack_GrantsCiRoleAppRunnerDeployPermissions_WhenContextFlagEnabled()
+    public void Stack_CreatesApiTaskDefinitionWithArm64AndCorrectSizing()
     {
-        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        var template = SynthTemplate();
+        template.ResourceCountIs("AWS::ECS::TaskDefinition", 1);
+        template.HasResourceProperties("AWS::ECS::TaskDefinition", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
         {
-            ["includeAppRunnerService"] = true
-        });
+            ["Cpu"] = "256",
+            ["Memory"] = "1024",
+            ["RuntimePlatform"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["CpuArchitecture"] = "ARM64",
+                ["OperatingSystemFamily"] = "LINUX"
+            })
+        }));
+    }
+
+    [Fact]
+    public void Stack_ApiContainerListensOn8080WithHealthCheck()
+    {
+        var template = SynthTemplate();
+        template.HasResourceProperties("AWS::ECS::TaskDefinition", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["ContainerDefinitions"] = Match.ArrayWith(new object[]
+            {
+                Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                {
+                    ["PortMappings"] = Match.ArrayWith(new object[]
+                    {
+                        Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                        {
+                            ["ContainerPort"] = 8080
+                        })
+                    }),
+                    ["HealthCheck"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                    {
+                        ["Command"] = Match.ArrayWith(new object[] { "CMD-SHELL", "curl -f http://localhost:8080/health || exit 1" })
+                    })
+                })
+            })
+        }));
+    }
+
+    [Fact]
+    public void Stack_ApiContainerIncludesPlainSettingsEnvVars()
+    {
+        var template = SynthTemplate();
+        template.HasResourceProperties("AWS::ECS::TaskDefinition", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["ContainerDefinitions"] = Match.ArrayWith(new object[]
+            {
+                Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                {
+                    ["Environment"] = Match.ArrayWith(new object[]
+                    {
+                        Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                        {
+                            ["Name"] = "JwtSettings__Issuer",
+                            ["Value"] = "StoryPlatform"
+                        }),
+                        Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                        {
+                            ["Name"] = "Logging__LogLevel__Default",
+                            ["Value"] = "Warning"
+                        })
+                    })
+                })
+            })
+        }));
+    }
+
+    [Fact]
+    public void Stack_ApiContainerReadsAllFiveSecretsFromConsolidatedSecret()
+    {
+        var template = SynthTemplate();
+        template.HasResourceProperties("AWS::ECS::TaskDefinition", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["ContainerDefinitions"] = Match.ArrayWith(new object[]
+            {
+                Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                {
+                    ["Secrets"] = Match.ArrayWith(new object[]
+                    {
+                        Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                        {
+                            ["Name"] = "RedisSettings__ConnectionString"
+                        })
+                    })
+                })
+            })
+        }));
+    }
+
+    [Fact]
+    public void Stack_GrantsTaskExecutionRoleAssumedByEcsTasksAndSecretsAccess()
+    {
+        var template = SynthTemplate();
+        template.HasResourceProperties("AWS::IAM::Role", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["AssumeRolePolicyDocument"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["Statement"] = Match.ArrayWith(new object[]
+                {
+                    Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                    {
+                        ["Principal"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                        {
+                            ["Service"] = "ecs-tasks.amazonaws.com"
+                        })
+                    })
+                })
+            })
+        }));
+
         template.HasResourceProperties("AWS::IAM::Policy", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
         {
             ["PolicyDocument"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
@@ -287,18 +245,109 @@ public class StoryPlatformCoreStackTests
                 {
                     Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
                     {
-                        ["Action"] = Match.ArrayWith(new object[] { "apprunner:StartDeployment", "apprunner:DescribeService", "apprunner:ListOperations" }),
-                        ["Resource"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                        {
-                            ["Fn::GetAtt"] = Match.ArrayWith(new object[]
-                            {
-                                Match.StringLikeRegexp("^CoreApiService"),
-                                "ServiceArn"
-                            })
-                        })
+                        ["Action"] = Match.ArrayWith(new object[] { "secretsmanager:GetSecretValue" })
                     })
                 })
             })
         }));
+    }
+
+    [Fact]
+    public void Stack_CreatesApiLogGroupWithOneWeekRetention()
+    {
+        var template = SynthTemplate();
+        template.HasResourceProperties("AWS::Logs::LogGroup", new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["LogGroupName"] = "/ecs/storyplatform-core-api",
+            ["RetentionInDays"] = 7
+        });
+    }
+
+    [Fact]
+    public void Stack_RdsSecurityGroupAllowsApiTaskOn5432()
+    {
+        // The API task's own security group getting 8080 traffic from the ALB (not directly
+        // from the internet) is covered by Stack_CreatesInternetFacingAlbForwardingToTaskPort8080_WhenContextFlagEnabled.
+        var template = SynthTemplate();
+        template.HasResourceProperties("AWS::EC2::SecurityGroupIngress", new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["FromPort"] = 5432,
+            ["ToPort"] = 5432
+        });
+    }
+
+    [Fact]
+    public void Stack_OmitsEcsServiceByDefault()
+    {
+        var template = SynthTemplate();
+        template.ResourceCountIs("AWS::ECS::Service", 0);
+    }
+
+    [Fact]
+    public void Stack_CreatesEcsServiceWithPublicIp_WhenContextFlagEnabled()
+    {
+        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["includeEcsService"] = true
+        });
+        template.ResourceCountIs("AWS::ECS::Service", 1);
+        template.HasResourceProperties("AWS::ECS::Service", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["DesiredCount"] = 1,
+            ["NetworkConfiguration"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["AwsvpcConfiguration"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                {
+                    ["AssignPublicIp"] = "ENABLED"
+                })
+            })
+        }));
+    }
+
+    [Fact]
+    public void Stack_OmitsAlbByDefault()
+    {
+        var template = SynthTemplate();
+        template.ResourceCountIs("AWS::ElasticLoadBalancingV2::LoadBalancer", 0);
+    }
+
+    [Fact]
+    public void Stack_CreatesInternetFacingAlbForwardingToTaskPort8080_WhenContextFlagEnabled()
+    {
+        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["includeEcsService"] = true
+        });
+
+        template.ResourceCountIs("AWS::ElasticLoadBalancingV2::LoadBalancer", 1);
+        template.HasResourceProperties("AWS::ElasticLoadBalancingV2::LoadBalancer", new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["Scheme"] = "internet-facing",
+            ["Type"] = "application"
+        });
+
+        template.ResourceCountIs("AWS::ElasticLoadBalancingV2::Listener", 1);
+        template.HasResourceProperties("AWS::ElasticLoadBalancingV2::Listener", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["Port"] = 80,
+            ["Protocol"] = "HTTP"
+        }));
+
+        template.ResourceCountIs("AWS::ElasticLoadBalancingV2::TargetGroup", 1);
+        template.HasResourceProperties("AWS::ElasticLoadBalancingV2::TargetGroup", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["Port"] = 8080,
+            ["Protocol"] = "HTTP",
+            ["TargetType"] = "ip",
+            ["HealthCheckPath"] = "/health"
+        }));
+
+        // The task's own security group must not accept traffic straight from the internet
+        // anymore - only from the ALB - now that the ALB is the public entry point.
+        Assert.ThrowsAny<System.Exception>(() => template.HasResourceProperties("AWS::EC2::SecurityGroupIngress", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["CidrIp"] = "0.0.0.0/0",
+            ["FromPort"] = 8080
+        })));
     }
 }

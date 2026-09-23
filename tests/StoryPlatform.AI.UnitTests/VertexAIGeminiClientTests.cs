@@ -88,8 +88,8 @@ public sealed class VertexAIGeminiClientTests
 
         Assert.Equal("Adc", options.AuthMode);
         Assert.Equal("gen-lang-client-0675088605", options.ProjectId);
-        Assert.Equal("us-central1", options.Location);
-        Assert.Equal("gemini-1.5-flash-002", options.Model);
+        Assert.Equal("global", options.Location);
+        Assert.Equal("gemini-3.8-flash", options.Model);
         Assert.Equal(120, options.TimeoutSeconds);
         Assert.Equal("AI:Google", VertexAIOptions.SectionName);
     }

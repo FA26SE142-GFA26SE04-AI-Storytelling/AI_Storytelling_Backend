@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS restore
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS restore
 WORKDIR /workspace
 
 # Copy project files first so NuGet restore can be cached independently from source changes.
@@ -46,6 +46,7 @@ USER $APP_UID
 
 FROM runtime AS core-api
 COPY --from=publish-core /artifacts/core/ ./
+COPY Database/Seed/ ./Seed/
 ENTRYPOINT ["dotnet", "StoryPlatform.Api.dll"]
 
 FROM runtime AS ai-api

@@ -13,6 +13,7 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
 {
     private const int MaxFailedAttempts = 5;
     private const int LockoutMinutes = 15;
+    private const int EasyLoginCodeTtlMinutes = 5;
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly ISupervisionAccessGuard _accessGuard;
@@ -155,6 +156,80 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
             credentialRepo.Delete(credential);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
         }
+    }
+
+    public async Task<EasyLoginCodeDto> GenerateEasyLoginCodeAsync(
+        int childProfileId, int currentUserId, CancellationToken cancellationToken = default)
+    {
+        await _accessGuard.EnsureActiveSupervisionAsync(
+            childProfileId, currentUserId, cancellationToken);
+
+        var credentialRepo = _unitOfWork.Repository<ChildAccessCredential>();
+        var credential = await credentialRepo.FirstOrDefaultAsync(
+            value => value.ChildProfileId == childProfileId,
+            cancellationToken: cancellationToken);
+        if (credential == null)
+        {
+            throw new NotFoundException("Thông tin truy cập của hồ sơ trẻ", childProfileId);
+        }
+
+        credential.EasyLoginCode = _jwtTokenGenerator.GenerateRefreshToken();
+        credential.EasyLoginExpiresAt = DateTime.UtcNow.AddMinutes(EasyLoginCodeTtlMinutes);
+        credential.EasyLoginUsedAt = null;
+        credential.UpdatedAt = DateTime.UtcNow;
+        credentialRepo.Update(credential);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return new EasyLoginCodeDto
+        {
+            Code = credential.EasyLoginCode,
+            ExpiresAt = credential.EasyLoginExpiresAt.Value
+        };
+    }
+
+    public async Task<ChildSessionDto> LoginWithEasyLoginAsync(
+        string easyLoginCode, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(easyLoginCode))
+        {
+            throw new BadRequestException("Mã EasyLogin không hợp lệ hoặc đã được sử dụng.");
+        }
+
+        var credentialRepo = _unitOfWork.Repository<ChildAccessCredential>();
+        var credential = await credentialRepo.FirstOrDefaultAsync(
+            value => value.EasyLoginCode == easyLoginCode.Trim(),
+            cancellationToken: cancellationToken);
+        if (credential == null)
+        {
+            throw new BadRequestException("Mã EasyLogin không hợp lệ hoặc đã được sử dụng.");
+        }
+
+        if (credential.EasyLoginUsedAt.HasValue)
+        {
+            throw new BadRequestException("Mã EasyLogin không hợp lệ hoặc đã được sử dụng.");
+        }
+
+        if (!credential.EasyLoginExpiresAt.HasValue
+            || credential.EasyLoginExpiresAt.Value <= DateTime.UtcNow)
+        {
+            throw new BadRequestException(
+                "Mã EasyLogin đã hết hạn. Vui lòng nhờ Supervisor hiện mã QR mới.");
+        }
+
+        credential.EasyLoginUsedAt = DateTime.UtcNow;
+        credential.EasyLoginCode = null;
+        credential.EasyLoginExpiresAt = null;
+        credential.UpdatedAt = DateTime.UtcNow;
+        credentialRepo.Update(credential);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return new ChildSessionDto
+        {
+            ChildProfileId = credential.ChildProfileId,
+            AvatarId = credential.AvatarId,
+            AccessToken = _jwtTokenGenerator.GenerateChildAccessToken(credential.ChildProfileId),
+            ExpiresInSeconds = _jwtTokenGenerator.ChildTokenExpiresInSeconds
+        };
     }
 
     public async Task<ChildSessionProfileDto> GetMySessionProfileAsync(

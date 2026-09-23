@@ -352,6 +352,16 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("CreatedByUserId")
                         .HasColumnType("integer");
 
+                    b.Property<string>("EasyLoginCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime?>("EasyLoginExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("EasyLoginUsedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("FailedAttempts")
                         .HasColumnType("integer");
 
@@ -375,6 +385,10 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .IsUnique();
 
                     b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("EasyLoginCode")
+                        .IsUnique()
+                        .HasFilter("\"EasyLoginCode\" IS NOT NULL");
 
                     b.ToTable("child_access_credentials", (string)null);
                 });
@@ -779,11 +793,21 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<DateTime?>("NotesAddedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("NotesAddedByUserId")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime>("OpenedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int?>("RecommendationId")
                         .HasColumnType("integer");
+
+                    b.Property<string>("ResolutionType")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
 
                     b.Property<DateTime?>("ResolvedAt")
                         .HasColumnType("timestamp with time zone");
@@ -804,6 +828,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
 
+                    b.Property<int?>("TriggeringStoryId")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -811,9 +838,13 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasIndex("ChildProfileId");
 
+                    b.HasIndex("NotesAddedByUserId");
+
                     b.HasIndex("RecommendationId");
 
                     b.HasIndex("ResolvedByUserId");
+
+                    b.HasIndex("TriggeringStoryId");
 
                     b.ToTable("intervention_cases", (string)null);
                 });
@@ -3520,6 +3551,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "NotesAddedByUser")
+                        .WithMany()
+                        .HasForeignKey("NotesAddedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("StoryPlatform.Domain.Entities.Recommendation", "Recommendation")
                         .WithMany()
                         .HasForeignKey("RecommendationId")
@@ -3530,11 +3566,20 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasForeignKey("ResolvedByUserId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("StoryPlatform.Domain.Entities.Story", "TriggeringStory")
+                        .WithMany()
+                        .HasForeignKey("TriggeringStoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("ChildProfile");
+
+                    b.Navigation("NotesAddedByUser");
 
                     b.Navigation("Recommendation");
 
                     b.Navigation("ResolvedByUser");
+
+                    b.Navigation("TriggeringStory");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.LearningInsight", b =>

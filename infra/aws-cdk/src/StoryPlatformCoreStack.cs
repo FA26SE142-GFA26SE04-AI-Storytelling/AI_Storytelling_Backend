@@ -1,8 +1,10 @@
 using Amazon.CDK;
-using Amazon.CDK.AWS.AppRunner;
 using Amazon.CDK.AWS.EC2;
 using Amazon.CDK.AWS.ECR;
+using Amazon.CDK.AWS.ECS;
+using Amazon.CDK.AWS.ElasticLoadBalancingV2;
 using Amazon.CDK.AWS.IAM;
+using Amazon.CDK.AWS.Logs;
 using Amazon.CDK.AWS.RDS;
 using Amazon.CDK.AWS.SecretsManager;
 using Constructs;
@@ -14,22 +16,47 @@ public sealed class StoryPlatformCoreStack : Stack
     public IVpc Vpc { get; }
     public DatabaseInstance Database { get; }
     public Repository EcrRepository { get; }
-    public Secret DbConnectionSecret { get; }
-    public Secret JwtSecret { get; }
-    public Secret ResendApiKeySecret { get; }
-    public Secret SePayApiKeySecret { get; }
-    public Role AppRunnerInstanceRole { get; }
-    public CfnVpcConnector VpcConnector { get; }
-    public CfnService? AppRunnerService { get; private set; }
+    public Amazon.CDK.AWS.SecretsManager.Secret AppSecrets { get; }
+    public Cluster Cluster { get; }
+    public Role TaskExecutionRole { get; }
+    public LogGroup ApiLogGroup { get; }
+    public FargateTaskDefinition ApiTaskDefinition { get; }
+    public SecurityGroup ApiTaskSecurityGroup { get; }
+    public FargateService? ApiService { get; private set; }
     public Role CiRole { get; }
 
     public StoryPlatformCoreStack(Construct scope, string id, IStackProps? props = null)
         : base(scope, id, props)
     {
+        // One-time bootstrap flag: when true, the container runs Database/Seed/*.sql once at
+        // startup (see DatabaseSeedExtensions in StoryPlatform.Api). Only pass
+        // --context seedDatabaseOnStart=true for the single deploy that should seed; unlike
+        // includeEcsService this isn't meant to be persisted in cdk.json, since leaving it true
+        // would re-seed on every deploy.
+        var seedDatabaseOnStartContext = Node.TryGetContext("seedDatabaseOnStart");
+        var seedDatabaseOnStart = seedDatabaseOnStartContext switch
+        {
+            bool b => b,
+            string s => bool.Parse(s),
+            _ => false
+        };
+
+        // One-time bootstrap flag for the 2026-09-22 migration-squash fix (see
+        // DatabaseMigrationHistoryFixExtensions in StoryPlatform.Api). Same not-persisted
+        // pattern as seedDatabaseOnStart: pass --context fixMigrationHistoryOnStart=true only
+        // for the single deploy that needs it, then leave it off.
+        var fixMigrationHistoryOnStartContext = Node.TryGetContext("fixMigrationHistoryOnStart");
+        var fixMigrationHistoryOnStart = fixMigrationHistoryOnStartContext switch
+        {
+            bool b => b,
+            string s => bool.Parse(s),
+            _ => false
+        };
+
         Vpc = new Vpc(this, "CoreVpc", new VpcProps
         {
             MaxAzs = 2,
-            NatGateways = 1,
+            NatGateways = 0,
             SubnetConfiguration = new[]
             {
                 new SubnetConfiguration
@@ -42,12 +69,6 @@ public sealed class StoryPlatformCoreStack : Stack
                 {
                     Name = "Public",
                     SubnetType = SubnetType.PUBLIC,
-                    CidrMask = 24
-                },
-                new SubnetConfiguration
-                {
-                    Name = "Private",
-                    SubnetType = SubnetType.PRIVATE_WITH_EGRESS,
                     CidrMask = 24
                 }
             }
@@ -92,62 +113,121 @@ public sealed class StoryPlatformCoreStack : Stack
             $"Host={Database.DbInstanceEndpointAddress};Port={Database.DbInstanceEndpointPort};" +
             $"Database=storyplatform;Username={dbUsername};Password={dbPassword}";
 
-        DbConnectionSecret = new Secret(this, "DbConnectionSecret", new SecretProps
-        {
-            SecretName = "storyplatform/core/db-connection-string",
-            SecretStringValue = SecretValue.UnsafePlainText(connectionString),
-            RemovalPolicy = RemovalPolicy.DESTROY
-        });
+        // Consolidated into 1 secret (was 4 separate ones) to cut Secrets Manager cost from
+        // ~$1.60/month to ~$0.40/month — Secrets Manager bills per secret, not per JSON key.
+        // GenerateStringKey lets Secrets Manager generate JwtSecretKey server-side (it never
+        // appears in the synthesized CloudFormation template) and merge it into this JSON
+        // template, so DbConnectionString stays composed from RDS's own generated credentials
+        // exactly as before; only Resend/SePay/Redis need a manual
+        // `aws secretsmanager put-secret-value` after deploy. RDS's generated password is
+        // excluded from quote/backslash characters by Secrets Manager's own default
+        // ExcludeCharacters, so embedding it in this hand-built JSON string is safe without
+        // extra escaping.
+        var appSecretsTemplate =
+            "{" +
+            $"\"DbConnectionString\":\"{connectionString}\"," +
+            "\"ResendApiKey\":\"REPLACE_ME_POST_DEPLOY\"," +
+            "\"SePayApiKey\":\"REPLACE_ME_POST_DEPLOY\"," +
+            "\"RedisConnectionString\":\"REPLACE_ME_POST_DEPLOY\"" +
+            "}";
 
-        JwtSecret = new Secret(this, "JwtSecret", new SecretProps
+        AppSecrets = new Amazon.CDK.AWS.SecretsManager.Secret(this, "AppSecrets", new SecretProps
         {
-            SecretName = "storyplatform/core/jwt-secret-key",
+            SecretName = "storyplatform/core/app-secrets",
             GenerateSecretString = new SecretStringGenerator
             {
-                PasswordLength = 64,
-                ExcludePunctuation = true
+                SecretStringTemplate = appSecretsTemplate,
+                GenerateStringKey = "JwtSecretKey",
+                ExcludePunctuation = true,
+                PasswordLength = 64
             },
             RemovalPolicy = RemovalPolicy.DESTROY
         });
 
-        ResendApiKeySecret = new Secret(this, "ResendApiKeySecret", new SecretProps
-        {
-            SecretName = "storyplatform/core/resend-api-key",
-            SecretStringValue = SecretValue.UnsafePlainText("REPLACE_ME_POST_DEPLOY"),
-            RemovalPolicy = RemovalPolicy.DESTROY
-        });
-
-        SePayApiKeySecret = new Secret(this, "SePayApiKeySecret", new SecretProps
-        {
-            SecretName = "storyplatform/core/sepay-api-key",
-            SecretStringValue = SecretValue.UnsafePlainText("REPLACE_ME_POST_DEPLOY"),
-            RemovalPolicy = RemovalPolicy.DESTROY
-        });
-
-        AppRunnerInstanceRole = new Role(this, "AppRunnerInstanceRole", new RoleProps
-        {
-            AssumedBy = new ServicePrincipal("tasks.apprunner.amazonaws.com")
-        });
-
-        DbConnectionSecret.GrantRead(AppRunnerInstanceRole);
-        JwtSecret.GrantRead(AppRunnerInstanceRole);
-        ResendApiKeySecret.GrantRead(AppRunnerInstanceRole);
-        SePayApiKeySecret.GrantRead(AppRunnerInstanceRole);
-
-        var vpcConnectorSecurityGroup = new SecurityGroup(this, "VpcConnectorSecurityGroupV2", new SecurityGroupProps
+        Cluster = new Cluster(this, "CoreApiCluster", new ClusterProps
         {
             Vpc = Vpc,
-            Description = "Security group for the App Runner VPC Connector",
+            ClusterName = "storyplatform-core-api-cluster"
+        });
+
+        TaskExecutionRole = new Role(this, "ApiTaskExecutionRole", new RoleProps
+        {
+            AssumedBy = new ServicePrincipal("ecs-tasks.amazonaws.com"),
+            ManagedPolicies = new IManagedPolicy[]
+            {
+                ManagedPolicy.FromAwsManagedPolicyName("service-role/AmazonECSTaskExecutionRolePolicy")
+            }
+        });
+        AppSecrets.GrantRead(TaskExecutionRole);
+
+        ApiLogGroup = new LogGroup(this, "ApiLogGroup", new LogGroupProps
+        {
+            LogGroupName = "/ecs/storyplatform-core-api",
+            Retention = RetentionDays.ONE_WEEK,
+            RemovalPolicy = RemovalPolicy.DESTROY
+        });
+
+        ApiTaskDefinition = new FargateTaskDefinition(this, "ApiTaskDefinition", new FargateTaskDefinitionProps
+        {
+            Cpu = 256,
+            MemoryLimitMiB = 1024,
+            RuntimePlatform = new RuntimePlatform
+            {
+                CpuArchitecture = CpuArchitecture.ARM64,
+                OperatingSystemFamily = OperatingSystemFamily.LINUX
+            },
+            ExecutionRole = TaskExecutionRole
+        });
+
+        var apiContainer = ApiTaskDefinition.AddContainer("ApiContainer", new ContainerDefinitionOptions
+        {
+            Image = ContainerImage.FromEcrRepository(EcrRepository, "latest"),
+            Logging = LogDriver.AwsLogs(new AwsLogDriverProps { StreamPrefix = "api", LogGroup = ApiLogGroup }),
+            Environment = new System.Collections.Generic.Dictionary<string, string>
+            {
+                ["ASPNETCORE_ENVIRONMENT"] = "Production",
+                ["Swagger__Enabled"] = "true",
+                ["JwtSettings__Issuer"] = "StoryPlatform",
+                ["JwtSettings__Audience"] = "StoryPlatformClient",
+                ["JwtSettings__ExpiryMinutes"] = "120",
+                ["JwtSettings__RefreshTokenExpiryDays"] = "7",
+                ["JwtSettings__ChildTokenExpiryMinutes"] = "240",
+                ["Logging__LogLevel__Default"] = "Warning",
+                ["SeedData__RunOnStartup"] = seedDatabaseOnStart ? "true" : "false",
+                ["FixMigrationHistory__RunOnStartup"] = fixMigrationHistoryOnStart ? "true" : "false"
+            },
+            Secrets = new System.Collections.Generic.Dictionary<string, Amazon.CDK.AWS.ECS.Secret>
+            {
+                ["ConnectionStrings__DefaultConnection"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "DbConnectionString"),
+                ["JwtSettings__SecretKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "JwtSecretKey"),
+                ["ResendSettings__ApiKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "ResendApiKey"),
+                ["SePaySettings__ApiKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "SePayApiKey"),
+                ["RedisSettings__ConnectionString"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "RedisConnectionString")
+            },
+            // Root Dockerfile's runtime stage already installs curl (confirmed by inspection),
+            // so this works without any Dockerfile change.
+            HealthCheck = new Amazon.CDK.AWS.ECS.HealthCheck
+            {
+                Command = new[] { "CMD-SHELL", "curl -f http://localhost:8080/health || exit 1" },
+                Interval = Duration.Seconds(30),
+                Timeout = Duration.Seconds(5),
+                Retries = 3,
+                StartPeriod = Duration.Seconds(30)
+            }
+        });
+        apiContainer.AddPortMappings(new PortMapping { ContainerPort = 8080, Protocol = Amazon.CDK.AWS.ECS.Protocol.TCP });
+
+        ApiTaskSecurityGroup = new SecurityGroup(this, "ApiTaskSecurityGroup", new SecurityGroupProps
+        {
+            Vpc = Vpc,
+            Description = "Security group for the Core API ECS Fargate task",
             AllowAllOutbound = true
         });
+        // No direct-from-internet ingress rule here: once includeEcsService is on, only the ALB
+        // (below) may reach the task on 8080 - tightened from the previous "Peer.AnyIpv4()" rule
+        // now that the ALB, not the task's own ephemeral public IP, is the public entry point.
 
-        Database.Connections.AllowFrom(vpcConnectorSecurityGroup, Port.Tcp(5432), "Allow App Runner VPC Connector to reach RDS");
-
-        VpcConnector = new CfnVpcConnector(this, "AppRunnerVpcConnector", new CfnVpcConnectorProps
-        {
-            Subnets = Vpc.SelectSubnets(new SubnetSelection { SubnetType = SubnetType.PRIVATE_WITH_EGRESS }).SubnetIds,
-            SecurityGroups = new[] { vpcConnectorSecurityGroup.SecurityGroupId }
-        });
+        Database.Connections.AllowFrom(ApiTaskSecurityGroup, Port.Tcp(5432), "Allow ECS API task to reach RDS");
 
         // Note: deliberately using the L1 CfnOIDCProvider (not the L2 OpenIdConnectProvider) so the
         // synthesized template contains a native AWS::IAM::OIDCProvider resource. In aws-cdk-lib 2.170.0
@@ -200,131 +280,101 @@ public sealed class StoryPlatformCoreStack : Stack
             Description = "Paste this ARN into the GitHub Actions workflow's role-to-assume input"
         });
 
-        // Bootstrap gating: on the very first `cdk deploy`, the ECR repo above is empty
-        // (no image has been pushed yet, since you can't push before the repo exists).
-        // Creating the App Runner Service unconditionally in that same deploy would make
-        // CloudFormation fail to find the image and roll back the ENTIRE stack, deleting
-        // the VPC/RDS/ECR/Secrets that succeeded too. So App Runner Service creation is
-        // gated behind this context flag (default false); Task 13 deploys twice: once
-        // with the flag off, pushes the first image, then deploys again with it on.
-        var includeAppRunnerServiceContext = Node.TryGetContext("includeAppRunnerService");
-        var includeAppRunnerService = includeAppRunnerServiceContext switch
+        var includeEcsServiceContext = Node.TryGetContext("includeEcsService");
+        var includeEcsService = includeEcsServiceContext switch
         {
             bool b => b,
             string s => bool.Parse(s),
             _ => false
         };
 
-        if (includeAppRunnerService)
+        if (includeEcsService)
         {
-            var appRunnerEcrAccessRole = new Role(this, "AppRunnerEcrAccessRole", new RoleProps
+            ApiService = new FargateService(this, "ApiService", new FargateServiceProps
             {
-                AssumedBy = new ServicePrincipal("build.apprunner.amazonaws.com")
+                Cluster = Cluster,
+                TaskDefinition = ApiTaskDefinition,
+                ServiceName = "storyplatform-core-api-svc",
+                DesiredCount = 1,
+                AssignPublicIp = true,
+                VpcSubnets = new SubnetSelection { SubnetType = SubnetType.PUBLIC },
+                SecurityGroups = new[] { ApiTaskSecurityGroup },
+                // Pin explicitly rather than rely on aws-cdk-lib's own default (documented as 50%
+                // for a non-daemon service, which varies by CDK version). At DesiredCount = 1, a
+                // 50% floor rounds down to 0 healthy tasks required, which would let ECS stop the
+                // old (healthy) task before the new one passes its health check. 100/200 keeps the
+                // previous task running until the new one is healthy (see design spec §9).
+                MinHealthyPercent = 100,
+                MaxHealthyPercent = 200
             });
-            EcrRepository.GrantPull(appRunnerEcrAccessRole);
 
-            // Construct ID bumped to V2 on 2026-09-21: every deploy of the app-with-auto-migration
-            // code deterministically failed its App Runner health check (HTTP and TCP both tried;
-            // VPC Connector on and off both tried) despite the exact image proving 100% healthy when
-            // run identically outside App Runner — pointing at stuck internal state on the original
-            // service rather than anything fixable via configuration. Changing the logical ID forces
-            // CloudFormation to create a brand-new service (and delete the old one) instead of
-            // updating in place, to rule out — or clear — that stuck state. This changes the
-            // service's ARN and public URL; both need updating wherever they're hardcoded
-            // (deploy-core-api.yml, RUNBOOK.md).
-            AppRunnerService = new CfnService(this, "CoreApiServiceV2", new CfnServiceProps
+            new CfnOutput(this, "EcsClusterNameOutput", new CfnOutputProps
             {
-                // Renamed from "storyplatform-core-api": App Runner service names must be unique
-                // per account/region, and CloudFormation creates the new resource before deleting
-                // the old one (safe-by-default ordering), so keeping the old literal name here
-                // collided with the still-existing old service and failed with "Service with the
-                // provided name already exists" (confirmed 2026-09-21, stack rolled back cleanly,
-                // old service untouched).
-                ServiceName = "storyplatform-core-api-v2",
-                SourceConfiguration = new CfnService.SourceConfigurationProperty
-                {
-                    AutoDeploymentsEnabled = false,
-                    AuthenticationConfiguration = new CfnService.AuthenticationConfigurationProperty
-                    {
-                        AccessRoleArn = appRunnerEcrAccessRole.RoleArn
-                    },
-                    ImageRepository = new CfnService.ImageRepositoryProperty
-                    {
-                        ImageIdentifier = $"{EcrRepository.RepositoryUri}:latest",
-                        ImageRepositoryType = "ECR",
-                        ImageConfiguration = new CfnService.ImageConfigurationProperty
-                        {
-                            Port = "8080",
-                            RuntimeEnvironmentVariables = new[]
-                            {
-                                new CfnService.KeyValuePairProperty { Name = "ASPNETCORE_ENVIRONMENT", Value = "Production" },
-                                new CfnService.KeyValuePairProperty { Name = "Swagger__Enabled", Value = "true" },
-                                new CfnService.KeyValuePairProperty { Name = "JwtSettings__Issuer", Value = "StoryPlatform" },
-                                new CfnService.KeyValuePairProperty { Name = "JwtSettings__Audience", Value = "StoryPlatformClient" },
-                                new CfnService.KeyValuePairProperty { Name = "JwtSettings__ExpiryMinutes", Value = "120" },
-                                new CfnService.KeyValuePairProperty { Name = "JwtSettings__RefreshTokenExpiryDays", Value = "7" },
-                                new CfnService.KeyValuePairProperty { Name = "JwtSettings__ChildTokenExpiryMinutes", Value = "240" }
-                            },
-                            RuntimeEnvironmentSecrets = new[]
-                            {
-                                new CfnService.KeyValuePairProperty { Name = "ConnectionStrings__DefaultConnection", Value = DbConnectionSecret.SecretArn },
-                                new CfnService.KeyValuePairProperty { Name = "JwtSettings__SecretKey", Value = JwtSecret.SecretArn },
-                                new CfnService.KeyValuePairProperty { Name = "ResendSettings__ApiKey", Value = ResendApiKeySecret.SecretArn },
-                                new CfnService.KeyValuePairProperty { Name = "SePaySettings__ApiKey", Value = SePayApiKeySecret.SecretArn }
-                            }
-                        }
-                    }
-                },
-                InstanceConfiguration = new CfnService.InstanceConfigurationProperty
-                {
-                    Cpu = "1024",
-                    Memory = "2048",
-                    InstanceRoleArn = AppRunnerInstanceRole.RoleArn
-                },
-                // Protocol=TCP (not HTTP): confirmed on 2026-09-21 that the exact deployed image,
-                // pulled straight from this service's own ECR repo and run locally with the same
-                // env vars App Runner uses, returns 200 "Healthy" on GET /health instantly and
-                // consistently — proving the code and image are correct. Every live App Runner
-                // deploy nonetheless got a deterministic health-check failure (HTTP: 404 on /health;
-                // TCP: port check itself failing) regardless of VPC Connector being attached or not
-                // (both tried and ruled out) — see the CoreApiServiceV2 construct-id-bump note above
-                // for the resulting decision to recreate the service. TCP kept as the simplest,
-                // lowest-risk check going forward; Path is not applicable to TCP and is omitted.
-                HealthCheckConfiguration = new CfnService.HealthCheckConfigurationProperty
-                {
-                    Protocol = "TCP",
-                    Interval = 10,
-                    Timeout = 5,
-                    HealthyThreshold = 1,
-                    UnhealthyThreshold = 15
-                },
-                NetworkConfiguration = new CfnService.NetworkConfigurationProperty
-                {
-                    EgressConfiguration = new CfnService.EgressConfigurationProperty
-                    {
-                        EgressType = "VPC",
-                        VpcConnectorArn = VpcConnector.AttrVpcConnectorArn
-                    }
-                }
+                Value = Cluster.ClusterName,
+                Description = "Paste this into deploy-core-api.yml's ECS_CLUSTER env var"
+            });
+
+            new CfnOutput(this, "EcsServiceNameOutput", new CfnOutputProps
+            {
+                Value = ApiService.ServiceName,
+                Description = "Paste this into deploy-core-api.yml's ECS_SERVICE env var"
             });
 
             CiRole.AddToPolicy(new PolicyStatement(new PolicyStatementProps
             {
                 Effect = Effect.ALLOW,
-                Actions = new[] { "apprunner:StartDeployment", "apprunner:DescribeService", "apprunner:ListOperations" },
-                Resources = new[] { AppRunnerService.AttrServiceArn }
+                Actions = new[] { "ecs:UpdateService", "ecs:DescribeServices" },
+                Resources = new[] { ApiService.ServiceArn }
             }));
 
-            new CfnOutput(this, "AppRunnerServiceArnOutput", new CfnOutputProps
+            // Stable public entry point for a custom domain. A Fargate awsvpc task gets a brand
+            // new ENI (and public IP) on every deploy/restart, so a domain can't point at the
+            // task directly; the ALB's DNS name never changes. (An EIP re-associated onto the
+            // task's ENI by a Lambda was tried first and would have been cheaper, but this
+            // account's org-level SCP blocks ec2:AssociateAddress outright - confirmed via
+            // AuthFailure on that call even with an admin-privileged IAM principal - so the ALB
+            // is the only viable option here despite its ~$16-20/month fixed cost.)
+            var apiAlb = new ApplicationLoadBalancer(this, "ApiAlb", new ApplicationLoadBalancerProps
             {
-                Value = AppRunnerService.AttrServiceArn,
-                Description = "Paste this into deploy-core-api.yml's APP_RUNNER_SERVICE_ARN env var"
+                Vpc = Vpc,
+                InternetFacing = true,
+                VpcSubnets = new SubnetSelection { SubnetType = SubnetType.PUBLIC }
             });
 
-            new CfnOutput(this, "AppRunnerServiceUrlOutput", new CfnOutputProps
+            ApiTaskSecurityGroup.Connections.AllowFrom(apiAlb, Port.Tcp(8080), "Allow ALB to reach Core API");
+
+            var apiListener = apiAlb.AddListener("HttpListener", new BaseApplicationListenerProps
             {
-                Value = AppRunnerService.AttrServiceUrl,
-                Description = "Public HTTPS URL of the App Runner service"
+                Port = 80,
+                Open = true
+            });
+
+            apiListener.AddTargets("ApiTargets", new AddApplicationTargetsProps
+            {
+                Port = 8080,
+                Protocol = ApplicationProtocol.HTTP,
+                Targets = new IApplicationLoadBalancerTarget[]
+                {
+                    ApiService.LoadBalancerTarget(new LoadBalancerTargetOptions
+                    {
+                        ContainerName = "ApiContainer",
+                        ContainerPort = 8080
+                    })
+                },
+                HealthCheck = new Amazon.CDK.AWS.ElasticLoadBalancingV2.HealthCheck
+                {
+                    Path = "/health",
+                    Interval = Duration.Seconds(30),
+                    Timeout = Duration.Seconds(5),
+                    HealthyThresholdCount = 2,
+                    UnhealthyThresholdCount = 5
+                }
+            });
+
+            new CfnOutput(this, "ApiAlbDnsNameOutput", new CfnOutputProps
+            {
+                Value = apiAlb.LoadBalancerDnsName,
+                Description = "Point your domain's DNS record (CNAME/ALIAS) here"
             });
         }
     }

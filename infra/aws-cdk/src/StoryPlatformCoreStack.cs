@@ -41,6 +41,18 @@ public sealed class StoryPlatformCoreStack : Stack
             _ => false
         };
 
+        // One-time bootstrap flag for the 2026-09-22 migration-squash fix (see
+        // DatabaseMigrationHistoryFixExtensions in StoryPlatform.Api). Same not-persisted
+        // pattern as seedDatabaseOnStart: pass --context fixMigrationHistoryOnStart=true only
+        // for the single deploy that needs it, then leave it off.
+        var fixMigrationHistoryOnStartContext = Node.TryGetContext("fixMigrationHistoryOnStart");
+        var fixMigrationHistoryOnStart = fixMigrationHistoryOnStartContext switch
+        {
+            bool b => b,
+            string s => bool.Parse(s),
+            _ => false
+        };
+
         Vpc = new Vpc(this, "CoreVpc", new VpcProps
         {
             MaxAzs = 2,
@@ -181,7 +193,8 @@ public sealed class StoryPlatformCoreStack : Stack
                 ["JwtSettings__RefreshTokenExpiryDays"] = "7",
                 ["JwtSettings__ChildTokenExpiryMinutes"] = "240",
                 ["Logging__LogLevel__Default"] = "Warning",
-                ["SeedData__RunOnStartup"] = seedDatabaseOnStart ? "true" : "false"
+                ["SeedData__RunOnStartup"] = seedDatabaseOnStart ? "true" : "false",
+                ["FixMigrationHistory__RunOnStartup"] = fixMigrationHistoryOnStart ? "true" : "false"
             },
             Secrets = new System.Collections.Generic.Dictionary<string, Amazon.CDK.AWS.ECS.Secret>
             {

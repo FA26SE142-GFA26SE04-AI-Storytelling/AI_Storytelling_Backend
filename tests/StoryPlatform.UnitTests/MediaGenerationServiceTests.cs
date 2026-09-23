@@ -150,6 +150,21 @@ public sealed class MediaGenerationServiceTests
     }
 
     [Fact]
+    public async Task ProcessNext_OpenCircuit_StopsAssetRetriesAndReturnsCircuitCode()
+    {
+        var uow = Seed();
+        var image = new OpenCircuitImageProvider();
+        var service = Create(uow, image: image);
+
+        var result = await service.ProcessNextAsync();
+
+        Assert.False(result.Success);
+        Assert.False(result.IsPermanentFailure);
+        Assert.Equal("MEDIA_CIRCUIT_OPEN", result.ErrorCode);
+        Assert.Equal(1, image.Calls);
+    }
+
+    [Fact]
     public async Task ProcessNext_ContextRemovedBeforePersist_RejectsResultAsStale()
     {
         var uow = Seed();
@@ -281,6 +296,18 @@ public sealed class MediaGenerationServiceTests
         public Task<GeneratedMedia> GenerateAsync(
             SceneSpecification specification, CancellationToken cancellationToken = default) =>
             throw new TimeoutException("temporary provider timeout");
+    }
+
+    private sealed class OpenCircuitImageProvider : IImageGenerationProvider
+    {
+        public int Calls { get; private set; }
+
+        public Task<GeneratedMedia> GenerateAsync(
+            SceneSpecification specification, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            throw new TransientMediaGenerationException("MEDIA_CIRCUIT_OPEN");
+        }
     }
 
     private sealed class RecordingTtsProvider : ITtsProvider

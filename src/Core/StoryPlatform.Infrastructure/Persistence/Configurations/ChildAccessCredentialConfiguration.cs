@@ -20,6 +20,9 @@ public class ChildAccessCredentialConfiguration : IEntityTypeConfiguration<Child
             .IsRequired()
             .HasMaxLength(255);
 
+        builder.Property(x => x.EasyLoginCode)
+            .HasMaxLength(64);
+
         builder.HasOne(x => x.ChildProfile)
             .WithMany()
             .HasForeignKey(x => x.ChildProfileId)
@@ -32,6 +35,10 @@ public class ChildAccessCredentialConfiguration : IEntityTypeConfiguration<Child
 
         builder.HasIndex(x => x.ChildProfileId)
             .IsUnique();
+
+        builder.HasIndex(x => x.EasyLoginCode)
+            .IsUnique()
+            .HasFilter("\"EasyLoginCode\" IS NOT NULL");
 
         builder.HasQueryFilter(x => !x.IsDeleted);
     }

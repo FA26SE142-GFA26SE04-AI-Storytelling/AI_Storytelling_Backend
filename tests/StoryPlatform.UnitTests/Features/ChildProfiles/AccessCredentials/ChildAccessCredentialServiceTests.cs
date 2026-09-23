@@ -232,6 +232,118 @@ public class ChildAccessCredentialServiceTests
         _credentialRepo.Verify(r => r.Delete(credential), Times.Once);
     }
 
+    [Fact]
+    public async Task GenerateEasyLoginCodeAsync_NoExistingCredential_ThrowsNotFound()
+    {
+        AllowSupervision();
+        SetupCredential(null);
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            _sut.GenerateEasyLoginCodeAsync(1, 2));
+    }
+
+    [Fact]
+    public async Task GenerateEasyLoginCodeAsync_ExistingCredential_SetsCodeWith5MinuteTtl()
+    {
+        AllowSupervision();
+        var credential = Credential();
+        SetupCredential(credential);
+        _jwtTokenGenerator.Setup(g => g.GenerateRefreshToken()).Returns("new-easylogin-code");
+
+        var before = DateTime.UtcNow;
+        var result = await _sut.GenerateEasyLoginCodeAsync(1, 2);
+
+        Assert.Equal("new-easylogin-code", result.Code);
+        Assert.Equal("new-easylogin-code", credential.EasyLoginCode);
+        Assert.Null(credential.EasyLoginUsedAt);
+        Assert.True(credential.EasyLoginExpiresAt > before.AddMinutes(4)
+            && credential.EasyLoginExpiresAt <= before.AddMinutes(5).AddSeconds(1));
+        _credentialRepo.Verify(r => r.Update(credential), Times.Once);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GenerateEasyLoginCodeAsync_PreviousCodePending_IsInvalidatedByNewOne()
+    {
+        AllowSupervision();
+        var credential = Credential();
+        credential.EasyLoginCode = "old-code";
+        credential.EasyLoginExpiresAt = DateTime.UtcNow.AddMinutes(3);
+        SetupCredential(credential);
+        _jwtTokenGenerator.Setup(g => g.GenerateRefreshToken()).Returns("new-code");
+
+        await _sut.GenerateEasyLoginCodeAsync(1, 2);
+
+        Assert.Equal("new-code", credential.EasyLoginCode);
+        Assert.NotEqual("old-code", credential.EasyLoginCode);
+    }
+
+    [Fact]
+    public async Task LoginWithEasyLoginAsync_ValidUnusedCode_CreatesSessionAndMarksUsed()
+    {
+        var credential = Credential();
+        credential.EasyLoginCode = "valid-code";
+        credential.EasyLoginExpiresAt = DateTime.UtcNow.AddMinutes(2);
+        _credentialRepo.Setup(r => r.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<ChildAccessCredential, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(credential);
+        _jwtTokenGenerator.Setup(g => g.GenerateChildAccessToken(1)).Returns("child-jwt");
+
+        var result = await _sut.LoginWithEasyLoginAsync("valid-code");
+
+        Assert.Equal(1, result.ChildProfileId);
+        Assert.Equal("child-jwt", result.AccessToken);
+        Assert.NotNull(credential.EasyLoginUsedAt);
+        Assert.Null(credential.EasyLoginCode);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task LoginWithEasyLoginAsync_ExpiredCode_ThrowsBadRequest()
+    {
+        var credential = Credential();
+        credential.EasyLoginCode = "expired-code";
+        credential.EasyLoginExpiresAt = DateTime.UtcNow.AddMinutes(-1);
+        _credentialRepo.Setup(r => r.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<ChildAccessCredential, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(credential);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.LoginWithEasyLoginAsync("expired-code"));
+
+        _jwtTokenGenerator.Verify(g => g.GenerateChildAccessToken(It.IsAny<int>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task LoginWithEasyLoginAsync_AlreadyUsedOrUnknownCode_ThrowsBadRequest()
+    {
+        _credentialRepo.Setup(r => r.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<ChildAccessCredential, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ChildAccessCredential?)null);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.LoginWithEasyLoginAsync("already-used-or-unknown"));
+    }
+
+    [Fact]
+    public async Task LoginWithEasyLoginAsync_CodeMarkedUsed_ThrowsBadRequest()
+    {
+        var credential = Credential();
+        credential.EasyLoginCode = "used-code";
+        credential.EasyLoginExpiresAt = DateTime.UtcNow.AddMinutes(2);
+        credential.EasyLoginUsedAt = DateTime.UtcNow.AddMinutes(-1);
+        SetupCredential(credential);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.LoginWithEasyLoginAsync("used-code"));
+
+        _jwtTokenGenerator.Verify(g => g.GenerateChildAccessToken(It.IsAny<int>()), Times.Never);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     private void AllowSupervision() => _guard
         .Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
         .ReturnsAsync(new SupervisionRelationship());

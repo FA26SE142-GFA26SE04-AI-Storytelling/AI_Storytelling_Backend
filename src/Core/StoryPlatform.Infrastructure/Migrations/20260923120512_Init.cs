@@ -531,6 +531,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     PinHash = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
                     FailedAttempts = table.Column<int>(type: "integer", nullable: false),
                     LockedUntil = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    EasyLoginCode = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
+                    EasyLoginExpiresAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    EasyLoginUsedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     CreatedByUserId = table.Column<int>(type: "integer", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
@@ -2215,6 +2218,13 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "IX_child_access_credentials_CreatedByUserId",
                 table: "child_access_credentials",
                 column: "CreatedByUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_child_access_credentials_EasyLoginCode",
+                table: "child_access_credentials",
+                column: "EasyLoginCode",
+                unique: true,
+                filter: "\"EasyLoginCode\" IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "IX_child_profile_version_history_AppliedByUserId",

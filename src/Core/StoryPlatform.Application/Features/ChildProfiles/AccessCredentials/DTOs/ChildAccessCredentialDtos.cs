@@ -43,3 +43,15 @@ public class ChildSessionProfileDto
     public string Nickname { get; set; } = string.Empty;
     public string AgeBand { get; set; } = string.Empty;
 }
+
+public class EasyLoginCodeDto
+{
+    public string Code { get; set; } = string.Empty;
+    public DateTime ExpiresAt { get; set; }
+}
+
+public class LoginWithEasyLoginRequestDto
+{
+    [Required(ErrorMessage = "Mã EasyLogin không được để trống.")]
+    public string Code { get; set; } = string.Empty;
+}

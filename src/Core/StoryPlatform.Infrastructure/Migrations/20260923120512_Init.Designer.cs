@@ -12,7 +12,7 @@ using StoryPlatform.Infrastructure.Persistence;
 namespace StoryPlatform.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260922113625_Init")]
+    [Migration("20260923120512_Init")]
     partial class Init
     {
         /// <inheritdoc />
@@ -355,6 +355,16 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("CreatedByUserId")
                         .HasColumnType("integer");
 
+                    b.Property<string>("EasyLoginCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime?>("EasyLoginExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("EasyLoginUsedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("FailedAttempts")
                         .HasColumnType("integer");
 
@@ -378,6 +388,10 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .IsUnique();
 
                     b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("EasyLoginCode")
+                        .IsUnique()
+                        .HasFilter("\"EasyLoginCode\" IS NOT NULL");
 
                     b.ToTable("child_access_credentials", (string)null);
                 });

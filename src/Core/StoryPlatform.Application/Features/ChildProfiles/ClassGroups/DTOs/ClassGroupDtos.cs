@@ -27,3 +27,20 @@ public class UpdateClassGroupRequestDto
     [StringLength(150, MinimumLength = 1, ErrorMessage = "Tên lớp từ 1 đến 150 ký tự.")]
     public string Name { get; set; } = string.Empty;
 }
+
+public class BulkEnrollRowResultDto
+{
+    public int RowNumber { get; set; }
+    public bool Success { get; set; }
+    public string? ErrorMessage { get; set; }
+    public int? ChildProfileId { get; set; }
+    public string? InvitationCode { get; set; }
+}
+
+public class BulkEnrollResultDto
+{
+    public int TotalRows { get; set; }
+    public int SuccessCount { get; set; }
+    public int FailureCount { get; set; }
+    public List<BulkEnrollRowResultDto> Rows { get; set; } = new();
+}

@@ -1,6 +1,8 @@
 using System.Linq.Expressions;
+using System.Text;
 using Moq;
 using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ChildProfiles.ClassGroups.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.ClassGroups.Interfaces;
@@ -18,6 +20,9 @@ public class ClassGroupServiceTests
     private readonly Mock<IGenericRepository<ChildProfile>> _profileRepo = new();
     private readonly Mock<IGenericRepository<SharedStory>> _sharedStoryRepo = new();
     private readonly Mock<IGenericRepository<SharedStoryRecipient>> _recipientRepo = new();
+    private readonly Mock<IGenericRepository<SupervisionRelationship>> _supervisionRelationshipRepo = new();
+    private readonly Mock<IGenericRepository<SupervisionInvitation>> _invitationRepo = new();
+    private readonly Mock<IJwtTokenGenerator> _tokenGenerator = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly ClassGroupService _sut;
 
@@ -28,7 +33,9 @@ public class ClassGroupServiceTests
         _unitOfWork.Setup(u => u.Repository<ChildProfile>()).Returns(_profileRepo.Object);
         _unitOfWork.Setup(u => u.Repository<SharedStory>()).Returns(_sharedStoryRepo.Object);
         _unitOfWork.Setup(u => u.Repository<SharedStoryRecipient>()).Returns(_recipientRepo.Object);
-        _sut = new ClassGroupService(_unitOfWork.Object);
+        _unitOfWork.Setup(u => u.Repository<SupervisionRelationship>()).Returns(_supervisionRelationshipRepo.Object);
+        _unitOfWork.Setup(u => u.Repository<SupervisionInvitation>()).Returns(_invitationRepo.Object);
+        _sut = new ClassGroupService(_unitOfWork.Object, _tokenGenerator.Object);
     }
 
     [Fact]
@@ -220,6 +227,129 @@ public class ClassGroupServiceTests
 
         Assert.Single(result);
         Assert.Equal("Bé Dạt", result[0].Nickname);
+    }
+
+    [Fact]
+    public async Task BulkEnrollAsync_NotClassOwner_ThrowsForbidden()
+    {
+        _classGroupRepo.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ClassGroup { Id = 1, TeacherUserId = 99, Status = ClassGroupStatus.Active });
+        var csv = Encoding.UTF8.GetBytes("Nickname,AgeBand,Language,InviteeEmail\nBé An,Age_6_8,vi,");
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.BulkEnrollAsync(1, 2, csv));
+    }
+
+    [Fact]
+    public async Task BulkEnrollAsync_ArchivedClassGroup_ThrowsBadRequest()
+    {
+        _classGroupRepo.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ClassGroup { Id = 1, TeacherUserId = 2, Status = ClassGroupStatus.Archived });
+        var csv = Encoding.UTF8.GetBytes("Nickname,AgeBand,Language,InviteeEmail\nBé An,Age_6_8,vi,");
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.BulkEnrollAsync(1, 2, csv));
+    }
+
+    [Fact]
+    public async Task BulkEnrollAsync_ValidRow_CreatesProfileRelationshipMembershipAndInvitation()
+    {
+        var classGroup = new ClassGroup
+        {
+            Id = 1,
+            TeacherUserId = 2,
+            OrganizationId = 7,
+            Status = ClassGroupStatus.Active
+        };
+        _classGroupRepo.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(classGroup);
+        _tokenGenerator.Setup(generator => generator.GenerateRefreshToken()).Returns("generated-code");
+        ChildProfile? addedProfile = null;
+        _profileRepo.Setup(r => r.AddAsync(It.IsAny<ChildProfile>(), It.IsAny<CancellationToken>()))
+            .Callback<ChildProfile, CancellationToken>((profile, _) => addedProfile = profile)
+            .ReturnsAsync((ChildProfile profile, CancellationToken _) => profile);
+        _unitOfWork.Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .Callback(() => addedProfile!.Id = 123)
+            .ReturnsAsync(1);
+        var csv = Encoding.UTF8.GetBytes(
+            "Nickname,AgeBand,Language,InviteeEmail\nBé An,Age_6_8,vi,parent@example.com");
+
+        var result = await _sut.BulkEnrollAsync(1, 2, csv);
+
+        Assert.Equal(1, result.TotalRows);
+        Assert.Equal(1, result.SuccessCount);
+        Assert.Equal(0, result.FailureCount);
+        Assert.Equal("generated-code", result.Rows[0].InvitationCode);
+        Assert.Equal(123, result.Rows[0].ChildProfileId);
+        _profileRepo.Verify(r => r.AddAsync(
+            It.Is<ChildProfile>(profile => profile.OwnerUserId == 2
+                                            && profile.Nickname == "Bé An"
+                                            && profile.AgeBand == AgeBand.Age_6_8
+                                            && profile.Scope == ProfileScope.Organization
+                                            && profile.OrganizationId == 7),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _supervisionRelationshipRepo.Verify(r => r.AddAsync(
+            It.Is<SupervisionRelationship>(relationship =>
+                relationship.SupervisorUserId == 2 && relationship.SupervisorRole == SupervisorRole.Owner),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _memberRepo.Verify(r => r.AddAsync(
+            It.Is<ClassGroupMember>(member => member.ClassGroup == classGroup),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _invitationRepo.Verify(r => r.AddAsync(
+            It.Is<SupervisionInvitation>(invitation =>
+                invitation.InvitationCode == "generated-code"
+                && invitation.InviteeEmail == "parent@example.com"
+                && invitation.Status == InvitationStatus.Pending),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task BulkEnrollAsync_InvalidAgeBandRow_RecordsFailureWithoutCreatingProfile()
+    {
+        _classGroupRepo.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ClassGroup { Id = 1, TeacherUserId = 2, Status = ClassGroupStatus.Active });
+        var csv = Encoding.UTF8.GetBytes("Nickname,AgeBand,Language,InviteeEmail\nBé An,invalid,vi,");
+
+        var result = await _sut.BulkEnrollAsync(1, 2, csv);
+
+        Assert.Equal(1, result.FailureCount);
+        Assert.False(result.Rows[0].Success);
+        Assert.NotNull(result.Rows[0].ErrorMessage);
+        _profileRepo.Verify(r => r.AddAsync(
+            It.IsAny<ChildProfile>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task BulkEnrollAsync_EmptyNicknameRow_RecordsFailureWithoutCreatingProfile()
+    {
+        _classGroupRepo.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ClassGroup { Id = 1, TeacherUserId = 2, Status = ClassGroupStatus.Active });
+        var csv = Encoding.UTF8.GetBytes("Nickname,AgeBand,Language,InviteeEmail\n,Age_6_8,vi,");
+
+        var result = await _sut.BulkEnrollAsync(1, 2, csv);
+
+        Assert.Equal(1, result.FailureCount);
+        Assert.False(result.Rows[0].Success);
+        _profileRepo.Verify(r => r.AddAsync(
+            It.IsAny<ChildProfile>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task BulkEnrollAsync_MixedValidAndInvalidRows_ContinuesProcessingAfterFailure()
+    {
+        _classGroupRepo.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ClassGroup { Id = 1, TeacherUserId = 2, Status = ClassGroupStatus.Active });
+        _tokenGenerator.Setup(generator => generator.GenerateRefreshToken()).Returns("generated-code");
+        var csv = Encoding.UTF8.GetBytes(
+            "Nickname,AgeBand,Language,InviteeEmail\n"
+            + ",Age_6_8,vi,\n"
+            + "Bé Bo,Age_9_12,vi,");
+
+        var result = await _sut.BulkEnrollAsync(1, 2, csv);
+
+        Assert.Equal(2, result.TotalRows);
+        Assert.Equal(1, result.SuccessCount);
+        Assert.Equal(1, result.FailureCount);
+        Assert.False(result.Rows[0].Success);
+        Assert.True(result.Rows[1].Success);
     }
 
     private void SetupGroupAndProfile(ChildProfileStatus status)

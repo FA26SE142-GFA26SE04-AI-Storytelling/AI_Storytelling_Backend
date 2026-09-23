@@ -55,4 +55,43 @@ public class ChildAccessCredentialControllerTests
         _service.Verify(service => service.GetMySessionProfileAsync(
             42, It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task GenerateEasyLoginCode_DelegatesWithCurrentUserId()
+    {
+        var expected = new EasyLoginCodeDto
+        {
+            Code = "abc123",
+            ExpiresAt = DateTime.UtcNow.AddMinutes(5)
+        };
+        _service.Setup(s => s.GenerateEasyLoginCodeAsync(7, 42, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+
+        var response = await _sut.GenerateEasyLoginCode(7, CancellationToken.None);
+
+        var result = Assert.IsType<OkObjectResult>(response.Result);
+        var apiResponse = Assert.IsType<ApiResponse<EasyLoginCodeDto>>(result.Value);
+        Assert.Same(expected, apiResponse.Data);
+    }
+
+    [Fact]
+    public async Task LoginWithEasyLogin_DelegatesCodeFromBody()
+    {
+        var expected = new ChildSessionDto
+        {
+            ChildProfileId = 7,
+            AvatarId = "fox",
+            AccessToken = "jwt",
+            ExpiresInSeconds = 14400
+        };
+        _service.Setup(s => s.LoginWithEasyLoginAsync("qr-code", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+
+        var response = await _sut.LoginWithEasyLogin(
+            new LoginWithEasyLoginRequestDto { Code = "qr-code" }, CancellationToken.None);
+
+        var result = Assert.IsType<OkObjectResult>(response.Result);
+        var apiResponse = Assert.IsType<ApiResponse<ChildSessionDto>>(result.Value);
+        Assert.Same(expected, apiResponse.Data);
+    }
 }

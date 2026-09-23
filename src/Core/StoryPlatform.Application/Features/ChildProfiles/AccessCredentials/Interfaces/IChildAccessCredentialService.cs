@@ -20,4 +20,10 @@ public interface IChildAccessCredentialService
 
     Task<ChildSessionProfileDto> GetMySessionProfileAsync(
         int childProfileId, CancellationToken cancellationToken = default);
+
+    Task<EasyLoginCodeDto> GenerateEasyLoginCodeAsync(
+        int childProfileId, int currentUserId, CancellationToken cancellationToken = default);
+
+    Task<ChildSessionDto> LoginWithEasyLoginAsync(
+        string easyLoginCode, CancellationToken cancellationToken = default);
 }

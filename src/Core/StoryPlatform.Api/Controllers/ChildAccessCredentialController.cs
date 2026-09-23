@@ -58,6 +58,33 @@ public class ChildAccessCredentialController : BaseApiController
     }
 
     /// <summary>
+    /// Supervisor generates a new single-use EasyLogin QR code with a five-minute TTL.
+    /// </summary>
+    [HttpPost("{childProfileId:int}/easylogin")]
+    [Authorize(Roles = "Parent,Teacher")]
+    public async Task<ActionResult<ApiResponse<EasyLoginCodeDto>>> GenerateEasyLoginCode(
+        int childProfileId, CancellationToken cancellationToken)
+    {
+        var result = await _childAccessCredentialService.GenerateEasyLoginCodeAsync(
+            childProfileId, GetCurrentUserId(), cancellationToken);
+        return HandleResult(result, "Đã tạo mã EasyLogin mới.");
+    }
+
+    /// <summary>
+    /// Creates a child session from a scanned EasyLogin QR code without supervisor authentication.
+    /// </summary>
+    [HttpPost("easylogin/login")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<ChildSessionDto>>> LoginWithEasyLogin(
+        [FromBody] LoginWithEasyLoginRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _childAccessCredentialService.LoginWithEasyLoginAsync(
+            request.Code, cancellationToken);
+        return HandleResult(result, "Đăng nhập bằng EasyLogin thành công.");
+    }
+
+    /// <summary>
     /// Trẻ tự đăng nhập bằng PIN, độc lập với phiên Supervisor (Bước 1.10) — KHÔNG cần JWT.
     /// </summary>
     [HttpPost("{childProfileId:int}/login")]

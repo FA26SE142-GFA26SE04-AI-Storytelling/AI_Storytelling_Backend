@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -97,6 +98,32 @@ public class ClassGroupController : BaseApiController
             classGroupId, childProfileId, GetCurrentUserId(), cancellationToken);
 
         return HandleResult<object?>(null, "Thêm hồ sơ trẻ vào Class Group thành công.");
+    }
+
+    /// <summary>
+    /// Bulk Enrollment (Bước 1.5) — import CSV, mỗi dòng hợp lệ tạo một ChildProfile và invitation code riêng.
+    /// </summary>
+    [HttpPost("{classGroupId:int}/bulk-enroll")]
+    [Authorize(Roles = "Teacher")]
+    [RequestSizeLimit(
+        StoryPlatform.Application.Features.ChildProfiles.ClassGroups.BulkEnrollment.CsvBulkEnrollmentParser.MaxFileSizeBytes)]
+    public async Task<ActionResult<ApiResponse<BulkEnrollResultDto>>> BulkEnroll(
+        int classGroupId,
+        IFormFile file,
+        CancellationToken cancellationToken)
+    {
+        if (file == null || file.Length == 0)
+        {
+            return BadRequest(ApiResponse<object?>.Fail("File CSV không được để trống."));
+        }
+
+        await using var stream = new MemoryStream();
+        await file.CopyToAsync(stream, cancellationToken);
+
+        var result = await _classGroupService.BulkEnrollAsync(
+            classGroupId, GetCurrentUserId(), stream.ToArray(), cancellationToken);
+
+        return HandleResult(result, "Xử lý import hàng loạt hoàn tất.");
     }
 
     /// <summary>

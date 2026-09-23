@@ -21,6 +21,8 @@ using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Services;
+using StoryPlatform.Application.Features.ChildProfiles.ParentalGate.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.ParentalGate.Services;
 using StoryPlatform.Application.Features.ChildProfiles.ClassGroups.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.ClassGroups.Services;
 using StoryPlatform.Application.Features.ChildProfiles.Learning.Interfaces;
@@ -67,6 +69,7 @@ public static class DependencyInjection
         services.AddScoped<ISupervisionService, SupervisionService>();
         services.AddScoped<IClassGroupService, ClassGroupService>();
         services.AddScoped<IChildAccessCredentialService, ChildAccessCredentialService>();
+        services.AddScoped<IParentalGateService, ParentalGateService>();
         services.AddScoped<IContentCategoryService, ContentCategoryService>();
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IOrganizationService, OrganizationService>();

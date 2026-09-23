@@ -51,6 +51,7 @@ builder.Services.AddScoped<INotificationRealtimePublisher, SignalRNotificationPu
 
 var app = builder.Build();
 
+app.FixMigrationHistoryIfRequested<StoryPlatform.Infrastructure.Persistence.ApplicationDbContext>(builder.Configuration);
 app.ApplyPendingMigrations<StoryPlatform.Infrastructure.Persistence.ApplicationDbContext>();
 app.SeedDataIfRequested<StoryPlatform.Infrastructure.Persistence.ApplicationDbContext>(builder.Configuration);
 

@@ -46,6 +46,7 @@ USER $APP_UID
 
 FROM runtime AS core-api
 COPY --from=publish-core /artifacts/core/ ./
+COPY Database/Seed/ ./Seed/
 ENTRYPOINT ["dotnet", "StoryPlatform.Api.dll"]
 
 FROM runtime AS ai-api

@@ -27,6 +27,19 @@ public sealed class StoryPlatformCoreStack : Stack
     public StoryPlatformCoreStack(Construct scope, string id, IStackProps? props = null)
         : base(scope, id, props)
     {
+        // One-time bootstrap flag: when true, the container runs Database/Seed/*.sql once at
+        // startup (see DatabaseSeedExtensions in StoryPlatform.Api). Only pass
+        // --context seedDatabaseOnStart=true for the single deploy that should seed; unlike
+        // includeEcsService this isn't meant to be persisted in cdk.json, since leaving it true
+        // would re-seed on every deploy.
+        var seedDatabaseOnStartContext = Node.TryGetContext("seedDatabaseOnStart");
+        var seedDatabaseOnStart = seedDatabaseOnStartContext switch
+        {
+            bool b => b,
+            string s => bool.Parse(s),
+            _ => false
+        };
+
         Vpc = new Vpc(this, "CoreVpc", new VpcProps
         {
             MaxAzs = 2,
@@ -166,7 +179,8 @@ public sealed class StoryPlatformCoreStack : Stack
                 ["JwtSettings__ExpiryMinutes"] = "120",
                 ["JwtSettings__RefreshTokenExpiryDays"] = "7",
                 ["JwtSettings__ChildTokenExpiryMinutes"] = "240",
-                ["Logging__LogLevel__Default"] = "Warning"
+                ["Logging__LogLevel__Default"] = "Warning",
+                ["SeedData__RunOnStartup"] = seedDatabaseOnStart ? "true" : "false"
             },
             Secrets = new System.Collections.Generic.Dictionary<string, Amazon.CDK.AWS.ECS.Secret>
             {

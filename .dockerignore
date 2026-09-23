@@ -19,7 +19,7 @@ docs
 .env
 .env.*
 **/appsettings*.json
-Database
+Database/Seed-Database.ps1
 infra
 tests
 *.docx

@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Persistence;
@@ -76,21 +77,114 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             .OrderByDescending(item => item.Id).FirstOrDefault();
         var failed = jobs.Where(item => item.Status == GenerationJobStatus.Failed)
             .OrderByDescending(item => item.Id).FirstOrDefault();
+        var qualityFailure = active is null ? ToQualityFailure(failed) : null;
 
         return new ContentGenerationProgressDto
         {
             StoryId = story.Id,
             StoryStatus = ToSnake(story.Status.ToString()),
-            CurrentStep = story.Status == StoryStatus.ContentReview ? "complete" : active is null ? "not_started" :
-                $"{(active.Status == GenerationJobStatus.Processing ? "generating" : "pending")}_{OperationName(active.Operation)}",
+            CurrentStep = story.Status == StoryStatus.ContentReview ? "complete" :
+                active is not null
+                    ? $"{(active.Status == GenerationJobStatus.Processing ? "generating" : "pending")}_{OperationName(active.Operation)}"
+                    : failed is not null ? $"failed_{OperationName(failed.Operation)}" : "not_started",
             Content = stable is not null ? "stable" : JobState(jobs, GenerationJobOperation.GenerateContent),
             Vocabulary = vocabularyDone ? "completed" : JobState(jobs, GenerationJobOperation.GenerateVocabulary),
             Quiz = quizDone ? "completed" : JobState(jobs, GenerationJobOperation.GenerateQuiz),
             Discussion = discussionDone ? "completed" : JobState(jobs, GenerationJobOperation.GenerateDiscussion),
             IsComplete = story.Status == StoryStatus.ContentReview && stable is not null && vocabularyDone && quizDone && discussionDone,
-            LastErrorCode = failed?.ErrorCode,
+            LastErrorCode = active is null ? failed?.ErrorCode : null,
+            QualityFailure = qualityFailure,
             StableStoryVersionId = stable?.Id
         };
+    }
+
+    public async Task<ContentGenerationProgressDto> RetryAsync(
+        int userId,
+        int storyId,
+        RetryContentGenerationRequestDto input,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateObject(input);
+        await InStoryTransactionAsync(storyId, async () =>
+        {
+            var story = await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
+            if (story.Source != StorySource.Ai || story.Status != StoryStatus.OutlineReview)
+            {
+                throw new ConflictException("Chỉ Story AI đang ở trạng thái outline_review mới có thể retry sinh nội dung.");
+            }
+
+            var outline = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
+                    item => item.StoryId == storyId &&
+                            item.IsCurrent &&
+                            item.Content == null &&
+                            item.OutlineApprovedAt != null,
+                    cancellationToken: cancellationToken))
+                .OrderByDescending(item => item.VersionNo)
+                .FirstOrDefault();
+            if (outline is null)
+            {
+                throw new ConflictException("Story không có outline hiện hành đã được duyệt để retry sinh nội dung.");
+            }
+
+            var key = input.RetryKey.Trim();
+            var existing = await _unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(
+                item => item.RequestedByUserId == userId &&
+                        item.Operation == GenerationJobOperation.GenerateContent &&
+                        item.OperationKey == key,
+                cancellationToken: cancellationToken);
+            if (existing is not null)
+            {
+                if (existing.StoryId != storyId || existing.BaseStoryVersionId != outline.Id)
+                {
+                    throw new ConflictException("Retry key đã được sử dụng cho Story hoặc outline version khác.");
+                }
+
+                return true;
+            }
+
+            if (await _unitOfWork.Repository<StoryGenerationJob>().ExistsAsync(
+                    item => item.StoryId == storyId &&
+                            (item.Operation == GenerationJobOperation.GenerateContent ||
+                             item.Operation == GenerationJobOperation.GenerateVocabulary ||
+                             item.Operation == GenerationJobOperation.GenerateQuiz ||
+                             item.Operation == GenerationJobOperation.GenerateDiscussion) &&
+                            (item.Status == GenerationJobStatus.Pending || item.Status == GenerationJobStatus.Processing),
+                    cancellationToken))
+            {
+                throw new ConflictException("Story đang có content generation job hoạt động.");
+            }
+
+            var failed = (await _unitOfWork.Repository<StoryGenerationJob>().FindAsync(
+                    item => item.StoryId == storyId &&
+                            item.Operation == GenerationJobOperation.GenerateContent &&
+                            item.Status == GenerationJobStatus.Failed &&
+                            item.BaseStoryVersionId == outline.Id,
+                    cancellationToken: cancellationToken))
+                .OrderByDescending(item => item.Id)
+                .FirstOrDefault();
+            if (failed is null || !failed.GenerationRequestId.HasValue)
+            {
+                throw new ConflictException("Story không có content generation thất bại hợp lệ để retry.");
+            }
+
+            await _unitOfWork.Repository<StoryGenerationJob>().AddAsync(new StoryGenerationJob
+            {
+                StoryId = storyId,
+                GenerationRequestId = failed.GenerationRequestId,
+                BaseStoryVersionId = outline.Id,
+                RequestedByUserId = userId,
+                OperationKey = key,
+                Operation = GenerationJobOperation.GenerateContent,
+                Stage = JobStage.ContentPending,
+                Status = GenerationJobStatus.Pending,
+                AttemptNo = 0,
+                MaxAttempts = failed.MaxAttempts > 0 ? failed.MaxAttempts : 3,
+                StartedAt = DateTime.UtcNow
+            }, cancellationToken);
+            return true;
+        }, cancellationToken);
+
+        return await GetProgressAsync(userId, storyId, cancellationToken);
     }
 
     public async Task<bool> ProcessNextAsync(CancellationToken cancellationToken = default)
@@ -227,7 +321,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             }
             var candidate = persistedCandidate ?? await PersistCandidateAsync(
                 handoff, storyContent, quality, refinement == 0 ? VersionEditType.Initial : VersionEditType.AiRefined,
-                metadata, claimedToken, cancellationToken);
+                metadata, refinement, claimedToken, cancellationToken);
             persistedCandidate = null;
             if (quality.IsPassed)
             {
@@ -410,7 +504,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
 
     private async Task<StoryVersion> PersistCandidateAsync(
         ContentHandoff handoff, StoryContentDto content, ContentQualityResult quality, VersionEditType editType,
-        GenerationMetadataDto metadata, string claimedToken, CancellationToken cancellationToken)
+        GenerationMetadataDto metadata, int refinementAttempts, string claimedToken, CancellationToken cancellationToken)
     {
         return await InStoryTransactionAsync(handoff.Job.StoryId, async () =>
         {
@@ -445,7 +539,8 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
                 job.BaseStoryVersionId ??= handoff.BaseVersion.Id;
                 job.StoryVersionId = candidate.Id;
                 job.StoryVersion = candidate;
-                job.GenerationMetadataJson = JsonSerializer.Serialize(new { generation = metadata, quality }, JsonOptions);
+                job.GenerationMetadataJson = JsonSerializer.Serialize(
+                    new { generation = metadata, quality, refinementAttempts }, JsonOptions);
                 _unitOfWork.Repository<StoryGenerationJob>().Update(job);
             }
             return candidate;
@@ -641,6 +736,55 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
     private static bool IsContentGenerationOperation(GenerationJobOperation operation) => operation is
         GenerationJobOperation.GenerateContent or GenerationJobOperation.GenerateVocabulary or
         GenerationJobOperation.GenerateQuiz or GenerationJobOperation.GenerateDiscussion;
+    private static ContentQualityFailureDto? ToQualityFailure(StoryGenerationJob? failedJob)
+    {
+        if (failedJob is null || string.IsNullOrWhiteSpace(failedJob.GenerationMetadataJson)) return null;
+
+        try
+        {
+            var envelope = JsonSerializer.Deserialize<CandidateMetadataEnvelope>(
+                failedJob.GenerationMetadataJson, JsonOptions);
+            if (envelope?.Quality is null) return null;
+
+            var quality = envelope.Quality;
+            var failedGates = new (string Name, ContentQualityGate Gate)[]
+                {
+                    ("outline_consistency", quality.OutlineConsistency),
+                    ("length", quality.Length),
+                    ("safety", quality.Safety),
+                    ("readability", quality.Readability),
+                    ("vocabulary_compliance", quality.VocabularyCompliance)
+                }
+                .Where(item => !item.Gate.Passed)
+                .Select(item => new ContentQualityGateFailureDto
+                {
+                    Gate = item.Name,
+                    ReasonCode = item.Gate.ReasonCode ?? "CONTENT_QUALITY_NOT_MET",
+                    Violations = item.Gate.Violations
+                })
+                .ToArray();
+
+            return failedGates.Length == 0 ? null : new ContentQualityFailureDto
+            {
+                RefinementAttempts = envelope.RefinementAttempts,
+                SafetyScore = quality.SafetyScore,
+                FailedGates = failedGates
+            };
+        }
+        catch (JsonException)
+        {
+            // Progress remains available even when legacy or malformed metadata cannot be parsed.
+            return null;
+        }
+    }
+    private static void ValidateObject(object value)
+    {
+        var results = new List<ValidationResult>();
+        if (!Validator.TryValidateObject(value, new ValidationContext(value), results, true))
+        {
+            throw new BadRequestException(string.Join(" ", results.Select(item => item.ErrorMessage)));
+        }
+    }
     private static string OperationName(GenerationJobOperation operation) => operation switch
     {
         GenerationJobOperation.GenerateContent => "content",
@@ -721,7 +865,10 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
 
     private sealed record ContentHandoff(StoryGenerationJob Job, StoryGenerationRequest Request, StoryVersion BaseVersion,
         AcceptedAIStoryInputSnapshot Input, AIStoryInputContextSnapshot Context);
-    private sealed record CandidateMetadataEnvelope(GenerationMetadataDto Generation, ContentQualityResult Quality);
+    private sealed record CandidateMetadataEnvelope(
+        GenerationMetadataDto? Generation,
+        ContentQualityResult? Quality,
+        int RefinementAttempts = 0);
     private sealed record ArtifactState(StoryGenerationJob Job, StoryVersion Version, AIStoryInputContextSnapshot Context);
     private sealed record QuizItemSeed(QuizType Type, string Question, string CorrectAnswer, string Choices)
     {

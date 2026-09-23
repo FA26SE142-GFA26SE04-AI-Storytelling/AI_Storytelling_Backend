@@ -5,6 +5,11 @@ namespace StoryPlatform.Application.Features.ContentGeneration.Interfaces;
 public interface IContentGenerationService
 {
     Task<ContentGenerationProgressDto> GetProgressAsync(int userId, int storyId, CancellationToken cancellationToken = default);
+    Task<ContentGenerationProgressDto> RetryAsync(
+        int userId,
+        int storyId,
+        RetryContentGenerationRequestDto input,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IContentGenerationJobProcessor

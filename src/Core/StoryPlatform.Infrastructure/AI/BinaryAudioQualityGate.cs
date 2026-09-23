@@ -28,8 +28,9 @@ public sealed class BinaryAudioQualityGate : IAudioQualityGate
         if (!magic.IsValid)
             return AudioQualityGateResult.Fail($"AUDIO_MAGIC_BYTES_INVALID: {magic.Reason}");
 
-        // 3. If word timings are expected, verify count matches (±0).
-        if (expectedMarks.Count > 0)
+        // 3. If word timings are expected and supported, verify count matches (±0).
+        var hasWordTimings = audio.GetMetadata("hasWordTimings");
+        if (!string.Equals(hasWordTimings, "false", StringComparison.OrdinalIgnoreCase) && expectedMarks.Count > 0)
         {
             var timingsJson = audio.GetMetadata("wordTimingsJson");
             if (string.IsNullOrEmpty(timingsJson))

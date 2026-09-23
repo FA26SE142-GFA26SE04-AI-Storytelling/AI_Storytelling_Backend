@@ -23,7 +23,7 @@ public sealed class GeminiSemanticSceneSegmentationProvider : ISemanticSceneSegm
     private readonly GeminiOptions _gemini;
     private readonly VertexOptions _vertex;
     private readonly ILogger<GeminiSemanticSceneSegmentationProvider> _logger;
-    private const string SemanticModel = "gemini-2.5-flash";
+    private const string SemanticModel = "gemini-3.8-flash";
 
     public GeminiSemanticSceneSegmentationProvider(
         HttpClient httpClient,
@@ -50,13 +50,8 @@ public sealed class GeminiSemanticSceneSegmentationProvider : ISemanticSceneSegm
 
         var prompt = BuildPrompt(request);
         var body = new { contents = new[] { new { role = "user", parts = new[] { new { text = prompt } } } } };
-        using var response = await GeminiHttpRetry.SendWithTransportRetryAsync(
-            () => BuildRequest(body),
-            _httpClient,
-            _gemini.TransportRetryCount,
-            TimeSpan.FromMilliseconds(_gemini.TransportRetryBaseDelayMs),
-            _logger,
-            cancellationToken).ConfigureAwait(false);
+        using var httpRequest = BuildRequest(body);
+        using var response = await _httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
 
         var statusCode = response.StatusCode;
         var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -101,10 +96,7 @@ public sealed class GeminiSemanticSceneSegmentationProvider : ISemanticSceneSegm
 
     private HttpRequestMessage BuildRequest(object body)
     {
-        var url = _vertex.UseVertex
-            ? $"https://{_vertex.Location}-aiplatform.googleapis.com/v1/projects/{_vertex.ProjectId}/locations/{_vertex.Location}/publishers/google/models/{SemanticModel}:generateContent"
-            : $"{_gemini.Endpoint.TrimEnd('/')}/{SemanticModel}:generateContent";
-
+        var url = VertexUrlResolver.Resolve(_vertex, _gemini, SemanticModel);
         var msg = new HttpRequestMessage(HttpMethod.Post, url);
         if (!_vertex.UseVertex)
         {

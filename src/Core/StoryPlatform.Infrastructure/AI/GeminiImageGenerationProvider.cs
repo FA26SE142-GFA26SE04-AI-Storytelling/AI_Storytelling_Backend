@@ -41,8 +41,8 @@ public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
         _vertex = vertexOptions.Value;
         _image = imageOptions.Value;
         _logger = logger;
-        if (_httpClient.Timeout == Timeout.InfiniteTimeSpan || _httpClient.Timeout > TimeSpan.FromSeconds(_gemini.TimeoutSeconds))
-            _httpClient.Timeout = TimeSpan.FromSeconds(_gemini.TimeoutSeconds);
+        if (_httpClient.Timeout == Timeout.InfiniteTimeSpan || _httpClient.Timeout > TimeSpan.FromSeconds(_image.TimeoutSeconds))
+            _httpClient.Timeout = TimeSpan.FromSeconds(_image.TimeoutSeconds);
     }
 
     public async Task<GeneratedMedia> GenerateAsync(
@@ -51,19 +51,16 @@ public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
         if (!_vertex.UseVertex && string.IsNullOrWhiteSpace(_gemini.ApiKey))
             throw new PermanentMediaGenerationException("IMAGE_PROVIDER_NOT_CONFIGURED");
 
-        var prompt = BuildPrompt(specification);
-        var body = BuildRequestBody(prompt, _image.AspectRatio);
-        using var response = await GeminiHttpRetry.SendWithTransportRetryAsync(
-            () => BuildRequest(body),
-            _httpClient,
-            _image.TransportRetryCount,
-            TimeSpan.FromMilliseconds(_image.TransportRetryBaseDelayMs),
-            _logger,
-            cancellationToken).ConfigureAwait(false);
+        var prompt = BuildPrompt(specification, _image);
+        var body = BuildRequestBody(prompt, _image);
+        using var request = BuildRequest(body);
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
         {
             var error = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            if (IsTransient(response.StatusCode))
+                throw new HttpRequestException($"GEMINI_IMAGE_TRANSIENT_HTTP_{(int)response.StatusCode}: {Truncate(error, 200)}");
             throw new PermanentMediaGenerationException($"GEMINI_IMAGE_HTTP_{(int)response.StatusCode}: {Truncate(error, 200)}");
         }
 
@@ -84,10 +81,7 @@ public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
 
     private HttpRequestMessage BuildRequest(object body)
     {
-        var url = _vertex.UseVertex
-            ? $"https://{_vertex.Location}-aiplatform.googleapis.com/v1/projects/{_vertex.ProjectId}/locations/{_vertex.Location}/publishers/google/models/{_image.Model}:generateContent"
-            : $"{_gemini.Endpoint.TrimEnd('/')}/{_image.Model}:generateContent";
-
+        var url = VertexUrlResolver.Resolve(_vertex, _gemini, _image.Model);
         var message = new HttpRequestMessage(HttpMethod.Post, url);
         if (!_vertex.UseVertex)
         {
@@ -98,10 +92,11 @@ public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
         return message;
     }
 
-    private static string BuildPrompt(SceneSpecification spec)
+    private static string BuildPrompt(SceneSpecification spec, ImageGenerationOptions options)
     {
         var sb = new StringBuilder();
         sb.AppendLine("Child-friendly storybook illustration. Avoid any unsafe content for children aged 6-12.");
+        sb.AppendLine($"People policy: {options.PersonGeneration}. Do not depict children in unsafe, sexualized, or exploitative situations.");
         sb.AppendLine("--- Visual description ---");
         sb.AppendLine(spec.VisualDescription ?? spec.SceneText);
         sb.AppendLine("--- Must show ---");
@@ -116,7 +111,7 @@ public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
         return sb.ToString();
     }
 
-    private static object BuildRequestBody(string prompt, string aspectRatio) => new
+    private static object BuildRequestBody(string prompt, ImageGenerationOptions options) => new
     {
         contents = new[]
         {
@@ -124,13 +119,37 @@ public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
         },
         generationConfig = new
         {
-            responseModalities = new[] { "IMAGE" },
-            responseFormat = new
+            responseModalities = new[] { "TEXT", "IMAGE" },
+            candidateCount = Math.Clamp(options.NumberOfImages, 1, 4),
+            imageConfig = new
             {
-                @image = new { aspectRatio }
+                aspectRatio = options.AspectRatio
             }
-        }
+        },
+        safetySettings = BuildSafetySettings(options.SafetySetting)
     };
+
+    private static object[] BuildSafetySettings(string setting)
+    {
+        var threshold = setting.Trim().ToLowerInvariant() switch
+        {
+            "block_most" => "BLOCK_LOW_AND_ABOVE",
+            "block_few" => "BLOCK_ONLY_HIGH",
+            "block_none" => "BLOCK_NONE",
+            _ => "BLOCK_MEDIUM_AND_ABOVE"
+        };
+        return
+        [
+            new { category = "HARM_CATEGORY_HARASSMENT", threshold },
+            new { category = "HARM_CATEGORY_HATE_SPEECH", threshold },
+            new { category = "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold },
+            new { category = "HARM_CATEGORY_DANGEROUS_CONTENT", threshold }
+        ];
+    }
+
+    private static bool IsTransient(System.Net.HttpStatusCode code) =>
+        code is System.Net.HttpStatusCode.TooManyRequests or System.Net.HttpStatusCode.RequestTimeout or
+        System.Net.HttpStatusCode.ServiceUnavailable || (int)code >= 500;
 
     private static async Task<(byte[] bytes, string? mimeHint)> ExtractFirstInlineImageAsync(
         Stream responseBody, CancellationToken cancellationToken)

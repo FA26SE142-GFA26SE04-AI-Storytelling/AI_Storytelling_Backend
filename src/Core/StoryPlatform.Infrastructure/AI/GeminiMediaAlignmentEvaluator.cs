@@ -36,8 +36,8 @@ public sealed class GeminiMediaAlignmentEvaluator : IMediaAlignmentEvaluator
         _vertex = vertexOptions.Value;
         _evalOptions = evalOptions.Value;
         _logger = logger;
-        if (_httpClient.Timeout == Timeout.InfiniteTimeSpan || _httpClient.Timeout.TotalSeconds > _gemini.TimeoutSeconds)
-            _httpClient.Timeout = TimeSpan.FromSeconds(_gemini.TimeoutSeconds);
+        if (_httpClient.Timeout == Timeout.InfiniteTimeSpan || _httpClient.Timeout.TotalSeconds > _evalOptions.TimeoutSeconds)
+            _httpClient.Timeout = TimeSpan.FromSeconds(_evalOptions.TimeoutSeconds);
     }
 
     public async Task<MediaEvaluationResult> EvaluateAsync(
@@ -48,14 +48,9 @@ public sealed class GeminiMediaAlignmentEvaluator : IMediaAlignmentEvaluator
             return new MediaEvaluationResult(MediaEvaluationDecision.Fail, "EVALUATOR_NOT_CONFIGURED");
 
         var prompt = BuildPrompt(specification);
-        var body = BuildRequestBody(prompt);
-        using var response = await GeminiHttpRetry.SendWithTransportRetryAsync(
-            () => BuildRequest(body),
-            _httpClient,
-            _evalOptions.TransportRetryCount,
-            TimeSpan.FromMilliseconds(_gemini.TransportRetryBaseDelayMs),
-            _logger,
-            cancellationToken).ConfigureAwait(false);
+        var body = BuildRequestBody(prompt, illustration);
+        using var request = BuildRequest(body);
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         var statusCode = response.StatusCode;
         var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -63,6 +58,8 @@ public sealed class GeminiMediaAlignmentEvaluator : IMediaAlignmentEvaluator
         if (!IsSuccess(statusCode))
         {
             _logger.LogError("Alignment evaluator HTTP {Status}: {Body}", (int)statusCode, Truncate(content, 200));
+            if (IsTransient(statusCode))
+                throw new HttpRequestException($"ALIGNMENT_EVALUATOR_TRANSIENT_HTTP_{(int)statusCode}");
             return new MediaEvaluationResult(MediaEvaluationDecision.Fail, "EVALUATOR_HTTP_ERROR");
         }
 
@@ -71,10 +68,7 @@ public sealed class GeminiMediaAlignmentEvaluator : IMediaAlignmentEvaluator
 
     private HttpRequestMessage BuildRequest(object body)
     {
-        var url = _vertex.UseVertex
-            ? $"https://{_vertex.Location}-aiplatform.googleapis.com/v1/projects/{_vertex.ProjectId}/locations/{_vertex.Location}/publishers/google/models/{_evalOptions.Model}:generateContent"
-            : $"{_gemini.Endpoint.TrimEnd('/')}/{_evalOptions.Model}:generateContent";
-
+        var url = VertexUrlResolver.Resolve(_vertex, _gemini, _evalOptions.Model);
         var message = new HttpRequestMessage(HttpMethod.Post, url);
         if (!_vertex.UseVertex)
         {
@@ -89,6 +83,10 @@ public sealed class GeminiMediaAlignmentEvaluator : IMediaAlignmentEvaluator
         var n = (int)code;
         return n >= 200 && n < 300;
     }
+
+    private static bool IsTransient(System.Net.HttpStatusCode code) =>
+        code is System.Net.HttpStatusCode.TooManyRequests or System.Net.HttpStatusCode.RequestTimeout or
+        System.Net.HttpStatusCode.ServiceUnavailable || (int)code >= 500;
 
     private static string BuildPrompt(SceneSpecification spec)
     {
@@ -116,16 +114,34 @@ public sealed class GeminiMediaAlignmentEvaluator : IMediaAlignmentEvaluator
         return sb.ToString();
     }
 
-    private static object BuildRequestBody(string prompt) => new
+    private static object BuildRequestBody(string prompt, GeneratedMedia illustration) => new
     {
-        contents = new[] { new { role = "user", parts = new[] { new { text = prompt } } } }
+        contents = new[]
+        {
+            new
+            {
+                role = "user",
+                parts = new object[]
+                {
+                    new { text = prompt },
+                    new
+                    {
+                        inlineData = new
+                        {
+                            mimeType = illustration.MimeType,
+                            data = Convert.ToBase64String(illustration.Content)
+                        }
+                    }
+                }
+            }
+        }
     };
 
     private static MediaEvaluationResult ParseResponse(string content)
     {
         try
         {
-            using var doc = JsonDocument.Parse(content);
+            using var doc = JsonDocument.Parse(GeminiResponseJson.ExtractFirstTextPayload(content));
             var root = doc.RootElement;
             var score = root.TryGetProperty("alignmentScore", out var s) && s.ValueKind == JsonValueKind.Number
                 ? s.GetDouble() : -1.0;

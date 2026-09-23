@@ -17,6 +17,12 @@ public static class DatabaseMigrationHistoryFixExtensions
     // before the app could ever answer /health. Marks the new id as applied, without running any
     // of its SQL, only when it isn't already recorded - safe to run repeatedly, and a no-op on a
     // genuinely fresh database (nothing to fix; ApplyPendingMigrations proceeds normally).
+    //
+    // Split into 3 separate commands (create / check / insert) rather than one parameterized
+    // multi-statement string, and logged at Warning (not Information, which production's
+    // Logging:LogLevel:Default filters out) - an earlier version combined everything into one
+    // command and never proved whether it actually ran in production, since nothing about it
+    // ever showed up in CloudWatch even at the ERROR level.
     private const string SquashedInitMigrationId = "20260922113625_Init";
     private const string SquashedInitProductVersion = "8.0.13"; // Migrations/20260922113625_Init.Designer.cs
 
@@ -32,6 +38,8 @@ public static class DatabaseMigrationHistoryFixExtensions
         var context = scope.ServiceProvider.GetRequiredService<TContext>();
         var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("DatabaseMigrationHistoryFix");
 
+        logger.LogWarning("Migration history fix starting for '{MigrationId}'.", SquashedInitMigrationId);
+
         try
         {
             var connection = context.Database.GetDbConnection();
@@ -40,34 +48,60 @@ public static class DatabaseMigrationHistoryFixExtensions
                 connection.Open();
             }
 
-            using var command = connection.CreateCommand();
-            command.CommandText = """
-                CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (
-                    "MigrationId" character varying(150) NOT NULL,
-                    "ProductVersion" character varying(32) NOT NULL,
-                    CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY ("MigrationId")
-                );
+            using (var createCommand = connection.CreateCommand())
+            {
+                createCommand.CommandText = """
+                    CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (
+                        "MigrationId" character varying(150) NOT NULL,
+                        "ProductVersion" character varying(32) NOT NULL,
+                        CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY ("MigrationId")
+                    );
+                    """;
+                createCommand.ExecuteNonQuery();
+            }
 
-                INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-                VALUES (@migrationId, @productVersion)
-                ON CONFLICT ("MigrationId") DO NOTHING;
-                """;
+            bool alreadyApplied;
+            using (var checkCommand = connection.CreateCommand())
+            {
+                checkCommand.CommandText = """
+                    SELECT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = @migrationId);
+                    """;
+                var checkParam = checkCommand.CreateParameter();
+                checkParam.ParameterName = "migrationId";
+                checkParam.Value = SquashedInitMigrationId;
+                checkCommand.Parameters.Add(checkParam);
+                alreadyApplied = (bool)checkCommand.ExecuteScalar()!;
+            }
 
-            var migrationIdParam = command.CreateParameter();
-            migrationIdParam.ParameterName = "migrationId";
-            migrationIdParam.Value = SquashedInitMigrationId;
-            command.Parameters.Add(migrationIdParam);
-
-            var productVersionParam = command.CreateParameter();
-            productVersionParam.ParameterName = "productVersion";
-            productVersionParam.Value = SquashedInitProductVersion;
-            command.Parameters.Add(productVersionParam);
-
-            var rowsInserted = command.ExecuteNonQuery();
-            logger.LogInformation(
-                "Migration history fix ran for '{MigrationId}' ({RowsInserted} row(s) inserted; 0 means it was already recorded).",
+            logger.LogWarning(
+                "Migration history check for '{MigrationId}': already recorded = {AlreadyApplied}.",
                 SquashedInitMigrationId,
-                rowsInserted);
+                alreadyApplied);
+
+            if (!alreadyApplied)
+            {
+                using var insertCommand = connection.CreateCommand();
+                insertCommand.CommandText = """
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+                    VALUES (@migrationId, @productVersion);
+                    """;
+
+                var migrationIdParam = insertCommand.CreateParameter();
+                migrationIdParam.ParameterName = "migrationId";
+                migrationIdParam.Value = SquashedInitMigrationId;
+                insertCommand.Parameters.Add(migrationIdParam);
+
+                var productVersionParam = insertCommand.CreateParameter();
+                productVersionParam.ParameterName = "productVersion";
+                productVersionParam.Value = SquashedInitProductVersion;
+                insertCommand.Parameters.Add(productVersionParam);
+
+                var rowsInserted = insertCommand.ExecuteNonQuery();
+                logger.LogWarning(
+                    "Inserted migration history row for '{MigrationId}': {RowsInserted} row(s).",
+                    SquashedInitMigrationId,
+                    rowsInserted);
+            }
         }
         catch (Exception ex)
         {

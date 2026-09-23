@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using StoryPlatform.AI.Infrastructure.LLM.VertexAI;
 using Xunit;
@@ -6,6 +8,9 @@ namespace StoryPlatform.AI.UnitTests;
 
 public sealed class VertexAIGeminiClientTests
 {
+    private static ILogger<VertexAIGeminiClient> CreateNullLogger() =>
+        NullLogger<VertexAIGeminiClient>.Instance;
+
     [Theory]
     [InlineData("", "us-central1", "gemini-1.5-flash-002")]
     [InlineData("  ", "us-central1", "gemini-1.5-flash-002")]
@@ -19,7 +24,8 @@ public sealed class VertexAIGeminiClientTests
             Model = model
         });
 
-        var exception = Assert.Throws<InvalidOperationException>(() => new VertexAIGeminiClient(options));
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            new VertexAIGeminiClient(options, CreateNullLogger()));
         Assert.Contains("ProjectId", exception.Message);
     }
 
@@ -36,7 +42,8 @@ public sealed class VertexAIGeminiClientTests
             Model = model
         });
 
-        var exception = Assert.Throws<InvalidOperationException>(() => new VertexAIGeminiClient(options));
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            new VertexAIGeminiClient(options, CreateNullLogger()));
         Assert.Contains("Location", exception.Message);
     }
 
@@ -53,7 +60,8 @@ public sealed class VertexAIGeminiClientTests
             Model = model
         });
 
-        var exception = Assert.Throws<InvalidOperationException>(() => new VertexAIGeminiClient(options));
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            new VertexAIGeminiClient(options, CreateNullLogger()));
         Assert.Contains("Model", exception.Message);
     }
 
@@ -68,7 +76,8 @@ public sealed class VertexAIGeminiClientTests
             Model = "gemini-1.5-flash-002"
         });
 
-        var exception = Assert.Throws<InvalidOperationException>(() => new VertexAIGeminiClient(options));
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            new VertexAIGeminiClient(options, CreateNullLogger()));
         Assert.Contains("AuthMode", exception.Message);
     }
 

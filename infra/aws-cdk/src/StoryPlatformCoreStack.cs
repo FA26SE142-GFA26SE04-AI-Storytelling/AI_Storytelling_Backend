@@ -192,7 +192,7 @@ public sealed class StoryPlatformCoreStack : Stack
         ApiTaskSecurityGroup = new SecurityGroup(this, "ApiTaskSecurityGroup", new SecurityGroupProps
         {
             Vpc = Vpc,
-            Description = "Security group for the Core API's ECS Fargate task",
+            Description = "Security group for the Core API ECS Fargate task",
             AllowAllOutbound = true
         });
         ApiTaskSecurityGroup.AddIngressRule(Peer.AnyIpv4(), Port.Tcp(8080), "Public HTTP access to Core API");

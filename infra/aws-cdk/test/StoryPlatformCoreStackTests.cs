@@ -264,21 +264,11 @@ public class StoryPlatformCoreStackTests
     }
 
     [Fact]
-    public void Stack_CreatesApiTaskSecurityGroupAllowingPublicHttpAndRdsAccess()
+    public void Stack_RdsSecurityGroupAllowsApiTaskOn5432()
     {
+        // The API task's own security group getting 8080 traffic from the ALB (not directly
+        // from the internet) is covered by Stack_CreatesInternetFacingAlbForwardingToTaskPort8080_WhenContextFlagEnabled.
         var template = SynthTemplate();
-        template.HasResourceProperties("AWS::EC2::SecurityGroup", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["SecurityGroupIngress"] = Match.ArrayWith(new object[]
-            {
-                Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-                {
-                    ["FromPort"] = 8080,
-                    ["ToPort"] = 8080,
-                    ["CidrIp"] = "0.0.0.0/0"
-                })
-            })
-        }));
         template.HasResourceProperties("AWS::EC2::SecurityGroupIngress", new System.Collections.Generic.Dictionary<string, object>
         {
             ["FromPort"] = 5432,
@@ -312,5 +302,52 @@ public class StoryPlatformCoreStackTests
                 })
             })
         }));
+    }
+
+    [Fact]
+    public void Stack_OmitsAlbByDefault()
+    {
+        var template = SynthTemplate();
+        template.ResourceCountIs("AWS::ElasticLoadBalancingV2::LoadBalancer", 0);
+    }
+
+    [Fact]
+    public void Stack_CreatesInternetFacingAlbForwardingToTaskPort8080_WhenContextFlagEnabled()
+    {
+        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["includeEcsService"] = true
+        });
+
+        template.ResourceCountIs("AWS::ElasticLoadBalancingV2::LoadBalancer", 1);
+        template.HasResourceProperties("AWS::ElasticLoadBalancingV2::LoadBalancer", new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["Scheme"] = "internet-facing",
+            ["Type"] = "application"
+        });
+
+        template.ResourceCountIs("AWS::ElasticLoadBalancingV2::Listener", 1);
+        template.HasResourceProperties("AWS::ElasticLoadBalancingV2::Listener", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["Port"] = 80,
+            ["Protocol"] = "HTTP"
+        }));
+
+        template.ResourceCountIs("AWS::ElasticLoadBalancingV2::TargetGroup", 1);
+        template.HasResourceProperties("AWS::ElasticLoadBalancingV2::TargetGroup", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["Port"] = 8080,
+            ["Protocol"] = "HTTP",
+            ["TargetType"] = "ip",
+            ["HealthCheckPath"] = "/health"
+        }));
+
+        // The task's own security group must not accept traffic straight from the internet
+        // anymore - only from the ALB - now that the ALB is the public entry point.
+        Assert.ThrowsAny<System.Exception>(() => template.HasResourceProperties("AWS::EC2::SecurityGroupIngress", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["CidrIp"] = "0.0.0.0/0",
+            ["FromPort"] = 8080
+        })));
     }
 }

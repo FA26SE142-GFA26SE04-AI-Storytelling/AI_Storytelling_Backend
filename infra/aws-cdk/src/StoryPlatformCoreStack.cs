@@ -2,6 +2,7 @@ using Amazon.CDK;
 using Amazon.CDK.AWS.EC2;
 using Amazon.CDK.AWS.ECR;
 using Amazon.CDK.AWS.ECS;
+using Amazon.CDK.AWS.ElasticLoadBalancingV2;
 using Amazon.CDK.AWS.IAM;
 using Amazon.CDK.AWS.Logs;
 using Amazon.CDK.AWS.RDS;
@@ -209,7 +210,9 @@ public sealed class StoryPlatformCoreStack : Stack
             Description = "Security group for the Core API ECS Fargate task",
             AllowAllOutbound = true
         });
-        ApiTaskSecurityGroup.AddIngressRule(Peer.AnyIpv4(), Port.Tcp(8080), "Public HTTP access to Core API");
+        // No direct-from-internet ingress rule here: once includeEcsService is on, only the ALB
+        // (below) may reach the task on 8080 - tightened from the previous "Peer.AnyIpv4()" rule
+        // now that the ALB, not the task's own ephemeral public IP, is the public entry point.
 
         Database.Connections.AllowFrom(ApiTaskSecurityGroup, Port.Tcp(5432), "Allow ECS API task to reach RDS");
 
@@ -310,6 +313,56 @@ public sealed class StoryPlatformCoreStack : Stack
                 Actions = new[] { "ecs:UpdateService", "ecs:DescribeServices" },
                 Resources = new[] { ApiService.ServiceArn }
             }));
+
+            // Stable public entry point for a custom domain. A Fargate awsvpc task gets a brand
+            // new ENI (and public IP) on every deploy/restart, so a domain can't point at the
+            // task directly; the ALB's DNS name never changes. (An EIP re-associated onto the
+            // task's ENI by a Lambda was tried first and would have been cheaper, but this
+            // account's org-level SCP blocks ec2:AssociateAddress outright - confirmed via
+            // AuthFailure on that call even with an admin-privileged IAM principal - so the ALB
+            // is the only viable option here despite its ~$16-20/month fixed cost.)
+            var apiAlb = new ApplicationLoadBalancer(this, "ApiAlb", new ApplicationLoadBalancerProps
+            {
+                Vpc = Vpc,
+                InternetFacing = true,
+                VpcSubnets = new SubnetSelection { SubnetType = SubnetType.PUBLIC }
+            });
+
+            ApiTaskSecurityGroup.Connections.AllowFrom(apiAlb, Port.Tcp(8080), "Allow ALB to reach Core API");
+
+            var apiListener = apiAlb.AddListener("HttpListener", new BaseApplicationListenerProps
+            {
+                Port = 80,
+                Open = true
+            });
+
+            apiListener.AddTargets("ApiTargets", new AddApplicationTargetsProps
+            {
+                Port = 8080,
+                Protocol = ApplicationProtocol.HTTP,
+                Targets = new IApplicationLoadBalancerTarget[]
+                {
+                    ApiService.LoadBalancerTarget(new LoadBalancerTargetOptions
+                    {
+                        ContainerName = "ApiContainer",
+                        ContainerPort = 8080
+                    })
+                },
+                HealthCheck = new Amazon.CDK.AWS.ElasticLoadBalancingV2.HealthCheck
+                {
+                    Path = "/health",
+                    Interval = Duration.Seconds(30),
+                    Timeout = Duration.Seconds(5),
+                    HealthyThresholdCount = 2,
+                    UnhealthyThresholdCount = 5
+                }
+            });
+
+            new CfnOutput(this, "ApiAlbDnsNameOutput", new CfnOutputProps
+            {
+                Value = apiAlb.LoadBalancerDnsName,
+                Description = "Point your domain's DNS record (CNAME/ALIAS) here"
+            });
         }
     }
 }

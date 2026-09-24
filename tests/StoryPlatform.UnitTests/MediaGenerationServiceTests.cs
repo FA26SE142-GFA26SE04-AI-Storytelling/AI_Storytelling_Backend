@@ -215,6 +215,56 @@ public sealed class MediaGenerationServiceTests
         Assert.Equal("TTS_RETRY_EXHAUSTED", result.ErrorCode);
     }
 
+    [Fact]
+    public async Task RetryAsync_RequeuesFailedJobAndOnlyResetsUnreadyAssets()
+    {
+        var uow = Seed();
+        var story = uow.Items<Story>().Single();
+        story.Status = StoryStatus.MediaProcessing;
+        var job = uow.Items<StoryGenerationJob>().Single();
+        job.Status = GenerationJobStatus.Failed;
+        job.Stage = JobStage.MediaGenerating;
+        job.AttemptNo = job.MaxAttempts;
+        job.ErrorCode = "ILLUSTRATION_RETRY_EXHAUSTED";
+        job.CompletedAt = DateTime.UtcNow;
+        uow.Seed(new StoryScene
+        {
+            Id = 30, StoryVersionId = 10, SceneIndex = 0,
+            TextRangeStart = 0, TextRangeEnd = 1, SceneText = "A"
+        });
+        uow.Seed(new MediaAsset
+        {
+            Id = 40, StoryVersionId = 10, StorySceneId = 30, Type = MediaType.Illustration,
+            Status = MediaStatus.ManualReview, ValidationStatus = ValidationStatus.Failed,
+            AttemptCount = 3, LastValidationReason = "temporary failure"
+        });
+        uow.Seed(new MediaAsset
+        {
+            Id = 41, StoryVersionId = 10, StorySceneId = 30, Type = MediaType.TtsAudio,
+            Status = MediaStatus.Ready, ValidationStatus = ValidationStatus.Passed,
+            AttemptCount = 1, Url = "ready.mp3", CompletedAt = DateTime.UtcNow
+        });
+        var service = Create(uow);
+
+        var progress = await service.RetryAsync(1, 1);
+
+        Assert.Equal(GenerationJobStatus.Pending, job.Status);
+        Assert.Equal(JobStage.MediaPending, job.Stage);
+        Assert.Equal(0, job.AttemptNo);
+        Assert.Null(job.ErrorCode);
+        Assert.Null(job.CompletedAt);
+        var illustration = uow.Items<MediaAsset>().Single(x => x.Id == 40);
+        Assert.Equal(MediaStatus.Queued, illustration.Status);
+        Assert.Equal(ValidationStatus.Pending, illustration.ValidationStatus);
+        Assert.Equal(0, illustration.AttemptCount);
+        Assert.Null(illustration.LastValidationReason);
+        var audio = uow.Items<MediaAsset>().Single(x => x.Id == 41);
+        Assert.Equal(MediaStatus.Ready, audio.Status);
+        Assert.Equal("ready.mp3", audio.Url);
+        Assert.Equal("Pending", progress.JobStatus);
+        Assert.Null(progress.ErrorCode);
+    }
+
     private static MediaGenerationService Create(
         StoryReviewServiceTests.FakeUnitOfWork uow,
         IImageGenerationProvider? image = null,

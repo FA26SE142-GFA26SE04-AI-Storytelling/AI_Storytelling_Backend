@@ -57,6 +57,7 @@ public interface IMediaSafetyEvaluator
 public interface IMediaGenerationService
 {
     Task<MediaGenerationProgress> GetProgressAsync(int userId, int storyId, CancellationToken cancellationToken = default);
+    Task<MediaGenerationProgress> RetryAsync(int userId, int storyId, CancellationToken cancellationToken = default);
 }
 
 public interface IMediaGenerationJobProcessor

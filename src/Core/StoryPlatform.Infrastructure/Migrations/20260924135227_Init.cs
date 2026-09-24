@@ -1821,6 +1821,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_reading_sessions", x => x.Id);
+                    table.CheckConstraint("CK_reading_sessions_exactly_one_entry_source", "(\"ChildAccessCredentialId\" IS NOT NULL AND \"SupervisorSessionId\" IS NULL) OR (\"ChildAccessCredentialId\" IS NULL AND \"SupervisorSessionId\" IS NOT NULL)");
                     table.ForeignKey(
                         name: "FK_reading_sessions_assignment_recipients_AssignmentRecipientId",
                         column: x => x.AssignmentRecipientId,

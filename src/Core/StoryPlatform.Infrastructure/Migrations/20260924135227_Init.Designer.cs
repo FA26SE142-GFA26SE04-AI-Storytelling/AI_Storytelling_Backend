@@ -12,7 +12,7 @@ using StoryPlatform.Infrastructure.Persistence;
 namespace StoryPlatform.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260924010248_Init")]
+    [Migration("20260924135227_Init")]
     partial class Init
     {
         /// <inheritdoc />
@@ -1873,7 +1873,10 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasIndex("SupervisorSessionId");
 
-                    b.ToTable("reading_sessions", (string)null);
+                    b.ToTable("reading_sessions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_reading_sessions_exactly_one_entry_source", "(\"ChildAccessCredentialId\" IS NOT NULL AND \"SupervisorSessionId\" IS NULL) OR (\"ChildAccessCredentialId\" IS NULL AND \"SupervisorSessionId\" IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.Recommendation", b =>

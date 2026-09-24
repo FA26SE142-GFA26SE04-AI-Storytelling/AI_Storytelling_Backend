@@ -126,4 +126,18 @@ public class PermissionController : BaseApiController
 
         return HandleResult(result, "Từ chối yêu cầu xin quyền thành công.");
     }
+
+    /// <summary>
+    /// Additional Supervisor tự huỷ yêu cầu xin quyền do chính mình tạo, khi Owner chưa xử lý (BR-1.14).
+    /// </summary>
+    [HttpPost("requests/{permissionRequestId:int}/cancel")]
+    [Authorize(Roles = "Parent,Teacher")]
+    public async Task<ActionResult<ApiResponse<PermissionRequestDto>>> CancelPermissionRequest(
+        int permissionRequestId, CancellationToken cancellationToken)
+    {
+        var result = await _supervisionService.CancelPermissionRequestAsync(
+            permissionRequestId, GetCurrentUserId(), cancellationToken);
+
+        return HandleResult(result, "Huỷ yêu cầu xin quyền thành công.");
+    }
 }

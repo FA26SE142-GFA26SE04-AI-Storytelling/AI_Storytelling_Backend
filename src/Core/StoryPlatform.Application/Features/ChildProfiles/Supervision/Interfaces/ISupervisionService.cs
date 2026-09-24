@@ -62,6 +62,9 @@ public interface ISupervisionService
     Task<PermissionRequestDto> RejectPermissionRequestAsync(
         int permissionRequestId, int ownerUserId, CancellationToken cancellationToken = default);
 
+    Task<PermissionRequestDto> CancelPermissionRequestAsync(
+        int permissionRequestId, int requesterUserId, CancellationToken cancellationToken = default);
+
     Task<List<PermissionRequestDto>> ListPermissionRequestsAsync(
         int supervisionRelationshipId, int currentUserId, CancellationToken cancellationToken = default);
 }

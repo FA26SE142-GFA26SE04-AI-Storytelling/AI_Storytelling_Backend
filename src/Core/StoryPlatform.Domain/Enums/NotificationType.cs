@@ -21,5 +21,7 @@ public enum NotificationType
     PermissionRequestRejected = 17,
     OwnershipTransferRequested = 18,
     OwnershipTransferAccepted = 19,
-    OwnershipTransferRejected = 20
+    OwnershipTransferRejected = 20,
+    ContentReportSlaWarning = 21,
+    ContentReportResolved = 22
 }

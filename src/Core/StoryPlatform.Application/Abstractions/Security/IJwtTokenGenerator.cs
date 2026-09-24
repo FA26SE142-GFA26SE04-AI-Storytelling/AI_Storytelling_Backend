@@ -5,7 +5,7 @@ namespace StoryPlatform.Application.Abstractions.Security;
 public interface IJwtTokenGenerator
 {
     string GenerateAccessToken(UserAccount user);
-    string GenerateChildAccessToken(int childProfileId);
+    string GenerateChildAccessToken(int childProfileId, string sessionKey);
     string GenerateMfaChallengeToken(int userId);
     bool TryValidateMfaChallengeToken(string token, out int userId);
     string GenerateRefreshToken();

@@ -189,7 +189,7 @@ public sealed class StoryPlatformCoreStack : Stack
                 ["Swagger__Enabled"] = "true",
                 ["JwtSettings__Issuer"] = "StoryPlatform",
                 ["JwtSettings__Audience"] = "StoryPlatformClient",
-                ["JwtSettings__ExpiryMinutes"] = "120",
+                ["JwtSettings__ExpiryMinutes"] = "15",
                 ["JwtSettings__RefreshTokenExpiryDays"] = "7",
                 ["JwtSettings__ChildTokenExpiryMinutes"] = "240",
                 ["Logging__LogLevel__Default"] = "Warning",

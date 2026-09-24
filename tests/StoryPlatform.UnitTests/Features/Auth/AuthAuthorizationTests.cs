@@ -36,13 +36,16 @@ public class AuthAuthorizationTests
     }
 
     [Fact]
-    public void GenerateChildAccessToken_ContainsProfileIdAndTokenTypeWithoutAdultClaims()
+    public void GenerateChildAccessToken_ContainsProfileIdSessionKeyAndTokenTypeWithoutAdultClaims()
     {
         var generator = new JwtTokenGenerator(BuildValidJwtConfiguration());
-        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(generator.GenerateChildAccessToken(42));
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(
+            generator.GenerateChildAccessToken(42, "session-abc"));
 
         Assert.Equal("42", jwt.Claims.Single(claim => claim.Type == JwtRegisteredClaimNames.NameId).Value);
         Assert.Equal("child", jwt.Claims.Single(claim => claim.Type == "token_type").Value);
+        Assert.Equal("session-abc", jwt.Claims.Single(
+            claim => claim.Type == ChildSession.SessionClaimType).Value);
         Assert.DoesNotContain(jwt.Claims, claim => claim.Type == ClaimTypes.Role);
         Assert.DoesNotContain(jwt.Claims, claim => claim.Type == "token_version");
     }
@@ -84,27 +87,15 @@ public class AuthAuthorizationTests
     public async Task TokenValidation_ChildToken_ValidatesAgainstChildProfileNotUserAccount(
         ChildProfileStatus status, bool deleted, bool accepted)
     {
-        var childProfile = new ChildProfile { Id = 42, Status = status, IsDeleted = deleted };
-        var childProfileRepository = new Mock<IGenericRepository<ChildProfile>>();
-        childProfileRepository.Setup(repository => repository.FirstOrDefaultAsync(
-                It.IsAny<Expression<Func<ChildProfile, bool>>>(), null,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(childProfile);
-        var userRepository = new Mock<IGenericRepository<UserAccount>>();
-        var unitOfWork = new Mock<IUnitOfWork>();
-        unitOfWork.Setup(work => work.Repository<ChildProfile>()).Returns(childProfileRepository.Object);
-        unitOfWork.Setup(work => work.Repository<UserAccount>()).Returns(userRepository.Object);
-
-        var context = CreateTokenValidatedContext(unitOfWork.Object, new List<Claim>
-        {
-            new(ClaimTypes.NameIdentifier, "42"),
-            new("token_type", "child")
-        });
+        var mocks = SetupChildUnitOfWork(
+            new ChildProfile { Id = 42, Status = status, IsDeleted = deleted },
+            ActiveSession(DateTime.UtcNow.AddSeconds(-10)));
+        var context = CreateTokenValidatedContext(mocks.UnitOfWork.Object, ChildClaims());
 
         await context.Options.Events.TokenValidated(context);
 
         Assert.Equal(accepted, context.Result?.Failure == null);
-        userRepository.Verify(repository => repository.FirstOrDefaultAsync(
+        mocks.UserRepository.Verify(repository => repository.FirstOrDefaultAsync(
             It.IsAny<Expression<Func<UserAccount, bool>>>(), null,
             It.IsAny<CancellationToken>()), Times.Never);
         (context.HttpContext.RequestServices as IDisposable)?.Dispose();
@@ -113,25 +104,145 @@ public class AuthAuthorizationTests
     [Fact]
     public async Task TokenValidation_ChildToken_MissingProfile_RejectsToken()
     {
-        var childProfileRepository = new Mock<IGenericRepository<ChildProfile>>();
-        childProfileRepository.Setup(repository => repository.FirstOrDefaultAsync(
-                It.IsAny<Expression<Func<ChildProfile, bool>>>(), null,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync((ChildProfile?)null);
-        var unitOfWork = new Mock<IUnitOfWork>();
-        unitOfWork.Setup(work => work.Repository<ChildProfile>()).Returns(childProfileRepository.Object);
-
-        var context = CreateTokenValidatedContext(unitOfWork.Object, new List<Claim>
-        {
-            new(ClaimTypes.NameIdentifier, "999"),
-            new("token_type", "child")
-        });
+        var mocks = SetupChildUnitOfWork(null, ActiveSession(DateTime.UtcNow));
+        var context = CreateTokenValidatedContext(mocks.UnitOfWork.Object, ChildClaims("999"));
 
         await context.Options.Events.TokenValidated(context);
 
         Assert.NotNull(context.Result?.Failure);
         (context.HttpContext.RequestServices as IDisposable)?.Dispose();
     }
+
+    [Fact]
+    public async Task TokenValidation_ChildToken_RecentActivity_AcceptedWithoutWritingActivity()
+    {
+        var mocks = SetupChildUnitOfWork(ActiveProfile(), ActiveSession(DateTime.UtcNow.AddSeconds(-30)));
+        var context = CreateTokenValidatedContext(mocks.UnitOfWork.Object, ChildClaims());
+
+        await context.Options.Events.TokenValidated(context);
+
+        Assert.Null(context.Result?.Failure);
+        mocks.SessionRepository.Verify(repository => repository.Update(It.IsAny<ChildSession>()), Times.Never);
+        mocks.UnitOfWork.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+        (context.HttpContext.RequestServices as IDisposable)?.Dispose();
+    }
+
+    [Fact]
+    public async Task TokenValidation_ChildToken_ActivityOlderThanOneMinute_RecordsActivity()
+    {
+        var session = ActiveSession(DateTime.UtcNow.AddMinutes(-5));
+        var mocks = SetupChildUnitOfWork(ActiveProfile(), session);
+        var context = CreateTokenValidatedContext(mocks.UnitOfWork.Object, ChildClaims());
+
+        var before = DateTime.UtcNow;
+        await context.Options.Events.TokenValidated(context);
+
+        Assert.Null(context.Result?.Failure);
+        Assert.True(session.LastActivityAt >= before);
+        mocks.SessionRepository.Verify(repository => repository.Update(session), Times.Once);
+        mocks.UnitOfWork.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        (context.HttpContext.RequestServices as IDisposable)?.Dispose();
+    }
+
+    [Fact]
+    public async Task TokenValidation_ChildToken_IdleFor20Minutes_RejectsToken()
+    {
+        var mocks = SetupChildUnitOfWork(
+            ActiveProfile(), ActiveSession(DateTime.UtcNow.AddMinutes(-20).AddSeconds(-1)));
+        var context = CreateTokenValidatedContext(mocks.UnitOfWork.Object, ChildClaims());
+
+        await context.Options.Events.TokenValidated(context);
+
+        Assert.NotNull(context.Result?.Failure);
+        mocks.UnitOfWork.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+        (context.HttpContext.RequestServices as IDisposable)?.Dispose();
+    }
+
+    [Fact]
+    public async Task TokenValidation_ChildToken_MissingSessionClaim_RejectsToken()
+    {
+        var mocks = SetupChildUnitOfWork(ActiveProfile(), ActiveSession(DateTime.UtcNow));
+        var context = CreateTokenValidatedContext(mocks.UnitOfWork.Object, ChildClaims(sessionKey: null));
+
+        await context.Options.Events.TokenValidated(context);
+
+        Assert.NotNull(context.Result?.Failure);
+        (context.HttpContext.RequestServices as IDisposable)?.Dispose();
+    }
+
+    [Fact]
+    public async Task TokenValidation_ChildToken_UnknownSession_RejectsToken()
+    {
+        var mocks = SetupChildUnitOfWork(ActiveProfile(), null);
+        var context = CreateTokenValidatedContext(mocks.UnitOfWork.Object, ChildClaims());
+
+        await context.Options.Events.TokenValidated(context);
+
+        Assert.NotNull(context.Result?.Failure);
+        (context.HttpContext.RequestServices as IDisposable)?.Dispose();
+    }
+
+    [Fact]
+    public async Task TokenValidation_ChildToken_SessionOfAnotherChild_RejectsToken()
+    {
+        var session = ActiveSession(DateTime.UtcNow);
+        session.ChildProfileId = 7;
+        var mocks = SetupChildUnitOfWork(ActiveProfile(), session);
+        var context = CreateTokenValidatedContext(mocks.UnitOfWork.Object, ChildClaims());
+
+        await context.Options.Events.TokenValidated(context);
+
+        Assert.NotNull(context.Result?.Failure);
+        (context.HttpContext.RequestServices as IDisposable)?.Dispose();
+    }
+
+    private static (Mock<IUnitOfWork> UnitOfWork,
+        Mock<IGenericRepository<ChildSession>> SessionRepository,
+        Mock<IGenericRepository<UserAccount>> UserRepository) SetupChildUnitOfWork(
+        ChildProfile? profile, ChildSession? session)
+    {
+        var profileRepository = new Mock<IGenericRepository<ChildProfile>>();
+        profileRepository.Setup(repository => repository.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<ChildProfile, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+        var sessionRepository = new Mock<IGenericRepository<ChildSession>>();
+        sessionRepository.Setup(repository => repository.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<ChildSession, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        var userRepository = new Mock<IGenericRepository<UserAccount>>();
+        var unitOfWork = new Mock<IUnitOfWork>();
+        unitOfWork.Setup(work => work.Repository<ChildProfile>()).Returns(profileRepository.Object);
+        unitOfWork.Setup(work => work.Repository<ChildSession>()).Returns(sessionRepository.Object);
+        unitOfWork.Setup(work => work.Repository<UserAccount>()).Returns(userRepository.Object);
+        return (unitOfWork, sessionRepository, userRepository);
+    }
+
+    private static List<Claim> ChildClaims(string childProfileId = "42", string? sessionKey = "session-abc")
+    {
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, childProfileId),
+            new("token_type", "child")
+        };
+        if (sessionKey != null)
+        {
+            claims.Add(new Claim(ChildSession.SessionClaimType, sessionKey));
+        }
+
+        return claims;
+    }
+
+    private static ChildProfile ActiveProfile() => new() { Id = 42, Status = ChildProfileStatus.Active };
+
+    private static ChildSession ActiveSession(DateTime lastActivityAt) => new()
+    {
+        Id = 1,
+        ChildProfileId = 42,
+        SessionKey = "session-abc",
+        LastActivityAt = lastActivityAt
+    };
 
     private static TokenValidatedContext CreateTokenValidatedContext(
         IUnitOfWork unitOfWork, IEnumerable<Claim> claims)

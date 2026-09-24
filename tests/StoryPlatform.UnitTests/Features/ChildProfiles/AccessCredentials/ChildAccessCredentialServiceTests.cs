@@ -16,6 +16,7 @@ namespace StoryPlatform.UnitTests.Features.ChildProfiles.AccessCredentials;
 public class ChildAccessCredentialServiceTests
 {
     private readonly Mock<IGenericRepository<ChildAccessCredential>> _credentialRepo = new();
+    private readonly Mock<IGenericRepository<ChildSession>> _sessionRepo = new();
     private readonly Mock<IGenericRepository<ChildProfile>> _profileRepo = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<ISupervisionAccessGuard> _guard = new();
@@ -26,6 +27,7 @@ public class ChildAccessCredentialServiceTests
     public ChildAccessCredentialServiceTests()
     {
         _unitOfWork.Setup(u => u.Repository<ChildAccessCredential>()).Returns(_credentialRepo.Object);
+        _unitOfWork.Setup(u => u.Repository<ChildSession>()).Returns(_sessionRepo.Object);
         _unitOfWork.Setup(u => u.Repository<ChildProfile>()).Returns(_profileRepo.Object);
         _jwtTokenGenerator.Setup(generator => generator.ChildTokenExpiresInSeconds).Returns(14400);
         _sut = new ChildAccessCredentialService(
@@ -85,6 +87,8 @@ public class ChildAccessCredentialServiceTests
 
     [Theory]
     [InlineData("123")]
+    [InlineData("12345")]
+    [InlineData("123456")]
     [InlineData("1234567")]
     [InlineData("12ab")]
     public async Task SetPinAsync_InvalidPin_ThrowsBadRequest(string pin)
@@ -104,7 +108,7 @@ public class ChildAccessCredentialServiceTests
         credential.FailedAttempts = 2;
         SetupCredential(credential);
         _passwordHasher.Setup(p => p.VerifyPassword("1234", "hashed-pin")).Returns(true);
-        _jwtTokenGenerator.Setup(generator => generator.GenerateChildAccessToken(1))
+        _jwtTokenGenerator.Setup(generator => generator.GenerateChildAccessToken(1, It.IsAny<string>()))
             .Returns("child-jwt-token");
 
         var result = await _sut.LoginWithPinAsync(1, "1234");
@@ -118,6 +122,38 @@ public class ChildAccessCredentialServiceTests
     }
 
     [Fact]
+    public async Task LoginWithPinAsync_CorrectPin_CreatesChildSessionAndBindsTokenToIt()
+    {
+        var credential = Credential();
+        SetupCredential(credential);
+        _passwordHasher.Setup(p => p.VerifyPassword("1234", "hashed-pin")).Returns(true);
+        var added = CaptureAddedSession();
+
+        var before = DateTime.UtcNow;
+        await _sut.LoginWithPinAsync(1, "1234");
+
+        var session = added();
+        Assert.NotNull(session);
+        Assert.Equal(1, session!.ChildProfileId);
+        Assert.False(string.IsNullOrWhiteSpace(session.SessionKey));
+        Assert.True(session.LastActivityAt >= before);
+        _jwtTokenGenerator.Verify(g => g.GenerateChildAccessToken(1, session.SessionKey), Times.Once);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task LoginWithPinAsync_WrongPin_DoesNotCreateChildSession()
+    {
+        SetupCredential(Credential());
+        _passwordHasher.Setup(p => p.VerifyPassword("0000", "hashed-pin")).Returns(false);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.LoginWithPinAsync(1, "0000"));
+
+        _sessionRepo.Verify(r => r.AddAsync(
+            It.IsAny<ChildSession>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task LoginWithPinAsync_WrongPin_DoesNotGenerateToken()
     {
         var credential = Credential();
@@ -128,7 +164,8 @@ public class ChildAccessCredentialServiceTests
         await Assert.ThrowsAsync<BadRequestException>(() => _sut.LoginWithPinAsync(1, "0000"));
 
         _jwtTokenGenerator.Verify(
-            generator => generator.GenerateChildAccessToken(It.IsAny<int>()), Times.Never);
+            generator => generator.GenerateChildAccessToken(
+                It.IsAny<int>(), It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
@@ -154,19 +191,49 @@ public class ChildAccessCredentialServiceTests
     }
 
     [Fact]
-    public async Task LoginWithPinAsync_FifthWrongAttempt_LocksFor15Minutes()
+    public async Task LoginWithPinAsync_FifthWrongAttempt_LocksFor5Minutes()
     {
         var credential = Credential();
         credential.FailedAttempts = 4;
         SetupCredential(credential);
         _passwordHasher.Setup(p => p.VerifyPassword("0000", "hashed-pin")).Returns(false);
 
+        var before = DateTime.UtcNow;
         await Assert.ThrowsAsync<BadRequestException>(() =>
             _sut.LoginWithPinAsync(1, "0000"));
 
         Assert.Equal(0, credential.FailedAttempts);
-        Assert.True(credential.LockedUntil > DateTime.UtcNow.AddMinutes(14));
+        Assert.True(credential.LockedUntil > before.AddMinutes(4)
+            && credential.LockedUntil <= before.AddMinutes(5).AddSeconds(1));
         _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task LoginWithPinAsync_Locked_MessageMentions5Minutes()
+    {
+        var credential = Credential();
+        credential.LockedUntil = DateTime.UtcNow.AddMinutes(3);
+        SetupCredential(credential);
+
+        var exception = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.LoginWithPinAsync(1, "1234"));
+
+        Assert.Contains("5 phút", exception.Message);
+    }
+
+    [Theory]
+    [InlineData("12345")]
+    [InlineData("123456")]
+    public async Task LoginWithPinAsync_NonFourDigitPin_RejectedWithoutCountingAttempt(string pin)
+    {
+        var credential = Credential();
+        SetupCredential(credential);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.LoginWithPinAsync(1, pin));
+
+        Assert.Equal(0, credential.FailedAttempts);
+        _passwordHasher.Verify(p => p.VerifyPassword(
+            It.IsAny<string>(), It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
@@ -288,7 +355,7 @@ public class ChildAccessCredentialServiceTests
                 It.IsAny<Expression<Func<ChildAccessCredential, bool>>>(), null,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(credential);
-        _jwtTokenGenerator.Setup(g => g.GenerateChildAccessToken(1)).Returns("child-jwt");
+        _jwtTokenGenerator.Setup(g => g.GenerateChildAccessToken(1, It.IsAny<string>())).Returns("child-jwt");
 
         var result = await _sut.LoginWithEasyLoginAsync("valid-code");
 
@@ -296,6 +363,24 @@ public class ChildAccessCredentialServiceTests
         Assert.Equal("child-jwt", result.AccessToken);
         Assert.NotNull(credential.EasyLoginUsedAt);
         Assert.Null(credential.EasyLoginCode);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task LoginWithEasyLoginAsync_ValidCode_CreatesChildSessionAndBindsTokenToIt()
+    {
+        var credential = Credential();
+        credential.EasyLoginCode = "valid-code";
+        credential.EasyLoginExpiresAt = DateTime.UtcNow.AddMinutes(2);
+        SetupCredential(credential);
+        var added = CaptureAddedSession();
+
+        await _sut.LoginWithEasyLoginAsync("valid-code");
+
+        var session = added();
+        Assert.NotNull(session);
+        Assert.Equal(1, session!.ChildProfileId);
+        _jwtTokenGenerator.Verify(g => g.GenerateChildAccessToken(1, session.SessionKey), Times.Once);
         _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -313,7 +398,8 @@ public class ChildAccessCredentialServiceTests
         await Assert.ThrowsAsync<BadRequestException>(() =>
             _sut.LoginWithEasyLoginAsync("expired-code"));
 
-        _jwtTokenGenerator.Verify(g => g.GenerateChildAccessToken(It.IsAny<int>()), Times.Never);
+        _jwtTokenGenerator.Verify(g => g.GenerateChildAccessToken(
+            It.IsAny<int>(), It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
@@ -340,7 +426,8 @@ public class ChildAccessCredentialServiceTests
         await Assert.ThrowsAsync<BadRequestException>(() =>
             _sut.LoginWithEasyLoginAsync("used-code"));
 
-        _jwtTokenGenerator.Verify(g => g.GenerateChildAccessToken(It.IsAny<int>()), Times.Never);
+        _jwtTokenGenerator.Verify(g => g.GenerateChildAccessToken(
+            It.IsAny<int>(), It.IsAny<string>()), Times.Never);
         _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -352,6 +439,15 @@ public class ChildAccessCredentialServiceTests
         .Setup(r => r.FirstOrDefaultAsync(
             It.IsAny<Expression<Func<ChildAccessCredential, bool>>>(), null,
             It.IsAny<CancellationToken>())).ReturnsAsync(credential);
+
+    private Func<ChildSession?> CaptureAddedSession()
+    {
+        ChildSession? added = null;
+        _sessionRepo.Setup(r => r.AddAsync(It.IsAny<ChildSession>(), It.IsAny<CancellationToken>()))
+            .Callback<ChildSession, CancellationToken>((value, _) => added = value)
+            .ReturnsAsync((ChildSession value, CancellationToken _) => value);
+        return () => added;
+    }
 
     private static SetChildAccessCredentialRequestDto ValidCredentialRequest() => new()
     {

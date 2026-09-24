@@ -229,6 +229,33 @@ public sealed class GeminiImageGenerationProviderTests
     }
 
     [Fact]
+    public async Task GenerateAsync_ExhaustedHttp429_ReturnsTypedTransientFailure()
+    {
+        var callCount = 0;
+        var handler = new MockHttpMessageHandler((req, ct) =>
+        {
+            callCount++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+            {
+                Content = new StringContent("{\"error\":\"Resource exhausted\"}")
+            });
+        });
+        var provider = CreateProvider(handler, new ImageGenerationOptions
+        {
+            TransportRetryCount = 2,
+            TransportRetryBaseDelayMs = 1
+        }, useResiliencePipeline: true);
+
+        var exception = await Assert.ThrowsAsync<TransientMediaGenerationException>(() =>
+            provider.GenerateAsync(CreateTestSpec()));
+
+        Assert.Equal(3, callCount);
+        Assert.Equal("GEMINI_IMAGE_HTTP_429", exception.ErrorCode);
+        var transportError = Assert.IsType<HttpRequestException>(exception.InnerException);
+        Assert.Equal(HttpStatusCode.TooManyRequests, transportError.StatusCode);
+    }
+
+    [Fact]
     public async Task GenerateAsync_CorruptedBytes_FailsMagicByteValidation()
     {
         var corruptedBytes = new byte[] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B };

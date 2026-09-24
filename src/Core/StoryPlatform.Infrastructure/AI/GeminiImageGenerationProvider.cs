@@ -59,9 +59,23 @@ public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
         if (!response.IsSuccessStatusCode)
         {
             var error = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var errorCode = $"GEMINI_IMAGE_HTTP_{(int)response.StatusCode}";
             if (IsTransient(response.StatusCode))
-                throw new HttpRequestException($"GEMINI_IMAGE_TRANSIENT_HTTP_{(int)response.StatusCode}: {Truncate(error, 200)}");
-            throw new PermanentMediaGenerationException($"GEMINI_IMAGE_HTTP_{(int)response.StatusCode}: {Truncate(error, 200)}");
+            {
+                _logger.LogWarning(
+                    "Gemini image provider returned transient HTTP {StatusCode}: {Body}",
+                    (int)response.StatusCode,
+                    Truncate(error, 200));
+                throw new TransientMediaGenerationException(
+                    errorCode,
+                    new HttpRequestException(errorCode, null, response.StatusCode));
+            }
+
+            _logger.LogError(
+                "Gemini image provider returned permanent HTTP {StatusCode}: {Body}",
+                (int)response.StatusCode,
+                Truncate(error, 200));
+            throw new PermanentMediaGenerationException(errorCode, $"{errorCode}: {Truncate(error, 200)}");
         }
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);

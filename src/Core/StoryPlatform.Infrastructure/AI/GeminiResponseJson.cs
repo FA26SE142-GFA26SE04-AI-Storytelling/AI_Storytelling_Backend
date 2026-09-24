@@ -26,14 +26,36 @@ internal static class GeminiResponseJson
     private static string StripCodeFence(string value)
     {
         var text = value.Trim();
-        if (!text.StartsWith("```", StringComparison.Ordinal))
-            return text;
 
-        var firstLine = text.IndexOf('\n');
-        if (firstLine < 0)
-            return text;
-        text = text[(firstLine + 1)..];
-        var closing = text.LastIndexOf("```", StringComparison.Ordinal);
-        return (closing >= 0 ? text[..closing] : text).Trim();
+        var fenceStart = text.IndexOf("```", StringComparison.Ordinal);
+        if (fenceStart >= 0)
+        {
+            var firstLineAfterFence = text.IndexOf('\n', fenceStart);
+            if (firstLineAfterFence >= 0)
+            {
+                var contentStart = firstLineAfterFence + 1;
+                var fenceEnd = text.IndexOf("```", contentStart, StringComparison.Ordinal);
+                if (fenceEnd >= 0)
+                {
+                    return text[contentStart..fenceEnd].Trim();
+                }
+            }
+        }
+
+        var firstBrace = text.IndexOf('{');
+        var lastBrace = text.LastIndexOf('}');
+        if (firstBrace >= 0 && lastBrace > firstBrace)
+        {
+            return text[firstBrace..(lastBrace + 1)].Trim();
+        }
+
+        var firstBracket = text.IndexOf('[');
+        var lastBracket = text.LastIndexOf(']');
+        if (firstBracket >= 0 && lastBracket > firstBracket)
+        {
+            return text[firstBracket..(lastBracket + 1)].Trim();
+        }
+
+        return text;
     }
 }

@@ -90,6 +90,74 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
             story.Status == StoryStatus.Ready, job.ErrorCode);
     }
 
+    public async Task<MediaGenerationProgress> RetryAsync(
+        int userId, int storyId, CancellationToken cancellationToken = default)
+    {
+        await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
+            var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
+                        ?? throw new NotFoundException("Story", storyId);
+            if (story.Status != StoryStatus.MediaProcessing)
+                throw new ConflictException("MEDIA_JOB_RETRY_NOT_ALLOWED");
+            var job = (await _unitOfWork.Repository<StoryGenerationJob>().FindAsync(
+                    x => x.StoryId == storyId && x.Operation == GenerationJobOperation.GenerateMediaPackage,
+                    cancellationToken: cancellationToken))
+                .OrderByDescending(x => x.Id)
+                .FirstOrDefault()
+                ?? throw new NotFoundException("Media generation job", storyId);
+
+            if (job.Status != GenerationJobStatus.Failed)
+                throw new ConflictException("MEDIA_JOB_NOT_FAILED");
+            if (job.StoryVersionId is not int versionId)
+                throw new ConflictException("INVALID_MEDIA_HANDOFF");
+
+            var version = await _unitOfWork.Repository<StoryVersion>().GetByIdAsync(versionId, cancellationToken);
+            if (version is null || version.StoryId != storyId || !version.IsCurrent || string.IsNullOrWhiteSpace(version.Content))
+                throw new ConflictException("INVALID_MEDIA_HANDOFF");
+
+            var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(
+                x => x.StoryVersionId == versionId && x.Status != MediaStatus.Ready,
+                cancellationToken: cancellationToken);
+            foreach (var asset in assets)
+            {
+                asset.Status = MediaStatus.Queued;
+                asset.ValidationStatus = ValidationStatus.Pending;
+                asset.AttemptCount = 0;
+                asset.LastValidationReason = null;
+                asset.ValidationResultJson = null;
+                asset.CompletedAt = null;
+                _unitOfWork.Repository<MediaAsset>().Update(asset);
+            }
+
+            job.Status = GenerationJobStatus.Pending;
+            job.Stage = JobStage.MediaPending;
+            job.AttemptNo = 0;
+            job.ErrorCode = null;
+            job.FallbackMessage = null;
+            job.LeaseExpiresAt = null;
+            job.CompletedAt = null;
+            job.StartedAt = DateTime.UtcNow;
+            _unitOfWork.Repository<StoryGenerationJob>().Update(job);
+            // Attach the no-tracking entity before rotating the concurrency token so EF
+            // keeps the database token as the original value in the UPDATE predicate.
+            RotateToken(job);
+
+            story.Status = StoryStatus.MediaProcessing;
+            _unitOfWork.Repository<Story>().Update(story);
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            throw;
+        }
+
+        return await GetProgressAsync(userId, storyId, cancellationToken);
+    }
+
     public async Task<MediaJobProcessResult> ProcessNextAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;
@@ -371,10 +439,10 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
             }
             catch (Exception exception) when (!cancellationToken.IsCancellationRequested && !IsStale(exception))
             {
-                if (exception is TransientMediaGenerationException) throw;
                 asset.Status = MediaStatus.Failed;
                 _unitOfWork.Repository<MediaAsset>().Update(asset);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
+                if (exception is TransientMediaGenerationException) throw;
             }
         }
 

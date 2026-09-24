@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using StoryPlatform.Application.Features.MediaGeneration;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.MediaStorage.Models;
@@ -59,7 +60,12 @@ public sealed class GeminiMediaSafetyEvaluator : IMediaSafetyEvaluator
         {
             _logger.LogError("Safety evaluator HTTP {Status}: {Body}", (int)statusCode, Truncate(content, 200));
             if (IsTransient(statusCode))
-                throw new HttpRequestException($"SAFETY_EVALUATOR_TRANSIENT_HTTP_{(int)statusCode}");
+            {
+                var errorCode = $"SAFETY_EVALUATOR_HTTP_{(int)statusCode}";
+                throw new TransientMediaGenerationException(
+                    errorCode,
+                    new HttpRequestException(errorCode, null, statusCode));
+            }
             return new MediaEvaluationResult(MediaEvaluationDecision.Fail, "EVALUATOR_HTTP_ERROR");
         }
 

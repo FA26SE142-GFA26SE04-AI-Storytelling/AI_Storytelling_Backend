@@ -31,6 +31,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<SupervisionPermissionRequestItem> SupervisionPermissionRequestItems => Set<SupervisionPermissionRequestItem>();
     public DbSet<OwnershipTransferRequest> OwnershipTransferRequests => Set<OwnershipTransferRequest>();
     public DbSet<ChildAccessCredential> ChildAccessCredentials => Set<ChildAccessCredential>();
+    public DbSet<ChildSession> ChildSessions => Set<ChildSession>();
 
     // Classroom / organization
     public DbSet<ClassGroup> ClassGroups => Set<ClassGroup>();

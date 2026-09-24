@@ -12,7 +12,7 @@ namespace StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Ser
 public class ChildAccessCredentialService : IChildAccessCredentialService
 {
     private const int MaxFailedAttempts = 5;
-    private const int LockoutMinutes = 15;
+    private const int LockoutMinutes = 5;
     private const int EasyLoginCodeTtlMinutes = 5;
 
     private readonly IUnitOfWork _unitOfWork;
@@ -110,15 +110,8 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
         credential.LockedUntil = null;
         credential.UpdatedAt = DateTime.UtcNow;
         credentialRepo.Update(credential);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return new ChildSessionDto
-        {
-            ChildProfileId = credential.ChildProfileId,
-            AvatarId = credential.AvatarId,
-            AccessToken = _jwtTokenGenerator.GenerateChildAccessToken(credential.ChildProfileId),
-            ExpiresInSeconds = _jwtTokenGenerator.ChildTokenExpiresInSeconds
-        };
+        return await StartChildSessionAsync(credential, cancellationToken);
     }
 
     public async Task<ChildAccessCredentialDto> GetCredentialAsync(
@@ -221,15 +214,8 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
         credential.EasyLoginExpiresAt = null;
         credential.UpdatedAt = DateTime.UtcNow;
         credentialRepo.Update(credential);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return new ChildSessionDto
-        {
-            ChildProfileId = credential.ChildProfileId,
-            AvatarId = credential.AvatarId,
-            AccessToken = _jwtTokenGenerator.GenerateChildAccessToken(credential.ChildProfileId),
-            ExpiresInSeconds = _jwtTokenGenerator.ChildTokenExpiresInSeconds
-        };
+        return await StartChildSessionAsync(credential, cancellationToken);
     }
 
     public async Task<ChildSessionProfileDto> GetMySessionProfileAsync(
@@ -250,6 +236,28 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
         };
     }
 
+    private async Task<ChildSessionDto> StartChildSessionAsync(
+        ChildAccessCredential credential, CancellationToken cancellationToken)
+    {
+        var session = new ChildSession
+        {
+            ChildProfileId = credential.ChildProfileId,
+            SessionKey = Guid.NewGuid().ToString("N"),
+            LastActivityAt = DateTime.UtcNow
+        };
+        await _unitOfWork.Repository<ChildSession>().AddAsync(session, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return new ChildSessionDto
+        {
+            ChildProfileId = credential.ChildProfileId,
+            AvatarId = credential.AvatarId,
+            AccessToken = _jwtTokenGenerator.GenerateChildAccessToken(
+                credential.ChildProfileId, session.SessionKey),
+            ExpiresInSeconds = _jwtTokenGenerator.ChildTokenExpiresInSeconds
+        };
+    }
+
     private static void ValidateCredential(string avatarId, string pin)
     {
         if (string.IsNullOrWhiteSpace(avatarId) || avatarId.Trim().Length > 100)
@@ -262,9 +270,9 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
 
     private static void ValidatePin(string pin)
     {
-        if (string.IsNullOrWhiteSpace(pin) || !Regex.IsMatch(pin, @"^\d{4,6}$"))
+        if (string.IsNullOrWhiteSpace(pin) || !Regex.IsMatch(pin, @"^\d{4}$"))
         {
-            throw new BadRequestException("PIN phải gồm 4-6 chữ số.");
+            throw new BadRequestException("PIN phải gồm đúng 4 chữ số.");
         }
     }
 }

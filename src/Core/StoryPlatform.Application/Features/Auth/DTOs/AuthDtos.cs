@@ -35,7 +35,8 @@ public class RegisterRequestDto
     public string FullName { get; set; } = string.Empty;
 
     [Required(ErrorMessage = "Mật khẩu không được để trống.")]
-    [StringLength(100, MinimumLength = 6, ErrorMessage = "Mật khẩu tối thiểu 6 ký tự.")]
+    [StringLength(PasswordPolicy.MaxLength, MinimumLength = PasswordPolicy.MinLength, ErrorMessage = PasswordPolicy.LengthErrorMessage)]
+    [RegularExpression(PasswordPolicy.Pattern, ErrorMessage = PasswordPolicy.CompositionErrorMessage)]
     public string Password { get; set; } = string.Empty;
 
     [Required(ErrorMessage = "Xác nhận mật khẩu không được để trống.")]
@@ -133,7 +134,8 @@ public class ResetPasswordRequestDto
     public string ResetToken { get; set; } = string.Empty;
 
     [Required(ErrorMessage = "Mật khẩu mới không được để trống.")]
-    [StringLength(100, MinimumLength = 6, ErrorMessage = "Mật khẩu tối thiểu 6 ký tự.")]
+    [StringLength(PasswordPolicy.MaxLength, MinimumLength = PasswordPolicy.MinLength, ErrorMessage = PasswordPolicy.LengthErrorMessage)]
+    [RegularExpression(PasswordPolicy.Pattern, ErrorMessage = PasswordPolicy.CompositionErrorMessage)]
     public string NewPassword { get; set; } = string.Empty;
 
     [Required(ErrorMessage = "Xác nhận mật khẩu mới không được để trống.")]
@@ -147,7 +149,8 @@ public class ChangePasswordRequestDto
     public string CurrentPassword { get; set; } = string.Empty;
 
     [Required(ErrorMessage = "Mật khẩu mới không được để trống.")]
-    [StringLength(100, MinimumLength = 6, ErrorMessage = "Mật khẩu tối thiểu 6 ký tự.")]
+    [StringLength(PasswordPolicy.MaxLength, MinimumLength = PasswordPolicy.MinLength, ErrorMessage = PasswordPolicy.LengthErrorMessage)]
+    [RegularExpression(PasswordPolicy.Pattern, ErrorMessage = PasswordPolicy.CompositionErrorMessage)]
     public string NewPassword { get; set; } = string.Empty;
 
     [Required(ErrorMessage = "Xác nhận mật khẩu mới không được để trống.")]
@@ -183,5 +186,15 @@ public class SessionDto
     public int Id { get; set; }
     public DateTime IssuedAt { get; set; }
     public DateTime ExpiresAt { get; set; }
+}
+
+/// <summary>Chính sách mật khẩu đã chốt (Mục 9): tối thiểu 8 ký tự, có ít nhất 1 chữ cái và 1 chữ số.</summary>
+public static class PasswordPolicy
+{
+    public const int MinLength = 8;
+    public const int MaxLength = 100;
+    public const string Pattern = @"^(?=.*\p{L})(?=.*\d).+$";
+    public const string LengthErrorMessage = "Mật khẩu phải từ 8 đến 100 ký tự.";
+    public const string CompositionErrorMessage = "Mật khẩu phải chứa ít nhất 1 chữ cái và 1 chữ số.";
 }
 

@@ -130,7 +130,7 @@ Tạo file cấu hình local `src/Core/StoryPlatform.Api/appsettings.json` (file
     "SecretKey": "YOUR_SUPER_SECRET_KEY_AT_LEAST_32_CHARACTERS_LONG",
     "Issuer": "StoryPlatform",
     "Audience": "StoryPlatformClient",
-    "ExpiryMinutes": 120,
+    "ExpiryMinutes": 15,
     "RefreshTokenExpiryDays": 7
   },
   "AIService": {

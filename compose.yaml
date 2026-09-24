@@ -37,9 +37,9 @@ services:
       JwtSettings__SecretKey: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env}
       JwtSettings__Issuer: ${JWT_ISSUER:-StoryPlatform}
       JwtSettings__Audience: ${JWT_AUDIENCE:-StoryPlatform.Client}
-      JwtSettings__ExpiryMinutes: ${JWT_EXPIRY_MINUTES:-60}
+      JwtSettings__ExpiryMinutes: ${JWT_EXPIRY_MINUTES:-15}
       JwtSettings__RefreshTokenExpiryDays: ${JWT_REFRESH_TOKEN_EXPIRY_DAYS:-7}
-      JwtSettings__ChildTokenExpiryMinutes: ${JWT_CHILD_TOKEN_EXPIRY_MINUTES:-120}
+      JwtSettings__ChildTokenExpiryMinutes: ${JWT_CHILD_TOKEN_EXPIRY_MINUTES:-240}
       Swagger__Enabled: ${SWAGGER_ENABLED:-true}
       AIService__ApiKey: ${GEMINI_API_KEY:-}
       AIService__Model: ${GEMINI_MODEL:-gemini-2.5-flash}

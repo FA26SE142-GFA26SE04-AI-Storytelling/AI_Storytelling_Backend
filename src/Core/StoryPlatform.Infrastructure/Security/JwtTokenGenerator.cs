@@ -69,7 +69,7 @@ public class JwtTokenGenerator : IJwtTokenGenerator
         return tokenHandler.WriteToken(token);
     }
 
-    public string GenerateChildAccessToken(int childProfileId)
+    public string GenerateChildAccessToken(int childProfileId, string sessionKey)
     {
         var tokenHandler = new JwtSecurityTokenHandler();
         var key = Encoding.UTF8.GetBytes(_secretKey);
@@ -80,6 +80,7 @@ public class JwtTokenGenerator : IJwtTokenGenerator
             new(JwtRegisteredClaimNames.Sub, childProfileIdValue),
             new(ClaimTypes.NameIdentifier, childProfileIdValue),
             new("token_type", "child"),
+            new(ChildSession.SessionClaimType, sessionKey),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 

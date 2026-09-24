@@ -12,7 +12,7 @@ using StoryPlatform.Infrastructure.Persistence;
 namespace StoryPlatform.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260923120512_Init")]
+    [Migration("20260924010248_Init")]
     partial class Init
     {
         /// <inheritdoc />
@@ -507,6 +507,44 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasIndex("RecommendationId");
 
                     b.ToTable("child_profile_version_history", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ChildSession", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ChildProfileId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("LastActivityAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SessionKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChildProfileId");
+
+                    b.HasIndex("SessionKey")
+                        .IsUnique();
+
+                    b.ToTable("child_sessions", (string)null);
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ClassGroup", b =>
@@ -3435,6 +3473,17 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("ChildProfile");
 
                     b.Navigation("Recommendation");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ChildSession", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
+                        .WithMany()
+                        .HasForeignKey("ChildProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ChildProfile");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ClassGroup", b =>

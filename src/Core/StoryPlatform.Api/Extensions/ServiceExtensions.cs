@@ -75,7 +75,9 @@ public static class ServiceExtensions
 
                     if (tokenType == "child")
                     {
-                        if (!int.TryParse(subjectClaim, out var childProfileId))
+                        var sessionKey = context.Principal?.FindFirst(ChildSession.SessionClaimType)?.Value;
+                        if (!int.TryParse(subjectClaim, out var childProfileId)
+                            || string.IsNullOrWhiteSpace(sessionKey))
                         {
                             context.Fail("Token không hợp lệ.");
                             return;
@@ -92,6 +94,29 @@ public static class ServiceExtensions
                             || childProfile.Status == ChildProfileStatus.Archived)
                         {
                             context.Fail("Phiên của trẻ không còn hợp lệ.");
+                            return;
+                        }
+
+                        // Bước 1.10 — idle-timeout 20 phút; ghi hoạt động tối đa 1 lần/phút.
+                        var sessionRepository = childUnitOfWork.Repository<ChildSession>();
+                        var session = await sessionRepository.FirstOrDefaultAsync(
+                            value => value.SessionKey == sessionKey,
+                            cancellationToken: context.HttpContext.RequestAborted);
+                        var now = DateTime.UtcNow;
+                        if (session == null
+                            || session.ChildProfileId != childProfileId
+                            || session.IsIdleExpired(now))
+                        {
+                            context.Fail("Phiên của trẻ đã hết hạn do không hoạt động. Vui lòng đăng nhập lại.");
+                            return;
+                        }
+
+                        if (session.ShouldRecordActivity(now))
+                        {
+                            session.LastActivityAt = now;
+                            session.UpdatedAt = now;
+                            sessionRepository.Update(session);
+                            await childUnitOfWork.SaveChangesAsync(context.HttpContext.RequestAborted);
                         }
 
                         return;

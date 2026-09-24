@@ -557,6 +557,30 @@ namespace StoryPlatform.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "child_sessions",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ChildProfileId = table.Column<int>(type: "integer", nullable: false),
+                    SessionKey = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    LastActivityAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_child_sessions", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_child_sessions_child_profiles_ChildProfileId",
+                        column: x => x.ChildProfileId,
+                        principalTable: "child_profiles",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "data_requests",
                 columns: table => new
                 {
@@ -2252,6 +2276,17 @@ namespace StoryPlatform.Infrastructure.Migrations
                 column: "OwnerUserId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_child_sessions_ChildProfileId",
+                table: "child_sessions",
+                column: "ChildProfileId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_child_sessions_SessionKey",
+                table: "child_sessions",
+                column: "SessionKey",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_class_group_members_ChildProfileId",
                 table: "class_group_members",
                 column: "ChildProfileId");
@@ -2974,6 +3009,9 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "child_profile_version_history");
+
+            migrationBuilder.DropTable(
+                name: "child_sessions");
 
             migrationBuilder.DropTable(
                 name: "class_group_members");

@@ -9,7 +9,7 @@ public class SetChildAccessCredentialRequestDto
     public string AvatarId { get; set; } = string.Empty;
 
     [Required(ErrorMessage = "PIN không được để trống.")]
-    [RegularExpression(@"^\d{4,6}$", ErrorMessage = "PIN phải gồm 4-6 chữ số.")]
+    [RegularExpression(@"^\d{4}$", ErrorMessage = "PIN phải gồm đúng 4 chữ số.")]
     public string Pin { get; set; } = string.Empty;
 }
 
@@ -33,7 +33,7 @@ public class ChildAccessCredentialDto
 public class LoginWithPinRequestDto
 {
     [Required(ErrorMessage = "PIN không được để trống.")]
-    [RegularExpression(@"^\d{4,6}$", ErrorMessage = "PIN phải gồm 4-6 chữ số.")]
+    [RegularExpression(@"^\d{4}$", ErrorMessage = "PIN phải gồm đúng 4 chữ số.")]
     public string Pin { get; set; } = string.Empty;
 }
 

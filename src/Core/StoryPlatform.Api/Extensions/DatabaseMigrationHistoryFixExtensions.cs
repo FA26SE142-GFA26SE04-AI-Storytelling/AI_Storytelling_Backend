@@ -9,22 +9,30 @@ namespace StoryPlatform.Api.Extensions;
 
 public static class DatabaseMigrationHistoryFixExtensions
 {
-    // One-time fix for the 2026-09-22 migration squash ("fix(migrations): remove superseded
-    // migration chain"): production's schema was already fully created under the old, now
-    // deleted migration classes, but __EFMigrationsHistory never got a row for the new squashed
-    // Init migration's id. Every startup since then tried (and failed) to recreate tables that
-    // already existed - CREATE TABLE has no "IF NOT EXISTS" in EF's generated SQL - crashing
-    // before the app could ever answer /health. Marks the new id as applied, without running any
-    // of its SQL, only when it isn't already recorded - safe to run repeatedly, and a no-op on a
-    // genuinely fresh database (nothing to fix; ApplyPendingMigrations proceeds normally).
+    // One-time fix for this project's migration-squash pattern: the single "Init" migration
+    // keeps getting regenerated (renamed with a new id + new schema) instead of the project
+    // adding genuine incremental migrations, so every regeneration makes Migrate() try to
+    // recreate a schema that mostly already exists under the migration's *old* id, crashing
+    // with "relation ... already exists" before the app can answer /health.
     //
-    // Split into 3 separate commands (create / check / insert) rather than one parameterized
-    // multi-statement string, and logged at Warning (not Information, which production's
-    // Logging:LogLevel:Default filters out) - an earlier version combined everything into one
-    // command and never proved whether it actually ran in production, since nothing about it
-    // ever showed up in CloudWatch even at the ERROR level.
-    private const string SquashedInitMigrationId = "20260922113625_Init";
-    private const string SquashedInitProductVersion = "8.0.13"; // Migrations/20260922113625_Init.Designer.cs
+    // Originally targeted "20260922113625_Init" (from the 2026-09-22 squash, PR #45). That id
+    // itself got superseded on 2026-09-24 by "20260923120512_Init", which folds in 3 new
+    // nullable columns + a unique partial index on child_access_credentials (EasyLogin) - a
+    // real, additive schema change, not just a rename. So unlike the first fix, this can't just
+    // mark the new id as applied: it must also apply that one additive delta itself (via
+    // idempotent IF NOT EXISTS DDL), or the EasyLogin columns would never get created even
+    // though the history table would claim the migration ran.
+    //
+    // Only runs the delta + insert when the *new* id isn't already recorded, so this is safe to
+    // leave in and to run repeatedly - including a no-op on a genuinely fresh database, which
+    // has neither id recorded and just lets ApplyPendingMigrations create everything fresh.
+    //
+    // Split into separate commands (not one parameterized multi-statement string) and logged at
+    // Warning (not Information, which production's Logging:LogLevel:Default filters out) - an
+    // earlier version combined everything into one command and never proved whether it actually
+    // ran in production, since nothing about it ever showed up in CloudWatch even at ERROR level.
+    private const string CurrentInitMigrationId = "20260923120512_Init";
+    private const string CurrentInitProductVersion = "8.0.13"; // Migrations/20260923120512_Init.Designer.cs
 
     public static void FixMigrationHistoryIfRequested<TContext>(this IHost host, IConfiguration configuration)
         where TContext : DbContext
@@ -38,7 +46,7 @@ public static class DatabaseMigrationHistoryFixExtensions
         var context = scope.ServiceProvider.GetRequiredService<TContext>();
         var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("DatabaseMigrationHistoryFix");
 
-        logger.LogWarning("Migration history fix starting for '{MigrationId}'.", SquashedInitMigrationId);
+        logger.LogWarning("Migration history fix starting for '{MigrationId}'.", CurrentInitMigrationId);
 
         try
         {
@@ -68,18 +76,38 @@ public static class DatabaseMigrationHistoryFixExtensions
                     """;
                 var checkParam = checkCommand.CreateParameter();
                 checkParam.ParameterName = "migrationId";
-                checkParam.Value = SquashedInitMigrationId;
+                checkParam.Value = CurrentInitMigrationId;
                 checkCommand.Parameters.Add(checkParam);
                 alreadyApplied = (bool)checkCommand.ExecuteScalar()!;
             }
 
             logger.LogWarning(
                 "Migration history check for '{MigrationId}': already recorded = {AlreadyApplied}.",
-                SquashedInitMigrationId,
+                CurrentInitMigrationId,
                 alreadyApplied);
 
             if (!alreadyApplied)
             {
+                // The one real, additive delta this id's regeneration introduced over the
+                // previous "20260922113625_Init" id: 3 new nullable columns + a unique partial
+                // index on child_access_credentials, for EasyLogin. IF NOT EXISTS makes this
+                // safe to run even if a table already has them from a normal (non-crash-looped)
+                // migration run.
+                using (var deltaCommand = connection.CreateCommand())
+                {
+                    deltaCommand.CommandText = """
+                        ALTER TABLE child_access_credentials ADD COLUMN IF NOT EXISTS "EasyLoginCode" character varying(64);
+                        ALTER TABLE child_access_credentials ADD COLUMN IF NOT EXISTS "EasyLoginExpiresAt" timestamp with time zone;
+                        ALTER TABLE child_access_credentials ADD COLUMN IF NOT EXISTS "EasyLoginUsedAt" timestamp with time zone;
+                        CREATE UNIQUE INDEX IF NOT EXISTS "IX_child_access_credentials_EasyLoginCode"
+                            ON child_access_credentials ("EasyLoginCode")
+                            WHERE "EasyLoginCode" IS NOT NULL;
+                        """;
+                    deltaCommand.ExecuteNonQuery();
+                }
+
+                logger.LogWarning("Applied the EasyLogin column/index delta for '{MigrationId}'.", CurrentInitMigrationId);
+
                 using var insertCommand = connection.CreateCommand();
                 insertCommand.CommandText = """
                     INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
@@ -88,18 +116,18 @@ public static class DatabaseMigrationHistoryFixExtensions
 
                 var migrationIdParam = insertCommand.CreateParameter();
                 migrationIdParam.ParameterName = "migrationId";
-                migrationIdParam.Value = SquashedInitMigrationId;
+                migrationIdParam.Value = CurrentInitMigrationId;
                 insertCommand.Parameters.Add(migrationIdParam);
 
                 var productVersionParam = insertCommand.CreateParameter();
                 productVersionParam.ParameterName = "productVersion";
-                productVersionParam.Value = SquashedInitProductVersion;
+                productVersionParam.Value = CurrentInitProductVersion;
                 insertCommand.Parameters.Add(productVersionParam);
 
                 var rowsInserted = insertCommand.ExecuteNonQuery();
                 logger.LogWarning(
                     "Inserted migration history row for '{MigrationId}': {RowsInserted} row(s).",
-                    SquashedInitMigrationId,
+                    CurrentInitMigrationId,
                     rowsInserted);
             }
         }
@@ -107,7 +135,7 @@ public static class DatabaseMigrationHistoryFixExtensions
         {
             // Must not block startup - if this fails, ApplyPendingMigrations right after
             // surfaces whatever error it always did, which is no worse than before this fix.
-            logger.LogError(ex, "Failed to fix migration history for '{MigrationId}'.", SquashedInitMigrationId);
+            logger.LogError(ex, "Failed to fix migration history for '{MigrationId}'.", CurrentInitMigrationId);
         }
     }
 }

@@ -156,7 +156,13 @@ public static class DependencyInjection
         // Application-layer interfaces → Infrastructure implementations
         services.AddSingleton<IImageGenerationProvider>(sp => sp.GetRequiredService<GeminiImageGenerationProvider>());
         services.AddSingleton<GoogleCloudTtsProvider>();
-        services.AddSingleton<ITtsProvider>(sp => sp.GetRequiredService<GoogleCloudTtsProvider>());
+        services.AddSingleton<ITtsProvider>(sp => ttsOptions.Provider.Trim().ToUpperInvariant() switch
+        {
+            "GEMINI" or "GEMINITTS" => sp.GetRequiredService<GeminiTtsProvider>(),
+            "GOOGLECLOUD" or "GOOGLECLOUDTTS" => sp.GetRequiredService<GoogleCloudTtsProvider>(),
+            _ => throw new InvalidOperationException(
+                $"Unsupported AI:TTS:Provider '{ttsOptions.Provider}'. Supported values: GeminiTTS, GoogleCloudTTS.")
+        });
         services.AddSingleton<IMediaAlignmentEvaluator>(sp => sp.GetRequiredService<GeminiMediaAlignmentEvaluator>());
         services.AddSingleton<IMediaSafetyEvaluator>(sp => sp.GetRequiredService<GeminiMediaSafetyEvaluator>());
         services.AddSingleton<ISemanticSceneSegmentationProvider>(sp => sp.GetRequiredService<GeminiSemanticSceneSegmentationProvider>());

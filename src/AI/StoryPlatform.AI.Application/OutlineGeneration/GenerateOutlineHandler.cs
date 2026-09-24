@@ -40,8 +40,7 @@ public sealed class GenerateOutlineHandler
         {
             if (attempt > 1)
             {
-                var delay = TimeSpan.FromSeconds(Math.Max(0, _options.BaseRetryDelaySeconds) * Math.Pow(2, attempt - 2));
-                await Task.Delay(delay, cancellationToken);
+                await Task.Delay(GetRetryDelay(attempt), cancellationToken);
             }
 
             try
@@ -78,13 +77,30 @@ public sealed class GenerateOutlineHandler
             {
                 throw;
             }
-            catch (Exception exception) when (IsRetryable(exception, cancellationToken) && attempt < maxAttempts)
+            catch (Exception exception) when (IsRetryable(exception, cancellationToken))
             {
                 lastError = exception;
+                if (attempt == maxAttempts)
+                {
+                    break;
+                }
             }
         }
 
         throw new InvalidOperationException("Outline generation failed after the configured attempts.", lastError);
+    }
+
+    private TimeSpan GetRetryDelay(int attempt)
+    {
+        var baseDelaySeconds = Math.Max(0, _options.BaseRetryDelaySeconds);
+        if (baseDelaySeconds == 0)
+        {
+            return TimeSpan.Zero;
+        }
+
+        var exponentialDelay = baseDelaySeconds * Math.Pow(2, attempt - 2);
+        var jitter = Random.Shared.NextDouble();
+        return TimeSpan.FromSeconds(exponentialDelay + jitter);
     }
 
     private static bool IsRetryable(Exception exception, CancellationToken callerToken) => exception switch

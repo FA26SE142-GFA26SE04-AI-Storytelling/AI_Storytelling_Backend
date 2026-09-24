@@ -55,6 +55,110 @@ public sealed class GeminiMediaEvaluatorTests
         Assert.True(result.Passed);
     }
 
+    [Fact]
+    public async Task AlignmentEvaluator_parses_string_number_score()
+    {
+        var handler = new MockHandler((request, cancellationToken) =>
+            Task.FromResult(JsonResponse("{\"alignmentScore\":\"0.85\",\"reason\":\"Matches the scene nicely\"}")));
+        var evaluator = new GeminiMediaAlignmentEvaluator(
+            new HttpClient(handler), Options.Create(new GeminiOptions()), Options.Create(Vertex()),
+            Options.Create(new MediaEvaluationOptions()), NullLogger<GeminiMediaAlignmentEvaluator>.Instance);
+
+        var result = await evaluator.EvaluateAsync(Specification, Illustration);
+
+        Assert.True(result.Passed);
+        Assert.Equal("Matches the scene nicely", result.Reason);
+    }
+
+    [Fact]
+    public async Task AlignmentEvaluator_parses_snake_case_alignment_score()
+    {
+        var handler = new MockHandler((request, cancellationToken) =>
+            Task.FromResult(JsonResponse("{\"alignment_score\":0.78,\"explanation\":\"Good portrayal\"}")));
+        var evaluator = new GeminiMediaAlignmentEvaluator(
+            new HttpClient(handler), Options.Create(new GeminiOptions()), Options.Create(Vertex()),
+            Options.Create(new MediaEvaluationOptions()), NullLogger<GeminiMediaAlignmentEvaluator>.Instance);
+
+        var result = await evaluator.EvaluateAsync(Specification, Illustration);
+
+        Assert.True(result.Passed);
+        Assert.Equal("Good portrayal", result.Reason);
+    }
+
+    [Fact]
+    public async Task AlignmentEvaluator_parses_string_pass_as_successful()
+    {
+        var handler = new MockHandler((request, cancellationToken) =>
+            Task.FromResult(JsonResponse("{\"score\":\"Pass\",\"alignmentReason\":\"Characters look accurate\"}")));
+        var evaluator = new GeminiMediaAlignmentEvaluator(
+            new HttpClient(handler), Options.Create(new GeminiOptions()), Options.Create(Vertex()),
+            Options.Create(new MediaEvaluationOptions()), NullLogger<GeminiMediaAlignmentEvaluator>.Instance);
+
+        var result = await evaluator.EvaluateAsync(Specification, Illustration);
+
+        Assert.True(result.Passed);
+        Assert.Equal("Characters look accurate", result.Reason);
+    }
+
+    [Fact]
+    public async Task AlignmentEvaluator_passes_score_at_70_percent_threshold()
+    {
+        var handler = new MockHandler((request, cancellationToken) =>
+            Task.FromResult(JsonResponse("{\"alignmentScore\":0.70,\"reason\":\"Acceptable alignment\"}")));
+        var evaluator = new GeminiMediaAlignmentEvaluator(
+            new HttpClient(handler), Options.Create(new GeminiOptions()), Options.Create(Vertex()),
+            Options.Create(new MediaEvaluationOptions()), NullLogger<GeminiMediaAlignmentEvaluator>.Instance);
+
+        var result = await evaluator.EvaluateAsync(Specification, Illustration);
+
+        Assert.True(result.Passed);
+    }
+
+    [Fact]
+    public async Task AlignmentEvaluator_fails_score_below_70_percent()
+    {
+        var handler = new MockHandler((request, cancellationToken) =>
+            Task.FromResult(JsonResponse("{\"alignmentScore\":0.55,\"reason\":\"Characters mismatch\"}")));
+        var evaluator = new GeminiMediaAlignmentEvaluator(
+            new HttpClient(handler), Options.Create(new GeminiOptions()), Options.Create(Vertex()),
+            Options.Create(new MediaEvaluationOptions()), NullLogger<GeminiMediaAlignmentEvaluator>.Instance);
+
+        var result = await evaluator.EvaluateAsync(Specification, Illustration);
+
+        Assert.False(result.Passed);
+        Assert.Equal("Characters mismatch", result.Reason);
+    }
+
+    [Fact]
+    public async Task AlignmentEvaluator_missing_score_with_positive_reasoning_falls_back_to_pass()
+    {
+        var handler = new MockHandler((request, cancellationToken) =>
+            Task.FromResult(JsonResponse("{\"reason\":\"The illustration matches key elements from the story scene.\"}")));
+        var evaluator = new GeminiMediaAlignmentEvaluator(
+            new HttpClient(handler), Options.Create(new GeminiOptions()), Options.Create(Vertex()),
+            Options.Create(new MediaEvaluationOptions()), NullLogger<GeminiMediaAlignmentEvaluator>.Instance);
+
+        var result = await evaluator.EvaluateAsync(Specification, Illustration);
+
+        Assert.True(result.Passed);
+    }
+
+    [Fact]
+    public async Task AlignmentEvaluator_parses_fenced_json_with_additional_commentary()
+    {
+        var markdownText = "Here is my evaluation:\n```json\n{\n  \"alignmentScore\": 0.95,\n  \"reason\": \"Perfect match\"\n}\n```\nHope this helps!";
+        var handler = new MockHandler((request, cancellationToken) =>
+            Task.FromResult(JsonResponse(markdownText)));
+        var evaluator = new GeminiMediaAlignmentEvaluator(
+            new HttpClient(handler), Options.Create(new GeminiOptions()), Options.Create(Vertex()),
+            Options.Create(new MediaEvaluationOptions()), NullLogger<GeminiMediaAlignmentEvaluator>.Instance);
+
+        var result = await evaluator.EvaluateAsync(Specification, Illustration);
+
+        Assert.True(result.Passed);
+        Assert.Equal("Perfect match", result.Reason);
+    }
+
     private static HttpResponseMessage JsonResponse(string modelText)
     {
         var envelope = JsonSerializer.Serialize(new

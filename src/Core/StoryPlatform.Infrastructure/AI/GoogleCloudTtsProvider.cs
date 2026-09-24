@@ -147,7 +147,8 @@ public sealed class GoogleCloudTtsProvider : ITtsProvider
         {
             ["provider"] = "GoogleCloud",
             ["model"] = _options.VoiceName,
-            ["languageCode"] = _options.LanguageCode
+            ["languageCode"] = _options.LanguageCode,
+            ["hasWordTimings"] = _options.EnableWordTimings ? "true" : "false"
         };
         if (wordTimingsJson is not null)
             meta["wordTimingsJson"] = wordTimingsJson;

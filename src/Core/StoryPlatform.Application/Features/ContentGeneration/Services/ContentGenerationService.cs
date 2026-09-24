@@ -156,9 +156,11 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
 
             var failed = (await _unitOfWork.Repository<StoryGenerationJob>().FindAsync(
                     item => item.StoryId == storyId &&
-                            item.Operation == GenerationJobOperation.GenerateContent &&
-                            item.Status == GenerationJobStatus.Failed &&
-                            item.BaseStoryVersionId == outline.Id,
+                            (item.Operation == GenerationJobOperation.GenerateContent ||
+                             item.Operation == GenerationJobOperation.GenerateVocabulary ||
+                             item.Operation == GenerationJobOperation.GenerateQuiz ||
+                             item.Operation == GenerationJobOperation.GenerateDiscussion) &&
+                            item.Status == GenerationJobStatus.Failed,
                     cancellationToken: cancellationToken))
                 .OrderByDescending(item => item.Id)
                 .FirstOrDefault();
@@ -171,11 +173,12 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             {
                 StoryId = storyId,
                 GenerationRequestId = failed.GenerationRequestId,
-                BaseStoryVersionId = outline.Id,
+                StoryVersionId = failed.StoryVersionId,
+                BaseStoryVersionId = failed.BaseStoryVersionId ?? outline.Id,
                 RequestedByUserId = userId,
                 OperationKey = key,
-                Operation = GenerationJobOperation.GenerateContent,
-                Stage = JobStage.ContentPending,
+                Operation = failed.Operation,
+                Stage = failed.Operation == GenerationJobOperation.GenerateContent ? JobStage.ContentPending : JobStage.ContentArtifactPending,
                 Status = GenerationJobStatus.Pending,
                 AttemptNo = 0,
                 MaxAttempts = failed.MaxAttempts > 0 ? failed.MaxAttempts : 3,
@@ -452,9 +455,9 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
         await CompleteArtifactAsync(state, claimedToken, response!.Metadata, async () =>
         {
             if (!await _unitOfWork.Repository<DiscussionQuestion>().ExistsAsync(item => item.StoryVersionId == state.Version.Id, cancellationToken))
-                await _unitOfWork.Repository<DiscussionQuestion>().AddRangeAsync(questions.Select(question => new DiscussionQuestion
+                await _unitOfWork.Repository<DiscussionQuestion>().AddRangeAsync(questions.Select((question, index) => new DiscussionQuestion
                 {
-                    StoryVersionId = state.Version.Id, Question = question, IsMoralLesson = false
+                    StoryVersionId = state.Version.Id, Question = question, IsMoralLesson = index == 0
                 }), cancellationToken);
         }, null, cancellationToken);
     }
@@ -525,6 +528,8 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
                 OutlineOpening = baseVersion.OutlineOpening,
                 OutlineDevelopment = baseVersion.OutlineDevelopment,
                 OutlineEnding = baseVersion.OutlineEnding,
+                OutlineApprovedAt = baseVersion.OutlineApprovedAt,
+                OutlineApprovedByUserId = baseVersion.OutlineApprovedByUserId,
                 Content = storyText,
                 Lesson = content.Lesson.Trim(),
                 ReadabilityFkgl = readability.Fkgl,
@@ -550,6 +555,9 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
     private async Task PromoteStableContentAsync(
         ContentHandoff handoff, StoryVersion candidate, string claimedToken, CancellationToken cancellationToken)
     {
+        int requestedByUserId = 0;
+        int? generationRequestId = null;
+
         await InStoryTransactionAsync(handoff.Job.StoryId, async () =>
         {
             var job = await RequireClaimedJobAsync(handoff.Job.Id, claimedToken, cancellationToken);
@@ -559,6 +567,8 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
                 throw new InvalidOperationException("STALE_BASE_VERSION");
             current.IsCurrent = false;
             stable.IsCurrent = true;
+            stable.OutlineApprovedAt = current.OutlineApprovedAt;
+            stable.OutlineApprovedByUserId = current.OutlineApprovedByUserId;
             _unitOfWork.Repository<StoryVersion>().Update(current);
             _unitOfWork.Repository<StoryVersion>().Update(stable);
             var story = await _unitOfWork.Repository<Story>().GetByIdAsync(job.StoryId, cancellationToken)
@@ -575,17 +585,19 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             RotateToken(job);
             _unitOfWork.Repository<StoryGenerationJob>().Update(job);
 
-            // Handoff sang chuỗi Vocabulary → Quiz → Discussion qua entry point duy nhất.
-            // StableVersionArtifactHandoffService idempotency: nếu job đã có cho (story, version)
-            // thì trả về job hiện có, không tạo trùng.
-            await _artifactHandoff.QueueArtifactsAsync(
-                storyId: job.StoryId,
-                storyVersionId: stable.Id,
-                requestedByUserId: job.RequestedByUserId ?? story.AuthorUserId,
-                generationRequestId: job.GenerationRequestId,
-                cancellationToken: cancellationToken);
+            requestedByUserId = job.RequestedByUserId ?? story.AuthorUserId;
+            generationRequestId = job.GenerationRequestId;
             return true;
         }, cancellationToken);
+
+        // Handoff sang chuá»—i Vocabulary â†’ Quiz â†’ Discussion qua entry point duy nháº¥t.
+        // QueueArtifactsAsync má»Ÿ transaction riÃªng, nÃªn gá»i sau khi transaction Content Ä‘Ã£ commit hoÃ n táº¥t.
+        await _artifactHandoff.QueueArtifactsAsync(
+            storyId: handoff.Job.StoryId,
+            storyVersionId: candidate.Id,
+            requestedByUserId: requestedByUserId,
+            generationRequestId: generationRequestId,
+            cancellationToken: cancellationToken);
     }
 
     private async Task EnsureNextJobAsync(
@@ -842,8 +854,32 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
                 answer = string.IsNullOrWhiteSpace(answer) ? item.Options[item.CorrectOptionIndex] : answer;
                 if (!item.Options.Contains(answer, StringComparer.OrdinalIgnoreCase)) throw new InvalidOperationException("QUIZ_VALIDATION_FAILED");
             }
-            else if (type == QuizType.TrueFalse && !string.Equals(answer, "true", StringComparison.OrdinalIgnoreCase) && !string.Equals(answer, "false", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("QUIZ_VALIDATION_FAILED");
+            else if (type == QuizType.TrueFalse)
+            {
+                if (string.Equals(answer, "true", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(answer, "đúng", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(answer, "dung", StringComparison.OrdinalIgnoreCase))
+                {
+                    answer = "true";
+                }
+                else if (string.Equals(answer, "false", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(answer, "sai", StringComparison.OrdinalIgnoreCase))
+                {
+                    answer = "false";
+                }
+                else if (item.CorrectOptionIndex == 0)
+                {
+                    answer = "true";
+                }
+                else if (item.CorrectOptionIndex == 1)
+                {
+                    answer = "false";
+                }
+                else
+                {
+                    throw new InvalidOperationException("QUIZ_VALIDATION_FAILED");
+                }
+            }
             else if (type == QuizType.ShortAnswer && string.IsNullOrWhiteSpace(answer))
                 throw new InvalidOperationException("QUIZ_VALIDATION_FAILED");
             result.Add(new QuizItemSeed(type, item.Question.Trim(), answer.Trim(), JsonSerializer.Serialize(item.Options, JsonOptions)));

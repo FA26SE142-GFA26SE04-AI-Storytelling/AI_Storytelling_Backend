@@ -242,6 +242,39 @@ public sealed class ContentGenerationServiceTests
             item.Status == GenerationJobStatus.Pending && item.OperationKey == request.RetryKey);
     }
 
+    [Fact]
+    public async Task Discussion_generation_automatically_marks_first_item_as_moral_lesson()
+    {
+        var store = Seed();
+        var ai = new FakeAIClient();
+        var service = Service(store, ai);
+
+        Assert.True(await service.ProcessNextAsync()); // Content
+        Assert.True(await service.ProcessNextAsync()); // Vocabulary
+        Assert.True(await service.ProcessNextAsync()); // Quiz
+        Assert.True(await service.ProcessNextAsync()); // Discussion
+
+        var questions = store.Items<DiscussionQuestion>().ToList();
+        Assert.NotEmpty(questions);
+        Assert.True(questions[0].IsMoralLesson);
+    }
+
+    [Fact]
+    public async Task Quiz_true_false_vietnamese_answers_are_normalized_to_boolean_strings()
+    {
+        var store = Seed();
+        var ai = new VietnameseTrueFalseAIClient();
+        var service = Service(store, ai);
+
+        Assert.True(await service.ProcessNextAsync()); // Content
+        Assert.True(await service.ProcessNextAsync()); // Vocabulary
+        Assert.True(await service.ProcessNextAsync()); // Quiz
+
+        var quizzes = store.Items<QuizItem>().Where(q => q.Type == QuizType.TrueFalse).ToList();
+        Assert.Single(quizzes);
+        Assert.Equal("true", quizzes[0].CorrectAnswer);
+    }
+
     private static StoryGenerationJob PendingJob(FakeUnitOfWork store) =>
         store.Items<StoryGenerationJob>().Single(item => item.Status == GenerationJobStatus.Pending);
 
@@ -324,7 +357,7 @@ public sealed class ContentGenerationServiceTests
         }
     }
 
-    private sealed class FakeAIClient(
+    private class FakeAIClient(
         bool invalidFirstVocabulary = false,
         bool blockSafety = false,
         double? safetyScore = null) : IAIStoryGenerationClient
@@ -356,7 +389,7 @@ public sealed class ContentGenerationServiceTests
                     : [new GeneratedVocabularyItemDto("chia sẻ", "Cùng dùng với người khác")]
             });
         }
-        public Task<GenerateQuizResponse> GenerateQuizAsync(GenerateQuizRequest request, CancellationToken cancellationToken = default)
+        public virtual Task<GenerateQuizResponse> GenerateQuizAsync(GenerateQuizRequest request, CancellationToken cancellationToken = default)
         {
             Calls.Add("quiz");
             return Task.FromResult(new GenerateQuizResponse
@@ -406,6 +439,24 @@ public sealed class ContentGenerationServiceTests
         public Task<GenerateStoryResponse> GenerateStoryAsync(GenerateStoryRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<RefineStoryResponse> RefineStoryAsync(RefineStoryRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<EvaluateStoryResponse> EvaluateStoryAsync(EvaluateStoryRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class VietnameseTrueFalseAIClient : FakeAIClient
+    {
+        public override Task<GenerateQuizResponse> GenerateQuizAsync(GenerateQuizRequest request, CancellationToken cancellationToken = default)
+        {
+            Calls.Add("quiz");
+            return Task.FromResult(new GenerateQuizResponse
+            {
+                RequestId = request.RequestId,
+                Items =
+                [
+                    new QuizItemDto { Type = "multiple_choice", Question = "Ai chia sẻ sách?", Options = ["Lan", "Nam"], CorrectOptionIndex = 0, CorrectAnswer = "Lan" },
+                    new QuizItemDto { Type = "true_false", Question = "Hai bạn cùng đọc sách?", CorrectAnswer = "Đúng", CorrectOptionIndex = 0 },
+                    new QuizItemDto { Type = "short_answer", Question = "Bài học là gì?", CorrectAnswer = "Biết chia sẻ", CorrectOptionIndex = -1 }
+                ]
+            });
+        }
     }
 
     private sealed class FakeFailureFinalizer(FakeUnitOfWork store) : IContentGenerationJobFailureFinalizer

@@ -76,16 +76,33 @@ public sealed class OutlineServiceTests
     }
 
     [Fact]
-    public async Task Approval_requires_separate_approve_permission()
+    public async Task Approval_without_supervision_relationship_throws_forbidden()
     {
         var unitOfWork = Seed(includeApprovePermission: false);
         var service = Service(unitOfWork);
         await service.ProcessNextAsync();
 
+        // User 99 không có quan hệ giám sát với hồ sơ trẻ của story
         await Assert.ThrowsAsync<ForbiddenException>(() => service.ApproveAsync(
-            1, 1, 1, new ApproveOutlineRequestDto { ApprovalKey = "approve-0001" }));
+            99, 1, 1, new ApproveOutlineRequestDto { ApprovalKey = "approve-0001" }));
 
         Assert.DoesNotContain(unitOfWork.Items<StoryGenerationJob>(),
+            item => item.Operation == GenerationJobOperation.GenerateContent);
+    }
+
+    [Fact]
+    public async Task Approval_succeeds_for_supervisor_even_without_explicit_approve_permission()
+    {
+        var unitOfWork = Seed(includeApprovePermission: false);
+        var service = Service(unitOfWork);
+        await service.ProcessNextAsync();
+
+        // User 1 có quan hệ giám sát nhưng không có permission ApproveStory riêng -> vẫn duyệt thành công
+        var result = await service.ApproveAsync(
+            1, 1, 1, new ApproveOutlineRequestDto { ApprovalKey = "approve-0001" });
+
+        Assert.NotNull(result);
+        Assert.Contains(unitOfWork.Items<StoryGenerationJob>(),
             item => item.Operation == GenerationJobOperation.GenerateContent);
     }
 

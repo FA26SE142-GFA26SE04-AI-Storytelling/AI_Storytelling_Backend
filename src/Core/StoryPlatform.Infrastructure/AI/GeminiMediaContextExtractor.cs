@@ -48,13 +48,8 @@ public sealed class GeminiMediaContextExtractor : IMediaContextExtractor
         {
             var prompt = BuildPrompt(request);
             var body = BuildRequestBody(prompt);
-            using var response = await GeminiHttpRetry.SendWithTransportRetryAsync(
-                () => BuildRequest(body),
-                _httpClient,
-                _gemini.TransportRetryCount,
-                TimeSpan.FromMilliseconds(_gemini.TransportRetryBaseDelayMs),
-                _logger,
-                cancellationToken).ConfigureAwait(false);
+            using var httpRequest = BuildRequest(body);
+            using var response = await _httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
 
             var statusCode = response.StatusCode;
             var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -80,10 +75,7 @@ public sealed class GeminiMediaContextExtractor : IMediaContextExtractor
 
     private HttpRequestMessage BuildRequest(object body)
     {
-        var url = _vertex.UseVertex
-            ? $"https://{_vertex.Location}-aiplatform.googleapis.com/v1/projects/{_vertex.ProjectId}/locations/{_vertex.Location}/publishers/google/models/gemini-2.5-flash:generateContent"
-            : $"{_gemini.Endpoint.TrimEnd('/')}/gemini-2.5-flash:generateContent";
-
+        var url = VertexUrlResolver.Resolve(_vertex, _gemini, "gemini-3.8-flash");
         var msg = new HttpRequestMessage(HttpMethod.Post, url);
         if (!_vertex.UseVertex)
         {
@@ -117,12 +109,13 @@ public sealed class GeminiMediaContextExtractor : IMediaContextExtractor
     {
         try
         {
-            using var doc = JsonDocument.Parse(content);
+            var payload = GeminiResponseJson.ExtractFirstTextPayload(content);
+            using var doc = JsonDocument.Parse(payload);
             var root = doc.RootElement;
             var chars = root.TryGetProperty("characterList", out var c) ? c.GetString() : null;
             var style = root.TryGetProperty("visualStyleGuidance", out var s) ? s.GetString() : null;
             var safety = root.TryGetProperty("safetyConstraints", out var sc) ? sc.GetString() : null;
-            return new ExtractedMediaContext(content, chars, style, safety);
+            return new ExtractedMediaContext(payload, chars, style, safety);
         }
         catch
         {

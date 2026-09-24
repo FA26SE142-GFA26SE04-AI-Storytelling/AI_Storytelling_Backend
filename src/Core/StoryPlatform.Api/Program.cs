@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using StoryPlatform.Api.Extensions;
@@ -9,6 +10,8 @@ using StoryPlatform.Application;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Infrastructure;
+using StoryPlatform.Infrastructure.AI;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -44,6 +47,8 @@ builder.Services.AddAuthorization(options =>
 // 5. Đăng ký Application use cases và Infrastructure adapters
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddHealthChecks()
+    .AddCheck<MediaServicesHealthCheck>("media_services", failureStatus: HealthStatus.Degraded, tags: ["ready"]);
 
 // 6. SignalR cho thông báo real-time
 builder.Services.AddSignalR();
@@ -80,6 +85,16 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHealthChecks("/health");
+app.MapHealthChecks("/healthz", new HealthCheckOptions
+{
+    Predicate = registration => registration.Tags.Contains("ready"),
+    ResultStatusCodes =
+    {
+        [HealthStatus.Healthy] = StatusCodes.Status200OK,
+        [HealthStatus.Degraded] = StatusCodes.Status503ServiceUnavailable,
+        [HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable
+    }
+});
 app.MapHub<NotificationHub>("/hubs/notifications");
 
 app.Run();

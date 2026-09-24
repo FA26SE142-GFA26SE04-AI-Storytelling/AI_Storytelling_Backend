@@ -10,6 +10,6 @@ public sealed class ResendOptions
     public const string SectionName = "ResendSettings";
     public string ApiKey { get; set; } = string.Empty;
     public string Endpoint { get; set; } = "https://api.resend.com/emails";
-    public string FromEmail { get; set; } = "tranduy1632004@gmail.com";
-    public string FromName { get; set; } = "AI Storytelling Platform";
+    public string FromEmail { get; set; } = "no-reply@taletale.site";
+    public string FromName { get; set; } = "MagicTales";
 }

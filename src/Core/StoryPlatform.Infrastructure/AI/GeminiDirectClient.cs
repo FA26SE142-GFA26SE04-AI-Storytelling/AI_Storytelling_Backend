@@ -129,6 +129,14 @@ public sealed class GeminiDirectClient : IAIStoryGenerationClient
 
     private async Task<string> GenerateContentAsync(string prompt, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(_apiKey))
+        {
+            throw new AIServiceRequestException(
+                401,
+                "GEMINI_API_KEY_NOT_CONFIGURED",
+                "Gemini API key is not configured. Please set AIService:ApiKey or GEMINI_API_KEY.");
+        }
+
         var modelsToTry = new List<string> { _model };
         if (!modelsToTry.Contains("gemini-3.5-flash-lite", StringComparer.OrdinalIgnoreCase))
             modelsToTry.Add("gemini-3.5-flash-lite");

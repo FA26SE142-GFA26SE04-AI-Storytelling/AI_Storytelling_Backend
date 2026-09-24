@@ -19,7 +19,7 @@ On success, Core performs one transaction that retires the previous current vers
 - `POST /api/v1/stories/{storyId}/outline/versions/{versionNo}/approve`
 - `POST /api/v1/stories/{storyId}/outline/versions/{versionNo}/reject`
 
-Edit and regenerate require `GenerateStory` on the Story's child. Approval and rejection require the separate `ApproveStory` permission. Edit creates a new version. Regenerate creates a new durable outline job tied to the current base version. A stale AI result cannot replace a newer current version.
+Edit and regenerate require `GenerateStory` on the Story's child. Approval requires that the Story's child is under the active supervision of a Parent or Teacher account (explicit `ApproveStory` permission check is bypassed). Rejection requires the separate `ApproveStory` permission. Edit creates a new version. Regenerate creates a new durable outline job tied to the current base version. A stale AI result cannot replace a newer current version.
 
 Approval records the exact approved StoryVersion and creates a `GenerateContent`/`ContentPending` job in the same transaction. The Phase 3 consumer is not implemented here.
 

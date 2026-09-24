@@ -180,20 +180,39 @@ public sealed class Phase1To4SequentialWorkflowTests
     }
 
     [Fact]
-    public async Task Phase2_approval_without_permission_does_not_create_phase3_handoff()
+    public async Task Phase2_approval_without_supervision_relationship_does_not_create_phase3_handoff()
     {
         var store = CreateEligibleStore(includeApprovePermission: false);
         var ai = new WorkflowAIClient();
         var (story, outlineService, outline) = await RunToOutlineReviewAsync(store, ai);
 
+        // User 99 không có quan hệ giám sát với trẻ của Story
         await Assert.ThrowsAsync<ForbiddenException>(() => outlineService.ApproveAsync(
-            1,
+            99,
             story.Id,
             outline.VersionNo,
-            new ApproveOutlineRequestDto { ApprovalKey = "approval-without-permission" }));
+            new ApproveOutlineRequestDto { ApprovalKey = "approval-without-supervision" }));
 
         Assert.DoesNotContain(store.Items<StoryGenerationJob>(), job => job.Operation == GenerationJobOperation.GenerateContent);
         Assert.Equal(StoryStatus.OutlineReview, story.Status);
+    }
+
+    [Fact]
+    public async Task Phase2_approval_for_supervisor_without_explicit_approve_permission_creates_phase3_handoff()
+    {
+        var store = CreateEligibleStore(includeApprovePermission: false);
+        var ai = new WorkflowAIClient();
+        var (story, outlineService, outline) = await RunToOutlineReviewAsync(store, ai);
+
+        // User 1 có quan hệ giám sát với trẻ nhưng không có permission ApproveStory riêng -> vẫn approve thành công
+        var result = await outlineService.ApproveAsync(
+            1,
+            story.Id,
+            outline.VersionNo,
+            new ApproveOutlineRequestDto { ApprovalKey = "approval-for-supervisor" });
+
+        Assert.NotNull(result);
+        Assert.Contains(store.Items<StoryGenerationJob>(), job => job.Operation == GenerationJobOperation.GenerateContent);
     }
 
     [Fact]

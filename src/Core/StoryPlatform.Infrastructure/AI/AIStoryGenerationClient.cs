@@ -1,5 +1,9 @@
+using System;
+using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Contracts.AI.Requests;
@@ -16,7 +20,8 @@ public sealed class AIStoryGenerationClient : IAIStoryGenerationClient
     {
         var settings = options.Value;
         _httpClient = httpClient;
-        _httpClient.BaseAddress = new Uri((settings.BaseUrl ?? "http://localhost:5260").TrimEnd('/') + '/');
+        var baseUrl = !string.IsNullOrWhiteSpace(settings.BaseUrl) ? settings.BaseUrl : "http://localhost:5260";
+        _httpClient.BaseAddress = new Uri(baseUrl.TrimEnd('/') + '/');
         _httpClient.Timeout = TimeSpan.FromSeconds(Math.Clamp(settings.TimeoutSeconds, 10, 300));
         if (!string.IsNullOrWhiteSpace(settings.InternalApiKey))
         {
@@ -72,13 +77,11 @@ public sealed class AIStoryGenerationClient : IAIStoryGenerationClient
                 // Preserve a stable Core-side error when an upstream proxy returns a non-JSON body.
             }
 
-            var rawBody = error is null ? await response.Content.ReadAsStringAsync(cancellationToken) : null;
             throw new AIServiceRequestException(
                 (int)response.StatusCode,
                 string.IsNullOrWhiteSpace(error?.ErrorCode) ? "AI_SERVICE_REQUEST_FAILED" : error.ErrorCode,
-                string.IsNullOrWhiteSpace(error?.Error) ? (rawBody ?? "AI service request failed.") : error.Error);
+                string.IsNullOrWhiteSpace(error?.Error) ? "AI service request failed." : error.Error);
         }
-
         return await response.Content.ReadFromJsonAsync<TResponse>(cancellationToken: cancellationToken)
                ?? throw new InvalidOperationException($"AI service returned an empty response for '{path}'.");
     }

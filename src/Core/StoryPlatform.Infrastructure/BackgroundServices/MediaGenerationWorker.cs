@@ -51,9 +51,11 @@ public sealed class MediaGenerationWorker : BackgroundService
                 }
                 else if (!result.Success)
                 {
-                    var delaySeconds = result.IsPermanentFailure
-                        ? Math.Clamp(_options.PermanentFailureDelaySeconds, 30, 1800)
-                        : Math.Clamp(_options.TransientFailureDelaySeconds, 1, 60);
+                    var delaySeconds = result.ErrorCode == "MEDIA_CIRCUIT_OPEN"
+                        ? Math.Clamp(_options.CircuitBreaker.DurationOfBreakSeconds, 10, 1800)
+                        : result.IsPermanentFailure
+                            ? Math.Clamp(_options.PermanentFailureDelaySeconds, 30, 1800)
+                            : Math.Clamp(_options.TransientFailureDelaySeconds, 1, 60);
                     if (result.IsPermanentFailure)
                         _logger.LogWarning(
                             "Permanent Phase 5 media failure {ErrorCode}; retrying after {DelaySeconds} seconds.",

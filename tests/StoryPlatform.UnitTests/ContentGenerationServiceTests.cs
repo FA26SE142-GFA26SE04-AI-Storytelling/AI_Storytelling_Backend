@@ -5,6 +5,7 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Features.AIStoryInput.Models;
 using StoryPlatform.Application.Features.ContentGeneration.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration;
+using StoryPlatform.Application.Features.ContentGeneration.DTOs;
 using StoryPlatform.Application.Features.ContentGeneration.Quality;
 using StoryPlatform.Application.Features.ContentGeneration.Services;
 using StoryPlatform.Application.Features.ExistingStories.Interfaces;
@@ -167,6 +168,80 @@ public sealed class ContentGenerationServiceTests
         Assert.DoesNotContain(store.Items<StoryGenerationJob>(), item => item.Operation == GenerationJobOperation.GenerateVocabulary);
     }
 
+    [Fact]
+    public async Task Failed_content_progress_returns_specific_quality_gate_details()
+    {
+        var store = Seed();
+        var service = new ContentGenerationService(
+            store,
+            new FakeAIClient(),
+            new AlwaysFailReadabilityQualityEvaluator(),
+            new FakeFailureFinalizer(store),
+            new RecordingHandoffService(store),
+            new ContentGenerationOptions { MaxContentRefinementAttempts = 2 });
+
+        Assert.True(await service.ProcessNextAsync());
+
+        var progress = await service.GetProgressAsync(1, 1);
+        Assert.Equal("failed_content", progress.CurrentStep);
+        Assert.Equal("failed", progress.Content);
+        Assert.Equal("CONTENT_QUALITY_NOT_MET", progress.LastErrorCode);
+        Assert.NotNull(progress.QualityFailure);
+        Assert.Equal(2, progress.QualityFailure.RefinementAttempts);
+        var gate = Assert.Single(progress.QualityFailure.FailedGates);
+        Assert.Equal("readability", gate.Gate);
+        Assert.Equal("CONTENT_READABILITY_NOT_MET", gate.ReasonCode);
+        Assert.Equal("Câu quá dài.", Assert.Single(gate.Violations));
+    }
+
+    [Fact]
+    public async Task Retry_failed_content_generation_queues_new_job_and_preserves_failure_history()
+    {
+        var store = Seed();
+        var failed = store.Items<StoryGenerationJob>().Single();
+        failed.Status = GenerationJobStatus.Failed;
+        failed.Stage = JobStage.ContentFailed;
+        failed.ErrorCode = "GEMINI_API_ERROR";
+        failed.CompletedAt = DateTime.UtcNow;
+        var service = Service(store, new FakeAIClient());
+
+        var progress = await service.RetryAsync(1, 1, new RetryContentGenerationRequestDto
+        {
+            RetryKey = "retry-content-0001"
+        });
+
+        var jobs = store.Items<StoryGenerationJob>().OrderBy(item => item.Id).ToArray();
+        Assert.Equal(2, jobs.Length);
+        Assert.Equal(GenerationJobStatus.Failed, jobs[0].Status);
+        Assert.Equal("GEMINI_API_ERROR", jobs[0].ErrorCode);
+        Assert.Equal(GenerationJobStatus.Pending, jobs[1].Status);
+        Assert.Equal(JobStage.ContentPending, jobs[1].Stage);
+        Assert.Equal(1, jobs[1].GenerationRequestId);
+        Assert.Equal(1, jobs[1].BaseStoryVersionId);
+        Assert.Equal("retry-content-0001", jobs[1].OperationKey);
+        Assert.Equal("pending_content", progress.CurrentStep);
+        Assert.Equal("pending", progress.Content);
+        Assert.Null(progress.LastErrorCode);
+    }
+
+    [Fact]
+    public async Task Retry_content_generation_is_idempotent_for_same_retry_key()
+    {
+        var store = Seed();
+        var failed = store.Items<StoryGenerationJob>().Single();
+        failed.Status = GenerationJobStatus.Failed;
+        failed.ErrorCode = "GEMINI_API_ERROR";
+        var service = Service(store, new FakeAIClient());
+        var request = new RetryContentGenerationRequestDto { RetryKey = "retry-content-0001" };
+
+        await service.RetryAsync(1, 1, request);
+        await service.RetryAsync(1, 1, request);
+
+        Assert.Equal(2, store.Items<StoryGenerationJob>().Count);
+        Assert.Single(store.Items<StoryGenerationJob>(), item =>
+            item.Status == GenerationJobStatus.Pending && item.OperationKey == request.RetryKey);
+    }
+
     private static StoryGenerationJob PendingJob(FakeUnitOfWork store) =>
         store.Items<StoryGenerationJob>().Single(item => item.Status == GenerationJobStatus.Pending);
 
@@ -228,6 +303,24 @@ public sealed class ContentGenerationServiceTests
             if (_calls > 1) return new ContentQualityResult(true, pass, pass, pass, pass, pass);
             var fail = new ContentQualityGate(false, true, "CONTENT_READABILITY_NOT_MET", ["Câu quá dài."]);
             return new ContentQualityResult(false, pass, pass, pass, fail, pass);
+        }
+    }
+
+    private sealed class AlwaysFailReadabilityQualityEvaluator : IContentQualityEvaluator
+    {
+        public ContentQualityResult Evaluate(
+            StoryContentDto story,
+            StoryOutlineDto approvedOutline,
+            AcceptedAIStoryInputSnapshot input,
+            AIStoryInputContextSnapshot context)
+        {
+            var pass = new ContentQualityGate(true, false, null, []);
+            var fail = new ContentQualityGate(
+                false,
+                true,
+                "CONTENT_READABILITY_NOT_MET",
+                ["Câu quá dài."]);
+            return new ContentQualityResult(false, pass, pass, pass, fail, pass, 98m);
         }
     }
 

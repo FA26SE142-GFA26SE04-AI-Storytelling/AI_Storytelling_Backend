@@ -216,7 +216,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         ValidateObject(input);
         return await InStoryTransactionAsync(storyId, async () =>
         {
-            var story = await LoadAuthorizedStoryAsync(userId, storyId, Permission.ApproveStory, cancellationToken);
+            var story = await LoadAuthorizedStoryForApprovalAsync(userId, storyId, cancellationToken);
             EnsureReviewState(story);
             var version = await LoadCurrentVersionAsync(storyId, versionNo, cancellationToken);
             if (version.Content is not null)
@@ -506,6 +506,29 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         _unitOfWork.Repository<StoryVersion>().Update(current);
         await _unitOfWork.Repository<StoryVersion>().AddAsync(next, cancellationToken);
         _unitOfWork.Repository<Story>().Update(story);
+    }
+
+    private async Task<Story> LoadAuthorizedStoryForApprovalAsync(
+        int userId,
+        int storyId,
+        CancellationToken cancellationToken)
+    {
+        var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
+                    ?? throw new NotFoundException("Story", storyId);
+        var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken)
+                   ?? throw new ForbiddenException();
+        if (user.Status == AccountStatus.Suspended || user.Role is not (UserRole.Parent or UserRole.Teacher))
+        {
+            throw new ForbiddenException();
+        }
+        var relationship = await _unitOfWork.Repository<SupervisionRelationship>().FirstOrDefaultAsync(
+            item => item.ChildProfileId == story.ChildProfileId && item.SupervisorUserId == userId && item.RevokedAt == null,
+            cancellationToken: cancellationToken);
+        if (relationship is null)
+        {
+            throw new ForbiddenException();
+        }
+        return story;
     }
 
     private async Task<Story> LoadAuthorizedStoryAsync(

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -144,6 +145,29 @@ public sealed class VertexAIGeminiClient : ILlmClient
         {
             stopwatch.Stop();
 
+            var statusCode = GetStatusCode(ex);
+            if (statusCode is 408 or 429 || statusCode >= 500)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Vertex request encountered a transient provider error. " +
+                    "Model={Model}, SchemaName={SchemaName}, LatencyMs={LatencyMs}, " +
+                    "Status=RetryableError, StatusCode={StatusCode}, ErrorType={ErrorType}",
+                    _options.Model,
+                    schemaName,
+                    stopwatch.ElapsedMilliseconds,
+                    statusCode,
+                    ex.GetType().Name);
+
+                // Google.GenAI.ClientError exposes its own integer StatusCode while its
+                // HttpRequestException.StatusCode can be null. Normalize the SDK error so
+                // provider-agnostic retry policies can reliably recognize 408/429/5xx.
+                throw new HttpRequestException(
+                    ex.Message,
+                    ex,
+                    (HttpStatusCode)statusCode.Value);
+            }
+
             // Structured error logging
             _logger.LogError(
                 ex,
@@ -159,6 +183,14 @@ public sealed class VertexAIGeminiClient : ILlmClient
 
         return result;
     }
+
+    private static int? GetStatusCode(Exception exception) => exception switch
+    {
+        ClientError clientError => clientError.StatusCode,
+        ServerError serverError => serverError.StatusCode,
+        HttpRequestException { StatusCode: not null } httpError => (int)httpError.StatusCode.Value,
+        _ => null
+    };
 
     private static Schema BuildSchema(JsonElement schema)
     {

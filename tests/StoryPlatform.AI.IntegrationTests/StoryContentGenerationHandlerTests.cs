@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Net;
 using Microsoft.Extensions.Options;
 using StoryPlatform.AI.Application.Abstractions.LLM;
 using StoryPlatform.AI.Application.Abstractions.Prompting;
@@ -34,14 +35,65 @@ public sealed class StoryContentGenerationHandlerTests
         Assert.Single(response.Story.StorySections);
     }
 
-    private sealed class StubLlmClient(params string[] responses) : ILlmClient
+    [Fact]
+    public async Task Content_handler_retries_vertex_rate_limit_and_then_succeeds()
     {
-        private readonly Queue<string> _responses = new(responses);
+        var llm = new StubLlmClient(
+            new HttpRequestException("Resource exhausted.", null, HttpStatusCode.TooManyRequests),
+            """{"title":"Tình bạn","storySections":[{"order":1,"heading":"Mở đầu","content":"Lan chia sẻ sách với Minh."}],"lesson":"Biết chia sẻ"}""");
+        var options = Options.Create(new StoryContentGenerationOptions { BaseRetryDelaySeconds = 0 });
+        var handler = new GenerateStoryContentHandler(new StoryContentGenerationExecutor(llm, options), new StubPromptProvider());
+
+        var response = await handler.HandleAsync(ValidRequest());
+
+        Assert.Equal(2, llm.CallCount);
+        Assert.Equal(2, response.Metadata.AttemptCount);
+    }
+
+    [Fact]
+    public async Task Content_handler_reports_retry_exhaustion_with_last_provider_error()
+    {
+        var errors = Enumerable.Range(0, 3)
+            .Select(_ => (object)new HttpRequestException("Resource exhausted.", null, HttpStatusCode.TooManyRequests))
+            .ToArray();
+        var llm = new StubLlmClient(errors);
+        var options = Options.Create(new StoryContentGenerationOptions
+        {
+            BaseRetryDelaySeconds = 0,
+            MaxTechnicalAttempts = 3
+        });
+        var handler = new GenerateStoryContentHandler(new StoryContentGenerationExecutor(llm, options), new StubPromptProvider());
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(ValidRequest()));
+
+        Assert.Equal(3, llm.CallCount);
+        Assert.Contains("configured attempts", exception.Message);
+        var providerError = Assert.IsType<HttpRequestException>(exception.InnerException);
+        Assert.Equal(HttpStatusCode.TooManyRequests, providerError.StatusCode);
+    }
+
+    private static GenerateStoryContentRequest ValidRequest() => new()
+    {
+        RequestId = "content-1", AgeBand = "6-8", ReadingLevel = "2", VocabularyLevel = "level_2", Language = "vi",
+        ApprovedOutlineReference = "version-1", Outline = new StoryOutlineDto("Lan gặp Minh", "Hai bạn đọc", "Hai bạn chia sẻ"),
+        StoryParameters = new StoryParametersDto { Topic = "Tình bạn", Lesson = "Biết chia sẻ", RequestedLength = 500 },
+        Constraints = new GenerationConstraintsDto { MaximumWords = 700 }
+    };
+
+    private sealed class StubLlmClient(params object[] responses) : ILlmClient
+    {
+        private readonly Queue<object> _responses = new(responses);
         public int CallCount { get; private set; }
         public Task<LlmGenerationResult> GenerateStructuredAsync(string prompt, string schemaName, JsonElement schema, CancellationToken cancellationToken = default)
         {
             CallCount++;
-            return Task.FromResult(new LlmGenerationResult(_responses.Dequeue(), "test", "test", "1", 1, 1, 1));
+            var response = _responses.Dequeue();
+            if (response is Exception exception)
+            {
+                return Task.FromException<LlmGenerationResult>(exception);
+            }
+
+            return Task.FromResult(new LlmGenerationResult((string)response, "test", "test", "1", 1, 1, 1));
         }
     }
 

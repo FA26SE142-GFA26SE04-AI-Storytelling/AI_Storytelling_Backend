@@ -12,8 +12,8 @@ using StoryPlatform.Infrastructure.Persistence;
 namespace StoryPlatform.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260924135227_Init")]
-    partial class Init
+    [Migration("20260925102343_AddReadingSessionEntrySourceCheck")]
+    partial class AddReadingSessionEntrySourceCheck
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

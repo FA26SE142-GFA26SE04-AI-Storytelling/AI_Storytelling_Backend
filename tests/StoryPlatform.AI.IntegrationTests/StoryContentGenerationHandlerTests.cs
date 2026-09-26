@@ -52,6 +52,37 @@ public sealed class StoryContentGenerationHandlerTests
     }
 
     [Fact]
+    public async Task Content_handler_UsesPinnedTemplateAndRetriesSectionCountViolation()
+    {
+        var llm = new StubLlmClient(
+            """{"title":"Tình bạn","storySections":[{"order":1,"heading":"Đầu","content":"Lan gặp Minh."}],"lesson":"Chia sẻ"}""",
+            """{"title":"Tình bạn","storySections":[{"order":1,"heading":"Đầu","content":"Lan gặp Minh."},{"order":2,"heading":"Cuối","content":"Hai bạn chia sẻ."}],"lesson":"Chia sẻ"}""");
+        var handler = new GenerateStoryContentHandler(
+            new StoryContentGenerationExecutor(llm, Options.Create(new StoryContentGenerationOptions { BaseRetryDelaySeconds = 0 })),
+            new StubPromptProvider());
+        var request = ValidRequest() with { Snapshot = new AiGenerationSnapshot
+        {
+            PromptCatalogVersionId = 2,
+            PromptVersionNo = "catalog-v2",
+            Templates = new Dictionary<string, string>
+            {
+                ["StoryContent"] = "Pinned content prompt {{context}}",
+                ["Quiz"] = "Private quiz prompt {{context}}"
+            },
+            Config = new AiGenerationConfigSnapshot { MinStorySections = 2, MaxStorySections = 3 }
+        } };
+
+        var result = await handler.HandleAsync(request);
+
+        Assert.Equal(2, llm.CallCount);
+        Assert.Equal(2, result.Story.StorySections.Count);
+        Assert.Equal("catalog-v2", result.Metadata.PromptVersion);
+        Assert.Contains("Pinned content prompt", llm.LastPrompt);
+        Assert.DoesNotContain("Private quiz prompt", llm.LastPrompt);
+        Assert.DoesNotContain("\"snapshot\"", llm.LastPrompt, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Content_handler_reports_retry_exhaustion_with_last_provider_error()
     {
         var errors = Enumerable.Range(0, 3)
@@ -139,9 +170,11 @@ public sealed class StoryContentGenerationHandlerTests
     {
         private readonly Queue<object> _responses = new(responses);
         public int CallCount { get; private set; }
+        public string LastPrompt { get; private set; } = string.Empty;
         public Task<LlmGenerationResult> GenerateStructuredAsync(string prompt, string schemaName, JsonElement schema, CancellationToken cancellationToken = default)
         {
             CallCount++;
+            LastPrompt = prompt;
             var response = _responses.Dequeue();
             if (response is Exception exception)
             {

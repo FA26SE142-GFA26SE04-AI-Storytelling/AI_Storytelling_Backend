@@ -4,6 +4,7 @@ namespace StoryPlatform.Contracts.AI.Requests;
 
 public sealed record GenerateOutlineRequest
 {
+    public AiGenerationSnapshot? Snapshot { get; init; }
     public string RequestId { get; init; } = string.Empty;
     public string AgeBand { get; init; } = string.Empty;
     public string ReadingLevel { get; init; } = string.Empty;
@@ -18,6 +19,7 @@ public sealed record GenerateOutlineRequest
 
 public sealed record GenerateStoryRequest
 {
+    public AiGenerationSnapshot? Snapshot { get; init; }
     public string RequestId { get; init; } = string.Empty;
     public string AgeBand { get; init; } = string.Empty;
     public string ReadingLevel { get; init; } = string.Empty;
@@ -33,6 +35,7 @@ public sealed record GenerateStoryRequest
 
 public sealed record RefineStoryRequest
 {
+    public AiGenerationSnapshot? Snapshot { get; init; }
     public string RequestId { get; init; } = string.Empty;
     public StoryPackageDto Story { get; init; } = new();
     public string Language { get; init; } = "vi";
@@ -44,6 +47,7 @@ public sealed record RefineStoryRequest
 
 public sealed record EvaluateStoryRequest
 {
+    public AiGenerationSnapshot? Snapshot { get; init; }
     public string RequestId { get; init; } = string.Empty;
     public StoryPackageDto Story { get; init; } = new();
     public GenerationConstraintsDto Constraints { get; init; } = new();
@@ -51,6 +55,7 @@ public sealed record EvaluateStoryRequest
 
 public sealed record GenerateStoryContentRequest
 {
+    public AiGenerationSnapshot? Snapshot { get; init; }
     public string RequestId { get; init; } = string.Empty;
     public string AgeBand { get; init; } = string.Empty;
     public string ReadingLevel { get; init; } = string.Empty;
@@ -65,6 +70,7 @@ public sealed record GenerateStoryContentRequest
 
 public sealed record RefineStoryContentRequest
 {
+    public AiGenerationSnapshot? Snapshot { get; init; }
     public string RequestId { get; init; } = string.Empty;
     public StoryContentDto Story { get; init; } = new();
     public StoryOutlineDto Outline { get; init; } = new(string.Empty, string.Empty, string.Empty);
@@ -79,6 +85,7 @@ public sealed record RefineStoryContentRequest
 
 public sealed record GenerateVocabularyRequest
 {
+    public AiGenerationSnapshot? Snapshot { get; init; }
     public string RequestId { get; init; } = string.Empty;
     public StoryContentDto Story { get; init; } = new();
     public string AgeBand { get; init; } = string.Empty;
@@ -89,6 +96,7 @@ public sealed record GenerateVocabularyRequest
 
 public sealed record GenerateQuizRequest
 {
+    public AiGenerationSnapshot? Snapshot { get; init; }
     public string RequestId { get; init; } = string.Empty;
     public StoryContentDto Story { get; init; } = new();
     public IReadOnlyList<GeneratedVocabularyItemDto> Vocabulary { get; init; } = [];
@@ -100,6 +108,7 @@ public sealed record GenerateQuizRequest
 
 public sealed record GenerateDiscussionRequest
 {
+    public AiGenerationSnapshot? Snapshot { get; init; }
     public string RequestId { get; init; } = string.Empty;
     public StoryContentDto Story { get; init; } = new();
     public string AgeBand { get; init; } = string.Empty;
@@ -109,6 +118,7 @@ public sealed record GenerateDiscussionRequest
 
 public sealed record EvaluateContentSafetyRequest
 {
+    public AiGenerationSnapshot? Snapshot { get; init; }
     public string RequestId { get; init; } = string.Empty;
     public StoryContentDto Story { get; init; } = new();
     public string AgeBand { get; init; } = string.Empty;

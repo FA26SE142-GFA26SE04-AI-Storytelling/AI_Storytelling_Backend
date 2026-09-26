@@ -22,10 +22,17 @@ public sealed class GenerateStoryContentHandler
     public async Task<GenerateStoryContentResponse> HandleAsync(GenerateStoryContentRequest request, CancellationToken cancellationToken = default)
     {
         ValidateContentRequest(request);
-        var template = _prompts.GetActive(PromptType.StoryContent, request.Language, request.AgeBand);
+        var template = SnapshotPromptResolver.Resolve(request.Snapshot, PromptType.StoryContent,
+            request.Language, request.AgeBand, _prompts);
+        var minimumSections = request.Snapshot is null ? 1 : Math.Clamp(request.Snapshot.Config.MinStorySections, 2, 10);
+        var maximumSections = request.Snapshot is null ? int.MaxValue : Math.Clamp(request.Snapshot.Config.MaxStorySections, 3, 20);
+        if (minimumSections > maximumSections) throw new ArgumentException("Invalid pinned section limits.", nameof(request));
+        var prompt = PromptComposer.Compose(template, request);
+        if (request.Snapshot is not null)
+            prompt += $"\nReturn {minimumSections} to {maximumSections} non-empty story sections.";
         var generated = await _executor.ExecuteAsync(
-            PromptComposer.Compose(template, request), "story_content", GenerationSchemas.StoryContent,
-            json => DeserializeStory(json), cancellationToken);
+            prompt, "story_content", GenerationSchemas.StoryContent,
+            json => DeserializeStory(json, minimumSections, maximumSections), cancellationToken);
         return new GenerateStoryContentResponse
         {
             RequestId = request.RequestId,
@@ -59,11 +66,13 @@ public sealed class GenerateStoryContentHandler
         }
     }
 
-    private static StoryContentDto DeserializeStory(string json)
+    private static StoryContentDto DeserializeStory(string json, int minimumSections, int maximumSections)
     {
         var story = JsonSerializer.Deserialize<StoryContentDto>(json, JsonDefaults.Options)
                     ?? throw new JsonException("The LLM returned an empty story payload.");
         ValidateStory(story);
+        if (story.StorySections.Count < minimumSections || story.StorySections.Count > maximumSections)
+            throw new JsonException("Generated story section count is outside pinned limits.");
         return EnsureDescription(story);
     }
 
@@ -101,7 +110,8 @@ public sealed class RefineStoryContentHandler
             throw new ArgumentException("A request id and refinement reasons are required.", nameof(request));
         }
         ValidateRefinementInput(request.Story);
-        var template = _prompts.GetActive(PromptType.StoryContentRefinement, request.Language, request.AgeBand);
+        var template = SnapshotPromptResolver.Resolve(request.Snapshot, PromptType.StoryContentRefinement,
+            request.Language, request.AgeBand, _prompts);
         var generated = await _executor.ExecuteAsync(
             PromptComposer.Compose(template, request), "refined_story_content", GenerationSchemas.StoryContent,
             json => DeserializeRefinedStory(json), cancellationToken);
@@ -146,14 +156,26 @@ public sealed class GenerateVocabularyHandler
     public async Task<GenerateVocabularyResponse> HandleAsync(GenerateVocabularyRequest request, CancellationToken cancellationToken = default)
     {
         ValidateArtifactRequest(request.RequestId, request.Story);
-        var template = _prompts.GetActive(PromptType.Vocabulary, request.Language, request.AgeBand);
+        var template = SnapshotPromptResolver.Resolve(request.Snapshot, PromptType.Vocabulary,
+            request.Language, request.AgeBand, _prompts);
+        var maxItems = request.Snapshot is null ? int.MaxValue : Math.Clamp(request.Snapshot.Config.MaxVocabularyItems, 5, 20);
+        var prompt = PromptComposer.Compose(template, request);
+        if (request.Snapshot is not null) prompt += $"\nReturn at most {maxItems} vocabulary items.";
         var generated = await _executor.ExecuteAsync(
-            PromptComposer.Compose(template, request), "story_vocabulary", GenerationSchemas.Vocabulary,
-            json => JsonSerializer.Deserialize<VocabularyPayload>(json, JsonDefaults.Options), cancellationToken);
+            prompt, "story_vocabulary", GenerationSchemas.Vocabulary,
+            json => DeserializeVocabulary(json, maxItems), cancellationToken);
         return new GenerateVocabularyResponse { RequestId = request.RequestId, Items = generated.Value.Items, Metadata = generated.Generation.ToMetadata(template.Version) with { AttemptCount = generated.AttemptCount } };
     }
 
     private sealed record VocabularyPayload(IReadOnlyList<GeneratedVocabularyItemDto> Items);
+    private static VocabularyPayload DeserializeVocabulary(string json, int maxItems)
+    {
+        var value = JsonSerializer.Deserialize<VocabularyPayload>(json, JsonDefaults.Options)
+            ?? throw new JsonException("The LLM returned an empty vocabulary payload.");
+        if (value.Items is null || value.Items.Count > maxItems)
+            throw new JsonException("Generated vocabulary exceeds the pinned item limit.");
+        return value;
+    }
     internal static void ValidateArtifactRequest(string requestId, StoryContentDto story)
     {
         if (string.IsNullOrWhiteSpace(requestId)) throw new ArgumentException("requestId is required.", nameof(requestId));
@@ -176,14 +198,26 @@ public sealed class GenerateQuizHandler
     {
         GenerateVocabularyHandler.ValidateArtifactRequest(request.RequestId, request.Story);
         if (request.Vocabulary.Count == 0) throw new ArgumentException("Validated vocabulary is required.", nameof(request));
-        var template = _prompts.GetActive(PromptType.Quiz, request.Language, request.AgeBand);
+        var template = SnapshotPromptResolver.Resolve(request.Snapshot, PromptType.Quiz,
+            request.Language, request.AgeBand, _prompts);
+        var maxItems = request.Snapshot is null ? int.MaxValue : Math.Clamp(request.Snapshot.Config.MaxQuizItems, 3, 15);
+        var prompt = PromptComposer.Compose(template, request);
+        if (request.Snapshot is not null) prompt += $"\nReturn at most {maxItems} quiz items.";
         var generated = await _executor.ExecuteAsync(
-            PromptComposer.Compose(template, request), "story_quiz", GenerationSchemas.Quiz,
-            json => JsonSerializer.Deserialize<QuizPayload>(json, JsonDefaults.Options), cancellationToken);
+            prompt, "story_quiz", GenerationSchemas.Quiz,
+            json => DeserializeQuiz(json, maxItems), cancellationToken);
         return new GenerateQuizResponse { RequestId = request.RequestId, Items = generated.Value.Items, Metadata = generated.Generation.ToMetadata(template.Version) with { AttemptCount = generated.AttemptCount } };
     }
 
     private sealed record QuizPayload(IReadOnlyList<QuizItemDto> Items);
+    private static QuizPayload DeserializeQuiz(string json, int maxItems)
+    {
+        var value = JsonSerializer.Deserialize<QuizPayload>(json, JsonDefaults.Options)
+            ?? throw new JsonException("The LLM returned an empty quiz payload.");
+        if (value.Items is null || value.Items.Count > maxItems)
+            throw new JsonException("Generated quiz exceeds the pinned item limit.");
+        return value;
+    }
 }
 
 public sealed class GenerateDiscussionHandler
@@ -195,7 +229,8 @@ public sealed class GenerateDiscussionHandler
     public async Task<GenerateDiscussionResponse> HandleAsync(GenerateDiscussionRequest request, CancellationToken cancellationToken = default)
     {
         GenerateVocabularyHandler.ValidateArtifactRequest(request.RequestId, request.Story);
-        var template = _prompts.GetActive(PromptType.Discussion, request.Language, request.AgeBand);
+        var template = SnapshotPromptResolver.Resolve(request.Snapshot, PromptType.Discussion,
+            request.Language, request.AgeBand, _prompts);
         var generated = await _executor.ExecuteAsync(
             PromptComposer.Compose(template, request), "story_discussion", GenerationSchemas.Discussion,
             json => JsonSerializer.Deserialize<DiscussionPayload>(json, JsonDefaults.Options), cancellationToken);
@@ -215,7 +250,8 @@ public sealed class EvaluateContentSafetyHandler
         EvaluateContentSafetyRequest request, CancellationToken cancellationToken = default)
     {
         GenerateVocabularyHandler.ValidateArtifactRequest(request.RequestId, request.Story);
-        var template = _prompts.GetActive(PromptType.ContentSafety, request.Language, request.AgeBand);
+        var template = SnapshotPromptResolver.Resolve(request.Snapshot, PromptType.ContentSafety,
+            request.Language, request.AgeBand, _prompts);
         var generated = await _executor.ExecuteAsync(
             PromptComposer.Compose(template, request), "content_safety", GenerationSchemas.ContentSafety,
             json => JsonSerializer.Deserialize<SafetyPayload>(json, JsonDefaults.Options), cancellationToken);

@@ -26,7 +26,8 @@ public sealed class RefineStoryHandler
     public async Task<RefineStoryResponse> HandleAsync(RefineStoryRequest request, CancellationToken cancellationToken = default)
     {
         RequestGuard.Validate(request.RequestId, null, request.Constraints);
-        var template = _promptProvider.GetActive(PromptType.Refinement, request.Language, request.Story.AgeBand);
+        var template = SnapshotPromptResolver.Resolve(request.Snapshot, PromptType.Refinement,
+            request.Language, request.Story.AgeBand, _promptProvider);
         var result = await _llmClient.GenerateStructuredAsync(
             PromptComposer.Compose(template, request), "refined_story_package", GenerationSchemas.StoryPackage, cancellationToken);
 

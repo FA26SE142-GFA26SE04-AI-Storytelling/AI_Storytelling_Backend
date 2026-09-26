@@ -30,6 +30,7 @@ public sealed record DiscussionQuestionDto(string Question);
 public sealed record StoryContentDto
 {
     public string Title { get; init; } = string.Empty;
+    public string? Description { get; init; }
     public IReadOnlyList<StorySectionDto> StorySections { get; init; } = [];
     public string Lesson { get; init; } = string.Empty;
 }

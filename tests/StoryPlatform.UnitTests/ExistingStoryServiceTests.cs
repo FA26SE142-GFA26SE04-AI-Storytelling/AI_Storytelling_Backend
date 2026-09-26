@@ -172,6 +172,83 @@ public sealed class ExistingStoryServiceTests
     }
 
     [Fact]
+    public async Task ImportDocument_extracts_txt_lines_and_runs_normal_import()
+    {
+        var store = SeedActiveChild();
+        var service = BuildService(store);
+        var txtBytes = Encoding.UTF8.GetBytes("Gấu con đi lạc trong rừng sâu.\nNhưng được chim sẻ dẫn đường về nhà.");
+        using var stream = new MemoryStream(txtBytes);
+
+        var result = await service.ImportDocumentAsync(1, new ImportStoryDocumentRequestDto
+        {
+            Content = stream,
+            FileName = "gau_con.txt",
+            ContentType = "text/plain",
+            ChildProfileId = 1,
+            Language = "vi"
+        });
+
+        Assert.True(result.CanProceed);
+        Assert.Equal("Draft", result.StoryStatus);
+        var version = store.Items<StoryVersion>().Single();
+        Assert.Contains("Gấu con đi lạc", version.Content);
+        Assert.Contains("chim sẻ dẫn đường", version.Content);
+    }
+
+    [Fact]
+    public async Task ImportDocument_rejects_unsupported_file_extension()
+    {
+        var store = SeedActiveChild();
+        var service = BuildService(store);
+        var pdfBytes = Encoding.UTF8.GetBytes("%PDF-1.4 dummy pdf content");
+        using var stream = new MemoryStream(pdfBytes);
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => service.ImportDocumentAsync(1, new ImportStoryDocumentRequestDto
+        {
+            Content = stream,
+            FileName = "story.pdf",
+            ContentType = "application/pdf",
+            ChildProfileId = 1,
+            Language = "vi"
+        }));
+
+        Assert.Equal("Chỉ hỗ trợ file .txt hoặc .docx.", ex.Message);
+    }
+
+    [Fact]
+    public async Task ImportDocument_rejects_empty_file_stream()
+    {
+        var store = SeedActiveChild();
+        var service = BuildService(store);
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => service.ImportDocumentAsync(1, new ImportStoryDocumentRequestDto
+        {
+            Content = Stream.Null,
+            FileName = "empty.txt",
+            ChildProfileId = 1
+        }));
+
+        Assert.Equal("File upload không hợp lệ.", ex.Message);
+    }
+
+    [Fact]
+    public async Task ImportDocument_rejects_oversized_file()
+    {
+        var store = SeedActiveChild();
+        var service = BuildService(store);
+        var oversizedStream = new MemoryStream(new byte[5_000_001]);
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => service.ImportDocumentAsync(1, new ImportStoryDocumentRequestDto
+        {
+            Content = oversizedStream,
+            FileName = "huge.txt",
+            ChildProfileId = 1
+        }));
+
+        Assert.Equal("File upload vượt quá giới hạn 5 MB.", ex.Message);
+    }
+
+    [Fact]
     public async Task Import_RejectsNonActiveChild()
     {
         var store = SeedActiveChild();
@@ -233,6 +310,7 @@ public sealed class ExistingStoryServiceTests
         Assert.True(store.Items<StoryVersion>().Single(v => v.Id == 2).IsCurrent);
         Assert.False(store.Items<StoryVersion>().Single(v => v.Id == 1).IsCurrent);
         Assert.Equal("Initial", store.Items<StoryVersion>().Single(v => v.Id == 1).EditType.ToString());
+        Assert.Equal("Một câu chuyện ngắn về tình bạn và sự sẻ chia.", store.Items<Story>().Single().Description);
     }
 
     [Fact]
@@ -557,6 +635,7 @@ public sealed class ExistingStoryServiceTests
                 Story = new StoryContentDto
                 {
                     Title = "Lan và Minh (đã chỉnh)",
+                    Description = "Một câu chuyện ngắn về tình bạn và sự sẻ chia.",
                     Lesson = "Chia sẻ là đẹp",
                     StorySections = [new StorySectionDto(1, "", "Lan và Minh cùng chia sẻ sách trong rừng.")]
                 }

@@ -1,0 +1,125 @@
+@startuml MediaGenerationDeliveryUseCase
+title AI Storytelling Platform - Media Generation and Delivery
+
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam actorStyle awesome
+
+actor Supervisor as Supervisor
+actor "LLM / Multimodal\nEvaluator" as LLM
+actor "Image Generation\nProvider" as ImageProvider
+actor "TTS Provider" as TtsProvider
+actor "AWS S3" as S3
+
+rectangle "AI Storytelling Platform\nMedia Generation and Delivery" {
+  package "Media Job" {
+    usecase "Queue Media Generation" as UC_QueueMedia
+    usecase "Generate Media Package" as UC_GeneratePackage
+    usecase "Monitor Media Generation" as UC_MonitorMedia
+    usecase "Retry Failed Media Job" as UC_RetryMedia
+    usecase "Complete Media Package" as UC_CompletePackage
+  }
+
+  package "Context and Scene Preparation" {
+    usecase "Build Media Context" as UC_BuildContext
+    usecase "Segment Story into Scenes" as UC_SegmentScenes
+    usecase "Build Scene Specification" as UC_BuildSceneSpec
+    usecase "Segment Scene for TTS" as UC_SegmentTts
+  }
+
+  package "Illustration Pipeline" {
+    usecase "Generate Illustration" as UC_GenerateImage
+    usecase "Validate Image Binary" as UC_ValidateImageBinary
+    usecase "Validate Illustration\nAlignment" as UC_ValidateAlignment
+    usecase "Validate Illustration\nSafety" as UC_ValidateImageSafety
+    usecase "Store Illustration" as UC_StoreImage
+  }
+
+  package "TTS Pipeline" {
+    usecase "Generate TTS Audio" as UC_GenerateAudio
+    usecase "Validate Audio Binary" as UC_ValidateAudioBinary
+    usecase "Validate Audio Quality" as UC_ValidateAudioQuality
+    usecase "Store TTS Audio" as UC_StoreAudio
+  }
+
+  package "Private Media Access" {
+    usecase "Request Story Media" as UC_RequestMedia
+    usecase "Authorize Story Access" as UC_AuthorizeMedia
+    usecase "Generate Presigned URL" as UC_SignedUrl
+  }
+
+  package "Planned Supervisor Controls" {
+    usecase "Regenerate Illustration" as UC_RegenerateImage
+    usecase "Regenerate Audio Segment" as UC_RegenerateAudio
+  }
+}
+
+' Primary actor associations
+Supervisor -- UC_MonitorMedia
+Supervisor -- UC_RetryMedia
+Supervisor -- UC_RequestMedia
+Supervisor -- UC_RegenerateImage
+Supervisor -- UC_RegenerateAudio
+
+' Media package orchestration
+UC_QueueMedia ..> UC_GeneratePackage : <<include>>
+UC_GeneratePackage ..> UC_BuildContext : <<include>>
+UC_GeneratePackage ..> UC_SegmentScenes : <<include>>
+UC_GeneratePackage ..> UC_BuildSceneSpec : <<include>>
+UC_GeneratePackage ..> UC_SegmentTts : <<include>>
+UC_GeneratePackage ..> UC_GenerateImage : <<include>>
+UC_GeneratePackage ..> UC_GenerateAudio : <<include>>
+UC_GeneratePackage ..> UC_CompletePackage : <<include>>
+UC_RetryMedia ..> UC_MonitorMedia : <<extend>>\n[job failed and retryable]
+
+' Illustration pipeline
+UC_GenerateImage ..> UC_ValidateImageBinary : <<include>>
+UC_GenerateImage ..> UC_ValidateAlignment : <<include>>
+UC_GenerateImage ..> UC_ValidateImageSafety : <<include>>
+UC_GenerateImage ..> UC_StoreImage : <<include>>
+
+' TTS pipeline
+UC_GenerateAudio ..> UC_ValidateAudioBinary : <<include>>
+UC_GenerateAudio ..> UC_ValidateAudioQuality : <<include>>
+UC_GenerateAudio ..> UC_StoreAudio : <<include>>
+
+' Private media delivery
+UC_RequestMedia ..> UC_AuthorizeMedia : <<include>>
+UC_RequestMedia ..> UC_SignedUrl : <<include>>
+
+' Planned controls: application logic exists, public API is not yet exposed
+UC_RegenerateImage ..> UC_MonitorMedia : <<extend>>\n[image rejected or failed]
+UC_RegenerateAudio ..> UC_MonitorMedia : <<extend>>\n[audio rejected or failed]
+
+' External system associations
+LLM -- UC_BuildContext
+LLM -- UC_SegmentScenes
+LLM -- UC_ValidateAlignment
+LLM -- UC_ValidateImageSafety
+ImageProvider -- UC_GenerateImage
+TtsProvider -- UC_GenerateAudio
+S3 -- UC_StoreImage
+S3 -- UC_StoreAudio
+S3 -- UC_SignedUrl
+
+note bottom of UC_CompletePackage
+  Story becomes Ready only when:
+  - Every scene has one Ready illustration
+  - Every story segment has one Ready TTS asset
+end note
+
+note bottom of UC_RegenerateImage
+  Planned API use case.
+  Regeneration logic exists in Application,
+  but MediaGenerationController currently
+  exposes only progress monitoring.
+end note
+
+note bottom of UC_RequestMedia
+  Required for private S3 delivery.
+  The current IMediaStorage supports signed URLs,
+  but the public media delivery endpoint is pending.
+end note
+
+@enduml

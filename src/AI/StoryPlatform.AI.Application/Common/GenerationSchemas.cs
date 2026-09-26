@@ -37,6 +37,7 @@ internal static class GenerationSchemas
           "type":"object",
           "properties":{
             "title":{"type":"string"},
+            "description":{"type":"string"},
             "storySections":{"type":"array","minItems":1,"items":{"type":"object","properties":{"order":{"type":"integer"},"heading":{"type":"string"},"content":{"type":"string"}},"required":["order","heading","content"],"additionalProperties":false}},
             "lesson":{"type":"string"}
           },

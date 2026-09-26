@@ -33,6 +33,7 @@ public sealed class StoryContentGenerationHandlerTests
         Assert.Equal(2, response.Metadata.AttemptCount);
         Assert.Equal("Tình bạn", response.Story.Title);
         Assert.Single(response.Story.StorySections);
+        Assert.Equal("Lan chia sẻ sách với Minh.", response.Story.Description);
     }
 
     [Fact]
@@ -70,6 +71,60 @@ public sealed class StoryContentGenerationHandlerTests
         Assert.Contains("configured attempts", exception.Message);
         var providerError = Assert.IsType<HttpRequestException>(exception.InnerException);
         Assert.Equal(HttpStatusCode.TooManyRequests, providerError.StatusCode);
+    }
+
+    [Fact]
+    public async Task Refine_handler_accepts_imported_story_without_lesson_and_returns_complete_story()
+    {
+        var llm = new StubLlmClient(
+            """{"title":"Tình bạn","description":"Một câu chuyện ấm áp về hai người bạn cùng chia sẻ sách.","storySections":[{"order":1,"heading":"Câu chuyện","content":"Lan chia sẻ sách với Minh."}],"lesson":"Biết chia sẻ"}""");
+        var options = Options.Create(new StoryContentGenerationOptions { BaseRetryDelaySeconds = 0 });
+        var handler = new RefineStoryContentHandler(
+            new StoryContentGenerationExecutor(llm, options),
+            new StubPromptProvider());
+
+        var response = await handler.HandleAsync(new RefineStoryContentRequest
+        {
+            RequestId = "adapt-21-v1",
+            Story = new StoryContentDto
+            {
+                Title = "Tình bạn",
+                Lesson = string.Empty,
+                StorySections = [new StorySectionDto(1, string.Empty, "Lan có một quyển sách.")]
+            },
+            Language = "vi",
+            AgeBand = "6-8",
+            Reasons = ["Viết lại bằng câu ngắn gọn cho bé 6 tuổi."]
+        });
+
+        Assert.Equal(1, llm.CallCount);
+        Assert.Equal("Biết chia sẻ", response.Story.Lesson);
+        Assert.Equal("Một câu chuyện ấm áp về hai người bạn cùng chia sẻ sách.", response.Story.Description);
+        Assert.Single(response.Story.StorySections);
+    }
+
+    [Fact]
+    public async Task Refine_handler_rejects_invalid_input_as_bad_request_before_calling_llm()
+    {
+        var llm = new StubLlmClient(
+            """{"title":"Tình bạn","storySections":[{"order":1,"heading":"Câu chuyện","content":"Lan chia sẻ sách."}],"lesson":"Biết chia sẻ"}""");
+        var options = Options.Create(new StoryContentGenerationOptions { BaseRetryDelaySeconds = 0 });
+        var handler = new RefineStoryContentHandler(
+            new StoryContentGenerationExecutor(llm, options),
+            new StubPromptProvider());
+
+        await Assert.ThrowsAsync<ArgumentException>(() => handler.HandleAsync(new RefineStoryContentRequest
+        {
+            RequestId = "adapt-invalid",
+            Story = new StoryContentDto
+            {
+                Title = string.Empty,
+                StorySections = [new StorySectionDto(1, string.Empty, "Lan có một quyển sách.")]
+            },
+            Reasons = ["Viết lại."]
+        }));
+
+        Assert.Equal(0, llm.CallCount);
     }
 
     private static GenerateStoryContentRequest ValidRequest() => new()

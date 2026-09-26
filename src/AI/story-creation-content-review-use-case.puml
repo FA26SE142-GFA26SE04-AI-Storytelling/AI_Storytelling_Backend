@@ -1,0 +1,196 @@
+@startuml StoryCreationContentReviewUseCase
+title AI Storytelling Platform - Story Creation and Content Review
+
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam actorStyle awesome
+
+actor Supervisor as Supervisor
+actor Parent as Parent
+actor Teacher as Teacher
+actor Administrator as Admin
+actor "LLM Provider\n(Gemini / Vertex AI / OpenAI)" as LLM
+
+Parent --|> Supervisor
+Teacher --|> Supervisor
+
+rectangle "AI Storytelling Platform\nStory Creation and Content Review" {
+  package "Story Intake" {
+    usecase "Create AI Story" as UC_Create
+    usecase "Load Child Profile\nContext" as UC_Context
+    usecase "Submit Story\nParameters" as UC_Submit
+    usecase "Validate Input &\nGuardrails" as UC_ValidateInput
+    usecase "Generate Outline" as UC_GenerateOutline
+    usecase "Monitor Input\nProcessing" as UC_MonitorInput
+    usecase "Retry Failed Input" as UC_RetryInput
+
+    usecase "Import Existing Story" as UC_Import
+    usecase "Import Story Text" as UC_ImportText
+    usecase "Import Story File" as UC_ImportFile
+    usecase "Evaluate Existing Story" as UC_EvaluateExisting
+    usecase "Review Evaluation\nResult" as UC_ReviewEvaluation
+    usecase "Adapt Story with AI" as UC_Adapt
+    usecase "Edit Existing Story\nManually" as UC_ManualEditExisting
+    usecase "Keep Original Story" as UC_KeepOriginal
+    usecase "Archive Existing Story" as UC_ArchiveExisting
+  }
+
+  package "Outline Review" {
+    usecase "Review Outline" as UC_ReviewOutline
+    usecase "View Outline Versions" as UC_ViewOutlineVersions
+    usecase "Edit Outline" as UC_EditOutline
+    usecase "Regenerate Outline" as UC_RegenerateOutline
+    usecase "Retry Outline Generation" as UC_RetryOutline
+    usecase "Approve Outline" as UC_ApproveOutline
+    usecase "Reject Outline" as UC_RejectOutline
+    usecase "Queue Story Content\nGeneration" as UC_QueueContent
+  }
+
+  package "Story Content Review" {
+    usecase "Generate Story Content" as UC_GenerateContent
+    usecase "Monitor Story\nGeneration" as UC_MonitorContent
+    usecase "Review Story Content" as UC_ReviewContent
+    usecase "Edit Story Content" as UC_EditContent
+    usecase "Request AI Partial Edit" as UC_PartialEdit
+    usecase "Preview AI Proposal" as UC_PreviewProposal
+    usecase "Apply AI Proposal" as UC_ApplyProposal
+    usecase "Discard AI Proposal" as UC_DiscardProposal
+    usecase "Complete Story Review" as UC_CompleteContentReview
+  }
+
+  package "Learning Artifacts" {
+    usecase "Queue Learning Artifact\nGeneration" as UC_QueueArtifacts
+    usecase "Generate Learning\nArtifacts" as UC_GenerateArtifacts
+    usecase "Generate Vocabulary" as UC_GenerateVocabulary
+    usecase "Generate Quiz" as UC_GenerateQuiz
+    usecase "Generate Discussion\nQuestions" as UC_GenerateDiscussion
+
+    usecase "Review Learning\nArtifacts" as UC_ReviewArtifacts
+    usecase "Review Vocabulary" as UC_ReviewVocabulary
+    usecase "Edit Vocabulary" as UC_EditVocabulary
+    usecase "Regenerate Vocabulary" as UC_RegenerateVocabulary
+    usecase "Complete Vocabulary\nReview" as UC_CompleteVocabulary
+    usecase "Review Quiz" as UC_ReviewQuiz
+    usecase "Edit Quiz" as UC_EditQuiz
+    usecase "Regenerate Quiz" as UC_RegenerateQuiz
+    usecase "Complete Quiz Review" as UC_CompleteQuiz
+    usecase "Review Discussion\nQuestions" as UC_ReviewDiscussion
+    usecase "Edit Discussion\nQuestions" as UC_EditDiscussion
+    usecase "Regenerate Discussion\nQuestions" as UC_RegenerateDiscussion
+    usecase "Complete Discussion\nReview" as UC_CompleteDiscussion
+  }
+
+  package "Validation and Approval" {
+    usecase "Validate Content Package" as UC_ValidatePackage
+    usecase "Approve Content Package" as UC_ApprovePackage
+    usecase "Evaluate Auto-Approval" as UC_AutoApproval
+    usecase "Archive Story" as UC_ArchiveStory
+    usecase "Queue Media Generation" as UC_QueueMedia
+  }
+}
+
+' Primary actor associations
+Supervisor -- UC_Create
+Supervisor -- UC_MonitorInput
+Supervisor -- UC_RetryInput
+Supervisor -- UC_Import
+Supervisor -- UC_ReviewEvaluation
+Supervisor -- UC_ReviewOutline
+Supervisor -- UC_MonitorContent
+Supervisor -- UC_ReviewContent
+Supervisor -- UC_ReviewArtifacts
+Supervisor -- UC_ValidatePackage
+Supervisor -- UC_ApprovePackage
+Supervisor -- UC_ArchiveStory
+
+Admin -- UC_ApprovePackage
+Admin -- UC_ArchiveStory
+
+' AI story intake
+UC_Create ..> UC_Context : <<include>>
+UC_Create ..> UC_Submit : <<include>>
+UC_Submit ..> UC_ValidateInput : <<include>>
+UC_Create ..> UC_GenerateOutline : <<include>>
+UC_RetryInput ..> UC_Create : <<extend>>\n[input/processing failed]
+
+' Existing story intake
+UC_ImportText ..> UC_Import : <<extend>>\n[text input]
+UC_ImportFile ..> UC_Import : <<extend>>\n[file input]
+UC_Import ..> UC_EvaluateExisting : <<include>>
+UC_Adapt ..> UC_ReviewEvaluation : <<extend>>\n[decision = Adapt]
+UC_ManualEditExisting ..> UC_ReviewEvaluation : <<extend>>\n[manual correction]
+UC_KeepOriginal ..> UC_ReviewEvaluation : <<extend>>\n[supervisor accepts original]
+UC_ArchiveExisting ..> UC_ReviewEvaluation : <<extend>>\n[blocked or cancelled]
+UC_Adapt ..> UC_EvaluateExisting : <<include>>
+UC_ManualEditExisting ..> UC_EvaluateExisting : <<include>>
+UC_KeepOriginal ..> UC_QueueArtifacts : <<include>>
+
+' Outline review
+UC_ViewOutlineVersions ..> UC_ReviewOutline : <<extend>>
+UC_EditOutline ..> UC_ReviewOutline : <<extend>>
+UC_RegenerateOutline ..> UC_ReviewOutline : <<extend>>
+UC_RetryOutline ..> UC_ReviewOutline : <<extend>>\n[technical failure]
+UC_ApproveOutline ..> UC_ReviewOutline : <<extend>>\n[selected version accepted]
+UC_RejectOutline ..> UC_ReviewOutline : <<extend>>\n[supervisor rejects outline]
+UC_RegenerateOutline ..> UC_GenerateOutline : <<include>>
+UC_ApproveOutline ..> UC_QueueContent : <<include>>
+
+' Story content review
+UC_QueueContent ..> UC_GenerateContent : <<include>>
+UC_EditContent ..> UC_ReviewContent : <<extend>>
+UC_PartialEdit ..> UC_ReviewContent : <<extend>>
+UC_PartialEdit ..> UC_PreviewProposal : <<include>>
+UC_ApplyProposal ..> UC_PreviewProposal : <<extend>>\n[proposal accepted]
+UC_DiscardProposal ..> UC_PreviewProposal : <<extend>>\n[proposal rejected]
+UC_CompleteContentReview ..> UC_ReviewContent : <<extend>>\n[content accepted]
+UC_CompleteContentReview ..> UC_QueueArtifacts : <<include>>
+
+' Learning artifact generation and review
+UC_QueueArtifacts ..> UC_GenerateArtifacts : <<include>>
+UC_GenerateArtifacts ..> UC_GenerateVocabulary : <<include>>
+UC_GenerateArtifacts ..> UC_GenerateQuiz : <<include>>
+UC_GenerateArtifacts ..> UC_GenerateDiscussion : <<include>>
+UC_ReviewArtifacts ..> UC_ReviewVocabulary : <<include>>
+UC_ReviewArtifacts ..> UC_ReviewQuiz : <<include>>
+UC_ReviewArtifacts ..> UC_ReviewDiscussion : <<include>>
+UC_EditVocabulary ..> UC_ReviewVocabulary : <<extend>>
+UC_RegenerateVocabulary ..> UC_ReviewVocabulary : <<extend>>
+UC_CompleteVocabulary ..> UC_ReviewVocabulary : <<extend>>
+UC_EditQuiz ..> UC_ReviewQuiz : <<extend>>
+UC_RegenerateQuiz ..> UC_ReviewQuiz : <<extend>>
+UC_CompleteQuiz ..> UC_ReviewQuiz : <<extend>>
+UC_EditDiscussion ..> UC_ReviewDiscussion : <<extend>>
+UC_RegenerateDiscussion ..> UC_ReviewDiscussion : <<extend>>
+UC_CompleteDiscussion ..> UC_ReviewDiscussion : <<extend>>
+
+' Package approval
+UC_ApprovePackage ..> UC_ValidatePackage : <<include>>
+UC_AutoApproval ..> UC_ValidatePackage : <<include>>
+UC_ArchiveStory ..> UC_ReviewArtifacts : <<extend>>\n[review rejected/cancelled]
+UC_ApprovePackage ..> UC_QueueMedia : <<include>>
+
+' External AI provider associations
+LLM -- UC_GenerateOutline
+LLM -- UC_EvaluateExisting
+LLM -- UC_Adapt
+LLM -- UC_GenerateContent
+LLM -- UC_PartialEdit
+LLM -- UC_GenerateVocabulary
+LLM -- UC_GenerateQuiz
+LLM -- UC_GenerateDiscussion
+LLM -- UC_RegenerateVocabulary
+LLM -- UC_RegenerateQuiz
+LLM -- UC_RegenerateDiscussion
+
+note bottom of UC_ApprovePackage
+  Preconditions:
+  - Story review completed
+  - Vocabulary review completed
+  - Quiz review completed
+  - Discussion review completed
+  - Package validation passed
+  - Actor has approval permission
+end note
+
+@enduml

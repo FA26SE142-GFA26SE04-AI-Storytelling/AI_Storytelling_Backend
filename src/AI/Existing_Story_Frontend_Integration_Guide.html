@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Hướng dẫn Frontend tích hợp hai luồng tạo câu chuyện</title>
+  <title>Tài liệu kết nối Frontend - Backend hai luồng tạo câu chuyện (AI & Existing Story)</title>
   <style>
     :root {
       --ink: #18212f;
@@ -13,11 +13,17 @@
       --line: #dce1e7;
       --brand: #255f55;
       --brand-soft: #e4f2ed;
+      --brand-dark: #153d37;
       --accent: #d7653b;
+      --accent-soft: #faede8;
       --warning: #fff5d9;
+      --warning-border: #f0c36d;
       --danger: #fce8e6;
+      --danger-border: #ea868f;
       --code: #15212c;
+      --code-border: #233446;
       --shadow: 0 12px 34px rgba(35, 47, 62, 0.08);
+      --shadow-sm: 0 4px 12px rgba(35, 47, 62, 0.05);
     }
 
     * { box-sizing: border-box; }
@@ -30,69 +36,88 @@
       line-height: 1.65;
     }
 
-    a { color: var(--brand); }
+    a { color: var(--brand); text-decoration: underline; text-underline-offset: 3px; }
+    a:hover { color: var(--accent); }
     code, pre { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
-    code { font-size: 0.92em; }
-    h1, h2, h3 { line-height: 1.22; letter-spacing: -0.025em; }
-    h2 { margin-top: 3rem; padding-top: 0.5rem; }
-    h3 { margin-top: 2rem; }
+    code { font-size: 0.92em; background: #eef2f5; padding: .15rem .35rem; border-radius: 4px; color: #1e3a5f; }
+    pre code { background: transparent; padding: 0; color: inherit; }
+    h1, h2, h3, h4 { line-height: 1.25; letter-spacing: -0.025em; color: var(--ink); }
+    h2 { margin-top: 3rem; padding-top: 0.8rem; border-top: 1px solid var(--line); }
+    h3 { margin-top: 2rem; color: var(--brand-dark); }
+    h4 { margin-top: 1.4rem; font-size: 1rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
 
     .hero {
       color: #f8fffc;
       background:
         radial-gradient(circle at 85% 15%, rgba(255,255,255,.14), transparent 28%),
         linear-gradient(125deg, #153d37, #27695d 60%, #3e7563);
-      padding: 4.5rem max(1.25rem, calc((100vw - 1180px) / 2));
+      padding: 4.5rem max(1.25rem, calc((100vw - 1200px) / 2));
     }
-    .eyebrow { text-transform: uppercase; letter-spacing: .14em; font-size: .78rem; font-weight: 800; opacity: .8; }
-    .hero h1 { max-width: 850px; margin: .7rem 0 1rem; font-size: clamp(2.1rem, 5vw, 4.2rem); }
-    .hero p { max-width: 760px; font-size: 1.1rem; color: #dcece7; }
-    .meta { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1.7rem; }
-    .pill { border: 1px solid rgba(255,255,255,.25); border-radius: 999px; padding: .38rem .8rem; font-size: .86rem; }
+    .eyebrow { text-transform: uppercase; letter-spacing: .14em; font-size: .8rem; font-weight: 800; opacity: .85; }
+    .hero h1 { max-width: 900px; margin: .7rem 0 1rem; font-size: clamp(2.1rem, 5vw, 4rem); font-weight: 800; }
+    .hero p { max-width: 820px; font-size: 1.12rem; color: #dcece7; line-height: 1.7; }
+    .meta { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1.8rem; }
+    .pill { border: 1px solid rgba(255,255,255,.3); background: rgba(255,255,255,.1); border-radius: 999px; padding: .38rem .85rem; font-size: .86rem; font-weight: 500; }
+    .pill.status-ready { background: #1f7a55; border-color: #5cdba2; color: #fff; font-weight: 700; }
 
-    .layout { max-width: 1180px; margin: 0 auto; padding: 2rem 1.25rem 5rem; display: grid; grid-template-columns: 245px minmax(0, 1fr); gap: 2.4rem; }
-    nav { position: sticky; top: 1rem; align-self: start; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 1rem; box-shadow: var(--shadow); }
-    nav strong { display: block; margin: .1rem .5rem .6rem; }
-    nav a { display: block; color: var(--muted); text-decoration: none; border-radius: 8px; padding: .42rem .5rem; font-size: .9rem; }
-    nav a:hover { background: var(--brand-soft); color: var(--brand); }
+    .layout { max-width: 1200px; margin: 0 auto; padding: 2.2rem 1.25rem 5rem; display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 2.5rem; }
+    nav { position: sticky; top: 1.2rem; align-self: start; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 1.2rem; box-shadow: var(--shadow); max-height: calc(100vh - 3rem); overflow-y: auto; }
+    nav strong { display: block; margin: .1rem .5rem .7rem; font-size: .95rem; text-transform: uppercase; letter-spacing: .08em; color: var(--brand); }
+    nav a { display: block; color: var(--muted); text-decoration: none; border-radius: 8px; padding: .45rem .6rem; font-size: .88rem; transition: all .15s ease; }
+    nav a:hover { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
     main { min-width: 0; }
 
-    .notice, .callout { border-radius: 14px; padding: 1rem 1.15rem; margin: 1.2rem 0; border-left: 5px solid var(--accent); background: var(--warning); }
-    .notice strong, .callout strong { display: block; margin-bottom: .25rem; }
-    .danger { background: var(--danger); border-left-color: #b9382f; }
-    .success { background: var(--brand-soft); border-left-color: var(--brand); }
+    .notice, .callout { border-radius: 14px; padding: 1.1rem 1.3rem; margin: 1.4rem 0; border-left: 5px solid var(--accent); background: var(--warning); border: 1px solid var(--warning-border); }
+    .notice strong, .callout strong { display: block; margin-bottom: .3rem; font-size: 1.02rem; }
+    .danger { background: var(--danger); border-left-color: #b9382f; border-color: var(--danger-border); }
+    .success { background: var(--brand-soft); border-left-color: var(--brand); border-color: #c4e4d7; }
+    .info { background: #eaf3fb; border-left-color: #2b78c5; border-color: #bad8f5; }
 
-    .flow { display: grid; grid-template-columns: repeat(6, 1fr); gap: .7rem; margin: 1.4rem 0; }
-    .flow-step { position: relative; min-height: 105px; padding: .85rem; background: var(--surface); border: 1px solid var(--line); border-radius: 13px; box-shadow: var(--shadow); }
+    .flow { display: grid; grid-template-columns: repeat(6, 1fr); gap: .75rem; margin: 1.5rem 0; }
+    .flow-step { position: relative; min-height: 110px; padding: .9rem; background: var(--surface); border: 1px solid var(--line); border-radius: 13px; box-shadow: var(--shadow-sm); }
     .flow-step b { display: block; color: var(--brand); font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; }
-    .flow-step span { display: block; margin-top: .35rem; font-weight: 700; }
-    .flow-step:not(:last-child)::after { content: "→"; position: absolute; right: -.58rem; top: 39%; color: var(--accent); font-weight: 900; z-index: 2; }
+    .flow-step span { display: block; margin-top: .4rem; font-weight: 700; font-size: .95rem; line-height: 1.35; }
+    .flow-step:not(:last-child)::after { content: "→"; position: absolute; right: -.65rem; top: 40%; color: var(--accent); font-weight: 900; z-index: 2; font-size: 1.2rem; }
 
-    .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
-    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 1rem; box-shadow: var(--shadow); }
-    .card h3 { margin: 0 0 .5rem; font-size: 1.05rem; }
-    .card p { margin: 0; color: var(--muted); }
+    .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.1rem; margin: 1.5rem 0; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 1.15rem; box-shadow: var(--shadow-sm); }
+    .card h3 { margin: 0 0 .5rem; font-size: 1.1rem; }
+    .card p { margin: 0; color: var(--muted); font-size: .92rem; }
+    .card.suitable { border-top: 4px solid #1f7a55; }
+    .card.adapt { border-top: 4px solid #d97706; }
+    .card.blocked { border-top: 4px solid #dc2626; }
 
-    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); margin: 1.2rem 0; box-shadow: var(--shadow-sm); }
     table { width: 100%; border-collapse: collapse; font-size: .92rem; }
-    th, td { padding: .78rem .9rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
-    th { color: var(--brand); background: #f1f7f5; font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; }
+    th, td { padding: .85rem 1rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    th { color: var(--brand-dark); background: #f1f7f5; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
     tr:last-child td { border-bottom: 0; }
-    .method { display: inline-block; min-width: 52px; text-align: center; color: white; background: var(--brand); border-radius: 5px; padding: .1rem .35rem; font-weight: 800; font-size: .73rem; }
+    tr:hover td { background: #fafcfb; }
+    
+    .method { display: inline-block; min-width: 54px; text-align: center; color: white; background: var(--brand); border-radius: 6px; padding: .15rem .45rem; font-weight: 800; font-size: .74rem; font-family: monospace; }
     .method.put { background: #805b19; }
     .method.get { background: #275f97; }
+    .method.patch { background: #6b46c1; }
+    .method.delete { background: #b91c1c; }
 
-    pre { overflow-x: auto; margin: 1rem 0; padding: 1rem 1.1rem; color: #e7f0f6; background: var(--code); border-radius: 13px; font-size: .86rem; line-height: 1.55; tab-size: 2; }
-    .file-label { display: inline-block; margin-bottom: -.65rem; padding: .22rem .55rem; color: #d8e8e3; background: #263844; border-radius: 6px 6px 0 0; font: .76rem "Cascadia Code", monospace; }
+    pre { overflow-x: auto; margin: 1rem 0; padding: 1.1rem 1.2rem; color: #e7f0f6; background: var(--code); border-radius: 13px; font-size: .87rem; line-height: 1.6; border: 1px solid var(--code-border); }
+    .file-label { display: inline-block; margin-bottom: -.65rem; padding: .25rem .7rem; color: #a5d8cb; background: #203342; border-radius: 8px 8px 0 0; font: 700 .78rem "Cascadia Code", monospace; border: 1px solid var(--code-border); border-bottom: none; }
     .checklist { padding-left: 0; list-style: none; }
-    .checklist li { margin: .55rem 0; padding-left: 1.7rem; position: relative; }
-    .checklist li::before { content: "✓"; position: absolute; left: 0; color: var(--brand); font-weight: 900; }
-    .state { display: inline-block; border-radius: 999px; padding: .12rem .5rem; background: var(--brand-soft); color: var(--brand); font-weight: 700; font-size: .82rem; }
-    footer { color: var(--muted); border-top: 1px solid var(--line); margin-top: 3rem; padding-top: 1.5rem; font-size: .9rem; }
+    .checklist li { margin: .65rem 0; padding-left: 1.9rem; position: relative; font-size: .95rem; }
+    .checklist li::before { content: "✓"; position: absolute; left: 0; color: var(--brand); font-weight: 900; font-size: 1.1rem; }
+    .state { display: inline-block; border-radius: 999px; padding: .14rem .65rem; background: var(--brand-soft); color: var(--brand); font-weight: 700; font-size: .82rem; }
+    .state.adapt { background: #fef3c7; color: #92400e; }
+    .state.blocked { background: #fee2e2; color: #991b1b; }
+    footer { color: var(--muted); border-top: 1px solid var(--line); margin-top: 4rem; padding-top: 2rem; font-size: .9rem; }
+
+    .tag { display: inline-block; font-size: .75rem; font-weight: 700; border-radius: 4px; padding: .1rem .4rem; text-transform: uppercase; }
+    .tag-json { background: #dbeafe; color: #1e40af; }
+    .tag-form { background: #fef3c7; color: #92400e; }
+    .tag-auth { background: #f3e8ff; color: #6b21a8; }
 
     @media (max-width: 980px) {
       .layout { grid-template-columns: 1fr; }
-      nav { position: static; columns: 2; }
+      nav { position: static; columns: 2; max-height: none; }
       nav strong { column-span: all; }
       .flow { grid-template-columns: repeat(3, 1fr); }
       .flow-step:nth-child(3)::after { display: none; }
@@ -107,211 +132,247 @@
 </head>
 <body>
   <header class="hero">
-    <div class="eyebrow">AI Storytelling · Frontend Integration</div>
+    <div class="eyebrow">AI Storytelling · Frontend Integration Guide</div>
     <h1>Hướng dẫn kết nối API hai luồng tạo câu chuyện</h1>
-    <p>Tài liệu triển khai cả nhánh tạo truyện bằng AI và nhánh truyện do Parent/Teacher tự nhập hoặc tải tệp TXT, từ dữ liệu đầu vào tới học liệu, review, media và trạng thái Ready.</p>
+    <p>Tài liệu kỹ thuật chi tiết dành cho lập trình viên Frontend: tích hợp kết nối xác thực, chọn hồ sơ trẻ, luồng tạo truyện bằng AI (Luồng A) và luồng tải truyện có sẵn dạng Paste/TXT/DOCX (Luồng B), kiểm duyệt nội dung, review học liệu, media và hoàn tất.</p>
     <div class="meta">
-      <span class="pill">Cập nhật: 19/09/2026</span>
+      <span class="pill">Cập nhật: 23/09/2026</span>
+      <span class="pill status-ready">Backend Controllers: Đã sẵn sàng</span>
       <span class="pill">API prefix: /api/v1</span>
+      <span class="pill">SignalR Hub: /hubs/notifications</span>
       <span class="pill">Luồng A: AI-generated</span>
-      <span class="pill">Luồng B: User-uploaded</span>
+      <span class="pill">Luồng B: User-uploaded (Paste / TXT / DOCX)</span>
       <span class="pill">Roles: Parent, Teacher</span>
-      <span class="pill">JSON: camelCase</span>
+      <span class="pill">JSON Serialization: camelCase</span>
     </div>
   </header>
 
   <div class="layout">
-    <nav aria-label="Mục lục">
+    <nav aria-label="Mục lục hướng dẫn">
       <strong>Mục lục</strong>
-      <a href="#important">Lưu ý trước khi tích hợp</a>
-      <a href="#overview">Luồng tổng thể</a>
-      <a href="#dual-flow">So sánh hai luồng</a>
-      <a href="#contract">Quy ước API</a>
-      <a href="#types">TypeScript types</a>
-      <a href="#endpoints">Danh sách endpoint</a>
-      <a href="#ai-flow">Luồng A — Tạo bằng AI</a>
-      <a href="#steps">Luồng B — Người dùng tải lên</a>
-      <a href="#client">API client mẫu</a>
-      <a href="#state-machine">State machine</a>
-      <a href="#errors">Xử lý lỗi</a>
-      <a href="#checklist">Checklist nghiệm thu</a>
+      <a href="#important">Lưu ý &amp; Trạng thái Backend</a>
+      <a href="#auth-flow">0. Xác thực &amp; Chọn hồ sơ trẻ</a>
+      <a href="#overview">1. Luồng tổng thể hai nhánh</a>
+      <a href="#dual-flow">2. So sánh &amp; Điểm hội tụ</a>
+      <a href="#contract">3. Quy ước Request &amp; Response</a>
+      <a href="#types">4. TypeScript Types chuẩn</a>
+      <a href="#endpoints">5. Danh mục Endpoints đầy đủ</a>
+      <a href="#ai-flow">6. Luồng A — Tạo bằng AI</a>
+      <a href="#existing-flow">7. Luồng B — Tải truyện có sẵn</a>
+      <a href="#review-flow">8. Hội tụ — Review, Edit &amp; Approve</a>
+      <a href="#media-flow">9. Media Generation &amp; Ready</a>
+      <a href="#client">10. Mã nguồn API Client mẫu</a>
+      <a href="#realtime">11. SignalR Realtime Hub</a>
+      <a href="#state-machine">12. State Machine phía Frontend</a>
+      <a href="#errors">13. Xử lý lỗi &amp; Concurrency</a>
+      <a href="#checklist">14. Checklist nghiệm thu Frontend</a>
     </nav>
 
     <main>
       <section id="important">
-        <h2>Lưu ý trước khi tích hợp</h2>
-        <div class="notice danger">
-          <strong>Backend Luồng 2 phải được triển khai trước.</strong>
-          Tại thời điểm tạo tài liệu, working tree đang ở <code>main</code> và chưa chứa <code>ExistingStoriesController</code>. Hợp đồng dưới đây được đối chiếu từ commit <code>436da8b</code>. Nếu gọi endpoint import trên backend chưa có commit này, frontend sẽ nhận 404.
+        <h2>Lưu ý quan trọng &amp; Trạng thái Backend</h2>
+        <div class="notice success">
+          <strong>Backend Luồng 2 (Existing Stories) đã được triển khai hoàn tất trên Backend!</strong>
+          <code>ExistingStoriesController</code> đã hoạt động đầy đủ tại route <code>/api/v1/stories</code>. Backend hỗ trợ cả <strong>Nhập trực tiếp (JSON)</strong> và <strong>Upload File .txt / .docx (Multipart Form Data)</strong> lên đến 5 MB.
+        </div>
+        <div class="notice info">
+          <strong>Base URL &amp; Môi trường kết nối</strong>
+          Backend lắng nghe qua CORS mở (cho phép mọi origin trong môi trường dev). Frontend cấu hình base URL trong tệp <code>.env</code> (ví dụ: <code>VITE_API_URL=https://localhost:7001</code> hoặc <code>http://localhost:5000</code>). Mọi endpoint nghiệp vụ đều có tiền tố <code>/api/v1/</code>.
         </div>
         <div class="notice">
-          <strong>Điểm dễ bỏ sót nhất</strong>
-          <code>POST /evaluate</code> chỉ đánh giá và trả quyết định, không tự queue học liệu. Nếu truyện import được đánh giá <code>Suitable</code>, frontend phải gọi <code>keep-original</code> để bắt đầu Vocabulary → Quiz → Discussion.
+          <strong>Điểm mấu chốt của Luồng B (Existing Story):</strong>
+          Endpoint <code>POST /existing/evaluate</code> chỉ đánh giá safety và profile fit, trả về quyết định (<code>Suitable</code>, <code>AdaptRecommended</code>, <code>Blocked</code>). Nếu truyện đạt <code>Suitable</code>, frontend <strong>bắt buộc phải gọi <code>POST /existing/keep-original</code></strong> để backend bàn giao sang chuỗi sinh học liệu (Vocabulary → Quiz → Discussion).
         </div>
       </section>
 
+      <section id="auth-flow">
+        <h2>0. Xác thực &amp; Chọn hồ sơ trẻ (Pre-requisites)</h2>
+        <p>Trước khi người dùng thực hiện tạo câu chuyện (cả Luồng A và B), ứng dụng Frontend cần hoàn thành hai thao tác nền tảng:</p>
+
+        <h3>0.1 Đăng nhập &amp; Lưu giữ JWT Tokens</h3>
+        <p>Endpoint đăng nhập hỗ trợ cả email lẫn username:</p>
+        <pre><code>POST /api/v1/auth/login
+Content-Type: application/json
+
+{
+  "usernameOrEmail": "parent@example.com",
+  "password": "SecurePassword123!"
+}</code></pre>
+        <p>Response trả về cấu trúc token và thông tin người dùng:</p>
+        <pre><code>{
+  "success": true,
+  "message": "Đăng nhập thành công.",
+  "data": {
+    "accessToken": "eyJhbGciOi...",
+    "refreshToken": "d8f1e2c3-...",
+    "tokenType": "Bearer",
+    "expiresInSeconds": 3600,
+    "user": {
+      "id": 15,
+      "email": "parent@example.com",
+      "fullName": "Nguyễn Văn A",
+      "role": "Parent"
+    },
+    "mfaRequired": false
+  },
+  "errors": null
+}</code></pre>
+
+        <h3>0.2 Làm mới token khi hết hạn (Refresh Token)</h3>
+        <p>Khi nhận mã lỗi <code>401 Unauthorized</code> từ bất kỳ API nào, frontend gọi endpoint sau để xoay vòng token mà không làm gián đoạn trải nghiệm người dùng:</p>
+        <pre><code>POST /api/v1/auth/refresh-token
+Content-Type: application/json
+
+{
+  "refreshToken": "d8f1e2c3-..."
+}</code></pre>
+
+        <h3>0.3 Lấy danh sách hồ sơ trẻ (Child Profile Selection)</h3>
+        <p>Cả hai luồng tạo truyện đều yêu cầu <code>childProfileId</code> hợp lệ để áp dụng đúng Safety Policy và Learning Profile của trẻ:</p>
+        <pre><code>GET /api/v1/childprofile/mine
+Authorization: Bearer &lt;accessToken&gt;</code></pre>
+        <p>Frontend hiển thị dropdown hoặc thẻ chọn trẻ. Lưu <code>childProfileId</code> đang được chọn để gửi kèm vào payload tạo truyện.</p>
+      </section>
+
       <section id="overview">
-        <h2>1. Luồng tổng thể</h2>
-        <div class="flow" aria-label="Luồng xử lý">
-          <div class="flow-step"><b>Bước 1</b><span>Chọn nguồn truyện</span></div>
-          <div class="flow-step"><b>Bước 2</b><span>Creative Input / Import</span></div>
-          <div class="flow-step"><b>Bước 3</b><span>Guardrail / Evaluate</span></div>
-          <div class="flow-step"><b>Bước 4</b><span>Outline / Adapt</span></div>
-          <div class="flow-step"><b>Bước 5</b><span>Content &amp; học liệu</span></div>
+        <h2>1. Luồng tổng thể hai nhánh</h2>
+        <div class="flow" aria-label="Luồng xử lý 6 bước">
+          <div class="flow-step"><b>Bước 1</b><span>Chọn hồ sơ &amp; Nguồn truyện</span></div>
+          <div class="flow-step"><b>Bước 2</b><span>Creative Input / Upload Story</span></div>
+          <div class="flow-step"><b>Bước 3</b><span>Safety Check / Evaluation</span></div>
+          <div class="flow-step"><b>Bước 4</b><span>Outline / Adapt Content</span></div>
+          <div class="flow-step"><b>Bước 5</b><span>Sinh học liệu (Vocab/Quiz/Disc)</span></div>
           <div class="flow-step"><b>Bước 6</b><span>Review → Media → Ready</span></div>
         </div>
 
-        <p>Ba quyết định dưới đây áp dụng riêng cho nhánh truyện do người dùng nhập hoặc tải lên:</p>
+        <p>Tại Bước 3 của <strong>Luồng B (Tải truyện có sẵn)</strong>, backend đưa ra 3 quyết định đánh giá:</p>
         <div class="cards">
-          <article class="card">
-            <h3>Suitable</h3>
-            <p>Hiển thị “Dùng bản gốc”, gọi <code>keep-original</code>, sau đó chuyển sang màn hình tiến độ.</p>
+          <article class="card suitable">
+            <h3 style="color: #1f7a55;">Suitable</h3>
+            <p>Nội dung hoàn toàn an toàn và phù hợp năng lực trẻ. Hiển thị nút “Sử dụng bản gốc”, gọi <code>keep-original</code> để tiến hành sinh học liệu.</p>
           </article>
-          <article class="card">
-            <h3>AdaptRecommended</h3>
-            <p>Cho chọn AI Adapt, chỉnh tay, giữ nguyên có lý do, hoặc lưu trữ.</p>
+          <article class="card adapt">
+            <h3 style="color: #b45309;">AdaptRecommended</h3>
+            <p>Nội dung an toàn nhưng từ vựng hoặc độ dài chưa khớp lứa tuổi. Cho phép chọn: AI Tinh chỉnh (Adapt), Sửa tay (Manual Edit), hoặc Giữ nguyên có lý do.</p>
           </article>
-          <article class="card">
-            <h3>Blocked</h3>
-            <p>Không cho giữ nguyên, adapt hay queue học liệu. Chỉ hiển thị lý do và hành động archive.</p>
+          <article class="card blocked">
+            <h3 style="color: #b91c1c;">Blocked</h3>
+            <p>Vi phạm chính sách an toàn nghiêm ngặt (Hard Safety). Không cho phép giữ nguyên hay tinh chỉnh. Chỉ hiển thị lỗi và nút “Lưu trữ” (Archive).</p>
           </article>
         </div>
       </section>
 
       <section id="dual-flow">
-        <h2>2. Hai nhánh tạo truyện và điểm hội tụ</h2>
+        <h2>2. So sánh hai luồng &amp; Điểm hội tụ</h2>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Tiêu chí</th><th>Luồng A — AI tạo truyện</th><th>Luồng B — Người dùng tải lên</th></tr></thead>
+            <thead><tr><th>Tiêu chí</th><th>Luồng A — AI tạo truyện mới</th><th>Luồng B — Người dùng tải truyện có sẵn</th></tr></thead>
             <tbody>
-              <tr><td>Nguồn Story</td><td><code>Ai</code></td><td><code>Manual</code></td></tr>
-              <tr><td>Đầu vào</td><td>Topic, genre, nhân vật, bối cảnh, bài học, độ dài.</td><td>Nội dung truyện có sẵn từ paste hoặc tệp TXT.</td></tr>
-              <tr><td>Safety đầu vào</td><td>Guardrail kiểm tra trước khi tạo outline.</td><td>Evaluation kiểm tra nội dung đã nhập và profile fit.</td></tr>
-              <tr><td>Outline</td><td>Có: sinh, sửa/regenerate, duyệt outline.</td><td>Bỏ qua hoàn toàn.</td></tr>
-              <tr><td>Nội dung truyện</td><td>AI sinh sau khi outline được duyệt.</td><td>Dùng bản gốc, AI adapt hoặc người dùng sửa tay.</td></tr>
-              <tr><td>Học liệu</td><td colspan="2">Cùng hội tụ tại Vocabulary → Quiz → Discussion.</td></tr>
-              <tr><td>Hoàn tất</td><td colspan="2">ContentReview → Review/Validation → Approved → MediaProcessing → Ready.</td></tr>
+              <tr><td>Nguồn Story (Source)</td><td><code>Ai</code></td><td><code>Manual</code></td></tr>
+              <tr><td>Dữ liệu đầu vào</td><td>Chủ đề, thể loại, nhân vật, bối cảnh, bài học, độ dài mục tiêu.</td><td>Văn bản paste trực tiếp, hoặc tải tệp <code>.txt</code> / <code>.docx</code>.</td></tr>
+              <tr><td>Kiểm duyệt an toàn</td><td>Safety Input Guardrail kiểm tra prompt trước khi tạo Outline.</td><td>Full Content Evaluation kiểm tra văn bản và Profile Fit.</td></tr>
+              <tr><td>Giai đoạn Outline</td><td>Có: AI sinh dàn ý 3 hồi, cho phép sửa, regenerate, approve.</td><td><strong>Bỏ qua hoàn toàn</strong>, không cần tạo dàn ý.</td></tr>
+              <tr><td>Hình thành nội dung</td><td>AI tự sinh nội dung câu chuyện sau khi duyệt outline.</td><td>Dùng bản gốc, yêu cầu AI tinh chỉnh (Adapt), hoặc tự sửa tay.</td></tr>
+              <tr><td>Sinh học liệu (Phase 3)</td><td colspan="2" style="background: #eef7f3; font-weight: 600;">Hội tụ hoàn toàn: Vocabulary → Quiz → Discussion.</td></tr>
+              <tr><td>Review &amp; Phê duyệt (Phase 4)</td><td colspan="2" style="background: #eef7f3; font-weight: 600;">Dùng chung màn hình Review Package, chỉnh sửa học liệu, Proposal AI, Validate &amp; Approve.</td></tr>
+              <tr><td>Sản xuất Media &amp; Đọc</td><td colspan="2" style="background: #eef7f3; font-weight: 600;">Dùng chung tiến trình MediaProcessing (hình ảnh + giọng đọc TTS) cho tới khi Ready.</td></tr>
             </tbody>
           </table>
         </div>
 
-        <h3>Sơ đồ trạng thái chung</h3>
-        <pre><code>LUỒNG A — AI
-Input → Guardrail → Draft → Generate Outline → OutlineReview
-      → Approve Outline → Generate Content → Vocabulary → Quiz → Discussion
-      → ContentReview → Approve → MediaProcessing → Ready
-
-LUỒNG B — USER UPLOAD
-Paste/TXT → Draft → Evaluate
-          ├─ Suitable ───────────────→ Keep Original ─┐
-          ├─ AdaptRecommended → Adapt/Edit/Keep ──────┼→ Vocabulary → Quiz → Discussion
-          └─ Blocked ────────────────→ Archive        │
-                                                     └→ ContentReview → Approve → MediaProcessing → Ready</code></pre>
-        <div class="callout success">
-          <strong>Điểm hội tụ frontend</strong>
-          Sau khi AI content ổn định hoặc Existing Story được chấp nhận, cả hai nhánh dùng chung màn hình Generation Progress, Review Package, Validation, Approval và Media Progress.
-        </div>
+        <h3>Sơ đồ trạng thái máy (State Machine Diagram)</h3>
+        <pre><code>LUỒNG A (AI STORY GENERATION):
+Input Form ──► Guardrail Check ──► Draft ──► Generate Outline ──► OutlineReview
+                                                                        │
+                                                                 (Approve Outline)
+                                                                        ▼
+                                                             Generate Content (AI)
+                                                                        │
+┌───────────────────────────────────────────────────────────────────────┘
+│
+LUỒNG B (EXISTING STORY IMPORT):
+Paste / Upload .txt / .docx ──► Input Check ──► Draft (v1) ──► Evaluate
+                                                                  ├─ Suitable ──────────► Keep Original ──┐
+                                                                  ├─ AdaptRecommended ──► Adapt/Edit/Keep─┤
+                                                                  └─ Blocked ───────────► Archive         │
+                                                                                                          ▼
+CHUỖI HỌC LIỆU DÙNG CHUNG (PHASE 3):                                                            Vocabulary
+                                                                                                          │
+                                                                                                        Quiz
+                                                                                                          │
+                                                                                                     Discussion
+                                                                                                          │
+CHUỖI PHÊ DUYỆT & MEDIA DÙNG CHUNG:                                                                       ▼
+Ready for Child Reading ◄── Media Complete ◄── MediaProcessing ◄── Approve ◄── Validation ◄── ContentReview Package</code></pre>
       </section>
 
       <section id="contract">
-        <h2>3. Quy ước API chung</h2>
-        <p>Mọi request được bảo vệ phải gửi JWT access token:</p>
+        <h2>3. Quy ước Request &amp; Response</h2>
+        <p>Mọi request (ngoại trừ các endpoint public như Login/Register) phải đính kèm Header xác thực:</p>
         <pre><code>Authorization: Bearer &lt;accessToken&gt;
-Content-Type: application/json</code></pre>
+Accept: application/json</code></pre>
 
-        <p>Response thành công và thất bại đều dùng envelope:</p>
+        <h3>3.1 Định dạng phản hồi Envelope chuẩn</h3>
+        <p>Mọi API đều trả về cấu trúc bọc dữ liệu đồng nhất:</p>
         <pre><code>{
   "success": true,
   "message": "Thao tác thành công.",
-  "data": {},
+  "data": { ... },
   "errors": null
 }</code></pre>
-        <div class="callout success">
-          <strong>Frontend phải kiểm tra cả HTTP status và <code>success</code>.</strong>
-          Không đọc payload nghiệp vụ trực tiếp từ response root; dữ liệu luôn nằm trong <code>data</code>.
+        <p>Khi có lỗi (4xx / 5xx), envelope vẫn giữ nguyên định dạng:</p>
+        <pre><code>{
+  "success": false,
+  "message": "Dữ liệu đầu vào không hợp lệ.",
+  "data": null,
+  "errors": [
+    "Nội dung truyện vượt quá giới hạn 200000 ký tự."
+  ]
+}</code></pre>
+
+        <div class="callout danger">
+          <strong>Lưu ý quan trọng cho Frontend Client:</strong>
+          Luôn trích xuất dữ liệu từ trường <code>response.data.data</code> (hoặc <code>envelope.data</code>). Không đọc trực tiếp từ tầng gốc của JSON response.
         </div>
-        <p>Điều kiện dùng hai luồng:</p>
-        <ul>
-          <li>Người dùng đăng nhập với role <code>Parent</code> hoặc <code>Teacher</code>.</li>
-          <li>Child Profile đang ở trạng thái Active.</li>
-          <li>Người dùng có quyền <code>GenerateStory</code> trên Child Profile.</li>
-          <li>Nội dung import không vượt 20.000 từ.</li>
-        </ul>
       </section>
 
       <section id="types">
-        <h2>4. TypeScript types dùng chung</h2>
-        <div class="file-label">types/existing-story.ts</div>
-        <pre><code>export interface ApiResponse&lt;T&gt; {
+        <h2>4. TypeScript Types chuẩn cho Frontend</h2>
+        <div class="file-label">types/story-api.ts</div>
+        <pre><code>// 1. Envelope chung
+export interface ApiResponse&lt;T&gt; {
   success: boolean;
   message: string;
   data: T | null;
   errors: string[] | null;
 }
 
-export interface ImportStoryRequest {
-  inputMethod: 'paste' | 'txt';
-  content: string;
-  title?: string;
-  childProfileId: number;
+// 2. Auth &amp; Profile
+export interface AuthResponse {
+  accessToken: string;
+  refreshToken: string;
+  tokenType: string;
+  expiresInSeconds: number;
+  user: {
+    id: number;
+    email: string;
+    fullName: string;
+    role: 'Parent' | 'Teacher' | 'Administrator';
+  };
+  mfaRequired: boolean;
+}
+
+export interface ChildProfileSummary {
+  id: number;
+  nickname: string;
+  fullName: string;
+  ageBand: '6-8' | '9-12' | string;
+  readingLevel: number;
   language: string;
-  idempotencyKey?: string;
+  status: 'Active' | 'Inactive';
 }
 
-export interface ImportStoryResult {
-  storyId: number;
-  storyVersionId: number;
-  storyStatus: string;
-  editType: string;
-  contentLength: number | null;
-  warnings: string[];
-}
-
-export type ExistingStoryDecision =
-  | 'Suitable'
-  | 'AdaptRecommended'
-  | 'Blocked';
-
-export interface EvaluationIssue {
-  code: string;
-  message: string;
-}
-
-export interface ExistingStoryEvaluation {
-  storyId: number;
-  storyVersionId: number;
-  decision: 1 | 2 | 3; // enum backend mặc định serialize thành số
-  decisionText: ExistingStoryDecision;
-  hardSafetyIssues: EvaluationIssue[];
-  profileFitIssues: EvaluationIssue[];
-  recommendedAgeBand: number | null;
-  readabilityFkgl: number | null;
-  readabilityFre: number | null;
-  wordCount: number | null;
-  canKeepOriginal: boolean;
-}
-
-export interface VersionMutationResult {
-  storyId: number;
-  storyVersionId: number;
-  storyStatus: string;
-  editType: string;
-  decision: ExistingStoryDecision | null;
-}
-
-export interface GenerationProgress {
-  storyId: number;
-  storyStatus: string;
-  currentStep: string;
-  content: string;
-  vocabulary: string;
-  quiz: string;
-  discussion: string;
-  isComplete: boolean;
-  lastErrorCode: string | null;
-  stableStoryVersionId: number | null;
-}
-
+// 3. Luồng A — AI Creative Input &amp; Outline
 export interface AIStoryInputContext {
   childProfileId: number;
   childNickname: string;
@@ -323,12 +384,13 @@ export interface AIStoryInputContext {
   availableLanguages: string[];
   maximumLength: number;
   requiredApprovalMode: string;
+  parentalGateEnabled: boolean;
   interests: string[];
   characterModes: Array&lt;'specified' | 'ai_suggested'&gt;;
   settingModes: Array&lt;'specified' | 'ai_suggested'&gt;;
 }
 
-export interface SubmitAIStoryInput {
+export interface SubmitAIStoryInputRequest {
   childProfileId: number;
   topic: string;
   genre?: string;
@@ -346,11 +408,7 @@ export interface SubmitAIStoryInput {
 export interface AIStoryInputProgress {
   storyId: number;
   requestId: number;
-  inputStatus:
-    | 'checking_input'
-    | 'input_accepted'
-    | 'input_blocked'
-    | 'input_check_failed';
+  inputStatus: 'checking_input' | 'input_accepted' | 'input_blocked' | 'input_check_failed';
   handoffStatus: string;
   handoffJobId: number | null;
   attemptCount: number;
@@ -363,7 +421,7 @@ export interface AIStoryInputProgress {
 export interface OutlineProgress {
   storyId: number;
   storyStatus: string;
-  currentVersion: null | {
+  currentVersion: {
     id: number;
     versionNo: number;
     title: string;
@@ -372,43 +430,159 @@ export interface OutlineProgress {
     ending: string;
     isCurrent: boolean;
     outlineApprovedAt: string | null;
-  };
+  } | null;
   activeOperation: string | null;
   activeJobStatus: string | null;
   lastErrorCode: string | null;
+}
+
+// 4. Luồng B — Existing Story Intake &amp; Evaluation
+export interface ImportStoryJsonRequest {
+  inputMethod: 'paste' | 'txt' | 'docx';
+  content: string;
+  title?: string;
+  childProfileId: number;
+  language?: string;
+  idempotencyKey?: string;
+}
+
+export interface ImportStoryResult {
+  storyId: number;
+  storyVersionId: number;
+  storyStatus: string;
+  editType: string;
+  contentLength: number | null;
+  inputStatus: 'input_accepted' | 'input_blocked' | 'input_check_failed';
+  reasonCode: string | null;
+  fallbackMessage: string | null;
+  canProceed: boolean;
+  warnings: string[];
+}
+
+export type ExistingStoryDecision = 'Suitable' | 'AdaptRecommended' | 'Blocked';
+
+export interface EvaluationIssue {
+  code: string;
+  message: string;
+}
+
+export interface ExistingStoryEvaluation {
+  storyId: number;
+  storyVersionId: number;
+  decision: 1 | 2 | 3;
+  decisionText: ExistingStoryDecision;
+  hardSafetyIssues: EvaluationIssue[];
+  profileFitIssues: EvaluationIssue[];
+  recommendedAgeBand: number | null;
+  readabilityFkgl: number | null;
+  readabilityFre: number | null;
+  safetyScore: number | null;
+  wordCount: number | null;
+  canKeepOriginal: boolean;
+}
+
+export interface VersionMutationResult {
+  storyId: number;
+  storyVersionId: number;
+  storyStatus: string;
+  editType: string;
+  decision: ExistingStoryDecision | null;
+}
+
+// 5. Học liệu, Review &amp; Media
+export interface ContentGenerationProgress {
+  storyId: number;
+  storyStatus: string;
+  currentStep: string;
+  content: 'not_started' | 'processing' | 'stable' | 'failed';
+  vocabulary: 'not_started' | 'processing' | 'stable' | 'failed';
+  quiz: 'not_started' | 'processing' | 'stable' | 'failed';
+  discussion: 'not_started' | 'processing' | 'stable' | 'failed';
+  isComplete: boolean;
+  lastErrorCode: string | null;
+  stableStoryVersionId: number | null;
+}
+
+export interface ReviewPackage {
+  storyId: number;
+  storyVersionId: number;
+  storyStatus: string;
+  title: string;
+  content: string;
+  lesson: string;
+  readabilityAlgorithm: string;
+  readabilityFkgl: number | null;
+  readabilityFre: number | null;
+  vocabulary: { state: string; itemCount: number };
+  quiz: { state: string; itemCount: number };
+  discussion: { state: string; itemCount: number };
+  canEdit: boolean;
+  canApprove: boolean;
+  canArchive: boolean;
+}
+
+export interface ValidationResult {
+  canApprove: boolean;
+  checks: Array&lt;{ name: string; passed: boolean; message: string | null }&gt;;
+  issues: string[];
+}
+
+export interface MediaGenerationProgress {
+  storyId: number;
+  approvedStoryVersionId: number | null;
+  storyStatus: 'MediaProcessing' | 'Ready' | 'Failed' | string;
+  jobStatus: 'NotStarted' | 'Processing' | 'Completed' | 'Failed' | string;
+  sceneCount: number;
+  readyIllustrations: number;
+  readyAudio: number;
+  isReady: boolean;
+  errorCode: string | null;
 }</code></pre>
-        <div class="callout">
-          <strong>Khuyến nghị</strong>
-          Điều hướng theo <code>decisionText</code>, không theo số <code>decision</code>, để code frontend dễ đọc và ít phụ thuộc thứ tự enum.
-        </div>
       </section>
 
       <section id="endpoints">
-        <h2>5. Danh sách endpoint</h2>
+        <h2>5. Danh mục Endpoints đầy đủ</h2>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Method</th><th>Endpoint</th><th>Mục đích</th></tr></thead>
+            <thead><tr><th>Phân nhóm</th><th>Phương thức</th><th>Endpoint URI</th><th>Mô tả chi tiết</th></tr></thead>
             <tbody>
-              <tr><td><span class="method get">GET</span></td><td><code>/api/v1/ai-story-input/children/{childProfileId}/context</code></td><td>Lấy policy/profile và option cho form AI.</td></tr>
-              <tr><td><span class="method">POST</span></td><td><code>/api/v1/ai-story-input/requests</code></td><td>Submit yêu cầu tạo truyện AI và chạy input guardrail.</td></tr>
-              <tr><td><span class="method get">GET</span></td><td><code>/api/v1/ai-story-input/stories/{storyId}/requests/{requestId}</code></td><td>Poll kiểm tra input AI.</td></tr>
-              <tr><td><span class="method">POST</span></td><td><code>/api/v1/ai-story-input/stories/{storyId}/requests/{requestId}/retry</code></td><td>Retry input check khi backend cho phép.</td></tr>
-              <tr><td><span class="method get">GET</span></td><td><code>/api/v1/stories/{storyId}/outline</code></td><td>Poll/lấy outline hiện tại.</td></tr>
-              <tr><td><span class="method put">PUT</span></td><td><code>/api/v1/stories/{storyId}/outline/versions/{versionNo}</code></td><td>Sửa outline và tạo version mới.</td></tr>
-              <tr><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/outline/versions/{versionNo}/regenerate</code></td><td>Yêu cầu AI tạo lại outline.</td></tr>
-              <tr><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/outline/versions/{versionNo}/approve</code></td><td>Duyệt outline và queue sinh content.</td></tr>
-              <tr><td><span class="method">POST</span></td><td><code>/api/v1/stories/import</code></td><td>Tạo Story Manual và StoryVersion v1.</td></tr>
-              <tr><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/existing/evaluate</code></td><td>Chạy lại đánh giá safety/profile fit.</td></tr>
-              <tr><td><span class="method get">GET</span></td><td><code>/api/v1/stories/{storyId}/existing/evaluation?storyVersionId=...</code></td><td>Lấy kết quả cache mới nhất; cache miss sẽ evaluate.</td></tr>
-              <tr><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/existing/adapt</code></td><td>AI chỉnh truyện, tạo version mới, evaluate lại.</td></tr>
-              <tr><td><span class="method put">PUT</span></td><td><code>/api/v1/stories/{storyId}/existing/content</code></td><td>Chỉnh tay, tạo version mới, evaluate lại.</td></tr>
-              <tr><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/existing/keep-original</code></td><td>Giữ version hiện tại và queue học liệu.</td></tr>
-              <tr><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/existing/archive</code></td><td>Lưu trữ truyện.</td></tr>
-              <tr><td><span class="method get">GET</span></td><td><code>/api/v1/stories/{storyId}/generation/progress</code></td><td>Theo dõi Vocabulary → Quiz → Discussion.</td></tr>
-              <tr><td><span class="method get">GET</span></td><td><code>/api/v1/stories/{storyId}/review</code></td><td>Lấy review package đầy đủ.</td></tr>
-              <tr><td><span class="method get">GET</span></td><td><code>/api/v1/stories/{storyId}/review/validation</code></td><td>Kiểm tra điều kiện phê duyệt.</td></tr>
-              <tr><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/review/approve</code></td><td>Phê duyệt và queue media.</td></tr>
-              <tr><td><span class="method get">GET</span></td><td><code>/api/v1/stories/{storyId}/media/progress</code></td><td>Theo dõi media cho tới Ready.</td></tr>
+              <!-- Auth & Profile -->
+              <tr><td><span class="tag tag-auth">Auth</span></td><td><span class="method">POST</span></td><td><code>/api/v1/auth/login</code></td><td>Đăng nhập bằng Email/Username + Password, nhận Access &amp; Refresh token.</td></tr>
+              <tr><td><span class="tag tag-auth">Auth</span></td><td><span class="method">POST</span></td><td><code>/api/v1/auth/refresh-token</code></td><td>Xoay vòng token khi access token 401 hết hạn.</td></tr>
+              <tr><td><span class="tag tag-auth">Profile</span></td><td><span class="method get">GET</span></td><td><code>/api/v1/childprofile/mine</code></td><td>Lấy danh sách hồ sơ trẻ của Parent/Teacher để chọn <code>childProfileId</code>.</td></tr>
+
+              <!-- Luồng A -->
+              <tr><td><span class="tag tag-json">Luồng A</span></td><td><span class="method get">GET</span></td><td><code>/api/v1/ai-story-input/children/{childProfileId}/context</code></td><td>Lấy giới hạn độ dài, vocabulary, safety policy trước khi dựng form AI.</td></tr>
+              <tr><td><span class="tag tag-json">Luồng A</span></td><td><span class="method">POST</span></td><td><code>/api/v1/ai-story-input/requests</code></td><td>Gửi ý tưởng truyện AI, khởi động bộ lọc input guardrail.</td></tr>
+              <tr><td><span class="tag tag-json">Luồng A</span></td><td><span class="method get">GET</span></td><td><code>/api/v1/ai-story-input/stories/{storyId}/requests/{requestId}</code></td><td>Polling kiểm tra trạng thái guardrail input.</td></tr>
+              <tr><td><span class="tag tag-json">Luồng A</span></td><td><span class="method get">GET</span></td><td><code>/api/v1/stories/{storyId}/outline</code></td><td>Polling nhận dàn ý câu chuyện (3 hồi: Mở đầu, Diễn biến, Kết thúc).</td></tr>
+              <tr><td><span class="tag tag-json">Luồng A</span></td><td><span class="method put">PUT</span></td><td><code>/api/v1/stories/{storyId}/outline/versions/{versionNo}</code></td><td>Chỉnh sửa nội dung dàn ý, tạo version mới.</td></tr>
+              <tr><td><span class="tag tag-json">Luồng A</span></td><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/outline/versions/{versionNo}/regenerate</code></td><td>Yêu cầu AI sinh lại dàn ý mới.</td></tr>
+              <tr><td><span class="tag tag-json">Luồng A</span></td><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/outline/versions/{versionNo}/approve</code></td><td>Duyệt dàn ý và kích hoạt AI sinh toàn văn câu chuyện (Phase 3).</td></tr>
+
+              <!-- Luồng B -->
+              <tr><td><span class="tag tag-form">Luồng B</span></td><td><span class="method">POST</span></td><td><code>/api/v1/stories/import-file</code></td><td><strong>Khuyên dùng:</strong> Upload trực tiếp file <code>.txt</code> hoặc <code>.docx</code> qua FormData (tối đa 5 MB).</td></tr>
+              <tr><td><span class="tag tag-json">Luồng B</span></td><td><span class="method">POST</span></td><td><code>/api/v1/stories/import</code></td><td>Nhập nội dung paste văn bản thô dạng JSON.</td></tr>
+              <tr><td><span class="tag tag-json">Luồng B</span></td><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/existing/evaluate</code></td><td>Kích hoạt đánh giá Safety và Profile Fit cho version hiện tại.</td></tr>
+              <tr><td><span class="tag tag-json">Luồng B</span></td><td><span class="method get">GET</span></td><td><code>/api/v1/stories/{storyId}/existing/evaluation?storyVersionId=...</code></td><td>Lấy kết quả đánh giá mới nhất (từ cache/database).</td></tr>
+              <tr><td><span class="tag tag-json">Luồng B</span></td><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/existing/keep-original</code></td><td>Chấp nhận bản gốc (khi Suitable hoặc có overrideReason) để queue sinh học liệu.</td></tr>
+              <tr><td><span class="tag tag-json">Luồng B</span></td><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/existing/adapt</code></td><td>Yêu cầu AI tinh chỉnh từ vựng, độ khó phù hợp với lứa tuổi của trẻ.</td></tr>
+              <tr><td><span class="tag tag-json">Luồng B</span></td><td><span class="method put">PUT</span></td><td><code>/api/v1/stories/{storyId}/existing/content</code></td><td>Chỉnh sửa nội dung thủ công và đánh giá lại.</td></tr>
+              <tr><td><span class="tag tag-json">Luồng B</span></td><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/existing/archive</code></td><td>Lưu trữ truyện khi bị Blocked hoặc người dùng muốn hủy bỏ.</td></tr>
+
+              <!-- Học liệu & Review -->
+              <tr><td><span class="tag">Chung</span></td><td><span class="method get">GET</span></td><td><code>/api/v1/stories/{storyId}/generation/progress</code></td><td>Polling theo dõi tiến độ sinh Vocabulary → Quiz → Discussion.</td></tr>
+              <tr><td><span class="tag">Review</span></td><td><span class="method get">GET</span></td><td><code>/api/v1/stories/{storyId}/review</code></td><td>Lấy toàn bộ gói Review Package (Story + Vocab + Quiz + Discussion).</td></tr>
+              <tr><td><span class="tag">Review</span></td><td><span class="method put">PUT</span></td><td><code>/api/v1/stories/{storyId}/review/story</code></td><td>Cập nhật trực tiếp nội dung câu chuyện trong màn hình Review.</td></tr>
+              <tr><td><span class="tag">Review</span></td><td><span class="method put">PUT</span></td><td><code>/api/v1/stories/{storyId}/review/vocabulary</code></td><td>Cập nhật danh sách từ vựng.</td></tr>
+              <tr><td><span class="tag">Review</span></td><td><span class="method put">PUT</span></td><td><code>/api/v1/stories/{storyId}/review/quiz</code></td><td>Cập nhật các câu hỏi Quiz và đáp án.</td></tr>
+              <tr><td><span class="tag">Review</span></td><td><span class="method put">PUT</span></td><td><code>/api/v1/stories/{storyId}/review/discussion</code></td><td>Cập nhật câu hỏi thảo luận bài học.</td></tr>
+              <tr><td><span class="tag">Review</span></td><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/review/story/ai/partial-edit</code></td><td>Tạo đề xuất AI chỉnh sửa một đoạn văn bản được bôi đen.</td></tr>
+              <tr><td><span class="tag">Review</span></td><td><span class="method get">GET</span></td><td><code>/api/v1/stories/{storyId}/review/validation</code></td><td>Kiểm tra toàn bộ điều kiện xem câu chuyện đã đủ chuẩn để duyệt chưa.</td></tr>
+              <tr><td><span class="tag">Review</span></td><td><span class="method">POST</span></td><td><code>/api/v1/stories/{storyId}/review/approve</code></td><td>Phê duyệt câu chuyện, chuyển trạng thái sang <code>MediaProcessing</code>.</td></tr>
+
+              <!-- Media -->
+              <tr><td><span class="tag">Media</span></td><td><span class="method get">GET</span></td><td><code>/api/v1/stories/{storyId}/media/progress</code></td><td>Polling tiến độ sinh tranh minh họa và audio đọc truyện cho đến khi <code>isReady = true</code>.</td></tr>
             </tbody>
           </table>
         </div>
@@ -417,381 +591,466 @@ export interface OutlineProgress {
       <section id="ai-flow">
         <h2>6. Luồng A — Tạo câu chuyện bằng AI</h2>
 
-        <h3>6.1 Tải context trước khi render form</h3>
-        <pre><code>GET /api/v1/ai-story-input/children/42/context</code></pre>
-        <p>Dùng response để khóa đúng <code>maximumLength</code>, language, vocabulary level, character/setting mode và hiển thị policy. Không hard-code option nếu backend đã trả chúng.</p>
+        <h3>6.1 Tải context cấu hình trước khi render Form</h3>
+        <pre><code>GET /api/v1/ai-story-input/children/{childProfileId}/context</code></pre>
+        <p>Sử dụng dữ liệu trả về để khởi tạo các trường: <code>maximumLength</code>, ngôn ngữ mặc định, các mức <code>availableVocabularyLevels</code> (level_1 đến level_5), và gợi ý sở thích (<code>interests</code>). Tránh hard-code trên Frontend.</p>
 
-        <h3>6.2 Submit creative input</h3>
+        <h3>6.2 Gửi yêu cầu sáng tác truyện (Submit Request)</h3>
         <pre><code>POST /api/v1/ai-story-input/requests
+Content-Type: application/json
 
 {
   "childProfileId": 42,
-  "topic": "Tình bạn trong khu rừng",
-  "genre": "Adventure",
+  "topic": "Chuyến thám hiểm khu rừng đom đóm",
+  "genre": "Phiêu lưu, Giả tưởng",
   "characterMode": "specified",
-  "characters": ["Lan", "Minh"],
+  "characters": ["Bé An", "Sóc Nâu"],
   "settingMode": "specified",
-  "setting": "Một khu rừng xanh sau cơn mưa",
-  "lesson": "Biết chia sẻ và giúp đỡ bạn bè",
+  "setting": "Khu rừng nhiệt đới vào buổi hoàng hôn",
+  "lesson": "Lòng dũng cảm và tinh thần đồng đội",
   "vocabularyLevel": "level_2",
   "language": "vi",
   "targetLength": 600,
-  "idempotencyKey": "ai-input-42-550e8400-e29b-41d4-a716-446655440000"
+  "idempotencyKey": "ai-req-42-b892a014-9988-4c12"
 }</code></pre>
-        <p>Backend thường trả HTTP <code>202 Accepted</code>. Lưu <code>storyId</code> và <code>requestId</code> ngay cả khi input còn ở <code>checking_input</code>.</p>
+        <p>Backend trả về HTTP <code>202 Accepted</code>. Frontend lưu <code>storyId</code> và <code>requestId</code> để polling kiểm tra:</p>
+        <pre><code>GET /api/v1/ai-story-input/stories/{storyId}/requests/{requestId}</code></pre>
+        <p>Khi <code>inputStatus === 'input_accepted'</code>, lập tức điều hướng sang màn hình theo dõi Dàn ý (Outline).</p>
 
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>inputStatus</th><th>HTTP thường gặp</th><th>Frontend xử lý</th></tr></thead>
-            <tbody>
-              <tr><td><code>checking_input</code></td><td>202</td><td>Poll progress theo storyId/requestId.</td></tr>
-              <tr><td><code>input_accepted</code></td><td>202</td><td>Chuyển sang màn hình Outline Progress.</td></tr>
-              <tr><td><code>input_blocked</code></td><td>422</td><td>Hiển thị reason/fallback; không đi tiếp.</td></tr>
-              <tr><td><code>input_check_failed</code></td><td>409/422/503</td><td>Chỉ hiện Retry nếu <code>canRetry</code> là true.</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3>6.3 Poll và review outline</h3>
-        <pre><code>GET /api/v1/stories/123/outline</code></pre>
-        <p>Poll cho đến khi <code>currentVersion</code> có dữ liệu hoặc <code>lastErrorCode</code> xuất hiện. Tại <code>OutlineReview</code>, người dùng có thể:</p>
+        <h3>6.3 Polling &amp; Duyệt Dàn ý (Outline)</h3>
+        <pre><code>GET /api/v1/stories/{storyId}/outline</code></pre>
+        <p>Khi <code>currentVersion</code> có dữ liệu, hiển thị 3 phần: Mở đầu (Opening), Diễn biến (Development), Kết thúc (Ending). Người dùng có các lựa chọn:</p>
         <ul>
-          <li>Sửa trực tiếp bằng <code>PUT .../outline/versions/{versionNo}</code>.</li>
-          <li>Regenerate bằng một <code>operationKey</code> duy nhất, tối thiểu 8 ký tự.</li>
-          <li>Reject với lý do rõ ràng.</li>
-          <li>Approve bằng một <code>approvalKey</code> duy nhất, tối thiểu 8 ký tự.</li>
+          <li><strong>Chỉnh sửa trực tiếp:</strong> Gọi <code>PUT /api/v1/stories/{storyId}/outline/versions/{versionNo}</code>.</li>
+          <li><strong>Yêu cầu AI sinh lại:</strong> Gọi <code>POST /api/v1/stories/{storyId}/outline/versions/{versionNo}/regenerate</code> kèm <code>operationKey</code>.</li>
+          <li><strong>Phê duyệt:</strong> Gọi <code>POST /api/v1/stories/{storyId}/outline/versions/{versionNo}/approve</code> kèm <code>approvalKey</code>. Bất kỳ tài khoản Parent hoặc Teacher đang quản lý hồ sơ trẻ (Supervision Relationship) đều có quyền duyệt mà không cần cấp quyền chi tiết. Sau khi duyệt, backend tự động khởi động quy trình sinh toàn văn nội dung và học liệu (Phase 3).</li>
         </ul>
-        <pre><code>POST /api/v1/stories/123/outline/versions/2/approve
-
-{ "approvalKey": "approve-outline-123-v2" }</code></pre>
-
-        <h3>6.4 Sinh content và học liệu</h3>
-        <p>Sau approve, backend chạy tuần tự:</p>
-        <pre><code>GenerateContent → Safety/Quality → Vocabulary → Quiz → Discussion</code></pre>
-        <p>Frontend dùng chung <code>GET /api/v1/stories/{storyId}/generation/progress</code>. Khác với Existing Story, trường <code>content</code> của luồng AI ban đầu sẽ ở trạng thái pending/processing rồi mới thành <code>stable</code>.</p>
-
-        <h3>6.5 Hội tụ vào Review và Media</h3>
-        <p>Khi <code>isComplete</code> là true, chuyển sang các bước Review → Validation → Approve → Media giống mục 7.5 và 7.6 bên dưới.</p>
       </section>
 
-      <section id="steps">
-        <h2>7. Luồng B — Người dùng nhập hoặc tải truyện có sẵn</h2>
+      <section id="existing-flow">
+        <h2>7. Luồng B — Tải truyện có sẵn (Paste / TXT / DOCX)</h2>
 
-        <div class="callout">
-          <strong>TXT không được upload dạng multipart.</strong>
-          Frontend đọc tệp TXT dưới dạng UTF-8 bằng <code>File.text()</code>, đưa chuỗi vào trường <code>content</code>, đặt <code>inputMethod: "txt"</code>, rồi gửi JSON giống thao tác paste.
-        </div>
+        <h3>7.1 Lựa chọn 1: Upload File trực tiếp bằng FormData (Khuyên dùng)</h3>
+        <p>Dành cho trường hợp người dùng bấm chọn tệp từ máy tính (hỗ trợ cả <code>.txt</code> UTF-8 và <code>.docx</code> Word, dung lượng tối đa 5 MB):</p>
+        <pre><code>POST /api/v1/stories/import-file
+Content-Type: multipart/form-data (trình duyệt tự gắn kèm boundary)
 
-        <h3>7.1 Import truyện</h3>
+Form Fields:
+- File: (tệp nhị phân .txt hoặc .docx)
+- Title: "Chú bé chăn cừu"
+- ChildProfileId: 42
+- Language: "vi"
+- IdempotencyKey: "import-file-42-abc12345"</code></pre>
+
+        <h3>7.2 Lựa chọn 2: Nhập văn bản thô dạng JSON</h3>
+        <p>Dành cho trường hợp người dùng copy/paste vào Textarea:</p>
         <pre><code>POST /api/v1/stories/import
+Content-Type: application/json
 
 {
   "inputMethod": "paste",
-  "content": "Ngày xưa, trong một khu rừng...",
-  "title": "Lan và khu rừng",
+  "content": "Ngày xưa có một chú bé chăn cừu...",
+  "title": "Chú bé chăn cừu",
   "childProfileId": 42,
   "language": "vi",
-  "idempotencyKey": "import-42-550e8400-e29b-41d4-a716-446655440000"
+  "idempotencyKey": "import-paste-42-abc12345"
 }</code></pre>
-        <p>Lưu ngay <code>storyId</code> và <code>storyVersionId</code> từ response. Dùng UUID làm <code>idempotencyKey</code> và giữ nguyên key khi retry cùng một thao tác để tránh tạo bản trùng.</p>
 
-        <h3>7.2 Evaluate version hiện tại</h3>
-        <pre><code>POST /api/v1/stories/123/existing/evaluate
-
-{ "storyVersionId": 456 }</code></pre>
-        <p>Render hai nhóm lỗi riêng:</p>
-        <ul>
-          <li><code>hardSafetyIssues</code>: lỗi cứng, không cho override.</li>
-          <li><code>profileFitIssues</code>: chưa phù hợp độ tuổi/độ khó, có thể adapt hoặc sửa tay.</li>
-        </ul>
-
-        <h3>7.3 Xử lý theo quyết định</h3>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>decisionText</th><th>UI được phép</th><th>API tiếp theo</th></tr></thead>
-            <tbody>
-              <tr><td><span class="state">Suitable</span></td><td>Dùng bản gốc hoặc archive.</td><td><code>keep-original</code> để queue artifact.</td></tr>
-              <tr><td><span class="state">AdaptRecommended</span></td><td>AI Adapt, sửa tay, giữ nguyên nếu <code>canKeepOriginal</code>, hoặc archive.</td><td><code>adapt</code>, <code>content</code>, <code>keep-original</code> hoặc <code>archive</code>.</td></tr>
-              <tr><td><span class="state">Blocked</span></td><td>Chỉ xem lỗi cứng và archive.</td><td><code>archive</code>.</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <p><strong>AI Adapt:</strong></p>
-        <pre><code>POST /api/v1/stories/123/existing/adapt
-
-{
-  "storyId": 123,
-  "baseStoryVersionId": 456,
-  "guideline": "Rút gọn câu và dùng từ phù hợp trẻ 6-8 tuổi."
-}</code></pre>
-        <p>Response trả version mới và <code>decision</code> sau khi backend tự evaluate. Nếu decision là <code>Suitable</code>, backend đã queue artifact; chuyển thẳng sang polling.</p>
-
-        <p><strong>Sửa tay:</strong></p>
-        <pre><code>PUT /api/v1/stories/123/existing/content
-
-{
-  "storyId": 123,
-  "baseStoryVersionId": 456,
-  "title": "Lan và khu rừng",
-  "content": "Nội dung đã chỉnh...",
-  "lesson": "Biết giúp đỡ bạn bè."
-}</code></pre>
-        <p>Luôn thay <code>baseStoryVersionId</code> bằng version mới nhất. Nếu nhận <code>STALE_BASE_VERSION</code>, tải lại dữ liệu và yêu cầu người dùng đối chiếu trước khi gửi lại.</p>
-
-        <p><strong>Giữ bản hiện tại và bắt đầu sinh học liệu:</strong></p>
-        <pre><code>POST /api/v1/stories/123/existing/keep-original
-
-{
-  "storyId": 123,
-  "storyVersionId": 456,
-  "overrideReason": "Nội dung đã phù hợp và được phụ huynh xác nhận."
-}</code></pre>
-        <div class="callout danger">
-          <strong>Không gọi <code>keep-original</code> khi Blocked.</strong>
-          Chỉ render nút khi <code>canKeepOriginal === true</code>. Frontend phải giữ guard này ngay cả khi backend có thêm validation sau này.
-        </div>
-
-        <h3>7.4 Poll tiến độ học liệu</h3>
-        <pre><code>GET /api/v1/stories/123/generation/progress
-
-{
+        <p>Cả 2 phương thức trên đều trả về cùng một cấu trúc <code>ImportStoryResult</code>:</p>
+        <pre><code>{
   "success": true,
+  "message": "Import truyện thành công.",
   "data": {
-    "storyId": 123,
+    "storyId": 128,
+    "storyVersionId": 310,
     "storyStatus": "Draft",
-    "currentStep": "generating_vocabulary",
-    "content": "stable",
-    "vocabulary": "processing",
-    "quiz": "not_started",
-    "discussion": "not_started",
-    "isComplete": false,
-    "lastErrorCode": null,
-    "stableStoryVersionId": 456
+    "editType": "OriginalImport",
+    "contentLength": 1420,
+    "inputStatus": "input_accepted",
+    "canProceed": true,
+    "warnings": []
   }
 }</code></pre>
-        <ul>
-          <li>Poll mỗi 2–3 giây khi tab đang visible.</li>
-          <li>Dừng khi <code>isComplete === true</code>; lúc này Story đã ở <code>ContentReview</code>.</li>
-          <li>Dừng và hiển thị retry/support khi <code>lastErrorCode</code> khác null.</li>
-          <li>Hủy request/poll khi component unmount hoặc đổi story.</li>
-        </ul>
 
-        <h3>7.5 Review và phê duyệt — dùng chung hai luồng</h3>
-        <p>Lấy package bằng <code>GET /api/v1/stories/{storyId}/review</code>. Khi chỉnh bất kỳ artifact nào, gửi đúng <code>versionId</code> hiện tại:</p>
-        <pre><code>PUT /api/v1/stories/123/review/story
-PUT /api/v1/stories/123/review/vocabulary
-PUT /api/v1/stories/123/review/quiz
-PUT /api/v1/stories/123/review/discussion</code></pre>
-        <p>Trước khi bật nút Approve:</p>
-        <pre><code>GET /api/v1/stories/123/review/validation
-
-// Chỉ bật Approve khi data.canApprove === true
-POST /api/v1/stories/123/review/approve</code></pre>
-        <p>Các endpoint <code>*/complete</code> hiện chỉ kiểm tra dữ liệu và trả <code>true</code>, không lưu một trạng thái completion riêng; frontend không nên phụ thuộc chúng để xác định có thể approve.</p>
-
-        <h3>7.6 Theo dõi media tới Ready — dùng chung hai luồng</h3>
-        <pre><code>GET /api/v1/stories/123/media/progress
+        <h3>7.3 Đánh giá câu chuyện (Evaluation)</h3>
+        <p>Ngay sau khi import thành công và <code>canProceed === true</code>, frontend gọi API đánh giá:</p>
+        <pre><code>POST /api/v1/stories/{storyId}/existing/evaluate
+Content-Type: application/json
 
 {
-  "storyId": 123,
-  "approvedStoryVersionId": 456,
-  "storyStatus": "MediaProcessing",
-  "jobStatus": "Processing",
-  "sceneCount": 5,
-  "readyIllustrations": 3,
-  "readyAudio": 5,
-  "isReady": false,
-  "errorCode": null
+  "storyVersionId": 310
 }</code></pre>
-        <p>Poll cho tới <code>isReady === true</code> và <code>storyStatus === "Ready"</code>. Khi đó frontend có thể điều hướng sang trang đọc dành cho trẻ.</p>
+
+        <p>Response trả về chi tiết các chỉ số:</p>
+        <pre><code>{
+  "success": true,
+  "data": {
+    "storyId": 128,
+    "storyVersionId": 310,
+    "decision": 1,
+    "decisionText": "Suitable",
+    "hardSafetyIssues": [],
+    "profileFitIssues": [],
+    "recommendedAgeBand": 8,
+    "readabilityFkgl": 3.8,
+    "readabilityFre": 82.5,
+    "safetyScore": 100.0,
+    "wordCount": 350,
+    "canKeepOriginal": true
+  }
+}</code></pre>
+
+        <h3>7.4 Xử lý các nhánh quyết định trên giao diện</h3>
+        <ul>
+          <li>
+            <strong>Nhánh Suitable:</strong>
+            Hiển thị thông báo truyện đạt chuẩn. Nút hành động chính là <strong>“Sử dụng bản gốc”</strong>. Khi bấm, gọi:
+            <pre><code>POST /api/v1/stories/{storyId}/existing/keep-original
+{
+  "storyId": 128,
+  "storyVersionId": 310,
+  "overrideReason": "Phụ huynh xác nhận nội dung nguyên bản phù hợp với trẻ."
+}</code></pre>
+            Sau đó chuyển ngay sang màn hình Polling tiến độ sinh học liệu.
+          </li>
+          <li>
+            <strong>Nhánh AdaptRecommended:</strong>
+            Hiển thị danh sách khuyến nghị trong <code>profileFitIssues</code>. Cung cấp 3 hành động:
+            <ol>
+              <li>
+                <strong>AI Tinh chỉnh (AI Adapt):</strong>
+                <pre><code>POST /api/v1/stories/{storyId}/existing/adapt
+{
+  "storyId": 128,
+  "baseStoryVersionId": 310,
+  "guideline": "Rút ngắn các câu dài, thay từ khó bằng từ ngữ thông dụng cho trẻ 6-8 tuổi."
+}</code></pre>
+                Backend tạo StoryVersion mới, tự động đánh giá lại. Nếu đạt <code>Suitable</code>, backend tự động queue sinh học liệu!
+              </li>
+              <li>
+                <strong>Tự chỉnh sửa tay (Manual Edit):</strong>
+                <pre><code>PUT /api/v1/stories/{storyId}/existing/content
+{
+  "storyId": 128,
+  "baseStoryVersionId": 310,
+  "title": "Chú bé chăn cừu (Bản rút gọn)",
+  "content": "Nội dung sau khi biên tập lại...",
+  "lesson": "Không nên nói dối làm mất lòng tin."
+}</code></pre>
+              </li>
+              <li>
+                <strong>Giữ nguyên:</strong> Chỉ hiển thị nếu <code>canKeepOriginal === true</code>, bắt buộc nhập <code>overrideReason</code>.
+              </li>
+            </ol>
+          </li>
+          <li>
+            <strong>Nhánh Blocked:</strong>
+            Hiển thị danh sách vi phạm nghiêm trọng trong <code>hardSafetyIssues</code>. Khóa toàn bộ các nút tiếp tục. Chỉ cung cấp duy nhất nút <strong>“Lưu trữ câu chuyện”</strong>:
+            <pre><code>POST /api/v1/stories/{storyId}/existing/archive
+{
+  "storyId": 128,
+  "reason": "Vi phạm chính sách nội dung an toàn."
+}</code></pre>
+          </li>
+        </ul>
+      </section>
+
+      <section id="review-flow">
+        <h2>8. Hội tụ — Review, Edit &amp; Phê duyệt</h2>
+        <p>Sau khi nội dung được chấp thuận (ở cả Luồng A và B), backend tiến hành sinh bộ học liệu (Vocabulary → Quiz → Discussion). Frontend theo dõi tiến độ qua endpoint:</p>
+        <pre><code>GET /api/v1/stories/{storyId}/generation/progress</code></pre>
+        <p>Khi <code>isComplete === true</code>, story chuyển sang trạng thái <code>ContentReview</code>. Frontend hiển thị màn hình Review Package.</p>
+
+        <h3>8.1 Lấy toàn bộ gói Review</h3>
+        <pre><code>GET /api/v1/stories/{storyId}/review</code></pre>
+
+        <h3>8.2 Chỉnh sửa từng phần học liệu</h3>
+        <p>Người dùng có thể trực tiếp sửa câu hỏi, từ vựng hoặc nội dung truyện trước khi duyệt:</p>
+        <pre><code>// 1. Cập nhật nội dung truyện
+PUT /api/v1/stories/{storyId}/review/story
+{ "versionId": 310, "title": "...", "content": "...", "lesson": "..." }
+
+// 2. Cập nhật từ vựng
+PUT /api/v1/stories/{storyId}/review/vocabulary
+{ "versionId": 310, "items": [{ "term": "Can đảm", "definition": "Không sợ hãi trước khó khăn." }] }
+
+// 3. Cập nhật câu hỏi trắc nghiệm
+PUT /api/v1/stories/{storyId}/review/quiz
+{ "versionId": 310, "items": [{ "question": "Ai đã cứu bạn Sóc?", "correctAnswer": "Bé An", "choices": ["Bé An", "Bác Gấu"] }] }
+
+// 4. Cập nhật câu hỏi thảo luận
+PUT /api/v1/stories/{storyId}/review/discussion
+{ "versionId": 310, "items": [{ "question": "Em học được bài học gì qua câu chuyện?", "isMoralLesson": true }] }</code></pre>
+
+        <h3>8.3 Kiểm tra điều kiện (Validation) &amp; Phê duyệt (Approve)</h3>
+        <p>Trước khi cho phép bấm nút "Phê duyệt &amp; Tạo Media", frontend kiểm tra điều kiện:</p>
+        <pre><code>GET /api/v1/stories/{storyId}/review/validation</code></pre>
+        <p>Nếu <code>data.canApprove === true</code>, mở khóa nút <strong>Phê duyệt</strong>:</p>
+        <pre><code>POST /api/v1/stories/{storyId}/review/approve</code></pre>
+        <p>Ngay sau khi gọi approve thành công, story chuyển trạng thái sang <code>MediaProcessing</code>.</p>
+      </section>
+
+      <section id="media-flow">
+        <h2>9. Media Generation &amp; Trạng thái Ready</h2>
+        <p>Hệ thống tự động kích hoạt tiến trình nền sinh hình ảnh minh họa cho các cảnh và tổng hợp giọng đọc audio (TTS). Frontend thực hiện polling mỗi 3–5 giây:</p>
+        <pre><code>GET /api/v1/stories/{storyId}/media/progress</code></pre>
+        <p>Response mẫu khi đang xử lý:</p>
+        <pre><code>{
+  "success": true,
+  "data": {
+    "storyId": 128,
+    "approvedStoryVersionId": 310,
+    "storyStatus": "MediaProcessing",
+    "jobStatus": "Processing",
+    "sceneCount": 4,
+    "readyIllustrations": 3,
+    "readyAudio": 2,
+    "isReady": false,
+    "errorCode": null
+  }
+}</code></pre>
+        <p>Frontend hiển thị thanh tiến độ: <code>(readyIllustrations + readyAudio) / (sceneCount * 2) * 100%</code>. Khi <code>isReady === true</code> và <code>storyStatus === 'Ready'</code>, dừng polling và điều hướng trẻ sang <strong>Giao diện Đọc truyện &amp; Nghe audio</strong>.</p>
       </section>
 
       <section id="client">
-        <h2>8. API client mẫu</h2>
-        <div class="file-label">lib/api.ts</div>
-        <pre><code>const API_URL = import.meta.env.VITE_CORE_API_URL;
+        <h2>10. Mã nguồn API Client mẫu (TypeScript + Fetch)</h2>
+        <div class="file-label">services/api-client.ts</div>
+        <pre><code>const BASE_URL = import.meta.env.VITE_API_URL || 'https://localhost:7001';
 
 export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
     public errors: string[] = [],
-    public data: unknown | null = null,
-  ) { super(message); }
+    public data: any = null,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
 }
 
-export async function api&lt;T&gt;(
-  path: string,
-  init: RequestInit = {},
+// Lưu trữ token trong Memory hoặc LocalStorage/Secure Cookie
+let accessToken: string | null = localStorage.getItem('access_token');
+let refreshToken: string | null = localStorage.getItem('refresh_token');
+
+export function setTokens(access: string, refresh: string) {
+  accessToken = access;
+  refreshToken = refresh;
+  localStorage.setItem('access_token', access);
+  localStorage.setItem('refresh_token', refresh);
+}
+
+export function clearTokens() {
+  accessToken = null;
+  refreshToken = null;
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('refresh_token');
+}
+
+// Fetch wrapper có cơ chế tự động Refresh Token khi gặp lỗi 401
+export async function request&lt;T&gt;(
+  endpoint: string,
+  options: RequestInit = {},
+  isRetry = false
 ): Promise&lt;T&gt; {
-  const accessToken = authStore.getState().accessToken;
-  const response = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-      ...init.headers,
-    },
+  const isFormData = options.body instanceof FormData;
+  const headers: Record&lt;string, string&gt; = {
+    Accept: 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+    ...(options.headers as Record&lt;string, string&gt;),
+  };
+
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+
+  const response = await fetch(`${BASE_URL}${endpoint}`, {
+    ...options,
+    headers,
   });
 
-  const envelope = await response.json() as ApiResponse&lt;T&gt;;
-  if (!response.ok || !envelope.success || envelope.data === null) {
+  // Tự động xoay vòng Token nếu gặp 401 Unauthorized
+  if (response.status === 401 &amp;&amp; !isRetry &amp;&amp; refreshToken) {
+    try {
+      const refreshRes = await fetch(`${BASE_URL}/api/v1/auth/refresh-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+      const refreshEnvelope = await refreshRes.json();
+      if (refreshRes.ok &amp;&amp; refreshEnvelope.success) {
+        setTokens(refreshEnvelope.data.accessToken, refreshEnvelope.data.refreshToken);
+        return request&lt;T&gt;(endpoint, options, true); // Replay request
+      }
+    } catch {
+      clearTokens();
+      window.location.href = '/login';
+    }
+  }
+
+  const envelope = await response.json();
+  if (!response.ok || !envelope.success) {
     throw new ApiError(
       response.status,
-      envelope.message,
-      envelope.errors ?? [],
-      envelope.data,
+      envelope.message || 'Yêu cầu thất bại.',
+      envelope.errors || [],
+      envelope.data
     );
   }
-  return envelope.data;
+
+  return envelope.data as T;
 }</code></pre>
 
-        <div class="file-label">services/ai-story.ts</div>
-        <pre><code>export const aiStoryApi = {
-  getContext: (childProfileId: number) =&gt;
-    api&lt;AIStoryInputContext&gt;(
-      `/api/v1/ai-story-input/children/${childProfileId}/context`,
-    ),
+        <div class="file-label">services/existing-story-service.ts</div>
+        <pre><code>import { request } from './api-client';
+import type {
+  ImportStoryJsonRequest,
+  ImportStoryResult,
+  ExistingStoryEvaluation,
+  VersionMutationResult,
+  ContentGenerationProgress,
+} from '../types/story-api';
 
-  submit: (input: SubmitAIStoryInput) =&gt;
-    api&lt;AIStoryInputProgress&gt;('/api/v1/ai-story-input/requests', {
-      method: 'POST', body: JSON.stringify(input),
+export const existingStoryApi = {
+  // 1. Upload File (.txt hoặc .docx) qua FormData
+  importFile: (file: File, childProfileId: number, title?: string) =&gt; {
+    const formData = new FormData();
+    formData.append('File', file);
+    formData.append('ChildProfileId', childProfileId.toString());
+    formData.append('Language', 'vi');
+    if (title) formData.append('Title', title);
+    formData.append('IdempotencyKey', `file-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
+
+    return request&lt;ImportStoryResult&gt;('/api/v1/stories/import-file', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  // 2. Nhập text paste qua JSON
+  importJson: (payload: ImportStoryJsonRequest) =&gt;
+    request&lt;ImportStoryResult&gt;('/api/v1/stories/import', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     }),
 
-  inputProgress: (storyId: number, requestId: number) =&gt;
-    api&lt;AIStoryInputProgress&gt;(
-      `/api/v1/ai-story-input/stories/${storyId}/requests/${requestId}`,
-    ),
-
-  outline: (storyId: number) =&gt;
-    api&lt;OutlineProgress&gt;(`/api/v1/stories/${storyId}/outline`),
-
-  approveOutline: (storyId: number, versionNo: number, approvalKey: string) =&gt;
-    api&lt;OutlineProgress&gt;(
-      `/api/v1/stories/${storyId}/outline/versions/${versionNo}/approve`,
-      { method: 'POST', body: JSON.stringify({ approvalKey }) },
-    ),
-};
-
-// Với HTTP 409/422/503 từ AI Input, ApiError.data vẫn chứa
-// AIStoryInputProgress để UI đọc reasonCode, fallbackMessage và canRetry.</code></pre>
-
-        <div class="file-label">services/existing-story.ts</div>
-        <pre><code>export const existingStoryApi = {
-  import: (input: ImportStoryRequest) =&gt;
-    api&lt;ImportStoryResult&gt;('/api/v1/stories/import', {
-      method: 'POST', body: JSON.stringify(input),
-    }),
-
+  // 3. Đánh giá truyện
   evaluate: (storyId: number, storyVersionId: number) =&gt;
-    api&lt;ExistingStoryEvaluation&gt;(
-      `/api/v1/stories/${storyId}/existing/evaluate`,
-      { method: 'POST', body: JSON.stringify({ storyVersionId }) },
-    ),
+    request&lt;ExistingStoryEvaluation&gt;(`/api/v1/stories/${storyId}/existing/evaluate`, {
+      method: 'POST',
+      body: JSON.stringify({ storyVersionId }),
+    }),
 
+  // 4. Giữ nguyên bản gốc
   keepOriginal: (storyId: number, storyVersionId: number, reason: string) =&gt;
-    api&lt;VersionMutationResult&gt;(
-      `/api/v1/stories/${storyId}/existing/keep-original`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ storyId, storyVersionId, overrideReason: reason }),
-      },
-    ),
+    request&lt;VersionMutationResult&gt;(`/api/v1/stories/${storyId}/existing/keep-original`, {
+      method: 'POST',
+      body: JSON.stringify({ storyId, storyVersionId, overrideReason: reason }),
+    }),
 
-  progress: (storyId: number) =&gt;
-    api&lt;GenerationProgress&gt;(`/api/v1/stories/${storyId}/generation/progress`),
+  // 5. Yêu cầu AI tinh chỉnh (Adapt)
+  adapt: (storyId: number, baseStoryVersionId: number, guideline?: string) =&gt;
+    request&lt;VersionMutationResult&gt;(`/api/v1/stories/${storyId}/existing/adapt`, {
+      method: 'POST',
+      body: JSON.stringify({ storyId, baseStoryVersionId, guideline }),
+    }),
+
+  // 6. Theo dõi tiến độ sinh học liệu
+  getProgress: (storyId: number) =&gt;
+    request&lt;ContentGenerationProgress&gt;(`/api/v1/stories/${storyId}/generation/progress`),
 };</code></pre>
       </section>
 
-      <section id="state-machine">
-        <h2>9. State machine phía Frontend</h2>
-        <pre><code>type ExistingStoryUiState =
-  | { step: 'editing-import' }
-  | { step: 'evaluating'; storyId: number; versionId: number }
-  | { step: 'decision'; result: ExistingStoryEvaluation }
-  | { step: 'mutating'; action: 'adapt' | 'manual' | 'keep' | 'archive' }
-  | { step: 'generating'; storyId: number }
-  | { step: 'review'; storyId: number }
-  | { step: 'media'; storyId: number }
-  | { step: 'ready'; storyId: number }
-  | { step: 'failed'; message: string; retryable: boolean };
+      <section id="realtime">
+        <h2>11. SignalR Realtime Hub (Thông báo thời gian thực)</h2>
+        <p>Hệ thống cung cấp SignalR Hub tại địa chỉ <code>/hubs/notifications</code> để thông báo trạng thái nền (như khi truyện đã hoàn tất Media, hoặc kiểm tra an toàn xong):</p>
+        <div class="file-label">services/signalr.ts</div>
+        <pre><code>import * as signalR from '@microsoft/signalr';
 
-type AIStoryUiState =
-  | { step: 'creative-input' }
-  | { step: 'checking-input'; storyId: number; requestId: number }
-  | { step: 'outline'; storyId: number; versionNo?: number }
-  | { step: 'generating'; storyId: number }
-  | { step: 'review'; storyId: number }
-  | { step: 'media'; storyId: number }
-  | { step: 'ready'; storyId: number }
-  | { step: 'failed'; message: string; retryable: boolean };
+let connection: signalR.HubConnection | null = null;
 
-function nextAfterEvaluation(result: ExistingStoryEvaluation) {
-  switch (result.decisionText) {
-    case 'Suitable':
-      return { showKeepOriginal: true, showEdit: false, showArchive: true };
-    case 'AdaptRecommended':
-      return {
-        showKeepOriginal: result.canKeepOriginal,
-        showEdit: true,
-        showArchive: true,
-      };
-    case 'Blocked':
-      return { showKeepOriginal: false, showEdit: false, showArchive: true };
+export function initNotificationHub(onNotificationReceived: (notification: any) =&gt; void) {
+  const token = localStorage.getItem('access_token');
+  if (!token) return;
+
+  connection = new signalR.HubConnectionBuilder()
+    .withUrl(`${import.meta.env.VITE_API_URL || 'https://localhost:7001'}/hubs/notifications`, {
+      accessTokenFactory: () => localStorage.getItem('access_token') || '',
+    })
+    .withAutomaticReconnect()
+    .build();
+
+  connection.on('ReceiveNotification', (notification) =&gt; {
+    console.log('Realtime notification received:', notification);
+    onNotificationReceived(notification);
+  });
+
+  connection.start().catch((err) =&gt; console.error('SignalR Connection Error: ', err));
+}
+
+export function stopNotificationHub() {
+  if (connection) {
+    connection.stop();
   }
 }</code></pre>
-        <p>Không suy ra trạng thái chỉ từ URL hay local state. Sau refresh trang, khôi phục bằng IDs đã lưu và gọi GET evaluation/progress/review tương ứng.</p>
+      </section>
+
+      <section id="state-machine">
+        <h2>12. State Machine phía Frontend</h2>
+        <pre><code>// State định tuyến màn hình cho Luồng B
+export type ExistingStoryScreenState =
+  | { step: 'select_source' }
+  | { step: 'uploading' }
+  | { step: 'evaluating'; storyId: number; storyVersionId: number }
+  | { step: 'decision_suitable'; evaluation: ExistingStoryEvaluation }
+  | { step: 'decision_adapt'; evaluation: ExistingStoryEvaluation }
+  | { step: 'decision_blocked'; evaluation: ExistingStoryEvaluation }
+  | { step: 'adapting_in_progress'; storyId: number }
+  | { step: 'generation_progress'; storyId: number }
+  | { step: 'review_package'; storyId: number }
+  | { step: 'media_progress'; storyId: number }
+  | { step: 'story_ready'; storyId: number }
+  | { step: 'error'; message: string; canRetry: boolean };</code></pre>
+        <p>Ghi nhớ: Khi người dùng F5 tải lại trang, đọc <code>storyId</code> từ URL params (ví dụ: <code>/stories/:storyId/progress</code>) và gọi API tương ứng để khôi phục chính xác trạng thái từ Backend.</p>
       </section>
 
       <section id="errors">
-        <h2>10. Xử lý lỗi và concurrency</h2>
+        <h2>13. Xử lý lỗi &amp; Concurrency</h2>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>HTTP</th><th>Ý nghĩa thường gặp</th><th>Hành vi frontend</th></tr></thead>
+            <thead><tr><th>Mã HTTP</th><th>Tình huống Backend</th><th>Cách Frontend xử lý</th></tr></thead>
             <tbody>
-              <tr><td>400</td><td>Body thiếu/sai, content rỗng, version không thuộc story.</td><td>Hiển thị message cạnh form; không retry tự động.</td></tr>
-              <tr><td>401</td><td>Access token thiếu hoặc hết hạn.</td><td>Refresh token một lần, replay request một lần; thất bại thì logout.</td></tr>
-              <tr><td>403</td><td>Sai role hoặc thiếu quyền trên child.</td><td>Ẩn action và hiển thị thông báo quyền truy cập.</td></tr>
-              <tr><td>404</td><td>Story/version/child không tồn tại; hoặc backend chưa deploy Luồng 2.</td><td>Phân biệt endpoint 404 với entity 404; về danh sách nếu entity mất.</td></tr>
-              <tr><td>409</td><td><code>STALE_BASE_VERSION</code>, trạng thái story không hợp lệ, request chưa accepted.</td><td>Tải lại version/progress; không gửi lại mutation mù quáng.</td></tr>
-              <tr><td>500</td><td>Lỗi nội bộ hoặc AI/provider.</td><td>Thông báo chung, ghi correlation info nếu có, cho retry có kiểm soát.</td></tr>
+              <tr><td><code>400 Bad Request</code></td><td>Dữ liệu thiếu, file quá 5MB, format sai (không phải .txt/.docx), hoặc trẻ chưa có Profile hợp lệ.</td><td>Hiển thị danh sách <code>errors</code> trực tiếp trên form, không retry tự động.</td></tr>
+              <tr><td><code>401 Unauthorized</code></td><td>Token hết hạn hoặc token không hợp lệ.</td><td>Chạy quy trình Refresh Token. Nếu refresh thất bại, xóa token và chuyển hướng về trang Đăng nhập.</td></tr>
+              <tr><td><code>403 Forbidden</code></td><td>Tài khoản không phải role Parent/Teacher hoặc không có quyền trên hồ sơ trẻ đã chọn.</td><td>Hiển thị modal thông báo quyền truy cập, chuyển về trang chủ hồ sơ.</td></tr>
+              <tr><td><code>404 Not Found</code></td><td>StoryId, VersionId không tồn tại.</td><td>Thông báo bản ghi không tìm thấy, đưa người dùng về danh sách truyện.</td></tr>
+              <tr><td><code>409 Conflict</code></td><td>Mã lỗi <code>STALE_BASE_VERSION</code> do có người khác chỉnh sửa phiên bản trước đó.</td><td>Tải lại phiên bản mới nhất từ backend và yêu cầu người dùng so sánh trước khi lưu lại.</td></tr>
+              <tr><td><code>422 Unprocessable</code></td><td>Nội dung bị chặn bởi Safety Policy (ví dụ: <code>RESTRICTED_CONTENT</code>).</td><td>Hiển thị <code>fallbackMessage</code> từ backend để người dùng hiểu lý do vi phạm.</td></tr>
+              <tr><td><code>503 Unavailable</code></td><td>Dịch vụ AI hoặc TTS tạm thời gián đoạn.</td><td>Chỉ hiển thị nút “Thử lại” nếu trường <code>canRetry === true</code>.</td></tr>
             </tbody>
           </table>
         </div>
-        <ul>
-          <li>Disable nút submit trong lúc request đang chạy.</li>
-          <li>Dùng AbortController để hủy evaluate/adapt khi rời trang.</li>
-          <li>Không tự retry mutation POST/PUT nếu không có idempotency key.</li>
-          <li>Khi sửa/adapt thành công, thay version cũ bằng <code>storyVersionId</code> mới từ response.</li>
-          <li>Không dùng endpoint publish chung cho Existing Story; phải đi qua Review → Approve → Media → Ready.</li>
-        </ul>
       </section>
 
       <section id="checklist">
-        <h2>11. Checklist nghiệm thu Frontend</h2>
+        <h2>14. Checklist nghiệm thu kết nối Frontend</h2>
         <ul class="checklist">
-          <li>JWT được gửi cho mọi endpoint AI Input, Outline, Existing Story, Generation, Review và Media.</li>
-          <li>Form AI lấy option và giới hạn từ Context API trước khi submit.</li>
-          <li>AI input xử lý đúng các HTTP 202, 409, 422 và 503.</li>
-          <li>Outline edit/regenerate luôn dùng version hiện tại và operation key mới.</li>
-          <li>Chỉ queue GenerateContent sau khi người dùng approve outline.</li>
-          <li>Import retry dùng lại cùng <code>idempotencyKey</code>.</li>
-          <li>Frontend lưu cả <code>storyId</code> và version ID hiện tại.</li>
-          <li>UI rẽ nhánh bằng <code>decisionText</code> và tôn trọng <code>canKeepOriginal</code>.</li>
-          <li>Suitable gọi <code>keep-original</code> trước khi bắt đầu polling.</li>
-          <li>Blocked không thể gọi keep/adapt/manual edit từ UI.</li>
-          <li>Polling dừng khi complete/error và được hủy lúc unmount.</li>
-          <li>Review luôn dùng <code>versionId</code> mới nhất.</li>
-          <li>Approve chỉ bật khi validation trả <code>canApprove: true</code>.</li>
-          <li>Chỉ mở trang đọc khi media trả <code>isReady: true</code>.</li>
-          <li>Đã test 400, 401, 403, 404, 409, 500 và double-click submit.</li>
-          <li>Đã test reload trình duyệt ở màn hình decision, generation, review và media.</li>
+          <li>Đã cấu hình đúng <code>VITE_API_URL</code> trong môi trường Frontend.</li>
+          <li>Mọi request bảo vệ đều gửi đúng Header <code>Authorization: Bearer &lt;token&gt;</code>.</li>
+          <li>Fetch interceptor tự động refresh token khi gặp 401 mà không làm mất trạng thái form.</li>
+          <li>Upload file <code>.txt</code> và <code>.docx</code> hoạt động mượt mà qua endpoint <code>/import-file</code> không tự set header Content-Type.</li>
+          <li>Paste text hoạt động chuẩn xác qua <code>/import</code> với <code>inputMethod: 'paste'</code>.</li>
+          <li>Đã kiểm tra xử lý cả 3 nhánh đánh giá: <code>Suitable</code>, <code>AdaptRecommended</code> và <code>Blocked</code>.</li>
+          <li>Nhánh <code>Suitable</code> gọi thành công <code>POST /existing/keep-original</code> trước khi vào polling học liệu.</li>
+          <li>Nhánh <code>Blocked</code> khóa toàn bộ nút giữ nguyên/sửa, chỉ hiển thị lý do và nút Lưu trữ.</li>
+          <li>Màn hình Review Package tải đủ 4 thành phần: Story, Vocabulary, Quiz và Discussion.</li>
+          <li>Nút Phê duyệt chỉ kích hoạt sau khi gọi <code>GET /review/validation</code> trả về <code>canApprove: true</code>.</li>
+          <li>Polling Media dừng chuẩn xác khi <code>isReady === true</code> và mở giao diện đọc truyện cho trẻ.</li>
         </ul>
       </section>
 
       <footer>
-        Nguồn hợp đồng: AI Story workflow trên <code>main</code>, Existing Story API tại commit <code>436da8b</code>, kết hợp Content Generation, Story Review và Media Generation API. Tài liệu này không chứa secret; cấu hình frontend chỉ nên nhận base URL qua biến môi trường công khai.
+        Tài liệu tích hợp Frontend Backend Story Platform · Phiên bản 2.0 (Cập nhật 23/09/2026) · Tương thích hoàn toàn với hệ thống Controller hiện hành trên nhánh backend.
       </footer>
     </main>
   </div>

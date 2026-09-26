@@ -38,6 +38,7 @@ public sealed class ContentGenerationServiceTests
         var story = store.Items<Story>().Single();
         var stable = store.Items<StoryVersion>().Single(item => item.Content is not null);
         Assert.Equal(StoryStatus.ContentReview, story.Status);
+        Assert.Equal("Một câu chuyện về tình bạn và sự sẻ chia.", story.Description);
         Assert.True(stable.IsCurrent);
         Assert.NotNull(stable.ReadabilityFkgl);
         Assert.NotNull(stable.ReadabilityFre);
@@ -372,7 +373,7 @@ public sealed class ContentGenerationServiceTests
                 RequestId = request.RequestId,
                 Story = new StoryContentDto
                 {
-                    Title = "Tình bạn", Lesson = "Biết chia sẻ",
+                    Title = "Tình bạn", Description = "Một câu chuyện về tình bạn và sự sẻ chia.", Lesson = "Biết chia sẻ",
                     StorySections = [new StorySectionDto(1, "Câu chuyện", "Lan và Minh cùng chia sẻ một quyển sách.")]
                 }
             });

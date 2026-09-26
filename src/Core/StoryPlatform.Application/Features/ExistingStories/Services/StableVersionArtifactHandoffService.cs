@@ -163,7 +163,7 @@ public sealed class StableVersionArtifactHandoffService : IStableVersionArtifact
             return existing.Id;
         }
 
-        // 2. Nếu Story đã có request accepted, dùng lại. Pending/Checking chưa an toàn để handoff.
+        // 2. Nếu Story đã có request accepted, dùng lại và đảm bảo ContextSnapshotJson đầy đủ consent.
         var activeRequest = (await _unitOfWork.Repository<StoryGenerationRequest>()
                 .FindAsync(req => req.StoryId == story.Id
                                   && req.Status == GenerationInputStatus.InputAccepted,
@@ -171,7 +171,12 @@ public sealed class StableVersionArtifactHandoffService : IStableVersionArtifact
             .OrderByDescending(req => req.Id)
             .FirstOrDefault();
         if (activeRequest is not null)
+        {
+            var (_, freshContext) = await BuildExistingStorySnapshotsAsync(story, version, cancellationToken);
+            activeRequest.ContextSnapshotJson = JsonSerializer.Serialize(freshContext, JsonOptions);
+            _unitOfWork.Repository<StoryGenerationRequest>().Update(activeRequest);
             return activeRequest.Id;
+        }
 
         // 3. Tạo request "ảo" cho Existing Story.
         var (input, context) = await BuildExistingStorySnapshotsAsync(story, version, cancellationToken);

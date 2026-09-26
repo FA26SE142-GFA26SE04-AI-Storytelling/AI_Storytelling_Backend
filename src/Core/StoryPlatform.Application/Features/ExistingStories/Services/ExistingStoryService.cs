@@ -455,6 +455,7 @@ public sealed class ExistingStoryService : IExistingStoryService
                 Story = new StoryPlatform.Contracts.AI.Models.StoryContentDto
                 {
                     Title = baseVersion.Title,
+                    Description = story.Description,
                     Lesson = baseVersion.Lesson ?? string.Empty,
                     StorySections = [new StoryPlatform.Contracts.AI.Models.StorySectionDto(1, string.Empty, baseVersion.Content!)]
                 },
@@ -491,6 +492,7 @@ public sealed class ExistingStoryService : IExistingStoryService
             story.Title = created.Title;
             story.Content = created.Content;
             story.MoralLesson = created.Lesson;
+            story.Description = NormalizeDescription(refined.Story.Description, created.Content);
             _unitOfWork.Repository<Story>().Update(story);
 
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
@@ -523,6 +525,15 @@ public sealed class ExistingStoryService : IExistingStoryService
         if (story.StorySections.Count == 0) return string.Empty;
         return string.Join("\n\n", story.StorySections.OrderBy(s => s.Order).Select(s =>
             string.IsNullOrWhiteSpace(s.Heading) ? s.Content.Trim() : $"{s.Heading.Trim()}\n{s.Content.Trim()}"));
+    }
+
+    private static string NormalizeDescription(string? description, string content)
+    {
+        var source = string.IsNullOrWhiteSpace(description) ? content : description;
+        var normalized = string.Join(' ', source.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (normalized.Length <= 300) return normalized;
+        var cut = normalized.LastIndexOf(' ', 299);
+        return normalized[..(cut >= 120 ? cut : 299)].TrimEnd() + "…";
     }
 
     #endregion

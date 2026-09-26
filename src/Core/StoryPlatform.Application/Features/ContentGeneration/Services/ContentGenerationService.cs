@@ -274,10 +274,11 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
         else
         {
             storyContent = ToContent(persistedCandidate);
-            metadata = string.IsNullOrWhiteSpace(handoff.Job.GenerationMetadataJson)
-                ? new GenerationMetadataDto()
-                : JsonSerializer.Deserialize<CandidateMetadataEnvelope>(handoff.Job.GenerationMetadataJson, JsonOptions)?.Generation
-                  ?? new GenerationMetadataDto();
+            var candidateEnvelope = string.IsNullOrWhiteSpace(handoff.Job.GenerationMetadataJson)
+                ? null
+                : JsonSerializer.Deserialize<CandidateMetadataEnvelope>(handoff.Job.GenerationMetadataJson, JsonOptions);
+            storyContent = storyContent with { Description = candidateEnvelope?.Description };
+            metadata = candidateEnvelope?.Generation ?? new GenerationMetadataDto();
             refinement = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
                     item => item.StoryId == handoff.Job.StoryId && item.Content != null && item.EditType == VersionEditType.AiRefined,
                     cancellationToken: cancellationToken)).Count;
@@ -328,7 +329,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             persistedCandidate = null;
             if (quality.IsPassed)
             {
-                await PromoteStableContentAsync(handoff, candidate, claimedToken, cancellationToken);
+                await PromoteStableContentAsync(handoff, candidate, storyContent, claimedToken, cancellationToken);
                 return;
             }
 
@@ -545,7 +546,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
                 job.StoryVersionId = candidate.Id;
                 job.StoryVersion = candidate;
                 job.GenerationMetadataJson = JsonSerializer.Serialize(
-                    new { generation = metadata, quality, refinementAttempts }, JsonOptions);
+                    new { generation = metadata, quality, refinementAttempts, description = content.Description }, JsonOptions);
                 _unitOfWork.Repository<StoryGenerationJob>().Update(job);
             }
             return candidate;
@@ -553,7 +554,11 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
     }
 
     private async Task PromoteStableContentAsync(
-        ContentHandoff handoff, StoryVersion candidate, string claimedToken, CancellationToken cancellationToken)
+        ContentHandoff handoff,
+        StoryVersion candidate,
+        StoryContentDto content,
+        string claimedToken,
+        CancellationToken cancellationToken)
     {
         int requestedByUserId = 0;
         int? generationRequestId = null;
@@ -576,6 +581,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             story.Title = stable.Title;
             story.Content = stable.Content;
             story.MoralLesson = stable.Lesson;
+            story.Description = NormalizeDescription(content.Description, stable.Content);
             _unitOfWork.Repository<Story>().Update(story);
             job.StoryVersionId = stable.Id;
             job.Status = GenerationJobStatus.Completed;
@@ -737,10 +743,19 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
     {
         Title = version.Title,
         StorySections = [new StorySectionDto(1, string.Empty, version.Content ?? string.Empty)],
-        Lesson = version.Lesson ?? string.Empty
+        Lesson = !string.IsNullOrWhiteSpace(version.Lesson) ? version.Lesson : (!string.IsNullOrWhiteSpace(version.Title) ? version.Title : "Bài học từ câu chuyện")
     };
     private static string Flatten(StoryContentDto story) => string.Join("\n\n", story.StorySections.OrderBy(item => item.Order)
         .Select(item => string.IsNullOrWhiteSpace(item.Heading) ? item.Content.Trim() : $"{item.Heading.Trim()}\n{item.Content.Trim()}"));
+    private static string NormalizeDescription(string? description, string? content)
+    {
+        var source = string.IsNullOrWhiteSpace(description) ? content : description;
+        if (string.IsNullOrWhiteSpace(source)) return string.Empty;
+        var normalized = string.Join(' ', source.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (normalized.Length <= 300) return normalized;
+        var cut = normalized.LastIndexOf(' ', 299);
+        return normalized[..(cut >= 120 ? cut : 299)].TrimEnd() + "…";
+    }
     private static IReadOnlyList<string> PolicyTerms(IReadOnlyList<string>? terms, IReadOnlyList<string> fallback) =>
         terms is { Count: > 0 } ? terms : fallback;
     private static bool ContainsTerm(string content, string term) => content.Contains(term.Trim(), StringComparison.OrdinalIgnoreCase);
@@ -904,7 +919,8 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
     private sealed record CandidateMetadataEnvelope(
         GenerationMetadataDto? Generation,
         ContentQualityResult? Quality,
-        int RefinementAttempts = 0);
+        int RefinementAttempts = 0,
+        string? Description = null);
     private sealed record ArtifactState(StoryGenerationJob Job, StoryVersion Version, AIStoryInputContextSnapshot Context);
     private sealed record QuizItemSeed(QuizType Type, string Question, string CorrectAnswer, string Choices)
     {

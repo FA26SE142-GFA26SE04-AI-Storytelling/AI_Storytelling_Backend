@@ -64,7 +64,22 @@ public sealed class GenerateStoryContentHandler
         var story = JsonSerializer.Deserialize<StoryContentDto>(json, JsonDefaults.Options)
                     ?? throw new JsonException("The LLM returned an empty story payload.");
         ValidateStory(story);
-        return story;
+        return EnsureDescription(story);
+    }
+
+    internal static StoryContentDto EnsureDescription(StoryContentDto story)
+    {
+        var source = string.IsNullOrWhiteSpace(story.Description)
+            ? story.StorySections.OrderBy(item => item.Order).First().Content
+            : story.Description;
+        var normalized = string.Join(' ', source.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (normalized.Length > 300)
+        {
+            var cut = normalized.LastIndexOf(' ', 299);
+            normalized = normalized[..(cut >= 120 ? cut : 299)].TrimEnd() + "…";
+        }
+
+        return story with { Description = normalized };
     }
 }
 
@@ -85,7 +100,7 @@ public sealed class RefineStoryContentHandler
         {
             throw new ArgumentException("A request id and refinement reasons are required.", nameof(request));
         }
-        GenerateStoryContentHandler.ValidateStory(request.Story);
+        ValidateRefinementInput(request.Story);
         var template = _prompts.GetActive(PromptType.StoryContentRefinement, request.Language, request.AgeBand);
         var generated = await _executor.ExecuteAsync(
             PromptComposer.Compose(template, request), "refined_story_content", GenerationSchemas.StoryContent,
@@ -100,12 +115,25 @@ public sealed class RefineStoryContentHandler
         };
     }
 
+    private static void ValidateRefinementInput(StoryContentDto story)
+    {
+        if (string.IsNullOrWhiteSpace(story.Title) ||
+            story.StorySections.Count == 0 ||
+            story.StorySections.Any(item => item.Order <= 0 || string.IsNullOrWhiteSpace(item.Content)) ||
+            story.StorySections.Select(item => item.Order).Distinct().Count() != story.StorySections.Count)
+        {
+            throw new ArgumentException(
+                "The story to refine requires a title and valid story sections.",
+                nameof(story));
+        }
+    }
+
     private static StoryContentDto DeserializeRefinedStory(string json)
     {
         var story = JsonSerializer.Deserialize<StoryContentDto>(json, JsonDefaults.Options)
                     ?? throw new JsonException("The LLM returned an empty refined story payload.");
         GenerateStoryContentHandler.ValidateStory(story);
-        return story;
+        return GenerateStoryContentHandler.EnsureDescription(story);
     }
 }
 
@@ -129,7 +157,12 @@ public sealed class GenerateVocabularyHandler
     internal static void ValidateArtifactRequest(string requestId, StoryContentDto story)
     {
         if (string.IsNullOrWhiteSpace(requestId)) throw new ArgumentException("requestId is required.", nameof(requestId));
-        GenerateStoryContentHandler.ValidateStory(story);
+        if (string.IsNullOrWhiteSpace(story.Title) ||
+            story.StorySections.Count == 0 || story.StorySections.Any(item => item.Order <= 0 || string.IsNullOrWhiteSpace(item.Content)) ||
+            story.StorySections.Select(item => item.Order).Distinct().Count() != story.StorySections.Count)
+        {
+            throw new JsonException("Story content is incomplete.");
+        }
     }
 }
 

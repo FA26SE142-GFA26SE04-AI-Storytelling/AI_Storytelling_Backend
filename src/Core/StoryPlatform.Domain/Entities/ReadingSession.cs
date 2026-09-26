@@ -23,6 +23,8 @@ public class ReadingSession : BaseEntity
     public int? StoryVersionId { get; set; }
     public virtual StoryVersion? StoryVersion { get; set; }
 
+    // Đúng 1 trong 2 cột ChildAccessCredentialId / SupervisorSessionId có giá trị
+    // (CHECK CK_reading_sessions_exactly_one_entry_source) — Luồng 3, Bước 3.0.
     public int? ChildAccessCredentialId { get; set; }
     public virtual ChildAccessCredential? ChildAccessCredential { get; set; }
 

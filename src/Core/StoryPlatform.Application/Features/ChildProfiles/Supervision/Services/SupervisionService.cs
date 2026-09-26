@@ -777,6 +777,32 @@ public class SupervisionService : ISupervisionService
         return MapPermissionRequest(permissionRequest);
     }
 
+    public async Task<PermissionRequestDto> CancelPermissionRequestAsync(
+        int permissionRequestId, int requesterUserId, CancellationToken cancellationToken = default)
+    {
+        var permissionRequest = await LoadPermissionRequestOrThrowAsync(
+            permissionRequestId, cancellationToken);
+
+        // BR-1.14 — chỉ Additional Supervisor đã tạo yêu cầu mới được tự huỷ.
+        if (permissionRequest.RequesterUserId != requesterUserId)
+        {
+            throw new ForbiddenException("Bạn chỉ có thể huỷ yêu cầu xin quyền do chính mình tạo.");
+        }
+
+        if (permissionRequest.Status != PermissionRequestStatus.Pending)
+        {
+            throw new BadRequestException("Chỉ có thể huỷ yêu cầu xin quyền đang chờ xử lý.");
+        }
+
+        permissionRequest.Status = PermissionRequestStatus.Cancelled;
+        permissionRequest.RespondedAt = DateTime.UtcNow;
+        permissionRequest.RespondedByUserId = requesterUserId;
+        _unitOfWork.Repository<SupervisionPermissionRequest>().Update(permissionRequest);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return MapPermissionRequest(permissionRequest);
+    }
+
     public async Task<List<PermissionRequestDto>> ListPermissionRequestsAsync(
         int supervisionRelationshipId, int currentUserId,
         CancellationToken cancellationToken = default)

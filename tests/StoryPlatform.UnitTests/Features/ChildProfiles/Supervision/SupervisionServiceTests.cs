@@ -583,6 +583,89 @@ public class SupervisionServiceTests
     }
 
     [Fact]
+    public async Task CancelPermissionRequestAsync_ByRequesterWhilePending_SetsCancelled()
+    {
+        var request = PendingPermissionRequest();
+        SetupPermissionRequest(request);
+
+        var before = DateTime.UtcNow;
+        var result = await _sut.CancelPermissionRequestAsync(30, 5);
+
+        Assert.Equal("Cancelled", result.Status);
+        Assert.Equal(PermissionRequestStatus.Cancelled, request.Status);
+        Assert.Equal(5, request.RespondedByUserId);
+        Assert.True(request.RespondedAt >= before);
+        _permissionRequestRepo.Verify(r => r.Update(request), Times.Once);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _permissionRepo.Verify(r => r.AddAsync(
+            It.IsAny<SupervisionPermission>(), It.IsAny<CancellationToken>()), Times.Never);
+        _notificationService.Verify(n => n.CreateAsync(
+            It.IsAny<int>(), It.IsAny<NotificationType>(), It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(2)] // Owner
+    [InlineData(9)] // người không liên quan
+    public async Task CancelPermissionRequestAsync_NotRequester_ThrowsForbidden(int currentUserId)
+    {
+        var request = PendingPermissionRequest();
+        SetupPermissionRequest(request);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.CancelPermissionRequestAsync(30, currentUserId));
+
+        Assert.Equal(PermissionRequestStatus.Pending, request.Status);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(PermissionRequestStatus.Accepted)]
+    [InlineData(PermissionRequestStatus.Rejected)]
+    [InlineData(PermissionRequestStatus.Cancelled)]
+    public async Task CancelPermissionRequestAsync_NotPending_ThrowsBadRequest(PermissionRequestStatus status)
+    {
+        var request = PendingPermissionRequest();
+        request.Status = status;
+        SetupPermissionRequest(request);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.CancelPermissionRequestAsync(30, 5));
+
+        Assert.Equal(status, request.Status);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CancelPermissionRequestAsync_NotFound_ThrowsNotFound()
+    {
+        _permissionRequestRepo.Setup(r => r.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<SupervisionPermissionRequest, bool>>>(), "Items",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SupervisionPermissionRequest?)null);
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            _sut.CancelPermissionRequestAsync(30, 5));
+    }
+
+    [Fact]
+    public async Task AcceptPermissionRequestAsync_Cancelled_ThrowsBadRequest()
+    {
+        var request = PendingPermissionRequest();
+        request.Status = PermissionRequestStatus.Cancelled;
+        SetupPermissionRequest(request);
+        _relationshipRepo.Setup(r => r.GetByIdAsync(20, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AdditionalSupervisor());
+        AllowOwner();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.AcceptPermissionRequestAsync(30, 2));
+
+        _permissionRepo.Verify(r => r.AddAsync(
+            It.IsAny<SupervisionPermission>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task ListPermissionRequestsAsync_Valid_ReturnsRequestsForRelationship()
     {
         _relationshipRepo.Setup(r => r.GetByIdAsync(20, It.IsAny<CancellationToken>()))

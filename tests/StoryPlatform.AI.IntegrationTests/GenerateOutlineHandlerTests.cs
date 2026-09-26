@@ -66,6 +66,100 @@ public sealed class GenerateOutlineHandlerTests
         Assert.Equal(1, llmClient.CallCount);
     }
 
+    [Fact]
+    public async Task Handle_UsesPinnedTemplateAndDoesNotLeakOtherTemplatesIntoPrompt()
+    {
+        var llmClient = new StubLlmClient();
+        var request = ValidRequest() with { Snapshot = Snapshot(new Dictionary<string, string>
+        {
+            ["Outline"] = "Pinned outline instructions. Context: {{context}}",
+            ["Quiz"] = "Unrelated private quiz template {{context}}"
+        }) };
+
+        var result = await CreateHandler(llmClient).HandleAsync(request);
+
+        Assert.Equal("catalog-v1", result.Metadata.PromptVersion);
+        Assert.Contains("Pinned outline instructions", llmClient.LastPrompt);
+        Assert.Contains("sharing", llmClient.LastPrompt);
+        Assert.DoesNotContain("Unrelated private quiz template", llmClient.LastPrompt);
+        Assert.DoesNotContain("\"snapshot\"", llmClient.LastPrompt, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Snapshot_SurvivesCoreToAiJsonRoundTrip()
+    {
+        var request = ValidRequest() with { Snapshot = Snapshot(new Dictionary<string, string>
+        {
+            ["Outline"] = "Pinned after transport {{context}}"
+        }) };
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var restored = JsonSerializer.Deserialize<GenerateOutlineRequest>(JsonSerializer.Serialize(request, options), options);
+        var llmClient = new StubLlmClient();
+
+        var result = await CreateHandler(llmClient).HandleAsync(Assert.IsType<GenerateOutlineRequest>(restored));
+
+        Assert.Equal("catalog-v1", result.Metadata.PromptVersion);
+        Assert.Contains("Pinned after transport", llmClient.LastPrompt);
+    }
+
+    [Fact]
+    public async Task Handle_RejectsIncompletePinnedSnapshotWithoutFallingBack()
+    {
+        var llmClient = new StubLlmClient();
+        var request = ValidRequest() with { Snapshot = Snapshot(new Dictionary<string, string>()) };
+
+        await Assert.ThrowsAsync<ArgumentException>(() => CreateHandler(llmClient).HandleAsync(request));
+
+        Assert.Equal(0, llmClient.CallCount);
+    }
+
+    [Fact]
+    public async Task Handle_RejectsTitleAboveCorePersistenceLimitEvenIfSnapshotAllowsMore()
+    {
+        var longTitle = new string('A', 210);
+        var llmClient = new StubLlmClient(JsonSerializer.Serialize(new
+        {
+            title = longTitle,
+            outline = new { opening = "A", development = "B", ending = "C" }
+        }));
+        var request = ValidRequest() with { Snapshot = Snapshot(new Dictionary<string, string>
+        {
+            ["Outline"] = "Pinned {{context}}"
+        }) };
+
+        var exception = await Assert.ThrowsAsync<OutlineRejectedException>(() =>
+            CreateHandler(llmClient).HandleAsync(request));
+
+        Assert.Equal("OUTLINE_LENGTH_INVALID", exception.ReasonCode);
+    }
+
+    [Fact]
+    public async Task Handle_UsesStricterPinnedTitleLimit()
+    {
+        var llmClient = new StubLlmClient(JsonSerializer.Serialize(new
+        {
+            title = new string('A', 150),
+            outline = new { opening = "A", development = "B", ending = "C" }
+        }));
+        var request = ValidRequest() with { Snapshot = Snapshot(new Dictionary<string, string>
+        {
+            ["Outline"] = "Pinned {{context}}"
+        }) with { Config = new AiGenerationConfigSnapshot { MaxTitleLength = 100 } } };
+
+        var exception = await Assert.ThrowsAsync<OutlineRejectedException>(() =>
+            CreateHandler(llmClient).HandleAsync(request));
+
+        Assert.Equal("OUTLINE_LENGTH_INVALID", exception.ReasonCode);
+    }
+
+    private static AiGenerationSnapshot Snapshot(IReadOnlyDictionary<string, string> templates) => new()
+    {
+        PromptCatalogVersionId = 2,
+        PromptVersionNo = "catalog-v1",
+        Templates = templates,
+        Config = new AiGenerationConfigSnapshot { MaxTitleLength = 300 }
+    };
+
     private static GenerateOutlineHandler CreateHandler(StubLlmClient llmClient)
     {
         var options = Options.Create(new OutlineGenerationOptions { BaseRetryDelaySeconds = 0 });

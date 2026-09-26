@@ -22,8 +22,11 @@ public sealed partial class RuleBasedOutlineOutputGuardrail : IOutlineOutputGuar
             return Block("OUTLINE_SCHEMA_INVALID", "AI không trả về đủ bốn phần của outline.");
         }
 
-        if (response.Title.Trim().Length > _options.MaximumTitleLength ||
-            fields.Skip(1).Any(value => value.Trim().Length > _options.MaximumSectionLength))
+        // StoryVersion.Title is varchar(200) in Core; never accept an outline Core cannot persist.
+        var maxTitleLength = Math.Clamp(request.Snapshot?.Config.MaxTitleLength ?? _options.MaximumTitleLength, 50, 200);
+        var maxSectionLength = Math.Clamp(request.Snapshot?.Config.MaxSectionLength ?? _options.MaximumSectionLength, 1_000, 10_000);
+        if (response.Title.Trim().Length > maxTitleLength ||
+            fields.Skip(1).Any(value => value.Trim().Length > maxSectionLength))
         {
             return Block("OUTLINE_LENGTH_INVALID", "Outline vượt giới hạn cấu hình.");
         }

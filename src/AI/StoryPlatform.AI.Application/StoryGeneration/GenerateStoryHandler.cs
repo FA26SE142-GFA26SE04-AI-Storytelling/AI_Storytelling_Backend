@@ -34,7 +34,8 @@ public sealed class GenerateStoryHandler
     public async Task<GenerateStoryResponse> HandleAsync(GenerateStoryRequest request, CancellationToken cancellationToken = default)
     {
         RequestGuard.Validate(request);
-        var template = _promptProvider.GetActive(PromptType.Story, request.Language, request.AgeBand);
+        var template = SnapshotPromptResolver.Resolve(request.Snapshot, PromptType.Story,
+            request.Language, request.AgeBand, _promptProvider);
         var result = await GenerateAsync(PromptComposer.Compose(template, request), cancellationToken);
         var attempts = new List<GenerationAttemptMetadataDto> { result.ToAttempt("story_generation") };
         var promptVersions = new List<string> { template.Version };
@@ -44,14 +45,17 @@ public sealed class GenerateStoryHandler
         story = story with { ReadabilityMetrics = evaluation.ReadabilityMetrics };
         var refinementCount = 0;
 
-        while (!evaluation.Passed && evaluation.SafetyPassed && refinementCount < _maxRefinementAttempts)
+        var maxRefinementAttempts = Math.Clamp(request.Snapshot?.Config.MaxRefinementAttempts ?? _maxRefinementAttempts, 0, 2);
+        while (!evaluation.Passed && evaluation.SafetyPassed && refinementCount < maxRefinementAttempts)
         {
             refinementCount++;
-            var refineTemplate = _promptProvider.GetActive(PromptType.Refinement, request.Language, request.AgeBand);
+            var refineTemplate = SnapshotPromptResolver.Resolve(request.Snapshot, PromptType.Refinement,
+                request.Language, request.AgeBand, _promptProvider);
             promptVersion = refineTemplate.Version;
             var refineInput = new RefineStoryRequest
             {
                 RequestId = request.RequestId,
+                Snapshot = request.Snapshot,
                 Story = story,
                 Language = request.Language,
                 ReadingLevel = request.ReadingLevel,

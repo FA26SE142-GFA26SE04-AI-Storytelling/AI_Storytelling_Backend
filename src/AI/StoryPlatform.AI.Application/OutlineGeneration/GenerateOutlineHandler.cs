@@ -32,9 +32,14 @@ public sealed class GenerateOutlineHandler
     public async Task<GenerateOutlineResponse> HandleAsync(GenerateOutlineRequest request, CancellationToken cancellationToken = default)
     {
         RequestGuard.Validate(request);
-        var template = _promptProvider.GetActiveForOutline(request, Domain.Enums.PromptType.Outline);
-        var prompt = template.Template;
-        var maxAttempts = Math.Clamp(_options.MaxAttempts, 1, 3);
+        var template = request.Snapshot is null
+            ? _promptProvider.GetActiveForOutline(request, PromptType.Outline)
+            : SnapshotPromptResolver.Resolve(request.Snapshot, PromptType.Outline, request.Language,
+                request.AgeBand, _promptProvider);
+        var prompt = request.Snapshot is null
+            ? template.Template
+            : ProfilePromptEnhancer.BuildSystemInstruction(request) + "\n\n" + PromptComposer.Compose(template, request);
+        var maxAttempts = Math.Clamp(request.Snapshot?.Config.MaxOutlineAttempts ?? _options.MaxAttempts, 1, 3);
         Exception? lastError = null;
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
@@ -46,7 +51,8 @@ public sealed class GenerateOutlineHandler
             try
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(_options.TimeoutSeconds, 10, 300)));
+                timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(
+                    request.Snapshot?.Config.OutlineTimeoutSeconds ?? _options.TimeoutSeconds, 10, 300)));
                 var result = await _llmClient.GenerateStructuredAsync(
                     prompt,
                     "story_outline",

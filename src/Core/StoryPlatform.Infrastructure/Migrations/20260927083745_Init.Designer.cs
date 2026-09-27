@@ -12,8 +12,8 @@ using StoryPlatform.Infrastructure.Persistence;
 namespace StoryPlatform.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260925102343_AddReadingSessionEntrySourceCheck")]
-    partial class AddReadingSessionEntrySourceCheck
+    [Migration("20260927083745_Init")]
+    partial class Init
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -385,7 +385,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ChildProfileId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
 
                     b.HasIndex("CreatedByUserId");
 
@@ -517,6 +518,9 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<int?>("ChildAccessCredentialId")
+                        .HasColumnType("integer");
+
                     b.Property<int>("ChildProfileId")
                         .HasColumnType("integer");
 
@@ -534,17 +538,27 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<int?>("SupervisorSessionId")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ChildAccessCredentialId");
 
                     b.HasIndex("ChildProfileId");
 
                     b.HasIndex("SessionKey")
                         .IsUnique();
 
-                    b.ToTable("child_sessions", (string)null);
+                    b.HasIndex("SupervisorSessionId");
+
+                    b.ToTable("child_sessions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_child_sessions_exactly_one_entry_source", "(\"ChildAccessCredentialId\" IS NOT NULL AND \"SupervisorSessionId\" IS NULL) OR (\"ChildAccessCredentialId\" IS NULL AND \"SupervisorSessionId\" IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ClassGroup", b =>
@@ -3480,13 +3494,27 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ChildSession", b =>
                 {
+                    b.HasOne("StoryPlatform.Domain.Entities.ChildAccessCredential", "ChildAccessCredential")
+                        .WithMany()
+                        .HasForeignKey("ChildAccessCredentialId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
                         .WithMany()
                         .HasForeignKey("ChildProfileId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("StoryPlatform.Domain.Entities.RefreshToken", "SupervisorSession")
+                        .WithMany()
+                        .HasForeignKey("SupervisorSessionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ChildAccessCredential");
+
                     b.Navigation("ChildProfile");
+
+                    b.Navigation("SupervisorSession");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ClassGroup", b =>

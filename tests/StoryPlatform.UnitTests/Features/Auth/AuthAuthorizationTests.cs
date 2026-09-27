@@ -82,6 +82,8 @@ public class AuthAuthorizationTests
 
     [Theory]
     [InlineData(ChildProfileStatus.Active, false, true)]
+    [InlineData(ChildProfileStatus.PendingParentConsent, false, false)]
+    [InlineData(ChildProfileStatus.Suspended, false, false)]
     [InlineData(ChildProfileStatus.Archived, false, false)]
     [InlineData(ChildProfileStatus.Active, true, false)]
     public async Task TokenValidation_ChildToken_ValidatesAgainstChildProfileNotUserAccount(

@@ -20,6 +20,9 @@ public class MediaAsset : BaseEntity
     public int? StorySceneId { get; set; }
     public virtual StoryScene? StoryScene { get; set; }
 
+    public int? IllustrationBeatId { get; set; }
+    public virtual IllustrationBeat? IllustrationBeat { get; set; }
+
     public int? StorySegmentId { get; set; }
     public virtual StorySegment? StorySegment { get; set; }
 

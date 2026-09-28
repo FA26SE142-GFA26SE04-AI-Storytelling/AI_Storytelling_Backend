@@ -17,6 +17,12 @@ public class MediaAssetConfiguration : IEntityTypeConfiguration<MediaAsset>
             table.HasCheckConstraint(
                 "CK_media_assets_segment_must_be_null_for_illustration",
                 "\"Type\" <> 'Illustration' OR \"StorySegmentId\" IS NULL");
+            table.HasCheckConstraint(
+                "CK_media_assets_beat_required_for_illustration",
+                "\"Type\" <> 'Illustration' OR \"StorySceneId\" IS NULL OR \"IllustrationBeatId\" IS NOT NULL");
+            table.HasCheckConstraint(
+                "CK_media_assets_beat_must_be_null_for_audio",
+                "\"Type\" <> 'TtsAudio' OR \"IllustrationBeatId\" IS NULL");
         });
 
         builder.HasKey(x => x.Id);
@@ -61,9 +67,14 @@ public class MediaAssetConfiguration : IEntityTypeConfiguration<MediaAsset>
             .HasForeignKey(x => x.StorySegmentId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        builder.HasIndex(x => new { x.StorySceneId, x.Type })
+        builder.HasOne(x => x.IllustrationBeat)
+            .WithMany()
+            .HasForeignKey(x => x.IllustrationBeatId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(x => new { x.IllustrationBeatId, x.Type })
             .IsUnique()
-            .HasFilter("\"StorySceneId\" IS NOT NULL AND \"StorySegmentId\" IS NULL AND \"IsDeleted\" = false");
+            .HasFilter("\"IllustrationBeatId\" IS NOT NULL AND \"IsDeleted\" = false");
 
         builder.HasIndex(x => new { x.StorySegmentId, x.Type })
             .IsUnique()

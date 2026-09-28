@@ -57,6 +57,34 @@ public sealed class Luong1SchemaAlignmentModelTests
         Assert.Contains("\"SupervisorSessionId\"", constraint.Sql);
     }
 
+    [Fact]
+    public void ChildSession_has_exactly_one_entry_source_check_constraint()
+    {
+        using var context = CreateModelOnlyContext();
+        var childSession = context.GetService<IDesignTimeModel>().Model
+            .FindEntityType(typeof(ChildSession))!;
+
+        var constraint = Assert.Single(
+            childSession.GetCheckConstraints(),
+            value => value.Name == ChildSessionConfiguration.ExactlyOneEntrySourceConstraintName);
+        Assert.Equal(ChildSessionConfiguration.ExactlyOneEntrySourceSql, constraint.Sql);
+        Assert.NotNull(childSession.FindProperty(nameof(ChildSession.ChildAccessCredentialId)));
+        Assert.NotNull(childSession.FindProperty(nameof(ChildSession.SupervisorSessionId)));
+    }
+
+    [Fact]
+    public void ChildAccessCredential_unique_profile_index_ignores_soft_deleted_rows()
+    {
+        using var context = CreateModelOnlyContext();
+        var credential = context.GetService<IDesignTimeModel>().Model
+            .FindEntityType(typeof(ChildAccessCredential))!;
+
+        var index = Assert.Single(credential.GetIndexes(), value =>
+            value.IsUnique
+            && value.Properties.Single().Name == nameof(ChildAccessCredential.ChildProfileId));
+        Assert.Equal("\"IsDeleted\" = false", index.GetFilter());
+    }
+
     private static ApplicationDbContext CreateModelOnlyContext() =>
         new(new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseNpgsql("Host=localhost;Database=model_only;Username=model_only;Password=model_only")

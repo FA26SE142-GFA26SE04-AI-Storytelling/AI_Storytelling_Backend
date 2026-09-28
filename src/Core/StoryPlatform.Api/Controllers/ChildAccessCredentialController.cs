@@ -46,7 +46,7 @@ public class ChildAccessCredentialController : BaseApiController
     }
 
     /// <summary>
-    /// Thu hồi Child Access Credential — Trẻ mất lối vào độc lập cho tới khi được thiết lập PIN mới.
+    /// Thu hồi Child Access Credential (soft delete) — Trẻ bị đăng xuất ngay và mất lối vào độc lập cho tới khi được thiết lập PIN mới.
     /// </summary>
     [HttpDelete("{childProfileId:int}")]
     [Authorize(Roles = "Parent,Teacher")]
@@ -68,6 +68,22 @@ public class ChildAccessCredentialController : BaseApiController
         var result = await _childAccessCredentialService.GenerateEasyLoginCodeAsync(
             childProfileId, GetCurrentUserId(), cancellationToken);
         return HandleResult(result, "Đã tạo mã EasyLogin mới.");
+    }
+
+    /// <summary>
+    /// Supervisor bàn giao thiết bị cho trẻ sau khi chọn hồ sơ qua ProfileSwitcher (Luồng 3, Bước 3.0) —
+    /// phát sinh Child Session riêng, tách khỏi phiên Supervisor.
+    /// </summary>
+    [HttpPost("{childProfileId:int}/handover")]
+    [Authorize(Roles = "Parent,Teacher")]
+    public async Task<ActionResult<ApiResponse<ChildSessionDto>>> StartSupervisedSession(
+        int childProfileId,
+        [FromBody] StartSupervisedChildSessionRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _childAccessCredentialService.StartSupervisedSessionAsync(
+            childProfileId, GetCurrentUserId(), request.SupervisorRefreshToken, cancellationToken);
+        return HandleResult(result, "Đã bàn giao thiết bị cho trẻ.");
     }
 
     /// <summary>

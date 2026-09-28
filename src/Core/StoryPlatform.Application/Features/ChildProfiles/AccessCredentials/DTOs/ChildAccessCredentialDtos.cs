@@ -55,3 +55,10 @@ public class LoginWithEasyLoginRequestDto
     [Required(ErrorMessage = "Mã EasyLogin không được để trống.")]
     public string Code { get; set; } = string.Empty;
 }
+
+public class StartSupervisedChildSessionRequestDto
+{
+    /// <summary>Refresh token của phiên Supervisor đang bàn giao thiết bị — dùng để ghi audit, không cấp lại.</summary>
+    [Required(ErrorMessage = "Refresh token của phiên Supervisor không được để trống.")]
+    public string SupervisorRefreshToken { get; set; } = string.Empty;
+}

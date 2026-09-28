@@ -26,4 +26,8 @@ public interface IChildAccessCredentialService
 
     Task<ChildSessionDto> LoginWithEasyLoginAsync(
         string easyLoginCode, CancellationToken cancellationToken = default);
+
+    Task<ChildSessionDto> StartSupervisedSessionAsync(
+        int childProfileId, int currentUserId, string supervisorRefreshToken,
+        CancellationToken cancellationToken = default);
 }

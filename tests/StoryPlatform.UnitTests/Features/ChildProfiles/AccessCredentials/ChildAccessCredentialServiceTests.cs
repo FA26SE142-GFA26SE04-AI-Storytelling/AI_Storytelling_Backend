@@ -3,6 +3,7 @@ using Moq;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Application.Common.Exceptions;
+using StoryPlatform.Application.Common.Security;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Services;
@@ -18,6 +19,7 @@ public class ChildAccessCredentialServiceTests
     private readonly Mock<IGenericRepository<ChildAccessCredential>> _credentialRepo = new();
     private readonly Mock<IGenericRepository<ChildSession>> _sessionRepo = new();
     private readonly Mock<IGenericRepository<ChildProfile>> _profileRepo = new();
+    private readonly Mock<IGenericRepository<RefreshToken>> _refreshTokenRepo = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<ISupervisionAccessGuard> _guard = new();
     private readonly Mock<IPasswordHasher> _passwordHasher = new();
@@ -29,6 +31,9 @@ public class ChildAccessCredentialServiceTests
         _unitOfWork.Setup(u => u.Repository<ChildAccessCredential>()).Returns(_credentialRepo.Object);
         _unitOfWork.Setup(u => u.Repository<ChildSession>()).Returns(_sessionRepo.Object);
         _unitOfWork.Setup(u => u.Repository<ChildProfile>()).Returns(_profileRepo.Object);
+        _unitOfWork.Setup(u => u.Repository<RefreshToken>()).Returns(_refreshTokenRepo.Object);
+        _profileRepo.Setup(r => r.GetByIdAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChildProfile { Id = 1, Status = ChildProfileStatus.Active });
         _jwtTokenGenerator.Setup(generator => generator.ChildTokenExpiresInSeconds).Returns(14400);
         _sut = new ChildAccessCredentialService(
             _unitOfWork.Object, _guard.Object, _passwordHasher.Object, _jwtTokenGenerator.Object);
@@ -139,6 +144,53 @@ public class ChildAccessCredentialServiceTests
         Assert.True(session.LastActivityAt >= before);
         _jwtTokenGenerator.Verify(g => g.GenerateChildAccessToken(1, session.SessionKey), Times.Once);
         _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task LoginWithPinAsync_CorrectPin_RecordsCredentialAsEntrySource()
+    {
+        SetupCredential(Credential());
+        _passwordHasher.Setup(p => p.VerifyPassword("1234", "hashed-pin")).Returns(true);
+        var addedSession = CaptureAddedSession();
+
+        await _sut.LoginWithPinAsync(1, "1234");
+
+        Assert.Equal(1, addedSession()!.ChildAccessCredentialId);
+        Assert.Null(addedSession()!.SupervisorSessionId);
+    }
+
+    [Theory]
+    [InlineData(ChildProfileStatus.PendingParentConsent)]
+    [InlineData(ChildProfileStatus.Suspended)]
+    [InlineData(ChildProfileStatus.Draft)]
+    [InlineData(ChildProfileStatus.Archived)]
+    public async Task LoginWithPinAsync_ProfileNotActive_BlocksWithFriendlyMessageAndNoSession(
+        ChildProfileStatus status)
+    {
+        SetupCredential(Credential());
+        _passwordHasher.Setup(p => p.VerifyPassword("1234", "hashed-pin")).Returns(true);
+        SetupProfileStatus(status);
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() => _sut.LoginWithPinAsync(1, "1234"));
+
+        Assert.Equal(ChildAccessCredentialService.ChildEntryBlockedMessage, ex.Message);
+        _sessionRepo.Verify(r => r.AddAsync(
+            It.IsAny<ChildSession>(), It.IsAny<CancellationToken>()), Times.Never);
+        _jwtTokenGenerator.Verify(g => g.GenerateChildAccessToken(
+            It.IsAny<int>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task LoginWithPinAsync_WrongPin_DoesNotRevealProfileStatus()
+    {
+        SetupCredential(Credential());
+        _passwordHasher.Setup(p => p.VerifyPassword("0000", "hashed-pin")).Returns(false);
+        SetupProfileStatus(ChildProfileStatus.PendingParentConsent);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.LoginWithPinAsync(1, "0000"));
+
+        _profileRepo.Verify(r => r.GetByIdAsync(
+            It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -288,15 +340,26 @@ public class ChildAccessCredentialServiceTests
     }
 
     [Fact]
-    public async Task RevokeCredentialAsync_Existing_DeletesRowHard()
+    public async Task RevokeCredentialAsync_Existing_SoftDeletesCredentialAndEndsItsSessions()
     {
         AllowSupervision();
         var credential = Credential();
+        credential.EasyLoginCode = "pending-code";
         SetupCredential(credential);
+        var session = new ChildSession { Id = 9, ChildProfileId = 1, ChildAccessCredentialId = 1 };
+        _sessionRepo.Setup(r => r.FindAsync(
+                It.IsAny<Expression<Func<ChildSession, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ChildSession> { session });
 
         await _sut.RevokeCredentialAsync(1, 2);
 
-        _credentialRepo.Verify(r => r.Delete(credential), Times.Once);
+        Assert.True(credential.IsDeleted);
+        Assert.Null(credential.EasyLoginCode);
+        Assert.True(session.IsDeleted);
+        _credentialRepo.Verify(r => r.Delete(It.IsAny<ChildAccessCredential>()), Times.Never);
+        _credentialRepo.Verify(r => r.Update(credential), Times.Once);
+        _sessionRepo.Verify(r => r.Update(session), Times.Once);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -385,6 +448,38 @@ public class ChildAccessCredentialServiceTests
     }
 
     [Fact]
+    public async Task LoginWithEasyLoginAsync_ValidCode_RecordsCredentialAsEntrySource()
+    {
+        var credential = Credential();
+        credential.EasyLoginCode = "qr-code";
+        credential.EasyLoginExpiresAt = DateTime.UtcNow.AddMinutes(3);
+        SetupCredential(credential);
+        var addedSession = CaptureAddedSession();
+
+        await _sut.LoginWithEasyLoginAsync("qr-code");
+
+        Assert.Equal(1, addedSession()!.ChildAccessCredentialId);
+        Assert.Null(addedSession()!.SupervisorSessionId);
+    }
+
+    [Fact]
+    public async Task LoginWithEasyLoginAsync_ProfileNotActive_BlocksWithoutConsumingCode()
+    {
+        var credential = Credential();
+        credential.EasyLoginCode = "qr-code";
+        credential.EasyLoginExpiresAt = DateTime.UtcNow.AddMinutes(3);
+        SetupCredential(credential);
+        SetupProfileStatus(ChildProfileStatus.Suspended);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.LoginWithEasyLoginAsync("qr-code"));
+
+        Assert.Equal("qr-code", credential.EasyLoginCode);
+        Assert.Null(credential.EasyLoginUsedAt);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task LoginWithEasyLoginAsync_ExpiredCode_ThrowsBadRequest()
     {
         var credential = Credential();
@@ -431,6 +526,95 @@ public class ChildAccessCredentialServiceTests
         _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Fact]
+    public async Task StartSupervisedSessionAsync_Valid_RecordsSupervisorSessionAsEntrySource()
+    {
+        AllowSupervision();
+        SetupSupervisorSession(SupervisorSession());
+        SetupCredential(Credential());
+        _jwtTokenGenerator.Setup(g => g.GenerateChildAccessToken(1, It.IsAny<string>()))
+            .Returns("child-jwt");
+        var addedSession = CaptureAddedSession();
+
+        var result = await _sut.StartSupervisedSessionAsync(1, 2, "supervisor-refresh");
+
+        Assert.Equal("child-jwt", result.AccessToken);
+        Assert.Equal("avatar-fox", result.AvatarId);
+        Assert.Equal(77, addedSession()!.SupervisorSessionId);
+        Assert.Null(addedSession()!.ChildAccessCredentialId);
+    }
+
+    [Fact]
+    public async Task StartSupervisedSessionAsync_ChildWithoutCredential_StillStartsSession()
+    {
+        AllowSupervision();
+        SetupSupervisorSession(SupervisorSession());
+        SetupCredential(null);
+        var addedSession = CaptureAddedSession();
+
+        var result = await _sut.StartSupervisedSessionAsync(1, 2, "supervisor-refresh");
+
+        Assert.Equal(string.Empty, result.AvatarId);
+        Assert.Equal(77, addedSession()!.SupervisorSessionId);
+    }
+
+    [Fact]
+    public async Task StartSupervisedSessionAsync_NotSupervising_ThrowsBeforeCheckingToken()
+    {
+        _guard.Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ForbiddenException("Không có quyền."));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.StartSupervisedSessionAsync(1, 2, "supervisor-refresh"));
+
+        _refreshTokenRepo.Verify(r => r.FirstOrDefaultAsync(
+            It.IsAny<Expression<Func<RefreshToken, bool>>>(), null,
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    public static TheoryData<RefreshToken?> InvalidSupervisorSessions() => new()
+    {
+        null,
+        new RefreshToken { Id = 77, UserAccountId = 2, SessionScope = SessionScope.Supervisor,
+            ExpiresAt = DateTime.UtcNow.AddDays(1), RevokedAt = DateTime.UtcNow.AddMinutes(-1) },
+        new RefreshToken { Id = 77, UserAccountId = 2, SessionScope = SessionScope.Supervisor,
+            ExpiresAt = DateTime.UtcNow.AddMinutes(-1) },
+        new RefreshToken { Id = 77, UserAccountId = 2, SessionScope = SessionScope.Admin,
+            ExpiresAt = DateTime.UtcNow.AddDays(1) },
+        new RefreshToken { Id = 77, UserAccountId = 99, SessionScope = SessionScope.Supervisor,
+            ExpiresAt = DateTime.UtcNow.AddDays(1) },
+        new RefreshToken { Id = 77, UserAccountId = 2, TokenHash = "wrong-hash",
+            SessionScope = SessionScope.Supervisor, ExpiresAt = DateTime.UtcNow.AddDays(1) }
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidSupervisorSessions))]
+    public async Task StartSupervisedSessionAsync_InvalidSupervisorSession_ThrowsUnauthorized(
+        RefreshToken? token)
+    {
+        AllowSupervision();
+        SetupSupervisorSession(token);
+
+        await Assert.ThrowsAsync<UnauthorizedException>(() =>
+            _sut.StartSupervisedSessionAsync(1, 2, "supervisor-refresh"));
+
+        _sessionRepo.Verify(r => r.AddAsync(
+            It.IsAny<ChildSession>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task StartSupervisedSessionAsync_ProfilePendingConsent_BlocksWithFriendlyMessage()
+    {
+        AllowSupervision();
+        SetupSupervisorSession(SupervisorSession());
+        SetupProfileStatus(ChildProfileStatus.PendingParentConsent);
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.StartSupervisedSessionAsync(1, 2, "supervisor-refresh"));
+
+        Assert.Equal(ChildAccessCredentialService.ChildEntryBlockedMessage, ex.Message);
+    }
+
     private void AllowSupervision() => _guard
         .Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
         .ReturnsAsync(new SupervisionRelationship());
@@ -439,6 +623,24 @@ public class ChildAccessCredentialServiceTests
         .Setup(r => r.FirstOrDefaultAsync(
             It.IsAny<Expression<Func<ChildAccessCredential, bool>>>(), null,
             It.IsAny<CancellationToken>())).ReturnsAsync(credential);
+
+    private void SetupProfileStatus(ChildProfileStatus status) => _profileRepo
+        .Setup(r => r.GetByIdAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()))
+        .ReturnsAsync(new ChildProfile { Id = 1, Status = status });
+
+    private void SetupSupervisorSession(RefreshToken? token) => _refreshTokenRepo
+        .Setup(r => r.FirstOrDefaultAsync(
+            It.IsAny<Expression<Func<RefreshToken, bool>>>(), null, It.IsAny<CancellationToken>()))
+        .ReturnsAsync(token);
+
+    private static RefreshToken SupervisorSession() => new()
+    {
+        Id = 77,
+        UserAccountId = 2,
+        TokenHash = TokenHasher.Hash("supervisor-refresh"),
+        SessionScope = SessionScope.Supervisor,
+        ExpiresAt = DateTime.UtcNow.AddDays(1)
+    };
 
     private Func<ChildSession?> CaptureAddedSession()
     {

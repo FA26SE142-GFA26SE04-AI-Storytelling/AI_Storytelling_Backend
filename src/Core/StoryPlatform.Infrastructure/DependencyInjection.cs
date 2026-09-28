@@ -150,6 +150,9 @@ public static class DependencyInjection
             services.AddHttpClient<GeminiSemanticSceneSegmentationProvider>(client => client.Timeout = TimeSpan.FromMinutes(2)),
             mediaOptions, geminiOptions.TransportRetryCount, geminiOptions.TransportRetryBaseDelayMs);
         ConfigureMediaHttpClient(
+            services.AddHttpClient<GeminiIllustrationBeatPlanner>(client => client.Timeout = TimeSpan.FromMinutes(2)),
+            mediaOptions, geminiOptions.TransportRetryCount, geminiOptions.TransportRetryBaseDelayMs);
+        ConfigureMediaHttpClient(
             services.AddHttpClient<GeminiMediaContextExtractor>(client => client.Timeout = TimeSpan.FromMinutes(2)),
             mediaOptions, geminiOptions.TransportRetryCount, geminiOptions.TransportRetryBaseDelayMs);
 
@@ -166,6 +169,7 @@ public static class DependencyInjection
         services.AddSingleton<IMediaAlignmentEvaluator>(sp => sp.GetRequiredService<GeminiMediaAlignmentEvaluator>());
         services.AddSingleton<IMediaSafetyEvaluator>(sp => sp.GetRequiredService<GeminiMediaSafetyEvaluator>());
         services.AddSingleton<ISemanticSceneSegmentationProvider>(sp => sp.GetRequiredService<GeminiSemanticSceneSegmentationProvider>());
+        services.AddSingleton<IIllustrationBeatPlanner>(sp => sp.GetRequiredService<GeminiIllustrationBeatPlanner>());
         services.AddSingleton<ParagraphSceneSegmentationProvider>();
         services.AddSingleton<IParagraphSceneSegmentationProvider>(sp => sp.GetRequiredService<ParagraphSceneSegmentationProvider>());
         services.AddSingleton<IMediaContextExtractor>(sp => sp.GetRequiredService<GeminiMediaContextExtractor>());

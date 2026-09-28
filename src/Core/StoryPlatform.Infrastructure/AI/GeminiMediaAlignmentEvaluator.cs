@@ -98,14 +98,21 @@ public sealed class GeminiMediaAlignmentEvaluator : IMediaAlignmentEvaluator
     {
         var sb = new StringBuilder();
         sb.AppendLine("You are a story illustration quality evaluator for children aged 6-12.");
-        sb.AppendLine("Evaluate whether the described illustration aligns with the story scene below.");
+        sb.AppendLine("Evaluate whether the illustration depicts the specified visual beat and does not contradict the full scene.");
+        if (!string.IsNullOrWhiteSpace(spec.BeatText))
+        {
+            sb.AppendLine("BEAT TEXT:");
+            sb.AppendLine(spec.BeatText);
+            sb.AppendLine("BEAT VISUAL FOCUS:");
+            sb.AppendLine(spec.BeatVisualFocus);
+        }
         sb.AppendLine();
         sb.AppendLine("SCENE TEXT:");
         sb.AppendLine(spec.SceneText);
         sb.AppendLine();
         if (!string.IsNullOrWhiteSpace(spec.VisualDescription))
         {
-            sb.AppendLine("VISUAL DESCRIPTION:");
+            sb.AppendLine("SCENE VISUAL CONTEXT (the image need not depict every moment):");
             sb.AppendLine(spec.VisualDescription);
             sb.AppendLine();
         }

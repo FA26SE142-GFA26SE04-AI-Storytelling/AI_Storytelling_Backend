@@ -2,10 +2,12 @@ using System.Text.RegularExpressions;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Application.Common.Exceptions;
+using StoryPlatform.Application.Common.Security;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
 using StoryPlatform.Domain.Entities;
+using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Services;
 
@@ -14,6 +16,10 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
     private const int MaxFailedAttempts = 5;
     private const int LockoutMinutes = 5;
     private const int EasyLoginCodeTtlMinutes = 5;
+
+    // Bước 3.0 — thông điệp duy nhất cho mọi lý do bị chặn; không lộ trạng thái nghiệp vụ cho trẻ.
+    public const string ChildEntryBlockedMessage =
+        "Bạn chưa vào đọc truyện được lúc này. Hãy nhờ bố mẹ hoặc thầy cô giúp nhé!";
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly ISupervisionAccessGuard _accessGuard;
@@ -106,12 +112,15 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
             throw new BadRequestException("PIN không chính xác.");
         }
 
+        await EnsureChildCanEnterAsync(credential.ChildProfileId, cancellationToken);
+
         credential.FailedAttempts = 0;
         credential.LockedUntil = null;
         credential.UpdatedAt = DateTime.UtcNow;
         credentialRepo.Update(credential);
 
-        return await StartChildSessionAsync(credential, cancellationToken);
+        return await StartChildSessionAsync(
+            credential.ChildProfileId, credential.AvatarId, credential.Id, null, cancellationToken);
     }
 
     public async Task<ChildAccessCredentialDto> GetCredentialAsync(
@@ -144,11 +153,32 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
         var credential = await credentialRepo.FirstOrDefaultAsync(
             value => value.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
 
-        if (credential != null)
+        if (credential == null)
         {
-            credentialRepo.Delete(credential);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            return;
         }
+
+        // Soft-revoke: giữ dòng cho audit "trẻ tự vào" (child_sessions/reading_sessions trỏ tới nó)
+        // và đăng xuất ngay mọi Child Session sinh ra từ credential này.
+        var now = DateTime.UtcNow;
+        credential.IsDeleted = true;
+        credential.EasyLoginCode = null;
+        credential.EasyLoginExpiresAt = null;
+        credential.UpdatedAt = now;
+        credentialRepo.Update(credential);
+
+        var sessionRepo = _unitOfWork.Repository<ChildSession>();
+        var sessions = await sessionRepo.FindAsync(
+            session => session.ChildAccessCredentialId == credential.Id,
+            cancellationToken: cancellationToken);
+        foreach (var session in sessions)
+        {
+            session.IsDeleted = true;
+            session.UpdatedAt = now;
+            sessionRepo.Update(session);
+        }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<EasyLoginCodeDto> GenerateEasyLoginCodeAsync(
@@ -209,13 +239,34 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
                 "Mã EasyLogin đã hết hạn. Vui lòng nhờ Supervisor hiện mã QR mới.");
         }
 
+        await EnsureChildCanEnterAsync(credential.ChildProfileId, cancellationToken);
+
         credential.EasyLoginUsedAt = DateTime.UtcNow;
         credential.EasyLoginCode = null;
         credential.EasyLoginExpiresAt = null;
         credential.UpdatedAt = DateTime.UtcNow;
         credentialRepo.Update(credential);
 
-        return await StartChildSessionAsync(credential, cancellationToken);
+        return await StartChildSessionAsync(
+            credential.ChildProfileId, credential.AvatarId, credential.Id, null, cancellationToken);
+    }
+
+    public async Task<ChildSessionDto> StartSupervisedSessionAsync(
+        int childProfileId, int currentUserId, string supervisorRefreshToken,
+        CancellationToken cancellationToken = default)
+    {
+        await _accessGuard.EnsureActiveSupervisionAsync(childProfileId, currentUserId, cancellationToken);
+        var supervisorSession = await ResolveSupervisorSessionAsync(
+            currentUserId, supervisorRefreshToken, cancellationToken);
+        await EnsureChildCanEnterAsync(childProfileId, cancellationToken);
+
+        // Avatar chỉ để hiển thị; trẻ chưa có credential vẫn vào được qua lối Supervisor.
+        var credential = await _unitOfWork.Repository<ChildAccessCredential>().FirstOrDefaultAsync(
+            value => value.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
+
+        return await StartChildSessionAsync(
+            childProfileId, credential?.AvatarId ?? string.Empty, null, supervisorSession.Id,
+            cancellationToken);
     }
 
     public async Task<ChildSessionProfileDto> GetMySessionProfileAsync(
@@ -236,12 +287,54 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
         };
     }
 
+    // Hold Mode (Luồng 4) cố ý không chặn ở đây — trẻ cần vào đọc để được tự mở khoá khi cải thiện.
+    private async Task EnsureChildCanEnterAsync(
+        int childProfileId, CancellationToken cancellationToken)
+    {
+        var profile = await _unitOfWork.Repository<ChildProfile>()
+            .GetByIdAsync(childProfileId, cancellationToken);
+        if (profile == null || profile.IsDeleted || profile.Status != ChildProfileStatus.Active)
+        {
+            throw new ForbiddenException(ChildEntryBlockedMessage);
+        }
+    }
+
+    private async Task<RefreshToken> ResolveSupervisorSessionAsync(
+        int currentUserId, string supervisorRefreshToken, CancellationToken cancellationToken)
+    {
+        const string invalidSessionMessage =
+            "Phiên Supervisor không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại.";
+        if (string.IsNullOrWhiteSpace(supervisorRefreshToken))
+        {
+            throw new UnauthorizedException(invalidSessionMessage);
+        }
+
+        var tokenHash = TokenHasher.Hash(supervisorRefreshToken.Trim());
+        var session = await _unitOfWork.Repository<RefreshToken>().FirstOrDefaultAsync(
+            value => value.TokenHash == tokenHash && value.UserAccountId == currentUserId,
+            cancellationToken: cancellationToken);
+        if (session == null
+            || session.UserAccountId != currentUserId
+            || session.TokenHash != tokenHash
+            || session.RevokedAt != null
+            || session.ExpiresAt <= DateTime.UtcNow
+            || session.SessionScope != SessionScope.Supervisor)
+        {
+            throw new UnauthorizedException(invalidSessionMessage);
+        }
+
+        return session;
+    }
+
     private async Task<ChildSessionDto> StartChildSessionAsync(
-        ChildAccessCredential credential, CancellationToken cancellationToken)
+        int childProfileId, string avatarId, int? childAccessCredentialId, int? supervisorSessionId,
+        CancellationToken cancellationToken)
     {
         var session = new ChildSession
         {
-            ChildProfileId = credential.ChildProfileId,
+            ChildProfileId = childProfileId,
+            ChildAccessCredentialId = childAccessCredentialId,
+            SupervisorSessionId = supervisorSessionId,
             SessionKey = Guid.NewGuid().ToString("N"),
             LastActivityAt = DateTime.UtcNow
         };
@@ -250,10 +343,9 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
 
         return new ChildSessionDto
         {
-            ChildProfileId = credential.ChildProfileId,
-            AvatarId = credential.AvatarId,
-            AccessToken = _jwtTokenGenerator.GenerateChildAccessToken(
-                credential.ChildProfileId, session.SessionKey),
+            ChildProfileId = childProfileId,
+            AvatarId = avatarId,
+            AccessToken = _jwtTokenGenerator.GenerateChildAccessToken(childProfileId, session.SessionKey),
             ExpiresInSeconds = _jwtTokenGenerator.ChildTokenExpiresInSeconds
         };
     }

@@ -1,6 +1,7 @@
 using System;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,6 +17,8 @@ namespace StoryPlatform.Api.Extensions;
 public static class ServiceExtensions
 {
     private const int MinimumJwtSecretKeyLength = 32;
+    public const string ChildSessionPolicy = "ChildSession";
+    public const string ChildTokenType = "child";
 
     public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)
     {
@@ -73,7 +76,7 @@ public static class ServiceExtensions
                     var tokenType = context.Principal?.FindFirst("token_type")?.Value;
                     var subjectClaim = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
-                    if (tokenType == "child")
+                    if (tokenType == ChildTokenType)
                     {
                         var sessionKey = context.Principal?.FindFirst(ChildSession.SessionClaimType)?.Value;
                         if (!int.TryParse(subjectClaim, out var childProfileId)
@@ -89,9 +92,10 @@ public static class ServiceExtensions
                             .FirstOrDefaultAsync(
                                 profile => profile.Id == childProfileId,
                                 cancellationToken: context.HttpContext.RequestAborted);
+                        // Bước 3.0 — chỉ hồ sơ Active mới giữ được Child Session đang mở.
                         if (childProfile == null
                             || childProfile.IsDeleted
-                            || childProfile.Status == ChildProfileStatus.Archived)
+                            || childProfile.Status != ChildProfileStatus.Active)
                         {
                             context.Fail("Phiên của trẻ không còn hợp lệ.");
                             return;
@@ -142,6 +146,25 @@ public static class ServiceExtensions
                     }
                 }
             };
+        });
+
+        return services;
+    }
+
+    public static IServiceCollection AddAppAuthorization(this IServiceCollection services)
+    {
+        services.AddAuthorization(options =>
+        {
+            // Bước 3.0 — [Authorize] trơn chỉ dành cho người lớn: Child token không bao giờ lọt vào
+            // Guardian Management Area/Admin Portal, kể cả khi client gọi nhầm route.
+            options.DefaultPolicy = new AuthorizationPolicyBuilder()
+                .RequireAuthenticatedUser()
+                .RequireAssertion(context => !context.User.HasClaim("token_type", ChildTokenType))
+                .Build();
+            options.AddPolicy(ChildSessionPolicy,
+                policy => policy
+                    .RequireAuthenticatedUser()
+                    .RequireClaim("token_type", ChildTokenType));
         });
 
         return services;

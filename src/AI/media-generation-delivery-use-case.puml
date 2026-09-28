@@ -1,125 +1,230 @@
-@startuml MediaGenerationDeliveryUseCase
-title AI Storytelling Platform - Media Generation and Delivery
+@startuml AIStorytellingPlatformUseCases
+title AI Storytelling Platform - Complete Use Case Diagram
 
 left to right direction
 skinparam packageStyle rectangle
 skinparam shadowing false
 skinparam actorStyle awesome
 
-actor Supervisor as Supervisor
-actor "LLM / Multimodal\nEvaluator" as LLM
-actor "Image Generation\nProvider" as ImageProvider
-actor "TTS Provider" as TtsProvider
-actor "AWS S3" as S3
+' ===================== ACTORS =====================
+actor "Supervisor\n(Parent/Teacher)" as Supervisor
+actor "AI System" as AI
+actor "Image Generator\nProvider" as ImageGen
+actor "TTS Provider" as TTS
+actor "Supabase\nStorage" as Storage
+actor "Administrator" as Admin
 
-rectangle "AI Storytelling Platform\nMedia Generation and Delivery" {
-  package "Media Job" {
-    usecase "Queue Media Generation" as UC_QueueMedia
-    usecase "Generate Media Package" as UC_GeneratePackage
-    usecase "Monitor Media Generation" as UC_MonitorMedia
+' ===================== MAIN RECTANGLE =====================
+rectangle "AI Storytelling Platform" {
+
+  ' ----- PACKAGE 1: Story Request -----
+  package "1. Story Request" {
+    usecase "Submit AI Story Request" as UC_SubmitRequest
+    usecase "Get Story Context" as UC_GetContext
+    usecase "Check Input Safety" as UC_CheckInput
+  }
+
+  ' ----- PACKAGE 2: Outline Generation -----
+  package "2. Outline Generation" {
+    usecase "Monitor Outline Progress" as UC_MonitorOutline
+    usecase "View Outline Versions" as UC_ViewOutlineVersions
+    usecase "View Outline Details" as UC_ViewOutline
+    usecase "Edit Outline" as UC_EditOutline
+    usecase "Regenerate Outline" as UC_RegenerateOutline
+    usecase "Retry Initial Outline" as UC_RetryOutline
+    usecase "Approve Outline" as UC_ApproveOutline
+    usecase "Reject Outline" as UC_RejectOutline
+  }
+
+  ' ----- PACKAGE 3: Content Generation -----
+  package "3. Content Generation" {
+    usecase "Monitor Content Progress" as UC_MonitorContent
+    usecase "Retry Content Generation" as UC_RetryContent
+  }
+
+  ' ----- PACKAGE 4: Story Review -----
+  package "4. Story Review & Approval" {
+    usecase "Get Review Package" as UC_GetReviewPackage
+    usecase "View Story Content" as UC_ViewStory
+    usecase "Edit Story Content" as UC_EditStory
+    usecase "Create Partial Edit Proposal" as UC_PartialEdit
+    usecase "View Vocabulary" as UC_ViewVocabulary
+    usecase "Edit Vocabulary" as UC_EditVocabulary
+    usecase "Regenerate Vocabulary" as UC_RegenVocabulary
+    usecase "View Quiz" as UC_ViewQuiz
+    usecase "Edit Quiz" as UC_EditQuiz
+    usecase "Regenerate Quiz" as UC_RegenQuiz
+    usecase "View Discussion" as UC_ViewDiscussion
+    usecase "Edit Discussion" as UC_EditDiscussion
+    usecase "Regenerate Discussion" as UC_RegenDiscussion
+    usecase "Apply AI Proposal" as UC_ApplyProposal
+    usecase "Discard AI Proposal" as UC_DiscardProposal
+    usecase "Validate Story" as UC_ValidateStory
+    usecase "Auto-Publish Check" as UC_AutoPublish
+    usecase "Approve Story" as UC_ApproveStory
+    usecase "Complete Review" as UC_CompleteReview
+    usecase "Archive Story" as UC_ArchiveStory
+  }
+
+  ' ----- PACKAGE 5: Media Generation -----
+  package "5. Media Generation" {
+    usecase "Monitor Media Progress" as UC_MonitorMedia
     usecase "Retry Failed Media Job" as UC_RetryMedia
-    usecase "Complete Media Package" as UC_CompletePackage
-  }
-
-  package "Context and Scene Preparation" {
-    usecase "Build Media Context" as UC_BuildContext
-    usecase "Segment Story into Scenes" as UC_SegmentScenes
-    usecase "Build Scene Specification" as UC_BuildSceneSpec
-    usecase "Segment Scene for TTS" as UC_SegmentTts
-  }
-
-  package "Illustration Pipeline" {
-    usecase "Generate Illustration" as UC_GenerateImage
-    usecase "Validate Image Binary" as UC_ValidateImageBinary
-    usecase "Validate Illustration\nAlignment" as UC_ValidateAlignment
-    usecase "Validate Illustration\nSafety" as UC_ValidateImageSafety
-    usecase "Store Illustration" as UC_StoreImage
-  }
-
-  package "TTS Pipeline" {
-    usecase "Generate TTS Audio" as UC_GenerateAudio
-    usecase "Validate Audio Binary" as UC_ValidateAudioBinary
-    usecase "Validate Audio Quality" as UC_ValidateAudioQuality
-    usecase "Store TTS Audio" as UC_StoreAudio
-  }
-
-  package "Private Media Access" {
-    usecase "Request Story Media" as UC_RequestMedia
-    usecase "Authorize Story Access" as UC_AuthorizeMedia
+    usecase "Regenerate Illustration Beat" as UC_RegenIllustration
+    usecase "Get Story Media Package" as UC_GetMediaPackage
     usecase "Generate Presigned URL" as UC_SignedUrl
   }
 
-  package "Planned Supervisor Controls" {
-    usecase "Regenerate Illustration" as UC_RegenerateImage
-    usecase "Regenerate Audio Segment" as UC_RegenerateAudio
+  ' ----- PACKAGE 6: AI Backend (Internal) -----
+  package "6. AI Backend (Internal)" {
+    usecase "Build Media Context" as AI_BuildContext
+    usecase "Segment Story Scenes" as AI_SegmentScenes
+    usecase "Plan Illustration Beats" as AI_PlanBeats
+    usecase "Build Scene Specification" as AI_BuildSpec
+    usecase "Create TTS Segments" as AI_CreateSegments
+    usecase "Generate Illustration" as AI_GenImage
+    usecase "Validate Image Alignment" as AI_ValidateAlign
+    usecase "Validate Image Safety" as AI_ValidateSafety
+    usecase "Store Illustration" as AI_StoreImage
+    usecase "Generate TTS Audio" as AI_GenAudio
+    usecase "Validate Audio Quality" as AI_ValidateAudio
+    usecase "Store TTS Audio" as AI_StoreAudio
+    usecase "Complete Media Package" as AI_CompleteMedia
+  }
+
+  ' ----- PACKAGE 7: Admin (AI Config) -----
+  package "7. AI Administration" {
+    usecase "Manage Prompt Catalog" as UC_ManagePrompt
+    usecase "Manage AI Config" as UC_ManageConfig
+    usecase "View Prompt Changelog" as UC_ViewChangelog
   }
 }
 
-' Primary actor associations
+' ===================== ACTOR ASSOCIATIONS =====================
+Supervisor -- UC_SubmitRequest
+Supervisor -- UC_GetContext
+Supervisor -- UC_MonitorOutline
+Supervisor -- UC_ViewOutlineVersions
+Supervisor -- UC_ViewOutline
+Supervisor -- UC_EditOutline
+Supervisor -- UC_RegenerateOutline
+Supervisor -- UC_RetryOutline
+Supervisor -- UC_ApproveOutline
+Supervisor -- UC_RejectOutline
+Supervisor -- UC_MonitorContent
+Supervisor -- UC_RetryContent
+Supervisor -- UC_GetReviewPackage
+Supervisor -- UC_ViewStory
+Supervisor -- UC_EditStory
+Supervisor -- UC_PartialEdit
+Supervisor -- UC_ViewVocabulary
+Supervisor -- UC_EditVocabulary
+Supervisor -- UC_RegenVocabulary
+Supervisor -- UC_ViewQuiz
+Supervisor -- UC_EditQuiz
+Supervisor -- UC_RegenQuiz
+Supervisor -- UC_ViewDiscussion
+Supervisor -- UC_EditDiscussion
+Supervisor -- UC_RegenDiscussion
+Supervisor -- UC_ApplyProposal
+Supervisor -- UC_DiscardProposal
+Supervisor -- UC_ValidateStory
+Supervisor -- UC_AutoPublish
+Supervisor -- UC_ApproveStory
+Supervisor -- UC_CompleteReview
+Supervisor -- UC_ArchiveStory
 Supervisor -- UC_MonitorMedia
 Supervisor -- UC_RetryMedia
-Supervisor -- UC_RequestMedia
-Supervisor -- UC_RegenerateImage
-Supervisor -- UC_RegenerateAudio
+Supervisor -- UC_RegenIllustration
+Supervisor -- UC_GetMediaPackage
 
-' Media package orchestration
-UC_QueueMedia ..> UC_GeneratePackage : <<include>>
-UC_GeneratePackage ..> UC_BuildContext : <<include>>
-UC_GeneratePackage ..> UC_SegmentScenes : <<include>>
-UC_GeneratePackage ..> UC_BuildSceneSpec : <<include>>
-UC_GeneratePackage ..> UC_SegmentTts : <<include>>
-UC_GeneratePackage ..> UC_GenerateImage : <<include>>
-UC_GeneratePackage ..> UC_GenerateAudio : <<include>>
-UC_GeneratePackage ..> UC_CompletePackage : <<include>>
+Admin -- UC_ManagePrompt
+Admin -- UC_ManageConfig
+Admin -- UC_ViewChangelog
+
+' ===================== INCLUDE RELATIONSHIPS =====================
+
+' Story Request flow
+UC_SubmitRequest ..> UC_CheckInput : <<include>>
+
+' Outline flow
+UC_ViewOutlineVersions ..> UC_ViewOutline : <<include>>
+
+' Media generation orchestration
+UC_MonitorMedia ..> AI_BuildContext : <<include>>
+UC_MonitorMedia ..> AI_SegmentScenes : <<include>>
+UC_MonitorMedia ..> AI_PlanBeats : <<include>>
+UC_MonitorMedia ..> AI_BuildSpec : <<include>>
+UC_MonitorMedia ..> AI_CreateSegments : <<include>>
+UC_MonitorMedia ..> AI_GenImage : <<include>>
+UC_MonitorMedia ..> AI_GenAudio : <<include>>
+UC_MonitorMedia ..> AI_CompleteMedia : <<include>>
 UC_RetryMedia ..> UC_MonitorMedia : <<extend>>\n[job failed and retryable]
 
 ' Illustration pipeline
-UC_GenerateImage ..> UC_ValidateImageBinary : <<include>>
-UC_GenerateImage ..> UC_ValidateAlignment : <<include>>
-UC_GenerateImage ..> UC_ValidateImageSafety : <<include>>
-UC_GenerateImage ..> UC_StoreImage : <<include>>
+AI_GenImage ..> AI_ValidateAlign : <<include>>
+AI_GenImage ..> AI_ValidateSafety : <<include>>
+AI_GenImage ..> AI_StoreImage : <<include>>
+UC_RegenIllustration ..> UC_MonitorMedia : <<extend>>\n[image rejected or failed]
 
 ' TTS pipeline
-UC_GenerateAudio ..> UC_ValidateAudioBinary : <<include>>
-UC_GenerateAudio ..> UC_ValidateAudioQuality : <<include>>
-UC_GenerateAudio ..> UC_StoreAudio : <<include>>
+AI_GenAudio ..> AI_ValidateAudio : <<include>>
+AI_GenAudio ..> AI_StoreAudio : <<include>>
 
-' Private media delivery
-UC_RequestMedia ..> UC_AuthorizeMedia : <<include>>
-UC_RequestMedia ..> UC_SignedUrl : <<include>>
+' Media delivery
+UC_GetMediaPackage ..> UC_SignedUrl : <<uses>>\n[internal]
 
-' Planned controls: application logic exists, public API is not yet exposed
-UC_RegenerateImage ..> UC_MonitorMedia : <<extend>>\n[image rejected or failed]
-UC_RegenerateAudio ..> UC_MonitorMedia : <<extend>>\n[audio rejected or failed]
+' Review flow
+UC_CompleteReview ..> UC_ValidateStory : <<include>>
 
-' External system associations
-LLM -- UC_BuildContext
-LLM -- UC_SegmentScenes
-LLM -- UC_ValidateAlignment
-LLM -- UC_ValidateImageSafety
-ImageProvider -- UC_GenerateImage
-TtsProvider -- UC_GenerateAudio
-S3 -- UC_StoreImage
-S3 -- UC_StoreAudio
-S3 -- UC_SignedUrl
+' ===================== AI SYSTEM ASSOCIATIONS =====================
+AI -- AI_BuildContext
+AI -- AI_SegmentScenes
+AI -- AI_PlanBeats
+AI -- AI_ValidateAlign
+AI -- AI_ValidateSafety
+AI -- AI_GenAudio
+AI -- AI_ValidateAudio
 
-note bottom of UC_CompletePackage
-  Story becomes Ready only when:
-  - Every scene has one Ready illustration
-  - Every story segment has one Ready TTS asset
+ImageGen -- AI_GenImage
+TTS -- AI_GenAudio
+Storage -- AI_StoreImage
+Storage -- AI_StoreAudio
+Storage -- UC_SignedUrl
+
+' ===================== NOTES =====================
+note top of UC_SubmitRequest
+  Endpoint: POST /api/v1/ai-story-input/requests
+  Roles: Parent, Teacher
+  Input types: AI-generated or user-imported story
 end note
 
-note bottom of UC_RegenerateImage
-  Planned API use case.
-  Regeneration logic exists in Application,
-  but MediaGenerationController currently
-  exposes only progress monitoring.
+note top of UC_ApproveOutline
+  Triggers Content Generation phase
+  Story status: OutlineApproved → ContentGenerating
 end note
 
-note bottom of UC_RequestMedia
-  Required for private S3 delivery.
-  The current IMediaStorage supports signed URLs,
-  but the public media delivery endpoint is pending.
+note top of UC_ApproveStory
+  Final supervisor approval before media generation
+  Story status: ContentReview → Approved
+  May trigger auto-publish if validation passes
+end note
+
+note bottom of AI_CompleteMedia
+  Story becomes Ready when:
+  - Every illustration beat has Ready illustration
+  - Every TTS segment has Ready audio
+end note
+
+note bottom of UC_GetMediaPackage
+  Endpoint: GET /api/v1/stories/{storyId}/media/package
+  Returns scene hierarchy with beats and audio
+  URLs are storage paths (not presigned URLs)
+end note
+
+note bottom of UC_RegenIllustration
+  Endpoint: POST /api/v1/stories/{storyId}/media/illustration-beats/{beatId}/regenerate
+  Resets beat asset to Queued and restarts job
 end note
 
 @enduml

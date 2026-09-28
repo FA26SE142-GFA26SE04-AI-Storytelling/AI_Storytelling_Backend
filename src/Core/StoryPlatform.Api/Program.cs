@@ -15,6 +15,14 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 
+if (builder.Environment.IsDevelopment() && OperatingSystem.IsWindows())
+{
+    // Local development must not depend on permission to write Windows Event Log.
+    builder.Logging.ClearProviders();
+    builder.Logging.AddConsole();
+    builder.Logging.AddDebug();
+}
+
 // 1. Cấu hình Controllers và JSON options
 builder.Services.AddControllers();
 builder.Services.AddHealthChecks();
@@ -56,11 +64,18 @@ builder.Services.AddScoped<INotificationRealtimePublisher, SignalRNotificationPu
 
 var app = builder.Build();
 
-app.RunMigrationsUnderLock(builder.Configuration, () =>
+if (builder.Configuration.GetValue("Database:RunMigrationsOnStartup", true))
 {
-    app.FixMigrationHistoryIfRequested<StoryPlatform.Infrastructure.Persistence.ApplicationDbContext>(builder.Configuration);
-    app.ApplyPendingMigrations<StoryPlatform.Infrastructure.Persistence.ApplicationDbContext>();
-});
+    app.RunMigrationsUnderLock(builder.Configuration, () =>
+    {
+        app.FixMigrationHistoryIfRequested<StoryPlatform.Infrastructure.Persistence.ApplicationDbContext>(builder.Configuration);
+        app.ApplyPendingMigrations<StoryPlatform.Infrastructure.Persistence.ApplicationDbContext>();
+    });
+}
+else
+{
+    app.Logger.LogInformation("Automatic database migrations are disabled for this startup.");
+}
 app.SeedDataIfRequested<StoryPlatform.Infrastructure.Persistence.ApplicationDbContext>(builder.Configuration);
 
 // Pipeline xử lý HTTP Request

@@ -41,7 +41,7 @@ public class ChildProfileController : BaseApiController
     }
 
     /// <summary>
-    /// Danh sách hồ sơ trẻ do chính tài khoản đang đăng nhập làm Owner (Bước 1.9a — ProfileSwitcher).
+    /// Danh sách hồ sơ trẻ mà tài khoản đang đăng nhập đang giám sát (Bước 1.9a — ProfileSwitcher).
     /// </summary>
     [HttpGet("mine")]
     [Authorize(Roles = "Parent,Teacher")]

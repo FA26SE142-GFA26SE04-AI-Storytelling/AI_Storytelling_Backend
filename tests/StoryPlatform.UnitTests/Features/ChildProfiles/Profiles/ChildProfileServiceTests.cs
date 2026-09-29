@@ -333,52 +333,83 @@ public class ChildProfileServiceTests
     }
 
     [Fact]
-    public async Task ListMyChildProfilesAsync_ReturnsRepositoryResult()
+    public async Task ListMyChildProfilesAsync_ReturnsProfilesForAllActiveSupervisorRoles()
     {
-        var profiles = new List<ChildProfile>
+        var relationships = new List<SupervisionRelationship>
         {
-            new() { Id = 1, OwnerUserId = 2, Nickname = "Bé An" },
-            new() { Id = 2, OwnerUserId = 2, Nickname = "Bé Bình" }
+            new()
+            {
+                ChildProfileId = 1,
+                SupervisorUserId = 2,
+                SupervisorRole = SupervisorRole.Owner,
+                ChildProfile = new ChildProfile { Id = 1, OwnerUserId = 2, Nickname = "Bé An" }
+            },
+            new()
+            {
+                ChildProfileId = 2,
+                SupervisorUserId = 2,
+                SupervisorRole = SupervisorRole.AdditionalSupervisor,
+                ChildProfile = new ChildProfile { Id = 2, OwnerUserId = 3, Nickname = "Bé Bình" }
+            }
         };
-        _profileRepo.Setup(r => r.FindAsync(
-                It.IsAny<Expression<Func<ChildProfile, bool>>>(), null,
-                It.IsAny<CancellationToken>())).ReturnsAsync(profiles);
+        _supervisionRepo.Setup(r => r.FindAsync(
+                It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(),
+                nameof(SupervisionRelationship.ChildProfile),
+                It.IsAny<CancellationToken>())).ReturnsAsync(relationships);
 
         var result = await _sut.ListMyChildProfilesAsync(2);
 
         Assert.Equal(2, result.Count);
-        Assert.All(result, value => Assert.Equal(2, value.OwnerUserId));
+        Assert.Contains(result, value => value.Id == 1 && value.OwnerUserId == 2);
+        Assert.Contains(result, value => value.Id == 2 && value.OwnerUserId == 3);
     }
 
     [Fact]
-    public async Task ListMyChildProfilesAsync_FiltersOutArchivedProfiles()
+    public async Task ListMyChildProfilesAsync_OnlyIncludesActiveRelationshipsAndNonArchivedProfiles()
     {
-        Expression<Func<ChildProfile, bool>>? capturedPredicate = null;
-        _profileRepo.Setup(repository => repository.FindAsync(
-                It.IsAny<Expression<Func<ChildProfile, bool>>>(), null,
+        Expression<Func<SupervisionRelationship, bool>>? capturedPredicate = null;
+        _supervisionRepo.Setup(repository => repository.FindAsync(
+                It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(),
+                nameof(SupervisionRelationship.ChildProfile),
                 It.IsAny<CancellationToken>()))
-            .Callback<Expression<Func<ChildProfile, bool>>, string?, CancellationToken>(
+            .Callback<Expression<Func<SupervisionRelationship, bool>>, string?, CancellationToken>(
                 (predicate, _, _) => capturedPredicate = predicate)
-            .ReturnsAsync(new List<ChildProfile>());
+            .ReturnsAsync(new List<SupervisionRelationship>());
 
         await _sut.ListMyChildProfilesAsync(2);
 
         Assert.NotNull(capturedPredicate);
         var compiled = capturedPredicate!.Compile();
-        Assert.True(compiled(new ChildProfile
+        Assert.True(compiled(new SupervisionRelationship
         {
-            OwnerUserId = 2,
-            Status = ChildProfileStatus.Active
+            SupervisorUserId = 2,
+            SupervisorRole = SupervisorRole.Owner,
+            ChildProfile = new ChildProfile { Status = ChildProfileStatus.Active }
         }));
-        Assert.False(compiled(new ChildProfile
+        Assert.True(compiled(new SupervisionRelationship
         {
-            OwnerUserId = 2,
-            Status = ChildProfileStatus.Archived
+            SupervisorUserId = 2,
+            SupervisorRole = SupervisorRole.AdditionalSupervisor,
+            ChildProfile = new ChildProfile { Status = ChildProfileStatus.Active }
         }));
-        Assert.False(compiled(new ChildProfile
+        Assert.False(compiled(new SupervisionRelationship
         {
-            OwnerUserId = 3,
-            Status = ChildProfileStatus.Active
+            SupervisorUserId = 2,
+            SupervisorRole = SupervisorRole.AdditionalSupervisor,
+            RevokedAt = DateTime.UtcNow,
+            ChildProfile = new ChildProfile { Status = ChildProfileStatus.Active }
+        }));
+        Assert.False(compiled(new SupervisionRelationship
+        {
+            SupervisorUserId = 2,
+            SupervisorRole = SupervisorRole.AdditionalSupervisor,
+            ChildProfile = new ChildProfile { Status = ChildProfileStatus.Archived }
+        }));
+        Assert.False(compiled(new SupervisionRelationship
+        {
+            SupervisorUserId = 3,
+            SupervisorRole = SupervisorRole.AdditionalSupervisor,
+            ChildProfile = new ChildProfile { Status = ChildProfileStatus.Active }
         }));
     }
 

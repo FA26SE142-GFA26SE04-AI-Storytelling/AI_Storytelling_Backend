@@ -153,14 +153,19 @@ public class ChildProfileService : IChildProfileService
     }
 
     public async Task<List<ChildProfileDto>> ListMyChildProfilesAsync(
-        int ownerUserId, CancellationToken cancellationToken = default)
+        int currentUserId, CancellationToken cancellationToken = default)
     {
-        var profiles = await _unitOfWork.Repository<ChildProfile>().FindAsync(
-            value => value.OwnerUserId == ownerUserId
-                     && value.Status != ChildProfileStatus.Archived,
+        var relationships = await _unitOfWork.Repository<SupervisionRelationship>().FindAsync(
+            value => value.SupervisorUserId == currentUserId
+                     && value.RevokedAt == null
+                     && value.ChildProfile != null
+                     && value.ChildProfile.Status != ChildProfileStatus.Archived,
+            includeProperties: nameof(SupervisionRelationship.ChildProfile),
             cancellationToken: cancellationToken);
 
-        return profiles.Select(MapToChildProfileDto).ToList();
+        return relationships
+            .Select(value => MapToChildProfileDto(value.ChildProfile!))
+            .ToList();
     }
 
     public async Task<ChildProfileDto> GetChildProfileByIdAsync(

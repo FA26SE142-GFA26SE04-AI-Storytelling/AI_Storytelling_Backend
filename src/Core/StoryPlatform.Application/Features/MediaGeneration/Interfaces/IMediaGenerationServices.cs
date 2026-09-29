@@ -32,6 +32,12 @@ public interface ISceneSpecificationBuilder
         string? visualDescription, string mediaContextJson);
 }
 
+public interface IIllustrationBeatPlanner
+{
+    Task<IReadOnlyList<IllustrationBeatSelection>> PlanAsync(
+        IllustrationBeatPlanRequest request, CancellationToken cancellationToken = default);
+}
+
 public interface IImageGenerationProvider
 {
     Task<GeneratedMedia> GenerateAsync(SceneSpecification specification, CancellationToken cancellationToken = default);
@@ -57,7 +63,15 @@ public interface IMediaSafetyEvaluator
 public interface IMediaGenerationService
 {
     Task<MediaGenerationProgress> GetProgressAsync(int userId, int storyId, CancellationToken cancellationToken = default);
+    Task<StoryMediaPackage> GetPackageAsync(int userId, int storyId, CancellationToken cancellationToken = default);
     Task<MediaGenerationProgress> RetryAsync(int userId, int storyId, CancellationToken cancellationToken = default);
+    Task RegenerateIllustrationBeatAsync(int userId, int storyId, int beatId, CancellationToken cancellationToken = default);
+}
+
+public interface IMediaReadinessService
+{
+    Task<MediaReadinessResult> CheckAsync(int storyVersionId, int? expectedSceneCount,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IMediaGenerationJobProcessor

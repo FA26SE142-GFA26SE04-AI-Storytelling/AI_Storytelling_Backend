@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
@@ -23,6 +24,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
     private readonly ISceneSegmentationProvider _segmenter;
     private readonly ISceneCoverageValidator _coverageValidator;
     private readonly ISceneSpecificationBuilder _specificationBuilder;
+    private readonly IIllustrationBeatPlanner _beatPlanner;
     private readonly IImageGenerationProvider _imageProvider;
     private readonly ITtsProvider _ttsProvider;
     private readonly IMediaStorage _mediaStorage;
@@ -31,6 +33,8 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
     private readonly IAudioQualityGate _audioQualityGate;
     private readonly IStorySegmentService _segmentService;
     private readonly IMediaGenerationJobFailureFinalizer _failureFinalizer;
+    private readonly IMediaReadinessService _readinessService;
+    private readonly ILogger<MediaGenerationService> _logger;
     private readonly TimeSpan _jobLease;
     private readonly int _assetMaxAttempts;
 
@@ -41,6 +45,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         ISceneSegmentationProvider segmenter,
         ISceneCoverageValidator coverageValidator,
         ISceneSpecificationBuilder specificationBuilder,
+        IIllustrationBeatPlanner beatPlanner,
         IImageGenerationProvider imageProvider,
         ITtsProvider ttsProvider,
         IMediaStorage mediaStorage,
@@ -49,7 +54,9 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         IAudioQualityGate audioQualityGate,
         IStorySegmentService segmentService,
         IMediaGenerationJobFailureFinalizer failureFinalizer,
-        MediaGenerationOptions options)
+        IMediaReadinessService readinessService,
+        MediaGenerationOptions options,
+        ILogger<MediaGenerationService> logger)
     {
         _unitOfWork = unitOfWork;
         _contextBuilder = contextBuilder;
@@ -57,6 +64,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         _segmenter = segmenter;
         _coverageValidator = coverageValidator;
         _specificationBuilder = specificationBuilder;
+        _beatPlanner = beatPlanner;
         _imageProvider = imageProvider;
         _ttsProvider = ttsProvider;
         _mediaStorage = mediaStorage;
@@ -65,6 +73,8 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         _audioQualityGate = audioQualityGate;
         _segmentService = segmentService;
         _failureFinalizer = failureFinalizer;
+        _readinessService = readinessService;
+        _logger = logger;
         _jobLease = TimeSpan.FromMinutes(Math.Clamp(options.JobLeaseMinutes, 1, 30));
         _assetMaxAttempts = Math.Clamp(options.AssetMaxAttempts, 1, 5);
     }
@@ -79,15 +89,39 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
             .OrderByDescending(x => x.Id).FirstOrDefault();
         if (job?.StoryVersionId is not int versionId)
             return new MediaGenerationProgress(storyId, null, story.Status.ToString(), "NotStarted", 0, 0, 0, false, null);
-        var scenes = await _unitOfWork.Repository<StoryScene>().FindAsync(
-            x => x.StoryVersionId == versionId, cancellationToken: cancellationToken);
-        var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(
-            x => x.StoryVersionId == versionId && x.StorySceneId != null, cancellationToken: cancellationToken);
+        var readiness = await _readinessService.CheckAsync(versionId, expectedSceneCount: null, cancellationToken);
         return new MediaGenerationProgress(
-            storyId, versionId, story.Status.ToString(), job.Status.ToString(), scenes.Count,
-            assets.Count(x => x.Type == MediaType.Illustration && x.Status == MediaStatus.Ready),
-            assets.Count(x => x.Type == MediaType.TtsAudio && x.Status == MediaStatus.Ready),
-            story.Status == StoryStatus.Ready, job.ErrorCode);
+            storyId, versionId, story.Status.ToString(), job.Status.ToString(), readiness.SceneCount,
+            readiness.ReadyIllustrations, readiness.ReadyAudio,
+            story.Status == StoryStatus.Ready && readiness.IsReady, job.ErrorCode, readiness.RequiredIllustrations,
+            readiness.MissingIllustrationBeatIds, readiness.MissingAudioSegmentIds,
+            readiness.ManualReviewAssetIds, readiness.ScenesWithoutValidBeats);
+    }
+
+    public async Task<StoryMediaPackage> GetPackageAsync(int userId, int storyId,
+        CancellationToken cancellationToken = default)
+    {
+        await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
+        var version = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
+            x => x.StoryId == storyId && x.IsCurrent, cancellationToken: cancellationToken)).FirstOrDefault()
+            ?? throw new NotFoundException("Current story version", storyId);
+        var scenes = (await _unitOfWork.Repository<StoryScene>().FindAsync(
+            x => x.StoryVersionId == version.Id, cancellationToken: cancellationToken))
+            .OrderBy(x => x.SceneIndex).ToArray();
+        var sceneIds = scenes.Select(scene => scene.Id).ToList();
+        var beats = await _unitOfWork.Repository<IllustrationBeat>().FindAsync(
+            x => sceneIds.Contains(x.StorySceneId), cancellationToken: cancellationToken);
+        var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(
+            x => x.StoryVersionId == version.Id && x.Type == MediaType.Illustration,
+            cancellationToken: cancellationToken);
+        return new StoryMediaPackage(storyId, version.Id, scenes.Select(scene =>
+            new SceneMediaItem(scene.Id, scene.SceneIndex, beats.Where(b => b.StorySceneId == scene.Id)
+                .OrderBy(b => b.BeatOrder).Select(beat =>
+                {
+                    var asset = assets.FirstOrDefault(a => a.IllustrationBeatId == beat.Id);
+                    return new IllustrationBeatMediaItem(beat.Id, beat.BeatOrder, beat.StartOffset, beat.EndOffset,
+                        beat.VisualFocus, asset?.Id, asset?.Status.ToString() ?? "Queued", asset?.Url);
+                }).ToArray())).ToArray());
     }
 
     public async Task<MediaGenerationProgress> RetryAsync(
@@ -148,6 +182,8 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
             story.Status = StoryStatus.MediaProcessing;
             _unitOfWork.Repository<Story>().Update(story);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            _logger.LogInformation("Media retry queued Story={StoryId} Version={VersionId} Job={JobId}",
+                storyId, versionId, job.Id);
         }
         catch
         {
@@ -156,6 +192,70 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         }
 
         return await GetProgressAsync(userId, storyId, cancellationToken);
+    }
+
+    public async Task RegenerateIllustrationBeatAsync(int userId, int storyId, int beatId,
+        CancellationToken cancellationToken = default)
+    {
+        await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
+            var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
+                ?? throw new NotFoundException("Story", storyId);
+            if (story.Status is not (StoryStatus.MediaProcessing or StoryStatus.Ready))
+                throw new ConflictException("MEDIA_REGENERATION_NOT_ALLOWED");
+            var version = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
+                x => x.StoryId == storyId && x.IsCurrent, cancellationToken: cancellationToken)).FirstOrDefault()
+                ?? throw new ConflictException("INVALID_MEDIA_HANDOFF");
+            var beat = await _unitOfWork.Repository<IllustrationBeat>().GetByIdAsync(beatId, cancellationToken)
+                ?? throw new NotFoundException("Illustration beat", beatId);
+            var scene = await _unitOfWork.Repository<StoryScene>().GetByIdAsync(beat.StorySceneId, cancellationToken);
+            if (scene is null || scene.StoryVersionId != version.Id)
+                throw new ConflictException("BEAT_NOT_IN_CURRENT_VERSION");
+            var asset = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(
+                x => x.IllustrationBeatId == beatId && x.Type == MediaType.Illustration,
+                cancellationToken: cancellationToken)
+                ?? throw new NotFoundException("Illustration asset", beatId);
+            if (asset.StorySceneId != scene.Id || asset.StoryVersionId != version.Id)
+                throw new ConflictException("BEAT_ASSET_NOT_IN_CURRENT_VERSION");
+            var job = (await _unitOfWork.Repository<StoryGenerationJob>().FindAsync(
+                x => x.StoryId == storyId && x.StoryVersionId == version.Id &&
+                     x.Operation == GenerationJobOperation.GenerateMediaPackage,
+                cancellationToken: cancellationToken)).OrderByDescending(x => x.Id).FirstOrDefault()
+                ?? throw new NotFoundException("Media generation job", storyId);
+            if (job.Status == GenerationJobStatus.Processing)
+                throw new ConflictException("MEDIA_JOB_PROCESSING");
+
+            asset.Status = MediaStatus.Queued;
+            asset.ValidationStatus = ValidationStatus.Pending;
+            asset.AttemptCount = 0;
+            asset.Url = null;
+            asset.LastValidationReason = null;
+            asset.ValidationResultJson = null;
+            asset.CompletedAt = null;
+            _unitOfWork.Repository<MediaAsset>().Update(asset);
+            job.Status = GenerationJobStatus.Pending;
+            job.Stage = JobStage.MediaPending;
+            job.AttemptNo = 0;
+            job.ErrorCode = null;
+            job.FallbackMessage = null;
+            job.LeaseExpiresAt = null;
+            job.CompletedAt = null;
+            _unitOfWork.Repository<StoryGenerationJob>().Update(job);
+            RotateToken(job);
+            story.Status = StoryStatus.MediaProcessing;
+            _unitOfWork.Repository<Story>().Update(story);
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            _logger.LogInformation("Illustration beat regeneration queued Story={StoryId} Version={VersionId} Beat={BeatId} Asset={AssetId}",
+                storyId, version.Id, beat.Id, asset.Id);
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            throw;
+        }
     }
 
     public async Task<MediaJobProcessResult> ProcessNextAsync(CancellationToken cancellationToken = default)
@@ -231,30 +331,6 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
     }
 
     /// <summary>
-    /// Resets a scene illustration to Queued and triggers regeneration.
-    /// Used when a supervisor manually rejects an illustration.
-    /// </summary>
-    public async Task RegenerateIllustrationAsync(
-        int userId, int storyId, int sceneId, CancellationToken cancellationToken = default)
-    {
-        await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
-        var scene = await _unitOfWork.Repository<StoryScene>().GetByIdAsync(sceneId, cancellationToken)
-                    ?? throw new NotFoundException("StoryScene", sceneId);
-        var asset = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(
-            x => x.StorySceneId == sceneId && x.Type == MediaType.Illustration,
-            cancellationToken: cancellationToken);
-        if (asset is null) throw new NotFoundException("Illustration asset", sceneId);
-        asset.Status = MediaStatus.Queued;
-        asset.ValidationStatus = ValidationStatus.Pending;
-        asset.AttemptCount = 0;
-        asset.LastValidationReason = null;
-        asset.Url = null;
-        asset.CompletedAt = null;
-        _unitOfWork.Repository<MediaAsset>().Update(asset);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-    }
-
-    /// <summary>
     /// Resets a segment TTS audio to Queued and triggers regeneration.
     /// Used when a supervisor manually rejects a segment's audio.
     /// </summary>
@@ -288,14 +364,19 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         foreach (var scene in scenes.OrderBy(x => x.SceneIndex))
         {
             await AssertFreshAsync(state.Job.Id, claimedToken, state.Version.Id, mediaContext.Id, cancellationToken);
-            var specification = _specificationBuilder.Build(
+            var baseSpecification = _specificationBuilder.Build(
                 state.Version.Id, scene.Id, scene.SceneIndex, scene.SceneText,
                 scene.VisualDescription, mediaContext.ContextJson);
 
-            // Illustration: scene-level, one asset per scene.
-            await EnsureIllustrationAsync(
-                state.Job.Id, claimedToken, state.Job.StoryId, state.Version.Id, mediaContext,
-                scene, specification, cancellationToken);
+            var beats = await GetOrCreateBeatsAsync(state.Job.Id, claimedToken, state.Version.Id,
+                mediaContext, scene, cancellationToken);
+            foreach (var beat in beats.OrderBy(x => x.BeatOrder))
+            {
+                var beatText = scene.SceneText[beat.StartOffset..beat.EndOffset];
+                await EnsureIllustrationAsync(
+                    state.Job.Id, claimedToken, state.Job.StoryId, state.Version.Id, mediaContext,
+                    scene, beat, baseSpecification.ForBeat(beatText, beat.VisualFocus), cancellationToken);
+            }
 
             // Audio: segment-level, one asset per StorySegment.
             await EnsureAudioSegmentsAsync(
@@ -304,7 +385,8 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         }
 
         await UpdateStageAsync(state.Job.Id, claimedToken, JobStage.MediaFinalizing, cancellationToken);
-        await FinalizeAsync(state.Job.Id, claimedToken, state.Version.Id, scenes.Count, cancellationToken);
+        await FinalizeAsync(state.Job.Id, claimedToken, state.Version.Id, mediaContext.Id,
+            scenes.Count, cancellationToken);
     }
 
     private async Task<MediaContext> GetOrCreateContextAsync(MediaState state, CancellationToken cancellationToken)
@@ -366,11 +448,79 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         return scenes;
     }
 
+    private async Task<IReadOnlyList<IllustrationBeat>> GetOrCreateBeatsAsync(
+        int jobId, string token, int versionId, MediaContext mediaContext, StoryScene scene,
+        CancellationToken cancellationToken)
+    {
+        var existing = await _unitOfWork.Repository<IllustrationBeat>().FindAsync(
+            x => x.StorySceneId == scene.Id, cancellationToken: cancellationToken);
+        if (existing.Count > 0)
+        {
+            ValidateBeats(scene, existing.Select(x => new IllustrationBeatSelection(
+                x.BeatOrder, x.StartOffset, x.EndOffset, x.VisualFocus)).ToArray());
+            return existing;
+        }
+
+        var legacyAsset = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(
+            x => x.StorySceneId == scene.Id && x.Type == MediaType.Illustration,
+            cancellationToken: cancellationToken);
+        IReadOnlyList<IllustrationBeatSelection> selections = [];
+        if (legacyAsset is null)
+        {
+            try
+            {
+                selections = await _beatPlanner.PlanAsync(new IllustrationBeatPlanRequest(
+                    scene.SceneText, scene.VisualDescription, mediaContext.ContextJson), cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch { /* Planner unavailable: use one whole-scene beat below. */ }
+        }
+        if (!AreValidBeats(scene, selections))
+        {
+            _logger.LogWarning("Illustration beat plan fallback StoryVersion={VersionId} Scene={SceneId}",
+                versionId, scene.Id);
+            selections = [new IllustrationBeatSelection(1, 0, scene.SceneText.Length,
+                scene.VisualDescription ?? "Illustrate the scene's main moment")];
+        }
+        await AssertFreshAsync(jobId, token, versionId, mediaContext.Id, cancellationToken);
+        var beats = selections.Select(x => new IllustrationBeat
+        {
+            StorySceneId = scene.Id, BeatOrder = x.BeatOrder, StartOffset = x.StartOffset,
+            EndOffset = x.EndOffset, VisualFocus = x.VisualFocus.Trim()
+        }).ToArray();
+        await _unitOfWork.Repository<IllustrationBeat>().AddRangeAsync(beats, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        if (legacyAsset is not null)
+        {
+            legacyAsset.IllustrationBeatId = beats[0].Id;
+            _unitOfWork.Repository<MediaAsset>().Update(legacyAsset);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        return beats;
+    }
+
+    private static bool AreValidBeats(StoryScene scene, IReadOnlyList<IllustrationBeatSelection> beats) =>
+        beats.Count is >= 1 and <= 3 && beats.OrderBy(x => x.BeatOrder)
+            .Select((beat, index) => beat.BeatOrder == index + 1 &&
+                beat.StartOffset >= 0 && beat.EndOffset <= scene.SceneText.Length &&
+                beat.EndOffset > beat.StartOffset && !string.IsNullOrWhiteSpace(beat.VisualFocus) &&
+                beat.VisualFocus.Length <= 500 &&
+                scene.SceneText[beat.StartOffset..beat.EndOffset].Any(c => !char.IsWhiteSpace(c)))
+            .All(x => x) && beats.Select(x => (x.StartOffset, x.EndOffset, x.VisualFocus.Trim()))
+            .Distinct().Count() == beats.Count &&
+        beats.OrderBy(x => x.BeatOrder).Select(x => x.StartOffset)
+            .SequenceEqual(beats.Select(x => x.StartOffset).OrderBy(x => x));
+
+    private static void ValidateBeats(StoryScene scene, IReadOnlyList<IllustrationBeatSelection> beats)
+    {
+        if (!AreValidBeats(scene, beats)) throw new InvalidOperationException("INVALID_PERSISTED_ILLUSTRATION_BEATS");
+    }
+
     private async Task EnsureIllustrationAsync(
         int jobId, string claimedToken, int storyId, int versionId, MediaContext mediaContext,
-        StoryScene scene, SceneSpecification baseSpecification, CancellationToken cancellationToken)
+        StoryScene scene, IllustrationBeat beat, SceneSpecification baseSpecification, CancellationToken cancellationToken)
     {
-        var asset = await GetOrCreateIllustrationAssetAsync(versionId, scene, cancellationToken);
+        var asset = await GetOrCreateIllustrationAssetAsync(versionId, scene, beat, cancellationToken);
         if (asset.Status == MediaStatus.Ready) return;
 
         // Failure-feedback history for this asset (reset when retrying).
@@ -415,7 +565,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
                 }
 
                 await AssertFreshAsync(jobId, claimedToken, versionId, mediaContext.Id, cancellationToken);
-                var storagePath = $"{storyId}/v{mediaContext.Revision}/scene-{scene.SceneIndex}-a{attempt + 1}{illustration.SuggestedExtension}";
+                var storagePath = $"{storyId}/v{mediaContext.Revision}/scene-{scene.SceneIndex}-beat-{beat.BeatOrder}-asset-{asset.Id}-{Guid.NewGuid():N}-a{attempt + 1}{illustration.SuggestedExtension}";
                 await using var content = illustration.OpenReadStream();
                 asset.Url = await _mediaStorage.UploadAsync(
                     storagePath, content, illustration.MimeType, cancellationToken);
@@ -427,6 +577,9 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
                 asset.CompletedAt = DateTime.UtcNow;
                 _unitOfWork.Repository<MediaAsset>().Update(asset);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
+                _logger.LogInformation(
+                    "Illustration ready Story={StoryId} Version={VersionId} Scene={SceneId} Beat={BeatId} Asset={AssetId} Attempt={Attempt}",
+                    storyId, versionId, scene.Id, beat.Id, asset.Id, asset.AttemptCount);
                 return;
             }
             catch (PermanentMediaGenerationException) when (!cancellationToken.IsCancellationRequested)
@@ -549,6 +702,9 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
                 asset.CompletedAt = DateTime.UtcNow;
                 _unitOfWork.Repository<MediaAsset>().Update(asset);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
+                _logger.LogInformation(
+                    "Audio ready Story={StoryId} Version={VersionId} Scene={SceneId} Segment={SegmentId} Asset={AssetId} Attempt={Attempt}",
+                    storyId, versionId, scene.Id, segment.Id, asset.Id, asset.AttemptCount);
                 return;
             }
             catch (Exception exception) when (!cancellationToken.IsCancellationRequested && !IsStale(exception))
@@ -581,16 +737,22 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         reason.Contains("CONTENT_TOO_SHORT", StringComparison.OrdinalIgnoreCase);
 
     private async Task<MediaAsset> GetOrCreateIllustrationAssetAsync(
-        int versionId, StoryScene scene, CancellationToken cancellationToken)
+        int versionId, StoryScene scene, IllustrationBeat beat, CancellationToken cancellationToken)
     {
         var existing = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(
-            x => x.StorySceneId == scene.Id && x.Type == MediaType.Illustration,
+            x => x.IllustrationBeatId == beat.Id && x.Type == MediaType.Illustration,
             cancellationToken: cancellationToken);
-        if (existing is not null) return existing;
+        if (existing is not null)
+        {
+            if (existing.StorySceneId != scene.Id || existing.StoryVersionId != versionId)
+                throw new InvalidOperationException("INVALID_ILLUSTRATION_BEAT_ASSET");
+            return existing;
+        }
         var asset = new MediaAsset
         {
             StoryVersionId = versionId,
             StorySceneId = scene.Id,
+            IllustrationBeatId = beat.Id,
             SceneIndex = scene.SceneIndex,
             Type = MediaType.Illustration,
             Status = MediaStatus.Queued,
@@ -624,29 +786,26 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
     }
 
     private async Task FinalizeAsync(
-        int jobId, string token, int versionId, int sceneCount, CancellationToken cancellationToken)
+        int jobId, string token, int versionId, int mediaContextId, int sceneCount,
+        CancellationToken cancellationToken)
     {
         var job = await RequireClaimedJobAsync(jobId, token, cancellationToken);
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(job.StoryId, cancellationToken)
                     ?? throw new InvalidOperationException("STORY_NOT_FOUND");
         if (story.Status == StoryStatus.Archived) throw new InvalidOperationException("STORY_ARCHIVED");
-        var scenes = await _unitOfWork.Repository<StoryScene>().FindAsync(
-            x => x.StoryVersionId == versionId, cancellationToken: cancellationToken);
-        var segments = await _unitOfWork.Repository<StorySegment>().FindAsync(
-            x => scenes.Select(s => s.Id).Contains(x.StorySceneId), cancellationToken: cancellationToken);
-        var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(
-            x => x.StoryVersionId == versionId && x.StorySceneId != null, cancellationToken: cancellationToken);
+        var readiness = await _readinessService.CheckAsync(versionId, sceneCount, cancellationToken);
+        if (!readiness.IsReady)
+        {
+            _logger.LogWarning(
+                "Media package incomplete Story={StoryId} Version={VersionId} MissingScenes={MissingSceneCount} MissingBeats={MissingBeatCount} MissingAudio={MissingAudioCount} ManualReview={ManualReviewCount}",
+                story.Id, versionId, readiness.ScenesWithoutValidBeats.Count,
+                readiness.MissingIllustrationBeatIds.Count, readiness.MissingAudioSegmentIds.Count,
+                readiness.ManualReviewAssetIds.Count);
+            throw new InvalidOperationException("MEDIA_PACKAGE_INCOMPLETE");
+        }
 
-        // Every scene needs exactly one Ready illustration.
-        var allScenesHaveIllustration = scenes.All(scene =>
-            assets.Any(a => a.StorySceneId == scene.Id && a.Type == MediaType.Illustration && a.Status == MediaStatus.Ready));
-
-        // Every segment needs exactly one Ready TTS audio.
-        var allSegmentsHaveAudio = segments.All(seg =>
-            assets.Any(a => a.StorySegmentId == seg.Id && a.Type == MediaType.TtsAudio && a.Status == MediaStatus.Ready));
-
-        var ready = sceneCount > 0 && scenes.Count == sceneCount && allScenesHaveIllustration && allSegmentsHaveAudio;
-        if (!ready) throw new InvalidOperationException("MEDIA_PACKAGE_INCOMPLETE");
+        // Re-check the current version, latest context, job lease and story state at the handoff.
+        await AssertFreshAsync(jobId, token, versionId, mediaContextId, cancellationToken);
 
         story.Status = StoryStatus.Ready;
         _unitOfWork.Repository<Story>().Update(story);
@@ -657,6 +816,8 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         RotateToken(job);
         _unitOfWork.Repository<StoryGenerationJob>().Update(job);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        _logger.LogInformation("Media package ready Story={StoryId} Version={VersionId} Beats={BeatCount} Audio={AudioCount}",
+            story.Id, versionId, readiness.RequiredIllustrations, readiness.ReadyAudio);
     }
 
     private static SceneSpecification BuildSpecificationWithFeedback(
@@ -796,6 +957,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         {
             if (current.Message is
                 "INVALID_MEDIA_HANDOFF" or "INVALID_PERSISTED_SCENE_COVERAGE" or
+                "INVALID_PERSISTED_ILLUSTRATION_BEATS" or "INVALID_ILLUSTRATION_BEAT_ASSET" or
                 "SCENE_COVERAGE_EMPTY" or "INVALID_SCENE_ORDER" or "UNKNOWN_SCENE_BLOCK" or
                 "NON_CONTIGUOUS_SCENE_BLOCKS" or "SCENE_TEXT_NOT_CANONICAL" or
                 "INCOMPLETE_OR_OVERLAPPING_SCENE_COVERAGE" or

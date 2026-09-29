@@ -31,6 +31,14 @@ while (currentDir != null)
 
 var builder = WebApplication.CreateBuilder(args);
 
+if (builder.Environment.IsDevelopment() && OperatingSystem.IsWindows())
+{
+    // Keep Vertex failures visible even when the developer cannot write Windows Event Log.
+    builder.Logging.ClearProviders();
+    builder.Logging.AddConsole();
+    builder.Logging.AddDebug();
+}
+
 builder.Services.AddControllers();
 builder.Services.AddHealthChecks();
 builder.Services.AddEndpointsApiExplorer();

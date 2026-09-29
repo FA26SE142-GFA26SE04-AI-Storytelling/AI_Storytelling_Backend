@@ -6,6 +6,9 @@
 # dotenv files
 .env
 
+# Local database backups created before development migrations
+/Database/*.dump
+
 # Local documentation (except Superpowers plans, which need to stay tracked
 # so tools like Codex's @-mention file picker can find them)
 /docs/*

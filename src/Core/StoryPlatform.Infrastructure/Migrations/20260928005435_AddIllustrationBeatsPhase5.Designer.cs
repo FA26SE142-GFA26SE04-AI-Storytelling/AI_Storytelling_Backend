@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using StoryPlatform.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using StoryPlatform.Infrastructure.Persistence;
 namespace StoryPlatform.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260928005435_AddIllustrationBeatsPhase5")]
+    partial class AddIllustrationBeatsPhase5
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -382,8 +385,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ChildProfileId")
-                        .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
+                        .IsUnique();
 
                     b.HasIndex("CreatedByUserId");
 
@@ -515,9 +517,6 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<int?>("ChildAccessCredentialId")
-                        .HasColumnType("integer");
-
                     b.Property<int>("ChildProfileId")
                         .HasColumnType("integer");
 
@@ -535,27 +534,17 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
-                    b.Property<int?>("SupervisorSessionId")
-                        .HasColumnType("integer");
-
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("ChildAccessCredentialId");
 
                     b.HasIndex("ChildProfileId");
 
                     b.HasIndex("SessionKey")
                         .IsUnique();
 
-                    b.HasIndex("SupervisorSessionId");
-
-                    b.ToTable("child_sessions", null, t =>
-                        {
-                            t.HasCheckConstraint("CK_child_sessions_exactly_one_entry_source", "(\"ChildAccessCredentialId\" IS NOT NULL AND \"SupervisorSessionId\" IS NULL) OR (\"ChildAccessCredentialId\" IS NULL AND \"SupervisorSessionId\" IS NOT NULL)");
-                        });
+                    b.ToTable("child_sessions", (string)null);
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ClassGroup", b =>
@@ -3547,27 +3536,13 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ChildSession", b =>
                 {
-                    b.HasOne("StoryPlatform.Domain.Entities.ChildAccessCredential", "ChildAccessCredential")
-                        .WithMany()
-                        .HasForeignKey("ChildAccessCredentialId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
                         .WithMany()
                         .HasForeignKey("ChildProfileId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("StoryPlatform.Domain.Entities.RefreshToken", "SupervisorSession")
-                        .WithMany()
-                        .HasForeignKey("SupervisorSessionId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("ChildAccessCredential");
-
                     b.Navigation("ChildProfile");
-
-                    b.Navigation("SupervisorSession");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ClassGroup", b =>

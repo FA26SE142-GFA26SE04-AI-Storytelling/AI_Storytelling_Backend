@@ -103,6 +103,13 @@ public sealed class GeminiMediaSafetyEvaluator : IMediaSafetyEvaluator
         sb.AppendLine("SCENE TEXT:");
         sb.AppendLine(spec.SceneText);
         sb.AppendLine();
+        if (!string.IsNullOrWhiteSpace(spec.BeatText))
+        {
+            sb.AppendLine("ILLUSTRATED BEAT:");
+            sb.AppendLine(spec.BeatText);
+            sb.AppendLine(spec.BeatVisualFocus);
+            sb.AppendLine();
+        }
         if (!string.IsNullOrWhiteSpace(spec.VisualDescription))
         {
             sb.AppendLine("VISUAL DESCRIPTION:");

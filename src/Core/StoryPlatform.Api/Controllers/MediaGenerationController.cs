@@ -25,6 +25,30 @@ public sealed class MediaGenerationController : ControllerBase
         return Ok(ApiResponse<MediaGenerationProgress>.Ok(result));
     }
 
+    [HttpGet("package")]
+    public async Task<ActionResult<ApiResponse<StoryMediaPackage>>> GetPackage(
+        int storyId, CancellationToken cancellationToken)
+    {
+        var value = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (!int.TryParse(value, out var userId)) throw new UnauthorizedAccessException();
+        var result = await _service.GetPackageAsync(userId, storyId, cancellationToken);
+        return Ok(ApiResponse<StoryMediaPackage>.Ok(result));
+    }
+
+    [HttpPost("illustration-beats/{beatId:int}/regenerate")]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> RegenerateIllustrationBeat(
+        int storyId, int beatId, CancellationToken cancellationToken)
+    {
+        var value = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (!int.TryParse(value, out var userId)) throw new UnauthorizedAccessException();
+        await _service.RegenerateIllustrationBeatAsync(userId, storyId, beatId, cancellationToken);
+        return Accepted();
+    }
+
     [HttpPost("retry")]
     [ProducesResponseType(typeof(ApiResponse<MediaGenerationProgress>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

@@ -97,6 +97,7 @@ public static class DependencyInjection
         services.AddSingleton<SemanticSceneSegmentationService>(); // Orchestrator: primary (LLM) + fallback (paragraph)
         services.AddSingleton<ISceneSegmentationProvider>(sp => sp.GetRequiredService<SemanticSceneSegmentationService>());
         services.AddSingleton<ISceneSpecificationBuilder, SceneSpecificationBuilder>();
+        services.AddScoped<IMediaReadinessService, MediaReadinessService>();
         services.AddScoped<MediaGenerationService>();
         services.AddScoped<IMediaGenerationService>(provider => provider.GetRequiredService<MediaGenerationService>());
         services.AddScoped<IMediaGenerationJobProcessor>(provider => provider.GetRequiredService<MediaGenerationService>());

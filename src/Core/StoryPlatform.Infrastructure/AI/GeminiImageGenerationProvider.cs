@@ -111,8 +111,19 @@ public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
         var sb = new StringBuilder();
         sb.AppendLine("Child-friendly storybook illustration. Avoid any unsafe content for children aged 6-12.");
         sb.AppendLine($"People policy: {options.PersonGeneration}. Do not depict children in unsafe, sexualized, or exploitative situations.");
+        sb.AppendLine("--- Story media context: preserve character appearance, style and safety across all beats ---");
+        sb.AppendLine(spec.MediaContextJson);
         sb.AppendLine("--- Visual description ---");
-        sb.AppendLine(spec.VisualDescription ?? spec.SceneText);
+        if (!string.IsNullOrWhiteSpace(spec.BeatText))
+        {
+            sb.AppendLine("Illustrate ONLY this visual beat, while preserving the scene's continuity:");
+            sb.AppendLine(spec.BeatText);
+            sb.AppendLine("Specific visual focus:");
+            sb.AppendLine(spec.BeatVisualFocus);
+            sb.AppendLine("Full scene context (do not depict all moments at once):");
+            sb.AppendLine(spec.SceneText);
+        }
+        else sb.AppendLine(spec.VisualDescription ?? spec.SceneText);
         sb.AppendLine("--- Must show ---");
         foreach (var must in spec.MustShow) sb.AppendLine($"- {must}");
         sb.AppendLine("--- Must not contradict ---");
@@ -134,7 +145,7 @@ public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
         generationConfig = new
         {
             responseModalities = new[] { "TEXT", "IMAGE" },
-            candidateCount = Math.Clamp(options.NumberOfImages, 1, 4),
+            candidateCount = 1,
             imageConfig = new
             {
                 aspectRatio = options.AspectRatio

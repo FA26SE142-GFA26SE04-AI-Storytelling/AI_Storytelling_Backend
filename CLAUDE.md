@@ -141,6 +141,18 @@ Do not rely on obsolete Superpowers slash commands such as `/brainstorm`, `/writ
 
 For small, obvious changes, avoid unnecessary ceremony. For larger or risky changes, use the full workflow.
 
+### Implementation plan format (writing-plans)
+
+Every Task in an implementation plan must open with two plain-language blocks, written in Vietnamese, placed right after the Task heading and before the `Files` list:
+
+1. `**Việc này làm gì (nói dễ hiểu):**` — what the task accomplishes for a reader who does not know the code (the business/user-facing purpose, 2–5 sentences, no code).
+2. `**Cần thêm / còn thiếu:**` — a bullet list comparing the current codebase against the spec for this task:
+   - `Đã có:` what already exists and will be reused (endpoint, service, table, config).
+   - `Cần thêm:` each new feature/behavior this task adds (new endpoint, column, rule, check).
+   - `Còn thiếu / ngoài phạm vi:` gaps this task deliberately does not cover and where they belong (a later step/flow, or a question for the user).
+
+Keep the technical `Files` / `Interfaces` / `Steps` sections unchanged below these blocks. Omit commit steps from plans.
+
 ## 10. claude-mem
 
 When claude-mem is available, use relevant project memory to avoid repeating previously established decisions.

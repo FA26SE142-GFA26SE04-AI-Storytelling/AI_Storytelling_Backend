@@ -557,30 +557,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "child_sessions",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    ChildProfileId = table.Column<int>(type: "integer", nullable: false),
-                    SessionKey = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
-                    LastActivityAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_child_sessions", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_child_sessions_child_profiles_ChildProfileId",
-                        column: x => x.ChildProfileId,
-                        principalTable: "child_profiles",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "data_requests",
                 columns: table => new
                 {
@@ -993,6 +969,45 @@ namespace StoryPlatform.Infrastructure.Migrations
                         name: "FK_organization_permissions_user_accounts_GrantedByUserId",
                         column: x => x.GrantedByUserId,
                         principalTable: "user_accounts",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "child_sessions",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ChildProfileId = table.Column<int>(type: "integer", nullable: false),
+                    SessionKey = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    LastActivityAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    ChildAccessCredentialId = table.Column<int>(type: "integer", nullable: true),
+                    SupervisorSessionId = table.Column<int>(type: "integer", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_child_sessions", x => x.Id);
+                    table.CheckConstraint("CK_child_sessions_exactly_one_entry_source", "(\"ChildAccessCredentialId\" IS NOT NULL AND \"SupervisorSessionId\" IS NULL) OR (\"ChildAccessCredentialId\" IS NULL AND \"SupervisorSessionId\" IS NOT NULL)");
+                    table.ForeignKey(
+                        name: "FK_child_sessions_child_access_credentials_ChildAccessCredenti~",
+                        column: x => x.ChildAccessCredentialId,
+                        principalTable: "child_access_credentials",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_child_sessions_child_profiles_ChildProfileId",
+                        column: x => x.ChildProfileId,
+                        principalTable: "child_profiles",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_child_sessions_refresh_tokens_SupervisorSessionId",
+                        column: x => x.SupervisorSessionId,
+                        principalTable: "refresh_tokens",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
                 });
@@ -1821,6 +1836,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_reading_sessions", x => x.Id);
+                    table.CheckConstraint("CK_reading_sessions_exactly_one_entry_source", "(\"ChildAccessCredentialId\" IS NOT NULL AND \"SupervisorSessionId\" IS NULL) OR (\"ChildAccessCredentialId\" IS NULL AND \"SupervisorSessionId\" IS NOT NULL)");
                     table.ForeignKey(
                         name: "FK_reading_sessions_assignment_recipients_AssignmentRecipientId",
                         column: x => x.AssignmentRecipientId,
@@ -2236,7 +2252,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                 name: "IX_child_access_credentials_ChildProfileId",
                 table: "child_access_credentials",
                 column: "ChildProfileId",
-                unique: true);
+                unique: true,
+                filter: "\"IsDeleted\" = false");
 
             migrationBuilder.CreateIndex(
                 name: "IX_child_access_credentials_CreatedByUserId",
@@ -2276,6 +2293,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                 column: "OwnerUserId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_child_sessions_ChildAccessCredentialId",
+                table: "child_sessions",
+                column: "ChildAccessCredentialId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_child_sessions_ChildProfileId",
                 table: "child_sessions",
                 column: "ChildProfileId");
@@ -2285,6 +2307,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                 table: "child_sessions",
                 column: "SessionKey",
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_child_sessions_SupervisorSessionId",
+                table: "child_sessions",
+                column: "SupervisorSessionId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_class_group_members_ChildProfileId",

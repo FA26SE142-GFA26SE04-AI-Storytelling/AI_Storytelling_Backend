@@ -94,4 +94,35 @@ public class ChildAccessCredentialControllerTests
         var apiResponse = Assert.IsType<ApiResponse<ChildSessionDto>>(result.Value);
         Assert.Same(expected, apiResponse.Data);
     }
+
+    [Fact]
+    public async Task StartSupervisedSession_DelegatesWithCurrentUserIdAndRefreshToken()
+    {
+        var expected = new ChildSessionDto { ChildProfileId = 5, AccessToken = "child-jwt" };
+        _service.Setup(service => service.StartSupervisedSessionAsync(
+                5, 42, "supervisor-refresh", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+
+        var response = await _sut.StartSupervisedSession(
+            5, new StartSupervisedChildSessionRequestDto
+            {
+                SupervisorRefreshToken = "supervisor-refresh"
+            }, CancellationToken.None);
+
+        var result = Assert.IsType<OkObjectResult>(response.Result);
+        var apiResponse = Assert.IsType<ApiResponse<ChildSessionDto>>(result.Value);
+        Assert.Same(expected, apiResponse.Data);
+    }
+
+    [Fact]
+    public void StartSupervisedSession_OnlyParentOrTeacher()
+    {
+        var method = typeof(ChildAccessCredentialController)
+            .GetMethod(nameof(ChildAccessCredentialController.StartSupervisedSession))!;
+        var authorize = Assert.Single(method.GetCustomAttributes(
+            typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), false)
+            .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>());
+
+        Assert.Equal("Parent,Teacher", authorize.Roles);
+    }
 }

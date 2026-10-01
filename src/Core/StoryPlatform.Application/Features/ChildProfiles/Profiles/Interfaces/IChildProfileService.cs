@@ -17,7 +17,7 @@ public interface IChildProfileService
         CancellationToken cancellationToken = default);
 
     Task<List<ChildProfileDto>> ListMyChildProfilesAsync(
-        int ownerUserId, CancellationToken cancellationToken = default);
+        int currentUserId, CancellationToken cancellationToken = default);
 
     Task<ChildProfileDto> GetChildProfileByIdAsync(
         int childProfileId, int currentUserId, CancellationToken cancellationToken = default);

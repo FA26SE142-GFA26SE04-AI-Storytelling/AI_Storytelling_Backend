@@ -17,6 +17,7 @@ namespace StoryPlatform.Application.Features.StoryReview.Services;
 
 public sealed class StoryReviewService : IStoryReviewService
 {
+    private static readonly JsonSerializerOptions ProposalJsonOptions = new(JsonSerializerDefaults.Web);
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAIStoryGenerationClient _aiClient;
     private readonly IProposalCache _proposalCache;
@@ -374,8 +375,8 @@ public sealed class StoryReviewService : IStoryReviewService
             StoryVersionId = version.Id,
             ArtifactType = "vocabulary",
             OperationType = "regenerate",
-            OriginalContent = JsonSerializer.SerializeToElement(new { items = vocabDtos }),
-            SuggestedContent = JsonSerializer.SerializeToElement(new { items = result.Items }),
+            OriginalContent = JsonSerializer.SerializeToElement(new { items = vocabDtos }, ProposalJsonOptions),
+            SuggestedContent = JsonSerializer.SerializeToElement(new { items = result.Items }, ProposalJsonOptions),
             Status = "pending",
             CreatedAt = DateTime.UtcNow,
             ExpiresAt = DateTime.UtcNow.AddHours(1)
@@ -533,7 +534,7 @@ public sealed class StoryReviewService : IStoryReviewService
             ArtifactType = "quiz",
             OperationType = "regenerate",
             OriginalContent = JsonSerializer.SerializeToElement(new { }),
-            SuggestedContent = JsonSerializer.SerializeToElement(new { items = quizItems }),
+            SuggestedContent = JsonSerializer.SerializeToElement(new { items = quizItems }, ProposalJsonOptions),
             Status = "pending",
             CreatedAt = DateTime.UtcNow,
             ExpiresAt = DateTime.UtcNow.AddHours(1)
@@ -659,7 +660,7 @@ public sealed class StoryReviewService : IStoryReviewService
             ArtifactType = "discussion",
             OperationType = "regenerate",
             OriginalContent = JsonSerializer.SerializeToElement(new { }),
-            SuggestedContent = JsonSerializer.SerializeToElement(new { items = discussionItems }),
+            SuggestedContent = JsonSerializer.SerializeToElement(new { items = discussionItems }, ProposalJsonOptions),
             Status = "pending",
             CreatedAt = DateTime.UtcNow,
             ExpiresAt = DateTime.UtcNow.AddHours(1)

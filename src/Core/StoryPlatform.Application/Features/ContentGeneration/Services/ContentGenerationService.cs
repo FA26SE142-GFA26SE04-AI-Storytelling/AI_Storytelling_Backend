@@ -164,7 +164,8 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
                     cancellationToken: cancellationToken))
                 .OrderByDescending(item => item.Id)
                 .FirstOrDefault();
-            if (failed is null || !failed.GenerationRequestId.HasValue)
+            if (failed is null || !failed.GenerationRequestId.HasValue ||
+                failed.Operation != GenerationJobOperation.GenerateContent)
             {
                 throw new ConflictException("Story không có content generation thất bại hợp lệ để retry.");
             }
@@ -173,8 +174,10 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             {
                 StoryId = storyId,
                 GenerationRequestId = failed.GenerationRequestId,
-                StoryVersionId = failed.StoryVersionId,
-                BaseStoryVersionId = failed.BaseStoryVersionId ?? outline.Id,
+                // A content retry produces a new candidate, not the failed version.
+                // Reusing that version violates the unique operation/version index.
+                StoryVersionId = null,
+                BaseStoryVersionId = outline.Id,
                 RequestedByUserId = userId,
                 OperationKey = key,
                 Operation = failed.Operation,

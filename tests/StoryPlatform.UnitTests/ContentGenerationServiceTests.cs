@@ -244,6 +244,37 @@ public sealed class ContentGenerationServiceTests
     }
 
     [Fact]
+    public async Task Retry_quality_failed_content_creates_new_candidate_without_reusing_failed_version()
+    {
+        var store = Seed();
+        var failingService = new ContentGenerationService(
+            store, new FakeAIClient(), new AlwaysFailReadabilityQualityEvaluator(),
+            new FakeFailureFinalizer(store), new RecordingHandoffService(store),
+            new ContentGenerationOptions { MaxContentRefinementAttempts = 2 });
+        Assert.True(await failingService.ProcessNextAsync());
+        var failed = store.Items<StoryGenerationJob>().Single();
+        Assert.Equal(GenerationJobStatus.Failed, failed.Status);
+        var failedVersionId = failed.StoryVersionId;
+        Assert.NotNull(failedVersionId);
+
+        var service = Service(store, new FakeAIClient());
+        var request = new RetryContentGenerationRequestDto { RetryKey = "retry-quality-0001" };
+        await service.RetryAsync(1, 1, request);
+        await service.RetryAsync(1, 1, request);
+        var retry = Assert.Single(store.Items<StoryGenerationJob>(), item => item.OperationKey == request.RetryKey);
+        Assert.Null(retry.StoryVersionId);
+        Assert.Equal(1, retry.BaseStoryVersionId);
+        Assert.Equal(failedVersionId, failed.StoryVersionId);
+
+        Assert.True(await service.ProcessNextAsync());
+        Assert.Equal(GenerationJobStatus.Completed, retry.Status);
+        Assert.NotNull(retry.StoryVersionId);
+        Assert.NotEqual(failedVersionId, retry.StoryVersionId);
+        Assert.Equal(GenerationJobStatus.Failed, failed.Status);
+        Assert.Equal(GenerationJobOperation.GenerateVocabulary, PendingJob(store).Operation);
+    }
+
+    [Fact]
     public async Task Discussion_generation_automatically_marks_first_item_as_moral_lesson()
     {
         var store = Seed();

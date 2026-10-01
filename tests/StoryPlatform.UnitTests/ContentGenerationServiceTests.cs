@@ -21,6 +21,24 @@ namespace StoryPlatform.UnitTests;
 public sealed class ContentGenerationServiceTests
 {
     [Fact]
+    public async Task ReadingMediaOnly_ProgressMarksLearningArtifactsSkippedAfterStableContent()
+    {
+        var store = Seed();
+        var story = store.Items<Story>().Single();
+        story.OutputMode = StoryOutputMode.ReadingMediaOnly;
+        story.Status = StoryStatus.ContentReview;
+        store.Items<StoryVersion>().Single().Content = "Lan và Minh cùng chia sẻ một quyển sách.";
+
+        var progress = await Service(store, new FakeAIClient()).GetProgressAsync(1, story.Id);
+
+        Assert.Equal("reading_media_only", progress.OutputMode);
+        Assert.True(progress.IsComplete);
+        Assert.Equal("skipped", progress.Vocabulary);
+        Assert.Equal("skipped", progress.Quiz);
+        Assert.Equal("skipped", progress.Discussion);
+    }
+
+    [Fact]
     public async Task Happy_path_runs_story_then_vocabulary_quiz_discussion()
     {
         var store = Seed();
@@ -554,7 +572,7 @@ public sealed class ContentGenerationServiceTests
     {
         public List<(int StoryId, int VersionId, int? GenerationRequestId)> Calls { get; } = [];
 
-        public async Task<int> QueueArtifactsAsync(
+        public async Task<StableVersionHandoffResult> QueueArtifactsAsync(
             int storyId, int storyVersionId, int requestedByUserId,
             int? generationRequestId, CancellationToken cancellationToken = default)
         {
@@ -565,7 +583,7 @@ public sealed class ContentGenerationServiceTests
                 job.StoryId == storyId
                 && job.Operation == GenerationJobOperation.GenerateVocabulary
                 && job.StoryVersionId == storyVersionId);
-            if (existing is not null) return existing.Id;
+            if (existing is not null) return new StableVersionHandoffResult(true, existing.Id);
 
             // Tạo job mới tương tự StableVersionArtifactHandoffService.
             var jobEntity = new StoryGenerationJob
@@ -584,7 +602,7 @@ public sealed class ContentGenerationServiceTests
                 StartedAt = DateTime.UtcNow
             };
             await store.Repository<StoryGenerationJob>().AddAsync(jobEntity, cancellationToken);
-            return jobEntity.Id;
+            return new StableVersionHandoffResult(true, jobEntity.Id);
         }
     }
 }

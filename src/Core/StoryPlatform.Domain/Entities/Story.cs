@@ -18,6 +18,7 @@ public class Story : BaseEntity
     public string? VocabularyLevel { get; set; }
     public string Language { get; set; } = "vi";
     public StorySource Source { get; set; } = StorySource.Ai;
+    public StoryOutputMode OutputMode { get; set; } = StoryOutputMode.Learning;
     public StoryStatus Status { get; set; } = StoryStatus.Draft;
     public bool IsPublished { get; set; } = false;
     public DateTime? ChildVisibleAt { get; set; }

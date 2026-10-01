@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Common;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.AIStoryInput.Guardrails;
@@ -106,6 +107,7 @@ public sealed class ExistingStoryService : IExistingStoryService
             Title = request.Title,
             ChildProfileId = request.ChildProfileId,
             Language = request.Language,
+            OutputMode = request.OutputMode,
             IdempotencyKey = request.IdempotencyKey
         }, cancellationToken);
     }
@@ -114,6 +116,7 @@ public sealed class ExistingStoryService : IExistingStoryService
         int userId, ImportStoryRequestDto request, CancellationToken cancellationToken = default)
     {
         ValidateImportRequest(request);
+        var outputMode = StoryOutputModeContract.Parse(request.OutputMode);
 
         var normalized = StoryContentNormalizer.Normalize(request.Content);
         if (string.IsNullOrWhiteSpace(normalized))
@@ -146,16 +149,26 @@ public sealed class ExistingStoryService : IExistingStoryService
             throw new BadRequestException($"Nội dung vượt Maximum Story Length {policyContext.MaximumLength} từ Safety Policy.");
 
         // Idempotency: nếu cùng user + child + content hash đã import -> trả về bản gốc.
+        var modeBoundContent = outputMode == StoryOutputMode.Learning
+            ? normalized
+            : $"{normalized}\noutputMode=reading_media_only";
+        var inputFingerprint = ShortHash(modeBoundContent);
         var idempotencyKey = !string.IsNullOrWhiteSpace(request.IdempotencyKey)
             ? request.IdempotencyKey!
-            : ExistingStoryIdempotencyKeys.ForImport(userId, child.Id, normalized);
+            : ExistingStoryIdempotencyKeys.ForImport(userId, child.Id, modeBoundContent);
 
         var existingRequest = await _unitOfWork.Repository<StoryGenerationRequest>().FirstOrDefaultAsync(
             req => req.SubmittedByUserId == userId && req.IdempotencyKey == idempotencyKey,
             cancellationToken: cancellationToken);
         if (existingRequest is not null)
         {
+            if (!string.Equals(existingRequest.InputFingerprint, inputFingerprint, StringComparison.Ordinal))
+                throw new ConflictException("Idempotency key đã được sử dụng cho nội dung hoặc outputMode khác.");
             var existingStory = await _unitOfWork.Repository<Story>().GetByIdAsync(existingRequest.StoryId, cancellationToken);
+            if (existingStory is not null &&
+                (existingStory.ChildProfileId != child.Id || existingStory.OutputMode != outputMode ||
+                 !string.Equals(existingStory.Language, language, StringComparison.OrdinalIgnoreCase)))
+                throw new ConflictException("Idempotency key đã được sử dụng cho Child Profile, ngôn ngữ hoặc outputMode khác.");
             var existingVersion = existingStory is null ? null : (await _unitOfWork.Repository<StoryVersion>().FindAsync(
                 v => v.StoryId == existingStory.Id && v.IsCurrent, cancellationToken: cancellationToken))
                 .OrderByDescending(v => v.VersionNo).FirstOrDefault();
@@ -164,6 +177,7 @@ public sealed class ExistingStoryService : IExistingStoryService
                 return new ImportStoryResponseDto
                 {
                     StoryId = existingStory.Id,
+                    OutputMode = StoryOutputModeContract.Format(existingStory.OutputMode),
                     StoryVersionId = existingVersion.Id,
                     StoryStatus = existingStory.Status.ToString(),
                     EditType = existingVersion.EditType.ToString(),
@@ -195,6 +209,7 @@ public sealed class ExistingStoryService : IExistingStoryService
                 ReadingLevel = learning.ReadingLevel,
                 VocabularyLevel = $"level_{learning.ReadingLevel}",
                 Source = StorySource.Manual,
+                OutputMode = outputMode,
                 Status = StoryStatus.Draft,
                 IsPublished = false,
                 AuthorUserId = userId,
@@ -222,7 +237,7 @@ public sealed class ExistingStoryService : IExistingStoryService
                 StoryId = story.Id,
                 SubmittedByUserId = userId,
                 IdempotencyKey = idempotencyKey,
-                InputFingerprint = ShortHash(normalized),
+                InputFingerprint = inputFingerprint,
                 ContextFingerprint = ShortHash($"{child.Id}:{story.AgeBand}:{story.Language}"),
                 ContextSnapshotJson = JsonSerializer.Serialize(new
                 {
@@ -300,6 +315,7 @@ public sealed class ExistingStoryService : IExistingStoryService
         return new ImportStoryResponseDto
         {
             StoryId = story.Id,
+            OutputMode = StoryOutputModeContract.Format(story.OutputMode),
             StoryVersionId = v1.Id,
             StoryStatus = story.Status.ToString(),
             EditType = v1.EditType.ToString(),

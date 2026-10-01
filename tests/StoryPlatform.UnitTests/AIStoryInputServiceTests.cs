@@ -18,6 +18,66 @@ namespace StoryPlatform.UnitTests;
 public sealed class AIStoryInputServiceTests
 {
     [Fact]
+    public async Task ReadingMediaOnly_IsPersistedOnStoryAndReturnedInProgress()
+    {
+        var unitOfWork = CreateEligibleUnitOfWork();
+        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
+        var input = ValidRequest();
+        var request = new SubmitAIStoryInputRequestDto
+        {
+            ChildProfileId = input.ChildProfileId, IdempotencyKey = input.IdempotencyKey,
+            Topic = input.Topic, Lesson = input.Lesson, VocabularyLevel = input.VocabularyLevel,
+            CharacterMode = input.CharacterMode, SettingMode = input.SettingMode,
+            TargetLength = input.TargetLength, OutputMode = "reading_media_only"
+        };
+
+        var progress = await service.SubmitAsync(1, request);
+
+        Assert.Equal(StoryOutputMode.ReadingMediaOnly, Assert.Single(unitOfWork.Items<Story>()).OutputMode);
+        Assert.Equal("reading_media_only", progress.OutputMode);
+    }
+
+    [Fact]
+    public async Task SameIdempotencyKeyWithDifferentOutputMode_IsRejected()
+    {
+        var unitOfWork = CreateEligibleUnitOfWork();
+        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
+        var input = ValidRequest();
+        await service.SubmitAsync(1, input);
+        var changed = new SubmitAIStoryInputRequestDto
+        {
+            ChildProfileId = input.ChildProfileId, IdempotencyKey = input.IdempotencyKey,
+            Topic = input.Topic, Lesson = input.Lesson, VocabularyLevel = input.VocabularyLevel,
+            CharacterMode = input.CharacterMode, SettingMode = input.SettingMode,
+            TargetLength = input.TargetLength, OutputMode = "reading_media_only"
+        };
+
+        await Assert.ThrowsAsync<ConflictException>(() => service.SubmitAsync(1, changed));
+        Assert.Single(unitOfWork.Items<Story>());
+    }
+
+    [Fact]
+    public async Task BlockedDraft_CanSelectReadingMediaOnlyWithNewRequestBeforeAnyJob()
+    {
+        var unitOfWork = CreateEligibleUnitOfWork(blockedTerm: "bạo lực");
+        var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
+        var blocked = await service.SubmitAsync(1, ValidRequest(topic: "Một câu chuyện bạo lực"));
+        var next = new SubmitAIStoryInputRequestDto
+        {
+            ChildProfileId = 1, ExistingStoryId = blocked.StoryId, IdempotencyKey = "operation-0002",
+            Topic = "Tình bạn", Lesson = "Biết giúp đỡ bạn bè", VocabularyLevel = "level_2",
+            CharacterMode = "ai_suggested", SettingMode = "ai_suggested",
+            TargetLength = 500, OutputMode = "reading_media_only"
+        };
+
+        var accepted = await service.SubmitAsync(1, next);
+
+        Assert.Equal(blocked.StoryId, accepted.StoryId);
+        Assert.Equal("reading_media_only", accepted.OutputMode);
+        Assert.Equal(StoryOutputMode.ReadingMediaOnly, unitOfWork.Items<Story>().Single().OutputMode);
+    }
+
+    [Fact]
     public async Task Loading_context_does_not_create_business_records()
     {
         var unitOfWork = CreateEligibleUnitOfWork();

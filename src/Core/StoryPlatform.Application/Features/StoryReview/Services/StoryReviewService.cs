@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Linq;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Common;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ContentGeneration.Quality;
 using StoryPlatform.Application.Features.ExistingStories.DTOs;
@@ -62,10 +63,12 @@ public sealed class StoryReviewService : IStoryReviewService
         var quizCount = await _quizRepo.CountAsync(q => q.StoryVersionId == version.Id, cancellationToken);
         var discussionCount = await _discussionRepo.CountAsync(d => d.StoryVersionId == version.Id, cancellationToken);
         var readability = ReadabilityCalculator.Calculate(version.Content, story.Language);
+        var readingMediaOnly = story.OutputMode == StoryOutputMode.ReadingMediaOnly;
 
         return new ReviewPackageDto
         {
             StoryId = storyId,
+            OutputMode = StoryOutputModeContract.Format(story.OutputMode),
             StoryVersionId = version.Id,
             StoryStatus = story.Status.ToString(),
             Title = version.Title,
@@ -74,9 +77,9 @@ public sealed class StoryReviewService : IStoryReviewService
             ReadabilityAlgorithm = readability.Algorithm,
             ReadabilityFkgl = version.ReadabilityFkgl ?? readability.Fkgl,
             ReadabilityFre = version.ReadabilityFre ?? readability.Fre,
-            Vocabulary = new ArtifactStatusDto { State = vocabCount > 0 ? "completed" : "pending", ItemCount = vocabCount },
-            Quiz = new ArtifactStatusDto { State = quizCount > 0 ? "completed" : "pending", ItemCount = quizCount },
-            Discussion = new ArtifactStatusDto { State = discussionCount > 0 ? "completed" : "pending", ItemCount = discussionCount },
+            Vocabulary = new ArtifactStatusDto { State = readingMediaOnly ? "skipped" : vocabCount > 0 ? "completed" : "pending", ItemCount = vocabCount },
+            Quiz = new ArtifactStatusDto { State = readingMediaOnly ? "skipped" : quizCount > 0 ? "completed" : "pending", ItemCount = quizCount },
+            Discussion = new ArtifactStatusDto { State = readingMediaOnly ? "skipped" : discussionCount > 0 ? "completed" : "pending", ItemCount = discussionCount },
             CanEdit = true,
             CanApprove = story.Status == StoryStatus.ContentReview,
             CanArchive = story.Status == StoryStatus.ContentReview
@@ -98,6 +101,7 @@ public sealed class StoryReviewService : IStoryReviewService
         return new StoryReviewDto
         {
             StoryId = storyId,
+            OutputMode = StoryOutputModeContract.Format(story.OutputMode),
             VersionId = version.Id,
             Title = version.Title,
             Content = version.Content ?? string.Empty,
@@ -177,6 +181,7 @@ public sealed class StoryReviewService : IStoryReviewService
             return new StoryReviewDto
             {
                 StoryId = storyId,
+                OutputMode = StoryOutputModeContract.Format(story.OutputMode),
                 VersionId = newVersion.Id,
                 Title = newVersion.Title,
                 Content = newVersion.Content,
@@ -266,6 +271,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<VocabularyReviewDto> GetVocabularyForReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
 
@@ -282,6 +288,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<VocabularyReviewDto> UpdateVocabularyAsync(int userId, int storyId, UpdateVocabularyRequestDto input, CancellationToken cancellationToken = default)
     {
+        await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.Id == input.VersionId && v.StoryId == storyId, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
 
@@ -342,6 +349,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<CreateProposalResponseDto> CreateVocabularyProposalAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
 
@@ -392,6 +400,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<QuizReviewDto> GetQuizForReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
 
@@ -415,6 +424,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<QuizReviewDto> UpdateQuizAsync(int userId, int storyId, UpdateQuizRequestDto input, CancellationToken cancellationToken = default)
     {
+        await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.Id == input.VersionId && v.StoryId == storyId, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
 
@@ -491,6 +501,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<CreateProposalResponseDto> CreateQuizProposalAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
 
@@ -550,6 +561,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<DiscussionReviewDto> GetDiscussionForReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
 
@@ -571,6 +583,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<DiscussionReviewDto> UpdateDiscussionAsync(int userId, int storyId, UpdateDiscussionRequestDto input, CancellationToken cancellationToken = default)
     {
+        await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.Id == input.VersionId && v.StoryId == storyId, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
 
@@ -623,6 +636,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<CreateProposalResponseDto> CreateDiscussionProposalAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
 
@@ -679,6 +693,8 @@ public sealed class StoryReviewService : IStoryReviewService
         var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
         await EnsureReviewPermissionAsync(story, userId, cancellationToken);
+        if (story.OutputMode == StoryOutputMode.ReadingMediaOnly && story.Status != StoryStatus.ContentReview)
+            throw new ConflictException("STORY_NOT_READY_FOR_REVIEW");
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
                       ?? throw new NotFoundException("StoryVersion");
         _reviewCompletionStore?.MarkStoryReviewed(storyId, version.Id, userId);
@@ -687,6 +703,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<bool> CompleteVocabularyReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
         await EnsureReviewPermissionAsync(story, userId, cancellationToken);
@@ -698,6 +715,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<bool> CompleteQuizReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
         await EnsureReviewPermissionAsync(story, userId, cancellationToken);
@@ -709,6 +727,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<bool> CompleteDiscussionReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
         await EnsureReviewPermissionAsync(story, userId, cancellationToken);
@@ -729,6 +748,8 @@ public sealed class StoryReviewService : IStoryReviewService
             checks.Add(new ValidationCheckDto { Name = "story_exists", Passed = false, Message = "Story not found" });
             return new ValidationResultDto { CanApprove = false, Checks = checks, Issues = ["Story not found"] };
         }
+
+        var readingMediaOnly = story.OutputMode == StoryOutputMode.ReadingMediaOnly;
 
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken);
         if (version == null)
@@ -848,24 +869,24 @@ public sealed class StoryReviewService : IStoryReviewService
                          vocabularyItems.All(item => !string.IsNullOrWhiteSpace(item.Term) && !string.IsNullOrWhiteSpace(item.Definition)) &&
                          vocabularyTerms.Distinct(StringComparer.OrdinalIgnoreCase).Count() == vocabularyTerms.Length &&
                          vocabularyTerms.All(term => (version.Content ?? string.Empty).Contains(term, StringComparison.OrdinalIgnoreCase));
-        checks.Add(new ValidationCheckDto { Name = "vocabulary_valid", Passed = vocabValid, Message = $"{vocabularyItems.Count} items" });
-        if (!vocabValid) issues.Add($"Vocabulary needs at least 5 unique, non-empty terms that occur in the story (current: {vocabularyItems.Count})");
+        checks.Add(new ValidationCheckDto { Name = "vocabulary_valid", Passed = readingMediaOnly || vocabValid, Message = readingMediaOnly ? "skipped" : $"{vocabularyItems.Count} items" });
+        if (!readingMediaOnly && !vocabValid) issues.Add($"Vocabulary needs at least 5 unique, non-empty terms that occur in the story (current: {vocabularyItems.Count})");
 
         // 6. Check quiz
         var quizItems = await _quizRepo.FindAsync(q => q.StoryVersionId == version.Id, cancellationToken: cancellationToken);
         var quizValid = quizItems.Count >= 3 && quizItems.All(IsValidQuizItem);
         var hasAllTypes = Enum.GetValues<QuizType>().All(t => quizItems.Any(q => q.Type == t));
         var quizPassed = quizValid && hasAllTypes;
-        checks.Add(new ValidationCheckDto { Name = "quiz_valid", Passed = quizPassed, Message = quizPassed ? $"{quizItems.Count} questions, all types" : "Missing types" });
-        if (!quizPassed) issues.Add("Quiz needs at least 3 valid questions with all types and valid answers");
+        checks.Add(new ValidationCheckDto { Name = "quiz_valid", Passed = readingMediaOnly || quizPassed, Message = readingMediaOnly ? "skipped" : quizPassed ? $"{quizItems.Count} questions, all types" : "Missing types" });
+        if (!readingMediaOnly && !quizPassed) issues.Add("Quiz needs at least 3 valid questions with all types and valid answers");
 
         // 7. Check discussion
         var discussionItems = await _discussionRepo.FindAsync(d => d.StoryVersionId == version.Id, cancellationToken: cancellationToken);
         var discussionValid = discussionItems.Count >= 2 &&
                               discussionItems.All(item => !string.IsNullOrWhiteSpace(item.Question)) &&
                               discussionItems.Any(item => item.IsMoralLesson);
-        checks.Add(new ValidationCheckDto { Name = "discussion_valid", Passed = discussionValid, Message = $"{discussionItems.Count} questions" });
-        if (!discussionValid) issues.Add($"Discussion needs at least 2 non-empty questions including the moral lesson (current: {discussionItems.Count})");
+        checks.Add(new ValidationCheckDto { Name = "discussion_valid", Passed = readingMediaOnly || discussionValid, Message = readingMediaOnly ? "skipped" : $"{discussionItems.Count} questions" });
+        if (!readingMediaOnly && !discussionValid) issues.Add($"Discussion needs at least 2 non-empty questions including the moral lesson (current: {discussionItems.Count})");
 
         // 8. Check Artifact Bindings
         var bindingsPassed = vocabularyItems.All(v => v.StoryVersionId == version.Id) &&
@@ -874,15 +895,18 @@ public sealed class StoryReviewService : IStoryReviewService
         checks.Add(new ValidationCheckDto
         {
             Name = "artifact_bindings_valid",
-            Passed = bindingsPassed,
-            Message = bindingsPassed ? "All artifacts bound to current version" : "Artifacts binding mismatch"
+            Passed = readingMediaOnly || bindingsPassed,
+            Message = readingMediaOnly ? "skipped" : bindingsPassed ? "All artifacts bound to current version" : "Artifacts binding mismatch"
         });
-        if (!bindingsPassed) issues.Add("Artifacts must be bound to the current story version.");
+        if (!readingMediaOnly && !bindingsPassed) issues.Add("Artifacts must be bound to the current story version.");
 
         // 9. Check Review Complete
         var isMarkedComplete = _reviewCompletionStore?.IsReviewCompleted(storyId, version.Id) ?? false;
         var structurallyComplete = storyValid && vocabValid && quizPassed && discussionValid;
-        var reviewComplete = isMarkedComplete || structurallyComplete;
+        var autoApproval = safetyPolicy is { ParentalGateEnabled: false, RequiredApprovalMode: ApprovalMode.AutoPublishOnThreshold };
+        var reviewComplete = readingMediaOnly
+            ? (_reviewCompletionStore?.IsStoryReviewed(storyId, version.Id) ?? false) || autoApproval
+            : isMarkedComplete || structurallyComplete;
         checks.Add(new ValidationCheckDto
         {
             Name = "review_complete",
@@ -895,10 +919,7 @@ public sealed class StoryReviewService : IStoryReviewService
                          readability.Passed &&
                          safetyPassed &&
                          profilePassed &&
-                         vocabValid &&
-                         quizPassed &&
-                         discussionValid &&
-                         bindingsPassed &&
+                         (readingMediaOnly || vocabValid && quizPassed && discussionValid && bindingsPassed) &&
                          reviewComplete;
 
         return new ValidationResultDto
@@ -954,10 +975,17 @@ public sealed class StoryReviewService : IStoryReviewService
                     cancellationToken: cancellationToken))
                 .OrderByDescending(j => j.Id)
                 .FirstOrDefault();
+            var acceptedRequest = sourceJob?.GenerationRequestId is null
+                ? (await _unitOfWork.Repository<StoryGenerationRequest>().FindAsync(
+                        request => request.StoryId == storyId &&
+                                   request.Status == GenerationInputStatus.InputAccepted,
+                        cancellationToken: cancellationToken))
+                    .OrderByDescending(request => request.Id).FirstOrDefault()
+                : null;
             await jobs.AddAsync(new StoryGenerationJob
             {
                 StoryId = storyId,
-                GenerationRequestId = sourceJob?.GenerationRequestId,
+                GenerationRequestId = sourceJob?.GenerationRequestId ?? acceptedRequest?.Id,
                 StoryVersionId = approvedVersion.Id,
                 BaseStoryVersionId = approvedVersion.Id,
                 RequestedByUserId = userId,
@@ -1046,6 +1074,15 @@ public sealed class StoryReviewService : IStoryReviewService
             StoryId = storyId,
             Status = "Archived"
         };
+    }
+
+    private async Task EnsureLearningModeAsync(int userId, int storyId, CancellationToken cancellationToken)
+    {
+        var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
+                    ?? throw new NotFoundException("Story", storyId);
+        await EnsureReviewPermissionAsync(story, userId, cancellationToken);
+        if (story.OutputMode != StoryOutputMode.Learning)
+            throw new ConflictException("LEARNING_ARTIFACT_NOT_ENABLED");
     }
 
     private async Task EnsureReviewPermissionAsync(

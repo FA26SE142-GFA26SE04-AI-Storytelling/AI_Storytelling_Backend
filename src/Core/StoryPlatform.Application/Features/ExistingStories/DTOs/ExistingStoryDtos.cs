@@ -26,6 +26,8 @@ public sealed class ImportStoryRequestDto
     /// <summary>Ngôn ngữ (mặc định "vi").</summary>
     public string Language { get; set; } = "vi";
 
+    public string OutputMode { get; set; } = "learning";
+
     /// <summary>Idempotency key do client sinh; nếu null backend tự sinh.</summary>
     public string? IdempotencyKey { get; set; }
 }
@@ -38,12 +40,14 @@ public sealed class ImportStoryDocumentRequestDto
     public string? Title { get; set; }
     public int ChildProfileId { get; set; }
     public string Language { get; set; } = "vi";
+    public string OutputMode { get; set; } = "learning";
     public string? IdempotencyKey { get; set; }
 }
 
 public sealed class ImportStoryResponseDto
 {
     public int StoryId { get; set; }
+    public string OutputMode { get; set; } = "learning";
     public int StoryVersionId { get; set; }
     public string StoryStatus { get; set; } = string.Empty;
     public string EditType { get; set; } = string.Empty;

@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Common;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AIStoryInput.DTOs;
 using StoryPlatform.Application.Features.AIStoryInput.Guardrails;
@@ -49,6 +50,7 @@ public sealed class AIStoryInputService : IAIStoryInputService
         CancellationToken cancellationToken = default)
     {
         ValidateDataAnnotations(request);
+        var outputMode = StoryOutputModeContract.Parse(request.OutputMode);
         var normalized = Normalize(request);
         ValidateCreativeInput(normalized);
         var context = await ResolveContextAsync(
@@ -60,7 +62,7 @@ public sealed class AIStoryInputService : IAIStoryInputService
         normalized = normalized with { VocabularyLevel = context.VocabularyLevel, Language = context.Language };
         ValidateAgainstContext(normalized, context);
 
-        var inputFingerprint = Fingerprint(normalized);
+        var inputFingerprint = InputFingerprint(normalized, outputMode);
         var requestRepository = _unitOfWork.Repository<StoryGenerationRequest>();
         var existing = await requestRepository.FirstOrDefaultAsync(
             item => item.SubmittedByUserId == userId && item.IdempotencyKey == request.IdempotencyKey.Trim(),
@@ -95,6 +97,10 @@ public sealed class AIStoryInputService : IAIStoryInputService
             {
                 throw new ConflictException("Story draft đang có một yêu cầu input hoạt động hoặc đang chờ Generate Outline.");
             }
+            if (await _unitOfWork.Repository<StoryGenerationJob>().ExistsAsync(
+                    item => item.StoryId == story.Id, cancellationToken))
+                throw new ConflictException("OUTPUT_MODE_LOCKED: Story draft đã có generation job.");
+            story.OutputMode = outputMode;
         }
         else
         {
@@ -104,6 +110,7 @@ public sealed class AIStoryInputService : IAIStoryInputService
                 AuthorUserId = userId,
                 ChildProfileId = request.ChildProfileId,
                 Source = StorySource.Ai,
+                OutputMode = outputMode,
                 Status = StoryStatus.Draft,
                 IsPublished = false,
                 AgeBand = context.AgeBand,
@@ -115,7 +122,7 @@ public sealed class AIStoryInputService : IAIStoryInputService
 
         var generationRequest = new StoryGenerationRequest
         {
-            Story = request.ExistingStoryId.HasValue ? null : story,
+            Story = story,
             StoryId = request.ExistingStoryId.HasValue ? story.Id : 0,
             SubmittedByUserId = userId,
             IdempotencyKey = request.IdempotencyKey.Trim(),
@@ -135,6 +142,10 @@ public sealed class AIStoryInputService : IAIStoryInputService
             if (!request.ExistingStoryId.HasValue)
             {
                 await _unitOfWork.Repository<Story>().AddAsync(story, cancellationToken);
+            }
+            else
+            {
+                _unitOfWork.Repository<Story>().Update(story);
             }
 
             await requestRepository.AddAsync(generationRequest, cancellationToken);
@@ -221,7 +232,7 @@ public sealed class AIStoryInputService : IAIStoryInputService
             throw new ConflictException("Yêu cầu đã sử dụng hết số lần kiểm tra input.");
         }
 
-        var fingerprint = Fingerprint(normalized);
+        var fingerprint = InputFingerprint(normalized, story.OutputMode);
         if (!string.Equals(fingerprint, request.InputFingerprint, StringComparison.Ordinal))
         {
             throw new ConflictException("INPUT_CHANGED: hãy tạo request mới trên cùng Story draft.");
@@ -786,6 +797,11 @@ public sealed class AIStoryInputService : IAIStoryInputService
         return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     }
 
+    private static string InputFingerprint(AcceptedAIStoryInputSnapshot input, StoryOutputMode outputMode) =>
+        outputMode == StoryOutputMode.Learning
+            ? Fingerprint(input) // Giữ tương thích fingerprint của request cũ.
+            : Fingerprint(new { input, outputMode = StoryOutputModeContract.Format(outputMode) });
+
     private static InputGuardrailResult TechnicalFailure(string code, string fallback) =>
         new(InputGuardrailDecision.Error, code, fallback, true, RuleBasedInputGuardrail.Version);
 
@@ -818,6 +834,7 @@ public sealed class AIStoryInputService : IAIStoryInputService
     private static AIStoryInputProgressDto ToProgressDto(StoryGenerationRequest request) => new()
     {
         StoryId = request.StoryId,
+        OutputMode = StoryOutputModeContract.Format(request.Story?.OutputMode ?? StoryOutputMode.Learning),
         RequestId = request.Id,
         InputStatus = request.Status switch
         {

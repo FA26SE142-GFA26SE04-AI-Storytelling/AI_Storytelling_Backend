@@ -18,6 +18,69 @@ namespace StoryPlatform.UnitTests;
 public sealed class StoryReviewPhase4FinalValidationTests
 {
     [Fact]
+    public async Task ReadingMediaOnly_RequiresStoryReviewButNotLearningArtifacts()
+    {
+        var uow = SeedContentReviewWithAllArtifacts();
+        uow.Items<Story>().Single().OutputMode = StoryOutputMode.ReadingMediaOnly;
+        ((FakeRepo<StoryVocabulary>)uow.Repository<StoryVocabulary>()).Items.Clear();
+        ((FakeRepo<QuizItem>)uow.Repository<QuizItem>()).Items.Clear();
+        ((FakeRepo<DiscussionQuestion>)uow.Repository<DiscussionQuestion>()).Items.Clear();
+        var reviewStore = new InMemoryReviewCompletionStore();
+        var service = BuildReviewService(uow, reviewStore: reviewStore);
+
+        var beforeReview = await service.ValidateAsync(1, 1);
+        Assert.False(beforeReview.CanApprove);
+        Assert.Contains(beforeReview.Checks, c => c.Name == "review_complete" && !c.Passed);
+
+        await service.CompleteStoryReviewAsync(1, 1);
+        var afterReview = await service.ValidateAsync(1, 1);
+        Assert.True(afterReview.CanApprove, string.Join("; ", afterReview.Issues));
+        Assert.Contains(afterReview.Checks, c => c.Name == "vocabulary_valid" && c.Message == "skipped");
+        Assert.Contains(afterReview.Checks, c => c.Name == "quiz_valid" && c.Message == "skipped");
+        Assert.Contains(afterReview.Checks, c => c.Name == "discussion_valid" && c.Message == "skipped");
+    }
+
+    [Fact]
+    public async Task ReadingMediaOnly_DoesNotBypassSafety()
+    {
+        var uow = SeedContentReviewWithAllArtifacts();
+        uow.Items<Story>().Single().OutputMode = StoryOutputMode.ReadingMediaOnly;
+        uow.Items<StoryVersion>().Single().SafetyScore = 0m;
+        var reviewStore = new InMemoryReviewCompletionStore();
+        var service = BuildReviewService(uow, reviewStore: reviewStore);
+        await service.CompleteStoryReviewAsync(1, 1);
+
+        var result = await service.ValidateAsync(1, 1);
+
+        Assert.False(result.CanApprove);
+        Assert.Contains(result.Checks, c => c.Name == "safety_passed" && !c.Passed);
+    }
+
+    [Fact]
+    public async Task ReadingMediaOnly_ApprovalQueuesMediaWithAcceptedContextRequest()
+    {
+        var uow = SeedContentReviewWithAllArtifacts();
+        uow.Items<Story>().Single().OutputMode = StoryOutputMode.ReadingMediaOnly;
+        ((FakeRepo<StoryVocabulary>)uow.Repository<StoryVocabulary>()).Items.Clear();
+        ((FakeRepo<QuizItem>)uow.Repository<QuizItem>()).Items.Clear();
+        ((FakeRepo<DiscussionQuestion>)uow.Repository<DiscussionQuestion>()).Items.Clear();
+        uow.Seed(new StoryGenerationRequest
+        {
+            Id = 19, StoryId = 1, SubmittedByUserId = 1,
+            Status = GenerationInputStatus.InputAccepted,
+            ContextSnapshotJson = "{}", AcceptedInputJson = "{}"
+        });
+        var reviewStore = new InMemoryReviewCompletionStore();
+        var service = BuildReviewService(uow, reviewStore: reviewStore);
+        await service.CompleteStoryReviewAsync(1, 1);
+
+        await service.ApproveAsync(1, 1);
+
+        Assert.Equal(StoryStatus.Approved, uow.Items<Story>().Single().Status);
+        Assert.Equal(19, Assert.Single(uow.Items<StoryGenerationJob>()).GenerationRequestId);
+    }
+
+    [Fact]
     public async Task Validate_Fails_WhenSafetyScoreBelowThreshold()
     {
         var uow = SeedContentReviewWithAllArtifacts();

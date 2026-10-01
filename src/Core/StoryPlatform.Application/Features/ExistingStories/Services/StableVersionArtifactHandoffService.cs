@@ -12,26 +12,25 @@ using StoryPlatform.Application.Features.ChildProfiles.Safety.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces;
 using StoryPlatform.Application.Features.ExistingStories.Helpers;
 using StoryPlatform.Application.Features.ExistingStories.Interfaces;
+using StoryPlatform.Application.Features.StoryReview.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.ExistingStories.Services;
 
 /// <summary>
-/// Điểm hội tụ duy nhất để đưa một StoryVersion đã ổn định vào chuỗi artifact
-/// Vocabulary → Quiz → Discussion (không qua GenerateContent).
+/// Điểm hội tụ của StoryVersion đã ổn định: xếp hàng learning artifacts
+/// hoặc chuyển sang ContentReview theo OutputMode.
 ///
 /// Hợp đồng:
 ///   - storyVersion.IsCurrent == true
 ///   - !string.IsNullOrWhiteSpace(version.Content)
 ///   - safety đã pass (caller đảm bảo)
 ///   - story.Source ∈ { Ai, Manual }
-///   - story.Status ∈ { OutlineReview (chỉ AI), Draft (Existing) }
+///   - story.Status ∈ { OutlineReview (AI), Draft (Existing), ContentReview (reading re-entry) }
 ///
-/// Kết quả:
-///   - Đảm bảo có 1 StoryGenerationRequest với ContextSnapshotJson hợp lệ
-///     (tái sử dụng nếu có, tạo "ảo" cho Existing Story).
-///   - Enqueue job GenerateVocabulary đầu tiên (idempotent theo (story, version)).
+/// Learning: đảm bảo GenerationRequest rồi enqueue Vocabulary idempotently.
+/// ReadingMediaOnly: không tạo artifact job, chuyển sang ContentReview.
 /// </summary>
 public sealed class StableVersionArtifactHandoffService : IStableVersionArtifactHandoffService
 {
@@ -40,24 +39,28 @@ public sealed class StableVersionArtifactHandoffService : IStableVersionArtifact
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILearningProfileService _learningProfileService;
     private readonly ISafetyPolicyService _safetyPolicyService;
+    private readonly IStoryReviewService? _reviewService;
 
     public StableVersionArtifactHandoffService(
         IUnitOfWork unitOfWork,
         ILearningProfileService learningProfileService,
-        ISafetyPolicyService safetyPolicyService)
+        ISafetyPolicyService safetyPolicyService,
+        IStoryReviewService? reviewService = null)
     {
         _unitOfWork = unitOfWork;
         _learningProfileService = learningProfileService;
         _safetyPolicyService = safetyPolicyService;
+        _reviewService = reviewService;
     }
 
-    public async Task<int> QueueArtifactsAsync(
+    public async Task<StableVersionHandoffResult> QueueArtifactsAsync(
         int storyId,
         int storyVersionId,
         int requestedByUserId,
         int? generationRequestId,
         CancellationToken cancellationToken = default)
     {
+        var readingMediaOnly = false;
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
@@ -70,48 +73,79 @@ public sealed class StableVersionArtifactHandoffService : IStableVersionArtifact
 
             ValidateHandoffContract(story, version);
 
-            // Đảm bảo có GenerationRequest (ảo nếu Existing Story, có sẵn nếu AI Story).
-            var requestId = await EnsureGenerationRequestAsync(
-                story, version, requestedByUserId, generationRequestId, cancellationToken);
-
-            // Idempotency: nếu đã có job GenerateVocabulary cho (story, version) thì trả về job đó.
-            var existingJob = await _unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(
-                job => job.StoryId == storyId
-                       && job.Operation == GenerationJobOperation.GenerateVocabulary
-                       && job.StoryVersionId == storyVersionId,
-                cancellationToken: cancellationToken);
-            if (existingJob is not null)
+            if (story.OutputMode == StoryOutputMode.ReadingMediaOnly)
             {
+                if (await _unitOfWork.Repository<StoryGenerationJob>().ExistsAsync(
+                        job => job.StoryId == storyId && job.StoryVersionId == storyVersionId &&
+                               (job.Operation == GenerationJobOperation.GenerateVocabulary ||
+                                job.Operation == GenerationJobOperation.GenerateQuiz ||
+                                job.Operation == GenerationJobOperation.GenerateDiscussion), cancellationToken))
+                    throw new ConflictException("OUTPUT_MODE_CONFLICT: learning job đã tồn tại cho version này.");
+                // Dù không tạo learning job, Phase 5 vẫn cần snapshot profile/safety đã accepted.
+                await EnsureGenerationRequestAsync(
+                    story, version, requestedByUserId, generationRequestId, cancellationToken);
+                story.Status = StoryStatus.ContentReview;
+                _unitOfWork.Repository<Story>().Update(story);
                 await _unitOfWork.CommitTransactionAsync(cancellationToken);
-                return existingJob.Id;
+                readingMediaOnly = true;
             }
-
-            // Tạo job đầu chain.
-            var jobEntity = new StoryGenerationJob
+            else
             {
-                StoryId = storyId,
-                GenerationRequestId = requestId,
-                StoryVersionId = storyVersionId,
-                BaseStoryVersionId = storyVersionId,
-                RequestedByUserId = requestedByUserId,
-                OperationKey = ExistingStoryIdempotencyKeys.ForArtifactHandoff(storyId, storyVersionId, 4),
-                Operation = GenerationJobOperation.GenerateVocabulary,
-                Stage = JobStage.ContentArtifactPending,
-                Status = GenerationJobStatus.Pending,
-                AttemptNo = 0,
-                MaxAttempts = 3,
-                StartedAt = DateTime.UtcNow
-            };
-            await _unitOfWork.Repository<StoryGenerationJob>().AddAsync(jobEntity, cancellationToken);
+                // Đảm bảo có GenerationRequest (ảo nếu Existing Story, có sẵn nếu AI Story).
+                var requestId = await EnsureGenerationRequestAsync(
+                    story, version, requestedByUserId, generationRequestId, cancellationToken);
 
-            await _unitOfWork.CommitTransactionAsync(cancellationToken);
-            return jobEntity.Id;
+                // Idempotency: nếu đã có job GenerateVocabulary cho (story, version) thì trả về job đó.
+                var existingJob = await _unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(
+                    job => job.StoryId == storyId
+                           && job.Operation == GenerationJobOperation.GenerateVocabulary
+                           && job.StoryVersionId == storyVersionId,
+                    cancellationToken: cancellationToken);
+                if (existingJob is not null)
+                {
+                    await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                    return new StableVersionHandoffResult(true, existingJob.Id);
+                }
+
+                var jobEntity = new StoryGenerationJob
+                {
+                    StoryId = storyId,
+                    GenerationRequestId = requestId,
+                    StoryVersionId = storyVersionId,
+                    BaseStoryVersionId = storyVersionId,
+                    RequestedByUserId = requestedByUserId,
+                    OperationKey = ExistingStoryIdempotencyKeys.ForArtifactHandoff(storyId, storyVersionId, 4),
+                    Operation = GenerationJobOperation.GenerateVocabulary,
+                    Stage = JobStage.ContentArtifactPending,
+                    Status = GenerationJobStatus.Pending,
+                    AttemptNo = 0,
+                    MaxAttempts = 3,
+                    StartedAt = DateTime.UtcNow
+                };
+                await _unitOfWork.Repository<StoryGenerationJob>().AddAsync(jobEntity, cancellationToken);
+
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                return new StableVersionHandoffResult(true, jobEntity.Id);
+            }
         }
         catch
         {
             await _unitOfWork.RollbackTransactionAsync(cancellationToken);
             throw;
         }
+
+        if (readingMediaOnly && _reviewService is not null)
+        {
+            try
+            {
+                await _reviewService.EvaluateAndApplyAutoPublishAsync(storyId, cancellationToken);
+            }
+            catch
+            {
+                // Giữ ContentReview để phụ huynh duyệt thủ công khi auto-publish không thành công.
+            }
+        }
+        return new StableVersionHandoffResult(false, null);
     }
 
     private static void ValidateHandoffContract(Story story, StoryVersion version)
@@ -127,7 +161,8 @@ public sealed class StableVersionArtifactHandoffService : IStableVersionArtifact
         if (story.Source == StorySource.Manual)
         {
             // Existing Story: bỏ qua Outline. Status phải ở Draft hoặc OutlineReview (re-entry).
-            if (story.Status is not (StoryStatus.Draft or StoryStatus.OutlineReview))
+            if (story.Status is not (StoryStatus.Draft or StoryStatus.OutlineReview or StoryStatus.ContentReview) ||
+                (story.Status == StoryStatus.ContentReview && story.OutputMode != StoryOutputMode.ReadingMediaOnly))
                 throw new ConflictException($"STORY_STATUS_INVALID:{story.Status}");
         }
         else if (story.Source == StorySource.Ai)
@@ -135,7 +170,8 @@ public sealed class StableVersionArtifactHandoffService : IStableVersionArtifact
             // AI Story: caller phải đảm bảo OutlineApprovedAt đã có.
             if (!version.OutlineApprovedAt.HasValue)
                 throw new BadRequestException("StoryVersion AI Story thiếu OutlineApprovedAt.");
-            if (story.Status is not (StoryStatus.OutlineReview or StoryStatus.Draft))
+            if (story.Status is not (StoryStatus.OutlineReview or StoryStatus.Draft or StoryStatus.ContentReview) ||
+                (story.Status == StoryStatus.ContentReview && story.OutputMode != StoryOutputMode.ReadingMediaOnly))
                 throw new ConflictException($"STORY_STATUS_INVALID:{story.Status}");
         }
         else

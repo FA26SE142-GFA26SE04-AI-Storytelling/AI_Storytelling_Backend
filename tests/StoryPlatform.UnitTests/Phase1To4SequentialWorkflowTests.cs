@@ -614,7 +614,7 @@ public sealed class Phase1To4SequentialWorkflowTests
     {
         public List<(int StoryId, int VersionId, int? GenerationRequestId)> Calls { get; } = [];
 
-        public async Task<int> QueueArtifactsAsync(
+        public async Task<StableVersionHandoffResult> QueueArtifactsAsync(
             int storyId, int storyVersionId, int requestedByUserId,
             int? generationRequestId, CancellationToken cancellationToken = default)
         {
@@ -623,7 +623,7 @@ public sealed class Phase1To4SequentialWorkflowTests
                 job.StoryId == storyId
                 && job.Operation == GenerationJobOperation.GenerateVocabulary
                 && job.StoryVersionId == storyVersionId);
-            if (existing is not null) return existing.Id;
+            if (existing is not null) return new StableVersionHandoffResult(true, existing.Id);
 
             var jobEntity = new StoryGenerationJob
             {
@@ -641,7 +641,7 @@ public sealed class Phase1To4SequentialWorkflowTests
                 StartedAt = DateTime.UtcNow
             };
             await store.Repository<StoryGenerationJob>().AddAsync(jobEntity, cancellationToken);
-            return jobEntity.Id;
+            return new StableVersionHandoffResult(true, jobEntity.Id);
         }
     }
 

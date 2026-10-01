@@ -16,6 +16,7 @@ public class StoryDto
     public string AgeBand { get; set; } = string.Empty;
     public string Language { get; set; } = "vi";
     public string Source { get; set; } = string.Empty;
+    public string OutputMode { get; set; } = "learning";
     public string Status { get; set; } = string.Empty;
     public bool IsPublished { get; set; }
     public int AuthorUserId { get; set; }

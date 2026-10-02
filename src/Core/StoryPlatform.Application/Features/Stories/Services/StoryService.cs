@@ -213,6 +213,7 @@ public class StoryService : IStoryService
             AgeBand = story.AgeBand,
             Language = story.Language,
             Source = story.Source.ToString(),
+            OutputMode = StoryPlatform.Application.Common.StoryOutputModeContract.Format(story.OutputMode),
             Status = story.Status.ToString(),
             IsPublished = story.IsPublished,
             AuthorUserId = story.AuthorUserId,

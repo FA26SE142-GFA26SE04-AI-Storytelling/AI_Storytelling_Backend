@@ -78,20 +78,24 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
         var failed = jobs.Where(item => item.Status == GenerationJobStatus.Failed)
             .OrderByDescending(item => item.Id).FirstOrDefault();
         var qualityFailure = active is null ? ToQualityFailure(failed) : null;
+        var readingMediaOnly = story.OutputMode == StoryOutputMode.ReadingMediaOnly;
+        var contentComplete = stable is not null && story.Status is
+            (StoryStatus.ContentReview or StoryStatus.Approved or StoryStatus.MediaProcessing or StoryStatus.Ready);
 
         return new ContentGenerationProgressDto
         {
             StoryId = story.Id,
+            OutputMode = StoryPlatform.Application.Common.StoryOutputModeContract.Format(story.OutputMode),
             StoryStatus = ToSnake(story.Status.ToString()),
-            CurrentStep = story.Status == StoryStatus.ContentReview ? "complete" :
+            CurrentStep = contentComplete && (readingMediaOnly || vocabularyDone && quizDone && discussionDone) ? "complete" :
                 active is not null
                     ? $"{(active.Status == GenerationJobStatus.Processing ? "generating" : "pending")}_{OperationName(active.Operation)}"
                     : failed is not null ? $"failed_{OperationName(failed.Operation)}" : "not_started",
             Content = stable is not null ? "stable" : JobState(jobs, GenerationJobOperation.GenerateContent),
-            Vocabulary = vocabularyDone ? "completed" : JobState(jobs, GenerationJobOperation.GenerateVocabulary),
-            Quiz = quizDone ? "completed" : JobState(jobs, GenerationJobOperation.GenerateQuiz),
-            Discussion = discussionDone ? "completed" : JobState(jobs, GenerationJobOperation.GenerateDiscussion),
-            IsComplete = story.Status == StoryStatus.ContentReview && stable is not null && vocabularyDone && quizDone && discussionDone,
+            Vocabulary = readingMediaOnly ? "skipped" : vocabularyDone ? "completed" : JobState(jobs, GenerationJobOperation.GenerateVocabulary),
+            Quiz = readingMediaOnly ? "skipped" : quizDone ? "completed" : JobState(jobs, GenerationJobOperation.GenerateQuiz),
+            Discussion = readingMediaOnly ? "skipped" : discussionDone ? "completed" : JobState(jobs, GenerationJobOperation.GenerateDiscussion),
+            IsComplete = contentComplete && (readingMediaOnly || vocabularyDone && quizDone && discussionDone),
             LastErrorCode = active is null ? failed?.ErrorCode : null,
             QualityFailure = qualityFailure,
             StableStoryVersionId = stable?.Id
@@ -164,7 +168,8 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
                     cancellationToken: cancellationToken))
                 .OrderByDescending(item => item.Id)
                 .FirstOrDefault();
-            if (failed is null || !failed.GenerationRequestId.HasValue)
+            if (failed is null || !failed.GenerationRequestId.HasValue ||
+                failed.Operation != GenerationJobOperation.GenerateContent)
             {
                 throw new ConflictException("Story không có content generation thất bại hợp lệ để retry.");
             }
@@ -173,8 +178,10 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             {
                 StoryId = storyId,
                 GenerationRequestId = failed.GenerationRequestId,
-                StoryVersionId = failed.StoryVersionId,
-                BaseStoryVersionId = failed.BaseStoryVersionId ?? outline.Id,
+                // A content retry produces a new candidate, not the failed version.
+                // Reusing that version violates the unique operation/version index.
+                StoryVersionId = null,
+                BaseStoryVersionId = outline.Id,
                 RequestedByUserId = userId,
                 OperationKey = key,
                 Operation = failed.Operation,
@@ -661,6 +668,9 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
         var version = await _unitOfWork.Repository<StoryVersion>().GetByIdAsync(job.StoryVersionId.Value, cancellationToken);
         var request = await _unitOfWork.Repository<StoryGenerationRequest>().GetByIdAsync(job.GenerationRequestId.Value, cancellationToken);
+        var story = await _unitOfWork.Repository<Story>().GetByIdAsync(job.StoryId, cancellationToken);
+        if (story?.OutputMode == StoryOutputMode.ReadingMediaOnly)
+            throw new InvalidOperationException("LEARNING_ARTIFACT_NOT_ENABLED");
         if (version is null || !version.IsCurrent || string.IsNullOrWhiteSpace(version.Content) || request is null)
             throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
         var context = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(request.ContextSnapshotJson, JsonOptions)

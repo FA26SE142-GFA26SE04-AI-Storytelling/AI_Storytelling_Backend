@@ -72,6 +72,7 @@ public sealed class ExistingStoriesController : BaseApiController
             Title = form.Title,
             ChildProfileId = form.ChildProfileId,
             Language = form.Language,
+            OutputMode = form.OutputMode,
             IdempotencyKey = form.IdempotencyKey
         }, cancellationToken);
         return Ok(ApiResponse<ImportStoryResponseDto>.Ok(result, "Import file truyện thành công."));
@@ -194,5 +195,6 @@ public sealed class ImportExistingStoryFileForm
     public string? Title { get; set; }
     public int ChildProfileId { get; set; }
     public string Language { get; set; } = "vi";
+    public string OutputMode { get; set; } = "learning";
     public string? IdempotencyKey { get; set; }
 }

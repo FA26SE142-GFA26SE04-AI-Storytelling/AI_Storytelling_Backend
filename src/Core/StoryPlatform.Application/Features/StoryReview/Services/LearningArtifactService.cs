@@ -58,6 +58,8 @@ public sealed class LearningArtifactService : ILearningArtifactService
         CancellationToken cancellationToken = default)
     {
         var (story, version) = await ResolveAuthorizedStoryAndVersionAsync(userId, storyId, request?.StoryVersionId, cancellationToken);
+        if (story.OutputMode != StoryOutputMode.Learning)
+            throw new ConflictException("LEARNING_ARTIFACT_NOT_ENABLED");
         var shouldVocab = request?.IncludeVocabulary ?? true;
         var shouldQuiz = request?.IncludeQuiz ?? true;
         var shouldDiscussion = request?.IncludeDiscussion ?? true;

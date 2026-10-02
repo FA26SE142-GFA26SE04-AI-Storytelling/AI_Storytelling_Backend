@@ -27,6 +27,23 @@ public sealed class ExistingStoryServiceTests
     #region Import tests
 
     [Fact]
+    public async Task Import_ReadingMediaOnlyPersistsMode_AndSameKeyDifferentModeConflicts()
+    {
+        var store = SeedActiveChild();
+        var service = BuildService(store);
+        var request = ValidImport();
+        request.OutputMode = "reading_media_only";
+        request.IdempotencyKey = "fixed-mode-key";
+
+        var result = await service.ImportAsync(1, request, CancellationToken.None);
+
+        Assert.Equal("reading_media_only", result.OutputMode);
+        Assert.Equal(StoryOutputMode.ReadingMediaOnly, Assert.Single(store.Items<Story>()).OutputMode);
+        request.OutputMode = "learning";
+        await Assert.ThrowsAsync<ConflictException>(() => service.ImportAsync(1, request, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Import_CreatesStoryAndInitialVersion_WithinTransaction()
     {
         var store = SeedActiveChild();
@@ -606,10 +623,10 @@ public sealed class ExistingStoryServiceTests
     private sealed class NoopHandoffService : IStableVersionArtifactHandoffService
     {
         public List<(int, int)> Calls { get; } = [];
-        public Task<int> QueueArtifactsAsync(int storyId, int storyVersionId, int requestedByUserId, int? generationRequestId, CancellationToken cancellationToken = default)
+        public Task<StableVersionHandoffResult> QueueArtifactsAsync(int storyId, int storyVersionId, int requestedByUserId, int? generationRequestId, CancellationToken cancellationToken = default)
         {
             Calls.Add((storyId, storyVersionId));
-            return Task.FromResult(0);
+            return Task.FromResult(new StableVersionHandoffResult(true, null));
         }
     }
 

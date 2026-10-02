@@ -634,6 +634,63 @@ public sealed class StoryReviewServiceTests
 
     #region Helper Methods
 
+
+    [Theory]
+    [InlineData("vocabulary")]
+    [InlineData("quiz")]
+    [InlineData("discussion")]
+    public async Task ApplyArtifactProposal_AcceptsLegacyPascalCaseItems(string artifact)
+    {
+        var store = SeedContentReview();
+        var cache = new InMemoryProposalCache();
+        object items = artifact switch
+        {
+            "vocabulary" => new[] { new { Term = "friend", Definition = "A companion" } },
+            "quiz" => new[] { new { Type = "MultipleChoice", Question = "Who helped?", CorrectAnswer = "Lan", Choices = new[] { "Lan", "Minh" } } },
+            _ => new[] { new { Question = "How can you help?", IsMoralLesson = true } }
+        };
+        var id = await cache.CreateAsync(new AIProposalDto
+        {
+            RequestedByUserId = 1, StoryId = 1, StoryVersionId = 1,
+            ArtifactType = artifact, OperationType = "regenerate", Status = "pending",
+            SuggestedContent = JsonSerializer.SerializeToElement(new { items }),
+            CreatedAt = DateTime.UtcNow, ExpiresAt = DateTime.UtcNow.AddHours(1)
+        });
+        var applied = await new ProposalService(cache, store).ApplyProposalAsync(1, 1, id);
+        Assert.True(applied.Success);
+        Assert.Equal("applied", (await cache.GetAsync(id))!.Status);
+        if (artifact == "vocabulary") Assert.Equal("friend", Assert.Single(store.Items<StoryVocabulary>()).Term);
+        if (artifact == "quiz")
+        {
+            var quiz = Assert.Single(store.Items<QuizItem>());
+            Assert.Equal("Who helped?", quiz.Question);
+            Assert.Equal("Lan", quiz.CorrectAnswer);
+            Assert.Contains("Minh", quiz.Choices!);
+        }
+        if (artifact == "discussion") Assert.True(Assert.Single(store.Items<DiscussionQuestion>()).IsMoralLesson);
+    }
+
+    [Theory]
+    [InlineData("vocabulary", "term")]
+    [InlineData("quiz", "question")]
+    [InlineData("discussion", "question")]
+    public async Task GeneratedArtifactProposal_IsCamelCase_AndCanApply(string artifact, string field)
+    {
+        var store = SeedContentReview();
+        var cache = new InMemoryProposalCache();
+        var review = Service(store, cache: cache);
+        var created = artifact switch
+        {
+            "vocabulary" => await review.CreateVocabularyProposalAsync(1, 1),
+            "quiz" => await review.CreateQuizProposalAsync(1, 1),
+            _ => await review.CreateDiscussionProposalAsync(1, 1)
+        };
+        var proposal = (await cache.GetAsync(created.ProposalId))!;
+        var suggested = Assert.IsType<JsonElement>(proposal.SuggestedContent);
+        Assert.True(suggested.GetProperty("items")[0].TryGetProperty(field, out _));
+        Assert.True((await new ProposalService(cache, store).ApplyProposalAsync(1, 1, created.ProposalId)).Success);
+    }
+
     private static StoryReviewService Service(
         FakeUnitOfWork unitOfWork,
         IAIStoryGenerationClient? aiClient = null,

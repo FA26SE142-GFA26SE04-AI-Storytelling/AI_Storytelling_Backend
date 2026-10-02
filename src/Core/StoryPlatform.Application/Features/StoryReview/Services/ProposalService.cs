@@ -47,6 +47,10 @@ public sealed class ProposalService : IProposalService
             throw new BadRequestException("Proposal is no longer pending");
         }
 
+        // Cached proposals created before camelCase serialization still need to apply.
+        if (proposal.SuggestedContent is JsonElement suggested)
+            proposal = proposal with { SuggestedContent = NormalizePropertyNames(suggested) };
+
         switch (proposal.ArtifactType)
         {
             case "story" when proposal.OperationType == "partial_edit":
@@ -220,6 +224,37 @@ public sealed class ProposalService : IProposalService
             }
             await _unitOfWork.SaveChangesAsync(cancellationToken);
         }
+    }
+
+
+    private static JsonElement NormalizePropertyNames(JsonElement content)
+    {
+        using var stream = new System.IO.MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+            WriteCamelCase(writer, content);
+        using var document = JsonDocument.Parse(stream.ToArray());
+        return document.RootElement.Clone();
+    }
+
+    private static void WriteCamelCase(Utf8JsonWriter writer, JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            writer.WriteStartObject();
+            foreach (var property in element.EnumerateObject())
+            {
+                writer.WritePropertyName(JsonNamingPolicy.CamelCase.ConvertName(property.Name));
+                WriteCamelCase(writer, property.Value);
+            }
+            writer.WriteEndObject();
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            writer.WriteStartArray();
+            foreach (var item in element.EnumerateArray()) WriteCamelCase(writer, item);
+            writer.WriteEndArray();
+        }
+        else element.WriteTo(writer);
     }
 
     private static void EnsureProposalAccess(AIProposalDto? proposal, int userId, int storyId)

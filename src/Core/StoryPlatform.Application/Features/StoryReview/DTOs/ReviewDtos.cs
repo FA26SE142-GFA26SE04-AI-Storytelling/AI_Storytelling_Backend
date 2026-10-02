@@ -5,6 +5,7 @@ namespace StoryPlatform.Application.Features.StoryReview.DTOs;
 public sealed record ReviewPackageDto
 {
     public int StoryId { get; init; }
+    public string OutputMode { get; init; } = "learning";
     public int StoryVersionId { get; init; }
     public string StoryStatus { get; init; } = string.Empty;
     public string Title { get; init; } = string.Empty;
@@ -38,6 +39,7 @@ public sealed record ArtifactStatusDto
 public sealed record StoryReviewDto
 {
     public int StoryId { get; init; }
+    public string OutputMode { get; init; } = "learning";
     public int VersionId { get; init; }
     public string Title { get; init; } = string.Empty;
     public string Content { get; init; } = string.Empty;

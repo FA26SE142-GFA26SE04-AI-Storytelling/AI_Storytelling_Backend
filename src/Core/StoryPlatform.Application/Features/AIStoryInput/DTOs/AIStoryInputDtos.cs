@@ -12,6 +12,7 @@ public sealed class AIStoryInputContextDto
     public IReadOnlyList<string> AvailableVocabularyLevels { get; init; } = [];
     public string DefaultLanguage { get; init; } = string.Empty;
     public IReadOnlyList<string> AvailableLanguages { get; init; } = [];
+    public IReadOnlyList<string> AvailableOutputModes { get; init; } = ["learning", "reading_media_only"];
     public int MaximumLength { get; init; }
     public string RequiredApprovalMode { get; init; } = string.Empty;
     public bool ParentalGateEnabled { get; init; }
@@ -62,6 +63,7 @@ public class AIStoryCreativeInputDto
 
 public sealed class SubmitAIStoryInputRequestDto : AIStoryCreativeInputDto
 {
+    public string OutputMode { get; init; } = "learning";
     [Range(1, int.MaxValue)]
     public int ChildProfileId { get; init; }
 
@@ -80,6 +82,7 @@ public sealed class RetryAIStoryInputRequestDto : AIStoryCreativeInputDto
 public sealed class AIStoryInputProgressDto
 {
     public int StoryId { get; init; }
+    public string OutputMode { get; init; } = "learning";
     public int RequestId { get; init; }
     public string InputStatus { get; init; } = string.Empty;
     public string HandoffStatus { get; init; } = "none";

@@ -21,6 +21,24 @@ namespace StoryPlatform.UnitTests;
 public sealed class ContentGenerationServiceTests
 {
     [Fact]
+    public async Task ReadingMediaOnly_ProgressMarksLearningArtifactsSkippedAfterStableContent()
+    {
+        var store = Seed();
+        var story = store.Items<Story>().Single();
+        story.OutputMode = StoryOutputMode.ReadingMediaOnly;
+        story.Status = StoryStatus.ContentReview;
+        store.Items<StoryVersion>().Single().Content = "Lan và Minh cùng chia sẻ một quyển sách.";
+
+        var progress = await Service(store, new FakeAIClient()).GetProgressAsync(1, story.Id);
+
+        Assert.Equal("reading_media_only", progress.OutputMode);
+        Assert.True(progress.IsComplete);
+        Assert.Equal("skipped", progress.Vocabulary);
+        Assert.Equal("skipped", progress.Quiz);
+        Assert.Equal("skipped", progress.Discussion);
+    }
+
+    [Fact]
     public async Task Happy_path_runs_story_then_vocabulary_quiz_discussion()
     {
         var store = Seed();
@@ -241,6 +259,37 @@ public sealed class ContentGenerationServiceTests
         Assert.Equal(2, store.Items<StoryGenerationJob>().Count);
         Assert.Single(store.Items<StoryGenerationJob>(), item =>
             item.Status == GenerationJobStatus.Pending && item.OperationKey == request.RetryKey);
+    }
+
+    [Fact]
+    public async Task Retry_quality_failed_content_creates_new_candidate_without_reusing_failed_version()
+    {
+        var store = Seed();
+        var failingService = new ContentGenerationService(
+            store, new FakeAIClient(), new AlwaysFailReadabilityQualityEvaluator(),
+            new FakeFailureFinalizer(store), new RecordingHandoffService(store),
+            new ContentGenerationOptions { MaxContentRefinementAttempts = 2 });
+        Assert.True(await failingService.ProcessNextAsync());
+        var failed = store.Items<StoryGenerationJob>().Single();
+        Assert.Equal(GenerationJobStatus.Failed, failed.Status);
+        var failedVersionId = failed.StoryVersionId;
+        Assert.NotNull(failedVersionId);
+
+        var service = Service(store, new FakeAIClient());
+        var request = new RetryContentGenerationRequestDto { RetryKey = "retry-quality-0001" };
+        await service.RetryAsync(1, 1, request);
+        await service.RetryAsync(1, 1, request);
+        var retry = Assert.Single(store.Items<StoryGenerationJob>(), item => item.OperationKey == request.RetryKey);
+        Assert.Null(retry.StoryVersionId);
+        Assert.Equal(1, retry.BaseStoryVersionId);
+        Assert.Equal(failedVersionId, failed.StoryVersionId);
+
+        Assert.True(await service.ProcessNextAsync());
+        Assert.Equal(GenerationJobStatus.Completed, retry.Status);
+        Assert.NotNull(retry.StoryVersionId);
+        Assert.NotEqual(failedVersionId, retry.StoryVersionId);
+        Assert.Equal(GenerationJobStatus.Failed, failed.Status);
+        Assert.Equal(GenerationJobOperation.GenerateVocabulary, PendingJob(store).Operation);
     }
 
     [Fact]
@@ -523,7 +572,7 @@ public sealed class ContentGenerationServiceTests
     {
         public List<(int StoryId, int VersionId, int? GenerationRequestId)> Calls { get; } = [];
 
-        public async Task<int> QueueArtifactsAsync(
+        public async Task<StableVersionHandoffResult> QueueArtifactsAsync(
             int storyId, int storyVersionId, int requestedByUserId,
             int? generationRequestId, CancellationToken cancellationToken = default)
         {
@@ -534,7 +583,7 @@ public sealed class ContentGenerationServiceTests
                 job.StoryId == storyId
                 && job.Operation == GenerationJobOperation.GenerateVocabulary
                 && job.StoryVersionId == storyVersionId);
-            if (existing is not null) return existing.Id;
+            if (existing is not null) return new StableVersionHandoffResult(true, existing.Id);
 
             // Tạo job mới tương tự StableVersionArtifactHandoffService.
             var jobEntity = new StoryGenerationJob
@@ -553,7 +602,7 @@ public sealed class ContentGenerationServiceTests
                 StartedAt = DateTime.UtcNow
             };
             await store.Repository<StoryGenerationJob>().AddAsync(jobEntity, cancellationToken);
-            return jobEntity.Id;
+            return new StableVersionHandoffResult(true, jobEntity.Id);
         }
     }
 }

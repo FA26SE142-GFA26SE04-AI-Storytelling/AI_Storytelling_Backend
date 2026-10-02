@@ -4,8 +4,8 @@ using System.Threading.Tasks;
 namespace StoryPlatform.Application.Features.ExistingStories.Interfaces;
 
 /// <summary>
-/// Entry point duy nhất để đưa một <see cref="Domain.Entities.StoryVersion"/> đã ổn định
-/// vào chuỗi artifact Phase 3 (Vocabulary → Quiz → Discussion).
+/// Entry point duy nhất để đưa một StoryVersion đã ổn định vào nhánh
+/// learning artifacts hoặc ContentReview theo Story.OutputMode.
 ///
 /// Hai nhánh đều dùng chung:
 ///   - AI Story: sau khi <c>GenerateContent</c> promote stable version.
@@ -17,7 +17,7 @@ namespace StoryPlatform.Application.Features.ExistingStories.Interfaces;
 public interface IStableVersionArtifactHandoffService
 {
     /// <summary>
-    /// Enqueue <c>GenerateVocabulary</c> cho <paramref name="storyVersionId"/>.
+    /// Enqueue <c>GenerateVocabulary</c> (Learning) hoặc chuyển ContentReview (ReadingMediaOnly).
     /// Idempotent: nếu job đã tồn tại cho cùng (storyId, versionId, operation),
     /// method trả về job hiện có mà không tạo trùng.
     /// </summary>
@@ -29,11 +29,13 @@ public interface IStableVersionArtifactHandoffService
     /// Nếu null, handoff service tự tạo request ảo từ LearningProfile + SafetyPolicy.
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>ID của StoryGenerationJob (Vocabulary hoặc job đã tồn tại).</returns>
-    Task<int> QueueArtifactsAsync(
+    /// <returns>Job Vocabulary nếu Learning; không có job nếu ReadingMediaOnly.</returns>
+    Task<StableVersionHandoffResult> QueueArtifactsAsync(
         int storyId,
         int storyVersionId,
         int requestedByUserId,
         int? generationRequestId,
         CancellationToken cancellationToken = default);
 }
+
+public sealed record StableVersionHandoffResult(bool ArtifactsQueued, int? JobId);

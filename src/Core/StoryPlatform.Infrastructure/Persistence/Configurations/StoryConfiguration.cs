@@ -43,6 +43,12 @@ public class StoryConfiguration : IEntityTypeConfiguration<Story>
             .HasMaxLength(30)
             .IsRequired();
 
+        builder.Property(s => s.OutputMode)
+            .HasConversion<string>()
+            .HasMaxLength(30)
+            .HasDefaultValue(StoryPlatform.Domain.Enums.StoryOutputMode.Learning)
+            .IsRequired();
+
         builder.Property(s => s.Status)
             .HasConversion<string>()
             .HasMaxLength(30)

@@ -21,8 +21,9 @@ public sealed class StableVersionArtifactHandoffServiceTests
         var store = Seed();
         var service = BuildService(store);
 
-        var jobId = await service.QueueArtifactsAsync(
+        var handoff = await service.QueueArtifactsAsync(
             storyId: 1, storyVersionId: 1, requestedByUserId: 1, generationRequestId: null);
+        var jobId = handoff.JobId;
 
         Assert.Single(store.Items<StoryGenerationJob>(), job => job.Operation == GenerationJobOperation.GenerateVocabulary);
         Assert.DoesNotContain(store.Items<StoryGenerationJob>(),
@@ -179,7 +180,41 @@ public sealed class StableVersionArtifactHandoffServiceTests
         var service = BuildService(store);
 
         var jobId = await service.QueueArtifactsAsync(1, 1, 1, null);
-        Assert.True(jobId > 0);
+        Assert.True(jobId.JobId > 0);
+    }
+
+    [Fact]
+    public async Task ReadingMediaOnly_MovesToContentReviewWithoutLearningJobs_AndIsIdempotent()
+    {
+        var store = Seed();
+        var story = store.Items<Story>().Single();
+        story.OutputMode = StoryOutputMode.ReadingMediaOnly;
+        var service = BuildService(store);
+
+        var first = await service.QueueArtifactsAsync(1, 1, 1, null);
+        var second = await service.QueueArtifactsAsync(1, 1, 1, null);
+
+        Assert.Equal(StoryStatus.ContentReview, story.Status);
+        Assert.Equal(new StableVersionHandoffResult(false, null), first);
+        Assert.Equal(first, second);
+        Assert.Empty(store.Items<StoryGenerationJob>());
+        Assert.Single(store.Items<StoryGenerationRequest>());
+    }
+
+    [Fact]
+    public async Task ReadingMediaOnly_RejectsExistingLearningJobForCurrentVersion()
+    {
+        var store = Seed();
+        store.Items<Story>().Single().OutputMode = StoryOutputMode.ReadingMediaOnly;
+        store.Seed(new StoryGenerationJob
+        {
+            Id = 7, StoryId = 1, StoryVersionId = 1,
+            Operation = GenerationJobOperation.GenerateVocabulary,
+            Status = GenerationJobStatus.Pending
+        });
+
+        await Assert.ThrowsAsync<ConflictException>(() => BuildService(store).QueueArtifactsAsync(1, 1, 1, null));
+        Assert.Equal(StoryStatus.Draft, store.Items<Story>().Single().Status);
     }
 
     private static StableVersionArtifactHandoffService BuildService(StableHandoffFakeUnitOfWork store) =>

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using StoryPlatform.Domain.Entities;
+using StoryPlatform.Domain.Enums;
 using StoryPlatform.Infrastructure.Persistence;
 using Xunit;
 
@@ -18,6 +19,10 @@ public sealed class AIStoryInputModelConfigurationTests
         var story = context.Model.FindEntityType(typeof(Story))!;
         Assert.True(story.FindProperty(nameof(Story.Title))!.IsNullable);
         Assert.Equal(20, story.FindProperty(nameof(Story.VocabularyLevel))!.GetMaxLength());
+        var outputMode = story.FindProperty(nameof(Story.OutputMode))!;
+        Assert.False(outputMode.IsNullable);
+        Assert.Equal(StoryOutputMode.Learning, outputMode.GetDefaultValue());
+        Assert.Equal(30, outputMode.GetMaxLength());
 
         var request = context.Model.FindEntityType(typeof(StoryGenerationRequest))!;
         Assert.Equal("story_generation_requests", request.GetTableName());

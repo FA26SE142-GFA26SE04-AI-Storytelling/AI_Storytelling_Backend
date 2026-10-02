@@ -25,6 +25,7 @@ public sealed class ContentQualityFailureDto
 public sealed class ContentGenerationProgressDto
 {
     public int StoryId { get; init; }
+    public string OutputMode { get; init; } = "learning";
     public string StoryStatus { get; init; } = string.Empty;
     public string CurrentStep { get; init; } = "not_started";
     public string Content { get; init; } = "not_started";

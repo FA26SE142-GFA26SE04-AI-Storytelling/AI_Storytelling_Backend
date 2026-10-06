@@ -163,19 +163,14 @@ public sealed class SupabaseMediaStorage : IMediaStorage
     private static string EncodePath(string path) =>
         string.Join('/', path.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(Uri.EscapeDataString));
 
-    private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    private static Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
-        if (response.IsSuccessStatusCode) return;
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
-        throw new HttpRequestException(
-            $"Supabase Storage returned HTTP {(int)response.StatusCode} ({response.ReasonPhrase}). " +
-            $"Response: {Truncate(body, 512)}",
-            null,
-            response.StatusCode);
+        cancellationToken.ThrowIfCancellationRequested();
+        return response.IsSuccessStatusCode
+            ? Task.CompletedTask
+            : Task.FromException(new HttpRequestException(
+                $"Supabase Storage returned HTTP {(int)response.StatusCode}.", null, response.StatusCode));
     }
-
-    private static string Truncate(string value, int maxLength) =>
-        value.Length <= maxLength ? value : value[..maxLength];
 
     private sealed record SignedUrlResponse(
         [property: JsonPropertyName("signedURL")] string? SignedUrl);

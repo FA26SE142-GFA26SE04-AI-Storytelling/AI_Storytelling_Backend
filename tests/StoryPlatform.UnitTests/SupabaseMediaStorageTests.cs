@@ -56,6 +56,28 @@ public sealed class SupabaseMediaStorageTests
     }
 
     [Fact]
+    public async Task GetSignedUrlAsync_StorageError_DoesNotIncludeResponseBody()
+    {
+        var storage = CreateStorage(_ => Task.FromResult(JsonResponse(
+            HttpStatusCode.Forbidden, "sensitive-upstream-response")));
+
+        var error = await Assert.ThrowsAsync<HttpRequestException>(() =>
+            storage.GetSignedUrlAsync("123/scene-1.webp", TimeSpan.FromMinutes(5)));
+
+        Assert.Equal(HttpStatusCode.Forbidden, error.StatusCode);
+        Assert.DoesNotContain("sensitive-upstream-response", error.Message);
+    }
+
+    [Fact]
+    public async Task GetSignedUrlAsync_MalformedSuccessBody_ThrowsJsonException()
+    {
+        var storage = CreateStorage(_ => Task.FromResult(JsonResponse(HttpStatusCode.OK, "not-json")));
+
+        await Assert.ThrowsAsync<System.Text.Json.JsonException>(() =>
+            storage.GetSignedUrlAsync("123/scene-1.webp", TimeSpan.FromMinutes(5)));
+    }
+
+    [Fact]
     public async Task DeleteAsync_NotFound_IsIdempotent()
     {
         var storage = CreateStorage(_ => Task.FromResult(JsonResponse(HttpStatusCode.NotFound, "{}")));

@@ -18,6 +18,12 @@ public class SupervisionInvitationConfiguration : IEntityTypeConfiguration<Super
         builder.Property(x => x.InviteeEmail)
             .HasMaxLength(150);
 
+        builder.Property(x => x.OtpHash)
+            .HasMaxLength(64);
+
+        builder.Property(x => x.OtpFailedAttempts)
+            .HasDefaultValue(0);
+
         builder.Property(x => x.Status)
             .HasConversion<string>()
             .HasMaxLength(30)

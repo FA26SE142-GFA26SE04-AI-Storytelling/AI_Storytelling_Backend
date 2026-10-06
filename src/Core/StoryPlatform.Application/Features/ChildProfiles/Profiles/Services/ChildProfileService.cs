@@ -98,26 +98,23 @@ public class ChildProfileService : IChildProfileService
                 "Hồ sơ trẻ chưa có Learning Profile không thể kích hoạt.");
         }
 
-        var hasSafetyPolicy = await _unitOfWork.Repository<SafetyPolicy>()
-            .ExistsAsync(value => value.ChildProfileId == childProfileId, cancellationToken);
-        if (!hasSafetyPolicy)
+        var safetyPolicy = await _unitOfWork.Repository<SafetyPolicy>()
+            .FirstOrDefaultAsync(
+                value => value.ChildProfileId == childProfileId,
+                cancellationToken: cancellationToken);
+        if (safetyPolicy == null)
         {
             throw new BadRequestException(
                 "Hồ sơ trẻ chưa có Safety Policy — không thể kích hoạt.");
         }
 
-        // BR-1.9 áp dụng thống nhất cho mọi scope: phải có ít nhất một Parent đang giám sát.
-        var hasActiveParentSupervisor = await _unitOfWork.Repository<SupervisionRelationship>()
-            .ExistsAsync(
-                value => value.ChildProfileId == childProfileId
-                         && value.RevokedAt == null
-                         && value.SupervisorUser != null
-                         && value.SupervisorUser.Role == UserRole.Parent,
-                cancellationToken);
+        if (!safetyPolicy.ConsentRecorded)
+        {
+            throw new BadRequestException(
+                "Safety Policy chưa có consent hợp lệ theo phiên bản hiện tại — không thể kích hoạt.");
+        }
 
-        profile.Status = hasActiveParentSupervisor
-            ? ChildProfileStatus.Active
-            : ChildProfileStatus.PendingParentConsent;
+        profile.Status = ChildProfileStatus.Active;
         profile.UpdatedAt = DateTime.UtcNow;
         profileRepo.Update(profile);
         await WriteChildProfileAuditAsync(

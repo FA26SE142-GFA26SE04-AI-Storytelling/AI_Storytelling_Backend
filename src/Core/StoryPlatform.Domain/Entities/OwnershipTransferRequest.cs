@@ -15,4 +15,5 @@ public class OwnershipTransferRequest : BaseEntity
 
     public OwnershipTransferRequestStatus Status { get; set; } = OwnershipTransferRequestStatus.Pending;
     public DateTime? RespondedAt { get; set; }
+    public DateTime? ExpiresAt { get; set; }
 }

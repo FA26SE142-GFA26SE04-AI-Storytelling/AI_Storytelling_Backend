@@ -138,12 +138,13 @@ public class ChildProfileServiceTests
     }
 
     [Theory]
-    [InlineData(false, true, "Learning Profile")]
-    [InlineData(true, false, "Safety Policy")]
+    [InlineData(false, true, true, "Learning Profile")]
+    [InlineData(true, false, false, "Safety Policy")]
+    [InlineData(true, true, false, "consent")]
     public async Task ActivateChildProfileAsync_MissingRequiredSetup_ThrowsBadRequest(
-        bool hasLearning, bool hasSafety, string expectedMessage)
+        bool hasLearning, bool hasSafety, bool hasConsent, string expectedMessage)
     {
-        SetupActivation(hasLearning, hasSafety, hasParentSupervisor: true);
+        SetupActivation(hasLearning, hasSafety, hasConsent);
 
         var exception = await Assert.ThrowsAsync<BadRequestException>(() =>
             _sut.ActivateChildProfileAsync(1, 2));
@@ -152,18 +153,15 @@ public class ChildProfileServiceTests
         _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    [Theory]
-    [InlineData(true, ChildProfileStatus.Active)]
-    [InlineData(false, ChildProfileStatus.PendingParentConsent)]
-    public async Task ActivateChildProfileAsync_AppliesBr19(
-        bool hasParentSupervisor, ChildProfileStatus expectedStatus)
+    [Fact]
+    public async Task ActivateChildProfileAsync_WithLearningSafetyAndConsent_SetsActive()
     {
-        var profile = SetupActivation(true, true, hasParentSupervisor);
+        var profile = SetupActivation(hasLearning: true, hasSafety: true, hasConsent: true);
 
         var result = await _sut.ActivateChildProfileAsync(1, 2);
 
-        Assert.Equal(expectedStatus, profile.Status);
-        Assert.Equal(expectedStatus.ToString(), result.Status);
+        Assert.Equal(ChildProfileStatus.Active, profile.Status);
+        Assert.Equal("Active", result.Status);
         _profileRepo.Verify(r => r.Update(profile), Times.Once);
         _auditLogRepo.Verify(repository => repository.AddAsync(
             It.Is<AuditLog>(log => log.ActorUserId == 2
@@ -360,7 +358,7 @@ public class ChildProfileServiceTests
     }
 
     private ChildProfile SetupActivation(
-        bool hasLearning, bool hasSafety, bool hasParentSupervisor)
+        bool hasLearning, bool hasSafety, bool hasConsent)
     {
         var profile = new ChildProfile
         {
@@ -373,12 +371,12 @@ public class ChildProfileServiceTests
         _learningProfileRepo.Setup(r => r.ExistsAsync(
                 It.IsAny<Expression<Func<LearningProfile, bool>>>(),
                 It.IsAny<CancellationToken>())).ReturnsAsync(hasLearning);
-        _safetyPolicyRepo.Setup(r => r.ExistsAsync(
-                It.IsAny<Expression<Func<SafetyPolicy, bool>>>(),
-                It.IsAny<CancellationToken>())).ReturnsAsync(hasSafety);
-        _supervisionRepo.Setup(r => r.ExistsAsync(
-                It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(),
-                It.IsAny<CancellationToken>())).ReturnsAsync(hasParentSupervisor);
+        _safetyPolicyRepo.Setup(r => r.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<SafetyPolicy, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(hasSafety
+                ? new SafetyPolicy { Id = 5, ChildProfileId = 1, ConsentRecorded = hasConsent }
+                : null);
         AllowProfileAccess();
         return profile;
     }

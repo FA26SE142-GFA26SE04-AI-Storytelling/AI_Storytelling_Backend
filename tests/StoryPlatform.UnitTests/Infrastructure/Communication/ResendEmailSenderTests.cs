@@ -69,6 +69,20 @@ public class ResendEmailSenderTests
     }
 
     [Fact]
+    public async Task SendSupervisionInvitationOtpEmailAsync_ValidRequest_PostsOtpToInvitee()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var sender = CreateSender(handler);
+
+        await sender.SendSupervisionInvitationOtpEmailAsync("invitee@example.com", "123456");
+
+        Assert.NotNull(handler.LastRequest);
+        Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+        Assert.Contains("invitee@example.com", handler.LastRequestBody);
+        Assert.Contains("123456", handler.LastRequestBody);
+    }
+
+    [Fact]
     public async Task SendAccountProvisionedEmailAsync_ValidRequest_PostsCorrectRequestToResendApi()
     {
         var handler = new FakeHttpMessageHandler();

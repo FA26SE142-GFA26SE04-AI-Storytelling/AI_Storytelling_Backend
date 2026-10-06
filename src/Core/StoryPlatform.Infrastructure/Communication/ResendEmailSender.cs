@@ -60,7 +60,20 @@ public class ResendEmailSender : IEmailSender
             <p>Xin chào,</p>
             <p>{inviterName} vừa mời bạn trở thành người giám sát bổ sung cho một hồ sơ trẻ trên AI Storytelling Platform. Mã mời của bạn là:</p>
             <p style="font-size:22px;font-weight:bold;letter-spacing:2px;">{invitationCode}</p>
-            <p>Vui lòng đăng nhập và dùng mã này để chấp nhận lời mời. Nếu bạn không mong đợi email này, vui lòng bỏ qua.</p>
+            <p>Vui lòng đăng nhập, nhập mã này, rồi xác thực mã OTP sẽ được gửi tới chính email này để xem và trả lời lời mời. Nếu bạn không mong đợi email này, vui lòng bỏ qua.</p>
+            """;
+
+        return SendAsync(toEmail, subject, html, cancellationToken);
+    }
+
+    public Task SendSupervisionInvitationOtpEmailAsync(string toEmail, string otp, CancellationToken cancellationToken = default)
+    {
+        const string subject = "Mã xác thực lời mời giám sát hồ sơ trẻ";
+        var html = $"""
+            <p>Xin chào,</p>
+            <p>Mã xác thực (OTP) để tiếp tục lời mời giám sát hồ sơ trẻ trên AI Storytelling Platform của bạn là:</p>
+            <p style="font-size:22px;font-weight:bold;letter-spacing:4px;">{otp}</p>
+            <p>Mã có hiệu lực trong 10 phút. Không chia sẻ mã này với bất kỳ ai. Nếu bạn không yêu cầu, vui lòng bỏ qua email này.</p>
             """;
 
         return SendAsync(toEmail, subject, html, cancellationToken);

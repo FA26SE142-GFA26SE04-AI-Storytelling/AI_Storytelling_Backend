@@ -18,9 +18,6 @@ public class ChildProfileServiceTests
     private readonly Mock<IGenericRepository<UserAccount>> _userRepo = new();
     private readonly Mock<IGenericRepository<ChildProfile>> _profileRepo = new();
     private readonly Mock<IGenericRepository<SupervisionRelationship>> _supervisionRepo = new();
-    private readonly Mock<IGenericRepository<Organization>> _organizationRepo = new();
-    private readonly Mock<IGenericRepository<ClassGroup>> _classGroupRepo = new();
-    private readonly Mock<IGenericRepository<ClassGroupMember>> _memberRepo = new();
     private readonly Mock<IGenericRepository<LearningProfile>> _learningProfileRepo = new();
     private readonly Mock<IGenericRepository<SafetyPolicy>> _safetyPolicyRepo = new();
     private readonly Mock<IGenericRepository<AuditLog>> _auditLogRepo = new();
@@ -33,9 +30,6 @@ public class ChildProfileServiceTests
         _unitOfWork.Setup(u => u.Repository<UserAccount>()).Returns(_userRepo.Object);
         _unitOfWork.Setup(u => u.Repository<ChildProfile>()).Returns(_profileRepo.Object);
         _unitOfWork.Setup(u => u.Repository<SupervisionRelationship>()).Returns(_supervisionRepo.Object);
-        _unitOfWork.Setup(u => u.Repository<Organization>()).Returns(_organizationRepo.Object);
-        _unitOfWork.Setup(u => u.Repository<ClassGroup>()).Returns(_classGroupRepo.Object);
-        _unitOfWork.Setup(u => u.Repository<ClassGroupMember>()).Returns(_memberRepo.Object);
         _unitOfWork.Setup(u => u.Repository<LearningProfile>()).Returns(_learningProfileRepo.Object);
         _unitOfWork.Setup(u => u.Repository<SafetyPolicy>()).Returns(_safetyPolicyRepo.Object);
         _unitOfWork.Setup(u => u.Repository<AuditLog>()).Returns(_auditLogRepo.Object);
@@ -43,7 +37,7 @@ public class ChildProfileServiceTests
     }
 
     [Fact]
-    public async Task CreateChildProfileAsync_PersonalScope_CreatesDraftProfileOwnerSupervisionAndAudit()
+    public async Task CreateChildProfileAsync_CreatesDraftProfileOwnerSupervisionAndAudit()
     {
         SetupOwner();
         ChildProfile? profile = null;
@@ -67,16 +61,12 @@ public class ChildProfileServiceTests
         Assert.Equal(AgeBand.Age_6_8, profile.AgeBand);
         Assert.Equal("vi", profile.Language);
         Assert.Equal(ChildProfileStatus.Draft, profile.Status);
-        Assert.Equal(ProfileScope.Personal, profile.Scope);
-        Assert.Null(profile.OrganizationId);
         Assert.NotNull(supervision);
         Assert.Same(profile, supervision!.ChildProfile);
         Assert.Equal(2, supervision.SupervisorUserId);
         Assert.Equal(SupervisorRole.Owner, supervision.SupervisorRole);
         Assert.Null(supervision.RevokedAt);
         Assert.Equal("Draft", result.Status);
-        Assert.Equal("Personal", result.Scope);
-        _memberRepo.Verify(r => r.AddAsync(It.IsAny<ClassGroupMember>(), It.IsAny<CancellationToken>()), Times.Never);
         _auditLogRepo.Verify(repository => repository.AddAsync(
             It.Is<AuditLog>(log => log.ActorUserId == 2
                                    && log.Action == "CREATE_CHILD_PROFILE"
@@ -102,23 +92,6 @@ public class ChildProfileServiceTests
         Assert.Equal("vi", profile!.Language);
     }
 
-    [Theory]
-    [InlineData(1, null)]
-    [InlineData(null, 5)]
-    [InlineData(1, 5)]
-    public async Task CreateChildProfileAsync_PersonalScopeWithOrganizationData_ThrowsBadRequest(
-        int? organizationId, int? classGroupId)
-    {
-        SetupOwner();
-        var request = PersonalRequest();
-        request.OrganizationId = organizationId;
-        request.ClassGroupId = classGroupId;
-
-        await Assert.ThrowsAsync<BadRequestException>(() => _sut.CreateChildProfileAsync(2, request));
-
-        VerifyNothingWasSaved();
-    }
-
     [Fact]
     public async Task CreateChildProfileAsync_UnknownOwner_ThrowsNotFound()
     {
@@ -130,125 +103,11 @@ public class ChildProfileServiceTests
     }
 
     [Fact]
-    public async Task CreateChildProfileAsync_OrganizationScope_MissingOrganizationOrClassGroup_ThrowsBadRequest()
-    {
-        SetupOwner();
-        var request = OrganizationRequest();
-        request.ClassGroupId = null;
-
-        await Assert.ThrowsAsync<BadRequestException>(() => _sut.CreateChildProfileAsync(2, request));
-
-        VerifyNothingWasSaved();
-    }
-
-    [Fact]
-    public async Task CreateChildProfileAsync_OrganizationScope_OrganizationNotFound_ThrowsNotFound()
-    {
-        SetupOwner();
-        _organizationRepo.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync((Organization?)null);
-
-        await Assert.ThrowsAsync<NotFoundException>(() => _sut.CreateChildProfileAsync(2, OrganizationRequest()));
-
-        VerifyNothingWasSaved();
-    }
-
-    [Theory]
-    [InlineData(OrgVerification.PendingVerification)]
-    [InlineData(OrgVerification.Suspended)]
-    [InlineData(OrgVerification.PendingReverification)]
-    [InlineData(OrgVerification.Rejected)]
-    public async Task CreateChildProfileAsync_OrganizationScope_OrganizationNotActive_ThrowsBadRequest(OrgVerification status)
-    {
-        SetupOwner();
-        _organizationRepo.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new Organization
-            {
-                Id = 1,
-                Name = "Trường Demo",
-                VerificationStatus = status,
-                CreatedByUserId = 1
-            });
-
-        await Assert.ThrowsAsync<BadRequestException>(() => _sut.CreateChildProfileAsync(2, OrganizationRequest()));
-
-        VerifyNothingWasSaved();
-    }
-
-    [Fact]
-    public async Task CreateChildProfileAsync_OrganizationScope_ClassGroupNotFound_ThrowsNotFound()
-    {
-        SetupOrganizationBranch();
-        _classGroupRepo.Setup(r => r.GetByIdAsync(5, It.IsAny<CancellationToken>())).ReturnsAsync((ClassGroup?)null);
-
-        await Assert.ThrowsAsync<NotFoundException>(() => _sut.CreateChildProfileAsync(2, OrganizationRequest()));
-
-        VerifyNothingWasSaved();
-    }
-
-    [Fact]
-    public async Task CreateChildProfileAsync_OrganizationScope_ClassGroupFromOtherOrganization_ThrowsBadRequest()
-    {
-        var classGroup = ActiveClassGroup();
-        classGroup.OrganizationId = 99;
-        SetupOrganizationBranch(classGroup);
-
-        await Assert.ThrowsAsync<BadRequestException>(() => _sut.CreateChildProfileAsync(2, OrganizationRequest()));
-
-        VerifyNothingWasSaved();
-    }
-
-    [Fact]
-    public async Task CreateChildProfileAsync_OrganizationScope_ArchivedClassGroup_ThrowsBadRequest()
-    {
-        var classGroup = ActiveClassGroup();
-        classGroup.Status = ClassGroupStatus.Archived;
-        SetupOrganizationBranch(classGroup);
-
-        await Assert.ThrowsAsync<BadRequestException>(() => _sut.CreateChildProfileAsync(2, OrganizationRequest()));
-
-        VerifyNothingWasSaved();
-    }
-
-    [Fact]
-    public async Task CreateChildProfileAsync_OrganizationScope_CreatesAllEntitiesAndAudit()
-    {
-        var classGroup = ActiveClassGroup();
-        SetupOrganizationBranch(classGroup);
-        ChildProfile? profile = null;
-        SupervisionRelationship? supervision = null;
-        ClassGroupMember? member = null;
-        _profileRepo.Setup(r => r.AddAsync(It.IsAny<ChildProfile>(), It.IsAny<CancellationToken>()))
-            .Callback<ChildProfile, CancellationToken>((value, _) => profile = value)
-            .ReturnsAsync((ChildProfile value, CancellationToken _) => value);
-        _supervisionRepo.Setup(r => r.AddAsync(It.IsAny<SupervisionRelationship>(), It.IsAny<CancellationToken>()))
-            .Callback<SupervisionRelationship, CancellationToken>((value, _) => supervision = value)
-            .ReturnsAsync((SupervisionRelationship value, CancellationToken _) => value);
-        _memberRepo.Setup(r => r.AddAsync(It.IsAny<ClassGroupMember>(), It.IsAny<CancellationToken>()))
-            .Callback<ClassGroupMember, CancellationToken>((value, _) => member = value)
-            .ReturnsAsync((ClassGroupMember value, CancellationToken _) => value);
-
-        var result = await _sut.CreateChildProfileAsync(2, OrganizationRequest());
-
-        Assert.Equal(1, profile!.OrganizationId);
-        Assert.Equal(ProfileScope.Organization, profile.Scope);
-        Assert.Same(profile, supervision!.ChildProfile);
-        Assert.Same(profile, member!.ChildProfile);
-        Assert.Same(classGroup, member.ClassGroup);
-        Assert.True(member.JoinedAt <= DateTime.UtcNow);
-        Assert.Equal("Organization", result.Scope);
-        Assert.Equal(1, result.OrganizationId);
-        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
-    }
-
-    [Theory]
-    [InlineData((ProfileScope)999, AgeBand.Age_6_8)]
-    [InlineData(ProfileScope.Personal, (AgeBand)999)]
-    public async Task CreateChildProfileAsync_InvalidEnum_ThrowsBadRequest(ProfileScope scope, AgeBand ageBand)
+    public async Task CreateChildProfileAsync_InvalidAgeBand_ThrowsBadRequest()
     {
         SetupOwner();
         var request = PersonalRequest();
-        request.Scope = scope;
-        request.AgeBand = ageBand;
+        request.AgeBand = (AgeBand)999;
 
         await Assert.ThrowsAsync<BadRequestException>(() => _sut.CreateChildProfileAsync(2, request));
 
@@ -259,11 +118,10 @@ public class ChildProfileServiceTests
     public void CreateChildProfileRequestDto_AcceptsDocumentedStringEnums()
     {
         var request = JsonSerializer.Deserialize<CreateChildProfileRequestDto>(
-            """{"Nickname":"Bé Test","AgeBand":"Age_6_8","Scope":"Personal"}""");
+            """{"Nickname":"Bé Test","AgeBand":"Age_6_8"}""");
 
         Assert.NotNull(request);
         Assert.Equal(AgeBand.Age_6_8, request!.AgeBand);
-        Assert.Equal(ProfileScope.Personal, request.Scope);
     }
 
     [Fact]
@@ -533,13 +391,6 @@ public class ChildProfileServiceTests
         .Setup(r => r.GetByIdAsync(2, It.IsAny<CancellationToken>()))
         .ReturnsAsync(new UserAccount { Id = 2, Role = UserRole.Parent, Status = AccountStatus.EmailVerified });
 
-    private void SetupOrganizationBranch(ClassGroup? classGroup = null)
-    {
-        SetupOwner();
-        _organizationRepo.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(ActiveOrganization());
-        _classGroupRepo.Setup(r => r.GetByIdAsync(5, It.IsAny<CancellationToken>())).ReturnsAsync(classGroup ?? ActiveClassGroup());
-    }
-
     private void VerifyNothingWasSaved()
     {
         _profileRepo.Verify(r => r.AddAsync(It.IsAny<ChildProfile>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -549,33 +400,6 @@ public class ChildProfileServiceTests
     private static CreateChildProfileRequestDto PersonalRequest() => new()
     {
         Nickname = "Bé Test",
-        AgeBand = AgeBand.Age_6_8,
-        Scope = ProfileScope.Personal
-    };
-
-    private static CreateChildProfileRequestDto OrganizationRequest() => new()
-    {
-        Nickname = "Bé Test",
-        AgeBand = AgeBand.Age_9_12,
-        Scope = ProfileScope.Organization,
-        OrganizationId = 1,
-        ClassGroupId = 5
-    };
-
-    private static Organization ActiveOrganization() => new()
-    {
-        Id = 1,
-        Name = "Trường Demo",
-        VerificationStatus = OrgVerification.Active,
-        CreatedByUserId = 1
-    };
-
-    private static ClassGroup ActiveClassGroup() => new()
-    {
-        Id = 5,
-        OrganizationId = 1,
-        TeacherUserId = 7,
-        Name = "Lớp 1A",
-        Status = ClassGroupStatus.Active
+        AgeBand = AgeBand.Age_6_8
     };
 }

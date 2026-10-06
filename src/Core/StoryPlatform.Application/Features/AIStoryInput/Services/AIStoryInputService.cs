@@ -561,31 +561,14 @@ public sealed class AIStoryInputService : IAIStoryInputService
             includeProperties: "ContentCategory",
             cancellationToken: cancellationToken);
 
-        OrgSafetyPolicyTemplate? organizationPolicy = null;
-        IReadOnlyList<OrgSafetyPolicyCategory> organizationCategories = [];
-        if (child.Scope == ProfileScope.Organization && child.OrganizationId.HasValue)
-        {
-            organizationPolicy = await _unitOfWork.Repository<OrgSafetyPolicyTemplate>().FirstOrDefaultAsync(
-                item => item.OrganizationId == child.OrganizationId.Value,
-                cancellationToken: cancellationToken);
-            if (organizationPolicy is not null)
-            {
-                organizationCategories = await _unitOfWork.Repository<OrgSafetyPolicyCategory>().FindAsync(
-                    item => item.OrgSafetyPolicyTemplateId == organizationPolicy.Id,
-                    includeProperties: "ContentCategory",
-                    cancellationToken: cancellationToken);
-            }
-        }
-
-        var maximumLength = RestrictiveMaximum(safety.MaxStoryLength, organizationPolicy?.MaxStoryLengthBaseline);
+        var maximumLength = safety.MaxStoryLength;
         if (maximumLength <= 0)
         {
             throw new BadRequestException("Safety Policy chưa có Maximum Story Length hợp lệ.");
         }
 
         var approvalMode = safety.ParentalGateEnabled ||
-                           safety.RequiredApprovalMode == ApprovalMode.AlwaysManual ||
-                           organizationPolicy?.RequiredApprovalModeDefault == ApprovalMode.AlwaysManual
+                           safety.RequiredApprovalMode == ApprovalMode.AlwaysManual
             ? ApprovalMode.AlwaysManual
             : ApprovalMode.AutoPublishOnThreshold;
         var profileLanguage = child.Language.Trim().ToLowerInvariant();
@@ -603,13 +586,10 @@ public sealed class AIStoryInputService : IAIStoryInputService
             throw new BadRequestException("Vocabulary Level không hợp lệ.");
         }
 
-        var categoryRules = MergeCategoryRules(personalCategories, organizationCategories);
+        var categoryRules = MergeCategoryRules(personalCategories);
         var categoryNames = personalCategories
             .Where(item => item.ContentCategory is { IsActive: true })
             .Select(item => (item.ContentCategory!.Code, item.ContentCategory.DisplayName))
-            .Concat(organizationCategories
-                .Where(item => item.ContentCategory is { IsActive: true })
-                .Select(item => (item.ContentCategory!.Code, item.ContentCategory.DisplayName)))
             .GroupBy(item => item.Code, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.First().DisplayName, StringComparer.OrdinalIgnoreCase);
         var allowedTerms = Terms(categoryRules, categoryNames, PolicyRule.Allowed);
@@ -687,16 +667,12 @@ public sealed class AIStoryInputService : IAIStoryInputService
     }
 
     private static Dictionary<string, PolicyRule> MergeCategoryRules(
-        IEnumerable<SafetyPolicyCategory> personal,
-        IEnumerable<OrgSafetyPolicyCategory> organization)
+        IEnumerable<SafetyPolicyCategory> personal)
     {
         var merged = new Dictionary<string, PolicyRule>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in personal
                      .Where(item => item.ContentCategory is { IsActive: true })
-                     .Select(item => (item.ContentCategory!.Code, item.Rule))
-                     .Concat(organization
-                         .Where(item => item.ContentCategory is { IsActive: true })
-                         .Select(item => (item.ContentCategory!.Code, item.Rule))))
+                     .Select(item => (item.ContentCategory!.Code, item.Rule)))
         {
             if (!merged.TryGetValue(item.Code, out var current) || item.Rule > current)
             {
@@ -718,12 +694,6 @@ public sealed class AIStoryInputService : IAIStoryInputService
         .Where(item => !string.IsNullOrWhiteSpace(item))
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .ToArray();
-
-    private static int RestrictiveMaximum(int personalMaximum, int? organizationMaximum)
-    {
-        var values = new[] { personalMaximum, organizationMaximum ?? 0 }.Where(value => value > 0).ToArray();
-        return values.Length == 0 ? 0 : values.Min();
-    }
 
     private static void ValidateAgainstContext(AcceptedAIStoryInputSnapshot input, EffectiveContext context)
     {

@@ -56,37 +56,11 @@ public class PaymentService : IPaymentService
             throw new BadRequestException("Gói này hiện không còn hoạt động.");
         }
 
-        if (plan.ApplicableScope == ProfileScope.Personal)
+        var payer = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(payerUserId, cancellationToken)
+                    ?? throw new ForbiddenException();
+        if (payer.Role != UserRole.Parent)
         {
-            if (request.OrganizationId.HasValue)
-            {
-                throw new BadRequestException("OrganizationId không áp dụng cho gói Personal.");
-            }
-
-            var payer = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(payerUserId, cancellationToken)
-                        ?? throw new ForbiddenException();
-            if (payer.Role != UserRole.Parent)
-            {
-                throw new ForbiddenException("Chỉ Parent mới được mua gói Personal.");
-            }
-        }
-        else
-        {
-            if (!request.OrganizationId.HasValue)
-            {
-                throw new BadRequestException("OrganizationId là bắt buộc cho gói Organization.");
-            }
-
-            var isSchoolAdmin = await _unitOfWork.Repository<OrganizationMembership>().ExistsAsync(
-                item => item.UserId == payerUserId
-                        && item.OrganizationId == request.OrganizationId.Value
-                        && item.Status == MembershipStatus.Active
-                        && item.OrgRole == OrgRole.SchoolAdmin,
-                cancellationToken);
-            if (!isSchoolAdmin)
-            {
-                throw new ForbiddenException("Chỉ School Admin đang active của Organization này mới được mua gói Organization.");
-            }
+            throw new ForbiddenException("Chỉ Parent mới được mua gói Personal.");
         }
 
         var duplicatePending = await _unitOfWork.Repository<PaymentTransaction>().ExistsAsync(
@@ -105,7 +79,6 @@ public class PaymentService : IPaymentService
         {
             PlanId = plan.Id,
             PayerUserId = payerUserId,
-            OrganizationId = plan.ApplicableScope == ProfileScope.Organization ? request.OrganizationId : null,
             TransactionCode = transactionCode,
             Amount = plan.PriceVnd,
             Status = PaymentStatus.Pending,
@@ -208,7 +181,7 @@ public class PaymentService : IPaymentService
     /// <summary>
     /// Fetches the transaction's plan and credits token quota, with the transaction already
     /// committed as Paid. A missing plan or a failure from <see cref="ITokenQuotaService.CreditAsync"/>
-    /// (e.g. missing OrganizationId, transient error) is recorded as an audit log entry for an
+    /// (e.g. transient error) is recorded as an audit log entry for an
     /// operator to act on rather than propagated — SePay will not retry a transaction it already
     /// saw succeed, and a manual mark-paid refuses an already-Paid transaction, so failing this step
     /// must never roll back or fail the surrounding payment-confirmation flow.
@@ -228,8 +201,7 @@ public class PaymentService : IPaymentService
         try
         {
             await _tokenQuotaService.CreditAsync(
-                plan.ApplicableScope, transaction.PayerUserId, transaction.OrganizationId, plan.QuotaAmount,
-                cancellationToken);
+                transaction.PayerUserId, plan.QuotaAmount, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -240,7 +212,6 @@ public class PaymentService : IPaymentService
                 {
                     reason = "CreditAsyncThrew",
                     planId = plan.Id,
-                    planScope = plan.ApplicableScope.ToString(),
                     quotaAmount = plan.QuotaAmount,
                     error = ex.Message
                 },
@@ -257,7 +228,6 @@ public class PaymentService : IPaymentService
     {
         Id = plan.Id,
         Name = plan.Name,
-        ApplicableScope = plan.ApplicableScope.ToString().ToLowerInvariant(),
         PriceVnd = plan.PriceVnd,
         QuotaAmount = plan.QuotaAmount
     };

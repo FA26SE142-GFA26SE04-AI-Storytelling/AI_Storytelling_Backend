@@ -30,19 +30,9 @@ public class ChildProfileConfiguration : IEntityTypeConfiguration<ChildProfile>
             .HasMaxLength(30)
             .IsRequired();
 
-        builder.Property(x => x.Scope)
-            .HasConversion<string>()
-            .HasMaxLength(30)
-            .IsRequired();
-
         builder.HasOne(x => x.OwnerUser)
             .WithMany(u => u.ChildProfiles)
             .HasForeignKey(x => x.OwnerUserId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        builder.HasOne(x => x.Organization)
-            .WithMany()
-            .HasForeignKey(x => x.OrganizationId)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasQueryFilter(x => !x.IsDeleted);

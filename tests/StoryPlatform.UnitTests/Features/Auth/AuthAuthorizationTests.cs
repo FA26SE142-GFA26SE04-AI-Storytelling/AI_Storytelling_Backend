@@ -339,20 +339,34 @@ public class AuthAuthorizationTests
         Assert.Null(typeof(RegisterRequestDto).GetProperty("Role"));
 
         var createParent = typeof(AuthController).GetMethod(nameof(AuthController.CreateParentAccount))!;
-        var createOrganization = typeof(OrganizationController)
-            .GetMethod(nameof(OrganizationController.CreateOrganization))!;
-        var createTeacher = typeof(OrganizationController)
-            .GetMethod(nameof(OrganizationController.CreateTeacherAccount))!;
 
         Assert.Equal(
             "Teacher",
             Assert.Single(createParent.GetCustomAttributes<AuthorizeAttribute>(true)).Roles);
-        Assert.Equal(
-            "Administrator",
-            Assert.Single(createOrganization.GetCustomAttributes<AuthorizeAttribute>(true)).Roles);
-        Assert.Equal(
-            "Teacher",
-            Assert.Single(createTeacher.GetCustomAttributes<AuthorizeAttribute>(true)).Roles);
+    }
+
+    [Fact]
+    public void ApiAssembly_DoesNotContainClassGroupOrOrganizationControllers()
+    {
+        var apiAssembly = typeof(AuthController).Assembly;
+
+        Assert.Null(apiAssembly.GetType("StoryPlatform.Api.Controllers.ClassGroupController"));
+        Assert.Null(apiAssembly.GetType("StoryPlatform.Api.Controllers.OrganizationController"));
+    }
+
+    [Fact]
+    public void ApplicationAssembly_DoesNotContainClassGroupOrOrganizationServices()
+    {
+        var applicationAssembly = typeof(StoryPlatform.Application.Features.Auth.DTOs.RegisterRequestDto).Assembly;
+
+        Assert.Null(applicationAssembly.GetType(
+            "StoryPlatform.Application.Features.ChildProfiles.ClassGroups.Services.ClassGroupService"));
+        Assert.Null(applicationAssembly.GetType(
+            "StoryPlatform.Application.Features.ChildProfiles.ClassGroups.Interfaces.IClassGroupService"));
+        Assert.Null(applicationAssembly.GetType(
+            "StoryPlatform.Application.Features.Organizations.Services.OrganizationService"));
+        Assert.Null(applicationAssembly.GetType(
+            "StoryPlatform.Application.Features.Organizations.Interfaces.IOrganizationService"));
     }
 
     private static IConfiguration BuildValidJwtConfiguration() =>

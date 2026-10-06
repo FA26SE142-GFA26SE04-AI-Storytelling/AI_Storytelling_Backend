@@ -31,11 +31,6 @@ public class PaymentTransactionConfiguration : IEntityTypeConfiguration<PaymentT
             .HasForeignKey(x => x.PayerUserId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        builder.HasOne(x => x.Organization)
-            .WithMany()
-            .HasForeignKey(x => x.OrganizationId)
-            .OnDelete(DeleteBehavior.Restrict);
-
         builder.HasIndex(x => x.TransactionCode)
             .IsUnique();
 

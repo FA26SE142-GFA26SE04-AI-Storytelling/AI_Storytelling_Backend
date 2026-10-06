@@ -373,32 +373,13 @@ public sealed class ExistingStoryService : IExistingStoryService
         var personal = await _unitOfWork.Repository<SafetyPolicyCategory>().FindAsync(
             item => item.SafetyPolicyId == policy.Id,
             includeProperties: "ContentCategory", cancellationToken: cancellationToken);
-        OrgSafetyPolicyTemplate? organizationPolicy = null;
-        IReadOnlyList<OrgSafetyPolicyCategory> organization = [];
-        if (child.Scope == ProfileScope.Organization && child.OrganizationId.HasValue)
-        {
-            organizationPolicy = await _unitOfWork.Repository<OrgSafetyPolicyTemplate>().FirstOrDefaultAsync(
-                item => item.OrganizationId == child.OrganizationId.Value, cancellationToken: cancellationToken);
-            if (organizationPolicy is not null)
-            {
-                organization = await _unitOfWork.Repository<OrgSafetyPolicyCategory>().FindAsync(
-                    item => item.OrgSafetyPolicyTemplateId == organizationPolicy.Id,
-                    includeProperties: "ContentCategory", cancellationToken: cancellationToken);
-            }
-        }
-
-        var maximums = new[] { policy.MaxStoryLength, organizationPolicy?.MaxStoryLengthBaseline ?? 0 }
-            .Where(value => value > 0).ToArray();
-        if (maximums.Length == 0)
+        if (policy.MaxStoryLength <= 0)
             throw new BadRequestException("Safety Policy chưa có Maximum Story Length hợp lệ.");
 
         var rules = new Dictionary<string, (PolicyRule Rule, string Name)>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in personal
                      .Where(item => item.ContentCategory is { IsActive: true })
-                     .Select(item => (item.ContentCategory!.Code, item.ContentCategory.DisplayName, item.Rule))
-                     .Concat(organization
-                         .Where(item => item.ContentCategory is { IsActive: true })
-                         .Select(item => (item.ContentCategory!.Code, item.ContentCategory.DisplayName, item.Rule))))
+                     .Select(item => (item.ContentCategory!.Code, item.ContentCategory.DisplayName, item.Rule)))
         {
             if (!rules.TryGetValue(item.Code, out var current) || item.Rule > current.Rule)
                 rules[item.Code] = (item.Rule, item.DisplayName);
@@ -412,7 +393,7 @@ public sealed class ExistingStoryService : IExistingStoryService
             .ToArray();
 
         return new ExistingStorySafetyContext(
-            policy, maximums.Min(), Terms(rules, PolicyRule.Blocked), Terms(rules, PolicyRule.Restricted));
+            policy, policy.MaxStoryLength, Terms(rules, PolicyRule.Blocked), Terms(rules, PolicyRule.Restricted));
     }
 
     private static string ToInputStatus(GenerationInputStatus status) => status switch

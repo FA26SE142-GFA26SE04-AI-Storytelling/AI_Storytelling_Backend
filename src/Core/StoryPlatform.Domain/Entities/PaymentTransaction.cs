@@ -11,8 +11,6 @@ public class PaymentTransaction : BaseEntity
     public int PayerUserId { get; set; }
     public virtual UserAccount? PayerUser { get; set; }
 
-    public int? OrganizationId { get; set; }
-    public virtual Organization? Organization { get; set; }
 
     public string TransactionCode { get; set; } = string.Empty;
     public int Amount { get; set; }

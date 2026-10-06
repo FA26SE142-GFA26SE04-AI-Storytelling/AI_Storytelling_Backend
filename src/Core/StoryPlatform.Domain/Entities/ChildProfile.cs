@@ -13,8 +13,4 @@ public class ChildProfile : BaseEntity
     public DateOnly? DateOfBirth { get; set; }
     public string Language { get; set; } = "vi";
     public ChildProfileStatus Status { get; set; } = ChildProfileStatus.Draft;
-    public ProfileScope Scope { get; set; } = ProfileScope.Personal;
-
-    public int? OrganizationId { get; set; }
-    public virtual Organization? Organization { get; set; }
 }

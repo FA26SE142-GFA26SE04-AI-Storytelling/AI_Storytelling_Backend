@@ -83,7 +83,7 @@ public class AdminAccountService : IAdminAccountService
             throw new ConflictException("Không thể thu hồi quyền của Administrator cuối cùng đang active.");
         }
 
-        var restoredRole = target.RoleBeforeAdmin ?? UserRole.Teacher;
+        var restoredRole = target.RoleBeforeAdmin ?? UserRole.Parent;
         target.Role = restoredRole;
         target.RoleBeforeAdmin = null;
         target.UpdatedAt = DateTime.UtcNow;

@@ -46,13 +46,13 @@ public class UserProvisioningServiceTests
             .ReturnsAsync((UserAccount u, CancellationToken _) => u);
 
         var (account, rawSetPasswordToken) = await _sut.CreatePendingAccountAsync(
-            "teacher1", "teacher1@example.com", "Le Thi B", "0900000000", UserRole.Teacher);
+            "admin1", "admin1@example.com", "Le Thi B", "0900000000", UserRole.Administrator);
 
         Assert.NotNull(added);
         Assert.Same(added, account);
-        Assert.Equal("teacher1", account.Username);
-        Assert.Equal("teacher1@example.com", account.Email);
-        Assert.Equal(UserRole.Teacher, account.Role);
+        Assert.Equal("admin1", account.Username);
+        Assert.Equal("admin1@example.com", account.Email);
+        Assert.Equal(UserRole.Administrator, account.Role);
         Assert.Equal(AccountStatus.PasswordResetPending, account.Status);
         Assert.Equal("hashed-random-password", account.PasswordHash);
         Assert.Equal(TokenHasher.Hash("raw-set-password-token"), account.ResetTokenHash);
@@ -69,7 +69,7 @@ public class UserProvisioningServiceTests
             .ReturnsAsync(true);
 
         await Assert.ThrowsAsync<BadRequestException>(() => _sut.CreatePendingAccountAsync(
-            "teacher1", "taken@example.com", "Le Thi B", null, UserRole.Teacher));
+            "admin1", "taken@example.com", "Le Thi B", null, UserRole.Administrator));
 
         _userRepoMock.Verify(
             r => r.AddAsync(It.IsAny<UserAccount>(), It.IsAny<CancellationToken>()), Times.Never);

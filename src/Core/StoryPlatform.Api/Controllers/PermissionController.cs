@@ -34,7 +34,7 @@ public class PermissionController : BaseApiController
     /// Lấy danh sách quyền của một quan hệ giám sát.
     /// </summary>
     [HttpGet("relationships/{relationshipId:int}")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<List<string>>>> ListRelationshipPermissions(
         int relationshipId, CancellationToken cancellationToken)
     {
@@ -47,7 +47,7 @@ public class PermissionController : BaseApiController
     /// Cấp một quyền cho quan hệ giám sát.
     /// </summary>
     [HttpPost("relationships/{relationshipId:int}/{permission}")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<object?>>> GrantPermission(
         int relationshipId, Permission permission, CancellationToken cancellationToken)
     {
@@ -60,7 +60,7 @@ public class PermissionController : BaseApiController
     /// Thu hồi một quyền khỏi quan hệ giám sát.
     /// </summary>
     [HttpDelete("relationships/{relationshipId:int}/{permission}")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<object?>>> RevokePermission(
         int relationshipId, Permission permission, CancellationToken cancellationToken)
     {
@@ -73,7 +73,7 @@ public class PermissionController : BaseApiController
     /// Tạo yêu cầu xin cấp quyền cho quan hệ giám sát của chính Additional Supervisor.
     /// </summary>
     [HttpPost("relationships/{relationshipId:int}/requests")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<PermissionRequestDto>>> CreatePermissionRequest(
         int relationshipId,
         [FromBody] CreatePermissionRequestRequestDto request,
@@ -90,7 +90,7 @@ public class PermissionController : BaseApiController
     /// Danh sách yêu cầu xin quyền của một quan hệ giám sát.
     /// </summary>
     [HttpGet("relationships/{relationshipId:int}/requests")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<List<PermissionRequestDto>>>> ListPermissionRequests(
         int relationshipId, CancellationToken cancellationToken)
     {
@@ -103,7 +103,7 @@ public class PermissionController : BaseApiController
     /// Owner chấp nhận yêu cầu xin quyền — cấp toàn bộ permission trong yêu cầu.
     /// </summary>
     [HttpPost("requests/{permissionRequestId:int}/accept")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<PermissionRequestDto>>> AcceptPermissionRequest(
         int permissionRequestId, CancellationToken cancellationToken)
     {
@@ -117,7 +117,7 @@ public class PermissionController : BaseApiController
     /// Owner từ chối yêu cầu xin quyền.
     /// </summary>
     [HttpPost("requests/{permissionRequestId:int}/reject")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<PermissionRequestDto>>> RejectPermissionRequest(
         int permissionRequestId, CancellationToken cancellationToken)
     {
@@ -131,7 +131,7 @@ public class PermissionController : BaseApiController
     /// Additional Supervisor tự huỷ yêu cầu xin quyền do chính mình tạo, khi Owner chưa xử lý (BR-1.14).
     /// </summary>
     [HttpPost("requests/{permissionRequestId:int}/cancel")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<PermissionRequestDto>>> CancelPermissionRequest(
         int permissionRequestId, CancellationToken cancellationToken)
     {

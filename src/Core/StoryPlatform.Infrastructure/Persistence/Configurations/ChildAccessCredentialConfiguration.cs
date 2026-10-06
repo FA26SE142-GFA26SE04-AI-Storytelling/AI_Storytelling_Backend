@@ -16,11 +16,7 @@ public class ChildAccessCredentialConfiguration : IEntityTypeConfiguration<Child
             .IsRequired()
             .HasMaxLength(100);
 
-        builder.Property(x => x.PinHash)
-            .IsRequired()
-            .HasMaxLength(255);
-
-        builder.Property(x => x.EasyLoginCode)
+        builder.Property(x => x.EasyLoginSecretHash)
             .HasMaxLength(64);
 
         builder.HasOne(x => x.ChildProfile)
@@ -38,9 +34,9 @@ public class ChildAccessCredentialConfiguration : IEntityTypeConfiguration<Child
             .IsUnique()
             .HasFilter("\"IsDeleted\" = false");
 
-        builder.HasIndex(x => x.EasyLoginCode)
+        builder.HasIndex(x => x.EasyLoginSecretHash)
             .IsUnique()
-            .HasFilter("\"EasyLoginCode\" IS NOT NULL");
+            .HasFilter("\"EasyLoginSecretHash\" IS NOT NULL");
 
         builder.HasQueryFilter(x => !x.IsDeleted);
     }

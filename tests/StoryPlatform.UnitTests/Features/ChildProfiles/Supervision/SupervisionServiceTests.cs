@@ -362,34 +362,19 @@ public class SupervisionServiceTests
         Assert.Null(target.RevokedAt);
     }
 
-    [Theory]
-    [InlineData(UserRole.Teacher, false, ChildProfileStatus.PendingParentConsent)]
-    [InlineData(UserRole.Teacher, true, ChildProfileStatus.Active)]
-    [InlineData(UserRole.Parent, false, ChildProfileStatus.Active)]
-    public async Task RevokeSupervisionAsync_RechecksLastParentSupervisor(
-        UserRole ownerRole, bool anotherParentExists, ChildProfileStatus expectedStatus)
+    [Fact]
+    public async Task RevokeSupervisionAsync_Valid_RevokesRelationshipAndKeepsProfileStatus()
     {
         var target = AdditionalSupervisor();
-        var profile = new ChildProfile
-        {
-            Id = 1, OwnerUserId = 2, Status = ChildProfileStatus.Active
-        };
         _relationshipRepo.Setup(r => r.GetByIdAsync(20, It.IsAny<CancellationToken>()))
             .ReturnsAsync(target);
-        _profileRepo.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(profile);
-        _userRepo.Setup(r => r.GetByIdAsync(2, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new UserAccount { Id = 2, Role = ownerRole });
-        _relationshipRepo.Setup(r => r.ExistsAsync(
-                It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(),
-                It.IsAny<CancellationToken>())).ReturnsAsync(anotherParentExists);
         AllowOwner();
 
         await _sut.RevokeSupervisionAsync(20, 2);
 
         Assert.NotNull(target.RevokedAt);
         Assert.Equal(2, target.RevokedByUserId);
-        Assert.Equal(expectedStatus, profile.Status);
+        _profileRepo.Verify(r => r.Update(It.IsAny<ChildProfile>()), Times.Never);
         _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 

@@ -11,7 +11,6 @@ public class ContentCategoryControllerAuthorizationTests
 {
     [Theory]
     [InlineData(UserRole.Parent, true)]
-    [InlineData(UserRole.Teacher, true)]
     [InlineData(UserRole.Administrator, true)]
     public async Task GetActions_AllowAnyAuthenticatedRole(UserRole role, bool expected)
     {
@@ -27,7 +26,6 @@ public class ContentCategoryControllerAuthorizationTests
 
     [Theory]
     [InlineData(UserRole.Administrator, true)]
-    [InlineData(UserRole.Teacher, false)]
     [InlineData(UserRole.Parent, false)]
     public async Task WriteActions_RequireAdministratorOnly(UserRole role, bool expected)
     {

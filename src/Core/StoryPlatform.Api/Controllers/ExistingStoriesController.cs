@@ -11,7 +11,7 @@ namespace StoryPlatform.Api.Controllers;
 
 /// <summary>
 /// Luồng 2 — Existing Story Workflow.
-/// Cung cấp API cho Parent/Teacher:
+/// Cung cấp API cho Parent:
 ///   - Import nội dung truyện thô.
 ///   - Evaluate để quyết định Suitable / Adapt / Blocked.
 ///   - Adapt / Manual Edit / Keep Original (đều tạo StoryVersion mới).
@@ -22,7 +22,7 @@ namespace StoryPlatform.Api.Controllers;
 /// vào chuỗi Phase 3 (Vocabulary → Quiz → Discussion).
 /// </summary>
 [ApiController]
-[Authorize(Roles = "Parent,Teacher")]
+[Authorize(Roles = "Parent")]
 [Route("api/v1/stories")]
 public sealed class ExistingStoriesController : BaseApiController
 {

@@ -49,6 +49,8 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<IClientAttemptLimiter, InMemoryClientAttemptLimiter>();
         services.AddSingleton<ITotpService, TotpService>();
         services.AddSingleton<IWorkbookExportBuilder, ClosedXmlWorkbookExportBuilder>();
         services.AddSingleton<IArchiveExportBuilder, ZipCsvArchiveExportBuilder>();

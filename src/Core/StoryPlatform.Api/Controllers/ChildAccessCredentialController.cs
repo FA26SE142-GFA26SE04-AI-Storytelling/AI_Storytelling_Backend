@@ -18,26 +18,10 @@ public class ChildAccessCredentialController : BaseApiController
     }
 
     /// <summary>
-    /// Đặt/đổi PIN + avatar cho Child Access Credential (Bước 1.10) — chỉ Supervisor được làm, Trẻ không tự đổi được.
-    /// </summary>
-    [HttpPut("{childProfileId:int}")]
-    [Authorize(Roles = "Parent,Teacher")]
-    public async Task<ActionResult<ApiResponse<object?>>> SetPin(
-        int childProfileId,
-        [FromBody] SetChildAccessCredentialRequestDto request,
-        CancellationToken cancellationToken)
-    {
-        await _childAccessCredentialService.SetPinAsync(
-            childProfileId, GetCurrentUserId(), request, cancellationToken);
-
-        return HandleResult<object?>(null, "Cập nhật PIN truy cập của trẻ thành công.");
-    }
-
-    /// <summary>
-    /// Lấy thông tin Child Access Credential (KHÔNG bao giờ trả PIN/PinHash).
+    /// Trạng thái Easy Login của hồ sơ (đã có chưa, tạo lúc nào) — KHÔNG bao giờ trả secret hay hash.
     /// </summary>
     [HttpGet("{childProfileId:int}")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<ChildAccessCredentialDto>>> GetCredential(
         int childProfileId, CancellationToken cancellationToken)
     {
@@ -46,10 +30,11 @@ public class ChildAccessCredentialController : BaseApiController
     }
 
     /// <summary>
-    /// Thu hồi Child Access Credential (soft delete) — Trẻ bị đăng xuất ngay và mất lối vào độc lập cho tới khi được thiết lập PIN mới.
+    /// Thu hồi Easy Login (soft delete): trẻ bị đăng xuất ngay và mất lối vào độc lập cho tới khi tạo Easy Login mới.
+    /// Cần quyền manage_safety_settings (Owner luôn có).
     /// </summary>
     [HttpDelete("{childProfileId:int}")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<object?>>> RevokeCredential(
         int childProfileId, CancellationToken cancellationToken)
     {
@@ -58,16 +43,17 @@ public class ChildAccessCredentialController : BaseApiController
     }
 
     /// <summary>
-    /// Supervisor generates a new single-use EasyLogin QR code with a five-minute TTL.
+    /// Tạo Easy Login lâu dài (lần đầu) hoặc TẠO LẠI secret mới (secret cũ vô hiệu ngay, mọi phiên của trẻ từ secret cũ bị kết thúc).
+    /// Secret chỉ trả đúng một lần — client dựng QR từ giá trị này. Cần quyền manage_safety_settings (Owner luôn có).
     /// </summary>
     [HttpPost("{childProfileId:int}/easylogin")]
-    [Authorize(Roles = "Parent,Teacher")]
-    public async Task<ActionResult<ApiResponse<EasyLoginCodeDto>>> GenerateEasyLoginCode(
+    [Authorize(Roles = "Parent")]
+    public async Task<ActionResult<ApiResponse<EasyLoginSecretDto>>> CreateOrRegenerateEasyLogin(
         int childProfileId, CancellationToken cancellationToken)
     {
-        var result = await _childAccessCredentialService.GenerateEasyLoginCodeAsync(
+        var result = await _childAccessCredentialService.CreateOrRegenerateEasyLoginAsync(
             childProfileId, GetCurrentUserId(), cancellationToken);
-        return HandleResult(result, "Đã tạo mã EasyLogin mới.");
+        return HandleResult(result, "Đã tạo Easy Login mới.");
     }
 
     /// <summary>
@@ -75,7 +61,7 @@ public class ChildAccessCredentialController : BaseApiController
     /// phát sinh Child Session riêng, tách khỏi phiên Supervisor.
     /// </summary>
     [HttpPost("{childProfileId:int}/handover")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<ChildSessionDto>>> StartSupervisedSession(
         int childProfileId,
         [FromBody] StartSupervisedChildSessionRequestDto request,
@@ -87,7 +73,8 @@ public class ChildAccessCredentialController : BaseApiController
     }
 
     /// <summary>
-    /// Creates a child session from a scanned EasyLogin QR code without supervisor authentication.
+    /// Trẻ quét QR Easy Login để vào Child Session, không cần phiên Supervisor.
+    /// Quét sai 5 lần liên tiếp trên cùng thiết bị (IP client) thì khóa 5 phút.
     /// </summary>
     [HttpPost("easylogin/login")]
     [AllowAnonymous]
@@ -95,25 +82,10 @@ public class ChildAccessCredentialController : BaseApiController
         [FromBody] LoginWithEasyLoginRequestDto request,
         CancellationToken cancellationToken)
     {
+        var clientKey = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         var result = await _childAccessCredentialService.LoginWithEasyLoginAsync(
-            request.Code, cancellationToken);
+            request.Secret, clientKey, cancellationToken);
         return HandleResult(result, "Đăng nhập bằng EasyLogin thành công.");
-    }
-
-    /// <summary>
-    /// Trẻ tự đăng nhập bằng PIN, độc lập với phiên Supervisor (Bước 1.10) — KHÔNG cần JWT.
-    /// </summary>
-    [HttpPost("{childProfileId:int}/login")]
-    [AllowAnonymous]
-    public async Task<ActionResult<ApiResponse<ChildSessionDto>>> LoginWithPin(
-        int childProfileId,
-        [FromBody] LoginWithPinRequestDto request,
-        CancellationToken cancellationToken)
-    {
-        var result = await _childAccessCredentialService.LoginWithPinAsync(
-            childProfileId, request.Pin, cancellationToken);
-
-        return HandleResult(result, "Đăng nhập Child Session thành công.");
     }
 
     /// <summary>

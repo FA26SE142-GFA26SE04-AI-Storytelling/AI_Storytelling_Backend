@@ -129,7 +129,7 @@ Project ai_storytelling_platform {
         Mục 7b) — mọi điểm "hệ thống gửi thông báo" trong 7 luồng PHẢI
         tạo 1 dòng ở đây, không được là hành vi ngầm không lưu vết; và
         child_access_credentials (Luồng 1, Bước 1.10) — cho phép Trẻ tự
-        vào giao diện đọc độc lập (avatar + PIN) mà không cần UserAccount
+        vào giao diện đọc độc lập (Easy Login QR lâu dài) mà không cần UserAccount
         riêng, tách biệt phiên đăng nhập của Supervisor.
     (T) user_accounts thêm role_before_admin — lưu role gốc trước khi
         được Grant làm Administrator (Luồng 5, Bước 5.1b), phục vụ
@@ -1080,29 +1080,23 @@ Table child_access_credentials {
   created_at timestamp [not null, default: `now()`]
   is_deleted boolean [not null, default: false]
   child_profile_id integer [not null, ref: - child_profiles.id, note: 'Chỉ 1 credential chưa soft-delete cho mỗi hồ sơ; migration dùng partial unique index WHERE is_deleted=false.']
-  avatar_id varchar [not null]
-  pin_hash varchar [not null]
-  failed_attempts integer [not null, default: 0]
-  locked_until timestamp
-  easy_login_code varchar(64) [unique, note: 'Mã ngẫu nhiên dùng cho đăng nhập nhanh qua QR; NULL khi chưa phát hành hoặc sau khi thu hồi. Unique index chỉ áp dụng khi khác NULL.']
-  easy_login_expires_at timestamp [note: 'Thời điểm hết hạn của mã EasyLogin.']
-  easy_login_used_at timestamp [note: 'Thời điểm mã EasyLogin đã được sử dụng; hỗ trợ cơ chế dùng một lần.']
-  created_by_user_id integer [not null, ref: > user_accounts.id, note: 'Owner/Additional Supervisor đã thiết lập PIN']
+  avatar_id varchar [not null, note: 'Tạm thời còn ở đây (mặc định avatar-default); sẽ chuyển sang child_profiles.avatar_id ở bước riêng.']
+  easy_login_secret_hash varchar(64) [unique, note: 'SHA-256 (hex) của secret QR ngẫu nhiên ≥128 bit. KHÔNG lưu secret. NULL khi chưa tạo hoặc đã thu hồi. Unique index chỉ áp dụng khi khác NULL. Không có TTL (BR-1.15).']
+  easy_login_created_at timestamp [note: 'Thời điểm tạo/tạo lại secret hiện hành.']
+  created_by_user_id integer [not null, ref: > user_accounts.id, note: 'Owner/Additional Supervisor (có manage_safety_settings) đã tạo Easy Login lần đầu']
   updated_at timestamp [not null, default: `now()`]
 
   Note: '''
-    ChildAccessCredential — Bước 1.10 (MỚI v9.4). Phương thức để chính
-    Trẻ (không phải Supervisor) tự vào giao diện đọc độc lập — Trẻ
-    KHÔNG có user_accounts riêng (không email/mật khẩu). Chỉ Owner/
-    Additional Supervisor có quyền đặt/đổi PIN — Trẻ không tự đổi được.
-    Giới hạn failed_attempts trước khi locked_until (khoá tạm thời).
-    EasyLogin QR tái sử dụng chính credential này qua mã ngẫu nhiên
-    có hạn và dùng một lần; không tạo UserAccount cho Trẻ.
-    Thu hồi = soft delete (is_deleted=true) kèm soft delete mọi
+    ChildAccessCredential — Bước 1.10. Easy Login lâu dài để chính Trẻ
+    (không có user_accounts riêng) tự vào giao diện đọc bằng cách quét
+    QR. Chỉ Owner hoặc người có manage_safety_settings được tạo/tạo lại/
+    thu hồi. Tạo lại = thay secret trong cùng dòng, secret cũ vô hiệu
+    ngay. Thu hồi = soft delete (is_deleted=true) kèm soft delete mọi
     child_sessions sinh từ credential; giữ dòng cũ cho audit.
-    Điều kiện tiên quyết cho Bước 3.0 (Child Entry, Luồng 3) — nếu
-    chưa thiết lập, Trẻ chỉ có thể vào qua ProfileSwitcher của
-    Supervisor (Bước 1.9a), không có lối vào độc lập.
+    Quét sai 5 lần liên tiếp trên cùng thiết bị (IP client) bị khóa 5
+    phút — bộ đếm nằm trong bộ nhớ của máy chủ, không lưu DB.
+    Không còn PIN. Nếu chưa có Easy Login, Trẻ chỉ vào được qua
+    ProfileSwitcher của Supervisor (Bước 1.9a).
   '''
 }
 
@@ -1119,8 +1113,8 @@ Table child_sessions {
 
   Note: '''
     ChildSession — Bước 1.10 (MỚI 24/09/2026). Lưu phiên đăng
-    nhập của Trẻ sau khi xác thực thành công bằng PIN hoặc
-    EasyLogin QR. session_key duy nhất được nhúng trong JWT qua claim
+    nhập của Trẻ sau khi xác thực thành công bằng
+    EasyLogin QR hoặc ProfileSwitcher. session_key duy nhất được nhúng trong JWT qua claim
     child_session; middleware truy vấn lại bản ghi này để áp
     idle-timeout 20 phút. last_activity_at chỉ cần ghi lại tối đa
     mỗi phút một lần, trong khi thời hạn JWT vẫn là trần

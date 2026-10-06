@@ -44,25 +44,25 @@ VALUES
      NOW() - INTERVAL '46 days', NULL, false),
 
     (7, 'teacher_demo1', 'teacher1@example.com', '$2a$11$uQ6RWu9dJN87HUij5gy3RedTZUibH1T4BB/QZBmvLntZBvkjQIR0S', 'Vu Van Phong', '0900000007', 
-     'https://ui-avatars.com/api/?name=Phong+Vu&background=2980B9&color=fff', 'Teacher', 'LoggedIn', NULL, NULL, 
+     'https://ui-avatars.com/api/?name=Phong+Vu&background=2980B9&color=fff', 'Parent', 'LoggedIn', NULL, NULL, 
      encode(sha256('demo-refresh-token-teacher1'::bytea), 'hex'), NOW() + INTERVAL '7 days', NOW() - INTERVAL '3 hours', 
      0, NULL, NULL, false, 1, NULL,
      NOW() - INTERVAL '45 days', NOW() - INTERVAL '3 hours', false),
 
     (8, 'teacher_demo2', 'teacher2@example.com', '$2a$11$uQ6RWu9dJN87HUij5gy3RedTZUibH1T4BB/QZBmvLntZBvkjQIR0S', 'Do Thi Giang', '0900000008', 
-     'https://ui-avatars.com/api/?name=Giang+Do&background=E74C3C&color=fff', 'Teacher', 'EmailVerified', NULL, NULL, 
+     'https://ui-avatars.com/api/?name=Giang+Do&background=E74C3C&color=fff', 'Parent', 'EmailVerified', NULL, NULL, 
      NULL, NULL, NOW() - INTERVAL '3 days', 
      0, NULL, NULL, false, 1, NULL,
      NOW() - INTERVAL '44 days', NOW() - INTERVAL '3 days', false),
 
     (9, 'teacher_demo3', 'teacher3@example.com', '$2a$11$uQ6RWu9dJN87HUij5gy3RedTZUibH1T4BB/QZBmvLntZBvkjQIR0S', 'Bui Van Hai', '0900000009', 
-     NULL, 'Teacher', 'PasswordResetPending', encode(sha256('demo-reset-token-teacher3'::bytea), 'hex'), NOW() + INTERVAL '1 hour', 
+     NULL, 'Parent', 'PasswordResetPending', encode(sha256('demo-reset-token-teacher3'::bytea), 'hex'), NOW() + INTERVAL '1 hour', 
      NULL, NULL, NOW() - INTERVAL '2 days', 
      0, NULL, NULL, false, 1, NULL,
      NOW() - INTERVAL '43 days', NOW() - INTERVAL '1 hour', false),
 
     (10, 'teacher_demo4', 'teacher4@example.com', '$2a$11$uQ6RWu9dJN87HUij5gy3RedTZUibH1T4BB/QZBmvLntZBvkjQIR0S', 'Dang Thi Kim', '0900000010', 
-     'https://ui-avatars.com/api/?name=Kim+Dang&background=34495E&color=fff', 'Teacher', 'LoggedOut', NULL, NULL, 
+     'https://ui-avatars.com/api/?name=Kim+Dang&background=34495E&color=fff', 'Parent', 'LoggedOut', NULL, NULL, 
      NULL, NULL, NOW() - INTERVAL '12 hours', 
      0, NULL, NULL, false, 1, NULL,
      NOW() - INTERVAL '42 days', NOW() - INTERVAL '6 hours', false)

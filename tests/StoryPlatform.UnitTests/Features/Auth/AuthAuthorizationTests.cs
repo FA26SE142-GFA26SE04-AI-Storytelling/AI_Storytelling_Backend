@@ -30,7 +30,7 @@ public class AuthAuthorizationTests
     {
         var generator = new JwtTokenGenerator(BuildValidJwtConfiguration());
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(generator.GenerateAccessToken(
-            new UserAccount { Id = 1, TokenVersion = 7, Role = UserRole.Teacher }));
+            new UserAccount { Id = 1, TokenVersion = 7, Role = UserRole.Parent }));
 
         Assert.Equal("7", jwt.Claims.Single(c => c.Type == "token_version").Value);
     }
@@ -76,7 +76,7 @@ public class AuthAuthorizationTests
     [Fact]
     public async Task TokenValidation_RoleChanged_RejectsOldRoleClaim()
     {
-        var user = new UserAccount { Id = 1, TokenVersion = 2, Status = AccountStatus.LoggedIn, Role = UserRole.Teacher };
+        var user = new UserAccount { Id = 1, TokenVersion = 2, Status = AccountStatus.LoggedIn, Role = UserRole.Administrator };
         await AssertValidationAsync(user, "1", "2", UserRole.Parent, false);
     }
 
@@ -297,9 +297,8 @@ public class AuthAuthorizationTests
 
     [Theory]
     [InlineData(UserRole.Parent, true)]
-    [InlineData(UserRole.Teacher, true)]
     [InlineData(UserRole.Administrator, false)]
-    public async Task GuardianRoutes_AllowOnlySupervisorRoles(UserRole role, bool expected)
+    public async Task GuardianRoutes_AllowOnlyParentRole(UserRole role, bool expected)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -338,11 +337,8 @@ public class AuthAuthorizationTests
         Assert.NotEmpty(register.GetCustomAttributes(typeof(AllowAnonymousAttribute), true));
         Assert.Null(typeof(RegisterRequestDto).GetProperty("Role"));
 
-        var createParent = typeof(AuthController).GetMethod(nameof(AuthController.CreateParentAccount))!;
-
-        Assert.Equal(
-            "Teacher",
-            Assert.Single(createParent.GetCustomAttributes<AuthorizeAttribute>(true)).Roles);
+        // Không còn endpoint tạo tài khoản Phụ huynh hộ.
+        Assert.Null(typeof(AuthController).GetMethod("CreateParentAccount"));
     }
 
     [Fact]

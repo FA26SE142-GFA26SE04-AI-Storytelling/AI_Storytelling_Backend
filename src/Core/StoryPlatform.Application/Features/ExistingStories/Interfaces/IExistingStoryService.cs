@@ -16,7 +16,7 @@ namespace StoryPlatform.Application.Features.ExistingStories.Interfaces;
 public interface IExistingStoryService
 {
     /// <summary>
-    /// Phase 1: Import nội dung truyện thô từ Parent/Teacher.
+    /// Phase 1: Import nội dung truyện thô từ Parent.
     /// Tạo Story + StoryVersion v1 (EditType = Initial).
     /// </summary>
     Task<ImportStoryResponseDto> ImportAsync(

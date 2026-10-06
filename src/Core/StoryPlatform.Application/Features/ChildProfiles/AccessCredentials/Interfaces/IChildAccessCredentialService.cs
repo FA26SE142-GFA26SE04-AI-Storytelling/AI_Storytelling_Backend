@@ -4,28 +4,20 @@ namespace StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Int
 
 public interface IChildAccessCredentialService
 {
-    Task SetPinAsync(
-        int childProfileId, int currentUserId, SetChildAccessCredentialRequestDto request,
-        CancellationToken cancellationToken = default);
-
-    Task<ChildSessionDto> LoginWithPinAsync(
-        int childProfileId, string pin,
-        CancellationToken cancellationToken = default);
-
     Task<ChildAccessCredentialDto> GetCredentialAsync(
+        int childProfileId, int currentUserId, CancellationToken cancellationToken = default);
+
+    Task<EasyLoginSecretDto> CreateOrRegenerateEasyLoginAsync(
         int childProfileId, int currentUserId, CancellationToken cancellationToken = default);
 
     Task RevokeCredentialAsync(
         int childProfileId, int currentUserId, CancellationToken cancellationToken = default);
 
+    Task<ChildSessionDto> LoginWithEasyLoginAsync(
+        string secret, string clientKey, CancellationToken cancellationToken = default);
+
     Task<ChildSessionProfileDto> GetMySessionProfileAsync(
         int childProfileId, CancellationToken cancellationToken = default);
-
-    Task<EasyLoginCodeDto> GenerateEasyLoginCodeAsync(
-        int childProfileId, int currentUserId, CancellationToken cancellationToken = default);
-
-    Task<ChildSessionDto> LoginWithEasyLoginAsync(
-        string easyLoginCode, CancellationToken cancellationToken = default);
 
     Task<ChildSessionDto> StartSupervisedSessionAsync(
         int childProfileId, int currentUserId, string supervisorRefreshToken,

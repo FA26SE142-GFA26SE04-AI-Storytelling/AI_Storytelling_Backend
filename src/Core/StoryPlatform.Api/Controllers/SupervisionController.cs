@@ -23,7 +23,7 @@ public class SupervisionController : BaseApiController
     /// Tạo lời mời giám sát cho một hồ sơ trẻ (Bước 1.5).
     /// </summary>
     [HttpPost("{childProfileId:int}/invitations")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<InvitationDto>>> CreateInvitation(
         int childProfileId,
         [FromBody] CreateInvitationRequestDto request,
@@ -40,7 +40,7 @@ public class SupervisionController : BaseApiController
     /// Danh sách toàn bộ lời mời giám sát (mọi trạng thái) của 1 hồ sơ trẻ.
     /// </summary>
     [HttpGet("{childProfileId:int}/invitations")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<List<InvitationDto>>>> ListInvitations(
         int childProfileId, CancellationToken cancellationToken)
     {
@@ -97,7 +97,7 @@ public class SupervisionController : BaseApiController
     /// Chấp nhận lời mời giám sát — yêu cầu đã xác thực OTP (Bước 1.6); cấp preset quyền mặc định.
     /// </summary>
     [HttpPost("invitations/accept")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<SupervisionRelationshipDto>>> AcceptInvitation(
         [FromBody] AcceptInvitationRequestDto request,
         CancellationToken cancellationToken)
@@ -112,7 +112,7 @@ public class SupervisionController : BaseApiController
     /// Huỷ 1 lời mời giám sát còn đang Pending.
     /// </summary>
     [HttpDelete("invitations/{invitationId:int}")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<object?>>> CancelInvitation(
         int invitationId, CancellationToken cancellationToken)
     {
@@ -124,7 +124,7 @@ public class SupervisionController : BaseApiController
     /// Danh sách người đang giám sát hiệu lực (chưa bị thu hồi) của 1 hồ sơ trẻ.
     /// </summary>
     [HttpGet("{childProfileId:int}/relationships")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<List<SupervisionRelationshipDto>>>> ListSupervisors(
         int childProfileId, CancellationToken cancellationToken)
     {
@@ -136,7 +136,7 @@ public class SupervisionController : BaseApiController
     /// Thu hồi một quan hệ giám sát (Bước 1.6b) — chỉ Owner được thực hiện.
     /// </summary>
     [HttpDelete("relationships/{relationshipId:int}")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<object?>>> RevokeSupervision(
         int relationshipId,
         CancellationToken cancellationToken)
@@ -152,7 +152,7 @@ public class SupervisionController : BaseApiController
     /// yêu cầu hết hạn sau 7 ngày.
     /// </summary>
     [HttpPost("{childProfileId:int}/transfer-ownership")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<OwnershipTransferRequestDto>>> RequestOwnershipTransfer(
         int childProfileId,
         [FromBody] TransferOwnershipRequestDto request,
@@ -170,7 +170,7 @@ public class SupervisionController : BaseApiController
     /// Danh sách yêu cầu chuyển nhượng quyền Owner của một hồ sơ trẻ.
     /// </summary>
     [HttpGet("{childProfileId:int}/ownership-transfers")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<List<OwnershipTransferRequestDto>>>> ListOwnershipTransfers(
         int childProfileId, CancellationToken cancellationToken)
     {
@@ -184,7 +184,7 @@ public class SupervisionController : BaseApiController
     /// Người được đề nghị chấp nhận yêu cầu chuyển nhượng quyền Owner — thực hiện đổi role ngay.
     /// </summary>
     [HttpPost("ownership-transfers/{ownershipTransferRequestId:int}/accept")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<SupervisionRelationshipDto>>> AcceptOwnershipTransfer(
         int ownershipTransferRequestId, CancellationToken cancellationToken)
     {
@@ -198,7 +198,7 @@ public class SupervisionController : BaseApiController
     /// Người được đề nghị từ chối yêu cầu chuyển nhượng quyền Owner.
     /// </summary>
     [HttpPost("ownership-transfers/{ownershipTransferRequestId:int}/reject")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<OwnershipTransferRequestDto>>> RejectOwnershipTransfer(
         int ownershipTransferRequestId, CancellationToken cancellationToken)
     {
@@ -226,7 +226,7 @@ public class SupervisionController : BaseApiController
     /// Danh sách permission đã cấp cho 1 Additional Supervisor. Chỉ Owner xem được.
     /// </summary>
     [HttpGet("relationships/{relationshipId:int}/permissions")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<List<string>>>> ListPermissions(
         int relationshipId, CancellationToken cancellationToken)
     {
@@ -238,7 +238,7 @@ public class SupervisionController : BaseApiController
     /// Cấp 1 permission cho Additional Supervisor (Bước 1.7, Mục 3 Bước D).
     /// </summary>
     [HttpPost("relationships/{relationshipId:int}/permissions/{permission}")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<object?>>> GrantPermission(
         int relationshipId,
         Permission permission,
@@ -254,7 +254,7 @@ public class SupervisionController : BaseApiController
     /// Thu hồi 1 permission cụ thể của Additional Supervisor (Bước 1.7, Mục 3 Bước F).
     /// </summary>
     [HttpDelete("relationships/{relationshipId:int}/permissions/{permission}")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<object?>>> RevokePermission(
         int relationshipId,
         Permission permission,

@@ -2,17 +2,6 @@ using System.ComponentModel.DataAnnotations;
 
 namespace StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.DTOs;
 
-public class SetChildAccessCredentialRequestDto
-{
-    [Required(ErrorMessage = "Avatar không được để trống.")]
-    [StringLength(100, ErrorMessage = "Avatar ID tối đa 100 ký tự.")]
-    public string AvatarId { get; set; } = string.Empty;
-
-    [Required(ErrorMessage = "PIN không được để trống.")]
-    [RegularExpression(@"^\d{4}$", ErrorMessage = "PIN phải gồm đúng 4 chữ số.")]
-    public string Pin { get; set; } = string.Empty;
-}
-
 public class ChildSessionDto
 {
     public int ChildProfileId { get; set; }
@@ -24,17 +13,11 @@ public class ChildSessionDto
 public class ChildAccessCredentialDto
 {
     public int ChildProfileId { get; set; }
-    public string AvatarId { get; set; } = string.Empty;
-    /// <summary>KHÔNG BAO GIỜ trả PinHash hay giá trị PIN dưới bất kỳ hình thức nào.</summary>
-    public bool HasPin { get; set; }
-    public bool IsLocked { get; set; }
-}
 
-public class LoginWithPinRequestDto
-{
-    [Required(ErrorMessage = "PIN không được để trống.")]
-    [RegularExpression(@"^\d{4}$", ErrorMessage = "PIN phải gồm đúng 4 chữ số.")]
-    public string Pin { get; set; } = string.Empty;
+    /// <summary>Hồ sơ đã có Easy Login đang hiệu lực chưa. KHÔNG BAO GIỜ trả secret hay hash.</summary>
+    public bool HasEasyLogin { get; set; }
+
+    public DateTime? EasyLoginCreatedAt { get; set; }
 }
 
 public class ChildSessionProfileDto
@@ -44,16 +27,18 @@ public class ChildSessionProfileDto
     public string AgeBand { get; set; } = string.Empty;
 }
 
-public class EasyLoginCodeDto
+/// <summary>Secret QR lâu dài — chỉ trả đúng một lần lúc tạo/tạo lại; client dựng QR từ giá trị này.</summary>
+public class EasyLoginSecretDto
 {
-    public string Code { get; set; } = string.Empty;
-    public DateTime ExpiresAt { get; set; }
+    public string Secret { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
 }
 
 public class LoginWithEasyLoginRequestDto
 {
     [Required(ErrorMessage = "Mã EasyLogin không được để trống.")]
-    public string Code { get; set; } = string.Empty;
+    [StringLength(128, ErrorMessage = "Mã EasyLogin không hợp lệ.")]
+    public string Secret { get; set; } = string.Empty;
 }
 
 public class StartSupervisedChildSessionRequestDto

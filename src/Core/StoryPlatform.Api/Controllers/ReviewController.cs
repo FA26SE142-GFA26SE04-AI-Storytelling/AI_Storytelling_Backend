@@ -225,7 +225,7 @@ public sealed class ReviewController : ControllerBase
     }
 
     [HttpPost("approve")]
-    [Authorize(Roles = "Parent,Teacher,Administrator")]
+    [Authorize(Roles = "Parent,Administrator")]
     public async Task<ActionResult<ApiResponse<ApproveResponseDto>>> Approve(
         int storyId, CancellationToken cancellationToken)
     {
@@ -234,7 +234,7 @@ public sealed class ReviewController : ControllerBase
     }
 
     [HttpPost("archive")]
-    [Authorize(Roles = "Parent,Teacher,Administrator")]
+    [Authorize(Roles = "Parent,Administrator")]
     public async Task<ActionResult<ApiResponse<ArchiveResponseDto>>> Archive(
         int storyId, [FromBody] ArchiveRequestDto input, CancellationToken cancellationToken)
     {

@@ -28,7 +28,7 @@ public class ChildProfileController : BaseApiController
     /// Tạo hồ sơ trẻ và quan hệ giám sát Owner trong cùng giao dịch.
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<ChildProfileDto>>> CreateChildProfile(
         [FromBody] CreateChildProfileRequestDto request,
         CancellationToken cancellationToken)
@@ -44,7 +44,7 @@ public class ChildProfileController : BaseApiController
     /// Danh sách hồ sơ trẻ mà tài khoản đang đăng nhập đang giám sát (Bước 1.9a — ProfileSwitcher).
     /// </summary>
     [HttpGet("mine")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<List<ChildProfileDto>>>> ListMyChildProfiles(
         CancellationToken cancellationToken)
     {
@@ -56,7 +56,7 @@ public class ChildProfileController : BaseApiController
     /// Lấy chi tiết 1 hồ sơ trẻ.
     /// </summary>
     [HttpGet("{id:int}")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<ChildProfileDto>>> GetChildProfileById(
         int id, CancellationToken cancellationToken)
     {
@@ -68,7 +68,7 @@ public class ChildProfileController : BaseApiController
     /// Lịch sử thay đổi hồ sơ trẻ; chỉ supervisor còn hiệu lực được xem.
     /// </summary>
     [HttpGet("{id:int}/audit-log")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<PagedResult<AuditLogDto>>>> GetChildProfileAuditLog(
         int id, [FromQuery] PageRequest pageRequest, CancellationToken cancellationToken)
     {
@@ -81,7 +81,7 @@ public class ChildProfileController : BaseApiController
     /// Cập nhật Nickname/AgeBand/Language của hồ sơ trẻ (KHÔNG đổi scope/organization).
     /// </summary>
     [HttpPut("{id:int}")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<ChildProfileDto>>> UpdateChildProfile(
         int id, [FromBody] UpdateChildProfileRequestDto request, CancellationToken cancellationToken)
     {
@@ -93,7 +93,7 @@ public class ChildProfileController : BaseApiController
     /// Kích hoạt hồ sơ trẻ (Bước 1.8) — Active nếu thỏa BR-1.9, ngược lại Pending Parent Consent.
     /// </summary>
     [HttpPatch("{id:int}/activate")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<ChildProfileDto>>> ActivateChildProfile(
         int id, CancellationToken cancellationToken)
     {
@@ -105,7 +105,7 @@ public class ChildProfileController : BaseApiController
     /// Lưu trữ (archive) hồ sơ trẻ — dừng truy cập mới, giữ nguyên lịch sử. Chỉ Owner được thực hiện.
     /// </summary>
     [HttpDelete("{id:int}")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<object?>>> ArchiveChildProfile(
         int id, CancellationToken cancellationToken)
     {

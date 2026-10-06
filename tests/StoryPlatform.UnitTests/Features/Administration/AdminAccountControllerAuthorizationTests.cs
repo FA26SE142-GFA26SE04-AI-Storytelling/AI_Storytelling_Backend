@@ -11,7 +11,6 @@ public class AdminAccountControllerAuthorizationTests
 {
     [Theory]
     [InlineData(UserRole.Administrator, true)]
-    [InlineData(UserRole.Teacher, false)]
     [InlineData(UserRole.Parent, false)]
     public async Task Actions_RequireAdministratorOnly(UserRole role, bool expected)
     {

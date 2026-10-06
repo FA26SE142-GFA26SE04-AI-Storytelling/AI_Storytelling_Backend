@@ -23,22 +23,19 @@ public class AuthService : IAuthService
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
     private readonly IEmailSender _emailSender;
     private readonly ITotpService _totpService;
-    private readonly IUserProvisioningService _userProvisioningService;
 
     public AuthService(
         IUnitOfWork unitOfWork,
         IPasswordHasher passwordHasher,
         IJwtTokenGenerator jwtTokenGenerator,
         IEmailSender emailSender,
-        ITotpService totpService,
-        IUserProvisioningService userProvisioningService)
+        ITotpService totpService)
     {
         _unitOfWork = unitOfWork;
         _passwordHasher = passwordHasher;
         _jwtTokenGenerator = jwtTokenGenerator;
         _emailSender = emailSender;
         _totpService = totpService;
-        _userProvisioningService = userProvisioningService;
     }
 
     public async Task<AuthResponseDto> LoginAsync(LoginRequestDto request, CancellationToken cancellationToken = default)
@@ -233,8 +230,8 @@ public class AuthService : IAuthService
             FullName = request.FullName.Trim(),
             PhoneNumber = request.PhoneNumber,
             PasswordHash = _passwordHasher.HashPassword(request.Password),
-            // Public self-registration only creates Parent accounts. Teacher and SchoolAdmin
-            // accounts must be provisioned by an authorized higher-level account.
+            // Public self-registration only creates Parent accounts. Operational accounts
+            // must be provisioned by an Administrator.
             Role = UserRole.Parent,
             Status = AccountStatus.Registered,
             EmailVerificationTokenHash = TokenHasher.Hash(rawVerificationToken),
@@ -246,36 +243,6 @@ public class AuthService : IAuthService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await _emailSender.SendEmailVerificationEmailAsync(newUser.Email, newUser.FullName, rawVerificationToken, cancellationToken);
-    }
-
-    public async Task<CreatedAccountDto> CreateParentAccountAsync(
-        int creatorTeacherUserId, CreateParentAccountRequestDto request,
-        CancellationToken cancellationToken = default)
-    {
-        var creator = await _unitOfWork.Repository<UserAccount>()
-            .GetByIdAsync(creatorTeacherUserId, cancellationToken);
-        if (creator == null)
-        {
-            throw new NotFoundException("Tài khoản", creatorTeacherUserId);
-        }
-
-        var (account, rawSetPasswordToken) = await _userProvisioningService.CreatePendingAccountAsync(
-            request.Username, request.Email, request.FullName, request.PhoneNumber,
-            UserRole.Parent, cancellationToken);
-
-        // AuditLog.EntityId is a scalar rather than a relationship, so the generated account id
-        // must be persisted before the audit entry can reference it.
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        await WriteAuthAuditAsync(
-            creatorTeacherUserId, "PROVISION_PARENT_ACCOUNT", account.Id, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        await _emailSender.SendAccountProvisionedEmailAsync(
-            account.Email, account.FullName, creator.FullName, "Phụ huynh (Parent)",
-            rawSetPasswordToken, cancellationToken);
-
-        return MapToCreatedAccountDto(account);
     }
 
     public async Task<UserProfileDto> GetCurrentUserProfileAsync(int userId, CancellationToken cancellationToken = default)
@@ -624,16 +591,6 @@ public class AuthService : IAuthService
             OccurredAt = DateTime.UtcNow
         }, cancellationToken);
     }
-
-    private static CreatedAccountDto MapToCreatedAccountDto(UserAccount user) => new()
-    {
-        Id = user.Id,
-        Username = user.Username,
-        Email = user.Email,
-        FullName = user.FullName,
-        Role = user.Role.ToString(),
-        Status = user.Status.ToString()
-    };
 
     private static UserProfileDto MapToUserProfileDto(UserAccount user)
     {

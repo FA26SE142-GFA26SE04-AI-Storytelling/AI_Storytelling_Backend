@@ -11,7 +11,6 @@ public class TokenQuotaControllerAuthorizationTests
 {
     [Theory]
     [InlineData(UserRole.Administrator, true)]
-    [InlineData(UserRole.Teacher, false)]
     [InlineData(UserRole.Parent, false)]
     public async Task ConfigActions_RequireAdministratorOnly(UserRole role, bool expected)
     {
@@ -27,7 +26,6 @@ public class TokenQuotaControllerAuthorizationTests
 
     [Theory]
     [InlineData(UserRole.Administrator, true)]
-    [InlineData(UserRole.Teacher, true)]
     [InlineData(UserRole.Parent, true)]
     public async Task GetChildStatus_AllowsAnyAuthenticatedRole(UserRole role, bool expected)
     {

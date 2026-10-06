@@ -6,7 +6,7 @@ namespace StoryPlatform.Application.Features.ExistingStories.DTOs;
 #region Intake
 
 /// <summary>
-/// Request nhập nội dung truyện từ Parent/Teacher.
+/// Request nhập nội dung truyện từ Parent.
 /// Hỗ trợ paste, TXT UTF-8 và DOCX.
 /// </summary>
 public sealed class ImportStoryRequestDto

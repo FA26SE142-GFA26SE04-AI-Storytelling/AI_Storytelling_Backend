@@ -31,7 +31,7 @@ public class AuditLogWriterTests
             action: "AdminGranted",
             entityType: "UserAccount",
             entityId: 42,
-            beforeState: new { role = "Teacher" },
+            beforeState: new { role = "Parent" },
             afterState: new { role = "Administrator" });
 
         Assert.NotNull(added);
@@ -39,7 +39,7 @@ public class AuditLogWriterTests
         Assert.Equal("AdminGranted", added.Action);
         Assert.Equal("UserAccount", added.EntityType);
         Assert.Equal(42, added.EntityId);
-        Assert.Contains("\"role\":\"Teacher\"", added.BeforeState);
+        Assert.Contains("\"role\":\"Parent\"", added.BeforeState);
         Assert.Contains("\"role\":\"Administrator\"", added.AfterState);
         _unitOfWork.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }

@@ -3,6 +3,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
@@ -19,6 +20,23 @@ public static class ServiceExtensions
     private const int MinimumJwtSecretKeyLength = 32;
     public const string ChildSessionPolicy = "ChildSession";
     public const string ChildTokenType = "child";
+
+    /// <summary>
+    /// API chạy sau ApplicationLoadBalancer trong VPC (xem infra/aws-cdk) nên IP kết nối là IP của ALB;
+    /// tin header X-Forwarded-For/Proto do ALB gắn để lấy IP client thật (dùng cho khóa quét sai Easy Login).
+    /// Chỉ an toàn khi API KHÔNG nhận lưu lượng trực tiếp từ Internet.
+    /// </summary>
+    public static IServiceCollection AddLoadBalancerForwardedHeaders(this IServiceCollection services)
+    {
+        services.Configure<ForwardedHeadersOptions>(options =>
+        {
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+            options.KnownIPNetworks.Clear();
+            options.KnownProxies.Clear();
+        });
+
+        return services;
+    }
 
     public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)
     {

@@ -71,7 +71,7 @@ public class AdminAccountServiceTests
     [Fact]
     public async Task GrantAsync_ValidTarget_SavesRoleBeforeAdminPromotesWritesAuditAndNotifies()
     {
-        var target = MakeUser(2, UserRole.Teacher);
+        var target = MakeUser(2, UserRole.Parent);
         _userRepository.Setup(repo => repo.FirstOrDefaultAsync(
                 It.IsAny<Expression<Func<UserAccount, bool>>>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(target);
@@ -79,10 +79,10 @@ public class AdminAccountServiceTests
         var result = await _sut.GrantAsync(
             10, new GrantAdministratorRequestDto { Email = target.Email });
 
-        Assert.Equal(UserRole.Teacher, target.RoleBeforeAdmin);
+        Assert.Equal(UserRole.Parent, target.RoleBeforeAdmin);
         Assert.Equal(UserRole.Administrator, target.Role);
         Assert.Equal("Administrator", result.Role);
-        Assert.Equal("Teacher", result.RoleBeforeAdmin);
+        Assert.Equal("Parent", result.RoleBeforeAdmin);
         _userRepository.Verify(repo => repo.Update(target), Times.Once);
         _auditLogWriter.Verify(writer => writer.LogAsync(
             10, "AdminGranted", nameof(UserAccount), target.Id,
@@ -106,7 +106,7 @@ public class AdminAccountServiceTests
     [Fact]
     public async Task RevokeAsync_TargetNotAdministrator_ThrowsBadRequest()
     {
-        var target = MakeUser(2, UserRole.Teacher);
+        var target = MakeUser(2, UserRole.Parent);
         _userRepository.Setup(repo => repo.GetByIdAsync(2, It.IsAny<CancellationToken>()))
             .ReturnsAsync(target);
 
@@ -116,7 +116,7 @@ public class AdminAccountServiceTests
     [Fact]
     public async Task RevokeAsync_LastActiveAdministrator_ThrowsConflict()
     {
-        var target = MakeUser(2, UserRole.Administrator, roleBeforeAdmin: UserRole.Teacher);
+        var target = MakeUser(2, UserRole.Administrator, roleBeforeAdmin: UserRole.Parent);
         _userRepository.Setup(repo => repo.GetByIdAsync(2, It.IsAny<CancellationToken>()))
             .ReturnsAsync(target);
         _userRepository.Setup(repo => repo.CountAsync(
@@ -131,7 +131,7 @@ public class AdminAccountServiceTests
     [Fact]
     public async Task RevokeAsync_RoleBeforeAdminSet_RestoresThatRoleAndClearsColumn()
     {
-        var target = MakeUser(2, UserRole.Administrator, roleBeforeAdmin: UserRole.Teacher);
+        var target = MakeUser(2, UserRole.Administrator, roleBeforeAdmin: UserRole.Parent);
         _userRepository.Setup(repo => repo.GetByIdAsync(2, It.IsAny<CancellationToken>()))
             .ReturnsAsync(target);
         _userRepository.Setup(repo => repo.CountAsync(
@@ -140,13 +140,13 @@ public class AdminAccountServiceTests
 
         var result = await _sut.RevokeAsync(1, 2);
 
-        Assert.Equal(UserRole.Teacher, target.Role);
+        Assert.Equal(UserRole.Parent, target.Role);
         Assert.Null(target.RoleBeforeAdmin);
-        Assert.Equal("Teacher", result.Role);
+        Assert.Equal("Parent", result.Role);
     }
 
     [Fact]
-    public async Task RevokeAsync_NullRoleBeforeAdmin_DefaultsToTeacher()
+    public async Task RevokeAsync_NullRoleBeforeAdmin_DefaultsToParent()
     {
         var target = MakeUser(2, UserRole.Administrator, roleBeforeAdmin: null);
         _userRepository.Setup(repo => repo.GetByIdAsync(2, It.IsAny<CancellationToken>()))
@@ -157,8 +157,8 @@ public class AdminAccountServiceTests
 
         var result = await _sut.RevokeAsync(1, 2);
 
-        Assert.Equal(UserRole.Teacher, target.Role);
-        Assert.Equal("Teacher", result.Role);
+        Assert.Equal(UserRole.Parent, target.Role);
+        Assert.Equal("Parent", result.Role);
     }
 
     [Fact]

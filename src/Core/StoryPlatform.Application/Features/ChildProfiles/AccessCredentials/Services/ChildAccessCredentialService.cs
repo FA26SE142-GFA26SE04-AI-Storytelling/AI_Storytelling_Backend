@@ -1,8 +1,10 @@
-using System.Text.RegularExpressions;
+using System.Buffers.Text;
+using System.Security.Cryptography;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Common.Security;
+using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
@@ -13,9 +15,13 @@ namespace StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Ser
 
 public class ChildAccessCredentialService : IChildAccessCredentialService
 {
-    private const int MaxFailedAttempts = 5;
-    private const int LockoutMinutes = 5;
-    private const int EasyLoginCodeTtlMinutes = 5;
+    public const string DefaultAvatarId = "avatar-default";
+
+    // BR-1.15: secret ≥128 bit — dùng 256 bit (32 byte).
+    private const int SecretByteLength = 32;
+
+    public const string TooManyFailedScansMessage =
+        "Quét sai quá nhiều lần trên thiết bị này. Vui lòng thử lại sau 5 phút.";
 
     // Bước 3.0 — thông điệp duy nhất cho mọi lý do bị chặn; không lộ trạng thái nghiệp vụ cho trẻ.
     public const string ChildEntryBlockedMessage =
@@ -23,104 +29,22 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly ISupervisionAccessGuard _accessGuard;
-    private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
+    private readonly IClientAttemptLimiter _attemptLimiter;
+    private readonly IAuditLogWriter _auditLogWriter;
 
     public ChildAccessCredentialService(
         IUnitOfWork unitOfWork,
         ISupervisionAccessGuard accessGuard,
-        IPasswordHasher passwordHasher,
-        IJwtTokenGenerator jwtTokenGenerator)
+        IJwtTokenGenerator jwtTokenGenerator,
+        IClientAttemptLimiter attemptLimiter,
+        IAuditLogWriter auditLogWriter)
     {
         _unitOfWork = unitOfWork;
         _accessGuard = accessGuard;
-        _passwordHasher = passwordHasher;
         _jwtTokenGenerator = jwtTokenGenerator;
-    }
-
-    public async Task SetPinAsync(
-        int childProfileId, int currentUserId, SetChildAccessCredentialRequestDto request,
-        CancellationToken cancellationToken = default)
-    {
-        await _accessGuard.EnsureActiveSupervisionAsync(
-            childProfileId, currentUserId, cancellationToken);
-        ValidateCredential(request.AvatarId, request.Pin);
-
-        var credentialRepo = _unitOfWork.Repository<ChildAccessCredential>();
-        var credential = await credentialRepo.FirstOrDefaultAsync(
-            value => value.ChildProfileId == childProfileId,
-            cancellationToken: cancellationToken);
-        var pinHash = _passwordHasher.HashPassword(request.Pin);
-
-        if (credential == null)
-        {
-            credential = new ChildAccessCredential
-            {
-                ChildProfileId = childProfileId,
-                AvatarId = request.AvatarId.Trim(),
-                PinHash = pinHash,
-                CreatedByUserId = currentUserId
-            };
-            await credentialRepo.AddAsync(credential, cancellationToken);
-        }
-        else
-        {
-            credential.AvatarId = request.AvatarId.Trim();
-            credential.PinHash = pinHash;
-            credential.FailedAttempts = 0;
-            credential.LockedUntil = null;
-            credential.UpdatedAt = DateTime.UtcNow;
-            credentialRepo.Update(credential);
-        }
-
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-    }
-
-    public async Task<ChildSessionDto> LoginWithPinAsync(
-        int childProfileId, string pin,
-        CancellationToken cancellationToken = default)
-    {
-        ValidatePin(pin);
-
-        var credentialRepo = _unitOfWork.Repository<ChildAccessCredential>();
-        var credential = await credentialRepo.FirstOrDefaultAsync(
-            value => value.ChildProfileId == childProfileId,
-            cancellationToken: cancellationToken);
-        if (credential == null)
-        {
-            throw new NotFoundException("Thông tin truy cập của hồ sơ trẻ", childProfileId);
-        }
-
-        if (credential.LockedUntil.HasValue && credential.LockedUntil.Value > DateTime.UtcNow)
-        {
-            throw new ForbiddenException(
-                $"Truy cập tạm thời bị khoá do nhập sai PIN quá {MaxFailedAttempts} lần. "
-                + $"Vui lòng thử lại sau {LockoutMinutes} phút hoặc nhờ Supervisor mở lại.");
-        }
-
-        if (!_passwordHasher.VerifyPassword(pin, credential.PinHash))
-        {
-            credential.FailedAttempts += 1;
-            if (credential.FailedAttempts >= MaxFailedAttempts)
-            {
-                credential.LockedUntil = DateTime.UtcNow.AddMinutes(LockoutMinutes);
-                credential.FailedAttempts = 0;
-            }
-
-            credentialRepo.Update(credential);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-            throw new BadRequestException("PIN không chính xác.");
-        }
-
-        await EnsureChildCanEnterAsync(credential.ChildProfileId, cancellationToken);
-
-        credential.FailedAttempts = 0;
-        credential.LockedUntil = null;
-        credential.UpdatedAt = DateTime.UtcNow;
-        credentialRepo.Update(credential);
-
-        return await StartChildSessionAsync(
-            credential.ChildProfileId, credential.AvatarId, credential.Id, null, cancellationToken);
+        _attemptLimiter = attemptLimiter;
+        _auditLogWriter = auditLogWriter;
     }
 
     public async Task<ChildAccessCredentialDto> GetCredentialAsync(
@@ -130,122 +54,130 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
 
         var credential = await _unitOfWork.Repository<ChildAccessCredential>().FirstOrDefaultAsync(
             value => value.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
-        if (credential == null)
-        {
-            throw new NotFoundException("Thông tin truy cập của hồ sơ trẻ", childProfileId);
-        }
 
+        var hasEasyLogin = credential?.EasyLoginSecretHash != null;
         return new ChildAccessCredentialDto
         {
-            ChildProfileId = credential.ChildProfileId,
-            AvatarId = credential.AvatarId,
-            HasPin = !string.IsNullOrEmpty(credential.PinHash),
-            IsLocked = credential.LockedUntil.HasValue && credential.LockedUntil.Value > DateTime.UtcNow
+            ChildProfileId = childProfileId,
+            HasEasyLogin = hasEasyLogin,
+            EasyLoginCreatedAt = hasEasyLogin ? credential!.EasyLoginCreatedAt : null
         };
     }
 
-    public async Task RevokeCredentialAsync(
+    public async Task<EasyLoginSecretDto> CreateOrRegenerateEasyLoginAsync(
         int childProfileId, int currentUserId, CancellationToken cancellationToken = default)
     {
-        await _accessGuard.EnsureActiveSupervisionAsync(childProfileId, currentUserId, cancellationToken);
+        // BR-1.11: Owner hoặc Additional Supervisor có manage_safety_settings (Owner luôn qua).
+        await _accessGuard.EnsurePermissionAsync(
+            childProfileId, currentUserId, Permission.ManageSafetySettings, cancellationToken);
 
         var credentialRepo = _unitOfWork.Repository<ChildAccessCredential>();
         var credential = await credentialRepo.FirstOrDefaultAsync(
             value => value.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
 
+        var secret = GenerateSecret();
+        var now = DateTime.UtcNow;
+        var isRegeneration = credential != null;
+        object? beforeState = null;
+        var endedChildSessions = 0;
+
+        if (credential == null)
+        {
+            credential = new ChildAccessCredential
+            {
+                ChildProfileId = childProfileId,
+                AvatarId = DefaultAvatarId,
+                EasyLoginSecretHash = TokenHasher.Hash(secret),
+                EasyLoginCreatedAt = now,
+                CreatedByUserId = currentUserId
+            };
+            await credentialRepo.AddAsync(credential, cancellationToken);
+        }
+        else
+        {
+            beforeState = new { childProfileId, easyLoginCreatedAt = credential.EasyLoginCreatedAt };
+
+            // Tạo lại: secret cũ vô hiệu ngay và mọi Child Session sinh từ credential bị kết thúc (Mục 7c).
+            credential.EasyLoginSecretHash = TokenHasher.Hash(secret);
+            credential.EasyLoginCreatedAt = now;
+            credential.UpdatedAt = now;
+            credentialRepo.Update(credential);
+            endedChildSessions = await EndChildSessionsAsync(credential.Id, now, cancellationToken);
+        }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // Không bao giờ ghi secret hoặc hash vào audit.
+        await _auditLogWriter.LogAsync(
+            currentUserId,
+            isRegeneration ? "REGENERATE_EASY_LOGIN" : "CREATE_EASY_LOGIN",
+            nameof(ChildAccessCredential), credential.Id,
+            beforeState,
+            new { childProfileId, easyLoginCreatedAt = now, endedChildSessions },
+            cancellationToken);
+
+        return new EasyLoginSecretDto { Secret = secret, CreatedAt = now };
+    }
+
+    public async Task RevokeCredentialAsync(
+        int childProfileId, int currentUserId, CancellationToken cancellationToken = default)
+    {
+        await _accessGuard.EnsurePermissionAsync(
+            childProfileId, currentUserId, Permission.ManageSafetySettings, cancellationToken);
+
+        var credentialRepo = _unitOfWork.Repository<ChildAccessCredential>();
+        var credential = await credentialRepo.FirstOrDefaultAsync(
+            value => value.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
         if (credential == null)
         {
             return;
         }
 
         // Soft-revoke: giữ dòng cho audit "trẻ tự vào" (child_sessions/reading_sessions trỏ tới nó)
-        // và đăng xuất ngay mọi Child Session sinh ra từ credential này.
+        // và kết thúc ngay mọi Child Session sinh ra từ credential này.
         var now = DateTime.UtcNow;
+        var easyLoginCreatedAt = credential.EasyLoginCreatedAt;
         credential.IsDeleted = true;
-        credential.EasyLoginCode = null;
-        credential.EasyLoginExpiresAt = null;
+        credential.EasyLoginSecretHash = null;
         credential.UpdatedAt = now;
         credentialRepo.Update(credential);
-
-        var sessionRepo = _unitOfWork.Repository<ChildSession>();
-        var sessions = await sessionRepo.FindAsync(
-            session => session.ChildAccessCredentialId == credential.Id,
-            cancellationToken: cancellationToken);
-        foreach (var session in sessions)
-        {
-            session.IsDeleted = true;
-            session.UpdatedAt = now;
-            sessionRepo.Update(session);
-        }
+        var endedChildSessions = await EndChildSessionsAsync(credential.Id, now, cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-    }
 
-    public async Task<EasyLoginCodeDto> GenerateEasyLoginCodeAsync(
-        int childProfileId, int currentUserId, CancellationToken cancellationToken = default)
-    {
-        await _accessGuard.EnsureActiveSupervisionAsync(
-            childProfileId, currentUserId, cancellationToken);
-
-        var credentialRepo = _unitOfWork.Repository<ChildAccessCredential>();
-        var credential = await credentialRepo.FirstOrDefaultAsync(
-            value => value.ChildProfileId == childProfileId,
-            cancellationToken: cancellationToken);
-        if (credential == null)
-        {
-            throw new NotFoundException("Thông tin truy cập của hồ sơ trẻ", childProfileId);
-        }
-
-        credential.EasyLoginCode = _jwtTokenGenerator.GenerateRefreshToken();
-        credential.EasyLoginExpiresAt = DateTime.UtcNow.AddMinutes(EasyLoginCodeTtlMinutes);
-        credential.EasyLoginUsedAt = null;
-        credential.UpdatedAt = DateTime.UtcNow;
-        credentialRepo.Update(credential);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        return new EasyLoginCodeDto
-        {
-            Code = credential.EasyLoginCode,
-            ExpiresAt = credential.EasyLoginExpiresAt.Value
-        };
+        await _auditLogWriter.LogAsync(
+            currentUserId, "REVOKE_EASY_LOGIN", nameof(ChildAccessCredential), credential.Id,
+            new { childProfileId, easyLoginCreatedAt },
+            new { childProfileId, endedChildSessions },
+            cancellationToken);
     }
 
     public async Task<ChildSessionDto> LoginWithEasyLoginAsync(
-        string easyLoginCode, CancellationToken cancellationToken = default)
+        string secret, string clientKey, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(easyLoginCode))
+        if (string.IsNullOrWhiteSpace(secret))
         {
-            throw new BadRequestException("Mã EasyLogin không hợp lệ hoặc đã được sử dụng.");
+            throw new BadRequestException("Mã EasyLogin không hợp lệ hoặc đã bị thu hồi.");
         }
 
-        var credentialRepo = _unitOfWork.Repository<ChildAccessCredential>();
-        var credential = await credentialRepo.FirstOrDefaultAsync(
-            value => value.EasyLoginCode == easyLoginCode.Trim(),
+        if (_attemptLimiter.IsBlocked(clientKey))
+        {
+            throw new ForbiddenException(TooManyFailedScansMessage);
+        }
+
+        var secretHash = TokenHasher.Hash(secret.Trim());
+        var credential = await _unitOfWork.Repository<ChildAccessCredential>().FirstOrDefaultAsync(
+            value => value.EasyLoginSecretHash == secretHash,
             cancellationToken: cancellationToken);
         if (credential == null)
         {
-            throw new BadRequestException("Mã EasyLogin không hợp lệ hoặc đã được sử dụng.");
+            _attemptLimiter.RegisterFailure(clientKey);
+            throw new BadRequestException("Mã EasyLogin không hợp lệ hoặc đã bị thu hồi.");
         }
 
-        if (credential.EasyLoginUsedAt.HasValue)
-        {
-            throw new BadRequestException("Mã EasyLogin không hợp lệ hoặc đã được sử dụng.");
-        }
-
-        if (!credential.EasyLoginExpiresAt.HasValue
-            || credential.EasyLoginExpiresAt.Value <= DateTime.UtcNow)
-        {
-            throw new BadRequestException(
-                "Mã EasyLogin đã hết hạn. Vui lòng nhờ Supervisor hiện mã QR mới.");
-        }
-
+        // Hồ sơ không Active chặn bằng thông điệp chung, KHÔNG tính là quét sai.
         await EnsureChildCanEnterAsync(credential.ChildProfileId, cancellationToken);
-
-        credential.EasyLoginUsedAt = DateTime.UtcNow;
-        credential.EasyLoginCode = null;
-        credential.EasyLoginExpiresAt = null;
-        credential.UpdatedAt = DateTime.UtcNow;
-        credentialRepo.Update(credential);
+        _attemptLimiter.Reset(clientKey);
 
         return await StartChildSessionAsync(
             credential.ChildProfileId, credential.AvatarId, credential.Id, null, cancellationToken);
@@ -350,21 +282,23 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
         };
     }
 
-    private static void ValidateCredential(string avatarId, string pin)
+    private async Task<int> EndChildSessionsAsync(
+        int credentialId, DateTime now, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(avatarId) || avatarId.Trim().Length > 100)
+        var sessionRepo = _unitOfWork.Repository<ChildSession>();
+        var sessions = await sessionRepo.FindAsync(
+            session => session.ChildAccessCredentialId == credentialId,
+            cancellationToken: cancellationToken);
+        foreach (var session in sessions)
         {
-            throw new BadRequestException("Avatar ID phải từ 1 đến 100 ký tự.");
+            session.IsDeleted = true;
+            session.UpdatedAt = now;
+            sessionRepo.Update(session);
         }
 
-        ValidatePin(pin);
+        return sessions.Count;
     }
 
-    private static void ValidatePin(string pin)
-    {
-        if (string.IsNullOrWhiteSpace(pin) || !Regex.IsMatch(pin, @"^\d{4}$"))
-        {
-            throw new BadRequestException("PIN phải gồm đúng 4 chữ số.");
-        }
-    }
+    private static string GenerateSecret() =>
+        Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(SecretByteLength));
 }

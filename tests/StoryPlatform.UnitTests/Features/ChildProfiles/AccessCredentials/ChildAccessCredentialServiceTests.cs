@@ -1,11 +1,12 @@
+using System.Buffers.Text;
 using System.Linq.Expressions;
+using System.Text.Json;
 using Moq;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Common.Security;
-using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.DTOs;
-using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Interfaces;
+using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Services;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
 using StoryPlatform.Domain.Entities;
@@ -16,14 +17,18 @@ namespace StoryPlatform.UnitTests.Features.ChildProfiles.AccessCredentials;
 
 public class ChildAccessCredentialServiceTests
 {
+    private const string ClientKey = "203.0.113.7";
+
     private readonly Mock<IGenericRepository<ChildAccessCredential>> _credentialRepo = new();
     private readonly Mock<IGenericRepository<ChildSession>> _sessionRepo = new();
     private readonly Mock<IGenericRepository<ChildProfile>> _profileRepo = new();
     private readonly Mock<IGenericRepository<RefreshToken>> _refreshTokenRepo = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<ISupervisionAccessGuard> _guard = new();
-    private readonly Mock<IPasswordHasher> _passwordHasher = new();
     private readonly Mock<IJwtTokenGenerator> _jwtTokenGenerator = new();
+    private readonly Mock<IClientAttemptLimiter> _limiter = new();
+    private readonly Mock<IAuditLogWriter> _auditLogWriter = new();
+    private readonly List<(int? Actor, string Action, string EntityType, int EntityId, string? Before, string? After)> _audits = new();
     private readonly ChildAccessCredentialService _sut;
 
     public ChildAccessCredentialServiceTests()
@@ -35,145 +40,264 @@ public class ChildAccessCredentialServiceTests
         _profileRepo.Setup(r => r.GetByIdAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ChildProfile { Id = 1, Status = ChildProfileStatus.Active });
         _jwtTokenGenerator.Setup(generator => generator.ChildTokenExpiresInSeconds).Returns(14400);
+        _auditLogWriter.Setup(w => w.LogAsync(
+                It.IsAny<int?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(),
+                It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
+            .Callback<int?, string, string, int, object?, object?, CancellationToken>(
+                (actor, action, entityType, entityId, before, after, _) => _audits.Add((
+                    actor, action, entityType, entityId,
+                    before == null ? null : JsonSerializer.Serialize(before),
+                    after == null ? null : JsonSerializer.Serialize(after))))
+            .Returns(Task.CompletedTask);
         _sut = new ChildAccessCredentialService(
-            _unitOfWork.Object, _guard.Object, _passwordHasher.Object, _jwtTokenGenerator.Object);
+            _unitOfWork.Object, _guard.Object, _jwtTokenGenerator.Object, _limiter.Object,
+            _auditLogWriter.Object);
     }
 
+    // ---------- CreateOrRegenerateEasyLoginAsync ----------
+
     [Fact]
-    public async Task SetPinAsync_WithoutSupervision_StopsBeforeHashing()
+    public async Task CreateOrRegenerateEasyLoginAsync_WithoutManageSafetyPermission_StopsBeforeWrite()
     {
-        _guard.Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
+        _guard.Setup(g => g.EnsurePermissionAsync(
+                1, 3, Permission.ManageSafetySettings, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ForbiddenException("Không có quyền."));
 
-        await Assert.ThrowsAsync<ForbiddenException>(() =>
-            _sut.SetPinAsync(1, 2, ValidCredentialRequest()));
+        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.CreateOrRegenerateEasyLoginAsync(1, 3));
 
-        _passwordHasher.Verify(p => p.HashPassword(It.IsAny<string>()), Times.Never);
+        _credentialRepo.Verify(r => r.AddAsync(
+            It.IsAny<ChildAccessCredential>(), It.IsAny<CancellationToken>()), Times.Never);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Empty(_audits);
     }
 
     [Fact]
-    public async Task SetPinAsync_NewCredential_StoresHashInsteadOfRawPin()
+    public async Task CreateOrRegenerateEasyLoginAsync_NoCredential_CreatesCredentialAndStoresOnlyHash()
     {
-        AllowSupervision();
-        SetupCredential(null);
-        _passwordHasher.Setup(p => p.HashPassword("1234")).Returns("hashed-pin");
+        AllowManageSafety();
+        SetupCredentials();
         ChildAccessCredential? added = null;
         _credentialRepo.Setup(r => r.AddAsync(
                 It.IsAny<ChildAccessCredential>(), It.IsAny<CancellationToken>()))
             .Callback<ChildAccessCredential, CancellationToken>((value, _) => added = value)
             .ReturnsAsync((ChildAccessCredential value, CancellationToken _) => value);
 
-        await _sut.SetPinAsync(1, 2, ValidCredentialRequest());
+        var result = await _sut.CreateOrRegenerateEasyLoginAsync(1, 2);
 
-        Assert.Equal("avatar-fox", added!.AvatarId);
-        Assert.Equal("hashed-pin", added.PinHash);
-        Assert.NotEqual("1234", added.PinHash);
+        Assert.NotNull(added);
+        Assert.Equal(1, added!.ChildProfileId);
         Assert.Equal(2, added.CreatedByUserId);
+        Assert.Equal(ChildAccessCredentialService.DefaultAvatarId, added.AvatarId);
+        Assert.Equal(TokenHasher.Hash(result.Secret), added.EasyLoginSecretHash);
+        Assert.NotEqual(result.Secret, added.EasyLoginSecretHash);
+        Assert.NotNull(added.EasyLoginCreatedAt);
+        Assert.Equal(added.EasyLoginCreatedAt, result.CreatedAt);
         _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+
+        var createAudit = Assert.Single(_audits);
+        Assert.Equal(2, createAudit.Actor);
+        Assert.Equal("CREATE_EASY_LOGIN", createAudit.Action);
+        Assert.Equal(nameof(ChildAccessCredential), createAudit.EntityType);
+        Assert.Contains("\"childProfileId\":1", createAudit.After);
+        Assert.DoesNotContain(result.Secret, createAudit.After);
+        Assert.DoesNotContain(added.EasyLoginSecretHash!, createAudit.After);
     }
 
     [Fact]
-    public async Task SetPinAsync_ExistingCredential_ReplacesPinAndClearsLock()
+    public async Task CreateOrRegenerateEasyLoginAsync_SecretIsAtLeast128BitAndDiffersEachCall()
     {
-        AllowSupervision();
-        var credential = Credential();
-        credential.FailedAttempts = 3;
-        credential.LockedUntil = DateTime.UtcNow.AddMinutes(10);
-        SetupCredential(credential);
-        _passwordHasher.Setup(p => p.HashPassword("1234")).Returns("new-hash");
+        AllowManageSafety();
+        SetupCredentials();
 
-        await _sut.SetPinAsync(1, 2, ValidCredentialRequest());
+        var first = await _sut.CreateOrRegenerateEasyLoginAsync(1, 2);
+        var second = await _sut.CreateOrRegenerateEasyLoginAsync(1, 2);
 
-        Assert.Equal("new-hash", credential.PinHash);
-        Assert.Equal(0, credential.FailedAttempts);
-        Assert.Null(credential.LockedUntil);
+        Assert.True(Base64Url.DecodeFromChars(first.Secret).Length >= 16);
+        Assert.NotEqual(first.Secret, second.Secret);
+    }
+
+    [Fact]
+    public async Task CreateOrRegenerateEasyLoginAsync_ExistingCredential_ReplacesSecretAndEndsItsSessions()
+    {
+        AllowManageSafety();
+        var credential = Credential("old-secret");
+        var oldHash = credential.EasyLoginSecretHash;
+        SetupCredentials(credential);
+        var session = new ChildSession { Id = 9, ChildProfileId = 1, ChildAccessCredentialId = 1 };
+        _sessionRepo.Setup(r => r.FindAsync(
+                It.IsAny<Expression<Func<ChildSession, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ChildSession> { session });
+
+        var result = await _sut.CreateOrRegenerateEasyLoginAsync(1, 2);
+
+        Assert.NotEqual(oldHash, credential.EasyLoginSecretHash);
+        Assert.Equal(TokenHasher.Hash(result.Secret), credential.EasyLoginSecretHash);
+        Assert.True(session.IsDeleted);
         _credentialRepo.Verify(r => r.Update(credential), Times.Once);
+        _credentialRepo.Verify(r => r.AddAsync(
+            It.IsAny<ChildAccessCredential>(), It.IsAny<CancellationToken>()), Times.Never);
+        _sessionRepo.Verify(r => r.Update(session), Times.Once);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+
+        var regenerateAudit = Assert.Single(_audits);
+        Assert.Equal("REGENERATE_EASY_LOGIN", regenerateAudit.Action);
+        Assert.Equal(1, regenerateAudit.EntityId);
+        Assert.Contains("\"endedChildSessions\":1", regenerateAudit.After);
+        Assert.DoesNotContain(result.Secret, regenerateAudit.After);
     }
 
-    [Theory]
-    [InlineData("123")]
-    [InlineData("12345")]
-    [InlineData("123456")]
-    [InlineData("1234567")]
-    [InlineData("12ab")]
-    public async Task SetPinAsync_InvalidPin_ThrowsBadRequest(string pin)
-    {
-        AllowSupervision();
-        var request = ValidCredentialRequest();
-        request.Pin = pin;
+    // ---------- RevokeCredentialAsync ----------
 
-        await Assert.ThrowsAsync<BadRequestException>(() =>
-            _sut.SetPinAsync(1, 2, request));
+    [Fact]
+    public async Task RevokeCredentialAsync_WithoutManageSafetyPermission_StopsBeforeWrite()
+    {
+        _guard.Setup(g => g.EnsurePermissionAsync(
+                1, 3, Permission.ManageSafetySettings, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ForbiddenException("Không có quyền."));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.RevokeCredentialAsync(1, 3));
+
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Empty(_audits);
     }
 
     [Fact]
-    public async Task LoginWithPinAsync_CorrectPin_ResetsFailuresAndReturnsSession()
+    public async Task RevokeCredentialAsync_Existing_SoftDeletesClearsSecretAndEndsSessions()
     {
-        var credential = Credential();
-        credential.FailedAttempts = 2;
-        SetupCredential(credential);
-        _passwordHasher.Setup(p => p.VerifyPassword("1234", "hashed-pin")).Returns(true);
-        _jwtTokenGenerator.Setup(generator => generator.GenerateChildAccessToken(1, It.IsAny<string>()))
-            .Returns("child-jwt-token");
+        AllowManageSafety();
+        var credential = Credential("qr-secret");
+        SetupCredentials(credential);
+        var session = new ChildSession { Id = 9, ChildProfileId = 1, ChildAccessCredentialId = 1 };
+        _sessionRepo.Setup(r => r.FindAsync(
+                It.IsAny<Expression<Func<ChildSession, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ChildSession> { session });
 
-        var result = await _sut.LoginWithPinAsync(1, "1234");
+        await _sut.RevokeCredentialAsync(1, 2);
+
+        Assert.True(credential.IsDeleted);
+        Assert.Null(credential.EasyLoginSecretHash);
+        Assert.True(session.IsDeleted);
+        _credentialRepo.Verify(r => r.Delete(It.IsAny<ChildAccessCredential>()), Times.Never);
+        _credentialRepo.Verify(r => r.Update(credential), Times.Once);
+        _sessionRepo.Verify(r => r.Update(session), Times.Once);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+
+        var revokeAudit = Assert.Single(_audits);
+        Assert.Equal(2, revokeAudit.Actor);
+        Assert.Equal("REVOKE_EASY_LOGIN", revokeAudit.Action);
+        Assert.Equal(1, revokeAudit.EntityId);
+        Assert.Contains("\"endedChildSessions\":1", revokeAudit.After);
+    }
+
+    [Fact]
+    public async Task RevokeCredentialAsync_NoCredential_IsNoOp()
+    {
+        AllowManageSafety();
+        SetupCredentials();
+
+        await _sut.RevokeCredentialAsync(1, 2);
+
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Empty(_audits);
+    }
+
+    // ---------- GetCredentialAsync ----------
+
+    [Fact]
+    public async Task GetCredentialAsync_NoCredential_ReturnsHasEasyLoginFalse()
+    {
+        AllowSupervision();
+        SetupCredentials();
+
+        var result = await _sut.GetCredentialAsync(1, 2);
+
+        Assert.Equal(1, result.ChildProfileId);
+        Assert.False(result.HasEasyLogin);
+        Assert.Null(result.EasyLoginCreatedAt);
+    }
+
+    [Fact]
+    public async Task GetCredentialAsync_WithSecret_ReturnsFlagAndCreatedAt()
+    {
+        AllowSupervision();
+        var credential = Credential("qr-secret");
+        SetupCredentials(credential);
+
+        var result = await _sut.GetCredentialAsync(1, 2);
+
+        Assert.True(result.HasEasyLogin);
+        Assert.Equal(credential.EasyLoginCreatedAt, result.EasyLoginCreatedAt);
+    }
+
+    [Fact]
+    public async Task GetCredentialAsync_PendingMigrationRowWithoutSecret_ReturnsHasEasyLoginFalse()
+    {
+        AllowSupervision();
+        SetupCredentials(Credential(secret: null));
+
+        var result = await _sut.GetCredentialAsync(1, 2);
+
+        Assert.False(result.HasEasyLogin);
+    }
+
+    // ---------- LoginWithEasyLoginAsync ----------
+
+    [Fact]
+    public async Task LoginWithEasyLoginAsync_ValidSecret_CreatesSessionBoundToCredentialAndResetsFailures()
+    {
+        SetupCredentials(Credential("qr-secret"));
+        _jwtTokenGenerator.Setup(g => g.GenerateChildAccessToken(1, It.IsAny<string>())).Returns("child-jwt");
+        var addedSession = CaptureAddedSession();
+
+        var result = await _sut.LoginWithEasyLoginAsync("  qr-secret  ", ClientKey);
 
         Assert.Equal(1, result.ChildProfileId);
         Assert.Equal("avatar-fox", result.AvatarId);
-        Assert.Equal("child-jwt-token", result.AccessToken);
+        Assert.Equal("child-jwt", result.AccessToken);
         Assert.Equal(14400, result.ExpiresInSeconds);
-        Assert.Equal(0, credential.FailedAttempts);
-        Assert.Null(credential.LockedUntil);
-    }
-
-    [Fact]
-    public async Task LoginWithPinAsync_CorrectPin_CreatesChildSessionAndBindsTokenToIt()
-    {
-        var credential = Credential();
-        SetupCredential(credential);
-        _passwordHasher.Setup(p => p.VerifyPassword("1234", "hashed-pin")).Returns(true);
-        var added = CaptureAddedSession();
-
-        var before = DateTime.UtcNow;
-        await _sut.LoginWithPinAsync(1, "1234");
-
-        var session = added();
-        Assert.NotNull(session);
-        Assert.Equal(1, session!.ChildProfileId);
-        Assert.False(string.IsNullOrWhiteSpace(session.SessionKey));
-        Assert.True(session.LastActivityAt >= before);
-        _jwtTokenGenerator.Verify(g => g.GenerateChildAccessToken(1, session.SessionKey), Times.Once);
-        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task LoginWithPinAsync_CorrectPin_RecordsCredentialAsEntrySource()
-    {
-        SetupCredential(Credential());
-        _passwordHasher.Setup(p => p.VerifyPassword("1234", "hashed-pin")).Returns(true);
-        var addedSession = CaptureAddedSession();
-
-        await _sut.LoginWithPinAsync(1, "1234");
-
         Assert.Equal(1, addedSession()!.ChildAccessCredentialId);
         Assert.Null(addedSession()!.SupervisorSessionId);
+        _limiter.Verify(l => l.Reset(ClientKey), Times.Once);
+        _limiter.Verify(l => l.RegisterFailure(It.IsAny<string>()), Times.Never);
     }
 
-    [Theory]
-    [InlineData(ChildProfileStatus.PendingParentConsent)]
-    [InlineData(ChildProfileStatus.Suspended)]
-    [InlineData(ChildProfileStatus.Draft)]
-    [InlineData(ChildProfileStatus.Archived)]
-    public async Task LoginWithPinAsync_ProfileNotActive_BlocksWithFriendlyMessageAndNoSession(
-        ChildProfileStatus status)
+    [Fact]
+    public async Task LoginWithEasyLoginAsync_SecretIsReusable_EachScanStartsAnotherSession()
     {
-        SetupCredential(Credential());
-        _passwordHasher.Setup(p => p.VerifyPassword("1234", "hashed-pin")).Returns(true);
-        SetupProfileStatus(status);
+        SetupCredentials(Credential("qr-secret"));
+        var addedSessions = new List<ChildSession>();
+        _sessionRepo.Setup(r => r.AddAsync(It.IsAny<ChildSession>(), It.IsAny<CancellationToken>()))
+            .Callback<ChildSession, CancellationToken>((value, _) => addedSessions.Add(value))
+            .ReturnsAsync((ChildSession value, CancellationToken _) => value);
 
-        var ex = await Assert.ThrowsAsync<ForbiddenException>(() => _sut.LoginWithPinAsync(1, "1234"));
+        await _sut.LoginWithEasyLoginAsync("qr-secret", ClientKey);
+        await _sut.LoginWithEasyLoginAsync("qr-secret", ClientKey);
 
-        Assert.Equal(ChildAccessCredentialService.ChildEntryBlockedMessage, ex.Message);
+        Assert.Equal(2, addedSessions.Count);
+        Assert.NotEqual(addedSessions[0].SessionKey, addedSessions[1].SessionKey);
+    }
+
+    [Fact]
+    public async Task LoginWithEasyLoginAsync_LooksUpByHashNotPlainText()
+    {
+        var credential = Credential("secret-A");
+        SetupCredentials(credential);
+
+        await _sut.LoginWithEasyLoginAsync("secret-A", ClientKey);
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.LoginWithEasyLoginAsync(credential.EasyLoginSecretHash!, ClientKey));
+    }
+
+    [Fact]
+    public async Task LoginWithEasyLoginAsync_UnknownSecret_RegistersFailureAndCreatesNoSession()
+    {
+        SetupCredentials(Credential("secret-A"));
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.LoginWithEasyLoginAsync("secret-B", ClientKey));
+
+        _limiter.Verify(l => l.RegisterFailure(ClientKey), Times.Once);
+        _limiter.Verify(l => l.Reset(It.IsAny<string>()), Times.Never);
         _sessionRepo.Verify(r => r.AddAsync(
             It.IsAny<ChildSession>(), It.IsAny<CancellationToken>()), Times.Never);
         _jwtTokenGenerator.Verify(g => g.GenerateChildAccessToken(
@@ -181,44 +305,65 @@ public class ChildAccessCredentialServiceTests
     }
 
     [Fact]
-    public async Task LoginWithPinAsync_WrongPin_DoesNotRevealProfileStatus()
+    public async Task LoginWithEasyLoginAsync_RevokedSecret_IsRejected()
     {
-        SetupCredential(Credential());
-        _passwordHasher.Setup(p => p.VerifyPassword("0000", "hashed-pin")).Returns(false);
-        SetupProfileStatus(ChildProfileStatus.PendingParentConsent);
+        var credential = Credential("qr-secret");
+        SetupCredentials(credential);
+        credential.EasyLoginSecretHash = null; // sau khi thu hồi
 
-        await Assert.ThrowsAsync<BadRequestException>(() => _sut.LoginWithPinAsync(1, "0000"));
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.LoginWithEasyLoginAsync("qr-secret", ClientKey));
 
-        _profileRepo.Verify(r => r.GetByIdAsync(
-            It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Never);
+        _limiter.Verify(l => l.RegisterFailure(ClientKey), Times.Once);
     }
 
     [Fact]
-    public async Task LoginWithPinAsync_WrongPin_DoesNotCreateChildSession()
+    public async Task LoginWithEasyLoginAsync_BlockedClient_ThrowsForbiddenWithoutQueryingCredentials()
     {
-        SetupCredential(Credential());
-        _passwordHasher.Setup(p => p.VerifyPassword("0000", "hashed-pin")).Returns(false);
+        _limiter.Setup(l => l.IsBlocked(ClientKey)).Returns(true);
+        SetupCredentials(Credential("qr-secret"));
 
-        await Assert.ThrowsAsync<BadRequestException>(() => _sut.LoginWithPinAsync(1, "0000"));
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.LoginWithEasyLoginAsync("qr-secret", ClientKey));
 
+        Assert.Equal(ChildAccessCredentialService.TooManyFailedScansMessage, ex.Message);
+        _credentialRepo.Verify(r => r.FirstOrDefaultAsync(
+            It.IsAny<Expression<Func<ChildAccessCredential, bool>>>(), null,
+            It.IsAny<CancellationToken>()), Times.Never);
+        _limiter.Verify(l => l.RegisterFailure(It.IsAny<string>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task LoginWithEasyLoginAsync_BlankSecret_ThrowsBadRequestWithoutCountingFailure(string secret)
+    {
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.LoginWithEasyLoginAsync(secret, ClientKey));
+
+        _limiter.Verify(l => l.RegisterFailure(It.IsAny<string>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(ChildProfileStatus.Suspended)]
+    [InlineData(ChildProfileStatus.Draft)]
+    [InlineData(ChildProfileStatus.Archived)]
+    public async Task LoginWithEasyLoginAsync_ProfileNotActive_BlocksWithFriendlyMessageAndNoFailureCount(
+        ChildProfileStatus status)
+    {
+        SetupCredentials(Credential("qr-secret"));
+        SetupProfileStatus(status);
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.LoginWithEasyLoginAsync("qr-secret", ClientKey));
+
+        Assert.Equal(ChildAccessCredentialService.ChildEntryBlockedMessage, ex.Message);
+        _limiter.Verify(l => l.RegisterFailure(It.IsAny<string>()), Times.Never);
         _sessionRepo.Verify(r => r.AddAsync(
             It.IsAny<ChildSession>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    [Fact]
-    public async Task LoginWithPinAsync_WrongPin_DoesNotGenerateToken()
-    {
-        var credential = Credential();
-        SetupCredential(credential);
-        _passwordHasher.Setup(hasher => hasher.VerifyPassword("0000", "hashed-pin"))
-            .Returns(false);
-
-        await Assert.ThrowsAsync<BadRequestException>(() => _sut.LoginWithPinAsync(1, "0000"));
-
-        _jwtTokenGenerator.Verify(
-            generator => generator.GenerateChildAccessToken(
-                It.IsAny<int>(), It.IsAny<string>()), Times.Never);
-    }
+    // ---------- GetMySessionProfileAsync ----------
 
     [Fact]
     public async Task GetMySessionProfileAsync_NotFound_ThrowsNotFound()
@@ -242,296 +387,14 @@ public class ChildAccessCredentialServiceTests
         Assert.Equal("Age_6_8", result.AgeBand);
     }
 
-    [Fact]
-    public async Task LoginWithPinAsync_FifthWrongAttempt_LocksFor5Minutes()
-    {
-        var credential = Credential();
-        credential.FailedAttempts = 4;
-        SetupCredential(credential);
-        _passwordHasher.Setup(p => p.VerifyPassword("0000", "hashed-pin")).Returns(false);
-
-        var before = DateTime.UtcNow;
-        await Assert.ThrowsAsync<BadRequestException>(() =>
-            _sut.LoginWithPinAsync(1, "0000"));
-
-        Assert.Equal(0, credential.FailedAttempts);
-        Assert.True(credential.LockedUntil > before.AddMinutes(4)
-            && credential.LockedUntil <= before.AddMinutes(5).AddSeconds(1));
-        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task LoginWithPinAsync_Locked_MessageMentions5Minutes()
-    {
-        var credential = Credential();
-        credential.LockedUntil = DateTime.UtcNow.AddMinutes(3);
-        SetupCredential(credential);
-
-        var exception = await Assert.ThrowsAsync<ForbiddenException>(() =>
-            _sut.LoginWithPinAsync(1, "1234"));
-
-        Assert.Contains("5 phút", exception.Message);
-    }
-
-    [Theory]
-    [InlineData("12345")]
-    [InlineData("123456")]
-    public async Task LoginWithPinAsync_NonFourDigitPin_RejectedWithoutCountingAttempt(string pin)
-    {
-        var credential = Credential();
-        SetupCredential(credential);
-
-        await Assert.ThrowsAsync<BadRequestException>(() => _sut.LoginWithPinAsync(1, pin));
-
-        Assert.Equal(0, credential.FailedAttempts);
-        _passwordHasher.Verify(p => p.VerifyPassword(
-            It.IsAny<string>(), It.IsAny<string>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task LoginWithPinAsync_Locked_DoesNotVerifyPin()
-    {
-        var credential = Credential();
-        credential.LockedUntil = DateTime.UtcNow.AddMinutes(5);
-        SetupCredential(credential);
-
-        await Assert.ThrowsAsync<ForbiddenException>(() =>
-            _sut.LoginWithPinAsync(1, "1234"));
-
-        _passwordHasher.Verify(p => p.VerifyPassword(
-            It.IsAny<string>(), It.IsAny<string>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task LoginWithPinAsync_ExpiredLock_AllowsCorrectPin()
-    {
-        var credential = Credential();
-        credential.LockedUntil = DateTime.UtcNow.AddMinutes(-1);
-        SetupCredential(credential);
-        _passwordHasher.Setup(p => p.VerifyPassword("1234", "hashed-pin")).Returns(true);
-
-        await _sut.LoginWithPinAsync(1, "1234");
-
-        Assert.Null(credential.LockedUntil);
-    }
-
-    [Fact]
-    public async Task GetCredentialAsync_NotSet_ThrowsNotFound()
-    {
-        AllowSupervision();
-        SetupCredential(null);
-
-        await Assert.ThrowsAsync<NotFoundException>(() => _sut.GetCredentialAsync(1, 2));
-    }
-
-    [Fact]
-    public async Task GetCredentialAsync_Exists_ReturnsDtoWithoutPinHash()
-    {
-        AllowSupervision();
-        var credential = Credential();
-        credential.LockedUntil = DateTime.UtcNow.AddMinutes(5);
-        SetupCredential(credential);
-
-        var result = await _sut.GetCredentialAsync(1, 2);
-
-        Assert.Equal("avatar-fox", result.AvatarId);
-        Assert.True(result.HasPin);
-        Assert.True(result.IsLocked);
-    }
-
-    [Fact]
-    public async Task RevokeCredentialAsync_Existing_SoftDeletesCredentialAndEndsItsSessions()
-    {
-        AllowSupervision();
-        var credential = Credential();
-        credential.EasyLoginCode = "pending-code";
-        SetupCredential(credential);
-        var session = new ChildSession { Id = 9, ChildProfileId = 1, ChildAccessCredentialId = 1 };
-        _sessionRepo.Setup(r => r.FindAsync(
-                It.IsAny<Expression<Func<ChildSession, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<ChildSession> { session });
-
-        await _sut.RevokeCredentialAsync(1, 2);
-
-        Assert.True(credential.IsDeleted);
-        Assert.Null(credential.EasyLoginCode);
-        Assert.True(session.IsDeleted);
-        _credentialRepo.Verify(r => r.Delete(It.IsAny<ChildAccessCredential>()), Times.Never);
-        _credentialRepo.Verify(r => r.Update(credential), Times.Once);
-        _sessionRepo.Verify(r => r.Update(session), Times.Once);
-        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task GenerateEasyLoginCodeAsync_NoExistingCredential_ThrowsNotFound()
-    {
-        AllowSupervision();
-        SetupCredential(null);
-
-        await Assert.ThrowsAsync<NotFoundException>(() =>
-            _sut.GenerateEasyLoginCodeAsync(1, 2));
-    }
-
-    [Fact]
-    public async Task GenerateEasyLoginCodeAsync_ExistingCredential_SetsCodeWith5MinuteTtl()
-    {
-        AllowSupervision();
-        var credential = Credential();
-        SetupCredential(credential);
-        _jwtTokenGenerator.Setup(g => g.GenerateRefreshToken()).Returns("new-easylogin-code");
-
-        var before = DateTime.UtcNow;
-        var result = await _sut.GenerateEasyLoginCodeAsync(1, 2);
-
-        Assert.Equal("new-easylogin-code", result.Code);
-        Assert.Equal("new-easylogin-code", credential.EasyLoginCode);
-        Assert.Null(credential.EasyLoginUsedAt);
-        Assert.True(credential.EasyLoginExpiresAt > before.AddMinutes(4)
-            && credential.EasyLoginExpiresAt <= before.AddMinutes(5).AddSeconds(1));
-        _credentialRepo.Verify(r => r.Update(credential), Times.Once);
-        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task GenerateEasyLoginCodeAsync_PreviousCodePending_IsInvalidatedByNewOne()
-    {
-        AllowSupervision();
-        var credential = Credential();
-        credential.EasyLoginCode = "old-code";
-        credential.EasyLoginExpiresAt = DateTime.UtcNow.AddMinutes(3);
-        SetupCredential(credential);
-        _jwtTokenGenerator.Setup(g => g.GenerateRefreshToken()).Returns("new-code");
-
-        await _sut.GenerateEasyLoginCodeAsync(1, 2);
-
-        Assert.Equal("new-code", credential.EasyLoginCode);
-        Assert.NotEqual("old-code", credential.EasyLoginCode);
-    }
-
-    [Fact]
-    public async Task LoginWithEasyLoginAsync_ValidUnusedCode_CreatesSessionAndMarksUsed()
-    {
-        var credential = Credential();
-        credential.EasyLoginCode = "valid-code";
-        credential.EasyLoginExpiresAt = DateTime.UtcNow.AddMinutes(2);
-        _credentialRepo.Setup(r => r.FirstOrDefaultAsync(
-                It.IsAny<Expression<Func<ChildAccessCredential, bool>>>(), null,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(credential);
-        _jwtTokenGenerator.Setup(g => g.GenerateChildAccessToken(1, It.IsAny<string>())).Returns("child-jwt");
-
-        var result = await _sut.LoginWithEasyLoginAsync("valid-code");
-
-        Assert.Equal(1, result.ChildProfileId);
-        Assert.Equal("child-jwt", result.AccessToken);
-        Assert.NotNull(credential.EasyLoginUsedAt);
-        Assert.Null(credential.EasyLoginCode);
-        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task LoginWithEasyLoginAsync_ValidCode_CreatesChildSessionAndBindsTokenToIt()
-    {
-        var credential = Credential();
-        credential.EasyLoginCode = "valid-code";
-        credential.EasyLoginExpiresAt = DateTime.UtcNow.AddMinutes(2);
-        SetupCredential(credential);
-        var added = CaptureAddedSession();
-
-        await _sut.LoginWithEasyLoginAsync("valid-code");
-
-        var session = added();
-        Assert.NotNull(session);
-        Assert.Equal(1, session!.ChildProfileId);
-        _jwtTokenGenerator.Verify(g => g.GenerateChildAccessToken(1, session.SessionKey), Times.Once);
-        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task LoginWithEasyLoginAsync_ValidCode_RecordsCredentialAsEntrySource()
-    {
-        var credential = Credential();
-        credential.EasyLoginCode = "qr-code";
-        credential.EasyLoginExpiresAt = DateTime.UtcNow.AddMinutes(3);
-        SetupCredential(credential);
-        var addedSession = CaptureAddedSession();
-
-        await _sut.LoginWithEasyLoginAsync("qr-code");
-
-        Assert.Equal(1, addedSession()!.ChildAccessCredentialId);
-        Assert.Null(addedSession()!.SupervisorSessionId);
-    }
-
-    [Fact]
-    public async Task LoginWithEasyLoginAsync_ProfileNotActive_BlocksWithoutConsumingCode()
-    {
-        var credential = Credential();
-        credential.EasyLoginCode = "qr-code";
-        credential.EasyLoginExpiresAt = DateTime.UtcNow.AddMinutes(3);
-        SetupCredential(credential);
-        SetupProfileStatus(ChildProfileStatus.Suspended);
-
-        await Assert.ThrowsAsync<ForbiddenException>(() =>
-            _sut.LoginWithEasyLoginAsync("qr-code"));
-
-        Assert.Equal("qr-code", credential.EasyLoginCode);
-        Assert.Null(credential.EasyLoginUsedAt);
-        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task LoginWithEasyLoginAsync_ExpiredCode_ThrowsBadRequest()
-    {
-        var credential = Credential();
-        credential.EasyLoginCode = "expired-code";
-        credential.EasyLoginExpiresAt = DateTime.UtcNow.AddMinutes(-1);
-        _credentialRepo.Setup(r => r.FirstOrDefaultAsync(
-                It.IsAny<Expression<Func<ChildAccessCredential, bool>>>(), null,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(credential);
-
-        await Assert.ThrowsAsync<BadRequestException>(() =>
-            _sut.LoginWithEasyLoginAsync("expired-code"));
-
-        _jwtTokenGenerator.Verify(g => g.GenerateChildAccessToken(
-            It.IsAny<int>(), It.IsAny<string>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task LoginWithEasyLoginAsync_AlreadyUsedOrUnknownCode_ThrowsBadRequest()
-    {
-        _credentialRepo.Setup(r => r.FirstOrDefaultAsync(
-                It.IsAny<Expression<Func<ChildAccessCredential, bool>>>(), null,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync((ChildAccessCredential?)null);
-
-        await Assert.ThrowsAsync<BadRequestException>(() =>
-            _sut.LoginWithEasyLoginAsync("already-used-or-unknown"));
-    }
-
-    [Fact]
-    public async Task LoginWithEasyLoginAsync_CodeMarkedUsed_ThrowsBadRequest()
-    {
-        var credential = Credential();
-        credential.EasyLoginCode = "used-code";
-        credential.EasyLoginExpiresAt = DateTime.UtcNow.AddMinutes(2);
-        credential.EasyLoginUsedAt = DateTime.UtcNow.AddMinutes(-1);
-        SetupCredential(credential);
-
-        await Assert.ThrowsAsync<BadRequestException>(() =>
-            _sut.LoginWithEasyLoginAsync("used-code"));
-
-        _jwtTokenGenerator.Verify(g => g.GenerateChildAccessToken(
-            It.IsAny<int>(), It.IsAny<string>()), Times.Never);
-        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
-    }
+    // ---------- StartSupervisedSessionAsync ----------
 
     [Fact]
     public async Task StartSupervisedSessionAsync_Valid_RecordsSupervisorSessionAsEntrySource()
     {
         AllowSupervision();
         SetupSupervisorSession(SupervisorSession());
-        SetupCredential(Credential());
+        SetupCredentials(Credential("qr-secret"));
         _jwtTokenGenerator.Setup(g => g.GenerateChildAccessToken(1, It.IsAny<string>()))
             .Returns("child-jwt");
         var addedSession = CaptureAddedSession();
@@ -549,7 +412,7 @@ public class ChildAccessCredentialServiceTests
     {
         AllowSupervision();
         SetupSupervisorSession(SupervisorSession());
-        SetupCredential(null);
+        SetupCredentials();
         var addedSession = CaptureAddedSession();
 
         var result = await _sut.StartSupervisedSessionAsync(1, 2, "supervisor-refresh");
@@ -602,12 +465,16 @@ public class ChildAccessCredentialServiceTests
             It.IsAny<ChildSession>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    [Fact]
-    public async Task StartSupervisedSessionAsync_ProfilePendingConsent_BlocksWithFriendlyMessage()
+    [Theory]
+    [InlineData(ChildProfileStatus.Suspended)]
+    [InlineData(ChildProfileStatus.Draft)]
+    [InlineData(ChildProfileStatus.Archived)]
+    public async Task StartSupervisedSessionAsync_ProfileNotActive_BlocksWithFriendlyMessage(
+        ChildProfileStatus status)
     {
         AllowSupervision();
         SetupSupervisorSession(SupervisorSession());
-        SetupProfileStatus(ChildProfileStatus.PendingParentConsent);
+        SetupProfileStatus(status);
 
         var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
             _sut.StartSupervisedSessionAsync(1, 2, "supervisor-refresh"));
@@ -615,14 +482,23 @@ public class ChildAccessCredentialServiceTests
         Assert.Equal(ChildAccessCredentialService.ChildEntryBlockedMessage, ex.Message);
     }
 
+    // ---------- helpers ----------
+
     private void AllowSupervision() => _guard
         .Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
         .ReturnsAsync(new SupervisionRelationship());
 
-    private void SetupCredential(ChildAccessCredential? credential) => _credentialRepo
+    private void AllowManageSafety() => _guard
+        .Setup(g => g.EnsurePermissionAsync(
+            1, 2, Permission.ManageSafetySettings, It.IsAny<CancellationToken>()))
+        .Returns(Task.CompletedTask);
+
+    private void SetupCredentials(params ChildAccessCredential[] credentials) => _credentialRepo
         .Setup(r => r.FirstOrDefaultAsync(
             It.IsAny<Expression<Func<ChildAccessCredential, bool>>>(), null,
-            It.IsAny<CancellationToken>())).ReturnsAsync(credential);
+            It.IsAny<CancellationToken>()))
+        .ReturnsAsync((Expression<Func<ChildAccessCredential, bool>> predicate, string? _, CancellationToken _) =>
+            credentials.FirstOrDefault(predicate.Compile()));
 
     private void SetupProfileStatus(ChildProfileStatus status) => _profileRepo
         .Setup(r => r.GetByIdAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()))
@@ -651,17 +527,12 @@ public class ChildAccessCredentialServiceTests
         return () => added;
     }
 
-    private static SetChildAccessCredentialRequestDto ValidCredentialRequest() => new()
-    {
-        AvatarId = "avatar-fox",
-        Pin = "1234"
-    };
-
-    private static ChildAccessCredential Credential() => new()
+    private static ChildAccessCredential Credential(string? secret = null) => new()
     {
         Id = 1,
         ChildProfileId = 1,
         AvatarId = "avatar-fox",
-        PinHash = "hashed-pin"
+        EasyLoginSecretHash = secret == null ? null : TokenHasher.Hash(secret),
+        EasyLoginCreatedAt = secret == null ? null : new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc)
     };
 }

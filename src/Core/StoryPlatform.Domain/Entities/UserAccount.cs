@@ -5,7 +5,7 @@ using StoryPlatform.Domain.Enums;
 namespace StoryPlatform.Domain.Entities;
 
 /// <summary>
-/// Thực thể tài khoản người dùng (Phụ huynh, Giáo viên, Quản trị viên).
+/// Thực thể tài khoản người dùng (Phụ huynh, Quản trị viên).
 /// </summary>
 public class UserAccount : BaseEntity
 {

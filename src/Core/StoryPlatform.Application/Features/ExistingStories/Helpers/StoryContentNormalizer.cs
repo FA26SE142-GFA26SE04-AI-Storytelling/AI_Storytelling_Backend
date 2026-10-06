@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 namespace StoryPlatform.Application.Features.ExistingStories.Helpers;
 
 /// <summary>
-/// Chuẩn hoá nội dung truyện nhập vào từ Parent/Teacher.
+/// Chuẩn hoá nội dung truyện nhập vào từ Parent.
 /// Loại bỏ BOM, null chars, chuẩn hoá newline, nén khoảng trắng thừa.
 /// </summary>
 internal static class StoryContentNormalizer

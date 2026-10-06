@@ -32,7 +32,7 @@ public class BusinessReportController : BaseApiController
     }
 
     /// <summary>
-    /// Publish một Business Report đang Compiling để hiển thị trên Parent/Teacher Dashboard.
+    /// Publish một Business Report đang Compiling để hiển thị trên Parent Dashboard.
     /// </summary>
     [HttpPost("{reportId:int}/publish")]
     [Authorize(Roles = "Administrator")]
@@ -44,7 +44,7 @@ public class BusinessReportController : BaseApiController
     }
 
     /// <summary>
-    /// Lấy Business Report được publish gần nhất, phục vụ Parent/Teacher Dashboard.
+    /// Lấy Business Report được publish gần nhất, phục vụ Parent Dashboard.
     /// </summary>
     [HttpGet("latest-published")]
     [Authorize]

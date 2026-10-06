@@ -11,7 +11,6 @@ public class DataRequestControllerAuthorizationTests
 {
     [Theory]
     [InlineData(UserRole.Parent, true)]
-    [InlineData(UserRole.Teacher, false)]
     [InlineData(UserRole.Administrator, false)]
     public async Task CreateDataRequest_OnlyParent(UserRole role, bool expected)
     {
@@ -21,7 +20,6 @@ public class DataRequestControllerAuthorizationTests
     [Theory]
     [InlineData(UserRole.Administrator, true)]
     [InlineData(UserRole.Parent, false)]
-    [InlineData(UserRole.Teacher, false)]
     public async Task AdminActions_OnlyAdministrator(UserRole role, bool expected)
     {
         foreach (var actionName in new[]

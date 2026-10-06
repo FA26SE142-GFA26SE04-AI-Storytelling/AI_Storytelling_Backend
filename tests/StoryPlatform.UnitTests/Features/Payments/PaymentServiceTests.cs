@@ -102,7 +102,7 @@ public class PaymentServiceTests
         _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakePlan(1, 49000));
         _userRepository.Setup(repo => repo.GetByIdAsync(10, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakeUser(10, UserRole.Teacher));
+            .ReturnsAsync(MakeUser(10, UserRole.Administrator));
 
         await Assert.ThrowsAsync<ForbiddenException>(() => _sut.CreateTransactionAsync(
             10, new CreatePaymentTransactionRequestDto { PlanId = 1 }));

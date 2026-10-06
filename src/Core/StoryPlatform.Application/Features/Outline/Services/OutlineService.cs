@@ -517,7 +517,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
                     ?? throw new NotFoundException("Story", storyId);
         var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken)
                    ?? throw new ForbiddenException();
-        if (user.Status == AccountStatus.Suspended || user.Role is not (UserRole.Parent or UserRole.Teacher))
+        if (user.Status == AccountStatus.Suspended || user.Role != UserRole.Parent)
         {
             throw new ForbiddenException();
         }
@@ -541,7 +541,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
                     ?? throw new NotFoundException("Story", storyId);
         var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken)
                    ?? throw new ForbiddenException();
-        if (user.Status == AccountStatus.Suspended || user.Role is not (UserRole.Parent or UserRole.Teacher))
+        if (user.Status == AccountStatus.Suspended || user.Role != UserRole.Parent)
         {
             throw new ForbiddenException();
         }
@@ -566,7 +566,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
                     ?? throw new NotFoundException("Story", storyId);
         var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken)
                    ?? throw new ForbiddenException();
-        if (user.Status == AccountStatus.Suspended || user.Role is not (UserRole.Parent or UserRole.Teacher))
+        if (user.Status == AccountStatus.Suspended || user.Role != UserRole.Parent)
         {
             throw new ForbiddenException();
         }

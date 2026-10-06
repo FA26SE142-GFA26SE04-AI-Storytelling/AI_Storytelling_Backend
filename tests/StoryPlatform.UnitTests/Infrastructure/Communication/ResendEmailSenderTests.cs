@@ -89,13 +89,13 @@ public class ResendEmailSenderTests
         var sender = CreateSender(handler);
 
         await sender.SendAccountProvisionedEmailAsync(
-            "teacher1@example.com", "Le Thi B", "Hieu Truong", "Giáo viên (Teacher)", "raw-set-password-token-789");
+            "admin1@example.com", "Le Thi B", "Hieu Truong", "Quản trị viên (Administrator)", "raw-set-password-token-789");
 
         Assert.NotNull(handler.LastRequest);
         Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
         Assert.Equal("https://api.resend.com/emails", handler.LastRequest.RequestUri!.ToString());
         Assert.Contains("raw-set-password-token-789", handler.LastRequestBody);
-        Assert.Contains("teacher1@example.com", handler.LastRequestBody);
+        Assert.Contains("admin1@example.com", handler.LastRequestBody);
         Assert.Contains("Hieu Truong", handler.LastRequestBody);
     }
 

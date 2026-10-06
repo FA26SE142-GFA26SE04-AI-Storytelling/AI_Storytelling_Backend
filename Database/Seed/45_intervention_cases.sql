@@ -15,7 +15,7 @@ VALUES
      'Loi phat am lap lai nhieu lan', 5, NOW() - INTERVAL '3 days' + INTERVAL '1 hour', NOW() - INTERVAL '3 days', false),
     (5, 9, 9, 'AutoBelowThreshold', 'ResolvedUnlocked', 9, 'AutoRetakePass', NOW() - INTERVAL '10 days', NOW() - INTERVAL '2 days', NULL,
      'Da cai thien sau khi retake truyen gay kich hoat Hold Mode', 6, NOW() - INTERVAL '9 days', NOW() - INTERVAL '10 days', false),
-    (6, 3, NULL, 'RecommendedByAi', 'ResolvedUnlocked', NULL, 'ManualTeacher', NOW() - INTERVAL '12 days', NOW() - INTERVAL '9 days', 3,
+    (6, 3, NULL, 'RecommendedByAi', 'ResolvedUnlocked', NULL, 'ManualParent', NOW() - INTERVAL '12 days', NOW() - INTERVAL '9 days', 3,
      'Da giai quyet, tre tien bo tot', 3, NOW() - INTERVAL '11 days', NOW() - INTERVAL '12 days', false),
     (7, 4, NULL, 'AutoBelowThreshold', 'OpenHoldMode', 4, NULL, NOW() - INTERVAL '2 days', NULL, NULL,
      'Theo doi kha nang suy luan', 3, NOW() - INTERVAL '2 days' + INTERVAL '1 hour', NOW() - INTERVAL '2 days', false),

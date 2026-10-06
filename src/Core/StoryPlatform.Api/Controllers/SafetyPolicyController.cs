@@ -21,7 +21,7 @@ public class SafetyPolicyController : BaseApiController
     /// Tạo/cập nhật Safety Policy của một hồ sơ trẻ (Bước 1.4) — yêu cầu quyền ManageSafetySettings.
     /// </summary>
     [HttpPut("{childProfileId:int}")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<SafetyPolicyDto>>> SetSafetyPolicy(
         int childProfileId,
         [FromBody] SetSafetyPolicyRequestDto request,
@@ -37,7 +37,7 @@ public class SafetyPolicyController : BaseApiController
     /// Tạo mới Safety Policy của một hồ sơ trẻ (dùng cùng logic upsert với PUT) — yêu cầu quyền ManageSafetySettings.
     /// </summary>
     [HttpPost("{childProfileId:int}")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<SafetyPolicyDto>>> CreateSafetyPolicy(
         int childProfileId,
         [FromBody] SetSafetyPolicyRequestDto request,
@@ -53,7 +53,7 @@ public class SafetyPolicyController : BaseApiController
     /// Lấy Safety Policy hiện tại của hồ sơ trẻ.
     /// </summary>
     [HttpGet("{childProfileId:int}")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<SafetyPolicyDto>>> GetSafetyPolicy(
         int childProfileId, CancellationToken cancellationToken)
     {
@@ -65,7 +65,7 @@ public class SafetyPolicyController : BaseApiController
     /// Xoá hẳn Safety Policy của hồ sơ trẻ (xoá cứng — chỉ là cấu hình).
     /// </summary>
     [HttpDelete("{childProfileId:int}")]
-    [Authorize(Roles = "Parent,Teacher")]
+    [Authorize(Roles = "Parent")]
     public async Task<ActionResult<ApiResponse<object?>>> DeleteSafetyPolicy(
         int childProfileId, CancellationToken cancellationToken)
     {

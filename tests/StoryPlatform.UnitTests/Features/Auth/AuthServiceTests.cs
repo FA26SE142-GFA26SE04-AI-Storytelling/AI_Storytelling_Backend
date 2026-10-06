@@ -27,7 +27,6 @@ public class AuthServiceTests
     private readonly Mock<IJwtTokenGenerator> _jwtGeneratorMock = new();
     private readonly Mock<IEmailSender> _emailSenderMock = new();
     private readonly Mock<ITotpService> _totpServiceMock = new();
-    private readonly Mock<IUserProvisioningService> _userProvisioningServiceMock = new();
     private readonly AuthService _sut;
 
     public AuthServiceTests()
@@ -44,7 +43,7 @@ public class AuthServiceTests
 
         _sut = new AuthService(
             _unitOfWorkMock.Object, _passwordHasherMock.Object, _jwtGeneratorMock.Object,
-            _emailSenderMock.Object, _totpServiceMock.Object, _userProvisioningServiceMock.Object);
+            _emailSenderMock.Object, _totpServiceMock.Object);
     }
 
     private static UserAccount CreateUser(string password = "hashed-password") => new()
@@ -228,61 +227,6 @@ public class AuthServiceTests
         _emailSenderMock.Verify(e => e.SendEmailVerificationEmailAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
             It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task CreateParentAccountAsync_ValidRequest_CreatesAccountAndSendsProvisioningEmail()
-    {
-        var teacher = new UserAccount { Id = 3, FullName = "Co Giao Lan", Role = UserRole.Teacher };
-        _userRepoMock.Setup(r => r.GetByIdAsync(3, It.IsAny<CancellationToken>())).ReturnsAsync(teacher);
-        var parentAccount = new UserAccount
-        {
-            Id = 10,
-            Username = "parent_x",
-            Email = "parentx@example.com",
-            FullName = "Tran Van C",
-            Role = UserRole.Parent,
-            Status = AccountStatus.PasswordResetPending
-        };
-        _userProvisioningServiceMock
-            .Setup(s => s.CreatePendingAccountAsync(
-                "parent_x", "parentx@example.com", "Tran Van C", null, UserRole.Parent,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync((parentAccount, "raw-parent-set-token"));
-
-        var result = await _sut.CreateParentAccountAsync(3, new CreateParentAccountRequestDto
-        {
-            Username = "parent_x",
-            Email = "parentx@example.com",
-            FullName = "Tran Van C"
-        });
-
-        Assert.Equal(10, result.Id);
-        Assert.Equal("Parent", result.Role);
-        _auditLogRepoMock.Verify(r => r.AddAsync(
-            It.Is<AuditLog>(log =>
-                log.ActorUserId == 3
-                && log.Action == "PROVISION_PARENT_ACCOUNT"
-                && log.EntityId == 10),
-            It.IsAny<CancellationToken>()), Times.Once);
-        _emailSenderMock.Verify(e => e.SendAccountProvisionedEmailAsync(
-            "parentx@example.com", "Tran Van C", "Co Giao Lan", "Phụ huynh (Parent)",
-            "raw-parent-set-token", It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task CreateParentAccountAsync_UnknownCreator_ThrowsNotFoundException()
-    {
-        _userRepoMock.Setup(r => r.GetByIdAsync(999, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((UserAccount?)null);
-
-        await Assert.ThrowsAsync<NotFoundException>(() => _sut.CreateParentAccountAsync(
-            999, new CreateParentAccountRequestDto
-            {
-                Username = "parent_x",
-                Email = "parentx@example.com",
-                FullName = "Parent X"
-            }));
     }
 
     [Fact]

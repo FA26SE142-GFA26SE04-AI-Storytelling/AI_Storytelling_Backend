@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -23,6 +24,7 @@ public class ChildAccessCredentialControllerTests
             {
                 HttpContext = new DefaultHttpContext
                 {
+                    Connection = { RemoteIpAddress = IPAddress.Parse("203.0.113.7") },
                     User = new ClaimsPrincipal(new ClaimsIdentity(
                         new[]
                         {
@@ -57,25 +59,25 @@ public class ChildAccessCredentialControllerTests
     }
 
     [Fact]
-    public async Task GenerateEasyLoginCode_DelegatesWithCurrentUserId()
+    public async Task CreateOrRegenerateEasyLogin_DelegatesWithCurrentUserId()
     {
-        var expected = new EasyLoginCodeDto
+        var expected = new EasyLoginSecretDto
         {
-            Code = "abc123",
-            ExpiresAt = DateTime.UtcNow.AddMinutes(5)
+            Secret = "abc123",
+            CreatedAt = DateTime.UtcNow
         };
-        _service.Setup(s => s.GenerateEasyLoginCodeAsync(7, 42, It.IsAny<CancellationToken>()))
+        _service.Setup(s => s.CreateOrRegenerateEasyLoginAsync(7, 42, It.IsAny<CancellationToken>()))
             .ReturnsAsync(expected);
 
-        var response = await _sut.GenerateEasyLoginCode(7, CancellationToken.None);
+        var response = await _sut.CreateOrRegenerateEasyLogin(7, CancellationToken.None);
 
         var result = Assert.IsType<OkObjectResult>(response.Result);
-        var apiResponse = Assert.IsType<ApiResponse<EasyLoginCodeDto>>(result.Value);
+        var apiResponse = Assert.IsType<ApiResponse<EasyLoginSecretDto>>(result.Value);
         Assert.Same(expected, apiResponse.Data);
     }
 
     [Fact]
-    public async Task LoginWithEasyLogin_DelegatesCodeFromBody()
+    public async Task LoginWithEasyLogin_PassesSecretAndRemoteIpAsClientKey()
     {
         var expected = new ChildSessionDto
         {
@@ -84,15 +86,34 @@ public class ChildAccessCredentialControllerTests
             AccessToken = "jwt",
             ExpiresInSeconds = 14400
         };
-        _service.Setup(s => s.LoginWithEasyLoginAsync("qr-code", It.IsAny<CancellationToken>()))
+        _service.Setup(s => s.LoginWithEasyLoginAsync(
+                "qr-secret", "203.0.113.7", It.IsAny<CancellationToken>()))
             .ReturnsAsync(expected);
 
         var response = await _sut.LoginWithEasyLogin(
-            new LoginWithEasyLoginRequestDto { Code = "qr-code" }, CancellationToken.None);
+            new LoginWithEasyLoginRequestDto { Secret = "qr-secret" }, CancellationToken.None);
 
         var result = Assert.IsType<OkObjectResult>(response.Result);
         var apiResponse = Assert.IsType<ApiResponse<ChildSessionDto>>(result.Value);
         Assert.Same(expected, apiResponse.Data);
+    }
+
+    [Theory]
+    [InlineData("SetPin")]
+    [InlineData("LoginWithPin")]
+    public void PinEndpoints_AreRemoved(string methodName)
+    {
+        Assert.Null(typeof(ChildAccessCredentialController).GetMethod(methodName));
+    }
+
+    [Fact]
+    public void LoginWithEasyLogin_IsAnonymous()
+    {
+        var method = typeof(ChildAccessCredentialController)
+            .GetMethod(nameof(ChildAccessCredentialController.LoginWithEasyLogin))!;
+
+        Assert.NotEmpty(method.GetCustomAttributes(
+            typeof(Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute), false));
     }
 
     [Fact]
@@ -115,7 +136,7 @@ public class ChildAccessCredentialControllerTests
     }
 
     [Fact]
-    public void StartSupervisedSession_OnlyParentOrTeacher()
+    public void StartSupervisedSession_OnlyParent()
     {
         var method = typeof(ChildAccessCredentialController)
             .GetMethod(nameof(ChildAccessCredentialController.StartSupervisedSession))!;
@@ -123,6 +144,6 @@ public class ChildAccessCredentialControllerTests
             typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), false)
             .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>());
 
-        Assert.Equal("Parent,Teacher", authorize.Roles);
+        Assert.Equal("Parent", authorize.Roles);
     }
 }

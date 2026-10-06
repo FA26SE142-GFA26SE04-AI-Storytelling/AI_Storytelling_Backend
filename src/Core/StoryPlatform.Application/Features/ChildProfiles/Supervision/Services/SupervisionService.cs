@@ -351,38 +351,7 @@ public class SupervisionService : ISupervisionService
         target.RevokedByUserId = revokerUserId;
         relationshipRepo.Update(target);
 
-        var childProfileRepo = _unitOfWork.Repository<ChildProfile>();
-        var childProfile = await childProfileRepo.GetByIdAsync(
-            target.ChildProfileId, cancellationToken);
-        if (childProfile == null)
-        {
-            throw new NotFoundException("Hồ sơ trẻ", target.ChildProfileId);
-        }
-
-        var owner = await _unitOfWork.Repository<UserAccount>()
-            .GetByIdAsync(childProfile.OwnerUserId, cancellationToken);
-        if (owner == null)
-        {
-            throw new NotFoundException("Tài khoản", childProfile.OwnerUserId);
-        }
-
-        if (owner.Role == UserRole.Teacher)
-        {
-            var stillHasParent = await relationshipRepo.ExistsAsync(
-                value => value.ChildProfileId == target.ChildProfileId
-                         && value.Id != target.Id
-                         && value.RevokedAt == null
-                         && value.SupervisorUser != null
-                         && value.SupervisorUser.Role == UserRole.Parent,
-                cancellationToken);
-            if (!stillHasParent)
-            {
-                childProfile.Status = ChildProfileStatus.PendingParentConsent;
-                childProfile.UpdatedAt = DateTime.UtcNow;
-                childProfileRepo.Update(childProfile);
-            }
-        }
-
+        // Owner luôn là Parent và không bị thu hồi qua đây, nên hồ sơ không đổi trạng thái (Bước 1.6b).
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         await _auditLogWriter.LogAsync(
             revokerUserId, "REVOKE_SUPERVISION", nameof(SupervisionRelationship), target.Id,

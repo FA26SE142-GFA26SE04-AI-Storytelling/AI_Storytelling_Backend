@@ -642,7 +642,7 @@ public sealed class AIStoryInputService : IAIStoryInputService
     {
         var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken)
                    ?? throw new ForbiddenException();
-        if (user.Status == AccountStatus.Suspended || user.Role is not (UserRole.Parent or UserRole.Teacher))
+        if (user.Status == AccountStatus.Suspended || user.Role != UserRole.Parent)
         {
             throw new ForbiddenException("Tài khoản không đủ điều kiện tạo truyện cho Child Profile.");
         }

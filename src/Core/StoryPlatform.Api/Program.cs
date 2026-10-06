@@ -47,6 +47,7 @@ builder.Services.AddCorsPolicy();
 
 // 4. Cấu hình Authentication & JWT Token
 builder.Services.AddJwtAuthentication(builder.Configuration);
+builder.Services.AddLoadBalancerForwardedHeaders();
 builder.Services.AddAppAuthorization();
 
 // 5. Đăng ký Application use cases và Infrastructure adapters
@@ -76,6 +77,9 @@ else
 app.SeedDataIfRequested<StoryPlatform.Infrastructure.Persistence.ApplicationDbContext>(builder.Configuration);
 
 // Pipeline xử lý HTTP Request
+// Phải chạy sớm để mọi middleware phía sau thấy IP client thật (không phải IP của ALB).
+app.UseForwardedHeaders();
+
 // Bắt ngoại lệ tập trung toàn ứng dụng
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 

@@ -27,11 +27,8 @@ public class DataRequestServiceTests
     private readonly Mock<IGenericRepository<TelemetryLog>> _telemetryLogRepository = new();
     private readonly Mock<IGenericRepository<QuizAttempt>> _quizAttemptRepository = new();
     private readonly Mock<IGenericRepository<AssignmentRecipient>> _assignmentRecipientRepository = new();
-    private readonly Mock<IGenericRepository<O2OAssessment>> _o2oAssessmentRepository = new();
     private readonly Mock<IGenericRepository<SupervisionRelationship>> _supervisionRelationshipRepository = new();
     private readonly Mock<IGenericRepository<Assignment>> _assignmentRepository = new();
-    private readonly Mock<IGenericRepository<SharedStoryRecipient>> _sharedStoryRecipientRepository = new();
-    private readonly Mock<IGenericRepository<SharedStory>> _sharedStoryRepository = new();
     private readonly Mock<IGenericRepository<Story>> _storyRepository = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IAuditLogWriter> _auditLogWriter = new();
@@ -54,11 +51,8 @@ public class DataRequestServiceTests
         _unitOfWork.Setup(work => work.Repository<TelemetryLog>()).Returns(_telemetryLogRepository.Object);
         _unitOfWork.Setup(work => work.Repository<QuizAttempt>()).Returns(_quizAttemptRepository.Object);
         _unitOfWork.Setup(work => work.Repository<AssignmentRecipient>()).Returns(_assignmentRecipientRepository.Object);
-        _unitOfWork.Setup(work => work.Repository<O2OAssessment>()).Returns(_o2oAssessmentRepository.Object);
         _unitOfWork.Setup(work => work.Repository<SupervisionRelationship>()).Returns(_supervisionRelationshipRepository.Object);
         _unitOfWork.Setup(work => work.Repository<Assignment>()).Returns(_assignmentRepository.Object);
-        _unitOfWork.Setup(work => work.Repository<SharedStoryRecipient>()).Returns(_sharedStoryRecipientRepository.Object);
-        _unitOfWork.Setup(work => work.Repository<SharedStory>()).Returns(_sharedStoryRepository.Object);
         _unitOfWork.Setup(work => work.Repository<Story>()).Returns(_storyRepository.Object);
 
         _learningProfileRepository.Setup(repo => repo.FindAsync(
@@ -94,9 +88,6 @@ public class DataRequestServiceTests
         _assignmentRecipientRepository.Setup(repo => repo.FindAsync(
                 It.IsAny<Expression<Func<AssignmentRecipient, bool>>>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<AssignmentRecipient>());
-        _o2oAssessmentRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<O2OAssessment, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Array.Empty<O2OAssessment>());
         _supervisionRelationshipRepository.Setup(repo => repo.FindAsync(
                 It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<SupervisionRelationship>());
@@ -106,12 +97,6 @@ public class DataRequestServiceTests
         _storyRepository.Setup(repo => repo.FindAsync(
                 It.IsAny<Expression<Func<Story, bool>>>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<Story>());
-        _sharedStoryRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<SharedStory, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Array.Empty<SharedStory>());
-        _sharedStoryRecipientRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<SharedStoryRecipient, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Array.Empty<SharedStoryRecipient>());
 
         _sut = new DataRequestService(
             _unitOfWork.Object, _auditLogWriter.Object, _exportBuilder.Object, _archiveExportBuilder.Object);
@@ -413,16 +398,6 @@ public class DataRequestServiceTests
                 It.IsAny<Expression<Func<Story, bool>>>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { story });
 
-        var sharedStory = new SharedStory { Id = 6, StoryId = 4, ClassGroupId = 1 };
-        _sharedStoryRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<SharedStory, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { sharedStory });
-
-        var sharedRecipient = new SharedStoryRecipient { Id = 7, SharedStoryId = 6, Status = RecipientStatus.Accepted };
-        _sharedStoryRecipientRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<SharedStoryRecipient, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { sharedRecipient });
-
         var result = await _sut.ResolveDeleteAsync(10, 1);
 
         Assert.NotNull(relationship.RevokedAt);
@@ -433,8 +408,6 @@ public class DataRequestServiceTests
         Assert.NotNull(recipient.CancelledAt);
 
         Assert.Equal(AssignmentStatus.Cancelled, directAssignment.Status);
-
-        Assert.Equal(RecipientStatus.Revoked, sharedRecipient.Status);
 
         Assert.Equal("[Đã ẩn danh]", child.Nickname);
         Assert.Null(child.DateOfBirth);

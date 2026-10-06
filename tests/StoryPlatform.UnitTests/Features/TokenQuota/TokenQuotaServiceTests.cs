@@ -34,21 +34,12 @@ public class TokenQuotaServiceTests
     private static ChildProfile MakePersonalChild(int id = 1, int ownerUserId = 1) => new()
     {
         Id = id,
-        OwnerUserId = ownerUserId,
-        Scope = ProfileScope.Personal
-    };
-
-    private static ChildProfile MakeOrgChild(int id = 1, int organizationId = 10) => new()
-    {
-        Id = id,
-        OwnerUserId = 1,
-        Scope = ProfileScope.Organization,
-        OrganizationId = organizationId
+        OwnerUserId = ownerUserId
     };
 
     private static StoryPlatform.Domain.Entities.TokenQuotaConfig MakeConfig(
         TokenQuotaScope scope, int quotaLimit, int quotaUsed,
-        int? organizationId = null, int? childProfileId = null, int? userId = null,
+        int? childProfileId = null, int? userId = null,
         DateOnly? periodStart = null, DateOnly? periodEnd = null)
     {
         var start = periodStart ?? DateOnly.FromDateTime(DateTime.UtcNow);
@@ -57,7 +48,6 @@ public class TokenQuotaServiceTests
         {
             Id = 1,
             Scope = scope,
-            OrganizationId = organizationId,
             ChildProfileId = childProfileId,
             UserId = userId,
             QuotaLimit = quotaLimit,
@@ -110,23 +100,14 @@ public class TokenQuotaServiceTests
     }
 
     [Fact]
-    public async Task EnsureWithinQuotaAsync_ChildConfigTakesPriorityOverOrganizationConfig()
+    public async Task EnsureWithinQuotaAsync_ChildConfigTakesPriorityOverPersonalConfig()
     {
-        SetupChild(MakeOrgChild(organizationId: 10));
+        SetupChild(MakePersonalChild(ownerUserId: 7));
         SetupConfigLookup(
             MakeConfig(TokenQuotaScope.Child, quotaLimit: 5, quotaUsed: 1, childProfileId: 1),
-            MakeConfig(TokenQuotaScope.Organization, quotaLimit: 1, quotaUsed: 1, organizationId: 10));
+            MakeConfig(TokenQuotaScope.Personal, quotaLimit: 1, quotaUsed: 1, userId: 7));
 
-        await _sut.EnsureWithinQuotaAsync(1); // child config (1/5) wins, not the exhausted org config
-    }
-
-    [Fact]
-    public async Task EnsureWithinQuotaAsync_OrganizationChild_FallsBackToOrganizationConfig()
-    {
-        SetupChild(MakeOrgChild(organizationId: 10));
-        SetupConfigLookup(MakeConfig(TokenQuotaScope.Organization, quotaLimit: 1, quotaUsed: 1, organizationId: 10));
-
-        await Assert.ThrowsAsync<ConflictException>(() => _sut.EnsureWithinQuotaAsync(1));
+        await _sut.EnsureWithinQuotaAsync(1); // child config (1/5) wins, not the exhausted personal config
     }
 
     [Fact]
@@ -194,20 +175,6 @@ public class TokenQuotaServiceTests
         _configRepository.Verify(r => r.Update(config), Times.Once);
     }
 
-    [Fact]
-    public async Task EnsureWithinQuotaAsync_MalformedOrganizationChildWithNullOrganizationId_DoesNotFallBackToPersonalConfig()
-    {
-        // A data-invariant-violating Organization-scope child with a null OrganizationId must not
-        // silently resolve against the owner's unrelated Personal config.
-        var child = new ChildProfile { Id = 1, OwnerUserId = 7, Scope = ProfileScope.Organization, OrganizationId = null };
-        SetupChild(child);
-        SetupConfigLookup(MakeConfig(TokenQuotaScope.Personal, quotaLimit: 1, quotaUsed: 1, userId: 7));
-
-        // Falls through to the System-scope lookup instead (none configured here) => no applicable
-        // config => does not throw, even though the exhausted Personal config exists.
-        await _sut.EnsureWithinQuotaAsync(1);
-    }
-
     // ---------- IncrementUsageAsync ----------
 
     [Fact]
@@ -246,12 +213,11 @@ public class TokenQuotaServiceTests
             .Callback<StoryPlatform.Domain.Entities.TokenQuotaConfig, CancellationToken>((entity, _) => added = entity)
             .ReturnsAsync((StoryPlatform.Domain.Entities.TokenQuotaConfig entity, CancellationToken _) => entity);
 
-        await _sut.CreditAsync(ProfileScope.Personal, payerUserId: 7, organizationId: null, quotaAmount: 50);
+        await _sut.CreditAsync(payerUserId: 7, quotaAmount: 50);
 
         Assert.NotNull(added);
         Assert.Equal(TokenQuotaScope.Personal, added!.Scope);
         Assert.Equal(7, added.UserId);
-        Assert.Null(added.OrganizationId);
         Assert.Equal(50, added.QuotaLimit);
         Assert.Equal(0, added.QuotaUsed);
     }
@@ -262,49 +228,10 @@ public class TokenQuotaServiceTests
         var existing = MakeConfig(TokenQuotaScope.Personal, quotaLimit: 50, quotaUsed: 30, userId: 7);
         SetupConfigLookup(existing);
 
-        await _sut.CreditAsync(ProfileScope.Personal, payerUserId: 7, organizationId: null, quotaAmount: 50);
+        await _sut.CreditAsync(payerUserId: 7, quotaAmount: 50);
 
         Assert.Equal(100, existing.QuotaLimit);
         Assert.Equal(30, existing.QuotaUsed);
-        _configRepository.Verify(r => r.Update(existing), Times.Once);
-    }
-
-    [Fact]
-    public async Task CreditAsync_OrganizationScope_NoExistingConfig_CreatesNewConfigForOrganization()
-    {
-        SetupConfigLookup();
-        StoryPlatform.Domain.Entities.TokenQuotaConfig? added = null;
-        _configRepository
-            .Setup(r => r.AddAsync(It.IsAny<StoryPlatform.Domain.Entities.TokenQuotaConfig>(), It.IsAny<CancellationToken>()))
-            .Callback<StoryPlatform.Domain.Entities.TokenQuotaConfig, CancellationToken>((entity, _) => added = entity)
-            .ReturnsAsync((StoryPlatform.Domain.Entities.TokenQuotaConfig entity, CancellationToken _) => entity);
-
-        await _sut.CreditAsync(ProfileScope.Organization, payerUserId: 7, organizationId: 10, quotaAmount: 150);
-
-        Assert.NotNull(added);
-        Assert.Equal(TokenQuotaScope.Organization, added!.Scope);
-        Assert.Equal(10, added.OrganizationId);
-        Assert.Null(added.UserId);
-        Assert.Equal(150, added.QuotaLimit);
-    }
-
-    [Fact]
-    public async Task CreditAsync_OrganizationScope_MissingOrganizationId_ThrowsBadRequest()
-    {
-        await Assert.ThrowsAsync<BadRequestException>(() =>
-            _sut.CreditAsync(ProfileScope.Organization, payerUserId: 7, organizationId: null, quotaAmount: 150));
-    }
-
-    [Fact]
-    public async Task CreditAsync_OrganizationScope_ExistingConfig_TopsUpWithoutResettingUsage()
-    {
-        var existing = MakeConfig(TokenQuotaScope.Organization, quotaLimit: 150, quotaUsed: 50, organizationId: 10);
-        SetupConfigLookup(existing);
-
-        await _sut.CreditAsync(ProfileScope.Organization, payerUserId: 7, organizationId: 10, quotaAmount: 150);
-
-        Assert.Equal(300, existing.QuotaLimit);
-        Assert.Equal(50, existing.QuotaUsed);
         _configRepository.Verify(r => r.Update(existing), Times.Once);
     }
 
@@ -317,7 +244,7 @@ public class TokenQuotaServiceTests
             periodStart: yesterday.AddDays(-30), periodEnd: yesterday);
         SetupConfigLookup(existing);
 
-        await _sut.CreditAsync(ProfileScope.Personal, payerUserId: 7, organizationId: null, quotaAmount: 150);
+        await _sut.CreditAsync(payerUserId: 7, quotaAmount: 150);
 
         Assert.Equal(0, existing.QuotaUsed);
         Assert.Equal(250, existing.QuotaLimit);
@@ -339,7 +266,7 @@ public class TokenQuotaServiceTests
     }
 
     [Fact]
-    public async Task SetConfigAsync_OrganizationScopeMissingOrganizationId_ThrowsBadRequest()
+    public async Task SetConfigAsync_OrganizationScope_IsNoLongerSupported_ThrowsBadRequest()
     {
         await Assert.ThrowsAsync<BadRequestException>(() => _sut.SetConfigAsync(1, new SetTokenQuotaConfigRequestDto
         {

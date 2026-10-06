@@ -15,6 +15,8 @@ public class SafetyPolicy : BaseEntity
     public DateTime? ConsentRecordedAt { get; set; }
 
     public int ConsentPolicyVersion { get; set; } = 1;
+    public int? ConsentedByUserId { get; set; }
+    public virtual UserAccount? ConsentedByUser { get; set; }
     public decimal? SafetyScoreThreshold { get; set; }
     public decimal? ReadabilityScoreThreshold { get; set; }
     public decimal ComprehensionThresholdPercent { get; set; } = 70m;

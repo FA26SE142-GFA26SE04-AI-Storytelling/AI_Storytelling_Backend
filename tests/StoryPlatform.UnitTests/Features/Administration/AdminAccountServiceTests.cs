@@ -16,7 +16,6 @@ namespace StoryPlatform.UnitTests.Features.Administration;
 public class AdminAccountServiceTests
 {
     private readonly Mock<IGenericRepository<UserAccount>> _userRepository = new();
-    private readonly Mock<IGenericRepository<OrganizationMembership>> _membershipRepository = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IAuditLogWriter> _auditLogWriter = new();
     private readonly Mock<INotificationService> _notificationService = new();
@@ -25,7 +24,6 @@ public class AdminAccountServiceTests
     public AdminAccountServiceTests()
     {
         _unitOfWork.Setup(work => work.Repository<UserAccount>()).Returns(_userRepository.Object);
-        _unitOfWork.Setup(work => work.Repository<OrganizationMembership>()).Returns(_membershipRepository.Object);
         _notificationService
             .Setup(service => service.CreateAsync(
                 It.IsAny<int>(), It.IsAny<NotificationType>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
@@ -71,50 +69,12 @@ public class AdminAccountServiceTests
     }
 
     [Fact]
-    public async Task GrantAsync_SchoolAdminConflictWithoutConfirm_ThrowsConflict()
-    {
-        var target = MakeUser(2, UserRole.Teacher);
-        _userRepository.Setup(repo => repo.FirstOrDefaultAsync(
-                It.IsAny<Expression<Func<UserAccount, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(target);
-        _membershipRepository.Setup(repo => repo.ExistsAsync(
-                It.IsAny<Expression<Func<OrganizationMembership, bool>>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-
-        await Assert.ThrowsAsync<ConflictException>(() => _sut.GrantAsync(
-            1, new GrantAdministratorRequestDto { Email = target.Email, ConfirmSchoolAdminConflict = false }));
-
-        _userRepository.Verify(repo => repo.Update(It.IsAny<UserAccount>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task GrantAsync_SchoolAdminConflictWithConfirm_GrantsSuccessfully()
-    {
-        var target = MakeUser(2, UserRole.Teacher);
-        _userRepository.Setup(repo => repo.FirstOrDefaultAsync(
-                It.IsAny<Expression<Func<UserAccount, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(target);
-        _membershipRepository.Setup(repo => repo.ExistsAsync(
-                It.IsAny<Expression<Func<OrganizationMembership, bool>>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-
-        var result = await _sut.GrantAsync(
-            1, new GrantAdministratorRequestDto { Email = target.Email, ConfirmSchoolAdminConflict = true });
-
-        Assert.Equal("Administrator", result.Role);
-        Assert.Equal(UserRole.Administrator, target.Role);
-    }
-
-    [Fact]
     public async Task GrantAsync_ValidTarget_SavesRoleBeforeAdminPromotesWritesAuditAndNotifies()
     {
         var target = MakeUser(2, UserRole.Teacher);
         _userRepository.Setup(repo => repo.FirstOrDefaultAsync(
                 It.IsAny<Expression<Func<UserAccount, bool>>>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(target);
-        _membershipRepository.Setup(repo => repo.ExistsAsync(
-                It.IsAny<Expression<Func<OrganizationMembership, bool>>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
 
         var result = await _sut.GrantAsync(
             10, new GrantAdministratorRequestDto { Email = target.Email });

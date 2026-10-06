@@ -49,7 +49,52 @@ public class SupervisionController : BaseApiController
     }
 
     /// <summary>
-    /// Chấp nhận lời mời giám sát bằng invitation_code (Bước 1.6) — tự động re-check BR-1.9.
+    /// Nhập mã mời để nhận OTP gửi tới email được mời (Bước 1.6, BR-1.4).
+    /// </summary>
+    [HttpPost("invitations/claim")]
+    [Authorize(Roles = "Parent")]
+    public async Task<ActionResult<ApiResponse<ClaimInvitationResultDto>>> ClaimInvitation(
+        [FromBody] ClaimInvitationRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _supervisionService.ClaimInvitationAsync(
+            request.InvitationCode, GetCurrentUserId(), cancellationToken);
+
+        return HandleResult(result, "Đã gửi mã OTP tới email được mời.");
+    }
+
+    /// <summary>
+    /// Xác thực OTP và xem thông tin hồ sơ ở phạm vi cho phép trước khi Accept/Reject.
+    /// </summary>
+    [HttpPost("invitations/verify-otp")]
+    [Authorize(Roles = "Parent")]
+    public async Task<ActionResult<ApiResponse<InvitationPreviewDto>>> VerifyInvitationOtp(
+        [FromBody] VerifyInvitationOtpRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _supervisionService.VerifyInvitationOtpAsync(
+            request.InvitationCode, request.Otp, GetCurrentUserId(), cancellationToken);
+
+        return HandleResult(result, "Xác thực OTP thành công.");
+    }
+
+    /// <summary>
+    /// Từ chối lời mời giám sát (sau khi đã xác thực OTP).
+    /// </summary>
+    [HttpPost("invitations/reject")]
+    [Authorize(Roles = "Parent")]
+    public async Task<ActionResult<ApiResponse<object?>>> RejectInvitation(
+        [FromBody] RejectInvitationRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        await _supervisionService.RejectInvitationAsync(
+            request.InvitationCode, GetCurrentUserId(), cancellationToken);
+
+        return HandleResult<object?>(null, "Đã từ chối lời mời giám sát.");
+    }
+
+    /// <summary>
+    /// Chấp nhận lời mời giám sát — yêu cầu đã xác thực OTP (Bước 1.6); cấp preset quyền mặc định.
     /// </summary>
     [HttpPost("invitations/accept")]
     [Authorize(Roles = "Parent,Teacher")]
@@ -103,8 +148,8 @@ public class SupervisionController : BaseApiController
     }
 
     /// <summary>
-    /// Owner hoặc Additional Supervisor khởi tạo yêu cầu đổi quyền Owner (BR-1.10).
-    /// Bên còn lại phải accept/reject; role chỉ được đổi sau khi accept.
+    /// Owner gửi yêu cầu chuyển quyền Owner cho một Additional Supervisor (Bước 1.7b);
+    /// yêu cầu hết hạn sau 7 ngày.
     /// </summary>
     [HttpPost("{childProfileId:int}/transfer-ownership")]
     [Authorize(Roles = "Parent,Teacher")]
@@ -161,6 +206,20 @@ public class SupervisionController : BaseApiController
             ownershipTransferRequestId, GetCurrentUserId(), cancellationToken);
 
         return HandleResult(result, "Từ chối chuyển nhượng quyền Owner thành công.");
+    }
+
+    /// <summary>
+    /// Owner thu hồi yêu cầu chuyển quyền Owner đang chờ phản hồi.
+    /// </summary>
+    [HttpPost("ownership-transfers/{ownershipTransferRequestId:int}/cancel")]
+    [Authorize(Roles = "Parent")]
+    public async Task<ActionResult<ApiResponse<OwnershipTransferRequestDto>>> CancelOwnershipTransfer(
+        int ownershipTransferRequestId, CancellationToken cancellationToken)
+    {
+        var result = await _supervisionService.CancelOwnershipTransferAsync(
+            ownershipTransferRequestId, GetCurrentUserId(), cancellationToken);
+
+        return HandleResult(result, "Đã thu hồi yêu cầu chuyển quyền Owner.");
     }
 
     /// <summary>

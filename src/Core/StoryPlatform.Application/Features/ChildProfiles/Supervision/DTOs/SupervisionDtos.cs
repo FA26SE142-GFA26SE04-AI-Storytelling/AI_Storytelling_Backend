@@ -14,12 +14,13 @@ public class InvitationDto
 
 public class CreateInvitationRequestDto
 {
-    /// <summary>Chỉ dùng để hiển thị, không dùng để xác thực người nhận.</summary>
+    /// <summary>Email người được mời — bắt buộc; OTP xác thực sẽ gửi tới địa chỉ này (BR-1.4).</summary>
+    [Required(ErrorMessage = "Email người được mời là bắt buộc.")]
     [EmailAddress(ErrorMessage = "Email người được mời không đúng định dạng.")]
     [StringLength(150, ErrorMessage = "Email người được mời tối đa 150 ký tự.")]
     public string? InviteeEmail { get; set; }
 
-    [Range(1, 365, ErrorMessage = "Số ngày hết hạn phải từ 1 đến 365.")]
+    [Range(1, 30, ErrorMessage = "Số ngày hết hạn phải từ 1 đến 30.")]
     public int ExpiresInDays { get; set; } = 7;
 }
 
@@ -37,12 +38,46 @@ public class AcceptInvitationRequestDto
     public string InvitationCode { get; set; } = string.Empty;
 }
 
+public class ClaimInvitationRequestDto
+{
+    [Required(ErrorMessage = "Mã mời không được để trống.")]
+    public string InvitationCode { get; set; } = string.Empty;
+}
+
+public class ClaimInvitationResultDto
+{
+    public string MaskedEmail { get; set; } = string.Empty;
+    public DateTime OtpExpiresAt { get; set; }
+}
+
+public class VerifyInvitationOtpRequestDto
+{
+    [Required(ErrorMessage = "Mã mời không được để trống.")]
+    public string InvitationCode { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Mã OTP không được để trống.")]
+    [RegularExpression("^[0-9]{6}$", ErrorMessage = "Mã OTP gồm đúng 6 chữ số.")]
+    public string Otp { get; set; } = string.Empty;
+}
+
+/// <summary>Thông tin hồ sơ ở phạm vi cho phép, chỉ hiện sau khi xác thực OTP (Bước 1.6).</summary>
+public class InvitationPreviewDto
+{
+    public int InvitationId { get; set; }
+    public string InviterName { get; set; } = string.Empty;
+    public string ChildNickname { get; set; } = string.Empty;
+    public string ChildAgeBand { get; set; } = string.Empty;
+}
+
+public class RejectInvitationRequestDto
+{
+    [Required(ErrorMessage = "Mã mời không được để trống.")]
+    public string InvitationCode { get; set; } = string.Empty;
+}
+
 public class TransferOwnershipRequestDto
 {
-    /// <summary>
-    /// User ở phía đối diện: Additional Supervisor khi người gửi là Owner,
-    /// hoặc Owner hiện tại khi người gửi là Additional Supervisor.
-    /// </summary>
+    /// <summary>Additional Supervisor đang hoạt động sẽ nhận quyền Owner. Chỉ Owner hiện tại được gửi yêu cầu.</summary>
     [Required(ErrorMessage = "Vui lòng chọn người nhận yêu cầu đổi quyền Owner.")]
     public int TargetSupervisorUserId { get; set; }
 }
@@ -76,4 +111,5 @@ public class OwnershipTransferRequestDto
     public string Status { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public DateTime? RespondedAt { get; set; }
+    public DateTime? ExpiresAt { get; set; }
 }

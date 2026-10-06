@@ -33,16 +33,6 @@ public class ApplicationDbContext : DbContext
     public DbSet<ChildAccessCredential> ChildAccessCredentials => Set<ChildAccessCredential>();
     public DbSet<ChildSession> ChildSessions => Set<ChildSession>();
 
-    // Classroom / organization
-    public DbSet<ClassGroup> ClassGroups => Set<ClassGroup>();
-    public DbSet<ClassGroupMember> ClassGroupMembers => Set<ClassGroupMember>();
-    public DbSet<Organization> Organizations => Set<Organization>();
-    public DbSet<OrganizationMembership> OrganizationMemberships => Set<OrganizationMembership>();
-    public DbSet<OrganizationPermission> OrganizationPermissions => Set<OrganizationPermission>();
-    public DbSet<OrgConsentRecord> OrgConsentRecords => Set<OrgConsentRecord>();
-    public DbSet<OrgSafetyPolicyTemplate> OrgSafetyPolicyTemplates => Set<OrgSafetyPolicyTemplate>();
-    public DbSet<OrgSafetyPolicyCategory> OrgSafetyPolicyCategories => Set<OrgSafetyPolicyCategory>();
-
     // Story content & generation
     public DbSet<StoryCategory> StoryCategories => Set<StoryCategory>();
     public DbSet<StoryVersion> StoryVersions => Set<StoryVersion>();
@@ -68,12 +58,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<Badge> Badges => Set<Badge>();
     public DbSet<VocabularyNotebookEntry> VocabularyNotebookEntries => Set<VocabularyNotebookEntry>();
 
-    // Assignments & sharing
+    // Assignments
     public DbSet<Assignment> Assignments => Set<Assignment>();
     public DbSet<AssignmentRecipient> AssignmentRecipients => Set<AssignmentRecipient>();
-    public DbSet<SharedStory> SharedStories => Set<SharedStory>();
-    public DbSet<SharedStoryRecipient> SharedStoryRecipients => Set<SharedStoryRecipient>();
-    public DbSet<O2OAssessment> O2OAssessments => Set<O2OAssessment>();
 
     // Learning intelligence & governance
     public DbSet<InterventionCase> InterventionCases => Set<InterventionCase>();

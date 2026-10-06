@@ -66,7 +66,7 @@ public class TokenQuotaService : ITokenQuotaService
     {
         if (!Enum.TryParse<TokenQuotaScope>(request.Scope, ignoreCase: true, out var scope))
         {
-            throw new BadRequestException("Scope phải là 'System', 'Organization', 'Child' hoặc 'Personal'.");
+            throw new BadRequestException("Scope phải là 'System', 'Child' hoặc 'Personal'.");
         }
 
         if (request.PeriodEnd <= request.PeriodStart)
@@ -77,11 +77,6 @@ public class TokenQuotaService : ITokenQuotaService
         if (request.QuotaLimit < 0)
         {
             throw new BadRequestException("QuotaLimit không được âm.");
-        }
-
-        if (scope == TokenQuotaScope.Organization && !request.OrganizationId.HasValue)
-        {
-            throw new BadRequestException("OrganizationId là bắt buộc cho scope Organization.");
         }
 
         if (scope == TokenQuotaScope.Child && !request.ChildProfileId.HasValue)
@@ -97,7 +92,6 @@ public class TokenQuotaService : ITokenQuotaService
         Expression<Func<TokenQuotaConfig, bool>> matchPredicate = scope switch
         {
             TokenQuotaScope.System => c => c.Scope == TokenQuotaScope.System,
-            TokenQuotaScope.Organization => c => c.Scope == TokenQuotaScope.Organization && c.OrganizationId == request.OrganizationId,
             TokenQuotaScope.Child => c => c.Scope == TokenQuotaScope.Child && c.ChildProfileId == request.ChildProfileId,
             TokenQuotaScope.Personal => c => c.Scope == TokenQuotaScope.Personal && c.UserId == request.UserId,
             _ => throw new BadRequestException("Scope không hợp lệ.")
@@ -115,7 +109,6 @@ public class TokenQuotaService : ITokenQuotaService
             existing = new TokenQuotaConfig
             {
                 Scope = scope,
-                OrganizationId = request.OrganizationId,
                 ChildProfileId = request.ChildProfileId,
                 UserId = request.UserId,
                 QuotaLimit = request.QuotaLimit,
@@ -192,39 +185,21 @@ public class TokenQuotaService : ITokenQuotaService
     }
 
     public async Task CreditAsync(
-        ProfileScope planScope, int payerUserId, int? organizationId, int quotaAmount,
-        CancellationToken cancellationToken = default)
+        int payerUserId, int quotaAmount, CancellationToken cancellationToken = default)
     {
         var repo = _unitOfWork.Repository<TokenQuotaConfig>();
-        var scope = planScope == ProfileScope.Personal ? TokenQuotaScope.Personal : TokenQuotaScope.Organization;
 
-        TokenQuotaConfig? config;
-        if (scope == TokenQuotaScope.Personal)
-        {
-            config = await repo.FirstOrDefaultAsync(
-                c => c.Scope == TokenQuotaScope.Personal && c.UserId == payerUserId,
-                cancellationToken: cancellationToken);
-        }
-        else
-        {
-            if (!organizationId.HasValue)
-            {
-                throw new BadRequestException("OrganizationId là bắt buộc để cộng quota cho gói Organization.");
-            }
-
-            config = await repo.FirstOrDefaultAsync(
-                c => c.Scope == TokenQuotaScope.Organization && c.OrganizationId == organizationId,
-                cancellationToken: cancellationToken);
-        }
+        var config = await repo.FirstOrDefaultAsync(
+            c => c.Scope == TokenQuotaScope.Personal && c.UserId == payerUserId,
+            cancellationToken: cancellationToken);
 
         if (config == null)
         {
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
             config = new TokenQuotaConfig
             {
-                Scope = scope,
-                UserId = scope == TokenQuotaScope.Personal ? payerUserId : null,
-                OrganizationId = scope == TokenQuotaScope.Organization ? organizationId : null,
+                Scope = TokenQuotaScope.Personal,
+                UserId = payerUserId,
                 QuotaLimit = quotaAmount,
                 QuotaUsed = 0,
                 PeriodStart = today,
@@ -243,7 +218,7 @@ public class TokenQuotaService : ITokenQuotaService
     }
 
     /// <summary>
-    /// Resolves the applicable config for a child by scope hierarchy (Child -> Organization/Personal
+    /// Resolves the applicable config for a child by scope hierarchy (Child -> Personal
     /// -> System) as a pure read — never rolls over or persists anything. Callers decide whether they
     /// need a real (persisted) rollover (<see cref="IncrementUsageAsync"/>) or just an as-if-rolled-over
     /// view (<see cref="EnsureWithinQuotaAsync"/>, <see cref="GetStatusForChildAsync"/>).
@@ -260,29 +235,13 @@ public class TokenQuotaService : ITokenQuotaService
             return childConfig;
         }
 
-        if (child.Scope == ProfileScope.Organization && child.OrganizationId.HasValue)
+        var personalConfig = await repo.FirstOrDefaultAsync(
+            c => c.Scope == TokenQuotaScope.Personal && c.UserId == child.OwnerUserId,
+            cancellationToken: cancellationToken);
+        if (personalConfig != null)
         {
-            var orgConfig = await repo.FirstOrDefaultAsync(
-                c => c.Scope == TokenQuotaScope.Organization && c.OrganizationId == child.OrganizationId,
-                cancellationToken: cancellationToken);
-            if (orgConfig != null)
-            {
-                return orgConfig;
-            }
+            return personalConfig;
         }
-        else if (child.Scope == ProfileScope.Personal)
-        {
-            var personalConfig = await repo.FirstOrDefaultAsync(
-                c => c.Scope == TokenQuotaScope.Personal && c.UserId == child.OwnerUserId,
-                cancellationToken: cancellationToken);
-            if (personalConfig != null)
-            {
-                return personalConfig;
-            }
-        }
-        // Any other/malformed case (e.g. Scope == Organization with a null OrganizationId, which
-        // violates the data invariant) intentionally falls through to the System-scope lookup below
-        // instead of silently resolving against the owner's unrelated Personal config.
 
         return await repo.FirstOrDefaultAsync(
             c => c.Scope == TokenQuotaScope.System, cancellationToken: cancellationToken);
@@ -362,7 +321,6 @@ public class TokenQuotaService : ITokenQuotaService
     {
         Id = config.Id,
         Scope = config.Scope.ToString(),
-        OrganizationId = config.OrganizationId,
         ChildProfileId = config.ChildProfileId,
         UserId = config.UserId,
         QuotaLimit = config.QuotaLimit,

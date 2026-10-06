@@ -154,7 +154,6 @@ public class DataRequestService : IDataRequestService
 
         await RevokeSupervisionRelationshipsAsync(childProfileId, adminUserId, cancellationToken);
         await CancelAssignmentsAsync(childProfileId, adminUserId, cancellationToken);
-        await RevokeSharedStoriesAsync(childProfileId, cancellationToken);
 
         child.Nickname = AnonymizedNicknamePlaceholder;
         child.DateOfBirth = null;
@@ -209,33 +208,6 @@ public class DataRequestService : IDataRequestService
         }
     }
 
-    private async Task RevokeSharedStoriesAsync(int childProfileId, CancellationToken cancellationToken)
-    {
-        var stories = await _unitOfWork.Repository<Story>().FindAsync(
-            item => item.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
-        var storyIds = stories.Select(item => item.Id).ToList();
-        if (storyIds.Count == 0)
-        {
-            return;
-        }
-
-        var sharedStories = await _unitOfWork.Repository<SharedStory>().FindAsync(
-            item => storyIds.Contains(item.StoryId), cancellationToken: cancellationToken);
-        var sharedStoryIds = sharedStories.Select(item => item.Id).ToList();
-        if (sharedStoryIds.Count == 0)
-        {
-            return;
-        }
-
-        var sharedRecipients = await _unitOfWork.Repository<SharedStoryRecipient>().FindAsync(
-            item => sharedStoryIds.Contains(item.SharedStoryId), cancellationToken: cancellationToken);
-        foreach (var recipient in sharedRecipients.Where(item => item.Status != RecipientStatus.Revoked))
-        {
-            recipient.Status = RecipientStatus.Revoked;
-            _unitOfWork.Repository<SharedStoryRecipient>().Update(recipient);
-        }
-    }
-
     private async Task<IReadOnlyList<ExportSheet>> GatherExportSheetsAsync(
         int childProfileId, CancellationToken cancellationToken)
     {
@@ -258,11 +230,6 @@ public class DataRequestService : IDataRequestService
             item => item.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
         var vocabulary = await _unitOfWork.Repository<VocabularyNotebookEntry>().FindAsync(
             item => item.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
-        var assignmentRecipients = await _unitOfWork.Repository<AssignmentRecipient>().FindAsync(
-            item => item.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
-        var assignmentRecipientIds = assignmentRecipients.Select(item => item.Id).ToList();
-        var o2oAssessments = await _unitOfWork.Repository<O2OAssessment>().FindAsync(
-            item => assignmentRecipientIds.Contains(item.AssignmentRecipientId), cancellationToken: cancellationToken);
         var interventionCases = await _unitOfWork.Repository<InterventionCase>().FindAsync(
             item => item.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
         var recommendations = await _unitOfWork.Repository<Recommendation>().FindAsync(
@@ -279,7 +246,6 @@ public class DataRequestService : IDataRequestService
             ToSheet("achievements", achievements),
             ToSheet("badges", badges),
             ToSheet("vocabulary_notebook_entries", vocabulary),
-            ToSheet("o2o_assessments", o2oAssessments),
             ToSheet("intervention_cases", interventionCases),
             ToSheet("recommendations", recommendations)
         };

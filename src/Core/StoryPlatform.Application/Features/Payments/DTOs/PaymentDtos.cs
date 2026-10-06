@@ -6,7 +6,6 @@ public class SubscriptionPlanDto
 {
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
-    public string ApplicableScope { get; set; } = string.Empty;
     public int PriceVnd { get; set; }
     public int QuotaAmount { get; set; }
 }
@@ -14,7 +13,6 @@ public class SubscriptionPlanDto
 public class CreatePaymentTransactionRequestDto
 {
     public int PlanId { get; set; }
-    public int? OrganizationId { get; set; }
 }
 
 public class PaymentTransactionDto

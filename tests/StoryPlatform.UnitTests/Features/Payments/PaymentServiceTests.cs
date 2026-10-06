@@ -20,7 +20,6 @@ public class PaymentServiceTests
     private readonly Mock<IGenericRepository<SubscriptionPlan>> _planRepository = new();
     private readonly Mock<IGenericRepository<PaymentTransaction>> _transactionRepository = new();
     private readonly Mock<IGenericRepository<UserAccount>> _userRepository = new();
-    private readonly Mock<IGenericRepository<OrganizationMembership>> _membershipRepository = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IAuditLogWriter> _auditLogWriter = new();
     private readonly Mock<INotificationService> _notificationService = new();
@@ -34,7 +33,6 @@ public class PaymentServiceTests
         _unitOfWork.Setup(work => work.Repository<SubscriptionPlan>()).Returns(_planRepository.Object);
         _unitOfWork.Setup(work => work.Repository<PaymentTransaction>()).Returns(_transactionRepository.Object);
         _unitOfWork.Setup(work => work.Repository<UserAccount>()).Returns(_userRepository.Object);
-        _unitOfWork.Setup(work => work.Repository<OrganizationMembership>()).Returns(_membershipRepository.Object);
 
         _notificationService
             .Setup(service => service.CreateAsync(
@@ -49,11 +47,10 @@ public class PaymentServiceTests
             _qrUrlBuilder.Object, _webhookAuthenticator.Object, _tokenQuotaService.Object);
     }
 
-    private static SubscriptionPlan MakePlan(int id, ProfileScope scope, int price, bool isActive = true) => new()
+    private static SubscriptionPlan MakePlan(int id, int price, bool isActive = true) => new()
     {
         Id = id,
-        Name = scope == ProfileScope.Personal ? "Personal" : "Organization",
-        ApplicableScope = scope,
+        Name = "Personal",
         PriceVnd = price,
         QuotaAmount = 50,
         IsActive = isActive
@@ -66,7 +63,7 @@ public class PaymentServiceTests
     [Fact]
     public async Task ListActivePlansAsync_ReturnsOnlyActivePlans()
     {
-        var plans = new[] { MakePlan(1, ProfileScope.Personal, 49000), MakePlan(2, ProfileScope.Organization, 99000, isActive: false) };
+        var plans = new[] { MakePlan(1, 49000), MakePlan(2, 99000, isActive: false) };
         _planRepository.Setup(repo => repo.FindAsync(
                 It.IsAny<Expression<Func<SubscriptionPlan, bool>>>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync((Expression<Func<SubscriptionPlan, bool>> predicate, string? _, CancellationToken _) =>
@@ -93,7 +90,7 @@ public class PaymentServiceTests
     public async Task CreateTransactionAsync_PlanInactive_ThrowsBadRequest()
     {
         _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakePlan(1, ProfileScope.Personal, 49000, isActive: false));
+            .ReturnsAsync(MakePlan(1, 49000, isActive: false));
 
         await Assert.ThrowsAsync<BadRequestException>(() => _sut.CreateTransactionAsync(
             1, new CreatePaymentTransactionRequestDto { PlanId = 1 }));
@@ -103,7 +100,7 @@ public class PaymentServiceTests
     public async Task CreateTransactionAsync_PersonalScope_NonParentPayer_ThrowsForbidden()
     {
         _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakePlan(1, ProfileScope.Personal, 49000));
+            .ReturnsAsync(MakePlan(1, 49000));
         _userRepository.Setup(repo => repo.GetByIdAsync(10, It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakeUser(10, UserRole.Teacher));
 
@@ -112,45 +109,10 @@ public class PaymentServiceTests
     }
 
     [Fact]
-    public async Task CreateTransactionAsync_PersonalScope_WithOrganizationId_ThrowsBadRequest()
-    {
-        _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakePlan(1, ProfileScope.Personal, 49000));
-        _userRepository.Setup(repo => repo.GetByIdAsync(10, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakeUser(10, UserRole.Parent));
-
-        await Assert.ThrowsAsync<BadRequestException>(() => _sut.CreateTransactionAsync(
-            10, new CreatePaymentTransactionRequestDto { PlanId = 1, OrganizationId = 5 }));
-    }
-
-    [Fact]
-    public async Task CreateTransactionAsync_OrganizationScope_MissingOrganizationId_ThrowsBadRequest()
-    {
-        _planRepository.Setup(repo => repo.GetByIdAsync(2, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakePlan(2, ProfileScope.Organization, 99000));
-
-        await Assert.ThrowsAsync<BadRequestException>(() => _sut.CreateTransactionAsync(
-            10, new CreatePaymentTransactionRequestDto { PlanId = 2, OrganizationId = null }));
-    }
-
-    [Fact]
-    public async Task CreateTransactionAsync_OrganizationScope_NotSchoolAdminOfOrg_ThrowsForbidden()
-    {
-        _planRepository.Setup(repo => repo.GetByIdAsync(2, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakePlan(2, ProfileScope.Organization, 99000));
-        _membershipRepository.Setup(repo => repo.ExistsAsync(
-                It.IsAny<Expression<Func<OrganizationMembership, bool>>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
-
-        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.CreateTransactionAsync(
-            10, new CreatePaymentTransactionRequestDto { PlanId = 2, OrganizationId = 5 }));
-    }
-
-    [Fact]
     public async Task CreateTransactionAsync_DuplicatePending_ThrowsConflict()
     {
         _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakePlan(1, ProfileScope.Personal, 49000));
+            .ReturnsAsync(MakePlan(1, 49000));
         _userRepository.Setup(repo => repo.GetByIdAsync(10, It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakeUser(10, UserRole.Parent));
         _transactionRepository.Setup(repo => repo.ExistsAsync(
@@ -165,7 +127,7 @@ public class PaymentServiceTests
     public async Task CreateTransactionAsync_ValidPersonal_CreatesPendingTransactionWithQr()
     {
         _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakePlan(1, ProfileScope.Personal, 49000));
+            .ReturnsAsync(MakePlan(1, 49000));
         _userRepository.Setup(repo => repo.GetByIdAsync(10, It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakeUser(10, UserRole.Parent));
         _transactionRepository.Setup(repo => repo.ExistsAsync(
@@ -183,7 +145,6 @@ public class PaymentServiceTests
         Assert.NotNull(added);
         Assert.Equal(1, added!.PlanId);
         Assert.Equal(10, added.PayerUserId);
-        Assert.Null(added.OrganizationId);
         Assert.Equal(49000, added.Amount);
         Assert.Equal(PaymentStatus.Pending, added.Status);
         Assert.NotEmpty(added.TransactionCode);
@@ -191,28 +152,6 @@ public class PaymentServiceTests
         Assert.Equal("https://qr.sepay.vn/img?fake=1", added.QrCodeUrl);
         Assert.Equal("https://qr.sepay.vn/img?fake=1", result.QrCodeUrl);
         Assert.Equal("Pending", result.Status);
-    }
-
-    [Fact]
-    public async Task CreateTransactionAsync_ValidOrganization_SetsOrganizationId()
-    {
-        _planRepository.Setup(repo => repo.GetByIdAsync(2, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakePlan(2, ProfileScope.Organization, 99000));
-        _membershipRepository.Setup(repo => repo.ExistsAsync(
-                It.IsAny<Expression<Func<OrganizationMembership, bool>>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-        _transactionRepository.Setup(repo => repo.ExistsAsync(
-                It.IsAny<Expression<Func<PaymentTransaction, bool>>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
-
-        PaymentTransaction? added = null;
-        _transactionRepository.Setup(repo => repo.AddAsync(It.IsAny<PaymentTransaction>(), It.IsAny<CancellationToken>()))
-            .Callback<PaymentTransaction, CancellationToken>((entity, _) => added = entity)
-            .ReturnsAsync((PaymentTransaction entity, CancellationToken _) => entity);
-
-        await _sut.CreateTransactionAsync(10, new CreatePaymentTransactionRequestDto { PlanId = 2, OrganizationId = 5 });
-
-        Assert.Equal(5, added!.OrganizationId);
     }
 
     // ---------- HandleWebhookAsync ----------
@@ -264,7 +203,7 @@ public class PaymentServiceTests
                 It.IsAny<Expression<Func<PaymentTransaction, bool>>>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { transaction });
         _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakePlan(1, ProfileScope.Personal, 49000));
+            .ReturnsAsync(MakePlan(1, 49000));
 
         await _sut.HandleWebhookAsync("valid", new SePayWebhookPayloadDto
         {
@@ -280,7 +219,7 @@ public class PaymentServiceTests
             transaction.PayerUserId, NotificationType.PaymentConfirmed, It.IsAny<string?>(), It.IsAny<CancellationToken>()),
             Times.Once);
         _tokenQuotaService.Verify(q => q.CreditAsync(
-            ProfileScope.Personal, transaction.PayerUserId, null, 50, It.IsAny<CancellationToken>()),
+            transaction.PayerUserId, 50, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -364,11 +303,10 @@ public class PaymentServiceTests
     public async Task MarkPaidManuallyAsync_Valid_SetsPaidWritesAuditAndNotifies()
     {
         var transaction = MakeTransaction(1, "M3", 49000, PaymentStatus.MismatchAmount);
-        transaction.OrganizationId = 5;
         _transactionRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(transaction);
         _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakePlan(1, ProfileScope.Organization, 99000));
+            .ReturnsAsync(MakePlan(1, 49000));
 
         var result = await _sut.MarkPaidManuallyAsync(99, 1);
 
@@ -382,15 +320,15 @@ public class PaymentServiceTests
             transaction.PayerUserId, NotificationType.PaymentConfirmed, It.IsAny<string?>(), It.IsAny<CancellationToken>()),
             Times.Once);
         _tokenQuotaService.Verify(q => q.CreditAsync(
-            ProfileScope.Organization, transaction.PayerUserId, 5, 50, It.IsAny<CancellationToken>()),
+            transaction.PayerUserId, 50, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
     [Fact]
     public async Task HandleWebhookAsync_AmountMatches_CreditAsyncThrows_StaysPaidAndWritesAuditLog()
     {
-        // Regression test: a CreditAsync failure (e.g. BadRequestException on missing
-        // OrganizationId, or any transient error) must not be silently lost. The transaction is
+        // Regression test: a CreditAsync failure (e.g. a transient error)
+        // must not be silently lost. The transaction is
         // already committed as Paid before CreditAsync runs (SePay will not retry a transaction it
         // already saw succeed), so the failure must be recorded via audit log instead of thrown.
         var transaction = MakeTransaction(1, "SEPAYFAIL01", 49000);
@@ -398,11 +336,11 @@ public class PaymentServiceTests
                 It.IsAny<Expression<Func<PaymentTransaction, bool>>>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { transaction });
         _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakePlan(1, ProfileScope.Personal, 49000));
+            .ReturnsAsync(MakePlan(1, 49000));
         _tokenQuotaService
             .Setup(q => q.CreditAsync(
-                It.IsAny<ProfileScope>(), It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new BadRequestException("OrganizationId là bắt buộc."));
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new BadRequestException("Lỗi cộng quota."));
 
         await _sut.HandleWebhookAsync("valid", new SePayWebhookPayloadDto
         {
@@ -440,7 +378,7 @@ public class PaymentServiceTests
 
         Assert.Equal(PaymentStatus.Paid, transaction.Status);
         _tokenQuotaService.Verify(q => q.CreditAsync(
-            It.IsAny<ProfileScope>(), It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Never);
         _auditLogWriter.Verify(writer => writer.LogAsync(
             null, "PaymentCreditFailed", nameof(PaymentTransaction), transaction.Id,
@@ -458,10 +396,10 @@ public class PaymentServiceTests
         _transactionRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(transaction);
         _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakePlan(1, ProfileScope.Personal, 49000));
+            .ReturnsAsync(MakePlan(1, 49000));
         _tokenQuotaService
             .Setup(q => q.CreditAsync(
-                It.IsAny<ProfileScope>(), It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new BadRequestException("boom"));
 
         var result = await _sut.MarkPaidManuallyAsync(99, 1);
@@ -488,7 +426,7 @@ public class PaymentServiceTests
         Assert.Equal(PaymentStatus.Paid, transaction.Status);
         Assert.Equal(string.Empty, result.PlanName);
         _tokenQuotaService.Verify(q => q.CreditAsync(
-            It.IsAny<ProfileScope>(), It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Never);
         _auditLogWriter.Verify(writer => writer.LogAsync(
             99, "PaymentCreditFailed", nameof(PaymentTransaction), transaction.Id,
@@ -509,7 +447,7 @@ public class PaymentServiceTests
         });
 
         _tokenQuotaService.Verify(q => q.CreditAsync(
-            It.IsAny<ProfileScope>(), It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
+            It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 }

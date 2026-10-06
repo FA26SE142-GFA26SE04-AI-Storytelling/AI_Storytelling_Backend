@@ -408,8 +408,7 @@ public sealed class Phase1To4SequentialWorkflowTests
             Nickname = "Mây",
             AgeBand = AgeBand.Age_6_8,
             Language = "vi",
-            Status = ChildProfileStatus.Active,
-            Scope = ProfileScope.Personal
+            Status = ChildProfileStatus.Active
         });
         store.Seed(new LearningProfile { Id = 1, ChildProfileId = 1, ReadingLevel = 2 });
         store.Seed(new SafetyPolicy

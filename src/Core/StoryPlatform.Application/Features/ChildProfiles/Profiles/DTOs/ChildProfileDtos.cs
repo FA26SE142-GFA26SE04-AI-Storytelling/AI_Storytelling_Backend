@@ -13,8 +13,6 @@ public class ChildProfileDto
     public string AgeBand { get; set; } = string.Empty;
     public string Language { get; set; } = "vi";
     public string Status { get; set; } = string.Empty;
-    public string Scope { get; set; } = string.Empty;
-    public int? OrganizationId { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 
@@ -30,15 +28,6 @@ public class CreateChildProfileRequestDto
 
     [StringLength(10, ErrorMessage = "Mã ngôn ngữ tối đa 10 ký tự.")]
     public string Language { get; set; } = "vi";
-
-    [JsonConverter(typeof(JsonStringEnumConverter))]
-    public ProfileScope Scope { get; set; } = ProfileScope.Personal;
-
-    /// <summary>Bắt buộc khi Scope = Organization; phải để trống khi Scope = Personal.</summary>
-    public int? OrganizationId { get; set; }
-
-    /// <summary>Bắt buộc khi Scope = Organization; phải để trống khi Scope = Personal.</summary>
-    public int? ClassGroupId { get; set; }
 }
 
 public class UpdateChildProfileRequestDto

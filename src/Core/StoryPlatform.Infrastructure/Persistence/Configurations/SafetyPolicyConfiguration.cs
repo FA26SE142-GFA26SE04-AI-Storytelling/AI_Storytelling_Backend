@@ -32,6 +32,11 @@ public class SafetyPolicyConfiguration : IEntityTypeConfiguration<SafetyPolicy>
             .HasForeignKey(x => x.ChildProfileId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(x => x.ConsentedByUser)
+            .WithMany()
+            .HasForeignKey(x => x.ConsentedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.HasIndex(x => x.ChildProfileId)
             .IsUnique();
 

@@ -3,7 +3,6 @@ namespace StoryPlatform.Application.Features.Administration.DTOs;
 public class GrantAdministratorRequestDto
 {
     public string Email { get; set; } = string.Empty;
-    public bool ConfirmSchoolAdminConflict { get; set; } = false;
 }
 
 public class AdministratorAccountDto

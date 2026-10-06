@@ -4,7 +4,6 @@ using StoryPlatform.Domain.Entities;
 
 namespace StoryPlatform.Infrastructure.Persistence.Configurations;
 
-// TODO: CHECK constraint — DBML note: class_group_id and child_profile_id must be mutually exclusive; requires raw SQL migration.
 public class AssignmentConfiguration : IEntityTypeConfiguration<Assignment>
 {
     public void Configure(EntityTypeBuilder<Assignment> builder)
@@ -26,11 +25,6 @@ public class AssignmentConfiguration : IEntityTypeConfiguration<Assignment>
         builder.HasOne(x => x.AssignedByUser)
             .WithMany()
             .HasForeignKey(x => x.AssignedByUserId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        builder.HasOne(x => x.ClassGroup)
-            .WithMany()
-            .HasForeignKey(x => x.ClassGroupId)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne(x => x.ChildProfile)

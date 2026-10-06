@@ -12,8 +12,6 @@ public class Assignment : BaseEntity
     public int AssignedByUserId { get; set; }
     public virtual UserAccount? AssignedByUser { get; set; }
 
-    public int? ClassGroupId { get; set; }
-    public virtual ClassGroup? ClassGroup { get; set; }
 
     public int? ChildProfileId { get; set; }
     public virtual ChildProfile? ChildProfile { get; set; }

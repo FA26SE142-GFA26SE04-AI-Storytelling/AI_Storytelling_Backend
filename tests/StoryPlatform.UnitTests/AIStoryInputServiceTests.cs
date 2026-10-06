@@ -153,12 +153,9 @@ public sealed class AIStoryInputServiceTests
     }
 
     [Fact]
-    public async Task Organization_context_uses_the_more_restrictive_policy()
+    public async Task Context_uses_only_the_child_safety_policy()
     {
         var unitOfWork = CreateEligibleUnitOfWork();
-        var child = unitOfWork.Items<ChildProfile>().Single();
-        child.Scope = ProfileScope.Organization;
-        child.OrganizationId = 10;
         unitOfWork.Items<SafetyPolicy>().Single().RequiredApprovalMode = ApprovalMode.AutoPublishOnThreshold;
         var category = new ContentCategory { Id = 3, Code = "violence", DisplayName = "Bạo lực", IsActive = true };
         unitOfWork.Seed(category);
@@ -168,29 +165,13 @@ public sealed class AIStoryInputServiceTests
             SafetyPolicyId = 1,
             ContentCategoryId = 3,
             ContentCategory = category,
-            Rule = PolicyRule.Allowed
-        });
-        unitOfWork.Seed(new OrgSafetyPolicyTemplate
-        {
-            Id = 1,
-            OrganizationId = 10,
-            MaxStoryLengthBaseline = 600,
-            RequiredApprovalModeDefault = ApprovalMode.AlwaysManual
-        });
-        unitOfWork.Seed(new OrgSafetyPolicyCategory
-        {
-            Id = 1,
-            OrgSafetyPolicyTemplateId = 1,
-            ContentCategoryId = 3,
-            ContentCategory = category,
             Rule = PolicyRule.Blocked
         });
         var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
 
         var context = await service.GetContextAsync(1, 1);
 
-        Assert.Equal(600, context.MaximumLength);
-        Assert.Equal("always_manual", context.RequiredApprovalMode);
+        Assert.Equal(unitOfWork.Items<SafetyPolicy>().Single().MaxStoryLength, context.MaximumLength);
         Assert.Contains("violence", context.BlockedCategoryCodes);
         Assert.DoesNotContain("violence", context.AllowedCategoryCodes);
     }
@@ -368,8 +349,7 @@ public sealed class AIStoryInputServiceTests
             Nickname = "Mây",
             AgeBand = AgeBand.Age_6_8,
             Language = "vi",
-            Status = ChildProfileStatus.Active,
-            Scope = ProfileScope.Personal
+            Status = ChildProfileStatus.Active
         });
         unitOfWork.Seed(new LearningProfile { Id = 1, ChildProfileId = 1, ReadingLevel = 2 });
         unitOfWork.Seed(new SafetyPolicy

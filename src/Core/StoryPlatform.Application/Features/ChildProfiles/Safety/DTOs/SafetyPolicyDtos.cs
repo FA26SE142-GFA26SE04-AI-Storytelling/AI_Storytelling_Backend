@@ -14,6 +14,7 @@ public class SafetyPolicyDto
     public bool ConsentRecorded { get; set; }
     public DateTime? ConsentRecordedAt { get; set; }
     public int ConsentPolicyVersion { get; set; }
+    public int? ConsentedByUserId { get; set; }
     public decimal? SafetyScoreThreshold { get; set; }
     public decimal? ReadabilityScoreThreshold { get; set; }
     public decimal ComprehensionThresholdPercent { get; set; }
@@ -38,9 +39,6 @@ public class SetSafetyPolicyRequestDto
     public bool ParentalGateEnabled { get; set; } = true;
 
     public bool ConsentRecorded { get; set; }
-
-    [Range(1, int.MaxValue, ErrorMessage = "Consent policy version phải lớn hơn 0.")]
-    public int ConsentPolicyVersion { get; set; } = 1;
 
     [Range(typeof(decimal), "0", "100", ErrorMessage = "Ngưỡng safety phải nằm trong khoảng 0 đến 100.")]
     public decimal? SafetyScoreThreshold { get; set; }

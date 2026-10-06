@@ -17,11 +17,6 @@ public class TokenQuotaConfigConfiguration : IEntityTypeConfiguration<TokenQuota
             .HasMaxLength(20)
             .IsRequired();
 
-        builder.HasOne(x => x.Organization)
-            .WithMany()
-            .HasForeignKey(x => x.OrganizationId)
-            .OnDelete(DeleteBehavior.Restrict);
-
         builder.HasOne(x => x.ChildProfile)
             .WithMany()
             .HasForeignKey(x => x.ChildProfileId)

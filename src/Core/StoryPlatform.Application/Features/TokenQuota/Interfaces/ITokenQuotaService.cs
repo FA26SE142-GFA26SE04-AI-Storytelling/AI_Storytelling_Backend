@@ -1,5 +1,4 @@
 using StoryPlatform.Application.Features.TokenQuota.DTOs;
-using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.TokenQuota.Interfaces;
 
@@ -18,6 +17,5 @@ public interface ITokenQuotaService
     Task IncrementUsageAsync(int childProfileId, CancellationToken cancellationToken = default);
 
     Task CreditAsync(
-        ProfileScope planScope, int payerUserId, int? organizationId, int quotaAmount,
-        CancellationToken cancellationToken = default);
+        int payerUserId, int quotaAmount, CancellationToken cancellationToken = default);
 }

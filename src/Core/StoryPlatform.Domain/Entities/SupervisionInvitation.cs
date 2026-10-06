@@ -21,4 +21,8 @@ public class SupervisionInvitation : BaseEntity
     public DateTime? ExpiresAt { get; set; }
     public DateTime? UsedAt { get; set; }
     public DateTime? RespondedAt { get; set; }
+    public string? OtpHash { get; set; }
+    public DateTime? OtpExpiresAt { get; set; }
+    public int OtpFailedAttempts { get; set; } = 0;
+    public DateTime? OtpVerifiedAt { get; set; }
 }

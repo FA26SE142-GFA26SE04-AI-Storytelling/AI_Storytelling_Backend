@@ -1,0 +1,2299 @@
+Project ai_storytelling_platform {
+  database_type: 'PostgreSQL'
+  Note: '''
+    Database Schema hoàn thiện cho AI Storytelling Platform for Children.
+    Bám sát Workflow_AI_Storytelling_v8 (6 luồng nghiệp vụ khép kín) + Luồng 7 (MỚI v9.3):
+    - Luồng 1: Profile & Supervision Setup
+    - Luồng 2: Guided AI Story Generation Pipeline
+    - Luồng 3: Child Reading Experience & Telemetry
+    - Luồng 4: Content Distribution, O2O Assessment & Intervention
+    - Luồng 5: Administrator Portal, AI Governance & Reporting
+    - Luồng 6: Adaptive Learning Analysis & Recommendation
+    - Luồng 7: Organization & School Admin Management (MỚI v9.3)
+    CẬP NHẬT 24/09/2026: đối chiếu đủ 63 entity cụ thể với EF Core;
+    bổ sung child_sessions để lưu phiên đăng nhập của Trẻ qua PIN/
+    EasyLogin QR, phục vụ idle-timeout 20 phút; bổ sung các trường
+    EasyLogin còn thiếu trong child_access_credentials.
+    CẬP NHẬT 22/09/2026: đối chiếu 62 entity cụ thể với EF Core; thêm
+    story_segments, các trường mở rộng của media_assets và các cột kế
+    thừa BaseEntity. Script DBML này mô tả mô hình; tên cột/giá trị enum
+    vật lý trong PostgreSQL do EF Core mapping và migration quyết định.
+    CẬP NHẬT 17/09/2026: đồng bộ đủ 61 bảng; bổ sung permission request,
+    ownership transfer hai chiều, story generation input request/job,
+    story_scenes, media_contexts, personal token quota và notification types.
+    Đã vá lỗi định danh O2O, xung đột trạng thái bài tập lớp học,
+    bổ sung tiến độ đọc nhanh (Bookmarks/Favorites) và Cây tri thức lớp.
+    CẢI THIỆN v9: Chuẩn hóa content category (safety_policy_categories)
+    qua bảng content_categories, thay cho varchar tự do.
+    CẢI THIỆN v9.1:
+    (A) assignments cần CHECK constraint loại trừ lẫn nhau giữa
+        class_group_id và child_profile_id (xem Note tại bảng assignments —
+        DBML không hỗ trợ CHECK constraint trực tiếp, phải thêm bằng SQL migration).
+    (B) reading_sessions nay tham chiếu assignment_recipients thay vì
+        assignments trực tiếp — assignment_recipients luôn được tạo (kể cả
+        khi assignment giao cho cá nhân), trở thành nguồn sự thật duy nhất
+        cho "trải nghiệm làm bài của 1 trẻ".
+    (C) stories.safety_tags (varchar tự do) được thay bằng bảng nối
+        story_categories tham chiếu content_categories, đồng bộ chuẩn hóa
+        với safety_policy_categories để Guardrail so khớp chính xác.
+    (D) learning_profile_topics.relation đổi từ varchar sang enum
+        topic_relation_enum (chỉ 2 giá trị cố định).
+    (E) shared_stories thêm unique index (story_id, class_group_id)
+        tránh tạo trùng bản ghi share.
+    (F) class_groups thêm status (active/archived) — cho phép ngừng dùng
+        1 lớp mà không hard-delete, giữ nguyên lịch sử liên quan.
+    (G) supervision_relationships thêm revoked_at — cho phép thu hồi
+        quyền giám sát mà không hard-delete, giữ audit trail phân quyền.
+        recipient_status_enum (shared_story_recipients) thêm giá trị
+        'revoked' — cho phép phụ huynh thu hồi đồng ý đã chấp nhận trước đó.
+    CẢI THIỆN v9.2:
+    (H) supervision_relationships thêm revoked_by_user_id — trước đây có
+        revoked_at nhưng không biết AI đã thu hồi, vi phạm chính nguyên
+        tắc Auditability của toàn hệ thống.
+    (P) recommendation_reviews thêm is_final + had_final_authority —
+        giải quyết câu hỏi "kiểm tra quyền TẠI THỜI ĐIỂM nào" khi Owner
+        đổi supervision_permissions của Teacher giữa lúc Teacher review
+        (chưa có quyền) và lúc Owner tự áp dụng thay đổi (có quyền).
+        had_final_authority là snapshot bất biến tại thời điểm review,
+        KHÔNG tính lại mỗi lần đọc.
+    CẢI THIỆN v9.3 (MỚI — Luồng 7, Organization & School Admin Management):
+    (I) 4 bảng mới: organizations, organization_memberships,
+        org_consent_records, org_safety_policy_templates (+ bảng con
+        org_safety_policy_categories) — hỗ trợ mô hình multi-tenant SaaS
+        cho trường học, song song với mô hình personal hiện có.
+    (J) child_profiles thêm scope (personal/organization, default
+        personal) + organization_id (NULLABLE, NOT NULL khi
+        scope=organization) — một ChildProfile chỉ thuộc TỐI ĐA 1
+        Organization tại một thời điểm (BR-7.8).
+    (K) class_groups thêm organization_id (NULLABLE) — 1 Class có thể
+        thuần Personal (VD: gia sư riêng) hoặc thuộc 1 Organization.
+    (L) organizations thêm created_by_user_id (NOT NULL, phải trỏ user
+        có role=teacher) — giải quyết bootstrap "con gà quả trứng": ai
+        tạo ra School Admin đầu tiên khi Organization vừa được tạo.
+        Thêm suspended_by_admin_id/suspended_at/suspension_reason —
+        audit trail cho hành động Suspend (BR-7.7).
+    (M) organization_memberships: UNIQUE(organization_id, user_id) —
+        1 người = 1 dòng membership mỗi Organization. [SỬA LẠI so với
+        thiết kế trước đó: KHÔNG cần org_role trong khóa unique nữa —
+        xem mục (R) bên dưới, phân cấp chi tiết đã chuyển sang bảng
+        organization_permissions riêng thay vì cần nhiều dòng org_role.]
+    (N) org_consent_records thêm revoked_at — theo ĐÚNG pattern audit
+        trail đã có ở supervision_relationships: đổi ý (Accepted <->
+        Rejected) hoặc un-enroll (Luồng 7, Bước 7.3c) đều đóng dòng cũ
+        bằng revoked_at=now() thay vì ghi đè status hoặc chỉ "giữ nguyên
+        không xóa". Cần thêm CHECK/partial unique index ở tầng migration
+        (DBML không hỗ trợ trực tiếp, xem Note tại bảng):
+          UNIQUE (child_profile_id, organization_id) WHERE revoked_at IS NULL
+        — đảm bảo luôn chỉ có ĐÚNG 1 dòng hiệu lực mỗi lần, kể cả khi
+        trẻ rời rồi quay lại đúng Organization đó nhiều lần.
+    (O) supervision_invitations thêm invitation_code (unique),
+        expires_at, used_at — thay cơ chế mời thuần qua email (không
+        khớp thói quen phụ huynh VN) bằng invitation_code ngẫu nhiên,
+        dùng 1 lần, gắn cứng 1 child_profile_id, phân phát qua kênh tự
+        chọn (Zalo/SMS/in giấy...). invitee_email đổi thành NULLABLE vì
+        không còn bắt buộc phải có trước khi tạo lời mời.
+    (Q) org_verification_enum thêm giá trị pending_reverification (Bước
+        7.1c, MỚI — School Admin tự quản lý thông tin Organization). Trước
+        đây KHÔNG có bước nào cho School Admin tự sửa name/address/
+        contact_email của Organization sau khi đăng ký. Tách 2 cấp: sửa
+        contact_email tự do; sửa name/address (định danh pháp lý) yêu cầu
+        Administrator duyệt lại nhưng KHÔNG đóng băng hoạt động hiện có
+        (áp dụng BR-7.7, không áp dụng BR-7.6 như tổ chức mới toanh).
+    (R) Bảng org_permission_enum + organization_permissions (MỚI —
+        Bước 7.2c, SỬA LẠI thành thiết kế 3 cấp): trước đây org_role chỉ
+        có 3 giá trị thô (teacher/school_admin/lead_teacher), không có
+        cách nào School Admin tùy chỉnh TỪNG Teacher cụ thể được làm gì.
+        Thêm bảng permission riêng, mô phỏng đúng cơ chế
+        supervision_permissions ở Luồng 1 — nhưng CHỈ áp dụng cho
+        org_role='teacher'. School Admin KHÔNG lưu dòng permission nào —
+        quyền luôn ngầm định qua code (org_role='school_admin' -> full
+        access), tránh 1 School Admin vô tình tự khóa quyền School Admin
+        khác. Thiết kế theo 3 cấp: Cấp 0 (baseline, tự động khi Accept),
+        Cấp 1 (nâng cao, School Admin cấp thủ công — thay thế hoàn toàn
+        nhu cầu lead_teacher), Cấp 2 (School Admin, ngầm định). Kèm rào
+        chắn bắt buộc: luôn phải còn ít nhất 1 School Admin active mỗi
+        Organization (đối xứng BR-1.9). HỆ QUẢ: org_role_enum RÚT GỌN
+        còn 2 giá trị (teacher/school_admin). Đồng thời Bước 7.4
+        (Dashboard) bổ sung View 1 — Org Management (danh sách
+        Teacher/Class + thống kê tổng), tách biệt với View 2 — Student
+        Data (vốn đã có, theo OrgConsentRecord).
+    Điểm đã kiểm tra và XÁC NHẬN KHÔNG CẦN THÊM CỘT:
+    - intervention_cases.trigger_type đã có sẵn giá trị recommended_by_ai
+      — khớp hoàn hảo với Recommendation category=learning_intervention
+      (Luồng 6, Bước 6.7 Nhánh C) khi đề xuất Hold Mode được duyệt.
+    - recommendation_status_enum đã có sẵn 'applied' — đủ dùng cho
+      Nhánh B (Advisory-only, category=content_personalization).
+
+    CẢI THIỆN v9.4 (MỚI — kết quả rà soát toàn bộ 7 tài liệu workflow):
+    (S) 2 bảng MỚI dùng chung toàn hệ thống: notifications (Luồng 1,
+        Mục 7b) — mọi điểm "hệ thống gửi thông báo" trong 7 luồng PHẢI
+        tạo 1 dòng ở đây, không được là hành vi ngầm không lưu vết; và
+        child_access_credentials (Luồng 1, Bước 1.10) — cho phép Trẻ tự
+        vào giao diện đọc độc lập (avatar + PIN) mà không cần UserAccount
+        riêng, tách biệt phiên đăng nhập của Supervisor.
+    (T) user_accounts thêm role_before_admin — lưu role gốc trước khi
+        được Grant làm Administrator (Luồng 5, Bước 5.1b), phục vụ
+        Revoke đúng role mà không bị treo ở trạng thái không xác định.
+    (U) stories thêm child_visible_at — SLA hậu kiểm cho auto-publish
+        (Luồng 2, Bước 2.5): truyện auto-publish chỉ hiển thị cho Trẻ
+        sau approved_at + 2 giờ, cho Supervisor kịp hậu kiểm trước khi
+        Trẻ có thể đọc; truyện duyệt thủ công hiển thị ngay lập tức.
+    (V) reading_sessions thêm force_exit_requested_at — cơ chế ngắt an
+        toàn real-time (Luồng 2, Bước 2.5 giải pháp B5 & Luồng 3, Bước
+        3.2): khi Supervisor Archive truyện đang đọc vì safety_concern,
+        set cột này để buộc Trẻ thoát khỏi truyện trong tối đa ~15 giây
+        (client poll nhịp ngắn trong Immersive Mode) — vá lỗ hổng an
+        toàn trẻ em thực sự từng bị bỏ ngỏ.
+    (W) assignment_recipients thêm cancelled_by_user_id +
+        cancelled_at — Bước 4.1b (MỚI, đối xứng Bước 4.1): Teacher hủy
+        Assignment giao nhầm (status chuyển 'cancelled', giá trị đã có
+        sẵn trong assignment_status_enum nhưng chưa từng dùng tới).
+    (X) recommendations thêm expires_at — cơ chế timeout cho Awaiting
+        Review (Luồng 6, Bước 6.5): quá 14 ngày không ai review,
+        status tự động chuyển 'stale' (không xóa, giữ audit trail).
+    (Y) data_requests: ĐÃ CHỐT quyết định Anonymize/Hard Delete từng để
+        ngỏ ở v9.3 — thêm created_at (mốc bắt đầu tính SLA 72 giờ, trước
+        đây thiếu hoàn toàn), resolved_by_user_id (ai xử lý),
+        deletion_method (mặc định anonymize; hard_delete chỉ khi có căn
+        cứ pháp lý minh thị), legal_basis_note (bắt buộc khi
+        deletion_method=hard_delete). Anonymize giữ triết lý Auditability
+        xuyên suốt schema; Hard Delete là lối thoát có kiểm soát cho yêu
+        cầu pháp lý, không phải mặc định.
+    (Z) organizations thêm rejection_reason (Bước 7.1d, MỚI — nhánh
+        Reject khi Administrator từ chối đăng ký, cho phép Resubmit) và
+        reactivated_at/reactivated_by_admin_id (Bước 7.6, MỚI —
+        Suspend/Reactivate tường minh, trước đây chỉ suy ra từ BR-7.7)
+        và closure_requested_at/closed_at (Bước 7.7, MỚI — Đóng cửa
+        Organization theo mô hình 2 bước, tái dùng verification_status=
+        'suspended' làm trạng thái vĩnh viễn, phân biệt bằng closed_at).
+    (AA) org_verification_enum thêm 'rejected'; membership_status_enum
+        thêm 'rejected' (tách biệt với 'removed' — 'rejected' = chưa
+        từng active mà đã từ chối lời mời/đăng ký, 'removed' = từng
+        active rồi bị gỡ/tự rời qua Bước 7.2b Nhánh B Self-Exit MỚI);
+        recommendation_status_enum thêm 'stale' (xem mục X).
+
+    CẢI THIỆN v9.5 (MỚI — kết quả rà soát bảo mật xác thực + tính năng
+    Payment SePay, phiên rà soát tiếp theo sau v9.4):
+    (AB) user_accounts thêm token_version (tăng lên khi có thay đổi
+        quyền nhạy cảm — revoke supervision Bước 1.6b, Grant/Revoke
+        Admin Bước 5.1b, Remove/Demote Bước 7.2b/7.2d — mọi access
+        token JWT cũ mang version cũ bị middleware từ chối NGAY dù
+        chưa hết hạn), mfa_secret/mfa_enabled (Luồng 5, Mục 9 — bắt
+        buộc TOTP cho role=administrator), email_verification_token_hash/
+        email_verification_token_expires_at (Bước 1.1 — bắt buộc xác thực
+        email khi đăng ký cold-start, không qua invitation_code),
+        failed_login_attempts/locked_until (chống brute-force đăng
+        nhập Supervisor, đối xứng child_access_credentials). Bảng MỚI
+        refresh_tokens (Luồng 1, Mục 7c) — lưu trữ có thể thu hồi từng
+        phiên cụ thể (logout 1 thiết bị), độc lập với token_version
+        (vốn thu hồi TOÀN BỘ session cùng lúc).
+    (AC) safety_policies thêm comprehension_threshold_percent (✅ ĐÃ
+        CHỐT = 70) và comprehension_window_size (✅ ĐÃ CHỐT = 3 bài đọc
+        gần nhất) cho ngưỡng Hold Mode (Luồng 4, Bước 4.5); thêm
+        safety_score_threshold/readability_score_threshold (v9.2-I,
+        ngưỡng auto-publish, NULL mặc định = luôn cần duyệt thủ công);
+        thêm consent_policy_version (Luồng 1, Mục 9 — phục vụ re-consent
+        khi Điều khoản/Chính sách thay đổi sau này).
+    (AD) stories thêm archived_reason (v9.2-L — phân biệt
+        supervisor_preference/safety_concern khi Archive, quyết định có
+        ngắt phiên đọc real-time hay không).
+    (AE) media_assets thêm word_timings (v9.2-J — dữ liệu đồng bộ
+        TTS-Karaoke, Luồng 3 Bước 3.2; chỉ áp dụng type=tts_audio).
+    (AF) reading_sessions thêm story_version_id (v9.2-M — ghim đúng
+        phiên bản truyện tại thời điểm Bước 3.1 Trigger, tránh lệch nếu
+        Supervisor Edit/Regenerate giữa lúc trẻ đang đọc dở) và
+        child_access_credential_id/supervisor_session_id (Luồng 3, Bước
+        3.0 — biết Child Session đến từ lối vào nào, đúng 1 trong 2 cột
+        có giá trị, phục vụ audit).
+    (AG) ⚠ BREAKING CHANGE — o2o_assessments đổi từ cặp FK độc lập
+        (assignment_id, child_profile_id) sang DUY NHẤT
+        assignment_recipient_id (v9.2-N), nhất quán với cách
+        reading_sessions đã làm — trước đây không có ràng buộc nào đảm
+        bảo cặp (assignment_id, child_profile_id) khớp với 1 dòng
+        assignment_recipients thực sự tồn tại. Cần migration backfill
+        TRƯỚC KHI drop 2 cột cũ (xem Note tại bảng).
+    (AH) 3 bảng MỚI — Payment & Token Quota (Luồng 5, Bước 5.1c/5.6,
+        tính năng Thanh toán qua SePay): token_quota_configs (giới hạn
+        lượt sinh truyện theo cấp system/organization/child, Luồng 2
+        Bước 2.1 phải kiểm tra trước khi generate); subscription_plans
+        (✅ ĐÃ CHỐT 2 gói seed: Personal 49.000đ/+50 lượt, Organization
+        99.000đ/+150 lượt); payment_transactions (giao dịch top-up qua
+        SePay — VietQR + webhook đối soát, KHÔNG BAO GIỜ cộng quota nếu
+        status khác 'paid'). Đảo ngược quyết định "billing ngoài phạm
+        vi capstone" từng chốt ở Luồng 7 — nay thu hẹp thành mô hình
+        top-up một lần, không phải subscription tự động gia hạn.
+    (AI) Bảng MỚI content_reports (Luồng 4, Bước 4.6 — Report/Flag
+        Content) — cho phép Parent/Teacher báo cáo bất kỳ truyện nào
+        (không chỉ Community-shared) tới Teacher/Administrator; lấp
+        khoảng trống mà chính Luồng 7 Bước 7.6 (Suspend Organization)
+        đã giả định tồn tại ("khiếu nại từ Parent/Teacher") nhưng chưa
+        từng có bảng lưu trước v9.5. notification_type_enum bổ sung
+        content_reported và payment_confirmed tương ứng 2 tính năng
+        MỚI (AH)/(AI).
+    (AJ) child_profiles thêm date_of_birth (ĐỀ XUẤT, còn treo — Luồng 1,
+        Mục 9: phục vụ tính thời điểm chuyển age_band khi trẻ lớn lên;
+        cột đã có nhưng CHƯA có cơ chế/job tự động sử dụng nó, cần
+        quyết định thêm trước khi coi là hoàn chỉnh).
+
+    CẢI THIỆN v10 (MỚI — Luồng 4 Deep Dive v10: Hold Mode chuyển từ
+    Teacher-unlock thủ công sang Auto-unlock):
+    (AK) intervention_cases thêm triggering_story_id (Bước 4.5.1 —
+        truyện đã gây kích hoạt Hold Mode, dùng để đối chiếu khi trẻ
+        retake), resolution_type (ENUM MỚI intervention_resolution_
+        type_enum: manual_teacher/auto_retake_pass — nguồn gốc lần
+        unlock), notes_added_by_user_id + notes_added_at (Bước 4.5.3b —
+        Teacher ghi skill_gap_notes SAU khi đã unlock, tách khỏi thời
+        điểm resolved_at). resolved_by_user_id giữ nguyên nullable
+        (không đổi cấu trúc cột) nhưng nay mang ý nghĩa NULL = unlock
+        tự động, không còn là actor bắt buộc. Bước 4.5.3 tách thành
+        4.5.3a (Auto-unlock, hệ thống, TỰ ĐỘNG khi retake đúng truyện
+        trigger đạt comprehension_threshold_percent) và 4.5.3b (Teacher
+        bổ sung skill gap notes, thủ công, TÙY CHỌN, không còn chặn
+        unlock) — đổi từ giám sát CHẶN TRƯỚC sang giám sát SONG SONG.
+        notification_type_enum bổ sung hold_mode_auto_unlocked tương
+        ứng thông báo tự động gửi khi 4.5.3a hoàn tất. CÒN TREO (chưa
+        thêm cột): giới hạn số lần retake/ngày hoặc khoảng cách thời
+        gian tối thiểu giữa các lần retake, để giữ ý nghĩa sư phạm của
+        Hold Mode — trẻ hiện có thể retake liên tục để "đoán" đạt
+        ngưỡng mà không có hướng dẫn thực chất.
+  '''
+}
+
+// =====================================================================
+// ENUMS: Luồng 1 — Profile & Supervision
+// =====================================================================
+Enum user_role {
+  parent
+  teacher
+  administrator
+}
+
+Enum account_status {
+  registered
+  email_verified
+  logged_in
+  password_reset_pending
+  logged_out
+  suspended
+}
+
+Enum age_band_enum {
+  age_6_8
+  age_9_12
+}
+
+Enum child_profile_status {
+  draft
+  pending_supervision
+  ready_for_activation
+  active
+  pending_parent_consent   // MỚI v9.3: Owner có role=teacher, chưa có Parent Accept (BR-1.9)
+  suspended
+  archived
+}
+
+Enum approval_mode_enum {
+  always_manual
+  auto_publish_on_threshold
+}
+
+Enum policy_rule_enum {
+  allowed
+  restricted
+  blocked
+}
+
+Enum invitation_status_enum {
+  pending
+  accepted
+  rejected
+  expired
+  revoked
+}
+
+Enum supervisor_role_enum {
+  owner
+  additional_supervisor
+}
+
+Enum permission_enum {
+  view_progress
+  view_results
+  assign_activity
+  receive_report
+  approve_reading_level
+  approve_story
+  manage_safety_settings
+  generate_story
+}
+
+Enum permission_request_status_enum {
+  pending
+  accepted
+  rejected
+  cancelled   // BR-1.14 — Additional Supervisor tự huỷ khi còn pending
+}
+
+Enum ownership_transfer_request_status_enum {
+  pending
+  accepted
+  rejected
+  pending_owner_response
+  accepted_by_owner
+  rejected_by_owner
+}
+
+Enum topic_relation_enum {
+  favorite_topic
+  priority_focus_area
+}
+
+Enum class_group_status_enum {
+  active
+  archived
+}
+
+// MỚI v9.3 — scope của ChildProfile (Personal vs Organization, Luồng 7)
+Enum profile_scope_enum {
+  personal
+  organization
+}
+
+// MỚI v9.5 (Luồng 1, Mục 7c) — payload access token JWT: session_scope
+// PHẢI được middleware kiểm tra TRƯỚC TIÊN ở mọi route Guardian
+// Management Area/Admin Portal, chặn cứng nếu scope=child.
+Enum session_scope_enum {
+  supervisor
+  child
+  admin
+}
+
+// =====================================================================
+// ENUMS: Luồng 2 — Guided AI Generation
+// =====================================================================
+Enum story_source_enum {
+  ai
+  manual
+}
+
+Enum story_status_enum {
+  draft
+  outline_review
+  content_review
+  approved
+  media_processing
+  ready
+  rejected
+  archived
+}
+
+Enum version_edit_type_enum {
+  initial
+  edit
+  regenerate
+}
+
+Enum job_stage_enum {
+  input_validated
+  outline_draft
+  outline_approved
+  content_review
+  approved
+  media_processing
+  ready
+  rejected
+  outline_pending
+  outline_generating
+  outline_generated
+  outline_failed
+  outline_rejected
+  content_pending
+  content_generating
+  content_stable
+  content_artifact_pending
+  content_artifact_generating
+  content_artifact_completed
+  content_package_completed
+  content_failed
+  media_pending
+  media_context_building
+  media_segmenting
+  media_generating
+  media_finalizing
+  media_completed
+  media_failed
+}
+
+Enum generation_input_status_enum {
+  pending_input
+  checking_input
+  input_accepted
+  input_blocked
+  input_check_failed
+}
+
+Enum generation_job_operation_enum {
+  generate_outline
+  regenerate_outline
+  generate_content
+  generate_vocabulary
+  generate_quiz
+  generate_discussion
+  generate_media_package
+  build_media_context
+  segment_story
+  generate_illustration
+  generate_tts
+  validate_illustration
+  finalize_media
+}
+
+Enum generation_job_status_enum {
+  pending
+  processing
+  completed
+  failed
+  cancelled
+}
+
+Enum guardrail_result_enum {
+  passed
+  fast_fail
+}
+
+Enum media_type_enum {
+  tts_audio
+  illustration
+}
+
+Enum media_status_enum {
+  queued
+  processing
+  generated
+  ready
+  failed
+  manual_review
+}
+
+Enum validation_status_enum {
+  pending
+  passed
+  failed
+}
+
+Enum quiz_type_enum {
+  multiple_choice
+  true_false
+  short_answer
+}
+
+// MỚI v9.5 (v9.2-L, Bước 2.5 giải pháp B5) — quyết định có ngắt phiên
+// đọc real-time (reading_sessions.force_exit_requested_at) hay không.
+Enum archived_reason_enum {
+  supervisor_preference  // KHÔNG ngắt — để trẻ đọc nốt phiên đang mở
+  safety_concern         // PHẢI ngắt sớm nhất có thể (~15 giây)
+}
+
+// =====================================================================
+// ENUMS: Luồng 3 — Reading Experience
+// =====================================================================
+Enum session_status_enum {
+  started
+  reading
+  activity
+  completed
+  abandoned
+}
+
+Enum telemetry_event_type_enum {
+  session_started
+  session_completed
+  page_viewed
+  page_completed
+  tts_started
+  tts_completed
+  asr_word_result
+  pronunciation_error
+  vocabulary_opened
+  vocabulary_collected
+  quiz_answered
+  quiz_completed
+  reward_granted
+  badge_unlocked
+  story_bookmarked
+  story_favorited
+  library_searched
+}
+
+// =====================================================================
+// ENUMS: Luồng 4 — Assignment, O2O & Intervention
+// =====================================================================
+Enum assignment_status_enum {
+  assigned
+  in_progress
+  completed
+  cancelled
+}
+
+Enum share_mode_enum {
+  one_to_one
+  broadcast
+}
+
+Enum teacher_share_status_enum {
+  pending
+  approved
+  rejected
+}
+
+Enum recipient_status_enum {
+  pending
+  accepted
+  declined
+  revoked
+}
+
+Enum intervention_trigger_enum {
+  auto_below_threshold   // Luồng 4: tự động, comprehension < 70% liên tục
+  recommended_by_ai      // Luồng 6: đề xuất qua Recommendation (Bước 6.7 Nhánh C), cần duyệt
+}
+
+Enum intervention_status_enum {
+  open_hold_mode
+  under_review
+  resolved_unlocked   // = "Unlocked" trong tài liệu Luồng 4 v10 — đạt được qua auto-unlock (mặc định) hoặc unlock thủ công (dự phòng, xem resolution_type)
+}
+
+// MỚI v10 (Luồng 4, Bước 4.5.3a) — nguồn gốc của lần unlock một
+// intervention_case. auto_retake_pass là đường mặc định từ v10 trở đi;
+// manual_teacher được giữ lại làm dự phòng nếu cần bật lại unlock thủ
+// công sau này, dù hiện tại pipeline chỉ tạo ra auto_retake_pass.
+Enum intervention_resolution_type_enum {
+  manual_teacher
+  auto_retake_pass
+}
+
+// MỚI v9.5 (Luồng 4, Bước 4.6 — Report/Flag Content, cross-cutting)
+Enum content_report_reason_enum {
+  safety_concern
+  inappropriate
+  wrong_age_band
+  other
+}
+
+Enum content_report_status_enum {
+  pending
+  reviewed_dismissed
+  reviewed_archived
+}
+
+// =====================================================================
+// ENUMS: Luồng 5 — Administrator & AI Governance
+// =====================================================================
+Enum catalog_status_enum {
+  draft
+  published
+  deprecated
+  rolled_back
+}
+
+Enum report_status_enum {
+  compiling
+  published
+}
+
+Enum data_request_type_enum {
+  export
+  delete
+}
+
+Enum data_request_status_enum {
+  pending
+  resolved
+}
+
+// MỚI v9.5 (Luồng 5, Bước 5.1c — Token Quota)
+Enum token_quota_scope_enum {
+  system
+  organization
+  child
+  personal
+}
+
+// MỚI v9.5 (Luồng 5, Bước 5.6 — Payment & Subscription qua SePay)
+Enum payment_status_enum {
+  pending
+  paid
+  expired
+  mismatch_amount
+}
+
+// =====================================================================
+// ENUMS: Luồng 6 — Adaptive Learning & Recommendation
+// =====================================================================
+Enum insight_status_enum {
+  insight_detected
+  reviewed
+}
+
+Enum recommendation_category_enum {
+  reading_difficulty
+  learning_focus
+  content_personalization
+  learning_intervention
+}
+
+Enum recommendation_status_enum {
+  detected
+  recommendation_created
+  awaiting_review
+  stale                    // MỚI v9.4 — Bước 6.5: quá 14 ngày (recommendations.expires_at) ở awaiting_review mà không có review nào is_final=true. KHÔNG xóa, chỉ ẩn khỏi hàng đợi 'Cần xử lý' chính, giữ audit trail.
+  modified
+  observe_more
+  rejected
+  approved
+  applied
+  monitoring
+  validated
+  reassessment_required
+}
+
+Enum review_decision_enum {
+  accept
+  modify
+  reject
+  observe_more
+}
+
+Enum version_history_status_enum {
+  draft_version
+  active_version
+  superseded
+}
+
+// =====================================================================
+// ENUMS: Luồng 7 — Organization & School Admin Management (MỚI v9.3)
+// =====================================================================
+Enum org_verification_enum {
+  pending_verification
+  active
+  rejected                 // MỚI v9.4 — Bước 7.1d: Administrator từ chối đăng ký lần đầu, kèm rejection_reason bắt buộc. Khóa MỌI thao tác ghi (nghiêm ngặt hơn cả suspended). Resubmit tái sử dụng cùng organization_id, quay lại pending_verification.
+  suspended                // Bước 7.6 (Suspend tạm thời, có thể Reactivate) HOẶC Bước 7.7 (Đóng cửa vĩnh viễn — phân biệt bằng closed_at IS NOT NULL).
+  pending_reverification   // MỚI v9.3 — Bước 7.1c: School Admin sửa name/address của Organization ĐÃ active, chờ Admin duyệt lại. Áp dụng BR-7.7 (chỉ chặn mở rộng), KHÔNG áp dụng BR-7.6 như pending_verification ban đầu.
+}
+
+Enum org_role_enum {
+  teacher
+  school_admin
+}
+
+// MỚI v9.3 (Bước 7.2c) — thay thế hoàn toàn nhu cầu org_role='lead_teacher'
+Enum org_permission_enum {
+  create_class_group
+  manage_class_members
+  invite_teacher
+  remove_teacher
+  edit_org_safety_policy
+  edit_org_info
+  view_org_dashboard
+}
+
+Enum membership_status_enum {
+  pending
+  active
+  removed                  // Từng active rồi bị School Admin gỡ (Bước 7.2b Nhánh A) hoặc tự rời (Nhánh B Self-Exit, MỚI v9.4).
+  rejected                 // MỚI v9.4 — Bước 7.2: từ chối lời mời, KHÔNG từng active. Tách biệt với 'removed' để không sai lệch số liệu tỷ lệ chấp nhận lời mời.
+}
+
+Enum consent_status_enum {
+  pending
+  accepted
+  rejected
+}
+
+// =====================================================================
+// ENUMS: Notification & Data Request — dùng chung toàn hệ thống (MỚI v9.4)
+// =====================================================================
+
+// MỚI v9.4 (Luồng 1, Mục 7b) — mọi điểm "hệ thống gửi thông báo" xuyên
+// suốt 7 luồng PHẢI dùng đúng 1 trong các giá trị này, không tự ý thêm
+// loại mới ngoài danh sách đã ánh xạ trong tài liệu workflow.
+Enum notification_type_enum {
+  supervision_invite              // Luồng 1, Bước 1.5
+  supervision_revoked_cascade     // Luồng 1, Bước 1.6b
+  story_shared                    // Luồng 4, Bước 4.3
+  hold_mode_alert                 // Luồng 4, Bước 4.5.2
+  hold_mode_auto_unlocked         // MỚI v10 — Luồng 4, Bước 4.5.3a
+  teacher_interaction_score       // Luồng 4, O2O Assessment
+  assignment_cancelled            // Luồng 4, Bước 4.1b (MỚI)
+  recommendation_awaiting_review  // Luồng 6, Bước 6.5 (kể cả lần nhắc ngày thứ 7)
+  org_teacher_invite              // Luồng 7, Bước 7.2
+  org_consent_request             // Luồng 7, Bước 7.3
+  org_unenrollment_notice         // Luồng 7, Bước 7.3c
+  data_request_sla_warning        // Luồng 5, Bước 5.4 (đề xuất kích hoạt ở mốc 48 giờ)
+  admin_role_changed              // Luồng 5, Bước 5.1b (MỚI)
+  content_reported                // MỚI v9.5 — Luồng 4, Bước 4.6
+  content_report_sla_warning      // Luồng 4, Bước 4.6 — báo cáo sắp quá hạn xử lý
+  content_report_resolved         // Luồng 4, Bước 4.6 — báo cáo đã được xử lý xong
+  payment_confirmed               // MỚI v9.5 — Luồng 5, Bước 5.6.2
+  permission_request_created
+  permission_request_accepted
+  permission_request_rejected
+  ownership_transfer_requested
+  ownership_transfer_accepted
+  ownership_transfer_rejected
+}
+
+Enum notification_read_status_enum {
+  unread
+  read
+}
+
+// MỚI v9.4 (Luồng 5, Bước 5.4) — quyết định Anonymize/Hard Delete
+Enum data_request_deletion_method_enum {
+  anonymize    // MẶC ĐỊNH — xóa/che trường định danh, GIỮ id + số liệu ẩn danh, không phá vỡ audit/báo cáo lịch sử
+  hard_delete  // Chỉ khi có căn cứ pháp lý minh thị (right to erasure), đã được Administrator/Legal xác nhận bằng văn bản (xem legal_basis_note)
+}
+
+// #####################################################################
+// LUỒNG 1 — CHILD LEARNING PROFILE & SUPERVISION SETUP
+// #####################################################################
+
+Table user_accounts {
+  id integer [pk, increment]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  username varchar(50) [not null, unique]
+  email varchar [not null, unique]
+  password_hash varchar [not null]
+  full_name varchar(100) [not null]
+  phone_number varchar(20)
+  avatar_url varchar(500)
+  role user_role [not null]
+  status account_status [not null, default: 'registered']
+  reset_token_hash varchar [note: 'Lưu token đặt lại mật khẩu — Bước 1.1']
+  reset_token_expires_at timestamp [note: 'Thời hạn token đặt lại mật khẩu']
+  refresh_token_hash varchar(64)
+  refresh_token_expires_at timestamp
+  email_verification_token_hash varchar [note: 'MỚI v9.5 — Bước 1.1: bắt buộc xác thực email khi đăng ký cold-start (không qua invitation_code), áp dụng thống nhất với luồng claim invitation vốn đã có OTP.']
+  email_verification_token_expires_at timestamp [note: 'MỚI v9.5']
+  failed_login_attempts integer [not null, default: 0, note: 'MỚI v9.5 — chống brute-force đăng nhập Supervisor, đối xứng child_access_credentials.failed_attempts']
+  locked_until timestamp [note: 'MỚI v9.5 — khoá tạm thời sau quá nhiều lần đăng nhập sai liên tiếp']
+  mfa_secret varchar [note: 'MỚI v9.5 — Luồng 5, Mục 9: TOTP secret, BẮT BUỘC khi role=administrator, tuỳ chọn cho Parent/Teacher']
+  mfa_enabled boolean [not null, default: false, note: 'MỚI v9.5']
+  token_version integer [not null, default: 1, note: 'MỚI v9.5 — Luồng 1, Mục 7c: tăng lên 1 khi có thay đổi quyền nhạy cảm (revoke supervision Bước 1.6b, Grant/Revoke Admin Bước 5.1b, Remove/Demote Bước 7.2b/7.2d) — mọi access token JWT cũ mang version không khớp bị middleware từ chối NGAY dù chưa hết hạn.']
+  last_login_at timestamp
+  role_before_admin user_role [note: 'MỚI v9.4 — Luồng 5, Bước 5.1b: lưu role hiện tại TRƯỚC khi được Grant làm administrator, phục vụ khôi phục đúng role khi Revoke. NULL nếu tài khoản được tạo làm administrator ngay từ đầu (khôi phục mặc định về teacher).']
+  created_at timestamp [not null, default: `now()`]
+
+  Note: 'Tài khoản đăng nhập: Parent/Teacher (Supervisor) hoặc Administrator. Bước 1.1 / 5.1. School Admin KHÔNG phải giá trị role riêng — là organization_memberships.org_role=school_admin gắn trên user role=teacher (Luồng 7).'
+}
+
+Table refresh_tokens {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  user_account_id integer [not null, ref: > user_accounts.id]
+  token_hash varchar [not null, unique]
+  session_scope session_scope_enum [not null]
+  issued_at timestamp [not null, default: `now()`]
+  expires_at timestamp [not null]
+  revoked_at timestamp
+
+  Note: '''
+    RefreshToken — Luồng 1, Mục 7c (MỚI v9.5). Cho phép thu hồi TỪNG
+    phiên cụ thể (VD "Đăng xuất khỏi thiết bị này") — độc lập với
+    user_accounts.token_version (vốn thu hồi TOÀN BỘ session cùng lúc
+    khi có thay đổi quyền nhạy cảm). "Đăng xuất khỏi mọi thiết bị" =
+    set revoked_at=now() cho MỌI dòng của user_account_id này.
+    Access token (JWT) chỉ chứa session_scope, KHÔNG chứa permission
+    chi tiết — mọi thao tác nhạy cảm vẫn phải re-query
+    supervision_relationships/supervision_permissions sống (Luồng 1).
+    Còn treo: TTL cụ thể theo session_scope (child nên ngắn hơn nhiều
+    so với supervisor, do dùng trên thiết bị lớp học dùng chung).
+  '''
+}
+
+Table child_profiles {
+  id integer [pk, increment]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  owner_user_id integer [not null, ref: > user_accounts.id]
+  nickname varchar [not null]
+  age_band age_band_enum [not null]
+  language varchar [not null, default: 'vi']
+  status child_profile_status [not null, default: 'draft']
+  scope profile_scope_enum [not null, default: 'personal', note: 'MỚI v9.3 — Luồng 7']
+  organization_id integer [ref: > organizations.id, note: 'MỚI v9.3 — NULLABLE, bắt buộc NOT NULL khi scope=organization (Luồng 7)']
+  date_of_birth date [note: 'MỚI v9.5, ĐỀ XUẤT CÒN TREO — Luồng 1, Mục 9: phục vụ tính thời điểm chuyển age_band khi trẻ lớn lên. Cột đã có nhưng CHƯA có job/cơ chế tự động nào sử dụng nó — hiện age_band vẫn phải đổi thủ công bởi Owner/Supervisor.']
+  created_at timestamp [not null, default: `now()`]
+
+  Note: '''
+    ChildProfile — Bước 1.2. owner_user_id = Profile Owner.
+    CẢI THIỆN v9.3: BR-1.9 (Luồng 1) — status chỉ chuyển 'active' nếu
+    tồn tại ít nhất 1 dòng supervision_relationships (owner hoặc
+    additional_supervisor, revoked_at IS NULL) mà supervisor_user_id
+    thuộc user_accounts.role='parent'. Áp dụng THỐNG NHẤT bất kể scope.
+    BR-7.8: 1 ChildProfile chỉ thuộc TỐI ĐA 1 organization_id tại một
+    thời điểm (giới hạn kiến trúc v9.3, không phải bảng nhiều-nhiều).
+  '''
+}
+
+Table learning_profiles {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+  child_profile_id integer [not null, unique, ref: - child_profiles.id]
+  reading_level integer [not null, note: '1..5, dùng cho Luồng 2 & Luồng 6']
+  comprehension_goal varchar
+  updated_at timestamp [not null, default: `now()`]
+
+  Note: 'LearningProfile 1-1 với ChildProfile — Bước 1.3.'
+}
+
+Table learning_profile_topics {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  learning_profile_id integer [not null, ref: > learning_profiles.id]
+  topic varchar [not null]
+  relation topic_relation_enum [not null]
+
+  Note: '''
+    Danh mục chủ đề yêu thích / lĩnh vực ưu tiên (Bước 1.3).
+    CẢI THIỆN v9.1 (D): relation đã đổi từ varchar sang enum
+    topic_relation_enum — chỉ có 2 giá trị cố định, tránh gõ sai.
+  '''
+}
+
+// =====================================================================
+// Content Categories — chuẩn hóa danh mục nội dung (v9)
+// =====================================================================
+Table content_categories {
+  id integer [pk, increment]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  code varchar [not null, unique, note: 'Mã chuẩn hóa, ví dụ: violence, mature_language, scary_content']
+  display_name varchar [not null, note: 'Tên hiển thị, ví dụ: Bạo lực, Ngôn ngữ người lớn']
+  is_active boolean [not null, default: true]
+  created_by_admin_id integer [ref: > user_accounts.id]
+  created_at timestamp [not null, default: `now()`]
+
+  Note: 'Danh mục nội dung chuẩn hóa — quản lý bởi Administrator (Luồng 5), dùng chung cho SafetyPolicy (Luồng 1), Guardrail check (Luồng 2), và OrgSafetyPolicyTemplate (Luồng 7). Thay thế varchar tự do trước đây ở safety_policy_categories.'
+}
+
+Table safety_policies {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+  child_profile_id integer [not null, unique, ref: - child_profiles.id]
+  max_story_length integer [not null]
+  required_approval_mode approval_mode_enum [not null, default: 'always_manual']
+  parental_gate_enabled boolean [not null, default: true]
+  consent_recorded boolean [not null, default: false]
+  consent_recorded_at timestamp
+  consent_policy_version integer [not null, default: 1, note: 'MỚI v9.5 — Luồng 1, Mục 9: version điều khoản tại thời điểm Parent đồng ý, phục vụ yêu cầu re-consent nếu Điều khoản/Chính sách bảo mật thay đổi sau này (Nghị định 13/2023/NĐ-CP).']
+  safety_score_threshold decimal [note: 'MỚI v9.2-I / v9.5 — ngưỡng auto-publish cho safety_score. NULL (mặc định) = required_approval_mode luôn always_manual, Owner tự bật auto_publish_on_threshold và đặt ngưỡng riêng nếu muốn.']
+  readability_score_threshold decimal [note: 'MỚI v9.2-I / v9.5 — ngưỡng auto-publish cho readability, đi kèm safety_score_threshold']
+  comprehension_threshold_percent decimal [not null, default: 70, note: '✅ ĐÃ CHỐT v9.5 — Luồng 4, Bước 4.5: Hold Mode kích hoạt khi tỷ lệ đọc hiểu LIÊN TỤC dưới ngưỡng này. Organization/Teacher có thể ghi đè riêng qua policy này, không bắt buộc cứng toàn hệ thống.']
+  comprehension_window_size integer [not null, default: 3, note: '✅ ĐÃ CHỐT v9.5 — số bài đọc GẦN NHẤT liên tiếp dùng để tính "liên tục" (KHÔNG phải số ngày).']
+  updated_at timestamp [not null, default: `now()`]
+
+  Note: '''
+    SafetyPolicy 1-1 với ChildProfile — Bước 1.4.
+    CẢI THIỆN v9.3: nếu child_profiles.scope=organization, hiệu lực
+    thực tế khi Guardrail chạy (Luồng 2, Bước 2.2) là UNION nghiêm ngặt
+    hơn giữa policy này và org_safety_policy_templates của Organization
+    (BR-7.4) — không đơn thuần dùng riêng bảng này.
+  '''
+}
+
+Table safety_policy_categories {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  safety_policy_id integer [not null, ref: > safety_policies.id]
+  content_category_id integer [not null, ref: > content_categories.id]
+  rule policy_rule_enum [not null]
+
+  Note: 'Allowed/Restricted/Blocked content categories — Bước 1.4. CẢI THIỆN v9: category đã chuẩn hóa qua content_categories thay vì varchar tự do, tránh lệch dữ liệu (vd "Violence" vs "violence") giữa cấu hình phụ huynh và Guardrail check ở Luồng 2.'
+
+  indexes {
+    (safety_policy_id, content_category_id) [unique]
+  }
+}
+
+Table supervision_invitations {
+  id integer [pk, increment]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  child_profile_id integer [not null, ref: > child_profiles.id]
+  inviter_user_id integer [not null, ref: > user_accounts.id]
+  invitation_code varchar [unique, note: 'MỚI v9.3 — mã ngẫu nhiên, dùng 1 lần, gắn cứng 1 child_profile_id']
+  invitee_email varchar [note: 'CẬP NHẬT v9.3: đổi thành NULLABLE — không còn bắt buộc, chỉ tham khảo hiển thị']
+  invitee_user_id integer [ref: > user_accounts.id]
+  status invitation_status_enum [not null, default: 'pending']
+  expires_at timestamp [note: 'MỚI v9.3']
+  used_at timestamp [note: 'MỚI v9.3 — đánh dấu khi invitation_code đã được claim']
+  created_at timestamp [not null, default: `now()`]
+  responded_at timestamp
+
+  Note: '''
+    SupervisionInvitation — Bước 1.5.
+    CẢI THIỆN v9.3: thay cơ chế mời thuần qua email bằng invitation_code
+    — áp dụng chung cho mời đơn lẻ (Personal) và Bulk Enrollment
+    (Organization, Luồng 7 Bước 7.3 Nhánh A — sinh 1 mã riêng/học sinh,
+    KHÔNG dùng chung 1 mã cho cả lớp). Claim bắt buộc xác thực qua kênh
+    cá nhân của người nhận (OTP) nếu là lần tạo tài khoản đầu tiên —
+    chống rủi ro "Provisioned Account" (nhà trường claim hộ).
+  '''
+}
+
+Table supervision_relationships {
+  id integer [pk, increment]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  child_profile_id integer [not null, ref: > child_profiles.id]
+  supervisor_user_id integer [not null, ref: > user_accounts.id]
+  supervision_invitation_id integer [ref: - supervision_invitations.id]
+  supervisor_role supervisor_role_enum [not null]
+  revoked_at timestamp [note: 'NULL = quan hệ đang hiệu lực; có giá trị = đã bị thu hồi quyền giám sát']
+  revoked_by_user_id integer [ref: > user_accounts.id, note: 'MỚI v9.2 — ai thực hiện hành động revoke']
+  created_at timestamp [not null, default: `now()`]
+
+  Note: '''
+    SupervisionRelationship — Bước 1.6. Nguồn quyền cho mọi permission check.
+    CẢI THIỆN v9.1 (G): thêm revoked_at — trước đây không có cách nào gỡ
+    một supervisor khỏi hồ sơ trẻ mà không hard-delete, làm mất lịch sử
+    "ai từng có quyền giám sát trẻ khi nào" (vi phạm nguyên tắc Auditability).
+    Mọi permission check phải lọc revoked_at IS NULL.
+    CẢI THIỆN v9.2 (H): thêm revoked_by_user_id — có revoked_at nhưng
+    không biết AI thu hồi thì audit trail vẫn không trọn vẹn.
+    CẢI THIỆN v9.3: Bước 1.6 (Accept) PHẢI, trong CÙNG transaction,
+    re-check BR-1.9 và tự động chuyển child_profiles.status sang
+    'active' nếu điều kiện đã thỏa (owner hoặc additional_supervisor có
+    role=parent) — không chờ một lượt xử lý riêng biệt nào khác. Ngược
+    lại, Bước 1.6b (revoke dòng role=parent CUỐI CÙNG, chỉ khi
+    owner.role=teacher) PHẢI tự động đẩy child_profiles.status về
+    'pending_parent_consent' — đối xứng 2 chiều, giữ nguyên lịch sử
+    học tập/telemetry, không xóa gì.
+  '''
+}
+
+Table supervision_permissions {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  supervision_relationship_id integer [not null, ref: > supervision_relationships.id]
+  permission permission_enum [not null]
+
+  Note: 'Supervisor Permission Set — Bước 1.7 (Least privilege).'
+}
+
+Table supervision_permission_requests {
+  id integer [pk, increment]
+  supervision_relationship_id integer [not null, ref: > supervision_relationships.id]
+  requester_user_id integer [not null, ref: > user_accounts.id]
+  status permission_request_status_enum [not null, default: 'pending']
+  responded_at timestamp
+  responded_by_user_id integer [ref: > user_accounts.id]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+
+  Note: 'Yêu cầu thay đổi bộ quyền của Additional Supervisor. Owner hoặc Additional Supervisor đều có thể tạo request; bên còn lại accept/reject.'
+}
+
+Table supervision_permission_request_items {
+  id integer [pk, increment]
+  supervision_permission_request_id integer [not null, ref: > supervision_permission_requests.id]
+  permission permission_enum [not null]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+
+  Note: 'Danh sách quyền được đề xuất trong một permission request.'
+}
+
+Table ownership_transfer_requests {
+  id integer [pk, increment]
+  child_profile_id integer [not null, ref: > child_profiles.id]
+  current_owner_user_id integer [not null, ref: > user_accounts.id]
+  target_supervisor_user_id integer [not null, ref: > user_accounts.id]
+  status ownership_transfer_request_status_enum [not null, default: 'pending']
+  responded_at timestamp
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+
+  Note: 'Yêu cầu chuyển Owner hai chiều: Owner có thể đề xuất chuyển quyền, hoặc Additional Supervisor có thể yêu cầu nhận Owner.'
+}
+
+Table class_groups {
+  id integer [pk, increment]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  teacher_user_id integer [not null, ref: > user_accounts.id]
+  name varchar [not null]
+  knowledge_tree_exp integer [not null, default: 0, note: 'EXP tích lũy Cây tri thức lớp — Bước 3.4']
+  status class_group_status_enum [not null, default: 'active']
+  organization_id integer [ref: > organizations.id, note: 'MỚI v9.3 — NULLABLE: Class có thể thuần Personal (VD gia sư riêng) hoặc thuộc 1 Organization']
+  created_at timestamp [not null, default: `now()`]
+
+  Note: '''
+    ClassGroup — Bước 1.9b (Class Group Management, tách khỏi 1.9a
+    ProfileSwitcher thuần Parent).
+    CẢI THIỆN v9.1 (F): thêm status (active/archived) — trước đây không
+    có cách nào ngừng dùng 1 lớp (vd cuối năm học) mà không hard-delete,
+    kéo theo mất luôn lịch sử class_group_members/assignments/shared_stories.
+    CẢI THIỆN v9.3: thêm organization_id — một Class chỉ thuộc đúng 1
+    Organization nếu có (BR-7.2, tenant isolation).
+  '''
+}
+
+Table class_group_members {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  class_group_id integer [not null, ref: > class_groups.id]
+  child_profile_id integer [not null, ref: > child_profiles.id]
+  joined_at timestamp [not null, default: `now()`]
+
+  Note: 'Bước 1.9b — Thành viên học sinh trong lớp. Xóa cứng khi un-enroll (Luồng 7, Bước 7.3c) — bảng chỉ phản ánh thành viên hiện tại, không mang dữ liệu lịch sử.'
+
+  indexes {
+    (class_group_id, child_profile_id) [unique]
+  }
+}
+
+// =====================================================================
+// Child Access Credential, Child Session & Notification — dùng chung toàn hệ thống
+// =====================================================================
+
+Table child_access_credentials {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+  child_profile_id integer [not null, ref: - child_profiles.id, note: 'Chỉ 1 credential chưa soft-delete cho mỗi hồ sơ; migration dùng partial unique index WHERE is_deleted=false.']
+  avatar_id varchar [not null]
+  pin_hash varchar [not null]
+  failed_attempts integer [not null, default: 0]
+  locked_until timestamp
+  easy_login_code varchar(64) [unique, note: 'Mã ngẫu nhiên dùng cho đăng nhập nhanh qua QR; NULL khi chưa phát hành hoặc sau khi thu hồi. Unique index chỉ áp dụng khi khác NULL.']
+  easy_login_expires_at timestamp [note: 'Thời điểm hết hạn của mã EasyLogin.']
+  easy_login_used_at timestamp [note: 'Thời điểm mã EasyLogin đã được sử dụng; hỗ trợ cơ chế dùng một lần.']
+  created_by_user_id integer [not null, ref: > user_accounts.id, note: 'Owner/Additional Supervisor đã thiết lập PIN']
+  updated_at timestamp [not null, default: `now()`]
+
+  Note: '''
+    ChildAccessCredential — Bước 1.10 (MỚI v9.4). Phương thức để chính
+    Trẻ (không phải Supervisor) tự vào giao diện đọc độc lập — Trẻ
+    KHÔNG có user_accounts riêng (không email/mật khẩu). Chỉ Owner/
+    Additional Supervisor có quyền đặt/đổi PIN — Trẻ không tự đổi được.
+    Giới hạn failed_attempts trước khi locked_until (khoá tạm thời).
+    EasyLogin QR tái sử dụng chính credential này qua mã ngẫu nhiên
+    có hạn và dùng một lần; không tạo UserAccount cho Trẻ.
+    Thu hồi = soft delete (is_deleted=true) kèm soft delete mọi
+    child_sessions sinh từ credential; giữ dòng cũ cho audit.
+    Điều kiện tiên quyết cho Bước 3.0 (Child Entry, Luồng 3) — nếu
+    chưa thiết lập, Trẻ chỉ có thể vào qua ProfileSwitcher của
+    Supervisor (Bước 1.9a), không có lối vào độc lập.
+  '''
+}
+
+Table child_sessions {
+  id integer [pk, increment]
+  child_profile_id integer [not null, ref: > child_profiles.id]
+  session_key varchar(64) [not null, unique]
+  child_access_credential_id integer [ref: > child_access_credentials.id, note: 'MỚI — Luồng 3, Bước 3.0: set khi Child Session đến từ lối vào độc lập (PIN / EasyLogin QR).']
+  supervisor_session_id integer [ref: > refresh_tokens.id, note: 'MỚI — Luồng 3, Bước 3.0: set khi Supervisor bàn giao thiết bị qua ProfileSwitcher (Bước 1.9a).']
+  last_activity_at timestamp [not null]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+
+  Note: '''
+    ChildSession — Bước 1.10 (MỚI 24/09/2026). Lưu phiên đăng
+    nhập của Trẻ sau khi xác thực thành công bằng PIN hoặc
+    EasyLogin QR. session_key duy nhất được nhúng trong JWT qua claim
+    child_session; middleware truy vấn lại bản ghi này để áp
+    idle-timeout 20 phút. last_activity_at chỉ cần ghi lại tối đa
+    mỗi phút một lần, trong khi thời hạn JWT vẫn là trần
+    tuyệt đối. Quan hệ N-1 với child_profiles dùng Restrict khi
+    xóa; query filter loại các dòng is_deleted=true.
+    Bước 3.0: CHECK CK_child_sessions_exactly_one_entry_source — đúng 1 trong 2
+    cột child_access_credential_id / supervisor_session_id có giá trị; Bước 3.1
+    chép nguyên cặp này sang reading_sessions.
+  '''
+
+  indexes {
+    child_profile_id
+    child_access_credential_id
+    supervisor_session_id
+  }
+}
+
+Table notifications {
+  id integer [pk, increment]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  recipient_user_id integer [not null, ref: > user_accounts.id]
+  type notification_type_enum [not null]
+  payload jsonb [note: 'Ngữ cảnh tùy loại: child_profile_id, story_id, organization_id...']
+  status notification_read_status_enum [not null, default: 'unread']
+  created_at timestamp [not null, default: `now()`]
+  read_at timestamp
+
+  Note: '''
+    Notification — Luồng 1, Mục 7b (MỚI v9.4). Bảng dùng CHUNG cho MỌI
+    điểm "hệ thống gửi thông báo" xuyên suốt 7 luồng nghiệp vụ, đóng
+    vai trò tương tự audit_logs nhưng hướng tới người dùng cuối thay vì
+    kiểm toán nội bộ. BUSINESS RULE BẮT BUỘC: bất kỳ đặc tả nào viết
+    "hệ thống gửi thông báo cho X" đều ngầm định một INSERT vào bảng
+    này với recipient_user_id=X — KHÔNG được hiểu là hành vi tức thời
+    không lưu vết (vd chỉ bắn email rồi thôi). Kênh gửi thật sự (in-app/
+    email/push) là quyết định hạ tầng nằm ngoài phạm vi schema này.
+  '''
+}
+
+// #####################################################################
+// LUỒNG 2 — GUIDED AI STORY GENERATION PIPELINE
+// #####################################################################
+
+Table stories {
+  id integer [pk, increment]
+  is_deleted boolean [not null, default: false]
+  author_user_id integer [not null, ref: > user_accounts.id]
+  child_profile_id integer [not null, ref: > child_profiles.id]
+  source story_source_enum [not null]
+  status story_status_enum [not null, default: 'draft']
+  title varchar
+  description varchar(1000)
+  content text
+  cover_image_url varchar(500)
+  genre varchar(50)
+  moral_lesson varchar(500)
+  age_band varchar(20) [not null, default: '6-8']
+  reading_level integer
+  vocabulary_level varchar
+  language varchar(10) [not null, default: 'vi']
+  is_published boolean [not null, default: false]
+  child_visible_at timestamp [note: 'MỚI v9.4 — Bước 2.5 B4: SLA hậu kiểm auto-publish = approved_at + 2 giờ; duyệt thủ công = approved_at ngay lập tức. Luồng 3, Bước 3.1 PHẢI filter child_visible_at <= now().']
+  archived_reason archived_reason_enum [note: 'MỚI v9.2-L / v9.5 — Bước 2.5 giải pháp B5: bắt buộc chọn khi Archive, quyết định có kích hoạt cơ chế ngắt real-time (reading_sessions.force_exit_requested_at) hay không.']
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+
+  Note: '''
+    Story — đầu ra Luồng 2. Hỗ trợ cả AI và Manual.
+    CẢI THIỆN v9.1 (C): cột safety_tags (varchar tự do) đã được thay
+    bằng bảng nối story_categories, tham chiếu content_categories —
+    đồng bộ chuẩn hóa với safety_policy_categories để Guardrail so khớp
+    chính xác giữa nội dung truyện và chính sách an toàn của trẻ.
+  '''
+}
+
+Table story_categories {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  story_id integer [not null, ref: > stories.id]
+  content_category_id integer [not null, ref: > content_categories.id]
+
+  Note: '''
+    MỚI (v9.1, cải thiện C): Gắn nhãn danh mục nội dung cho từng Story,
+    thay cho cột safety_tags varchar tự do trước đây. Dùng chung
+    content_categories với safety_policy_categories để Guardrail
+    (Luồng 2) so khớp chính xác giữa Story và SafetyPolicy của trẻ.
+  '''
+
+  indexes {
+    (story_id, content_category_id) [unique]
+  }
+}
+
+Table story_versions {
+  id integer [pk, increment]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  story_id integer [not null, ref: > stories.id]
+  version_no integer [not null]
+  edit_type version_edit_type_enum [not null, default: 'initial']
+  editor_user_id integer [ref: > user_accounts.id]
+  title varchar [not null]
+  outline_opening text
+  outline_development text
+  outline_ending text
+  content text
+  lesson text
+  readability_fkgl decimal
+  readability_fre decimal
+  safety_score decimal
+  is_current boolean [not null, default: false]
+  outline_approved_by_user_id integer [ref: > user_accounts.id]
+  outline_approved_at timestamp
+  created_at timestamp [not null, default: `now()`]
+
+  Note: '''
+    StoryVersion — Lưu trữ bất biến từng lần Edit/Regenerate (Bước 2.5).
+    CẢI THIỆN v9.3: Bước 2.4 (sinh nội dung) tách 4 sub-step độc lập
+    (2.4.1 nội dung truyện = bảng này; 2.4.2 story_vocabulary; 2.4.3
+    quiz_items; 2.4.4 discussion_questions) — nếu 1 sub-artifact fail
+    validation, chỉ regenerate đúng phần đó, KHÔNG cần sinh lại toàn bộ.
+    CẦN MIGRATION RIÊNG (v9.2-K, DBML không hỗ trợ trực tiếp, Mức 1 BẮT
+    BUỘC): đảm bảo chỉ đúng 1 dòng is_current=true cho mỗi story_id:
+      CREATE UNIQUE INDEX story_versions_one_current_per_story
+      ON story_versions (story_id) WHERE is_current = true;
+  '''
+}
+
+Table media_contexts {
+  id integer [pk, increment]
+  story_version_id integer [not null, ref: > story_versions.id]
+  revision integer [not null]
+  context_json jsonb [not null]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    (story_version_id, revision) [unique]
+  }
+
+  Note: '''
+    Ngữ cảnh continuity có version dùng chung cho toàn bộ media artifact của
+    một StoryVersion. Dữ liệu revision là append-only, không ghi đè revision cũ.
+    Migration áp dụng CHECK revision > 0.
+  '''
+}
+
+Table story_scenes {
+  id integer [pk, increment]
+  story_version_id integer [not null, ref: > story_versions.id]
+  scene_index integer [not null]
+  text_range_start integer [not null]
+  text_range_end integer [not null]
+  scene_text text [not null]
+  visual_description text
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    (story_version_id, scene_index) [unique]
+  }
+
+  Note: '''
+    Ánh xạ bất biến giữa StoryVersion đã duyệt và từng cảnh media chuẩn hóa.
+    scene_text phải khớp đoạn content[text_range_start..text_range_end].
+    Migration áp dụng CHECK scene_index >= 0, text_range_start >= 0 và
+    text_range_end > text_range_start.
+  '''
+}
+
+Table story_segments {
+  id integer [pk, increment]
+  story_scene_id integer [not null, ref: > story_scenes.id]
+  segment_order integer [not null]
+  start_offset integer [not null]
+  end_offset integer [not null]
+  text_content text [not null]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    (story_scene_id, segment_order) [unique]
+  }
+
+  Note: '''
+    Một phần văn bản của StoryScene dùng để gắn âm thanh TTS và word timing.
+    Offset tính theo [start_offset, end_offset), text_content phải khớp
+    scene_text[start_offset..end_offset]. EF Core áp dụng CHECK
+    segment_order >= 1, start_offset >= 0 và end_offset > start_offset.
+  '''
+}
+
+Table story_generation_requests {
+  id integer [pk, increment]
+  story_id integer [not null, ref: > stories.id]
+  submitted_by_user_id integer [not null, ref: > user_accounts.id]
+  idempotency_key varchar(100) [not null]
+  input_fingerprint varchar(64) [not null]
+  context_fingerprint varchar(64) [not null]
+  context_snapshot_json jsonb [not null]
+  accepted_input_json jsonb
+  status generation_input_status_enum [not null, default: 'pending_input']
+  attempt_count integer [not null, default: 0]
+  max_attempts integer [not null, default: 3]
+  concurrency_token varchar(32) [not null]
+  last_retry_key varchar(100)
+  attempt_started_at timestamp
+  guardrail_decision varchar(30)
+  reason_code varchar(100)
+  fallback_message varchar(500)
+  can_retry boolean [not null, default: false]
+  guardrail_check_version varchar(100)
+  guardrail_checked_at timestamp
+  handoff_job_id integer [ref: - story_generation_jobs.id]
+  handoff_created_at timestamp
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    (submitted_by_user_id, idempotency_key) [unique]
+    handoff_job_id [unique]
+  }
+
+  Note: '''
+    Input-validation request của pipeline AI. Chỉ lưu accepted_input_json sau khi
+    guardrail cho phép; hỗ trợ idempotency, retry và handoff sang generation job.
+    Migration phải tạo partial unique index trên story_id khi status thuộc
+    PendingInput/CheckingInput/InputAccepted và is_deleted=false.
+  '''
+}
+
+Table story_generation_jobs {
+  id integer [pk, increment]
+  story_id integer [not null, ref: > stories.id]
+  prompt_catalog_version_id integer [ref: > prompt_catalog_versions.id]
+  generation_request_id integer [ref: > story_generation_requests.id]
+  story_version_id integer [ref: > story_versions.id]
+  base_story_version_id integer [ref: > story_versions.id]
+  requested_by_user_id integer [ref: > user_accounts.id]
+  operation_key varchar(100)
+  operation generation_job_operation_enum [not null, default: 'generate_outline']
+  stage job_stage_enum [not null, default: 'input_validated']
+  status generation_job_status_enum [not null, default: 'pending']
+  attempt_no integer [not null, default: 0]
+  max_attempts integer [not null, default: 3]
+  concurrency_token varchar(32) [not null]
+  lease_expires_at timestamp
+  guardrail_result guardrail_result_enum
+  fallback_message text
+  error_code varchar(100)
+  generation_metadata_json jsonb
+  started_at timestamp [not null, default: `now()`]
+  completed_at timestamp
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+
+  indexes {
+    (status, stage, lease_expires_at)
+  }
+
+  Note: '''
+    StoryGenerationJob — giám sát pipeline AI, retry, lease và Guardrails.
+    Migration phải tạo 3 partial unique index: (1) story_id cho outline job đang
+    Pending/Processing; (2) operation + story_version_id khi version khác NULL;
+    (3) requested_by_user_id + operation + operation_key khi các key khác NULL.
+    Cả ba index đều chỉ áp dụng khi is_deleted=false.
+  '''
+}
+
+Table story_vocabulary {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  story_version_id integer [not null, ref: > story_versions.id]
+  term varchar [not null]
+  definition text [not null]
+
+  Note: 'Từ vựng trích xuất từ truyện — Bước 2.4.2.'
+}
+
+Table quiz_items {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  story_version_id integer [not null, ref: > story_versions.id]
+  type quiz_type_enum [not null]
+  question text [not null]
+  correct_answer text
+  choices text
+
+  Note: 'Bộ câu hỏi đọc hiểu 3 dạng — Bước 2.4.3.'
+}
+
+Table discussion_questions {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  story_version_id integer [not null, ref: > story_versions.id]
+  question text [not null]
+  is_moral_lesson boolean [not null, default: false]
+
+  Note: 'Câu hỏi thảo luận dành riêng cho Parent/Teacher — Bước 2.4.4 & 4.3b.'
+}
+
+Table media_assets {
+  id integer [pk, increment]
+  story_version_id integer [not null, ref: > story_versions.id]
+  story_scene_id integer [ref: > story_scenes.id]
+  story_segment_id integer [ref: > story_segments.id]
+  type media_type_enum [not null]
+  status media_status_enum [not null, default: 'queued']
+  validation_status validation_status_enum [not null, default: 'pending']
+  scene_index integer
+  url varchar(500)
+  word_timings text [note: 'MỚI v9.2-J / v9.5 — JSON timing map, CHỈ áp dụng type=tts_audio, phục vụ đồng bộ TTS-Karaoke (Luồng 3, Bước 3.2). Còn treo: AI Generation Engine hay dịch vụ TTS bên thứ ba là bên sinh ra dữ liệu này.']
+  mime_type varchar(100)
+  provider varchar(50)
+  model varchar(120)
+  provider_request_id varchar(120)
+  provider_asset_id varchar(200)
+  validation_result_json text
+  reference_image_asset_id integer
+  attempt_count integer [not null, default: 0]
+  completed_at timestamp
+  last_validation_reason varchar(500)
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+
+  Note: '''
+    MediaAsset — TTS và minh họa xử lý async sau khi duyệt truyện.
+    TTS audio gắn StorySegment; illustration gắn StoryScene. EF Core áp dụng
+    CHECK attempt_count >= 0; TtsAudio cần story_segment_id, Illustration
+    không được có story_segment_id. Partial unique index (story_scene_id,
+    type) chỉ áp dụng khi story_scene_id khác NULL, story_segment_id NULL,
+    is_deleted=false; partial unique index (story_segment_id, type) chỉ
+    áp dụng khi story_segment_id khác NULL và is_deleted=false.
+  '''
+}
+
+// #####################################################################
+// LUỒNG 3 — CHILD READING EXPERIENCE & ENGAGEMENT
+// #####################################################################
+
+Table reading_sessions {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  child_profile_id integer [not null, ref: > child_profiles.id]
+  story_id integer [not null, ref: > stories.id]
+  story_version_id integer [ref: > story_versions.id, note: 'MỚI v9.2-M / v9.5 — ghim đúng phiên bản truyện tại thời điểm Bước 3.1 (Trigger) chọn truyện, dùng cố định cho toàn bộ session. Tránh lệch nếu Supervisor Edit/Regenerate (story_versions.is_current đổi) NGAY LÚC trẻ đang đọc dở.']
+  assignment_recipient_id integer [ref: > assignment_recipients.id]
+  child_access_credential_id integer [ref: > child_access_credentials.id, note: 'MỚI v9.5 — Luồng 3, Bước 3.0: set khi Child Session đến từ lối vào độc lập (avatar+PIN). Đúng 1 trong 2 cột (cột này / supervisor_session_id) có giá trị, không cả hai.']
+  supervisor_session_id integer [ref: > refresh_tokens.id, note: 'MỚI v9.5 — Luồng 3, Bước 3.0: set khi Child Session đến từ ProfileSwitcher của Supervisor (Bước 1.9a) — phân biệt "trẻ tự vào" với "phụ huynh bàn giao thiết bị", phục vụ audit.']
+  status session_status_enum [not null, default: 'started']
+  started_at timestamp [not null, default: `now()`]
+  completed_at timestamp
+  time_spent_seconds integer [not null, default: 0]
+  pages_completed integer [not null, default: 0]
+  force_exit_requested_at timestamp [note: 'MỚI v9.4 — cơ chế ngắt an toàn real-time (Luồng 2, Bước 2.5 giải pháp B5). Set khi Supervisor Archive story vì safety_concern; client (Bước 3.2, Immersive Mode) poll cột này ở nhịp 15 giây/lần, buộc thoát ngay khi có giá trị.']
+
+  Note: '''
+    Phiên đọc của trẻ — Bước 3.1-3.4.
+    CẢI THIỆN v9.1 (B): tham chiếu assignment_recipients (không phải
+    assignments trực tiếp) để khi session hoàn thành, hệ thống cập nhật
+    đúng dòng trạng thái của đúng trẻ, kể cả khi assignment giao theo lớp.
+    Còn treo (Bước 3.0): định nghĩa chính xác khi nào session được đánh
+    dấu 'abandoned' (session_status_enum) — chưa có ngưỡng timeout cụ thể.
+    Ràng buộc: CHECK CK_reading_sessions_exactly_one_entry_source — đúng 1
+    trong 2 cột child_access_credential_id / supervisor_session_id có giá trị.
+  '''
+}
+
+Table reading_progress {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+  child_profile_id integer [not null, ref: > child_profiles.id]
+  story_id integer [not null, ref: > stories.id]
+  last_page_read integer [not null, default: 1, note: 'Vị trí trang đọc dở cho Continue Reading']
+  is_favorited boolean [not null, default: false, note: 'Đánh dấu yêu thích']
+  is_bookmarked boolean [not null, default: false, note: 'Đánh dấu trang']
+  updated_at timestamp [not null, default: `now()`]
+
+  Note: 'Trạng thái đọc nhanh của trẻ — Bước 3.2 (tránh quét bảng log).'
+
+  indexes {
+    (child_profile_id, story_id) [unique]
+  }
+}
+
+Table telemetry_logs {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  reading_session_id integer [not null, ref: > reading_sessions.id]
+  event_type telemetry_event_type_enum [not null]
+  event_payload text
+  occurred_at timestamp [not null, default: `now()`]
+
+  Note: 'Dữ liệu hành vi chi tiết theo thời gian thực (Mục 3.3).'
+}
+
+Table quiz_attempts {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  reading_session_id integer [not null, ref: > reading_sessions.id]
+  quiz_item_id integer [not null, ref: > quiz_items.id]
+  answer_given text
+  is_correct boolean
+  answered_at timestamp [not null, default: `now()`]
+
+  Note: 'Lịch sử trả lời câu hỏi đọc hiểu của trẻ.'
+}
+
+Table achievements {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  is_deleted boolean [not null, default: false]
+  child_profile_id integer [not null, unique, ref: - child_profiles.id]
+  exp_total integer [not null, default: 0]
+  streak_days integer [not null, default: 0]
+  updated_at timestamp [not null, default: `now()`]
+
+  Note: 'Điểm EXP cá nhân và chuỗi ngày đọc sách liên tục.'
+}
+
+Table badges {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  child_profile_id integer [not null, ref: > child_profiles.id]
+  badge_code varchar [not null]
+  earned_at timestamp [not null, default: `now()`]
+
+  Note: 'Huy hiệu thành tích đạt được.'
+}
+
+Table vocabulary_notebook_entries {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  child_profile_id integer [not null, ref: > child_profiles.id]
+  story_vocabulary_id integer [not null, ref: > story_vocabulary.id]
+  collected_at timestamp [not null, default: `now()`]
+
+  Note: 'Sổ tay từ vựng của trẻ — Bước 3.2 & 3.4.'
+
+  indexes {
+    (child_profile_id, story_vocabulary_id) [unique]
+  }
+}
+
+// #####################################################################
+// LUỒNG 4 — CONTENT DISTRIBUTION, O2O ASSESSMENT & LEARNING INTERVENTION
+// #####################################################################
+
+Table assignments {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  story_id integer [not null, ref: > stories.id]
+  assigned_by_user_id integer [not null, ref: > user_accounts.id]
+  class_group_id integer [ref: > class_groups.id, note: 'Giao cho cả lớp']
+  child_profile_id integer [ref: > child_profiles.id, note: 'Hoặc giao riêng cho 1 em']
+  status assignment_status_enum [not null, default: 'assigned']
+  assigned_at timestamp [not null, default: `now()`]
+  due_at timestamp
+
+  Note: '''
+    Nhiệm vụ đọc được giao — Bước 4.1.
+    CẢI THIỆN v9.1 (A): phải có CHECK constraint ở tầng migration
+    (DBML không hỗ trợ CHECK constraint) đảm bảo đúng 1 trong 2 cột
+    được set, không cả hai / không cả hai đều null:
+      CHECK (
+        (class_group_id IS NOT NULL AND child_profile_id IS NULL) OR
+        (class_group_id IS NULL AND child_profile_id IS NOT NULL)
+      )
+  '''
+}
+
+Table assignment_recipients {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  assignment_id integer [not null, ref: > assignments.id]
+  child_profile_id integer [not null, ref: > child_profiles.id]
+  status assignment_status_enum [not null, default: 'assigned']
+  completed_at timestamp
+  cancelled_by_user_id integer [ref: > user_accounts.id, note: 'MỚI v9.4 — Bước 4.1b']
+  cancelled_at timestamp [note: 'MỚI v9.4 — Bước 4.1b: chỉ cho phép hủy khi CHƯA completed. KHÔNG xóa dòng, giữ audit trail.']
+
+  Note: '''
+    Quản lý trạng thái làm bài độc lập của từng học sinh khi giao bài cho cả lớp.
+    CẢI THIỆN v9.1 (B): luôn tạo 1 dòng ở đây kể cả khi assignment giao
+    cho cá nhân (không chỉ khi giao theo lớp) — để bảng này trở thành
+    nguồn sự thật duy nhất cho "trải nghiệm làm bài của 1 trẻ", và
+    reading_sessions có thể tham chiếu trực tiếp vào đây thay vì assignments.
+    CẢI THIỆN v9.4: Bước 4.1b (MỚI, đối xứng Bước 4.1) — Teacher/Owner
+    tạo Assignment có quyền Hủy (status='cancelled', giá trị đã có sẵn
+    trong assignment_status_enum). Tạo 1 dòng notifications
+    (type=assignment_cancelled) cho Parent liên quan.
+  '''
+
+  indexes {
+    (assignment_id, child_profile_id) [unique]
+  }
+}
+
+Table shared_stories {
+  id integer [pk, increment]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  story_id integer [not null, ref: > stories.id]
+  shared_by_user_id integer [not null, ref: > user_accounts.id]
+  class_group_id integer [not null, ref: > class_groups.id]
+  share_mode share_mode_enum [not null]
+  teacher_status teacher_share_status_enum [not null, default: 'pending']
+  reviewed_by_user_id integer [ref: > user_accounts.id]
+  reviewed_at timestamp
+  created_at timestamp [not null, default: `now()`]
+
+  Note: '''
+    Chia sẻ truyện trong lớp — Gatekeeping tầng 1 (Giáo viên duyệt).
+    CẢI THIỆN v9.1 (E): thêm unique index (story_id, class_group_id)
+    để tránh tạo trùng bản ghi share cho cùng 1 truyện vào cùng 1 lớp.
+    Ghi chú v9.3: logic Bước 4.2 KHÔNG đổi dù class_group_id thuộc
+    Organization hay thuần Personal — đã tự cách ly qua class_group_id.
+    Báo cáo TỔNG HỢP nhiều Class trong cùng Organization (nếu xây sau
+    này) mới cần filter thêm organization_id (BR-7.2).
+  '''
+
+  indexes {
+    (story_id, class_group_id) [unique]
+  }
+}
+
+Table shared_story_recipients {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  shared_story_id integer [not null, ref: > shared_stories.id]
+  recipient_user_id integer [not null, ref: > user_accounts.id]
+  status recipient_status_enum [not null, default: 'pending']
+  responded_at timestamp
+
+  Note: 'Gatekeeping tầng 2 — Từng phụ huynh chấp thuận riêng cho con. Khi thêm 1 child_profile MỚI vào class_group_members (Bước 1.9b), hệ thống PHẢI quét shared_stories đang teacher_status=approved của lớp và tự động backfill 1 dòng pending ở đây cho phụ huynh của trẻ mới.'
+}
+
+Table o2o_assessments {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  assignment_recipient_id integer [not null, ref: > assignment_recipients.id, note: '⚠ BREAKING CHANGE v9.2-N / v9.5 — thay thế cặp FK độc lập (assignment_id, child_profile_id) trước đây, nhất quán với reading_sessions.']
+  teacher_user_id integer [not null, ref: > user_accounts.id]
+  bonus_points integer [not null, default: 1]
+  notes text
+  assessed_at timestamp [not null, default: `now()`]
+
+  Note: '''
+    Đánh giá O2O của giáo viên — Bước 4.4, tách biệt điểm tự động
+    (bonus_points là điểm CỘNG THÊM ngoài quiz_attempts, KHÔNG phải
+    điểm chính — 2 nguồn điểm KHÔNG được gộp/ghi đè lẫn nhau).
+    ⚠ MIGRATION BẮT BUỘC (v9.2-N): trước đây dùng 2 FK độc lập
+    (assignment_id, child_profile_id), KHÔNG có ràng buộc nào đảm bảo
+    cặp giá trị khớp với 1 dòng assignment_recipients thực sự tồn tại
+    — về lý thuyết có thể INSERT điểm O2O cho trẻ KHÔNG hề được giao
+    assignment đó. Backfill: với mỗi dòng cũ, JOIN assignment_recipients
+    theo đúng cặp (assignment_id, child_profile_id) để lấy đúng id, gán
+    vào assignment_recipient_id, SAU ĐÓ mới drop 2 cột cũ — không thể
+    chỉ thêm cột đơn giản mà bỏ qua bước backfill này.
+  '''
+}
+
+Table intervention_cases {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  child_profile_id integer [not null, ref: > child_profiles.id]
+  recommendation_id integer [ref: > recommendations.id]
+  trigger_type intervention_trigger_enum [not null]
+  status intervention_status_enum [not null, default: 'open_hold_mode']
+  skill_gap_notes text
+  opened_at timestamp [not null, default: `now()`]
+  triggering_story_id integer [ref: > stories.id, note: 'MỚI v10 — Bước 4.5.1: truyện của phiên đọc cuối cùng trong chuỗi <70% đã gây kích hoạt Hold Mode. Dùng để đối chiếu ở Bước 4.5.3a khi trẻ retake — chỉ đúng truyện này mới tính là điều kiện auto-unlock.']
+  resolution_type intervention_resolution_type_enum [note: 'MỚI v10 — nguồn gốc của lần unlock (auto_retake_pass là đường mặc định từ v10; manual_teacher giữ lại làm dự phòng). NULL khi case chưa được unlock.']
+  resolved_by_user_id integer [ref: > user_accounts.id, note: 'MỚI v10: NULL khi resolution_type=auto_retake_pass — không còn actor con người thực hiện unlock trong đường mặc định.']
+  resolved_at timestamp
+  notes_added_by_user_id integer [ref: > user_accounts.id, note: 'MỚI v10 — Bước 4.5.3b: Teacher nào đã ghi skill_gap_notes, tách biệt khỏi resolved_by_user_id vì việc ghi notes xảy ra SAU và ĐỘC LẬP với thời điểm unlock.']
+  notes_added_at timestamp [note: 'MỚI v10 — thời điểm skill_gap_notes được ghi, có thể trễ hơn nhiều so với resolved_at vì đây là hành động thủ công, tùy chọn, không có thời hạn cố định.']
+
+  Note: '''
+    Ca can thiệp sư phạm (Hold Mode).
+    CẢI THIỆN v9.3: Bước 4.5 tách 4 sub-step độc lập theo actor/thời
+    điểm — 4.5.1 Auto-detect (hệ thống, tự động, trigger_type=
+    auto_below_threshold) → 4.5.2 Gửi cảnh báo (hệ thống, tự động) →
+    4.5.3 Phân tích & Unlock → 4.5.4 Báo cáo ngày (hệ thống, định kỳ,
+    ĐỘC LẬP với Hold Mode, không thuộc bảng này). trigger_type=
+    recommended_by_ai được tạo từ Luồng 6, Bước 6.7 Nhánh C khi
+    Recommendation category=learning_intervention (đề xuất Hold Mode)
+    được duyệt — KHÔNG ghi vào child_profile_version_history.
+
+    CẢI THIỆN v10 (Luồng 4 Deep Dive, THAY THẾ mô hình Teacher-unlock
+    thủ công cũ): Bước 4.5.3 tách thành 4.5.3a (Auto-unlock, hệ thống,
+    TỰ ĐỘNG) và 4.5.3b (Teacher bổ sung skill_gap_notes, thủ công, TÙY
+    CHỌN). 4.5.3a kích hoạt khi reading_sessions chuyển Completed với
+    story_id TRÙNG triggering_story_id của case đang open_hold_mode cho
+    đúng trẻ đó VÀ điểm quiz retake ≥ safety_policies.
+    comprehension_threshold_percent (không cần đủ lại window_size bài
+    liên tục như lúc kích hoạt ban đầu — 1 lần retake đạt ngưỡng là đủ).
+    Xử lý GIỐNG NHAU bất kể trigger_type là auto_below_threshold hay
+    recommended_by_ai. Khi unlock tự động: status='resolved_unlocked',
+    resolution_type='auto_retake_pass', resolved_by_user_id=NULL,
+    resolved_at=now() — KHÔNG chờ Teacher xác nhận. 4.5.3b diễn ra SAU
+    ĐÓ, bất kỳ lúc nào, KHÔNG đổi status — chỉ set skill_gap_notes +
+    notes_added_by_user_id + notes_added_at. Đổi từ giám sát CHẶN TRƯỚC
+    (Human-in-the-loop bắt buộc) sang giám sát SONG SONG (Teacher xem
+    sau, không chặn). CÒN TREO (ghi nhận, chưa thiết kế cột): giới hạn
+    số lần retake/ngày hoặc khoảng cách thời gian tối thiểu giữa các
+    lần retake — hiện trẻ có thể retake liên tục để "đoán" đạt ngưỡng.
+  '''
+}
+
+Table content_reports {
+  id integer [pk, increment]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  story_id integer [not null, ref: > stories.id]
+  reporter_user_id integer [not null, ref: > user_accounts.id]
+  reason content_report_reason_enum [not null]
+  description text
+  status content_report_status_enum [not null, default: 'pending']
+  reviewed_by_user_id integer [ref: > user_accounts.id]
+  reviewed_at timestamp
+  created_at timestamp [not null, default: `now()`]
+
+  Note: '''
+    ContentReport — Luồng 4, Bước 4.6 (MỚI v9.5, Report/Flag Content).
+    Dùng CHUNG cho MỌI loại truyện (Assignment, Community-shared, hay
+    truyện riêng trong thư viện cá nhân) — không giới hạn trong phạm
+    vi Community Sharing. Report KHÔNG tự động Archive truyện — chỉ
+    tạo bản ghi + notification (type=content_reported) tới: (a) Teacher
+    phụ trách Class nếu truyện đang ở phạm vi Community Sharing; (b)
+    Administrator nếu reason=safety_concern HOẶC cùng story_id đã bị
+    report từ ≥2 reporter_user_id khác nhau (tín hiệu lan rộng). Người
+    xử lý có thể Archive (stories.archived_reason=safety_concern, tái
+    dùng cơ chế ngắt real-time đã có) hoặc Dismiss kèm ghi chú lý do.
+    Tổng hợp content_reports theo Organization là 1 nguồn dữ liệu cho
+    quyết định Suspend Organization (Luồng 7, Bước 7.6) — quan hệ một
+    chiều, KHÔNG tự động kích hoạt Suspend. Còn treo: ngưỡng "≥2
+    reporter khác nhau" là con số đề xuất ban đầu, nên rà lại cùng lúc
+    với các threshold khác đã có (Hold Mode, Token Quota).
+  '''
+}
+
+// #####################################################################
+// LUỒNG 5 — ADMINISTRATOR PORTAL, AI GOVERNANCE & BUSINESS REPORTING
+// #####################################################################
+
+Table prompt_catalog_versions {
+  id integer [pk, increment]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  version_no varchar [not null]
+  grade_band varchar [not null]
+  restricted_keywords text
+  status catalog_status_enum [not null, default: 'draft']
+  effective_date date
+  created_by_admin_id integer [not null, ref: > user_accounts.id]
+  created_at timestamp [not null, default: `now()`]
+
+  Note: 'Quản lý phiên bản Prompt mẫu có thể rollback — Bước 5.3.'
+}
+
+Table ai_governance_metrics {
+  id integer [pk, increment]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  metric_date date [not null]
+  generation_success_rate decimal
+  safety_flag_rate decimal
+  regeneration_rate decimal
+  approval_rate decimal
+  avg_latency_ms integer
+  created_at timestamp [not null, default: `now()`]
+
+  Note: 'Chỉ số đo lường hiệu năng và mức độ an toàn của AI — Bước 5.2.'
+}
+
+Table business_reports {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  period_start date [not null]
+  period_end date [not null]
+  stories_generated integer [not null, default: 0]
+  stories_approved integer [not null, default: 0]
+  stories_rejected integer [not null, default: 0]
+  reading_sessions_completed integer [not null, default: 0]
+  status report_status_enum [not null, default: 'compiling']
+  published_at timestamp
+
+  Note: 'Báo cáo tổng hợp vận hành cấp hệ thống — Bước 5.5. CẢI THIỆN v9.3: có thể tổng hợp thêm chiều organization_id (Luồng 7) — Administrator xem xuyên mọi Organization, School Admin (nếu có report riêng) chỉ xem đúng Organization của mình, không dùng chung 1 endpoint không phân quyền.'
+}
+
+Table data_requests {
+  id integer [pk, increment]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  requested_by_user_id integer [not null, ref: > user_accounts.id]
+  child_profile_id integer [ref: > child_profiles.id]
+  request_type data_request_type_enum [not null]
+  status data_request_status_enum [not null, default: 'pending']
+  deletion_method data_request_deletion_method_enum [default: 'anonymize', note: 'MỚI v9.4 — chỉ áp dụng khi request_type=delete']
+  legal_basis_note text [note: 'MỚI v9.4 — bắt buộc khi deletion_method=hard_delete, ghi rõ căn cứ pháp lý đã được Administrator/Legal xác nhận']
+  resolved_by_user_id integer [ref: > user_accounts.id, note: 'MỚI v9.4 — Administrator nào đã xử lý']
+  created_at timestamp [not null, default: `now()`, note: 'MỚI v9.4 — mốc bắt đầu tính SLA 72 giờ, trước đây thiếu hoàn toàn nên không đo được SLA']
+  resolved_at timestamp
+
+  Note: '''
+    Xử lý yêu cầu xuất / xóa dữ liệu theo chuẩn COPPA/GDPR — Bước 5.4.
+    ĐÃ CHỐT v9.4 (trước đây để ngỏ): nhánh delete mặc định Anonymize
+    (xóa/che trường định danh, GIỮ id + số liệu ẩn danh để không phá vỡ
+    audit/báo cáo lịch sử — giữ triết lý Auditability xuyên suốt
+    schema); Hard Delete chỉ khi có yêu cầu pháp lý minh thị (right to
+    erasure) đã được Administrator/Legal xác nhận bằng văn bản
+    (legal_basis_note bắt buộc trong trường hợp này). notification_type=
+    data_request_sla_warning nên kích hoạt ở mốc 48 giờ kể từ created_at
+    (còn 24 giờ trước hạn) nếu status vẫn 'pending'. HỆ QUẢ cho Luồng 1:
+    vì Anonymize là mặc định, Ownership Transfer (Owner=Parent muốn rời
+    hồ sơ) trở thành một luồng cần thiết kế thêm, không còn vô nghĩa
+    như giả định ban đầu — xem Luồng 1, Mục 9.
+  '''
+}
+
+Table audit_logs {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  actor_user_id integer [ref: > user_accounts.id]
+  action varchar [not null]
+  entity_type varchar [not null]
+  entity_id integer [not null]
+  before_state text
+  after_state text
+  occurred_at timestamp [not null, default: `now()`]
+
+  Note: 'Nhật ký kiểm toán mọi hành động nhạy cảm toàn hệ thống.'
+}
+
+Table token_quota_configs {
+  id integer [pk, increment]
+  scope token_quota_scope_enum [not null]
+  user_id integer [ref: > user_accounts.id, note: 'Bắt buộc khi scope=personal']
+  organization_id integer [ref: > organizations.id, note: 'Bắt buộc khi scope=organization']
+  child_profile_id integer [ref: > child_profiles.id, note: 'Bắt buộc khi scope=child']
+  quota_limit integer [not null]
+  quota_used integer [not null, default: 0]
+  period_start date [not null]
+  period_end date [not null]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+
+  Note: '''
+    TokenQuotaConfig — Luồng 5, Bước 5.1c (MỚI v9.5). Luồng 2, Bước 2.1
+    (Input Preparation) PHẢI kiểm tra quota_used < quota_limit TRƯỚC
+    khi tạo GenerationRequest — Fast Fail với fallback message thân
+    thiện nếu vượt (KHÔNG phải lỗi kỹ thuật). Vượt quota KHÔNG tự động
+    Suspend tài khoản/Organization — chỉ tạm chặn tạo truyện MỚI trong
+    chu kỳ hiện tại, tự mở lại khi period kế tiếp bắt đầu. quota_used
+    được CỘNG DỒN khi payment_transactions chuyển 'paid' (Bước 5.6.2).
+    Còn treo: giá trị quota_limit mặc định (miễn phí, không phải mua)
+    theo từng cấp — khác với số lượt mua thêm qua subscription_plans.
+  '''
+}
+
+Table subscription_plans {
+  id integer [pk, increment]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  name varchar [not null]
+  applicable_scope profile_scope_enum [not null, note: 'Tái dùng enum đã có — personal (Parent mua cho chính mình) / organization (School Admin mua đại diện cả trường)']
+  price_vnd integer [not null]
+  quota_amount integer [not null, note: 'Số lượt sinh truyện cộng thêm vào token_quota_configs khi mua thành công']
+  is_active boolean [not null, default: true]
+  created_at timestamp [not null, default: `now()`]
+
+  Note: '''
+    SubscriptionPlan — Luồng 5, Bước 5.6 (MỚI v9.5, SePay top-up).
+    ✅ ĐÃ CHỐT — 2 gói seed mặc định:
+      Personal:     49.000đ → +50 lượt sinh truyện AI
+      Organization: 99.000đ → +150 lượt sinh truyện AI
+    Mô hình MUA TOP-UP một lần, KHÔNG PHẢI subscription tự động gia
+    hạn định kỳ (chuyển khoản QR không hỗ trợ tự động trừ tiền định kỳ
+    như thẻ tín dụng). School Admin/Administrator có thể sửa quota_amount
+    qua Admin Portal bất kỳ lúc nào mà không ảnh hưởng giao dịch đã bán
+    trước đó (chỉ áp dụng cho giao dịch MỚI).
+  '''
+}
+
+Table payment_transactions {
+  id integer [pk, increment]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  plan_id integer [not null, ref: > subscription_plans.id]
+  payer_user_id integer [not null, ref: > user_accounts.id]
+  organization_id integer [ref: > organizations.id, note: 'Set khi School Admin mua thay mặt Organization']
+  transaction_code varchar [not null, unique, note: 'Nội dung chuyển khoản (VietQR) để SePay đối soát chính xác giao dịch']
+  amount integer [not null]
+  status payment_status_enum [not null, default: 'pending']
+  sepay_transaction_id varchar [note: 'Mã giao dịch SePay trả về kèm webhook, sau khi thanh toán thành công']
+  qr_code_url varchar
+  created_at timestamp [not null, default: `now()`]
+  expires_at timestamp [not null, note: 'created_at + 15 phút — QR hết hạn KHÔNG được tái sử dụng, phải tạo giao dịch mới']
+  paid_at timestamp
+
+  Note: '''
+    PaymentTransaction — Luồng 5, Bước 5.6.1-5.6.3 (MỚI v9.5).
+    Webhook SePay PHẢI được xác thực bằng API Key/Secret (biến môi
+    trường, KHÔNG lưu ở đây) TRƯỚC khi xử lý — chặn webhook giả mạo.
+    Đối chiếu amount nhận được với plan_id.price_vnd: khớp → status=
+    'paid', paid_at=now(), cộng dồn token_quota_configs.quota_limit
+    tương ứng scope của plan; không khớp → status='mismatch_amount',
+    KHÔNG tự động cộng quota, cần Administrator xử lý thủ công (đối
+    soát tay, còn treo quy trình chi tiết: hoàn tiền/cộng theo tỷ lệ).
+    Business rule bất biến: KHÔNG BAO GIỜ cộng quota nếu status khác
+    'paid' — kể cả khi Administrator thấy tiền đã vào tài khoản ngân
+    hàng qua kênh khác (sao kê thủ công), phải cập nhật status thủ
+    công qua Admin Portal có ghi audit_logs, không có đường tắt khác
+    ngoài webhook SePay. Job định kỳ chuyển 'pending' quá expires_at
+    sang 'expired'. Không cho 2 giao dịch pending cùng lúc cho cùng
+    payer_user_id trên cùng plan_id.
+  '''
+}
+
+// #####################################################################
+// LUỒNG 6 — ADAPTIVE LEARNING ANALYSIS, RECOMMENDATION & PROFILE ADJUSTMENT
+// #####################################################################
+
+Table learning_insights {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  child_profile_id integer [not null, ref: > child_profiles.id]
+  status insight_status_enum [not null, default: 'insight_detected']
+  observation text [not null]
+  evidence text [not null]
+  detected_at timestamp [not null, default: `now()`]
+
+  Note: 'Nhận định học tập từ AI qua phân tích đa chiều — Bước 6.2.'
+}
+
+Table recommendations {
+  id integer [pk, increment]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  learning_insight_id integer [not null, ref: > learning_insights.id]
+  child_profile_id integer [not null, ref: > child_profiles.id]
+  category recommendation_category_enum [not null]
+  current_state text [not null]
+  proposed_change text [not null]
+  evidence text [not null]
+  status recommendation_status_enum [not null, default: 'recommendation_created']
+  expires_at timestamp [note: 'MỚI v9.4 — set = created_at + 14 ngày ngay khi chuyển sang awaiting_review (Bước 6.5). Quá hạn mà chưa có review is_final=true → status tự động chuyển stale.']
+  created_at timestamp [not null, default: `now()`]
+
+  Note: '''
+    Đề xuất thích ứng 12 trạng thái (bổ sung 'stale' v9.4) — Bước 6.3/6.4.
+    CẢI THIỆN v9.3: Bước 6.5 (hiển thị cho supervisor) đổi từ mô hình
+    PUSH (chốt cứng danh sách người nhận tại thời điểm tạo) sang PULL
+    (hàng đợi live — quyền approve_reading_level được truy vấn LẠI mỗi
+    lần Dashboard tải hoặc Bước 6.6 được gọi, KHÔNG cache). Bước 6.7 áp
+    dụng theo status/category vào ĐÚNG 1 trong 3 nhánh:
+      - Nhánh A (category IN reading_difficulty, learning_focus) →
+        ghi child_profile_version_history, cần approve_reading_level.
+      - Nhánh B (category=content_personalization) → KHÔNG ghi version
+        history, KHÔNG cần permission đặc biệt, chỉ set status='applied'.
+      - Nhánh C (category=learning_intervention, đề xuất Hold Mode) →
+        ghi vào intervention_cases (Luồng 4) với trigger_type=
+        recommended_by_ai, KHÔNG ghi child_profile_version_history.
+  '''
+}
+
+Table recommendation_reviews {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  recommendation_id integer [not null, ref: > recommendations.id]
+  reviewer_user_id integer [not null, ref: > user_accounts.id]
+  decision review_decision_enum [not null]
+  modified_value text
+  reason text
+  is_final boolean [not null, default: false, note: 'MỚI v9.2 — đánh dấu review nào là quyết định cuối cùng khi có nhiều dòng review cho cùng 1 recommendation']
+  had_final_authority boolean [not null, default: false, note: 'MỚI v9.2 — snapshot permission approve_reading_level TẠI THỜI ĐIỂM review này được tạo, KHÔNG tính lại sau']
+  reviewed_at timestamp [not null, default: `now()`]
+
+  Note: '''
+    Quyết định duyệt/điều chỉnh của người giám sát — Bước 6.6. Mỗi
+    supervisor review độc lập, KHÔNG ghi đè review của người khác — mỗi
+    người INSERT 1 dòng riêng. is_final luôn ưu tiên áp dụng lên
+    recommendations.status, bất kể thứ tự thời gian.
+  '''
+}
+
+Table child_profile_version_history {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  child_profile_id integer [not null, ref: > child_profiles.id]
+  recommendation_id integer [ref: > recommendations.id]
+  previous_config text [not null]
+  new_config text [not null]
+  applied_by_user_id integer [ref: > user_accounts.id]
+  version_status version_history_status_enum [not null, default: 'draft_version']
+  applied_at timestamp [not null, default: `now()`]
+
+  Note: 'Lịch sử snapshot phiên bản hồ sơ học tập bất biến — Bước 6.7 Nhánh A. CHỈ dùng cho category IN (reading_difficulty, learning_focus) — KHÔNG dùng cho Nhánh B (content_personalization, xem recommendations.status) hay Nhánh C (learning_intervention/Hold Mode, xem intervention_cases).'
+}
+
+// #####################################################################
+// LUỒNG 7 — ORGANIZATION & SCHOOL ADMIN MANAGEMENT (MỚI v9.3)
+// #####################################################################
+
+Table organizations {
+  id integer [pk, increment]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  name varchar [not null]
+  address varchar
+  contact_email varchar
+  verification_status org_verification_enum [not null, default: 'pending_verification']
+  created_by_user_id integer [not null, ref: > user_accounts.id, note: 'Người sáng lập — PHẢI có role=teacher (Bước 7.1)']
+  verified_by_admin_id integer [ref: > user_accounts.id, note: 'Administrator đã duyệt (Luồng 5, Bước 5.1)']
+  rejection_reason text [note: 'MỚI v9.4 — Bước 7.1d: bắt buộc khi verification_status=rejected']
+  suspended_by_admin_id integer [ref: > user_accounts.id]
+  suspended_at timestamp
+  suspension_reason text
+  reactivated_at timestamp [note: 'MỚI v9.4 — Bước 7.6']
+  reactivated_by_admin_id integer [ref: > user_accounts.id, note: 'MỚI v9.4 — Bước 7.6']
+  closure_requested_at timestamp [note: 'MỚI v9.4 — Bước 7.7: School Admin yêu cầu đóng cửa']
+  closed_at timestamp [note: 'MỚI v9.4 — Bước 7.7: Administrator xác nhận đóng cửa vĩnh viễn. Phân biệt với Suspend tạm thời (Bước 7.6) vốn cùng dùng verification_status=suspended: closed_at IS NOT NULL nghĩa là vĩnh viễn, KHÔNG được Reactivate.']
+  created_at timestamp [not null, default: `now()`]
+
+  Note: '''
+    Organization — Bước 7.1. Trường học đăng ký trên nền tảng.
+    Bước 7.1b (Auto-provision Founding School Admin): trong CÙNG
+    transaction tạo bản ghi này, PHẢI tự động tạo 1 dòng
+    organization_memberships(org_role=school_admin, status=active) cho
+    created_by_user_id — ngoại lệ DUY NHẤT được ghi khi
+    verification_status=pending_verification (khác BR-7.6, vốn chặn
+    Class Group/Enrollment ở trạng thái này).
+    BR-7.7: Suspended chỉ chặn thao tác làm TĂNG phạm vi (mời Teacher
+    mới, tạo Class mới, Enrollment mới — cả 2 nhánh Bước 7.3); LUÔN cho
+    phép thao tác làm GIẢM phạm vi (Un-enrollment Bước 7.3c, Remove
+    Teacher kèm Reassign ở Bước 7.2b) và mọi thao tác ĐỌC.
+    Bước 7.1c (School Admin tự cập nhật thông tin, MỚI v9.3): contact_email
+    sửa tự do; name/address (định danh pháp lý) sửa xong tự động chuyển
+    verification_status sang 'pending_reverification', áp dụng BR-7.7
+    (KHÔNG áp dụng BR-7.6) trong lúc chờ Administrator duyệt lại — Teacher/
+    Class/Enrollment đã có tiếp tục hoạt động bình thường, không gián đoạn.
+    Audit trail của Bước 7.1c dùng chung bảng audit_logs (entity_type=
+    'organizations'), không cần thêm cột riêng.
+
+    MỚI v9.4 — Bước 7.1d (Từ chối & Nộp lại): Administrator từ chối
+    đăng ký lần đầu → verification_status='rejected' + rejection_reason
+    bắt buộc; dòng organization_memberships(school_admin) ở Bước 7.1b
+    VẪN GIỮ NGUYÊN để cho phép Resubmit (tái dùng organization_id cũ,
+    quay lại 'pending_verification'), MỌI thao tác ghi bị khóa nghiêm
+    ngặt hơn cả suspended. Nếu Administrator từ chối re-verification
+    (từ pending_reverification), KHÔNG chuyển rejected — tự động khôi
+    phục name/address về giá trị TRƯỚC KHI sửa và quay lại 'active'.
+
+    MỚI v9.4 — Bước 7.6 (Suspend/Reactivate): CHỈ Administrator được
+    Suspend (School Admin không tự suspend chính mình). Reactivate BẮT
+    BUỘC kiểm tra closed_at IS NULL trước khi cho phép — tránh vô tình
+    hồi sinh 1 Organization đã đóng cửa vĩnh viễn qua Bước 7.7.
+
+    MỚI v9.4 — Bước 7.7 (Đóng cửa, Offboarding): mô hình 2 bước
+    (closure_requested_at do School Admin → closed_at do Administrator
+    xác nhận). Khi xác nhận: MỌI ChildProfile thuộc Organization về
+    scope='personal'/organization_id=NULL, đóng org_consent_records
+    liên quan, MỌI organization_memberships chuyển 'removed', MỌI
+    class_groups chuyển 'archived' — TUYỆT ĐỐI GIỮ NGUYÊN lịch sử học
+    tập/telemetry, chỉ cắt liên kết Organization.
+
+    MỚI v9.4 — Nhóm hành động "vận hành/tái tổ chức nội bộ" (BR-7.7 mở
+    rộng): khi Suspended, gán/thu hồi organization_permissions và
+    Demote School Admin→Teacher LUÔN được phép; riêng Promote
+    Teacher→School Admin BỊ CHẶN (tránh thêm người toàn quyền lúc đang
+    bị xem xét); Approve/Reject truyện chia sẻ (Luồng 4, Bước 4.2) cho
+    học sinh hiện có cũng LUÔN được phép, không bị xem là "mở rộng".
+  '''
+}
+
+Table organization_memberships {
+  id integer [pk, increment]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  organization_id integer [not null, ref: > organizations.id]
+  user_id integer [not null, ref: > user_accounts.id]
+  org_role org_role_enum [not null]
+  status membership_status_enum [not null, default: 'pending']
+  invited_by_user_id integer [ref: > user_accounts.id]
+  created_at timestamp [not null, default: `now()`]
+
+  Note: '''
+    OrganizationMembership — Bước 7.2/7.2b. Một Teacher có thể thuộc
+    nhiều Organization (nhiều dòng, mỗi dòng 1 organization_id).
+    Bước 7.2b Nhánh A (School-initiated Remove): School Admin set
+    status=removed cho người khác (KHÔNG xóa tài khoản); nếu
+    org_role=teacher, Class Group của người này BẮT BUỘC phải Reassign
+    sang Teacher khác đang active trong cùng Organization trước khi
+    hoàn tất — kể cả khi Organization đang Suspended (BR-7.7, ngoại lệ
+    vì đây là sửa lỗi dữ liệu, không phải mở rộng).
+    Bước 7.2b Nhánh B Self-Exit (MỚI v9.4, đối xứng Parent-initiated ở
+    Bước 7.3c): CHÍNH người đó tự set status=removed cho dòng của
+    mình, không cần School Admin khác thao tác hộ — áp dụng CHUNG ràng
+    buộc Reassign Class và rào chắn "luôn còn ít nhất 1 School Admin".
+    Bước 7.2d (Promote/Demote, MỚI v9.4): đổi org_role qua lại
+    teacher<->school_admin mà KHÔNG đổi status — Promote xóa hết dòng
+    organization_permissions cũ; Demote tạo lại Cấp 0 baseline.
+    CẬP NHẬT v9.3: org_role_enum rút gọn còn 2 giá trị (teacher/
+    school_admin) — phân cấp chi tiết hơn (thay cho lead_teacher) đã
+    chuyển hẳn sang bảng organization_permissions (Bước 7.2c), nên mỗi
+    người chỉ cần ĐÚNG 1 dòng membership mỗi Organization.
+  '''
+
+  indexes {
+    (organization_id, user_id) [unique, note: 'CẬP NHẬT v9.3 — rút gọn từ (organization_id, user_id, org_role): 1 người = 1 dòng membership mỗi Organization, phân cấp qua organization_permissions']
+  }
+}
+
+Table organization_permissions {
+  id integer [pk, increment]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  organization_membership_id integer [not null, ref: > organization_memberships.id]
+  permission org_permission_enum [not null]
+  granted_by_user_id integer [ref: > user_accounts.id, note: 'School Admin nào đã cấp quyền này (audit)']
+  created_at timestamp [not null, default: `now()`]
+
+  Note: '''
+    MỚI v9.3 (Bước 7.2c) — mô phỏng đúng cơ chế supervision_permissions
+    ở Luồng 1. CHỈ áp dụng cho organization_memberships.org_role='teacher'
+    — School Admin KHÔNG BAO GIỜ có dòng nào ở đây; quyền của School
+    Admin luôn kiểm tra NGẦM ĐỊNH qua code (org_role='school_admin' ->
+    full access), tương tự Owner ở Luồng 1 (Bước 1.2b). Tránh rủi ro 1
+    School Admin vô tình xóa/sửa nhầm dòng permission của School Admin
+    khác, tự khóa quyền lẫn nhau.
+
+    Thiết kế theo 3 CẤP:
+    - Cấp 0 (Baseline, mặc định, tự động khi Accept ở Bước 7.2):
+      create_class_group, manage_class_members, view_org_dashboard.
+    - Cấp 1 (Nâng cao, School Admin cấp thủ công, preset "Giáo viên
+      phụ trách"): Cấp 0 + invite_teacher, edit_org_safety_policy.
+      Đây CHÍNH LÀ cách tạo hiệu ứng "giáo viên trưởng" mà KHÔNG cần
+      org_role='lead_teacher' (giải quyết dứt điểm câu hỏi mở đã nêu
+      ở tài liệu Luồng 7, Mục 9). CỐ TÌNH KHÔNG đưa remove_teacher và
+      edit_org_info vào Cấp 1 — 2 quyền này ảnh hưởng người khác (đồng
+      nghiệp) hoặc định danh pháp lý cả trường, vượt phạm vi hợp lý
+      của vai trò vẫn là 'teacher'.
+    - Cấp 2 (School Admin, ngầm định — KHÔNG lưu ở bảng này): toàn
+      quyền bao gồm cả remove_teacher, edit_org_info.
+
+    UI nên hiển thị preset (Cấp 0/Cấp 1) thay vì 7 checkbox rời rạc,
+    kèm tùy chọn "Tùy chỉnh chi tiết" cho ai cần linh hoạt hơn preset.
+
+    RÀO CHẮN BẮT BUỘC (đối xứng BR-1.9 ở Luồng 1): không cho phép hạ
+    cấp org_role hoặc set organization_memberships.status='removed'
+    cho School Admin CUỐI CÙNG đang active của 1 Organization — phải
+    luôn còn ít nhất 1 School Admin active. Vi phạm thì từ chối thao
+    tác, yêu cầu chỉ định School Admin khác trước.
+  '''
+
+  indexes {
+    (organization_membership_id, permission) [unique]
+  }
+}
+
+Table org_consent_records {
+  id integer [pk, increment]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  child_profile_id integer [not null, ref: > child_profiles.id]
+  organization_id integer [not null, ref: > organizations.id]
+  status consent_status_enum [not null, default: 'pending']
+  decided_by_user_id integer [ref: > user_accounts.id, note: 'Parent xác nhận']
+  decided_at timestamp
+  revoked_at timestamp [note: 'MỚI v9.3 — đóng dòng khi Parent đổi ý (Accepted<->Rejected) hoặc khi un-enroll (Bước 7.3c)']
+  created_at timestamp [not null, default: `now()`]
+
+  Note: '''
+    OrgConsentRecord — Bước 7.3. Đồng thuận RIÊNG, tách biệt hoàn toàn
+    với SupervisionRelationship (Luồng 1) — cho phép School Admin xem dữ
+    liệu học tập chi tiết. Mặc định pending/rejected cho đến khi Parent
+    chủ động Accept (opt-in, KHÔNG opt-out).
+    Đổi ý hoặc un-enroll: đóng dòng bằng revoked_at=now() + tạo dòng
+    mới nếu cần — KHÔNG ghi đè status trực tiếp, theo đúng pattern
+    supervision_relationships.
+    Re-enroll (rời rồi quay lại đúng Organization): PHẢI tạo dòng MỚI ở
+    pending, KHÔNG tự động kế thừa quyết định cũ (giữ nguyên tinh thần
+    opt-in nghiêm ngặt — hoàn cảnh gia đình có thể đã thay đổi). Bản ghi
+    cũ (đã revoked) giữ nguyên làm audit trail, không xóa.
+    CẦN MIGRATION RIÊNG (DBML không hỗ trợ trực tiếp): partial unique
+    index đảm bảo tại một thời điểm chỉ có ĐÚNG 1 dòng hiệu lực mỗi cặp:
+      CREATE UNIQUE INDEX ON org_consent_records (child_profile_id, organization_id)
+      WHERE revoked_at IS NULL;
+  '''
+}
+
+Table org_safety_policy_templates {
+  id integer [pk, increment]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  organization_id integer [not null, unique, ref: > organizations.id]
+  max_story_length_baseline integer
+  required_approval_mode_default approval_mode_enum
+  created_at timestamp [not null, default: `now()`]
+
+  Note: '''
+    OrgSafetyPolicyTemplate — Bước 7.5. Baseline chỉ được THẮT CHẶT
+    thêm ở cấp Class (Teacher) hoặc Child (Parent), KHÔNG được nới lỏng
+    (BR-7.4). Khi Guardrail chạy (Luồng 2, Bước 2.2), SafetyPolicy hiệu
+    lực = union nghiêm ngặt hơn giữa policy cá nhân của Child và
+    baseline này.
+  '''
+}
+
+Table org_safety_policy_categories {
+  id integer [pk, increment]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp
+  is_deleted boolean [not null, default: false]
+  org_safety_policy_template_id integer [not null, ref: > org_safety_policy_templates.id]
+  content_category_id integer [not null, ref: > content_categories.id]
+  rule policy_rule_enum [not null]
+
+  Note: '''
+    MỚI v9.3 (đề xuất bổ sung): bảng con chuẩn hóa cho category_baseline
+    của OrgSafetyPolicyTemplate — dùng chung content_categories, tương tự
+    cách safety_policy_categories đã chuẩn hóa ở Luồng 1 (v9), thay vì
+    lưu JSON blob tự do trong org_safety_policy_templates.
+  '''
+
+  indexes {
+    (org_safety_policy_template_id, content_category_id) [unique]
+  }
+}

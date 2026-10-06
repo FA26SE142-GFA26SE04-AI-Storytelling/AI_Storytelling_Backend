@@ -1,9 +1,13 @@
 using System.ComponentModel.DataAnnotations;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using StoryPlatform.Application.Abstractions.Communication;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Application.Common.Exceptions;
+using StoryPlatform.Application.Common.Security;
+using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
@@ -19,42 +23,49 @@ public class SupervisionService : ISupervisionService
     private readonly IJwtTokenGenerator _tokenGenerator;
     private readonly IEmailSender _emailSender;
     private readonly INotificationService _notificationService;
+    private readonly IAuditLogWriter _auditLogWriter;
 
     public SupervisionService(
         IUnitOfWork unitOfWork,
         ISupervisionAccessGuard accessGuard,
         IJwtTokenGenerator tokenGenerator,
         IEmailSender emailSender,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        IAuditLogWriter auditLogWriter)
     {
         _unitOfWork = unitOfWork;
         _accessGuard = accessGuard;
         _tokenGenerator = tokenGenerator;
         _emailSender = emailSender;
         _notificationService = notificationService;
+        _auditLogWriter = auditLogWriter;
     }
 
     public async Task<InvitationDto> CreateInvitationAsync(
         int childProfileId, int inviterUserId, CreateInvitationRequestDto request,
         CancellationToken cancellationToken = default)
     {
-        await _accessGuard.EnsureActiveSupervisionAsync(
+        await _accessGuard.EnsureOwnerAsync(
             childProfileId, inviterUserId, cancellationToken);
 
-        if (request.ExpiresInDays is < 1 or > 365)
+        if (request.ExpiresInDays is < 1 or > SupervisionDefaults.InvitationMaxExpiryDays)
         {
-            throw new BadRequestException("Số ngày hết hạn phải từ 1 đến 365.");
+            throw new BadRequestException(
+                $"Số ngày hết hạn phải từ 1 đến {SupervisionDefaults.InvitationMaxExpiryDays}.");
         }
 
-        var email = string.IsNullOrWhiteSpace(request.InviteeEmail)
-            ? null
-            : request.InviteeEmail.Trim();
-        if (email?.Length > 150)
+        var email = request.InviteeEmail?.Trim();
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            throw new BadRequestException("Email người được mời là bắt buộc.");
+        }
+
+        if (email.Length > 150)
         {
             throw new BadRequestException("Email người được mời tối đa 150 ký tự.");
         }
 
-        if (email != null && !new EmailAddressAttribute().IsValid(email))
+        if (!new EmailAddressAttribute().IsValid(email))
         {
             throw new BadRequestException("Email người được mời không đúng định dạng.");
         }
@@ -73,41 +84,154 @@ public class SupervisionService : ISupervisionService
             .AddAsync(invitation, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        if (email != null)
-        {
-            var inviter = await _unitOfWork.Repository<UserAccount>()
-                .GetByIdAsync(inviterUserId, cancellationToken);
-            var inviterName = inviter?.FullName ?? "Một người dùng AI Storytelling Platform";
-            await _emailSender.SendSupervisionInvitationEmailAsync(
-                email, inviterName, invitation.InvitationCode!, cancellationToken);
-        }
+        await _auditLogWriter.LogAsync(
+            inviterUserId, "CREATE_SUPERVISION_INVITATION", nameof(SupervisionInvitation), invitation.Id,
+            null,
+            new { childProfileId, inviteeEmail = MaskEmail(email), expiresAt = invitation.ExpiresAt },
+            cancellationToken);
+
+        var inviter = await _unitOfWork.Repository<UserAccount>()
+            .GetByIdAsync(inviterUserId, cancellationToken);
+        var inviterName = inviter?.FullName ?? "Một người dùng AI Storytelling Platform";
+        await _emailSender.SendSupervisionInvitationEmailAsync(
+            email, inviterName, invitation.InvitationCode!, cancellationToken);
 
         return MapInvitation(invitation);
+    }
+
+    public async Task<ClaimInvitationResultDto> ClaimInvitationAsync(
+        string invitationCode, int claimerUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var invitation = await LoadPendingInvitationAsync(invitationCode, cancellationToken);
+        if (string.IsNullOrWhiteSpace(invitation.InviteeEmail))
+        {
+            throw new BadRequestException("Lời mời không có email người nhận hợp lệ.");
+        }
+
+        var alreadySupervising = await _unitOfWork.Repository<SupervisionRelationship>()
+            .ExistsAsync(
+                value => value.ChildProfileId == invitation.ChildProfileId
+                         && value.SupervisorUserId == claimerUserId
+                         && value.RevokedAt == null,
+                cancellationToken);
+        if (alreadySupervising)
+        {
+            throw new BadRequestException("Bạn đã giám sát hồ sơ trẻ này.");
+        }
+
+        var now = DateTime.UtcNow;
+        if (invitation.OtpExpiresAt.HasValue)
+        {
+            var lastSentAt = invitation.OtpExpiresAt.Value - SupervisionDefaults.InvitationOtpTtl;
+            if (lastSentAt + SupervisionDefaults.InvitationOtpResendCooldown > now)
+            {
+                throw new BadRequestException("Vui lòng chờ trước khi yêu cầu gửi lại OTP.");
+            }
+        }
+
+        var otp = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+        invitation.OtpHash = TokenHasher.Hash(OtpPayload(invitation.Id, otp));
+        invitation.OtpExpiresAt = now + SupervisionDefaults.InvitationOtpTtl;
+        invitation.OtpFailedAttempts = 0;
+        invitation.OtpVerifiedAt = null;
+        _unitOfWork.Repository<SupervisionInvitation>().Update(invitation);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _auditLogWriter.LogAsync(
+            claimerUserId, "CLAIM_SUPERVISION_INVITATION", nameof(SupervisionInvitation), invitation.Id,
+            null, new { childProfileId = invitation.ChildProfileId, channel = "email" }, cancellationToken);
+
+        await _emailSender.SendSupervisionInvitationOtpEmailAsync(
+            invitation.InviteeEmail, otp, cancellationToken);
+
+        return new ClaimInvitationResultDto
+        {
+            MaskedEmail = MaskEmail(invitation.InviteeEmail),
+            OtpExpiresAt = invitation.OtpExpiresAt.Value
+        };
+    }
+
+    public async Task<InvitationPreviewDto> VerifyInvitationOtpAsync(
+        string invitationCode, string otp, int verifierUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var invitation = await LoadPendingInvitationAsync(invitationCode, cancellationToken);
+        var now = DateTime.UtcNow;
+        if (invitation.OtpHash == null
+            || !invitation.OtpExpiresAt.HasValue
+            || invitation.OtpExpiresAt.Value <= now)
+        {
+            throw new BadRequestException(
+                "Mã OTP không hợp lệ hoặc đã hết hạn. Vui lòng yêu cầu gửi lại.");
+        }
+
+        var submittedHash = TokenHasher.Hash(
+            OtpPayload(invitation.Id, (otp ?? string.Empty).Trim()));
+        if (!CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(submittedHash),
+                Encoding.UTF8.GetBytes(invitation.OtpHash)))
+        {
+            invitation.OtpFailedAttempts++;
+            var locked = invitation.OtpFailedAttempts >= SupervisionDefaults.InvitationOtpMaxAttempts;
+            if (locked)
+            {
+                invitation.OtpHash = null;
+                invitation.OtpExpiresAt = null;
+            }
+
+            _unitOfWork.Repository<SupervisionInvitation>().Update(invitation);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            if (locked)
+            {
+                await _auditLogWriter.LogAsync(
+                    verifierUserId, "SUPERVISION_INVITATION_OTP_LOCKED", nameof(SupervisionInvitation), invitation.Id,
+                    null,
+                    new
+                    {
+                        childProfileId = invitation.ChildProfileId,
+                        failedAttempts = invitation.OtpFailedAttempts
+                    },
+                    cancellationToken);
+            }
+
+            throw new BadRequestException("Mã OTP không chính xác.");
+        }
+
+        invitation.OtpHash = null;
+        invitation.OtpExpiresAt = null;
+        invitation.OtpFailedAttempts = 0;
+        invitation.OtpVerifiedAt = now;
+        invitation.InviteeUserId = verifierUserId;
+        _unitOfWork.Repository<SupervisionInvitation>().Update(invitation);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _auditLogWriter.LogAsync(
+            verifierUserId, "VERIFY_SUPERVISION_INVITATION_OTP", nameof(SupervisionInvitation), invitation.Id,
+            null, new { childProfileId = invitation.ChildProfileId }, cancellationToken);
+
+        var child = await _unitOfWork.Repository<ChildProfile>()
+            .GetByIdAsync(invitation.ChildProfileId, cancellationToken)
+            ?? throw new NotFoundException("Hồ sơ trẻ", invitation.ChildProfileId);
+        var inviter = await _unitOfWork.Repository<UserAccount>()
+            .GetByIdAsync(invitation.InviterUserId, cancellationToken);
+
+        return new InvitationPreviewDto
+        {
+            InvitationId = invitation.Id,
+            InviterName = inviter?.FullName ?? "Người dùng AI Storytelling Platform",
+            ChildNickname = child.Nickname,
+            ChildAgeBand = child.AgeBand.ToString()
+        };
     }
 
     public async Task<SupervisionRelationshipDto> AcceptInvitationAsync(
         string invitationCode, int accepterUserId,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(invitationCode))
-        {
-            throw new BadRequestException("Mã mời không hợp lệ hoặc đã được sử dụng.");
-        }
-
+        var invitation = await LoadPendingInvitationAsync(invitationCode, cancellationToken);
+        RequireVerifiedInvitation(invitation, accepterUserId);
         var invitationRepo = _unitOfWork.Repository<SupervisionInvitation>();
-        var invitation = await invitationRepo.FirstOrDefaultAsync(
-            value => value.InvitationCode == invitationCode.Trim()
-                     && value.Status == InvitationStatus.Pending,
-            cancellationToken: cancellationToken);
-        if (invitation == null)
-        {
-            throw new BadRequestException("Mã mời không hợp lệ hoặc đã được sử dụng.");
-        }
-
-        if (!invitation.ExpiresAt.HasValue || invitation.ExpiresAt.Value <= DateTime.UtcNow)
-        {
-            throw new BadRequestException("Mã mời đã hết hạn.");
-        }
 
         var childProfileRepo = _unitOfWork.Repository<ChildProfile>();
         var childProfile = await childProfileRepo.GetByIdAsync(
@@ -115,13 +239,6 @@ public class SupervisionService : ISupervisionService
         if (childProfile == null)
         {
             throw new NotFoundException("Hồ sơ trẻ", invitation.ChildProfileId);
-        }
-
-        var accepter = await _unitOfWork.Repository<UserAccount>()
-            .GetByIdAsync(accepterUserId, cancellationToken);
-        if (accepter == null)
-        {
-            throw new NotFoundException("Tài khoản", accepterUserId);
         }
 
         var relationshipRepo = _unitOfWork.Repository<SupervisionRelationship>();
@@ -151,18 +268,57 @@ public class SupervisionService : ISupervisionService
         };
         await relationshipRepo.AddAsync(relationship, cancellationToken);
 
-        // Parent vừa chấp nhận làm hồ sơ đang chờ consent thỏa BR-1.9 ngay trong transaction này.
-        if (childProfile.Status == ChildProfileStatus.PendingParentConsent
-            && accepter.Role == UserRole.Parent)
+        foreach (var permission in SupervisionDefaults.DefaultPreset)
         {
-            childProfile.Status = ChildProfileStatus.Active;
-            childProfile.UpdatedAt = now;
-            childProfileRepo.Update(childProfile);
+            await _unitOfWork.Repository<SupervisionPermission>().AddAsync(
+                new SupervisionPermission
+                {
+                    SupervisionRelationship = relationship,
+                    Permission = permission
+                }, cancellationToken);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+        await _auditLogWriter.LogAsync(
+            accepterUserId, "ACCEPT_SUPERVISION_INVITATION", nameof(SupervisionInvitation), invitation.Id,
+            new { status = InvitationStatus.Pending.ToString() },
+            new
+            {
+                status = InvitationStatus.Accepted.ToString(),
+                childProfileId = invitation.ChildProfileId,
+                relationshipId = relationship.Id,
+                role = relationship.SupervisorRole.ToString(),
+                permissions = SupervisionDefaults.DefaultPreset.Select(permission => permission.ToString()).ToList()
+            },
+            cancellationToken);
+        await NotifyOwnerAsync(
+            invitation.ChildProfileId, NotificationType.SupervisionAccepted, invitation.Id,
+            accepterUserId, cancellationToken);
+
         return MapRelationship(relationship);
+    }
+
+    public async Task RejectInvitationAsync(
+        string invitationCode, int rejecterUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var invitation = await LoadPendingInvitationAsync(invitationCode, cancellationToken);
+        RequireVerifiedInvitation(invitation, rejecterUserId);
+
+        invitation.Status = InvitationStatus.Rejected;
+        invitation.RespondedAt = DateTime.UtcNow;
+        _unitOfWork.Repository<SupervisionInvitation>().Update(invitation);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _auditLogWriter.LogAsync(
+            rejecterUserId, "REJECT_SUPERVISION_INVITATION", nameof(SupervisionInvitation), invitation.Id,
+            new { status = InvitationStatus.Pending.ToString() },
+            new { status = InvitationStatus.Rejected.ToString(), childProfileId = invitation.ChildProfileId },
+            cancellationToken);
+        await NotifyOwnerAsync(
+            invitation.ChildProfileId, NotificationType.SupervisionRejected, invitation.Id,
+            rejecterUserId, cancellationToken);
     }
 
     public async Task RevokeSupervisionAsync(
@@ -228,6 +384,16 @@ public class SupervisionService : ISupervisionService
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _auditLogWriter.LogAsync(
+            revokerUserId, "REVOKE_SUPERVISION", nameof(SupervisionRelationship), target.Id,
+            new
+            {
+                childProfileId = target.ChildProfileId,
+                supervisorUserId = target.SupervisorUserId,
+                role = target.SupervisorRole.ToString()
+            },
+            new { revokedByUserId = revokerUserId, target.RevokedAt },
+            cancellationToken);
     }
 
     public async Task<OwnershipTransferRequestDto> RequestOwnershipTransferAsync(
@@ -239,82 +405,65 @@ public class SupervisionService : ISupervisionService
             throw new BadRequestException("Không thể chuyển nhượng quyền Owner cho chính mình.");
         }
 
-        var requesterRelationship = await _accessGuard.EnsureActiveSupervisionAsync(
-            childProfileId, requesterUserId, cancellationToken);
+        await _accessGuard.EnsureOwnerAsync(childProfileId, requesterUserId, cancellationToken);
+
         var relationshipRepo = _unitOfWork.Repository<SupervisionRelationship>();
-
-        int currentOwnerUserId;
-        int targetSupervisorUserId;
-        int responderUserId;
-        OwnershipTransferRequestStatus status;
-
-        switch (requesterRelationship.SupervisorRole)
+        var targetExists = await relationshipRepo.ExistsAsync(
+            value => value.ChildProfileId == childProfileId
+                     && value.SupervisorUserId == request.TargetSupervisorUserId
+                     && value.SupervisorRole == SupervisorRole.AdditionalSupervisor
+                     && value.RevokedAt == null,
+            cancellationToken);
+        if (!targetExists)
         {
-            case SupervisorRole.Owner:
-                var targetExists = await relationshipRepo.ExistsAsync(
-                    value => value.ChildProfileId == childProfileId
-                             && value.SupervisorUserId == request.TargetSupervisorUserId
-                             && value.SupervisorRole == SupervisorRole.AdditionalSupervisor
-                             && value.RevokedAt == null,
-                    cancellationToken);
-                if (!targetExists)
-                {
-                    throw new BadRequestException(
-                        "Người nhận phải là một Additional Supervisor đang hoạt động của hồ sơ trẻ này.");
-                }
+            throw new BadRequestException(
+                "Người nhận phải là một Additional Supervisor đang hoạt động của hồ sơ trẻ này.");
+        }
 
-                currentOwnerUserId = requesterUserId;
-                targetSupervisorUserId = request.TargetSupervisorUserId;
-                responderUserId = targetSupervisorUserId;
-                status = OwnershipTransferRequestStatus.Pending;
-                break;
-
-            case SupervisorRole.AdditionalSupervisor:
-                var targetIsOwner = await relationshipRepo.ExistsAsync(
-                    value => value.ChildProfileId == childProfileId
-                             && value.SupervisorUserId == request.TargetSupervisorUserId
-                             && value.SupervisorRole == SupervisorRole.Owner
-                             && value.RevokedAt == null,
-                    cancellationToken);
-                if (!targetIsOwner)
-                {
-                    throw new BadRequestException(
-                        "Người nhận phải là Owner đang hoạt động của hồ sơ trẻ này.");
-                }
-
-                currentOwnerUserId = request.TargetSupervisorUserId;
-                targetSupervisorUserId = requesterUserId;
-                responderUserId = currentOwnerUserId;
-                status = OwnershipTransferRequestStatus.PendingOwnerResponse;
-                break;
-
-            // SupervisorRole chỉ có 2 giá trị hợp lệ; nhánh này chỉ còn lại phòng khi
-            // enum bị mở rộng trong tương lai hoặc dữ liệu bị ép kiểu sai.
-            default:
-                throw new ForbiddenException(
-                    "Chỉ Owner hoặc Additional Supervisor đang hoạt động mới có thể tạo yêu cầu đổi quyền Owner.");
+        var now = DateTime.UtcNow;
+        var requestRepo = _unitOfWork.Repository<OwnershipTransferRequest>();
+        var hasPendingRequest = await requestRepo.ExistsAsync(
+            value => value.ChildProfileId == childProfileId
+                     && value.Status == OwnershipTransferRequestStatus.Pending
+                     && (value.ExpiresAt == null || value.ExpiresAt > now),
+            cancellationToken);
+        if (hasPendingRequest)
+        {
+            throw new ConflictException(
+                "Hồ sơ trẻ đã có một yêu cầu chuyển quyền sở hữu đang chờ xử lý.");
         }
 
         var transferRequest = new OwnershipTransferRequest
         {
             ChildProfileId = childProfileId,
-            CurrentOwnerUserId = currentOwnerUserId,
-            TargetSupervisorUserId = targetSupervisorUserId,
-            Status = status
+            CurrentOwnerUserId = requesterUserId,
+            TargetSupervisorUserId = request.TargetSupervisorUserId,
+            Status = OwnershipTransferRequestStatus.Pending,
+            ExpiresAt = now + SupervisionDefaults.OwnershipTransferTtl
         };
 
-        await _unitOfWork.Repository<OwnershipTransferRequest>()
-            .AddAsync(transferRequest, cancellationToken);
+        await requestRepo.AddAsync(transferRequest, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+        await _auditLogWriter.LogAsync(
+            requesterUserId, "REQUEST_OWNERSHIP_TRANSFER", nameof(OwnershipTransferRequest), transferRequest.Id,
+            null,
+            new
+            {
+                childProfileId,
+                targetUserId = request.TargetSupervisorUserId,
+                expiresAt = transferRequest.ExpiresAt
+            },
+            cancellationToken);
+
         await _notificationService.CreateAsync(
-            responderUserId, NotificationType.OwnershipTransferRequested,
+            transferRequest.TargetSupervisorUserId, NotificationType.OwnershipTransferRequested,
             JsonSerializer.Serialize(new
             {
                 ownershipTransferRequestId = transferRequest.Id,
                 childProfileId,
                 requesterUserId,
-                responderUserId
+                responderUserId = transferRequest.TargetSupervisorUserId
             }), cancellationToken);
 
         return MapOwnershipTransferRequest(transferRequest);
@@ -326,31 +475,35 @@ public class SupervisionService : ISupervisionService
     {
         var requestRepo = _unitOfWork.Repository<OwnershipTransferRequest>();
         var transferRequest = await requestRepo.GetByIdAsync(
-            ownershipTransferRequestId, cancellationToken);
-        if (transferRequest == null)
-        {
-            throw new NotFoundException(
+            ownershipTransferRequestId, cancellationToken)
+            ?? throw new NotFoundException(
                 "Yêu cầu chuyển nhượng quyền Owner", ownershipTransferRequestId);
-        }
 
-        if (!IsPendingOwnershipTransfer(transferRequest.Status))
+        if (transferRequest.Status != OwnershipTransferRequestStatus.Pending)
         {
             throw new BadRequestException(
                 "Yêu cầu chuyển nhượng quyền Owner đã được xử lý trước đó.");
         }
 
-        var responderUserId = GetOwnershipTransferResponderUserId(transferRequest);
-        if (accepterUserId != responderUserId)
+        if (accepterUserId != transferRequest.TargetSupervisorUserId)
         {
             throw new ForbiddenException(
-                "Chỉ người nhận yêu cầu đổi quyền Owner mới có thể chấp nhận yêu cầu này.");
+                "Chỉ Additional Supervisor được chỉ định mới có thể chấp nhận yêu cầu này.");
         }
 
-        var requesterUserId = GetOwnershipTransferRequesterUserId(transferRequest);
-        var ownerResponds = IsOwnerResponseOwnershipTransfer(transferRequest.Status);
+        if (IsExpired(transferRequest, DateTime.UtcNow))
+        {
+            transferRequest.Status = OwnershipTransferRequestStatus.Expired;
+            requestRepo.Update(transferRequest);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _auditLogWriter.LogAsync(
+                null, "EXPIRE_OWNERSHIP_TRANSFER", nameof(OwnershipTransferRequest), transferRequest.Id,
+                new { status = OwnershipTransferRequestStatus.Pending.ToString() },
+                new { status = OwnershipTransferRequestStatus.Expired.ToString() }, cancellationToken);
+            throw new BadRequestException("Yêu cầu chuyển nhượng quyền Owner đã hết hạn.");
+        }
 
         SupervisionRelationship? targetRelationship = null;
-
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
@@ -367,7 +520,7 @@ public class SupervisionService : ISupervisionService
             if (ownerRelationship == null)
             {
                 throw new BadRequestException(
-                    "Yêu cầu chuyển nhượng không còn hợp lệ vì Owner trong yêu cầu không còn giữ quyền Owner của hồ sơ này.");
+                    "Yêu cầu chuyển nhượng không còn hợp lệ vì Owner trong yêu cầu không còn giữ quyền Owner.");
             }
 
             targetRelationship = await relationshipRepo.FirstOrDefaultAsync(
@@ -388,39 +541,32 @@ public class SupervisionService : ISupervisionService
             relationshipRepo.Update(targetRelationship);
 
             var permissionRepo = _unitOfWork.Repository<SupervisionPermission>();
-            var staleTargetPermissions = await permissionRepo.FindAsync(
+            var targetPermissions = await permissionRepo.FindAsync(
                 value => value.SupervisionRelationshipId == targetRelationship.Id,
                 cancellationToken: cancellationToken);
-            permissionRepo.DeleteRange(staleTargetPermissions);
+            if (targetPermissions.Count > 0)
+            {
+                permissionRepo.DeleteRange(targetPermissions);
+            }
 
-            var ownerHasViewResults = await permissionRepo.ExistsAsync(
-                value => value.SupervisionRelationshipId == ownerRelationship.Id
-                         && value.Permission == Permission.ViewResults,
-                cancellationToken);
-            if (!ownerHasViewResults)
+            foreach (var permission in SupervisionDefaults.DefaultPreset)
             {
                 await permissionRepo.AddAsync(new SupervisionPermission
                 {
                     SupervisionRelationshipId = ownerRelationship.Id,
-                    Permission = Permission.ViewResults
+                    Permission = permission
                 }, cancellationToken);
             }
 
             var childProfileRepo = _unitOfWork.Repository<ChildProfile>();
             var childProfile = await childProfileRepo.GetByIdAsync(
-                transferRequest.ChildProfileId, cancellationToken);
-            if (childProfile == null)
-            {
-                throw new NotFoundException("Hồ sơ trẻ", transferRequest.ChildProfileId);
-            }
-
+                transferRequest.ChildProfileId, cancellationToken)
+                ?? throw new NotFoundException("Hồ sơ trẻ", transferRequest.ChildProfileId);
             childProfile.OwnerUserId = transferRequest.TargetSupervisorUserId;
             childProfile.UpdatedAt = DateTime.UtcNow;
             childProfileRepo.Update(childProfile);
 
-            transferRequest.Status = ownerResponds
-                ? OwnershipTransferRequestStatus.AcceptedByOwner
-                : OwnershipTransferRequestStatus.Accepted;
+            transferRequest.Status = OwnershipTransferRequestStatus.Accepted;
             transferRequest.RespondedAt = DateTime.UtcNow;
             requestRepo.Update(transferRequest);
 
@@ -432,8 +578,14 @@ public class SupervisionService : ISupervisionService
             throw;
         }
 
+        await _auditLogWriter.LogAsync(
+            accepterUserId, "ACCEPT_OWNERSHIP_TRANSFER", nameof(OwnershipTransferRequest), transferRequest.Id,
+            new { ownerUserId = transferRequest.CurrentOwnerUserId },
+            new { ownerUserId = transferRequest.TargetSupervisorUserId },
+            cancellationToken);
+
         await _notificationService.CreateAsync(
-            requesterUserId, NotificationType.OwnershipTransferAccepted,
+            transferRequest.CurrentOwnerUserId, NotificationType.OwnershipTransferAccepted,
             JsonSerializer.Serialize(new
             {
                 ownershipTransferRequestId = transferRequest.Id,
@@ -450,36 +602,34 @@ public class SupervisionService : ISupervisionService
     {
         var requestRepo = _unitOfWork.Repository<OwnershipTransferRequest>();
         var transferRequest = await requestRepo.GetByIdAsync(
-            ownershipTransferRequestId, cancellationToken);
-        if (transferRequest == null)
-        {
-            throw new NotFoundException(
+            ownershipTransferRequestId, cancellationToken)
+            ?? throw new NotFoundException(
                 "Yêu cầu chuyển nhượng quyền Owner", ownershipTransferRequestId);
-        }
 
-        if (!IsPendingOwnershipTransfer(transferRequest.Status))
+        if (transferRequest.Status != OwnershipTransferRequestStatus.Pending)
         {
             throw new BadRequestException(
                 "Yêu cầu chuyển nhượng quyền Owner đã được xử lý trước đó.");
         }
 
-        var responderUserId = GetOwnershipTransferResponderUserId(transferRequest);
-        if (rejecterUserId != responderUserId)
+        if (rejecterUserId != transferRequest.TargetSupervisorUserId)
         {
             throw new ForbiddenException(
-                "Chỉ người nhận yêu cầu đổi quyền Owner mới có thể từ chối yêu cầu này.");
+                "Chỉ Additional Supervisor được chỉ định mới có thể từ chối yêu cầu này.");
         }
 
-        var requesterUserId = GetOwnershipTransferRequesterUserId(transferRequest);
-        transferRequest.Status = IsOwnerResponseOwnershipTransfer(transferRequest.Status)
-            ? OwnershipTransferRequestStatus.RejectedByOwner
-            : OwnershipTransferRequestStatus.Rejected;
+        transferRequest.Status = OwnershipTransferRequestStatus.Rejected;
         transferRequest.RespondedAt = DateTime.UtcNow;
         requestRepo.Update(transferRequest);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+        await _auditLogWriter.LogAsync(
+            rejecterUserId, "REJECT_OWNERSHIP_TRANSFER", nameof(OwnershipTransferRequest), transferRequest.Id,
+            new { status = OwnershipTransferRequestStatus.Pending.ToString() },
+            new { status = OwnershipTransferRequestStatus.Rejected.ToString() }, cancellationToken);
+
         await _notificationService.CreateAsync(
-            requesterUserId, NotificationType.OwnershipTransferRejected,
+            transferRequest.CurrentOwnerUserId, NotificationType.OwnershipTransferRejected,
             JsonSerializer.Serialize(new
             {
                 ownershipTransferRequestId = transferRequest.Id,
@@ -489,6 +639,38 @@ public class SupervisionService : ISupervisionService
         return MapOwnershipTransferRequest(transferRequest);
     }
 
+    public async Task<OwnershipTransferRequestDto> CancelOwnershipTransferAsync(
+        int ownershipTransferRequestId, int ownerUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var requestRepo = _unitOfWork.Repository<OwnershipTransferRequest>();
+        var transferRequest = await requestRepo.GetByIdAsync(
+            ownershipTransferRequestId, cancellationToken)
+            ?? throw new NotFoundException(
+                "Yêu cầu chuyển nhượng quyền Owner", ownershipTransferRequestId);
+
+        if (transferRequest.CurrentOwnerUserId != ownerUserId)
+        {
+            throw new ForbiddenException("Chỉ Owner đã tạo yêu cầu mới có thể huỷ yêu cầu này.");
+        }
+
+        if (transferRequest.Status != OwnershipTransferRequestStatus.Pending)
+        {
+            throw new BadRequestException("Chỉ có thể huỷ yêu cầu chuyển quyền đang chờ xử lý.");
+        }
+
+        transferRequest.Status = OwnershipTransferRequestStatus.Cancelled;
+        transferRequest.RespondedAt = DateTime.UtcNow;
+        requestRepo.Update(transferRequest);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _auditLogWriter.LogAsync(
+            ownerUserId, "CANCEL_OWNERSHIP_TRANSFER", nameof(OwnershipTransferRequest), transferRequest.Id,
+            new { status = OwnershipTransferRequestStatus.Pending.ToString() },
+            new { status = OwnershipTransferRequestStatus.Cancelled.ToString() }, cancellationToken);
+
+        return MapOwnershipTransferRequest(transferRequest);
+    }
     public async Task<List<OwnershipTransferRequestDto>> ListOwnershipTransferRequestsAsync(
         int childProfileId, int currentUserId, CancellationToken cancellationToken = default)
     {
@@ -522,6 +704,16 @@ public class SupervisionService : ISupervisionService
                 Permission = permission
             }, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _auditLogWriter.LogAsync(
+                ownerUserId, "GRANT_SUPERVISION_PERMISSION", nameof(SupervisionRelationship), target.Id,
+                null,
+                new
+                {
+                    childProfileId = target.ChildProfileId,
+                    supervisorUserId = target.SupervisorUserId,
+                    permission = permission.ToString()
+                },
+                cancellationToken);
         }
     }
 
@@ -541,6 +733,15 @@ public class SupervisionService : ISupervisionService
         {
             permissionRepo.Delete(existing);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _auditLogWriter.LogAsync(
+                ownerUserId, "REVOKE_SUPERVISION_PERMISSION", nameof(SupervisionRelationship), target.Id,
+                new
+                {
+                    childProfileId = target.ChildProfileId,
+                    supervisorUserId = target.SupervisorUserId,
+                    permission = permission.ToString()
+                },
+                null, cancellationToken);
         }
     }
 
@@ -565,7 +766,7 @@ public class SupervisionService : ISupervisionService
             throw new NotFoundException("Lời mời giám sát", invitationId);
         }
 
-        await _accessGuard.EnsureActiveSupervisionAsync(invitation.ChildProfileId, currentUserId, cancellationToken);
+        await _accessGuard.EnsureOwnerAsync(invitation.ChildProfileId, currentUserId, cancellationToken);
 
         if (invitation.Status != InvitationStatus.Pending)
         {
@@ -576,6 +777,11 @@ public class SupervisionService : ISupervisionService
         invitation.RespondedAt = DateTime.UtcNow;
         invitationRepo.Update(invitation);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _auditLogWriter.LogAsync(
+            currentUserId, "CANCEL_SUPERVISION_INVITATION", nameof(SupervisionInvitation), invitation.Id,
+            new { status = InvitationStatus.Pending.ToString() },
+            new { status = InvitationStatus.Revoked.ToString(), childProfileId = invitation.ChildProfileId },
+            cancellationToken);
     }
 
     public async Task<List<SupervisionRelationshipDto>> ListSupervisorsAsync(
@@ -738,6 +944,16 @@ public class SupervisionService : ISupervisionService
                 permissions = permissionRequest.Items.Select(item => item.Permission.ToString())
             }), cancellationToken);
 
+        await _auditLogWriter.LogAsync(
+            ownerUserId, "ACCEPT_PERMISSION_REQUEST", nameof(SupervisionPermissionRequest), permissionRequest.Id,
+            null,
+            new
+            {
+                supervisionRelationshipId = relationship.Id,
+                permissions = permissionRequest.Items.Select(item => item.Permission.ToString()).ToList()
+            },
+            cancellationToken);
+
         return MapPermissionRequest(permissionRequest);
     }
 
@@ -825,6 +1041,83 @@ public class SupervisionService : ISupervisionService
         return requests.Select(MapPermissionRequest).ToList();
     }
 
+    private async Task<SupervisionInvitation> LoadPendingInvitationAsync(
+        string invitationCode, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(invitationCode))
+        {
+            throw new BadRequestException("Mã mời không hợp lệ hoặc đã được sử dụng.");
+        }
+
+        var invitationRepo = _unitOfWork.Repository<SupervisionInvitation>();
+        var invitation = await invitationRepo.FirstOrDefaultAsync(
+            value => value.InvitationCode == invitationCode.Trim()
+                     && value.Status == InvitationStatus.Pending,
+            cancellationToken: cancellationToken);
+        if (invitation == null)
+        {
+            throw new BadRequestException("Mã mời không hợp lệ hoặc đã được sử dụng.");
+        }
+
+        if (!invitation.ExpiresAt.HasValue || invitation.ExpiresAt.Value <= DateTime.UtcNow)
+        {
+            invitation.Status = InvitationStatus.Expired;
+            invitation.RespondedAt = DateTime.UtcNow;
+            invitationRepo.Update(invitation);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            throw new BadRequestException("Mã mời đã hết hạn.");
+        }
+
+        return invitation;
+    }
+
+    private static void RequireVerifiedInvitation(
+        SupervisionInvitation invitation, int currentUserId)
+    {
+        if (invitation.InviteeUserId != currentUserId
+            || !invitation.OtpVerifiedAt.HasValue
+            || invitation.OtpVerifiedAt.Value + SupervisionDefaults.InvitationVerifiedWindow <= DateTime.UtcNow)
+        {
+            throw new BadRequestException(
+                "Bạn phải xác thực OTP hợp lệ trước khi phản hồi lời mời.");
+        }
+    }
+
+    private async Task NotifyOwnerAsync(
+        int childProfileId, NotificationType notificationType, int invitationId,
+        int respondingUserId, CancellationToken cancellationToken)
+    {
+        var childProfile = await _unitOfWork.Repository<ChildProfile>()
+            .GetByIdAsync(childProfileId, cancellationToken)
+            ?? throw new NotFoundException("Hồ sơ trẻ", childProfileId);
+        var responder = await _unitOfWork.Repository<UserAccount>()
+            .GetByIdAsync(respondingUserId, cancellationToken);
+
+        await _notificationService.CreateAsync(
+            childProfile.OwnerUserId, notificationType,
+            JsonSerializer.Serialize(new
+            {
+                invitationId,
+                childProfileId,
+                supervisorUserId = respondingUserId,
+                supervisorName = responder?.FullName ?? string.Empty
+            }), cancellationToken);
+    }
+
+    private static string OtpPayload(int invitationId, string otp) =>
+        $"{invitationId}:{otp}";
+
+    private static string MaskEmail(string email)
+    {
+        var at = email.IndexOf('@');
+        if (at <= 0)
+        {
+            return "*****";
+        }
+
+        return $"{email[0]}*****{email[at..]}";
+    }
+
     private async Task<SupervisionPermissionRequest> LoadPermissionRequestOrThrowAsync(
         int permissionRequestId, CancellationToken cancellationToken)
     {
@@ -905,34 +1198,6 @@ public class SupervisionService : ISupervisionService
         RespondedAt = request.RespondedAt
     };
 
-    private static bool IsPendingOwnershipTransfer(OwnershipTransferRequestStatus status) =>
-        status is OwnershipTransferRequestStatus.Pending
-            or OwnershipTransferRequestStatus.PendingOwnerResponse;
-
-    private static bool IsOwnerResponseOwnershipTransfer(OwnershipTransferRequestStatus status) =>
-        status is OwnershipTransferRequestStatus.PendingOwnerResponse
-            or OwnershipTransferRequestStatus.AcceptedByOwner
-            or OwnershipTransferRequestStatus.RejectedByOwner;
-
-    private static int GetOwnershipTransferRequesterUserId(OwnershipTransferRequest request) =>
-        IsOwnerResponseOwnershipTransfer(request.Status)
-            ? request.TargetSupervisorUserId
-            : request.CurrentOwnerUserId;
-
-    private static int GetOwnershipTransferResponderUserId(OwnershipTransferRequest request) =>
-        IsOwnerResponseOwnershipTransfer(request.Status)
-            ? request.CurrentOwnerUserId
-            : request.TargetSupervisorUserId;
-
-    private static string GetOwnershipTransferPublicStatus(OwnershipTransferRequestStatus status) =>
-        status switch
-        {
-            OwnershipTransferRequestStatus.PendingOwnerResponse => "Pending",
-            OwnershipTransferRequestStatus.AcceptedByOwner => "Accepted",
-            OwnershipTransferRequestStatus.RejectedByOwner => "Rejected",
-            _ => status.ToString()
-        };
-
     private static OwnershipTransferRequestDto MapOwnershipTransferRequest(
         OwnershipTransferRequest request) => new()
     {
@@ -940,10 +1205,17 @@ public class SupervisionService : ISupervisionService
         ChildProfileId = request.ChildProfileId,
         CurrentOwnerUserId = request.CurrentOwnerUserId,
         TargetSupervisorUserId = request.TargetSupervisorUserId,
-        RequesterUserId = GetOwnershipTransferRequesterUserId(request),
-        ResponderUserId = GetOwnershipTransferResponderUserId(request),
-        Status = GetOwnershipTransferPublicStatus(request.Status),
+        RequesterUserId = request.CurrentOwnerUserId,
+        ResponderUserId = request.TargetSupervisorUserId,
+        Status = request.Status == OwnershipTransferRequestStatus.Pending
+                 && request.ExpiresAt <= DateTime.UtcNow
+            ? OwnershipTransferRequestStatus.Expired.ToString()
+            : request.Status.ToString(),
         CreatedAt = request.CreatedAt,
-        RespondedAt = request.RespondedAt
+        RespondedAt = request.RespondedAt,
+        ExpiresAt = request.ExpiresAt
     };
+
+    private static bool IsExpired(OwnershipTransferRequest request, DateTime now) =>
+        request.ExpiresAt.HasValue && request.ExpiresAt.Value <= now;
 }

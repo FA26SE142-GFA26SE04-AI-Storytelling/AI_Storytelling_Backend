@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using StoryPlatform.Domain.Entities;
-using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Infrastructure.Persistence.Configurations;
 
@@ -20,33 +19,16 @@ public class SubscriptionPlanConfiguration : IEntityTypeConfiguration<Subscripti
             .IsRequired()
             .HasMaxLength(150);
 
-        builder.Property(x => x.ApplicableScope)
-            .HasConversion<string>()
-            .HasMaxLength(20)
-            .IsRequired();
-
         builder.HasQueryFilter(x => !x.IsDeleted);
 
-        // Buoc 5.6 — 2 goi mac dinh da chot: Personal (49.000d/+50 luot) va Organization (99.000d/+150 luot).
+        // Buoc 5.6 — goi mac dinh: Personal (49.000d/+50 luot). Goi Organization da bo cung Organization/Teacher.
         builder.HasData(
             new SubscriptionPlan
             {
                 Id = 1,
                 Name = "Personal",
-                ApplicableScope = ProfileScope.Personal,
                 PriceVnd = 49000,
                 QuotaAmount = 50,
-                IsActive = true,
-                CreatedAt = SeedCreatedAt,
-                IsDeleted = false
-            },
-            new SubscriptionPlan
-            {
-                Id = 2,
-                Name = "Organization",
-                ApplicableScope = ProfileScope.Organization,
-                PriceVnd = 99000,
-                QuotaAmount = 150,
                 IsActive = true,
                 CreatedAt = SeedCreatedAt,
                 IsDeleted = false

@@ -13,6 +13,18 @@ public interface ISupervisionService
         string invitationCode, int accepterUserId,
         CancellationToken cancellationToken = default);
 
+    Task<ClaimInvitationResultDto> ClaimInvitationAsync(
+        string invitationCode, int claimerUserId,
+        CancellationToken cancellationToken = default);
+
+    Task<InvitationPreviewDto> VerifyInvitationOtpAsync(
+        string invitationCode, string otp, int userId,
+        CancellationToken cancellationToken = default);
+
+    Task RejectInvitationAsync(
+        string invitationCode, int rejecterUserId,
+        CancellationToken cancellationToken = default);
+
     Task RevokeSupervisionAsync(
         int supervisionRelationshipId, int revokerUserId,
         CancellationToken cancellationToken = default);
@@ -27,6 +39,10 @@ public interface ISupervisionService
 
     Task<OwnershipTransferRequestDto> RejectOwnershipTransferAsync(
         int ownershipTransferRequestId, int rejecterUserId,
+        CancellationToken cancellationToken = default);
+
+    Task<OwnershipTransferRequestDto> CancelOwnershipTransferAsync(
+        int ownershipTransferRequestId, int cancellerUserId,
         CancellationToken cancellationToken = default);
 
     Task<List<OwnershipTransferRequestDto>> ListOwnershipTransferRequestsAsync(

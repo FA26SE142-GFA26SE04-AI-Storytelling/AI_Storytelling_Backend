@@ -37,26 +37,13 @@ public class ChildProfileService : IChildProfileService
 
         ValidateRequest(request);
 
-        ClassGroup? classGroup = null;
-        if (request.Scope == ProfileScope.Organization)
-        {
-            classGroup = await ValidateOrganizationScopeAsync(request, cancellationToken);
-        }
-        else if (request.OrganizationId.HasValue || request.ClassGroupId.HasValue)
-        {
-            throw new BadRequestException(
-                "Không được chỉ định Organization/Class Group khi tạo hồ sơ với scope='personal'.");
-        }
-
         var childProfile = new ChildProfile
         {
             OwnerUserId = ownerUserId,
             Nickname = request.Nickname.Trim(),
             AgeBand = request.AgeBand,
             Language = string.IsNullOrWhiteSpace(request.Language) ? "vi" : request.Language.Trim(),
-            Status = ChildProfileStatus.Draft,
-            Scope = request.Scope,
-            OrganizationId = request.Scope == ProfileScope.Organization ? request.OrganizationId : null
+            Status = ChildProfileStatus.Draft
         };
 
         await _unitOfWork.Repository<ChildProfile>().AddAsync(childProfile, cancellationToken);
@@ -72,19 +59,7 @@ public class ChildProfileService : IChildProfileService
             },
             cancellationToken);
 
-        if (classGroup != null)
-        {
-            await _unitOfWork.Repository<ClassGroupMember>().AddAsync(
-                new ClassGroupMember
-                {
-                    ClassGroup = classGroup,
-                    ChildProfile = childProfile,
-                    JoinedAt = DateTime.UtcNow
-                },
-                cancellationToken);
-        }
-
-        // Lưu profile, quyền Owner và membership cùng nhau trước để EF cấp ChildProfile.Id.
+        // Lưu profile và quyền Owner cùng nhau trước để EF cấp ChildProfile.Id.
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         // AuditLog dùng EntityId thường, không có navigation tới ChildProfile, nên cần lưu riêng sau khi có Id.
@@ -123,26 +98,23 @@ public class ChildProfileService : IChildProfileService
                 "Hồ sơ trẻ chưa có Learning Profile không thể kích hoạt.");
         }
 
-        var hasSafetyPolicy = await _unitOfWork.Repository<SafetyPolicy>()
-            .ExistsAsync(value => value.ChildProfileId == childProfileId, cancellationToken);
-        if (!hasSafetyPolicy)
+        var safetyPolicy = await _unitOfWork.Repository<SafetyPolicy>()
+            .FirstOrDefaultAsync(
+                value => value.ChildProfileId == childProfileId,
+                cancellationToken: cancellationToken);
+        if (safetyPolicy == null)
         {
             throw new BadRequestException(
                 "Hồ sơ trẻ chưa có Safety Policy — không thể kích hoạt.");
         }
 
-        // BR-1.9 áp dụng thống nhất cho mọi scope: phải có ít nhất một Parent đang giám sát.
-        var hasActiveParentSupervisor = await _unitOfWork.Repository<SupervisionRelationship>()
-            .ExistsAsync(
-                value => value.ChildProfileId == childProfileId
-                         && value.RevokedAt == null
-                         && value.SupervisorUser != null
-                         && value.SupervisorUser.Role == UserRole.Parent,
-                cancellationToken);
+        if (!safetyPolicy.ConsentRecorded)
+        {
+            throw new BadRequestException(
+                "Safety Policy chưa có consent hợp lệ theo phiên bản hiện tại — không thể kích hoạt.");
+        }
 
-        profile.Status = hasActiveParentSupervisor
-            ? ChildProfileStatus.Active
-            : ChildProfileStatus.PendingParentConsent;
+        profile.Status = ChildProfileStatus.Active;
         profile.UpdatedAt = DateTime.UtcNow;
         profileRepo.Update(profile);
         await WriteChildProfileAuditAsync(
@@ -205,7 +177,6 @@ public class ChildProfileService : IChildProfileService
             throw new BadRequestException("Nhóm tuổi nhận thức không hợp lệ.");
         }
 
-        // Scope/OrganizationId KHÔNG được sửa qua endpoint này — đổi scope là 1 luồng riêng (Luồng 7).
         profile.Nickname = request.Nickname.Trim();
         profile.AgeBand = request.AgeBand;
         profile.Language = string.IsNullOrWhiteSpace(request.Language) ? "vi" : request.Language.Trim();
@@ -258,50 +229,6 @@ public class ChildProfileService : IChildProfileService
         }, cancellationToken);
     }
 
-    private async Task<ClassGroup> ValidateOrganizationScopeAsync(
-        CreateChildProfileRequestDto request,
-        CancellationToken cancellationToken)
-    {
-        if (!request.OrganizationId.HasValue || !request.ClassGroupId.HasValue)
-        {
-            throw new BadRequestException(
-                "Phải chọn Organization và Class Group khi tạo hồ sơ với scope='organization'.");
-        }
-
-        var organization = await _unitOfWork.Repository<Organization>()
-            .GetByIdAsync(request.OrganizationId.Value, cancellationToken);
-        if (organization == null)
-        {
-            throw new NotFoundException("Organization", request.OrganizationId.Value);
-        }
-
-        if (organization.VerificationStatus != OrgVerification.Active)
-        {
-            throw new BadRequestException(
-                "Organization phải ở trạng thái Active mới có thể tạo hồ sơ trẻ trong đó.");
-        }
-
-        var classGroup = await _unitOfWork.Repository<ClassGroup>()
-            .GetByIdAsync(request.ClassGroupId.Value, cancellationToken);
-        if (classGroup == null)
-        {
-            throw new NotFoundException("Class Group", request.ClassGroupId.Value);
-        }
-
-        if (classGroup.OrganizationId != request.OrganizationId.Value)
-        {
-            throw new BadRequestException("Class Group không thuộc Organization đã chọn.");
-        }
-
-        if (classGroup.Status != ClassGroupStatus.Active)
-        {
-            throw new BadRequestException(
-                "Class Group đã ngừng hoạt động (archived), không thể thêm hồ sơ trẻ mới.");
-        }
-
-        return classGroup;
-    }
-
     private static void ValidateRequest(CreateChildProfileRequestDto request)
     {
         if (string.IsNullOrWhiteSpace(request.Nickname))
@@ -312,11 +239,6 @@ public class ChildProfileService : IChildProfileService
         if (!Enum.IsDefined(request.AgeBand))
         {
             throw new BadRequestException("Nhóm tuổi nhận thức không hợp lệ.");
-        }
-
-        if (!Enum.IsDefined(request.Scope))
-        {
-            throw new BadRequestException("Phạm vi hồ sơ không hợp lệ.");
         }
 
         var language = request.Language?.Trim();
@@ -336,8 +258,6 @@ public class ChildProfileService : IChildProfileService
             AgeBand = childProfile.AgeBand.ToString(),
             Language = childProfile.Language,
             Status = childProfile.Status.ToString(),
-            Scope = childProfile.Scope.ToString(),
-            OrganizationId = childProfile.OrganizationId,
             CreatedAt = childProfile.CreatedAt
         };
     }

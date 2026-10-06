@@ -41,18 +41,6 @@ public class AdminAccountService : IAdminAccountService
             throw new ConflictException("Tài khoản này đã là Administrator.");
         }
 
-        var hasSchoolAdminConflict = await _unitOfWork.Repository<OrganizationMembership>().ExistsAsync(
-            membership => membership.UserId == target.Id
-                          && membership.Status == MembershipStatus.Active
-                          && membership.OrgRole == OrgRole.SchoolAdmin,
-            cancellationToken);
-        if (hasSchoolAdminConflict && !request.ConfirmSchoolAdminConflict)
-        {
-            throw new ConflictException(
-                "Tài khoản đang là School Admin đang active của một Organization. " +
-                "Xác nhận lại (confirmSchoolAdminConflict=true) nếu vẫn muốn cấp quyền Administrator.");
-        }
-
         var beforeRole = target.Role;
         target.RoleBeforeAdmin = beforeRole;
         target.Role = UserRole.Administrator;

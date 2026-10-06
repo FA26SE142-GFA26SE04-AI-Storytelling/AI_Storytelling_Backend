@@ -113,9 +113,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int?>("ChildProfileId")
                         .HasColumnType("integer");
 
-                    b.Property<int?>("ClassGroupId")
-                        .HasColumnType("integer");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -141,8 +138,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasIndex("AssignedByUserId");
 
                     b.HasIndex("ChildProfileId");
-
-                    b.HasIndex("ClassGroupId");
 
                     b.HasIndex("StoryId");
 
@@ -426,16 +421,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)");
 
-                    b.Property<int?>("OrganizationId")
-                        .HasColumnType("integer");
-
                     b.Property<int>("OwnerUserId")
                         .HasColumnType("integer");
-
-                    b.Property<string>("Scope")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -446,8 +433,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("OrganizationId");
 
                     b.HasIndex("OwnerUserId");
 
@@ -556,87 +541,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                         {
                             t.HasCheckConstraint("CK_child_sessions_exactly_one_entry_source", "(\"ChildAccessCredentialId\" IS NOT NULL AND \"SupervisorSessionId\" IS NULL) OR (\"ChildAccessCredentialId\" IS NULL AND \"SupervisorSessionId\" IS NOT NULL)");
                         });
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.ClassGroup", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<int>("KnowledgeTreeExp")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)");
-
-                    b.Property<int?>("OrganizationId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<int>("TeacherUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrganizationId");
-
-                    b.HasIndex("TeacherUserId");
-
-                    b.ToTable("class_groups", (string)null);
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.ClassGroupMember", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("ChildProfileId")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("ClassGroupId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTime>("JoinedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ChildProfileId");
-
-                    b.HasIndex("ClassGroupId", "ChildProfileId")
-                        .IsUnique();
-
-                    b.ToTable("class_group_members", (string)null);
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ContentCategory", b =>
@@ -1262,332 +1166,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("notifications", (string)null);
                 });
 
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.O2OAssessment", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("AssessedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("AssignmentRecipientId")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("BonusPoints")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("text");
-
-                    b.Property<int>("TeacherUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AssignmentRecipientId");
-
-                    b.HasIndex("TeacherUserId");
-
-                    b.ToTable("o2o_assessments", (string)null);
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.OrgConsentRecord", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("ChildProfileId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("DecidedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("DecidedByUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<int>("OrganizationId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("RevokedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ChildProfileId");
-
-                    b.HasIndex("DecidedByUserId");
-
-                    b.HasIndex("OrganizationId");
-
-                    b.ToTable("org_consent_records", (string)null);
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.OrgSafetyPolicyCategory", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("ContentCategoryId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<int>("OrgSafetyPolicyTemplateId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Rule")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ContentCategoryId");
-
-                    b.HasIndex("OrgSafetyPolicyTemplateId", "ContentCategoryId")
-                        .IsUnique();
-
-                    b.ToTable("org_safety_policy_categories", (string)null);
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.OrgSafetyPolicyTemplate", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<int?>("MaxStoryLengthBaseline")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("OrganizationId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("RequiredApprovalModeDefault")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrganizationId")
-                        .IsUnique();
-
-                    b.ToTable("org_safety_policy_templates", (string)null);
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.Organization", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Address")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<DateTime?>("ClosedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("ClosureRequestedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ContactEmail")
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("CreatedByUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<DateTime?>("ReactivatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("ReactivatedByAdminId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("RejectionReason")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("SuspendedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("SuspendedByAdminId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("SuspensionReason")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("VerificationStatus")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<int?>("VerifiedByAdminId")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("ReactivatedByAdminId");
-
-                    b.HasIndex("SuspendedByAdminId");
-
-                    b.HasIndex("VerifiedByAdminId");
-
-                    b.ToTable("organizations", (string)null);
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.OrganizationMembership", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("InvitedByUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("OrgRole")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<int>("OrganizationId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("InvitedByUserId");
-
-                    b.HasIndex("UserId");
-
-                    b.HasIndex("OrganizationId", "UserId")
-                        .IsUnique();
-
-                    b.ToTable("organization_memberships", (string)null);
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.OrganizationPermission", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("GrantedByUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<int>("OrganizationMembershipId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Permission")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("GrantedByUserId");
-
-                    b.HasIndex("OrganizationMembershipId", "Permission")
-                        .IsUnique();
-
-                    b.ToTable("organization_permissions", (string)null);
-                });
-
             modelBuilder.Entity("StoryPlatform.Domain.Entities.OwnershipTransferRequest", b =>
                 {
                     b.Property<int>("Id")
@@ -1653,9 +1231,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
-                    b.Property<int?>("OrganizationId")
-                        .HasColumnType("integer");
-
                     b.Property<DateTime?>("PaidAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1685,8 +1260,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("OrganizationId");
 
                     b.HasIndex("PayerUserId");
 
@@ -2204,102 +1777,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("safety_policy_categories", (string)null);
                 });
 
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.SharedStory", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("ClassGroupId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTime?>("ReviewedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("ReviewedByUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("ShareMode")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<int>("SharedByUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("StoryId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("TeacherStatus")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ClassGroupId");
-
-                    b.HasIndex("ReviewedByUserId");
-
-                    b.HasIndex("SharedByUserId");
-
-                    b.HasIndex("StoryId", "ClassGroupId")
-                        .IsUnique();
-
-                    b.ToTable("shared_stories", (string)null);
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.SharedStoryRecipient", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<int>("RecipientUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("RespondedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("SharedStoryId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RecipientUserId");
-
-                    b.HasIndex("SharedStoryId");
-
-                    b.ToTable("shared_story_recipients", (string)null);
-                });
-
             modelBuilder.Entity("StoryPlatform.Domain.Entities.Story", b =>
                 {
                     b.Property<int>("Id")
@@ -2358,6 +1835,13 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<string>("MoralLesson")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
+
+                    b.Property<string>("OutputMode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("Learning");
 
                     b.Property<int?>("ReadingLevel")
                         .HasColumnType("integer");
@@ -2877,11 +2361,6 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("ApplicableScope")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -2913,24 +2392,12 @@ namespace StoryPlatform.Infrastructure.Migrations
                         new
                         {
                             Id = 1,
-                            ApplicableScope = "Personal",
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
                             IsDeleted = false,
                             Name = "Personal",
                             PriceVnd = 49000,
                             QuotaAmount = 50
-                        },
-                        new
-                        {
-                            Id = 2,
-                            ApplicableScope = "Organization",
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            IsActive = true,
-                            IsDeleted = false,
-                            Name = "Organization",
-                            PriceVnd = 99000,
-                            QuotaAmount = 150
                         });
                 });
 
@@ -3210,9 +2677,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
-                    b.Property<int?>("OrganizationId")
-                        .HasColumnType("integer");
-
                     b.Property<DateOnly>("PeriodEnd")
                         .HasColumnType("date");
 
@@ -3239,8 +2703,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ChildProfileId");
-
-                    b.HasIndex("OrganizationId");
 
                     b.HasIndex("UserId");
 
@@ -3416,11 +2878,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasForeignKey("ChildProfileId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("StoryPlatform.Domain.Entities.ClassGroup", "ClassGroup")
-                        .WithMany()
-                        .HasForeignKey("ClassGroupId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("StoryPlatform.Domain.Entities.Story", "Story")
                         .WithMany()
                         .HasForeignKey("StoryId")
@@ -3430,8 +2887,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("AssignedByUser");
 
                     b.Navigation("ChildProfile");
-
-                    b.Navigation("ClassGroup");
 
                     b.Navigation("Story");
                 });
@@ -3504,18 +2959,11 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ChildProfile", b =>
                 {
-                    b.HasOne("StoryPlatform.Domain.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "OwnerUser")
                         .WithMany("ChildProfiles")
                         .HasForeignKey("OwnerUserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
-
-                    b.Navigation("Organization");
 
                     b.Navigation("OwnerUser");
                 });
@@ -3568,43 +3016,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("ChildProfile");
 
                     b.Navigation("SupervisorSession");
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.ClassGroup", b =>
-                {
-                    b.HasOne("StoryPlatform.Domain.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "TeacherUser")
-                        .WithMany()
-                        .HasForeignKey("TeacherUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Organization");
-
-                    b.Navigation("TeacherUser");
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.ClassGroupMember", b =>
-                {
-                    b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
-                        .WithMany()
-                        .HasForeignKey("ChildProfileId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("StoryPlatform.Domain.Entities.ClassGroup", "ClassGroup")
-                        .WithMany()
-                        .HasForeignKey("ClassGroupId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("ChildProfile");
-
-                    b.Navigation("ClassGroup");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ContentCategory", b =>
@@ -3816,157 +3227,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("RecipientUser");
                 });
 
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.O2OAssessment", b =>
-                {
-                    b.HasOne("StoryPlatform.Domain.Entities.AssignmentRecipient", "AssignmentRecipient")
-                        .WithMany()
-                        .HasForeignKey("AssignmentRecipientId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "TeacherUser")
-                        .WithMany()
-                        .HasForeignKey("TeacherUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("AssignmentRecipient");
-
-                    b.Navigation("TeacherUser");
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.OrgConsentRecord", b =>
-                {
-                    b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
-                        .WithMany()
-                        .HasForeignKey("ChildProfileId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "DecidedByUser")
-                        .WithMany()
-                        .HasForeignKey("DecidedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("StoryPlatform.Domain.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("ChildProfile");
-
-                    b.Navigation("DecidedByUser");
-
-                    b.Navigation("Organization");
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.OrgSafetyPolicyCategory", b =>
-                {
-                    b.HasOne("StoryPlatform.Domain.Entities.ContentCategory", "ContentCategory")
-                        .WithMany()
-                        .HasForeignKey("ContentCategoryId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("StoryPlatform.Domain.Entities.OrgSafetyPolicyTemplate", "OrgSafetyPolicyTemplate")
-                        .WithMany()
-                        .HasForeignKey("OrgSafetyPolicyTemplateId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("ContentCategory");
-
-                    b.Navigation("OrgSafetyPolicyTemplate");
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.OrgSafetyPolicyTemplate", b =>
-                {
-                    b.HasOne("StoryPlatform.Domain.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Organization");
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.Organization", b =>
-                {
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "CreatedByUser")
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "ReactivatedByAdmin")
-                        .WithMany()
-                        .HasForeignKey("ReactivatedByAdminId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "SuspendedByAdmin")
-                        .WithMany()
-                        .HasForeignKey("SuspendedByAdminId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "VerifiedByAdmin")
-                        .WithMany()
-                        .HasForeignKey("VerifiedByAdminId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("CreatedByUser");
-
-                    b.Navigation("ReactivatedByAdmin");
-
-                    b.Navigation("SuspendedByAdmin");
-
-                    b.Navigation("VerifiedByAdmin");
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.OrganizationMembership", b =>
-                {
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "InvitedByUser")
-                        .WithMany()
-                        .HasForeignKey("InvitedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("StoryPlatform.Domain.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("InvitedByUser");
-
-                    b.Navigation("Organization");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.OrganizationPermission", b =>
-                {
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "GrantedByUser")
-                        .WithMany()
-                        .HasForeignKey("GrantedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("StoryPlatform.Domain.Entities.OrganizationMembership", "OrganizationMembership")
-                        .WithMany()
-                        .HasForeignKey("OrganizationMembershipId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("GrantedByUser");
-
-                    b.Navigation("OrganizationMembership");
-                });
-
             modelBuilder.Entity("StoryPlatform.Domain.Entities.OwnershipTransferRequest", b =>
                 {
                     b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
@@ -3996,11 +3256,6 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.PaymentTransaction", b =>
                 {
-                    b.HasOne("StoryPlatform.Domain.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "PayerUser")
                         .WithMany()
                         .HasForeignKey("PayerUserId")
@@ -4012,8 +3267,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasForeignKey("PlanId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
-
-                    b.Navigation("Organization");
 
                     b.Navigation("PayerUser");
 
@@ -4204,59 +3457,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("ContentCategory");
 
                     b.Navigation("SafetyPolicy");
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.SharedStory", b =>
-                {
-                    b.HasOne("StoryPlatform.Domain.Entities.ClassGroup", "ClassGroup")
-                        .WithMany()
-                        .HasForeignKey("ClassGroupId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "ReviewedByUser")
-                        .WithMany()
-                        .HasForeignKey("ReviewedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "SharedByUser")
-                        .WithMany()
-                        .HasForeignKey("SharedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("StoryPlatform.Domain.Entities.Story", "Story")
-                        .WithMany()
-                        .HasForeignKey("StoryId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("ClassGroup");
-
-                    b.Navigation("ReviewedByUser");
-
-                    b.Navigation("SharedByUser");
-
-                    b.Navigation("Story");
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.SharedStoryRecipient", b =>
-                {
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "RecipientUser")
-                        .WithMany()
-                        .HasForeignKey("RecipientUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("StoryPlatform.Domain.Entities.SharedStory", "SharedStory")
-                        .WithMany()
-                        .HasForeignKey("SharedStoryId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("RecipientUser");
-
-                    b.Navigation("SharedStory");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.Story", b =>
@@ -4552,19 +3752,12 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasForeignKey("ChildProfileId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("StoryPlatform.Domain.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("ChildProfile");
-
-                    b.Navigation("Organization");
 
                     b.Navigation("User");
                 });

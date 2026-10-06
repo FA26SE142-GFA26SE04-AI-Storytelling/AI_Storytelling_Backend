@@ -26,9 +26,12 @@ public sealed class MediaGenerationController : ControllerBase
     }
 
     [HttpGet("package")]
+    [ProducesResponseType(typeof(ApiResponse<StoryMediaPackage>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     public async Task<ActionResult<ApiResponse<StoryMediaPackage>>> GetPackage(
         int storyId, CancellationToken cancellationToken)
     {
+        Response.Headers.CacheControl = "private, no-store";
         var value = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
         if (!int.TryParse(value, out var userId)) throw new UnauthorizedAccessException();
         var result = await _service.GetPackageAsync(userId, storyId, cancellationToken);

@@ -87,7 +87,7 @@ public sealed record MediaReadinessResult(
 
 public sealed record IllustrationBeatMediaItem(
     int BeatId, int BeatOrder, int StartOffset, int EndOffset, string VisualFocus,
-    int? AssetId, string Status, string? Url);
+    int? AssetId, string Status, string? Url, DateTimeOffset? UrlExpiresAt = null);
 
 public sealed record SceneMediaItem(int SceneId, int SceneIndex, IReadOnlyList<IllustrationBeatMediaItem> Illustrations);
 

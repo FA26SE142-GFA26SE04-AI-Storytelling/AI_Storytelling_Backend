@@ -1,4 +1,6 @@
+using System.Text.Json;
 using StoryPlatform.Application.Features.MediaGeneration;
+using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
@@ -14,6 +16,67 @@ namespace StoryPlatform.UnitTests;
 
 public sealed class MediaGenerationServiceTests
 {
+    [Fact]
+    public async Task GetPackage_SignsOnlyReadyIllustrationsOfCurrentVersion()
+    {
+        var uow = Seed();
+        uow.Seed(new StoryScene { Id = 30, StoryVersionId = 10, SceneIndex = 0, SceneText = "A B", TextRangeEnd = 3 });
+        uow.Seed(new IllustrationBeat { Id = 31, StorySceneId = 30, BeatOrder = 1, StartOffset = 0, EndOffset = 1, VisualFocus = "A" });
+        uow.Seed(new IllustrationBeat { Id = 32, StorySceneId = 30, BeatOrder = 2, StartOffset = 2, EndOffset = 3, VisualFocus = "B" });
+        uow.Seed(new MediaAsset { Id = 40, StoryVersionId = 10, StorySceneId = 30, IllustrationBeatId = 31,
+            Type = MediaType.Illustration, Status = MediaStatus.Ready, Url = "1/v1/ready.png" });
+        uow.Seed(new MediaAsset { Id = 41, StoryVersionId = 10, StorySceneId = 30, IllustrationBeatId = 32,
+            Type = MediaType.Illustration, Status = MediaStatus.Failed, Url = "1/v1/failed.png" });
+        uow.Seed(new StoryVersion { Id = 99, StoryId = 1, VersionNo = 0, IsCurrent = false, Content = "Old" });
+        uow.Seed(new MediaAsset { Id = 42, StoryVersionId = 99, StorySceneId = 30, IllustrationBeatId = 32,
+            Type = MediaType.Illustration, Status = MediaStatus.Ready, Url = "1/v0/old.png" });
+        var storage = new RecordingMediaStorage();
+        var before = DateTimeOffset.UtcNow;
+
+        var package = await Create(uow, storage: storage).GetPackageAsync(1, 1);
+
+        Assert.Equal(10, package.StoryVersionId);
+        var illustrations = package.Scenes.Single().Illustrations;
+        Assert.Equal(new[] { 1, 2 }, illustrations.Select(item => item.BeatOrder));
+        Assert.Equal("https://media.test/1/v1/ready.png?token=test", illustrations[0].Url);
+        Assert.InRange(illustrations[0].UrlExpiresAt!.Value, before.AddMinutes(5), DateTimeOffset.UtcNow.AddMinutes(5));
+        Assert.Null(illustrations[1].Url);
+        Assert.Null(illustrations[1].UrlExpiresAt);
+        Assert.Equal(["1/v1/ready.png"], storage.SignedPaths);
+        Assert.Equal("1/v1/ready.png", uow.Items<MediaAsset>().Single(asset => asset.Id == 40).Url);
+    }
+
+    [Fact]
+    public async Task GetPackage_UnauthorizedUser_DoesNotSignAnyUrl()
+    {
+        var uow = Seed();
+        var storage = new RecordingMediaStorage();
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => Create(uow, storage: storage).GetPackageAsync(2, 1));
+
+        Assert.Empty(storage.SignedPaths);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetPackage_SigningFailure_DoesNotChangeReadyAsset(bool malformedResponse)
+    {
+        var uow = Seed();
+        uow.Seed(new StoryScene { Id = 30, StoryVersionId = 10, SceneIndex = 0, SceneText = "A", TextRangeEnd = 1 });
+        uow.Seed(new IllustrationBeat { Id = 31, StorySceneId = 30, BeatOrder = 1, StartOffset = 0, EndOffset = 1, VisualFocus = "A" });
+        uow.Seed(new MediaAsset { Id = 40, StoryVersionId = 10, StorySceneId = 30, IllustrationBeatId = 31,
+            Type = MediaType.Illustration, Status = MediaStatus.Ready, Url = "1/v1/ready.png" });
+        var storage = new RecordingMediaStorage { FailSigning = true, MalformedSigningResponse = malformedResponse };
+
+        var error = await Assert.ThrowsAsync<ServiceUnavailableException>(() =>
+            Create(uow, storage: storage).GetPackageAsync(1, 1));
+
+        Assert.Equal(503, error.StatusCode);
+        Assert.Equal(MediaStatus.Ready, uow.Items<MediaAsset>().Single().Status);
+        Assert.Equal("1/v1/ready.png", uow.Items<MediaAsset>().Single().Url);
+    }
+
     [Fact]
     public async Task ProcessNext_CreatesExactScenesAndTwoAssetsPerSceneThenMarksReady()
     {
@@ -278,7 +341,8 @@ public sealed class MediaGenerationServiceTests
             TextRangeStart = 0, TextRangeEnd = text.Length
         });
         var tts = new RecordingTtsProvider();
-        var service = Create(uow, tts: tts, planner: new FixedBeatPlanner([
+        var storage = new RecordingMediaStorage();
+        var service = Create(uow, tts: tts, storage: storage, planner: new FixedBeatPlanner([
             new(1, 0, 13, "The fox jumps"),
             new(2, 14, 24, "The fox waves")]));
 
@@ -291,6 +355,12 @@ public sealed class MediaGenerationServiceTests
         Assert.Equal(new[] { "The fox jumps and waves.", "The rabbit smiles." }, tts.Inputs);
         var package = await service.GetPackageAsync(1, 1);
         Assert.Equal(new[] { 1, 2 }, package.Scenes.Single().Illustrations.Select(x => x.BeatOrder));
+        Assert.Equal(2, storage.SignedPaths.Count);
+        Assert.All(package.Scenes.Single().Illustrations, illustration =>
+        {
+            Assert.NotNull(illustration.Url);
+            Assert.NotNull(illustration.UrlExpiresAt);
+        });
         Assert.Equal(2, (await service.GetProgressAsync(1, 1)).RequiredIllustrations);
     }
 
@@ -630,6 +700,9 @@ public sealed class MediaGenerationServiceTests
     private sealed class RecordingMediaStorage : IMediaStorage
     {
         public List<string> UploadedPaths { get; } = [];
+        public List<string> SignedPaths { get; } = [];
+        public bool FailSigning { get; init; }
+        public bool MalformedSigningResponse { get; init; }
 
         public Task<string> UploadAsync(string storagePath, Stream content, string mimeType,
             CancellationToken cancellationToken = default)
@@ -639,8 +712,13 @@ public sealed class MediaGenerationServiceTests
         }
 
         public Task<string> GetSignedUrlAsync(string storagePath, TimeSpan expiry,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult($"https://media.test/{storagePath}?token=test");
+            CancellationToken cancellationToken = default)
+        {
+            SignedPaths.Add(storagePath);
+            if (MalformedSigningResponse) throw new JsonException("Invalid signed URL response");
+            if (FailSigning) throw new HttpRequestException("Storage unavailable");
+            return Task.FromResult($"https://media.test/{storagePath}?token=test");
+        }
 
         public Task DeleteAsync(string storagePath, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;

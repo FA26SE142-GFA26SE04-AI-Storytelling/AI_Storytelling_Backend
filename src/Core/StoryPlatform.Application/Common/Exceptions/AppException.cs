@@ -51,3 +51,10 @@ public class ConflictException : AppException
     {
     }
 }
+
+public class ServiceUnavailableException : AppException
+{
+    public ServiceUnavailableException(string message) : base(message, 503)
+    {
+    }
+}

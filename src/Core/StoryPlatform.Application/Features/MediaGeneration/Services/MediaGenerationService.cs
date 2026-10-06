@@ -18,6 +18,7 @@ namespace StoryPlatform.Application.Features.MediaGeneration.Services;
 
 public sealed class MediaGenerationService : IMediaGenerationService, IMediaGenerationJobProcessor
 {
+    private static readonly TimeSpan IllustrationUrlLifetime = TimeSpan.FromMinutes(5);
     private readonly IUnitOfWork _unitOfWork;
     private readonly IMediaContextBuilder _contextBuilder;
     private readonly IStoryBlockParser _blockParser;
@@ -114,14 +115,45 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(
             x => x.StoryVersionId == version.Id && x.Type == MediaType.Illustration,
             cancellationToken: cancellationToken);
-        return new StoryMediaPackage(storyId, version.Id, scenes.Select(scene =>
-            new SceneMediaItem(scene.Id, scene.SceneIndex, beats.Where(b => b.StorySceneId == scene.Id)
-                .OrderBy(b => b.BeatOrder).Select(beat =>
+        var assetsByBeatId = assets.Where(asset => asset.IllustrationBeatId.HasValue)
+            .GroupBy(asset => asset.IllustrationBeatId!.Value)
+            .ToDictionary(group => group.Key, group => group.First());
+        var sceneItems = new List<SceneMediaItem>(scenes.Length);
+        foreach (var scene in scenes)
+        {
+            var illustrations = new List<IllustrationBeatMediaItem>();
+            foreach (var beat in beats.Where(item => item.StorySceneId == scene.Id).OrderBy(item => item.BeatOrder))
+            {
+                assetsByBeatId.TryGetValue(beat.Id, out var asset);
+                string? signedUrl = null;
+                DateTimeOffset? expiresAt = null;
+                if (asset?.Status == MediaStatus.Ready && !string.IsNullOrWhiteSpace(asset.Url))
                 {
-                    var asset = assets.FirstOrDefault(a => a.IllustrationBeatId == beat.Id);
-                    return new IllustrationBeatMediaItem(beat.Id, beat.BeatOrder, beat.StartOffset, beat.EndOffset,
-                        beat.VisualFocus, asset?.Id, asset?.Status.ToString() ?? "Queued", asset?.Url);
-                }).ToArray())).ToArray());
+                    var requestedAt = DateTimeOffset.UtcNow;
+                    try
+                    {
+                        signedUrl = await _mediaStorage.GetSignedUrlAsync(
+                            asset.Url, IllustrationUrlLifetime, cancellationToken);
+                    }
+                    catch (Exception exception) when (
+                        !cancellationToken.IsCancellationRequested &&
+                        exception is (HttpRequestException or InvalidOperationException or ArgumentException or TaskCanceledException or JsonException))
+                    {
+                        _logger.LogWarning(
+                            "Could not sign illustration URL for story {StoryId}, beat {BeatId}, asset {AssetId}. ErrorType={ErrorType}",
+                            storyId, beat.Id, asset.Id, exception.GetType().Name);
+                        throw new ServiceUnavailableException("Ảnh minh họa tạm thời chưa thể truy cập. Vui lòng thử lại sau.");
+                    }
+                    expiresAt = requestedAt.Add(IllustrationUrlLifetime);
+                }
+
+                illustrations.Add(new IllustrationBeatMediaItem(
+                    beat.Id, beat.BeatOrder, beat.StartOffset, beat.EndOffset, beat.VisualFocus,
+                    asset?.Id, asset?.Status.ToString() ?? "Queued", signedUrl, expiresAt));
+            }
+            sceneItems.Add(new SceneMediaItem(scene.Id, scene.SceneIndex, illustrations));
+        }
+        return new StoryMediaPackage(storyId, version.Id, sceneItems);
     }
 
     public async Task<MediaGenerationProgress> RetryAsync(

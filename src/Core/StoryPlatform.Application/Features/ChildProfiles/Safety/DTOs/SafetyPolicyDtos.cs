@@ -19,6 +19,15 @@ public class SafetyPolicyDto
     public decimal? ReadabilityScoreThreshold { get; set; }
     public decimal ComprehensionThresholdPercent { get; set; }
     public int ComprehensionWindowSize { get; set; }
+    public bool StoryWishesEnabled { get; set; }
+    public bool AllowInteractiveStories { get; set; }
+    public bool ChildCreationEnabled { get; set; }
+    public string ChildCreationMode { get; set; } = string.Empty;
+    public bool VoiceAnswersEnabled { get; set; }
+    public DateTime? VoiceConsentAt { get; set; }
+    public bool VoiceConsentRequired { get; set; }
+    public bool ConsentOutdated { get; set; }
+    public bool EffectiveVoiceAnswersEnabled { get; set; }
     public List<SafetyPolicyCategoryDto> Categories { get; set; } = new();
 }
 
@@ -52,7 +61,28 @@ public class SetSafetyPolicyRequestDto
     [Range(1, 20, ErrorMessage = "Comprehension window size phải nằm trong khoảng 1 đến 20.")]
     public int ComprehensionWindowSize { get; set; } = 3;
 
+    public bool StoryWishesEnabled { get; set; } = true;
+    public bool AllowInteractiveStories { get; set; } = true;
+    public bool ChildCreationEnabled { get; set; } = true;
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public ChildCreationMode ChildCreationMode { get; set; } = ChildCreationMode.ReviewFirst;
+
+    public bool VoiceAnswersEnabled { get; set; }
+
+    /// <summary>Owner đồng ý mục (e) giọng nói khi bật lần đầu.</summary>
+    public bool VoiceConsentAccepted { get; set; }
+
+    /// <summary>null = tự áp khi tạo mới và chưa khai danh mục; false = không áp.</summary>
+    public bool? ApplyAgePreset { get; set; }
+
     public List<SetSafetyPolicyCategoryRequestDto> Categories { get; set; } = new();
+}
+
+public class AgePresetDto
+{
+    public string AgeBand { get; set; } = string.Empty;
+    public List<int> BlockedCategoryIds { get; set; } = new();
 }
 
 public class SetSafetyPolicyCategoryRequestDto

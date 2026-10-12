@@ -13,6 +13,7 @@ public class ChildProfileVersionHistory : BaseEntity
 
     public string PreviousConfig { get; set; } = string.Empty;
     public string NewConfig { get; set; } = string.Empty;
+    public VersionHistorySource Source { get; set; } = VersionHistorySource.Manual;
 
     public int? AppliedByUserId { get; set; }
     public virtual UserAccount? AppliedByUser { get; set; }

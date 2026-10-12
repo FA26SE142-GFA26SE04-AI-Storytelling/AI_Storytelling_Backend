@@ -2,8 +2,10 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
+using System.Text.Json;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
+using StoryPlatform.Application.Features.ChildProfiles.Learning;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Safety;
@@ -191,16 +193,49 @@ public class ChildProfileService : IChildProfileService
             throw new BadRequestException("Nhóm tuổi nhận thức không hợp lệ.");
         }
 
-        profile.Language = NormalizeLanguage(request.Language);
+        var language = NormalizeLanguage(request.Language);
+        var previousAgeBand = profile.AgeBand;
+        var ageBandChanged = previousAgeBand != request.AgeBand;
+
         profile.Nickname = request.Nickname.Trim();
         profile.AgeBand = request.AgeBand;
+        profile.Language = language;
+        if (!string.IsNullOrWhiteSpace(request.AvatarId))
+        {
+            profile.AvatarId = request.AvatarId.Trim();
+        }
+
         profile.UpdatedAt = DateTime.UtcNow;
         profileRepo.Update(profile);
+
+        if (ageBandChanged)
+        {
+            await _unitOfWork.Repository<ChildProfileVersionHistory>().AddAsync(
+                new ChildProfileVersionHistory
+                {
+                    ChildProfileId = childProfileId,
+                    RecommendationId = null,
+                    Source = VersionHistorySource.Manual,
+                    PreviousConfig = JsonSerializer.Serialize(new { ageBand = previousAgeBand.ToString() }),
+                    NewConfig = JsonSerializer.Serialize(new { ageBand = profile.AgeBand.ToString() }),
+                    AppliedByUserId = currentUserId,
+                    VersionStatus = VersionHistoryStatus.ActiveVersion,
+                    AppliedAt = DateTime.UtcNow
+                }, cancellationToken);
+        }
+
         await WriteChildProfileAuditAsync(
             currentUserId, "UPDATE_CHILD_PROFILE", childProfileId, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return MapToChildProfileDto(profile);
+        var dto = MapToChildProfileDto(profile);
+        if (ageBandChanged)
+        {
+            dto.ShouldReapplyBlockedPreset = true;
+            dto.SuggestedReadingMode = ReadingModeDefaults.ForAgeBand(profile.AgeBand).ToString();
+        }
+
+        return dto;
     }
 
     public async Task ArchiveChildProfileAsync(
@@ -405,6 +440,7 @@ public class ChildProfileService : IChildProfileService
             Id = childProfile.Id,
             OwnerUserId = childProfile.OwnerUserId,
             Nickname = childProfile.Nickname,
+            AvatarId = childProfile.AvatarId,
             AgeBand = childProfile.AgeBand.ToString(),
             Language = childProfile.Language,
             Status = childProfile.Status.ToString(),

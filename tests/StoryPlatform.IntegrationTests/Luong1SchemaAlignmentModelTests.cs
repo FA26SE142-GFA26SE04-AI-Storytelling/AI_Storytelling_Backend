@@ -102,6 +102,41 @@ public sealed class Luong1SchemaAlignmentModelTests
         Assert.Equal("\"IsDeleted\" = false", index.GetFilter());
     }
 
+    [Fact]
+    public void Safety_learning_profile_v41_columns_are_mapped()
+    {
+        using var context = CreateModelOnlyContext();
+
+        var childProfile = context.Model.FindEntityType(typeof(ChildProfile))!;
+        Assert.Equal(
+            ChildProfile.DefaultAvatarId,
+            childProfile.FindProperty(nameof(ChildProfile.AvatarId))!.GetDefaultValue());
+
+        var learningProfile = context.Model.FindEntityType(typeof(LearningProfile))!;
+        Assert.Equal(
+            ReadingMode.ListenFirst,
+            learningProfile.FindProperty(nameof(LearningProfile.ReadingMode))!.GetDefaultValue());
+
+        var contentCategory = context.Model.FindEntityType(typeof(ContentCategory))!;
+        Assert.Equal(
+            "text[]",
+            contentCategory.FindProperty(nameof(ContentCategory.DefaultBlockedAgeBands))!.GetColumnType());
+
+        var safetyPolicy = context.Model.FindEntityType(typeof(SafetyPolicy))!;
+        Assert.NotNull(safetyPolicy.FindProperty(nameof(SafetyPolicy.StoryWishesEnabled)));
+        Assert.NotNull(safetyPolicy.FindProperty(nameof(SafetyPolicy.AllowInteractiveStories)));
+        Assert.NotNull(safetyPolicy.FindProperty(nameof(SafetyPolicy.ChildCreationEnabled)));
+        Assert.NotNull(safetyPolicy.FindProperty(nameof(SafetyPolicy.ChildCreationMode)));
+        Assert.NotNull(safetyPolicy.FindProperty(nameof(SafetyPolicy.VoiceAnswersEnabled)));
+        Assert.NotNull(safetyPolicy.FindProperty(nameof(SafetyPolicy.VoiceConsentAt)));
+        Assert.NotNull(safetyPolicy.FindProperty(nameof(SafetyPolicy.VoiceEnableRequestedAt)));
+
+        var versionHistory = context.Model.FindEntityType(typeof(ChildProfileVersionHistory))!;
+        Assert.Equal(
+            VersionHistorySource.Recommendation,
+            versionHistory.FindProperty(nameof(ChildProfileVersionHistory.Source))!.GetDefaultValue());
+    }
+
     private static ApplicationDbContext CreateModelOnlyContext() =>
         new(new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseNpgsql("Host=localhost;Database=model_only;Username=model_only;Password=model_only")

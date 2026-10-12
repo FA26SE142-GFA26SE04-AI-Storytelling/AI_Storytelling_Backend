@@ -24,6 +24,7 @@ public class ChildProfileServiceTests
     private readonly Mock<IGenericRepository<SafetyPolicy>> _safetyPolicyRepo = new();
     private readonly Mock<IGenericRepository<ChildAccessCredential>> _credentialRepo = new();
     private readonly Mock<IGenericRepository<AuditLog>> _auditLogRepo = new();
+    private readonly Mock<IGenericRepository<ChildProfileVersionHistory>> _historyRepo = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<ISupervisionAccessGuard> _accessGuard = new();
     private readonly Mock<IChildSessionRevoker> _childSessionRevoker = new();
@@ -38,6 +39,7 @@ public class ChildProfileServiceTests
         _unitOfWork.Setup(u => u.Repository<SafetyPolicy>()).Returns(_safetyPolicyRepo.Object);
         _unitOfWork.Setup(u => u.Repository<ChildAccessCredential>()).Returns(_credentialRepo.Object);
         _unitOfWork.Setup(u => u.Repository<AuditLog>()).Returns(_auditLogRepo.Object);
+        _unitOfWork.Setup(u => u.Repository<ChildProfileVersionHistory>()).Returns(_historyRepo.Object);
         _sut = new ChildProfileService(
             _unitOfWork.Object, _accessGuard.Object, _childSessionRevoker.Object);
     }
@@ -96,6 +98,22 @@ public class ChildProfileServiceTests
         await _sut.CreateChildProfileAsync(2, request);
 
         Assert.Equal("vi", profile!.Language);
+    }
+
+    [Fact]
+    public async Task CreateChildProfileAsync_AssignsDefaultAvatar()
+    {
+        SetupOwner();
+        ChildProfile? profile = null;
+        _profileRepo.Setup(repository => repository.AddAsync(
+                It.IsAny<ChildProfile>(), It.IsAny<CancellationToken>()))
+            .Callback<ChildProfile, CancellationToken>((value, _) => profile = value)
+            .ReturnsAsync((ChildProfile value, CancellationToken _) => value);
+
+        var result = await _sut.CreateChildProfileAsync(2, PersonalRequest());
+
+        Assert.Equal(ChildProfile.DefaultAvatarId, profile!.AvatarId);
+        Assert.Equal(ChildProfile.DefaultAvatarId, result.AvatarId);
     }
 
     [Fact]
@@ -405,6 +423,62 @@ public class ChildProfileServiceTests
             }));
 
         Assert.Equal("Cũ", profile.Nickname);
+    }
+
+    [Fact]
+    public async Task UpdateChildProfileAsync_ChangeAvatarOnly_NoHistoryAndNoPresetPrompt()
+    {
+        var profile = new ChildProfile
+        {
+            Id = 1, OwnerUserId = 2, Nickname = "An",
+            AgeBand = AgeBand.Age_6_8, Status = ChildProfileStatus.Active
+        };
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+
+        var result = await _sut.UpdateChildProfileAsync(1, 2, new UpdateChildProfileRequestDto
+        {
+            Nickname = "An",
+            AgeBand = AgeBand.Age_6_8,
+            AvatarId = "avatar-fox"
+        });
+
+        Assert.Equal("avatar-fox", profile.AvatarId);
+        Assert.False(result.ShouldReapplyBlockedPreset);
+        Assert.Null(result.SuggestedReadingMode);
+        _historyRepo.Verify(repository => repository.AddAsync(
+            It.IsAny<ChildProfileVersionHistory>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateChildProfileAsync_AgeBandChanged_WritesManualHistoryAndReturnsPromptFlags()
+    {
+        var profile = new ChildProfile
+        {
+            Id = 1, OwnerUserId = 2, Nickname = "An",
+            AgeBand = AgeBand.Age_6_8, Status = ChildProfileStatus.Active
+        };
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+
+        var result = await _sut.UpdateChildProfileAsync(1, 2, new UpdateChildProfileRequestDto
+        {
+            Nickname = "An",
+            AgeBand = AgeBand.Age_9_12
+        });
+
+        Assert.Equal(AgeBand.Age_9_12, profile.AgeBand);
+        Assert.True(result.ShouldReapplyBlockedPreset);
+        Assert.Equal("ReadFirst", result.SuggestedReadingMode);
+        _historyRepo.Verify(repository => repository.AddAsync(
+            It.Is<ChildProfileVersionHistory>(history =>
+                history.ChildProfileId == 1
+                && history.Source == VersionHistorySource.Manual
+                && history.RecommendationId == null
+                && history.AppliedByUserId == 2
+                && history.PreviousConfig.Contains("Age_6_8")
+                && history.NewConfig.Contains("Age_9_12")),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

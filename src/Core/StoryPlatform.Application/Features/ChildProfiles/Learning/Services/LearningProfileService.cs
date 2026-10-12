@@ -1,9 +1,11 @@
+using System.Text.Json;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ChildProfiles.Learning.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Learning.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
 using StoryPlatform.Domain.Entities;
+using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.ChildProfiles.Learning.Services;
 
@@ -22,43 +24,57 @@ public class LearningProfileService : ILearningProfileService
         int childProfileId, int currentUserId, SetLearningProfileRequestDto request,
         CancellationToken cancellationToken = default)
     {
-        await _accessGuard.EnsureActiveSupervisionAsync(
-            childProfileId, currentUserId, cancellationToken);
+        await _accessGuard.EnsurePermissionAsync(
+            childProfileId, currentUserId, Permission.ApproveReadingLevel, cancellationToken);
         ValidateRequest(request);
 
+        var child = await _unitOfWork.Repository<ChildProfile>()
+            .GetByIdAsync(childProfileId, cancellationToken)
+            ?? throw new NotFoundException("Hồ sơ trẻ", childProfileId);
+
         var profileRepo = _unitOfWork.Repository<LearningProfile>();
+        var topicRepo = _unitOfWork.Repository<LearningProfileTopic>();
         var profile = await profileRepo.FirstOrDefaultAsync(
             value => value.ChildProfileId == childProfileId,
             cancellationToken: cancellationToken);
 
+        string? previousConfig = null;
         if (profile == null)
         {
             profile = new LearningProfile
             {
                 ChildProfileId = childProfileId,
                 ReadingLevel = request.ReadingLevel,
-                ComprehensionGoal = request.ComprehensionGoal?.Trim()
+                ComprehensionGoal = request.ComprehensionGoal?.Trim(),
+                ReadingMode = request.ReadingMode ?? ReadingModeDefaults.ForAgeBand(child.AgeBand)
             };
             await profileRepo.AddAsync(profile, cancellationToken);
         }
         else
         {
+            var existingTopics = await topicRepo.FindAsync(
+                value => value.LearningProfileId == profile.Id,
+                cancellationToken: cancellationToken);
+            previousConfig = SerializeConfig(
+                profile.ReadingLevel, profile.ReadingMode, profile.ComprehensionGoal,
+                existingTopics.Select(value => (value.Topic, value.Relation)));
+
             profile.ReadingLevel = request.ReadingLevel;
             profile.ComprehensionGoal = request.ComprehensionGoal?.Trim();
+            if (request.ReadingMode.HasValue)
+            {
+                profile.ReadingMode = request.ReadingMode.Value;
+            }
+
             profile.UpdatedAt = DateTime.UtcNow;
             profileRepo.Update(profile);
 
-            var existingTopics = await _unitOfWork.Repository<LearningProfileTopic>()
-                .FindAsync(
-                    value => value.LearningProfileId == profile.Id,
-                    cancellationToken: cancellationToken);
             if (existingTopics.Count > 0)
             {
-                _unitOfWork.Repository<LearningProfileTopic>().DeleteRange(existingTopics);
+                topicRepo.DeleteRange(existingTopics);
             }
         }
 
-        var topicRepo = _unitOfWork.Repository<LearningProfileTopic>();
         foreach (var topic in request.Topics)
         {
             await topicRepo.AddAsync(new LearningProfileTopic
@@ -69,6 +85,28 @@ public class LearningProfileService : ILearningProfileService
             }, cancellationToken);
         }
 
+        var newConfig = SerializeConfig(
+            profile.ReadingLevel, profile.ReadingMode, profile.ComprehensionGoal,
+            request.Topics.Select(value => (value.Topic.Trim(), value.Relation)));
+
+        if (previousConfig != null
+            && child.Status == ChildProfileStatus.Active
+            && previousConfig != newConfig)
+        {
+            await _unitOfWork.Repository<ChildProfileVersionHistory>().AddAsync(
+                new ChildProfileVersionHistory
+                {
+                    ChildProfileId = childProfileId,
+                    RecommendationId = null,
+                    Source = VersionHistorySource.Manual,
+                    PreviousConfig = previousConfig,
+                    NewConfig = newConfig,
+                    AppliedByUserId = currentUserId,
+                    VersionStatus = VersionHistoryStatus.ActiveVersion,
+                    AppliedAt = DateTime.UtcNow
+                }, cancellationToken);
+        }
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new LearningProfileDto
@@ -76,6 +114,7 @@ public class LearningProfileService : ILearningProfileService
             Id = profile.Id,
             ChildProfileId = profile.ChildProfileId,
             ReadingLevel = profile.ReadingLevel,
+            ReadingMode = profile.ReadingMode.ToString(),
             ComprehensionGoal = profile.ComprehensionGoal,
             Topics = request.Topics.Select(value => new LearningProfileTopicDto
             {
@@ -105,6 +144,7 @@ public class LearningProfileService : ILearningProfileService
             Id = profile.Id,
             ChildProfileId = profile.ChildProfileId,
             ReadingLevel = profile.ReadingLevel,
+            ReadingMode = profile.ReadingMode.ToString(),
             ComprehensionGoal = profile.ComprehensionGoal,
             Topics = topics.Select(t => new LearningProfileTopicDto { Topic = t.Topic, Relation = t.Relation.ToString() }).ToList()
         };
@@ -147,6 +187,11 @@ public class LearningProfileService : ILearningProfileService
             throw new BadRequestException("Mục tiêu đọc hiểu tối đa 500 ký tự.");
         }
 
+        if (request.ReadingMode.HasValue && !Enum.IsDefined(request.ReadingMode.Value))
+        {
+            throw new BadRequestException("Chế độ đọc không hợp lệ.");
+        }
+
         request.Topics ??= new List<SetLearningProfileTopicRequestDto>();
         foreach (var topic in request.Topics)
         {
@@ -161,4 +206,19 @@ public class LearningProfileService : ILearningProfileService
             }
         }
     }
+
+    private static string SerializeConfig(
+        int readingLevel, ReadingMode readingMode, string? comprehensionGoal,
+        IEnumerable<(string Topic, TopicRelation Relation)> topics) =>
+        JsonSerializer.Serialize(new
+        {
+            readingLevel,
+            readingMode = readingMode.ToString(),
+            comprehensionGoal,
+            topics = topics
+                .OrderBy(value => value.Relation)
+                .ThenBy(value => value.Topic, StringComparer.Ordinal)
+                .Select(value => new { topic = value.Topic, relation = value.Relation.ToString() })
+                .ToList()
+        });
 }

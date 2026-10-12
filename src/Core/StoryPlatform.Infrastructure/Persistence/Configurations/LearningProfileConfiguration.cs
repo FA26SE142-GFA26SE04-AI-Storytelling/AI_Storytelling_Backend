@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using StoryPlatform.Domain.Entities;
+using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Infrastructure.Persistence.Configurations;
 
@@ -14,6 +15,12 @@ public class LearningProfileConfiguration : IEntityTypeConfiguration<LearningPro
 
         builder.Property(x => x.ComprehensionGoal)
             .HasMaxLength(500);
+
+        builder.Property(x => x.ReadingMode)
+            .HasConversion<string>()
+            .HasMaxLength(30)
+            .HasDefaultValue(ReadingMode.ListenFirst)
+            .IsRequired();
 
         builder.HasOne(x => x.ChildProfile)
             .WithMany()

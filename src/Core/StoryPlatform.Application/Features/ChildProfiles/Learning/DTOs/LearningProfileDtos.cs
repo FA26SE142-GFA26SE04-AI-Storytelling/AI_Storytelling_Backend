@@ -9,6 +9,7 @@ public class LearningProfileDto
     public int Id { get; set; }
     public int ChildProfileId { get; set; }
     public int ReadingLevel { get; set; }
+    public string ReadingMode { get; set; } = string.Empty;
     public string? ComprehensionGoal { get; set; }
     public List<LearningProfileTopicDto> Topics { get; set; } = new();
 }
@@ -23,6 +24,10 @@ public class SetLearningProfileRequestDto
 {
     [Range(1, 5, ErrorMessage = "Reading level phải từ 1 đến 5.")]
     public int ReadingLevel { get; set; }
+
+    /// <summary>null: tạo mới dùng mặc định theo tuổi; cập nhật giữ nguyên.</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public ReadingMode? ReadingMode { get; set; }
 
     [StringLength(500, ErrorMessage = "Mục tiêu đọc hiểu tối đa 500 ký tự.")]
     public string? ComprehensionGoal { get; set; }

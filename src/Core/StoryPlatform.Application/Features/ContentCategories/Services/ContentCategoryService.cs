@@ -3,6 +3,7 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ContentCategories.DTOs;
 using StoryPlatform.Application.Features.ContentCategories.Interfaces;
 using StoryPlatform.Domain.Entities;
+using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.ContentCategories.Services;
 
@@ -30,7 +31,8 @@ public class ContentCategoryService : IContentCategoryService
             Code = code,
             DisplayName = request.DisplayName.Trim(),
             IsActive = request.IsActive,
-            CreatedByAdminId = currentUserId
+            CreatedByAdminId = currentUserId,
+            DefaultBlockedAgeBands = NormalizeAgeBands(request.DefaultBlockedAgeBands)
         };
 
         await repository.AddAsync(category, cancellationToken);
@@ -50,6 +52,11 @@ public class ContentCategoryService : IContentCategoryService
 
         category.DisplayName = request.DisplayName.Trim();
         category.IsActive = request.IsActive;
+        if (request.DefaultBlockedAgeBands != null)
+        {
+            category.DefaultBlockedAgeBands = NormalizeAgeBands(request.DefaultBlockedAgeBands);
+        }
+
         category.UpdatedAt = DateTime.UtcNow;
         repository.Update(category);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -93,6 +100,28 @@ public class ContentCategoryService : IContentCategoryService
         Id = category.Id,
         Code = category.Code,
         DisplayName = category.DisplayName,
-        IsActive = category.IsActive
+        IsActive = category.IsActive,
+        DefaultBlockedAgeBands = category.DefaultBlockedAgeBands.ToList()
     };
+
+    private static List<string> NormalizeAgeBands(IEnumerable<string>? values)
+    {
+        var result = new List<string>();
+        foreach (var raw in values ?? Array.Empty<string>())
+        {
+            if (!Enum.TryParse<AgeBand>(raw?.Trim(), ignoreCase: false, out var band)
+                || !Enum.IsDefined(band))
+            {
+                throw new BadRequestException($"Nhóm tuổi '{raw}' không hợp lệ.");
+            }
+
+            var name = band.ToString();
+            if (!result.Contains(name))
+            {
+                result.Add(name);
+            }
+        }
+
+        return result;
+    }
 }

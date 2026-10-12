@@ -121,4 +121,62 @@ public class ContentCategoryServiceTests
         Assert.Equal(2, result.Count);
         Assert.Equal("animals", result[0].Code);
     }
+
+    [Fact]
+    public async Task CreateAsync_WithDefaultBlockedAgeBands_NormalizesAndStores()
+    {
+        _repository.Setup(repository => repository.ExistsAsync(
+                It.IsAny<Expression<Func<ContentCategory, bool>>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        ContentCategory? added = null;
+        _repository.Setup(repository => repository.AddAsync(
+                It.IsAny<ContentCategory>(), It.IsAny<CancellationToken>()))
+            .Callback<ContentCategory, CancellationToken>((category, _) => added = category)
+            .ReturnsAsync((ContentCategory category, CancellationToken _) => category);
+
+        var result = await _sut.CreateAsync(9, new CreateContentCategoryRequestDto
+        {
+            Code = "horror",
+            DisplayName = "Kinh dị",
+            DefaultBlockedAgeBands = new List<string> { "Age_6_8", " Age_6_8 " }
+        });
+
+        Assert.Equal(new[] { "Age_6_8" }, added!.DefaultBlockedAgeBands);
+        Assert.Equal(new[] { "Age_6_8" }, result.DefaultBlockedAgeBands);
+    }
+
+    [Fact]
+    public async Task CreateAsync_UnknownAgeBand_ThrowsBadRequest()
+    {
+        _repository.Setup(repository => repository.ExistsAsync(
+                It.IsAny<Expression<Func<ContentCategory, bool>>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.CreateAsync(9,
+            new CreateContentCategoryRequestDto
+            {
+                Code = "x",
+                DisplayName = "X",
+                DefaultBlockedAgeBands = new List<string> { "Age_99" }
+            }));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_NullAgeBands_KeepsExistingAndListReplacesThem()
+    {
+        var category = new ContentCategory { Id = 4, Code = "horror", DisplayName = "Kinh dị" };
+        category.DefaultBlockedAgeBands.Add("Age_6_8");
+        _repository.Setup(repository => repository.GetByIdAsync(4, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(category);
+
+        await _sut.UpdateAsync(4, new UpdateContentCategoryRequestDto { DisplayName = "Kinh dị" });
+        Assert.Equal(new[] { "Age_6_8" }, category.DefaultBlockedAgeBands);
+
+        await _sut.UpdateAsync(4, new UpdateContentCategoryRequestDto
+        {
+            DisplayName = "Kinh dị",
+            DefaultBlockedAgeBands = new List<string> { "Age_9_12" }
+        });
+        Assert.Equal(new[] { "Age_9_12" }, category.DefaultBlockedAgeBands);
+    }
 }

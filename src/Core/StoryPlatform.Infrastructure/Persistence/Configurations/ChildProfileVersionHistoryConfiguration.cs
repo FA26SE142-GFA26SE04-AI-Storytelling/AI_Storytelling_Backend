@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using StoryPlatform.Domain.Entities;
+using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Infrastructure.Persistence.Configurations;
 
@@ -23,6 +24,12 @@ public class ChildProfileVersionHistoryConfiguration : IEntityTypeConfiguration<
         builder.Property(x => x.VersionStatus)
             .HasConversion<string>()
             .HasMaxLength(30)
+            .IsRequired();
+
+        builder.Property(x => x.Source)
+            .HasConversion<string>()
+            .HasMaxLength(30)
+            .HasDefaultValue(VersionHistorySource.Recommendation)
             .IsRequired();
 
         builder.HasOne(x => x.ChildProfile)

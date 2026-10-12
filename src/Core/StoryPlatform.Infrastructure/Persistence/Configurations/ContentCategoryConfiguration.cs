@@ -20,6 +20,11 @@ public class ContentCategoryConfiguration : IEntityTypeConfiguration<ContentCate
             .IsRequired()
             .HasMaxLength(150);
 
+        builder.Property(x => x.DefaultBlockedAgeBands)
+            .HasColumnType("text[]")
+            .HasDefaultValueSql("'{}'")
+            .IsRequired();
+
         builder.HasOne(x => x.CreatedByAdmin)
             .WithMany()
             .HasForeignKey(x => x.CreatedByAdminId)

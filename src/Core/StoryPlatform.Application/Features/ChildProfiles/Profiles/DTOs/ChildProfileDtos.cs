@@ -43,3 +43,11 @@ public class UpdateChildProfileRequestDto
     [StringLength(10, ErrorMessage = "Mã ngôn ngữ tối đa 10 ký tự.")]
     public string Language { get; set; } = "vi";
 }
+
+public class ResumeChildProfileRequestDto
+{
+    /// <summary>
+    /// Owner đồng ý bản consent hiện hành khi consent_policy_version đã đổi (Bước 1.8b).
+    /// </summary>
+    public bool AcceptCurrentConsent { get; set; }
+}

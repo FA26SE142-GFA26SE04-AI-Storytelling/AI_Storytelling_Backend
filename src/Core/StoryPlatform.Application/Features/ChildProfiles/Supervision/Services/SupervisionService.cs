@@ -8,6 +8,7 @@ using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Common.Security;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Sessions.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
@@ -24,6 +25,7 @@ public class SupervisionService : ISupervisionService
     private readonly IEmailSender _emailSender;
     private readonly INotificationService _notificationService;
     private readonly IAuditLogWriter _auditLogWriter;
+    private readonly IChildSessionRevoker _childSessionRevoker;
 
     public SupervisionService(
         IUnitOfWork unitOfWork,
@@ -31,7 +33,8 @@ public class SupervisionService : ISupervisionService
         IJwtTokenGenerator tokenGenerator,
         IEmailSender emailSender,
         INotificationService notificationService,
-        IAuditLogWriter auditLogWriter)
+        IAuditLogWriter auditLogWriter,
+        IChildSessionRevoker childSessionRevoker)
     {
         _unitOfWork = unitOfWork;
         _accessGuard = accessGuard;
@@ -39,6 +42,7 @@ public class SupervisionService : ISupervisionService
         _emailSender = emailSender;
         _notificationService = notificationService;
         _auditLogWriter = auditLogWriter;
+        _childSessionRevoker = childSessionRevoker;
     }
 
     public async Task<InvitationDto> CreateInvitationAsync(
@@ -333,8 +337,18 @@ public class SupervisionService : ISupervisionService
             throw new NotFoundException("Quan hệ giám sát", supervisionRelationshipId);
         }
 
-        await _accessGuard.EnsureOwnerAsync(
-            target.ChildProfileId, revokerUserId, cancellationToken);
+        // Bước 1.6b: Owner gỡ người khác, hoặc Additional Supervisor tự rời.
+        var isSelfLeave = target.SupervisorUserId == revokerUserId;
+        if (isSelfLeave)
+        {
+            await _accessGuard.EnsureActiveSupervisionAsync(
+                target.ChildProfileId, revokerUserId, cancellationToken);
+        }
+        else
+        {
+            await _accessGuard.EnsureOwnerAsync(
+                target.ChildProfileId, revokerUserId, cancellationToken);
+        }
 
         if (target.SupervisorRole == SupervisorRole.Owner)
         {
@@ -347,12 +361,56 @@ public class SupervisionService : ISupervisionService
             return;
         }
 
-        target.RevokedAt = DateTime.UtcNow;
-        target.RevokedByUserId = revokerUserId;
-        relationshipRepo.Update(target);
+        var now = DateTime.UtcNow;
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            // Cùng khóa theo hồ sơ với Accept chuyển Owner để hai thao tác không chạy chồng nhau.
+            await _unitOfWork.AcquireTransactionLockAsync(target.ChildProfileId, cancellationToken);
 
-        // Owner luôn là Parent và không bị thu hồi qua đây, nên hồ sơ không đổi trạng thái (Bước 1.6b).
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+            target.RevokedAt = now;
+            target.RevokedByUserId = revokerUserId;
+            relationshipRepo.Update(target);
+
+            var permissionRequestRepo = _unitOfWork.Repository<SupervisionPermissionRequest>();
+            var pendingPermissionRequests = await permissionRequestRepo.FindAsync(
+                value => value.SupervisionRelationshipId == target.Id
+                         && value.Status == PermissionRequestStatus.Pending,
+                cancellationToken: cancellationToken);
+            foreach (var permissionRequest in pendingPermissionRequests)
+            {
+                permissionRequest.Status = PermissionRequestStatus.Cancelled;
+                permissionRequest.RespondedAt = now;
+                permissionRequestRepo.Update(permissionRequest);
+            }
+
+            var transferRepo = _unitOfWork.Repository<OwnershipTransferRequest>();
+            var pendingTransfers = await transferRepo.FindAsync(
+                value => value.ChildProfileId == target.ChildProfileId
+                         && value.Status == OwnershipTransferRequestStatus.Pending
+                         && (value.CurrentOwnerUserId == target.SupervisorUserId
+                             || value.TargetSupervisorUserId == target.SupervisorUserId),
+                cancellationToken: cancellationToken);
+            foreach (var transfer in pendingTransfers)
+            {
+                transfer.Status = OwnershipTransferRequestStatus.Cancelled;
+                transfer.RespondedAt = now;
+                transferRepo.Update(transfer);
+            }
+
+            await _childSessionRevoker.RevokeBySupervisorAsync(
+                target.SupervisorUserId, target.ChildProfileId, cancellationToken);
+
+            // Owner luôn là Parent và không bị thu hồi qua đây, nên hồ sơ không đổi trạng thái (Bước 1.6b).
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            throw;
+        }
+
         await _auditLogWriter.LogAsync(
             revokerUserId, "REVOKE_SUPERVISION", nameof(SupervisionRelationship), target.Id,
             new
@@ -361,8 +419,32 @@ public class SupervisionService : ISupervisionService
                 supervisorUserId = target.SupervisorUserId,
                 role = target.SupervisorRole.ToString()
             },
-            new { revokedByUserId = revokerUserId, target.RevokedAt },
+            new { revokedByUserId = revokerUserId, target.RevokedAt, selfLeave = isSelfLeave },
             cancellationToken);
+
+        // Owner gỡ → báo người bị gỡ; tự rời → báo Owner.
+        var recipientUserId = target.SupervisorUserId;
+        if (isSelfLeave)
+        {
+            var profile = await _unitOfWork.Repository<ChildProfile>()
+                .GetByIdAsync(target.ChildProfileId, cancellationToken);
+            if (profile == null)
+            {
+                return;
+            }
+
+            recipientUserId = profile.OwnerUserId;
+        }
+
+        await _notificationService.CreateAsync(
+            recipientUserId, NotificationType.SupervisionRevoked,
+            JsonSerializer.Serialize(new
+            {
+                childProfileId = target.ChildProfileId,
+                supervisionRelationshipId = target.Id,
+                revokedByUserId = revokerUserId,
+                reason = isSelfLeave ? "left" : "removed"
+            }), cancellationToken);
     }
 
     public async Task<OwnershipTransferRequestDto> RequestOwnershipTransferAsync(

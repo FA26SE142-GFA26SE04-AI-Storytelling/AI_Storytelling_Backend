@@ -11,6 +11,23 @@ namespace StoryPlatform.IntegrationTests;
 
 public sealed class Luong1SchemaAlignmentModelTests
 {
+    [Fact]
+    public void Child_profile_status_matches_v41_lifecycle_values()
+    {
+        Assert.Equal(
+            new[] { "Draft", "Active", "Suspended", "Archived", "Deleted" },
+            Enum.GetNames<ChildProfileStatus>());
+    }
+
+    [Fact]
+    public void Child_profile_model_does_not_store_exact_date_of_birth()
+    {
+        using var context = CreateModelOnlyContext();
+        var childProfile = context.Model.FindEntityType(typeof(ChildProfile))!;
+
+        Assert.Null(childProfile.FindProperty("DateOfBirth"));
+    }
+
     [Theory]
     [InlineData("ContentReportSlaWarning", 21)]
     [InlineData("ContentReportResolved", 22)]

@@ -230,11 +230,6 @@ Project ai_storytelling_platform {
         từng có bảng lưu trước v9.5. notification_type_enum bổ sung
         content_reported và payment_confirmed tương ứng 2 tính năng
         MỚI (AH)/(AI).
-    (AJ) child_profiles thêm date_of_birth (ĐỀ XUẤT, còn treo — Luồng 1,
-        Mục 9: phục vụ tính thời điểm chuyển age_band khi trẻ lớn lên;
-        cột đã có nhưng CHƯA có cơ chế/job tự động sử dụng nó, cần
-        quyết định thêm trước khi coi là hoàn chỉnh).
-
     CẢI THIỆN v10 (MỚI — Luồng 4 Deep Dive v10: Hold Mode chuyển từ
     Teacher-unlock thủ công sang Auto-unlock):
     (AK) intervention_cases thêm triggering_story_id (Bước 4.5.1 —
@@ -284,12 +279,10 @@ Enum age_band_enum {
 
 Enum child_profile_status {
   draft
-  pending_supervision
-  ready_for_activation
   active
-  pending_parent_consent   // MỚI v9.3: Owner có role=teacher, chưa có Parent Accept (BR-1.9)
   suspended
   archived
+  deleted
 }
 
 Enum approval_mode_enum {
@@ -826,7 +819,6 @@ Table child_profiles {
   status child_profile_status [not null, default: 'draft']
   scope profile_scope_enum [not null, default: 'personal', note: 'MỚI v9.3 — Luồng 7']
   organization_id integer [ref: > organizations.id, note: 'MỚI v9.3 — NULLABLE, bắt buộc NOT NULL khi scope=organization (Luồng 7)']
-  date_of_birth date [note: 'MỚI v9.5, ĐỀ XUẤT CÒN TREO — Luồng 1, Mục 9: phục vụ tính thời điểm chuyển age_band khi trẻ lớn lên. Cột đã có nhưng CHƯA có job/cơ chế tự động nào sử dụng nó — hiện age_band vẫn phải đổi thủ công bởi Owner/Supervisor.']
   created_at timestamp [not null, default: `now()`]
 
   Note: '''
@@ -972,14 +964,9 @@ Table supervision_relationships {
     Mọi permission check phải lọc revoked_at IS NULL.
     CẢI THIỆN v9.2 (H): thêm revoked_by_user_id — có revoked_at nhưng
     không biết AI thu hồi thì audit trail vẫn không trọn vẹn.
-    CẢI THIỆN v9.3: Bước 1.6 (Accept) PHẢI, trong CÙNG transaction,
-    re-check BR-1.9 và tự động chuyển child_profiles.status sang
-    'active' nếu điều kiện đã thỏa (owner hoặc additional_supervisor có
-    role=parent) — không chờ một lượt xử lý riêng biệt nào khác. Ngược
-    lại, Bước 1.6b (revoke dòng role=parent CUỐI CÙNG, chỉ khi
-    owner.role=teacher) PHẢI tự động đẩy child_profiles.status về
-    'pending_parent_consent' — đối xứng 2 chiều, giữ nguyên lịch sử
-    học tập/telemetry, không xóa gì.
+    Luồng 1 v41 Bước 1.6b: gỡ hoặc tự rời quan hệ giám sát không đổi
+    trạng thái hồ sơ trẻ; thao tác phải hủy các yêu cầu pending liên quan
+    và thu hồi Child Session do người giám sát đó mở.
   '''
 }
 

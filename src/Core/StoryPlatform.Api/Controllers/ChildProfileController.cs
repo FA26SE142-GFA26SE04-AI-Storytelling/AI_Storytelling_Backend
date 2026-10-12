@@ -78,7 +78,8 @@ public class ChildProfileController : BaseApiController
     }
 
     /// <summary>
-    /// Cập nhật Nickname/AgeBand/Language của hồ sơ trẻ (KHÔNG đổi scope/organization).
+    /// Cập nhật Nickname/AgeBand/Language của hồ sơ trẻ — chỉ Owner
+    /// (KHÔNG đổi scope/organization).
     /// </summary>
     [HttpPut("{id:int}")]
     [Authorize(Roles = "Parent")]
@@ -90,7 +91,7 @@ public class ChildProfileController : BaseApiController
     }
 
     /// <summary>
-    /// Kích hoạt hồ sơ trẻ (Bước 1.8) — Active nếu thỏa BR-1.9, ngược lại Pending Parent Consent.
+    /// Kích hoạt hồ sơ trẻ (Bước 1.8) — chỉ Active khi consent đúng phiên bản hiện hành.
     /// </summary>
     [HttpPatch("{id:int}/activate")]
     [Authorize(Roles = "Parent")]
@@ -102,7 +103,45 @@ public class ChildProfileController : BaseApiController
     }
 
     /// <summary>
-    /// Lưu trữ (archive) hồ sơ trẻ — dừng truy cập mới, giữ nguyên lịch sử. Chỉ Owner được thực hiện.
+    /// Tạm dừng hồ sơ trẻ (Bước 1.8b) — chỉ Owner; thu hồi Child Session và Easy Login.
+    /// </summary>
+    [HttpPatch("{id:int}/suspend")]
+    [Authorize(Roles = "Parent")]
+    public async Task<ActionResult<ApiResponse<ChildProfileDto>>> SuspendChildProfile(
+        int id, CancellationToken cancellationToken)
+    {
+        var result = await _childProfileService.SuspendChildProfileAsync(id, GetCurrentUserId(), cancellationToken);
+        return HandleResult(result, "Tạm dừng hồ sơ trẻ thành công.");
+    }
+
+    /// <summary>
+    /// Kích hoạt lại hồ sơ đang tạm dừng (Bước 1.8b) — chỉ Owner; có thể kèm đồng ý lại consent.
+    /// </summary>
+    [HttpPatch("{id:int}/resume")]
+    [Authorize(Roles = "Parent")]
+    public async Task<ActionResult<ApiResponse<ChildProfileDto>>> ResumeChildProfile(
+        int id, [FromBody] ResumeChildProfileRequestDto? request, CancellationToken cancellationToken)
+    {
+        var result = await _childProfileService.ResumeChildProfileAsync(
+            id, GetCurrentUserId(), request ?? new ResumeChildProfileRequestDto(), cancellationToken);
+        return HandleResult(result, "Kích hoạt lại hồ sơ trẻ thành công.");
+    }
+
+    /// <summary>
+    /// Khôi phục hồ sơ đã lưu trữ về Active (Bước 1.8b) — chỉ Owner; Easy Login phải tạo mới.
+    /// </summary>
+    [HttpPatch("{id:int}/restore")]
+    [Authorize(Roles = "Parent")]
+    public async Task<ActionResult<ApiResponse<ChildProfileDto>>> RestoreChildProfile(
+        int id, [FromBody] ResumeChildProfileRequestDto? request, CancellationToken cancellationToken)
+    {
+        var result = await _childProfileService.RestoreChildProfileAsync(
+            id, GetCurrentUserId(), request ?? new ResumeChildProfileRequestDto(), cancellationToken);
+        return HandleResult(result, "Khôi phục hồ sơ trẻ thành công.");
+    }
+
+    /// <summary>
+    /// Lưu trữ hồ sơ trẻ — chỉ Owner; thu hồi Child Session và Easy Login, giữ nguyên lịch sử.
     /// </summary>
     [HttpDelete("{id:int}")]
     [Authorize(Roles = "Parent")]

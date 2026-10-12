@@ -29,6 +29,8 @@ using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Services;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.Services;
+using StoryPlatform.Application.Features.ChildProfiles.Sessions.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Sessions.Services;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.Services;
 using StoryPlatform.Application.Features.ContentCategories.Interfaces;
@@ -64,6 +66,7 @@ public static class DependencyInjection
         services.AddScoped<ISafetyPolicyService, SafetyPolicyService>();
         services.AddScoped<ISupervisionService, SupervisionService>();
         services.AddScoped<IChildAccessCredentialService, ChildAccessCredentialService>();
+        services.AddScoped<IChildSessionRevoker, ChildSessionRevoker>();
         services.AddScoped<IParentalGateService, ParentalGateService>();
         services.AddScoped<IContentCategoryService, ContentCategoryService>();
         services.AddScoped<INotificationService, NotificationService>();

@@ -374,7 +374,6 @@ public class DataRequestServiceTests
         _dataRequestRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(request);
         var child = MakeChild(5, ownerUserId: 1);
-        child.DateOfBirth = new DateOnly(2018, 5, 1);
         _childProfileRepository.Setup(repo => repo.GetByIdAsync(5, It.IsAny<CancellationToken>()))
             .ReturnsAsync(child);
 
@@ -410,7 +409,6 @@ public class DataRequestServiceTests
         Assert.Equal(AssignmentStatus.Cancelled, directAssignment.Status);
 
         Assert.Equal("[Đã ẩn danh]", child.Nickname);
-        Assert.Null(child.DateOfBirth);
         Assert.Equal(ChildProfileStatus.Archived, child.Status);
         Assert.Equal(1, child.OwnerUserId);
 

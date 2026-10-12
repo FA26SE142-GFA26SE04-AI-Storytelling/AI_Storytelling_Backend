@@ -6,6 +6,8 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Safety;
+using StoryPlatform.Application.Features.ChildProfiles.Sessions.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -16,11 +18,16 @@ public class ChildProfileService : IChildProfileService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly ISupervisionAccessGuard _accessGuard;
+    private readonly IChildSessionRevoker _childSessionRevoker;
 
-    public ChildProfileService(IUnitOfWork unitOfWork, ISupervisionAccessGuard accessGuard)
+    public ChildProfileService(
+        IUnitOfWork unitOfWork,
+        ISupervisionAccessGuard accessGuard,
+        IChildSessionRevoker childSessionRevoker)
     {
         _unitOfWork = unitOfWork;
         _accessGuard = accessGuard;
+        _childSessionRevoker = childSessionRevoker;
     }
 
     public async Task<ChildProfileDto> CreateChildProfileAsync(
@@ -42,7 +49,7 @@ public class ChildProfileService : IChildProfileService
             OwnerUserId = ownerUserId,
             Nickname = request.Nickname.Trim(),
             AgeBand = request.AgeBand,
-            Language = string.IsNullOrWhiteSpace(request.Language) ? "vi" : request.Language.Trim(),
+            Language = NormalizeLanguage(request.Language),
             Status = ChildProfileStatus.Draft
         };
 
@@ -114,6 +121,12 @@ public class ChildProfileService : IChildProfileService
                 "Safety Policy chưa có consent hợp lệ theo phiên bản hiện tại — không thể kích hoạt.");
         }
 
+        if (safetyPolicy.ConsentPolicyVersion < ConsentPolicy.CurrentVersion)
+        {
+            throw new BadRequestException(
+                "Điều khoản đồng thuận đã thay đổi — Owner cần đồng ý bản mới trước khi kích hoạt.");
+        }
+
         profile.Status = ChildProfileStatus.Active;
         profile.UpdatedAt = DateTime.UtcNow;
         profileRepo.Update(profile);
@@ -131,7 +144,8 @@ public class ChildProfileService : IChildProfileService
             value => value.SupervisorUserId == currentUserId
                      && value.RevokedAt == null
                      && value.ChildProfile != null
-                     && value.ChildProfile.Status != ChildProfileStatus.Archived,
+                     && value.ChildProfile.Status != ChildProfileStatus.Archived
+                     && value.ChildProfile.Status != ChildProfileStatus.Deleted,
             includeProperties: nameof(SupervisionRelationship.ChildProfile),
             cancellationToken: cancellationToken);
 
@@ -165,7 +179,7 @@ public class ChildProfileService : IChildProfileService
             throw new NotFoundException("Hồ sơ trẻ", childProfileId);
         }
 
-        await _accessGuard.EnsureActiveSupervisionAsync(childProfileId, currentUserId, cancellationToken);
+        await _accessGuard.EnsureOwnerAsync(childProfileId, currentUserId, cancellationToken);
 
         if (string.IsNullOrWhiteSpace(request.Nickname))
         {
@@ -177,9 +191,9 @@ public class ChildProfileService : IChildProfileService
             throw new BadRequestException("Nhóm tuổi nhận thức không hợp lệ.");
         }
 
+        profile.Language = NormalizeLanguage(request.Language);
         profile.Nickname = request.Nickname.Trim();
         profile.AgeBand = request.AgeBand;
-        profile.Language = string.IsNullOrWhiteSpace(request.Language) ? "vi" : request.Language.Trim();
         profile.UpdatedAt = DateTime.UtcNow;
         profileRepo.Update(profile);
         await WriteChildProfileAuditAsync(
@@ -192,28 +206,149 @@ public class ChildProfileService : IChildProfileService
     public async Task ArchiveChildProfileAsync(
         int childProfileId, int currentUserId, CancellationToken cancellationToken = default)
     {
-        var profileRepo = _unitOfWork.Repository<ChildProfile>();
-        var profile = await profileRepo.GetByIdAsync(childProfileId, cancellationToken);
-        if (profile == null)
-        {
-            throw new NotFoundException("Hồ sơ trẻ", childProfileId);
-        }
-
-        // Chỉ Owner được quyền lưu trữ hồ sơ.
-        await _accessGuard.EnsureOwnerAsync(childProfileId, currentUserId, cancellationToken);
-
+        var profile = await LoadOwnedProfileAsync(childProfileId, currentUserId, cancellationToken);
         if (profile.Status == ChildProfileStatus.Archived)
         {
             return;
         }
 
-        // Archived KHÔNG xoá dữ liệu lịch sử — chỉ dừng truy cập mới (đặc tả Luồng 1, Mục 4).
-        profile.Status = ChildProfileStatus.Archived;
+        // Bước 1.8b: lưu trữ từ Active / Suspended; thu hồi Child Session và Easy Login.
+        if (profile.Status is not (ChildProfileStatus.Active or ChildProfileStatus.Suspended))
+        {
+            throw new BadRequestException("Chỉ có thể lưu trữ hồ sơ đang Active hoặc đã tạm dừng.");
+        }
+
+        await ChangeStatusAndRevokeAccessAsync(
+            profile, ChildProfileStatus.Archived, "ARCHIVE_CHILD_PROFILE", currentUserId, cancellationToken);
+    }
+
+    public async Task<ChildProfileDto> SuspendChildProfileAsync(
+        int childProfileId, int currentUserId, CancellationToken cancellationToken = default)
+    {
+        var profile = await LoadOwnedProfileAsync(childProfileId, currentUserId, cancellationToken);
+        if (profile.Status == ChildProfileStatus.Suspended)
+        {
+            return MapToChildProfileDto(profile);
+        }
+
+        if (profile.Status != ChildProfileStatus.Active)
+        {
+            throw new BadRequestException("Chỉ có thể tạm dừng hồ sơ đang Active.");
+        }
+
+        await ChangeStatusAndRevokeAccessAsync(
+            profile, ChildProfileStatus.Suspended, "SUSPEND_CHILD_PROFILE", currentUserId, cancellationToken);
+        return MapToChildProfileDto(profile);
+    }
+
+    public Task<ChildProfileDto> ResumeChildProfileAsync(
+        int childProfileId, int currentUserId, ResumeChildProfileRequestDto request,
+        CancellationToken cancellationToken = default) =>
+        ReactivateAsync(
+            childProfileId, currentUserId, request, ChildProfileStatus.Suspended,
+            "Chỉ có thể kích hoạt lại hồ sơ đang tạm dừng.", "RESUME_CHILD_PROFILE", cancellationToken);
+
+    public Task<ChildProfileDto> RestoreChildProfileAsync(
+        int childProfileId, int currentUserId, ResumeChildProfileRequestDto request,
+        CancellationToken cancellationToken = default) =>
+        ReactivateAsync(
+            childProfileId, currentUserId, request, ChildProfileStatus.Archived,
+            "Chỉ có thể khôi phục hồ sơ đã lưu trữ.", "RESTORE_CHILD_PROFILE", cancellationToken);
+
+    private async Task<ChildProfileDto> ReactivateAsync(
+        int childProfileId, int currentUserId, ResumeChildProfileRequestDto request,
+        ChildProfileStatus requiredStatus, string wrongStatusMessage, string auditAction,
+        CancellationToken cancellationToken)
+    {
+        var profile = await LoadOwnedProfileAsync(childProfileId, currentUserId, cancellationToken);
+        if (profile.Status != requiredStatus)
+        {
+            throw new BadRequestException(wrongStatusMessage);
+        }
+
+        // Easy Login đã bị thu hồi hẳn khi tạm dừng / lưu trữ — Owner phải tạo QR mới (Bước 1.10).
+        await EnsureConsentCurrentAsync(
+            profile.Id, currentUserId, request?.AcceptCurrentConsent ?? false, cancellationToken);
+
+        profile.Status = ChildProfileStatus.Active;
         profile.UpdatedAt = DateTime.UtcNow;
-        profileRepo.Update(profile);
-        await WriteChildProfileAuditAsync(
-            currentUserId, "ARCHIVE_CHILD_PROFILE", childProfileId, cancellationToken);
+        _unitOfWork.Repository<ChildProfile>().Update(profile);
+        await WriteChildProfileAuditAsync(currentUserId, auditAction, profile.Id, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return MapToChildProfileDto(profile);
+    }
+
+    private async Task<ChildProfile> LoadOwnedProfileAsync(
+        int childProfileId, int currentUserId, CancellationToken cancellationToken)
+    {
+        var profile = await _unitOfWork.Repository<ChildProfile>()
+            .GetByIdAsync(childProfileId, cancellationToken);
+        if (profile == null || profile.Status == ChildProfileStatus.Deleted)
+        {
+            throw new NotFoundException("Hồ sơ trẻ", childProfileId);
+        }
+
+        // Chỉ Owner được tạm dừng / kích hoạt lại / lưu trữ / khôi phục hồ sơ (Bước 1.8b).
+        await _accessGuard.EnsureOwnerAsync(childProfileId, currentUserId, cancellationToken);
+        return profile;
+    }
+
+    private async Task ChangeStatusAndRevokeAccessAsync(
+        ChildProfile profile, ChildProfileStatus newStatus, string auditAction, int currentUserId,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        profile.Status = newStatus;
+        profile.UpdatedAt = now;
+        _unitOfWork.Repository<ChildProfile>().Update(profile);
+
+        await _childSessionRevoker.RevokeByChildProfileAsync(profile.Id, cancellationToken);
+
+        // Soft-revoke giống ChildAccessCredentialService.RevokeCredentialAsync: giữ dòng cho audit,
+        // chỉ mục unique lọc IsDeleted=false nên Owner tạo được QR mới sau khi kích hoạt lại.
+        var credentialRepo = _unitOfWork.Repository<ChildAccessCredential>();
+        var credential = await credentialRepo.FirstOrDefaultAsync(
+            value => value.ChildProfileId == profile.Id, cancellationToken: cancellationToken);
+        if (credential != null)
+        {
+            credential.IsDeleted = true;
+            credential.EasyLoginSecretHash = null;
+            credential.UpdatedAt = now;
+            credentialRepo.Update(credential);
+        }
+
+        await WriteChildProfileAuditAsync(currentUserId, auditAction, profile.Id, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task EnsureConsentCurrentAsync(
+        int childProfileId, int currentUserId, bool acceptCurrentConsent,
+        CancellationToken cancellationToken)
+    {
+        var policyRepo = _unitOfWork.Repository<SafetyPolicy>();
+        var policy = await policyRepo.FirstOrDefaultAsync(
+            value => value.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
+        if (policy == null || !policy.ConsentRecorded)
+        {
+            throw new BadRequestException("Hồ sơ trẻ chưa có consent hợp lệ — không thể kích hoạt lại.");
+        }
+
+        if (policy.ConsentPolicyVersion >= ConsentPolicy.CurrentVersion)
+        {
+            return;
+        }
+
+        if (!acceptCurrentConsent)
+        {
+            throw new BadRequestException(
+                "Điều khoản đồng thuận đã thay đổi — Owner cần đồng ý bản mới để tiếp tục.");
+        }
+
+        policy.ConsentPolicyVersion = ConsentPolicy.CurrentVersion;
+        policy.ConsentRecordedAt = DateTime.UtcNow;
+        policy.ConsentedByUserId = currentUserId;
+        policy.UpdatedAt = DateTime.UtcNow;
+        policyRepo.Update(policy);
     }
 
     private async Task WriteChildProfileAuditAsync(
@@ -246,6 +381,21 @@ public class ChildProfileService : IChildProfileService
         {
             throw new BadRequestException("Mã ngôn ngữ tối đa 10 ký tự.");
         }
+    }
+
+    private const string SupportedLanguage = "vi";
+
+    private static string NormalizeLanguage(string? language)
+    {
+        var value = string.IsNullOrWhiteSpace(language)
+            ? SupportedLanguage
+            : language.Trim().ToLowerInvariant();
+        if (value != SupportedLanguage)
+        {
+            throw new BadRequestException("Nền tảng hiện chỉ hỗ trợ tiếng Việt.");
+        }
+
+        return value;
     }
 
     private static ChildProfileDto MapToChildProfileDto(ChildProfile childProfile)

@@ -23,6 +23,9 @@ public class DataRequestConfiguration : IEntityTypeConfiguration<DataRequest>
             .HasMaxLength(30)
             .IsRequired();
 
+        builder.Property(x => x.RejectionReason)
+            .HasMaxLength(500);
+
         builder.Property(x => x.DeletionMethod)
             .HasConversion<string>()
             .HasMaxLength(20)

@@ -84,8 +84,9 @@ public class TransferOwnershipRequestDto
 
 public class CreatePermissionRequestRequestDto
 {
-    [Required(ErrorMessage = "Vui lòng chọn ít nhất 1 quyền cần xin.")]
-    [MinLength(1, ErrorMessage = "Vui lòng chọn ít nhất 1 quyền cần xin.")]
+    [Required(ErrorMessage = "Vui lòng chọn quyền cần xin.")]
+    [MinLength(1, ErrorMessage = "Mỗi yêu cầu xin quyền cần đúng 1 quyền.")]
+    [MaxLength(1, ErrorMessage = "Mỗi yêu cầu xin quyền chỉ được xin đúng 1 quyền.")]
     public List<Permission> Permissions { get; set; } = new();
 }
 
@@ -111,5 +112,4 @@ public class OwnershipTransferRequestDto
     public string Status { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public DateTime? RespondedAt { get; set; }
-    public DateTime? ExpiresAt { get; set; }
 }

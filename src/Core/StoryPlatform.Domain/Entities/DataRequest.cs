@@ -14,6 +14,7 @@ public class DataRequest : BaseEntity
     public DataRequestType RequestType { get; set; }
     public DataRequestStatus Status { get; set; } = DataRequestStatus.Pending;
     public DateTime? ResolvedAt { get; set; }
+    public string? RejectionReason { get; set; }
     public DataRequestDeletionMethod? DeletionMethod { get; set; } = DataRequestDeletionMethod.Anonymize;
     public string? LegalBasisNote { get; set; }
     public int? ResolvedByUserId { get; set; }

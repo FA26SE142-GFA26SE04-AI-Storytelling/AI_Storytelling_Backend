@@ -29,8 +29,8 @@ public sealed class Luong1SchemaAlignmentModelTests
     }
 
     [Theory]
-    [InlineData("ContentReportSlaWarning", 21)]
-    [InlineData("ContentReportResolved", 22)]
+    [InlineData("ModerationSlaWarning", 15)]
+    [InlineData("ContentReportResolved", 16)]
     public void NotificationType_defines_content_report_values(string name, int expectedValue)
     {
         Assert.True(Enum.TryParse<NotificationType>(name, out var value), name);
@@ -90,7 +90,7 @@ public sealed class Luong1SchemaAlignmentModelTests
     }
 
     [Fact]
-    public void ChildAccessCredential_unique_profile_index_ignores_soft_deleted_rows()
+    public void ChildAccessCredential_unique_profile_index_ignores_revoked_and_soft_deleted_rows()
     {
         using var context = CreateModelOnlyContext();
         var credential = context.GetService<IDesignTimeModel>().Model
@@ -99,7 +99,7 @@ public sealed class Luong1SchemaAlignmentModelTests
         var index = Assert.Single(credential.GetIndexes(), value =>
             value.IsUnique
             && value.Properties.Single().Name == nameof(ChildAccessCredential.ChildProfileId));
-        Assert.Equal("\"IsDeleted\" = false", index.GetFilter());
+        Assert.Equal("\"RevokedAt\" IS NULL AND \"IsDeleted\" = false", index.GetFilter());
     }
 
     [Fact]
@@ -135,6 +135,53 @@ public sealed class Luong1SchemaAlignmentModelTests
         Assert.Equal(
             VersionHistorySource.Recommendation,
             versionHistory.FindProperty(nameof(ChildProfileVersionHistory.Source))!.GetDefaultValue());
+    }
+
+    [Fact]
+    public void Account_ownership_v41_columns_and_statuses_are_mapped()
+    {
+        using var context = CreateModelOnlyContext();
+
+        var userAccount = context.Model.FindEntityType(typeof(UserAccount))!;
+        Assert.NotNull(userAccount.FindProperty(nameof(UserAccount.EmailVerifiedAt)));
+        Assert.NotNull(userAccount.FindProperty(nameof(UserAccount.EmailVerificationFailedAttempts)));
+        Assert.NotNull(userAccount.FindProperty(nameof(UserAccount.PasswordChangedAt)));
+        Assert.Equal(150, userAccount.FindProperty(nameof(UserAccount.PendingEmail))!.GetMaxLength());
+        Assert.Equal(64, userAccount.FindProperty(nameof(UserAccount.PendingEmailOtpHash))!.GetMaxLength());
+        Assert.NotNull(userAccount.FindProperty(nameof(UserAccount.PendingEmailOtpExpiresAt)));
+        Assert.NotNull(userAccount.FindProperty(nameof(UserAccount.PendingEmailOtpFailedAttempts)));
+
+        var ownershipTransfer = context.Model.FindEntityType(typeof(OwnershipTransferRequest))!;
+        Assert.Null(ownershipTransfer.FindProperty("ExpiresAt"));
+        Assert.Equal(
+            new[] { "Pending", "Accepted", "Rejected", "Cancelled" },
+            Enum.GetNames<OwnershipTransferRequestStatus>());
+        Assert.Contains(nameof(DataRequestStatus.Cancelled), Enum.GetNames<DataRequestStatus>());
+        Assert.Equal(8, (int)NotificationType.AccountSecurityChanged);
+    }
+
+    [Fact]
+    public void Notifications_sessions_and_data_requests_v41_columns_are_mapped()
+    {
+        using var context = CreateModelOnlyContext();
+
+        var notification = context.Model.FindEntityType(typeof(Notification))!;
+        Assert.NotNull(notification.FindProperty(nameof(Notification.ChildProfileId)));
+
+        var childSession = context.Model.FindEntityType(typeof(ChildSession))!;
+        Assert.Equal(30, childSession.FindProperty(nameof(ChildSession.EntryMethod))!.GetMaxLength());
+        Assert.Equal(
+            ChildEntryMethod.ProfileSwitcher,
+            childSession.FindProperty(nameof(ChildSession.EntryMethod))!.GetDefaultValue());
+
+        var credential = context.Model.FindEntityType(typeof(ChildAccessCredential))!;
+        Assert.NotNull(credential.FindProperty(nameof(ChildAccessCredential.RevokedAt)));
+
+        var dataRequest = context.Model.FindEntityType(typeof(DataRequest))!;
+        Assert.Equal(500, dataRequest.FindProperty(nameof(DataRequest.RejectionReason))!.GetMaxLength());
+        Assert.Equal(
+            new[] { "Pending", "Resolved", "Cancelled", "Rejected" },
+            Enum.GetNames<DataRequestStatus>());
     }
 
     private static ApplicationDbContext CreateModelOnlyContext() =>

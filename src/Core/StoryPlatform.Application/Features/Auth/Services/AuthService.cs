@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using StoryPlatform.Application.Abstractions.Communication;
@@ -12,12 +13,15 @@ using StoryPlatform.Domain.Enums;
 using StoryPlatform.Application.Features.Auth.DTOs;
 using StoryPlatform.Application.Features.Auth.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Sessions.Interfaces;
+using StoryPlatform.Application.Features.Notifications.Interfaces;
 
 namespace StoryPlatform.Application.Features.Auth.Services;
 
 public class AuthService : IAuthService
 {
     private const string MfaIssuer = "AI Storytelling Platform";
+    private const int MaxFailedLoginAttempts = 5;
+    private const int LockoutMinutes = 15;
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IPasswordHasher _passwordHasher;
@@ -25,6 +29,7 @@ public class AuthService : IAuthService
     private readonly IEmailSender _emailSender;
     private readonly ITotpService _totpService;
     private readonly IChildSessionRevoker _childSessionRevoker;
+    private readonly INotificationService _notificationService;
 
     public AuthService(
         IUnitOfWork unitOfWork,
@@ -32,7 +37,8 @@ public class AuthService : IAuthService
         IJwtTokenGenerator jwtTokenGenerator,
         IEmailSender emailSender,
         ITotpService totpService,
-        IChildSessionRevoker childSessionRevoker)
+        IChildSessionRevoker childSessionRevoker,
+        INotificationService notificationService)
     {
         _unitOfWork = unitOfWork;
         _passwordHasher = passwordHasher;
@@ -40,13 +46,11 @@ public class AuthService : IAuthService
         _emailSender = emailSender;
         _totpService = totpService;
         _childSessionRevoker = childSessionRevoker;
+        _notificationService = notificationService;
     }
 
     public async Task<AuthResponseDto> LoginAsync(LoginRequestDto request, CancellationToken cancellationToken = default)
     {
-        const int MaxFailedLoginAttempts = 5;
-        const int LockoutMinutes = 15;
-
         var userRepo = _unitOfWork.Repository<UserAccount>();
 
         // Cho phép đăng nhập bằng cả Email hoặc Username
@@ -67,12 +71,7 @@ public class AuthService : IAuthService
 
         if (!_passwordHasher.VerifyPassword(request.Password, user.PasswordHash))
         {
-            user.FailedLoginAttempts += 1;
-            if (user.FailedLoginAttempts >= MaxFailedLoginAttempts)
-            {
-                user.LockedUntil = DateTime.UtcNow.AddMinutes(LockoutMinutes);
-                user.FailedLoginAttempts = 0;
-            }
+            ApplyFailedLogin(user);
             userRepo.Update(user);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -225,7 +224,7 @@ public class AuthService : IAuthService
             throw new BadRequestException($"Tên đăng nhập '{request.Username}' đã tồn tại.");
         }
 
-        var rawVerificationToken = _jwtTokenGenerator.GenerateRefreshToken(); // tái dùng bộ sinh chuỗi ngẫu nhiên an toàn sẵn có
+        var otp = OtpHelper.Generate();
 
         var newUser = new UserAccount
         {
@@ -238,15 +237,16 @@ public class AuthService : IAuthService
             // must be provisioned by an Administrator.
             Role = UserRole.Parent,
             Status = AccountStatus.Registered,
-            EmailVerificationTokenHash = TokenHasher.Hash(rawVerificationToken),
-            EmailVerificationTokenExpiresAt = DateTime.UtcNow.AddHours(24),
+            EmailVerificationTokenHash = OtpHelper.Hash(OtpHelper.EmailVerifyPurpose, normalizedEmail, otp),
+            EmailVerificationTokenExpiresAt = DateTime.UtcNow.Add(OtpHelper.Ttl),
             CreatedAt = DateTime.UtcNow
         };
 
         await userRepo.AddAsync(newUser, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        await _emailSender.SendEmailVerificationEmailAsync(newUser.Email, newUser.FullName, rawVerificationToken, cancellationToken);
+        await _emailSender.SendEmailVerificationEmailAsync(
+            newUser.Email, newUser.FullName, otp, cancellationToken);
     }
 
     public async Task<UserProfileDto> GetCurrentUserProfileAsync(int userId, CancellationToken cancellationToken = default)
@@ -256,6 +256,41 @@ public class AuthService : IAuthService
         {
             throw new NotFoundException("Tài khoản", userId);
         }
+
+        return MapToUserProfileDto(user);
+    }
+
+    public async Task<UserProfileDto> UpdateProfileAsync(
+        int userId, UpdateProfileRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        var userRepo = _unitOfWork.Repository<UserAccount>();
+        var user = await userRepo.GetByIdAsync(userId, cancellationToken)
+                   ?? throw new NotFoundException("Tài khoản", userId);
+
+        var fullName = request.FullName?.Trim() ?? string.Empty;
+        if (fullName.Length == 0)
+        {
+            throw new BadRequestException("Họ và tên không được để trống.");
+        }
+
+        var avatarUrl = string.IsNullOrWhiteSpace(request.AvatarUrl)
+            ? null
+            : request.AvatarUrl.Trim();
+        if (avatarUrl != null
+            && !(Uri.TryCreate(avatarUrl, UriKind.Absolute, out var uri)
+                 && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp)))
+        {
+            throw new BadRequestException(
+                "Địa chỉ ảnh đại diện phải là đường dẫn http hoặc https.");
+        }
+
+        user.FullName = fullName;
+        user.AvatarUrl = avatarUrl;
+        user.UpdatedAt = DateTime.UtcNow;
+        userRepo.Update(user);
+        await WriteAuthAuditAsync(user.Id, "UPDATE_PROFILE", user.Id, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return MapToUserProfileDto(user);
     }
@@ -275,19 +310,13 @@ public class AuthService : IAuthService
             rt => rt.TokenHash == hashedToken && rt.UserAccountId == userId,
             cancellationToken: cancellationToken);
 
-        // Đăng xuất là hành động idempotent — nếu token đã bị thu hồi/không xác định,
-        // vẫn chuyển trạng thái tài khoản về LoggedOut thay vì báo lỗi.
+        // Đăng xuất là hành động idempotent — token đã thu hồi/không xác định vẫn thành công.
         if (tokenRow != null && tokenRow.RevokedAt == null)
         {
             tokenRow.RevokedAt = DateTime.UtcNow;
             refreshTokenRepo.Update(tokenRow);
         }
 
-        // Không hạ cấp trạng thái Suspended — tài khoản bị khoá phải giữ nguyên trạng thái khoá.
-        if (user.Status != AccountStatus.Suspended)
-        {
-            user.Status = AccountStatus.LoggedOut;
-        }
         userRepo.Update(user);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -312,10 +341,6 @@ public class AuthService : IAuthService
 
         // JWT đã phát hành sẽ bị từ chối ở request tiếp theo khi version không còn khớp.
         user.TokenVersion += 1;
-        if (user.Status != AccountStatus.Suspended)
-        {
-            user.Status = AccountStatus.LoggedOut;
-        }
         userRepo.Update(user);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -352,23 +377,44 @@ public class AuthService : IAuthService
 
     public async Task VerifyEmailAsync(VerifyEmailRequestDto request, CancellationToken cancellationToken = default)
     {
+        const string invalidMessage = "Mã xác thực email không hợp lệ.";
         var normalizedEmail = request.Email.Trim().ToLowerInvariant();
         var userRepo = _unitOfWork.Repository<UserAccount>();
-        var user = await userRepo.FirstOrDefaultAsync(u => u.Email.ToLower() == normalizedEmail, cancellationToken: cancellationToken);
+        var user = await userRepo.FirstOrDefaultAsync(
+            u => u.Email.ToLower() == normalizedEmail,
+            cancellationToken: cancellationToken);
 
-        var hashedIncomingToken = TokenHasher.Hash(request.Token);
-        if (user == null || user.EmailVerificationTokenHash != hashedIncomingToken)
+        if (user == null || user.EmailVerificationTokenHash == null)
         {
-            throw new BadRequestException("Mã xác thực email không hợp lệ.");
+            throw new BadRequestException(invalidMessage);
+        }
+
+        if (user.EmailVerificationFailedAttempts >= OtpHelper.MaxAttempts)
+        {
+            throw new BadRequestException(
+                "Bạn đã nhập sai quá nhiều lần. Vui lòng yêu cầu gửi lại mã xác thực.");
         }
 
         if (user.EmailVerificationTokenExpiresAt == null || user.EmailVerificationTokenExpiresAt < DateTime.UtcNow)
         {
-            throw new BadRequestException("Mã xác thực email đã hết hạn.");
+            throw new BadRequestException(
+                "Mã xác thực email đã hết hạn. Vui lòng yêu cầu gửi lại mã.");
+        }
+
+        if (!OtpHelper.Matches(
+                user.EmailVerificationTokenHash, OtpHelper.EmailVerifyPurpose,
+                normalizedEmail, request.Otp))
+        {
+            user.EmailVerificationFailedAttempts += 1;
+            userRepo.Update(user);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            throw new BadRequestException(invalidMessage);
         }
 
         user.EmailVerificationTokenHash = null;
         user.EmailVerificationTokenExpiresAt = null;
+        user.EmailVerificationFailedAttempts = 0;
+        user.EmailVerifiedAt = DateTime.UtcNow;
         // Chỉ nâng cấp trạng thái Registered -> EmailVerified. Không hạ cấp một tài khoản
         // đã LoggedIn/LoggedOut/PasswordResetPending, và không mở khoá Suspended qua đường này.
         if (user.Status == AccountStatus.Registered)
@@ -383,8 +429,6 @@ public class AuthService : IAuthService
     public async Task ResendVerificationEmailAsync(
         ResendVerificationEmailRequestDto request, CancellationToken cancellationToken = default)
     {
-        const int CooldownSeconds = 60;
-
         var normalizedEmail = request.Email.Trim().ToLowerInvariant();
         var userRepo = _unitOfWork.Repository<UserAccount>();
         var user = await userRepo.FirstOrDefaultAsync(
@@ -397,7 +441,7 @@ public class AuthService : IAuthService
             return;
         }
 
-        var cooldownStart = DateTime.UtcNow.AddSeconds(-CooldownSeconds);
+        var cooldownStart = DateTime.UtcNow - OtpHelper.ResendCooldown;
         var sentRecently = await _unitOfWork.Repository<AuditLog>().ExistsAsync(
             log => log.EntityType == nameof(UserAccount)
                    && log.EntityId == user.Id
@@ -409,15 +453,17 @@ public class AuthService : IAuthService
             return;
         }
 
-        var rawVerificationToken = _jwtTokenGenerator.GenerateRefreshToken();
-        user.EmailVerificationTokenHash = TokenHasher.Hash(rawVerificationToken);
-        user.EmailVerificationTokenExpiresAt = DateTime.UtcNow.AddHours(24);
+        var otp = OtpHelper.Generate();
+        user.EmailVerificationTokenHash = OtpHelper.Hash(
+            OtpHelper.EmailVerifyPurpose, user.Email, otp);
+        user.EmailVerificationTokenExpiresAt = DateTime.UtcNow.Add(OtpHelper.Ttl);
+        user.EmailVerificationFailedAttempts = 0;
         userRepo.Update(user);
         await WriteAuthAuditAsync(user.Id, "RESEND_VERIFICATION_EMAIL", user.Id, cancellationToken);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         await _emailSender.SendEmailVerificationEmailAsync(
-            user.Email, user.FullName, rawVerificationToken, cancellationToken);
+            user.Email, user.FullName, otp, cancellationToken);
     }
 
     public async Task ResetPasswordAsync(ResetPasswordRequestDto request, CancellationToken cancellationToken = default)
@@ -485,21 +531,200 @@ public class AuthService : IAuthService
             throw new ForbiddenException("Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.");
         }
 
+        if (user.LockedUntil.HasValue && user.LockedUntil.Value > DateTime.UtcNow)
+        {
+            throw new ForbiddenException(
+                $"Tài khoản tạm thời bị khoá do nhập sai mật khẩu quá {MaxFailedLoginAttempts} lần. Vui lòng thử lại sau {LockoutMinutes} phút.");
+        }
+
         if (!_passwordHasher.VerifyPassword(request.CurrentPassword, user.PasswordHash))
         {
+            ApplyFailedLogin(user);
+            userRepo.Update(user);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
             throw new BadRequestException("Mật khẩu hiện tại không chính xác.");
         }
 
+        user.FailedLoginAttempts = 0;
+        user.LockedUntil = null;
         user.PasswordHash = _passwordHasher.HashPassword(request.NewPassword);
+        user.PasswordChangedAt = DateTime.UtcNow;
         user.RefreshTokenHash = null;
         user.RefreshTokenExpiresAt = null;
-        user.TokenVersion += 1;
-        await RevokeRefreshTokensAsync(user.Id, cancellationToken);
+
+        RefreshToken? currentSession = null;
+        if (!string.IsNullOrWhiteSpace(request.CurrentRefreshToken))
+        {
+            var hash = TokenHasher.Hash(request.CurrentRefreshToken.Trim());
+            currentSession = await _unitOfWork.Repository<RefreshToken>().FirstOrDefaultAsync(
+                token => token.TokenHash == hash
+                         && token.UserAccountId == userId
+                         && token.RevokedAt == null,
+                cancellationToken: cancellationToken);
+        }
+
+        if (currentSession != null)
+        {
+            await RevokeRefreshTokensExceptAsync(userId, currentSession.Id, cancellationToken);
+            await _childSessionRevoker.RevokeBySupervisorExceptSessionAsync(
+                userId, currentSession.Id, cancellationToken);
+        }
+        else
+        {
+            user.TokenVersion += 1;
+            await RevokeRefreshTokensAsync(user.Id, cancellationToken);
+            await _childSessionRevoker.RevokeBySupervisorAsync(userId, null, cancellationToken);
+        }
+
         await WriteAuthAuditAsync(user.Id, "CHANGE_PASSWORD", user.Id, cancellationToken);
         user.UpdatedAt = DateTime.UtcNow;
 
         userRepo.Update(user);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await NotifySecurityChangeAsync(
+            user, AccountSecurityChange.PasswordChanged, null, cancellationToken);
+    }
+
+    public async Task RequestEmailChangeAsync(
+        int userId, RequestEmailChangeRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        var userRepo = _unitOfWork.Repository<UserAccount>();
+        var user = await userRepo.GetByIdAsync(userId, cancellationToken)
+                   ?? throw new NotFoundException("Tài khoản", userId);
+
+        if (user.Role != UserRole.Parent)
+        {
+            throw new ForbiddenException(
+                "Tài khoản vận hành không tự đổi email — vui lòng liên hệ Administrator.");
+        }
+
+        if (user.LockedUntil.HasValue && user.LockedUntil.Value > DateTime.UtcNow)
+        {
+            throw new ForbiddenException(
+                $"Tài khoản tạm thời bị khoá do nhập sai mật khẩu quá {MaxFailedLoginAttempts} lần. Vui lòng thử lại sau {LockoutMinutes} phút.");
+        }
+
+        if (!_passwordHasher.VerifyPassword(request.CurrentPassword, user.PasswordHash))
+        {
+            ApplyFailedLogin(user);
+            userRepo.Update(user);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            throw new BadRequestException("Mật khẩu hiện tại không chính xác.");
+        }
+
+        var newEmail = request.NewEmail.Trim().ToLowerInvariant();
+        if (!new EmailAddressAttribute().IsValid(newEmail))
+        {
+            throw new BadRequestException("Email không đúng định dạng.");
+        }
+
+        if (newEmail == user.Email)
+        {
+            throw new BadRequestException("Email mới phải khác email hiện tại.");
+        }
+
+        if (await userRepo.ExistsAsync(
+                value => value.Email.ToLower() == newEmail && value.Id != userId,
+                cancellationToken))
+        {
+            throw new BadRequestException(
+                "Email này đã được sử dụng bởi tài khoản khác.");
+        }
+
+        var now = DateTime.UtcNow;
+        if (user.PendingEmailOtpExpiresAt.HasValue
+            && user.PendingEmailOtpExpiresAt.Value - OtpHelper.Ttl
+            + OtpHelper.ResendCooldown > now)
+        {
+            throw new BadRequestException(
+                "Vui lòng đợi một chút trước khi yêu cầu gửi lại mã.");
+        }
+
+        var otp = OtpHelper.Generate();
+        user.FailedLoginAttempts = 0;
+        user.LockedUntil = null;
+        user.PendingEmail = newEmail;
+        user.PendingEmailOtpHash = OtpHelper.Hash(
+            OtpHelper.EmailChangePurpose, newEmail, otp);
+        user.PendingEmailOtpExpiresAt = now.Add(OtpHelper.Ttl);
+        user.PendingEmailOtpFailedAttempts = 0;
+        userRepo.Update(user);
+        await WriteAuthAuditAsync(
+            user.Id, "REQUEST_EMAIL_CHANGE", user.Id, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _emailSender.SendEmailChangeOtpEmailAsync(
+            newEmail, user.FullName, otp, cancellationToken);
+    }
+
+    public async Task ConfirmEmailChangeAsync(
+        int userId, ConfirmEmailChangeRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        var userRepo = _unitOfWork.Repository<UserAccount>();
+        var user = await userRepo.GetByIdAsync(userId, cancellationToken)
+                   ?? throw new NotFoundException("Tài khoản", userId);
+
+        if (user.Role != UserRole.Parent)
+        {
+            throw new ForbiddenException(
+                "Tài khoản vận hành không tự đổi email — vui lòng liên hệ Administrator.");
+        }
+
+        if (user.PendingEmail == null || user.PendingEmailOtpHash == null)
+        {
+            throw new BadRequestException(
+                "Không có yêu cầu đổi email nào đang chờ xác thực.");
+        }
+
+        if (user.PendingEmailOtpFailedAttempts >= OtpHelper.MaxAttempts)
+        {
+            throw new BadRequestException(
+                "Bạn đã nhập sai quá nhiều lần. Vui lòng gửi lại yêu cầu đổi email.");
+        }
+
+        if (user.PendingEmailOtpExpiresAt == null
+            || user.PendingEmailOtpExpiresAt < DateTime.UtcNow)
+        {
+            throw new BadRequestException(
+                "Mã xác thực đã hết hạn. Vui lòng gửi lại yêu cầu đổi email.");
+        }
+
+        if (!OtpHelper.Matches(
+                user.PendingEmailOtpHash, OtpHelper.EmailChangePurpose,
+                user.PendingEmail, request.Otp))
+        {
+            user.PendingEmailOtpFailedAttempts += 1;
+            userRepo.Update(user);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            throw new BadRequestException("Mã xác thực không hợp lệ.");
+        }
+
+        var newEmail = user.PendingEmail;
+        if (await userRepo.ExistsAsync(
+                value => value.Email.ToLower() == newEmail && value.Id != userId,
+                cancellationToken))
+        {
+            throw new BadRequestException(
+                "Email này đã được sử dụng bởi tài khoản khác.");
+        }
+
+        var oldEmail = user.Email;
+        user.Email = newEmail;
+        user.EmailVerifiedAt = DateTime.UtcNow;
+        user.PendingEmail = null;
+        user.PendingEmailOtpHash = null;
+        user.PendingEmailOtpExpiresAt = null;
+        user.PendingEmailOtpFailedAttempts = 0;
+        user.UpdatedAt = DateTime.UtcNow;
+        userRepo.Update(user);
+        await WriteAuthAuditAsync(user.Id, "CHANGE_EMAIL", user.Id, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await NotifySecurityChangeAsync(
+            user, AccountSecurityChange.EmailChanged, oldEmail, cancellationToken);
     }
 
     public async Task<List<SessionDto>> ListSessionsAsync(
@@ -584,6 +809,44 @@ public class AuthService : IAuthService
             token.RevokedAt = now;
             repository.Update(token);
         }
+    }
+
+    private async Task RevokeRefreshTokensExceptAsync(
+        int userId, int keepTokenId, CancellationToken cancellationToken)
+    {
+        var repository = _unitOfWork.Repository<RefreshToken>();
+        var tokens = await repository.FindAsync(
+            token => token.UserAccountId == userId
+                     && token.RevokedAt == null
+                     && token.Id != keepTokenId,
+            cancellationToken: cancellationToken);
+        var now = DateTime.UtcNow;
+        foreach (var token in tokens.Where(token => token.Id != keepTokenId))
+        {
+            token.RevokedAt = now;
+            repository.Update(token);
+        }
+    }
+
+    private static void ApplyFailedLogin(UserAccount user)
+    {
+        user.FailedLoginAttempts += 1;
+        if (user.FailedLoginAttempts >= MaxFailedLoginAttempts)
+        {
+            user.LockedUntil = DateTime.UtcNow.AddMinutes(LockoutMinutes);
+            user.FailedLoginAttempts = 0;
+        }
+    }
+
+    private async Task NotifySecurityChangeAsync(
+        UserAccount user, AccountSecurityChange change, string? emailTo,
+        CancellationToken cancellationToken)
+    {
+        await _notificationService.CreateAsync(
+            user.Id, NotificationType.AccountSecurityChanged,
+            JsonSerializer.Serialize(new { change = change.ToString() }), cancellationToken);
+        await _emailSender.SendAccountSecurityChangedEmailAsync(
+            emailTo ?? user.Email, user.FullName, change, cancellationToken);
     }
 
     private async Task WriteAuthAuditAsync(

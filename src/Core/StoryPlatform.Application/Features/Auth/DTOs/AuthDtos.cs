@@ -129,6 +129,9 @@ public class ChangePasswordRequestDto
     [Required(ErrorMessage = "Xác nhận mật khẩu mới không được để trống.")]
     [Compare(nameof(NewPassword), ErrorMessage = "Mật khẩu xác nhận không khớp.")]
     public string ConfirmPassword { get; set; } = string.Empty;
+
+    /// <summary>Refresh token của phiên đang thao tác; bỏ trống để thu hồi mọi phiên.</summary>
+    public string? CurrentRefreshToken { get; set; }
 }
 
 public class LogoutRequestDto
@@ -144,7 +147,57 @@ public class VerifyEmailRequestDto
     public string Email { get; set; } = string.Empty;
 
     [Required(ErrorMessage = "Mã xác thực không được để trống.")]
-    public string Token { get; set; } = string.Empty;
+    [RegularExpression(@"^\s*\d{6}\s*$", ErrorMessage = "Mã xác thực gồm 6 chữ số.")]
+    public string Otp { get; set; } = string.Empty;
+}
+
+public class RequestEmailChangeRequestDto
+{
+    [Required(ErrorMessage = "Mật khẩu hiện tại không được để trống.")]
+    public string CurrentPassword { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Email mới không được để trống.")]
+    [EmailAddress(ErrorMessage = "Email không đúng định dạng.")]
+    public string NewEmail { get; set; } = string.Empty;
+}
+
+public class ConfirmEmailChangeRequestDto
+{
+    [Required(ErrorMessage = "Mã xác thực không được để trống.")]
+    [RegularExpression(@"^\s*\d{6}\s*$", ErrorMessage = "Mã xác thực gồm 6 chữ số.")]
+    public string Otp { get; set; } = string.Empty;
+}
+
+public class UpdateProfileRequestDto
+{
+    [Required(ErrorMessage = "Họ và tên không được để trống.")]
+    [StringLength(100, ErrorMessage = "Họ và tên tối đa 100 ký tự.")]
+    public string FullName { get; set; } = string.Empty;
+
+    [StringLength(500, ErrorMessage = "Địa chỉ ảnh đại diện tối đa 500 ký tự.")]
+    public string? AvatarUrl { get; set; }
+}
+
+public class OwnedChildProfileSummaryDto
+{
+    public int Id { get; set; }
+    public string Nickname { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+}
+
+public class DeleteAccountPreviewDto
+{
+    public List<OwnedChildProfileSummaryDto> BlockingProfiles { get; set; } = new();
+    public List<OwnedChildProfileSummaryDto> DraftProfiles { get; set; } = new();
+    public bool CanDelete => BlockingProfiles.Count == 0;
+}
+
+public class DeleteAccountRequestDto
+{
+    [Required(ErrorMessage = "Mật khẩu hiện tại không được để trống.")]
+    public string CurrentPassword { get; set; } = string.Empty;
+
+    public bool DeleteDraftProfiles { get; set; }
 }
 
 public class ResendVerificationEmailRequestDto

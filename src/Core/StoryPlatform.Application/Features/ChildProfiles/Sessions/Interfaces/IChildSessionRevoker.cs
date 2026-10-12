@@ -16,4 +16,9 @@ public interface IChildSessionRevoker
     /// </summary>
     Task<int> RevokeBySupervisorAsync(
         int supervisorUserId, int? childProfileId, CancellationToken cancellationToken = default);
+
+    /// <summary>Đóng các phiên trẻ từ phiên đăng nhập khác, giữ phiên đang thao tác và các phiên Easy Login.</summary>
+    Task<int> RevokeBySupervisorExceptSessionAsync(
+        int supervisorUserId, int keepSupervisorSessionId,
+        CancellationToken cancellationToken = default);
 }

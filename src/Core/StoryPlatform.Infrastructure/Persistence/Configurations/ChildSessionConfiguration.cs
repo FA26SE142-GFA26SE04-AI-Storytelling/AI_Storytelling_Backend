@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using StoryPlatform.Domain.Entities;
+using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Infrastructure.Persistence.Configurations;
 
@@ -23,6 +24,12 @@ public class ChildSessionConfiguration : IEntityTypeConfiguration<ChildSession>
         builder.Property(x => x.SessionKey)
             .IsRequired()
             .HasMaxLength(64);
+
+        builder.Property(x => x.EntryMethod)
+            .HasConversion<string>()
+            .HasMaxLength(30)
+            .HasDefaultValue(ChildEntryMethod.ProfileSwitcher)
+            .IsRequired();
 
         builder.HasOne(x => x.ChildProfile)
             .WithMany()

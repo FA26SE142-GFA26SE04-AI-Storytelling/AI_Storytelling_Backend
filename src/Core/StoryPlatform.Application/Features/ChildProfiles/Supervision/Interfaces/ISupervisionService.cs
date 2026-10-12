@@ -1,4 +1,5 @@
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.DTOs;
+using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
@@ -27,6 +28,10 @@ public interface ISupervisionService
 
     Task RevokeSupervisionAsync(
         int supervisionRelationshipId, int revokerUserId,
+        CancellationToken cancellationToken = default);
+
+    Task ApplyRevocationAsync(
+        SupervisionRelationship target, int revokerUserId, DateTime now,
         CancellationToken cancellationToken = default);
 
     Task<OwnershipTransferRequestDto> RequestOwnershipTransferAsync(

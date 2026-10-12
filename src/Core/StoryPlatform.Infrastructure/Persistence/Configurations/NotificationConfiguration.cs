@@ -30,6 +30,13 @@ public class NotificationConfiguration : IEntityTypeConfiguration<Notification>
             .HasForeignKey(x => x.RecipientUserId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(x => x.ChildProfile)
+            .WithMany()
+            .HasForeignKey(x => x.ChildProfileId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(x => x.ChildProfileId);
+
         builder.HasQueryFilter(x => !x.IsDeleted);
     }
 }

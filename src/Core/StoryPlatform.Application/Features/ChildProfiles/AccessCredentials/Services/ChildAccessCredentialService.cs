@@ -52,8 +52,7 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
     {
         await _accessGuard.EnsureActiveSupervisionAsync(childProfileId, currentUserId, cancellationToken);
 
-        var credential = await _unitOfWork.Repository<ChildAccessCredential>().FirstOrDefaultAsync(
-            value => value.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
+        var credential = await FindActiveCredentialAsync(childProfileId, cancellationToken);
 
         var hasEasyLogin = credential?.EasyLoginSecretHash != null;
         return new ChildAccessCredentialDto
@@ -72,40 +71,49 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
             childProfileId, currentUserId, Permission.ManageSafetySettings, cancellationToken);
 
         var credentialRepo = _unitOfWork.Repository<ChildAccessCredential>();
-        var credential = await credentialRepo.FirstOrDefaultAsync(
-            value => value.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
-
         var secret = GenerateSecret();
         var now = DateTime.UtcNow;
-        var isRegeneration = credential != null;
+        var active = await FindActiveCredentialAsync(childProfileId, cancellationToken);
+        var isRegeneration = active != null;
+        var avatarId = active?.AvatarId ?? DefaultAvatarId;
         object? beforeState = null;
         var endedChildSessions = 0;
 
-        if (credential == null)
+        ChildAccessCredential credential;
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
         {
+            if (active != null)
+            {
+                beforeState = new
+                {
+                    childProfileId,
+                    easyLoginCreatedAt = active.EasyLoginCreatedAt
+                };
+                MarkRevoked(active, now);
+                credentialRepo.Update(active);
+                endedChildSessions = await EndChildSessionsAsync(
+                    active.Id, now, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+            }
+
             credential = new ChildAccessCredential
             {
                 ChildProfileId = childProfileId,
-                AvatarId = DefaultAvatarId,
+                AvatarId = avatarId,
                 EasyLoginSecretHash = TokenHasher.Hash(secret),
                 EasyLoginCreatedAt = now,
                 CreatedByUserId = currentUserId
             };
             await credentialRepo.AddAsync(credential, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
         }
-        else
+        catch
         {
-            beforeState = new { childProfileId, easyLoginCreatedAt = credential.EasyLoginCreatedAt };
-
-            // Tạo lại: secret cũ vô hiệu ngay và mọi Child Session sinh từ credential bị kết thúc (Mục 7c).
-            credential.EasyLoginSecretHash = TokenHasher.Hash(secret);
-            credential.EasyLoginCreatedAt = now;
-            credential.UpdatedAt = now;
-            credentialRepo.Update(credential);
-            endedChildSessions = await EndChildSessionsAsync(credential.Id, now, cancellationToken);
+            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            throw;
         }
-
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         // Không bao giờ ghi secret hoặc hash vào audit.
         await _auditLogWriter.LogAsync(
@@ -126,8 +134,7 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
             childProfileId, currentUserId, Permission.ManageSafetySettings, cancellationToken);
 
         var credentialRepo = _unitOfWork.Repository<ChildAccessCredential>();
-        var credential = await credentialRepo.FirstOrDefaultAsync(
-            value => value.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
+        var credential = await FindActiveCredentialAsync(childProfileId, cancellationToken);
         if (credential == null)
         {
             return;
@@ -137,9 +144,7 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
         // và kết thúc ngay mọi Child Session sinh ra từ credential này.
         var now = DateTime.UtcNow;
         var easyLoginCreatedAt = credential.EasyLoginCreatedAt;
-        credential.IsDeleted = true;
-        credential.EasyLoginSecretHash = null;
-        credential.UpdatedAt = now;
+        MarkRevoked(credential, now);
         credentialRepo.Update(credential);
         var endedChildSessions = await EndChildSessionsAsync(credential.Id, now, cancellationToken);
 
@@ -167,7 +172,7 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
 
         var secretHash = TokenHasher.Hash(secret.Trim());
         var credential = await _unitOfWork.Repository<ChildAccessCredential>().FirstOrDefaultAsync(
-            value => value.EasyLoginSecretHash == secretHash,
+            value => value.EasyLoginSecretHash == secretHash && value.RevokedAt == null,
             cancellationToken: cancellationToken);
         if (credential == null)
         {
@@ -180,7 +185,8 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
         _attemptLimiter.Reset(clientKey);
 
         return await StartChildSessionAsync(
-            credential.ChildProfileId, credential.AvatarId, credential.Id, null, cancellationToken);
+            credential.ChildProfileId, credential.AvatarId, credential.Id, null,
+            ChildEntryMethod.EasyLogin, cancellationToken);
     }
 
     public async Task<ChildSessionDto> StartSupervisedSessionAsync(
@@ -193,12 +199,11 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
         await EnsureChildCanEnterAsync(childProfileId, cancellationToken);
 
         // Avatar chỉ để hiển thị; trẻ chưa có credential vẫn vào được qua lối Supervisor.
-        var credential = await _unitOfWork.Repository<ChildAccessCredential>().FirstOrDefaultAsync(
-            value => value.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
+        var credential = await FindActiveCredentialAsync(childProfileId, cancellationToken);
 
         return await StartChildSessionAsync(
             childProfileId, credential?.AvatarId ?? string.Empty, null, supervisorSession.Id,
-            cancellationToken);
+            ChildEntryMethod.ProfileSwitcher, cancellationToken);
     }
 
     public async Task<ChildSessionProfileDto> GetMySessionProfileAsync(
@@ -260,13 +265,14 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
 
     private async Task<ChildSessionDto> StartChildSessionAsync(
         int childProfileId, string avatarId, int? childAccessCredentialId, int? supervisorSessionId,
-        CancellationToken cancellationToken)
+        ChildEntryMethod entryMethod, CancellationToken cancellationToken)
     {
         var session = new ChildSession
         {
             ChildProfileId = childProfileId,
             ChildAccessCredentialId = childAccessCredentialId,
             SupervisorSessionId = supervisorSessionId,
+            EntryMethod = entryMethod,
             SessionKey = Guid.NewGuid().ToString("N"),
             LastActivityAt = DateTime.UtcNow
         };
@@ -280,6 +286,19 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
             AccessToken = _jwtTokenGenerator.GenerateChildAccessToken(childProfileId, session.SessionKey),
             ExpiresInSeconds = _jwtTokenGenerator.ChildTokenExpiresInSeconds
         };
+    }
+
+    private Task<ChildAccessCredential?> FindActiveCredentialAsync(
+        int childProfileId, CancellationToken cancellationToken) =>
+        _unitOfWork.Repository<ChildAccessCredential>().FirstOrDefaultAsync(
+            value => value.ChildProfileId == childProfileId && value.RevokedAt == null,
+            cancellationToken: cancellationToken);
+
+    private static void MarkRevoked(ChildAccessCredential credential, DateTime now)
+    {
+        credential.RevokedAt = now;
+        credential.EasyLoginSecretHash = null;
+        credential.UpdatedAt = now;
     }
 
     private async Task<int> EndChildSessionsAsync(

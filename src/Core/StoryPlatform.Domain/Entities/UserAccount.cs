@@ -23,6 +23,13 @@ public class UserAccount : BaseEntity
     public DateTime? RefreshTokenExpiresAt { get; set; }
     public string? EmailVerificationTokenHash { get; set; }
     public DateTime? EmailVerificationTokenExpiresAt { get; set; }
+    public DateTime? EmailVerifiedAt { get; set; }
+    public int EmailVerificationFailedAttempts { get; set; }
+    public DateTime? PasswordChangedAt { get; set; }
+    public string? PendingEmail { get; set; }
+    public string? PendingEmailOtpHash { get; set; }
+    public DateTime? PendingEmailOtpExpiresAt { get; set; }
+    public int PendingEmailOtpFailedAttempts { get; set; }
     public DateTime? LastLoginAt { get; set; }
 
     public int FailedLoginAttempts { get; set; } = 0;

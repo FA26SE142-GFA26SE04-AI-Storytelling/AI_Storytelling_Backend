@@ -14,11 +14,14 @@ public interface IAuthService
     Task ResendVerificationEmailAsync(ResendVerificationEmailRequestDto request, CancellationToken cancellationToken = default);
     Task<AuthResponseDto> RefreshTokenAsync(RefreshTokenRequestDto request, CancellationToken cancellationToken = default);
     Task<UserProfileDto> GetCurrentUserProfileAsync(int userId, CancellationToken cancellationToken = default);
+    Task<UserProfileDto> UpdateProfileAsync(int userId, UpdateProfileRequestDto request, CancellationToken cancellationToken = default);
     Task LogoutAsync(int userId, LogoutRequestDto request, CancellationToken cancellationToken = default);
     Task LogoutAllDevicesAsync(int userId, CancellationToken cancellationToken = default);
     Task ForgotPasswordAsync(ForgotPasswordRequestDto request, CancellationToken cancellationToken = default);
     Task ResetPasswordAsync(ResetPasswordRequestDto request, CancellationToken cancellationToken = default);
     Task ChangePasswordAsync(int userId, ChangePasswordRequestDto request, CancellationToken cancellationToken = default);
+    Task RequestEmailChangeAsync(int userId, RequestEmailChangeRequestDto request, CancellationToken cancellationToken = default);
+    Task ConfirmEmailChangeAsync(int userId, ConfirmEmailChangeRequestDto request, CancellationToken cancellationToken = default);
     Task<List<SessionDto>> ListSessionsAsync(int userId, CancellationToken cancellationToken = default);
     Task RevokeSessionAsync(int userId, int sessionId, CancellationToken cancellationToken = default);
 }

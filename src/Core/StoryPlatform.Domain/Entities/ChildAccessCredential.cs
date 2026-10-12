@@ -15,6 +15,7 @@ public class ChildAccessCredential : BaseEntity
 
     public string? EasyLoginSecretHash { get; set; }
     public DateTime? EasyLoginCreatedAt { get; set; }
+    public DateTime? RevokedAt { get; set; }
 
     public int CreatedByUserId { get; set; }
     public virtual UserAccount? CreatedByUser { get; set; }

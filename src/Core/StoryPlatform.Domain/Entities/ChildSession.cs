@@ -1,4 +1,5 @@
 using System;
+using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Domain.Entities;
 
@@ -17,6 +18,7 @@ public class ChildSession : BaseEntity
 
     public string SessionKey { get; set; } = string.Empty;
     public DateTime LastActivityAt { get; set; }
+    public ChildEntryMethod EntryMethod { get; set; } = ChildEntryMethod.ProfileSwitcher;
 
     // Bước 3.0 — đúng 1 trong 2 có giá trị (CHECK CK_child_sessions_exactly_one_entry_source):
     // trẻ tự vào bằng PIN/EasyLogin HOẶC Supervisor bàn giao thiết bị qua ProfileSwitcher.

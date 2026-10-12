@@ -14,11 +14,16 @@ public class AuthController : BaseApiController
 {
     private readonly IAuthService _authService;
     private readonly IAuditLogQueryService _auditLogQueryService;
+    private readonly IAccountDeletionService _accountDeletionService;
 
-    public AuthController(IAuthService authService, IAuditLogQueryService auditLogQueryService)
+    public AuthController(
+        IAuthService authService,
+        IAuditLogQueryService auditLogQueryService,
+        IAccountDeletionService accountDeletionService)
     {
         _authService = authService;
         _auditLogQueryService = auditLogQueryService;
+        _accountDeletionService = accountDeletionService;
     }
 
     /// <summary>
@@ -115,7 +120,7 @@ public class AuthController : BaseApiController
     }
 
     /// <summary>
-    /// Đổi mật khẩu cho tài khoản đang đăng nhập
+    /// Đổi mật khẩu; gửi CurrentRefreshToken để giữ phiên hiện tại.
     /// </summary>
     [HttpPost("change-password")]
     [Authorize]
@@ -125,7 +130,7 @@ public class AuthController : BaseApiController
     {
         var userId = GetCurrentUserId();
         await _authService.ChangePasswordAsync(userId, request, cancellationToken);
-        return HandleResult<object?>(null, "Đổi mật khẩu thành công. Vui lòng đăng nhập lại.");
+        return HandleResult<object?>(null, "Đổi mật khẩu thành công.");
     }
 
     /// <summary>
@@ -151,6 +156,63 @@ public class AuthController : BaseApiController
         var userId = GetCurrentUserId();
         var profile = await _authService.GetCurrentUserProfileAsync(userId, cancellationToken);
         return HandleResult(profile, "Lấy thông tin tài khoản thành công.");
+    }
+
+    /// <summary>Sửa họ tên và ảnh đại diện của tài khoản đang đăng nhập.</summary>
+    [HttpPut("me")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<UserProfileDto>>> UpdateProfile(
+        [FromBody] UpdateProfileRequestDto request, CancellationToken cancellationToken)
+    {
+        var result = await _authService.UpdateProfileAsync(
+            GetCurrentUserId(), request, cancellationToken);
+        return HandleResult(result, "Cập nhật thông tin cá nhân thành công.");
+    }
+
+    /// <summary>Yêu cầu đổi email Parent; OTP được gửi tới email mới.</summary>
+    [HttpPost("change-email")]
+    [Authorize(Roles = "Parent")]
+    public async Task<ActionResult<ApiResponse<object?>>> RequestEmailChange(
+        [FromBody] RequestEmailChangeRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        await _authService.RequestEmailChangeAsync(
+            GetCurrentUserId(), request, cancellationToken);
+        return HandleResult<object?>(null, "Đã gửi mã xác thực tới email mới.");
+    }
+
+    /// <summary>Xác nhận đổi email bằng OTP gửi tới email mới.</summary>
+    [HttpPost("change-email/confirm")]
+    [Authorize(Roles = "Parent")]
+    public async Task<ActionResult<ApiResponse<object?>>> ConfirmEmailChange(
+        [FromBody] ConfirmEmailChangeRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        await _authService.ConfirmEmailChangeAsync(
+            GetCurrentUserId(), request, cancellationToken);
+        return HandleResult<object?>(null, "Đổi email thành công.");
+    }
+
+    /// <summary>Xem các hồ sơ đang chặn hoặc sẽ bị xóa cùng tài khoản Parent.</summary>
+    [HttpGet("me/delete-preview")]
+    [Authorize(Roles = "Parent")]
+    public async Task<ActionResult<ApiResponse<DeleteAccountPreviewDto>>> GetDeleteAccountPreview(
+        CancellationToken cancellationToken)
+    {
+        var result = await _accountDeletionService.GetPreviewAsync(
+            GetCurrentUserId(), cancellationToken);
+        return HandleResult(result, "Lấy thông tin trước khi xóa tài khoản thành công.");
+    }
+
+    /// <summary>Xóa và ẩn danh hóa tài khoản Parent.</summary>
+    [HttpDelete("me")]
+    [Authorize(Roles = "Parent")]
+    public async Task<ActionResult<ApiResponse<object?>>> DeleteAccount(
+        [FromBody] DeleteAccountRequestDto request, CancellationToken cancellationToken)
+    {
+        await _accountDeletionService.DeleteAccountAsync(
+            GetCurrentUserId(), request, cancellationToken);
+        return HandleResult<object?>(null, "Đã xóa tài khoản.");
     }
 
     /// <summary>

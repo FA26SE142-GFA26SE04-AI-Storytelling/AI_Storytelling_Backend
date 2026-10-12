@@ -9,3 +9,8 @@ VALUES
     (5, 5, 5, NULL, '00000000000000000000000000000005', NOW() - INTERVAL '19 minutes', NOW() - INTERVAL '40 minutes', false),
     (6, 6, 6, NULL, '00000000000000000000000000000006', NOW() - INTERVAL '20 minutes', NOW() - INTERVAL '45 minutes', false)
 ON CONFLICT ("Id") DO NOTHING;
+
+-- Buoc 1.10: phien co credential la Easy Login; cac phien con lai dung mac dinh ProfileSwitcher.
+UPDATE child_sessions
+SET "EntryMethod" = 'EasyLogin'
+WHERE "ChildAccessCredentialId" IS NOT NULL;

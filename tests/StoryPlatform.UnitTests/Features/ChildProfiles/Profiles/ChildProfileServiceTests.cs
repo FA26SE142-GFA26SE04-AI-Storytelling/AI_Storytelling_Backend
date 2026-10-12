@@ -520,7 +520,8 @@ public class ChildProfileServiceTests
         await _sut.ArchiveChildProfileAsync(1, 2);
 
         Assert.Equal(ChildProfileStatus.Archived, profile.Status);
-        Assert.True(credential.IsDeleted);
+        Assert.NotNull(credential.RevokedAt);
+        Assert.False(credential.IsDeleted);
         Assert.Null(credential.EasyLoginSecretHash);
         _childSessionRevoker.Verify(
             revoker => revoker.RevokeByChildProfileAsync(1, It.IsAny<CancellationToken>()), Times.Once);
@@ -575,7 +576,8 @@ public class ChildProfileServiceTests
         var result = await _sut.SuspendChildProfileAsync(1, 2);
 
         Assert.Equal("Suspended", result.Status);
-        Assert.True(credential.IsDeleted);
+        Assert.NotNull(credential.RevokedAt);
+        Assert.False(credential.IsDeleted);
         Assert.Null(credential.EasyLoginSecretHash);
         _accessGuard.Verify(
             guard => guard.EnsureOwnerAsync(1, 2, It.IsAny<CancellationToken>()), Times.Once);

@@ -156,7 +156,6 @@ public class DataRequestService : IDataRequestService
         await CancelAssignmentsAsync(childProfileId, adminUserId, cancellationToken);
 
         child.Nickname = AnonymizedNicknamePlaceholder;
-        child.DateOfBirth = null;
         child.Status = ChildProfileStatus.Archived;
         _unitOfWork.Repository<ChildProfile>().Update(child);
 

@@ -20,6 +20,7 @@ public class SafetyPolicyServiceTests
     private readonly Mock<IGenericRepository<SafetyPolicy>> _policyRepo = new();
     private readonly Mock<IGenericRepository<SafetyPolicyCategory>> _categoryRepo = new();
     private readonly Mock<IGenericRepository<ChildProfile>> _profileRepo = new();
+    private readonly Mock<IGenericRepository<ContentCategory>> _contentCategoryRepo = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<ISupervisionAccessGuard> _guard = new();
     private readonly Mock<IAuditLogWriter> _auditLogWriter = new();
@@ -31,6 +32,7 @@ public class SafetyPolicyServiceTests
         _unitOfWork.Setup(u => u.Repository<SafetyPolicy>()).Returns(_policyRepo.Object);
         _unitOfWork.Setup(u => u.Repository<SafetyPolicyCategory>()).Returns(_categoryRepo.Object);
         _unitOfWork.Setup(u => u.Repository<ChildProfile>()).Returns(_profileRepo.Object);
+        _unitOfWork.Setup(u => u.Repository<ContentCategory>()).Returns(_contentCategoryRepo.Object);
         _auditLogWriter.Setup(w => w.LogAsync(
                 It.IsAny<int?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(),
                 It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
@@ -277,6 +279,367 @@ public class SafetyPolicyServiceTests
 
         _policyRepo.Verify(r => r.Delete(It.IsAny<SafetyPolicy>()), Times.Never);
         Assert.Empty(_audits);
+    }
+
+    [Fact]
+    public async Task SetSafetyPolicyAsync_NewPolicy_StoresInteractionFlagsAndDefaults()
+    {
+        AllowPermission();
+        SetupNoPolicy();
+        SafetyPolicy? added = null;
+        _policyRepo.Setup(repository => repository.AddAsync(
+                It.IsAny<SafetyPolicy>(), It.IsAny<CancellationToken>()))
+            .Callback<SafetyPolicy, CancellationToken>((value, _) => added = value)
+            .ReturnsAsync((SafetyPolicy value, CancellationToken _) => value);
+        var request = ValidRequest();
+        request.StoryWishesEnabled = false;
+        request.ChildCreationMode = ChildCreationMode.ListenNow;
+
+        var result = await _sut.SetSafetyPolicyAsync(1, 2, request);
+
+        Assert.False(added!.StoryWishesEnabled);
+        Assert.True(added.AllowInteractiveStories);
+        Assert.True(added.ChildCreationEnabled);
+        Assert.Equal(ChildCreationMode.ListenNow, added.ChildCreationMode);
+        Assert.False(added.VoiceAnswersEnabled);
+        Assert.Equal("ListenNow", result.ChildCreationMode);
+        Assert.False(result.VoiceConsentRequired);
+    }
+
+    [Fact]
+    public async Task SetSafetyPolicyAsync_OwnerEnablesVoiceFirstTimeWithoutAcceptance_ThrowsBadRequest()
+    {
+        AllowPermission();
+        SetupExistingPolicy(new SafetyPolicy
+        {
+            Id = 5, ChildProfileId = 1, ConsentRecorded = true,
+            ConsentPolicyVersion = 1, ConsentedByUserId = 2
+        });
+        var request = ValidRequest();
+        request.VoiceAnswersEnabled = true;
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.SetSafetyPolicyAsync(1, 2, request));
+    }
+
+    [Fact]
+    public async Task SetSafetyPolicyAsync_OwnerEnablesVoiceWithAcceptance_RecordsVoiceConsent()
+    {
+        AllowPermission();
+        var policy = new SafetyPolicy
+        {
+            Id = 5, ChildProfileId = 1, ConsentRecorded = true,
+            ConsentPolicyVersion = 1, ConsentedByUserId = 2
+        };
+        SetupExistingPolicy(policy);
+        var request = ValidRequest();
+        request.VoiceAnswersEnabled = true;
+        request.VoiceConsentAccepted = true;
+
+        var result = await _sut.SetSafetyPolicyAsync(1, 2, request);
+
+        Assert.True(policy.VoiceAnswersEnabled);
+        Assert.NotNull(policy.VoiceConsentAt);
+        Assert.Null(policy.VoiceEnableRequestedAt);
+        Assert.False(result.VoiceConsentRequired);
+    }
+
+    [Fact]
+    public async Task SetSafetyPolicyAsync_AdditionalSupervisorEnablesVoiceWithoutOwnerConsent_DoesNotSaveFlagButRaisesRequest()
+    {
+        AllowPermission(SupervisorRole.AdditionalSupervisor, userId: 3);
+        var policy = new SafetyPolicy
+        {
+            Id = 5, ChildProfileId = 1, ConsentRecorded = true,
+            ConsentPolicyVersion = 1, ConsentedByUserId = 2
+        };
+        SetupExistingPolicy(policy);
+        var request = ValidRequest();
+        request.VoiceAnswersEnabled = true;
+
+        var result = await _sut.SetSafetyPolicyAsync(1, 3, request);
+
+        Assert.False(policy.VoiceAnswersEnabled);
+        Assert.Null(policy.VoiceConsentAt);
+        Assert.NotNull(policy.VoiceEnableRequestedAt);
+        Assert.True(result.VoiceConsentRequired);
+        Assert.False(result.VoiceAnswersEnabled);
+    }
+
+    [Fact]
+    public async Task SetSafetyPolicyAsync_AdditionalSupervisorEnablesVoiceAfterOwnerConsent_EnablesFlag()
+    {
+        AllowPermission(SupervisorRole.AdditionalSupervisor, userId: 3);
+        var consentAt = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc);
+        var policy = new SafetyPolicy
+        {
+            Id = 5, ChildProfileId = 1, ConsentRecorded = true,
+            ConsentPolicyVersion = 1, ConsentedByUserId = 2,
+            VoiceConsentAt = consentAt, VoiceEnableRequestedAt = consentAt
+        };
+        SetupExistingPolicy(policy);
+        var request = ValidRequest();
+        request.VoiceAnswersEnabled = true;
+
+        await _sut.SetSafetyPolicyAsync(1, 3, request);
+
+        Assert.True(policy.VoiceAnswersEnabled);
+        Assert.Equal(consentAt, policy.VoiceConsentAt);
+        Assert.Null(policy.VoiceEnableRequestedAt);
+    }
+
+    [Fact]
+    public async Task SetSafetyPolicyAsync_DisablingVoice_ClearsFlagAndPendingRequest()
+    {
+        AllowPermission(SupervisorRole.AdditionalSupervisor, userId: 3);
+        var policy = new SafetyPolicy
+        {
+            Id = 5, ChildProfileId = 1, ConsentRecorded = true,
+            ConsentPolicyVersion = 1, ConsentedByUserId = 2,
+            VoiceAnswersEnabled = true, VoiceConsentAt = DateTime.UtcNow,
+            VoiceEnableRequestedAt = DateTime.UtcNow
+        };
+        SetupExistingPolicy(policy);
+        var request = ValidRequest();
+        request.VoiceAnswersEnabled = false;
+
+        await _sut.SetSafetyPolicyAsync(1, 3, request);
+
+        Assert.False(policy.VoiceAnswersEnabled);
+        Assert.Null(policy.VoiceEnableRequestedAt);
+        Assert.NotNull(policy.VoiceConsentAt);
+    }
+
+    [Fact]
+    public void ConsentPolicy_IsOutdated_ComparesWithCurrentVersion()
+    {
+        Assert.True(ConsentPolicy.IsOutdated(ConsentPolicy.CurrentVersion - 1));
+        Assert.False(ConsentPolicy.IsOutdated(ConsentPolicy.CurrentVersion));
+    }
+
+    [Fact]
+    public async Task ReconsentAsync_CallerNotOwner_ThrowsForbidden()
+    {
+        _guard.Setup(guard => guard.EnsureOwnerAsync(1, 3, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ForbiddenException("Không phải Owner."));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.ReconsentAsync(1, 3));
+
+        _unitOfWork.Verify(unit => unit.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ReconsentAsync_OutdatedVersion_RecordsCurrentVersionAndAudits()
+    {
+        var policy = new SafetyPolicy
+        {
+            Id = 5, ChildProfileId = 1, ConsentRecorded = true,
+            ConsentPolicyVersion = 0, ConsentedByUserId = 9
+        };
+        SetupExistingPolicy(policy);
+
+        var result = await _sut.ReconsentAsync(1, 2);
+
+        Assert.Equal(ConsentPolicy.CurrentVersion, policy.ConsentPolicyVersion);
+        Assert.Equal(2, policy.ConsentedByUserId);
+        Assert.NotNull(policy.ConsentRecordedAt);
+        Assert.False(result.ConsentOutdated);
+        Assert.Single(_audits, audit => audit.Action == "RECONSENT_SAFETY_POLICY");
+    }
+
+    [Fact]
+    public async Task ReconsentAsync_AlreadyCurrent_DoesNothing()
+    {
+        var policy = new SafetyPolicy
+        {
+            Id = 5, ChildProfileId = 1, ConsentRecorded = true,
+            ConsentPolicyVersion = ConsentPolicy.CurrentVersion
+        };
+        SetupExistingPolicy(policy);
+
+        await _sut.ReconsentAsync(1, 2);
+
+        _policyRepo.Verify(repository => repository.Update(It.IsAny<SafetyPolicy>()), Times.Never);
+        Assert.Empty(_audits);
+    }
+
+    [Fact]
+    public async Task ReconsentAsync_NoPolicyOrNoInitialConsent_Throws()
+    {
+        SetupNoPolicy();
+        await Assert.ThrowsAsync<NotFoundException>(() => _sut.ReconsentAsync(1, 2));
+
+        SetupExistingPolicy(new SafetyPolicy { Id = 5, ChildProfileId = 1, ConsentRecorded = false });
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.ReconsentAsync(1, 2));
+    }
+
+    [Fact]
+    public async Task GetSafetyPolicyAsync_OutdatedConsent_ReportsOutdatedAndTurnsVoiceOffTemporarily()
+    {
+        AllowPermission();
+        SetupExistingPolicy(new SafetyPolicy
+        {
+            Id = 5, ChildProfileId = 1, ConsentRecorded = true, ConsentPolicyVersion = 0,
+            VoiceAnswersEnabled = true, VoiceConsentAt = DateTime.UtcNow
+        });
+
+        var result = await _sut.GetSafetyPolicyAsync(1, 2);
+
+        Assert.True(result.ConsentOutdated);
+        Assert.True(result.VoiceAnswersEnabled);
+        Assert.False(result.EffectiveVoiceAnswersEnabled);
+    }
+
+    [Fact]
+    public async Task SetSafetyPolicyAsync_NewPolicyWithoutCategories_FillsBlockedPresetForAgeBand()
+    {
+        AllowPermission();
+        SetupNoPolicy();
+        SetupChildAndCategories(AgeBand.Age_6_8);
+        var request = ValidRequest();
+        request.Categories.Clear();
+
+        var result = await _sut.SetSafetyPolicyAsync(1, 2, request);
+
+        var category = Assert.Single(result.Categories);
+        Assert.Equal(7, category.ContentCategoryId);
+        Assert.Equal("Blocked", category.Rule);
+    }
+
+    [Fact]
+    public async Task SetSafetyPolicyAsync_NewPolicyOptOutOfPreset_StoresNoCategories()
+    {
+        AllowPermission();
+        SetupNoPolicy();
+        SetupChildAndCategories(AgeBand.Age_6_8);
+        var request = ValidRequest();
+        request.Categories.Clear();
+        request.ApplyAgePreset = false;
+
+        var result = await _sut.SetSafetyPolicyAsync(1, 2, request);
+
+        Assert.Empty(result.Categories);
+        _profileRepo.Verify(repository => repository.GetByIdAsync(
+            It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SetSafetyPolicyAsync_PresetDoesNotOverrideCategoryParentAlreadyDeclared()
+    {
+        AllowPermission();
+        SetupNoPolicy();
+        SetupChildAndCategories(AgeBand.Age_6_8);
+        var request = ValidRequest();
+        request.ApplyAgePreset = true;
+        request.Categories = new List<SetSafetyPolicyCategoryRequestDto>
+        {
+            new() { ContentCategoryId = 7, Rule = PolicyRule.Allowed }
+        };
+
+        var result = await _sut.SetSafetyPolicyAsync(1, 2, request);
+
+        var category = Assert.Single(result.Categories);
+        Assert.Equal("Allowed", category.Rule);
+    }
+
+    [Fact]
+    public async Task GetAgePresetAsync_ReturnsBlockedCategoryIdsOfChildAgeBand()
+    {
+        _guard.Setup(guard => guard.EnsureActiveSupervisionAsync(
+                1, 2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SupervisionRelationship());
+        SetupChildAndCategories(AgeBand.Age_9_12);
+
+        var result = await _sut.GetAgePresetAsync(1, 2);
+
+        Assert.Equal("Age_9_12", result.AgeBand);
+        Assert.Equal(new[] { 8 }, result.BlockedCategoryIds);
+    }
+
+    [Fact]
+    public async Task ApplyAgePresetAsync_ReplacesBlockedKeepsUnrelatedAllowedAndBlockedWins()
+    {
+        AllowPermission();
+        var policy = new SafetyPolicy
+        {
+            Id = 5, ChildProfileId = 1, ConsentRecorded = true, ConsentPolicyVersion = 1
+        };
+        _policyRepo.Setup(repository => repository.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<SafetyPolicy, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(policy);
+        var existing = new List<SafetyPolicyCategory>
+        {
+            new() { Id = 1, SafetyPolicyId = 5, ContentCategoryId = 1, Rule = PolicyRule.Allowed },
+            new() { Id = 2, SafetyPolicyId = 5, ContentCategoryId = 2, Rule = PolicyRule.Blocked },
+            new() { Id = 3, SafetyPolicyId = 5, ContentCategoryId = 7, Rule = PolicyRule.Allowed }
+        };
+        _categoryRepo.Setup(repository => repository.FindAsync(
+                It.IsAny<Expression<Func<SafetyPolicyCategory, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existing);
+        SetupChildAndCategories(AgeBand.Age_6_8);
+
+        var result = await _sut.ApplyAgePresetAsync(1, 2);
+
+        _categoryRepo.Verify(repository => repository.DeleteRange(
+            It.Is<IEnumerable<SafetyPolicyCategory>>(removed =>
+                removed.Select(category => category.Id).OrderBy(id => id).SequenceEqual(new[] { 2, 3 }))),
+            Times.Once);
+        _categoryRepo.Verify(repository => repository.AddAsync(
+            It.Is<SafetyPolicyCategory>(category =>
+                category.ContentCategoryId == 7 && category.Rule == PolicyRule.Blocked),
+            It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Contains(result.Categories,
+            category => category.ContentCategoryId == 1 && category.Rule == "Allowed");
+        Assert.Contains(result.Categories,
+            category => category.ContentCategoryId == 7 && category.Rule == "Blocked");
+        Assert.DoesNotContain(result.Categories, category => category.ContentCategoryId == 2);
+        Assert.Single(_audits, audit => audit.Action == "APPLY_AGE_PRESET");
+    }
+
+    [Fact]
+    public async Task SetSafetyPolicyAsync_RestrictedRule_ThrowsBadRequest()
+    {
+        AllowPermission();
+        var request = ValidRequest();
+        request.Categories = new List<SetSafetyPolicyCategoryRequestDto>
+        {
+            new() { ContentCategoryId = 1, Rule = PolicyRule.Restricted }
+        };
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.SetSafetyPolicyAsync(1, 2, request));
+    }
+
+    private void SetupExistingPolicy(SafetyPolicy policy)
+    {
+        _policyRepo.Setup(repository => repository.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<SafetyPolicy, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(policy);
+        _categoryRepo.Setup(repository => repository.FindAsync(
+                It.IsAny<Expression<Func<SafetyPolicyCategory, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<SafetyPolicyCategory>());
+    }
+
+    private void SetupNoPolicy() => _policyRepo.Setup(repository => repository.FirstOrDefaultAsync(
+            It.IsAny<Expression<Func<SafetyPolicy, bool>>>(), null,
+            It.IsAny<CancellationToken>()))
+        .ReturnsAsync((SafetyPolicy?)null);
+
+    private void SetupChildAndCategories(AgeBand ageBand)
+    {
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChildProfile { Id = 1, AgeBand = ageBand });
+        var category7 = new ContentCategory { Id = 7, Code = "HORROR", IsActive = true };
+        category7.DefaultBlockedAgeBands.Add("Age_6_8");
+        var category8 = new ContentCategory { Id = 8, Code = "VIOLENCE", IsActive = true };
+        category8.DefaultBlockedAgeBands.Add("Age_9_12");
+        var category9 = new ContentCategory { Id = 9, Code = "ANIMALS", IsActive = true };
+        _contentCategoryRepo.Setup(repository => repository.FindAsync(
+                It.IsAny<Expression<Func<ContentCategory, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ContentCategory> { category7, category8, category9 });
     }
 
     private void AllowPermission(SupervisorRole role = SupervisorRole.Owner, int userId = 2)

@@ -263,6 +263,12 @@ public sealed class StableVersionArtifactHandoffServiceTests
             throw new NotImplementedException();
         public Task<SafetyPolicyDto> GetSafetyPolicyAsync(int childProfileId, int currentUserId, CancellationToken cancellationToken = default) =>
             throw new NotFoundException("SafetyPolicy");
+        public Task<SafetyPolicyDto> ReconsentAsync(int childProfileId, int currentUserId, CancellationToken cancellationToken = default) =>
+            throw new NotImplementedException();
+        public Task<AgePresetDto> GetAgePresetAsync(int childProfileId, int currentUserId, CancellationToken cancellationToken = default) =>
+            throw new NotImplementedException();
+        public Task<SafetyPolicyDto> ApplyAgePresetAsync(int childProfileId, int currentUserId, CancellationToken cancellationToken = default) =>
+            throw new NotImplementedException();
         public Task DeleteSafetyPolicyAsync(int childProfileId, int currentUserId, CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();
     }

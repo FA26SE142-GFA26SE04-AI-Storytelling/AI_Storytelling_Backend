@@ -16,6 +16,8 @@ public class LearningProfileServiceTests
 {
     private readonly Mock<IGenericRepository<LearningProfile>> _profileRepo = new();
     private readonly Mock<IGenericRepository<LearningProfileTopic>> _topicRepo = new();
+    private readonly Mock<IGenericRepository<ChildProfile>> _childRepo = new();
+    private readonly Mock<IGenericRepository<ChildProfileVersionHistory>> _historyRepo = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<ISupervisionAccessGuard> _guard = new();
     private readonly LearningProfileService _sut;
@@ -24,13 +26,17 @@ public class LearningProfileServiceTests
     {
         _unitOfWork.Setup(u => u.Repository<LearningProfile>()).Returns(_profileRepo.Object);
         _unitOfWork.Setup(u => u.Repository<LearningProfileTopic>()).Returns(_topicRepo.Object);
+        _unitOfWork.Setup(u => u.Repository<ChildProfile>()).Returns(_childRepo.Object);
+        _unitOfWork.Setup(u => u.Repository<ChildProfileVersionHistory>()).Returns(_historyRepo.Object);
+        SetupChild(AgeBand.Age_6_8, ChildProfileStatus.Draft);
         _sut = new LearningProfileService(_unitOfWork.Object, _guard.Object);
     }
 
     [Fact]
-    public async Task SetLearningProfileAsync_WithoutSupervision_StopsBeforeWrite()
+    public async Task SetLearningProfileAsync_WithoutApproveReadingLevelPermission_StopsBeforeWrite()
     {
-        _guard.Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
+        _guard.Setup(g => g.EnsurePermissionAsync(
+                1, 2, Permission.ApproveReadingLevel, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ForbiddenException("Không có quyền."));
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
@@ -163,9 +169,152 @@ public class LearningProfileServiceTests
         _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    private void AllowSupervision() => _guard
-        .Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
-        .ReturnsAsync(new SupervisionRelationship());
+    [Theory]
+    [InlineData(AgeBand.Age_6_8, ReadingMode.ListenFirst)]
+    [InlineData(AgeBand.Age_9_12, ReadingMode.ReadFirst)]
+    public async Task SetLearningProfileAsync_NewProfileWithoutMode_UsesDefaultOfAgeBand(
+        AgeBand ageBand, ReadingMode expected)
+    {
+        AllowSupervision();
+        SetupChild(ageBand, ChildProfileStatus.Draft);
+        SetupNoProfile(out var added);
+
+        var result = await _sut.SetLearningProfileAsync(1, 2, ValidRequest());
+
+        Assert.Equal(expected, added()!.ReadingMode);
+        Assert.Equal(expected.ToString(), result.ReadingMode);
+    }
+
+    [Fact]
+    public async Task SetLearningProfileAsync_ExplicitMode_IsStored()
+    {
+        AllowSupervision();
+        SetupNoProfile(out var added);
+        var request = ValidRequest();
+        request.ReadingMode = ReadingMode.ReadFirst;
+
+        await _sut.SetLearningProfileAsync(1, 2, request);
+
+        Assert.Equal(ReadingMode.ReadFirst, added()!.ReadingMode);
+    }
+
+    [Fact]
+    public async Task SetLearningProfileAsync_ActiveChildAndConfigChanged_WritesManualVersionHistory()
+    {
+        AllowSupervision();
+        SetupChild(AgeBand.Age_6_8, ChildProfileStatus.Active);
+        var profile = new LearningProfile
+        {
+            Id = 5, ChildProfileId = 1, ReadingLevel = 1, ReadingMode = ReadingMode.ListenFirst
+        };
+        _profileRepo.Setup(repository => repository.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<LearningProfile, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+        _topicRepo.Setup(repository => repository.FindAsync(
+                It.IsAny<Expression<Func<LearningProfileTopic, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<LearningProfileTopic>());
+        var request = ValidRequest();
+        request.ReadingLevel = 3;
+
+        await _sut.SetLearningProfileAsync(1, 2, request);
+
+        _historyRepo.Verify(repository => repository.AddAsync(
+            It.Is<ChildProfileVersionHistory>(history =>
+                history.ChildProfileId == 1
+                && history.Source == VersionHistorySource.Manual
+                && history.RecommendationId == null
+                && history.AppliedByUserId == 2
+                && history.VersionStatus == VersionHistoryStatus.ActiveVersion
+                && history.PreviousConfig.Contains("\"readingLevel\":1")
+                && history.NewConfig.Contains("\"readingLevel\":3")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SetLearningProfileAsync_ActiveChildButNothingChanged_WritesNoHistory()
+    {
+        AllowSupervision();
+        SetupChild(AgeBand.Age_6_8, ChildProfileStatus.Active);
+        var request = ValidRequest();
+        var profile = new LearningProfile
+        {
+            Id = 5,
+            ChildProfileId = 1,
+            ReadingLevel = request.ReadingLevel,
+            ComprehensionGoal = request.ComprehensionGoal?.Trim(),
+            ReadingMode = ReadingMode.ListenFirst
+        };
+        _profileRepo.Setup(repository => repository.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<LearningProfile, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+        _topicRepo.Setup(repository => repository.FindAsync(
+                It.IsAny<Expression<Func<LearningProfileTopic, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(request.Topics.Select(topic => new LearningProfileTopic
+            {
+                Topic = topic.Topic.Trim(),
+                Relation = topic.Relation
+            }).ToList());
+
+        await _sut.SetLearningProfileAsync(1, 2, request);
+
+        _historyRepo.Verify(repository => repository.AddAsync(
+            It.IsAny<ChildProfileVersionHistory>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SetLearningProfileAsync_DraftChildChanged_WritesNoHistory()
+    {
+        AllowSupervision();
+        SetupChild(AgeBand.Age_6_8, ChildProfileStatus.Draft);
+        var profile = new LearningProfile { Id = 5, ChildProfileId = 1, ReadingLevel = 1 };
+        _profileRepo.Setup(repository => repository.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<LearningProfile, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+        _topicRepo.Setup(repository => repository.FindAsync(
+                It.IsAny<Expression<Func<LearningProfileTopic, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<LearningProfileTopic>());
+
+        await _sut.SetLearningProfileAsync(1, 2, ValidRequest());
+
+        _historyRepo.Verify(repository => repository.AddAsync(
+            It.IsAny<ChildProfileVersionHistory>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    private void AllowSupervision()
+    {
+        _guard.Setup(g => g.EnsurePermissionAsync(
+                1, 2, Permission.ApproveReadingLevel, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _guard.Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SupervisionRelationship());
+    }
+
+    private void SetupChild(AgeBand ageBand, ChildProfileStatus status) => _childRepo
+        .Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+        .ReturnsAsync(new ChildProfile
+        {
+            Id = 1, OwnerUserId = 2, AgeBand = ageBand, Status = status
+        });
+
+    private void SetupNoProfile(out Func<LearningProfile?> added)
+    {
+        LearningProfile? captured = null;
+        _profileRepo.Setup(repository => repository.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<LearningProfile, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((LearningProfile?)null);
+        _profileRepo.Setup(repository => repository.AddAsync(
+                It.IsAny<LearningProfile>(), It.IsAny<CancellationToken>()))
+            .Callback<LearningProfile, CancellationToken>((value, _) => captured = value)
+            .ReturnsAsync((LearningProfile value, CancellationToken _) => value);
+        added = () => captured;
+    }
 
     private static SetLearningProfileRequestDto ValidRequest() => new()
     {

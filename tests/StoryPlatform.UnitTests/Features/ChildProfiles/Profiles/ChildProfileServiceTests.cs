@@ -6,6 +6,8 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Services;
+using StoryPlatform.Application.Features.ChildProfiles.Safety;
+using StoryPlatform.Application.Features.ChildProfiles.Sessions.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -20,9 +22,12 @@ public class ChildProfileServiceTests
     private readonly Mock<IGenericRepository<SupervisionRelationship>> _supervisionRepo = new();
     private readonly Mock<IGenericRepository<LearningProfile>> _learningProfileRepo = new();
     private readonly Mock<IGenericRepository<SafetyPolicy>> _safetyPolicyRepo = new();
+    private readonly Mock<IGenericRepository<ChildAccessCredential>> _credentialRepo = new();
     private readonly Mock<IGenericRepository<AuditLog>> _auditLogRepo = new();
+    private readonly Mock<IGenericRepository<ChildProfileVersionHistory>> _historyRepo = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<ISupervisionAccessGuard> _accessGuard = new();
+    private readonly Mock<IChildSessionRevoker> _childSessionRevoker = new();
     private readonly ChildProfileService _sut;
 
     public ChildProfileServiceTests()
@@ -32,8 +37,11 @@ public class ChildProfileServiceTests
         _unitOfWork.Setup(u => u.Repository<SupervisionRelationship>()).Returns(_supervisionRepo.Object);
         _unitOfWork.Setup(u => u.Repository<LearningProfile>()).Returns(_learningProfileRepo.Object);
         _unitOfWork.Setup(u => u.Repository<SafetyPolicy>()).Returns(_safetyPolicyRepo.Object);
+        _unitOfWork.Setup(u => u.Repository<ChildAccessCredential>()).Returns(_credentialRepo.Object);
         _unitOfWork.Setup(u => u.Repository<AuditLog>()).Returns(_auditLogRepo.Object);
-        _sut = new ChildProfileService(_unitOfWork.Object, _accessGuard.Object);
+        _unitOfWork.Setup(u => u.Repository<ChildProfileVersionHistory>()).Returns(_historyRepo.Object);
+        _sut = new ChildProfileService(
+            _unitOfWork.Object, _accessGuard.Object, _childSessionRevoker.Object);
     }
 
     [Fact]
@@ -90,6 +98,34 @@ public class ChildProfileServiceTests
         await _sut.CreateChildProfileAsync(2, request);
 
         Assert.Equal("vi", profile!.Language);
+    }
+
+    [Fact]
+    public async Task CreateChildProfileAsync_AssignsDefaultAvatar()
+    {
+        SetupOwner();
+        ChildProfile? profile = null;
+        _profileRepo.Setup(repository => repository.AddAsync(
+                It.IsAny<ChildProfile>(), It.IsAny<CancellationToken>()))
+            .Callback<ChildProfile, CancellationToken>((value, _) => profile = value)
+            .ReturnsAsync((ChildProfile value, CancellationToken _) => value);
+
+        var result = await _sut.CreateChildProfileAsync(2, PersonalRequest());
+
+        Assert.Equal(ChildProfile.DefaultAvatarId, profile!.AvatarId);
+        Assert.Equal(ChildProfile.DefaultAvatarId, result.AvatarId);
+    }
+
+    [Fact]
+    public async Task CreateChildProfileAsync_NonVietnameseLanguage_ThrowsBadRequest()
+    {
+        SetupOwner();
+        var request = PersonalRequest();
+        request.Language = "en";
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.CreateChildProfileAsync(2, request));
+
+        VerifyNothingWasSaved();
     }
 
     [Fact]
@@ -169,6 +205,25 @@ public class ChildProfileServiceTests
                                    && log.EntityId == 1),
             It.IsAny<CancellationToken>()), Times.Once);
         _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ActivateChildProfileAsync_OutdatedConsentVersion_ThrowsBadRequest()
+    {
+        var profile = SetupActivation(hasLearning: true, hasSafety: true, hasConsent: true);
+        _safetyPolicyRepo.Setup(repository => repository.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<SafetyPolicy, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SafetyPolicy
+            {
+                Id = 5,
+                ChildProfileId = 1,
+                ConsentRecorded = true,
+                ConsentPolicyVersion = 0
+            });
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.ActivateChildProfileAsync(1, 2));
+
+        Assert.Equal(ChildProfileStatus.Draft, profile.Status);
     }
 
     [Fact]
@@ -318,6 +373,123 @@ public class ChildProfileServiceTests
     }
 
     [Fact]
+    public async Task UpdateChildProfileAsync_CallerNotOwner_ThrowsForbiddenAndSavesNothing()
+    {
+        var profile = new ChildProfile
+        {
+            Id = 1,
+            OwnerUserId = 2,
+            Nickname = "Cũ",
+            AgeBand = AgeBand.Age_6_8,
+            Status = ChildProfileStatus.Active
+        };
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+        _accessGuard.Setup(guard => guard.EnsureOwnerAsync(1, 5, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ForbiddenException("Không phải Owner."));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.UpdateChildProfileAsync(
+            1, 5, new UpdateChildProfileRequestDto
+            {
+                Nickname = "Mới",
+                AgeBand = AgeBand.Age_9_12
+            }));
+
+        Assert.Equal("Cũ", profile.Nickname);
+        _unitOfWork.Verify(unit => unit.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateChildProfileAsync_NonVietnameseLanguage_ThrowsBadRequest()
+    {
+        var profile = new ChildProfile
+        {
+            Id = 1,
+            OwnerUserId = 2,
+            Nickname = "Cũ",
+            AgeBand = AgeBand.Age_6_8,
+            Status = ChildProfileStatus.Active
+        };
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+        AllowProfileAccess();
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.UpdateChildProfileAsync(
+            1, 2, new UpdateChildProfileRequestDto
+            {
+                Nickname = "Mới",
+                AgeBand = AgeBand.Age_6_8,
+                Language = "en"
+            }));
+
+        Assert.Equal("Cũ", profile.Nickname);
+    }
+
+    [Fact]
+    public async Task UpdateChildProfileAsync_ChangeAvatarOnly_NoHistoryAndNoPresetPrompt()
+    {
+        var profile = new ChildProfile
+        {
+            Id = 1, OwnerUserId = 2, Nickname = "An",
+            AgeBand = AgeBand.Age_6_8, Status = ChildProfileStatus.Active
+        };
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+
+        var result = await _sut.UpdateChildProfileAsync(1, 2, new UpdateChildProfileRequestDto
+        {
+            Nickname = "An",
+            AgeBand = AgeBand.Age_6_8,
+            AvatarId = "avatar-fox"
+        });
+
+        Assert.Equal("avatar-fox", profile.AvatarId);
+        Assert.False(result.ShouldReapplyBlockedPreset);
+        Assert.Null(result.SuggestedReadingMode);
+        _historyRepo.Verify(repository => repository.AddAsync(
+            It.IsAny<ChildProfileVersionHistory>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateChildProfileAsync_AgeBandChanged_WritesManualHistoryAndReturnsPromptFlags()
+    {
+        var profile = new ChildProfile
+        {
+            Id = 1, OwnerUserId = 2, Nickname = "An",
+            AgeBand = AgeBand.Age_6_8, Status = ChildProfileStatus.Active
+        };
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+
+        var result = await _sut.UpdateChildProfileAsync(1, 2, new UpdateChildProfileRequestDto
+        {
+            Nickname = "An",
+            AgeBand = AgeBand.Age_9_12
+        });
+
+        Assert.Equal(AgeBand.Age_9_12, profile.AgeBand);
+        Assert.True(result.ShouldReapplyBlockedPreset);
+        Assert.Equal("ReadFirst", result.SuggestedReadingMode);
+        _historyRepo.Verify(repository => repository.AddAsync(
+            It.Is<ChildProfileVersionHistory>(history =>
+                history.ChildProfileId == 1
+                && history.Source == VersionHistorySource.Manual
+                && history.RecommendationId == null
+                && history.AppliedByUserId == 2
+                && history.PreviousConfig.Contains("Age_6_8")
+                && history.NewConfig.Contains("Age_9_12")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public void ChildProfileStatus_MatchesSpecValuesOnly()
+    {
+        Assert.Equal(
+            new[] { "Draft", "Active", "Suspended", "Archived", "Deleted" },
+            Enum.GetNames<ChildProfileStatus>());
+    }
+
+    [Fact]
     public async Task ArchiveChildProfileAsync_CallerNotOwner_ThrowsForbidden()
     {
         _profileRepo.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
@@ -329,20 +501,46 @@ public class ChildProfileServiceTests
     }
 
     [Fact]
-    public async Task ArchiveChildProfileAsync_Owner_SetsStatusArchived()
+    public async Task ArchiveChildProfileAsync_Owner_SetsStatusArchivedAndRevokesAccess()
     {
         var profile = new ChildProfile { Id = 1, OwnerUserId = 2, Status = ChildProfileStatus.Active };
+        var credential = new ChildAccessCredential
+        {
+            Id = 8,
+            ChildProfileId = 1,
+            EasyLoginSecretHash = "hash"
+        };
         _profileRepo.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(profile);
+        _credentialRepo.Setup(repository => repository.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<ChildAccessCredential, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(credential);
         _accessGuard.Setup(g => g.EnsureOwnerAsync(1, 2, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         await _sut.ArchiveChildProfileAsync(1, 2);
 
         Assert.Equal(ChildProfileStatus.Archived, profile.Status);
+        Assert.True(credential.IsDeleted);
+        Assert.Null(credential.EasyLoginSecretHash);
+        _childSessionRevoker.Verify(
+            revoker => revoker.RevokeByChildProfileAsync(1, It.IsAny<CancellationToken>()), Times.Once);
         _auditLogRepo.Verify(repository => repository.AddAsync(
             It.Is<AuditLog>(log => log.ActorUserId == 2
                                    && log.Action == "ARCHIVE_CHILD_PROFILE"
                                    && log.EntityId == 1),
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ArchiveChildProfileAsync_DraftProfile_ThrowsBadRequest()
+    {
+        var profile = new ChildProfile { Id = 1, OwnerUserId = 2, Status = ChildProfileStatus.Draft };
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.ArchiveChildProfileAsync(1, 2));
+
+        Assert.Equal(ChildProfileStatus.Draft, profile.Status);
     }
 
     [Fact]
@@ -355,6 +553,132 @@ public class ChildProfileServiceTests
         await _sut.ArchiveChildProfileAsync(1, 2);
 
         _profileRepo.Verify(r => r.Update(profile), Times.Never);
+    }
+
+    [Fact]
+    public async Task SuspendChildProfileAsync_ActiveProfile_SuspendsAndRevokesSessionsAndEasyLogin()
+    {
+        var profile = new ChildProfile { Id = 1, OwnerUserId = 2, Status = ChildProfileStatus.Active };
+        var credential = new ChildAccessCredential
+        {
+            Id = 8,
+            ChildProfileId = 1,
+            EasyLoginSecretHash = "hash"
+        };
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+        _credentialRepo.Setup(repository => repository.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<ChildAccessCredential, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(credential);
+
+        var result = await _sut.SuspendChildProfileAsync(1, 2);
+
+        Assert.Equal("Suspended", result.Status);
+        Assert.True(credential.IsDeleted);
+        Assert.Null(credential.EasyLoginSecretHash);
+        _accessGuard.Verify(
+            guard => guard.EnsureOwnerAsync(1, 2, It.IsAny<CancellationToken>()), Times.Once);
+        _childSessionRevoker.Verify(
+            revoker => revoker.RevokeByChildProfileAsync(1, It.IsAny<CancellationToken>()), Times.Once);
+        _auditLogRepo.Verify(repository => repository.AddAsync(
+            It.Is<AuditLog>(log => log.Action == "SUSPEND_CHILD_PROFILE"),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SuspendChildProfileAsync_DraftProfile_ThrowsBadRequest()
+    {
+        var profile = new ChildProfile { Id = 1, OwnerUserId = 2, Status = ChildProfileStatus.Draft };
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.SuspendChildProfileAsync(1, 2));
+    }
+
+    [Fact]
+    public async Task SuspendChildProfileAsync_CallerNotOwner_ThrowsForbidden()
+    {
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChildProfile { Id = 1, OwnerUserId = 2, Status = ChildProfileStatus.Active });
+        _accessGuard.Setup(guard => guard.EnsureOwnerAsync(1, 5, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ForbiddenException("Không phải Owner."));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.SuspendChildProfileAsync(1, 5));
+    }
+
+    [Fact]
+    public async Task ResumeChildProfileAsync_ConsentUpToDate_SetsActiveWithoutAskingConsent()
+    {
+        var profile = new ChildProfile { Id = 1, OwnerUserId = 2, Status = ChildProfileStatus.Suspended };
+        SetupConsent(profile, ConsentPolicy.CurrentVersion);
+
+        var result = await _sut.ResumeChildProfileAsync(1, 2, new ResumeChildProfileRequestDto());
+
+        Assert.Equal("Active", result.Status);
+        _safetyPolicyRepo.Verify(repository => repository.Update(It.IsAny<SafetyPolicy>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ResumeChildProfileAsync_ConsentOutdatedAndNotAccepted_ThrowsBadRequest()
+    {
+        var profile = new ChildProfile { Id = 1, OwnerUserId = 2, Status = ChildProfileStatus.Suspended };
+        SetupConsent(profile, consentVersion: 0);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.ResumeChildProfileAsync(1, 2, new ResumeChildProfileRequestDto()));
+
+        Assert.Equal(ChildProfileStatus.Suspended, profile.Status);
+    }
+
+    [Fact]
+    public async Task ResumeChildProfileAsync_ConsentOutdatedAndAccepted_RecordsNewConsentAndActivates()
+    {
+        var profile = new ChildProfile { Id = 1, OwnerUserId = 2, Status = ChildProfileStatus.Suspended };
+        var policy = SetupConsent(profile, consentVersion: 0);
+
+        var result = await _sut.ResumeChildProfileAsync(
+            1, 2, new ResumeChildProfileRequestDto { AcceptCurrentConsent = true });
+
+        Assert.Equal("Active", result.Status);
+        Assert.Equal(ConsentPolicy.CurrentVersion, policy.ConsentPolicyVersion);
+        Assert.Equal(2, policy.ConsentedByUserId);
+    }
+
+    [Fact]
+    public async Task ResumeChildProfileAsync_NotSuspended_ThrowsBadRequest()
+    {
+        var profile = new ChildProfile { Id = 1, OwnerUserId = 2, Status = ChildProfileStatus.Active };
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.ResumeChildProfileAsync(1, 2, new ResumeChildProfileRequestDto()));
+    }
+
+    [Fact]
+    public async Task RestoreChildProfileAsync_ArchivedProfile_SetsActive()
+    {
+        var profile = new ChildProfile { Id = 1, OwnerUserId = 2, Status = ChildProfileStatus.Archived };
+        SetupConsent(profile, ConsentPolicy.CurrentVersion);
+
+        var result = await _sut.RestoreChildProfileAsync(1, 2, new ResumeChildProfileRequestDto());
+
+        Assert.Equal("Active", result.Status);
+        _auditLogRepo.Verify(repository => repository.AddAsync(
+            It.Is<AuditLog>(log => log.Action == "RESTORE_CHILD_PROFILE"),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RestoreChildProfileAsync_NotArchived_ThrowsBadRequest()
+    {
+        var profile = new ChildProfile { Id = 1, OwnerUserId = 2, Status = ChildProfileStatus.Suspended };
+        _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.RestoreChildProfileAsync(1, 2, new ResumeChildProfileRequestDto()));
     }
 
     private ChildProfile SetupActivation(
@@ -375,7 +699,13 @@ public class ChildProfileServiceTests
                 It.IsAny<Expression<Func<SafetyPolicy, bool>>>(), null,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(hasSafety
-                ? new SafetyPolicy { Id = 5, ChildProfileId = 1, ConsentRecorded = hasConsent }
+                ? new SafetyPolicy
+                {
+                    Id = 5,
+                    ChildProfileId = 1,
+                    ConsentRecorded = hasConsent,
+                    ConsentPolicyVersion = ConsentPolicy.CurrentVersion
+                }
                 : null);
         AllowProfileAccess();
         return profile;
@@ -384,6 +714,24 @@ public class ChildProfileServiceTests
     private void AllowProfileAccess() => _accessGuard
         .Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
         .ReturnsAsync(new SupervisionRelationship());
+
+    private SafetyPolicy SetupConsent(ChildProfile profile, int consentVersion)
+    {
+        var policy = new SafetyPolicy
+        {
+            Id = 5,
+            ChildProfileId = profile.Id,
+            ConsentRecorded = true,
+            ConsentPolicyVersion = consentVersion
+        };
+        _profileRepo.Setup(repository => repository.GetByIdAsync(profile.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+        _safetyPolicyRepo.Setup(repository => repository.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<SafetyPolicy, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(policy);
+        return policy;
+    }
 
     private void SetupOwner() => _userRepo
         .Setup(r => r.GetByIdAsync(2, It.IsAny<CancellationToken>()))

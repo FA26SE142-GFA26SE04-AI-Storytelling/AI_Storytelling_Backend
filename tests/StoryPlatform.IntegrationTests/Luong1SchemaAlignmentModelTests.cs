@@ -11,6 +11,23 @@ namespace StoryPlatform.IntegrationTests;
 
 public sealed class Luong1SchemaAlignmentModelTests
 {
+    [Fact]
+    public void Child_profile_status_matches_v41_lifecycle_values()
+    {
+        Assert.Equal(
+            new[] { "Draft", "Active", "Suspended", "Archived", "Deleted" },
+            Enum.GetNames<ChildProfileStatus>());
+    }
+
+    [Fact]
+    public void Child_profile_model_does_not_store_exact_date_of_birth()
+    {
+        using var context = CreateModelOnlyContext();
+        var childProfile = context.Model.FindEntityType(typeof(ChildProfile))!;
+
+        Assert.Null(childProfile.FindProperty("DateOfBirth"));
+    }
+
     [Theory]
     [InlineData("ContentReportSlaWarning", 21)]
     [InlineData("ContentReportResolved", 22)]
@@ -83,6 +100,41 @@ public sealed class Luong1SchemaAlignmentModelTests
             value.IsUnique
             && value.Properties.Single().Name == nameof(ChildAccessCredential.ChildProfileId));
         Assert.Equal("\"IsDeleted\" = false", index.GetFilter());
+    }
+
+    [Fact]
+    public void Safety_learning_profile_v41_columns_are_mapped()
+    {
+        using var context = CreateModelOnlyContext();
+
+        var childProfile = context.Model.FindEntityType(typeof(ChildProfile))!;
+        Assert.Equal(
+            ChildProfile.DefaultAvatarId,
+            childProfile.FindProperty(nameof(ChildProfile.AvatarId))!.GetDefaultValue());
+
+        var learningProfile = context.Model.FindEntityType(typeof(LearningProfile))!;
+        Assert.Equal(
+            ReadingMode.ListenFirst,
+            learningProfile.FindProperty(nameof(LearningProfile.ReadingMode))!.GetDefaultValue());
+
+        var contentCategory = context.Model.FindEntityType(typeof(ContentCategory))!;
+        Assert.Equal(
+            "text[]",
+            contentCategory.FindProperty(nameof(ContentCategory.DefaultBlockedAgeBands))!.GetColumnType());
+
+        var safetyPolicy = context.Model.FindEntityType(typeof(SafetyPolicy))!;
+        Assert.NotNull(safetyPolicy.FindProperty(nameof(SafetyPolicy.StoryWishesEnabled)));
+        Assert.NotNull(safetyPolicy.FindProperty(nameof(SafetyPolicy.AllowInteractiveStories)));
+        Assert.NotNull(safetyPolicy.FindProperty(nameof(SafetyPolicy.ChildCreationEnabled)));
+        Assert.NotNull(safetyPolicy.FindProperty(nameof(SafetyPolicy.ChildCreationMode)));
+        Assert.NotNull(safetyPolicy.FindProperty(nameof(SafetyPolicy.VoiceAnswersEnabled)));
+        Assert.NotNull(safetyPolicy.FindProperty(nameof(SafetyPolicy.VoiceConsentAt)));
+        Assert.NotNull(safetyPolicy.FindProperty(nameof(SafetyPolicy.VoiceEnableRequestedAt)));
+
+        var versionHistory = context.Model.FindEntityType(typeof(ChildProfileVersionHistory))!;
+        Assert.Equal(
+            VersionHistorySource.Recommendation,
+            versionHistory.FindProperty(nameof(ChildProfileVersionHistory.Source))!.GetDefaultValue());
     }
 
     private static ApplicationDbContext CreateModelOnlyContext() =>

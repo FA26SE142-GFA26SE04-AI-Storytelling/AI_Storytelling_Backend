@@ -16,6 +16,11 @@ public class ChildProfileConfiguration : IEntityTypeConfiguration<ChildProfile>
             .IsRequired()
             .HasMaxLength(150);
 
+        builder.Property(x => x.AvatarId)
+            .IsRequired()
+            .HasDefaultValue(ChildProfile.DefaultAvatarId)
+            .HasMaxLength(100);
+
         builder.Property(x => x.Language)
             .IsRequired()
             .HasMaxLength(10);

@@ -11,6 +11,7 @@ using StoryPlatform.Application.Common.Security;
 using StoryPlatform.Application.Features.Auth.DTOs;
 using StoryPlatform.Application.Features.Auth.Interfaces;
 using StoryPlatform.Application.Features.Auth.Services;
+using StoryPlatform.Application.Features.ChildProfiles.Sessions.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using Xunit;
@@ -27,6 +28,7 @@ public class AuthServiceTests
     private readonly Mock<IJwtTokenGenerator> _jwtGeneratorMock = new();
     private readonly Mock<IEmailSender> _emailSenderMock = new();
     private readonly Mock<ITotpService> _totpServiceMock = new();
+    private readonly Mock<IChildSessionRevoker> _childSessionRevokerMock = new();
     private readonly AuthService _sut;
 
     public AuthServiceTests()
@@ -43,7 +45,7 @@ public class AuthServiceTests
 
         _sut = new AuthService(
             _unitOfWorkMock.Object, _passwordHasherMock.Object, _jwtGeneratorMock.Object,
-            _emailSenderMock.Object, _totpServiceMock.Object);
+            _emailSenderMock.Object, _totpServiceMock.Object, _childSessionRevokerMock.Object);
     }
 
     private static UserAccount CreateUser(string password = "hashed-password") => new()
@@ -887,6 +889,23 @@ public class AuthServiceTests
         Assert.Equal(2, user.TokenVersion);
         Assert.Equal(AccountStatus.LoggedOut, user.Status);
         _refreshTokenRepoMock.Verify(r => r.Update(It.IsAny<RefreshToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task LogoutAllDevicesAsync_RevokesSupervisorChildSessionsOfEveryChild()
+    {
+        var user = CreateUser();
+        _userRepoMock.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+        _refreshTokenRepoMock
+            .Setup(repository => repository.FindAsync(
+                It.IsAny<Expression<Func<RefreshToken, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<RefreshToken>());
+
+        await _sut.LogoutAllDevicesAsync(1);
+
+        _childSessionRevokerMock.Verify(
+            revoker => revoker.RevokeBySupervisorAsync(1, null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

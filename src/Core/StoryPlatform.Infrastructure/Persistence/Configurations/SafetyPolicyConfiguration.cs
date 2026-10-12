@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using StoryPlatform.Domain.Entities;
+using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Infrastructure.Persistence.Configurations;
 
@@ -26,6 +27,16 @@ public class SafetyPolicyConfiguration : IEntityTypeConfiguration<SafetyPolicy>
         builder.Property(x => x.ComprehensionThresholdPercent)
             .HasColumnType("decimal(5,2)")
             .HasDefaultValue(70m);
+
+        builder.Property(x => x.StoryWishesEnabled).HasDefaultValue(true);
+        builder.Property(x => x.AllowInteractiveStories).HasDefaultValue(true);
+        builder.Property(x => x.ChildCreationEnabled).HasDefaultValue(true);
+        builder.Property(x => x.ChildCreationMode)
+            .HasConversion<string>()
+            .HasMaxLength(30)
+            .IsRequired()
+            .HasDefaultValue(ChildCreationMode.ReviewFirst);
+        builder.Property(x => x.VoiceAnswersEnabled).HasDefaultValue(false);
 
         builder.HasOne(x => x.ChildProfile)
             .WithMany()

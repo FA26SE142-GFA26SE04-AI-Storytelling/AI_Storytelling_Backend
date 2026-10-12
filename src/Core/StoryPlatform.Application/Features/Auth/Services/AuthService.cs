@@ -11,6 +11,7 @@ using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.Application.Features.Auth.DTOs;
 using StoryPlatform.Application.Features.Auth.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Sessions.Interfaces;
 
 namespace StoryPlatform.Application.Features.Auth.Services;
 
@@ -23,19 +24,22 @@ public class AuthService : IAuthService
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
     private readonly IEmailSender _emailSender;
     private readonly ITotpService _totpService;
+    private readonly IChildSessionRevoker _childSessionRevoker;
 
     public AuthService(
         IUnitOfWork unitOfWork,
         IPasswordHasher passwordHasher,
         IJwtTokenGenerator jwtTokenGenerator,
         IEmailSender emailSender,
-        ITotpService totpService)
+        ITotpService totpService,
+        IChildSessionRevoker childSessionRevoker)
     {
         _unitOfWork = unitOfWork;
         _passwordHasher = passwordHasher;
         _jwtTokenGenerator = jwtTokenGenerator;
         _emailSender = emailSender;
         _totpService = totpService;
+        _childSessionRevoker = childSessionRevoker;
     }
 
     public async Task<AuthResponseDto> LoginAsync(LoginRequestDto request, CancellationToken cancellationToken = default)
@@ -299,6 +303,9 @@ public class AuthService : IAuthService
         }
 
         await RevokeRefreshTokensAsync(userId, cancellationToken);
+        // Mục 7c: thu hồi Child Session vào qua ProfileSwitcher / "Cho bé đọc truyện này" của người này.
+        // Phiên Easy Login không có SupervisorSession nên không bị ảnh hưởng.
+        await _childSessionRevoker.RevokeBySupervisorAsync(userId, null, cancellationToken);
         user.RefreshTokenHash = null;
         user.RefreshTokenExpiresAt = null;
         await WriteAuthAuditAsync(user.Id, "LOGOUT_ALL_DEVICES", user.Id, cancellationToken);

@@ -10,10 +10,13 @@ public class ChildProfileDto
     public int Id { get; set; }
     public int OwnerUserId { get; set; }
     public string Nickname { get; set; } = string.Empty;
+    public string AvatarId { get; set; } = string.Empty;
     public string AgeBand { get; set; } = string.Empty;
     public string Language { get; set; } = "vi";
     public string Status { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
+    public bool ShouldReapplyBlockedPreset { get; set; }
+    public string? SuggestedReadingMode { get; set; }
 }
 
 public class CreateChildProfileRequestDto
@@ -28,6 +31,7 @@ public class CreateChildProfileRequestDto
 
     [StringLength(10, ErrorMessage = "Mã ngôn ngữ tối đa 10 ký tự.")]
     public string Language { get; set; } = "vi";
+
 }
 
 public class UpdateChildProfileRequestDto
@@ -42,4 +46,15 @@ public class UpdateChildProfileRequestDto
 
     [StringLength(10, ErrorMessage = "Mã ngôn ngữ tối đa 10 ký tự.")]
     public string Language { get; set; } = "vi";
+
+    [StringLength(100, ErrorMessage = "Mã ảnh đại diện tối đa 100 ký tự.")]
+    public string? AvatarId { get; set; }
+}
+
+public class ResumeChildProfileRequestDto
+{
+    /// <summary>
+    /// Owner đồng ý bản consent hiện hành khi consent_policy_version đã đổi (Bước 1.8b).
+    /// </summary>
+    public bool AcceptCurrentConsent { get; set; }
 }

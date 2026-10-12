@@ -8,6 +8,7 @@ public class ContentCategoryDto
     public string Code { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
     public bool IsActive { get; set; }
+    public List<string> DefaultBlockedAgeBands { get; set; } = new();
 }
 
 public class CreateContentCategoryRequestDto
@@ -21,6 +22,7 @@ public class CreateContentCategoryRequestDto
     public string DisplayName { get; set; } = string.Empty;
 
     public bool IsActive { get; set; } = true;
+    public List<string>? DefaultBlockedAgeBands { get; set; }
 }
 
 public class UpdateContentCategoryRequestDto
@@ -30,4 +32,5 @@ public class UpdateContentCategoryRequestDto
     public string DisplayName { get; set; } = string.Empty;
 
     public bool IsActive { get; set; } = true;
+    public List<string>? DefaultBlockedAgeBands { get; set; }
 }

@@ -230,11 +230,6 @@ Project ai_storytelling_platform {
         từng có bảng lưu trước v9.5. notification_type_enum bổ sung
         content_reported và payment_confirmed tương ứng 2 tính năng
         MỚI (AH)/(AI).
-    (AJ) child_profiles thêm date_of_birth (ĐỀ XUẤT, còn treo — Luồng 1,
-        Mục 9: phục vụ tính thời điểm chuyển age_band khi trẻ lớn lên;
-        cột đã có nhưng CHƯA có cơ chế/job tự động sử dụng nó, cần
-        quyết định thêm trước khi coi là hoàn chỉnh).
-
     CẢI THIỆN v10 (MỚI — Luồng 4 Deep Dive v10: Hold Mode chuyển từ
     Teacher-unlock thủ công sang Auto-unlock):
     (AK) intervention_cases thêm triggering_story_id (Bước 4.5.1 —
@@ -284,17 +279,30 @@ Enum age_band_enum {
 
 Enum child_profile_status {
   draft
-  pending_supervision
-  ready_for_activation
   active
-  pending_parent_consent   // MỚI v9.3: Owner có role=teacher, chưa có Parent Accept (BR-1.9)
   suspended
   archived
+  deleted
 }
 
 Enum approval_mode_enum {
   always_manual
   auto_publish_on_threshold
+}
+
+Enum child_creation_mode_enum {
+  review_first
+  listen_now
+}
+
+Enum reading_mode_enum {
+  listen_first
+  read_first
+}
+
+Enum version_history_source_enum {
+  manual
+  recommendation
 }
 
 Enum policy_rule_enum {
@@ -821,12 +829,12 @@ Table child_profiles {
   is_deleted boolean [not null, default: false]
   owner_user_id integer [not null, ref: > user_accounts.id]
   nickname varchar [not null]
+  avatar_id varchar [not null, default: 'avatar-default', note: 'Hệ thống tự gán khi tạo — Bước 1.2']
   age_band age_band_enum [not null]
   language varchar [not null, default: 'vi']
   status child_profile_status [not null, default: 'draft']
   scope profile_scope_enum [not null, default: 'personal', note: 'MỚI v9.3 — Luồng 7']
   organization_id integer [ref: > organizations.id, note: 'MỚI v9.3 — NULLABLE, bắt buộc NOT NULL khi scope=organization (Luồng 7)']
-  date_of_birth date [note: 'MỚI v9.5, ĐỀ XUẤT CÒN TREO — Luồng 1, Mục 9: phục vụ tính thời điểm chuyển age_band khi trẻ lớn lên. Cột đã có nhưng CHƯA có job/cơ chế tự động nào sử dụng nó — hiện age_band vẫn phải đổi thủ công bởi Owner/Supervisor.']
   created_at timestamp [not null, default: `now()`]
 
   Note: '''
@@ -846,6 +854,7 @@ Table learning_profiles {
   is_deleted boolean [not null, default: false]
   child_profile_id integer [not null, unique, ref: - child_profiles.id]
   reading_level integer [not null, note: '1..5, dùng cho Luồng 2 & Luồng 6']
+  reading_mode reading_mode_enum [not null, default: 'listen_first', note: 'Mặc định theo age_band — Bước 1.3']
   comprehension_goal varchar
   updated_at timestamp [not null, default: `now()`]
 
@@ -879,6 +888,7 @@ Table content_categories {
   display_name varchar [not null, note: 'Tên hiển thị, ví dụ: Bạo lực, Ngôn ngữ người lớn']
   is_active boolean [not null, default: true]
   created_by_admin_id integer [ref: > user_accounts.id]
+  default_blocked_age_bands "age_band_enum[]" [not null, default: '{}', note: 'Preset Blocked theo age_band — Bước 1.4; Administrator sửa ở Luồng 5 Bước 5.3']
   created_at timestamp [not null, default: `now()`]
 
   Note: 'Danh mục nội dung chuẩn hóa — quản lý bởi Administrator (Luồng 5), dùng chung cho SafetyPolicy (Luồng 1), Guardrail check (Luồng 2), và OrgSafetyPolicyTemplate (Luồng 7). Thay thế varchar tự do trước đây ở safety_policy_categories.'
@@ -899,6 +909,13 @@ Table safety_policies {
   readability_score_threshold decimal [note: 'MỚI v9.2-I / v9.5 — ngưỡng auto-publish cho readability, đi kèm safety_score_threshold']
   comprehension_threshold_percent decimal [not null, default: 70, note: '✅ ĐÃ CHỐT v9.5 — Luồng 4, Bước 4.5: Hold Mode kích hoạt khi tỷ lệ đọc hiểu LIÊN TỤC dưới ngưỡng này. Organization/Teacher có thể ghi đè riêng qua policy này, không bắt buộc cứng toàn hệ thống.']
   comprehension_window_size integer [not null, default: 3, note: '✅ ĐÃ CHỐT v9.5 — số bài đọc GẦN NHẤT liên tiếp dùng để tính "liên tục" (KHÔNG phải số ngày).']
+  story_wishes_enabled boolean [not null, default: true]
+  allow_interactive_stories boolean [not null, default: true]
+  child_creation_enabled boolean [not null, default: true]
+  child_creation_mode child_creation_mode_enum [not null, default: 'review_first']
+  voice_answers_enabled boolean [not null, default: false]
+  voice_consent_at timestamp [note: 'Owner đồng ý mục (e) giọng nói — Bước 1.4']
+  voice_enable_requested_at timestamp [note: 'Additional Supervisor xin bật giọng nói khi Owner chưa đồng ý — Luồng 4 Bước 4.3c đọc cột này']
   updated_at timestamp [not null, default: `now()`]
 
   Note: '''
@@ -972,14 +989,9 @@ Table supervision_relationships {
     Mọi permission check phải lọc revoked_at IS NULL.
     CẢI THIỆN v9.2 (H): thêm revoked_by_user_id — có revoked_at nhưng
     không biết AI thu hồi thì audit trail vẫn không trọn vẹn.
-    CẢI THIỆN v9.3: Bước 1.6 (Accept) PHẢI, trong CÙNG transaction,
-    re-check BR-1.9 và tự động chuyển child_profiles.status sang
-    'active' nếu điều kiện đã thỏa (owner hoặc additional_supervisor có
-    role=parent) — không chờ một lượt xử lý riêng biệt nào khác. Ngược
-    lại, Bước 1.6b (revoke dòng role=parent CUỐI CÙNG, chỉ khi
-    owner.role=teacher) PHẢI tự động đẩy child_profiles.status về
-    'pending_parent_consent' — đối xứng 2 chiều, giữ nguyên lịch sử
-    học tập/telemetry, không xóa gì.
+    Luồng 1 v41 Bước 1.6b: gỡ hoặc tự rời quan hệ giám sát không đổi
+    trạng thái hồ sơ trẻ; thao tác phải hủy các yêu cầu pending liên quan
+    và thu hồi Child Session do người giám sát đó mở.
   '''
 }
 
@@ -2055,6 +2067,7 @@ Table child_profile_version_history {
   recommendation_id integer [ref: > recommendations.id]
   previous_config text [not null]
   new_config text [not null]
+  source version_history_source_enum [not null, note: 'manual = Owner/approve_reading_level sửa trực tiếp; recommendation = áp dụng đề xuất Luồng 6']
   applied_by_user_id integer [ref: > user_accounts.id]
   version_status version_history_status_enum [not null, default: 'draft_version']
   applied_at timestamp [not null, default: `now()`]

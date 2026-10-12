@@ -28,4 +28,15 @@ public interface IChildProfileService
 
     Task ArchiveChildProfileAsync(
         int childProfileId, int currentUserId, CancellationToken cancellationToken = default);
+
+    Task<ChildProfileDto> SuspendChildProfileAsync(
+        int childProfileId, int currentUserId, CancellationToken cancellationToken = default);
+
+    Task<ChildProfileDto> ResumeChildProfileAsync(
+        int childProfileId, int currentUserId, ResumeChildProfileRequestDto request,
+        CancellationToken cancellationToken = default);
+
+    Task<ChildProfileDto> RestoreChildProfileAsync(
+        int childProfileId, int currentUserId, ResumeChildProfileRequestDto request,
+        CancellationToken cancellationToken = default);
 }

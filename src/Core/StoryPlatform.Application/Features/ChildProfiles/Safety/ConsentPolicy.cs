@@ -7,4 +7,7 @@ namespace StoryPlatform.Application.Features.ChildProfiles.Safety;
 public static class ConsentPolicy
 {
     public const int CurrentVersion = 1;
+
+    /// <summary>Consent đã cũ khi phiên bản từng đồng ý nhỏ hơn bản hiện hành.</summary>
+    public static bool IsOutdated(int consentPolicyVersion) => consentPolicyVersion < CurrentVersion;
 }

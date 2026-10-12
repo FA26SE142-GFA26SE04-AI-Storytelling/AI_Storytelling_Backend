@@ -133,7 +133,8 @@ public class SupervisionController : BaseApiController
     }
 
     /// <summary>
-    /// Thu hồi một quan hệ giám sát (Bước 1.6b) — chỉ Owner được thực hiện.
+    /// Thu hồi một quan hệ giám sát (Bước 1.6b) — Owner gỡ người giám sát,
+    /// hoặc Additional Supervisor tự rời hồ sơ. Không áp dụng cho Owner.
     /// </summary>
     [HttpDelete("relationships/{relationshipId:int}")]
     [Authorize(Roles = "Parent")]

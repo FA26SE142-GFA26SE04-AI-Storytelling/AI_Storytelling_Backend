@@ -21,5 +21,6 @@ public enum NotificationType
     ContentReportSlaWarning = 21,
     ContentReportResolved = 22,
     SupervisionAccepted = 23,
-    SupervisionRejected = 24
+    SupervisionRejected = 24,
+    SupervisionRevoked = 25
 }

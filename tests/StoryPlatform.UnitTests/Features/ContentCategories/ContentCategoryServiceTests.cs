@@ -175,8 +175,8 @@ public class ContentCategoryServiceTests
         await _sut.UpdateAsync(4, new UpdateContentCategoryRequestDto
         {
             DisplayName = "Kinh dị",
-            DefaultBlockedAgeBands = new List<string> { "Age_9_12" }
+            DefaultBlockedAgeBands = new List<string> { "Age_9_10" }
         });
-        Assert.Equal(new[] { "Age_9_12" }, category.DefaultBlockedAgeBands);
+        Assert.Equal(new[] { "Age_9_10" }, category.DefaultBlockedAgeBands);
     }
 }

@@ -239,7 +239,7 @@ public sealed class OutlineServiceTests
     internal static FakeUnitOfWork Seed(bool includeApprovePermission = true)
     {
         var unitOfWork = new FakeUnitOfWork();
-        unitOfWork.Seed(new UserAccount { Id = 1, Role = UserRole.Parent, Status = AccountStatus.LoggedIn });
+        unitOfWork.Seed(new UserAccount { Id = 1, Role = UserRole.Parent, Status = AccountStatus.Active });
         unitOfWork.Seed(new Story
         {
             Id = 1, ChildProfileId = 1, AuthorUserId = 1, Source = StorySource.Ai, Status = StoryStatus.Draft

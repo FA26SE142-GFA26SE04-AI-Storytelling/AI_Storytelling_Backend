@@ -518,7 +518,7 @@ public sealed class ExistingStoryServiceTests
     private static ExistingStoryFakeUnitOfWork SeedActiveChild()
     {
         var store = new ExistingStoryFakeUnitOfWork();
-        store.Seed(new UserAccount { Id = 1, Role = UserRole.Parent, Status = AccountStatus.LoggedIn });
+        store.Seed(new UserAccount { Id = 1, Role = UserRole.Parent, Status = AccountStatus.Active });
         store.Seed(new ChildProfile
         {
             Id = 1,

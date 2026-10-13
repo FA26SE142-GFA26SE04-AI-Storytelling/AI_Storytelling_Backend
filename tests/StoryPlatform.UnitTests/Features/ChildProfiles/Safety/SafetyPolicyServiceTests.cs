@@ -547,11 +547,11 @@ public class SafetyPolicyServiceTests
         _guard.Setup(guard => guard.EnsureActiveSupervisionAsync(
                 1, 2, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SupervisionRelationship());
-        SetupChildAndCategories(AgeBand.Age_9_12);
+        SetupChildAndCategories(AgeBand.Age_9_10);
 
         var result = await _sut.GetAgePresetAsync(1, 2);
 
-        Assert.Equal("Age_9_12", result.AgeBand);
+        Assert.Equal("Age_9_10", result.AgeBand);
         Assert.Equal(new[] { 8 }, result.BlockedCategoryIds);
     }
 
@@ -634,7 +634,7 @@ public class SafetyPolicyServiceTests
         var category7 = new ContentCategory { Id = 7, Code = "HORROR", IsActive = true };
         category7.DefaultBlockedAgeBands.Add("Age_6_8");
         var category8 = new ContentCategory { Id = 8, Code = "VIOLENCE", IsActive = true };
-        category8.DefaultBlockedAgeBands.Add("Age_9_12");
+        category8.DefaultBlockedAgeBands.Add("Age_9_10");
         var category9 = new ContentCategory { Id = 9, Code = "ANIMALS", IsActive = true };
         _contentCategoryRepo.Setup(repository => repository.FindAsync(
                 It.IsAny<Expression<Func<ContentCategory, bool>>>(), null,

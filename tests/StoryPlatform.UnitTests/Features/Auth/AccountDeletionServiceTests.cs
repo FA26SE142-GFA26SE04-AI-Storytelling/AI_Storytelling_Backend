@@ -264,7 +264,7 @@ public class AccountDeletionServiceTests
             FullName = "Nguyen Van A",
             PasswordHash = "stored-hash",
             Role = role,
-            Status = AccountStatus.EmailVerified,
+            Status = AccountStatus.Active,
             AvatarUrl = "https://cdn.example.com/a.png"
         };
         _userRepo.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))

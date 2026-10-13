@@ -707,7 +707,7 @@ public sealed class StoryReviewServiceTests
         var unitOfWork = new FakeUnitOfWork();
 
         // Seed User
-        unitOfWork.Seed(new UserAccount { Id = 1, Role = UserRole.Parent, Status = AccountStatus.LoggedIn });
+        unitOfWork.Seed(new UserAccount { Id = 1, Role = UserRole.Parent, Status = AccountStatus.Active });
 
         // Seed Story in ContentReview status
         unitOfWork.Seed(new Story

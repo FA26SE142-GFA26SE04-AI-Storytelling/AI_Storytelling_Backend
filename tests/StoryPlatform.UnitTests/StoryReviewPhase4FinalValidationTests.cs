@@ -267,7 +267,7 @@ public sealed class StoryReviewPhase4FinalValidationTests
     private static FakeUnitOfWork SeedContentReviewWithAllArtifacts()
     {
         var uow = new FakeUnitOfWork();
-        uow.Seed(new UserAccount { Id = 1, Role = UserRole.Parent, Status = AccountStatus.LoggedIn });
+        uow.Seed(new UserAccount { Id = 1, Role = UserRole.Parent, Status = AccountStatus.Active });
         uow.Seed(new Story
         {
             Id = 1,

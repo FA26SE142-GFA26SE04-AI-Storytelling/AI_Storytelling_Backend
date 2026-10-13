@@ -13,7 +13,7 @@ public class Story : BaseEntity
     public string? CoverImageUrl { get; set; }
     public string? Genre { get; set; }
     public string? MoralLesson { get; set; }
-    public string AgeBand { get; set; } = "6-8"; // e.g., 6-8, 9-12
+    public string AgeBand { get; set; } = "6-8"; // e.g., 6-8, 9-10
     public int? ReadingLevel { get; set; }
     public string? VocabularyLevel { get; set; }
     public string Language { get; set; } = "vi";

@@ -400,7 +400,7 @@ public sealed class Phase1To4SequentialWorkflowTests
     private static WorkflowUnitOfWork CreateEligibleStore(bool includeApprovePermission = true, string? blockedTerm = null)
     {
         var store = new WorkflowUnitOfWork();
-        store.Seed(new UserAccount { Id = 1, Role = UserRole.Parent, Status = AccountStatus.LoggedIn });
+        store.Seed(new UserAccount { Id = 1, Role = UserRole.Parent, Status = AccountStatus.Active });
         store.Seed(new ChildProfile
         {
             Id = 1,

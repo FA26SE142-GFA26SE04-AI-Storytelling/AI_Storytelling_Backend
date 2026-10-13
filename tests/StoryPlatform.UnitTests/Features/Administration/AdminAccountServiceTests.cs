@@ -32,7 +32,7 @@ public class AdminAccountServiceTests
         _sut = new AdminAccountService(_unitOfWork.Object, _auditLogWriter.Object, _notificationService.Object);
     }
 
-    private static UserAccount MakeUser(int id, UserRole role, AccountStatus status = AccountStatus.LoggedIn,
+    private static UserAccount MakeUser(int id, UserRole role, AccountStatus status = AccountStatus.Active,
         UserRole? roleBeforeAdmin = null) => new()
     {
         Id = id,

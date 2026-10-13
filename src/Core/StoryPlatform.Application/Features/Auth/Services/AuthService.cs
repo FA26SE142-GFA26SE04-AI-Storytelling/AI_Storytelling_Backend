@@ -101,7 +101,6 @@ public class AuthService : IAuthService
 
         user.FailedLoginAttempts = 0;
         user.LockedUntil = null;
-        user.Status = AccountStatus.LoggedIn;
         user.LastLoginAt = DateTime.UtcNow;
 
         return await GenerateAuthResponseAsync(user, cancellationToken);
@@ -126,7 +125,6 @@ public class AuthService : IAuthService
         user.MfaEnabled = true;
         user.FailedLoginAttempts = 0;
         user.LockedUntil = null;
-        user.Status = AccountStatus.LoggedIn;
         user.LastLoginAt = DateTime.UtcNow;
 
         return await GenerateAuthResponseAsync(user, cancellationToken);
@@ -368,7 +366,8 @@ public class AuthService : IAuthService
         var rawResetToken = _jwtTokenGenerator.GenerateRefreshToken(); // tái dùng bộ sinh chuỗi ngẫu nhiên an toàn sẵn có
         user.ResetTokenHash = TokenHasher.Hash(rawResetToken);
         user.ResetTokenExpiresAt = DateTime.UtcNow.AddHours(1);
-        user.Status = AccountStatus.PasswordResetPending;
+        // UC-L1B-02: quên mật khẩu không đổi trạng thái tài khoản — nếu không, người lạ chỉ cần
+        // nhập email nạn nhân vào "Quên mật khẩu" là khóa được đăng nhập của họ.
         userRepo.Update(user);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -415,11 +414,10 @@ public class AuthService : IAuthService
         user.EmailVerificationTokenExpiresAt = null;
         user.EmailVerificationFailedAttempts = 0;
         user.EmailVerifiedAt = DateTime.UtcNow;
-        // Chỉ nâng cấp trạng thái Registered -> EmailVerified. Không hạ cấp một tài khoản
-        // đã LoggedIn/LoggedOut/PasswordResetPending, và không mở khoá Suspended qua đường này.
+        // Chỉ nâng cấp trạng thái Registered -> Active; không mở khoá Suspended qua đường này.
         if (user.Status == AccountStatus.Registered)
         {
-            user.Status = AccountStatus.EmailVerified;
+            user.Status = AccountStatus.Active;
         }
         userRepo.Update(user);
 
@@ -500,7 +498,7 @@ public class AuthService : IAuthService
         // Không hạ cấp trạng thái Suspended — đặt lại mật khẩu không được dùng để tự mở khoá tài khoản.
         if (user.Status != AccountStatus.Suspended)
         {
-            user.Status = AccountStatus.LoggedOut;
+            user.Status = AccountStatus.Active;
         }
         userRepo.Update(user);
 

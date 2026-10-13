@@ -43,6 +43,28 @@ public class DataRequestController : BaseApiController
         return HandleResult(result, "Lấy danh sách Data Request đang chờ xử lý thành công.");
     }
 
+    /// <summary>Danh sách Data Request do chính Owner gửi.</summary>
+    [HttpGet("mine")]
+    [Authorize(Roles = "Parent")]
+    public async Task<ActionResult<ApiResponse<List<DataRequestDto>>>> ListMyDataRequests(
+        [FromQuery] int? childProfileId, CancellationToken cancellationToken)
+    {
+        var result = await _dataRequestService.ListMineAsync(
+            GetCurrentUserId(), childProfileId, cancellationToken);
+        return HandleResult(result, "Lấy danh sách Data Request của bạn thành công.");
+    }
+
+    /// <summary>Owner hủy Data Request của mình khi còn pending.</summary>
+    [HttpPost("{dataRequestId:int}/cancel")]
+    [Authorize(Roles = "Parent")]
+    public async Task<ActionResult<ApiResponse<DataRequestDto>>> CancelDataRequest(
+        int dataRequestId, CancellationToken cancellationToken)
+    {
+        var result = await _dataRequestService.CancelAsync(
+            GetCurrentUserId(), dataRequestId, cancellationToken);
+        return HandleResult(result, "Hủy Data Request thành công.");
+    }
+
     /// <summary>
     /// Xử lý một Data Request loại Export: trả về file .xlsx tổng hợp dữ liệu của trẻ.
     /// </summary>
@@ -70,5 +92,17 @@ public class DataRequestController : BaseApiController
     {
         var result = await _dataRequestService.ResolveDeleteAsync(GetCurrentUserId(), dataRequestId, cancellationToken);
         return HandleResult(result, "Xử lý Data Request Delete thành công.");
+    }
+
+    /// <summary>Administrator từ chối Data Request kèm lý do.</summary>
+    [HttpPost("{dataRequestId:int}/reject")]
+    [Authorize(Roles = "Administrator")]
+    public async Task<ActionResult<ApiResponse<DataRequestDto>>> RejectDataRequest(
+        int dataRequestId, [FromBody] RejectDataRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _dataRequestService.RejectAsync(
+            GetCurrentUserId(), dataRequestId, request.Reason, cancellationToken);
+        return HandleResult(result, "Từ chối Data Request thành công.");
     }
 }

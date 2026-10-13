@@ -58,6 +58,7 @@ public static class DependencyInjection
     {
         services.AddScoped<IUserProvisioningService, UserProvisioningService>();
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IAccountDeletionService, AccountDeletionService>();
         services.AddScoped<IStoryService, StoryService>();
         services.AddScoped<IAIStoryInputService, AIStoryInputService>();
         services.AddScoped<IChildProfileService, ChildProfileService>();
@@ -70,6 +71,7 @@ public static class DependencyInjection
         services.AddScoped<IParentalGateService, ParentalGateService>();
         services.AddScoped<IContentCategoryService, ContentCategoryService>();
         services.AddScoped<INotificationService, NotificationService>();
+        services.AddScoped<INotificationRetentionService, NotificationRetentionService>();
         services.AddScoped<IAuditLogQueryService, AuditLogQueryService>();
         services.AddScoped<IAuditLogWriter, AuditLogWriter>();
         services.AddScoped<IAdminAccountService, AdminAccountService>();

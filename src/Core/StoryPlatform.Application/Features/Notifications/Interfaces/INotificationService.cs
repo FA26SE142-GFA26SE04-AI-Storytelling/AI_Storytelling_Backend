@@ -9,6 +9,10 @@ public interface INotificationService
         int recipientUserId, NotificationType type, string? payload, CancellationToken cancellationToken = default);
 
     Task<List<NotificationDto>> ListAsync(int currentUserId, CancellationToken cancellationToken = default);
+    Task<List<NotificationDto>> ListAsync(
+        int currentUserId, string? group, CancellationToken cancellationToken);
+    Task<int> GetUnreadCountAsync(
+        int currentUserId, CancellationToken cancellationToken = default);
     Task MarkAsReadAsync(int notificationId, int currentUserId, CancellationToken cancellationToken = default);
     Task MarkAllAsReadAsync(int currentUserId, CancellationToken cancellationToken = default);
     Task DeleteAsync(int notificationId, int currentUserId, CancellationToken cancellationToken = default);

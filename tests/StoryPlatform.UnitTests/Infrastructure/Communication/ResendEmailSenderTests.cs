@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using StoryPlatform.Application.Abstractions.Communication;
 using StoryPlatform.Infrastructure.Communication;
 using Xunit;
 
@@ -111,6 +112,34 @@ public class ResendEmailSenderTests
         Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
         Assert.Contains("raw-verification-token-456", handler.LastRequestBody);
         Assert.Contains("user@example.com", handler.LastRequestBody);
+    }
+
+    [Fact]
+    public async Task SendAccountSecurityChangedEmailAsync_SendsToRecipient()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var sender = CreateSender(handler);
+
+        await sender.SendAccountSecurityChangedEmailAsync(
+            "owner@example.com", "An", AccountSecurityChange.PasswordChanged);
+
+        Assert.NotNull(handler.LastRequest);
+        Assert.Contains("owner@example.com", handler.LastRequestBody);
+        Assert.Contains("AI Storytelling Platform", handler.LastRequestBody);
+    }
+
+    [Fact]
+    public async Task SendDataRequestCompletedEmailAsync_Rejected_SendsToRecipient()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var sender = CreateSender(handler);
+
+        await sender.SendDataRequestCompletedEmailAsync(
+            "owner@example.com", "An", "delete", "rejected", "reason-text");
+
+        Assert.NotNull(handler.LastRequest);
+        Assert.Contains("owner@example.com", handler.LastRequestBody);
+        Assert.Contains("reason-text", handler.LastRequestBody);
     }
 
     [Fact]

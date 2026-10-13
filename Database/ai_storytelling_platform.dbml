@@ -346,9 +346,7 @@ Enum ownership_transfer_request_status_enum {
   pending
   accepted
   rejected
-  pending_owner_response
-  accepted_by_owner
-  rejected_by_owner
+  cancelled
 }
 
 Enum topic_relation_enum {
@@ -374,6 +372,12 @@ Enum session_scope_enum {
   supervisor
   child
   admin
+}
+
+Enum child_entry_method_enum {
+  easy_login
+  profile_switcher
+  supervisor_pick
 }
 
 // =====================================================================
@@ -618,6 +622,8 @@ Enum data_request_type_enum {
 Enum data_request_status_enum {
   pending
   resolved
+  cancelled
+  rejected
 }
 
 // MỚI v9.5 (Luồng 5, Bước 5.1c — Token Quota)
@@ -728,7 +734,8 @@ Enum consent_status_enum {
 // loại mới ngoài danh sách đã ánh xạ trong tài liệu workflow.
 Enum notification_type_enum {
   supervision_invite              // Luồng 1, Bước 1.5
-  supervision_revoked_cascade     // Luồng 1, Bước 1.6b
+  supervision_invite_result
+  supervision_revoked             // Luồng 1, Bước 1.6b
   story_shared                    // Luồng 4, Bước 4.3
   hold_mode_alert                 // Luồng 4, Bước 4.5.2
   hold_mode_auto_unlocked         // MỚI v10 — Luồng 4, Bước 4.5.3a
@@ -739,17 +746,17 @@ Enum notification_type_enum {
   org_consent_request             // Luồng 7, Bước 7.3
   org_unenrollment_notice         // Luồng 7, Bước 7.3c
   data_request_sla_warning        // Luồng 5, Bước 5.4 (đề xuất kích hoạt ở mốc 48 giờ)
+  data_request_completed
   admin_role_changed              // Luồng 5, Bước 5.1b (MỚI)
   content_reported                // MỚI v9.5 — Luồng 4, Bước 4.6
-  content_report_sla_warning      // Luồng 4, Bước 4.6 — báo cáo sắp quá hạn xử lý
+  moderation_sla_warning          // Luồng 4, Bước 4.6 — báo cáo sắp quá hạn xử lý
   content_report_resolved         // Luồng 4, Bước 4.6 — báo cáo đã được xử lý xong
   payment_confirmed               // MỚI v9.5 — Luồng 5, Bước 5.6.2
-  permission_request_created
-  permission_request_accepted
-  permission_request_rejected
-  ownership_transfer_requested
-  ownership_transfer_accepted
-  ownership_transfer_rejected
+  permission_request
+  permission_request_result
+  ownership_transfer_request
+  ownership_transfer_result
+  account_security_changed
 }
 
 Enum notification_read_status_enum {
@@ -785,6 +792,13 @@ Table user_accounts {
   refresh_token_expires_at timestamp
   email_verification_token_hash varchar [note: 'MỚI v9.5 — Bước 1.1: bắt buộc xác thực email khi đăng ký cold-start (không qua invitation_code), áp dụng thống nhất với luồng claim invitation vốn đã có OTP.']
   email_verification_token_expires_at timestamp [note: 'MỚI v9.5']
+  email_verified_at timestamp [note: 'NULL = chưa xác thực email (OTP) — Bước 1.1']
+  email_verification_failed_attempts integer [not null, default: 0]
+  password_changed_at timestamp
+  pending_email varchar [note: 'Email mới chờ xác thực OTP — BR-1.18']
+  pending_email_otp_hash varchar
+  pending_email_otp_expires_at timestamp
+  pending_email_otp_failed_attempts integer [not null, default: 0]
   failed_login_attempts integer [not null, default: 0, note: 'MỚI v9.5 — chống brute-force đăng nhập Supervisor, đối xứng child_access_credentials.failed_attempts']
   locked_until timestamp [note: 'MỚI v9.5 — khoá tạm thời sau quá nhiều lần đăng nhập sai liên tiếp']
   mfa_secret varchar [note: 'MỚI v9.5 — Luồng 5, Mục 9: TOTP secret, BẮT BUỘC khi role=administrator, tuỳ chọn cho Parent/Teacher']
@@ -1091,19 +1105,20 @@ Table child_access_credentials {
   id integer [pk, increment]
   created_at timestamp [not null, default: `now()`]
   is_deleted boolean [not null, default: false]
-  child_profile_id integer [not null, ref: - child_profiles.id, note: 'Chỉ 1 credential chưa soft-delete cho mỗi hồ sơ; migration dùng partial unique index WHERE is_deleted=false.']
+  child_profile_id integer [not null, ref: - child_profiles.id, note: 'Chỉ 1 credential đang hiệu lực cho mỗi hồ sơ; partial unique index WHERE revoked_at IS NULL AND is_deleted=false.']
   avatar_id varchar [not null, note: 'Tạm thời còn ở đây (mặc định avatar-default); sẽ chuyển sang child_profiles.avatar_id ở bước riêng.']
   easy_login_secret_hash varchar(64) [unique, note: 'SHA-256 (hex) của secret QR ngẫu nhiên ≥128 bit. KHÔNG lưu secret. NULL khi chưa tạo hoặc đã thu hồi. Unique index chỉ áp dụng khi khác NULL. Không có TTL (BR-1.15).']
   easy_login_created_at timestamp [note: 'Thời điểm tạo/tạo lại secret hiện hành.']
-  created_by_user_id integer [not null, ref: > user_accounts.id, note: 'Owner/Additional Supervisor (có manage_safety_settings) đã tạo Easy Login lần đầu']
+  revoked_at timestamp [note: 'Thời điểm credential bị thu hồi hoặc được thay thế; NULL khi còn hiệu lực.']
+  created_by_user_id integer [not null, ref: > user_accounts.id, note: 'Owner/Additional Supervisor (có manage_safety_settings) đã tạo credential này']
   updated_at timestamp [not null, default: `now()`]
 
   Note: '''
     ChildAccessCredential — Bước 1.10. Easy Login lâu dài để chính Trẻ
     (không có user_accounts riêng) tự vào giao diện đọc bằng cách quét
     QR. Chỉ Owner hoặc người có manage_safety_settings được tạo/tạo lại/
-    thu hồi. Tạo lại = thay secret trong cùng dòng, secret cũ vô hiệu
-    ngay. Thu hồi = soft delete (is_deleted=true) kèm soft delete mọi
+    thu hồi. Tạo lại = đặt revoked_at cho credential cũ rồi tạo dòng mới;
+    secret cũ vô hiệu ngay. Thu hồi = đặt revoked_at và kết thúc mọi
     child_sessions sinh từ credential; giữ dòng cũ cho audit.
     Quét sai 5 lần liên tiếp trên cùng thiết bị (IP client) bị khóa 5
     phút — bộ đếm nằm trong bộ nhớ của máy chủ, không lưu DB.
@@ -1116,9 +1131,10 @@ Table child_sessions {
   id integer [pk, increment]
   child_profile_id integer [not null, ref: > child_profiles.id]
   session_key varchar(64) [not null, unique]
-  child_access_credential_id integer [ref: > child_access_credentials.id, note: 'MỚI — Luồng 3, Bước 3.0: set khi Child Session đến từ lối vào độc lập (PIN / EasyLogin QR).']
+  child_access_credential_id integer [ref: > child_access_credentials.id, note: 'MỚI — Luồng 3, Bước 3.0: set khi Child Session đến từ lối vào độc lập EasyLogin QR.']
   supervisor_session_id integer [ref: > refresh_tokens.id, note: 'MỚI — Luồng 3, Bước 3.0: set khi Supervisor bàn giao thiết bị qua ProfileSwitcher (Bước 1.9a).']
   last_activity_at timestamp [not null]
+  entry_method child_entry_method_enum [not null, default: 'profile_switcher']
   created_at timestamp [not null, default: `now()`]
   updated_at timestamp
   is_deleted boolean [not null, default: false]
@@ -1149,6 +1165,7 @@ Table notifications {
   updated_at timestamp
   is_deleted boolean [not null, default: false]
   recipient_user_id integer [not null, ref: > user_accounts.id]
+  child_profile_id integer [ref: > child_profiles.id, note: 'Hồ sơ trẻ liên quan, nếu thông báo thuộc ngữ cảnh một trẻ cụ thể.']
   type notification_type_enum [not null]
   payload jsonb [note: 'Ngữ cảnh tùy loại: child_profile_id, story_id, organization_id...']
   status notification_read_status_enum [not null, default: 'unread']
@@ -1866,6 +1883,7 @@ Table data_requests {
   deletion_method data_request_deletion_method_enum [default: 'anonymize', note: 'MỚI v9.4 — chỉ áp dụng khi request_type=delete']
   legal_basis_note text [note: 'MỚI v9.4 — bắt buộc khi deletion_method=hard_delete, ghi rõ căn cứ pháp lý đã được Administrator/Legal xác nhận']
   resolved_by_user_id integer [ref: > user_accounts.id, note: 'MỚI v9.4 — Administrator nào đã xử lý']
+  rejection_reason varchar(500)
   created_at timestamp [not null, default: `now()`, note: 'MỚI v9.4 — mốc bắt đầu tính SLA 72 giờ, trước đây thiếu hoàn toàn nên không đo được SLA']
   resolved_at timestamp
 

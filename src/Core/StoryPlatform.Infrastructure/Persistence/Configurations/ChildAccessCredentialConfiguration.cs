@@ -29,10 +29,10 @@ public class ChildAccessCredentialConfiguration : IEntityTypeConfiguration<Child
             .HasForeignKey(x => x.CreatedByUserId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // Soft-revoke giữ dòng cũ cho audit; chỉ 1 credential CHƯA xoá cho mỗi hồ sơ trẻ.
+        // Giữ dòng đã thu hồi cho audit; chỉ một credential đang hiệu lực cho mỗi hồ sơ.
         builder.HasIndex(x => x.ChildProfileId)
             .IsUnique()
-            .HasFilter("\"IsDeleted\" = false");
+            .HasFilter("\"RevokedAt\" IS NULL AND \"IsDeleted\" = false");
 
         builder.HasIndex(x => x.EasyLoginSecretHash)
             .IsUnique()

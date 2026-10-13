@@ -40,14 +40,68 @@ public class ResendEmailSender : IEmailSender
         return SendAsync(toEmail, subject, html, cancellationToken);
     }
 
-    public Task SendEmailVerificationEmailAsync(string toEmail, string toName, string rawVerificationToken, CancellationToken cancellationToken = default)
+    public Task SendEmailVerificationEmailAsync(string toEmail, string toName, string otp, CancellationToken cancellationToken = default)
     {
         const string subject = "Xác thực địa chỉ email của bạn";
         var html = $"""
             <p>Chào {toName},</p>
-            <p>Cảm ơn bạn đã đăng ký tài khoản AI Storytelling Platform. Mã xác thực email của bạn là:</p>
-            <p style="font-size:22px;font-weight:bold;letter-spacing:2px;">{rawVerificationToken}</p>
-            <p>Mã này có hiệu lực trong 24 giờ. Vui lòng xác thực email trước khi đăng nhập.</p>
+            <p>Cảm ơn bạn đã đăng ký tài khoản AI Storytelling Platform. Mã xác thực (OTP) email của bạn là:</p>
+            <p style="font-size:22px;font-weight:bold;letter-spacing:4px;">{otp}</p>
+            <p>Mã có hiệu lực trong 10 phút. Không chia sẻ mã này với bất kỳ ai. Vui lòng xác thực email trước khi đăng nhập.</p>
+            """;
+
+        return SendAsync(toEmail, subject, html, cancellationToken);
+    }
+
+    public Task SendEmailChangeOtpEmailAsync(
+        string toEmail, string toName, string otp,
+        CancellationToken cancellationToken = default)
+    {
+        const string subject = "Xác thực địa chỉ email mới";
+        var html = $"""
+            <p>Chào {toName},</p>
+            <p>Bạn vừa yêu cầu đổi email của tài khoản AI Storytelling Platform sang địa chỉ này. Mã xác thực (OTP) của bạn là:</p>
+            <p style="font-size:22px;font-weight:bold;letter-spacing:4px;">{otp}</p>
+            <p>Mã có hiệu lực trong 10 phút. Không chia sẻ mã này với bất kỳ ai. Nếu bạn không yêu cầu, vui lòng bỏ qua email này.</p>
+            """;
+
+        return SendAsync(toEmail, subject, html, cancellationToken);
+    }
+
+    public Task SendAccountSecurityChangedEmailAsync(
+        string toEmail, string toName, AccountSecurityChange change,
+        CancellationToken cancellationToken = default)
+    {
+        const string subject = "Thông báo bảo mật tài khoản";
+        var description = change switch
+        {
+            AccountSecurityChange.PasswordChanged => "mật khẩu của tài khoản vừa được thay đổi",
+            AccountSecurityChange.EmailChanged => "địa chỉ email của tài khoản vừa được thay đổi",
+            AccountSecurityChange.AccountDeleted => "tài khoản của bạn vừa được xóa",
+            _ => "tài khoản của bạn vừa có thay đổi về bảo mật"
+        };
+        var html = $"""
+            <p>Chào {toName},</p>
+            <p>Chúng tôi thông báo {description} trên AI Storytelling Platform.</p>
+            <p>Nếu không phải bạn thực hiện, vui lòng liên hệ quản trị viên ngay.</p>
+            """;
+
+        return SendAsync(toEmail, subject, html, cancellationToken);
+    }
+
+    public Task SendDataRequestCompletedEmailAsync(
+        string toEmail, string toName, string requestType, string result,
+        string? reason, CancellationToken cancellationToken = default)
+    {
+        const string subject = "Kết quả yêu cầu dữ liệu của bạn";
+        var typeLabel = requestType == "delete" ? "xóa dữ liệu" : "xuất dữ liệu";
+        var body = result == "rejected"
+            ? $"<p>Yêu cầu {typeLabel} của bạn đã bị từ chối.</p><p>Lý do: {reason}</p>"
+            : $"<p>Yêu cầu {typeLabel} của bạn đã được xử lý xong.</p>";
+        var html = $"""
+            <p>Chào {toName},</p>
+            {body}
+            <p>Đây là thông báo từ AI Storytelling Platform.</p>
             """;
 
         return SendAsync(toEmail, subject, html, cancellationToken);

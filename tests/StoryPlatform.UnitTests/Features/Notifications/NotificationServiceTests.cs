@@ -46,6 +46,42 @@ public class NotificationServiceTests
     }
 
     [Fact]
+    public async Task CreateAsync_PayloadWithChildProfileId_StoresChildProfileId()
+    {
+        Notification? added = null;
+        _repository.Setup(r => r.AddAsync(
+                It.IsAny<Notification>(), It.IsAny<CancellationToken>()))
+            .Callback<Notification, CancellationToken>((value, _) => added = value)
+            .ReturnsAsync((Notification value, CancellationToken _) => value);
+
+        var dto = await _sut.CreateAsync(
+            2, NotificationType.SupervisionRevoked,
+            "{\"childProfileId\":7,\"reason\":\"removed\"}");
+
+        Assert.Equal(7, added!.ChildProfileId);
+        Assert.Equal(7, dto.ChildProfileId);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("{\"foo\":1}")]
+    [InlineData("{\"childProfileId\":\"abc\"}")]
+    [InlineData("not json")]
+    public async Task CreateAsync_PayloadWithoutValidChildProfileId_LeavesNull(string? payload)
+    {
+        Notification? added = null;
+        _repository.Setup(r => r.AddAsync(
+                It.IsAny<Notification>(), It.IsAny<CancellationToken>()))
+            .Callback<Notification, CancellationToken>((value, _) => added = value)
+            .ReturnsAsync((Notification value, CancellationToken _) => value);
+
+        await _sut.CreateAsync(2, NotificationType.AccountSecurityChanged, payload);
+
+        Assert.Null(added!.ChildProfileId);
+    }
+
+    [Fact]
     public async Task ListAsync_ReturnsOwnNotificationsNewestFirst()
     {
         var older = new Notification { Id = 1, RecipientUserId = 7, CreatedAt = DateTime.UtcNow.AddDays(-1) };
@@ -58,6 +94,66 @@ public class NotificationServiceTests
         var result = await _sut.ListAsync(7);
 
         Assert.Equal(new[] { 2, 1 }, result.Select(dto => dto.Id));
+    }
+
+    [Fact]
+    public async Task ListAsync_WithGroup_QueriesOnlyGroupAndExposesGroup()
+    {
+        Expression<Func<Notification, bool>>? captured = null;
+        _repository.Setup(r => r.FindAsync(
+                It.IsAny<Expression<Func<Notification, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .Callback<Expression<Func<Notification, bool>>, string?, CancellationToken>(
+                (predicate, _, _) => captured = predicate)
+            .ReturnsAsync(new List<Notification>
+            {
+                new() { Id = 1, RecipientUserId = 2, Type = NotificationType.SupervisionInvite,
+                    CreatedAt = DateTime.UtcNow.AddMinutes(-5) },
+                new() { Id = 2, RecipientUserId = 2, Type = NotificationType.PermissionRequest,
+                    CreatedAt = DateTime.UtcNow }
+            });
+
+        var result = await _sut.ListAsync(2, "supervisors", CancellationToken.None);
+
+        var matches = captured!.Compile();
+        Assert.True(matches(new Notification
+            { RecipientUserId = 2, Type = NotificationType.SupervisionInvite }));
+        Assert.False(matches(new Notification
+            { RecipientUserId = 2, Type = NotificationType.AccountSecurityChanged }));
+        Assert.False(matches(new Notification
+            { RecipientUserId = 3, Type = NotificationType.SupervisionInvite }));
+        Assert.Equal(new[] { 2, 1 }, result.Select(n => n.Id));
+        Assert.All(result, n => Assert.Equal("supervisors", n.Group));
+    }
+
+    [Fact]
+    public async Task ListAsync_UnknownGroup_ThrowsBadRequest()
+    {
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.ListAsync(2, "nonsense", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task GetUnreadCountAsync_CountsOnlyUnreadOfCurrentUser()
+    {
+        Expression<Func<Notification, bool>>? captured = null;
+        _repository.Setup(r => r.CountAsync(
+                It.IsAny<Expression<Func<Notification, bool>>>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<Expression<Func<Notification, bool>>?, CancellationToken>(
+                (predicate, _) => captured = predicate)
+            .ReturnsAsync(4);
+
+        var count = await _sut.GetUnreadCountAsync(2);
+
+        Assert.Equal(4, count);
+        var matches = captured!.Compile();
+        Assert.True(matches(new Notification
+            { RecipientUserId = 2, Status = NotificationReadStatus.Unread }));
+        Assert.False(matches(new Notification
+            { RecipientUserId = 2, Status = NotificationReadStatus.Read }));
+        Assert.False(matches(new Notification
+            { RecipientUserId = 3, Status = NotificationReadStatus.Unread }));
     }
 
     [Fact]

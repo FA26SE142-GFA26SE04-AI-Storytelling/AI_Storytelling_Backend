@@ -150,7 +150,7 @@ public class SupervisionController : BaseApiController
 
     /// <summary>
     /// Owner gửi yêu cầu chuyển quyền Owner cho một Additional Supervisor (Bước 1.7b);
-    /// yêu cầu hết hạn sau 7 ngày.
+    /// yêu cầu chờ đến khi người nhận phản hồi hoặc Owner hủy.
     /// </summary>
     [HttpPost("{childProfileId:int}/transfer-ownership")]
     [Authorize(Roles = "Parent")]

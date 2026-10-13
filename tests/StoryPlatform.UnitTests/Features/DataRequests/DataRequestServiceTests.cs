@@ -1,11 +1,15 @@
 using System.Linq.Expressions;
 using Moq;
+using StoryPlatform.Application.Abstractions.Communication;
 using StoryPlatform.Application.Abstractions.Export;
 using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Sessions.Interfaces;
 using StoryPlatform.Application.Features.DataRequests.DTOs;
 using StoryPlatform.Application.Features.DataRequests.Services;
+using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using Xunit;
@@ -30,10 +34,16 @@ public class DataRequestServiceTests
     private readonly Mock<IGenericRepository<SupervisionRelationship>> _supervisionRelationshipRepository = new();
     private readonly Mock<IGenericRepository<Assignment>> _assignmentRepository = new();
     private readonly Mock<IGenericRepository<Story>> _storyRepository = new();
+    private readonly Mock<IGenericRepository<UserAccount>> _userRepository = new();
+    private readonly Mock<IGenericRepository<ChildAccessCredential>> _credentialRepository = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IAuditLogWriter> _auditLogWriter = new();
     private readonly Mock<IWorkbookExportBuilder> _exportBuilder = new();
     private readonly Mock<IArchiveExportBuilder> _archiveExportBuilder = new();
+    private readonly Mock<IPasswordHasher> _passwordHasher = new();
+    private readonly Mock<IChildSessionRevoker> _childSessionRevoker = new();
+    private readonly Mock<INotificationService> _notificationService = new();
+    private readonly Mock<IEmailSender> _emailSender = new();
     private readonly DataRequestService _sut;
 
     public DataRequestServiceTests()
@@ -54,6 +64,8 @@ public class DataRequestServiceTests
         _unitOfWork.Setup(work => work.Repository<SupervisionRelationship>()).Returns(_supervisionRelationshipRepository.Object);
         _unitOfWork.Setup(work => work.Repository<Assignment>()).Returns(_assignmentRepository.Object);
         _unitOfWork.Setup(work => work.Repository<Story>()).Returns(_storyRepository.Object);
+        _unitOfWork.Setup(work => work.Repository<UserAccount>()).Returns(_userRepository.Object);
+        _unitOfWork.Setup(work => work.Repository<ChildAccessCredential>()).Returns(_credentialRepository.Object);
 
         _learningProfileRepository.Setup(repo => repo.FindAsync(
                 It.IsAny<Expression<Func<LearningProfile, bool>>>(), null, It.IsAny<CancellationToken>()))
@@ -97,9 +109,15 @@ public class DataRequestServiceTests
         _storyRepository.Setup(repo => repo.FindAsync(
                 It.IsAny<Expression<Func<Story, bool>>>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<Story>());
+        _credentialRepository.Setup(repo => repo.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<ChildAccessCredential, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ChildAccessCredential?)null);
 
         _sut = new DataRequestService(
-            _unitOfWork.Object, _auditLogWriter.Object, _exportBuilder.Object, _archiveExportBuilder.Object);
+            _unitOfWork.Object, _auditLogWriter.Object, _exportBuilder.Object,
+            _archiveExportBuilder.Object, _passwordHasher.Object,
+            _childSessionRevoker.Object, _notificationService.Object, _emailSender.Object);
     }
 
     private static ChildProfile MakeChild(int id, int ownerUserId) => new()
@@ -187,6 +205,75 @@ public class DataRequestServiceTests
         _unitOfWork.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.AtLeastOnce);
     }
 
+    [Fact]
+    public async Task CreateAsync_DeleteWithWrongPassword_ThrowsBadRequest()
+    {
+        _childProfileRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeChild(1, 2));
+        _userRepository.Setup(r => r.GetByIdAsync(2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserAccount { Id = 2, PasswordHash = "stored-hash" });
+        _passwordHasher.Setup(p => p.VerifyPassword("wrong", "stored-hash"))
+            .Returns(false);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.CreateAsync(
+            2, new CreateDataRequestDto
+            {
+                ChildProfileId = 1,
+                RequestType = "delete",
+                CurrentPassword = "wrong",
+                ConfirmNickname = "Bé An"
+            }));
+
+        _dataRequestRepository.Verify(r => r.AddAsync(
+            It.IsAny<DataRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateAsync_DeleteWithWrongNickname_ThrowsBadRequest()
+    {
+        var child = MakeChild(1, 2);
+        child.Nickname = "Bé An";
+        _childProfileRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(child);
+        _userRepository.Setup(r => r.GetByIdAsync(2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserAccount { Id = 2, PasswordHash = "stored-hash" });
+        _passwordHasher.Setup(p => p.VerifyPassword("Pass@123", "stored-hash"))
+            .Returns(true);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.CreateAsync(
+            2, new CreateDataRequestDto
+            {
+                ChildProfileId = 1,
+                RequestType = "delete",
+                CurrentPassword = "Pass@123",
+                ConfirmNickname = "Be An"
+            }));
+    }
+
+    [Fact]
+    public async Task CreateAsync_ExportDoesNotNeedPasswordOrNickname()
+    {
+        _childProfileRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeChild(1, 2));
+        _dataRequestRepository.Setup(r => r.ExistsAsync(
+                It.IsAny<Expression<Func<DataRequest, bool>>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        _dataRequestRepository.Setup(r => r.AddAsync(
+                It.IsAny<DataRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((DataRequest value, CancellationToken _) => value);
+
+        var result = await _sut.CreateAsync(2, new CreateDataRequestDto
+        {
+            ChildProfileId = 1,
+            RequestType = "export"
+        });
+
+        Assert.Equal("export", result.RequestType);
+        _passwordHasher.Verify(p => p.VerifyPassword(
+            It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
     // ---------- ListPendingAsync ----------
 
     [Fact]
@@ -218,6 +305,80 @@ public class DataRequestServiceTests
         Assert.Equal(1, result[0].Id);
         Assert.Equal(2, result[1].Id);
         Assert.All(result, dto => Assert.Equal("Pending", dto.Status));
+    }
+
+    [Fact]
+    public async Task ListMineAsync_ReturnsOnlyRequestsOfOwnerNewestFirst()
+    {
+        Expression<Func<DataRequest, bool>>? captured = null;
+        _dataRequestRepository.Setup(r => r.FindAsync(
+                It.IsAny<Expression<Func<DataRequest, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .Callback<Expression<Func<DataRequest, bool>>, string?, CancellationToken>(
+                (predicate, _, _) => captured = predicate)
+            .ReturnsAsync(new List<DataRequest>
+            {
+                new() { Id = 1, RequestedByUserId = 2, ChildProfileId = 1,
+                    RequestType = DataRequestType.Export, CreatedAt = DateTime.UtcNow.AddHours(-2) },
+                new() { Id = 2, RequestedByUserId = 2, ChildProfileId = 1,
+                    RequestType = DataRequestType.Delete, CreatedAt = DateTime.UtcNow }
+            });
+
+        var result = await _sut.ListMineAsync(2, 1);
+
+        Assert.Equal(new[] { 2, 1 }, result.Select(r => r.Id));
+        var matches = captured!.Compile();
+        Assert.True(matches(new DataRequest { RequestedByUserId = 2, ChildProfileId = 1 }));
+        Assert.False(matches(new DataRequest { RequestedByUserId = 3, ChildProfileId = 1 }));
+        Assert.False(matches(new DataRequest { RequestedByUserId = 2, ChildProfileId = 9 }));
+    }
+
+    [Fact]
+    public async Task CancelAsync_PendingOwnRequest_SetsCancelledAndAudits()
+    {
+        var request = new DataRequest
+            { Id = 5, RequestedByUserId = 2, ChildProfileId = 1, Status = DataRequestStatus.Pending };
+        _dataRequestRepository.Setup(r => r.GetByIdAsync(5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(request);
+        _childProfileRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeChild(1, 2));
+
+        var result = await _sut.CancelAsync(2, 5);
+
+        Assert.Equal(DataRequestStatus.Cancelled, request.Status);
+        Assert.Equal("Cancelled", result.Status);
+        _auditLogWriter.Verify(w => w.LogAsync(
+            2, "DataRequestCancelled", nameof(DataRequest), 5,
+            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
+        _notificationService.Verify(n => n.CreateAsync(
+            It.IsAny<int>(), It.IsAny<NotificationType>(), It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CancelAsync_NotRequester_ThrowsForbidden()
+    {
+        var request = new DataRequest
+            { Id = 5, RequestedByUserId = 2, ChildProfileId = 1, Status = DataRequestStatus.Pending };
+        _dataRequestRepository.Setup(r => r.GetByIdAsync(5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(request);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.CancelAsync(3, 5));
+
+        Assert.Equal(DataRequestStatus.Pending, request.Status);
+    }
+
+    [Fact]
+    public async Task CancelAsync_AlreadyResolved_ThrowsConflict()
+    {
+        var request = new DataRequest
+            { Id = 5, RequestedByUserId = 2, ChildProfileId = 1, Status = DataRequestStatus.Resolved };
+        _dataRequestRepository.Setup(r => r.GetByIdAsync(5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(request);
+        _childProfileRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeChild(1, 2));
+
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.CancelAsync(2, 5));
     }
 
     // ---------- ResolveExportAsync ----------
@@ -409,7 +570,7 @@ public class DataRequestServiceTests
         Assert.Equal(AssignmentStatus.Cancelled, directAssignment.Status);
 
         Assert.Equal("[Đã ẩn danh]", child.Nickname);
-        Assert.Equal(ChildProfileStatus.Archived, child.Status);
+        Assert.Equal(ChildProfileStatus.Deleted, child.Status);
         Assert.Equal(1, child.OwnerUserId);
 
         Assert.Equal(DataRequestStatus.Resolved, request.Status);
@@ -419,5 +580,94 @@ public class DataRequestServiceTests
         _auditLogWriter.Verify(writer => writer.LogAsync(
             10, "DataRequestDeleted", nameof(DataRequest), 1,
             It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ResolveDeleteAsync_RevokesChildAccessAndNotifiesRequester()
+    {
+        var request = new DataRequest
+        {
+            Id = 5, RequestedByUserId = 2, ChildProfileId = 1,
+            RequestType = DataRequestType.Delete, Status = DataRequestStatus.Pending
+        };
+        _dataRequestRepository.Setup(r => r.GetByIdAsync(5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(request);
+        var child = MakeChild(1, 2);
+        _childProfileRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(child);
+        var credential = new ChildAccessCredential
+            { Id = 8, ChildProfileId = 1, EasyLoginSecretHash = "hash" };
+        _credentialRepository.Setup(r => r.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<ChildAccessCredential, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(credential);
+        _userRepository.Setup(r => r.GetByIdAsync(2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserAccount
+                { Id = 2, Email = "owner@example.com", FullName = "An" });
+
+        await _sut.ResolveDeleteAsync(9, 5);
+
+        Assert.Equal(ChildProfileStatus.Deleted, child.Status);
+        Assert.NotNull(credential.RevokedAt);
+        Assert.Null(credential.EasyLoginSecretHash);
+        _childSessionRevoker.Verify(r => r.RevokeByChildProfileAsync(
+            1, It.IsAny<CancellationToken>()), Times.Once);
+        _notificationService.Verify(n => n.CreateAsync(
+            2, NotificationType.DataRequestCompleted, It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _emailSender.Verify(e => e.SendDataRequestCompletedEmailAsync(
+            "owner@example.com", "An", "delete", "resolved", null,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RejectAsync_PendingRequest_SetsRejectedWithReasonAndNotifies()
+    {
+        var request = new DataRequest
+        {
+            Id = 6, RequestedByUserId = 2, ChildProfileId = 1,
+            RequestType = DataRequestType.Export, Status = DataRequestStatus.Pending
+        };
+        _dataRequestRepository.Setup(r => r.GetByIdAsync(6, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(request);
+        _userRepository.Setup(r => r.GetByIdAsync(2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserAccount
+                { Id = 2, Email = "owner@example.com", FullName = "An" });
+
+        var result = await _sut.RejectAsync(9, 6, "  Thiếu thông tin xác minh  ");
+
+        Assert.Equal(DataRequestStatus.Rejected, request.Status);
+        Assert.Equal("Thiếu thông tin xác minh", request.RejectionReason);
+        Assert.Equal(9, request.ResolvedByUserId);
+        Assert.Equal("Rejected", result.Status);
+        Assert.Equal("Thiếu thông tin xác minh", result.RejectionReason);
+        _notificationService.Verify(n => n.CreateAsync(
+            2, NotificationType.DataRequestCompleted,
+            It.Is<string>(payload => payload.Contains("\"result\":\"rejected\"")),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _emailSender.Verify(e => e.SendDataRequestCompletedEmailAsync(
+            "owner@example.com", "An", "export", "rejected",
+            "Thiếu thông tin xác minh", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task RejectAsync_BlankReason_ThrowsBadRequest(string reason)
+    {
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.RejectAsync(9, 6, reason));
+    }
+
+    [Fact]
+    public async Task RejectAsync_AlreadyHandled_ThrowsConflict()
+    {
+        var request = new DataRequest
+            { Id = 6, RequestedByUserId = 2, Status = DataRequestStatus.Cancelled };
+        _dataRequestRepository.Setup(r => r.GetByIdAsync(6, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(request);
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            _sut.RejectAsync(9, 6, "lý do"));
     }
 }

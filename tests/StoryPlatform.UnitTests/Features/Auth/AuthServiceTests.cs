@@ -12,6 +12,7 @@ using StoryPlatform.Application.Features.Auth.DTOs;
 using StoryPlatform.Application.Features.Auth.Interfaces;
 using StoryPlatform.Application.Features.Auth.Services;
 using StoryPlatform.Application.Features.ChildProfiles.Sessions.Interfaces;
+using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using Xunit;
@@ -29,6 +30,7 @@ public class AuthServiceTests
     private readonly Mock<IEmailSender> _emailSenderMock = new();
     private readonly Mock<ITotpService> _totpServiceMock = new();
     private readonly Mock<IChildSessionRevoker> _childSessionRevokerMock = new();
+    private readonly Mock<INotificationService> _notificationServiceMock = new();
     private readonly AuthService _sut;
 
     public AuthServiceTests()
@@ -45,7 +47,8 @@ public class AuthServiceTests
 
         _sut = new AuthService(
             _unitOfWorkMock.Object, _passwordHasherMock.Object, _jwtGeneratorMock.Object,
-            _emailSenderMock.Object, _totpServiceMock.Object, _childSessionRevokerMock.Object);
+            _emailSenderMock.Object, _totpServiceMock.Object, _childSessionRevokerMock.Object,
+            _notificationServiceMock.Object);
     }
 
     private static UserAccount CreateUser(string password = "hashed-password") => new()
@@ -139,6 +142,13 @@ public class AuthServiceTests
             .Setup(r => r.AddAsync(It.IsAny<UserAccount>(), It.IsAny<CancellationToken>()))
             .Callback<UserAccount, CancellationToken>((u, _) => addedUser = u)
             .ReturnsAsync((UserAccount u, CancellationToken _) => u);
+        string? sentOtp = null;
+        _emailSenderMock.Setup(e => e.SendEmailVerificationEmailAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<string, string, string, CancellationToken>(
+                (_, _, otp, _) => sentOtp = otp)
+            .Returns(Task.CompletedTask);
 
         var request = new RegisterRequestDto
         {
@@ -153,12 +163,16 @@ public class AuthServiceTests
 
         Assert.NotNull(addedUser);
         Assert.Equal(AccountStatus.Registered, addedUser!.Status);
-        Assert.Equal(TokenHasher.Hash("fake-refresh-token-raw"), addedUser.EmailVerificationTokenHash);
-        Assert.True(addedUser.EmailVerificationTokenExpiresAt > DateTime.UtcNow.AddHours(23));
+        Assert.Matches(@"^\d{6}$", sentOtp!);
+        Assert.Equal(
+            OtpHelper.Hash(OtpHelper.EmailVerifyPurpose, addedUser.Email, sentOtp!),
+            addedUser.EmailVerificationTokenHash);
+        Assert.True(addedUser.EmailVerificationTokenExpiresAt > DateTime.UtcNow.AddMinutes(9));
+        Assert.True(addedUser.EmailVerificationTokenExpiresAt <= DateTime.UtcNow.AddMinutes(10));
         // Đăng ký không còn cấp phiên đăng nhập ngay — phải xác thực email trước.
         Assert.Null(addedUser.RefreshTokenHash);
         _emailSenderMock.Verify(e => e.SendEmailVerificationEmailAsync(
-            "new@example.com", "Nguoi Dung Moi", "fake-refresh-token-raw", It.IsAny<CancellationToken>()), Times.Once);
+            "new@example.com", "Nguoi Dung Moi", sentOtp!, It.IsAny<CancellationToken>()), Times.Once);
         // Tài khoản mới (Id == 0) đang ở trạng thái Added của EF — không được gọi Update().
         _userRepoMock.Verify(r => r.Update(It.IsAny<UserAccount>()), Times.Never);
     }
@@ -604,54 +618,64 @@ public class AuthServiceTests
     }
 
     [Fact]
-    public async Task VerifyEmailAsync_ValidToken_SetsStatusToEmailVerifiedAndClearsToken()
+    public async Task VerifyEmailAsync_ValidOtp_VerifiesEmailAndClearsOtp()
     {
         var user = CreateUser();
         user.Status = AccountStatus.Registered;
-        user.EmailVerificationTokenHash = TokenHasher.Hash("valid-raw-verification-token");
-        user.EmailVerificationTokenExpiresAt = DateTime.UtcNow.AddHours(12);
+        user.EmailVerificationTokenHash = OtpHelper.Hash(
+            OtpHelper.EmailVerifyPurpose, user.Email, "123456");
+        user.EmailVerificationTokenExpiresAt = DateTime.UtcNow.AddMinutes(5);
 
         _userRepoMock
             .Setup(r => r.FirstOrDefaultAsync(It.IsAny<Expression<Func<UserAccount, bool>>>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(user);
 
-        await _sut.VerifyEmailAsync(new VerifyEmailRequestDto { Email = user.Email, Token = "valid-raw-verification-token" });
+        await _sut.VerifyEmailAsync(new VerifyEmailRequestDto { Email = user.Email, Otp = "123456" });
 
         Assert.Equal(AccountStatus.EmailVerified, user.Status);
         Assert.Null(user.EmailVerificationTokenHash);
         Assert.Null(user.EmailVerificationTokenExpiresAt);
+        Assert.NotNull(user.EmailVerifiedAt);
+        Assert.Equal(0, user.EmailVerificationFailedAttempts);
     }
 
     [Fact]
-    public async Task VerifyEmailAsync_InvalidToken_ThrowsBadRequestException()
+    public async Task VerifyEmailAsync_WrongOtp_CountsAttemptAndThrows()
     {
         var user = CreateUser();
         user.Status = AccountStatus.Registered;
-        user.EmailVerificationTokenHash = TokenHasher.Hash("correct-token");
-        user.EmailVerificationTokenExpiresAt = DateTime.UtcNow.AddHours(12);
+        user.EmailVerificationTokenHash = OtpHelper.Hash(
+            OtpHelper.EmailVerifyPurpose, user.Email, "123456");
+        user.EmailVerificationTokenExpiresAt = DateTime.UtcNow.AddMinutes(5);
 
         _userRepoMock
             .Setup(r => r.FirstOrDefaultAsync(It.IsAny<Expression<Func<UserAccount, bool>>>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(user);
 
         await Assert.ThrowsAsync<BadRequestException>(() =>
-            _sut.VerifyEmailAsync(new VerifyEmailRequestDto { Email = user.Email, Token = "wrong-token" }));
+            _sut.VerifyEmailAsync(new VerifyEmailRequestDto { Email = user.Email, Otp = "000000" }));
+
+        Assert.Equal(1, user.EmailVerificationFailedAttempts);
+        Assert.Null(user.EmailVerifiedAt);
+        _unitOfWorkMock.Verify(
+            u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task VerifyEmailAsync_ExpiredToken_ThrowsBadRequestException()
+    public async Task VerifyEmailAsync_ExpiredOtp_ThrowsBadRequestException()
     {
         var user = CreateUser();
         user.Status = AccountStatus.Registered;
-        user.EmailVerificationTokenHash = TokenHasher.Hash("expired-token");
-        user.EmailVerificationTokenExpiresAt = DateTime.UtcNow.AddHours(-1);
+        user.EmailVerificationTokenHash = OtpHelper.Hash(
+            OtpHelper.EmailVerifyPurpose, user.Email, "123456");
+        user.EmailVerificationTokenExpiresAt = DateTime.UtcNow.AddMinutes(-1);
 
         _userRepoMock
             .Setup(r => r.FirstOrDefaultAsync(It.IsAny<Expression<Func<UserAccount, bool>>>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(user);
 
         await Assert.ThrowsAsync<BadRequestException>(() =>
-            _sut.VerifyEmailAsync(new VerifyEmailRequestDto { Email = user.Email, Token = "expired-token" }));
+            _sut.VerifyEmailAsync(new VerifyEmailRequestDto { Email = user.Email, Otp = "123456" }));
     }
 
     [Fact]
@@ -827,7 +851,7 @@ public class AuthServiceTests
     }
 
     [Fact]
-    public async Task LogoutAsync_RevokesOnlyMatchingRefreshTokenRowAndSetsLoggedOutStatus()
+    public async Task LogoutAsync_RevokesOnlyMatchingRefreshTokenRowAndKeepsAccountStatus()
     {
         var user = CreateUser();
         user.Status = AccountStatus.LoggedIn;
@@ -847,12 +871,12 @@ public class AuthServiceTests
         await _sut.LogoutAsync(1, new LogoutRequestDto { RefreshToken = "current-device-raw-token" });
 
         Assert.NotNull(currentDeviceToken.RevokedAt);
-        Assert.Equal(AccountStatus.LoggedOut, user.Status);
+        Assert.Equal(AccountStatus.LoggedIn, user.Status);
         _refreshTokenRepoMock.Verify(r => r.Update(currentDeviceToken), Times.Once);
     }
 
     [Fact]
-    public async Task LogoutAsync_UnknownRefreshToken_StillSetsLoggedOutStatusIdempotently()
+    public async Task LogoutAsync_UnknownRefreshToken_StillKeepsAccountStatusIdempotently()
     {
         var user = CreateUser();
         user.Status = AccountStatus.LoggedIn;
@@ -863,7 +887,7 @@ public class AuthServiceTests
 
         await _sut.LogoutAsync(1, new LogoutRequestDto { RefreshToken = "already-revoked-or-unknown" });
 
-        Assert.Equal(AccountStatus.LoggedOut, user.Status);
+        Assert.Equal(AccountStatus.LoggedIn, user.Status);
         _refreshTokenRepoMock.Verify(r => r.Update(It.IsAny<RefreshToken>()), Times.Never);
     }
 
@@ -887,7 +911,7 @@ public class AuthServiceTests
 
         Assert.All(rows, r => Assert.NotNull(r.RevokedAt));
         Assert.Equal(2, user.TokenVersion);
-        Assert.Equal(AccountStatus.LoggedOut, user.Status);
+        Assert.Equal(AccountStatus.LoggedIn, user.Status);
         _refreshTokenRepoMock.Verify(r => r.Update(It.IsAny<RefreshToken>()), Times.Exactly(2));
     }
 
@@ -1082,7 +1106,7 @@ public class AuthServiceTests
         Assert.Equal(rawToken == "other-device", rows[1].RevokedAt.HasValue);
         Assert.Null(rows[2].RevokedAt);
         Assert.Equal(1, user.TokenVersion);
-        Assert.Equal(status == AccountStatus.Suspended ? status : AccountStatus.LoggedOut, user.Status);
+        Assert.Equal(status, user.Status);
     }
 
     [Fact]
@@ -1346,5 +1370,228 @@ public class AuthServiceTests
         Assert.Equal("fake-access-token", result.AccessToken);
         Assert.False(result.MfaRequired);
         Assert.False(result.MfaSetupRequired);
+    }
+
+    [Fact]
+    public async Task VerifyEmailAsync_TooManyWrongAttempts_RejectsEvenCorrectOtp()
+    {
+        var user = CreateUser();
+        user.Status = AccountStatus.Registered;
+        user.EmailVerificationTokenHash = OtpHelper.Hash(
+            OtpHelper.EmailVerifyPurpose, user.Email, "123456");
+        user.EmailVerificationTokenExpiresAt = DateTime.UtcNow.AddMinutes(5);
+        user.EmailVerificationFailedAttempts = OtpHelper.MaxAttempts;
+        _userRepoMock.Setup(r => r.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<UserAccount, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.VerifyEmailAsync(new VerifyEmailRequestDto
+            {
+                Email = user.Email,
+                Otp = "123456"
+            }));
+
+        Assert.Null(user.EmailVerifiedAt);
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_WithCurrentRefreshToken_KeepsCurrentSessionRevokesOthersAndNotifies()
+    {
+        var user = CreateUser();
+        user.TokenVersion = 3;
+        _userRepoMock.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+        _passwordHasherMock.Setup(p => p.VerifyPassword("CurrentPass@123", user.PasswordHash))
+            .Returns(true);
+        _passwordHasherMock.Setup(p => p.HashPassword("NewPass@123"))
+            .Returns("new-hash");
+        var current = new RefreshToken { Id = 30, UserAccountId = 1 };
+        var other = new RefreshToken { Id = 31, UserAccountId = 1 };
+        _refreshTokenRepoMock.Setup(r => r.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<RefreshToken, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(current);
+        _refreshTokenRepoMock.Setup(r => r.FindAsync(
+                It.IsAny<Expression<Func<RefreshToken, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<RefreshToken> { current, other });
+
+        await _sut.ChangePasswordAsync(1, new ChangePasswordRequestDto
+        {
+            CurrentPassword = "CurrentPass@123",
+            NewPassword = "NewPass@123",
+            ConfirmPassword = "NewPass@123",
+            CurrentRefreshToken = "current-raw-token"
+        });
+
+        Assert.Equal("new-hash", user.PasswordHash);
+        Assert.NotNull(user.PasswordChangedAt);
+        Assert.Null(current.RevokedAt);
+        Assert.NotNull(other.RevokedAt);
+        Assert.Equal(3, user.TokenVersion);
+        _childSessionRevokerMock.Verify(r => r.RevokeBySupervisorExceptSessionAsync(
+            1, 30, It.IsAny<CancellationToken>()), Times.Once);
+        _notificationServiceMock.Verify(n => n.CreateAsync(
+            1, NotificationType.AccountSecurityChanged, It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _emailSenderMock.Verify(e => e.SendAccountSecurityChangedEmailAsync(
+            user.Email, user.FullName, AccountSecurityChange.PasswordChanged,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_WrongCurrentPasswordFifthTime_LocksAccountLikeLogin()
+    {
+        var user = CreateUser();
+        user.FailedLoginAttempts = 4;
+        _userRepoMock.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+        _passwordHasherMock.Setup(p => p.VerifyPassword("wrong", user.PasswordHash))
+            .Returns(false);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.ChangePasswordAsync(1, new ChangePasswordRequestDto
+            {
+                CurrentPassword = "wrong",
+                NewPassword = "NewPass@123",
+                ConfirmPassword = "NewPass@123"
+            }));
+
+        Assert.True(user.LockedUntil > DateTime.UtcNow.AddMinutes(14));
+        Assert.Equal(0, user.FailedLoginAttempts);
+    }
+
+    [Fact]
+    public async Task RequestEmailChangeAsync_NonParent_ThrowsForbidden()
+    {
+        var user = CreateUser();
+        user.Role = UserRole.Administrator;
+        _userRepoMock.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.RequestEmailChangeAsync(1, new RequestEmailChangeRequestDto
+            {
+                CurrentPassword = "x",
+                NewEmail = "new@example.com"
+            }));
+    }
+
+    [Fact]
+    public async Task RequestEmailChangeAsync_Valid_StoresPendingEmailAndSendsOtpToNewEmail()
+    {
+        var user = CreateUser();
+        _userRepoMock.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+        _passwordHasherMock.Setup(p => p.VerifyPassword("CurrentPass@123", user.PasswordHash))
+            .Returns(true);
+        _userRepoMock.Setup(r => r.ExistsAsync(
+                It.IsAny<Expression<Func<UserAccount, bool>>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        string? sentOtp = null;
+        _emailSenderMock.Setup(e => e.SendEmailChangeOtpEmailAsync(
+                "new@example.com", user.FullName, It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<string, string, string, CancellationToken>(
+                (_, _, otp, _) => sentOtp = otp)
+            .Returns(Task.CompletedTask);
+
+        await _sut.RequestEmailChangeAsync(1, new RequestEmailChangeRequestDto
+        {
+            CurrentPassword = "CurrentPass@123",
+            NewEmail = "  New@Example.com "
+        });
+
+        Assert.Equal("new@example.com", user.PendingEmail);
+        Assert.Equal(
+            OtpHelper.Hash(OtpHelper.EmailChangePurpose, "new@example.com", sentOtp!),
+            user.PendingEmailOtpHash);
+        Assert.True(user.PendingEmailOtpExpiresAt > DateTime.UtcNow.AddMinutes(9));
+        Assert.Equal("parent1@example.com", user.Email);
+    }
+
+    [Fact]
+    public async Task ConfirmEmailChangeAsync_ValidOtp_SwitchesEmailAndNotifiesOldAddress()
+    {
+        var user = CreateUser();
+        user.PendingEmail = "new@example.com";
+        user.PendingEmailOtpHash = OtpHelper.Hash(
+            OtpHelper.EmailChangePurpose, "new@example.com", "123456");
+        user.PendingEmailOtpExpiresAt = DateTime.UtcNow.AddMinutes(5);
+        _userRepoMock.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+        _userRepoMock.Setup(r => r.ExistsAsync(
+                It.IsAny<Expression<Func<UserAccount, bool>>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        await _sut.ConfirmEmailChangeAsync(
+            1, new ConfirmEmailChangeRequestDto { Otp = "123456" });
+
+        Assert.Equal("new@example.com", user.Email);
+        Assert.NotNull(user.EmailVerifiedAt);
+        Assert.Null(user.PendingEmail);
+        Assert.Null(user.PendingEmailOtpHash);
+        _emailSenderMock.Verify(e => e.SendAccountSecurityChangedEmailAsync(
+            "parent1@example.com", user.FullName, AccountSecurityChange.EmailChanged,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ConfirmEmailChangeAsync_WrongOtp_CountsAttemptAndKeepsOldEmail()
+    {
+        var user = CreateUser();
+        user.PendingEmail = "new@example.com";
+        user.PendingEmailOtpHash = OtpHelper.Hash(
+            OtpHelper.EmailChangePurpose, "new@example.com", "123456");
+        user.PendingEmailOtpExpiresAt = DateTime.UtcNow.AddMinutes(5);
+        _userRepoMock.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.ConfirmEmailChangeAsync(
+                1, new ConfirmEmailChangeRequestDto { Otp = "000000" }));
+
+        Assert.Equal(1, user.PendingEmailOtpFailedAttempts);
+        Assert.Equal("parent1@example.com", user.Email);
+    }
+
+    [Fact]
+    public async Task UpdateProfileAsync_Valid_UpdatesNameAndAvatarAndWritesAudit()
+    {
+        var user = CreateUser();
+        _userRepoMock.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+
+        var result = await _sut.UpdateProfileAsync(1, new UpdateProfileRequestDto
+        {
+            FullName = "  Nguyen Van A ",
+            AvatarUrl = "https://cdn.example.com/a.png"
+        });
+
+        Assert.Equal("Nguyen Van A", user.FullName);
+        Assert.Equal("https://cdn.example.com/a.png", user.AvatarUrl);
+        Assert.Equal("Nguyen Van A", result.FullName);
+        _auditLogRepoMock.Verify(r => r.AddAsync(
+            It.Is<AuditLog>(log => log.Action == "UPDATE_PROFILE" && log.EntityId == 1),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateProfileAsync_NonHttpAvatar_ThrowsBadRequest()
+    {
+        var user = CreateUser();
+        _userRepoMock.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.UpdateProfileAsync(1, new UpdateProfileRequestDto
+            {
+                FullName = "An",
+                AvatarUrl = "javascript:alert(1)"
+            }));
     }
 }

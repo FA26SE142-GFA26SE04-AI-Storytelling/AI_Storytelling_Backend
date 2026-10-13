@@ -69,6 +69,28 @@ public class ChildSessionRevokerTests
         Assert.False(matches(new ChildSession { ChildProfileId = 7, ChildAccessCredentialId = 3 }));
     }
 
+    [Fact]
+    public async Task RevokeBySupervisorExceptSessionAsync_KeepsCurrentSessionAndEasyLogin()
+    {
+        SetupFind(new List<ChildSession>());
+
+        await _sut.RevokeBySupervisorExceptSessionAsync(
+            5, keepSupervisorSessionId: 99);
+
+        var matches = _predicate!.Compile();
+        var kept = Session(childId: 7, supervisorUserId: 5);
+        var other = Session(childId: 7, supervisorUserId: 5);
+        other.SupervisorSessionId = 100;
+
+        Assert.False(matches(kept));
+        Assert.True(matches(other));
+        Assert.False(matches(new ChildSession
+        {
+            ChildProfileId = 7,
+            ChildAccessCredentialId = 3
+        }));
+    }
+
     private static ChildSession Session(int childId, int supervisorUserId) => new()
     {
         ChildProfileId = childId,

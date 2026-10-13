@@ -297,8 +297,8 @@ public class SupervisionService : ISupervisionService
             },
             cancellationToken);
         await NotifyOwnerAsync(
-            invitation.ChildProfileId, NotificationType.SupervisionAccepted, invitation.Id,
-            accepterUserId, cancellationToken);
+            invitation.ChildProfileId, NotificationType.SupervisionInviteResult, invitation.Id,
+            accepterUserId, "accepted", cancellationToken);
 
         return MapRelationship(relationship);
     }
@@ -321,8 +321,8 @@ public class SupervisionService : ISupervisionService
             new { status = InvitationStatus.Rejected.ToString(), childProfileId = invitation.ChildProfileId },
             cancellationToken);
         await NotifyOwnerAsync(
-            invitation.ChildProfileId, NotificationType.SupervisionRejected, invitation.Id,
-            rejecterUserId, cancellationToken);
+            invitation.ChildProfileId, NotificationType.SupervisionInviteResult, invitation.Id,
+            rejecterUserId, "rejected", cancellationToken);
     }
 
     public async Task RevokeSupervisionAsync(
@@ -368,38 +368,7 @@ public class SupervisionService : ISupervisionService
             // Cùng khóa theo hồ sơ với Accept chuyển Owner để hai thao tác không chạy chồng nhau.
             await _unitOfWork.AcquireTransactionLockAsync(target.ChildProfileId, cancellationToken);
 
-            target.RevokedAt = now;
-            target.RevokedByUserId = revokerUserId;
-            relationshipRepo.Update(target);
-
-            var permissionRequestRepo = _unitOfWork.Repository<SupervisionPermissionRequest>();
-            var pendingPermissionRequests = await permissionRequestRepo.FindAsync(
-                value => value.SupervisionRelationshipId == target.Id
-                         && value.Status == PermissionRequestStatus.Pending,
-                cancellationToken: cancellationToken);
-            foreach (var permissionRequest in pendingPermissionRequests)
-            {
-                permissionRequest.Status = PermissionRequestStatus.Cancelled;
-                permissionRequest.RespondedAt = now;
-                permissionRequestRepo.Update(permissionRequest);
-            }
-
-            var transferRepo = _unitOfWork.Repository<OwnershipTransferRequest>();
-            var pendingTransfers = await transferRepo.FindAsync(
-                value => value.ChildProfileId == target.ChildProfileId
-                         && value.Status == OwnershipTransferRequestStatus.Pending
-                         && (value.CurrentOwnerUserId == target.SupervisorUserId
-                             || value.TargetSupervisorUserId == target.SupervisorUserId),
-                cancellationToken: cancellationToken);
-            foreach (var transfer in pendingTransfers)
-            {
-                transfer.Status = OwnershipTransferRequestStatus.Cancelled;
-                transfer.RespondedAt = now;
-                transferRepo.Update(transfer);
-            }
-
-            await _childSessionRevoker.RevokeBySupervisorAsync(
-                target.SupervisorUserId, target.ChildProfileId, cancellationToken);
+            await ApplyRevocationAsync(target, revokerUserId, now, cancellationToken);
 
             // Owner luôn là Parent và không bị thu hồi qua đây, nên hồ sơ không đổi trạng thái (Bước 1.6b).
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -447,6 +416,44 @@ public class SupervisionService : ISupervisionService
             }), cancellationToken);
     }
 
+    public async Task ApplyRevocationAsync(
+        SupervisionRelationship target, int revokerUserId, DateTime now,
+        CancellationToken cancellationToken = default)
+    {
+        target.RevokedAt = now;
+        target.RevokedByUserId = revokerUserId;
+        _unitOfWork.Repository<SupervisionRelationship>().Update(target);
+
+        var permissionRequestRepo = _unitOfWork.Repository<SupervisionPermissionRequest>();
+        var pendingPermissionRequests = await permissionRequestRepo.FindAsync(
+            value => value.SupervisionRelationshipId == target.Id
+                     && value.Status == PermissionRequestStatus.Pending,
+            cancellationToken: cancellationToken);
+        foreach (var permissionRequest in pendingPermissionRequests)
+        {
+            permissionRequest.Status = PermissionRequestStatus.Cancelled;
+            permissionRequest.RespondedAt = now;
+            permissionRequestRepo.Update(permissionRequest);
+        }
+
+        var transferRepo = _unitOfWork.Repository<OwnershipTransferRequest>();
+        var pendingTransfers = await transferRepo.FindAsync(
+            value => value.ChildProfileId == target.ChildProfileId
+                     && value.Status == OwnershipTransferRequestStatus.Pending
+                     && (value.CurrentOwnerUserId == target.SupervisorUserId
+                         || value.TargetSupervisorUserId == target.SupervisorUserId),
+            cancellationToken: cancellationToken);
+        foreach (var transfer in pendingTransfers)
+        {
+            transfer.Status = OwnershipTransferRequestStatus.Cancelled;
+            transfer.RespondedAt = now;
+            transferRepo.Update(transfer);
+        }
+
+        await _childSessionRevoker.RevokeBySupervisorAsync(
+            target.SupervisorUserId, target.ChildProfileId, cancellationToken);
+    }
+
     public async Task<OwnershipTransferRequestDto> RequestOwnershipTransferAsync(
         int childProfileId, int requesterUserId, TransferOwnershipRequestDto request,
         CancellationToken cancellationToken = default)
@@ -471,12 +478,10 @@ public class SupervisionService : ISupervisionService
                 "Người nhận phải là một Additional Supervisor đang hoạt động của hồ sơ trẻ này.");
         }
 
-        var now = DateTime.UtcNow;
         var requestRepo = _unitOfWork.Repository<OwnershipTransferRequest>();
         var hasPendingRequest = await requestRepo.ExistsAsync(
             value => value.ChildProfileId == childProfileId
-                     && value.Status == OwnershipTransferRequestStatus.Pending
-                     && (value.ExpiresAt == null || value.ExpiresAt > now),
+                     && value.Status == OwnershipTransferRequestStatus.Pending,
             cancellationToken);
         if (hasPendingRequest)
         {
@@ -489,8 +494,7 @@ public class SupervisionService : ISupervisionService
             ChildProfileId = childProfileId,
             CurrentOwnerUserId = requesterUserId,
             TargetSupervisorUserId = request.TargetSupervisorUserId,
-            Status = OwnershipTransferRequestStatus.Pending,
-            ExpiresAt = now + SupervisionDefaults.OwnershipTransferTtl
+            Status = OwnershipTransferRequestStatus.Pending
         };
 
         await requestRepo.AddAsync(transferRequest, cancellationToken);
@@ -502,13 +506,12 @@ public class SupervisionService : ISupervisionService
             new
             {
                 childProfileId,
-                targetUserId = request.TargetSupervisorUserId,
-                expiresAt = transferRequest.ExpiresAt
+                targetUserId = request.TargetSupervisorUserId
             },
             cancellationToken);
 
         await _notificationService.CreateAsync(
-            transferRequest.TargetSupervisorUserId, NotificationType.OwnershipTransferRequested,
+            transferRequest.TargetSupervisorUserId, NotificationType.OwnershipTransferRequest,
             JsonSerializer.Serialize(new
             {
                 ownershipTransferRequestId = transferRequest.Id,
@@ -542,19 +545,8 @@ public class SupervisionService : ISupervisionService
                 "Chỉ Additional Supervisor được chỉ định mới có thể chấp nhận yêu cầu này.");
         }
 
-        if (IsExpired(transferRequest, DateTime.UtcNow))
-        {
-            transferRequest.Status = OwnershipTransferRequestStatus.Expired;
-            requestRepo.Update(transferRequest);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-            await _auditLogWriter.LogAsync(
-                null, "EXPIRE_OWNERSHIP_TRANSFER", nameof(OwnershipTransferRequest), transferRequest.Id,
-                new { status = OwnershipTransferRequestStatus.Pending.ToString() },
-                new { status = OwnershipTransferRequestStatus.Expired.ToString() }, cancellationToken);
-            throw new BadRequestException("Yêu cầu chuyển nhượng quyền Owner đã hết hạn.");
-        }
-
         SupervisionRelationship? targetRelationship = null;
+        var cancelledDataRequestIds = new List<int>();
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
@@ -617,8 +609,46 @@ public class SupervisionService : ISupervisionService
             childProfile.UpdatedAt = DateTime.UtcNow;
             childProfileRepo.Update(childProfile);
 
+            var now = DateTime.UtcNow;
+            var otherTransfers = await requestRepo.FindAsync(
+                value => value.ChildProfileId == transferRequest.ChildProfileId
+                         && value.Id != transferRequest.Id
+                         && value.Status == OwnershipTransferRequestStatus.Pending,
+                cancellationToken: cancellationToken);
+            foreach (var other in otherTransfers)
+            {
+                other.Status = OwnershipTransferRequestStatus.Cancelled;
+                other.RespondedAt = now;
+                requestRepo.Update(other);
+            }
+
+            var permissionRequestRepo = _unitOfWork.Repository<SupervisionPermissionRequest>();
+            var newOwnerPermissionRequests = await permissionRequestRepo.FindAsync(
+                value => value.SupervisionRelationshipId == targetRelationship.Id
+                         && value.Status == PermissionRequestStatus.Pending,
+                cancellationToken: cancellationToken);
+            foreach (var permissionRequest in newOwnerPermissionRequests)
+            {
+                permissionRequest.Status = PermissionRequestStatus.Cancelled;
+                permissionRequest.RespondedAt = now;
+                permissionRequestRepo.Update(permissionRequest);
+            }
+
+            var dataRequestRepo = _unitOfWork.Repository<DataRequest>();
+            var pendingDataRequests = await dataRequestRepo.FindAsync(
+                value => value.ChildProfileId == transferRequest.ChildProfileId
+                         && value.Status == DataRequestStatus.Pending,
+                cancellationToken: cancellationToken);
+            foreach (var dataRequest in pendingDataRequests)
+            {
+                dataRequest.Status = DataRequestStatus.Cancelled;
+                dataRequest.UpdatedAt = now;
+                dataRequestRepo.Update(dataRequest);
+                cancelledDataRequestIds.Add(dataRequest.Id);
+            }
+
             transferRequest.Status = OwnershipTransferRequestStatus.Accepted;
-            transferRequest.RespondedAt = DateTime.UtcNow;
+            transferRequest.RespondedAt = now;
             requestRepo.Update(transferRequest);
 
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
@@ -635,13 +665,28 @@ public class SupervisionService : ISupervisionService
             new { ownerUserId = transferRequest.TargetSupervisorUserId },
             cancellationToken);
 
+        foreach (var dataRequestId in cancelledDataRequestIds)
+        {
+            await _auditLogWriter.LogAsync(
+                accepterUserId, "CANCEL_DATA_REQUEST_ON_OWNER_TRANSFER",
+                nameof(DataRequest), dataRequestId,
+                new { status = DataRequestStatus.Pending.ToString() },
+                new
+                {
+                    status = DataRequestStatus.Cancelled.ToString(),
+                    childProfileId = transferRequest.ChildProfileId
+                },
+                cancellationToken);
+        }
+
         await _notificationService.CreateAsync(
-            transferRequest.CurrentOwnerUserId, NotificationType.OwnershipTransferAccepted,
+            transferRequest.CurrentOwnerUserId, NotificationType.OwnershipTransferResult,
             JsonSerializer.Serialize(new
             {
                 ownershipTransferRequestId = transferRequest.Id,
                 childProfileId = transferRequest.ChildProfileId,
-                newOwnerUserId = transferRequest.TargetSupervisorUserId
+                newOwnerUserId = transferRequest.TargetSupervisorUserId,
+                result = "accepted"
             }), cancellationToken);
 
         return MapRelationship(targetRelationship!);
@@ -680,11 +725,12 @@ public class SupervisionService : ISupervisionService
             new { status = OwnershipTransferRequestStatus.Rejected.ToString() }, cancellationToken);
 
         await _notificationService.CreateAsync(
-            transferRequest.CurrentOwnerUserId, NotificationType.OwnershipTransferRejected,
+            transferRequest.CurrentOwnerUserId, NotificationType.OwnershipTransferResult,
             JsonSerializer.Serialize(new
             {
                 ownershipTransferRequestId = transferRequest.Id,
-                childProfileId = transferRequest.ChildProfileId
+                childProfileId = transferRequest.ChildProfileId,
+                result = "rejected"
             }), cancellationToken);
 
         return MapOwnershipTransferRequest(transferRequest);
@@ -900,9 +946,10 @@ public class SupervisionService : ISupervisionService
         }
 
         var permissions = (request.Permissions ?? new List<Permission>()).Distinct().ToList();
-        if (permissions.Count == 0)
+        if (permissions.Count != 1)
         {
-            throw new BadRequestException("Vui lòng chọn ít nhất 1 quyền cần xin.");
+            throw new BadRequestException(
+                "Mỗi yêu cầu xin quyền chỉ được xin đúng 1 quyền (BR-1.14).");
         }
 
         if (permissions.Any(permission => !Enum.IsDefined(permission)))
@@ -930,11 +977,12 @@ public class SupervisionService : ISupervisionService
         if (childProfile != null)
         {
             await _notificationService.CreateAsync(
-                childProfile.OwnerUserId, NotificationType.PermissionRequestCreated,
+                childProfile.OwnerUserId, NotificationType.PermissionRequest,
                 JsonSerializer.Serialize(new
                 {
                     permissionRequestId = permissionRequest.Id,
                     supervisionRelationshipId,
+                    childProfileId = relationship.ChildProfileId,
                     permissions = permissions.Select(permission => permission.ToString())
                 }), cancellationToken);
         }
@@ -964,6 +1012,14 @@ public class SupervisionService : ISupervisionService
             throw new BadRequestException("Yêu cầu xin quyền đã được xử lý trước đó.");
         }
 
+        if (relationship.RevokedAt.HasValue
+            || relationship.SupervisorRole != SupervisorRole.AdditionalSupervisor
+            || relationship.SupervisorUserId != permissionRequest.RequesterUserId)
+        {
+            throw new BadRequestException(
+                "Người xin quyền không còn là Additional Supervisor đang hoạt động của hồ sơ này.");
+        }
+
         var permissionRepo = _unitOfWork.Repository<SupervisionPermission>();
         foreach (var item in permissionRequest.Items)
         {
@@ -988,10 +1044,12 @@ public class SupervisionService : ISupervisionService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await _notificationService.CreateAsync(
-            permissionRequest.RequesterUserId, NotificationType.PermissionRequestAccepted,
+            permissionRequest.RequesterUserId, NotificationType.PermissionRequestResult,
             JsonSerializer.Serialize(new
             {
                 permissionRequestId = permissionRequest.Id,
+                childProfileId = relationship.ChildProfileId,
+                result = "accepted",
                 permissions = permissionRequest.Items.Select(item => item.Permission.ToString())
             }), cancellationToken);
 
@@ -1037,8 +1095,13 @@ public class SupervisionService : ISupervisionService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await _notificationService.CreateAsync(
-            permissionRequest.RequesterUserId, NotificationType.PermissionRequestRejected,
-            JsonSerializer.Serialize(new { permissionRequestId = permissionRequest.Id }),
+            permissionRequest.RequesterUserId, NotificationType.PermissionRequestResult,
+            JsonSerializer.Serialize(new
+            {
+                permissionRequestId = permissionRequest.Id,
+                childProfileId = relationship.ChildProfileId,
+                result = "rejected"
+            }),
             cancellationToken);
 
         return MapPermissionRequest(permissionRequest);
@@ -1136,7 +1199,7 @@ public class SupervisionService : ISupervisionService
 
     private async Task NotifyOwnerAsync(
         int childProfileId, NotificationType notificationType, int invitationId,
-        int respondingUserId, CancellationToken cancellationToken)
+        int respondingUserId, string result, CancellationToken cancellationToken)
     {
         var childProfile = await _unitOfWork.Repository<ChildProfile>()
             .GetByIdAsync(childProfileId, cancellationToken)
@@ -1151,7 +1214,8 @@ public class SupervisionService : ISupervisionService
                 invitationId,
                 childProfileId,
                 supervisorUserId = respondingUserId,
-                supervisorName = responder?.FullName ?? string.Empty
+                supervisorName = responder?.FullName ?? string.Empty,
+                result
             }), cancellationToken);
     }
 
@@ -1258,15 +1322,8 @@ public class SupervisionService : ISupervisionService
         TargetSupervisorUserId = request.TargetSupervisorUserId,
         RequesterUserId = request.CurrentOwnerUserId,
         ResponderUserId = request.TargetSupervisorUserId,
-        Status = request.Status == OwnershipTransferRequestStatus.Pending
-                 && request.ExpiresAt <= DateTime.UtcNow
-            ? OwnershipTransferRequestStatus.Expired.ToString()
-            : request.Status.ToString(),
+        Status = request.Status.ToString(),
         CreatedAt = request.CreatedAt,
-        RespondedAt = request.RespondedAt,
-        ExpiresAt = request.ExpiresAt
+        RespondedAt = request.RespondedAt
     };
-
-    private static bool IsExpired(OwnershipTransferRequest request, DateTime now) =>
-        request.ExpiresAt.HasValue && request.ExpiresAt.Value <= now;
 }

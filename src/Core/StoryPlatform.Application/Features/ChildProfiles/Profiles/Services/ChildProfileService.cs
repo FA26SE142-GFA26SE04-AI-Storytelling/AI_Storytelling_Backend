@@ -339,14 +339,14 @@ public class ChildProfileService : IChildProfileService
 
         await _childSessionRevoker.RevokeByChildProfileAsync(profile.Id, cancellationToken);
 
-        // Soft-revoke giống ChildAccessCredentialService.RevokeCredentialAsync: giữ dòng cho audit,
-        // chỉ mục unique lọc IsDeleted=false nên Owner tạo được QR mới sau khi kích hoạt lại.
+        // Thu hồi bằng RevokedAt và giữ dòng cho audit; kích hoạt lại thì tạo QR mới.
         var credentialRepo = _unitOfWork.Repository<ChildAccessCredential>();
         var credential = await credentialRepo.FirstOrDefaultAsync(
-            value => value.ChildProfileId == profile.Id, cancellationToken: cancellationToken);
+            value => value.ChildProfileId == profile.Id && value.RevokedAt == null,
+            cancellationToken: cancellationToken);
         if (credential != null)
         {
-            credential.IsDeleted = true;
+            credential.RevokedAt = now;
             credential.EasyLoginSecretHash = null;
             credential.UpdatedAt = now;
             credentialRepo.Update(credential);

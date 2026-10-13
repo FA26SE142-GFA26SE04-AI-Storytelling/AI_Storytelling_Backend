@@ -12,9 +12,19 @@ public interface IDataRequestService
 
     Task<List<DataRequestDto>> ListPendingAsync(CancellationToken cancellationToken = default);
 
+    Task<List<DataRequestDto>> ListMineAsync(
+        int ownerUserId, int? childProfileId, CancellationToken cancellationToken = default);
+
+    Task<DataRequestDto> CancelAsync(
+        int ownerUserId, int dataRequestId, CancellationToken cancellationToken = default);
+
     Task<ExportedFileDto> ResolveExportAsync(
         int adminUserId, int dataRequestId, string format = "xlsx", CancellationToken cancellationToken = default);
 
     Task<DataRequestDto> ResolveDeleteAsync(
         int adminUserId, int dataRequestId, CancellationToken cancellationToken = default);
+
+    Task<DataRequestDto> RejectAsync(
+        int adminUserId, int dataRequestId, string reason,
+        CancellationToken cancellationToken = default);
 }

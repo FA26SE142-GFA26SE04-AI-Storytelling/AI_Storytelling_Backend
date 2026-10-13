@@ -1,26 +1,29 @@
 namespace StoryPlatform.Domain.Enums;
 
+/// <summary>
+/// Loại thông báo theo Luồng 1 Mục 7b. Các giá trị legacy chỉ được giữ để
+/// tương thích dữ liệu cũ và không dùng khi tạo thông báo mới.
+/// </summary>
 public enum NotificationType
 {
     SupervisionInvite = 1,
-    SupervisionRevokedCascade = 2,
-    StoryShared = 3,
-    HoldModeAlert = 4,
-    AssignmentCancelled = 6,
-    RecommendationAwaitingReview = 7,
+    SupervisionInviteResult = 2,
+    SupervisionRevoked = 3,
+    PermissionRequest = 4,
+    PermissionRequestResult = 5,
+    OwnershipTransferRequest = 6,
+    OwnershipTransferResult = 7,
+    AccountSecurityChanged = 8,
+    HoldModeAlert = 9,
+    RecommendationAwaitingReview = 10,
     DataRequestSlaWarning = 11,
-    AdminRoleChanged = 12,
-    ContentReported = 13,
-    PaymentConfirmed = 14,
-    PermissionRequestCreated = 15,
-    PermissionRequestAccepted = 16,
-    PermissionRequestRejected = 17,
-    OwnershipTransferRequested = 18,
-    OwnershipTransferAccepted = 19,
-    OwnershipTransferRejected = 20,
-    ContentReportSlaWarning = 21,
-    ContentReportResolved = 22,
-    SupervisionAccepted = 23,
-    SupervisionRejected = 24,
-    SupervisionRevoked = 25
+    DataRequestCompleted = 12,
+    AdminRoleChanged = 13,
+    ContentReported = 14,
+    ModerationSlaWarning = 15,
+    ContentReportResolved = 16,
+    PaymentConfirmed = 17,
+
+    StoryShared = 100,
+    AssignmentCancelled = 101
 }

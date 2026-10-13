@@ -127,21 +127,38 @@ public class ChildAccessCredentialServiceTests
         _sessionRepo.Setup(r => r.FindAsync(
                 It.IsAny<Expression<Func<ChildSession, bool>>>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<ChildSession> { session });
+        ChildAccessCredential? addedCredential = null;
+        _credentialRepo.Setup(r => r.AddAsync(
+                It.IsAny<ChildAccessCredential>(), It.IsAny<CancellationToken>()))
+            .Callback<ChildAccessCredential, CancellationToken>(
+                (value, _) =>
+                {
+                    value.Id = 2;
+                    addedCredential = value;
+                })
+            .ReturnsAsync((ChildAccessCredential value, CancellationToken _) => value);
 
         var result = await _sut.CreateOrRegenerateEasyLoginAsync(1, 2);
 
-        Assert.NotEqual(oldHash, credential.EasyLoginSecretHash);
-        Assert.Equal(TokenHasher.Hash(result.Secret), credential.EasyLoginSecretHash);
+        Assert.NotNull(credential.RevokedAt);
+        Assert.Null(credential.EasyLoginSecretHash);
+        Assert.False(credential.IsDeleted);
+        Assert.NotNull(addedCredential);
+        Assert.NotSame(credential, addedCredential);
+        Assert.NotEqual(oldHash, addedCredential!.EasyLoginSecretHash);
+        Assert.Equal(TokenHasher.Hash(result.Secret), addedCredential.EasyLoginSecretHash);
+        Assert.Equal(credential.AvatarId, addedCredential.AvatarId);
         Assert.True(session.IsDeleted);
         _credentialRepo.Verify(r => r.Update(credential), Times.Once);
         _credentialRepo.Verify(r => r.AddAsync(
-            It.IsAny<ChildAccessCredential>(), It.IsAny<CancellationToken>()), Times.Never);
+            It.IsAny<ChildAccessCredential>(), It.IsAny<CancellationToken>()), Times.Once);
         _sessionRepo.Verify(r => r.Update(session), Times.Once);
-        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
+        _unitOfWork.Verify(u => u.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
 
         var regenerateAudit = Assert.Single(_audits);
         Assert.Equal("REGENERATE_EASY_LOGIN", regenerateAudit.Action);
-        Assert.Equal(1, regenerateAudit.EntityId);
+        Assert.Equal(2, regenerateAudit.EntityId);
         Assert.Contains("\"endedChildSessions\":1", regenerateAudit.After);
         Assert.DoesNotContain(result.Secret, regenerateAudit.After);
     }
@@ -162,7 +179,7 @@ public class ChildAccessCredentialServiceTests
     }
 
     [Fact]
-    public async Task RevokeCredentialAsync_Existing_SoftDeletesClearsSecretAndEndsSessions()
+    public async Task RevokeCredentialAsync_Existing_MarksRevokedClearsSecretAndEndsSessions()
     {
         AllowManageSafety();
         var credential = Credential("qr-secret");
@@ -174,7 +191,8 @@ public class ChildAccessCredentialServiceTests
 
         await _sut.RevokeCredentialAsync(1, 2);
 
-        Assert.True(credential.IsDeleted);
+        Assert.NotNull(credential.RevokedAt);
+        Assert.False(credential.IsDeleted);
         Assert.Null(credential.EasyLoginSecretHash);
         Assert.True(session.IsDeleted);
         _credentialRepo.Verify(r => r.Delete(It.IsAny<ChildAccessCredential>()), Times.Never);
@@ -240,6 +258,33 @@ public class ChildAccessCredentialServiceTests
         Assert.False(result.HasEasyLogin);
     }
 
+    [Fact]
+    public async Task GetCredentialAsync_QueriesOnlyActiveCredential()
+    {
+        AllowSupervision();
+        Expression<Func<ChildAccessCredential, bool>>? captured = null;
+        _credentialRepo.Setup(r => r.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<ChildAccessCredential, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .Callback<Expression<Func<ChildAccessCredential, bool>>, string?, CancellationToken>(
+                (predicate, _, _) => captured = predicate)
+            .ReturnsAsync((ChildAccessCredential?)null);
+
+        await _sut.GetCredentialAsync(1, 2);
+
+        var matches = captured!.Compile();
+        Assert.True(matches(new ChildAccessCredential { ChildProfileId = 1 }));
+        Assert.False(matches(new ChildAccessCredential
+            { ChildProfileId = 1, RevokedAt = DateTime.UtcNow }));
+        Assert.False(matches(new ChildAccessCredential { ChildProfileId = 2 }));
+    }
+
+    [Fact]
+    public void ChildEntryMethod_HasSpecValues() =>
+        Assert.Equal(
+            new[] { "EasyLogin", "ProfileSwitcher", "SupervisorPick" },
+            Enum.GetNames<ChildEntryMethod>());
+
     // ---------- LoginWithEasyLoginAsync ----------
 
     [Fact]
@@ -257,6 +302,7 @@ public class ChildAccessCredentialServiceTests
         Assert.Equal(14400, result.ExpiresInSeconds);
         Assert.Equal(1, addedSession()!.ChildAccessCredentialId);
         Assert.Null(addedSession()!.SupervisorSessionId);
+        Assert.Equal(ChildEntryMethod.EasyLogin, addedSession()!.EntryMethod);
         _limiter.Verify(l => l.Reset(ClientKey), Times.Once);
         _limiter.Verify(l => l.RegisterFailure(It.IsAny<string>()), Times.Never);
     }
@@ -405,6 +451,7 @@ public class ChildAccessCredentialServiceTests
         Assert.Equal("avatar-fox", result.AvatarId);
         Assert.Equal(77, addedSession()!.SupervisorSessionId);
         Assert.Null(addedSession()!.ChildAccessCredentialId);
+        Assert.Equal(ChildEntryMethod.ProfileSwitcher, addedSession()!.EntryMethod);
     }
 
     [Fact]

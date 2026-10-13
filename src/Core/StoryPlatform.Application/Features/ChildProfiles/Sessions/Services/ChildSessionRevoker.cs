@@ -26,6 +26,15 @@ public class ChildSessionRevoker : IChildSessionRevoker
                        && (childProfileId == null || session.ChildProfileId == childProfileId),
             cancellationToken);
 
+    public Task<int> RevokeBySupervisorExceptSessionAsync(
+        int supervisorUserId, int keepSupervisorSessionId,
+        CancellationToken cancellationToken = default) =>
+        RevokeAsync(
+            session => session.SupervisorSession != null
+                       && session.SupervisorSession.UserAccountId == supervisorUserId
+                       && session.SupervisorSessionId != keepSupervisorSessionId,
+            cancellationToken);
+
     private async Task<int> RevokeAsync(
         Expression<Func<ChildSession, bool>> predicate, CancellationToken cancellationToken)
     {

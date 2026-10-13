@@ -1,9 +1,14 @@
+using System.Text.Json;
+using StoryPlatform.Application.Abstractions.Communication;
 using StoryPlatform.Application.Abstractions.Export;
 using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Sessions.Interfaces;
 using StoryPlatform.Application.Features.DataRequests.DTOs;
 using StoryPlatform.Application.Features.DataRequests.Interfaces;
+using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -17,17 +22,29 @@ public class DataRequestService : IDataRequestService
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly IWorkbookExportBuilder _exportBuilder;
     private readonly IArchiveExportBuilder _archiveExportBuilder;
+    private readonly IPasswordHasher _passwordHasher;
+    private readonly IChildSessionRevoker _childSessionRevoker;
+    private readonly INotificationService _notificationService;
+    private readonly IEmailSender _emailSender;
 
     public DataRequestService(
         IUnitOfWork unitOfWork,
         IAuditLogWriter auditLogWriter,
         IWorkbookExportBuilder exportBuilder,
-        IArchiveExportBuilder archiveExportBuilder)
+        IArchiveExportBuilder archiveExportBuilder,
+        IPasswordHasher passwordHasher,
+        IChildSessionRevoker childSessionRevoker,
+        INotificationService notificationService,
+        IEmailSender emailSender)
     {
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
         _exportBuilder = exportBuilder;
         _archiveExportBuilder = archiveExportBuilder;
+        _passwordHasher = passwordHasher;
+        _childSessionRevoker = childSessionRevoker;
+        _notificationService = notificationService;
+        _emailSender = emailSender;
     }
 
     public async Task<DataRequestDto> CreateAsync(
@@ -44,6 +61,12 @@ public class DataRequestService : IDataRequestService
         if (child.OwnerUserId != ownerUserId)
         {
             throw new ForbiddenException("Chỉ Owner của Child Profile mới được tạo Data Request.");
+        }
+
+        if (requestType == DataRequestType.Delete)
+        {
+            await EnsureDeleteConfirmedAsync(
+                ownerUserId, child, request, cancellationToken);
         }
 
         var duplicatePending = await _unitOfWork.Repository<DataRequest>().ExistsAsync(
@@ -75,6 +98,60 @@ public class DataRequestService : IDataRequestService
         var pending = await _unitOfWork.Repository<DataRequest>().FindAsync(
             item => item.Status == DataRequestStatus.Pending, cancellationToken: cancellationToken);
         return pending.OrderBy(item => item.CreatedAt).Select(MapToDto).ToList();
+    }
+
+    public async Task<List<DataRequestDto>> ListMineAsync(
+        int ownerUserId, int? childProfileId,
+        CancellationToken cancellationToken = default)
+    {
+        var requests = await _unitOfWork.Repository<DataRequest>().FindAsync(
+            item => item.RequestedByUserId == ownerUserId
+                    && (childProfileId == null || item.ChildProfileId == childProfileId),
+            cancellationToken: cancellationToken);
+        return requests
+            .OrderByDescending(item => item.CreatedAt)
+            .Select(MapToDto)
+            .ToList();
+    }
+
+    public async Task<DataRequestDto> CancelAsync(
+        int ownerUserId, int dataRequestId,
+        CancellationToken cancellationToken = default)
+    {
+        var requestRepo = _unitOfWork.Repository<DataRequest>();
+        var request = await requestRepo.GetByIdAsync(dataRequestId, cancellationToken)
+                      ?? throw new NotFoundException("Data Request", dataRequestId);
+        if (request.RequestedByUserId != ownerUserId)
+        {
+            throw new ForbiddenException(
+                "Bạn chỉ hủy được yêu cầu do chính mình gửi.");
+        }
+
+        var child = await _unitOfWork.Repository<ChildProfile>()
+            .GetByIdAsync(request.ChildProfileId ?? 0, cancellationToken);
+        if (child == null || child.OwnerUserId != ownerUserId)
+        {
+            throw new ForbiddenException(
+                "Chỉ Owner của hồ sơ trẻ mới hủy được Data Request.");
+        }
+
+        if (request.Status != DataRequestStatus.Pending)
+        {
+            throw new ConflictException(
+                "Chỉ hủy được Data Request đang chờ xử lý.");
+        }
+
+        request.Status = DataRequestStatus.Cancelled;
+        request.UpdatedAt = DateTime.UtcNow;
+        requestRepo.Update(request);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _auditLogWriter.LogAsync(
+            ownerUserId, "DataRequestCancelled", nameof(DataRequest), request.Id,
+            new { status = DataRequestStatus.Pending.ToString() },
+            new { status = DataRequestStatus.Cancelled.ToString() }, cancellationToken);
+
+        return MapToDto(request);
     }
 
     private static readonly HashSet<string> SupportedExportFormats = new(StringComparer.OrdinalIgnoreCase) { "xlsx", "csv" };
@@ -118,6 +195,8 @@ public class DataRequestService : IDataRequestService
             adminUserId, "DataRequestExported", nameof(DataRequest), request.Id,
             beforeState, new { status = request.Status.ToString() }, cancellationToken);
 
+        await NotifyCompletedAsync(request, "resolved", null, cancellationToken);
+
         return new ExportedFileDto
         {
             FileName = $"child-{childProfileId}-data-export-{DateTime.UtcNow:yyyyMMdd}.{extension}",
@@ -156,8 +235,9 @@ public class DataRequestService : IDataRequestService
         await CancelAssignmentsAsync(childProfileId, adminUserId, cancellationToken);
 
         child.Nickname = AnonymizedNicknamePlaceholder;
-        child.Status = ChildProfileStatus.Archived;
+        child.Status = ChildProfileStatus.Deleted;
         _unitOfWork.Repository<ChildProfile>().Update(child);
+        await RevokeChildAccessAsync(childProfileId, DateTime.UtcNow, cancellationToken);
 
         var beforeState = new { status = request.Status.ToString() };
         request.Status = DataRequestStatus.Resolved;
@@ -170,7 +250,115 @@ public class DataRequestService : IDataRequestService
             adminUserId, "DataRequestDeleted", nameof(DataRequest), request.Id,
             beforeState, new { status = request.Status.ToString() }, cancellationToken);
 
+        await NotifyCompletedAsync(request, "resolved", null, cancellationToken);
+
         return MapToDto(request);
+    }
+
+    public async Task<DataRequestDto> RejectAsync(
+        int adminUserId, int dataRequestId, string reason,
+        CancellationToken cancellationToken = default)
+    {
+        var trimmedReason = reason?.Trim() ?? string.Empty;
+        if (trimmedReason.Length == 0)
+        {
+            throw new BadRequestException("Lý do từ chối không được để trống.");
+        }
+
+        var requestRepo = _unitOfWork.Repository<DataRequest>();
+        var request = await requestRepo.GetByIdAsync(dataRequestId, cancellationToken)
+                      ?? throw new NotFoundException("Data Request", dataRequestId);
+        if (request.Status != DataRequestStatus.Pending)
+        {
+            throw new ConflictException(
+                "Data Request đã được xử lý trước đó.");
+        }
+
+        request.Status = DataRequestStatus.Rejected;
+        request.RejectionReason = trimmedReason;
+        request.ResolvedAt = DateTime.UtcNow;
+        request.ResolvedByUserId = adminUserId;
+        requestRepo.Update(request);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _auditLogWriter.LogAsync(
+            adminUserId, "DataRequestRejected", nameof(DataRequest), request.Id,
+            new { status = DataRequestStatus.Pending.ToString() },
+            new { status = DataRequestStatus.Rejected.ToString() }, cancellationToken);
+        await NotifyCompletedAsync(
+            request, "rejected", trimmedReason, cancellationToken);
+
+        return MapToDto(request);
+    }
+
+    private async Task EnsureDeleteConfirmedAsync(
+        int ownerUserId, ChildProfile child, CreateDataRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var owner = await _unitOfWork.Repository<UserAccount>()
+            .GetByIdAsync(ownerUserId, cancellationToken)
+            ?? throw new NotFoundException("Tài khoản", ownerUserId);
+        if (string.IsNullOrEmpty(request.CurrentPassword)
+            || !_passwordHasher.VerifyPassword(
+                request.CurrentPassword, owner.PasswordHash))
+        {
+            throw new BadRequestException("Mật khẩu hiện tại không chính xác.");
+        }
+
+        if (!string.Equals(
+                request.ConfirmNickname?.Trim(), child.Nickname,
+                StringComparison.Ordinal))
+        {
+            throw new BadRequestException(
+                "Biệt danh nhập vào không khớp với biệt danh của trẻ.");
+        }
+    }
+
+    private async Task RevokeChildAccessAsync(
+        int childProfileId, DateTime now, CancellationToken cancellationToken)
+    {
+        await _childSessionRevoker.RevokeByChildProfileAsync(
+            childProfileId, cancellationToken);
+
+        var credentialRepo = _unitOfWork.Repository<ChildAccessCredential>();
+        var credential = await credentialRepo.FirstOrDefaultAsync(
+            value => value.ChildProfileId == childProfileId
+                     && value.RevokedAt == null,
+            cancellationToken: cancellationToken);
+        if (credential != null)
+        {
+            credential.RevokedAt = now;
+            credential.EasyLoginSecretHash = null;
+            credential.UpdatedAt = now;
+            credentialRepo.Update(credential);
+        }
+    }
+
+    private async Task NotifyCompletedAsync(
+        DataRequest request, string result, string? reason,
+        CancellationToken cancellationToken)
+    {
+        var requester = await _unitOfWork.Repository<UserAccount>()
+            .GetByIdAsync(request.RequestedByUserId, cancellationToken);
+        if (requester == null)
+        {
+            return;
+        }
+
+        var requestType = request.RequestType.ToString().ToLowerInvariant();
+        await _notificationService.CreateAsync(
+            requester.Id, NotificationType.DataRequestCompleted,
+            JsonSerializer.Serialize(new
+            {
+                dataRequestId = request.Id,
+                childProfileId = request.ChildProfileId,
+                request_type = requestType,
+                result,
+                reason
+            }), cancellationToken);
+        await _emailSender.SendDataRequestCompletedEmailAsync(
+            requester.Email, requester.FullName, requestType, result, reason,
+            cancellationToken);
     }
 
     private async Task RevokeSupervisionRelationshipsAsync(
@@ -288,6 +476,7 @@ public class DataRequestService : IDataRequestService
         ChildProfileId = request.ChildProfileId ?? 0,
         RequestType = request.RequestType.ToString().ToLowerInvariant(),
         Status = request.Status.ToString(),
+        RejectionReason = request.RejectionReason,
         CreatedAt = request.CreatedAt,
         ResolvedAt = request.ResolvedAt,
         ResolvedByUserId = request.ResolvedByUserId

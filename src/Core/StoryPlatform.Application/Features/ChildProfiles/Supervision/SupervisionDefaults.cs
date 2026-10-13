@@ -17,8 +17,6 @@ public static class SupervisionDefaults
     /// <summary>Sau khi xác thực OTP, người được mời có chừng này thời gian để Accept/Reject.</summary>
     public static readonly TimeSpan InvitationVerifiedWindow = TimeSpan.FromMinutes(30);
 
-    public static readonly TimeSpan OwnershipTransferTtl = TimeSpan.FromDays(7);
-
     /// <summary>Preset quyền khi Additional Supervisor Accept (BR-1.7, BR-1.10).</summary>
     public static readonly IReadOnlyList<Permission> DefaultPreset = new[]
     {

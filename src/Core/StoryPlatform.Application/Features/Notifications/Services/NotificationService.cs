@@ -1,3 +1,4 @@
+using System.Text.Json;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.Notifications.DTOs;
@@ -24,6 +25,7 @@ public class NotificationService : INotificationService
         var notification = new Notification
         {
             RecipientUserId = recipientUserId,
+            ChildProfileId = ExtractChildProfileId(payload),
             Type = type,
             Payload = payload,
             Status = NotificationReadStatus.Unread
@@ -37,18 +39,37 @@ public class NotificationService : INotificationService
         return dto;
     }
 
+    public Task<List<NotificationDto>> ListAsync(
+        int currentUserId, CancellationToken cancellationToken = default) =>
+        ListAsync(currentUserId, null, cancellationToken);
+
     public async Task<List<NotificationDto>> ListAsync(
-        int currentUserId, CancellationToken cancellationToken = default)
+        int currentUserId, string? group, CancellationToken cancellationToken)
     {
-        var notifications = await _unitOfWork.Repository<Notification>().FindAsync(
-            notification => notification.RecipientUserId == currentUserId,
-            cancellationToken: cancellationToken);
+        if (group != null && !NotificationGroups.IsValid(group))
+        {
+            throw new BadRequestException("Nhóm thông báo không hợp lệ.");
+        }
+
+        var notifications = group == null
+            ? await _unitOfWork.Repository<Notification>().FindAsync(
+                notification => notification.RecipientUserId == currentUserId,
+                cancellationToken: cancellationToken)
+            : await FindByTypesAsync(
+                currentUserId, NotificationGroups.TypesIn(group), cancellationToken);
 
         return notifications
             .OrderByDescending(notification => notification.CreatedAt)
             .Select(MapNotification)
             .ToList();
     }
+
+    public Task<int> GetUnreadCountAsync(
+        int currentUserId, CancellationToken cancellationToken = default) =>
+        _unitOfWork.Repository<Notification>().CountAsync(
+            notification => notification.RecipientUserId == currentUserId
+                            && notification.Status != NotificationReadStatus.Read,
+            cancellationToken);
 
     public async Task MarkAsReadAsync(
         int notificationId, int currentUserId, CancellationToken cancellationToken = default)
@@ -116,10 +137,46 @@ public class NotificationService : INotificationService
     private static NotificationDto MapNotification(Notification notification) => new()
     {
         Id = notification.Id,
+        ChildProfileId = notification.ChildProfileId,
         Type = notification.Type.ToString(),
+        Group = NotificationGroups.For(notification.Type),
         Payload = notification.Payload,
         Status = notification.Status.ToString(),
         ReadAt = notification.ReadAt,
         CreatedAt = notification.CreatedAt
     };
+
+    private async Task<IReadOnlyList<Notification>> FindByTypesAsync(
+        int currentUserId, IReadOnlyList<NotificationType> types,
+        CancellationToken cancellationToken) =>
+        await _unitOfWork.Repository<Notification>().FindAsync(
+            notification => notification.RecipientUserId == currentUserId
+                            && types.Contains(notification.Type),
+            cancellationToken: cancellationToken);
+
+    private static int? ExtractChildProfileId(string? payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            if (document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("childProfileId", out var element)
+                && element.ValueKind == JsonValueKind.Number
+                && element.TryGetInt32(out var childProfileId))
+            {
+                return childProfileId;
+            }
+        }
+        catch (JsonException)
+        {
+            // Payload không hợp lệ không ngăn việc tạo thông báo.
+        }
+
+        return null;
+    }
 }

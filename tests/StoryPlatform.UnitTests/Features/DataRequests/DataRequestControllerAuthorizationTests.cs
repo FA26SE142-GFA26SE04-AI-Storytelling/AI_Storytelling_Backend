@@ -14,7 +14,15 @@ public class DataRequestControllerAuthorizationTests
     [InlineData(UserRole.Administrator, false)]
     public async Task CreateDataRequest_OnlyParent(UserRole role, bool expected)
     {
-        Assert.Equal(expected, await IsAuthorizedAsync(nameof(DataRequestController.CreateDataRequest), role));
+        foreach (var actionName in new[]
+                 {
+                     nameof(DataRequestController.CreateDataRequest),
+                     nameof(DataRequestController.ListMyDataRequests),
+                     nameof(DataRequestController.CancelDataRequest)
+                 })
+        {
+            Assert.Equal(expected, await IsAuthorizedAsync(actionName, role));
+        }
     }
 
     [Theory]
@@ -26,7 +34,8 @@ public class DataRequestControllerAuthorizationTests
                  {
                      nameof(DataRequestController.ListPendingDataRequests),
                      nameof(DataRequestController.ResolveExport),
-                     nameof(DataRequestController.ResolveDelete)
+                     nameof(DataRequestController.ResolveDelete),
+                     nameof(DataRequestController.RejectDataRequest)
                  })
         {
             Assert.Equal(expected, await IsAuthorizedAsync(actionName, role));

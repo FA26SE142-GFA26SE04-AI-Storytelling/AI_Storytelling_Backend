@@ -20,14 +20,25 @@ public class NotificationController : BaseApiController
     }
 
     /// <summary>
-    /// Lấy danh sách thông báo của người dùng hiện tại, mới nhất trước.
+    /// Lấy thông báo mới nhất trước; lọc bằng ?group=stories|children|supervisors|account|moderation.
     /// </summary>
     [HttpGet]
     public async Task<ActionResult<ApiResponse<List<NotificationDto>>>> ListNotifications(
+        [FromQuery] string? group, CancellationToken cancellationToken)
+    {
+        var result = await _notificationService.ListAsync(
+            GetCurrentUserId(), group, cancellationToken);
+        return HandleResult(result, "Lấy danh sách thông báo thành công.");
+    }
+
+    /// <summary>Số thông báo chưa đọc của người dùng hiện tại.</summary>
+    [HttpGet("unread-count")]
+    public async Task<ActionResult<ApiResponse<int>>> GetUnreadCount(
         CancellationToken cancellationToken)
     {
-        var result = await _notificationService.ListAsync(GetCurrentUserId(), cancellationToken);
-        return HandleResult(result, "Lấy danh sách thông báo thành công.");
+        var result = await _notificationService.GetUnreadCountAsync(
+            GetCurrentUserId(), cancellationToken);
+        return HandleResult(result, "Lấy số thông báo chưa đọc thành công.");
     }
 
     /// <summary>

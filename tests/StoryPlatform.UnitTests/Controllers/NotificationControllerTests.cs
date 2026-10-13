@@ -34,12 +34,25 @@ public class NotificationControllerTests
     public async Task ListNotifications_DelegatesWithCurrentUser()
     {
         var expected = new List<NotificationDto> { new() { Id = 1 } };
-        _service.Setup(service => service.ListAsync(7, It.IsAny<CancellationToken>())).ReturnsAsync(expected);
+        _service.Setup(service => service.ListAsync(
+            7, null, It.IsAny<CancellationToken>())).ReturnsAsync(expected);
 
-        var response = await _sut.ListNotifications(CancellationToken.None);
+        var response = await _sut.ListNotifications(null, CancellationToken.None);
 
         var result = Assert.IsType<OkObjectResult>(response.Result);
         Assert.Same(expected, Assert.IsType<ApiResponse<List<NotificationDto>>>(result.Value).Data);
+    }
+
+    [Fact]
+    public async Task GetUnreadCount_DelegatesWithCurrentUser()
+    {
+        _service.Setup(service => service.GetUnreadCountAsync(
+            7, It.IsAny<CancellationToken>())).ReturnsAsync(4);
+
+        var response = await _sut.GetUnreadCount(CancellationToken.None);
+
+        var result = Assert.IsType<OkObjectResult>(response.Result);
+        Assert.Equal(4, Assert.IsType<ApiResponse<int>>(result.Value).Data);
     }
 
     [Fact]

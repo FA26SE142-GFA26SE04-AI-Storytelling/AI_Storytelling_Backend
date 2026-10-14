@@ -67,3 +67,22 @@ VALUES
      0, NULL, NULL, false, 1, NULL,
      NOW() - INTERVAL '42 days', NOW() - INTERVAL '6 hours', false)
 ON CONFLICT ("Id") DO NOTHING;
+
+-- Moderator / Content Creator demo accounts for WF-L5. Administrator is Id 1 above.
+-- MFA enrollment is intentionally left to the authentication workflow.
+INSERT INTO user_accounts (
+    "Id", "Username", "Email", "PasswordHash", "FullName", "PhoneNumber",
+    "Role", "Status", "FailedLoginAttempts", "MfaEnabled", "TokenVersion",
+    "Expertise", "CommitmentAcceptedAt", "CreatedAt", "IsDeleted"
+)
+VALUES
+    (11, 'moderator_demo1', 'moderator1@example.com', '$2a$11$uQ6RWu9dJN87HUij5gy3RedTZUibH1T4BB/QZBmvLntZBvkjQIR0S',
+     'Nguyen Thi Lan', '0900000011', 'Moderator', 'Active', 0, false, 1,
+     'Giao vien tieu hoc', NOW() - INTERVAL '38 days', NOW() - INTERVAL '40 days', false),
+    (12, 'moderator_demo2', 'moderator2@example.com', '$2a$11$uQ6RWu9dJN87HUij5gy3RedTZUibH1T4BB/QZBmvLntZBvkjQIR0S',
+     'Tran Van Minh', '0900000012', 'Moderator', 'Active', 0, false, 1,
+     'Tam ly tre em', NOW() - INTERVAL '36 days', NOW() - INTERVAL '39 days', false),
+    (13, 'creator_demo', 'creator@example.com', '$2a$11$uQ6RWu9dJN87HUij5gy3RedTZUibH1T4BB/QZBmvLntZBvkjQIR0S',
+     'Le Thi Mai', '0900000013', 'ContentCreator', 'Active', 0, false, 1,
+     'Sang tac truyen thieu nhi', NULL, NOW() - INTERVAL '35 days', false)
+ON CONFLICT ("Id") DO NOTHING;

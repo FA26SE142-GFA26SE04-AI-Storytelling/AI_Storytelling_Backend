@@ -12,3 +12,28 @@ VALUES
     (9, 9, 1, 'Chuyen Phieu Luu Rung Ram - Ban 1', 'Bon nguoi ban quyet dinh kham pha khu rung phia sau lang...', 'Gioi thieu nhom ban', 'Thu thach trong rung ram', 'Doan ket vuot kho khan', 'Doan ket tao nen suc manh', 3.600, 76.000, 91.000, 'Initial', NULL, 6, NOW() - INTERVAL '15 days' + INTERVAL '1 hour', false, NOW() - INTERVAL '15 days', false),
     (10, 10, 1, 'Tran Bong Da Dang Nho - Ban 1', 'Tran chung ket bong da cua truong dien ra day kich tinh...', 'Gioi thieu tran dau', 'Dien bien gay can', 'Bai hoc ve fair-play', 'Tinh than fair-play trong the thao', 4.000, 73.000, 94.000, 'Initial', 7, 6, NOW() - INTERVAL '13 days' + INTERVAL '1 hour', true, NOW() - INTERVAL '13 days', false)
 ON CONFLICT ("Id") DO NOTHING;
+
+UPDATE story_versions
+SET "ReviewStatus" = 'Approved', "ReviewSubmittedAt" = NOW() - INTERVAL '30 days' + INTERVAL '1 hour',
+    "ReviewedByUserId" = 11, "ReviewedAt" = NOW() - INTERVAL '30 days' + INTERVAL '90 minutes'
+WHERE "Id" = 1 AND "ReviewStatus" = 'None';
+
+UPDATE story_versions
+SET "ModerationZone" = 'GrayZone', "GrayZoneFlags" = '{"sections":["development"],"reason":"age_band_review"}'::jsonb,
+    "ReviewStatus" = 'Pending', "ReviewSubmittedAt" = NOW() - INTERVAL '1 day'
+WHERE "Id" = 4 AND "ReviewStatus" = 'None';
+
+UPDATE story_versions
+SET "ModerationZone" = 'GrayZone', "GrayZoneFlags" = '{"sections":["ending"],"reason":"safety_review"}'::jsonb,
+    "GrayZoneCleared" = true, "GrayZoneClearedByUserId" = 12,
+    "GrayZoneClearedAt" = NOW() - INTERVAL '20 days' + INTERVAL '90 minutes',
+    "ReviewStatus" = 'Approved', "ReviewSubmittedAt" = NOW() - INTERVAL '20 days' + INTERVAL '1 hour',
+    "ReviewedByUserId" = 12, "ReviewedAt" = NOW() - INTERVAL '20 days' + INTERVAL '90 minutes',
+    "ReviewFeedback" = '{"ending":"Adjusted wording for age group"}'::jsonb
+WHERE "Id" = 6 AND "ReviewStatus" = 'None';
+
+UPDATE story_versions
+SET "ReviewStatus" = 'Rejected', "ReviewedByUserId" = 11,
+    "ReviewedAt" = NOW() - INTERVAL '14 days',
+    "ReviewFeedback" = '{"development":"Safety concern in this section"}'::jsonb
+WHERE "Id" = 9 AND "ReviewStatus" = 'None';

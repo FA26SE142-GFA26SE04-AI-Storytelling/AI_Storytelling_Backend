@@ -39,6 +39,12 @@ public class UserAccount : BaseEntity
     public int TokenVersion { get; set; } = 1;
     public UserRole? RoleBeforeAdmin { get; set; }
 
+    /// <summary>Chuyên môn của Moderator / Content Creator (vd giáo viên tiểu học).</summary>
+    public string? Expertise { get; set; }
+
+    /// <summary>Thời điểm Moderator tick cam kết bảo mật dữ liệu trẻ em và quy tắc kiểm duyệt.</summary>
+    public DateTime? CommitmentAcceptedAt { get; set; }
+
     // Navigation properties
     public virtual ICollection<Story> Stories { get; set; } = new List<Story>();
     public virtual ICollection<ChildProfile> ChildProfiles { get; set; } = new List<ChildProfile>();

@@ -9,6 +9,23 @@ VALUES
     (6, 'Bi Mat Dai Duong', 'Kham pha the gioi ky dieu duoi day dai duong', 'Sau lop song bien xanh la ca mot the gioi ky dieu...', 'https://example.com/covers/story6.png', 'Phieu luu', 'Bao ve moi truong bien', 'vi', 'Age_9_10', 4, 'level_4', 'Ready', 'Ai', true, NOW() - INTERVAL '20 days' + INTERVAL '2 hours', NULL, 9, 6, NOW() - INTERVAL '20 days', false),
     (7, 'Gia Dinh Hanh Phuc', 'Nhung khoanh khac am ap trong mot gia dinh nho', 'Moi buoi toi, ca gia dinh quay quan ben nhau...', 'https://example.com/covers/story7.png', 'Doi thuong', 'Yeu thuong gia dinh', 'vi', 'Age_6_8', 2, 'level_2', 'Draft', 'Manual', false, NULL, NULL, 5, 7, NOW() - INTERVAL '19 days', false),
     (8, 'Sieu Nhan Ti Hon', 'Cau be co suc manh dac biet bao ve xom lang', 'Trong mot ngoi lang nho, co mot cau be so huu suc manh dac biet...', 'https://example.com/covers/story8.png', 'Sieu anh hung', 'Dung cam bao ve nguoi yeu the', 'vi', 'Age_9_10', 5, 'level_5', 'OutlineReview', 'Ai', false, NULL, NULL, 10, 8, NOW() - INTERVAL '17 days', false),
-    (9, 'Chuyen Phieu Luu Rung Ram', 'Nhom ban cung nhau kham pha khu rung bi an', 'Bon nguoi ban quyet dinh kham pha khu rung phia sau lang...', 'https://example.com/covers/story9.png', 'Phieu luu', 'Doan ket tao nen suc manh', 'vi', 'Age_6_8', 3, 'level_3', 'Rejected', 'Manual', false, NULL, NULL, 6, 9, NOW() - INTERVAL '15 days', false),
+    (9, 'Chuyen Phieu Luu Rung Ram', 'Nhom ban cung nhau kham pha khu rung bi an', 'Bon nguoi ban quyet dinh kham pha khu rung phia sau lang...', 'https://example.com/covers/story9.png', 'Phieu luu', 'Doan ket tao nen suc manh', 'vi', 'Age_6_8', 3, 'level_3', 'Archived', 'Manual', false, NULL, 'SafetyConcern', 6, 9, NOW() - INTERVAL '15 days', false),
     (10, 'Tran Bong Da Dang Nho', 'Bai hoc ve tinh than the thao va fair-play', 'Tran chung ket bong da cua truong dien ra day kich tinh...', 'https://example.com/covers/story10.png', 'The thao', 'Tinh than fair-play trong the thao', 'vi', 'Age_9_10', 4, 'level_4', 'Ready', 'Ai', true, NOW() - INTERVAL '13 days' + INTERVAL '2 hours', NULL, 7, 10, NOW() - INTERVAL '13 days', false)
 ON CONFLICT ("Id") DO NOTHING;
+
+-- Public timestamps are historical demo values; Story.Visibility is not in this schema yet.
+UPDATE stories
+SET "PublishedAt" = "ChildVisibleAt"
+WHERE "Id" IN (1, 3, 6, 10) AND "IsPublished" = true AND "PublishedAt" IS NULL;
+
+UPDATE stories
+SET "EverGrayZone" = true
+WHERE "Id" IN (4, 6) AND "EverGrayZone" = false;
+
+UPDATE stories
+SET "Status" = 'Archived', "ArchivedReason" = 'SafetyConcern'
+WHERE "Id" = 9 AND "Status" = 'Rejected';
+
+UPDATE stories
+SET "ArchivedAt" = NOW() - INTERVAL '14 days'
+WHERE "Id" = 9 AND "Status" = 'Archived' AND "ArchivedAt" IS NULL;

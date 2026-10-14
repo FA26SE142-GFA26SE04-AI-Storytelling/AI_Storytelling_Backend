@@ -24,6 +24,11 @@ public class Story : BaseEntity
     public DateTime? ChildVisibleAt { get; set; }
     public ArchivedReason? ArchivedReason { get; set; }
 
+    /// <summary>Từng vào vùng xám: luôn duyệt thủ công ở mọi phiên bản sau (BR-L5B-02), không bao giờ bỏ.</summary>
+    public bool EverGrayZone { get; set; } = false;
+    public DateTime? PublishedAt { get; set; }
+    public DateTime? ArchivedAt { get; set; }
+
     // Khóa ngoại tác giả / người khởi tạo
     public int AuthorUserId { get; set; }
     public virtual UserAccount? Author { get; set; }

@@ -23,6 +23,14 @@ public enum NotificationType
     ModerationSlaWarning = 15,
     ContentReportResolved = 16,
     PaymentConfirmed = 17,
+    ContentReportEscalated = 18,
+    ContentModerationResult = 19,
+    StoryModerationResult = 20,
+    StoryArchivedByModeration = 21,
+    CreatorContentFlagged = 22,
+    CommunityLibraryReviewed = 23,
+    TotpReset = 24,
+    StaffInvite = 25,
 
     StoryShared = 100,
     AssignmentCancelled = 101

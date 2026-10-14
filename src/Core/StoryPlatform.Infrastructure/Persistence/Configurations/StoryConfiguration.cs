@@ -58,6 +58,8 @@ public class StoryConfiguration : IEntityTypeConfiguration<Story>
             .HasConversion<string>()
             .HasMaxLength(30);
 
+        builder.Property(s => s.EverGrayZone).HasDefaultValue(false);
+
         // Foreign key to UserAccount (Author)
         builder.HasOne(s => s.Author)
             .WithMany(u => u.Stories)

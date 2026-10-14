@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using StoryPlatform.Domain.Entities;
+using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Infrastructure.Persistence.Configurations;
 
@@ -31,6 +32,16 @@ public class StoryVersionConfiguration : IEntityTypeConfiguration<StoryVersion>
         builder.Property(x => x.ReadabilityFre).HasColumnType("decimal(6,3)");
         builder.Property(x => x.SafetyScore).HasColumnType("decimal(6,3)");
 
+        builder.Property(x => x.ModerationZone).HasConversion<string>().HasMaxLength(30);
+        builder.Property(x => x.GrayZoneFlags).HasColumnType("jsonb");
+        builder.Property(x => x.GrayZoneCleared).HasDefaultValue(false);
+        builder.Property(x => x.ReviewStatus)
+            .HasConversion<string>()
+            .HasMaxLength(30)
+            .IsRequired()
+            .HasDefaultValue(VersionReviewStatus.None);
+        builder.Property(x => x.ReviewFeedback).HasColumnType("jsonb");
+
         builder.HasOne(x => x.Story)
             .WithMany()
             .HasForeignKey(x => x.StoryId)
@@ -44,6 +55,16 @@ public class StoryVersionConfiguration : IEntityTypeConfiguration<StoryVersion>
         builder.HasOne(x => x.OutlineApprovedByUser)
             .WithMany()
             .HasForeignKey(x => x.OutlineApprovedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(x => x.GrayZoneClearedByUser)
+            .WithMany()
+            .HasForeignKey(x => x.GrayZoneClearedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(x => x.ReviewedByUser)
+            .WithMany()
+            .HasForeignKey(x => x.ReviewedByUserId)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(x => new { x.StoryId, x.VersionNo }).IsUnique();

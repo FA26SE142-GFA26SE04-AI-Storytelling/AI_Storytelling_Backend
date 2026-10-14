@@ -48,6 +48,10 @@ public class ApplicationDbContext : DbContext
     public DbSet<MediaContext> MediaContexts => Set<MediaContext>();
     public DbSet<PromptCatalogVersion> PromptCatalogVersions => Set<PromptCatalogVersion>();
     public DbSet<ContentReport> ContentReports => Set<ContentReport>();
+    public DbSet<ModerationItem> ModerationItems => Set<ModerationItem>();
+    public DbSet<ModerationReviewView> ModerationReviewViews => Set<ModerationReviewView>();
+    public DbSet<ReadingRoadmap> ReadingRoadmaps => Set<ReadingRoadmap>();
+    public DbSet<ReadingRoadmapItem> ReadingRoadmapItems => Set<ReadingRoadmapItem>();
 
     // Reading & engagement
     public DbSet<ReadingSession> ReadingSessions => Set<ReadingSession>();

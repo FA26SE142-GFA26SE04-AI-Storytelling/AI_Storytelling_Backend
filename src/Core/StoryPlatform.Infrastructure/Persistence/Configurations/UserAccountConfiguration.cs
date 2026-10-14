@@ -31,6 +31,9 @@ public class UserAccountConfiguration : IEntityTypeConfiguration<UserAccount>
         builder.Property(u => u.PhoneNumber)
             .HasMaxLength(20);
 
+        builder.Property(u => u.Expertise)
+            .HasMaxLength(200);
+
         builder.Property(u => u.AvatarUrl)
             .HasMaxLength(500);
 

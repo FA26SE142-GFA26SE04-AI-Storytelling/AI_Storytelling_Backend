@@ -121,6 +121,19 @@ public class SupervisionController : BaseApiController
     }
 
     /// <summary>
+    /// Owner cấp lại mã cho lời mời đang chờ hoặc đã hết hạn (UC-L1C-01); gia hạn 7 ngày và gửi lại email.
+    /// </summary>
+    [HttpPost("invitations/{invitationId:int}/regenerate")]
+    [Authorize(Roles = "Parent")]
+    public async Task<ActionResult<ApiResponse<InvitationDto>>> RegenerateInvitationCode(
+        int invitationId, CancellationToken cancellationToken)
+    {
+        var result = await _supervisionService.RegenerateInvitationCodeAsync(
+            invitationId, GetCurrentUserId(), cancellationToken);
+        return HandleResult(result, "Cấp lại mã mời thành công.");
+    }
+
+    /// <summary>
     /// Danh sách người đang giám sát hiệu lực (chưa bị thu hồi) của 1 hồ sơ trẻ.
     /// </summary>
     [HttpGet("{childProfileId:int}/relationships")]

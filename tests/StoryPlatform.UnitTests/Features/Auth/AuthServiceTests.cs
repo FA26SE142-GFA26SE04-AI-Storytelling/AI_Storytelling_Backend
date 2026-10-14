@@ -33,6 +33,14 @@ public class AuthServiceTests
     private readonly Mock<INotificationService> _notificationServiceMock = new();
     private readonly AuthService _sut;
 
+    [Fact]
+    public void AccountStatus_MatchesSpecValuesOnly()
+    {
+        Assert.Equal(
+            new[] { "Registered", "Active", "PasswordResetPending", "Suspended" },
+            Enum.GetNames<AccountStatus>());
+    }
+
     public AuthServiceTests()
     {
         _unitOfWorkMock.Setup(u => u.Repository<UserAccount>()).Returns(_userRepoMock.Object);
@@ -59,7 +67,7 @@ public class AuthServiceTests
         PasswordHash = password,
         FullName = "Tran Thi Hoa",
         Role = UserRole.Parent,
-        Status = AccountStatus.EmailVerified
+        Status = AccountStatus.Active
     };
 
     [Fact]
@@ -78,6 +86,22 @@ public class AuthServiceTests
 
         _userRepoMock.Verify(r => r.Update(user), Times.AtLeastOnce);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task LoginAsync_Success_DoesNotChangeAccountStatus()
+    {
+        var user = CreateUser();
+        user.Status = AccountStatus.Active;
+        _passwordHasherMock.Setup(h => h.VerifyPassword(It.IsAny<string>(), It.IsAny<string>())).Returns(true);
+        _userRepoMock
+            .Setup(r => r.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<UserAccount, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+
+        await _sut.LoginAsync(new LoginRequestDto { Identifier = user.Email, Password = "Password1" });
+
+        Assert.Equal(AccountStatus.Active, user.Status);
     }
 
     [Fact]
@@ -265,6 +289,7 @@ public class AuthServiceTests
 
         Assert.NotNull(user.ResetTokenHash);
         Assert.True(user.ResetTokenExpiresAt > DateTime.UtcNow);
+        Assert.NotEqual(AccountStatus.PasswordResetPending, user.Status);
         _emailSenderMock.Verify(e => e.SendPasswordResetEmailAsync(
             user.Email, user.FullName, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
@@ -310,7 +335,7 @@ public class AuthServiceTests
         Assert.Null(user.ResetTokenExpiresAt);
         Assert.Null(user.RefreshTokenHash);
         Assert.Null(user.RefreshTokenExpiresAt);
-        Assert.Equal(AccountStatus.LoggedOut, user.Status);
+        Assert.Equal(AccountStatus.Active, user.Status);
         Assert.Equal(2, user.TokenVersion);
     }
 
@@ -632,7 +657,7 @@ public class AuthServiceTests
 
         await _sut.VerifyEmailAsync(new VerifyEmailRequestDto { Email = user.Email, Otp = "123456" });
 
-        Assert.Equal(AccountStatus.EmailVerified, user.Status);
+        Assert.Equal(AccountStatus.Active, user.Status);
         Assert.Null(user.EmailVerificationTokenHash);
         Assert.Null(user.EmailVerificationTokenExpiresAt);
         Assert.NotNull(user.EmailVerifiedAt);
@@ -854,7 +879,7 @@ public class AuthServiceTests
     public async Task LogoutAsync_RevokesOnlyMatchingRefreshTokenRowAndKeepsAccountStatus()
     {
         var user = CreateUser();
-        user.Status = AccountStatus.LoggedIn;
+        user.Status = AccountStatus.Active;
         var currentDeviceToken = new RefreshToken
         {
             Id = 20,
@@ -871,7 +896,7 @@ public class AuthServiceTests
         await _sut.LogoutAsync(1, new LogoutRequestDto { RefreshToken = "current-device-raw-token" });
 
         Assert.NotNull(currentDeviceToken.RevokedAt);
-        Assert.Equal(AccountStatus.LoggedIn, user.Status);
+        Assert.Equal(AccountStatus.Active, user.Status);
         _refreshTokenRepoMock.Verify(r => r.Update(currentDeviceToken), Times.Once);
     }
 
@@ -879,7 +904,7 @@ public class AuthServiceTests
     public async Task LogoutAsync_UnknownRefreshToken_StillKeepsAccountStatusIdempotently()
     {
         var user = CreateUser();
-        user.Status = AccountStatus.LoggedIn;
+        user.Status = AccountStatus.Active;
         _userRepoMock.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(user);
         _refreshTokenRepoMock
             .Setup(r => r.FirstOrDefaultAsync(It.IsAny<Expression<Func<RefreshToken, bool>>>(), null, It.IsAny<CancellationToken>()))
@@ -887,7 +912,7 @@ public class AuthServiceTests
 
         await _sut.LogoutAsync(1, new LogoutRequestDto { RefreshToken = "already-revoked-or-unknown" });
 
-        Assert.Equal(AccountStatus.LoggedIn, user.Status);
+        Assert.Equal(AccountStatus.Active, user.Status);
         _refreshTokenRepoMock.Verify(r => r.Update(It.IsAny<RefreshToken>()), Times.Never);
     }
 
@@ -895,7 +920,7 @@ public class AuthServiceTests
     public async Task LogoutAllDevicesAsync_RevokesEveryActiveRefreshTokenRowForUser()
     {
         var user = CreateUser();
-        user.Status = AccountStatus.LoggedIn;
+        user.Status = AccountStatus.Active;
         user.TokenVersion = 1;
         var rows = new List<RefreshToken>
         {
@@ -911,7 +936,7 @@ public class AuthServiceTests
 
         Assert.All(rows, r => Assert.NotNull(r.RevokedAt));
         Assert.Equal(2, user.TokenVersion);
-        Assert.Equal(AccountStatus.LoggedIn, user.Status);
+        Assert.Equal(AccountStatus.Active, user.Status);
         _refreshTokenRepoMock.Verify(r => r.Update(It.IsAny<RefreshToken>()), Times.Exactly(2));
     }
 
@@ -1002,7 +1027,7 @@ public class AuthServiceTests
     public async Task LogoutAllDevicesAsync_WritesAuditLogEntry()
     {
         var user = CreateUser();
-        user.Status = AccountStatus.LoggedIn;
+        user.Status = AccountStatus.Active;
         _userRepoMock.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(user);
         _refreshTokenRepoMock
             .Setup(r => r.FindAsync(It.IsAny<Expression<Func<RefreshToken, bool>>>(), null, It.IsAny<CancellationToken>()))
@@ -1081,9 +1106,9 @@ public class AuthServiceTests
     }
 
     [Theory]
-    [InlineData("current", AccountStatus.LoggedIn, true)]
-    [InlineData("other-device", AccountStatus.LoggedIn, false)]
-    [InlineData("foreign", AccountStatus.LoggedIn, false)]
+    [InlineData("current", AccountStatus.Active, true)]
+    [InlineData("other-device", AccountStatus.Active, false)]
+    [InlineData("foreign", AccountStatus.Active, false)]
     [InlineData("current", AccountStatus.Suspended, true)]
     public async Task LogoutAsync_EnforcesTokenOwnershipAndPreservesOtherSessions(string rawToken, AccountStatus status, bool revokeCurrent)
     {
@@ -1274,7 +1299,7 @@ public class AuthServiceTests
         PasswordHash = "hashed-password",
         FullName = "Admin Demo",
         Role = UserRole.Administrator,
-        Status = AccountStatus.EmailVerified,
+        Status = AccountStatus.Active,
         MfaEnabled = mfaEnabled,
         MfaSecret = mfaSecret
     };

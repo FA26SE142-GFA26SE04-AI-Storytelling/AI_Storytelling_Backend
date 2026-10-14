@@ -25,6 +25,7 @@ public class ChildProfileServiceTests
     private readonly Mock<IGenericRepository<ChildAccessCredential>> _credentialRepo = new();
     private readonly Mock<IGenericRepository<AuditLog>> _auditLogRepo = new();
     private readonly Mock<IGenericRepository<ChildProfileVersionHistory>> _historyRepo = new();
+    private readonly Mock<IGenericRepository<Recommendation>> _recommendationRepo = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<ISupervisionAccessGuard> _accessGuard = new();
     private readonly Mock<IChildSessionRevoker> _childSessionRevoker = new();
@@ -40,6 +41,10 @@ public class ChildProfileServiceTests
         _unitOfWork.Setup(u => u.Repository<ChildAccessCredential>()).Returns(_credentialRepo.Object);
         _unitOfWork.Setup(u => u.Repository<AuditLog>()).Returns(_auditLogRepo.Object);
         _unitOfWork.Setup(u => u.Repository<ChildProfileVersionHistory>()).Returns(_historyRepo.Object);
+        _unitOfWork.Setup(u => u.Repository<Recommendation>()).Returns(_recommendationRepo.Object);
+        _recommendationRepo.Setup(r => r.FindAsync(
+                It.IsAny<Expression<Func<Recommendation, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Recommendation>());
         _sut = new ChildProfileService(
             _unitOfWork.Object, _accessGuard.Object, _childSessionRevoker.Object);
     }
@@ -357,12 +362,12 @@ public class ChildProfileServiceTests
         var result = await _sut.UpdateChildProfileAsync(1, 2, new UpdateChildProfileRequestDto
         {
             Nickname = "Bé Mới",
-            AgeBand = AgeBand.Age_9_12,
+            AgeBand = AgeBand.Age_9_10,
             Language = "vi"
         });
 
         Assert.Equal("Bé Mới", profile.Nickname);
-        Assert.Equal(AgeBand.Age_9_12, profile.AgeBand);
+        Assert.Equal(AgeBand.Age_9_10, profile.AgeBand);
         Assert.Equal("Bé Mới", result.Nickname);
         _profileRepo.Verify(r => r.Update(profile), Times.Once);
         _auditLogRepo.Verify(repository => repository.AddAsync(
@@ -392,7 +397,7 @@ public class ChildProfileServiceTests
             1, 5, new UpdateChildProfileRequestDto
             {
                 Nickname = "Mới",
-                AgeBand = AgeBand.Age_9_12
+                AgeBand = AgeBand.Age_9_10
             }));
 
         Assert.Equal("Cũ", profile.Nickname);
@@ -460,14 +465,25 @@ public class ChildProfileServiceTests
         };
         _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(profile);
+        var pending = new Recommendation
+        {
+            ChildProfileId = 1,
+            Category = RecommendationCategory.ReadingDifficulty,
+            Status = RecommendationStatus.AwaitingReview
+        };
+        _recommendationRepo.Setup(r => r.FindAsync(
+                It.IsAny<Expression<Func<Recommendation, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Recommendation> { pending });
 
         var result = await _sut.UpdateChildProfileAsync(1, 2, new UpdateChildProfileRequestDto
         {
             Nickname = "An",
-            AgeBand = AgeBand.Age_9_12
+            AgeBand = AgeBand.Age_9_10
         });
 
-        Assert.Equal(AgeBand.Age_9_12, profile.AgeBand);
+        Assert.Equal(RecommendationStatus.Stale, pending.Status);
+
+        Assert.Equal(AgeBand.Age_9_10, profile.AgeBand);
         Assert.True(result.ShouldReapplyBlockedPreset);
         Assert.Equal("ReadFirst", result.SuggestedReadingMode);
         _historyRepo.Verify(repository => repository.AddAsync(
@@ -477,7 +493,7 @@ public class ChildProfileServiceTests
                 && history.RecommendationId == null
                 && history.AppliedByUserId == 2
                 && history.PreviousConfig.Contains("Age_6_8")
-                && history.NewConfig.Contains("Age_9_12")),
+                && history.NewConfig.Contains("Age_9_10")),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -737,7 +753,7 @@ public class ChildProfileServiceTests
 
     private void SetupOwner() => _userRepo
         .Setup(r => r.GetByIdAsync(2, It.IsAny<CancellationToken>()))
-        .ReturnsAsync(new UserAccount { Id = 2, Role = UserRole.Parent, Status = AccountStatus.EmailVerified });
+        .ReturnsAsync(new UserAccount { Id = 2, Role = UserRole.Parent, Status = AccountStatus.Active });
 
     private void VerifyNothingWasSaved()
     {

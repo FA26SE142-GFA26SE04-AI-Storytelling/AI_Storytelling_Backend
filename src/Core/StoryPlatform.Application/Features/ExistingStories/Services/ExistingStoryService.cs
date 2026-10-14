@@ -345,7 +345,7 @@ public sealed class ExistingStoryService : IExistingStoryService
     private static string MapAgeBand(AgeBand band) => band switch
     {
         AgeBand.Age_6_8 => "6-8",
-        AgeBand.Age_9_12 => "9-12",
+        AgeBand.Age_9_10 => "9-10",
         _ => "6-8"
     };
 

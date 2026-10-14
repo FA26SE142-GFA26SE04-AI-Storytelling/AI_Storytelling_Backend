@@ -100,6 +100,24 @@ public class SupervisionService : ISupervisionService
         await _emailSender.SendSupervisionInvitationEmailAsync(
             email, inviterName, invitation.InvitationCode!, cancellationToken);
 
+        // UC-L1C-01: email luôn được gửi; thêm thông báo in-app nếu email đó đã có tài khoản.
+        var normalizedEmail = email.ToLowerInvariant();
+        var inviteeAccount = await _unitOfWork.Repository<UserAccount>().FirstOrDefaultAsync(
+            value => value.Email.ToLower() == normalizedEmail && value.Id != inviterUserId,
+            cancellationToken: cancellationToken);
+        if (inviteeAccount != null)
+        {
+            await _notificationService.CreateAsync(
+                inviteeAccount.Id, NotificationType.SupervisionInvite,
+                JsonSerializer.Serialize(new
+                {
+                    invitationId = invitation.Id,
+                    childProfileId,
+                    inviterUserId,
+                    inviterName
+                }), cancellationToken);
+        }
+
         return MapInvitation(invitation);
     }
 
@@ -479,14 +497,16 @@ public class SupervisionService : ISupervisionService
         }
 
         var requestRepo = _unitOfWork.Repository<OwnershipTransferRequest>();
+        // UC-L1C-06: được gửi đề nghị cho nhiều người cùng lúc; chỉ chặn gửi trùng một người.
         var hasPendingRequest = await requestRepo.ExistsAsync(
             value => value.ChildProfileId == childProfileId
+                     && value.TargetSupervisorUserId == request.TargetSupervisorUserId
                      && value.Status == OwnershipTransferRequestStatus.Pending,
             cancellationToken);
         if (hasPendingRequest)
         {
             throw new ConflictException(
-                "Hồ sơ trẻ đã có một yêu cầu chuyển quyền sở hữu đang chờ xử lý.");
+                "Bạn đã gửi đề nghị chuyển quyền Owner cho người này và đang chờ họ trả lời.");
         }
 
         var transferRequest = new OwnershipTransferRequest
@@ -845,7 +865,8 @@ public class SupervisionService : ISupervisionService
     public async Task<List<InvitationDto>> ListInvitationsAsync(
         int childProfileId, int currentUserId, CancellationToken cancellationToken = default)
     {
-        await _accessGuard.EnsureActiveSupervisionAsync(childProfileId, currentUserId, cancellationToken);
+        // UC-L1C-02: chỉ Owner thấy lời mời (kèm mã mời); Additional Supervisor không thấy.
+        await _accessGuard.EnsureOwnerAsync(childProfileId, currentUserId, cancellationToken);
 
         var invitations = await _unitOfWork.Repository<SupervisionInvitation>().FindAsync(
             value => value.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
@@ -879,6 +900,59 @@ public class SupervisionService : ISupervisionService
             new { status = InvitationStatus.Pending.ToString() },
             new { status = InvitationStatus.Revoked.ToString(), childProfileId = invitation.ChildProfileId },
             cancellationToken);
+    }
+
+    public async Task<InvitationDto> RegenerateInvitationCodeAsync(
+        int invitationId, int ownerUserId, CancellationToken cancellationToken = default)
+    {
+        var invitationRepo = _unitOfWork.Repository<SupervisionInvitation>();
+        var invitation = await invitationRepo.GetByIdAsync(invitationId, cancellationToken)
+            ?? throw new NotFoundException("Lời mời giám sát", invitationId);
+
+        await _accessGuard.EnsureOwnerAsync(invitation.ChildProfileId, ownerUserId, cancellationToken);
+
+        // UC-L1C-01: cấp lại mã cho lời mời đang chờ hoặc đã hết hạn; lời mời đã có kết quả thì mời mới.
+        if (invitation.Status is not (InvitationStatus.Pending or InvitationStatus.Expired))
+        {
+            throw new BadRequestException("Chỉ cấp lại mã cho lời mời đang chờ hoặc đã hết hạn.");
+        }
+
+        if (string.IsNullOrWhiteSpace(invitation.InviteeEmail))
+        {
+            throw new BadRequestException("Lời mời không có email người nhận hợp lệ.");
+        }
+
+        invitation.InvitationCode = _tokenGenerator.GenerateRefreshToken();
+        invitation.Status = InvitationStatus.Pending;
+        invitation.ExpiresAt = DateTime.UtcNow.AddDays(SupervisionDefaults.InvitationDefaultExpiryDays);
+        invitation.UsedAt = null;
+        invitation.RespondedAt = null;
+        invitation.InviteeUserId = null;
+        invitation.OtpHash = null;
+        invitation.OtpExpiresAt = null;
+        invitation.OtpFailedAttempts = 0;
+        invitation.OtpVerifiedAt = null;
+        invitationRepo.Update(invitation);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _auditLogWriter.LogAsync(
+            ownerUserId, "REGENERATE_SUPERVISION_INVITATION_CODE", nameof(SupervisionInvitation), invitation.Id,
+            null,
+            new
+            {
+                childProfileId = invitation.ChildProfileId,
+                inviteeEmail = MaskEmail(invitation.InviteeEmail),
+                expiresAt = invitation.ExpiresAt
+            },
+            cancellationToken);
+
+        var owner = await _unitOfWork.Repository<UserAccount>()
+            .GetByIdAsync(ownerUserId, cancellationToken);
+        await _emailSender.SendSupervisionInvitationEmailAsync(
+            invitation.InviteeEmail, owner?.FullName ?? "Một người dùng AI Storytelling Platform",
+            invitation.InvitationCode!, cancellationToken);
+
+        return MapInvitation(invitation);
     }
 
     public async Task<List<SupervisionRelationshipDto>> ListSupervisorsAsync(

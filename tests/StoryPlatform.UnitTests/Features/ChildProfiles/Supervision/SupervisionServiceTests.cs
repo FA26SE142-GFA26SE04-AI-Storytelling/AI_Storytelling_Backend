@@ -560,9 +560,9 @@ public class SupervisionServiceTests
     }
 
     [Fact]
-    public async Task ListInvitationsAsync_NoActiveSupervision_ThrowsForbidden()
+    public async Task ListInvitationsAsync_NotOwner_ThrowsForbidden()
     {
-        _guard.Setup(g => g.EnsureActiveSupervisionAsync(1, 9, It.IsAny<CancellationToken>()))
+        _guard.Setup(g => g.EnsureOwnerAsync(1, 9, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ForbiddenException("Không có quyền."));
 
         await Assert.ThrowsAsync<ForbiddenException>(() => _sut.ListInvitationsAsync(1, 9));
@@ -607,6 +607,81 @@ public class SupervisionServiceTests
 
         Assert.Equal(InvitationStatus.Revoked, invitation.Status);
         Assert.NotNull(invitation.RespondedAt);
+    }
+
+    [Theory]
+    [InlineData(InvitationStatus.Pending)]
+    [InlineData(InvitationStatus.Expired)]
+    public async Task RegenerateInvitationCodeAsync_PendingOrExpired_IssuesNewCodeAndResetsOtp(
+        InvitationStatus status)
+    {
+        AllowOwner();
+        var invitation = new SupervisionInvitation
+        {
+            Id = 9, ChildProfileId = 1, InviterUserId = 2, InviteeEmail = "mom@example.com",
+            InvitationCode = "OLD-CODE", Status = status,
+            ExpiresAt = DateTime.UtcNow.AddDays(-1),
+            OtpHash = "hash", OtpExpiresAt = DateTime.UtcNow.AddMinutes(5),
+            OtpFailedAttempts = 3, OtpVerifiedAt = DateTime.UtcNow, InviteeUserId = 7,
+            RespondedAt = DateTime.UtcNow
+        };
+        _invitationRepo.Setup(r => r.GetByIdAsync(9, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(invitation);
+
+        var result = await _sut.RegenerateInvitationCodeAsync(9, 2);
+
+        Assert.Equal("RANDOM-CODE-0001", invitation.InvitationCode);
+        Assert.Equal(InvitationStatus.Pending, invitation.Status);
+        Assert.True(invitation.ExpiresAt > DateTime.UtcNow.AddDays(6));
+        Assert.Null(invitation.OtpHash);
+        Assert.Null(invitation.OtpVerifiedAt);
+        Assert.Null(invitation.InviteeUserId);
+        Assert.Null(invitation.RespondedAt);
+        Assert.Equal(0, invitation.OtpFailedAttempts);
+        Assert.Equal("RANDOM-CODE-0001", result.InvitationCode);
+        _emailSender.Verify(e => e.SendSupervisionInvitationEmailAsync(
+            "mom@example.com", It.IsAny<string>(), "RANDOM-CODE-0001",
+            It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Single(_audits, audit => audit.Action == "REGENERATE_SUPERVISION_INVITATION_CODE");
+    }
+
+    [Theory]
+    [InlineData(InvitationStatus.Accepted)]
+    [InlineData(InvitationStatus.Rejected)]
+    [InlineData(InvitationStatus.Revoked)]
+    public async Task RegenerateInvitationCodeAsync_FinalStatus_ThrowsBadRequest(InvitationStatus status)
+    {
+        AllowOwner();
+        _invitationRepo.Setup(r => r.GetByIdAsync(9, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SupervisionInvitation
+            {
+                Id = 9, ChildProfileId = 1, InviteeEmail = "mom@example.com", Status = status
+            });
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.RegenerateInvitationCodeAsync(9, 2));
+    }
+
+    [Fact]
+    public async Task RegenerateInvitationCodeAsync_NotOwner_ThrowsForbidden()
+    {
+        _invitationRepo.Setup(r => r.GetByIdAsync(9, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SupervisionInvitation
+            {
+                Id = 9, ChildProfileId = 1, InviteeEmail = "mom@example.com", Status = InvitationStatus.Pending
+            });
+        _guard.Setup(g => g.EnsureOwnerAsync(1, 5, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ForbiddenException("Chỉ Owner."));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.RegenerateInvitationCodeAsync(9, 5));
+    }
+
+    [Fact]
+    public async Task RegenerateInvitationCodeAsync_UnknownInvitation_ThrowsNotFound()
+    {
+        _invitationRepo.Setup(r => r.GetByIdAsync(404, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SupervisionInvitation?)null);
+
+        await Assert.ThrowsAsync<NotFoundException>(() => _sut.RegenerateInvitationCodeAsync(404, 2));
     }
 
     [Fact]
@@ -984,6 +1059,39 @@ public class SupervisionServiceTests
 
         await Assert.ThrowsAsync<ConflictException>(() => _sut.RequestOwnershipTransferAsync(
             1, 2, new TransferOwnershipRequestDto { TargetSupervisorUserId = 3 }));
+    }
+
+    [Fact]
+    public async Task RequestOwnershipTransferAsync_PendingRequestToAnotherPerson_DoesNotBlock()
+    {
+        AllowOwner();
+        _relationshipRepo.Setup(r => r.ExistsAsync(
+                It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(),
+                It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        Expression<Func<OwnershipTransferRequest, bool>>? duplicateCheck = null;
+        _ownershipTransferRequestRepo.Setup(r => r.ExistsAsync(
+                It.IsAny<Expression<Func<OwnershipTransferRequest, bool>>>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<Expression<Func<OwnershipTransferRequest, bool>>, CancellationToken>(
+                (predicate, _) => duplicateCheck = predicate)
+            .ReturnsAsync(false);
+
+        await _sut.RequestOwnershipTransferAsync(
+            1, 2, new TransferOwnershipRequestDto { TargetSupervisorUserId = 3 });
+
+        var isDuplicate = duplicateCheck!.Compile();
+        Assert.True(isDuplicate(new OwnershipTransferRequest
+        {
+            ChildProfileId = 1, TargetSupervisorUserId = 3, Status = OwnershipTransferRequestStatus.Pending
+        }));
+        Assert.False(isDuplicate(new OwnershipTransferRequest
+        {
+            ChildProfileId = 1, TargetSupervisorUserId = 4, Status = OwnershipTransferRequestStatus.Pending
+        }));
+        Assert.False(isDuplicate(new OwnershipTransferRequest
+        {
+            ChildProfileId = 1, TargetSupervisorUserId = 3, Status = OwnershipTransferRequestStatus.Rejected
+        }));
     }
 
     [Fact]

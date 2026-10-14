@@ -70,7 +70,7 @@ public class ParentalGateServiceTests
     }
 
     [Fact]
-    public async Task VerifyAsync_FifthWrongPassword_LocksAccountFor15Minutes()
+    public async Task VerifyAsync_FifthWrongPassword_LocksAccountForFifteenMinutes()
     {
         var user = SupervisorUser();
         user.FailedLoginAttempts = 4;
@@ -81,8 +81,10 @@ public class ParentalGateServiceTests
         await Assert.ThrowsAsync<BadRequestException>(() => _sut.VerifyAsync(
             new VerifyParentalGateRequestDto { Email = user.Email, Password = "wrong-pass" }));
 
-        Assert.Equal(0, user.FailedLoginAttempts);
+        Assert.NotNull(user.LockedUntil);
         Assert.True(user.LockedUntil > DateTime.UtcNow.AddMinutes(14));
+        Assert.Equal(0, user.FailedLoginAttempts);
+        Assert.Equal(AccountStatus.Active, user.Status);
     }
 
     [Fact]
@@ -103,7 +105,7 @@ public class ParentalGateServiceTests
     {
         var user = SupervisorUser();
         user.FailedLoginAttempts = 3;
-        user.Status = AccountStatus.LoggedOut;
+        user.Status = AccountStatus.Active;
         user.LastLoginAt = DateTime.UtcNow.AddDays(-1);
         var previousLastLoginAt = user.LastLoginAt;
         SetupUser(user);
@@ -115,7 +117,7 @@ public class ParentalGateServiceTests
 
         Assert.Equal(0, user.FailedLoginAttempts);
         Assert.Null(user.LockedUntil);
-        Assert.Equal(AccountStatus.LoggedOut, user.Status);
+        Assert.Equal(AccountStatus.Active, user.Status);
         Assert.Equal(previousLastLoginAt, user.LastLoginAt);
         _userRepo.Verify(repository => repository.Update(user), Times.Once);
         _unitOfWork.Verify(
@@ -135,6 +137,6 @@ public class ParentalGateServiceTests
         FullName = "Chị An",
         PasswordHash = "hashed-real-password",
         Role = UserRole.Parent,
-        Status = AccountStatus.LoggedIn
+        Status = AccountStatus.Active
     };
 }

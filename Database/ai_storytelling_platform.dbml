@@ -265,16 +265,14 @@ Enum user_role {
 
 Enum account_status {
   registered
-  email_verified
-  logged_in
+  active
   password_reset_pending
-  logged_out
   suspended
 }
 
 Enum age_band_enum {
   age_6_8
-  age_9_12
+  age_9_10
 }
 
 Enum child_profile_status {

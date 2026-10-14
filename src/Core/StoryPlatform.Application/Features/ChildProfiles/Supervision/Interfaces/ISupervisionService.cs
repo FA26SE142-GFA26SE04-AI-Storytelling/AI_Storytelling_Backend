@@ -67,6 +67,10 @@ public interface ISupervisionService
     Task CancelInvitationAsync(
         int invitationId, int currentUserId, CancellationToken cancellationToken = default);
 
+    Task<InvitationDto> RegenerateInvitationCodeAsync(
+        int invitationId, int ownerUserId,
+        CancellationToken cancellationToken = default);
+
     Task<List<SupervisionRelationshipDto>> ListSupervisorsAsync(
         int childProfileId, int currentUserId, CancellationToken cancellationToken = default);
 

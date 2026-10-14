@@ -51,15 +51,14 @@ public class AuthAuthorizationTests
     }
 
     [Theory]
-    [InlineData("1", "2", AccountStatus.LoggedIn, false, true)]
-    [InlineData("1", "1", AccountStatus.LoggedIn, false, false)]
-    [InlineData("1", null, AccountStatus.LoggedIn, false, false)]
-    [InlineData("1", "invalid", AccountStatus.LoggedIn, false, false)]
-    [InlineData("invalid", "2", AccountStatus.LoggedIn, false, false)]
+    [InlineData("1", "2", AccountStatus.Active, false, true)]
+    [InlineData("1", "1", AccountStatus.Active, false, false)]
+    [InlineData("1", null, AccountStatus.Active, false, false)]
+    [InlineData("1", "invalid", AccountStatus.Active, false, false)]
+    [InlineData("invalid", "2", AccountStatus.Active, false, false)]
     [InlineData("1", "2", AccountStatus.Suspended, false, false)]
     [InlineData("1", "2", AccountStatus.Registered, false, false)]
-    [InlineData("1", "2", AccountStatus.LoggedIn, true, false)]
-    [InlineData("1", "2", AccountStatus.LoggedOut, false, true)]
+    [InlineData("1", "2", AccountStatus.Active, true, false)]
     public async Task TokenValidation_RejectsInvalidOrRevokedCredentials(
         string userId, string? version, AccountStatus status, bool deleted, bool accepted)
     {
@@ -76,7 +75,7 @@ public class AuthAuthorizationTests
     [Fact]
     public async Task TokenValidation_RoleChanged_RejectsOldRoleClaim()
     {
-        var user = new UserAccount { Id = 1, TokenVersion = 2, Status = AccountStatus.LoggedIn, Role = UserRole.Administrator };
+        var user = new UserAccount { Id = 1, TokenVersion = 2, Status = AccountStatus.Active, Role = UserRole.Administrator };
         await AssertValidationAsync(user, "1", "2", UserRole.Parent, false);
     }
 

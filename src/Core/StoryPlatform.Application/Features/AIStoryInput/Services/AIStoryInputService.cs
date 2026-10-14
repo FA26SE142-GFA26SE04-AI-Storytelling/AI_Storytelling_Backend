@@ -9,6 +9,7 @@ using StoryPlatform.Application.Features.AIStoryInput.DTOs;
 using StoryPlatform.Application.Features.AIStoryInput.Guardrails;
 using StoryPlatform.Application.Features.AIStoryInput.Interfaces;
 using StoryPlatform.Application.Features.AIStoryInput.Models;
+using StoryPlatform.Application.Features.ChildProfiles.Safety;
 using StoryPlatform.Application.Features.TokenQuota.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -547,6 +548,11 @@ public sealed class AIStoryInputService : IAIStoryInputService
         {
             throw new BadRequestException("CONSENT_REQUIRED: Child Profile chưa có consent hợp lệ để sử dụng AI.");
         }
+        if (ConsentPolicy.IsOutdated(safety.ConsentPolicyVersion))
+        {
+            throw new BadRequestException(
+                "CONSENT_OUTDATED: Điều khoản đồng thuận đã thay đổi — Owner cần đồng ý lại trước khi tạo truyện mới.");
+        }
         if (safety.SafetyScoreThreshold is < 0m or > 100m)
         {
             throw new BadRequestException("Safety Score Threshold phải nằm trong khoảng 0 đến 100.");
@@ -599,7 +605,7 @@ public sealed class AIStoryInputService : IAIStoryInputService
             item => item.LearningProfileId == learning.Id && item.Relation == TopicRelation.FavoriteTopic,
             cancellationToken: cancellationToken);
         var interests = topics.Select(item => item.Topic.Trim()).Where(item => item.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).Order().ToArray();
-        var ageBand = child.AgeBand == AgeBand.Age_6_8 ? "6-8" : "9-12";
+        var ageBand = child.AgeBand == AgeBand.Age_6_8 ? "6-8" : "9-10";
         var snapshot = new AIStoryInputContextSnapshot(
             child.Id,
             ageBand,

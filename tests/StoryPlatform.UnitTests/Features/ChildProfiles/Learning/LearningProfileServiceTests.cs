@@ -171,7 +171,7 @@ public class LearningProfileServiceTests
 
     [Theory]
     [InlineData(AgeBand.Age_6_8, ReadingMode.ListenFirst)]
-    [InlineData(AgeBand.Age_9_12, ReadingMode.ReadFirst)]
+    [InlineData(AgeBand.Age_9_10, ReadingMode.ReadFirst)]
     public async Task SetLearningProfileAsync_NewProfileWithoutMode_UsesDefaultOfAgeBand(
         AgeBand ageBand, ReadingMode expected)
     {

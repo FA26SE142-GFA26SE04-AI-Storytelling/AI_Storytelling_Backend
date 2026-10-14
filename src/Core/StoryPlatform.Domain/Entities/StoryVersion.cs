@@ -27,4 +27,18 @@ public class StoryVersion : BaseEntity
     public int? OutlineApprovedByUserId { get; set; }
     public virtual UserAccount? OutlineApprovedByUser { get; set; }
     public DateTime? OutlineApprovedAt { get; set; }
+
+    public ModerationZone? ModerationZone { get; set; }
+    public string? GrayZoneFlags { get; set; }
+    public bool GrayZoneCleared { get; set; } = false;
+    public int? GrayZoneClearedByUserId { get; set; }
+    public virtual UserAccount? GrayZoneClearedByUser { get; set; }
+    public DateTime? GrayZoneClearedAt { get; set; }
+
+    public VersionReviewStatus ReviewStatus { get; set; } = VersionReviewStatus.None;
+    public DateTime? ReviewSubmittedAt { get; set; }
+    public int? ReviewedByUserId { get; set; }
+    public virtual UserAccount? ReviewedByUser { get; set; }
+    public DateTime? ReviewedAt { get; set; }
+    public string? ReviewFeedback { get; set; }
 }

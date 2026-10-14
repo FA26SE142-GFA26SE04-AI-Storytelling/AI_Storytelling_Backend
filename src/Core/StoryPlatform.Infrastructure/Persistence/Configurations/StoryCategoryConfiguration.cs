@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using StoryPlatform.Domain.Entities;
+using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Infrastructure.Persistence.Configurations;
 
@@ -24,6 +25,12 @@ public class StoryCategoryConfiguration : IEntityTypeConfiguration<StoryCategory
 
         builder.HasIndex(x => new { x.StoryId, x.ContentCategoryId })
             .IsUnique();
+
+        builder.Property(x => x.Source)
+            .HasConversion<string>()
+            .HasMaxLength(30)
+            .IsRequired()
+            .HasDefaultValue(TagSource.Ai);
 
         builder.HasQueryFilter(x => !x.IsDeleted);
     }

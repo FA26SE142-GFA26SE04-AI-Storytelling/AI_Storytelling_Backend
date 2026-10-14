@@ -5,5 +5,7 @@ public enum ContentReportReason
     SafetyConcern = 1,
     Inappropriate = 2,
     WrongAgeBand = 3,
-    Other = 4
+    Other = 4,
+    Copyright = 5,
+    Cultural = 6
 }

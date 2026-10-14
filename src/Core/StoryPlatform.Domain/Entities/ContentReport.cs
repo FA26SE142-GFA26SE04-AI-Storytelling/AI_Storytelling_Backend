@@ -13,6 +13,19 @@ public class ContentReport : BaseEntity
 
     public ContentReportReason Reason { get; set; }
     public string? Description { get; set; }
+
+    public int? StoryVersionId { get; set; }
+    public virtual StoryVersion? StoryVersion { get; set; }
+
+    public int? ReadingRoadmapId { get; set; }
+    public virtual ReadingRoadmap? ReadingRoadmap { get; set; }
+
+    /// <summary>true = Moderator tạo từ tab "Nội dung đã công khai".</summary>
+    public bool IsReviewItem { get; set; }
+
+    public string? AttachmentUrl { get; set; }
+    public DateTime? ResolvedAt { get; set; }
+
     public ContentReportStatus Status { get; set; } = ContentReportStatus.Pending;
 
     public int? ReviewedByUserId { get; set; }

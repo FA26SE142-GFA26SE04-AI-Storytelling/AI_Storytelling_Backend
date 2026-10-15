@@ -2239,10 +2239,22 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
 
+                    b.Property<int>("AudienceRevision")
+                        .HasColumnType("integer");
+
                     b.Property<int>("AuthorUserId")
                         .HasColumnType("integer");
 
-                    b.Property<int>("ChildProfileId")
+                    b.Property<int>("AuthoringLastVersionNo")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("AuthoringRevisionToken")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int?>("ChildProfileId")
                         .HasColumnType("integer");
 
                     b.Property<DateTime?>("ChildVisibleAt")
@@ -2255,6 +2267,17 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<string>("CreateOperationId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("CreateRequestHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("CreateResponseJson")
+                        .HasColumnType("text");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -2266,6 +2289,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
+
+                    b.Property<string>("ExperienceMode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<string>("Genre")
                         .HasMaxLength(50)
@@ -2299,6 +2327,13 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int?>("ReadingLevel")
                         .HasColumnType("integer");
 
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("Parent");
+
                     b.Property<string>("Source")
                         .IsRequired()
                         .HasMaxLength(30)
@@ -2322,11 +2357,16 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AuthorUserId");
-
                     b.HasIndex("ChildProfileId");
 
-                    b.ToTable("stories", (string)null);
+                    b.HasIndex("AuthorUserId", "CreateOperationId")
+                        .IsUnique()
+                        .HasFilter("\"CreateOperationId\" IS NOT NULL");
+
+                    b.ToTable("stories", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Story_ScopeChild", "(\"Scope\" = 'Parent' AND \"ChildProfileId\" IS NOT NULL AND \"ChildProfileId\" > 0) OR (\"Scope\" = 'Creator' AND \"ChildProfileId\" IS NULL)");
+                        });
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryCategory", b =>
@@ -2700,6 +2740,16 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<int>("AudienceRevision")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("AuthoringOrigin")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int?>("BaseVersionId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Content")
                         .HasColumnType("text");
 
@@ -2728,6 +2778,18 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<string>("GrayZoneFlags")
                         .HasColumnType("jsonb");
 
+                    b.Property<string>("ImportFileName")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("ImportPreviewHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ImportSourceHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<bool>("IsCurrent")
                         .HasColumnType("boolean");
 
@@ -2740,6 +2802,13 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<string>("ModerationZone")
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
+
+                    b.Property<string>("OperationId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("OperationResponseJson")
+                        .HasColumnType("text");
 
                     b.Property<DateTime?>("OutlineApprovedAt")
                         .HasColumnType("timestamp with time zone");
@@ -2762,6 +2831,13 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<decimal?>("ReadabilityFre")
                         .HasColumnType("decimal(6,3)");
 
+                    b.Property<string>("RequestHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int?>("RestoredFromVersionId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("ReviewFeedback")
                         .HasColumnType("jsonb");
 
@@ -2781,8 +2857,18 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int?>("ReviewedByUserId")
                         .HasColumnType("integer");
 
+                    b.Property<string>("RightsDeclaration")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
                     b.Property<decimal?>("SafetyScore")
                         .HasColumnType("decimal(6,3)");
+
+                    b.Property<string>("SourceDeclaration")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
 
                     b.Property<int>("StoryId")
                         .HasColumnType("integer");
@@ -2800,17 +2886,29 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("BaseVersionId");
+
                     b.HasIndex("EditorUserId");
 
                     b.HasIndex("GrayZoneClearedByUserId");
 
                     b.HasIndex("OutlineApprovedByUserId");
 
+                    b.HasIndex("RestoredFromVersionId");
+
                     b.HasIndex("ReviewedByUserId");
 
                     b.HasIndex("StoryId")
                         .IsUnique()
                         .HasFilter("\"IsCurrent\" = true AND \"IsDeleted\" = false");
+
+                    b.HasIndex("StoryId", "ImportPreviewHash")
+                        .IsUnique()
+                        .HasFilter("\"ImportPreviewHash\" IS NOT NULL");
+
+                    b.HasIndex("StoryId", "OperationId")
+                        .IsUnique()
+                        .HasFilter("\"OperationId\" IS NOT NULL");
 
                     b.HasIndex("StoryId", "VersionNo")
                         .IsUnique();
@@ -4201,8 +4299,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
                         .WithMany()
                         .HasForeignKey("ChildProfileId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Author");
 
@@ -4324,6 +4421,11 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryVersion", b =>
                 {
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryVersion", null)
+                        .WithMany()
+                        .HasForeignKey("BaseVersionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "EditorUser")
                         .WithMany()
                         .HasForeignKey("EditorUserId")
@@ -4337,6 +4439,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "OutlineApprovedByUser")
                         .WithMany()
                         .HasForeignKey("OutlineApprovedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryVersion", null)
+                        .WithMany()
+                        .HasForeignKey("RestoredFromVersionId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "ReviewedByUser")

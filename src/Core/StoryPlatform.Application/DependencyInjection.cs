@@ -2,6 +2,8 @@ using Microsoft.Extensions.DependencyInjection;
 using StoryPlatform.Application.Features.CreatorAuthoring.Interfaces;
 using StoryPlatform.Application.Features.CreatorAuthoring.Services;
 using StoryPlatform.Application.Features.Auth.Interfaces;
+using StoryPlatform.Application.Features.Moderation.Interfaces;
+using StoryPlatform.Application.Features.Moderation.Services;
 using StoryPlatform.Application.Features.Auth.Services;
 using StoryPlatform.Application.Features.AIStoryInput.Guardrails;
 using StoryPlatform.Application.Features.AIStoryInput.Interfaces;
@@ -79,6 +81,9 @@ public static class DependencyInjection
         services.AddScoped<IAuditLogQueryService, AuditLogQueryService>();
         services.AddScoped<IAuditLogWriter, AuditLogWriter>();
         services.AddScoped<IAdminAccountService, AdminAccountService>();
+        services.AddScoped<IModerationQueueService, ModerationQueueService>();
+        services.AddScoped<IModerationReviewViewService, ModerationReviewViewService>();
+        services.AddScoped<IModerationSweepService, ModerationSweepService>();
         services.AddScoped<IModeratorAccountService, ModeratorAccountService>();
         services.AddScoped<IDataRequestService, DataRequestService>();
         services.AddScoped<IBusinessReportService, BusinessReportService>();

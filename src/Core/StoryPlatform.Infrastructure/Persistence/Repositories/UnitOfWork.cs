@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore;
 using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Infrastructure.Persistence;
 
 namespace StoryPlatform.Infrastructure.Persistence.Repositories;
@@ -29,9 +30,20 @@ public class UnitOfWork : IUnitOfWork
         return (IGenericRepository<T>)_repositories.GetOrAdd(typeof(T), _ => new GenericRepository<T>(_context));
     }
 
-    public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        SaveTranslatingConcurrencyAsync(cancellationToken);
+
+    private async Task<int> SaveTranslatingConcurrencyAsync(CancellationToken cancellationToken)
     {
-        return await _context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            return await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new ConflictException(
+                "Dữ liệu vừa được người khác thay đổi. Vui lòng tải lại và thử lại.");
+        }
     }
 
     public async Task BeginTransactionAsync(CancellationToken cancellationToken = default)
@@ -61,7 +73,7 @@ public class UnitOfWork : IUnitOfWork
     {
         try
         {
-            await _context.SaveChangesAsync(cancellationToken);
+            await SaveTranslatingConcurrencyAsync(cancellationToken);
             if (_currentTransaction != null)
             {
                 await _currentTransaction.CommitAsync(cancellationToken);

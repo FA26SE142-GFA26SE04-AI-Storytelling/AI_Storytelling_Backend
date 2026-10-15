@@ -15,15 +15,18 @@ public class AuthController : BaseApiController
     private readonly IAuthService _authService;
     private readonly IAuditLogQueryService _auditLogQueryService;
     private readonly IAccountDeletionService _accountDeletionService;
+    private readonly IStaffActivationService _staffActivationService;
 
     public AuthController(
         IAuthService authService,
         IAuditLogQueryService auditLogQueryService,
-        IAccountDeletionService accountDeletionService)
+        IAccountDeletionService accountDeletionService,
+        IStaffActivationService staffActivationService)
     {
         _authService = authService;
         _auditLogQueryService = auditLogQueryService;
         _accountDeletionService = accountDeletionService;
+        _staffActivationService = staffActivationService;
     }
 
     /// <summary>
@@ -63,6 +66,21 @@ public class AuthController : BaseApiController
     {
         var result = await _authService.VerifyMfaAsync(request, cancellationToken);
         return HandleResult(result, "Xác thực MFA thành công.");
+    }
+
+    /// <summary>
+    /// Kích hoạt tài khoản Moderator bằng mã mời: đặt mật khẩu và xác nhận cam kết.
+    /// </summary>
+    [HttpPost("staff-activation")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<object?>>> ActivateStaffAccount(
+        [FromBody] StaffActivationRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        await _staffActivationService.ActivateAsync(request, cancellationToken);
+        return HandleResult<object?>(
+            null,
+            "Kích hoạt tài khoản thành công. Bạn có thể đăng nhập ngay bây giờ.");
     }
 
     /// <summary>

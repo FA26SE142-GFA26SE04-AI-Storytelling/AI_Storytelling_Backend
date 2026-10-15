@@ -4,5 +4,6 @@ public enum SessionScope
 {
     Supervisor = 1,
     Child = 2,
-    Admin = 3
+    Admin = 3,
+    Moderator = 4
 }

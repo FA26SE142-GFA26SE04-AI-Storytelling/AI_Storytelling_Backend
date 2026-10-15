@@ -70,6 +70,93 @@ public class AuthServiceTests
         Status = AccountStatus.Active
     };
 
+    private static UserAccount CreateModeratorUser(bool activated = true) => new()
+    {
+        Id = 11,
+        Username = "moderator_demo1",
+        Email = "moderator1@example.com",
+        PasswordHash = "hashed-password",
+        FullName = "Nguyen Thi Lan",
+        Role = UserRole.Moderator,
+        Status = activated ? AccountStatus.Active : AccountStatus.PasswordResetPending,
+        CommitmentAcceptedAt = activated ? DateTime.UtcNow.AddDays(-30) : null
+    };
+
+    [Fact]
+    public async Task LoginAsync_Moderator_ReturnsTokensAndModeratorScopedRefreshToken()
+    {
+        var moderator = CreateModeratorUser();
+        _userRepoMock
+            .Setup(r => r.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<UserAccount, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(moderator);
+        _passwordHasherMock
+            .Setup(p => p.VerifyPassword("Demo@123", moderator.PasswordHash))
+            .Returns(true);
+        RefreshToken? issued = null;
+        _refreshTokenRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<RefreshToken>(), It.IsAny<CancellationToken>()))
+            .Callback<RefreshToken, CancellationToken>((token, _) => issued = token)
+            .ReturnsAsync((RefreshToken token, CancellationToken _) => token);
+
+        var result = await _sut.LoginAsync(new LoginRequestDto
+        {
+            Identifier = moderator.Email,
+            Password = "Demo@123"
+        });
+
+        Assert.False(result.MfaRequired);
+        Assert.False(result.MfaSetupRequired);
+        Assert.Equal("fake-access-token", result.AccessToken);
+        Assert.NotNull(issued);
+        Assert.Equal(SessionScope.Moderator, issued!.SessionScope);
+    }
+
+    [Fact]
+    public async Task ForgotPasswordAsync_ModeratorNotYetActivated_SilentlyIgnoredAndKeepsInviteToken()
+    {
+        var pending = CreateModeratorUser(activated: false);
+        pending.ResetTokenHash = "invite-hash";
+        _userRepoMock
+            .Setup(r => r.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<UserAccount, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pending);
+
+        await _sut.ForgotPasswordAsync(
+            new ForgotPasswordRequestDto { Email = pending.Email });
+
+        Assert.Equal("invite-hash", pending.ResetTokenHash);
+        _emailSenderMock.Verify(e => e.SendPasswordResetEmailAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ResetPasswordAsync_ModeratorNotYetActivated_ThrowsBadRequestAndStaysPending()
+    {
+        var pending = CreateModeratorUser(activated: false);
+        pending.ResetTokenHash = TokenHasher.Hash("invite-token");
+        pending.ResetTokenExpiresAt = DateTime.UtcNow.AddHours(10);
+        _userRepoMock
+            .Setup(r => r.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<UserAccount, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(pending);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.ResetPasswordAsync(new ResetPasswordRequestDto
+            {
+                Email = pending.Email,
+                ResetToken = "invite-token",
+                NewPassword = "Matkhau123",
+                ConfirmPassword = "Matkhau123"
+            }));
+
+        Assert.Equal(AccountStatus.PasswordResetPending, pending.Status);
+    }
+
     [Fact]
     public async Task LoginAsync_ValidCredentials_ReturnsTokensAndSavesUser()
     {

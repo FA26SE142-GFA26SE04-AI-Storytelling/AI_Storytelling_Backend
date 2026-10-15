@@ -61,6 +61,7 @@ public static class DependencyInjection
         services.AddScoped<ICreatorAuthoringService, CreatorAuthoringService>();
         services.AddScoped<IUserProvisioningService, UserProvisioningService>();
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IStaffActivationService, StaffActivationService>();
         services.AddScoped<IAccountDeletionService, AccountDeletionService>();
         services.AddScoped<IStoryService, StoryService>();
         services.AddScoped<IAIStoryInputService, AIStoryInputService>();
@@ -78,6 +79,7 @@ public static class DependencyInjection
         services.AddScoped<IAuditLogQueryService, AuditLogQueryService>();
         services.AddScoped<IAuditLogWriter, AuditLogWriter>();
         services.AddScoped<IAdminAccountService, AdminAccountService>();
+        services.AddScoped<IModeratorAccountService, ModeratorAccountService>();
         services.AddScoped<IDataRequestService, DataRequestService>();
         services.AddScoped<IBusinessReportService, BusinessReportService>();
         services.AddScoped<IPaymentService, PaymentService>();

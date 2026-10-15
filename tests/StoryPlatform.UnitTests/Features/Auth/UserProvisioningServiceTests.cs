@@ -74,4 +74,22 @@ public class UserProvisioningServiceTests
         _userRepoMock.Verify(
             r => r.AddAsync(It.IsAny<UserAccount>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    [Fact]
+    public async Task CreatePendingAccountAsync_CustomLifetime_UsesItForTokenExpiry()
+    {
+        _userRepoMock.Setup(r => r.ExistsAsync(
+                It.IsAny<Expression<Func<UserAccount, bool>>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var (account, _) = await _sut.CreatePendingAccountAsync(
+            "mod_abc", "mod@example.com", "Nguyen Thi Lan", null,
+            UserRole.Moderator, TimeSpan.FromHours(72));
+
+        Assert.NotNull(account.ResetTokenExpiresAt);
+        Assert.InRange(
+            account.ResetTokenExpiresAt!.Value,
+            DateTime.UtcNow.AddHours(71.9),
+            DateTime.UtcNow.AddHours(72.1));
+    }
 }

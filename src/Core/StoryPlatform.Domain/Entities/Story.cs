@@ -18,6 +18,7 @@ public class Story : BaseEntity
     public string? VocabularyLevel { get; set; }
     public string Language { get; set; } = "vi";
     public StorySource Source { get; set; } = StorySource.Ai;
+    public StoryScope Scope { get; set; } = StoryScope.Parent;
     public StoryOutputMode OutputMode { get; set; } = StoryOutputMode.Learning;
     public StoryStatus Status { get; set; } = StoryStatus.Draft;
     public bool IsPublished { get; set; } = false;
@@ -29,11 +30,19 @@ public class Story : BaseEntity
     public DateTime? PublishedAt { get; set; }
     public DateTime? ArchivedAt { get; set; }
 
+    public string AuthoringRevisionToken { get; set; } = Guid.NewGuid().ToString("N");
+    public int AudienceRevision { get; set; } = 1;
+    public string ExperienceMode { get; set; } = "reading";
+    public int AuthoringLastVersionNo { get; set; }
+    public string? CreateOperationId { get; set; }
+    public string? CreateRequestHash { get; set; }
+    public string? CreateResponseJson { get; set; }
+
     // Khóa ngoại tác giả / người khởi tạo
     public int AuthorUserId { get; set; }
     public virtual UserAccount? Author { get; set; }
 
     // Khóa ngoại tới ChildProfile sở hữu câu chuyện (theo DBML: stories.child_profile_id)
-    public int ChildProfileId { get; set; }
+    public int? ChildProfileId { get; set; }
     public virtual ChildProfile? ChildProfile { get; set; }
 }

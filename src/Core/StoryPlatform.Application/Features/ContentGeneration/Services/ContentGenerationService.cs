@@ -494,6 +494,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             {
                 var story = await _unitOfWork.Repository<Story>().GetByIdAsync(job.StoryId, cancellationToken)
                             ?? throw new InvalidOperationException("STORY_NOT_FOUND");
+                if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
                 story.Status = StoryStatus.ContentReview;
                 _unitOfWork.Repository<Story>().Update(story);
             }
@@ -585,6 +586,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             _unitOfWork.Repository<StoryVersion>().Update(stable);
             var story = await _unitOfWork.Repository<Story>().GetByIdAsync(job.StoryId, cancellationToken)
                         ?? throw new InvalidOperationException("STORY_NOT_FOUND");
+            if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
             story.Title = stable.Title;
             story.Content = stable.Content;
             story.MoralLesson = stable.Lesson;
@@ -698,6 +700,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
     {
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
+        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
         if (story.AuthorUserId == userId) return story;
         var relationship = await _unitOfWork.Repository<SupervisionRelationship>().FirstOrDefaultAsync(
             item => item.ChildProfileId == story.ChildProfileId && item.SupervisorUserId == userId && item.RevokedAt == null,

@@ -424,9 +424,10 @@ public sealed class ExistingStoryService : IExistingStoryService
 
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(request.StoryId, cancellationToken)
                     ?? throw new NotFoundException("Story", request.StoryId);
+        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
         if (story.Source != StorySource.Manual)
             throw new BadRequestException("Story không thuộc nhánh Existing.");
-        await _accessGuard.EnsurePermissionAsync(story.ChildProfileId, userId, Permission.GenerateStory, cancellationToken);
+        await _accessGuard.EnsurePermissionAsync(StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story), userId, Permission.GenerateStory, cancellationToken);
         await EnsureImportedContentAcceptedAsync(story.Id, cancellationToken);
 
         StoryVersion? created = null;
@@ -549,9 +550,10 @@ public sealed class ExistingStoryService : IExistingStoryService
 
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(request.StoryId, cancellationToken)
                     ?? throw new NotFoundException("Story", request.StoryId);
+        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
         if (story.Source != StorySource.Manual)
             throw new BadRequestException("Story không thuộc nhánh Existing.");
-        await _accessGuard.EnsurePermissionAsync(story.ChildProfileId, userId, Permission.GenerateStory, cancellationToken);
+        await _accessGuard.EnsurePermissionAsync(StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story), userId, Permission.GenerateStory, cancellationToken);
         await EnsureImportedContentAcceptedAsync(story.Id, cancellationToken);
 
         StoryVersion? created = null;
@@ -630,9 +632,10 @@ public sealed class ExistingStoryService : IExistingStoryService
 
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(request.StoryId, cancellationToken)
                     ?? throw new NotFoundException("Story", request.StoryId);
+        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
         if (story.Source != StorySource.Manual)
             throw new BadRequestException("Story không thuộc nhánh Existing.");
-        await _accessGuard.EnsurePermissionAsync(story.ChildProfileId, userId, Permission.GenerateStory, cancellationToken);
+        await _accessGuard.EnsurePermissionAsync(StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story), userId, Permission.GenerateStory, cancellationToken);
         await EnsureImportedContentAcceptedAsync(story.Id, cancellationToken);
 
         var version = await _unitOfWork.Repository<StoryVersion>().GetByIdAsync(request.StoryVersionId, cancellationToken)
@@ -691,9 +694,10 @@ public sealed class ExistingStoryService : IExistingStoryService
 
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(request.StoryId, cancellationToken)
                     ?? throw new NotFoundException("Story", request.StoryId);
+        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
         if (story.Source != StorySource.Manual)
             throw new BadRequestException("Story không thuộc nhánh Existing.");
-        await _accessGuard.EnsurePermissionAsync(story.ChildProfileId, userId, Permission.GenerateStory, cancellationToken);
+        await _accessGuard.EnsurePermissionAsync(StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story), userId, Permission.GenerateStory, cancellationToken);
 
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try

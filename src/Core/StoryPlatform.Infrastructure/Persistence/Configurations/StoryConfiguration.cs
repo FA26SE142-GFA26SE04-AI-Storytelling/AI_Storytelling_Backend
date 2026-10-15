@@ -8,9 +8,23 @@ public class StoryConfiguration : IEntityTypeConfiguration<Story>
 {
     public void Configure(EntityTypeBuilder<Story> builder)
     {
-        builder.ToTable("stories");
+        builder.ToTable("stories", t => t.HasCheckConstraint("CK_Story_ScopeChild",
+            "(\"Scope\" = 'Parent' AND \"ChildProfileId\" IS NOT NULL AND \"ChildProfileId\" > 0) OR (\"Scope\" = 'Creator' AND \"ChildProfileId\" IS NULL)"));
 
         builder.HasKey(s => s.Id);
+
+        builder.Property(s => s.Scope)
+            .HasConversion<string>()
+            .HasMaxLength(30)
+            .HasDefaultValue(StoryPlatform.Domain.Enums.StoryScope.Parent)
+            .IsRequired();
+        builder.Property(s => s.AuthoringRevisionToken).HasMaxLength(32).IsRequired().IsConcurrencyToken();
+        builder.Property(s => s.ExperienceMode).HasMaxLength(20).IsRequired();
+        builder.Property(s => s.CreateOperationId).HasMaxLength(100);
+        builder.Property(s => s.CreateRequestHash).HasMaxLength(64);
+        builder.Property(s => s.CreateResponseJson).HasColumnType("text");
+        builder.HasIndex(s => new { s.AuthorUserId, s.CreateOperationId }).IsUnique()
+            .HasFilter("\"CreateOperationId\" IS NOT NULL");
 
         builder.Property(s => s.Title)
             .HasMaxLength(200);

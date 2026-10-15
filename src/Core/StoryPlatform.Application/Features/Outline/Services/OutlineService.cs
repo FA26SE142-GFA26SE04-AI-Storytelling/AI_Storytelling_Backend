@@ -515,6 +515,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
     {
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
+        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
         var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken)
                    ?? throw new ForbiddenException();
         if (user.Status == AccountStatus.Suspended || user.Role != UserRole.Parent)
@@ -539,6 +540,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
     {
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
+        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
         var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken)
                    ?? throw new ForbiddenException();
         if (user.Status == AccountStatus.Suspended || user.Role != UserRole.Parent)
@@ -564,6 +566,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
     {
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
+        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
         var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken)
                    ?? throw new ForbiddenException();
         if (user.Status == AccountStatus.Suspended || user.Role != UserRole.Parent)

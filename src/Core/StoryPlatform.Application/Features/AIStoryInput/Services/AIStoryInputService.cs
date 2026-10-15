@@ -193,7 +193,7 @@ public sealed class AIStoryInputService : IAIStoryInputService
         CancellationToken cancellationToken = default)
     {
         var request = await LoadRequestAsync(storyId, requestId, cancellationToken);
-        await EnsureGeneratePermissionAsync(userId, request.Story!.ChildProfileId, cancellationToken);
+        await EnsureGeneratePermissionAsync(userId, StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(request.Story!), cancellationToken);
         return await RecoverIfStaleAsync(request, cancellationToken);
     }
 
@@ -211,7 +211,7 @@ public sealed class AIStoryInputService : IAIStoryInputService
         ValidateCreativeInput(normalized);
         var context = await ResolveContextAsync(
             userId,
-            story.ChildProfileId,
+            StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story),
             normalized.VocabularyLevel,
             normalized.Language,
             cancellationToken);
@@ -324,7 +324,7 @@ public sealed class AIStoryInputService : IAIStoryInputService
             {
                 currentContext = await ResolveContextAsync(
                     generationRequest.SubmittedByUserId,
-                    story.ChildProfileId,
+                    StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story),
                     input.VocabularyLevel,
                     input.Language,
                     cancellationToken);
@@ -338,7 +338,7 @@ public sealed class AIStoryInputService : IAIStoryInputService
             var validStory = await _unitOfWork.Repository<Story>().ExistsAsync(
                 item => item.Id == story.Id &&
                         item.AuthorUserId == generationRequest.SubmittedByUserId &&
-                        item.ChildProfileId == story.ChildProfileId &&
+                        item.ChildProfileId == StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story) &&
                         item.Source == StorySource.Ai &&
                         item.Status == StoryStatus.Draft,
                 cancellationToken);
@@ -501,6 +501,7 @@ public sealed class AIStoryInputService : IAIStoryInputService
         var story = await _unitOfWork.Repository<Story>().FirstOrDefaultAsync(
             item => item.Id == storyId &&
                     item.AuthorUserId == userId &&
+                    item.Scope == StoryScope.Parent &&
                     item.ChildProfileId == childProfileId,
             cancellationToken: cancellationToken);
         if (story is null)

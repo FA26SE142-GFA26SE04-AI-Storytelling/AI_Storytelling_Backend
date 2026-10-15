@@ -28,6 +28,7 @@ public class StoryService : IStoryService
     {
         // Xây dựng biểu thức điều kiện lọc động bằng Linq Expression
         Expression<Func<DomainStory, bool>> predicate = s =>
+            s.Scope == StoryScope.Parent &&
             (!filter.IsPublished.HasValue || s.IsPublished == filter.IsPublished.Value) &&
             (!filter.AuthorUserId.HasValue || s.AuthorUserId == filter.AuthorUserId.Value) &&
             (string.IsNullOrEmpty(filter.Genre) || s.Genre == filter.Genre) &&
@@ -56,11 +57,11 @@ public class StoryService : IStoryService
     {
         var storyRepo = _unitOfWork.Repository<DomainStory>();
         var story = await storyRepo.FirstOrDefaultAsync(
-            s => s.Id == id, 
+            s => s.Id == id && s.Scope == StoryScope.Parent,
             includeProperties: "Author", 
             cancellationToken: cancellationToken);
 
-        if (story == null)
+        if (story == null || story.Scope != StoryScope.Parent)
         {
             throw new NotFoundException("Câu chuyện", id);
         }
@@ -104,11 +105,11 @@ public class StoryService : IStoryService
     {
         var storyRepo = _unitOfWork.Repository<DomainStory>();
         var story = await storyRepo.FirstOrDefaultAsync(
-            s => s.Id == id,
+            s => s.Id == id && s.Scope == StoryScope.Parent,
             includeProperties: "Author",
             cancellationToken: cancellationToken);
 
-        if (story == null)
+        if (story == null || story.Scope != StoryScope.Parent)
         {
             throw new NotFoundException("Câu chuyện", id);
         }
@@ -151,7 +152,7 @@ public class StoryService : IStoryService
     {
         var storyRepo = _unitOfWork.Repository<DomainStory>();
         var story = await storyRepo.GetByIdAsync(id, cancellationToken);
-        if (story == null)
+        if (story == null || story.Scope != StoryScope.Parent)
         {
             throw new NotFoundException("Câu chuyện", id);
         }
@@ -173,7 +174,7 @@ public class StoryService : IStoryService
     {
         var storyRepo = _unitOfWork.Repository<DomainStory>();
         var story = await storyRepo.GetByIdAsync(id, cancellationToken);
-        if (story == null)
+        if (story == null || story.Scope != StoryScope.Parent)
         {
             throw new NotFoundException("Câu chuyện", id);
         }

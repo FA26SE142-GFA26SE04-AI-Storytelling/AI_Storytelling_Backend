@@ -26,6 +26,19 @@ public class StoryVersionConfiguration : IEntityTypeConfiguration<StoryVersion>
         builder.Property(x => x.OutlineDevelopment).HasColumnType("text");
         builder.Property(x => x.OutlineEnding).HasColumnType("text");
         builder.Property(x => x.Content).HasColumnType("text");
+        builder.Property(x => x.AuthoringOrigin).HasMaxLength(20);
+        builder.Property(x => x.SourceDeclaration).HasMaxLength(2000).IsRequired();
+        builder.Property(x => x.RightsDeclaration).HasMaxLength(2000).IsRequired();
+        builder.Property(x => x.ImportFileName).HasMaxLength(255);
+        builder.Property(x => x.ImportSourceHash).HasMaxLength(64);
+        builder.Property(x => x.ImportPreviewHash).HasMaxLength(64);
+        builder.Property(x => x.OperationId).HasMaxLength(100);
+        builder.Property(x => x.RequestHash).HasMaxLength(64);
+        builder.Property(x => x.OperationResponseJson).HasColumnType("text");
+        builder.HasOne<StoryVersion>().WithMany().HasForeignKey(x => x.BaseVersionId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<StoryVersion>().WithMany().HasForeignKey(x => x.RestoredFromVersionId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(x => new { x.StoryId, x.OperationId }).IsUnique().HasFilter("\"OperationId\" IS NOT NULL");
+        builder.HasIndex(x => new { x.StoryId, x.ImportPreviewHash }).IsUnique().HasFilter("\"ImportPreviewHash\" IS NOT NULL");
         builder.Property(x => x.Lesson).HasColumnType("text");
 
         builder.Property(x => x.ReadabilityFkgl).HasColumnType("decimal(6,3)");

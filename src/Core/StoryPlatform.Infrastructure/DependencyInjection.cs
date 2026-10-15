@@ -25,6 +25,7 @@ using StoryPlatform.Infrastructure.Persistence.Repositories;
 using StoryPlatform.Infrastructure.Security;
 using StoryPlatform.Infrastructure.Storage;
 using StoryPlatform.Application.Features.MediaStorage.Interfaces;
+using StoryPlatform.Application.Features.CreatorAuthoring;
 
 namespace StoryPlatform.Infrastructure;
 
@@ -32,6 +33,18 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
+        services.AddDataProtection();
+        services.AddScoped<StoryPlatform.Application.Features.CreatorAuthoring.Interfaces.IImportPreviewProtector,
+            StoryPlatform.Infrastructure.Security.ImportPreviewProtector>();
+        services.AddOptions<CreatorAuthoringOptions>()
+            .Bind(configuration.GetSection(CreatorAuthoringOptions.SectionName))
+            .Validate(x => x.MaximumContentCharacters is > 0 and <= 200_000 &&
+                           x.MaximumImportBytes is > 0 and <= 5_000_000 &&
+                           x.ImportPreviewLifetimeHours is > 0 and <= 168 &&
+                           x.SupportedLanguages is { Length: > 0 } && x.SupportedAgeBands is { Length: > 0 },
+                "Creator authoring limits must remain within the import safety limits.")
+            .ValidateOnStart();
+        services.AddSingleton(sp => sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<CreatorAuthoringOptions>>().Value);
         var connectionString = ConnectionStringHelper.GetConnectionString(configuration);
 
         services.AddRedisCache(configuration);

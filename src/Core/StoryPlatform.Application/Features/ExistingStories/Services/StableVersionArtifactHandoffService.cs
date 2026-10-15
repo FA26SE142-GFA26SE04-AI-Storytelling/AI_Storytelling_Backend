@@ -68,6 +68,7 @@ public sealed class StableVersionArtifactHandoffService : IStableVersionArtifact
 
             var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                         ?? throw new NotFoundException("Story", storyId);
+            if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
             var version = await _unitOfWork.Repository<StoryVersion>().GetByIdAsync(storyVersionId, cancellationToken)
                           ?? throw new NotFoundException("StoryVersion", storyVersionId);
 
@@ -260,7 +261,7 @@ public sealed class StableVersionArtifactHandoffService : IStableVersionArtifact
     private async Task<AIStoryInputContextSnapshot> BuildContextSnapshotAsync(
         Story story, CancellationToken cancellationToken)
     {
-        var childProfileId = story.ChildProfileId;
+        var childProfileId = StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story);
 
         LearningProfileDto? learning = null;
         try

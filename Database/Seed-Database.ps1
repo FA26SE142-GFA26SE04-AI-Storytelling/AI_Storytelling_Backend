@@ -67,7 +67,13 @@ function Find-Psql {
     }
 
     $candidates = @(Get-ChildItem -LiteralPath $postgresRoot -Directory -ErrorAction SilentlyContinue |
-        Sort-Object { [version]($_.Name -replace '[^0-9.]', '') } -Descending)
+        Sort-Object {
+            $versionText = $_.Name -replace '[^0-9.]', ''
+            if ($versionText -match '^\d+$') { $versionText += '.0' }
+            $parsedVersion = [version]'0.0'
+            if ([version]::TryParse($versionText, [ref]$parsedVersion)) { $parsedVersion }
+            else { [version]'0.0' }
+        } -Descending)
 
     foreach ($directory in $candidates) {
         $candidate = Join-Path $directory.FullName "bin\psql.exe"

@@ -1,0 +1,1752 @@
+{
+  "info": {
+    "_postman_id": "8ca784b9-d91b-41a8-b72c-b5482b8c63aa",
+    "name": "Content Creator - Manual Story API - Local",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "# Mục đích\n32 test case cho API Creator authoring hiện có; 28 ca chính và 4 ca tùy chọn. Đây là API thủ công/import; không gọi AI generation, không kiểm thử mua gói hoặc publication chưa triển khai.\n\n# Chuẩn bị\n1. Database local đã cập nhật migration.\n2. Bật CreatorAuthoring:Enabled=true trong cấu hình local hoặc đặt biến môi trường CreatorAuthoring__Enabled=true trước khi khởi động Core API. Mặc định feature tắt sẽ trả 403. Không cần gói Creator.\n3. Chạy Core API (profile http mặc định http://localhost:5259). Đổi baseUrl theo địa chỉ thực tế, không thêm dấu / cuối.\n4. Điền accessToken là JWT access token còn hạn, không kèm chữ Bearer. Tài khoản phải Active, không bị khóa/xóa. Không dùng refresh token hoặc token phiên trẻ. Không lưu token thật vào Git.\n\n# Cách chạy\nImport JSON vào Postman Desktop, mở Variables và điền baseUrl/accessToken. Chạy toàn collection bằng Runner, 1 iteration, theo thứ tự, tắt chạy song song. Các biến trạng thái do scripts quản lý bằng collectionVariables, không tạo Environment trùng tên storyId/revisionToken/versionId/requestBody. Mỗi lần chạy từ CC01 tạo một story mới để tránh xung đột. Khi request trả status khác kỳ vọng, Runner dừng sau ca đó; xem response và Postman Console để xử lý. Ca lỗi 400 từ DataAnnotations có thể dùng ProblemDetails thay vì ApiResponse; chỉ kiểm tra HTTP cho các ca đó.\n\n# Ca tùy chọn\notherAccessToken: JWT tài khoản Active thứ hai (CC29). parentStoryId: story Parent của tài khoản chính (CC30). importFilePath: tệp TXT UTF-8 hoặc DOCX có nội dung (CC31-32). Để trống sẽ bỏ qua bằng pm.execution.skipRequest: https://learning.postman.com/docs/tests-and-scripts/write-scripts/postman-sandbox-reference/pm-execution/ . Nếu phiên bản Postman không hỗ trợ, bỏ chọn folder 02 khi chạy.\n\n# Kết quả và dữ liệu\nFolder 01 tạo 1 Story và đúng 4 StoryVersion, không enqueue AI. Folder 02 có thể thêm 1 version nhập tệp. Chưa có endpoint xóa trong controller này; collection giữ dữ liệu để bạn kiểm tra database. Các assertion API không chứng minh không có AI job ở DB; muốn xác minh điều đó cần đối chiếu story_generation_jobs theo story ID.\n\n# Giới hạn\nCác ca expiration, race condition đồng thời, account inactive/feature disabled, upload quá dung lượng/encoding sai và AI phase 1-5 cần fixture hoặc cấu hình riêng, không thuộc collection này. File đã được kiểm tra JSON/script, chưa chạy HTTP với tài khoản thật."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5259",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "otherAccessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "parentStoryId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "importFilePath",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const url = String(pm.variables.get('baseUrl') || '');",
+          "if (!/^https?:\\/\\/(localhost|127\\.0\\.0\\.1|\\[::1\\])(?::\\d+)?$/.test(url)) throw new Error('Collection tạo dữ liệu test: baseUrl phải là URL local, không có dấu / cuối.');",
+          "if (!String(pm.variables.get('accessToken') || '').trim()) throw new Error('Điền accessToken của tài khoản Active trước khi chạy.');"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "01 - Luồng chính và kiểm tra lỗi (chạy theo thứ tự)",
+      "item": [
+        {
+          "name": "CC01 - Tạo bản nháp thủ công",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.collectionVariables;",
+                  "for (const key of ['storyId','revisionToken','versionId','versionNo','previewToken','previewContent','filePreviewToken','filePreviewContent','fileConfirmBody']) c.unset(key);",
+                  "c.set('runId', pm.variables.replaceIn('{{$guid}}'));",
+                  "c.set('contentV1', '  Lan gieo một hạt giống nhỏ.\\n\\nMỗi ngày, Lan tưới nước và kiên nhẫn chờ cây lớn.  ');",
+                  "c.set('contentV2', 'Lan gieo một hạt giống nhỏ. Minh giúp Lan tưới nước.\\nMột sáng, hai bạn thấy chiếc lá đầu tiên và cùng mỉm cười.');",
+                  "const body = { operationId: c.get('runId') + ':create', title: 'Lan và hạt giống nhỏ', description: 'Kiểm thử tạo truyện thủ công qua API thực', language: 'vi', ageBand: '6-8', genre: 'Tình bạn', experienceMode: 'reading' };",
+                  "c.set('createBody', JSON.stringify(body)); pm.variables.set('requestBody', JSON.stringify(body));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = true', () => pm.expect(response.success).to.eql(true));",
+                  "if (pm.response.code === 201) {",
+                  "",
+                  "const d = response.data;",
+                  "pm.test('Bản nháp chưa có phiên bản', () => { pm.expect(d.storyId).to.be.above(0); pm.expect(d.selectedVersionId).to.eql(null); pm.expect(d.lastVersionNo).to.eql(0); pm.expect(d.revisionToken).to.match(/^[a-f0-9]{32}$/); });",
+                  "pm.collectionVariables.set('storyId', String(d.storyId));",
+                  "pm.collectionVariables.set('revisionToken', d.revisionToken);",
+                  "pm.collectionVariables.set('initialRevision', d.revisionToken);",
+                  "pm.collectionVariables.set('createReceipt', JSON.stringify(d));",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/manual",
+            "description": "CC01 - Tạo bản nháp thủ công. Expected HTTP 201.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC02 - Gửi lại lệnh tạo không sinh thêm story",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('requestBody', pm.collectionVariables.get('createBody'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = true', () => pm.expect(response.success).to.eql(true));",
+                  "if (pm.response.code === 201) {",
+                  "pm.test('Trả đúng receipt ban đầu', () => pm.expect(response.data).to.deep.eql(JSON.parse(pm.collectionVariables.get('createReceipt'))));",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/manual",
+            "description": "CC02 - Gửi lại lệnh tạo không sinh thêm story. Expected HTTP 201.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC03 - Cùng OperationId nhưng khác dữ liệu",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = JSON.parse(pm.collectionVariables.get('createBody')); body.title = 'Tên khác'; pm.variables.set('requestBody', JSON.stringify(body));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = false', () => pm.expect(response.success).to.eql(false));",
+                  "if (pm.response.code === 409) {",
+                  "",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/manual",
+            "description": "CC03 - Cùng OperationId nhưng khác dữ liệu. Expected HTTP 409.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC04 - Đọc bản nháp",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = true', () => pm.expect(response.success).to.eql(true));",
+                  "if (pm.response.code === 200) {",
+                  "pm.test('Đúng story và chưa có version', () => { pm.expect(response.data.storyId).to.eql(Number(pm.collectionVariables.get('storyId'))); pm.expect(response.data.selectedVersionId).to.eql(null); });",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}",
+            "description": "CC04 - Đọc bản nháp. Expected HTTP 200."
+          },
+          "response": []
+        },
+        {
+          "name": "CC05 - Lưu nội dung thủ công V1",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.collectionVariables;",
+                  "const payload = { operationId: c.get('runId') + ':save-v1', revisionToken: c.get('revisionToken'), baseVersionId: Number(c.get('versionId')) || null, title: 'Lan và hạt giống nhỏ', content: c.get('contentV1'), sourceDeclaration: 'Tự sáng tác', rightsDeclaration: 'Tôi là tác giả' };",
+                  "pm.variables.set('requestBody', JSON.stringify(payload));",
+                  "c.set('saveV1Body', JSON.stringify(payload));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = true', () => pm.expect(response.success).to.eql(true));",
+                  "if (pm.response.code === 201) {",
+                  "",
+                  "const d = response.data;",
+                  "pm.test('Story/version liên kết đúng', () => {",
+                  "    pm.expect(d.story.storyId).to.eql(Number(pm.collectionVariables.get('storyId')));",
+                  "    pm.expect(d.version.storyId).to.eql(d.story.storyId);",
+                  "    pm.expect(d.story.selectedVersionId).to.eql(d.version.versionId);",
+                  "    pm.expect(d.story.lastVersionNo).to.eql(d.version.versionNo);",
+                  "});",
+                  "pm.collectionVariables.set('revisionToken', d.story.revisionToken);",
+                  "pm.collectionVariables.set('versionId', String(d.version.versionId));",
+                  "pm.collectionVariables.set('versionNo', String(d.version.versionNo));pm.test('Origin Write', () => pm.expect(response.data.version.origin).to.eql('Write'));",
+                  "pm.test('V1 giữ nguyên nội dung và khoảng trắng', () => { pm.expect(d.version.versionNo).to.eql(1); pm.expect(d.version.content).to.eql(pm.collectionVariables.get('contentV1')); pm.expect(d.version.baseVersionId).to.eql(null); });",
+                  "pm.collectionVariables.set('v1Id', String(d.version.versionId));",
+                  "pm.collectionVariables.set('v1Receipt', JSON.stringify(d));",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}/manual/versions",
+            "description": "CC05 - Lưu nội dung thủ công V1. Expected HTTP 201.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC06 - Lưu lặp V1 trả cùng phiên bản",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('requestBody', pm.collectionVariables.get('saveV1Body'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = true', () => pm.expect(response.success).to.eql(true));",
+                  "if (pm.response.code === 201) {",
+                  "pm.test('Không sinh V2 khi retry', () => pm.expect(response.data).to.deep.eql(JSON.parse(pm.collectionVariables.get('v1Receipt'))));",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}/manual/versions",
+            "description": "CC06 - Lưu lặp V1 trả cùng phiên bản. Expected HTTP 201.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC07 - Chỉnh sửa và lưu V2",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.collectionVariables;",
+                  "const payload = { operationId: c.get('runId') + ':save-v2', revisionToken: c.get('revisionToken'), baseVersionId: Number(c.get('versionId')) || null, title: 'Lan và hạt giống nhỏ', content: c.get('contentV2'), sourceDeclaration: 'Tự sáng tác', rightsDeclaration: 'Tôi là tác giả' };",
+                  "pm.variables.set('requestBody', JSON.stringify(payload));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = true', () => pm.expect(response.success).to.eql(true));",
+                  "if (pm.response.code === 201) {",
+                  "",
+                  "const d = response.data;",
+                  "pm.test('Story/version liên kết đúng', () => {",
+                  "    pm.expect(d.story.storyId).to.eql(Number(pm.collectionVariables.get('storyId')));",
+                  "    pm.expect(d.version.storyId).to.eql(d.story.storyId);",
+                  "    pm.expect(d.story.selectedVersionId).to.eql(d.version.versionId);",
+                  "    pm.expect(d.story.lastVersionNo).to.eql(d.version.versionNo);",
+                  "});",
+                  "pm.collectionVariables.set('revisionToken', d.story.revisionToken);",
+                  "pm.collectionVariables.set('versionId', String(d.version.versionId));",
+                  "pm.collectionVariables.set('versionNo', String(d.version.versionNo));pm.test('Origin Write', () => pm.expect(response.data.version.origin).to.eql('Write'));",
+                  "pm.test('V2 nối tiếp V1', () => { pm.expect(d.version.versionNo).to.eql(2); pm.expect(d.version.baseVersionId).to.eql(Number(pm.collectionVariables.get('v1Id'))); pm.expect(d.version.content).to.eql(pm.collectionVariables.get('contentV2')); });",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}/manual/versions",
+            "description": "CC07 - Chỉnh sửa và lưu V2. Expected HTTP 201.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC08 - Retry V1 sau V2 vẫn trả receipt V1",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('requestBody', pm.collectionVariables.get('saveV1Body'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = true', () => pm.expect(response.success).to.eql(true));",
+                  "if (pm.response.code === 201) {",
+                  "pm.test('Receipt V1 giữ nguyên', () => pm.expect(response.data).to.deep.eql(JSON.parse(pm.collectionVariables.get('v1Receipt'))));",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}/manual/versions",
+            "description": "CC08 - Retry V1 sau V2 vẫn trả receipt V1. Expected HTTP 201.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC09 - Nội dung V1 không bị ghi đè",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = true', () => pm.expect(response.success).to.eql(true));",
+                  "if (pm.response.code === 200) {",
+                  "pm.test('V1 bất biến', () => { pm.expect(response.data.versionNo).to.eql(1); pm.expect(response.data.content).to.eql(pm.collectionVariables.get('contentV1')); });",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}/content/versions/{{v1Id}}",
+            "description": "CC09 - Nội dung V1 không bị ghi đè. Expected HTTP 200."
+          },
+          "response": []
+        },
+        {
+          "name": "CC10 - Từ chối revision cũ",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.collectionVariables;",
+                  "const payload = { operationId: c.get('runId') + ':stale-revision', revisionToken: c.get('revisionToken'), baseVersionId: Number(c.get('versionId')) || null, title: 'Lan và hạt giống nhỏ', content: c.get('contentV1'), sourceDeclaration: 'Tự sáng tác', rightsDeclaration: 'Tôi là tác giả' };",
+                  "pm.variables.set('requestBody', JSON.stringify(payload));",
+                  "payload.revisionToken = c.get('initialRevision'); pm.variables.set('requestBody', JSON.stringify(payload));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = false', () => pm.expect(response.success).to.eql(false));",
+                  "if (pm.response.code === 409) {",
+                  "pm.test('Thông báo tiếng Việt đúng', () => pm.expect(response.message).to.eql('Bản nháp đã thay đổi.'));",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}/manual/versions",
+            "description": "CC10 - Từ chối revision cũ. Expected HTTP 409.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC11 - Từ chối BaseVersionId cũ",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.collectionVariables;",
+                  "const payload = { operationId: c.get('runId') + ':stale-base', revisionToken: c.get('revisionToken'), baseVersionId: Number(c.get('versionId')) || null, title: 'Lan và hạt giống nhỏ', content: c.get('contentV1'), sourceDeclaration: 'Tự sáng tác', rightsDeclaration: 'Tôi là tác giả' };",
+                  "pm.variables.set('requestBody', JSON.stringify(payload));",
+                  "payload.baseVersionId = Number(c.get('v1Id')); pm.variables.set('requestBody', JSON.stringify(payload));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = false', () => pm.expect(response.success).to.eql(false));",
+                  "if (pm.response.code === 409) {",
+                  "pm.test('Xung đột phiên bản nguồn', () => pm.expect(response.message).to.eql('Phiên bản nguồn đã thay đổi.'));",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}/manual/versions",
+            "description": "CC11 - Từ chối BaseVersionId cũ. Expected HTTP 409.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC12 - Khôi phục V1 thành phiên bản mới V3",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.collectionVariables;",
+                  "const payload = { operationId: c.get('runId') + ':restore-v1', revisionToken: c.get('revisionToken'), baseVersionId: Number(c.get('versionId')) || null, sourceVersionId: Number(c.get('v1Id')) };",
+                  "pm.variables.set('requestBody', JSON.stringify(payload));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = true', () => pm.expect(response.success).to.eql(true));",
+                  "if (pm.response.code === 201) {",
+                  "",
+                  "const d = response.data;",
+                  "pm.test('Story/version liên kết đúng', () => {",
+                  "    pm.expect(d.story.storyId).to.eql(Number(pm.collectionVariables.get('storyId')));",
+                  "    pm.expect(d.version.storyId).to.eql(d.story.storyId);",
+                  "    pm.expect(d.story.selectedVersionId).to.eql(d.version.versionId);",
+                  "    pm.expect(d.story.lastVersionNo).to.eql(d.version.versionNo);",
+                  "});",
+                  "pm.collectionVariables.set('revisionToken', d.story.revisionToken);",
+                  "pm.collectionVariables.set('versionId', String(d.version.versionId));",
+                  "pm.collectionVariables.set('versionNo', String(d.version.versionNo));pm.test('Origin Restore', () => pm.expect(response.data.version.origin).to.eql('Restore'));",
+                  "pm.test('Khôi phục tạo V3, không ghi đè V1', () => { pm.expect(d.version.versionNo).to.eql(3); pm.expect(d.version.restoredFromVersionId).to.eql(Number(pm.collectionVariables.get('v1Id'))); pm.expect(d.version.content).to.eql(pm.collectionVariables.get('contentV1')); });",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}/content/restore",
+            "description": "CC12 - Khôi phục V1 thành phiên bản mới V3. Expected HTTP 201.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC13 - Xem trước nhập văn bản",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.collectionVariables;",
+                  "pm.variables.set('requestBody', JSON.stringify({ operationId: c.get('runId') + ':preview', revisionToken: c.get('revisionToken'), content: 'Một buổi sáng, Thỏ tìm thấy một chiếc ô.\\nThỏ chia sẻ chiếc ô với Sóc khi trời mưa.' }));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = true', () => pm.expect(response.success).to.eql(true));",
+                  "if (pm.response.code === 201) {",
+                  "",
+                  "pm.test('Preview có token và chưa thay đổi revision', () => { pm.expect(response.data.previewToken).to.be.a('string').and.not.empty; pm.expect(response.data.inputMethod).to.eql('paste'); pm.expect(response.data.storyId).to.eql(Number(pm.collectionVariables.get('storyId'))); });",
+                  "pm.collectionVariables.set('previewToken', response.data.previewToken);",
+                  "pm.collectionVariables.set('previewContent', response.data.content);",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}/imports/preview",
+            "description": "CC13 - Xem trước nhập văn bản. Expected HTTP 201.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC14 - Preview không tạo thêm phiên bản",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = true', () => pm.expect(response.success).to.eql(true));",
+                  "if (pm.response.code === 200) {",
+                  "pm.test('Vẫn có đúng 3 phiên bản', () => pm.expect(response.data).to.have.lengthOf(3));",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}/content/versions",
+            "description": "CC14 - Preview không tạo thêm phiên bản. Expected HTTP 200."
+          },
+          "response": []
+        },
+        {
+          "name": "CC15 - Từ chối import thiếu quyền sử dụng",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.collectionVariables;",
+                  "const payload = { operationId: c.get('runId') + ':missing-rights', revisionToken: c.get('revisionToken'), baseVersionId: Number(c.get('versionId')) || null, previewToken: c.get('previewToken'), content: c.get('previewContent'), title: 'Câu chuyện nhập từ văn bản', sourceDeclaration: 'Nội dung mẫu do người kiểm thử tự viết', rightsDeclaration: 'Tôi có quyền sử dụng nội dung mẫu này' };",
+                  "pm.variables.set('requestBody', JSON.stringify(payload));",
+                  "payload.rightsDeclaration = ''; pm.variables.set('requestBody', JSON.stringify(payload));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400 - DTO validation', () => pm.response.to.have.status(400));",
+                  "if (pm.response.code !== 400) pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}/imports/confirm",
+            "description": "CC15 - Từ chối import thiếu quyền sử dụng. Expected HTTP 400.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC16 - Từ chối preview token bị sửa",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.collectionVariables;",
+                  "const payload = { operationId: c.get('runId') + ':invalid-preview-token', revisionToken: c.get('revisionToken'), baseVersionId: Number(c.get('versionId')) || null, previewToken: c.get('previewToken'), content: c.get('previewContent'), title: 'Câu chuyện nhập từ văn bản', sourceDeclaration: 'Nội dung mẫu do người kiểm thử tự viết', rightsDeclaration: 'Tôi có quyền sử dụng nội dung mẫu này' };",
+                  "pm.variables.set('requestBody', JSON.stringify(payload));",
+                  "payload.previewToken = 'invalid-token'; pm.variables.set('requestBody', JSON.stringify(payload));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = false', () => pm.expect(response.success).to.eql(false));",
+                  "if (pm.response.code === 400) {",
+                  "pm.test('Token không hợp lệ', () => pm.expect(response.message).to.eql('PreviewToken không hợp lệ.'));",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}/imports/confirm",
+            "description": "CC16 - Từ chối preview token bị sửa. Expected HTTP 400.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC17 - Từ chối sửa nội dung sau preview",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.collectionVariables;",
+                  "const payload = { operationId: c.get('runId') + ':changed-preview-text', revisionToken: c.get('revisionToken'), baseVersionId: Number(c.get('versionId')) || null, previewToken: c.get('previewToken'), content: c.get('previewContent'), title: 'Câu chuyện nhập từ văn bản', sourceDeclaration: 'Nội dung mẫu do người kiểm thử tự viết', rightsDeclaration: 'Tôi có quyền sử dụng nội dung mẫu này' };",
+                  "pm.variables.set('requestBody', JSON.stringify(payload));",
+                  "payload.content += ' Nội dung thêm sau preview.'; pm.variables.set('requestBody', JSON.stringify(payload));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = false', () => pm.expect(response.success).to.eql(false));",
+                  "if (pm.response.code === 400) {",
+                  "pm.test('Yêu cầu preview lại', () => pm.expect(response.message).to.eql('Nội dung khác bản xem trước; cần preview lại.'));",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}/imports/confirm",
+            "description": "CC17 - Từ chối sửa nội dung sau preview. Expected HTTP 400.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC18 - Xác nhận import tạo V4",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.collectionVariables;",
+                  "const payload = { operationId: c.get('runId') + ':confirm-import', revisionToken: c.get('revisionToken'), baseVersionId: Number(c.get('versionId')) || null, previewToken: c.get('previewToken'), content: c.get('previewContent'), title: 'Câu chuyện nhập từ văn bản', sourceDeclaration: 'Nội dung mẫu do người kiểm thử tự viết', rightsDeclaration: 'Tôi có quyền sử dụng nội dung mẫu này' };",
+                  "pm.variables.set('requestBody', JSON.stringify(payload));",
+                  "c.set('confirmBody', JSON.stringify(payload));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = true', () => pm.expect(response.success).to.eql(true));",
+                  "if (pm.response.code === 201) {",
+                  "",
+                  "const d = response.data;",
+                  "pm.test('Story/version liên kết đúng', () => {",
+                  "    pm.expect(d.story.storyId).to.eql(Number(pm.collectionVariables.get('storyId')));",
+                  "    pm.expect(d.version.storyId).to.eql(d.story.storyId);",
+                  "    pm.expect(d.story.selectedVersionId).to.eql(d.version.versionId);",
+                  "    pm.expect(d.story.lastVersionNo).to.eql(d.version.versionNo);",
+                  "});",
+                  "pm.collectionVariables.set('revisionToken', d.story.revisionToken);",
+                  "pm.collectionVariables.set('versionId', String(d.version.versionId));",
+                  "pm.collectionVariables.set('versionNo', String(d.version.versionNo));pm.test('Origin Import', () => pm.expect(response.data.version.origin).to.eql('Import'));",
+                  "pm.test('Import lưu nội dung và nguồn khai báo', () => { pm.expect(d.version.versionNo).to.eql(4); pm.expect(d.version.content).to.eql(pm.collectionVariables.get('previewContent')); pm.expect(d.version.sourceDeclaration).to.eql('Nội dung mẫu do người kiểm thử tự viết'); });",
+                  "pm.collectionVariables.set('confirmReceipt', JSON.stringify(d));",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}/imports/confirm",
+            "description": "CC18 - Xác nhận import tạo V4. Expected HTTP 201.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC19 - Gửi lại confirm không sinh thêm phiên bản",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('requestBody', pm.collectionVariables.get('confirmBody'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = true', () => pm.expect(response.success).to.eql(true));",
+                  "if (pm.response.code === 201) {",
+                  "pm.test('Trả receipt import đã lưu', () => pm.expect(response.data).to.deep.eql(JSON.parse(pm.collectionVariables.get('confirmReceipt'))));",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}/imports/confirm",
+            "description": "CC19 - Gửi lại confirm không sinh thêm phiên bản. Expected HTTP 201.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC20 - Token preview cũ không dùng cho lệnh mới",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.collectionVariables;",
+                  "const payload = { operationId: c.get('runId') + ':reuse-preview-new-command', revisionToken: c.get('revisionToken'), baseVersionId: Number(c.get('versionId')) || null, previewToken: c.get('previewToken'), content: c.get('previewContent'), title: 'Câu chuyện nhập từ văn bản', sourceDeclaration: 'Nội dung mẫu do người kiểm thử tự viết', rightsDeclaration: 'Tôi có quyền sử dụng nội dung mẫu này' };",
+                  "pm.variables.set('requestBody', JSON.stringify(payload));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = false', () => pm.expect(response.success).to.eql(false));",
+                  "if (pm.response.code === 409) {",
+                  "",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}/imports/confirm",
+            "description": "CC20 - Token preview cũ không dùng cho lệnh mới. Expected HTTP 409.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC21 - Kiểm tra lịch sử sau các lỗi và retry",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = true', () => pm.expect(response.success).to.eql(true));",
+                  "if (pm.response.code === 200) {",
+                  "",
+                  "pm.test('Chỉ có 4 phiên bản, mới nhất đứng đầu', () => { pm.expect(response.data.map(v => v.versionNo)).to.deep.eql([4,3,2,1]); pm.expect(response.data[0].versionId).to.eql(Number(pm.collectionVariables.get('versionId'))); });",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}/content/versions",
+            "description": "CC21 - Kiểm tra lịch sử sau các lỗi và retry. Expected HTTP 200."
+          },
+          "response": []
+        },
+        {
+          "name": "CC22 - Danh sách truyện của tôi",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = true', () => pm.expect(response.success).to.eql(true));",
+                  "if (pm.response.code === 200) {",
+                  "",
+                  "pm.test('Danh sách có story vừa tạo', () => pm.expect(response.data.items.some(x => x.storyId === Number(pm.collectionVariables.get('storyId')))).to.eql(true));",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories?pageIndex=1&pageSize=100",
+            "description": "CC22 - Danh sách truyện của tôi. Expected HTTP 200."
+          },
+          "response": []
+        },
+        {
+          "name": "CC23 - Nhóm tuổi không hỗ trợ",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.collectionVariables;",
+                  "const body = JSON.parse(c.get('createBody')); body.operationId = c.get('runId') + ':bad-age'; body.ageBand = '9-12'; pm.variables.set('requestBody', JSON.stringify(body));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = false', () => pm.expect(response.success).to.eql(false));",
+                  "if (pm.response.code === 400) {",
+                  "",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/manual",
+            "description": "CC23 - Nhóm tuổi không hỗ trợ. Expected HTTP 400.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC24 - Thiếu OperationId",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.collectionVariables;",
+                  "const body = JSON.parse(c.get('createBody')); delete body.operationId; pm.variables.set('requestBody', JSON.stringify(body));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400 - DTO validation', () => pm.response.to.have.status(400));",
+                  "if (pm.response.code !== 400) pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/manual",
+            "description": "CC24 - Thiếu OperationId. Expected HTTP 400.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC25 - Phân trang không hợp lệ",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = false', () => pm.expect(response.success).to.eql(false));",
+                  "if (pm.response.code === 400) {",
+                  "",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories?pageIndex=0&pageSize=20",
+            "description": "CC25 - Phân trang không hợp lệ. Expected HTTP 400."
+          },
+          "response": []
+        },
+        {
+          "name": "CC26 - Nội dung vượt giới hạn tối đa",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const c = pm.collectionVariables;",
+                  "const payload = { operationId: c.get('runId') + ':oversize', revisionToken: c.get('revisionToken'), baseVersionId: Number(c.get('versionId')) || null, title: 'Quá dài', content: 'a'.repeat(200001) };",
+                  "pm.variables.set('requestBody', JSON.stringify(payload));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = false', () => pm.expect(response.success).to.eql(false));",
+                  "if (pm.response.code === 400) {",
+                  "",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}/manual/versions",
+            "description": "CC26 - Nội dung vượt giới hạn tối đa. Expected HTTP 400.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC27 - Chưa đăng nhập",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', () => pm.response.to.have.status(401));",
+                  "",
+                  "if (pm.response.code === 401) {",
+                  "",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}",
+            "description": "CC27 - Chưa đăng nhập. Expected HTTP 401.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC28 - Các lệnh lỗi không thay đổi bản hiện tại",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = true', () => pm.expect(response.success).to.eql(true));",
+                  "if (pm.response.code === 200) {",
+                  "",
+                  "pm.test('Vẫn ở V4 và revision mới nhất', () => { pm.expect(response.data.lastVersionNo).to.eql(4); pm.expect(response.data.selectedVersionId).to.eql(Number(pm.collectionVariables.get('versionId'))); pm.expect(response.data.revisionToken).to.eql(pm.collectionVariables.get('revisionToken')); });",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}",
+            "description": "CC28 - Các lệnh lỗi không thay đổi bản hiện tại. Expected HTTP 200."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 - Tùy chọn: phân quyền và nhập tệp",
+      "item": [
+        {
+          "name": "CC29 - Tài khoản khác không đọc được story",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('otherAccessToken')) { console.info('SKIP: chưa cấu hình otherAccessToken'); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = false', () => pm.expect(response.success).to.eql(false));",
+                  "if (pm.response.code === 404) {",
+                  "",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}",
+            "description": "Tùy chọn. otherAccessToken phải thuộc tài khoản Active khác với chủ story. Để trống sẽ bỏ qua.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{otherAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC30 - API Creator không đọc story Parent",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!(Number(pm.variables.get('parentStoryId')) > 0)) { console.info('SKIP: chưa cấu hình parentStoryId'); pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = false', () => pm.expect(response.success).to.eql(false));",
+                  "if (pm.response.code === 404) {",
+                  "",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{parentStoryId}}",
+            "description": "Tùy chọn. Điền ID story Scope=Parent thuộc chính tài khoản đang kiểm thử, để kiểm tra ranh giới scope thay vì chỉ kiểm tra sai chủ sở hữu."
+          },
+          "response": []
+        },
+        {
+          "name": "CC31 - Xem trước tệp TXT hoặc DOCX",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('importFilePath')) { console.info('SKIP: chưa cấu hình importFilePath'); pm.execution.skipRequest(); }",
+                  "pm.collectionVariables.unset('filePreviewToken');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = true', () => pm.expect(response.success).to.eql(true));",
+                  "if (pm.response.code === 201) {",
+                  "",
+                  "pm.test('Tệp được nhận diện', () => { pm.expect(['txt','docx']).to.include(response.data.inputMethod); pm.expect(response.data.fileName).to.be.a('string').and.not.empty; });",
+                  "pm.collectionVariables.set('filePreviewToken', response.data.previewToken);",
+                  "pm.collectionVariables.set('filePreviewContent', response.data.content);",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}/imports/preview-file",
+            "description": "Tùy chọn. Đặt importFilePath là đường dẫn tệp TXT UTF-8 hoặc DOCX có nội dung, tối đa 5 MB. Chọn lại file ở Body nếu Postman yêu cầu quyền đọc tệp. Postman tự đặt multipart boundary.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "File",
+                  "type": "file",
+                  "src": "{{importFilePath}}"
+                },
+                {
+                  "key": "RevisionToken",
+                  "type": "text",
+                  "value": "{{revisionToken}}"
+                },
+                {
+                  "key": "OperationId",
+                  "type": "text",
+                  "value": "{{runId}}:preview-file"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CC32 - Xác nhận nhập từ tệp",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('importFilePath')) { pm.execution.skipRequest(); }",
+                  "if (!pm.collectionVariables.get('filePreviewToken')) { throw new Error('Cần chạy thành công CC31 trước CC32.'); }",
+                  "const c = pm.collectionVariables;",
+                  "const payload = { operationId: c.get('runId') + ':confirm-file', revisionToken: c.get('revisionToken'), baseVersionId: Number(c.get('versionId')) || null, previewToken: c.get('previewToken'), content: c.get('previewContent'), title: 'Câu chuyện nhập từ văn bản', sourceDeclaration: 'Nội dung mẫu do người kiểm thử tự viết', rightsDeclaration: 'Tôi có quyền sử dụng nội dung mẫu này' };",
+                  "pm.variables.set('requestBody', JSON.stringify(payload));",
+                  "payload.previewToken = c.get('filePreviewToken'); payload.content = c.get('filePreviewContent'); pm.variables.set('requestBody', JSON.stringify(payload));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "const response = pm.response.json();",
+                  "pm.test('Response success = true', () => pm.expect(response.success).to.eql(true));",
+                  "if (pm.response.code === 201) {",
+                  "",
+                  "const d = response.data;",
+                  "pm.test('Story/version liên kết đúng', () => {",
+                  "    pm.expect(d.story.storyId).to.eql(Number(pm.collectionVariables.get('storyId')));",
+                  "    pm.expect(d.version.storyId).to.eql(d.story.storyId);",
+                  "    pm.expect(d.story.selectedVersionId).to.eql(d.version.versionId);",
+                  "    pm.expect(d.story.lastVersionNo).to.eql(d.version.versionNo);",
+                  "});",
+                  "pm.collectionVariables.set('revisionToken', d.story.revisionToken);",
+                  "pm.collectionVariables.set('versionId', String(d.version.versionId));",
+                  "pm.collectionVariables.set('versionNo', String(d.version.versionNo));pm.test('Origin Import', () => pm.expect(response.data.version.origin).to.eql('Import'));",
+                  "pm.test('Có tên tệp nguồn và nội dung preview', () => { pm.expect(d.version.importFileName).to.be.a('string').and.not.empty; pm.expect(d.version.content).to.eql(pm.collectionVariables.get('filePreviewContent')); });",
+                  "} else if (pm.execution && pm.execution.setNextRequest) {",
+                  "    pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/creator/stories/{{storyId}}/imports/confirm",
+            "description": "CC32 - Xác nhận nhập từ tệp. Expected HTTP 201.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{requestBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

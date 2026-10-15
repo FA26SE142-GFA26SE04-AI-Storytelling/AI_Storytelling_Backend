@@ -52,7 +52,7 @@ public sealed class ExistingStoryEvaluationService : IExistingStoryEvaluationSer
     {
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
-        await _accessGuard.EnsurePermissionAsync(story.ChildProfileId, userId, Permission.GenerateStory, cancellationToken);
+        await _accessGuard.EnsurePermissionAsync(StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story), userId, Permission.GenerateStory, cancellationToken);
 
         var version = await _unitOfWork.Repository<StoryVersion>().GetByIdAsync(storyVersionId, cancellationToken)
                       ?? throw new NotFoundException("StoryVersion", storyVersionId);
@@ -67,7 +67,7 @@ public sealed class ExistingStoryEvaluationService : IExistingStoryEvaluationSer
         try
         {
             safety = await _safetyPolicyService.GetSafetyPolicyAsync(
-                story.ChildProfileId, userId, cancellationToken);
+                StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story), userId, cancellationToken);
         }
         catch (NotFoundException)
         {
@@ -76,7 +76,7 @@ public sealed class ExistingStoryEvaluationService : IExistingStoryEvaluationSer
         if (safety is null || !safety.ConsentRecorded || !safety.ConsentRecordedAt.HasValue || safety.ConsentPolicyVersion <= 0)
             throw new BadRequestException("CONSENT_REQUIRED: Child Profile chưa có consent hợp lệ để sử dụng AI.");
 
-        var learning = await TryLoadLearningAsync(story.ChildProfileId, userId, cancellationToken);
+        var learning = await TryLoadLearningAsync(StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story), userId, cancellationToken);
 
         var blockedCategories = await LoadBlockedCategoriesAsync(safety, cancellationToken);
         var hardIssues = ScanHardSafety(version.Content!, blockedCategories).ToList();
@@ -131,7 +131,7 @@ public sealed class ExistingStoryEvaluationService : IExistingStoryEvaluationSer
     {
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
-        await _accessGuard.EnsurePermissionAsync(story.ChildProfileId, userId, Permission.GenerateStory, cancellationToken);
+        await _accessGuard.EnsurePermissionAsync(StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story), userId, Permission.GenerateStory, cancellationToken);
 
         var version = await _unitOfWork.Repository<StoryVersion>().GetByIdAsync(storyVersionId, cancellationToken)
                       ?? throw new NotFoundException("StoryVersion", storyVersionId);

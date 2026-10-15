@@ -1,10 +1,13 @@
 -- 20. media_assets (10: 8 active + 2 soft-deleted historical records)
 -- Url luu object path trong private Supabase bucket, khong luu public/signed URL.
 -- Selects from a VALUES list (rather than a plain INSERT) so rows whose StorySceneId
--- or StorySegmentId doesn't exist yet (18b_story_scenes.sql / 18c_story_segments.sql are
+-- or StorySegmentId doesn't exist yet (15_story_scenes.sql / 17_story_segments.sql are
 -- themselves conditional on story_versions.Content) are skipped instead of violating the FK.
-INSERT INTO media_assets ("Id", "StoryVersionId", "StorySceneId", "StorySegmentId", "Type", "Url", "Status", "ValidationStatus", "SceneIndex", "WordTimings", "AttemptCount", "CreatedAt", "IsDeleted")
-SELECT v."Id", v."StoryVersionId", v."StorySceneId", v."StorySegmentId", v."Type", v."Url", v."Status", v."ValidationStatus", v."SceneIndex", v."WordTimings", 0, v."CreatedAt", v."IsDeleted"
+-- For this fixture each illustration beat has the same Id as its ready scene.
+INSERT INTO media_assets ("Id", "StoryVersionId", "StorySceneId", "IllustrationBeatId", "StorySegmentId", "Type", "Url", "Status", "ValidationStatus", "SceneIndex", "WordTimings", "AttemptCount", "CreatedAt", "IsDeleted")
+SELECT v."Id", v."StoryVersionId", v."StorySceneId",
+    CASE WHEN v."Type" = 'Illustration' THEN v."StorySceneId" ELSE NULL END,
+    v."StorySegmentId", v."Type", v."Url", v."Status", v."ValidationStatus", v."SceneIndex", v."WordTimings", 0, v."CreatedAt", v."IsDeleted"
 FROM (VALUES
     (1, 1, 1, NULL, 'Illustration', '1/scene-0.png', 'Ready', 'Passed', 0, NULL, NOW() - INTERVAL '30 days', false),
     (2, 1, 1, 1, 'TtsAudio', '1/audio-0.mp3', 'Ready', 'Passed', 0, '[{"word":"Ngay","start":0.0,"end":0.3},{"word":"xua","start":0.4,"end":0.7}]', NOW() - INTERVAL '30 days', false),
@@ -19,9 +22,11 @@ FROM (VALUES
 ) AS v("Id", "StoryVersionId", "StorySceneId", "StorySegmentId", "Type", "Url", "Status", "ValidationStatus", "SceneIndex", "WordTimings", "CreatedAt", "IsDeleted")
 WHERE (v."StorySceneId" IS NULL OR EXISTS (SELECT 1 FROM story_scenes s WHERE s."Id" = v."StorySceneId"))
   AND (v."StorySegmentId" IS NULL OR EXISTS (SELECT 1 FROM story_segments sg WHERE sg."Id" = v."StorySegmentId"))
+  AND (v."Type" <> 'Illustration' OR v."StorySceneId" IS NULL OR EXISTS (SELECT 1 FROM illustration_beats b WHERE b."Id" = v."StorySceneId" AND b."StorySceneId" = v."StorySceneId"))
 ON CONFLICT ("Id") DO UPDATE SET
     "StoryVersionId" = EXCLUDED."StoryVersionId",
     "StorySceneId" = EXCLUDED."StorySceneId",
+    "IllustrationBeatId" = EXCLUDED."IllustrationBeatId",
     "StorySegmentId" = EXCLUDED."StorySegmentId",
     "Type" = EXCLUDED."Type",
     "Url" = EXCLUDED."Url",

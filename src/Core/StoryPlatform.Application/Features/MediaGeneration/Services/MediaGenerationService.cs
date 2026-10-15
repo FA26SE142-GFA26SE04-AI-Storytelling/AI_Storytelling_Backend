@@ -134,6 +134,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
             await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
             var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                         ?? throw new NotFoundException("Story", storyId);
+            if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
             if (story.Status != StoryStatus.MediaProcessing)
                 throw new ConflictException("MEDIA_JOB_RETRY_NOT_ALLOWED");
             var job = (await _unitOfWork.Repository<StoryGenerationJob>().FindAsync(
@@ -204,6 +205,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
             await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
             var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                 ?? throw new NotFoundException("Story", storyId);
+            if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
             if (story.Status is not (StoryStatus.MediaProcessing or StoryStatus.Ready))
                 throw new ConflictException("MEDIA_REGENERATION_NOT_ALLOWED");
             var version = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
@@ -920,6 +922,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
     {
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
+        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
         if (story.AuthorUserId == userId) return story;
         var relationship = await _unitOfWork.Repository<SupervisionRelationship>().FirstOrDefaultAsync(
             x => x.ChildProfileId == story.ChildProfileId && x.SupervisorUserId == userId && x.RevokedAt == null,

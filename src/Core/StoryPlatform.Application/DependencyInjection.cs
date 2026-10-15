@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using StoryPlatform.Application.Features.CreatorAuthoring.Interfaces;
+using StoryPlatform.Application.Features.CreatorAuthoring.Services;
 using StoryPlatform.Application.Features.Auth.Interfaces;
 using StoryPlatform.Application.Features.Auth.Services;
 using StoryPlatform.Application.Features.AIStoryInput.Guardrails;
@@ -56,6 +58,7 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
+        services.AddScoped<ICreatorAuthoringService, CreatorAuthoringService>();
         services.AddScoped<IUserProvisioningService, UserProvisioningService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IAccountDeletionService, AccountDeletionService>();

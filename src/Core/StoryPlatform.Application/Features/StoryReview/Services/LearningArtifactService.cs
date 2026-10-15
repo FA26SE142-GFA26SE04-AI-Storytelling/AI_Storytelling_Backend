@@ -121,7 +121,7 @@ public sealed class LearningArtifactService : ILearningArtifactService
     {
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
-        await _accessGuard.EnsurePermissionAsync(story.ChildProfileId, userId, Permission.GenerateStory, cancellationToken);
+        await _accessGuard.EnsurePermissionAsync(StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story), userId, Permission.GenerateStory, cancellationToken);
 
         var versionRepo = _unitOfWork.Repository<StoryVersion>();
         StoryVersion? version;
@@ -148,8 +148,8 @@ public sealed class LearningArtifactService : ILearningArtifactService
     private async Task<int> GenerateVocabularyInternalAsync(
         int userId, Story story, StoryVersion version, CancellationToken cancellationToken)
     {
-        var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(story.ChildProfileId, cancellationToken);
-        var learning = await TryGetLearningProfileAsync(story.ChildProfileId, userId, cancellationToken);
+        var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story), cancellationToken);
+        var learning = await TryGetLearningProfileAsync(StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story), userId, cancellationToken);
         var ageBand = child?.AgeBand.ToString() ?? "Age_6_8";
 
         var request = new GenerateVocabularyRequest
@@ -212,9 +212,9 @@ public sealed class LearningArtifactService : ILearningArtifactService
     private async Task<int> GenerateQuizInternalAsync(
         int userId, Story story, StoryVersion version, CancellationToken cancellationToken)
     {
-        var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(story.ChildProfileId, cancellationToken);
-        var learning = await TryGetLearningProfileAsync(story.ChildProfileId, userId, cancellationToken);
-        var safety = await TryGetSafetyPolicyAsync(story.ChildProfileId, userId, cancellationToken);
+        var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story), cancellationToken);
+        var learning = await TryGetLearningProfileAsync(StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story), userId, cancellationToken);
+        var safety = await TryGetSafetyPolicyAsync(StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story), userId, cancellationToken);
         var ageBand = child?.AgeBand.ToString() ?? "Age_6_8";
 
         var vocabRepo = _unitOfWork.Repository<StoryVocabulary>();
@@ -289,8 +289,8 @@ public sealed class LearningArtifactService : ILearningArtifactService
     private async Task<int> GenerateDiscussionInternalAsync(
         int userId, Story story, StoryVersion version, CancellationToken cancellationToken)
     {
-        var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(story.ChildProfileId, cancellationToken);
-        var learning = await TryGetLearningProfileAsync(story.ChildProfileId, userId, cancellationToken);
+        var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story), cancellationToken);
+        var learning = await TryGetLearningProfileAsync(StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story), userId, cancellationToken);
         var ageBand = child?.AgeBand.ToString() ?? "Age_6_8";
 
         var request = new GenerateDiscussionRequest

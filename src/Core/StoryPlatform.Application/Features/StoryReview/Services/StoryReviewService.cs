@@ -55,6 +55,7 @@ public sealed class StoryReviewService : IStoryReviewService
     {
         var story = await _storyRepo.FirstOrDefaultAsync(s => s.Id == storyId, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("Story");
+        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
 
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
@@ -94,6 +95,7 @@ public sealed class StoryReviewService : IStoryReviewService
     {
         var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story");
+        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
         var readability = ReadabilityCalculator.Calculate(version.Content, story.Language);
@@ -123,6 +125,7 @@ public sealed class StoryReviewService : IStoryReviewService
         // Mọi chỉnh sửa phải tạo StoryVersion mới (EditType = HumanEdited) để bảo toàn audit trail.
         var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story");
+        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
         await EnsureReviewPermissionAsync(story, userId, cancellationToken);
 
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
@@ -692,6 +695,7 @@ public sealed class StoryReviewService : IStoryReviewService
     {
         var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
+        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
         await EnsureReviewPermissionAsync(story, userId, cancellationToken);
         if (story.OutputMode == StoryOutputMode.ReadingMediaOnly && story.Status != StoryStatus.ContentReview)
             throw new ConflictException("STORY_NOT_READY_FOR_REVIEW");
@@ -706,6 +710,7 @@ public sealed class StoryReviewService : IStoryReviewService
         await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
+        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
         await EnsureReviewPermissionAsync(story, userId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
                       ?? throw new NotFoundException("StoryVersion");
@@ -718,6 +723,7 @@ public sealed class StoryReviewService : IStoryReviewService
         await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
+        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
         await EnsureReviewPermissionAsync(story, userId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
                       ?? throw new NotFoundException("StoryVersion");
@@ -730,6 +736,7 @@ public sealed class StoryReviewService : IStoryReviewService
         await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
+        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
         await EnsureReviewPermissionAsync(story, userId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
                       ?? throw new NotFoundException("StoryVersion");
@@ -954,6 +961,7 @@ public sealed class StoryReviewService : IStoryReviewService
                 throw new BadRequestException($"Cannot approve: {string.Join(", ", lockedValidation.Issues)}");
             var story = await _storyRepo.FirstOrDefaultAsync(s => s.Id == storyId, cancellationToken: cancellationToken)
                 ?? throw new NotFoundException("Story");
+            if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
             await EnsureReviewPermissionAsync(story, userId, cancellationToken);
             if (story.Status != StoryStatus.ContentReview)
                 throw new ConflictException("INVALID_STORY_STATUS");
@@ -1022,7 +1030,7 @@ public sealed class StoryReviewService : IStoryReviewService
         int storyId, CancellationToken cancellationToken = default)
     {
         var story = await _storyRepo.FirstOrDefaultAsync(s => s.Id == storyId, cancellationToken: cancellationToken);
-        if (story is null || story.Status != StoryStatus.ContentReview)
+        if (story is null || story.Scope != StoryScope.Parent || story.Status != StoryStatus.ContentReview)
             return null;
 
         var safetyPolicy = await _unitOfWork.Repository<SafetyPolicy>().FirstOrDefaultAsync(
@@ -1057,6 +1065,7 @@ public sealed class StoryReviewService : IStoryReviewService
             var story = await _storyRepo.FirstOrDefaultAsync(
                 s => s.Id == storyId, cancellationToken: cancellationToken)
                 ?? throw new NotFoundException("Story");
+            if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
             await EnsureReviewPermissionAsync(story, userId, cancellationToken);
             story.Status = StoryStatus.Archived;
             _storyRepo.Update(story);
@@ -1080,6 +1089,7 @@ public sealed class StoryReviewService : IStoryReviewService
     {
         var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
+        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
         await EnsureReviewPermissionAsync(story, userId, cancellationToken);
         if (story.OutputMode != StoryOutputMode.Learning)
             throw new ConflictException("LEARNING_ARTIFACT_NOT_ENABLED");
@@ -1088,6 +1098,7 @@ public sealed class StoryReviewService : IStoryReviewService
     private async Task EnsureReviewPermissionAsync(
         Story story, int userId, CancellationToken cancellationToken)
     {
+        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
         if (story.AuthorUserId == userId) return;
         var relationship = await _unitOfWork.Repository<SupervisionRelationship>().FirstOrDefaultAsync(
             value => value.ChildProfileId == story.ChildProfileId &&

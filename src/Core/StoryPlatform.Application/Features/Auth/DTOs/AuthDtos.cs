@@ -214,6 +214,28 @@ public class SessionDto
     public DateTime ExpiresAt { get; set; }
 }
 
+public class StaffActivationRequestDto
+{
+    [Required(ErrorMessage = "Email không được để trống.")]
+    [EmailAddress(ErrorMessage = "Email không đúng định dạng.")]
+    public string Email { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Mã mời không được để trống.")]
+    public string InviteToken { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Mật khẩu không được để trống.")]
+    [StringLength(PasswordPolicy.MaxLength, MinimumLength = PasswordPolicy.MinLength, ErrorMessage = PasswordPolicy.LengthErrorMessage)]
+    [RegularExpression(PasswordPolicy.Pattern, ErrorMessage = PasswordPolicy.CompositionErrorMessage)]
+    public string NewPassword { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Xác nhận mật khẩu không được để trống.")]
+    [Compare(nameof(NewPassword), ErrorMessage = "Mật khẩu xác nhận không khớp.")]
+    public string ConfirmPassword { get; set; } = string.Empty;
+
+    /// <summary>Đã tick cam kết bảo mật dữ liệu trẻ em và quy tắc kiểm duyệt.</summary>
+    public bool CommitmentAccepted { get; set; }
+}
+
 /// <summary>Chính sách mật khẩu đã chốt (Mục 9): tối thiểu 8 ký tự, có ít nhất 1 chữ cái và 1 chữ số.</summary>
 public static class PasswordPolicy
 {

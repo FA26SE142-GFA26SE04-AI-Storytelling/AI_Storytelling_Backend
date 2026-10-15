@@ -1,6 +1,7 @@
 using System;
 using System.Net;
 using System.Net.Http;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -98,6 +99,24 @@ public class ResendEmailSenderTests
         Assert.Contains("raw-set-password-token-789", handler.LastRequestBody);
         Assert.Contains("admin1@example.com", handler.LastRequestBody);
         Assert.Contains("Hieu Truong", handler.LastRequestBody);
+    }
+
+    [Fact]
+    public async Task SendStaffInviteEmailAsync_ValidRequest_PostsInviteTokenAnd72HourNotice()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var sender = CreateSender(handler);
+
+        await sender.SendStaffInviteEmailAsync(
+            "mod@example.com", "Nguyen Thi Lan", "Admin Demo",
+            "Kiểm duyệt viên (Moderator)", "raw-invite-token-xyz");
+
+        Assert.NotNull(handler.LastRequest);
+        Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+        Assert.Contains("raw-invite-token-xyz", handler.LastRequestBody);
+        Assert.Contains("mod@example.com", handler.LastRequestBody);
+        using var payload = JsonDocument.Parse(handler.LastRequestBody!);
+        Assert.Contains("72 giờ", payload.RootElement.GetProperty("html").GetString());
     }
 
     [Fact]

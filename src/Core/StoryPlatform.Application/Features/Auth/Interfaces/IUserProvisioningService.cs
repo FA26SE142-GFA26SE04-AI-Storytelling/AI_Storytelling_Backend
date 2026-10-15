@@ -11,5 +11,6 @@ public interface IUserProvisioningService
 {
     Task<(UserAccount Account, string RawSetPasswordToken)> CreatePendingAccountAsync(
         string username, string email, string fullName, string? phoneNumber, UserRole role,
+        TimeSpan? setPasswordTokenLifetime = null,
         CancellationToken cancellationToken = default);
 }

@@ -14,6 +14,8 @@
 /docs/*
 !/docs/superpowers/
 !/docs/HUONG_DAN_SU_DUNG_API_LUONG_2.md
+!/docs/KE_HOACH_CREATOR_CREATIVE_SUGGESTION_ENGINE.md
+!/docs/CREATOR_ASSISTANCE_API_FRONTEND_GUIDE.md
 
 # AppSettings
 appsettings*.json

@@ -94,11 +94,6 @@ public class AuthService : IAuthService
                 "Vui lòng thiết lập mật khẩu bằng mã đã được gửi qua email trước khi đăng nhập.");
         }
 
-        if (user.Role == UserRole.Administrator)
-        {
-            return await BuildMfaChallengeResponseAsync(user, cancellationToken);
-        }
-
         user.FailedLoginAttempts = 0;
         user.LockedUntil = null;
         user.LastLoginAt = DateTime.UtcNow;

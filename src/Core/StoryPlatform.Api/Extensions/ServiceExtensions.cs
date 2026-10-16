@@ -237,6 +237,9 @@ public static class ServiceExtensions
                 Description = "Nhập JWT Token của bạn: {token}"
             });
 
+            // Query enum hiển thị tên (Pending, Medium...) thay vì số; model binder nhận cả tên lẫn số.
+            c.ParameterFilter<QueryEnumAsStringParameterFilter>();
+
             c.AddSecurityRequirement(new OpenApiSecurityRequirement
             {
                 {
@@ -254,6 +257,33 @@ public static class ServiceExtensions
         });
 
         return services;
+    }
+
+    private sealed class QueryEnumAsStringParameterFilter : Swashbuckle.AspNetCore.SwaggerGen.IParameterFilter
+    {
+        public void Apply(OpenApiParameter parameter, Swashbuckle.AspNetCore.SwaggerGen.ParameterFilterContext context)
+        {
+            if (parameter.In != ParameterLocation.Query)
+            {
+                return;
+            }
+
+            var type = context.ApiParameterDescription.Type;
+            var enumType = type is null ? null : Nullable.GetUnderlyingType(type) ?? type;
+            if (enumType is null || !enumType.IsEnum)
+            {
+                return;
+            }
+
+            parameter.Schema = new OpenApiSchema
+            {
+                Type = "string",
+                Nullable = Nullable.GetUnderlyingType(type!) != null,
+                Enum = Enum.GetNames(enumType)
+                    .Select(name => (Microsoft.OpenApi.Any.IOpenApiAny)new Microsoft.OpenApi.Any.OpenApiString(name))
+                    .ToList()
+            };
+        }
     }
 
     public static IServiceCollection AddCorsPolicy(this IServiceCollection services)

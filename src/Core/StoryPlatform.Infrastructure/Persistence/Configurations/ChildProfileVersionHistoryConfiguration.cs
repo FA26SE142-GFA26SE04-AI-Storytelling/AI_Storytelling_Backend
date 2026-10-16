@@ -30,6 +30,7 @@ public class ChildProfileVersionHistoryConfiguration : IEntityTypeConfiguration<
             .HasConversion<string>()
             .HasMaxLength(30)
             .HasDefaultValue(VersionHistorySource.Recommendation)
+            .HasSentinel(VersionHistorySource.Recommendation)
             .IsRequired();
 
         builder.HasOne(x => x.ChildProfile)

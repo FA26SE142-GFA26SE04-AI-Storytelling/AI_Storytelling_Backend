@@ -29,6 +29,7 @@ public class ChildSessionConfiguration : IEntityTypeConfiguration<ChildSession>
             .HasConversion<string>()
             .HasMaxLength(30)
             .HasDefaultValue(ChildEntryMethod.ProfileSwitcher)
+            .HasSentinel(ChildEntryMethod.ProfileSwitcher)
             .IsRequired();
 
         builder.HasOne(x => x.ChildProfile)

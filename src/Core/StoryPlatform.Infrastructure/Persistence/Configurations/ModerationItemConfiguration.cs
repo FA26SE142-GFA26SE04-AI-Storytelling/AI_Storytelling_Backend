@@ -21,9 +21,11 @@ public class ModerationItemConfiguration : IEntityTypeConfiguration<ModerationIt
 
         builder.Property(x => x.ItemType).HasConversion<string>().HasMaxLength(30).IsRequired();
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(30).IsRequired()
-            .HasDefaultValue(ModerationItemStatus.Pending);
+            .HasDefaultValue(ModerationItemStatus.Pending)
+            .HasSentinel(ModerationItemStatus.Pending);
         builder.Property(x => x.Priority).HasConversion<string>().HasMaxLength(30).IsRequired()
-            .HasDefaultValue(ModerationPriority.Medium);
+            .HasDefaultValue(ModerationPriority.Medium)
+            .HasSentinel(ModerationPriority.Medium);
         builder.Property(x => x.CopyrightDeclaration).HasConversion<string>().HasMaxLength(30);
 
         builder.Property(x => x.PiiCheckResult).HasColumnType("jsonb");

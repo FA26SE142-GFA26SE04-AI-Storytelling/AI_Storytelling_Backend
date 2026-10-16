@@ -17,6 +17,7 @@ public class StoryConfiguration : IEntityTypeConfiguration<Story>
             .HasConversion<string>()
             .HasMaxLength(30)
             .HasDefaultValue(StoryPlatform.Domain.Enums.StoryScope.Parent)
+            .HasSentinel(StoryPlatform.Domain.Enums.StoryScope.Parent)
             .IsRequired();
         builder.Property(s => s.AuthoringRevisionToken).HasMaxLength(32).IsRequired().IsConcurrencyToken();
         builder.Property(s => s.ExperienceMode).HasMaxLength(20).IsRequired();
@@ -61,6 +62,7 @@ public class StoryConfiguration : IEntityTypeConfiguration<Story>
             .HasConversion<string>()
             .HasMaxLength(30)
             .HasDefaultValue(StoryPlatform.Domain.Enums.StoryOutputMode.Learning)
+            .HasSentinel(StoryPlatform.Domain.Enums.StoryOutputMode.Learning)
             .IsRequired();
 
         builder.Property(s => s.Status)

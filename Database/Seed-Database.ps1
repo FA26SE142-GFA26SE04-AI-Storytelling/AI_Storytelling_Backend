@@ -353,6 +353,11 @@ if (-not [string]::IsNullOrEmpty($Password)) {
     $env:PGPASSWORD = $Password
 }
 
+# File SQL tam duoc ghi bang UTF-8; psql tren Windows mac dinh dung WIN1252 nen phai ep client encoding = UTF8.
+$hadPgClientEncoding = Test-Path Env:PGCLIENTENCODING
+$previousPgClientEncoding = $env:PGCLIENTENCODING
+$env:PGCLIENTENCODING = 'UTF8'
+
 try {
     Write-Host "Ket noi PostgreSQL: Host=$PgHost Port=$Port Database=$Database Username=$Username" -ForegroundColor Cyan
     $psqlArguments = @(
@@ -378,6 +383,13 @@ finally {
     }
     else {
         Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
+    }
+
+    if ($hadPgClientEncoding) {
+        $env:PGCLIENTENCODING = $previousPgClientEncoding
+    }
+    else {
+        Remove-Item Env:\PGCLIENTENCODING -ErrorAction SilentlyContinue
     }
 
     if (Test-Path -LiteralPath $tempFile -PathType Leaf) {

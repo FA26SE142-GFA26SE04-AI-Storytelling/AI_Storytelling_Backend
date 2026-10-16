@@ -36,6 +36,8 @@ public class ApplicationDbContext : DbContext
     // Story content & generation
     public DbSet<StoryCategory> StoryCategories => Set<StoryCategory>();
     public DbSet<StoryVersion> StoryVersions => Set<StoryVersion>();
+    public DbSet<StoryAssistanceTask> StoryAssistanceTasks => Set<StoryAssistanceTask>();
+    public DbSet<StoryAssistanceStep> StoryAssistanceSteps => Set<StoryAssistanceStep>();
     public DbSet<StoryGenerationJob> StoryGenerationJobs => Set<StoryGenerationJob>();
     public DbSet<StoryGenerationRequest> StoryGenerationRequests => Set<StoryGenerationRequest>();
     public DbSet<StoryVocabulary> StoryVocabularies => Set<StoryVocabulary>();

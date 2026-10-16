@@ -1,4 +1,8 @@
 using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
+using StoryPlatform.Application.Features.CreatorAssistance.DTOs;
+using StoryPlatform.Contracts.AI.CreatorAssistance;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -10,6 +14,68 @@ namespace StoryPlatform.UnitTests;
 
 public sealed class SeedDataAlignmentTests
 {
+    [Fact]
+    public void SeedAssistance_ClosedTaskKeepsSourceContextAndReplayReceiptsConsistent()
+    {
+        var inserts = ReadInserts();
+        var task = Assert.Single(Rows(inserts, "story_assistance_tasks"));
+        var step = Assert.Single(Rows(inserts, "story_assistance_steps"));
+        var sourceStory = Assert.Single(Rows(inserts, "stories"), s => s["Id"] == task["StoryId"]);
+        var sourceVersion = Assert.Single(Rows(inserts, "story_versions"), v => v["Id"] == task["SourceVersionId"]);
+        var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        T Read<T>(Dictionary<string, string> row, string key) => JsonSerializer.Deserialize<T>(StringLiteral(row[key])!, json)!;
+        string Hash<T>(T value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value, json))));
+        var context = Read<CreateAssistanceTaskRequest>(task, "ContextJson");
+        var creation = Read<AssistanceTaskDto>(task, "CreateResponseJson");
+        var command = Read<AssistanceCommand>(step, "InputJson");
+        var receipt = Read<AssistanceCommandResult>(step, "ResponseJson");
+
+        Assert.Equal("Creator", StringLiteral(sourceStory["Scope"]));
+        Assert.Equal(sourceStory["AuthorUserId"], task["OwnerUserId"]);
+        Assert.Equal(task["StoryId"], sourceVersion["StoryId"]);
+        Assert.Equal("true", sourceVersion["IsCurrent"]);
+        Assert.Equal(int.Parse(sourceVersion["Id"]), context.BaseVersionId);
+        Assert.Equal(StringLiteral(sourceVersion["Title"]), context.EditorSnapshot.Title);
+        Assert.Equal(StringLiteral(sourceVersion["Content"]), context.EditorSnapshot.Content);
+        var revisionExpression = Regex.Match(sourceStory["AuthoringRevisionToken"], @"^md5\('([^']+)'\)$");
+        Assert.True(revisionExpression.Success);
+        var revision = Convert.ToHexString(MD5.HashData(Encoding.UTF8.GetBytes(revisionExpression.Groups[1].Value))).ToLowerInvariant();
+        Assert.Equal(revision, context.RevisionToken);
+        Assert.Equal(revision, StringLiteral(task["SourceRevisionToken"]));
+        Assert.Equal(context.OperationId, StringLiteral(task["CreateOperationId"]));
+        Assert.Equal(Hash(context), StringLiteral(task["CreateRequestHash"]));
+        var snapshotHash = Hash(new[] { context.EditorSnapshot.Title, context.EditorSnapshot.Content });
+        Assert.Equal(snapshotHash, StringLiteral(task["SnapshotHash"]));
+        AssistanceValidation.ValidateTarget(context.EntryPoint, context.EditorSnapshot, context.Target);
+        AssistanceValidation.ValidateConstraints(context.Constraints);
+
+        Assert.Equal(int.Parse(task["Id"]), creation.TaskId);
+        Assert.Equal(context.EditorSnapshot, creation.Snapshot);
+        Assert.Equal(context.Target, creation.Target);
+        Assert.Equal("Open", creation.Status); // A create replay returns its original historical receipt.
+        Assert.Equal(command.ExpectedTaskRevision, creation.TaskRevision);
+        Assert.Equal(snapshotHash, creation.SnapshotHash);
+        Assert.Equal("Closed", StringLiteral(task["Status"]));
+        Assert.Equal("NULL", task.GetValueOrDefault("ActiveOperationId", "NULL"));
+        Assert.Equal("NULL", task.GetValueOrDefault("LeaseExpiresAt", "NULL"));
+        Assert.Equal(task["Id"], step["TaskId"]);
+        Assert.Equal(task["LastSequence"], step["Sequence"]);
+        Assert.Equal(Hash(new { kind = "Close", request = (object)command }), StringLiteral(step["RequestHash"]));
+        Assert.Equal(command.OperationId, StringLiteral(step["OperationId"]));
+        Assert.Equal(command.ExpectedTaskRevision + 1, int.Parse(task["TaskRevision"]));
+        Assert.Equal(int.Parse(task["TaskRevision"]), receipt.TaskRevision);
+        Assert.Equal(receipt.TaskRevision, receipt.Step.ResultingTaskRevision);
+        Assert.Equal(int.Parse(step["Id"]), receipt.StepId);
+        Assert.Equal(creation.TaskId, receipt.TaskId);
+        Assert.Equal("Closed", receipt.Status);
+        Assert.False(receipt.IsRunning);
+        Assert.Equal("Close", receipt.Step.Kind);
+        Assert.Equal("Succeeded", receipt.Step.Status);
+        Assert.Null(receipt.Step.Result);
+        Assert.Equal("NULL", step["OutputJson"]);
+        Assert.Equal("NULL", step.GetValueOrDefault("Provider", "NULL"));
+        Assert.Equal(snapshotHash, receipt.SnapshotHash);
+    }
     private sealed record Insert(string File, string Table, string[] Columns, List<Dictionary<string, string>> Rows, bool Derived);
 
     [Fact]
@@ -20,7 +86,15 @@ public sealed class SeedDataAlignmentTests
             .UseNpgsql("Host=localhost;Database=metadata_only;Username=unused;Password=unused").Options);
         var model = db.GetService<IDesignTimeModel>().Model.GetRelationalModel();
         var inserts = ReadInserts();
-        Assert.Equal(model.Tables.Select(t => t.Name).OrderBy(x => x), inserts.Select(i => i.Table).Distinct().OrderBy(x => x));
+        var modelTables = model.Tables.Select(t => t.Name).OrderBy(x => x, StringComparer.Ordinal).ToArray();
+        var seedTables = inserts.Select(i => i.Table).Distinct(StringComparer.Ordinal).OrderBy(x => x, StringComparer.Ordinal).ToArray();
+        var missingInserts = modelTables.Except(seedTables, StringComparer.Ordinal).ToArray();
+        var extraInserts = seedTables.Except(modelTables, StringComparer.Ordinal).ToArray();
+        Assert.True(modelTables.SequenceEqual(seedTables, StringComparer.Ordinal),
+            $"Seed coverage mismatch. Missing seed INSERTs: [{string.Join(", ", missingInserts)}]. " +
+            $"Seed INSERTs for unknown tables: [{string.Join(", ", extraInserts)}]. " +
+            $"Model tables ({modelTables.Length}): [{string.Join(", ", modelTables)}]. " +
+            $"Seed tables ({seedTables.Length}): [{string.Join(", ", seedTables)}].");
         foreach (var insert in inserts)
         {
             var table = model.Tables.Single(t => t.Name == insert.Table);

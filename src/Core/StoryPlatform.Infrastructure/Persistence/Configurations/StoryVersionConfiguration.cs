@@ -27,6 +27,7 @@ public class StoryVersionConfiguration : IEntityTypeConfiguration<StoryVersion>
         builder.Property(x => x.OutlineEnding).HasColumnType("text");
         builder.Property(x => x.Content).HasColumnType("text");
         builder.Property(x => x.AuthoringOrigin).HasMaxLength(20);
+        builder.Property(x => x.AssistanceProvenanceJson).HasColumnType("jsonb");
         builder.Property(x => x.SourceDeclaration).HasMaxLength(2000).IsRequired();
         builder.Property(x => x.RightsDeclaration).HasMaxLength(2000).IsRequired();
         builder.Property(x => x.ImportFileName).HasMaxLength(255);

@@ -26,6 +26,10 @@ public class ExceptionHandlingMiddleware
         {
             await _next(context);
         }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            _logger.LogInformation("Request aborted by caller. TraceId={TraceId}", System.Diagnostics.Activity.Current?.TraceId.ToString() ?? context.TraceIdentifier);
+        }
         catch (Exception ex)
         {
             await HandleExceptionAsync(context, ex);
@@ -34,6 +38,7 @@ public class ExceptionHandlingMiddleware
 
     private async Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
+        if (context.RequestAborted.IsCancellationRequested || context.Response.HasStarted) return;
         context.Response.ContentType = "application/json";
 
         int statusCode;
@@ -62,7 +67,8 @@ public class ExceptionHandlingMiddleware
 
         context.Response.StatusCode = statusCode;
 
-        var response = ApiResponse<object>.Fail(message);
+        var response = ApiResponse<object>.Fail(message,
+            exception is StoryPlatform.Application.Features.CreatorAssistance.AssistanceException assistance ? [assistance.Code] : null);
         var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
         var json = JsonSerializer.Serialize(response, jsonOptions);
 

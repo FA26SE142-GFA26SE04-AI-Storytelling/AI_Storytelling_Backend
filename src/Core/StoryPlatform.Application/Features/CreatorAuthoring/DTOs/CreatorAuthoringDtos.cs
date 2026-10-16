@@ -26,6 +26,8 @@ public abstract record CreatorVersionCommand : CreatorCommand
 
 public sealed record SaveCreatorContentRequest : CreatorVersionCommand
 {
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public StoryPlatform.Application.Features.CreatorAssistance.DTOs.AssistanceReference[]? AssistanceReferences { get; init; }
     [StringLength(200)] public string Title { get; init; } = string.Empty;
     public string Content { get; init; } = string.Empty;
     [StringLength(2000)] public string SourceDeclaration { get; init; } = string.Empty;
@@ -59,7 +61,8 @@ public sealed record CreatorDraftDto(int StoryId, int AuthorUserId, string Title
 public sealed record CreatorVersionDto(int VersionId, int StoryId, int VersionNo, int? BaseVersionId,
     int? RestoredFromVersionId, int EditorUserId, string Title, string Content, string Origin,
     string SourceDeclaration, string RightsDeclaration, string? ImportFileName, string? ImportSourceHash,
-    int AudienceRevision, DateTime CreatedAt);
+    int AudienceRevision, DateTime CreatedAt,
+    StoryPlatform.Application.Features.CreatorAssistance.DTOs.AssistanceProvenance? Assistance = null);
 
 public sealed record CreatorContentSavedDto(CreatorDraftDto Story, CreatorVersionDto Version);
 public sealed record CreatorImportPreviewDto(string PreviewToken, int StoryId, string Content,

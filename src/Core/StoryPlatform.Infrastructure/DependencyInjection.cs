@@ -34,6 +34,11 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddDataProtection();
+        services.AddOptions<StoryPlatform.Application.Features.CreatorAssistance.CreatorAssistanceOptions>()
+            .Bind(configuration.GetSection(StoryPlatform.Application.Features.CreatorAssistance.CreatorAssistanceOptions.SectionName))
+            .Validate(x => x.HasValidLimits(),
+                "Creator assistance limits are invalid. Lease must include the 10-second completion budget and 5-second safety margin after timeout.").ValidateOnStart();
+        services.AddSingleton(sp => sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<StoryPlatform.Application.Features.CreatorAssistance.CreatorAssistanceOptions>>().Value);
         services.AddScoped<StoryPlatform.Application.Features.CreatorAuthoring.Interfaces.IImportPreviewProtector,
             StoryPlatform.Infrastructure.Security.ImportPreviewProtector>();
         services.AddOptions<CreatorAuthoringOptions>()
@@ -85,6 +90,7 @@ public static class DependencyInjection
         });
         services.AddHttpClient<GeminiDirectClient>();
         services.AddHttpClient<IAIStoryGenerationClient, AIStoryGenerationClient>();
+        services.AddHttpClient<StoryPlatform.Application.Features.CreatorAssistance.Interfaces.ICreatorAssistanceAiClient, CreatorAssistanceAiClient>();
         services.Configure<OutlineWorkerOptions>(configuration.GetSection(OutlineWorkerOptions.SectionName));
         services.AddSingleton<IOutlineJobFailureFinalizer, OutlineJobFailureFinalizer>();
         services.AddHostedService<OutlineGenerationWorker>();

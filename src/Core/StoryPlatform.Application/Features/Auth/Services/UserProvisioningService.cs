@@ -10,7 +10,7 @@ namespace StoryPlatform.Application.Features.Auth.Services;
 
 public class UserProvisioningService : IUserProvisioningService
 {
-    private const int SetPasswordTokenExpiryDays = 7;
+    private static readonly TimeSpan DefaultSetPasswordTokenLifetime = TimeSpan.FromDays(7);
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IPasswordHasher _passwordHasher;
@@ -26,6 +26,7 @@ public class UserProvisioningService : IUserProvisioningService
 
     public async Task<(UserAccount Account, string RawSetPasswordToken)> CreatePendingAccountAsync(
         string username, string email, string fullName, string? phoneNumber, UserRole role,
+        TimeSpan? setPasswordTokenLifetime = null,
         CancellationToken cancellationToken = default)
     {
         var userRepo = _unitOfWork.Repository<UserAccount>();
@@ -61,7 +62,8 @@ public class UserProvisioningService : IUserProvisioningService
             Role = role,
             Status = AccountStatus.PasswordResetPending,
             ResetTokenHash = TokenHasher.Hash(rawSetPasswordToken),
-            ResetTokenExpiresAt = DateTime.UtcNow.AddDays(SetPasswordTokenExpiryDays),
+            ResetTokenExpiresAt = DateTime.UtcNow.Add(
+                setPasswordTokenLifetime ?? DefaultSetPasswordTokenLifetime),
             CreatedAt = DateTime.UtcNow
         };
 

@@ -363,6 +363,11 @@ public class AuthService : IAuthService
             return;
         }
 
+        if (IsUnactivatedModerator(user))
+        {
+            return;
+        }
+
         var rawResetToken = _jwtTokenGenerator.GenerateRefreshToken(); // tái dùng bộ sinh chuỗi ngẫu nhiên an toàn sẵn có
         user.ResetTokenHash = TokenHasher.Hash(rawResetToken);
         user.ResetTokenExpiresAt = DateTime.UtcNow.AddHours(1);
@@ -479,6 +484,12 @@ public class AuthService : IAuthService
         if (user == null || user.ResetTokenHash != hashedIncomingToken)
         {
             throw new BadRequestException("Token đặt lại mật khẩu không hợp lệ.");
+        }
+
+        if (IsUnactivatedModerator(user))
+        {
+            throw new BadRequestException(
+                "Tài khoản Moderator cần được kích hoạt qua trang kích hoạt tài khoản bằng mã mời.");
         }
 
         if (user.ResetTokenExpiresAt == null || user.ResetTokenExpiresAt < DateTime.UtcNow)
@@ -775,7 +786,12 @@ public class AuthService : IAuthService
         {
             UserAccountId = user.Id,
             TokenHash = TokenHasher.Hash(rawRefreshToken),
-            SessionScope = user.Role == UserRole.Administrator ? SessionScope.Admin : SessionScope.Supervisor,
+            SessionScope = user.Role switch
+            {
+                UserRole.Administrator => SessionScope.Admin,
+                UserRole.Moderator => SessionScope.Moderator,
+                _ => SessionScope.Supervisor
+            },
             IssuedAt = DateTime.UtcNow,
             ExpiresAt = refreshTokenExpiresAt
         }, cancellationToken);
@@ -835,6 +851,13 @@ public class AuthService : IAuthService
             user.FailedLoginAttempts = 0;
         }
     }
+
+    /// <summary>
+    /// Moderator được mời nhưng chưa kích hoạt phải đi qua trang kích hoạt để xác nhận cam kết,
+    /// không được dùng luồng đặt lại mật khẩu với mã mời lưu chung trong ResetToken.
+    /// </summary>
+    private static bool IsUnactivatedModerator(UserAccount user) =>
+        user.Role == UserRole.Moderator && user.CommitmentAcceptedAt == null;
 
     private async Task NotifySecurityChangeAsync(
         UserAccount user, AccountSecurityChange change, string? emailTo,

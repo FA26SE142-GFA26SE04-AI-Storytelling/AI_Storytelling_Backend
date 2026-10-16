@@ -219,6 +219,9 @@ public static class DependencyInjection
         services.Configure<NotificationRetentionWorkerOptions>(
             configuration.GetSection(NotificationRetentionWorkerOptions.SectionName));
         services.AddHostedService<NotificationRetentionWorker>();
+        services.Configure<ModerationSweepWorkerOptions>(
+            configuration.GetSection(ModerationSweepWorkerOptions.SectionName));
+        services.AddHostedService<ModerationSweepWorker>();
 
         return services;
     }

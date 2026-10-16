@@ -149,6 +149,22 @@ public class ResendEmailSender : IEmailSender
         return SendAsync(toEmail, subject, html, cancellationToken);
     }
 
+    public Task SendStaffInviteEmailAsync(
+        string toEmail, string toName, string inviterName, string roleLabel, string rawInviteToken,
+        CancellationToken cancellationToken = default)
+    {
+        const string subject = "Lời mời tham gia AI Storytelling Platform";
+        var html = $"""
+            <p>Chào {toName},</p>
+            <p>{inviterName} mời bạn tham gia AI Storytelling Platform với vai trò <strong>{roleLabel}</strong>.</p>
+            <p>Dùng mã mời bên dưới tại trang kích hoạt tài khoản để đặt mật khẩu, xác nhận cam kết bảo mật dữ liệu trẻ em và quy tắc kiểm duyệt:</p>
+            <p style="font-size:18px;font-weight:bold;word-break:break-all;">{rawInviteToken}</p>
+            <p>Mã chỉ có hiệu lực trong 72 giờ và chỉ dùng được một lần. Nếu bạn không mong đợi email này, vui lòng bỏ qua.</p>
+            """;
+
+        return SendAsync(toEmail, subject, html, cancellationToken);
+    }
+
     private async Task SendAsync(string toEmail, string subject, string html, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(_options.ApiKey))

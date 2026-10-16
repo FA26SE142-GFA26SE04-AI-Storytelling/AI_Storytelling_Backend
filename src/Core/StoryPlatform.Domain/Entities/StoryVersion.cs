@@ -26,6 +26,7 @@ public class StoryVersion : BaseEntity
 
     // Authoring provenance and command receipts on the shared version row.
     public string? AuthoringOrigin { get; set; }
+    public string? AssistanceProvenanceJson { get; set; }
     public int? BaseVersionId { get; set; }
     public int? RestoredFromVersionId { get; set; }
     public int AudienceRevision { get; set; } = 1;

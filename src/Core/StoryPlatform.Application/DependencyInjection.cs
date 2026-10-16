@@ -61,6 +61,8 @@ public static class DependencyInjection
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
         services.AddScoped<ICreatorAuthoringService, CreatorAuthoringService>();
+        services.AddScoped<Features.CreatorAssistance.Interfaces.ICreatorAssistanceService, Features.CreatorAssistance.Services.CreatorAssistanceService>();
+        services.AddSingleton<Features.CreatorAssistance.Services.AssistanceCancellationRegistry>();
         services.AddScoped<IUserProvisioningService, UserProvisioningService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IStaffActivationService, StaffActivationService>();

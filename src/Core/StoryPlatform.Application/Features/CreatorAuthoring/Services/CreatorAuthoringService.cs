@@ -72,10 +72,12 @@ public sealed partial class CreatorAuthoringService : ICreatorAuthoringService
         CommandAsync(userId, storyId, "save-manual", request.OperationId, request, async story =>
         {
             await CheckSourceAsync(story!, request, ct);
+            var assistance = await ValidateAssistanceAsync(userId, story!, request, ct);
             return await AddVersionAsync(userId, story!, new StoryVersion
             {
                 Title = Limited(request.Title, 200, "Tên truyện"), Content = Content(request.Content, false),
                 AuthoringOrigin = "Write", EditType = VersionEditType.HumanEdited,
+                AssistanceProvenanceJson = assistance,
                 SourceDeclaration = Limited(request.SourceDeclaration, 2000, "Nguồn"),
                 RightsDeclaration = Limited(request.RightsDeclaration, 2000, "Quyền sử dụng")
             }, "creator_manual_content_saved", ct);
@@ -105,6 +107,7 @@ public sealed partial class CreatorAuthoringService : ICreatorAuthoringService
             {
                 Title = source.Title, Content = source.Content, AuthoringOrigin = "Restore", EditType = VersionEditType.HumanEdited,
                 RestoredFromVersionId = source.Id, SourceDeclaration = source.SourceDeclaration,
+                AssistanceProvenanceJson = RestoreAssistance(source),
                 RightsDeclaration = source.RightsDeclaration, ImportFileName = source.ImportFileName, ImportSourceHash = source.ImportSourceHash
             }, "creator_content_restored", ct);
         }, ct);
@@ -114,6 +117,13 @@ public sealed partial class CreatorAuthoringService : ICreatorAuthoringService
         var current = await CurrentVersionAsync(story.Id, ct);
         version.StoryId = story.Id;
         version.BaseVersionId = current?.Id;
+        version.AssistanceProvenanceJson ??= JsonSerializer.Serialize(
+            new StoryPlatform.Application.Features.CreatorAssistance.DTOs.AssistanceProvenance(1, [], current?.Id, version.RestoredFromVersionId), JsonOptions);
+        if (version.AssistanceProvenanceJson is not null)
+        {
+            var provenance = JsonSerializer.Deserialize<StoryPlatform.Application.Features.CreatorAssistance.DTOs.AssistanceProvenance>(version.AssistanceProvenanceJson, JsonOptions)!;
+            version.AssistanceProvenanceJson = JsonSerializer.Serialize(provenance with { BaseVersionId = current?.Id }, JsonOptions);
+        }
         version.VersionNo = ++story.AuthoringLastVersionNo;
         version.AudienceRevision = story.AudienceRevision;
         version.EditorUserId = userId;
@@ -265,5 +275,6 @@ public sealed partial class CreatorAuthoringService : ICreatorAuthoringService
     private static CreatorVersionDto ToVersion(StoryVersion x) => new(x.Id, x.StoryId, x.VersionNo,
         x.BaseVersionId, x.RestoredFromVersionId, x.EditorUserId ?? 0, x.Title, x.Content ?? string.Empty,
         x.AuthoringOrigin ?? "Write", x.SourceDeclaration, x.RightsDeclaration, x.ImportFileName, x.ImportSourceHash,
-        x.AudienceRevision, x.CreatedAt);
+        x.AudienceRevision, x.CreatedAt, x.AssistanceProvenanceJson is null ? null :
+            JsonSerializer.Deserialize<StoryPlatform.Application.Features.CreatorAssistance.DTOs.AssistanceProvenance>(x.AssistanceProvenanceJson, JsonOptions));
 }

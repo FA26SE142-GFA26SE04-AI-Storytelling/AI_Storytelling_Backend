@@ -1391,46 +1391,24 @@ public class AuthServiceTests
         MfaSecret = mfaSecret
     };
 
-    [Fact]
-    public async Task LoginAsync_AdministratorWithMfaEnabled_ReturnsMfaRequiredWithoutTokens()
+    [Theory]
+    [InlineData(true, "JBSWY3DPEHPK3PXP")]
+    [InlineData(false, null)]
+    public async Task LoginAsync_Administrator_ReturnsTokensWithoutMfaChallenge(bool mfaEnabled, string? mfaSecret)
     {
-        var admin = CreateAdminUser(mfaEnabled: true, mfaSecret: "JBSWY3DPEHPK3PXP");
+        var admin = CreateAdminUser(mfaEnabled, mfaSecret);
         _userRepoMock
             .Setup(r => r.FirstOrDefaultAsync(It.IsAny<Expression<Func<UserAccount, bool>>>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(admin);
         _passwordHasherMock.Setup(p => p.VerifyPassword("Demo@123", admin.PasswordHash)).Returns(true);
-        _jwtGeneratorMock.Setup(j => j.GenerateMfaChallengeToken(admin.Id)).Returns("challenge-token");
 
         var result = await _sut.LoginAsync(new LoginRequestDto { Identifier = admin.Email, Password = "Demo@123" });
 
-        Assert.True(result.MfaRequired);
+        Assert.False(result.MfaRequired);
         Assert.False(result.MfaSetupRequired);
-        Assert.Equal("challenge-token", result.MfaChallengeToken);
-        Assert.Empty(result.AccessToken);
-        _unitOfWorkMock.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task LoginAsync_AdministratorWithoutMfaSetup_GeneratesSecretAndReturnsSetupRequired()
-    {
-        var admin = CreateAdminUser(mfaEnabled: false, mfaSecret: null);
-        _userRepoMock
-            .Setup(r => r.FirstOrDefaultAsync(It.IsAny<Expression<Func<UserAccount, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(admin);
-        _passwordHasherMock.Setup(p => p.VerifyPassword("Demo@123", admin.PasswordHash)).Returns(true);
-        _totpServiceMock.Setup(t => t.GenerateSecret()).Returns("NEWSECRET234567");
-        _totpServiceMock.Setup(t => t.BuildProvisioningUri("NEWSECRET234567", admin.Email, It.IsAny<string>()))
-            .Returns("otpauth://totp/fake");
-        _jwtGeneratorMock.Setup(j => j.GenerateMfaChallengeToken(admin.Id)).Returns("setup-challenge-token");
-
-        var result = await _sut.LoginAsync(new LoginRequestDto { Identifier = admin.Email, Password = "Demo@123" });
-
-        Assert.True(result.MfaSetupRequired);
-        Assert.Equal("otpauth://totp/fake", result.MfaProvisioningUri);
-        Assert.Equal("setup-challenge-token", result.MfaChallengeToken);
-        Assert.Equal("NEWSECRET234567", admin.MfaSecret);
-        Assert.False(admin.MfaEnabled);
-        _unitOfWorkMock.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Null(result.MfaChallengeToken);
+        Assert.Equal("fake-access-token", result.AccessToken);
+        _jwtGeneratorMock.Verify(j => j.GenerateMfaChallengeToken(It.IsAny<int>()), Times.Never);
     }
 
     [Fact]

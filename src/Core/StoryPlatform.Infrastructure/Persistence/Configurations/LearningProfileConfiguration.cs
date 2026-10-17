@@ -20,6 +20,7 @@ public class LearningProfileConfiguration : IEntityTypeConfiguration<LearningPro
             .HasConversion<string>()
             .HasMaxLength(30)
             .HasDefaultValue(ReadingMode.ListenFirst)
+            .HasSentinel(ReadingMode.ListenFirst)
             .IsRequired();
 
         builder.HasOne(x => x.ChildProfile)

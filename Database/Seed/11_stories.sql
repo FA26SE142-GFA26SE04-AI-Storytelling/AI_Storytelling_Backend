@@ -1,6 +1,7 @@
--- 11. stories (12: 10 Parent, 2 Creator)
+-- 11. stories (14: 10 Parent, 4 Creator)
 -- Creator: Id 11 = manual V2, Id 12 = imported text V1; author is creator_demo (Id 13).
--- Both remain Draft/unpublished, without ChildProfileId, AI jobs or publication artifacts.
+-- WF-L5A fixtures: Id 11 = first submit/withdraw; Id 13 = creator resubmit;
+-- Id 14 = recent pending resubmission for moderator queue/history/compare.
 -- ON CONFLICT preserves existing rows; this file does not overwrite live authoring data.
 INSERT INTO stories (
     "Id", "Title", "Description", "Content", "CoverImageUrl", "Genre", "MoralLesson", "Language", "AgeBand", "ReadingLevel", "VocabularyLevel", "Status", "Source", "IsPublished", "ChildVisibleAt", "ArchivedReason", "AuthorUserId", "ChildProfileId", "CreatedAt", "IsDeleted", "Scope", "OutputMode", "AudienceRevision", "AuthoringLastVersionNo", "AuthoringRevisionToken", "ExperienceMode"
@@ -16,9 +17,20 @@ VALUES
     (8, 'Sieu Nhan Ti Hon', 'Cau be co suc manh dac biet bao ve xom lang', 'Trong mot ngoi lang nho, co mot cau be so huu suc manh dac biet...', 'https://example.com/covers/story8.png', 'Sieu anh hung', 'Dung cam bao ve nguoi yeu the', 'vi', '9-10', 5, 'level_5', 'OutlineReview', 'Ai', false, NULL, NULL, 10, 8, NOW() - INTERVAL '17 days', false, 'Parent', 'Learning', 1, 1, md5('seed-parent-story-8'), 'reading'),
     (9, 'Chuyen Phieu Luu Rung Ram', 'Nhom ban cung nhau kham pha khu rung bi an', 'Bon nguoi ban quyet dinh kham pha khu rung phia sau lang...', 'https://example.com/covers/story9.png', 'Phieu luu', 'Doan ket tao nen suc manh', 'vi', '6-8', 3, 'level_3', 'Archived', 'Manual', false, NULL, 'SafetyConcern', 6, 9, NOW() - INTERVAL '15 days', false, 'Parent', 'Learning', 1, 1, md5('seed-parent-story-9'), 'reading'),
     (10, 'Tran Bong Da Dang Nho', 'Bai hoc ve tinh than the thao va fair-play', 'Tran chung ket bong da cua truong dien ra day kich tinh...', 'https://example.com/covers/story10.png', 'The thao', 'Tinh than fair-play trong the thao', 'vi', '9-10', 4, 'level_4', 'Ready', 'Ai', true, NOW() - INTERVAL '13 days' + INTERVAL '2 hours', NULL, 7, 10, NOW() - INTERVAL '13 days', false, 'Parent', 'Learning', 1, 1, md5('seed-parent-story-10'), 'reading'),
-    (11, 'Hạt giống của Lan', 'Mẫu kiểm thử Creator trên Story/StoryVersion dùng chung', 'Lan gieo một hạt giống nhỏ. Minh giúp Lan tưới nước mỗi sáng. Khi chiếc lá đầu tiên xuất hiện, hai bạn cùng mỉm cười.', NULL, 'Tình bạn', NULL, 'vi', '6-8', NULL, NULL, 'Draft', 'Manual', false, NULL, NULL, 13, NULL, NOW() - INTERVAL '2 days', false, 'Creator', 'ReadingMediaOnly', 1, 2, md5('seed-creator-story-11'), 'reading'),
-    (12, 'Chiếc ô tình bạn', 'Mẫu kiểm thử Creator trên Story/StoryVersion dùng chung', 'Thỏ tìm thấy một chiếc ô bên đường. Khi trời mưa, Thỏ mời Sóc cùng trú dưới ô. Hai bạn vui vẻ đi về nhà.', NULL, 'Tình bạn', NULL, 'vi', '6-8', NULL, NULL, 'Draft', 'Manual', false, NULL, NULL, 13, NULL, NOW() - INTERVAL '2 days', false, 'Creator', 'ReadingMediaOnly', 1, 1, md5('seed-creator-story-12'), 'reading')
+    (11, 'Hạt giống của Lan', 'Mẫu gửi duyệt và rút yêu cầu WF-L5A', 'Lan gieo một hạt giống nhỏ. Minh giúp Lan tưới nước mỗi sáng. Khi chiếc lá đầu tiên xuất hiện, hai bạn cùng mỉm cười.', NULL, 'Tình bạn', NULL, 'vi', '6-8', NULL, NULL, 'Ready', 'Manual', false, NULL, NULL, 13, NULL, NOW() - INTERVAL '2 days', false, 'Creator', 'ReadingMediaOnly', 1, 2, md5('seed-creator-story-11'), 'reading'),
+    (12, 'Chiếc ô tình bạn', 'Mẫu kiểm thử Creator trên Story/StoryVersion dùng chung', 'Thỏ tìm thấy một chiếc ô bên đường. Khi trời mưa, Thỏ mời Sóc cùng trú dưới ô. Hai bạn vui vẻ đi về nhà.', NULL, 'Tình bạn', NULL, 'vi', '6-8', NULL, NULL, 'Draft', 'Manual', false, NULL, NULL, 13, NULL, NOW() - INTERVAL '2 days', false, 'Creator', 'ReadingMediaOnly', 1, 1, md5('seed-creator-story-12'), 'reading'),
+    (13, 'Khu vườn biết sẻ chia', 'Mẫu Creator gửi lại sau yêu cầu sửa WF-L5A', 'Mai trồng một luống hoa nhỏ. Nam xin phép hái một bông và cùng Mai chăm sóc khu vườn. Hai bạn chia hoa cho lớp học.', NULL, 'Tình bạn', 'Biết xin phép và sẻ chia', 'vi', '6-8', 2, 'level_2', 'Ready', 'Manual', true, NOW() - INTERVAL '6 days', NULL, 13, NULL, NOW() - INTERVAL '8 days', false, 'Creator', 'ReadingMediaOnly', 1, 3, md5('seed-creator-story-13'), 'reading'),
+    (14, 'Ngọn đèn trong đêm', 'Mẫu gửi lại đang chờ để Moderator kiểm tra WF-L5A', 'An đặt ngọn đèn an toàn bên cửa sổ. Ánh sáng dịu giúp các bạn tìm thấy đường về. Cả nhóm cảm ơn An.', NULL, 'Tình bạn', 'Bình tĩnh giúp đỡ mọi người', 'vi', '6-8', 2, 'level_2', 'Ready', 'Manual', true, NOW() - INTERVAL '7 days', NULL, 13, NULL, NOW() - INTERVAL '9 days', false, 'Creator', 'ReadingMediaOnly', 1, 3, md5('seed-creator-story-14'), 'reading')
 ON CONFLICT ("Id") DO NOTHING;
+
+-- Giữ fixture gửi lần đầu ở trạng thái có thể submit kể cả khi seed được chạy lại.
+UPDATE stories
+SET "Status" = 'Ready', "Description" = 'Mẫu gửi duyệt và rút yêu cầu WF-L5A'
+WHERE "Id" = 11 AND "Scope" = 'Creator';
+
+UPDATE stories
+SET "PublishedAt" = "ChildVisibleAt"
+WHERE "Id" IN (13, 14) AND "IsPublished" = true AND "PublishedAt" IS NULL;
 
 -- Public timestamps are historical demo values; Story.Visibility is not in this schema yet.
 UPDATE stories

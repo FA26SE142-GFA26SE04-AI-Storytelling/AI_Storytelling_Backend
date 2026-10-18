@@ -369,7 +369,7 @@ public class PublicStoryReviewServiceTests
     }
 
     [Fact]
-    public void Controller_IsRestrictedAndExposesEightEndpoints()
+    public void Controller_IsRestrictedAndExposesNineEndpoints()
     {
         var authorize = typeof(PublicStoryReviewController).GetCustomAttribute<AuthorizeAttribute>();
         var methods = typeof(PublicStoryReviewController)
@@ -381,7 +381,7 @@ public class PublicStoryReviewServiceTests
         Assert.Equal(
             new[]
             {
-                "Approve", "GetPackage", "MarkViewed", "Reject", "RequestChanges", "ResolveFlag",
+                "Approve", "Compare", "GetPackage", "MarkViewed", "Reject", "RequestChanges", "ResolveFlag",
                 "SaveChecklist", "SetLabels"
             },
             methods);
@@ -716,6 +716,103 @@ public class PublicStoryReviewServiceTests
         Assert.Contains("\"future\":1", progress);
         Assert.Contains("\"future\":1", flags);
         Assert.Contains("\"future\":1", checklist);
+    }
+
+    [Fact]
+    public async Task GetPackageAsync_Resubmission_ReturnsPreviousModeratorAndReviewHistory()
+    {
+        var previousVersion = _h.CloneVersion(PublicStoryReviewHarness.VersionId, 49);
+        var previous = new ModerationItem
+        {
+            Id = 90,
+            ItemType = ModerationItemType.PublicStoryReview,
+            Status = ModerationItemStatus.ChangesRequested,
+            StoryId = PublicStoryReviewHarness.StoryId,
+            StoryVersionId = previousVersion.Id,
+            CreatedByUserId = PublicStoryReviewHarness.CreatorId,
+            DecidedByUserId = PublicStoryReviewHarness.ModeratorId,
+            DecidedAt = DateTime.UtcNow.AddDays(-1),
+            DecisionReason = "Cần sửa phần kết.",
+            Feedback = "{\"parts\":[]}"
+        };
+        _h.Items.Add(previous);
+        _h.Items[0].IsResubmission = true;
+        _h.Items[0].PreviousItemId = previous.Id;
+
+        var package = await _h.Sut.GetPackageAsync(
+            PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId);
+
+        Assert.Equal("Nguyen Thi Lan", package.PreviousModeratorName);
+        var history = Assert.Single(package.ReviewHistory);
+        Assert.Equal(previous.Id, history.ItemId);
+        Assert.Equal("ChangesRequested", history.Decision);
+        Assert.Equal("Nguyen Thi Lan", history.DecidedByName);
+        Assert.Equal("Cần sửa phần kết.", history.Reason);
+    }
+
+    [Fact]
+    public async Task CompareAsync_Previous_ReturnsDiffAndWritesAudit()
+    {
+        var previousVersion = _h.CloneVersion(PublicStoryReviewHarness.VersionId, 49);
+        previousVersion.Content = "Mở đầu cũ. Kết thúc.";
+        var previous = new ModerationItem
+        {
+            Id = 90,
+            ItemType = ModerationItemType.PublicStoryReview,
+            Status = ModerationItemStatus.Rejected,
+            StoryId = PublicStoryReviewHarness.StoryId,
+            StoryVersionId = previousVersion.Id,
+            CreatedByUserId = PublicStoryReviewHarness.CreatorId,
+            DecidedByUserId = PublicStoryReviewHarness.ModeratorId,
+            DecidedAt = DateTime.UtcNow.AddHours(-2)
+        };
+        _h.Items.Add(previous);
+        _h.Items[0].IsResubmission = true;
+        _h.Items[0].PreviousItemId = previous.Id;
+
+        var result = await _h.Sut.CompareAsync(
+            PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId, "previous");
+
+        Assert.Equal("previous", result.Against);
+        Assert.Equal(previousVersion.Id, result.BaseVersionId);
+        Assert.False(result.IsIdentical);
+        _h.Audit.Verify(audit => audit.LogAsync(
+            PublicStoryReviewHarness.ModeratorId, "PublicStoryReviewCompared", nameof(ModerationItem),
+            PublicStoryReviewHarness.ItemId, null, It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CompareAsync_Public_UsesLatestApprovedVersion()
+    {
+        var older = _h.CloneVersion(PublicStoryReviewHarness.VersionId, 48);
+        older.ReviewStatus = VersionReviewStatus.Approved;
+        older.ReviewedAt = DateTime.UtcNow.AddDays(-2);
+        var latest = _h.CloneVersion(PublicStoryReviewHarness.VersionId, 49);
+        latest.ReviewStatus = VersionReviewStatus.Approved;
+        latest.ReviewedAt = DateTime.UtcNow.AddDays(-1);
+
+        var result = await _h.Sut.CompareAsync(
+            PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId, "public");
+
+        Assert.Equal(latest.Id, result.BaseVersionId);
+        Assert.Equal("public", result.Against);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("other")]
+    public async Task CompareAsync_InvalidTarget_IsBadRequest(string? against)
+    {
+        await Assert.ThrowsAsync<BadRequestException>(() => _h.Sut.CompareAsync(
+            PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId, against));
+    }
+
+    [Fact]
+    public async Task CompareAsync_PreviousWithoutPreviousItem_IsBadRequest()
+    {
+        await Assert.ThrowsAsync<BadRequestException>(() => _h.Sut.CompareAsync(
+            PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId, "previous"));
     }
 
     private void GivenTwoFlags()

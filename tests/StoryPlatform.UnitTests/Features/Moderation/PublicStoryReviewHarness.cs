@@ -92,7 +92,8 @@ public sealed class PublicStoryReviewHarness
             ReadingLevel = 2,
             Language = "vi",
             AuthorUserId = CreatorId,
-            Status = StoryStatus.Ready
+            Status = StoryStatus.Ready,
+            Scope = StoryScope.Creator
         });
         Versions.Add(new StoryVersion
         {
@@ -189,6 +190,130 @@ public sealed class PublicStoryReviewHarness
             "{\"safety\":true,\"ageFit\":true,\"education\":true,\"language\":true,"
             + "\"copyright\":true,\"image\":true,\"audio\":true,\"interaction\":true}";
         return segmentId;
+    }
+
+    public StoryVersion CloneVersion(int sourceVersionId, int newVersionId)
+    {
+        var source = Versions.Single(version => version.Id == sourceVersionId);
+        var copy = new StoryVersion
+        {
+            Id = newVersionId,
+            StoryId = source.StoryId,
+            VersionNo = source.VersionNo + 1,
+            Title = source.Title,
+            Content = source.Content,
+            Lesson = source.Lesson,
+            OutlineOpening = source.OutlineOpening,
+            OutlineDevelopment = source.OutlineDevelopment,
+            OutlineEnding = source.OutlineEnding
+        };
+        Versions.Add(copy);
+
+        var offset = newVersionId * 100000;
+        var sceneMap = new Dictionary<int, int>();
+        var segmentMap = new Dictionary<int, int>();
+        var beatMap = new Dictionary<int, int>();
+
+        foreach (var scene in Scenes.Where(scene => scene.StoryVersionId == sourceVersionId).ToList())
+        {
+            sceneMap[scene.Id] = scene.Id + offset;
+            Scenes.Add(new StoryScene
+            {
+                Id = scene.Id + offset,
+                StoryVersionId = newVersionId,
+                SceneIndex = scene.SceneIndex,
+                TextRangeStart = scene.TextRangeStart,
+                TextRangeEnd = scene.TextRangeEnd,
+                SceneText = scene.SceneText,
+                VisualDescription = scene.VisualDescription
+            });
+        }
+
+        foreach (var segment in Segments.Where(segment => sceneMap.ContainsKey(segment.StorySceneId)).ToList())
+        {
+            segmentMap[segment.Id] = segment.Id + offset;
+            Segments.Add(new StorySegment
+            {
+                Id = segment.Id + offset,
+                StorySceneId = sceneMap[segment.StorySceneId],
+                SegmentOrder = segment.SegmentOrder,
+                StartOffset = segment.StartOffset,
+                EndOffset = segment.EndOffset,
+                TextContent = segment.TextContent
+            });
+        }
+
+        foreach (var beat in Beats.Where(beat => sceneMap.ContainsKey(beat.StorySceneId)).ToList())
+        {
+            beatMap[beat.Id] = beat.Id + offset;
+            Beats.Add(new IllustrationBeat
+            {
+                Id = beat.Id + offset,
+                StorySceneId = sceneMap[beat.StorySceneId],
+                BeatOrder = beat.BeatOrder,
+                StartOffset = beat.StartOffset,
+                EndOffset = beat.EndOffset,
+                VisualFocus = beat.VisualFocus
+            });
+        }
+
+        foreach (var asset in Assets.Where(asset => asset.StoryVersionId == sourceVersionId).ToList())
+        {
+            Assets.Add(new MediaAsset
+            {
+                Id = asset.Id + offset,
+                StoryVersionId = newVersionId,
+                StorySceneId = asset.StorySceneId.HasValue ? sceneMap[asset.StorySceneId.Value] : null,
+                IllustrationBeatId = asset.IllustrationBeatId.HasValue
+                    ? beatMap[asset.IllustrationBeatId.Value]
+                    : null,
+                StorySegmentId = asset.StorySegmentId.HasValue
+                    ? segmentMap[asset.StorySegmentId.Value]
+                    : null,
+                Type = asset.Type,
+                Status = asset.Status,
+                Url = asset.Url,
+                WordTimings = asset.WordTimings
+            });
+        }
+
+        foreach (var quiz in Quizzes.Where(quiz => quiz.StoryVersionId == sourceVersionId).ToList())
+        {
+            Quizzes.Add(new QuizItem
+            {
+                Id = quiz.Id + offset,
+                StoryVersionId = newVersionId,
+                Type = quiz.Type,
+                Question = quiz.Question,
+                CorrectAnswer = quiz.CorrectAnswer,
+                Choices = quiz.Choices
+            });
+        }
+
+        foreach (var word in Vocabulary.Where(word => word.StoryVersionId == sourceVersionId).ToList())
+        {
+            Vocabulary.Add(new StoryVocabulary
+            {
+                Id = word.Id + offset,
+                StoryVersionId = newVersionId,
+                Term = word.Term,
+                Definition = word.Definition
+            });
+        }
+
+        foreach (var question in Discussions
+                     .Where(question => question.StoryVersionId == sourceVersionId).ToList())
+        {
+            Discussions.Add(new DiscussionQuestion
+            {
+                Id = question.Id + offset,
+                StoryVersionId = newVersionId,
+                Question = question.Question,
+                IsMoralLesson = question.IsMoralLesson
+            });
+        }
+
+        return copy;
     }
 
     private void Back<T>(List<T> list) where T : BaseEntity

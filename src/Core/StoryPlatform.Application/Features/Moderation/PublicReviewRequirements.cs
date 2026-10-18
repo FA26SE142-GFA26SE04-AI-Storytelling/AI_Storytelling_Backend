@@ -53,6 +53,9 @@ public static class PublicReviewRequirements
     public const int MaxChangeParts = 50;
     public const int MaxDecisionReasonLength = 1000;
 
+    public const string ComparePrevious = "previous";
+    public const string ComparePublic = "public";
+
     public static bool HasPronunciationWarning(MediaAsset? audio) =>
         audio != null
         && !string.IsNullOrWhiteSpace(audio.Url)

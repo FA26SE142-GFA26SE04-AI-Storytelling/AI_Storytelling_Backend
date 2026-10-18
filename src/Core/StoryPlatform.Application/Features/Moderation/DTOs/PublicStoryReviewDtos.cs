@@ -19,6 +19,8 @@ public class PublicReviewPackageDto
     public PublicReviewChecklistDto Checklist { get; set; } = new();
     public List<ApproveBlockerDto> ApproveBlockers { get; set; } = new();
     public bool CanApprove { get; set; }
+    public string? PreviousModeratorName { get; set; }
+    public List<PublicReviewHistoryEntryDto> ReviewHistory { get; set; } = new();
 }
 
 public class PublicReviewStoryDto
@@ -198,4 +200,81 @@ public class RequestChangesDto
 public class RejectRequestDto
 {
     public string Reason { get; set; } = string.Empty;
+}
+
+public class SubmitPublicStoryRequestDto
+{
+    public int StoryId { get; set; }
+    public int StoryVersionId { get; set; }
+}
+
+public class PublicStorySubmissionResultDto
+{
+    public int ItemId { get; set; }
+    public int StoryId { get; set; }
+    public int StoryVersionId { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public bool IsResubmission { get; set; }
+    public int? PreviousItemId { get; set; }
+}
+
+public class PublicReviewHistoryEntryDto
+{
+    public int ItemId { get; set; }
+    public int? StoryVersionId { get; set; }
+    public int? VersionNo { get; set; }
+    public string Decision { get; set; } = string.Empty;
+    public int? DecidedByUserId { get; set; }
+    public string? DecidedByName { get; set; }
+    public DateTime? DecidedAt { get; set; }
+    public string? Reason { get; set; }
+    public string? Feedback { get; set; }
+}
+
+public class PublicVersionComparisonDto
+{
+    public string Against { get; set; } = string.Empty;
+    public int BaseVersionId { get; set; }
+    public int BaseVersionNo { get; set; }
+    public int CurrentVersionId { get; set; }
+    public int CurrentVersionNo { get; set; }
+    public bool IsIdentical { get; set; }
+    public List<TextDiffEntryDto> TextDiff { get; set; } = new();
+    public PublicVersionMetricsDto BaseMetrics { get; set; } = new();
+    public PublicVersionMetricsDto CurrentMetrics { get; set; } = new();
+    public List<string> ChangedFields { get; set; } = new();
+    public List<SceneChangeDto> SceneChanges { get; set; } = new();
+    public List<ArtifactChangeDto> ArtifactChanges { get; set; } = new();
+}
+
+public class TextDiffEntryDto
+{
+    public string Type { get; set; } = string.Empty;
+    public string? Before { get; set; }
+    public string? After { get; set; }
+}
+
+public class PublicVersionMetricsDto
+{
+    public int WordCount { get; set; }
+    public int SentenceCount { get; set; }
+    public double AverageSentenceLength { get; set; }
+    public decimal? ReadabilityFkgl { get; set; }
+    public decimal? ReadabilityFre { get; set; }
+}
+
+public class SceneChangeDto
+{
+    public int SceneIndex { get; set; }
+    public string Change { get; set; } = string.Empty;
+    public bool TextChanged { get; set; }
+    public bool ImageChanged { get; set; }
+    public bool AudioChanged { get; set; }
+}
+
+public class ArtifactChangeDto
+{
+    public string Kind { get; set; } = string.Empty;
+    public string Change { get; set; } = string.Empty;
+    public string Key { get; set; } = string.Empty;
 }

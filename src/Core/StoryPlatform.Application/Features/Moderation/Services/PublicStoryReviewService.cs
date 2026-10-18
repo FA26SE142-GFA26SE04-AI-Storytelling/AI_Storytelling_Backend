@@ -132,6 +132,7 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
         var heardAudio = PublicReviewState.GetViewed(item.ReviewProgress, PublicReviewRequirements.AudioPart);
         var flags = BuildFlags(context.Version, item);
         var blockers = EvaluateApproveBlockers(context, content);
+        var history = await LoadReviewHistoryAsync(item, cancellationToken);
 
         return new PublicReviewPackageDto
         {
@@ -228,7 +229,9 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
             Progress = BuildProgress(item, content),
             Checklist = BuildChecklist(item),
             ApproveBlockers = blockers,
-            CanApprove = blockers.Count == 0
+            CanApprove = blockers.Count == 0,
+            PreviousModeratorName = history.FirstOrDefault()?.DecidedByName,
+            ReviewHistory = history
         };
     }
 

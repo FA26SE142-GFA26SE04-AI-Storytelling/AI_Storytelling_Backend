@@ -27,4 +27,11 @@ public interface IPublicStoryReviewService
 
     Task<PublicReviewDecisionResultDto> RejectAsync(
         int actorUserId, int itemId, RejectRequestDto request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// So sánh bản đang duyệt với bản đã gửi trước ("previous") hoặc bản đang công khai ("public").
+    /// Chỉ thực hiện trên mục đang được người gọi giữ và ghi audit cho mỗi lượt so sánh.
+    /// </summary>
+    Task<PublicVersionComparisonDto> CompareAsync(
+        int actorUserId, int itemId, string? against, CancellationToken cancellationToken = default);
 }

@@ -66,13 +66,18 @@ public class ModerationQueueService : IModerationQueueService
             && (!onlyOverdue || (item.SlaDueAt != null && item.SlaDueAt < now))
             && (!hideOwnItems || item.CreatedByUserId != actorId);
 
+        var resubmissionCutoff = now - ModerationQueuePolicy.ResubmissionPriorityWindow;
         // Priority lưu dạng chuỗi nên phải sắp theo biểu thức CASE, không sắp trực tiếp theo cột.
         var (items, totalCount) = await _unitOfWork.Repository<ModerationItem>().GetPagedAsync(
             pageIndex,
             pageSize,
             filter,
             orderBy: source => source
-                .OrderBy(item => item.Priority == ModerationPriority.High ? 0
+                .OrderBy(item => item.IsResubmission
+                                 && item.PreviousItem != null
+                                 && item.PreviousItem.DecidedByUserId == actorId
+                                 && item.CreatedAt > resubmissionCutoff ? 0 : 1)
+                .ThenBy(item => item.Priority == ModerationPriority.High ? 0
                     : item.Priority == ModerationPriority.Medium ? 1 : 2)
                 .ThenBy(item => item.SlaDueAt)
                 .ThenBy(item => item.Id),

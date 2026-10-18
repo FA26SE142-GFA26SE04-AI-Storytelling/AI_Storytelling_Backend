@@ -129,4 +129,17 @@ public class PublicStoryReviewController : BaseApiController
         var result = await _reviewService.RejectAsync(GetCurrentUserId(), itemId, request, cancellationToken);
         return HandleResult(result, "Đã từ chối truyện.");
     }
+    /// <summary>So sánh bản đang duyệt với bản đã gửi trước hoặc bản đang công khai.</summary>
+    /// <remarks>
+    /// Truyền against=previous để so với phiên bản của lượt duyệt trước, hoặc against=public để so với
+    /// phiên bản Approved mới nhất. Người gọi phải đang giữ mục và claim còn hiệu lực. Mỗi lượt so sánh
+    /// đều được ghi audit; kết quả dùng diff theo câu, không dùng AI và không thay đổi nội dung truyện.
+    /// </remarks>
+    [HttpGet("{itemId:int}/compare")]
+    public async Task<ActionResult<ApiResponse<PublicVersionComparisonDto>>> Compare(
+        int itemId, [FromQuery] string? against, CancellationToken cancellationToken)
+    {
+        var result = await _reviewService.CompareAsync(GetCurrentUserId(), itemId, against, cancellationToken);
+        return HandleResult(result, "So sánh phiên bản thành công.");
+    }
 }

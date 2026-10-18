@@ -1,5 +1,4 @@
--- 56. moderation_items (16): queue examples for gray-zone stories, reports, roadmaps and Community.
--- PublicStoryReview is not seeded until the Public Library story model exists.
+-- 56. moderation_items (21): queue examples including the WF-L5A PublicStoryReview chain.
 INSERT INTO moderation_items (
     "Id", "ItemType", "Status", "Priority", "StoryId", "StoryVersionId",
     "CreatedByUserId", "SourceChildProfileId", "ClaimedByUserId", "ClaimedAt",
@@ -18,6 +17,52 @@ VALUES
      '{"safety":true,"ageBand":true}'::jsonb, '{"section":"ending","completed":true}'::jsonb,
      'Da sua cach dien dat phu hop do tuoi', 12, NOW() - INTERVAL '20 days' + INTERVAL '90 minutes',
      2, false, NOW() - INTERVAL '20 days', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- WF-L5A Public Library review history.
+-- Story 13 stops at ChangesRequested so creator_demo can submit changed version 16.
+-- Story 14 already has a recent Pending resubmission (item 21), boosted for moderator_demo1 for 24 hours.
+INSERT INTO moderation_items (
+    "Id", "ItemType", "Status", "Priority", "StoryId", "StoryVersionId", "CreatedByUserId",
+    "ClaimedByUserId", "ClaimedAt", "SlaDueAt", "Checklist", "ReviewProgress", "Feedback",
+    "DecisionReason", "DecidedByUserId", "DecidedAt", "WithdrawnAt", "PreviousItemId",
+    "RowVersion", "IsResubmission", "CreatedAt", "IsDeleted"
+)
+VALUES
+    (17, 'PublicStoryReview', 'Approved', 'Medium', 13, 14, 13,
+     12, NOW() - INTERVAL '6 days' - INTERVAL '30 minutes', NOW() - INTERVAL '5 days',
+     '{"safety":true,"ageFit":true,"education":true,"language":true,"copyright":true,"image":true,"audio":true,"interaction":true}'::jsonb,
+     '{"viewed":{"scene":[14],"audio":[14]}}'::jsonb,
+     '{"general":"Đạt yêu cầu công khai"}'::jsonb, NULL,
+     12, NOW() - INTERVAL '6 days', NULL, NULL,
+     2, false, NOW() - INTERVAL '7 days', false),
+    (18, 'PublicStoryReview', 'ChangesRequested', 'Medium', 13, 15, 13,
+     11, NOW() - INTERVAL '8 hours', NOW() + INTERVAL '2 days',
+     '{"safety":true,"ageFit":true,"education":false,"language":true,"copyright":true,"image":true,"audio":true,"interaction":true}'::jsonb,
+     '{"viewed":{"scene":[15],"audio":[15]}}'::jsonb,
+     '{"general":"Bổ sung việc xin phép và kết thúc tích cực","parts":[{"partType":"scene_text","partId":15,"note":"Làm rõ cách hai bạn sẻ chia"}]}'::jsonb,
+     'Bổ sung việc xin phép và kết thúc tích cực',
+     11, NOW() - INTERVAL '6 hours', NULL, 17,
+     2, true, NOW() - INTERVAL '1 day', false),
+    (19, 'PublicStoryReview', 'Approved', 'Medium', 14, 17, 13,
+     12, NOW() - INTERVAL '7 days' - INTERVAL '30 minutes', NOW() - INTERVAL '6 days',
+     '{"safety":true,"ageFit":true,"education":true,"language":true,"copyright":true,"image":true,"audio":true,"interaction":true}'::jsonb,
+     '{"viewed":{"scene":[17],"audio":[17]}}'::jsonb,
+     '{"general":"Đạt yêu cầu công khai"}'::jsonb, NULL,
+     12, NOW() - INTERVAL '7 days', NULL, NULL,
+     2, false, NOW() - INTERVAL '8 days', false),
+    (20, 'PublicStoryReview', 'ChangesRequested', 'Medium', 14, 18, 13,
+     11, NOW() - INTERVAL '8 hours', NOW() + INTERVAL '2 days',
+     '{"safety":false,"ageFit":true,"education":true,"language":true,"copyright":true,"image":true,"audio":true,"interaction":true}'::jsonb,
+     '{"viewed":{"scene":[18],"audio":[18]}}'::jsonb,
+     '{"general":"Thay chi tiết lửa bằng nguồn sáng an toàn","parts":[{"partType":"scene_text","partId":18,"note":"Bỏ chi tiết gây nguy hiểm"}]}'::jsonb,
+     'Thay chi tiết lửa bằng nguồn sáng an toàn',
+     11, NOW() - INTERVAL '6 hours', NULL, 19,
+     2, true, NOW() - INTERVAL '1 day', false),
+    (21, 'PublicStoryReview', 'Pending', 'Medium', 14, 19, 13,
+     NULL, NULL, NOW() + INTERVAL '71 hours', NULL, NULL, NULL, NULL,
+     NULL, NULL, NULL, 20,
+     0, true, NOW() - INTERVAL '1 hour', false)
 ON CONFLICT ("Id") DO NOTHING;
 
 INSERT INTO moderation_items (

@@ -17,6 +17,8 @@ public class PublicReviewPackageDto
     public bool AllFlagsResolved { get; set; }
     public PublicReviewProgressDto Progress { get; set; } = new();
     public PublicReviewChecklistDto Checklist { get; set; } = new();
+    public List<ApproveBlockerDto> ApproveBlockers { get; set; } = new();
+    public bool CanApprove { get; set; }
 }
 
 public class PublicReviewStoryDto
@@ -162,4 +164,38 @@ public class PublicReviewFlagsResultDto
 public class SetContentLabelsRequestDto
 {
     public List<int> ContentCategoryIds { get; set; } = new();
+}
+
+public class ApproveBlockerDto
+{
+    public string Code { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+}
+
+public class PublicReviewDecisionResultDto
+{
+    public int ItemId { get; set; }
+    public string Decision { get; set; } = string.Empty;
+    public int StoryId { get; set; }
+    public int StoryVersionId { get; set; }
+    public bool StoryPublished { get; set; }
+    public DateTime DecidedAt { get; set; }
+}
+
+public class ChangeRequestPartDto
+{
+    public string PartType { get; set; } = string.Empty;
+    public int? PartId { get; set; }
+    public string Note { get; set; } = string.Empty;
+}
+
+public class RequestChangesDto
+{
+    public string GeneralNote { get; set; } = string.Empty;
+    public List<ChangeRequestPartDto> Parts { get; set; } = new();
+}
+
+public class RejectRequestDto
+{
+    public string Reason { get; set; } = string.Empty;
 }

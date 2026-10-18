@@ -3,6 +3,7 @@ using Moq;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.Moderation.Services;
+using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -19,6 +20,7 @@ public sealed class PublicStoryReviewHarness
 
     public readonly Mock<IUnitOfWork> UnitOfWork = new();
     public readonly Mock<IAuditLogWriter> Audit = new();
+    public readonly Mock<INotificationService> Notifications = new();
 
     public readonly List<UserAccount> Users = new();
     public readonly List<ModerationItem> Items = new();
@@ -89,7 +91,8 @@ public sealed class PublicStoryReviewHarness
             AgeBand = "6-8",
             ReadingLevel = 2,
             Language = "vi",
-            AuthorUserId = CreatorId
+            AuthorUserId = CreatorId,
+            Status = StoryStatus.Ready
         });
         Versions.Add(new StoryVersion
         {
@@ -115,7 +118,7 @@ public sealed class PublicStoryReviewHarness
             CreatedByUserId = CreatorId
         });
 
-        Sut = new PublicStoryReviewService(UnitOfWork.Object, Audit.Object);
+        Sut = new PublicStoryReviewService(UnitOfWork.Object, Audit.Object, Notifications.Object);
     }
 
     public int AddScene(int sceneId, int index, bool withAudio = true, bool withWordTimings = true)
@@ -175,6 +178,16 @@ public sealed class PublicStoryReviewHarness
             });
         }
 
+        return segmentId;
+    }
+
+    public int MakeApprovable()
+    {
+        var segmentId = AddScene(1, 1);
+        Items[0].ReviewProgress = $"{{\"viewed\":{{\"scene\":[1],\"audio\":[{segmentId}]}}}}";
+        Items[0].Checklist =
+            "{\"safety\":true,\"ageFit\":true,\"education\":true,\"language\":true,"
+            + "\"copyright\":true,\"image\":true,\"audio\":true,\"interaction\":true}";
         return segmentId;
     }
 

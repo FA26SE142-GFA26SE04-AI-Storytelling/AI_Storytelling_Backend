@@ -62,8 +62,8 @@ public class PublicStoryReviewController : BaseApiController
     /// <summary>Lưu kết quả chấm checklist 8 tiêu chí của lượt duyệt.</summary>
     /// <remarks>
     /// Lưu ý: true = Đạt, false = Không đạt, null = giữ nguyên giá trị hiện tại. Phải gửi ít nhất
-    /// một tiêu chí. API chưa thực hiện quyết định Approve/Request changes/Reject; thao tác này chỉ
-    /// lưu checklist, tăng RowVersion và ghi audit trạng thái trước/sau.
+    /// một tiêu chí. Thao tác này chỉ lưu checklist, tăng RowVersion và ghi audit trạng thái
+    /// trước/sau; quyết định cuối được thực hiện qua các endpoint riêng.
     /// </remarks>
     [HttpPut("{itemId:int}/checklist")]
     public async Task<ActionResult<ApiResponse<PublicReviewChecklistDto>>> SaveChecklist(
@@ -86,5 +86,47 @@ public class PublicStoryReviewController : BaseApiController
         var result = await _reviewService.SetContentLabelsAsync(
             GetCurrentUserId(), itemId, request, cancellationToken);
         return HandleResult(result, "Đã cập nhật nhãn nội dung.");
+    }
+
+    /// <summary>Approve phiên bản và công khai truyện ngay khi đủ mọi điều kiện.</summary>
+    /// <remarks>
+    /// Lưu ý: server luôn kiểm tra lại các điều kiện trong ApproveBlockers. Nội dung do chính người
+    /// duyệt tạo trả 403; các điều kiện khác chưa đủ trả 400. Quyết định, audit và thông báo cho
+    /// Content Creator được thực hiện trong cùng transaction và thao tác tăng RowVersion.
+    /// </remarks>
+    [HttpPost("{itemId:int}/approve")]
+    public async Task<ActionResult<ApiResponse<PublicReviewDecisionResultDto>>> Approve(
+        int itemId, CancellationToken cancellationToken)
+    {
+        var result = await _reviewService.ApproveAsync(GetCurrentUserId(), itemId, cancellationToken);
+        return HandleResult(result, "Đã duyệt và công khai truyện.");
+    }
+
+    /// <summary>Yêu cầu Content Creator sửa các phần cụ thể của phiên bản.</summary>
+    /// <remarks>
+    /// Lưu ý: bắt buộc ghi chú chung và từ 1 đến 50 phần cần sửa. Mỗi phần phải có loại, vị trí
+    /// hợp lệ thuộc đúng phiên bản và ghi chú tối đa 1000 ký tự. Quyết định không gỡ bản truyện
+    /// đã công khai trước đó và được ghi audit, gửi thông báo trong cùng transaction.
+    /// </remarks>
+    [HttpPost("{itemId:int}/request-changes")]
+    public async Task<ActionResult<ApiResponse<PublicReviewDecisionResultDto>>> RequestChanges(
+        int itemId, [FromBody] RequestChangesDto request, CancellationToken cancellationToken)
+    {
+        var result = await _reviewService.RequestChangesAsync(
+            GetCurrentUserId(), itemId, request, cancellationToken);
+        return HandleResult(result, "Đã gửi yêu cầu sửa cho Content Creator.");
+    }
+
+    /// <summary>Từ chối phiên bản đang duyệt.</summary>
+    /// <remarks>
+    /// Lưu ý: lý do là bắt buộc và tối đa 1000 ký tự. Quyết định không thay đổi Story.Status và
+    /// không gỡ bản truyện đã công khai trước đó; audit và thông báo được ghi trong cùng transaction.
+    /// </remarks>
+    [HttpPost("{itemId:int}/reject")]
+    public async Task<ActionResult<ApiResponse<PublicReviewDecisionResultDto>>> Reject(
+        int itemId, [FromBody] RejectRequestDto request, CancellationToken cancellationToken)
+    {
+        var result = await _reviewService.RejectAsync(GetCurrentUserId(), itemId, request, cancellationToken);
+        return HandleResult(result, "Đã từ chối truyện.");
     }
 }

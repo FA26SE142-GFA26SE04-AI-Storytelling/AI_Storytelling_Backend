@@ -18,4 +18,13 @@ public interface IPublicStoryReviewService
 
     Task<List<PublicReviewLabelDto>> SetContentLabelsAsync(
         int actorUserId, int itemId, SetContentLabelsRequestDto request, CancellationToken cancellationToken = default);
+
+    Task<PublicReviewDecisionResultDto> ApproveAsync(
+        int actorUserId, int itemId, CancellationToken cancellationToken = default);
+
+    Task<PublicReviewDecisionResultDto> RequestChangesAsync(
+        int actorUserId, int itemId, RequestChangesDto request, CancellationToken cancellationToken = default);
+
+    Task<PublicReviewDecisionResultDto> RejectAsync(
+        int actorUserId, int itemId, RejectRequestDto request, CancellationToken cancellationToken = default);
 }

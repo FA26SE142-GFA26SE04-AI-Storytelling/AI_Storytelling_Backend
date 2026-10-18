@@ -3,6 +3,7 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.Moderation.DTOs;
 using StoryPlatform.Application.Features.Moderation.Interfaces;
+using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -12,11 +13,16 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogWriter _auditLogWriter;
+    private readonly INotificationService _notificationService;
 
-    public PublicStoryReviewService(IUnitOfWork unitOfWork, IAuditLogWriter auditLogWriter)
+    public PublicStoryReviewService(
+        IUnitOfWork unitOfWork,
+        IAuditLogWriter auditLogWriter,
+        INotificationService notificationService)
     {
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
+        _notificationService = notificationService;
     }
 
     private sealed record ReviewContext(UserAccount Actor, ModerationItem Item, Story Story, StoryVersion Version);
@@ -125,6 +131,7 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
         var viewedScenes = PublicReviewState.GetViewed(item.ReviewProgress, PublicReviewRequirements.ScenePart);
         var heardAudio = PublicReviewState.GetViewed(item.ReviewProgress, PublicReviewRequirements.AudioPart);
         var flags = BuildFlags(context.Version, item);
+        var blockers = EvaluateApproveBlockers(context, content);
 
         return new PublicReviewPackageDto
         {
@@ -219,7 +226,9 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
             Flags = flags,
             AllFlagsResolved = flags.All(flag => flag.Resolved),
             Progress = BuildProgress(item, content),
-            Checklist = BuildChecklist(item)
+            Checklist = BuildChecklist(item),
+            ApproveBlockers = blockers,
+            CanApprove = blockers.Count == 0
         };
     }
 

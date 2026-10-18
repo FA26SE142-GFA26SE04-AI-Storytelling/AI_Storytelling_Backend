@@ -86,6 +86,7 @@ public static class DependencyInjection
         services.AddScoped<IModerationQueueService, ModerationQueueService>();
         services.AddScoped<IModerationReviewViewService, ModerationReviewViewService>();
         services.AddScoped<IModerationSweepService, ModerationSweepService>();
+        services.AddScoped<IPublicStoryReviewService, PublicStoryReviewService>();
         services.AddScoped<IModeratorAccountService, ModeratorAccountService>();
         services.AddScoped<IDataRequestService, DataRequestService>();
         services.AddScoped<IBusinessReportService, BusinessReportService>();

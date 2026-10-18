@@ -50,6 +50,24 @@ public sealed record PublicVersionSnapshot(
             version, scenes, segments, beats, assets, quizzes, vocabulary, discussions);
     }
 
+    /// <summary>URL ảnh sẵn sàng của một scene theo thứ tự beat; bỏ qua beat chưa có ảnh.</summary>
+    public IReadOnlyList<string> ImageUrls(int sceneId) => Beats
+        .Where(beat => beat.StorySceneId == sceneId)
+        .OrderBy(beat => beat.BeatOrder)
+        .Select(beat => ReadyUrl(asset =>
+            asset.IllustrationBeatId == beat.Id && asset.Type == MediaType.Illustration))
+        .Where(url => url.Length > 0)
+        .ToList();
+
+    /// <summary>URL audio sẵn sàng của một scene theo thứ tự đoạn; bỏ qua đoạn chưa có audio.</summary>
+    public IReadOnlyList<string> AudioUrls(int sceneId) => Segments
+        .Where(segment => segment.StorySceneId == sceneId)
+        .OrderBy(segment => segment.SegmentOrder)
+        .Select(segment => ReadyUrl(asset =>
+            asset.StorySegmentId == segment.Id && asset.Type == MediaType.TtsAudio))
+        .Where(url => url.Length > 0)
+        .ToList();
+
     public string ImageKey(int sceneId) => string.Join(";", Beats
         .Where(beat => beat.StorySceneId == sceneId)
         .OrderBy(beat => beat.BeatOrder)

@@ -31,6 +31,15 @@ public sealed class ContentReportHarness
     public readonly List<SupervisionRelationship> Relationships = new();
     public readonly List<ContentReport> Reports = new();
     public readonly List<ModerationItem> Items = new();
+    public readonly List<StoryScene> Scenes = new();
+    public readonly List<StorySegment> Segments = new();
+    public readonly List<IllustrationBeat> Beats = new();
+    public readonly List<MediaAsset> Assets = new();
+    public readonly List<QuizItem> Quizzes = new();
+    public readonly List<StoryVocabulary> Vocabulary = new();
+    public readonly List<DiscussionQuestion> Discussions = new();
+    public readonly List<StoryCategory> StoryCategories = new();
+    public readonly List<ContentCategory> ContentCategories = new();
 
     public ContentReportHarness()
     {
@@ -41,6 +50,15 @@ public sealed class ContentReportHarness
         Back(Relationships);
         Back(Reports);
         Back(Items);
+        Back(Scenes);
+        Back(Segments);
+        Back(Beats);
+        Back(Assets);
+        Back(Quizzes);
+        Back(Vocabulary);
+        Back(Discussions);
+        Back(StoryCategories);
+        Back(ContentCategories);
 
         AddUser(AdminId, "admin_demo", UserRole.Administrator);
         AddUser(ReporterId, "parent_demo1", UserRole.Parent);
@@ -134,6 +152,44 @@ public sealed class ContentReportHarness
             SupervisorRole = role
         });
         return child;
+    }
+
+    /// <summary>
+    /// Tạo report Pending và mục ContentReport đang do Moderator mặc định giữ từ 10 phút trước.
+    /// </summary>
+    public ModerationItem AddReportItem(
+        ContentReportReason reason = ContentReportReason.Inappropriate,
+        int storyId = PublicStoryId,
+        int? versionId = 50,
+        int reporterId = ReporterId)
+    {
+        var report = new ContentReport
+        {
+            Id = Reports.Count == 0 ? 1 : Reports.Max(existing => existing.Id) + 1,
+            StoryId = storyId,
+            ReporterUserId = reporterId,
+            Reason = reason,
+            Description = "Mô tả của người báo cáo",
+            StoryVersionId = versionId,
+            Status = ContentReportStatus.Pending
+        };
+        Reports.Add(report);
+
+        var item = new ModerationItem
+        {
+            Id = Items.Count == 0 ? 1 : Items.Max(existing => existing.Id) + 1,
+            ItemType = ModerationItemType.ContentReport,
+            Status = ModerationItemStatus.Claimed,
+            Priority = ModerationPriority.Medium,
+            StoryId = storyId,
+            StoryVersionId = versionId,
+            ContentReportId = report.Id,
+            CreatedByUserId = reporterId,
+            ClaimedByUserId = ModeratorId,
+            ClaimedAt = DateTime.UtcNow.AddMinutes(-10)
+        };
+        Items.Add(item);
+        return item;
     }
 
     private void Back<T>(List<T> list) where T : BaseEntity

@@ -6,17 +6,18 @@ using StoryPlatform.Domain.Enums;
 namespace StoryPlatform.Application.Features.ChildRoadmaps.Services;
 
 /// <summary>
-/// Mở truyện kế (UC-L4A-05) ở dạng rút gọn: chỉ kiểm hồ sơ hoạt động, Hold Mode và truyện còn đọc được.
-/// Các kiểm tra chủ đề bị chặn, độ tuổi và độ dài (BR-L4A-07) thuộc Giai đoạn 4 và phải được thêm vào đây trước
-/// khi có API tạo child_roadmap_items.
+/// Mở truyện kế (UC-L4A-05): kiểm hồ sơ hoạt động, Hold Mode và tính hợp lệ của truyện
+/// (BR-L4A-07) bằng IChildRoadmapEligibility.
 /// </summary>
 public class ChildRoadmapAdvancer : IChildRoadmapAdvancer
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IChildRoadmapEligibility _eligibility;
 
-    public ChildRoadmapAdvancer(IUnitOfWork unitOfWork)
+    public ChildRoadmapAdvancer(IUnitOfWork unitOfWork, IChildRoadmapEligibility eligibility)
     {
         _unitOfWork = unitOfWork;
+        _eligibility = eligibility;
     }
 
     public async Task<ChildRoadmapItem?> AdvanceAsync(int childProfileId, CancellationToken cancellationToken = default)
@@ -63,7 +64,7 @@ public class ChildRoadmapAdvancer : IChildRoadmapAdvancer
             }
 
             var story = await _unitOfWork.Repository<Story>().GetByIdAsync(step.StoryId, cancellationToken);
-            var unavailable = ClassifyUnavailable(story);
+            var unavailable = await _eligibility.EvaluateAsync(child, story, cancellationToken);
             if (unavailable.HasValue)
             {
                 step.Status = ChildRoadmapItemStatus.Skipped;
@@ -89,21 +90,5 @@ public class ChildRoadmapAdvancer : IChildRoadmapAdvancer
         }
 
         return opened;
-    }
-
-    /// <summary>Null khi truyện còn đọc được; ngược lại là lý do bỏ qua.</summary>
-    private static ChildRoadmapSkipReason? ClassifyUnavailable(Story? story)
-    {
-        if (story == null || story.IsDeleted)
-        {
-            return ChildRoadmapSkipReason.SourceDeleted;
-        }
-
-        if (story.Status != StoryStatus.Ready || story.ArchivedAt != null)
-        {
-            return ChildRoadmapSkipReason.StoryUnavailable;
-        }
-
-        return null;
     }
 }

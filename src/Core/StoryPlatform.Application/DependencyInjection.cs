@@ -110,6 +110,11 @@ public static class DependencyInjection
         services.AddScoped<IStoryArchiveConsequences, StoryArchiveConsequences>();
         services.AddScoped<IReadingSessionInterruptService, ReadingSessionInterruptService>();
         services.AddScoped<IChildRoadmapAdvancer, ChildRoadmapAdvancer>();
+        services.AddScoped<IChildRoadmapEligibility, ChildRoadmapEligibility>();
+        services.AddScoped<IChildRoadmapInserter, ChildRoadmapInserter>();
+        services.AddScoped<IChildRoadmapNotifier, ChildRoadmapNotifier>();
+        services.AddScoped<IChildRoadmapProgressRecorder, ChildRoadmapProgressRecorder>();
+        services.AddScoped<IChildRoadmapService, ChildRoadmapService>();
         services.AddScoped<IPublishedContentReviewService, PublishedContentReviewService>();
         services.AddScoped<IRoadmapSubmissionChecker, RoadmapSubmissionChecker>();
         services.AddScoped<IRoadmapTemplateService, RoadmapTemplateService>();

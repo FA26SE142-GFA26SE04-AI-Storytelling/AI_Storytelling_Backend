@@ -15,7 +15,8 @@ public class ChildRoadmapAdvancerTests
 
     public ChildRoadmapAdvancerTests()
     {
-        _sut = new ChildRoadmapAdvancer(_h.UnitOfWork.Object);
+        _sut = new ChildRoadmapAdvancer(
+            _h.UnitOfWork.Object, new ChildRoadmapEligibility(_h.UnitOfWork.Object));
     }
 
     private ChildRoadmapItem Item(int id) => _h.Items.Single(item => item.Id == id);
@@ -127,6 +128,38 @@ public class ChildRoadmapAdvancerTests
 
         Assert.Equal(ChildRoadmapSkipReason.SourceDeleted, Item(1).SkipReason);
         Assert.Equal(ChildRoadmapItemStatus.Open, Item(2).Status);
+    }
+
+    [Theory]
+    [InlineData("blocked-topic", ChildRoadmapSkipReason.BlockedTopic)]
+    [InlineData("wrong-age", ChildRoadmapSkipReason.WrongAge)]
+    [InlineData("too-long", ChildRoadmapSkipReason.TooLong)]
+    public async Task AdvanceAsync_StepBecameUnsuitable_IsSkippedAndTheNextOpens(
+        string problem, ChildRoadmapSkipReason expected)
+    {
+        switch (problem)
+        {
+            case "blocked-topic":
+                _h.Block(Child, 5);
+                _h.Tag(10, 5);
+                break;
+            case "wrong-age":
+                _h.Stories.Single(story => story.Id == 10).AgeBand = "9-10";
+                break;
+            case "too-long":
+                _h.AddPolicy(Child, 100);
+                _h.Stories.Single(story => story.Id == 10).Content = new string('a', 500);
+                break;
+        }
+
+        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Waiting);
+        _h.AddItem(2, Child, 11, ChildRoadmapItemStatus.Waiting);
+
+        var opened = await _sut.AdvanceAsync(Child);
+
+        Assert.Equal(2, opened!.Id);
+        Assert.Equal(ChildRoadmapItemStatus.Skipped, Item(1).Status);
+        Assert.Equal(expected, Item(1).SkipReason);
     }
 
     [Fact]

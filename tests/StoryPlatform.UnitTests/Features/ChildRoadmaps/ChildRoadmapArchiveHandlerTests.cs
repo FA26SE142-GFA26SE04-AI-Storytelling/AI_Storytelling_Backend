@@ -151,7 +151,8 @@ public class ChildRoadmapArchiveHandlerTests
         _h.AddItem(2, Child, 11, ChildRoadmapItemStatus.Waiting);
         _h.AddItem(3, Child, 12, ChildRoadmapItemStatus.Waiting);
         var sut = new ChildRoadmapArchiveHandler(
-            _h.UnitOfWork.Object, _h.Audit.Object, new ChildRoadmapAdvancer(_h.UnitOfWork.Object));
+            _h.UnitOfWork.Object, _h.Audit.Object,
+            new ChildRoadmapAdvancer(_h.UnitOfWork.Object, new ChildRoadmapEligibility(_h.UnitOfWork.Object)));
 
         await sut.HandleAsync(Context());
 
@@ -167,7 +168,8 @@ public class ChildRoadmapArchiveHandlerTests
         _h.AddItem(1, Child, ArchivedStory, ChildRoadmapItemStatus.Open);
         _h.AddItem(2, Child, 11, ChildRoadmapItemStatus.Waiting);
         var sut = new ChildRoadmapArchiveHandler(
-            _h.UnitOfWork.Object, _h.Audit.Object, new ChildRoadmapAdvancer(_h.UnitOfWork.Object));
+            _h.UnitOfWork.Object, _h.Audit.Object,
+            new ChildRoadmapAdvancer(_h.UnitOfWork.Object, new ChildRoadmapEligibility(_h.UnitOfWork.Object)));
 
         await sut.HandleAsync(Context());
 

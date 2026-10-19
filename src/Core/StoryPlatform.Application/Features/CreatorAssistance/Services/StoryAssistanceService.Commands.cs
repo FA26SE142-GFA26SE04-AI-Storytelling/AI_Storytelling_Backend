@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace StoryPlatform.Application.Features.CreatorAssistance.Services;
 
-public sealed partial class CreatorAssistanceService
+public partial class StoryAssistanceService
 {
     private Task<AssistanceCommandResult> Command(int user, int storyId, int taskId, string kind, AssistanceCommand request,
         Func<Story, StoryAssistanceTask, StoryAssistanceStep, Task> action, bool allowBusy, CancellationToken ct) =>
@@ -19,8 +19,15 @@ public sealed partial class CreatorAssistanceService
             if (prior is not null)
             {
                 if (prior.RequestHash != hash) throw Fail("OPERATION_PAYLOAD_CONFLICT");
-                if (prior.Status == "Failed") throw Fail(prior.ErrorCode!, prior.ErrorCode == "AI_TIMEOUT" ? 504 : prior.ErrorCode == "EDITOR_CONTEXT_STALE" ? 409 : 502);
+                if (prior.Status == "Failed") throw Fail(prior.ErrorCode!, FailureStatus(prior.ErrorCode!));
                 return prior.ResponseJson is null ? Result(task, prior) : Read<AssistanceCommandResult>(prior.ResponseJson);
+            }
+            if (kind is not ("Cancel" or "Close"))
+            {
+                await _access.EnsureWritableAsync(story, ct);
+                await _access.ValidateContextAsync(story, AssistanceContextStorage.ServerContext(task.ContextJson), ct);
+                if (task.SourceRevisionToken != story.AuthoringRevisionToken || task.AudienceRevision != story.AudienceRevision)
+                    throw Fail("EDITOR_CONTEXT_STALE");
             }
             if (request.ExpectedTaskRevision != task.TaskRevision) throw Fail("TASK_REVISION_CONFLICT");
             if (task.Status == "Closed" && kind == "Close")
@@ -173,7 +180,8 @@ public sealed partial class CreatorAssistanceService
             {
                 Mode = kind, EntryPoint = task.EntryPoint, Snapshot = context.EditorSnapshot, Target = context.Target,
                 Language = task.Language, AgeBand = task.AgeBand, Goal = context.Goal, Constraints = constraints,
-                Answer = answer, ConfirmedDirection = direction?.ConfirmedDirectionText, MaximumTrialCharacters = options.MaximumTrialCharacters
+                Answer = answer, ConfirmedDirection = direction?.ConfirmedDirectionText, MaximumTrialCharacters = options.MaximumTrialCharacters,
+                ChildPolicy = AssistanceContextStorage.ChildPolicy(task.ContextJson)
             };
             step.Status = "Running";
             task.ActiveOperationId = command.OperationId; task.LeaseExpiresAt = Now.AddSeconds(options.LeaseSeconds);
@@ -218,6 +226,26 @@ public sealed partial class CreatorAssistanceService
             task.ActiveOperationId = null; task.LeaseExpiresAt = null; task.TaskRevision++;
             if (story.AudienceRevision != task.AudienceRevision || story.AuthoringRevisionToken != task.SourceRevisionToken)
             { error = "EDITOR_CONTEXT_STALE"; errorStatus = 409; }
+            try
+            {
+                var activeUser = await uow.Repository<UserAccount>().FirstOrDefaultAsync(x => x.Id == user, cancellationToken: completion.Token);
+                if (activeUser is null || activeUser.IsDeleted || activeUser.Status != StoryPlatform.Domain.Enums.AccountStatus.Active || activeUser.LockedUntil > Now)
+                    throw Fail("ASSISTANCE_ACCESS_REVOKED", 403);
+                await _access.AuthorizeAsync(user, story, completion.Token);
+                await _access.EnsureWritableAsync(story, completion.Token);
+                await _access.ValidateContextAsync(story, AssistanceContextStorage.ServerContext(task.ContextJson), completion.Token);
+            }
+            catch (Exception ex) when (ex is AssistanceException or StoryPlatform.Application.Common.Exceptions.ForbiddenException
+                or StoryPlatform.Application.Common.Exceptions.ConflictException or StoryPlatform.Application.Common.Exceptions.NotFoundException)
+            {
+                error = ex switch
+                {
+                    AssistanceException a => a.Code,
+                    StoryPlatform.Application.Common.Exceptions.ConflictException c when c.Message == "PARENT_STORY_FINALIZED" => "PARENT_STORY_FINALIZED",
+                    _ => "ASSISTANCE_CONTEXT_UNAVAILABLE"
+                };
+                errorStatus = FailureStatus(error);
+            }
             step.Status = error is null ? "Succeeded" : error == "AI_OPERATION_CANCELLED" ? "Cancelled" : "Failed";
             step.ErrorCode = error; step.CompletedAt = Now; step.ResultingTaskRevision = task.TaskRevision;
             if (error is null)
@@ -234,8 +262,8 @@ public sealed partial class CreatorAssistanceService
             var result = Result(task, step); step.ResponseJson = Serialize(result);
             uow.Repository<StoryAssistanceStep>().Update(step); uow.Repository<StoryAssistanceTask>().Update(task);
             return result;
-        }, completion.Token);
-        logger?.LogInformation("Creator assistance completed. TraceId={TraceId}, EntryPoint={EntryPoint}, Mode={Mode}, TaskId={TaskId}, StepId={StepId}, Status={Status}, ErrorCode={ErrorCode}, LatencyMs={LatencyMs}", System.Diagnostics.Activity.Current?.TraceId.ToString(), input.EntryPoint, kind, taskId, finished.StepId, finished.Step.Status, finished.Step.ErrorCode, elapsed.ElapsedMilliseconds);
+        }, completion.Token, completing: true);
+        logger?.LogInformation("Story assistance completed. TraceId={TraceId}, EntryPoint={EntryPoint}, Mode={Mode}, TaskId={TaskId}, StepId={StepId}, Status={Status}, ErrorCode={ErrorCode}, LatencyMs={LatencyMs}", System.Diagnostics.Activity.Current?.TraceId.ToString(), input.EntryPoint, kind, taskId, finished.StepId, finished.Step.Status, finished.Step.ErrorCode, elapsed.ElapsedMilliseconds);
         if (finished.Step.Status == "Failed") throw Fail(finished.Step.ErrorCode!, errorStatus);
         return finished;
     }

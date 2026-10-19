@@ -1,4 +1,4 @@
--- 11. stories (14: 10 Parent, 4 Creator)
+-- 11. stories (15: 11 Parent, 4 Creator)
 -- Creator: Id 11 = manual V2, Id 12 = imported text V1; author is creator_demo (Id 13).
 -- WF-L5A fixtures: Id 11 = first submit/withdraw; Id 13 = creator resubmit;
 -- Id 14 = recent pending resubmission for moderator queue/history/compare.
@@ -48,3 +48,14 @@ WHERE "Id" = 9 AND "Status" = 'Rejected';
 UPDATE stories
 SET "ArchivedAt" = NOW() - INTERVAL '14 days'
 WHERE "Id" = 9 AND "Status" = 'Archived' AND "ArchivedAt" IS NULL;
+
+-- Parent V4 private demo fixture; requires AddParentManualAuthoring. No child access grant.
+INSERT INTO stories (
+    "Id", "Title", "Content", "Language", "AgeBand", "Status", "Source", "IsPublished",
+    "AuthorUserId", "ChildProfileId", "CreatedAt", "IsDeleted", "Scope", "OutputMode",
+    "AudienceRevision", "AuthoringLastVersionNo", "AuthoringRevisionToken", "ExperienceMode", "CreateOperationId", "WritingPurpose"
+)
+VALUES
+    (15, 'Chiều cùng con', 'Bắp làm đổ nước. Mẹ cùng Bắp lau bàn. Hai mẹ con mỉm cười.', 'vi', '6-8', 'Draft', 'Manual', false,
+     2, 1, '2026-10-18T01:00:00Z', false, 'Parent', 'ReadingMediaOnly', 1, 1, md5('seed-parent-v4-story-15'), 'reading', 'seed-parent-manual-15', 'family_memory')
+ON CONFLICT ("Id") DO NOTHING;

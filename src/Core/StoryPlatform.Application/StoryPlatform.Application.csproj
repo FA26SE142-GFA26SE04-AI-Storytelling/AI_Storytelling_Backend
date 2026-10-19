@@ -15,5 +15,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Features/ParentAuthoring/Resources/authoring-guides.vi.json" LogicalName="ParentAuthoringGuides.vi.json" WithCulture="false" />
+  </ItemGroup>
 
 </Project>

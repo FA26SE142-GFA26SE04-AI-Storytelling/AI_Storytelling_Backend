@@ -16,6 +16,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<Story> Stories => Set<Story>();
+    public DbSet<ParentStoryOperation> ParentStoryOperations => Set<ParentStoryOperation>();
 
     // Child profile & supervision
     public DbSet<ChildProfile> ChildProfiles => Set<ChildProfile>();

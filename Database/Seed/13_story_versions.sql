@@ -1,4 +1,4 @@
--- 13. story_versions (19: 10 Parent versions, 9 Creator versions)
+-- 13. story_versions (20: 11 Parent versions, 9 Creator versions)
 -- Creator Story 11: versions 11 -> 12 (current); Creator Story 12: version 13 (Import/current).
 -- Command receipts and protected preview tokens are created by the API, not fabricated in seed data.
 INSERT INTO story_versions (
@@ -111,3 +111,13 @@ SET "ReviewStatus" = 'Rejected', "ReviewedByUserId" = 11,
     "ReviewedAt" = NOW() - INTERVAL '14 days',
     "ReviewFeedback" = '{"development":"Safety concern in this section"}'::jsonb
 WHERE "Id" = 9 AND "ReviewStatus" = 'None';
+
+-- Parent V4 private demo fixture; requires AddParentManualAuthoring. No child access grant.
+INSERT INTO story_versions (
+    "Id", "StoryId", "VersionNo", "Title", "Content", "EditType", "EditorUserId", "IsCurrent",
+    "CreatedAt", "IsDeleted", "AudienceRevision", "SourceDeclaration", "RightsDeclaration", "AuthoringOrigin"
+)
+VALUES
+    (20, 15, 1, 'Chiều cùng con', 'Bắp làm đổ nước. Mẹ cùng Bắp lau bàn. Hai mẹ con mỉm cười.', 'HumanEdited', 2, true,
+     '2026-10-18T01:05:00Z', false, 1, 'Nội dung mẫu tự sáng tác', 'Có quyền sử dụng nội dung mẫu', 'Write')
+ON CONFLICT ("Id") DO NOTHING;

@@ -80,7 +80,8 @@ public class PendingSubmissionArchiveHandlerTests
         await _sut.HandleAsync(Context());
 
         Assert.Equal(ModerationItemStatus.Closed, item.Status);
-        Assert.Equal(PendingSubmissionArchiveHandler.ClosedReason, item.DecisionReason);
+        Assert.Equal(PendingSubmissionArchiveHandler.ClosedReason, item.ClosedReason);
+        Assert.Null(item.DecisionReason);
         Assert.Equal(ContentReportHarness.OtherModeratorId, item.ClaimedByUserId);
         Assert.NotNull(item.DecidedAt);
         Assert.Equal(1, item.RowVersion);

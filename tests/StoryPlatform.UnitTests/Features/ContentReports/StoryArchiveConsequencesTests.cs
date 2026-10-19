@@ -85,7 +85,11 @@ public class StoryArchiveConsequencesTests
             .Select(handler => handler.GetType()).ToArray();
 
         Assert.Equal(
-            new[] { typeof(PendingSubmissionArchiveHandler), typeof(ReadingSessionArchiveHandler) },
+            new[]
+            {
+                typeof(PendingSubmissionArchiveHandler), typeof(CommunitySubmissionArchiveHandler),
+                typeof(ReadingSessionArchiveHandler), typeof(ChildRoadmapArchiveHandler)
+            },
             handlers);
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IStoryArchiveConsequences>());
     }

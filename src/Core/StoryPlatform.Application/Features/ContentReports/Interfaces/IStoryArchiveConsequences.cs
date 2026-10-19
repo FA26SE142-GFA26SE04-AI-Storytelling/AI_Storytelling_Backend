@@ -4,7 +4,7 @@ using StoryPlatform.Domain.Enums;
 namespace StoryPlatform.Application.Features.ContentReports.Interfaces;
 
 public sealed record StoryArchiveContext(
-    Story Story, ArchivedReason Reason, int ActorUserId, DateTime Now);
+    Story Story, ArchivedReason Reason, int ActorUserId, DateTime Now, int? ReporterUserId = null);
 
 public interface IStoryArchiveHandler
 {

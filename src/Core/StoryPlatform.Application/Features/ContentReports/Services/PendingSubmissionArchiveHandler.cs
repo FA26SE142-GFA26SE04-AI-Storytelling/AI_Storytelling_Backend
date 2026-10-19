@@ -63,7 +63,7 @@ public class PendingSubmissionArchiveHandler : IStoryArchiveHandler
             {
                 item.Status = ModerationItemStatus.Closed;
                 item.DecidedAt = context.Now;
-                item.DecisionReason = ClosedReason;
+                item.ClosedReason = ClosedReason;
             }
 
             item.RowVersion += 1;

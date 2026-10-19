@@ -517,6 +517,84 @@ public class ContentReportReviewServiceTests
     }
 
     [Fact]
+    public async Task ArchiveAsync_AppliesTheArchiveConsequencesOnceWithTheDecisionData()
+    {
+        var item = _h.AddReportItem(ContentReportReason.SafetyConcern);
+        var before = DateTime.UtcNow;
+
+        await ArchiveAsync(item.Id, ArchivedReason.SafetyConcern);
+
+        _consequences.Verify(c => c.ApplyAsync(
+            It.Is<StoryArchiveContext>(context =>
+                context.Story.Id == PublicStory
+                && context.Reason == ArchivedReason.SafetyConcern
+                && context.ActorUserId == Moderator
+                && context.ReporterUserId == ContentReportHarness.ReporterId
+                && context.Now >= before),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ArchiveAsync_AppliesConsequencesInsideTheTransactionAfterTheStoryIsArchived()
+    {
+        var item = _h.AddReportItem(ContentReportReason.Copyright);
+        StoryStatus? storyStatusSeen = null;
+        var inTransaction = false;
+        _h.UnitOfWork.Setup(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()))
+            .Callback(() => inTransaction = true).Returns(Task.CompletedTask);
+        _consequences.Setup(c => c.ApplyAsync(It.IsAny<StoryArchiveContext>(), It.IsAny<CancellationToken>()))
+            .Callback<StoryArchiveContext, CancellationToken>((context, _) =>
+            {
+                storyStatusSeen = context.Story.Status;
+                Assert.True(inTransaction);
+            })
+            .Returns(Task.CompletedTask);
+
+        await ArchiveAsync(item.Id, ArchivedReason.Copyright);
+
+        Assert.Equal(StoryStatus.Archived, storyStatusSeen);
+    }
+
+    [Fact]
+    public async Task ArchiveAsync_StoryAlreadyArchived_DoesNotApplyTheConsequencesAgain()
+    {
+        var item = _h.AddReportItem(ContentReportReason.SafetyConcern);
+        _h.Stories.Single(story => story.Id == PublicStory).Status = StoryStatus.Archived;
+
+        await ArchiveAsync(item.Id, ArchivedReason.SafetyConcern);
+
+        _consequences.Verify(c => c.ApplyAsync(
+            It.IsAny<StoryArchiveContext>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DismissAsync_DoesNotApplyTheArchiveConsequences()
+    {
+        var item = _h.AddReportItem(ContentReportReason.Cultural);
+
+        await DismissAsync(item.Id);
+
+        _consequences.Verify(c => c.ApplyAsync(
+            It.IsAny<StoryArchiveContext>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ArchiveAsync_ConsequencesFail_RollsTheWholeDecisionBack()
+    {
+        var item = _h.AddReportItem(ContentReportReason.SafetyConcern);
+        _consequences.Setup(c => c.ApplyAsync(It.IsAny<StoryArchiveContext>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("boom"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => ArchiveAsync(item.Id, ArchivedReason.SafetyConcern));
+
+        _h.UnitOfWork.Verify(u => u.RollbackTransactionAsync(CancellationToken.None), Times.Once);
+        _h.UnitOfWork.Verify(u => u.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _h.Notifications.Verify(n => n.CreateAsync(
+            It.IsAny<int>(), It.IsAny<NotificationType>(), It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task ArchiveAsync_ArchivesStoryAndRecordsDecision()
     {
         var item = _h.AddReportItem(ContentReportReason.SafetyConcern);

@@ -57,6 +57,8 @@ using StoryPlatform.Application.Features.Payments.Interfaces;
 using StoryPlatform.Application.Features.Payments.Services;
 using StoryPlatform.Application.Features.TokenQuota.Interfaces;
 using StoryPlatform.Application.Features.TokenQuota.Services;
+using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
+using StoryPlatform.Application.Features.ChildRoadmaps.Services;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 using StoryPlatform.Application.Features.ReadingSessions.Services;
 
@@ -100,10 +102,14 @@ public static class DependencyInjection
         services.AddScoped<IReportableStoryResolver, ReportableStoryResolver>();
         services.AddScoped<IContentReportService, ContentReportService>();
         services.AddScoped<IContentReportReviewService, ContentReportReviewService>();
+        // Hệ quả của Archive: thứ tự đăng ký = thứ tự chạy.
         services.AddScoped<IStoryArchiveHandler, PendingSubmissionArchiveHandler>();
+        services.AddScoped<IStoryArchiveHandler, CommunitySubmissionArchiveHandler>();
         services.AddScoped<IStoryArchiveHandler, ReadingSessionArchiveHandler>();
+        services.AddScoped<IStoryArchiveHandler, ChildRoadmapArchiveHandler>();
         services.AddScoped<IStoryArchiveConsequences, StoryArchiveConsequences>();
         services.AddScoped<IReadingSessionInterruptService, ReadingSessionInterruptService>();
+        services.AddScoped<IChildRoadmapAdvancer, ChildRoadmapAdvancer>();
         services.AddScoped<IPublishedContentReviewService, PublishedContentReviewService>();
         services.AddScoped<IRoadmapSubmissionChecker, RoadmapSubmissionChecker>();
         services.AddScoped<IRoadmapTemplateService, RoadmapTemplateService>();

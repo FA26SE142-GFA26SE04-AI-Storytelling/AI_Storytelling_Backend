@@ -138,7 +138,8 @@ public partial class ContentReportReviewService
             if (archiveNow)
             {
                 await _archiveConsequences.ApplyAsync(
-                    new StoryArchiveContext(story, archiveReason!.Value, context.Actor.Id, now),
+                    new StoryArchiveContext(
+                        story, archiveReason!.Value, context.Actor.Id, now, report.ReporterUserId),
                     cancellationToken);
             }
 

@@ -45,6 +45,11 @@ public class ReadingSessionConfiguration : IEntityTypeConfiguration<ReadingSessi
             .HasForeignKey(x => x.StoryVersionId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(x => x.ChildRoadmapItem)
+            .WithMany()
+            .HasForeignKey(x => x.ChildRoadmapItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.HasOne(x => x.ChildAccessCredential)
             .WithMany()
             .HasForeignKey(x => x.ChildAccessCredentialId)

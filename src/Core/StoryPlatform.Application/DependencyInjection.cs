@@ -101,6 +101,7 @@ public static class DependencyInjection
         services.AddScoped<IPublishedContentReviewService, PublishedContentReviewService>();
         services.AddScoped<IRoadmapSubmissionChecker, RoadmapSubmissionChecker>();
         services.AddScoped<IRoadmapTemplateService, RoadmapTemplateService>();
+        services.AddScoped<IRoadmapReviewService, RoadmapReviewService>();
         services.AddScoped<IModeratorAccountService, ModeratorAccountService>();
         services.AddScoped<IDataRequestService, DataRequestService>();
         services.AddScoped<IBusinessReportService, BusinessReportService>();

@@ -198,7 +198,49 @@ public partial class RoadmapTemplateService : IRoadmapTemplateService
                 Message = check.Message,
                 RelatedRoadmapId = check.RelatedRoadmapId
             }).ToList(),
-            CanSubmit = roadmap.Status == RoadmapTemplateStatus.Draft && checks.All(check => check.Passed)
+            CanSubmit = roadmap.Status == RoadmapTemplateStatus.Draft && checks.All(check => check.Passed),
+            LastReview = await LoadLastReviewAsync(roadmap, actor, cancellationToken)
+        };
+    }
+
+    private async Task<RoadmapLastReviewDto?> LoadLastReviewAsync(
+        ReadingRoadmap roadmap, UserAccount actor, CancellationToken cancellationToken)
+    {
+        if (roadmap.Status != RoadmapTemplateStatus.Draft || roadmap.CreatedByUserId != actor.Id)
+        {
+            return null;
+        }
+
+        var roadmapId = roadmap.Id;
+        var reviewItems = await _unitOfWork.Repository<ModerationItem>().FindAsync(
+            item => item.ItemType == ModerationItemType.RoadmapTemplateReview
+                    && item.ReadingRoadmapId == roadmapId,
+            cancellationToken: cancellationToken);
+        var latest = reviewItems.OrderByDescending(item => item.Id).FirstOrDefault();
+        if (latest == null
+            || latest.Status is not (ModerationItemStatus.ChangesRequested or ModerationItemStatus.Rejected))
+        {
+            return null;
+        }
+
+        var feedback = RoadmapReviewState.ReadFeedback(latest.Feedback);
+        if (feedback == null)
+        {
+            return null;
+        }
+
+        var reviewer = latest.DecidedByUserId.HasValue
+            ? await _unitOfWork.Repository<UserAccount>()
+                .GetByIdAsync(latest.DecidedByUserId.Value, cancellationToken)
+            : null;
+        return new RoadmapLastReviewDto
+        {
+            Decision = feedback.Decision,
+            ReviewerName = reviewer == null ? null : DisplayName(reviewer),
+            GeneralNote = feedback.GeneralNote,
+            Reason = feedback.Reason,
+            Parts = feedback.Parts,
+            DecidedAt = latest.DecidedAt
         };
     }
 

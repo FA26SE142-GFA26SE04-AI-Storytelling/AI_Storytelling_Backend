@@ -59,6 +59,7 @@ public class RoadmapDetailDto
     public List<RoadmapStoryDto> Stories { get; set; } = new();
     public List<RoadmapCheckDto> Checks { get; set; } = new();
     public bool CanSubmit { get; set; }
+    public RoadmapLastReviewDto? LastReview { get; set; }
 }
 
 public class CandidateQueryDto
@@ -128,4 +129,14 @@ public class RoadmapListItemDto
     public bool IsMine { get; set; }
     public DateTime? SubmittedAt { get; set; }
     public DateTime? PublishedAt { get; set; }
+}
+
+public class RoadmapLastReviewDto
+{
+    public string Decision { get; set; } = string.Empty;
+    public string? ReviewerName { get; set; }
+    public string? GeneralNote { get; set; }
+    public string? Reason { get; set; }
+    public List<RoadmapChangePartDto> Parts { get; set; } = new();
+    public DateTime? DecidedAt { get; set; }
 }

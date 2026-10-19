@@ -461,6 +461,42 @@ public class ModerationQueueServiceTests
     }
 
     [Fact]
+    public async Task ListAsync_RecentResubmission_IsBoostedOnlyForPreviousModeratorFor24Hours()
+    {
+        Assert.Equal(TimeSpan.FromHours(24), ModerationQueuePolicy.ResubmissionPriorityWindow);
+        Func<IQueryable<ModerationItem>, IOrderedQueryable<ModerationItem>>? capturedOrder = null;
+        _itemRepoMock.Setup(repository => repository.GetPagedAsync(
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Expression<Func<ModerationItem, bool>>?>(),
+                It.IsAny<Func<IQueryable<ModerationItem>, IOrderedQueryable<ModerationItem>>?>(),
+                It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback<int, int, Expression<Func<ModerationItem, bool>>?,
+                Func<IQueryable<ModerationItem>, IOrderedQueryable<ModerationItem>>?, string?, CancellationToken>(
+                (_, _, _, order, _, _) => capturedOrder = order)
+            .ReturnsAsync((Items: (IReadOnlyList<ModerationItem>)Array.Empty<ModerationItem>(), TotalCount: 0));
+
+        var previous = new ModerationItem { Id = 90, DecidedByUserId = _moderatorA.Id };
+        var boosted = PendingItem(1);
+        boosted.Priority = ModerationPriority.Low;
+        boosted.IsResubmission = true;
+        boosted.PreviousItemId = previous.Id;
+        boosted.PreviousItem = previous;
+        boosted.CreatedAt = DateTime.UtcNow.AddHours(-1);
+        var high = PendingItem(2);
+        high.Priority = ModerationPriority.High;
+        var items = new[] { high, boosted }.AsQueryable();
+
+        await _sut.ListAsync(_moderatorA.Id, new ModerationQueueQueryDto());
+        Assert.Equal(new[] { 1, 2 }, capturedOrder!(items).Select(item => item.Id));
+
+        await _sut.ListAsync(_moderatorB.Id, new ModerationQueueQueryDto());
+        Assert.Equal(new[] { 2, 1 }, capturedOrder!(items).Select(item => item.Id));
+
+        boosted.CreatedAt = DateTime.UtcNow.AddHours(-25);
+        await _sut.ListAsync(_moderatorA.Id, new ModerationQueueQueryDto());
+        Assert.Equal(new[] { 2, 1 }, capturedOrder!(items).Select(item => item.Id));
+    }
+
+    [Fact]
     public void ModerationQueueController_IsRestrictedToModeratorAndAdministrator()
     {
         var authorize = typeof(ModerationQueueController).GetCustomAttribute<AuthorizeAttribute>();

@@ -35,7 +35,8 @@ public class SafetyPolicyConfiguration : IEntityTypeConfiguration<SafetyPolicy>
             .HasConversion<string>()
             .HasMaxLength(30)
             .IsRequired()
-            .HasDefaultValue(ChildCreationMode.ReviewFirst);
+            .HasDefaultValue(ChildCreationMode.ReviewFirst)
+            .HasSentinel(ChildCreationMode.ReviewFirst);
         builder.Property(x => x.VoiceAnswersEnabled).HasDefaultValue(false);
 
         builder.HasOne(x => x.ChildProfile)

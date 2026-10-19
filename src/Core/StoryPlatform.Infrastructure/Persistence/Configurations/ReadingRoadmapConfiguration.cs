@@ -17,7 +17,8 @@ public class ReadingRoadmapConfiguration : IEntityTypeConfiguration<ReadingRoadm
         builder.Property(x => x.Description).HasColumnType("text");
         builder.Property(x => x.AgeBand).HasConversion<string>().HasMaxLength(30).IsRequired();
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(30).IsRequired()
-            .HasDefaultValue(RoadmapTemplateStatus.Draft);
+            .HasDefaultValue(RoadmapTemplateStatus.Draft)
+            .HasSentinel(RoadmapTemplateStatus.Draft);
         builder.Property(x => x.ArchivedReason).HasConversion<string>().HasMaxLength(30);
         builder.Property(x => x.ArchiveNote).HasMaxLength(500);
 

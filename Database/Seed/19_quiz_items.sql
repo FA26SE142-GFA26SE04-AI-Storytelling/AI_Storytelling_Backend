@@ -1,4 +1,4 @@
--- 19. quiz_items (10)
+-- 19. quiz_items (16)
 INSERT INTO quiz_items ("Id", "StoryVersionId", "Type", "Question", "Choices", "CorrectAnswer", "CreatedAt", "IsDeleted")
 VALUES
     (1, 1, 'MultipleChoice', 'Nhan vat chinh trong cau chuyen la ai?', '["Chu Tho","Chu Ruoi","Chu Rua"]', 'Chu Tho', NOW() - INTERVAL '30 days', false),
@@ -10,5 +10,11 @@ VALUES
     (7, 7, 'ShortAnswer', 'Gia dinh trong truyen thuong lam gi vao buoi toi?', NULL, 'Quay quan ben nhau', NOW() - INTERVAL '19 days', false),
     (8, 8, 'TrueFalse', 'Sieu nhan ti hon co suc manh dac biet.', '["Dung","Sai"]', 'Dung', NOW() - INTERVAL '17 days', false),
     (9, 9, 'MultipleChoice', 'Nhom ban trong truyen co bao nhieu nguoi?', '["Ba","Bon","Nam"]', 'Bon', NOW() - INTERVAL '15 days', false),
-    (10, 10, 'ShortAnswer', 'Fair-play nghia la gi?', NULL, 'Choi dep va trung thuc', NOW() - INTERVAL '13 days', false)
+    (10, 10, 'ShortAnswer', 'Fair-play nghia la gi?', NULL, 'Choi dep va trung thuc', NOW() - INTERVAL '13 days', false),
+    (11, 14, 'MultipleChoice', 'Ai chăm sóc khu vườn?', '["Mai","Nam","Cả hai"]', 'Mai', NOW() - INTERVAL '7 days', false),
+    (12, 15, 'MultipleChoice', 'Ai chăm sóc khu vườn?', '["Mai","Nam","Cả hai"]', 'Mai', NOW() - INTERVAL '2 days', false),
+    (13, 16, 'MultipleChoice', 'Ai chăm sóc khu vườn?', '["Mai","Nam","Cả hai"]', 'Cả hai', NOW() - INTERVAL '2 hours', false),
+    (14, 17, 'TrueFalse', 'Ngọn đèn giúp các bạn tìm đường.', '["Đúng","Sai"]', 'Đúng', NOW() - INTERVAL '8 days', false),
+    (15, 18, 'TrueFalse', 'Đặt đèn sát rèm cửa là an toàn.', '["Đúng","Sai"]', 'Sai', NOW() - INTERVAL '1 day', false),
+    (16, 19, 'TrueFalse', 'An đặt ngọn đèn ở vị trí an toàn.', '["Đúng","Sai"]', 'Đúng', NOW() - INTERVAL '1 hour', false)
 ON CONFLICT ("Id") DO NOTHING;

@@ -30,7 +30,8 @@ public class StoryCategoryConfiguration : IEntityTypeConfiguration<StoryCategory
             .HasConversion<string>()
             .HasMaxLength(30)
             .IsRequired()
-            .HasDefaultValue(TagSource.Ai);
+            .HasDefaultValue(TagSource.Ai)
+            .HasSentinel(TagSource.Ai);
 
         builder.HasQueryFilter(x => !x.IsDeleted);
     }

@@ -14,6 +14,8 @@ public static class ModerationQueuePolicy
     /// <summary>Thời hạn quyền đọc tạm sau khi bấm "Xem để rà soát".</summary>
     public static readonly TimeSpan ReviewViewLifetime = TimeSpan.FromHours(2);
 
+    public static readonly TimeSpan ResubmissionPriorityWindow = TimeSpan.FromHours(24);
+
     public static TimeSpan GetSla(ModerationItemType itemType) => itemType switch
     {
         ModerationItemType.GrayZoneStory => TimeSpan.FromHours(24),

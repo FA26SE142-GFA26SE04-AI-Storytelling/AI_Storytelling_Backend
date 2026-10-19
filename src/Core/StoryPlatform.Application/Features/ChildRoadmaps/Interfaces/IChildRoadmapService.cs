@@ -5,6 +5,9 @@ public interface IChildRoadmapService
     Task<AddRoadmapStoryResultDto> AddStoryAsync(
         int actorUserId, AddRoadmapStoryRequestDto request, CancellationToken cancellationToken = default);
 
+    Task<WishRoadmapResultDto> AddForWishAsync(
+        int actorUserId, int childProfileId, int storyId, CancellationToken cancellationToken = default);
+
     Task<ChildRoadmapDto> RemoveAsync(
         int actorUserId, int childProfileId, int itemId, CancellationToken cancellationToken = default);
 

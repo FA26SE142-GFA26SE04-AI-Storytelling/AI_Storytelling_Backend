@@ -115,6 +115,7 @@ public static class DependencyInjection
         services.AddScoped<IChildRoadmapNotifier, ChildRoadmapNotifier>();
         services.AddScoped<IChildRoadmapProgressRecorder, ChildRoadmapProgressRecorder>();
         services.AddScoped<IChildRoadmapService, ChildRoadmapService>();
+        services.AddScoped<IMyRoadmapService, MyRoadmapService>();
         services.AddScoped<IRoadmapLibraryService, RoadmapLibraryService>();
         services.AddScoped<IPublishedContentReviewService, PublishedContentReviewService>();
         services.AddScoped<IRoadmapSubmissionChecker, RoadmapSubmissionChecker>();

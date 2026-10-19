@@ -10,6 +10,7 @@ public enum RoadmapInsertPosition
 
 public static class ChildRoadmapPolicy
 {
+    public const string WishNote = "Từ điều ước của em";
     public const int MaxNoteLength = 500;
     public const int MinExpectedDays = 1;
     public const int MaxExpectedDays = 90;
@@ -54,6 +55,12 @@ public class ChildAddResultDto
 public class AddRoadmapStoryResultDto
 {
     public List<ChildAddResultDto> Results { get; set; } = new();
+}
+
+public class WishRoadmapResultDto
+{
+    public int ItemId { get; set; }
+    public string Outcome { get; set; } = string.Empty;
 }
 
 public class ReorderRoadmapRequestDto

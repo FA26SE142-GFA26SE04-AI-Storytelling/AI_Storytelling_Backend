@@ -36,3 +36,14 @@ WHERE "Id" = 9 AND "Status" = 'Rejected';
 UPDATE stories
 SET "ArchivedAt" = NOW() - INTERVAL '14 days'
 WHERE "Id" = 9 AND "Status" = 'Archived' AND "ArchivedAt" IS NULL;
+
+-- Parent V4 private demo fixture; requires AddParentManualAuthoring. No child access grant.
+INSERT INTO stories (
+    "Id", "Title", "Content", "Language", "AgeBand", "Status", "Source", "IsPublished",
+    "AuthorUserId", "ChildProfileId", "CreatedAt", "IsDeleted", "Scope", "OutputMode",
+    "AudienceRevision", "AuthoringLastVersionNo", "AuthoringRevisionToken", "ExperienceMode", "CreateOperationId", "WritingPurpose"
+)
+VALUES
+    (13, 'Chiều cùng con', 'Bắp làm đổ nước. Mẹ cùng Bắp lau bàn. Hai mẹ con mỉm cười.', 'vi', '6-8', 'Draft', 'Manual', false,
+     2, 1, '2026-10-18T01:00:00Z', false, 'Parent', 'ReadingMediaOnly', 1, 1, md5('seed-parent-v4-story-13'), 'reading', 'seed-parent-manual-13', 'family_memory')
+ON CONFLICT ("Id") DO NOTHING;

@@ -15,6 +15,28 @@ namespace StoryPlatform.UnitTests;
 public sealed class SeedDataAlignmentTests
 {
     [Fact]
+    public void SeedManifest_has_one_target_table_per_file_matching_runner_contract()
+    {
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root is not null && !File.Exists(Path.Combine(root.FullName, "StoryPlatform.sln"))) root = root.Parent;
+        Assert.NotNull(root);
+        var files = Directory.GetFiles(Path.Combine(root.FullName, "Database", "Seed"), "*.sql").OrderBy(x => x).ToArray();
+        for (var index = 0; index < files.Length; index++)
+        {
+            var name = Path.GetFileName(files[index]);
+            var match = Regex.Match(name, @"^(?<order>\d{2})_(?<table>[a-z][a-z0-9_]*)\.sql$");
+            Assert.True(match.Success, name);
+            Assert.Equal(index + 1, int.Parse(match.Groups["order"].Value));
+            // Same pattern as Seed-Database.ps1:Get-SeedTableName, including quoted identifiers.
+            var inserts = Regex.Matches(File.ReadAllText(files[index]),
+                "(?im)^\\s*INSERT\\s+INTO\\s+(?:\"(?<quoted>[a-z][a-z0-9_]*)\"|(?<plain>[a-z][a-z0-9_]*))");
+            var tables = inserts.Select(x => x.Groups["quoted"].Success ? x.Groups["quoted"].Value : x.Groups["plain"].Value)
+                .Distinct(StringComparer.Ordinal).ToArray();
+            Assert.Equal(match.Groups["table"].Value, Assert.Single(tables));
+        }
+    }
+
+    [Fact]
     public void SeedAssistance_ClosedTaskKeepsSourceContextAndReplayReceiptsConsistent()
     {
         var inserts = ReadInserts();

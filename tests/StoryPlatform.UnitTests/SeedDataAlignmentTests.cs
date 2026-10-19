@@ -15,6 +15,43 @@ namespace StoryPlatform.UnitTests;
 public sealed class SeedDataAlignmentTests
 {
     [Fact]
+    public void SeedExplicitIds_AreUniqueAcrossAllInsertsForEachTable()
+    {
+        // ON CONFLICT DO NOTHING must not silently discard another feature's fixture.
+        foreach (var table in ReadInserts().GroupBy(insert => insert.Table))
+        {
+            var duplicates = table.SelectMany(insert => insert.Rows.Select(row =>
+                    (Id: row["Id"], File: insert.File)))
+                .GroupBy(row => row.Id)
+                .Where(group => group.Count() > 1)
+                .Select(group => $"Id={group.Key} in [{string.Join(", ", group.Select(row => row.File))}]");
+            Assert.True(!duplicates.Any(), $"{table.Key}: duplicate seed IDs: {string.Join("; ", duplicates)}");
+        }
+    }
+
+    [Fact]
+    public void SeedParentOperations_ReferencePrivateParentStoryAndMatchingVersion()
+    {
+        var inserts = ReadInserts();
+        foreach (var operation in Rows(inserts, "parent_story_operations"))
+        {
+            var story = Assert.Single(Rows(inserts, "stories"), row => row["Id"] == operation["StoryId"]);
+            var version = Assert.Single(Rows(inserts, "story_versions"), row => row["Id"] == operation["StoryVersionId"]);
+            Assert.Equal("Parent", StringLiteral(story["Scope"]));
+            Assert.Equal("Manual", StringLiteral(story["Source"]));
+            Assert.Equal("false", story["IsPublished"]);
+            Assert.Equal(story["AuthorUserId"], operation["ActorUserId"]);
+            Assert.Equal(story["ChildProfileId"], operation["ChildProfileId"]);
+            Assert.Equal(story["Id"], version["StoryId"]);
+            Assert.Equal(story["Content"], version["Content"]);
+            Assert.Equal("true", version["IsCurrent"]);
+            using var result = JsonDocument.Parse(StringLiteral(operation["ResultJson"])!);
+            Assert.Equal(int.Parse(version["Id"]), result.RootElement.GetProperty("storyVersionId").GetInt32());
+            Assert.False(result.RootElement.GetProperty("canPrepare").GetBoolean());
+        }
+    }
+
+    [Fact]
     public void SeedManifest_has_one_target_table_per_file_matching_runner_contract()
     {
         var root = new DirectoryInfo(AppContext.BaseDirectory);

@@ -1,5 +1,6 @@
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
+using StoryPlatform.Application.Features.ContentReports;
 using StoryPlatform.Application.Features.ContentReports.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -49,8 +50,9 @@ public class ReportableStoryResolver : IReportableStoryResolver
             throw new ForbiddenException(NotAccessibleMessage);
         }
 
-        var displayedVersionId = await FindDisplayedVersionIdAsync(story, cancellationToken);
-        return new ReportableStory(story, displayedVersionId);
+        var displayed = await ReportedContentBuilder.FindDisplayedVersionAsync(
+            _unitOfWork, story, cancellationToken);
+        return new ReportableStory(story, displayed?.Id);
     }
 
     private static bool CanAccess(Story story, ChildProfile child) =>
@@ -65,22 +67,4 @@ public class ReportableStoryResolver : IReportableStoryResolver
         _ => int.MaxValue
     };
 
-    private async Task<int?> FindDisplayedVersionIdAsync(
-        Story story, CancellationToken cancellationToken)
-    {
-        var versions = await _unitOfWork.Repository<StoryVersion>().FindAsync(
-            version => version.StoryId == story.Id,
-            cancellationToken: cancellationToken);
-
-        if (story.Scope == StoryScope.Parent)
-        {
-            return versions.FirstOrDefault(version => version.IsCurrent)?.Id;
-        }
-
-        return versions
-            .Where(version => version.ReviewStatus == VersionReviewStatus.Approved)
-            .OrderByDescending(version => version.ReviewedAt)
-            .ThenByDescending(version => version.VersionNo)
-            .FirstOrDefault()?.Id;
-    }
 }

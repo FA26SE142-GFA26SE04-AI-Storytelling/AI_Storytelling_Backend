@@ -39,6 +39,12 @@ public class ContentReportDetailDto
     public string? Description { get; set; }
     public string? AttachmentUrl { get; set; }
     public bool IsReviewItem { get; set; }
+    /// <summary>"Claimed" (đang do Moderator giữ) hoặc "Escalated" (đã chuyển Administrator).</summary>
+    public string ItemStatus { get; set; } = string.Empty;
+
+    /// <summary>Lý do Moderator chuyển ca lên (đã che thông tin cá nhân); null nếu chưa Escalate.</summary>
+    public string? EscalationReason { get; set; }
+    public DateTime? EscalatedAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public ReportedStoryDto Story { get; set; } = new();
     public ReportedVersionDto? Version { get; set; }
@@ -129,4 +135,27 @@ public class ContentReportDecisionResultDto
     public string Decision { get; set; } = string.Empty;
     public bool StoryArchived { get; set; }
     public DateTime DecidedAt { get; set; }
+}
+
+public class EscalateReportRequestDto
+{
+    /// <summary>Lý do chuyển Administrator (bắt buộc, tối đa 1000 ký tự). Chỉ Administrator đọc được.</summary>
+    public string Reason { get; set; } = string.Empty;
+}
+
+public class CreateReviewItemRequestDto
+{
+    public int StoryId { get; set; }
+
+    /// <summary>Khi rà soát một truyện trong bộ truyện mẫu: Id bộ (bộ phải đang công khai và chứa truyện).</summary>
+    public int? ReadingRoadmapId { get; set; }
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public ContentReportReason Reason { get; set; }
+
+    /// <summary>Ghi chú tùy chọn, tối đa 2000 ký tự.</summary>
+    public string? Description { get; set; }
+
+    /// <summary>Nguồn đính kèm tùy chọn (URL http hoặc https, tối đa 500 ký tự).</summary>
+    public string? AttachmentUrl { get; set; }
 }

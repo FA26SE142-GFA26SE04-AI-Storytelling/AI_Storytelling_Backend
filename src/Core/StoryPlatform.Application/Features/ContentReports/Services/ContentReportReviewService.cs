@@ -3,6 +3,7 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.ContentReports.DTOs;
 using StoryPlatform.Application.Features.ContentReports.Interfaces;
+using StoryPlatform.Application.Features.ContentReports;
 using StoryPlatform.Application.Features.Moderation;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Domain.Entities;
@@ -69,56 +70,23 @@ public partial class ContentReportReviewService : IContentReportReviewService
             Description = Mask(report.Description),
             AttachmentUrl = report.AttachmentUrl,
             IsReviewItem = report.IsReviewItem,
+            ItemStatus = context.Item.Status.ToString(),
+            EscalationReason = Mask(context.Item.EscalationReason),
+            EscalatedAt = context.Item.EscalatedAt,
             CreatedAt = report.CreatedAt,
-            Story = new ReportedStoryDto
-            {
-                StoryId = story.Id,
-                Title = Mask(story.Title),
-                Description = Mask(story.Description),
-                Genre = story.Genre,
-                AgeBand = story.AgeBand,
-                ReadingLevel = story.ReadingLevel,
-                Language = story.Language,
-                Scope = story.Scope.ToString(),
-                IsArchived = story.Status == StoryStatus.Archived || story.ArchivedAt != null,
-                Labels = await LoadLabelsAsync(story.Id, cancellationToken)
-            }
+            Story = ReportedContentBuilder.BuildStory(
+                story,
+                await ReportedContentBuilder.LoadLabelsAsync(_unitOfWork, story.Id, cancellationToken),
+                Mask)
         };
 
         if (version != null && snapshot != null)
         {
-            detail.Version = new ReportedVersionDto
-            {
-                VersionId = version.Id,
-                VersionNo = version.VersionNo,
-                Title = Mask(version.Title) ?? string.Empty,
-                Content = Mask(version.Content),
-                Lesson = Mask(version.Lesson)
-            };
-            detail.Scenes = snapshot.Scenes.Select(scene => new ReportedSceneDto
-            {
-                SceneIndex = scene.SceneIndex,
-                Text = Mask(scene.SceneText) ?? string.Empty,
-                ImageUrls = snapshot.ImageUrls(scene.Id).ToList(),
-                AudioUrls = snapshot.AudioUrls(scene.Id).ToList()
-            }).ToList();
-            detail.Vocabulary = snapshot.Vocabulary.Select(word => new ReportedVocabularyDto
-            {
-                Term = Mask(word.Term) ?? string.Empty,
-                Definition = Mask(word.Definition) ?? string.Empty
-            }).ToList();
-            detail.Quizzes = snapshot.Quizzes.Select(quiz => new ReportedQuizDto
-            {
-                Type = quiz.Type.ToString(),
-                Question = Mask(quiz.Question) ?? string.Empty,
-                CorrectAnswer = Mask(quiz.CorrectAnswer),
-                Choices = Mask(quiz.Choices)
-            }).ToList();
-            detail.DiscussionQuestions = snapshot.Discussions.Select(question => new ReportedDiscussionDto
-            {
-                Question = Mask(question.Question) ?? string.Empty,
-                IsMoralLesson = question.IsMoralLesson
-            }).ToList();
+            detail.Version = ReportedContentBuilder.BuildVersion(version, Mask);
+            detail.Scenes = ReportedContentBuilder.BuildScenes(snapshot, Mask);
+            detail.Vocabulary = ReportedContentBuilder.BuildVocabulary(snapshot, Mask);
+            detail.Quizzes = ReportedContentBuilder.BuildQuizzes(snapshot, Mask);
+            detail.DiscussionQuestions = ReportedContentBuilder.BuildDiscussions(snapshot, Mask);
         }
 
         await _auditLogWriter.LogAsync(
@@ -133,10 +101,7 @@ public partial class ContentReportReviewService : IContentReportReviewService
         return detail;
     }
 
-    /// <summary>
-    /// Cổng chung cho mọi thao tác trên mục report: nhân sự đang hoạt động, mục đang do chính mình nhận,
-    /// chưa quá thời hạn claim, report còn Pending và truyện còn tồn tại.
-    /// </summary>
+    /// <summary>Cổng chung cho mục đang do chính mình nhận hoặc ca Escalated do Administrator xử lý.</summary>
     private async Task<ReportContext> LoadClaimedContextAsync(
         int actorUserId, int itemId, CancellationToken cancellationToken)
     {
@@ -163,6 +128,16 @@ public partial class ContentReportReviewService : IContentReportReviewService
             throw new BadRequestException("Mục này không phải mục xử lý report.");
         }
 
+        if (item.Status == ModerationItemStatus.Escalated)
+        {
+            if (actor.Role != UserRole.Administrator)
+            {
+                throw new ForbiddenException("Ca đã chuyển cho Administrator quyết định.");
+            }
+
+            return await BuildContextAsync(actor, item, ContentReportStatus.Escalated, cancellationToken);
+        }
+
         if (item.Status != ModerationItemStatus.Claimed || item.ClaimedByUserId != actor.Id)
         {
             throw new ForbiddenException("Bạn chỉ được đọc mục đang do chính mình nhận.");
@@ -175,6 +150,13 @@ public partial class ContentReportReviewService : IContentReportReviewService
                 "Mục đã quá 2 giờ kể từ lúc nhận và sẽ được trả về hàng đợi. Vui lòng nhận lại.");
         }
 
+        return await BuildContextAsync(actor, item, ContentReportStatus.Pending, cancellationToken);
+    }
+
+    private async Task<ReportContext> BuildContextAsync(
+        UserAccount actor, ModerationItem item, ContentReportStatus expectedReportStatus,
+        CancellationToken cancellationToken)
+    {
         if (item.ContentReportId == null)
         {
             throw new BadRequestException("Mục chưa gắn report để xử lý.");
@@ -187,38 +169,17 @@ public partial class ContentReportReviewService : IContentReportReviewService
             throw new NotFoundException("Report", item.ContentReportId.Value);
         }
 
-        if (report.Status != ContentReportStatus.Pending)
+        if (report.Status != expectedReportStatus)
         {
             throw new ConflictException("Report này đã được xử lý.");
         }
 
-        var story = await _unitOfWork.Repository<Story>()
-            .GetByIdAsync(report.StoryId, cancellationToken);
+        var story = await _unitOfWork.Repository<Story>().GetByIdAsync(report.StoryId, cancellationToken);
         if (story == null || story.IsDeleted)
         {
             throw new NotFoundException("Truyện", report.StoryId);
         }
 
         return new ReportContext(actor, item, report, story);
-    }
-
-    private async Task<List<ReportedLabelDto>> LoadLabelsAsync(
-        int storyId, CancellationToken cancellationToken)
-    {
-        var links = await _unitOfWork.Repository<StoryCategory>().FindAsync(
-            link => link.StoryId == storyId,
-            cancellationToken: cancellationToken);
-        var categoryIds = links.Select(link => link.ContentCategoryId).ToList();
-        var categories = await _unitOfWork.Repository<ContentCategory>().FindAsync(
-            category => categoryIds.Contains(category.Id),
-            cancellationToken: cancellationToken);
-
-        return categories.OrderBy(category => category.Id)
-            .Select(category => new ReportedLabelDto
-            {
-                Code = category.Code,
-                DisplayName = category.DisplayName
-            })
-            .ToList();
     }
 }

@@ -85,6 +85,7 @@ public partial class ContentReportReviewService
         var item = context.Item;
         var report = context.Report;
         var story = context.Story;
+        var previousStatus = item.Status;
         var now = DateTime.UtcNow;
         var storyAlreadyArchived = story.Status == StoryStatus.Archived || story.ArchivedAt != null;
         var archiveNow = archiveReason.HasValue && !storyAlreadyArchived;
@@ -121,7 +122,7 @@ public partial class ContentReportReviewService
                 auditAction,
                 nameof(ModerationItem),
                 item.Id,
-                beforeState: new { status = ModerationItemStatus.Claimed.ToString() },
+                beforeState: new { status = previousStatus.ToString() },
                 afterState: new
                 {
                     status = itemStatus.ToString(),

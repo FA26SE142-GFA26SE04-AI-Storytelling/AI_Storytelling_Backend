@@ -37,6 +37,7 @@ public class Story : BaseEntity
     public string? CreateOperationId { get; set; }
     public string? CreateRequestHash { get; set; }
     public string? CreateResponseJson { get; set; }
+    public string? WritingPurpose { get; set; }
 
     // Khóa ngoại tác giả / người khởi tạo
     public int AuthorUserId { get; set; }

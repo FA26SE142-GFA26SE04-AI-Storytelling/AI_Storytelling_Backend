@@ -20,6 +20,7 @@ public class StoryConfiguration : IEntityTypeConfiguration<Story>
             .IsRequired();
         builder.Property(s => s.AuthoringRevisionToken).HasMaxLength(32).IsRequired().IsConcurrencyToken();
         builder.Property(s => s.ExperienceMode).HasMaxLength(20).IsRequired();
+        builder.Property(s => s.WritingPurpose).HasMaxLength(30);
         builder.Property(s => s.CreateOperationId).HasMaxLength(100);
         builder.Property(s => s.CreateRequestHash).HasMaxLength(64);
         builder.Property(s => s.CreateResponseJson).HasColumnType("text");

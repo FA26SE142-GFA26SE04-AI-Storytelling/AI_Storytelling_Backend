@@ -1474,6 +1474,78 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("ownership_transfer_requests", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ParentStoryOperation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ActorUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ChildProfileId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ContextFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("OperationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("StoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("StoryVersionId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("StoryVersionId");
+
+                    b.HasIndex("ChildProfileId", "Kind");
+
+                    b.HasIndex("StoryId", "Kind");
+
+                    b.HasIndex("StoryId", "ActorUserId", "OperationId")
+                        .IsUnique();
+
+                    b.ToTable("parent_story_operations", (string)null);
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.PaymentTransaction", b =>
                 {
                     b.Property<int>("Id")
@@ -2354,6 +2426,10 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<string>("VocabularyLevel")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
+
+                    b.Property<string>("WritingPurpose")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
 
                     b.HasKey("Id");
 
@@ -4243,6 +4319,32 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("CurrentOwnerUser");
 
                     b.Navigation("TargetSupervisorUser");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ParentStoryOperation", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", null)
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", null)
+                        .WithMany()
+                        .HasForeignKey("ChildProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.Story", null)
+                        .WithMany()
+                        .HasForeignKey("StoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryVersion", null)
+                        .WithMany()
+                        .HasForeignKey("StoryVersionId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.PaymentTransaction", b =>

@@ -4,6 +4,8 @@ using StoryPlatform.Application.Features.CreatorAuthoring.Services;
 using StoryPlatform.Application.Features.Auth.Interfaces;
 using StoryPlatform.Application.Features.Moderation.Interfaces;
 using StoryPlatform.Application.Features.Moderation.Services;
+using StoryPlatform.Application.Features.RoadmapTemplates.Interfaces;
+using StoryPlatform.Application.Features.RoadmapTemplates.Services;
 using StoryPlatform.Application.Features.ContentReports.Interfaces;
 using StoryPlatform.Application.Features.ContentReports.Services;
 using StoryPlatform.Application.Features.Auth.Services;
@@ -97,6 +99,8 @@ public static class DependencyInjection
         services.AddScoped<IContentReportService, ContentReportService>();
         services.AddScoped<IContentReportReviewService, ContentReportReviewService>();
         services.AddScoped<IPublishedContentReviewService, PublishedContentReviewService>();
+        services.AddScoped<IRoadmapSubmissionChecker, RoadmapSubmissionChecker>();
+        services.AddScoped<IRoadmapTemplateService, RoadmapTemplateService>();
         services.AddScoped<IModeratorAccountService, ModeratorAccountService>();
         services.AddScoped<IDataRequestService, DataRequestService>();
         services.AddScoped<IBusinessReportService, BusinessReportService>();

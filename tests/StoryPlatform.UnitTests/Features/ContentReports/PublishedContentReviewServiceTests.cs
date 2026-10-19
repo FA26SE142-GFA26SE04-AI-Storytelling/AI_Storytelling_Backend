@@ -196,6 +196,63 @@ public class PublishedContentReviewServiceTests
     }
 
     [Fact]
+    public async Task ListAsync_RoadmapTemplate_FlagsOnlyRoadmapContainingArchivedStory()
+    {
+        _h.AddPublicStory(30, "6-8", DateTime.UtcNow.AddDays(-1));
+        _h.AddRoadmap(1, AgeBand.Age_6_8, 5, DateTime.UtcNow,
+            PublicStory, 30);
+        _h.AddRoadmap(2, AgeBand.Age_6_8, 6, DateTime.UtcNow.AddDays(-1),
+            PublicStory);
+        _h.Stories.Single(story => story.Id == 30).Status = StoryStatus.Archived;
+
+        var result = await _sut.ListAsync(Moderator, new PublishedContentQueryDto
+        {
+            Source = PublishedContentSource.RoadmapTemplate
+        });
+
+        Assert.True(result.Items.Single(item => item.Id == 1).NeedsUpdate);
+        Assert.False(result.Items.Single(item => item.Id == 2).NeedsUpdate);
+    }
+
+    [Fact]
+    public async Task ListAsync_PublicLibrary_NeverCarriesNeedsUpdateFlag()
+    {
+        var result = await _sut.ListAsync(Moderator, new PublishedContentQueryDto
+        {
+            Source = PublishedContentSource.PublicLibrary
+        });
+
+        Assert.All(result.Items, item => Assert.False(item.NeedsUpdate));
+    }
+
+    [Fact]
+    public async Task GetRoadmapAsync_ReportsNeedsUpdateAndArchivedStory()
+    {
+        _h.AddPublicStory(30, "6-8", DateTime.UtcNow.AddDays(-1));
+        _h.AddRoadmap(1, AgeBand.Age_6_8, 5, DateTime.UtcNow, PublicStory, 30);
+        _h.ReviewViews.Setup(view => view.HasActiveViewAsync(
+                Moderator, null, 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _h.Stories.Single(story => story.Id == 30).Status = StoryStatus.Archived;
+
+        var result = await _sut.GetRoadmapAsync(Moderator, 1);
+
+        Assert.True(result.NeedsUpdate);
+        Assert.True(result.Stories.Single(story => story.StoryId == 30).IsArchived);
+    }
+
+    [Fact]
+    public async Task GetRoadmapAsync_HealthyRoadmapDoesNotNeedUpdate()
+    {
+        _h.AddRoadmap(1, AgeBand.Age_6_8, 5, DateTime.UtcNow, PublicStory);
+        _h.ReviewViews.Setup(view => view.HasActiveViewAsync(
+                Moderator, null, 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        Assert.False((await _sut.GetRoadmapAsync(Moderator, 1)).NeedsUpdate);
+    }
+
+    [Fact]
     public void Controller_IsRestrictedToStaffAndOnlyModeratorsMayCreateReviewItems()
     {
         var authorize = typeof(PublishedContentReviewController).GetCustomAttribute<AuthorizeAttribute>();

@@ -5,6 +5,7 @@ using Moq;
 using StoryPlatform.Api.Controllers;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ContentReports.DTOs;
+using StoryPlatform.Application.Features.ContentReports.Interfaces;
 using StoryPlatform.Application.Features.ContentReports.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -15,6 +16,7 @@ namespace StoryPlatform.UnitTests.Features.ContentReports;
 public class ContentReportReviewServiceTests
 {
     private readonly ContentReportHarness _h = new();
+    private readonly Mock<IStoryArchiveConsequences> _consequences = new();
     private readonly ContentReportReviewService _sut;
 
     private const int Moderator = ContentReportHarness.ModeratorId;
@@ -23,7 +25,7 @@ public class ContentReportReviewServiceTests
     public ContentReportReviewServiceTests()
     {
         _sut = new ContentReportReviewService(
-            _h.UnitOfWork.Object, _h.Audit.Object, _h.Notifications.Object);
+            _h.UnitOfWork.Object, _h.Audit.Object, _h.Notifications.Object, _consequences.Object);
     }
 
     private void AddScene(int sceneId, int versionId = 50, string text = "Gọi 0912345678 ngay")

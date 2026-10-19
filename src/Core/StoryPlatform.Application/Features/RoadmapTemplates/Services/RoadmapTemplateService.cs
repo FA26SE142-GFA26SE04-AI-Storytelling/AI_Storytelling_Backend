@@ -158,6 +158,9 @@ public partial class RoadmapTemplateService : IRoadmapTemplateService
             .GetByIdAsync(roadmap.MainCategoryId, cancellationToken);
         var creator = await _unitOfWork.Repository<UserAccount>()
             .GetByIdAsync(roadmap.CreatedByUserId, cancellationToken);
+        var retired = roadmap.Status == RoadmapTemplateStatus.Published
+            ? await RoadmapNeedsUpdate.RetiredStoriesByRoadmapAsync(_unitOfWork, items, cancellationToken)
+            : new Dictionary<int, List<int>>();
 
         return new RoadmapDetailDto
         {
@@ -192,7 +195,11 @@ public partial class RoadmapTemplateService : IRoadmapTemplateService
                 RelatedRoadmapId = check.RelatedRoadmapId
             }).ToList(),
             CanSubmit = roadmap.Status == RoadmapTemplateStatus.Draft && checks.All(check => check.Passed),
-            LastReview = await LoadLastReviewAsync(roadmap, actor, cancellationToken)
+            LastReview = await LoadLastReviewAsync(roadmap, actor, cancellationToken),
+            NeedsUpdate = retired.ContainsKey(roadmap.Id),
+            RetiredStoryIds = retired.TryGetValue(roadmap.Id, out var retiredIds)
+                ? retiredIds
+                : new List<int>()
         };
     }
 

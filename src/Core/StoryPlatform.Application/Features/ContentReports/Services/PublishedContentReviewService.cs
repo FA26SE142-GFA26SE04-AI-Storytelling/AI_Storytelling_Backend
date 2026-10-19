@@ -7,6 +7,7 @@ using StoryPlatform.Application.Features.ContentReports.DTOs;
 using StoryPlatform.Application.Features.ContentReports.Interfaces;
 using StoryPlatform.Application.Features.Moderation;
 using StoryPlatform.Application.Features.Moderation.Interfaces;
+using StoryPlatform.Application.Features.RoadmapTemplates;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -143,6 +144,9 @@ public class PublishedContentReviewService : IPublishedContentReviewService
             ReadingLevelMax = roadmap.ReadingLevelMax,
             DefaultDaysPerStory = roadmap.DefaultDaysPerStory,
             PublishedAt = roadmap.PublishedAt,
+            NeedsUpdate = items.Any(item =>
+                RoadmapNeedsUpdate.IsRetired(
+                    stories.FirstOrDefault(candidate => candidate.Id == item.StoryId))),
             Stories = items.Select(item =>
             {
                 var story = stories.FirstOrDefault(candidate => candidate.Id == item.StoryId);
@@ -250,6 +254,8 @@ public class PublishedContentReviewService : IPublishedContentReviewService
             item => roadmapIds.Contains(item.ReadingRoadmapId), cancellationToken: cancellationToken);
         var categories = await LoadCategoriesAsync(
             roadmaps.Select(roadmap => roadmap.MainCategoryId).Distinct().ToList(), cancellationToken);
+        var retired = await RoadmapNeedsUpdate.RetiredStoriesByRoadmapAsync(
+            _unitOfWork, roadmapItems, cancellationToken);
         var items = roadmaps.Select(roadmap => new PublishedContentItemDto
         {
             Source = PublishedContentSource.RoadmapTemplate.ToString(),
@@ -258,6 +264,7 @@ public class PublishedContentReviewService : IPublishedContentReviewService
             AgeBand = AgeText(roadmap.AgeBand),
             PublishedAt = roadmap.PublishedAt,
             StoryCount = roadmapItems.Count(item => item.ReadingRoadmapId == roadmap.Id),
+            NeedsUpdate = retired.ContainsKey(roadmap.Id),
             Labels = categories.TryGetValue(roadmap.MainCategoryId, out var label)
                 ? [label]
                 : []

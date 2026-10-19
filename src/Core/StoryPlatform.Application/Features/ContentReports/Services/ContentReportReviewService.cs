@@ -16,15 +16,18 @@ public partial class ContentReportReviewService : IContentReportReviewService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly INotificationService _notificationService;
+    private readonly IStoryArchiveConsequences _archiveConsequences;
 
     public ContentReportReviewService(
         IUnitOfWork unitOfWork,
         IAuditLogWriter auditLogWriter,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        IStoryArchiveConsequences archiveConsequences)
     {
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
         _notificationService = notificationService;
+        _archiveConsequences = archiveConsequences;
     }
 
     private sealed record ReportContext(

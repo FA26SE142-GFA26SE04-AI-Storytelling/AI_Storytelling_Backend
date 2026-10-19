@@ -57,6 +57,8 @@ using StoryPlatform.Application.Features.Payments.Interfaces;
 using StoryPlatform.Application.Features.Payments.Services;
 using StoryPlatform.Application.Features.TokenQuota.Interfaces;
 using StoryPlatform.Application.Features.TokenQuota.Services;
+using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
+using StoryPlatform.Application.Features.ReadingSessions.Services;
 
 namespace StoryPlatform.Application;
 
@@ -98,6 +100,10 @@ public static class DependencyInjection
         services.AddScoped<IReportableStoryResolver, ReportableStoryResolver>();
         services.AddScoped<IContentReportService, ContentReportService>();
         services.AddScoped<IContentReportReviewService, ContentReportReviewService>();
+        services.AddScoped<IStoryArchiveHandler, PendingSubmissionArchiveHandler>();
+        services.AddScoped<IStoryArchiveHandler, ReadingSessionArchiveHandler>();
+        services.AddScoped<IStoryArchiveConsequences, StoryArchiveConsequences>();
+        services.AddScoped<IReadingSessionInterruptService, ReadingSessionInterruptService>();
         services.AddScoped<IPublishedContentReviewService, PublishedContentReviewService>();
         services.AddScoped<IRoadmapSubmissionChecker, RoadmapSubmissionChecker>();
         services.AddScoped<IRoadmapTemplateService, RoadmapTemplateService>();

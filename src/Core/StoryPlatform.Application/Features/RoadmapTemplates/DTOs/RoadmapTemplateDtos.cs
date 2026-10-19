@@ -60,6 +60,8 @@ public class RoadmapDetailDto
     public List<RoadmapCheckDto> Checks { get; set; } = new();
     public bool CanSubmit { get; set; }
     public RoadmapLastReviewDto? LastReview { get; set; }
+    public bool NeedsUpdate { get; set; }
+    public List<int> RetiredStoryIds { get; set; } = new();
 }
 
 public class CandidateQueryDto
@@ -135,6 +137,8 @@ public class RoadmapListItemDto
 
     /// <summary>Bản nhân bản đang mở của bộ này, nếu có.</summary>
     public int? OpenCloneId { get; set; }
+    public bool NeedsUpdate { get; set; }
+    public int RetiredStoryCount { get; set; }
 }
 
 public class RoadmapLastReviewDto

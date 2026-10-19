@@ -1,6 +1,7 @@
 using System.Text.Json;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ContentReports.DTOs;
+using StoryPlatform.Application.Features.ContentReports.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -133,6 +134,13 @@ public partial class ContentReportReviewService
                     storyArchivedNow = archiveNow
                 },
                 cancellationToken: cancellationToken);
+
+            if (archiveNow)
+            {
+                await _archiveConsequences.ApplyAsync(
+                    new StoryArchiveContext(story, archiveReason!.Value, context.Actor.Id, now),
+                    cancellationToken);
+            }
 
             await NotifyReporterAsync(context, reportStatus, cancellationToken);
             if (archiveNow)

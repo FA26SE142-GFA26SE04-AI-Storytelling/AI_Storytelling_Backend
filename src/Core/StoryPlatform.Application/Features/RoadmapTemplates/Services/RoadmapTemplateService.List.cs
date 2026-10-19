@@ -84,6 +84,11 @@ public partial class RoadmapTemplateService
             }
         }
 
+        var retired = query.Group == RoadmapListGroup.Published
+            ? await RoadmapNeedsUpdate.RetiredStoriesByRoadmapAsync(
+                _unitOfWork, roadmapItems, cancellationToken)
+            : new Dictionary<int, List<int>>();
+
         var items = roadmaps.Select(roadmap =>
         {
             var category = categories.FirstOrDefault(candidate => candidate.Id == roadmap.MainCategoryId);
@@ -108,7 +113,11 @@ public partial class RoadmapTemplateService
                 IsMine = roadmap.CreatedByUserId == actorId,
                 SubmittedAt = roadmap.SubmittedAt,
                 PublishedAt = roadmap.PublishedAt,
-                OpenCloneId = openCloneBySource.TryGetValue(roadmap.Id, out var cloneId) ? cloneId : null
+                OpenCloneId = openCloneBySource.TryGetValue(roadmap.Id, out var cloneId) ? cloneId : null,
+                NeedsUpdate = retired.ContainsKey(roadmap.Id),
+                RetiredStoryCount = retired.TryGetValue(roadmap.Id, out var retiredIds)
+                    ? retiredIds.Count
+                    : 0
             };
         }).ToList();
 

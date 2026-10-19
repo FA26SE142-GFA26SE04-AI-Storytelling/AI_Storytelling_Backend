@@ -31,6 +31,7 @@ public class PublishedContentItemDto
     public List<ReportedLabelDto> Labels { get; set; } = new();
     public DateTime? PublishedAt { get; set; }
     public int? StoryCount { get; set; }
+    public bool NeedsUpdate { get; set; }
 }
 
 /// <summary>Nội dung một truyện đã công khai cho nhân sự kiểm duyệt.</summary>
@@ -55,6 +56,7 @@ public class PublishedRoadmapDto
     public int ReadingLevelMax { get; set; }
     public int DefaultDaysPerStory { get; set; }
     public DateTime? PublishedAt { get; set; }
+    public bool NeedsUpdate { get; set; }
     public List<PublishedRoadmapStoryDto> Stories { get; set; } = new();
 }
 

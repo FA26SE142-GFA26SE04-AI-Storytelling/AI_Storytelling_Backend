@@ -1,0 +1,565 @@
+{
+  "schemaVersion": 1,
+  "catalogVersion": "parent-vi-1",
+  "locale": "vi",
+  "items": [
+    {
+      "id": "family_memory-start-1",
+      "audienceRole": "Parent",
+      "purposes": [
+        "family_memory"
+      ],
+      "supportGroup": "starting_point",
+      "itemType": "question",
+      "title": "Có lần nào cả nhà cùng làm một việc lần đầu?",
+      "instruction": "Đọc để tìm điểm bắt đầu; bạn có thể bỏ qua.",
+      "example": null,
+      "templateText": null,
+      "placeholderDefinitions": [],
+      "order": 1
+    },
+    {
+      "id": "family_memory-start-2",
+      "audienceRole": "Parent",
+      "purposes": [
+        "family_memory"
+      ],
+      "supportGroup": "starting_point",
+      "itemType": "question",
+      "title": "Bạn nhớ rõ chi tiết nhỏ nào trong một ngày bên con?",
+      "instruction": "Đọc để tìm điểm bắt đầu; bạn có thể bỏ qua.",
+      "example": null,
+      "templateText": null,
+      "placeholderDefinitions": [],
+      "order": 2
+    },
+    {
+      "id": "family_memory-start-3",
+      "audienceRole": "Parent",
+      "purposes": [
+        "family_memory"
+      ],
+      "supportGroup": "starting_point",
+      "itemType": "question",
+      "title": "Một việc ngoài dự định đã diễn ra như thế nào?",
+      "instruction": "Đọc để tìm điểm bắt đầu; bạn có thể bỏ qua.",
+      "example": null,
+      "templateText": null,
+      "placeholderDefinitions": [],
+      "order": 3
+    },
+    {
+      "id": "understanding-start-1",
+      "audienceRole": "Parent",
+      "purposes": [
+        "understanding"
+      ],
+      "supportGroup": "starting_point",
+      "itemType": "question",
+      "title": "Có điều gì con đang tò mò mà bạn muốn cùng tìm hiểu?",
+      "instruction": "Đọc để tìm điểm bắt đầu; bạn có thể bỏ qua.",
+      "example": null,
+      "templateText": null,
+      "placeholderDefinitions": [],
+      "order": 4
+    },
+    {
+      "id": "understanding-start-2",
+      "audienceRole": "Parent",
+      "purposes": [
+        "understanding"
+      ],
+      "supportGroup": "starting_point",
+      "itemType": "question",
+      "title": "Bạn muốn kể một trải nghiệm giúp con hiểu điều gì?",
+      "instruction": "Đọc để tìm điểm bắt đầu; bạn có thể bỏ qua.",
+      "example": null,
+      "templateText": null,
+      "placeholderDefinitions": [],
+      "order": 5
+    },
+    {
+      "id": "understanding-start-3",
+      "audienceRole": "Parent",
+      "purposes": [
+        "understanding"
+      ],
+      "supportGroup": "starting_point",
+      "itemType": "question",
+      "title": "Có tình huống quen thuộc nào để bắt đầu câu chuyện?",
+      "instruction": "Đọc để tìm điểm bắt đầu; bạn có thể bỏ qua.",
+      "example": null,
+      "templateText": null,
+      "placeholderDefinitions": [],
+      "order": 6
+    },
+    {
+      "id": "message-start-1",
+      "audienceRole": "Parent",
+      "purposes": [
+        "message"
+      ],
+      "supportGroup": "starting_point",
+      "itemType": "question",
+      "title": "Bạn muốn nói điều gì với con qua một câu chuyện?",
+      "instruction": "Đọc để tìm điểm bắt đầu; bạn có thể bỏ qua.",
+      "example": null,
+      "templateText": null,
+      "placeholderDefinitions": [],
+      "order": 7
+    },
+    {
+      "id": "message-start-2",
+      "audienceRole": "Parent",
+      "purposes": [
+        "message"
+      ],
+      "supportGroup": "starting_point",
+      "itemType": "question",
+      "title": "Có lời cảm ơn nào bạn muốn gửi đến con?",
+      "instruction": "Đọc để tìm điểm bắt đầu; bạn có thể bỏ qua.",
+      "example": null,
+      "templateText": null,
+      "placeholderDefinitions": [],
+      "order": 8
+    },
+    {
+      "id": "message-start-3",
+      "audienceRole": "Parent",
+      "purposes": [
+        "message"
+      ],
+      "supportGroup": "starting_point",
+      "itemType": "question",
+      "title": "Bạn muốn con nhớ điều gì về một khoảnh khắc bên nhau?",
+      "instruction": "Đọc để tìm điểm bắt đầu; bạn có thể bỏ qua.",
+      "example": null,
+      "templateText": null,
+      "placeholderDefinitions": [],
+      "order": 9
+    },
+    {
+      "id": "free-start-1",
+      "audienceRole": "Parent",
+      "purposes": [
+        "free"
+      ],
+      "supportGroup": "starting_point",
+      "itemType": "question",
+      "title": "Bạn muốn câu chuyện bắt đầu ở đâu?",
+      "instruction": "Đọc để tìm điểm bắt đầu; bạn có thể bỏ qua.",
+      "example": null,
+      "templateText": null,
+      "placeholderDefinitions": [],
+      "order": 10
+    },
+    {
+      "id": "free-start-2",
+      "audienceRole": "Parent",
+      "purposes": [
+        "free"
+      ],
+      "supportGroup": "starting_point",
+      "itemType": "question",
+      "title": "Ai xuất hiện đầu tiên và đang làm gì?",
+      "instruction": "Đọc để tìm điểm bắt đầu; bạn có thể bỏ qua.",
+      "example": null,
+      "templateText": null,
+      "placeholderDefinitions": [],
+      "order": 11
+    },
+    {
+      "id": "free-start-3",
+      "audienceRole": "Parent",
+      "purposes": [
+        "free"
+      ],
+      "supportGroup": "starting_point",
+      "itemType": "question",
+      "title": "Chi tiết nào khiến bạn muốn kể câu chuyện này?",
+      "instruction": "Đọc để tìm điểm bắt đầu; bạn có thể bỏ qua.",
+      "example": null,
+      "templateText": null,
+      "placeholderDefinitions": [],
+      "order": 12
+    },
+    {
+      "id": "opening-1",
+      "audienceRole": "Parent",
+      "purposes": [
+        "family_memory",
+        "understanding",
+        "message",
+        "free"
+      ],
+      "supportGroup": "opening",
+      "itemType": "template",
+      "title": "Mẫu diễn đạt 1",
+      "instruction": "Điền chi tiết, xem trước rồi chủ động chèn vào bản thảo. Có thể sửa mọi câu chữ.",
+      "example": null,
+      "templateText": "Hôm ấy, {{person}} cùng {{companion}} thử {{activity}}.",
+      "placeholderDefinitions": [
+        "person",
+        "companion",
+        "activity"
+      ],
+      "order": 13
+    },
+    {
+      "id": "opening-2",
+      "audienceRole": "Parent",
+      "purposes": [
+        "family_memory",
+        "understanding",
+        "message",
+        "free"
+      ],
+      "supportGroup": "opening",
+      "itemType": "template",
+      "title": "Mẫu diễn đạt 2",
+      "instruction": "Điền chi tiết, xem trước rồi chủ động chèn vào bản thảo. Có thể sửa mọi câu chữ.",
+      "example": null,
+      "templateText": "Ở {{place}}, {{person}} đang {{activity}}.",
+      "placeholderDefinitions": [
+        "place",
+        "person",
+        "activity"
+      ],
+      "order": 14
+    },
+    {
+      "id": "opening-3",
+      "audienceRole": "Parent",
+      "purposes": [
+        "family_memory",
+        "understanding",
+        "message",
+        "free"
+      ],
+      "supportGroup": "opening",
+      "itemType": "template",
+      "title": "Mẫu diễn đạt 3",
+      "instruction": "Điền chi tiết, xem trước rồi chủ động chèn vào bản thảo. Có thể sửa mọi câu chữ.",
+      "example": null,
+      "templateText": "Câu chuyện bắt đầu khi {{event}}.",
+      "placeholderDefinitions": [
+        "event"
+      ],
+      "order": 15
+    },
+    {
+      "id": "events-1",
+      "audienceRole": "Parent",
+      "purposes": [
+        "family_memory",
+        "understanding",
+        "message",
+        "free"
+      ],
+      "supportGroup": "events",
+      "itemType": "template",
+      "title": "Mẫu diễn đạt 1",
+      "instruction": "Điền chi tiết, xem trước rồi chủ động chèn vào bản thảo. Có thể sửa mọi câu chữ.",
+      "example": null,
+      "templateText": "Sau đó, {{person}} quyết định {{action}}.",
+      "placeholderDefinitions": [
+        "person",
+        "action"
+      ],
+      "order": 16
+    },
+    {
+      "id": "events-2",
+      "audienceRole": "Parent",
+      "purposes": [
+        "family_memory",
+        "understanding",
+        "message",
+        "free"
+      ],
+      "supportGroup": "events",
+      "itemType": "template",
+      "title": "Mẫu diễn đạt 2",
+      "instruction": "Điền chi tiết, xem trước rồi chủ động chèn vào bản thảo. Có thể sửa mọi câu chữ.",
+      "example": null,
+      "templateText": "Khi {{event}}, {{person}} đã {{action}}.",
+      "placeholderDefinitions": [
+        "event",
+        "person",
+        "action"
+      ],
+      "order": 17
+    },
+    {
+      "id": "events-3",
+      "audienceRole": "Parent",
+      "purposes": [
+        "family_memory",
+        "understanding",
+        "message",
+        "free"
+      ],
+      "supportGroup": "events",
+      "itemType": "template",
+      "title": "Mẫu diễn đạt 3",
+      "instruction": "Điền chi tiết, xem trước rồi chủ động chèn vào bản thảo. Có thể sửa mọi câu chữ.",
+      "example": null,
+      "templateText": "Điều xảy ra tiếp theo là {{event}}.",
+      "placeholderDefinitions": [
+        "event"
+      ],
+      "order": 18
+    },
+    {
+      "id": "emotion-1",
+      "audienceRole": "Parent",
+      "purposes": [
+        "family_memory",
+        "understanding",
+        "message",
+        "free"
+      ],
+      "supportGroup": "emotion",
+      "itemType": "template",
+      "title": "Mẫu diễn đạt 1",
+      "instruction": "Điền chi tiết, xem trước rồi chủ động chèn vào bản thảo. Có thể sửa mọi câu chữ.",
+      "example": null,
+      "templateText": "{{person}} cảm thấy {{feeling}} khi {{event}}.",
+      "placeholderDefinitions": [
+        "person",
+        "feeling",
+        "event"
+      ],
+      "order": 19
+    },
+    {
+      "id": "emotion-2",
+      "audienceRole": "Parent",
+      "purposes": [
+        "family_memory",
+        "understanding",
+        "message",
+        "free"
+      ],
+      "supportGroup": "emotion",
+      "itemType": "template",
+      "title": "Mẫu diễn đạt 2",
+      "instruction": "Điền chi tiết, xem trước rồi chủ động chèn vào bản thảo. Có thể sửa mọi câu chữ.",
+      "example": null,
+      "templateText": "Nhìn thấy {{detail}}, {{person}} bỗng {{feeling}}.",
+      "placeholderDefinitions": [
+        "detail",
+        "person",
+        "feeling"
+      ],
+      "order": 20
+    },
+    {
+      "id": "emotion-3",
+      "audienceRole": "Parent",
+      "purposes": [
+        "family_memory",
+        "understanding",
+        "message",
+        "free"
+      ],
+      "supportGroup": "emotion",
+      "itemType": "template",
+      "title": "Mẫu diễn đạt 3",
+      "instruction": "Điền chi tiết, xem trước rồi chủ động chèn vào bản thảo. Có thể sửa mọi câu chữ.",
+      "example": null,
+      "templateText": "{{person}} muốn nói rằng {{thought}}.",
+      "placeholderDefinitions": [
+        "person",
+        "thought"
+      ],
+      "order": 21
+    },
+    {
+      "id": "dialogue-1",
+      "audienceRole": "Parent",
+      "purposes": [
+        "family_memory",
+        "understanding",
+        "message",
+        "free"
+      ],
+      "supportGroup": "dialogue",
+      "itemType": "template",
+      "title": "Mẫu diễn đạt 1",
+      "instruction": "Điền chi tiết, xem trước rồi chủ động chèn vào bản thảo. Có thể sửa mọi câu chữ.",
+      "example": null,
+      "templateText": "{{person}} nói: “{{words}}”.",
+      "placeholderDefinitions": [
+        "person",
+        "words"
+      ],
+      "order": 22
+    },
+    {
+      "id": "dialogue-2",
+      "audienceRole": "Parent",
+      "purposes": [
+        "family_memory",
+        "understanding",
+        "message",
+        "free"
+      ],
+      "supportGroup": "dialogue",
+      "itemType": "template",
+      "title": "Mẫu diễn đạt 2",
+      "instruction": "Điền chi tiết, xem trước rồi chủ động chèn vào bản thảo. Có thể sửa mọi câu chữ.",
+      "example": null,
+      "templateText": "“{{question}}”, {{person}} hỏi.",
+      "placeholderDefinitions": [
+        "question",
+        "person"
+      ],
+      "order": 23
+    },
+    {
+      "id": "dialogue-3",
+      "audienceRole": "Parent",
+      "purposes": [
+        "family_memory",
+        "understanding",
+        "message",
+        "free"
+      ],
+      "supportGroup": "dialogue",
+      "itemType": "template",
+      "title": "Mẫu diễn đạt 3",
+      "instruction": "Điền chi tiết, xem trước rồi chủ động chèn vào bản thảo. Có thể sửa mọi câu chữ.",
+      "example": null,
+      "templateText": "{{person}} đáp: “{{words}}”.",
+      "placeholderDefinitions": [
+        "person",
+        "words"
+      ],
+      "order": 24
+    },
+    {
+      "id": "transition-1",
+      "audienceRole": "Parent",
+      "purposes": [
+        "family_memory",
+        "understanding",
+        "message",
+        "free"
+      ],
+      "supportGroup": "transition",
+      "itemType": "template",
+      "title": "Mẫu diễn đạt 1",
+      "instruction": "Điền chi tiết, xem trước rồi chủ động chèn vào bản thảo. Có thể sửa mọi câu chữ.",
+      "example": null,
+      "templateText": "Một lúc sau, {{event}}.",
+      "placeholderDefinitions": [
+        "event"
+      ],
+      "order": 25
+    },
+    {
+      "id": "transition-2",
+      "audienceRole": "Parent",
+      "purposes": [
+        "family_memory",
+        "understanding",
+        "message",
+        "free"
+      ],
+      "supportGroup": "transition",
+      "itemType": "template",
+      "title": "Mẫu diễn đạt 2",
+      "instruction": "Điền chi tiết, xem trước rồi chủ động chèn vào bản thảo. Có thể sửa mọi câu chữ.",
+      "example": null,
+      "templateText": "Trong khi đó, {{person}} đang {{activity}}.",
+      "placeholderDefinitions": [
+        "person",
+        "activity"
+      ],
+      "order": 26
+    },
+    {
+      "id": "transition-3",
+      "audienceRole": "Parent",
+      "purposes": [
+        "family_memory",
+        "understanding",
+        "message",
+        "free"
+      ],
+      "supportGroup": "transition",
+      "itemType": "template",
+      "title": "Mẫu diễn đạt 3",
+      "instruction": "Điền chi tiết, xem trước rồi chủ động chèn vào bản thảo. Có thể sửa mọi câu chữ.",
+      "example": null,
+      "templateText": "Sáng hôm sau, {{event}}.",
+      "placeholderDefinitions": [
+        "event"
+      ],
+      "order": 27
+    },
+    {
+      "id": "ending-1",
+      "audienceRole": "Parent",
+      "purposes": [
+        "family_memory",
+        "understanding",
+        "message",
+        "free"
+      ],
+      "supportGroup": "ending",
+      "itemType": "template",
+      "title": "Mẫu diễn đạt 1",
+      "instruction": "Điền chi tiết, xem trước rồi chủ động chèn vào bản thảo. Có thể sửa mọi câu chữ.",
+      "example": null,
+      "templateText": "Cuối ngày, {{person}} nhớ nhất {{detail}}.",
+      "placeholderDefinitions": [
+        "person",
+        "detail"
+      ],
+      "order": 28
+    },
+    {
+      "id": "ending-2",
+      "audienceRole": "Parent",
+      "purposes": [
+        "family_memory",
+        "understanding",
+        "message",
+        "free"
+      ],
+      "supportGroup": "ending",
+      "itemType": "template",
+      "title": "Mẫu diễn đạt 2",
+      "instruction": "Điền chi tiết, xem trước rồi chủ động chèn vào bản thảo. Có thể sửa mọi câu chữ.",
+      "example": null,
+      "templateText": "Câu chuyện khép lại khi {{event}}.",
+      "placeholderDefinitions": [
+        "event"
+      ],
+      "order": 29
+    },
+    {
+      "id": "ending-3",
+      "audienceRole": "Parent",
+      "purposes": [
+        "family_memory",
+        "understanding",
+        "message",
+        "free"
+      ],
+      "supportGroup": "ending",
+      "itemType": "template",
+      "title": "Mẫu diễn đạt 3",
+      "instruction": "Điền chi tiết, xem trước rồi chủ động chèn vào bản thảo. Có thể sửa mọi câu chữ.",
+      "example": null,
+      "templateText": "{{person}} giữ lại {{detail}} như một kỷ niệm.",
+      "placeholderDefinitions": [
+        "person",
+        "detail"
+      ],
+      "order": 30
+    }
+  ]
+}

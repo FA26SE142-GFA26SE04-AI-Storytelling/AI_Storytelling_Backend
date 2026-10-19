@@ -135,11 +135,26 @@ public sealed class CreatorAssistanceHandlerTests
         Assert.Equal(0, fake.Calls);
     }
 
+    [Fact]
+    public async Task Parent_child_policy_reaches_both_generation_and_safety_without_profile_identifiers()
+    {
+        var fake = new FakeLlm(Options);
+        await new CreatorAssistanceHandler(fake).HandleAsync(Request with
+        { ChildPolicy = new(2000, 2, ["violence"], ["fear"], 70, 80) }, default);
+        foreach (var prompt in new[] { fake.GenerationPrompt, fake.SafetyPrompt })
+        {
+            Assert.Contains("blockedCategories", prompt); Assert.Contains("violence", prompt);
+            Assert.Contains("restrictedCategories", prompt); Assert.Contains("readingLevel", prompt);
+            Assert.DoesNotContain("childProfileId", prompt); Assert.DoesNotContain("consentedByUserId", prompt);
+        }
+    }
+
     private sealed class FakeLlm(AssistanceAiResult output) : ILlmClient
     {
         public Action<string>? BeforeResponse { get; init; }
         public int Calls { get; private set; }
         public string SafetyJson { get; set; } = "{\"isAppropriate\":true}";
+        public string SafetyPrompt { get; private set; } = "";
         public string GenerationPrompt { get; private set; } = "";
         public JsonElement GenerationSchema { get; private set; }
         public Task<LlmGenerationResult> GenerateStructuredAsync(string prompt, string schemaName, JsonElement schema, CancellationToken cancellationToken = default)
@@ -147,6 +162,7 @@ public sealed class CreatorAssistanceHandlerTests
             cancellationToken.ThrowIfCancellationRequested(); Calls++;
             BeforeResponse?.Invoke(schemaName);
             if (schemaName == "creator_assistance") { GenerationPrompt = prompt; GenerationSchema = schema.Clone(); }
+            if (schemaName == "creator_assistance_safety") SafetyPrompt = prompt;
             Assert.Equal("object", schema.GetProperty("type").GetString());
             return Task.FromResult(new LlmGenerationResult(schemaName == "creator_assistance_safety" ? SafetyJson : JsonSerializer.Serialize(output, Json), "fake-provider", "fake-model", "v1", 0, 0, 1));
         }

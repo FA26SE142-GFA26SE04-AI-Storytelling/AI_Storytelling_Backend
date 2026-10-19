@@ -1,12 +1,13 @@
+using StoryPlatform.Application.Features.CreatorAuthoring;
 using System.Text.Json;
 using StoryPlatform.Application.Features.CreatorAssistance;
 using StoryPlatform.Application.Features.CreatorAssistance.DTOs;
 using StoryPlatform.Application.Features.CreatorAuthoring.DTOs;
 using StoryPlatform.Domain.Entities;
 
-namespace StoryPlatform.Application.Features.CreatorAuthoring.Services;
+namespace StoryPlatform.Application.Features.ManualAuthoring.Services;
 
-public sealed partial class CreatorAuthoringService
+public partial class ManualAuthoringService
 {
     private async Task<string?> ValidateAssistanceAsync(int user, Story story, SaveCreatorContentRequest request, CancellationToken ct)
     {
@@ -25,6 +26,8 @@ public sealed partial class CreatorAuthoringService
                 (reference.Usage != "DirectionUsed" && reference.Usage != "TrialUsed") ||
                 (reference.Usage == "DirectionUsed" ? step.Kind != "Direction" : step.Kind != "Trial"))
                 throw new AssistanceException("INVALID_ASSISTANCE_REFERENCES", 400);
+            await _policy.ValidateAssistanceContextAsync(story,
+                StoryPlatform.Application.Features.CreatorAssistance.Services.AssistanceContextStorage.ServerContext(task.ContextJson), ct);
             if (task.AudienceRevision != story.AudienceRevision) throw new AssistanceException("AUDIENCE_CONTEXT_STALE");
             references.Add(new(task.Id, step.Id, reference.Usage, task.SnapshotHash,
                 step.OutputJson is null ? null : Hash(System.Text.Encoding.UTF8.GetBytes(step.OutputJson)), step.Provider, step.Model, step.PromptVersion));

@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Features.CreatorAuthoring;
 using System.Text;
 using System.Text.Json;
 using System.Security.Cryptography;
@@ -7,9 +8,9 @@ using StoryPlatform.Application.Features.ExistingStories.Helpers;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
-namespace StoryPlatform.Application.Features.CreatorAuthoring.Services;
+namespace StoryPlatform.Application.Features.ManualAuthoring.Services;
 
-public sealed partial class CreatorAuthoringService
+public partial class ManualAuthoringService
 {
     public async Task<CreatorImportPreviewDto> PreviewImportAsync(int userId, int storyId,
         PreviewCreatorImportRequest request, CancellationToken ct = default)
@@ -26,8 +27,7 @@ public sealed partial class CreatorAuthoringService
     {
         await RequireCreatorAsync(userId, ct);
         // Preview is read-only; verify owner and scope before parsing the upload.
-        if (!await _uow.Repository<Story>().ExistsAsync(x => x.Id == storyId && x.AuthorUserId == userId && x.Scope == StoryPlatform.Domain.Enums.StoryScope.Creator && !x.IsDeleted, ct))
-            throw new NotFoundException("Story", storyId);
+        await RequireStoryAsync(userId, storyId, ct);
         if (string.IsNullOrWhiteSpace(fileName) || fileName.Length > 255)
             throw new BadRequestException("Tên tệp không hợp lệ.");
         var extension = Path.GetExtension(fileName).ToLowerInvariant();

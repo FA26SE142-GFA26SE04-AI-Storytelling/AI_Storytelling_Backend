@@ -10,8 +10,12 @@ public sealed record AssistanceFinding(string Id, int Start, int Length, string 
 public sealed record AssistancePatch(string Kind, int Start, int Length, string Text, string Quote);
 
 /// <summary>Internal Core-to-AI contract. The AI service never receives persistence access.</summary>
+public sealed record AssistanceChildPolicy(int MaxStoryWords, int? ReadingLevel,
+    string[] BlockedCategories, string[] RestrictedCategories, decimal? ReadabilityThreshold, decimal? SafetyThreshold);
+
 public sealed record AssistanceAiRequest
 {
+    public AssistanceChildPolicy? ChildPolicy { get; init; }
     public string Mode { get; init; } = "Suggestions";
     public string EntryPoint { get; init; } = "ContinueWriting";
     public EditorSnapshot Snapshot { get; init; } = new("", "");

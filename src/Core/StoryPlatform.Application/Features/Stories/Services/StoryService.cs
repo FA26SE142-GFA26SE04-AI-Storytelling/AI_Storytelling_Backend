@@ -28,7 +28,7 @@ public class StoryService : IStoryService
     {
         // Xây dựng biểu thức điều kiện lọc động bằng Linq Expression
         Expression<Func<DomainStory, bool>> predicate = s =>
-            s.Scope == StoryScope.Parent &&
+            s.Scope == StoryScope.Parent && (s.Source != StorySource.Manual || s.CreateOperationId == null || s.CreateOperationId == "") &&
             (!filter.IsPublished.HasValue || s.IsPublished == filter.IsPublished.Value) &&
             (!filter.AuthorUserId.HasValue || s.AuthorUserId == filter.AuthorUserId.Value) &&
             (string.IsNullOrEmpty(filter.Genre) || s.Genre == filter.Genre) &&
@@ -57,11 +57,11 @@ public class StoryService : IStoryService
     {
         var storyRepo = _unitOfWork.Repository<DomainStory>();
         var story = await storyRepo.FirstOrDefaultAsync(
-            s => s.Id == id && s.Scope == StoryScope.Parent,
+            s => s.Id == id && s.Scope == StoryScope.Parent && (s.Source != StorySource.Manual || s.CreateOperationId == null || s.CreateOperationId == ""),
             includeProperties: "Author", 
             cancellationToken: cancellationToken);
 
-        if (story == null || story.Scope != StoryScope.Parent)
+        if (story == null || story.Scope != StoryScope.Parent || StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story))
         {
             throw new NotFoundException("Câu chuyện", id);
         }
@@ -105,11 +105,11 @@ public class StoryService : IStoryService
     {
         var storyRepo = _unitOfWork.Repository<DomainStory>();
         var story = await storyRepo.FirstOrDefaultAsync(
-            s => s.Id == id && s.Scope == StoryScope.Parent,
+            s => s.Id == id && s.Scope == StoryScope.Parent && (s.Source != StorySource.Manual || s.CreateOperationId == null || s.CreateOperationId == ""),
             includeProperties: "Author",
             cancellationToken: cancellationToken);
 
-        if (story == null || story.Scope != StoryScope.Parent)
+        if (story == null || story.Scope != StoryScope.Parent || StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story))
         {
             throw new NotFoundException("Câu chuyện", id);
         }
@@ -152,7 +152,7 @@ public class StoryService : IStoryService
     {
         var storyRepo = _unitOfWork.Repository<DomainStory>();
         var story = await storyRepo.GetByIdAsync(id, cancellationToken);
-        if (story == null || story.Scope != StoryScope.Parent)
+        if (story == null || story.Scope != StoryScope.Parent || StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story))
         {
             throw new NotFoundException("Câu chuyện", id);
         }
@@ -174,7 +174,7 @@ public class StoryService : IStoryService
     {
         var storyRepo = _unitOfWork.Repository<DomainStory>();
         var story = await storyRepo.GetByIdAsync(id, cancellationToken);
-        if (story == null || story.Scope != StoryScope.Parent)
+        if (story == null || story.Scope != StoryScope.Parent || StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story))
         {
             throw new NotFoundException("Câu chuyện", id);
         }

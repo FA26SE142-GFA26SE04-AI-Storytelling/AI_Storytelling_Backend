@@ -85,4 +85,27 @@ public class RoadmapTemplateController : BaseApiController
         var result = await _roadmapService.WithdrawAsync(GetCurrentUserId(), id, cancellationToken);
         return HandleResult(result, "Đã rút yêu cầu duyệt.");
     }
+
+    /// <summary>Nhân bản bộ công khai hoặc Nháp của Moderator đã bị vô hiệu hóa.</summary>
+    [Authorize(Roles = "Moderator")]
+    [HttpPost("{id:int}/clone")]
+    public async Task<ActionResult<ApiResponse<RoadmapCloneResultDto>>> Clone(
+        int id, CancellationToken cancellationToken)
+    {
+        var result = await _roadmapService.CloneAsync(GetCurrentUserId(), id, cancellationToken);
+        return HandleResult(result, result.AlreadyExisted
+            ? "Bộ này đã có bản nhân bản đang mở."
+            : "Đã nhân bản bộ truyện mẫu.");
+    }
+
+    /// <summary>Archive bộ đang công khai với lý do bắt buộc từ 3 đến 500 ký tự.</summary>
+    [Authorize(Roles = "Moderator")]
+    [HttpPost("{id:int}/archive")]
+    public async Task<ActionResult<ApiResponse<RoadmapDetailDto>>> Archive(
+        int id, [FromBody] ArchiveRoadmapRequestDto request, CancellationToken cancellationToken)
+    {
+        var result = await _roadmapService.ArchiveAsync(
+            GetCurrentUserId(), id, request, cancellationToken);
+        return HandleResult(result, "Đã Archive bộ truyện mẫu.");
+    }
 }

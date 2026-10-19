@@ -121,13 +121,6 @@ public partial class RoadmapTemplateService : IRoadmapTemplateService
             throw new NotFoundException("Bộ truyện mẫu", roadmapId);
         }
 
-        var isOwner = roadmap.CreatedByUserId == actor.Id;
-        var isPublicState = roadmap.Status is RoadmapTemplateStatus.Published or RoadmapTemplateStatus.Archived;
-        if (!isOwner && !isPublicState)
-        {
-            throw new ForbiddenException("Bạn chỉ xem được bộ Nháp hoặc đang chờ duyệt do chính mình tạo.");
-        }
-
         return await BuildDetailAsync(roadmap, actor, cancellationToken);
     }
 

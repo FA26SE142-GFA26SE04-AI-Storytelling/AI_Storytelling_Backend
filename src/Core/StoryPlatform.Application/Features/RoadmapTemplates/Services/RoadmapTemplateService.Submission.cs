@@ -46,6 +46,32 @@ public partial class RoadmapTemplateService
             _unitOfWork.Repository<ReadingRoadmap>().Update(roadmap);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+            if (roadmap.ClonedFromId.HasValue)
+            {
+                var source = await _unitOfWork.Repository<ReadingRoadmap>()
+                    .GetByIdAsync(roadmap.ClonedFromId.Value, cancellationToken);
+                if (source != null && !source.IsDeleted && source.Status == RoadmapTemplateStatus.Draft)
+                {
+                    source.Status = RoadmapTemplateStatus.Archived;
+                    source.ArchivedReason = RoadmapArchiveReason.ReplacedByClone;
+                    source.ArchivedAt = now;
+                    source.ArchivedByUserId = actor.Id;
+                    _unitOfWork.Repository<ReadingRoadmap>().Update(source);
+                    await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                    await _auditLogWriter.LogAsync(
+                        actor.Id, "RoadmapTemplateArchived", nameof(ReadingRoadmap), source.Id,
+                        beforeState: new { status = RoadmapTemplateStatus.Draft.ToString() },
+                        afterState: new
+                        {
+                            status = RoadmapTemplateStatus.Archived.ToString(),
+                            reason = RoadmapArchiveReason.ReplacedByClone.ToString(),
+                            replacedByRoadmapId = roadmap.Id
+                        },
+                        cancellationToken: cancellationToken);
+                }
+            }
+
             queued = await _queueService.EnqueueAsync(new EnqueueModerationItemCommand
             {
                 ItemType = ModerationItemType.RoadmapTemplateReview,

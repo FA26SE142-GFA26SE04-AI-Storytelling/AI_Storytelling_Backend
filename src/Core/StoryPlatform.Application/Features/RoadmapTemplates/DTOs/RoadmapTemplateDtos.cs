@@ -105,7 +105,10 @@ public enum RoadmapListGroup
     Drafts = 1,
     Pending = 2,
     Published = 3,
-    Archived = 4
+    Archived = 4,
+
+    /// <summary>Bộ Nháp của Moderator đã bị vô hiệu hóa để Moderator khác tiếp quản bằng cách nhân bản.</summary>
+    Orphaned = 5
 }
 
 public class RoadmapListQueryDto
@@ -129,6 +132,9 @@ public class RoadmapListItemDto
     public bool IsMine { get; set; }
     public DateTime? SubmittedAt { get; set; }
     public DateTime? PublishedAt { get; set; }
+
+    /// <summary>Bản nhân bản đang mở của bộ này, nếu có.</summary>
+    public int? OpenCloneId { get; set; }
 }
 
 public class RoadmapLastReviewDto
@@ -139,4 +145,17 @@ public class RoadmapLastReviewDto
     public string? Reason { get; set; }
     public List<RoadmapChangePartDto> Parts { get; set; } = new();
     public DateTime? DecidedAt { get; set; }
+}
+
+public class RoadmapCloneResultDto
+{
+    public int RoadmapId { get; set; }
+    public int SourceRoadmapId { get; set; }
+    public bool AlreadyExisted { get; set; }
+}
+
+public class ArchiveRoadmapRequestDto
+{
+    /// <summary>Lý do Archive, bắt buộc từ 3 đến 500 ký tự.</summary>
+    public string Reason { get; set; } = string.Empty;
 }

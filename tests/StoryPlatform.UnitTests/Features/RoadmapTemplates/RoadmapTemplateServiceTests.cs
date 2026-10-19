@@ -120,16 +120,22 @@ public class RoadmapTemplateServiceTests
             _sut.UpdateAsync(Moderator, 1, ValidRequest()));
     }
 
-    [Fact]
-    public async Task GetAsync_OwnerCanReadPrivateStates_OthersOnlyPublicStates()
+    [Theory]
+    [InlineData(RoadmapTemplateStatus.Draft)]
+    [InlineData(RoadmapTemplateStatus.PendingReview)]
+    [InlineData(RoadmapTemplateStatus.Published)]
+    [InlineData(RoadmapTemplateStatus.Archived)]
+    public async Task GetAsync_AnotherModeratorOrAdministrator_CanSeeEveryStatus(
+        RoadmapTemplateStatus status)
     {
-        _h.AddRoadmap(1, AgeBand.Age_6_8, 5, RoadmapTemplateStatus.Draft, Moderator, 10);
-        Assert.True((await _sut.GetAsync(Moderator, 1)).IsMine);
-        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.GetAsync(OtherModerator, 1));
-        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.GetAsync(RoadmapHarness.AdminId, 1));
+        _h.AddRoadmap(1, AgeBand.Age_6_8, 5, status, Moderator, 10);
 
-        _h.Roadmaps.Single().Status = RoadmapTemplateStatus.Published;
-        Assert.False((await _sut.GetAsync(RoadmapHarness.AdminId, 1)).IsMine);
+        var byModerator = await _sut.GetAsync(OtherModerator, 1);
+        var byAdmin = await _sut.GetAsync(RoadmapHarness.AdminId, 1);
+
+        Assert.False(byModerator.IsMine);
+        Assert.False(byAdmin.IsMine);
+        Assert.Equal(status.ToString(), byModerator.Status);
     }
 
     [Fact]
@@ -359,10 +365,11 @@ public class RoadmapTemplateServiceTests
         Assert.Equal("Moderator,Administrator", authorize!.Roles);
         Assert.Equal(new[]
         {
-            "Create", "Get", "List", "ListCandidates", "SetItems", "Submit", "Update", "Withdraw"
+            "Archive", "Clone", "Create", "Get", "List", "ListCandidates", "SetItems", "Submit", "Update",
+            "Withdraw"
         }, methods.Select(method => method.Name));
         Assert.All(methods.Where(method => method.Name is
-                "Create" or "SetItems" or "Submit" or "Update" or "Withdraw"),
+                "Archive" or "Clone" or "Create" or "SetItems" or "Submit" or "Update" or "Withdraw"),
             method => Assert.Equal("Moderator",
                 method.GetCustomAttribute<AuthorizeAttribute>()?.Roles));
     }

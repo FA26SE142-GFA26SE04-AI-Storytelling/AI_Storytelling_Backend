@@ -15,12 +15,22 @@ public partial class RoadmapTemplateService
         var actor = await RequireStaffAsync(actorUserId, cancellationToken);
         if (!Enum.IsDefined(query.Group))
         {
-            throw new BadRequestException("Nhóm phải là Drafts, Pending, Published hoặc Archived.");
+            throw new BadRequestException("Nhóm phải là Drafts, Pending, Published, Archived hoặc Orphaned.");
         }
 
         var pageIndex = Math.Max(query.PageIndex, 1);
         var pageSize = Math.Clamp(query.PageSize, 1, 100);
         var actorId = actor.Id;
+
+        var inactiveCreatorIds = new List<int>();
+        if (query.Group == RoadmapListGroup.Orphaned)
+        {
+            var inactive = await _unitOfWork.Repository<UserAccount>().FindAsync(
+                user => user.Role == UserRole.Moderator && user.Status != AccountStatus.Active,
+                cancellationToken: cancellationToken);
+            inactiveCreatorIds = inactive.Select(user => user.Id).ToList();
+        }
+
         Expression<Func<ReadingRoadmap, bool>> filter = query.Group switch
         {
             RoadmapListGroup.Drafts => roadmap => !roadmap.IsDeleted
@@ -30,6 +40,9 @@ public partial class RoadmapTemplateService
                                                    && roadmap.Status == RoadmapTemplateStatus.PendingReview,
             RoadmapListGroup.Published => roadmap => !roadmap.IsDeleted
                                                      && roadmap.Status == RoadmapTemplateStatus.Published,
+            RoadmapListGroup.Orphaned => roadmap => !roadmap.IsDeleted
+                                                    && roadmap.Status == RoadmapTemplateStatus.Draft
+                                                    && inactiveCreatorIds.Contains(roadmap.CreatedByUserId),
             _ => roadmap => !roadmap.IsDeleted && roadmap.Status == RoadmapTemplateStatus.Archived
         };
         Func<IQueryable<ReadingRoadmap>, IOrderedQueryable<ReadingRoadmap>> orderBy = query.Group switch
@@ -54,6 +67,23 @@ public partial class RoadmapTemplateService
         var creators = await _unitOfWork.Repository<UserAccount>().FindAsync(
             user => creatorIds.Contains(user.Id), cancellationToken: cancellationToken);
 
+        var openCloneBySource = new Dictionary<int, int>();
+        if (query.Group is RoadmapListGroup.Published or RoadmapListGroup.Orphaned)
+        {
+            var sourceIds = roadmaps.Select(roadmap => roadmap.Id).ToList();
+            var openClones = await _unitOfWork.Repository<ReadingRoadmap>().FindAsync(
+                clone => !clone.IsDeleted
+                         && clone.ClonedFromId.HasValue
+                         && sourceIds.Contains(clone.ClonedFromId.Value)
+                         && (clone.Status == RoadmapTemplateStatus.Draft
+                             || clone.Status == RoadmapTemplateStatus.PendingReview),
+                cancellationToken: cancellationToken);
+            foreach (var clone in openClones.OrderBy(candidate => candidate.Id))
+            {
+                openCloneBySource.TryAdd(clone.ClonedFromId!.Value, clone.Id);
+            }
+        }
+
         var items = roadmaps.Select(roadmap =>
         {
             var category = categories.FirstOrDefault(candidate => candidate.Id == roadmap.MainCategoryId);
@@ -77,7 +107,8 @@ public partial class RoadmapTemplateService
                 CreatedByName = creator == null ? null : DisplayName(creator),
                 IsMine = roadmap.CreatedByUserId == actorId,
                 SubmittedAt = roadmap.SubmittedAt,
-                PublishedAt = roadmap.PublishedAt
+                PublishedAt = roadmap.PublishedAt,
+                OpenCloneId = openCloneBySource.TryGetValue(roadmap.Id, out var cloneId) ? cloneId : null
             };
         }).ToList();
 

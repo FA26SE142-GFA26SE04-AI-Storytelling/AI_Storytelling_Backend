@@ -15,6 +15,13 @@ public interface IRoadmapTemplateService
     Task<RoadmapDetailDto> GetAsync(
         int actorUserId, int roadmapId, CancellationToken cancellationToken = default);
 
+    Task<RoadmapCloneResultDto> CloneAsync(
+        int actorUserId, int roadmapId, CancellationToken cancellationToken = default);
+
+    Task<RoadmapDetailDto> ArchiveAsync(
+        int actorUserId, int roadmapId, ArchiveRoadmapRequestDto request,
+        CancellationToken cancellationToken = default);
+
     Task<PagedResult<CandidateStoryDto>> ListCandidatesAsync(
         int actorUserId, CandidateQueryDto query, CancellationToken cancellationToken = default);
 

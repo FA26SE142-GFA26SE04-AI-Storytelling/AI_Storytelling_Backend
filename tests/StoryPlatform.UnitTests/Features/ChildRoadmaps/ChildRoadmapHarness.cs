@@ -34,6 +34,9 @@ public sealed class ChildRoadmapHarness
     public readonly List<SupervisionPermission> Permissions = new();
     public readonly List<LearningProfile> Learning = new();
     public readonly List<ReadingSession> Sessions = new();
+    public readonly List<ReadingRoadmap> Roadmaps = new();
+    public readonly List<ReadingRoadmapItem> RoadmapItems = new();
+    public readonly List<ContentCategory> Categories = new();
 
     public ChildRoadmapHarness()
     {
@@ -49,6 +52,9 @@ public sealed class ChildRoadmapHarness
         Back(Permissions);
         Back(Learning);
         Back(Sessions);
+        Back(Roadmaps);
+        Back(RoadmapItems);
+        Back(Categories);
 
         AddChild(Child, ChildProfileStatus.Active);
         AddChild(OtherChild, ChildProfileStatus.Active);
@@ -57,6 +63,10 @@ public sealed class ChildRoadmapHarness
         AddUser(StrangerId, UserRole.Parent);
         AddSupervisor(Child, ParentId, SupervisorRole.Owner);
         AddSupervisor(OtherChild, ParentId, SupervisorRole.Owner);
+        Categories.Add(new ContentCategory
+            { Id = 5, Code = "friendship", DisplayName = "Tình bạn", IsActive = true });
+        Categories.Add(new ContentCategory
+            { Id = 6, Code = "animals", DisplayName = "Động vật", IsActive = true });
         foreach (var id in new[] { 10, 11, 12, 13 })
         {
             AddStory(id);
@@ -195,6 +205,50 @@ public sealed class ChildRoadmapHarness
         return profile;
     }
 
+    public ReadingRoadmap AddTemplate(
+        int id, AgeBand age, int categoryId, RoadmapTemplateStatus status, params int[] storyIds)
+    {
+        var roadmap = new ReadingRoadmap
+        {
+            Id = id,
+            Name = $"Bộ {id}",
+            Description = $"Mô tả bộ {id}",
+            AgeBand = age,
+            MainCategoryId = categoryId,
+            ReadingLevelMin = 1,
+            ReadingLevelMax = 3,
+            DefaultDaysPerStory = 2,
+            Status = status,
+            CreatedByUserId = ModeratorId
+        };
+        if (status == RoadmapTemplateStatus.Published)
+        {
+            roadmap.PublishedAt = DateTime.UtcNow.AddDays(-2);
+        }
+
+        if (status == RoadmapTemplateStatus.Archived)
+        {
+            roadmap.ArchivedAt = DateTime.UtcNow.AddDays(-1);
+        }
+
+        Roadmaps.Add(roadmap);
+        for (var position = 0; position < storyIds.Length; position++)
+        {
+            RoadmapItems.Add(new ReadingRoadmapItem
+            {
+                Id = id * 100 + position,
+                ReadingRoadmapId = id,
+                StoryId = storyIds[position],
+                Position = position + 1
+            });
+        }
+
+        return roadmap;
+    }
+
+    public void SetItemDays(int roadmapId, int storyId, int days) =>
+        RoadmapItems.Single(item => item.ReadingRoadmapId == roadmapId && item.StoryId == storyId).Days = days;
+
     private void Back<T>(List<T> list) where T : BaseEntity
     {
         var repo = new Mock<IGenericRepository<T>>();
@@ -240,6 +294,28 @@ public sealed class ChildRoadmapHarness
                 predicate == null ? list.Count : list.Count(predicate.Compile()));
         repo.Setup(r => r.ExistsAsync(It.IsAny<Expression<Func<T, bool>>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Expression<Func<T, bool>> predicate, CancellationToken _) => list.Any(predicate.Compile()));
+        repo.Setup(r => r.GetPagedAsync(
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Expression<Func<T, bool>>?>(),
+                It.IsAny<Func<IQueryable<T>, IOrderedQueryable<T>>?>(), It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((int pageIndex, int pageSize, Expression<Func<T, bool>>? filter,
+                Func<IQueryable<T>, IOrderedQueryable<T>>? orderBy, string? _, CancellationToken _) =>
+            {
+                IQueryable<T> query = list.AsQueryable();
+                if (filter != null)
+                {
+                    query = query.Where(filter);
+                }
+
+                var total = query.Count();
+                if (orderBy != null)
+                {
+                    query = orderBy(query);
+                }
+
+                var items = query.Skip((pageIndex - 1) * pageSize).Take(pageSize).ToList();
+                return ((IReadOnlyList<T>)items, total);
+            });
         UnitOfWork.Setup(u => u.Repository<T>()).Returns(repo.Object);
     }
 }

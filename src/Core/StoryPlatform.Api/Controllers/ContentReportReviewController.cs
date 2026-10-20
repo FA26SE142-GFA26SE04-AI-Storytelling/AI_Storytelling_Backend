@@ -52,4 +52,14 @@ public class ContentReportReviewController : BaseApiController
             GetCurrentUserId(), itemId, request, cancellationToken);
         return HandleResult(result, "Đã gỡ truyện.");
     }
+
+    /// <summary>Chuyển ca cho Administrator quyết định cuối. Chỉ Moderator đang giữ mục.</summary>
+    [HttpPost("{itemId:int}/escalate")]
+    public async Task<ActionResult<ApiResponse<ContentReportDecisionResultDto>>> Escalate(
+        int itemId, [FromBody] EscalateReportRequestDto request, CancellationToken cancellationToken)
+    {
+        var result = await _reviewService.EscalateAsync(
+            GetCurrentUserId(), itemId, request, cancellationToken);
+        return HandleResult(result, "Đã chuyển ca cho Administrator.");
+    }
 }

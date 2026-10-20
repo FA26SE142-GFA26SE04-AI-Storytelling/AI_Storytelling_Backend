@@ -8,6 +8,7 @@ using StoryPlatform.Application.Features.Administration.DTOs;
 using StoryPlatform.Application.Features.Administration.Interfaces;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.Auth.Interfaces;
+using StoryPlatform.Application.Features.Moderation.Interfaces;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -25,6 +26,7 @@ public class ModeratorAccountService : IModeratorAccountService
     private readonly IEmailSender _emailSender;
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly INotificationService _notificationService;
+    private readonly IModerationSweepService _sweepService;
 
     public ModeratorAccountService(
         IUnitOfWork unitOfWork,
@@ -32,7 +34,8 @@ public class ModeratorAccountService : IModeratorAccountService
         IJwtTokenGenerator jwtTokenGenerator,
         IEmailSender emailSender,
         IAuditLogWriter auditLogWriter,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        IModerationSweepService sweepService)
     {
         _unitOfWork = unitOfWork;
         _userProvisioningService = userProvisioningService;
@@ -40,6 +43,7 @@ public class ModeratorAccountService : IModeratorAccountService
         _emailSender = emailSender;
         _auditLogWriter = auditLogWriter;
         _notificationService = notificationService;
+        _sweepService = sweepService;
     }
 
     public async Task<ModeratorAccountDto> InviteAsync(
@@ -152,6 +156,9 @@ public class ModeratorAccountService : IModeratorAccountService
         await _notificationService.CreateAsync(
             target.Id, NotificationType.AdminRoleChanged,
             JsonSerializer.Serialize(new { action = "deactivated" }), cancellationToken);
+
+        await _sweepService.ReleaseClaimsOfModeratorAsync(target.Id, cancellationToken);
+        await _sweepService.WithdrawRoadmapReviewsOfInactiveCreatorsAsync(target.Id, cancellationToken);
 
         return MapToDto(target);
     }

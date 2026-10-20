@@ -55,6 +55,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<ModerationReviewView> ModerationReviewViews => Set<ModerationReviewView>();
     public DbSet<ReadingRoadmap> ReadingRoadmaps => Set<ReadingRoadmap>();
     public DbSet<ReadingRoadmapItem> ReadingRoadmapItems => Set<ReadingRoadmapItem>();
+    public DbSet<ChildRoadmapItem> ChildRoadmapItems => Set<ChildRoadmapItem>();
 
     // Reading & engagement
     public DbSet<ReadingSession> ReadingSessions => Set<ReadingSession>();

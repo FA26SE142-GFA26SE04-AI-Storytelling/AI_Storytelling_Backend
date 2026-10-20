@@ -1,6 +1,7 @@
 using System.Text.Json;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ContentReports.DTOs;
+using StoryPlatform.Application.Features.ContentReports.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -85,6 +86,7 @@ public partial class ContentReportReviewService
         var item = context.Item;
         var report = context.Report;
         var story = context.Story;
+        var previousStatus = item.Status;
         var now = DateTime.UtcNow;
         var storyAlreadyArchived = story.Status == StoryStatus.Archived || story.ArchivedAt != null;
         var archiveNow = archiveReason.HasValue && !storyAlreadyArchived;
@@ -121,7 +123,7 @@ public partial class ContentReportReviewService
                 auditAction,
                 nameof(ModerationItem),
                 item.Id,
-                beforeState: new { status = ModerationItemStatus.Claimed.ToString() },
+                beforeState: new { status = previousStatus.ToString() },
                 afterState: new
                 {
                     status = itemStatus.ToString(),
@@ -132,6 +134,14 @@ public partial class ContentReportReviewService
                     storyArchivedNow = archiveNow
                 },
                 cancellationToken: cancellationToken);
+
+            if (archiveNow)
+            {
+                await _archiveConsequences.ApplyAsync(
+                    new StoryArchiveContext(
+                        story, archiveReason!.Value, context.Actor.Id, now, report.ReporterUserId),
+                    cancellationToken);
+            }
 
             await NotifyReporterAsync(context, reportStatus, cancellationToken);
             if (archiveNow)

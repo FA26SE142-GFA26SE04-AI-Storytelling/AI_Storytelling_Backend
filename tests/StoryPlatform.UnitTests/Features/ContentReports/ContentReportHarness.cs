@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using Moq;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
+using StoryPlatform.Application.Features.Moderation.Interfaces;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -23,6 +24,7 @@ public sealed class ContentReportHarness
     public readonly Mock<IUnitOfWork> UnitOfWork = new();
     public readonly Mock<IAuditLogWriter> Audit = new();
     public readonly Mock<INotificationService> Notifications = new();
+    public readonly Mock<IModerationReviewViewService> ReviewViews = new();
 
     public readonly List<UserAccount> Users = new();
     public readonly List<Story> Stories = new();
@@ -40,6 +42,8 @@ public sealed class ContentReportHarness
     public readonly List<DiscussionQuestion> Discussions = new();
     public readonly List<StoryCategory> StoryCategories = new();
     public readonly List<ContentCategory> ContentCategories = new();
+    public readonly List<ReadingRoadmap> Roadmaps = new();
+    public readonly List<ReadingRoadmapItem> RoadmapItems = new();
 
     public ContentReportHarness()
     {
@@ -59,6 +63,8 @@ public sealed class ContentReportHarness
         Back(Discussions);
         Back(StoryCategories);
         Back(ContentCategories);
+        Back(Roadmaps);
+        Back(RoadmapItems);
 
         AddUser(AdminId, "admin_demo", UserRole.Administrator);
         AddUser(ReporterId, "parent_demo1", UserRole.Parent);
@@ -192,6 +198,55 @@ public sealed class ContentReportHarness
         return item;
     }
 
+    public Story AddPublicStory(int id, string ageBand, DateTime? publishedAt)
+    {
+        var story = new Story
+        {
+            Id = id,
+            Title = $"Truyện {id}",
+            Scope = StoryScope.Creator,
+            AgeBand = ageBand,
+            IsPublished = true,
+            Status = StoryStatus.Ready,
+            PublishedAt = publishedAt,
+            AuthorUserId = CreatorId
+        };
+        Stories.Add(story);
+        return story;
+    }
+
+    public ReadingRoadmap AddRoadmap(
+        int id, AgeBand ageBand, int mainCategoryId, DateTime? publishedAt, params int[] storyIds)
+    {
+        var roadmap = new ReadingRoadmap
+        {
+            Id = id,
+            Name = $"Bộ {id}",
+            Description = $"Mô tả bộ {id}",
+            AgeBand = ageBand,
+            MainCategoryId = mainCategoryId,
+            ReadingLevelMin = 1,
+            ReadingLevelMax = 3,
+            DefaultDaysPerStory = 2,
+            Status = RoadmapTemplateStatus.Published,
+            CreatedByUserId = ModeratorId,
+            PublishedAt = publishedAt
+        };
+        Roadmaps.Add(roadmap);
+        for (var position = 0; position < storyIds.Length; position++)
+        {
+            RoadmapItems.Add(new ReadingRoadmapItem
+            {
+                Id = id * 100 + position,
+                ReadingRoadmapId = id,
+                StoryId = storyIds[position],
+                Position = position + 1
+            });
+        }
+
+        return roadmap;
+    }
+
     private void Back<T>(List<T> list) where T : BaseEntity
     {
         var repository = new Mock<IGenericRepository<T>>();
@@ -223,6 +278,28 @@ public sealed class ContentReportHarness
 
                 list.Add(entity);
                 return entity;
+            });
+        repository.Setup(repo => repo.GetPagedAsync(
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Expression<Func<T, bool>>?>(),
+                It.IsAny<Func<IQueryable<T>, IOrderedQueryable<T>>?>(), It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((int pageIndex, int pageSize, Expression<Func<T, bool>>? filter,
+                Func<IQueryable<T>, IOrderedQueryable<T>>? orderBy, string? _, CancellationToken _) =>
+            {
+                IQueryable<T> query = list.AsQueryable();
+                if (filter != null)
+                {
+                    query = query.Where(filter);
+                }
+
+                var total = query.Count();
+                if (orderBy != null)
+                {
+                    query = orderBy(query);
+                }
+
+                var items = query.Skip((pageIndex - 1) * pageSize).Take(pageSize).ToList();
+                return ((IReadOnlyList<T>)items, total);
             });
         UnitOfWork.Setup(unit => unit.Repository<T>()).Returns(repository.Object);
     }

@@ -39,6 +39,86 @@ public class ModerationSweepService : IModerationSweepService
             item => item.ClaimedByUserId == moderatorUserId, cancellationToken);
     }
 
+    public async Task<int> WithdrawRoadmapReviewsOfInactiveCreatorsAsync(
+        int? creatorUserId = null, CancellationToken cancellationToken = default)
+    {
+        var filterByCreator = creatorUserId.HasValue;
+        var creatorId = creatorUserId ?? 0;
+        var itemRepository = _unitOfWork.Repository<ModerationItem>();
+        var pending = await itemRepository.FindAsync(
+            item => item.ItemType == ModerationItemType.RoadmapTemplateReview
+                    && item.Status == ModerationItemStatus.Pending
+                    && item.CreatedByUserId.HasValue
+                    && (!filterByCreator || item.CreatedByUserId == creatorId),
+            cancellationToken: cancellationToken);
+        if (pending.Count == 0)
+        {
+            return 0;
+        }
+
+        var creatorIds = pending.Select(item => item.CreatedByUserId!.Value).Distinct().ToList();
+        var activeCreators = await _unitOfWork.Repository<UserAccount>().FindAsync(
+            user => creatorIds.Contains(user.Id) && user.Status == AccountStatus.Active && !user.IsDeleted,
+            cancellationToken: cancellationToken);
+        var activeIds = activeCreators.Select(user => user.Id).ToHashSet();
+        var targets = pending.Where(item => !activeIds.Contains(item.CreatedByUserId!.Value)).ToList();
+        if (targets.Count == 0)
+        {
+            return 0;
+        }
+
+        var roadmapRepository = _unitOfWork.Repository<ReadingRoadmap>();
+        var count = 0;
+        var now = DateTime.UtcNow;
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            foreach (var candidate in targets)
+            {
+                var item = await itemRepository.GetByIdAsync(candidate.Id, cancellationToken);
+                if (item == null || item.IsDeleted || item.RowVersion != candidate.RowVersion
+                    || item.Status != ModerationItemStatus.Pending)
+                {
+                    continue;
+                }
+
+                item.Status = ModerationItemStatus.Withdrawn;
+                item.WithdrawnAt = now;
+                item.RowVersion += 1;
+                itemRepository.Update(item);
+
+                if (item.ReadingRoadmapId.HasValue)
+                {
+                    var roadmap = await roadmapRepository.GetByIdAsync(
+                        item.ReadingRoadmapId.Value, cancellationToken);
+                    if (roadmap != null && !roadmap.IsDeleted
+                        && roadmap.Status == RoadmapTemplateStatus.PendingReview)
+                    {
+                        roadmap.Status = RoadmapTemplateStatus.Draft;
+                        roadmap.SubmittedAt = null;
+                        roadmapRepository.Update(roadmap);
+                    }
+                }
+
+                count += 1;
+            }
+
+            if (count > 0)
+            {
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+            }
+
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+            throw;
+        }
+
+        return count;
+    }
+
     public async Task<int> WarnOverdueSlaAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;

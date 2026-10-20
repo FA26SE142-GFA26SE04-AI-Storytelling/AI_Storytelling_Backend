@@ -19,7 +19,7 @@ public sealed record AcceptedAIStoryInputSnapshot(
 /// Server-resolved profile and policy values used to validate the accepted input.
 /// </summary>
 public sealed record AIStoryInputContextSnapshot(
-    int ChildProfileId,
+    int? ChildProfileId,
     string AgeBand,
     int ReadingLevel,
     string VocabularyLevel,
@@ -40,4 +40,8 @@ public sealed record AIStoryInputContextSnapshot(
     decimal? ComprehensionThresholdPercent = null,
     int ComprehensionWindowSize = 3,
     int ConsentPolicyVersion = 1,
-    DateTime? ConsentRecordedAt = null);
+    DateTime? ConsentRecordedAt = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    string? AudienceScope = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    int? CreatorUserId = null);

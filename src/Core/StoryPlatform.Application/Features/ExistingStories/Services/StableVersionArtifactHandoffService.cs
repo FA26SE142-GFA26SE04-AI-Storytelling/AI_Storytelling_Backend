@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Common;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AIStoryInput.Models;
 using StoryPlatform.Application.Features.ChildProfiles.Learning.DTOs;
@@ -68,7 +69,9 @@ public sealed class StableVersionArtifactHandoffService : IStableVersionArtifact
 
             var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                         ?? throw new NotFoundException("Story", storyId);
-            if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
+            GenerationStoryAccess.EnsureSupported(story);
+            if (story.Scope == StoryScope.Creator)
+                await GenerationStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, requestedByUserId, cancellationToken);
             var version = await _unitOfWork.Repository<StoryVersion>().GetByIdAsync(storyVersionId, cancellationToken)
                           ?? throw new NotFoundException("StoryVersion", storyVersionId);
 
@@ -197,6 +200,7 @@ public sealed class StableVersionArtifactHandoffService : IStableVersionArtifact
                 throw new NotFoundException("StoryGenerationRequest", providedRequestId.Value);
             if (existing.Status != GenerationInputStatus.InputAccepted)
                 throw new ConflictException($"GENERATION_REQUEST_NOT_ACCEPTED:{existing.Status}");
+            if (story.Scope == StoryScope.Creator) ValidateCreatorRequest(story, existing);
             return existing.Id;
         }
 
@@ -209,12 +213,18 @@ public sealed class StableVersionArtifactHandoffService : IStableVersionArtifact
             .FirstOrDefault();
         if (activeRequest is not null)
         {
+            if (story.Scope == StoryScope.Creator)
+            {
+                ValidateCreatorRequest(story, activeRequest);
+                return activeRequest.Id;
+            }
             var (_, freshContext) = await BuildExistingStorySnapshotsAsync(story, version, cancellationToken);
             activeRequest.ContextSnapshotJson = JsonSerializer.Serialize(freshContext, JsonOptions);
             _unitOfWork.Repository<StoryGenerationRequest>().Update(activeRequest);
             return activeRequest.Id;
         }
 
+        if (story.Scope == StoryScope.Creator) throw new ConflictException("CREATOR_CONTEXT_MISSING");
         // 3. Tạo request "ảo" cho Existing Story.
         var (input, context) = await BuildExistingStorySnapshotsAsync(story, version, cancellationToken);
 
@@ -256,6 +266,14 @@ public sealed class StableVersionArtifactHandoffService : IStableVersionArtifact
 
         var context = await BuildContextSnapshotAsync(story, cancellationToken);
         return (input, context);
+    }
+
+    private static void ValidateCreatorRequest(Story story, StoryGenerationRequest request)
+    {
+        if (request.SubmittedByUserId != story.AuthorUserId) throw new ConflictException("CREATOR_CONTEXT_INVALID");
+        var context = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(request.ContextSnapshotJson, JsonOptions)
+            ?? throw new ConflictException("CREATOR_CONTEXT_MISSING");
+        GenerationStoryAccess.ValidateSnapshot(story, context);
     }
 
     private async Task<AIStoryInputContextSnapshot> BuildContextSnapshotAsync(

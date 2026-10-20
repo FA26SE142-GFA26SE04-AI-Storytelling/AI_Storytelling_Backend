@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Common;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using StoryPlatform.Application.Abstractions.AI;
@@ -390,7 +391,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
                     ?? throw new InvalidOperationException("ACCEPTED_INPUT_MISSING");
         var context = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(request.ContextSnapshotJson, JsonOptions)
                       ?? throw new InvalidOperationException("CONTEXT_SNAPSHOT_MISSING");
-        ValidateConsentContext(context);
+        GenerationStoryAccess.ValidateSnapshot(story, context);
         StoryVersion? baseVersion = null;
         if (job.Operation == GenerationJobOperation.RegenerateOutline)
         {
@@ -481,6 +482,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
             {
                 current.IsCurrent = false;
                 _unitOfWork.Repository<StoryVersion>().Update(current);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
             }
             await _unitOfWork.Repository<StoryVersion>().AddAsync(created, cancellationToken);
             _unitOfWork.Repository<Story>().Update(story);
@@ -504,6 +506,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         current.IsCurrent = false;
         story.Title = next.Title;
         _unitOfWork.Repository<StoryVersion>().Update(current);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
         await _unitOfWork.Repository<StoryVersion>().AddAsync(next, cancellationToken);
         _unitOfWork.Repository<Story>().Update(story);
     }
@@ -516,7 +519,8 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
         if (StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story)) throw new ConflictException("PARENT_MANUAL_USE_AUTHORING_API");
-        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
+        GenerationStoryAccess.EnsureSupported(story);
+        if (await GenerationStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, cancellationToken)) return story;
         var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken)
                    ?? throw new ForbiddenException();
         if (user.Status == AccountStatus.Suspended || user.Role != UserRole.Parent)
@@ -542,7 +546,8 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
         if (StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story)) throw new ConflictException("PARENT_MANUAL_USE_AUTHORING_API");
-        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
+        GenerationStoryAccess.EnsureSupported(story);
+        if (await GenerationStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, cancellationToken)) return story;
         var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken)
                    ?? throw new ForbiddenException();
         if (user.Status == AccountStatus.Suspended || user.Role != UserRole.Parent)
@@ -569,7 +574,8 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
         if (StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story)) throw new ConflictException("PARENT_MANUAL_USE_AUTHORING_API");
-        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
+        GenerationStoryAccess.EnsureSupported(story);
+        if (await GenerationStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, cancellationToken)) return story;
         var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken)
                    ?? throw new ForbiddenException();
         if (user.Status == AccountStatus.Suspended || user.Role != UserRole.Parent)
@@ -607,14 +613,9 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         var request = await LoadAcceptedRequestAsync(storyId, cancellationToken);
         var context = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(request.ContextSnapshotJson, JsonOptions)
                       ?? throw new ConflictException("Context Snapshot không hợp lệ.");
-        ValidateConsentContext(context);
+        var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken) ?? throw new NotFoundException("Story", storyId);
+        GenerationStoryAccess.ValidateSnapshot(story, context);
         return context;
-    }
-
-    private static void ValidateConsentContext(AIStoryInputContextSnapshot context)
-    {
-        if (!context.ConsentRecordedAt.HasValue || context.ConsentPolicyVersion <= 0)
-            throw new InvalidOperationException("CONSENT_REQUIRED");
     }
 
     private async Task<StoryVersion> LoadCurrentVersionAsync(int storyId, int versionNo, CancellationToken cancellationToken)

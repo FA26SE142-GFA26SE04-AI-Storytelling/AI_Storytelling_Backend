@@ -287,10 +287,17 @@ public partial class ManualAuthoringService
         }, ct);
 
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
-    private async Task<CreatorDraftDto> ToDraftAsync(Story x, CancellationToken ct) => new(x.Id, x.AuthorUserId,
-        x.Title ?? string.Empty, x.Description ?? string.Empty, x.Language, x.AgeBand, x.Genre ?? string.Empty,
-        x.ExperienceMode, x.AudienceRevision, x.AuthoringRevisionToken, (await CurrentVersionAsync(x.Id, ct))?.Id,
-        x.AuthoringLastVersionNo, x.CreatedAt, x.UpdatedAt);
+    private async Task<CreatorDraftDto> ToDraftAsync(Story x, CancellationToken ct)
+    {
+        var lastVersionNo = x.AuthoringLastVersionNo;
+        if (x.Scope == StoryScope.Creator && x.Source == StorySource.Ai)
+            lastVersionNo = (await _uow.Repository<StoryVersion>().FindAsync(v => v.StoryId == x.Id && !v.IsDeleted,
+                cancellationToken: ct)).Select(v => v.VersionNo).DefaultIfEmpty().Max();
+        return new(x.Id, x.AuthorUserId, x.Title ?? string.Empty, x.Description ?? string.Empty,
+            x.Language, x.AgeBand, x.Genre ?? string.Empty, x.ExperienceMode, x.AudienceRevision,
+            x.AuthoringRevisionToken, (await CurrentVersionAsync(x.Id, ct))?.Id, lastVersionNo,
+            x.CreatedAt, x.UpdatedAt, x.Source.ToString(), x.Status.ToString());
+    }
     private static CreatorVersionDto ToVersion(StoryVersion x) => new(x.Id, x.StoryId, x.VersionNo,
         x.BaseVersionId, x.RestoredFromVersionId, x.EditorUserId ?? 0, x.Title, x.Content ?? string.Empty,
         x.AuthoringOrigin ?? "Write", x.SourceDeclaration, x.RightsDeclaration, x.ImportFileName, x.ImportSourceHash,

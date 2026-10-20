@@ -20,6 +20,22 @@ namespace StoryPlatform.UnitTests;
 public sealed class OutlineServiceTests
 {
     [Fact]
+    public async Task Creator_CanGenerateEditAndApproveOutlineWithoutAChild()
+    {
+        var store = Seed();
+        store.Items<UserAccount>().Single().Role = UserRole.ContentCreator;
+        CreatorGenerationTestContext.Configure(store.Items<Story>().Single(), store.Items<StoryGenerationRequest>().Single());
+        var service = Service(store);
+        Assert.True(await service.ProcessNextAsync());
+        Assert.Equal(StoryStatus.OutlineReview, store.Items<Story>().Single().Status);
+        await Assert.ThrowsAsync<NotFoundException>(() => service.GetCurrentAsync(99, 1));
+        var outline = store.Items<StoryVersion>().Single();
+        await service.ApproveAsync(1, 1, outline.VersionNo, new ApproveOutlineRequestDto { ApprovalKey = "creator-approve-001" });
+        Assert.Contains(store.Items<StoryGenerationJob>(), job => job.Operation == GenerationJobOperation.GenerateContent);
+        Assert.Null(store.Items<Story>().Single().ChildProfileId);
+    }
+
+    [Fact]
     public async Task Approved_outline_cannot_be_edited_or_regenerated_after_content_handoff()
     {
         var db = Seed();

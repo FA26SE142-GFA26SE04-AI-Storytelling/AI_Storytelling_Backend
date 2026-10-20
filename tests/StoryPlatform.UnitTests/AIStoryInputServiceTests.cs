@@ -18,6 +18,80 @@ namespace StoryPlatform.UnitTests;
 public sealed class AIStoryInputServiceTests
 {
     [Fact]
+    public async Task Creator_SubmitUsesAudienceWithoutChildConsentOrChildQuota()
+    {
+        var store = new FakeUnitOfWork();
+        store.Seed(new UserAccount { Id = 13, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
+        var quota = new Moq.Mock<ITokenQuotaService>(Moq.MockBehavior.Strict);
+        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), quota.Object);
+        var result = await service.SubmitCreatorAsync(13, CreatorRequest());
+        var replay = await service.SubmitCreatorAsync(13, CreatorRequest());
+        Assert.Equal(result.RequestId, replay.RequestId);
+        Assert.Equal("input_accepted", result.InputStatus);
+        var story = Assert.Single(store.Items<Story>());
+        Assert.Equal(StoryScope.Creator, story.Scope);
+        Assert.Equal(StorySource.Ai, story.Source);
+        Assert.Null(story.ChildProfileId);
+        Assert.False(story.IsPublished);
+        var context = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(Assert.Single(store.Items<StoryGenerationRequest>()).ContextSnapshotJson,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        Assert.Equal("Creator", context.AudienceScope);
+        Assert.Equal(13, context.CreatorUserId);
+        Assert.Null(context.ChildProfileId);
+        Assert.Null(context.ConsentRecordedAt);
+        Assert.Equal("always_manual", context.RequiredApprovalMode);
+        Assert.Single(store.Items<StoryGenerationJob>());
+        Assert.Empty(store.Items<StoryVersion>());
+        await Assert.ThrowsAsync<NotFoundException>(() => service.GetProgressAsync(99, story.Id, result.RequestId));
+    }
+
+    [Fact]
+    public async Task Creator_CannotReplayKeyWithAnotherAudienceOrReuseParentDraft()
+    {
+        var store = CreateEligibleUnitOfWork();
+        store.Seed(new UserAccount { Id = 13, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
+        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), CreateTokenQuotaService(store));
+        var parent = await service.SubmitAsync(1, ValidRequest());
+        await Assert.ThrowsAsync<NotFoundException>(() => service.SubmitCreatorAsync(13,
+            CreatorRequest(existingStoryId: parent.StoryId)));
+        await service.SubmitCreatorAsync(13, CreatorRequest());
+        await Assert.ThrowsAsync<ConflictException>(() => service.SubmitCreatorAsync(13, CreatorRequest(ageBand: "9-10")));
+        Assert.Equal(2, store.Items<Story>().Count);
+    }
+
+    [Theory]
+    [InlineData(UserRole.Parent, AccountStatus.Active)]
+    [InlineData(UserRole.Administrator, AccountStatus.Active)]
+    [InlineData(UserRole.ContentCreator, AccountStatus.Suspended)]
+    public async Task Creator_InputRejectsWrongRoleOrInactiveAccount(UserRole role, AccountStatus status)
+    {
+        var store = new FakeUnitOfWork();
+        store.Seed(new UserAccount { Id = 13, Role = role, Status = status });
+        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), new Moq.Mock<ITokenQuotaService>(Moq.MockBehavior.Strict).Object);
+        await Assert.ThrowsAsync<ForbiddenException>(() => service.SubmitCreatorAsync(13, CreatorRequest()));
+        Assert.Empty(store.Items<Story>());
+    }
+
+    [Fact]
+    public async Task Creator_AgePresetGuardrailBlocksBeforeOutlineHandoff()
+    {
+        var store = new FakeUnitOfWork();
+        store.Seed(new UserAccount { Id = 13, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
+        store.Seed(new ContentCategory { Id = 1, Code = "friendship", DisplayName = "Tình bạn", DefaultBlockedAgeBands = ["Age_6_8"] });
+        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), new Moq.Mock<ITokenQuotaService>(Moq.MockBehavior.Strict).Object);
+        var result = await service.SubmitCreatorAsync(13, CreatorRequest());
+        Assert.Equal("input_blocked", result.InputStatus);
+        Assert.Empty(store.Items<StoryGenerationJob>());
+        Assert.Null(Assert.Single(store.Items<StoryGenerationRequest>()).AcceptedInputJson);
+    }
+
+    private static SubmitCreatorAIStoryInputRequestDto CreatorRequest(string ageBand = "6-8", int? existingStoryId = null) => new()
+    {
+        AgeBand = ageBand, ReadingLevel = 2, ExistingStoryId = existingStoryId, IdempotencyKey = "creator-generation-001",
+        Topic = "Tình bạn", Lesson = "Biết giúp đỡ bạn bè", VocabularyLevel = "level_2", Language = "vi", TargetLength = 500
+    };
+
+    [Fact]
     public async Task ReadingMediaOnly_IsPersistedOnStoryAndReturnedInProgress()
     {
         var unitOfWork = CreateEligibleUnitOfWork();

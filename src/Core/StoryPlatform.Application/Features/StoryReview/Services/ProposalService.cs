@@ -1,6 +1,7 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Linq;
 using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Common;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.StoryReview.DTOs;
 using StoryPlatform.Application.Features.StoryReview.Interfaces;
@@ -17,13 +18,15 @@ public sealed class ProposalService : IProposalService
     private readonly IGenericRepository<StoryVocabulary> _vocabRepo;
     private readonly IGenericRepository<QuizItem> _quizRepo;
     private readonly IGenericRepository<DiscussionQuestion> _discussionRepo;
+    private readonly IStoryReviewService? _reviewService;
 
     public ProposalService(
         IProposalCache cache,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork, IStoryReviewService? reviewService = null)
     {
         _cache = cache;
         _unitOfWork = unitOfWork;
+        _reviewService = reviewService;
         _versionRepo = unitOfWork.Repository<StoryVersion>();
         _vocabRepo = unitOfWork.Repository<StoryVocabulary>();
         _quizRepo = unitOfWork.Repository<QuizItem>();
@@ -39,8 +42,17 @@ public sealed class ProposalService : IProposalService
 
     public async Task<ApplyDiscardResponseDto> ApplyProposalAsync(int userId, int storyId, string proposalId, CancellationToken cancellationToken = default)
     {
+        var targetStory = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken);
+        if (targetStory?.Scope == StoryScope.Creator)
+        {
+            await GenerationStoryAccess.AuthorizeCreatorAsync(_unitOfWork, targetStory, userId, cancellationToken);
+            if (targetStory.Status != StoryStatus.ContentReview) throw new ConflictException("INVALID_STORY_STATUS");
+        }
         var proposal = await _cache.GetAsync(proposalId);
         EnsureProposalAccess(proposal, userId, storyId);
+        if (targetStory?.Scope == StoryScope.Creator && !await _versionRepo.ExistsAsync(
+            x => x.Id == proposal!.StoryVersionId && x.StoryId == storyId && x.IsCurrent, cancellationToken))
+            throw new ConflictException("STALE_PROPOSAL_VERSION");
 
         if (proposal!.Status != "pending")
         {
@@ -57,13 +69,25 @@ public sealed class ProposalService : IProposalService
                 await ApplyStoryProposalAsync(userId, proposal, cancellationToken);
                 break;
             case "vocabulary":
-                await ApplyVocabularyProposalAsync(proposal, cancellationToken);
+                await CreatorPublicationGuard.WriteAsync(_unitOfWork, storyId, proposal.StoryVersionId, async () =>
+                {
+                    await ApplyVocabularyProposalAsync(proposal, cancellationToken);
+                    return true;
+                }, cancellationToken);
                 break;
             case "quiz":
-                await ApplyQuizProposalAsync(proposal, cancellationToken);
+                await CreatorPublicationGuard.WriteAsync(_unitOfWork, storyId, proposal.StoryVersionId, async () =>
+                {
+                    await ApplyQuizProposalAsync(proposal, cancellationToken);
+                    return true;
+                }, cancellationToken);
                 break;
             case "discussion":
-                await ApplyDiscussionProposalAsync(proposal, cancellationToken);
+                await CreatorPublicationGuard.WriteAsync(_unitOfWork, storyId, proposal.StoryVersionId, async () =>
+                {
+                    await ApplyDiscussionProposalAsync(proposal, cancellationToken);
+                    return true;
+                }, cancellationToken);
                 break;
             default:
                 throw new BadRequestException($"Unknown artifact type: {proposal.ArtifactType}");
@@ -104,6 +128,7 @@ public sealed class ProposalService : IProposalService
         if (proposal.SuggestedContent is JsonElement element && element.TryGetProperty("content", out var contentProp))
         {
             var replacement = contentProp.GetString() ?? string.Empty;
+            string nextContent;
             if (proposal.OriginalContent is JsonElement original &&
                 original.TryGetProperty("start", out var startProperty) &&
                 original.TryGetProperty("endExclusive", out var endProperty))
@@ -115,12 +140,21 @@ public sealed class ProposalService : IProposalService
                 {
                     throw new BadRequestException("The story changed and the proposal selection is no longer valid.");
                 }
-                version.Content = string.Concat(currentContent.AsSpan(0, start), replacement, currentContent.AsSpan(endExclusive));
+                nextContent = string.Concat(currentContent.AsSpan(0, start), replacement, currentContent.AsSpan(endExclusive));
             }
             else
             {
-                version.Content = replacement;
+                nextContent = replacement;
             }
+            var story = await _unitOfWork.Repository<Story>().GetByIdAsync(proposal.StoryId, cancellationToken);
+            if (story?.Scope == StoryScope.Creator)
+            {
+                if (_reviewService is null) throw new ConflictException("CREATOR_REVIEW_SERVICE_REQUIRED");
+                await _reviewService.UpdateStoryAsync(userId, story.Id, new UpdateStoryRequestDto
+                { VersionId = version.Id, Title = version.Title, Content = nextContent, Lesson = version.Lesson ?? string.Empty }, cancellationToken);
+                return;
+            }
+            version.Content = nextContent;
             version.EditorUserId = userId;
             version.EditType = VersionEditType.AiRefined;
             _versionRepo.Update(version);

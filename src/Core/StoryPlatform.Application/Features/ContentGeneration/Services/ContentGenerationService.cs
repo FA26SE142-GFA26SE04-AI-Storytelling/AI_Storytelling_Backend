@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Common;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using StoryPlatform.Application.Abstractions.AI;
@@ -494,7 +495,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             {
                 var story = await _unitOfWork.Repository<Story>().GetByIdAsync(job.StoryId, cancellationToken)
                             ?? throw new InvalidOperationException("STORY_NOT_FOUND");
-                if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
+                GenerationStoryAccess.EnsureSupported(story);
                 story.Status = StoryStatus.ContentReview;
                 _unitOfWork.Repository<Story>().Update(story);
             }
@@ -579,6 +580,8 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             if (current is null || stable is null || !current.IsCurrent || !current.OutlineApprovedAt.HasValue)
                 throw new InvalidOperationException("STALE_BASE_VERSION");
             current.IsCurrent = false;
+            _unitOfWork.Repository<StoryVersion>().Update(current);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
             stable.IsCurrent = true;
             stable.OutlineApprovedAt = current.OutlineApprovedAt;
             stable.OutlineApprovedByUserId = current.OutlineApprovedByUserId;
@@ -586,7 +589,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             _unitOfWork.Repository<StoryVersion>().Update(stable);
             var story = await _unitOfWork.Repository<Story>().GetByIdAsync(job.StoryId, cancellationToken)
                         ?? throw new InvalidOperationException("STORY_NOT_FOUND");
-            if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
+            GenerationStoryAccess.EnsureSupported(story);
             story.Title = stable.Title;
             story.Content = stable.Content;
             story.MoralLesson = stable.Lesson;
@@ -658,7 +661,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
                     ?? throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
         var context = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(request.ContextSnapshotJson, JsonOptions)
                       ?? throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
-        ValidateConsentContext(context);
+        GenerationStoryAccess.ValidateSnapshot(story!, context);
         return new ContentHandoff(job, request, baseVersion, input, context);
     }
 
@@ -677,14 +680,8 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
         var context = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(request.ContextSnapshotJson, JsonOptions)
                       ?? throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
-        ValidateConsentContext(context);
+        GenerationStoryAccess.ValidateSnapshot(story!, context);
         return new ArtifactState(job, version, context);
-    }
-
-    private static void ValidateConsentContext(AIStoryInputContextSnapshot context)
-    {
-        if (!context.ConsentRecordedAt.HasValue || context.ConsentPolicyVersion <= 0)
-            throw new InvalidOperationException("CONSENT_REQUIRED");
     }
 
     private async Task<StoryGenerationJob> RequireClaimedJobAsync(
@@ -700,7 +697,8 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
     {
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
-        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
+        GenerationStoryAccess.EnsureSupported(story);
+        if (await GenerationStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, cancellationToken)) return story;
         if (story.AuthorUserId == userId) return story;
         var relationship = await _unitOfWork.Repository<SupervisionRelationship>().FirstOrDefaultAsync(
             item => item.ChildProfileId == story.ChildProfileId && item.SupervisorUserId == userId && item.RevokedAt == null,

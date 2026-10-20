@@ -1,4 +1,4 @@
-using StoryPlatform.Domain.Enums;
+﻿using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.Moderation.DTOs;
 
@@ -59,6 +59,7 @@ public class ModerationItemSummaryDto
 /// <summary>Chi tiết hàng đợi của mục đang nhận. Nội dung truyện thật do từng luồng con dựng, không nằm ở đây.</summary>
 public class ModerationItemDetailDto : ModerationItemSummaryDto
 {
+    public int RowVersion { get; set; }
     public string? Flags { get; set; }
     public string? Checklist { get; set; }
     public string? ReviewProgress { get; set; }

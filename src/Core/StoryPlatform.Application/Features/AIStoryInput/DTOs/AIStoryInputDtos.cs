@@ -67,11 +67,31 @@ public sealed class SubmitAIStoryInputRequestDto : AIStoryCreativeInputDto
     [Range(1, int.MaxValue)]
     public int ChildProfileId { get; init; }
 
+    [System.Text.Json.Serialization.JsonIgnore]
+    public CreatorGenerationAudience? CreatorAudience { get; init; }
+
     public int? ExistingStoryId { get; init; }
 
     [Required, StringLength(100, MinimumLength = 8)]
     public string IdempotencyKey { get; init; } = string.Empty;
 }
+
+public sealed record CreatorGenerationAudience(string AgeBand, int ReadingLevel);
+
+public sealed class SubmitCreatorAIStoryInputRequestDto : AIStoryCreativeInputDto
+{
+    [Required, RegularExpression("^(6-8|9-10)$")]
+    public string AgeBand { get; init; } = "6-8";
+    [Range(1, 5)] public int ReadingLevel { get; init; } = 2;
+    public string OutputMode { get; init; } = "reading_media_only";
+    public int? ExistingStoryId { get; init; }
+    [Required, StringLength(100, MinimumLength = 8)] public string IdempotencyKey { get; init; } = string.Empty;
+}
+
+public sealed record CreatorAIStoryInputContextDto(string AgeBand, int ReadingLevel, string DefaultLanguage,
+    IReadOnlyList<string> AvailableLanguages, IReadOnlyList<string> AvailableVocabularyLevels, int MaximumLength,
+    string RequiredApprovalMode, decimal SafetyScoreThreshold, IReadOnlyList<string> BlockedCategoryCodes,
+    IReadOnlyList<string> AvailableOutputModes);
 
 public sealed class RetryAIStoryInputRequestDto : AIStoryCreativeInputDto
 {

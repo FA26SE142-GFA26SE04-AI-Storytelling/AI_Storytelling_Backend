@@ -1,4 +1,4 @@
-using StoryPlatform.Application.Features.StoryReview.DTOs;
+﻿using StoryPlatform.Application.Features.StoryReview.DTOs;
 
 namespace StoryPlatform.Application.Features.StoryReview.Interfaces;
 
@@ -50,6 +50,7 @@ public interface IStoryReviewService
     Task<bool> CompleteDiscussionReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default);
 
     Task<ValidationResultDto> ValidateAsync(int userId, int storyId, CancellationToken cancellationToken = default);
+    Task<ConfirmCreatorContentResponseDto> ConfirmCreatorContentAsync(int userId, int storyId, ConfirmCreatorContentRequestDto input, CancellationToken cancellationToken = default);
     Task<ApproveResponseDto> ApproveAsync(int userId, int storyId, CancellationToken cancellationToken = default);
     Task<ApproveResponseDto?> EvaluateAndApplyAutoPublishAsync(int storyId, CancellationToken cancellationToken = default);
     Task<ArchiveResponseDto> ArchiveAsync(int userId, int storyId, ArchiveRequestDto input, CancellationToken cancellationToken = default);

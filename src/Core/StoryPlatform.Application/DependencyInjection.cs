@@ -1,4 +1,4 @@
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using StoryPlatform.Application.Features.CreatorAuthoring.Interfaces;
 using StoryPlatform.Application.Features.CreatorAuthoring.Services;
 using StoryPlatform.Application.Features.Auth.Interfaces;
@@ -101,6 +101,7 @@ public static class DependencyInjection
         services.AddScoped<IModerationSweepService, ModerationSweepService>();
         services.AddScoped<IPublicStoryReviewService, PublicStoryReviewService>();
         services.AddScoped<IPublicStorySubmissionService, PublicStorySubmissionService>();
+        services.AddScoped<ICreatorPublicationService, CreatorPublicationService>();
         services.AddScoped<IReportableStoryResolver, ReportableStoryResolver>();
         services.AddScoped<IContentReportService, ContentReportService>();
         services.AddScoped<IContentReportReviewService, ContentReportReviewService>();

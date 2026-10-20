@@ -44,9 +44,32 @@ public sealed class ContentReportHarness
     public readonly List<ContentCategory> ContentCategories = new();
     public readonly List<ReadingRoadmap> Roadmaps = new();
     public readonly List<ReadingRoadmapItem> RoadmapItems = new();
+    public readonly List<SupervisionPermission> Permissions = new();
+    public readonly List<SafetyPolicy> Policies = new();
+    public readonly List<SafetyPolicyCategory> PolicyCategories = new();
+
+    public SafetyPolicy AddPolicy(int childId, int maxLength = 0)
+    {
+        var policy = new SafetyPolicy { Id = Policies.Count + 1, ChildProfileId = childId, MaxStoryLength = maxLength };
+        Policies.Add(policy);
+        return policy;
+    }
+
+    public void Block(int childId, int categoryId)
+    {
+        var policy = Policies.FirstOrDefault(existing => existing.ChildProfileId == childId) ?? AddPolicy(childId);
+        PolicyCategories.Add(new SafetyPolicyCategory
+        {
+            Id = PolicyCategories.Count + 1, SafetyPolicyId = policy.Id, ContentCategoryId = categoryId,
+            Rule = PolicyRule.Blocked
+        });
+    }
 
     public ContentReportHarness()
     {
+        Back(Permissions);
+        Back(Policies);
+        Back(PolicyCategories);
         Back(Users);
         Back(Stories);
         Back(Versions);
@@ -132,6 +155,30 @@ public sealed class ContentReportHarness
         };
         Users.Add(user);
         return user;
+    }
+
+    public SupervisionRelationship AddSupervisor(
+        int childId, int userId, SupervisorRole role, params Permission[] permissions)
+    {
+        var relationship = new SupervisionRelationship
+        {
+            Id = Relationships.Count + 1,
+            ChildProfileId = childId,
+            SupervisorUserId = userId,
+            SupervisorRole = role
+        };
+        Relationships.Add(relationship);
+        foreach (var permission in permissions)
+        {
+            Permissions.Add(new SupervisionPermission
+            {
+                Id = Permissions.Count + 1,
+                SupervisionRelationshipId = relationship.Id,
+                Permission = permission
+            });
+        }
+
+        return relationship;
     }
 
     public ChildProfile AddChild(
@@ -268,6 +315,7 @@ public sealed class ContentReportHarness
                 It.IsAny<Expression<Func<T, bool>>?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Expression<Func<T, bool>>? predicate, CancellationToken _) =>
                 predicate == null ? list.Count : list.Count(predicate.Compile()));
+        repository.Setup(repo => repo.Delete(It.IsAny<T>())).Callback<T>(entity => list.Remove(entity));
         repository.Setup(repo => repo.AddAsync(It.IsAny<T>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((T entity, CancellationToken _) =>
             {

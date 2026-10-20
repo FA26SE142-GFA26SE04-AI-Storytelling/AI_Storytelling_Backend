@@ -61,6 +61,8 @@ using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
 using StoryPlatform.Application.Features.ChildRoadmaps.Services;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 using StoryPlatform.Application.Features.ReadingSessions.Services;
+using StoryPlatform.Application.Features.CommunityLibrary.Interfaces;
+using StoryPlatform.Application.Features.CommunityLibrary.Services;
 
 namespace StoryPlatform.Application;
 
@@ -118,6 +120,9 @@ public static class DependencyInjection
         services.AddScoped<IMyRoadmapService, MyRoadmapService>();
         services.AddScoped<IRoadmapLibraryService, RoadmapLibraryService>();
         services.AddScoped<IPublishedContentReviewService, PublishedContentReviewService>();
+        services.AddScoped<ICommunitySubmissionService, CommunitySubmissionService>();
+        services.AddScoped<ICommunityReviewService, CommunityReviewService>();
+        services.AddScoped<ICommunityLibraryService, CommunityLibraryService>();
         services.AddScoped<IRoadmapSubmissionChecker, RoadmapSubmissionChecker>();
         services.AddScoped<IRoadmapTemplateService, RoadmapTemplateService>();
         services.AddScoped<IRoadmapReviewService, RoadmapReviewService>();

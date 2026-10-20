@@ -6,6 +6,7 @@ using StoryPlatform.Api.Controllers;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ContentReports.DTOs;
 using StoryPlatform.Application.Features.ContentReports.Services;
+using StoryPlatform.Application.Features.Moderation.DTOs;
 using StoryPlatform.Application.Features.Moderation.Services;
 using StoryPlatform.Application.Features.Notifications.DTOs;
 using StoryPlatform.Domain.Entities;
@@ -40,6 +41,21 @@ public class ContentReportServiceTests
     private Task<ContentReportResultDto> CreateAsync(
         CreateContentReportRequestDto request,
         int actorId = Reporter) => _sut.CreateAsync(actorId, request);
+
+    private static CreateReviewItemRequestDto ReviewRequest(
+        ContentReportReason reason = ContentReportReason.Inappropriate,
+        int storyId = PublicStory,
+        int? roadmapId = null) => new()
+    {
+        StoryId = storyId,
+        Reason = reason,
+        ReadingRoadmapId = roadmapId
+    };
+
+    private Task<ContentReportResultDto> CreateReviewAsync(
+        CreateReviewItemRequestDto request,
+        int actorId = ContentReportHarness.ModeratorId) =>
+        _sut.CreateReviewItemAsync(actorId, request);
 
     [Fact]
     public async Task CreateAsync_Valid_CreatesPendingReportWithDisplayedVersion()
@@ -328,6 +344,89 @@ public class ContentReportServiceTests
 
         _h.UnitOfWork.Verify(unit => unit.RollbackTransactionAsync(CancellationToken.None), Times.Once);
         _h.UnitOfWork.Verify(unit => unit.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateReviewItemAsync_CreatesReviewReportForAnotherModerator()
+    {
+        await CreateReviewAsync(ReviewRequest(ContentReportReason.SafetyConcern));
+
+        var report = Assert.Single(_h.Reports);
+        var item = Assert.Single(_h.Items);
+        Assert.True(report.IsReviewItem);
+        Assert.Equal(ContentReportHarness.ModeratorId, report.ReporterUserId);
+        Assert.Equal(50, report.StoryVersionId);
+        Assert.Equal(ContentReportStatus.Pending, report.Status);
+        Assert.Equal(ContentReportHarness.ModeratorId, item.CreatedByUserId);
+        Assert.Equal(ModerationPriority.High, item.Priority);
+        Assert.Equal(ModerationItemStatus.Pending, item.Status);
+
+        var queue = new ModerationQueueService(_h.UnitOfWork.Object, _h.Audit.Object);
+        var ownList = await queue.ListAsync(
+            ContentReportHarness.ModeratorId, new ModerationQueueQueryDto());
+        var otherList = await queue.ListAsync(
+            ContentReportHarness.OtherModeratorId, new ModerationQueueQueryDto());
+        Assert.Empty(ownList.Items);
+        Assert.Contains(otherList.Items, candidate => candidate.Id == item.Id);
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            queue.ClaimAsync(ContentReportHarness.ModeratorId, item.Id));
+    }
+
+    [Fact]
+    public async Task CreateReviewItemAsync_NotifiesOtherModeratorsButNotCreator()
+    {
+        var sent = new List<(int Recipient, NotificationType Type, string? Payload)>();
+        CaptureNotifications(sent);
+
+        await CreateReviewAsync(ReviewRequest(ContentReportReason.Copyright));
+
+        var notification = Assert.Single(sent);
+        Assert.Equal(ContentReportHarness.OtherModeratorId, notification.Recipient);
+        Assert.Equal(NotificationType.ContentReported, notification.Type);
+    }
+
+    [Fact]
+    public async Task CreateReviewItemAsync_NoOtherModerator_FallsBackToAdministrators()
+    {
+        _h.Users.Single(user => user.Id == ContentReportHarness.OtherModeratorId).Status = AccountStatus.Suspended;
+        var sent = new List<(int Recipient, NotificationType Type, string? Payload)>();
+        CaptureNotifications(sent);
+
+        await CreateReviewAsync(ReviewRequest());
+
+        Assert.Equal(ContentReportHarness.AdminId, Assert.Single(sent).Recipient);
+    }
+
+    [Fact]
+    public async Task CreateReviewItemAsync_ValidatesActorStoryRoadmapAndDuplicate()
+    {
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            CreateReviewAsync(ReviewRequest(), ContentReportHarness.AdminId));
+
+        _h.Stories.Single(story => story.Id == PublicStory).Status = StoryStatus.Archived;
+        await Assert.ThrowsAsync<BadRequestException>(() => CreateReviewAsync(ReviewRequest()));
+        _h.Stories.Single(story => story.Id == PublicStory).Status = StoryStatus.Ready;
+
+        _h.ContentCategories.Add(new ContentCategory
+        {
+            Id = 5, Code = "friendship", DisplayName = "Tình bạn"
+        });
+        _h.AddRoadmap(1, AgeBand.Age_6_8, 5, DateTime.UtcNow, PublicStory);
+        await CreateReviewAsync(ReviewRequest(roadmapId: 1));
+        Assert.Equal(1, _h.Reports.Single().ReadingRoadmapId);
+        Assert.Equal(1, _h.Items.Single().ReadingRoadmapId);
+        await Assert.ThrowsAsync<ConflictException>(() => CreateReviewAsync(ReviewRequest()));
+    }
+
+    [Fact]
+    public async Task CreateReviewItemAsync_DoesNotChangePublishedStory()
+    {
+        await CreateReviewAsync(ReviewRequest());
+
+        var story = _h.Stories.Single(candidate => candidate.Id == PublicStory);
+        Assert.True(story.IsPublished);
+        Assert.Equal(StoryStatus.Ready, story.Status);
+        Assert.Null(story.ArchivedAt);
     }
 
     [Fact]

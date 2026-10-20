@@ -6,5 +6,8 @@ public enum SessionStatus
     Reading = 2,
     Activity = 3,
     Completed = 4,
-    Abandoned = 5
+    Abandoned = 5,
+
+    /// <summary>Phiên bị hệ thống ngắt; không được tính là trẻ tự bỏ ngang.</summary>
+    ForceExited = 6
 }

@@ -26,7 +26,10 @@ public static class NotificationGroups
 
         NotificationType.HoldModeAlert
             or NotificationType.RecommendationAwaitingReview
-            or NotificationType.AssignmentCancelled => Children,
+            or NotificationType.AssignmentCancelled
+            or NotificationType.RoadmapStoryAdded
+            or NotificationType.RoadmapStoryRemoved
+            or NotificationType.RoadmapCompleted => Children,
 
         NotificationType.ContentReported
             or NotificationType.ModerationSlaWarning

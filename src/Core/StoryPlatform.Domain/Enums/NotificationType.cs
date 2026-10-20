@@ -31,6 +31,9 @@ public enum NotificationType
     CommunityLibraryReviewed = 23,
     TotpReset = 24,
     StaffInvite = 25,
+    RoadmapStoryAdded = 26,
+    RoadmapStoryRemoved = 27,
+    RoadmapCompleted = 28,
 
     StoryShared = 100,
     AssignmentCancelled = 101

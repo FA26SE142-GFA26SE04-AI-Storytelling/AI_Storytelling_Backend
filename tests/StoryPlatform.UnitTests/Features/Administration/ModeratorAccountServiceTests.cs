@@ -12,6 +12,7 @@ using StoryPlatform.Application.Features.Administration.DTOs;
 using StoryPlatform.Application.Features.Administration.Services;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.Auth.Interfaces;
+using StoryPlatform.Application.Features.Moderation.Interfaces;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -29,6 +30,7 @@ public class ModeratorAccountServiceTests
     private readonly Mock<IEmailSender> _emailSenderMock = new();
     private readonly Mock<IAuditLogWriter> _auditLogWriterMock = new();
     private readonly Mock<INotificationService> _notificationServiceMock = new();
+    private readonly Mock<IModerationSweepService> _sweepServiceMock = new();
     private readonly ModeratorAccountService _sut;
 
     private readonly UserAccount _admin = new()
@@ -61,7 +63,8 @@ public class ModeratorAccountServiceTests
             _jwtGeneratorMock.Object,
             _emailSenderMock.Object,
             _auditLogWriterMock.Object,
-            _notificationServiceMock.Object);
+            _notificationServiceMock.Object,
+            _sweepServiceMock.Object);
     }
 
     private static UserAccount ActiveModerator(int id = 11) => new()
@@ -274,6 +277,25 @@ public class ModeratorAccountServiceTests
 
         await Assert.ThrowsAsync<ConflictException>(() =>
             _sut.DeactivateAsync(_admin.Id, moderator.Id, "Nghỉ việc"));
+
+        _sweepServiceMock.Verify(service => service.ReleaseClaimsOfModeratorAsync(
+            It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+        _sweepServiceMock.Verify(service => service.WithdrawRoadmapReviewsOfInactiveCreatorsAsync(
+            It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeactivateAsync_ReleasesClaimsAndWithdrawsPendingRoadmapReviews()
+    {
+        var moderator = ActiveModerator();
+        ReturnTarget(moderator);
+
+        await _sut.DeactivateAsync(_admin.Id, moderator.Id, "Nghỉ việc");
+
+        _sweepServiceMock.Verify(service => service.ReleaseClaimsOfModeratorAsync(
+            moderator.Id, It.IsAny<CancellationToken>()), Times.Once);
+        _sweepServiceMock.Verify(service => service.WithdrawRoadmapReviewsOfInactiveCreatorsAsync(
+            moderator.Id, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

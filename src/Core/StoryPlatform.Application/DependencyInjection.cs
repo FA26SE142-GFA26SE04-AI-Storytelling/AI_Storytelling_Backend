@@ -4,6 +4,8 @@ using StoryPlatform.Application.Features.CreatorAuthoring.Services;
 using StoryPlatform.Application.Features.Auth.Interfaces;
 using StoryPlatform.Application.Features.Moderation.Interfaces;
 using StoryPlatform.Application.Features.Moderation.Services;
+using StoryPlatform.Application.Features.RoadmapTemplates.Interfaces;
+using StoryPlatform.Application.Features.RoadmapTemplates.Services;
 using StoryPlatform.Application.Features.ContentReports.Interfaces;
 using StoryPlatform.Application.Features.ContentReports.Services;
 using StoryPlatform.Application.Features.Auth.Services;
@@ -55,6 +57,10 @@ using StoryPlatform.Application.Features.Payments.Interfaces;
 using StoryPlatform.Application.Features.Payments.Services;
 using StoryPlatform.Application.Features.TokenQuota.Interfaces;
 using StoryPlatform.Application.Features.TokenQuota.Services;
+using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
+using StoryPlatform.Application.Features.ChildRoadmaps.Services;
+using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
+using StoryPlatform.Application.Features.ReadingSessions.Services;
 
 namespace StoryPlatform.Application;
 
@@ -97,6 +103,25 @@ public static class DependencyInjection
         services.AddScoped<IReportableStoryResolver, ReportableStoryResolver>();
         services.AddScoped<IContentReportService, ContentReportService>();
         services.AddScoped<IContentReportReviewService, ContentReportReviewService>();
+        // Hệ quả của Archive: thứ tự đăng ký = thứ tự chạy.
+        services.AddScoped<IStoryArchiveHandler, PendingSubmissionArchiveHandler>();
+        services.AddScoped<IStoryArchiveHandler, CommunitySubmissionArchiveHandler>();
+        services.AddScoped<IStoryArchiveHandler, ReadingSessionArchiveHandler>();
+        services.AddScoped<IStoryArchiveHandler, ChildRoadmapArchiveHandler>();
+        services.AddScoped<IStoryArchiveConsequences, StoryArchiveConsequences>();
+        services.AddScoped<IReadingSessionInterruptService, ReadingSessionInterruptService>();
+        services.AddScoped<IChildRoadmapAdvancer, ChildRoadmapAdvancer>();
+        services.AddScoped<IChildRoadmapEligibility, ChildRoadmapEligibility>();
+        services.AddScoped<IChildRoadmapInserter, ChildRoadmapInserter>();
+        services.AddScoped<IChildRoadmapNotifier, ChildRoadmapNotifier>();
+        services.AddScoped<IChildRoadmapProgressRecorder, ChildRoadmapProgressRecorder>();
+        services.AddScoped<IChildRoadmapService, ChildRoadmapService>();
+        services.AddScoped<IMyRoadmapService, MyRoadmapService>();
+        services.AddScoped<IRoadmapLibraryService, RoadmapLibraryService>();
+        services.AddScoped<IPublishedContentReviewService, PublishedContentReviewService>();
+        services.AddScoped<IRoadmapSubmissionChecker, RoadmapSubmissionChecker>();
+        services.AddScoped<IRoadmapTemplateService, RoadmapTemplateService>();
+        services.AddScoped<IRoadmapReviewService, RoadmapReviewService>();
         services.AddScoped<IModeratorAccountService, ModeratorAccountService>();
         services.AddScoped<IDataRequestService, DataRequestService>();
         services.AddScoped<IBusinessReportService, BusinessReportService>();

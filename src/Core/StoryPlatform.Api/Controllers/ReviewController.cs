@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
@@ -222,6 +222,17 @@ public sealed class ReviewController : ControllerBase
             result is not null
                 ? "Story đã đủ điều kiện auto-publish và được chuyển sang trạng thái Approved."
                 : "Story giữ nguyên trạng thái ContentReview để review thủ công."));
+    }
+
+    /// <summary>Creator xác nhận bản nội dung hiện tại và xếp hàng media; không duyệt công khai.</summary>
+    [HttpPost("/api/v1/creator/stories/{storyId:int}/generation/confirm-content")]
+    [Authorize(Roles = "ContentCreator")]
+    public async Task<ActionResult<ApiResponse<ConfirmCreatorContentResponseDto>>> ConfirmCreatorContent(
+        int storyId, [FromBody] ConfirmCreatorContentRequestDto input, CancellationToken cancellationToken)
+    {
+        var result = await _reviewService.ConfirmCreatorContentAsync(CurrentUserId(), storyId, input, cancellationToken);
+        return Accepted(ApiResponse<ConfirmCreatorContentResponseDto>.Ok(result,
+            "Đã xác nhận nội dung và xếp hàng tạo media. Truyện chưa được duyệt công khai."));
     }
 
     [HttpPost("approve")]

@@ -1,4 +1,4 @@
-using StoryPlatform.Application.Features.MediaGeneration;
+﻿using StoryPlatform.Application.Features.MediaGeneration;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
@@ -14,6 +14,45 @@ namespace StoryPlatform.UnitTests;
 
 public sealed class MediaGenerationServiceTests
 {
+    [Theory]
+    [InlineData(VersionReviewStatus.Pending)]
+    [InlineData(VersionReviewStatus.Approved)]
+    [InlineData(VersionReviewStatus.ChangesRequested)]
+    public async Task Creator_SubmittedMediaCannotBeRegeneratedOrLoseItsUrl(VersionReviewStatus reviewStatus)
+    {
+        var store = Seed();
+        var story = store.Items<Story>().Single();
+        story.Scope = StoryScope.Creator; story.Source = StorySource.Ai; story.ChildProfileId = null;
+        store.Seed(new UserAccount { Id = 1, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
+        var service = Create(store);
+        Assert.True((await service.ProcessNextAsync()).Success);
+        var version = store.Items<StoryVersion>().Single();
+        version.ReviewStatus = reviewStatus;
+        story.IsPublished = reviewStatus == VersionReviewStatus.Approved;
+        var before = store.Items<MediaAsset>().Select(x => (x.Id, x.Url, x.Status)).ToArray();
+        var beat = store.Items<IllustrationBeat>().First();
+        await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.ConflictException>(() =>
+            service.RegenerateIllustrationBeatAsync(1, story.Id, beat.Id));
+        Assert.Equal(before, store.Items<MediaAsset>().Select(x => (x.Id, x.Url, x.Status)).ToArray());
+        Assert.Equal(StoryStatus.Ready, story.Status);
+    }
+
+    [Fact]
+    public async Task Creator_MediaReachesReadyWithoutPublishingAndRejectsAnotherAuthor()
+    {
+        var store = Seed();
+        var story = store.Items<Story>().Single();
+        story.Scope = StoryScope.Creator; story.Source = StorySource.Ai; story.ChildProfileId = null;
+        story.Status = StoryStatus.MediaProcessing;
+        store.Seed(new UserAccount { Id = 1, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
+        var service = Create(store);
+        Assert.True((await service.ProcessNextAsync()).Success);
+        Assert.Equal(StoryStatus.Ready, story.Status);
+        Assert.False(story.IsPublished);
+        await service.GetProgressAsync(1, 1);
+        await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.NotFoundException>(() => service.GetProgressAsync(99, 1));
+    }
+
     [Fact]
     public async Task ProcessNext_CreatesExactScenesAndTwoAssetsPerSceneThenMarksReady()
     {

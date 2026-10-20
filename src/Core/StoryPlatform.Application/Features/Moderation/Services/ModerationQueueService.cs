@@ -1,4 +1,4 @@
-using StoryPlatform.Application.Abstractions.Persistence;
+﻿using StoryPlatform.Application.Abstractions.Persistence;
 using System.Linq.Expressions;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Common.Exceptions;
@@ -192,6 +192,7 @@ public class ModerationQueueService : IModerationQueueService
     private static ModerationItemDetailDto MapDetail(ModerationItem item, DateTime now)
     {
         var detail = FillSummary(new ModerationItemDetailDto(), item, now);
+        detail.RowVersion = item.RowVersion;
         detail.Flags = item.Flags;
         detail.Checklist = item.Checklist;
         detail.ReviewProgress = item.ReviewProgress;

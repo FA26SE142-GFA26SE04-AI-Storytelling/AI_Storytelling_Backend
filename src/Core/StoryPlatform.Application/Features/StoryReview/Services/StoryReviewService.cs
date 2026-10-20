@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Linq;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Persistence;
@@ -53,10 +53,11 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<ReviewPackageDto> GetReviewPackageAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         var story = await _storyRepo.FirstOrDefaultAsync(s => s.Id == storyId, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("Story");
         if (StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story)) throw new ConflictException("PARENT_MANUAL_USE_AUTHORING_API");
-        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
+        GenerationStoryAccess.EnsureSupported(story);
 
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
@@ -82,8 +83,9 @@ public sealed class StoryReviewService : IStoryReviewService
             Vocabulary = new ArtifactStatusDto { State = readingMediaOnly ? "skipped" : vocabCount > 0 ? "completed" : "pending", ItemCount = vocabCount },
             Quiz = new ArtifactStatusDto { State = readingMediaOnly ? "skipped" : quizCount > 0 ? "completed" : "pending", ItemCount = quizCount },
             Discussion = new ArtifactStatusDto { State = readingMediaOnly ? "skipped" : discussionCount > 0 ? "completed" : "pending", ItemCount = discussionCount },
-            CanEdit = true,
-            CanApprove = story.Status == StoryStatus.ContentReview,
+            CanEdit = story.Scope != StoryScope.Creator || story.Status == StoryStatus.ContentReview,
+            CanApprove = story.Scope != StoryScope.Creator && story.Status == StoryStatus.ContentReview,
+            CanConfirmContent = story.Scope == StoryScope.Creator && story.Status == StoryStatus.ContentReview,
             CanArchive = story.Status == StoryStatus.ContentReview
         };
     }
@@ -94,10 +96,11 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<StoryReviewDto> GetStoryForReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story");
         if (StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story)) throw new ConflictException("PARENT_MANUAL_USE_AUTHORING_API");
-        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
+        GenerationStoryAccess.EnsureSupported(story);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
         var readability = ReadabilityCalculator.Calculate(version.Content, story.Language);
@@ -118,6 +121,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<StoryReviewDto> UpdateStoryAsync(int userId, int storyId, UpdateStoryRequestDto input, CancellationToken cancellationToken = default)
     {
+        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         if (string.IsNullOrWhiteSpace(input.Title) || string.IsNullOrWhiteSpace(input.Content) || string.IsNullOrWhiteSpace(input.Lesson))
         {
             throw new BadRequestException("Title, content and lesson are required.");
@@ -128,18 +132,42 @@ public sealed class StoryReviewService : IStoryReviewService
         var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story");
         if (StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story)) throw new ConflictException("PARENT_MANUAL_USE_AUTHORING_API");
-        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
+        GenerationStoryAccess.EnsureSupported(story);
         await EnsureReviewPermissionAsync(story, userId, cancellationToken);
 
+        decimal? creatorSafetyScore = null;
+        if (story.Scope == StoryScope.Creator)
+        {
+            await RequireEditableCreatorVersionAsync(story, userId, input.VersionId, cancellationToken);
+            var context = await LoadCreatorContextAsync(story, cancellationToken);
+            var safety = await _aiClient.EvaluateContentSafetyAsync(new EvaluateContentSafetyRequest
+            {
+                RequestId = $"creator-edit-{storyId}-{input.VersionId}-{Guid.NewGuid():N}",
+                AgeBand = context.AgeBand, Language = context.Language,
+                BlockedTopics = context.BlockedCategoryTerms ?? context.BlockedCategoryCodes,
+                RestrictedTopics = context.RestrictedCategoryTerms ?? context.RestrictedCategoryCodes,
+                Story = new StoryContentDto { Title = input.Title, Lesson = input.Lesson,
+                    StorySections = [new StorySectionDto(1, string.Empty, input.Content)] }
+            }, cancellationToken);
+            creatorSafetyScore = (decimal)(safety.SafetyScore ?? (safety.IsAllowed ? 100d : 0d));
+            if (!safety.IsAllowed || creatorSafetyScore < context.SafetyScoreThreshold)
+                throw new BadRequestException("CONTENT_SAFETY_SCORE_NOT_MET");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
             await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
-
-            var currentVersion = await _versionRepo.FirstOrDefaultAsync(
+            // GetById uses EF Find: discard its tracked pre-provider copy before reading fresh rows.
+            story = await _storyRepo.FirstOrDefaultAsync(x => x.Id == storyId, cancellationToken: cancellationToken)
+                ?? throw new NotFoundException("Story");
+            await EnsureReviewPermissionAsync(story, userId, cancellationToken);
+            var currentVersion = story.Scope == StoryScope.Creator
+                ? await RequireEditableCreatorVersionAsync(story, userId, input.VersionId, cancellationToken)
+                : await _versionRepo.FirstOrDefaultAsync(
                     v => v.Id == input.VersionId && v.StoryId == storyId && v.IsCurrent,
-                    cancellationToken: cancellationToken)
-                ?? throw new NotFoundException("StoryVersion");
+                    cancellationToken: cancellationToken) ?? throw new NotFoundException("StoryVersion");
 
             // Tạo version mới với EditType = HumanEdited, version_no = current + 1.
             var versions = await _versionRepo.FindAsync(
@@ -148,6 +176,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
             currentVersion.IsCurrent = false;
             _versionRepo.Update(currentVersion);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
             var readability = ReadabilityCalculator.Calculate(input.Content, story.Language);
 
             var newVersion = new StoryVersion
@@ -164,6 +193,7 @@ public sealed class StoryReviewService : IStoryReviewService
                 OutlineEnding = currentVersion.OutlineEnding,
                 ReadabilityFkgl = readability.Fkgl,
                 ReadabilityFre = readability.Fre,
+                SafetyScore = creatorSafetyScore,
                 IsCurrent = true,
                 OutlineApprovedAt = currentVersion.OutlineApprovedAt,
                 OutlineApprovedByUserId = currentVersion.OutlineApprovedByUserId
@@ -199,13 +229,14 @@ public sealed class StoryReviewService : IStoryReviewService
         }
         catch
         {
-            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
             throw;
         }
     }
 
     public async Task<CreateProposalResponseDto> CreateProposalAsync(int userId, int storyId, PartialEditRequestDto input, CancellationToken cancellationToken = default)
     {
+        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         var sourceStory = await _storyRepo.GetByIdAsync(storyId, cancellationToken) ?? throw new NotFoundException("Story");
         if (StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(sourceStory)) throw new ConflictException("PARENT_MANUAL_USE_AUTHORING_API");
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.Id == input.VersionId && v.StoryId == storyId, cancellationToken: cancellationToken)
@@ -238,12 +269,13 @@ public sealed class StoryReviewService : IStoryReviewService
             }
         };
 
+        var audience = await _storyRepo.GetByIdAsync(storyId, cancellationToken) ?? throw new NotFoundException("Story", storyId);
         var request = new RefineStoryContentRequest
         {
             RequestId = Guid.NewGuid().ToString("N"),
             Story = story,
-            Language = "vi",
-            AgeBand = "6-8",
+            Language = audience.Language,
+            AgeBand = audience.AgeBand,
             Reasons = new List<string> { input.Instruction }
         };
 
@@ -279,6 +311,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<VocabularyReviewDto> GetVocabularyForReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
@@ -294,8 +327,13 @@ public sealed class StoryReviewService : IStoryReviewService
         };
     }
 
-    public async Task<VocabularyReviewDto> UpdateVocabularyAsync(int userId, int storyId, UpdateVocabularyRequestDto input, CancellationToken cancellationToken = default)
+    public Task<VocabularyReviewDto> UpdateVocabularyAsync(int userId, int storyId, UpdateVocabularyRequestDto input, CancellationToken cancellationToken = default) =>
+        CreatorPublicationGuard.WriteAsync(_unitOfWork, storyId, input.VersionId,
+            () => UpdateVocabularyCoreAsync(userId, storyId, input, cancellationToken), cancellationToken);
+
+    private async Task<VocabularyReviewDto> UpdateVocabularyCoreAsync(int userId, int storyId, UpdateVocabularyRequestDto input, CancellationToken cancellationToken)
     {
+        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.Id == input.VersionId && v.StoryId == storyId, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
@@ -357,6 +395,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<CreateProposalResponseDto> CreateVocabularyProposalAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
@@ -374,12 +413,13 @@ public sealed class StoryReviewService : IStoryReviewService
         var vocabItems = await _vocabRepo.FindAsync(v => v.StoryVersionId == version.Id, cancellationToken: cancellationToken);
         var vocabDtos = vocabItems.Select(v => new GeneratedVocabularyItemDto(v.Term, v.Definition)).ToList();
 
+        var audience = await _storyRepo.GetByIdAsync(storyId, cancellationToken) ?? throw new NotFoundException("Story", storyId);
         var request = new GenerateVocabularyRequest
         {
             RequestId = Guid.NewGuid().ToString("N"),
             Story = story,
-            Language = "vi",
-            AgeBand = "6-8"
+            Language = audience.Language,
+            AgeBand = audience.AgeBand
         };
 
         var result = await _aiClient.GenerateVocabularyAsync(request, cancellationToken);
@@ -408,6 +448,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<QuizReviewDto> GetQuizForReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
@@ -430,8 +471,13 @@ public sealed class StoryReviewService : IStoryReviewService
         };
     }
 
-    public async Task<QuizReviewDto> UpdateQuizAsync(int userId, int storyId, UpdateQuizRequestDto input, CancellationToken cancellationToken = default)
+    public Task<QuizReviewDto> UpdateQuizAsync(int userId, int storyId, UpdateQuizRequestDto input, CancellationToken cancellationToken = default) =>
+        CreatorPublicationGuard.WriteAsync(_unitOfWork, storyId, input.VersionId,
+            () => UpdateQuizCoreAsync(userId, storyId, input, cancellationToken), cancellationToken);
+
+    private async Task<QuizReviewDto> UpdateQuizCoreAsync(int userId, int storyId, UpdateQuizRequestDto input, CancellationToken cancellationToken)
     {
+        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.Id == input.VersionId && v.StoryId == storyId, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
@@ -509,6 +555,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<CreateProposalResponseDto> CreateQuizProposalAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
@@ -526,13 +573,14 @@ public sealed class StoryReviewService : IStoryReviewService
         var vocabItems = await _vocabRepo.FindAsync(v => v.StoryVersionId == version.Id, cancellationToken: cancellationToken);
         var vocabDtos = vocabItems.Select(v => new GeneratedVocabularyItemDto(v.Term, v.Definition)).ToList();
 
+        var audience = await _storyRepo.GetByIdAsync(storyId, cancellationToken) ?? throw new NotFoundException("Story", storyId);
         var request = new GenerateQuizRequest
         {
             RequestId = Guid.NewGuid().ToString("N"),
             Story = story,
             Vocabulary = vocabDtos,
-            Language = "vi",
-            AgeBand = "6-8"
+            Language = audience.Language,
+            AgeBand = audience.AgeBand
         };
 
         var result = await _aiClient.GenerateQuizAsync(request, cancellationToken);
@@ -569,6 +617,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<DiscussionReviewDto> GetDiscussionForReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
@@ -589,8 +638,13 @@ public sealed class StoryReviewService : IStoryReviewService
         };
     }
 
-    public async Task<DiscussionReviewDto> UpdateDiscussionAsync(int userId, int storyId, UpdateDiscussionRequestDto input, CancellationToken cancellationToken = default)
+    public Task<DiscussionReviewDto> UpdateDiscussionAsync(int userId, int storyId, UpdateDiscussionRequestDto input, CancellationToken cancellationToken = default) =>
+        CreatorPublicationGuard.WriteAsync(_unitOfWork, storyId, input.VersionId,
+            () => UpdateDiscussionCoreAsync(userId, storyId, input, cancellationToken), cancellationToken);
+
+    private async Task<DiscussionReviewDto> UpdateDiscussionCoreAsync(int userId, int storyId, UpdateDiscussionRequestDto input, CancellationToken cancellationToken)
     {
+        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.Id == input.VersionId && v.StoryId == storyId, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
@@ -644,6 +698,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<CreateProposalResponseDto> CreateDiscussionProposalAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("StoryVersion");
@@ -658,12 +713,13 @@ public sealed class StoryReviewService : IStoryReviewService
             }
         };
 
+        var audience = await _storyRepo.GetByIdAsync(storyId, cancellationToken) ?? throw new NotFoundException("Story", storyId);
         var request = new GenerateDiscussionRequest
         {
             RequestId = Guid.NewGuid().ToString("N"),
             Story = story,
-            Language = "vi",
-            AgeBand = "6-8"
+            Language = audience.Language,
+            AgeBand = audience.AgeBand
         };
 
         var result = await _aiClient.GenerateDiscussionAsync(request, cancellationToken);
@@ -698,10 +754,11 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<bool> CompleteStoryReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
         if (StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story)) throw new ConflictException("PARENT_MANUAL_USE_AUTHORING_API");
-        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
+        GenerationStoryAccess.EnsureSupported(story);
         await EnsureReviewPermissionAsync(story, userId, cancellationToken);
         if (story.OutputMode == StoryOutputMode.ReadingMediaOnly && story.Status != StoryStatus.ContentReview)
             throw new ConflictException("STORY_NOT_READY_FOR_REVIEW");
@@ -713,11 +770,12 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<bool> CompleteVocabularyReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
         if (StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story)) throw new ConflictException("PARENT_MANUAL_USE_AUTHORING_API");
-        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
+        GenerationStoryAccess.EnsureSupported(story);
         await EnsureReviewPermissionAsync(story, userId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
                       ?? throw new NotFoundException("StoryVersion");
@@ -727,11 +785,12 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<bool> CompleteQuizReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
         if (StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story)) throw new ConflictException("PARENT_MANUAL_USE_AUTHORING_API");
-        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
+        GenerationStoryAccess.EnsureSupported(story);
         await EnsureReviewPermissionAsync(story, userId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
                       ?? throw new NotFoundException("StoryVersion");
@@ -741,11 +800,12 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<bool> CompleteDiscussionReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         await EnsureLearningModeAsync(userId, storyId, cancellationToken);
         var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
         if (StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story)) throw new ConflictException("PARENT_MANUAL_USE_AUTHORING_API");
-        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
+        GenerationStoryAccess.EnsureSupported(story);
         await EnsureReviewPermissionAsync(story, userId, cancellationToken);
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
                       ?? throw new NotFoundException("StoryVersion");
@@ -755,6 +815,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<ValidationResultDto> ValidateAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         var checks = new List<ValidationCheckDto>();
         var issues = new List<string>();
 
@@ -786,6 +847,23 @@ public sealed class StoryReviewService : IStoryReviewService
         var safetyPolicy = await _unitOfWork.Repository<SafetyPolicy>().FirstOrDefaultAsync(
             policy => policy.ChildProfileId == story.ChildProfileId,
             cancellationToken: cancellationToken);
+        if (story.Scope == StoryScope.Creator)
+        {
+            var context = await LoadCreatorContextAsync(story, cancellationToken);
+            safetyPolicy = new SafetyPolicy { SafetyScoreThreshold = context.SafetyScoreThreshold,
+                ReadabilityScoreThreshold = context.ReadabilityScoreThreshold, ParentalGateEnabled = true,
+                RequiredApprovalMode = ApprovalMode.AlwaysManual };
+            var prohibited = (context.BlockedCategoryTerms ?? context.BlockedCategoryCodes)
+                .Where(term => !string.IsNullOrWhiteSpace(term))
+                .Any(term => System.Text.RegularExpressions.Regex.IsMatch(version.Content ?? "",
+                    $@"(?<![\p{{L}}\p{{N}}]){System.Text.RegularExpressions.Regex.Escape(term)}(?![\p{{L}}\p{{N}}])",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant));
+            if (prohibited)
+            {
+                checks.Add(new ValidationCheckDto { Name = "creator_audience_policy", Passed = false, Message = "Nội dung thuộc nhóm bị chặn." });
+                issues.Add("Nội dung thuộc nhóm bị chặn cho đối tượng độc giả.");
+            }
+        }
 
         // 2. Check Readability
         var readability = ReadabilityCalculator.EvaluateForProfile(
@@ -932,7 +1010,7 @@ public sealed class StoryReviewService : IStoryReviewService
         });
         if (!reviewComplete) issues.Add("Required review is incomplete");
 
-        var canApprove = storyValid &&
+        var canApprove = !checks.Any(check => check.Name == "creator_audience_policy" && !check.Passed) && storyValid &&
                          readability.Passed &&
                          safetyPassed &&
                          profilePassed &&
@@ -941,7 +1019,8 @@ public sealed class StoryReviewService : IStoryReviewService
 
         return new ValidationResultDto
         {
-            CanApprove = canApprove,
+            CanApprove = canApprove && story.Scope != StoryScope.Creator,
+            CanConfirmContent = canApprove && story.Scope == StoryScope.Creator && story.Status == StoryStatus.ContentReview,
             Checks = checks,
             Issues = issues
         };
@@ -949,41 +1028,74 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<ApproveResponseDto> ApproveAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
+        await QueueReviewedMediaAsync(userId, storyId, false, null, cancellationToken);
+        return new ApproveResponseDto
+        {
+            Success = true, StoryId = storyId, Status = "Approved", ApprovedAt = DateTime.UtcNow
+        };
+    }
+
+    public async Task<ConfirmCreatorContentResponseDto> ConfirmCreatorContentAsync(
+        int userId, int storyId, ConfirmCreatorContentRequestDto input, CancellationToken cancellationToken = default)
+    {
+        if (input.VersionId <= 0) throw new BadRequestException("VersionId phải lớn hơn 0.");
+        var versionId = await QueueReviewedMediaAsync(userId, storyId, true, input.VersionId, cancellationToken);
+        return new ConfirmCreatorContentResponseDto
+        {
+            StoryId = storyId, VersionId = versionId, Status = "MediaProcessing", ConfirmedAt = DateTime.UtcNow
+        };
+    }
+
+    // Content confirmation queues media only; public review remains owned by Moderator.
+    private async Task<int> QueueReviewedMediaAsync(int userId, int storyId, bool creatorConfirmation,
+        int? expectedVersionId, CancellationToken cancellationToken)
+    {
+        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         var storyForAuthorization = await _storyRepo.FirstOrDefaultAsync(
             s => s.Id == storyId, cancellationToken: cancellationToken)
             ?? throw new NotFoundException("Story");
         await EnsureReviewPermissionAsync(storyForAuthorization, userId, cancellationToken);
+        if (creatorConfirmation != (storyForAuthorization.Scope == StoryScope.Creator))
+            throw new ForbiddenException("Creator phải xác nhận nội dung qua API confirm-content; duyệt công khai thuộc Moderator.");
         if (storyForAuthorization.Status != StoryStatus.ContentReview)
             throw new ConflictException("INVALID_STORY_STATUS");
 
-        var validation = await ValidateAsync(userId, storyId, cancellationToken);
-        if (!validation.CanApprove)
+        // Preserve Parent preflight behavior; Creator validation must follow the locked version check.
+        if (!creatorConfirmation)
         {
-            throw new BadRequestException($"Cannot approve: {string.Join(", ", validation.Issues)}");
+            var validation = await ValidateAsync(userId, storyId, cancellationToken);
+            if (!validation.CanApprove)
+                throw new BadRequestException($"Content is not ready for media: {string.Join(", ", validation.Issues)}");
         }
 
+        int versionId = 0;
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
             await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
-            var lockedValidation = await ValidateAsync(userId, storyId, cancellationToken);
-            if (!lockedValidation.CanApprove)
-                throw new BadRequestException($"Cannot approve: {string.Join(", ", lockedValidation.Issues)}");
             var story = await _storyRepo.FirstOrDefaultAsync(s => s.Id == storyId, cancellationToken: cancellationToken)
                 ?? throw new NotFoundException("Story");
             if (StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story)) throw new ConflictException("PARENT_MANUAL_USE_AUTHORING_API");
-            if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
+            GenerationStoryAccess.EnsureSupported(story);
             await EnsureReviewPermissionAsync(story, userId, cancellationToken);
             if (story.Status != StoryStatus.ContentReview)
                 throw new ConflictException("INVALID_STORY_STATUS");
             var approvedVersion = await _versionRepo.FirstOrDefaultAsync(
                 v => v.StoryId == storyId && v.IsCurrent && v.Content != null,
                 cancellationToken: cancellationToken)
-                ?? throw new BadRequestException("Cannot approve without a current canonical story version.");
+                ?? throw new BadRequestException("Cannot prepare media without a current canonical story version.");
 
+            if (expectedVersionId.HasValue && approvedVersion.Id != expectedVersionId.Value)
+                throw new ConflictException("STALE_STORY_VERSION");
+            if (creatorConfirmation) await RequireActiveCreatorAsync(story, userId, cancellationToken);
+            await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, storyId, expectedVersionId, cancellationToken);
+            var lockedValidation = await ValidateAsync(userId, storyId, cancellationToken);
+            if (!(creatorConfirmation ? lockedValidation.CanConfirmContent : lockedValidation.CanApprove))
+                throw new BadRequestException($"Content is not ready for media: {string.Join(", ", lockedValidation.Issues)}");
+            versionId = approvedVersion.Id;
             var jobs = _unitOfWork.Repository<StoryGenerationJob>();
             if (await jobs.ExistsAsync(j =>
-                    j.StoryId == storyId &&
+                    j.StoryId == storyId && j.StoryVersionId == approvedVersion.Id &&
                     j.Operation == GenerationJobOperation.GenerateMediaPackage,
                     cancellationToken))
                 throw new ConflictException("MEDIA_JOB_ALREADY_EXISTS");
@@ -1017,24 +1129,18 @@ public sealed class StoryReviewService : IStoryReviewService
                 StartedAt = DateTime.UtcNow
             }, cancellationToken);
 
-            story.Status = StoryStatus.Approved;
+            story.Status = creatorConfirmation ? StoryStatus.MediaProcessing : StoryStatus.Approved;
             _storyRepo.Update(story);
 
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
         }
         catch
         {
-            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
             throw;
         }
 
-        return new ApproveResponseDto
-        {
-            Success = true,
-            StoryId = storyId,
-            Status = "Approved",
-            ApprovedAt = DateTime.UtcNow
-        };
+        return versionId;
     }
 
     public async Task<ApproveResponseDto?> EvaluateAndApplyAutoPublishAsync(
@@ -1069,6 +1175,7 @@ public sealed class StoryReviewService : IStoryReviewService
 
     public async Task<ArchiveResponseDto> ArchiveAsync(int userId, int storyId, ArchiveRequestDto input, CancellationToken cancellationToken = default)
     {
+        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
@@ -1077,7 +1184,7 @@ public sealed class StoryReviewService : IStoryReviewService
                 s => s.Id == storyId, cancellationToken: cancellationToken)
                 ?? throw new NotFoundException("Story");
             if (StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story)) throw new ConflictException("PARENT_MANUAL_USE_AUTHORING_API");
-            if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
+            GenerationStoryAccess.EnsureSupported(story);
             await EnsureReviewPermissionAsync(story, userId, cancellationToken);
             story.Status = StoryStatus.Archived;
             _storyRepo.Update(story);
@@ -1102,17 +1209,62 @@ public sealed class StoryReviewService : IStoryReviewService
         var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
         if (StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story)) throw new ConflictException("PARENT_MANUAL_USE_AUTHORING_API");
-        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
+        GenerationStoryAccess.EnsureSupported(story);
         await EnsureReviewPermissionAsync(story, userId, cancellationToken);
         if (story.OutputMode != StoryOutputMode.Learning)
             throw new ConflictException("LEARNING_ARTIFACT_NOT_ENABLED");
+    }
+
+    private async Task<StoryPlatform.Application.Features.AIStoryInput.Models.AIStoryInputContextSnapshot> LoadCreatorContextAsync(Story story, CancellationToken ct)
+    {
+        var request = (await _unitOfWork.Repository<StoryGenerationRequest>().FindAsync(
+            x => x.StoryId == story.Id && x.Status == GenerationInputStatus.InputAccepted,
+            cancellationToken: ct)).OrderByDescending(x => x.Id).FirstOrDefault()
+            ?? throw new ConflictException("CREATOR_CONTEXT_MISSING");
+        var context = JsonSerializer.Deserialize<StoryPlatform.Application.Features.AIStoryInput.Models.AIStoryInputContextSnapshot>(
+            request.ContextSnapshotJson, ProposalJsonOptions) ?? throw new ConflictException("CREATOR_CONTEXT_MISSING");
+        GenerationStoryAccess.ValidateSnapshot(story, context);
+        return context;
+    }
+
+    private async Task RequireActiveCreatorAsync(Story story, int userId, CancellationToken ct)
+    {
+        GenerationStoryAccess.EnsureSupported(story);
+        if (story.AuthorUserId != userId) throw new NotFoundException("Story", story.Id);
+        // Do not reuse a tracked account loaded before the provider call.
+        var user = await _unitOfWork.Repository<UserAccount>().FirstOrDefaultAsync(x => x.Id == userId, cancellationToken: ct);
+        if (user is null || user.IsDeleted || user.Role != UserRole.ContentCreator || user.Status != AccountStatus.Active ||
+            user.LockedUntil > DateTime.UtcNow) throw new ForbiddenException();
+    }
+
+    private async Task<StoryVersion> RequireEditableCreatorVersionAsync(Story story, int userId, int versionId, CancellationToken ct)
+    {
+        await RequireActiveCreatorAsync(story, userId, ct);
+        if (story.Status != StoryStatus.ContentReview) throw new ConflictException("INVALID_STORY_STATUS");
+        var current = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == story.Id && v.IsCurrent && !v.IsDeleted,
+            cancellationToken: ct);
+        if (current is null || current.Id != versionId) throw new ConflictException("STALE_STORY_VERSION");
+        await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, story.Id, versionId, ct);
+        if (await _unitOfWork.Repository<StoryGenerationJob>().ExistsAsync(j => j.StoryId == story.Id &&
+            j.StoryVersionId == versionId && j.Operation == GenerationJobOperation.GenerateMediaPackage &&
+            (j.Status == GenerationJobStatus.Pending || j.Status == GenerationJobStatus.Processing), ct))
+            throw new ConflictException("MEDIA_JOB_ACTIVE");
+        return current;
+    }
+
+    private async Task AuthorizeCreatorOperationAsync(int userId, int storyId, CancellationToken ct)
+    {
+        var story = await _storyRepo.GetByIdAsync(storyId, ct);
+        if (story?.Scope == StoryScope.Creator)
+            await GenerationStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, ct);
     }
 
     private async Task EnsureReviewPermissionAsync(
         Story story, int userId, CancellationToken cancellationToken)
     {
         if (StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story)) throw new ConflictException("PARENT_MANUAL_USE_AUTHORING_API");
-        if (story.Scope != StoryScope.Parent) throw new NotFoundException("Story", story.Id);
+        GenerationStoryAccess.EnsureSupported(story);
+        if (await GenerationStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, cancellationToken)) return;
         if (story.AuthorUserId == userId) return;
         var relationship = await _unitOfWork.Repository<SupervisionRelationship>().FirstOrDefaultAsync(
             value => value.ChildProfileId == story.ChildProfileId &&

@@ -1,4 +1,4 @@
-namespace StoryPlatform.Application.Features.StoryReview.DTOs;
+﻿namespace StoryPlatform.Application.Features.StoryReview.DTOs;
 
 #region Review Package
 
@@ -23,6 +23,7 @@ public sealed record ReviewPackageDto
     // Permissions
     public bool CanEdit { get; init; }
     public bool CanApprove { get; init; }
+    public bool CanConfirmContent { get; init; }
     public bool CanArchive { get; init; }
 }
 
@@ -152,6 +153,7 @@ public sealed record UpdateDiscussionRequestDto
 public sealed record ValidationResultDto
 {
     public bool CanApprove { get; init; }
+    public bool CanConfirmContent { get; init; }
     public List<ValidationCheckDto> Checks { get; init; } = new();
     public List<string> Issues { get; init; } = new();
 }
@@ -166,6 +168,20 @@ public sealed record ValidationCheckDto
 #endregion
 
 #region Approval
+
+public sealed record ConfirmCreatorContentRequestDto
+{
+    [System.ComponentModel.DataAnnotations.Range(1, int.MaxValue)]
+    public int VersionId { get; init; }
+}
+
+public sealed record ConfirmCreatorContentResponseDto
+{
+    public int StoryId { get; init; }
+    public int VersionId { get; init; }
+    public string Status { get; init; } = string.Empty;
+    public DateTime ConfirmedAt { get; init; }
+}
 
 public sealed record ApproveResponseDto
 {

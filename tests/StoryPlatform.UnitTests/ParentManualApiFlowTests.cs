@@ -1,4 +1,4 @@
-using Moq;
+﻿using Moq;
 using Microsoft.Extensions.Logging.Abstractions;
 using StoryPlatform.Application.Features.CreatorAssistance;
 using StoryPlatform.Application.Features.CreatorAssistance.Services;
@@ -296,7 +296,7 @@ public sealed class ParentManualApiFlowTests
         Assert.Empty(host.Store.Items<StoryGenerationRequest>()); Assert.Empty(host.Store.Items<StoryGenerationJob>());
     }
 
-    private sealed class ApiHost(WebApplication app, HttpClient client, ParentAuthoringTestStore store,
+    internal sealed class ApiHost(WebApplication app, HttpClient client, ParentAuthoringTestStore store,
         string parent, string otherParent, string child, string otherChild) : IAsyncDisposable
     {
         public HttpClient Client { get; } = client;
@@ -305,10 +305,14 @@ public sealed class ParentManualApiFlowTests
         public string OtherParent { get; } = otherParent;
         public string Child { get; } = child;
         public string OtherChild { get; } = otherChild;
+        public string Creator { get; private set; } = string.Empty;
+        public string Moderator { get; private set; } = string.Empty;
 
-        public static async Task<ApiHost> StartAsync()
+        public static async Task<ApiHost> StartAsync(StoryPlatform.Application.Features.StoryReview.Interfaces.IStoryReviewService? reviewService = null)
         {
             var store = new ParentAuthoringTestStore();
+            store.Items<UserAccount>().Add(new() { Id = 13, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
+            store.Items<UserAccount>().Add(new() { Id = 14, Role = UserRole.Moderator, Status = AccountStatus.Active });
             store.Items<ChildProfile>().Add(new() { Id = 4, OwnerUserId = 1, Language = "vi", AgeBand = AgeBand.Age_6_8, Status = ChildProfileStatus.Active });
             store.Items<SupervisionRelationship>().Add(new() { Id = 2, ChildProfileId = 4, SupervisorUserId = 1, SupervisorRole = SupervisorRole.Owner });
             store.Items<SafetyPolicy>().Add(new() { Id = 2, ChildProfileId = 4, MaxStoryLength = 5000 });
@@ -328,7 +332,23 @@ public sealed class ParentManualApiFlowTests
             });
             builder.Services.AddControllers().AddApplicationPart(typeof(ParentAuthoringController).Assembly);
             builder.Services.AddSingleton<IUnitOfWork>(store.Uow.Object);
+            if (reviewService is not null)
+            {
+                builder.Services.AddSingleton(reviewService);
+                builder.Services.AddSingleton(new Mock<StoryPlatform.Application.Features.StoryReview.Interfaces.IProposalService>(MockBehavior.Strict).Object);
+            }
+            var audit = new Mock<StoryPlatform.Application.Features.AuditLogs.Interfaces.IAuditLogWriter>();
+            var queue = new StoryPlatform.Application.Features.Moderation.Services.ModerationQueueService(store.Uow.Object, audit.Object);
+            builder.Services.AddSingleton<StoryPlatform.Application.Features.Moderation.Interfaces.IModerationQueueService>(queue);
+            builder.Services.AddSingleton(new Mock<StoryPlatform.Application.Features.Moderation.Interfaces.IModerationReviewViewService>().Object);
+            builder.Services.AddSingleton<StoryPlatform.Application.Features.Moderation.Interfaces.ICreatorPublicationService>(
+                new StoryPlatform.Application.Features.Moderation.Services.CreatorPublicationService(store.Uow.Object, queue, audit.Object));
             builder.Services.AddSingleton(store.Service);
+            builder.Services.AddSingleton<StoryPlatform.Application.Features.CreatorAuthoring.Interfaces.ICreatorAuthoringService>(store.Creator);
+            builder.Services.AddSingleton<StoryPlatform.Application.Features.AIStoryInput.Interfaces.IAIStoryInputService>(
+                new StoryPlatform.Application.Features.AIStoryInput.Services.AIStoryInputService(store.Uow.Object,
+                    new StoryPlatform.Application.Features.AIStoryInput.Guardrails.RuleBasedInputGuardrail(),
+                    new Mock<StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService>(MockBehavior.Strict).Object));
             var ai = new Mock<ICreatorAssistanceAiClient>();
             ai.Setup(x => x.GenerateAsync(It.IsAny<AssistanceAiRequest>(), It.IsAny<CancellationToken>()))
                 .Returns<AssistanceAiRequest, CancellationToken>((r, _) => Task.FromResult(
@@ -350,7 +370,9 @@ public sealed class ParentManualApiFlowTests
             var generator = new JwtTokenGenerator(builder.Configuration);
             return new ApiHost(app, new HttpClient { BaseAddress = new Uri(address), Timeout = TimeSpan.FromSeconds(30) }, store,
                 generator.GenerateAccessToken(store.Items<UserAccount>()[0]), generator.GenerateAccessToken(store.Items<UserAccount>()[1]),
-                generator.GenerateChildAccessToken(3, "http-child-3"), generator.GenerateChildAccessToken(4, "http-child-4"));
+                generator.GenerateChildAccessToken(3, "http-child-3"), generator.GenerateChildAccessToken(4, "http-child-4"))
+                { Creator = generator.GenerateAccessToken(store.Items<UserAccount>().Single(x => x.Id == 13)),
+                    Moderator = generator.GenerateAccessToken(store.Items<UserAccount>().Single(x => x.Id == 14)) };
         }
 
         public Task<JsonElement> CreateAsync(string operationId = "create", int childId = 3) =>
@@ -364,7 +386,7 @@ public sealed class ParentManualApiFlowTests
             using var response = await Client.SendAsync(request);
             var raw = await response.Content.ReadAsStringAsync();
             Assert.True(response.StatusCode == expected, $"{method} {path}: expected {(int)expected}, got {(int)response.StatusCode}; {raw}");
-            if (expected != HttpStatusCode.OK && expected != HttpStatusCode.Created) return default;
+            if (expected != HttpStatusCode.OK && expected != HttpStatusCode.Created && expected != HttpStatusCode.Accepted) return default;
             var envelope = JsonSerializer.Deserialize<JsonElement>(raw);
             Assert.True(envelope.GetProperty("success").GetBoolean());
             return envelope.GetProperty("data").Clone();

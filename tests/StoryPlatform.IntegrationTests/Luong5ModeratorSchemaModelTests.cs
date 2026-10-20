@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using StoryPlatform.Domain.Entities;
@@ -24,7 +24,7 @@ public sealed class Luong5ModeratorSchemaModelTests
     public void Moderation_enums_match_workflow_documents()
     {
         Assert.Equal(
-            new[] { "PublicStoryReview", "GrayZoneStory", "ContentReport", "RoadmapTemplateReview", "CommunitySubmission" },
+            new[] { "PublicStoryReview", "GrayZoneStory", "ContentReport", "RoadmapTemplateReview", "CommunitySubmission", "PublicStoryRemoval" },
             Enum.GetNames<ModerationItemType>());
         Assert.Equal(
             new[] { "Pending", "Claimed", "Approved", "ChangesRequested", "Rejected", "Cleared", "Blocked",

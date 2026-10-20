@@ -1,4 +1,4 @@
-using System.Linq.Expressions;
+﻿using System.Linq.Expressions;
 using Moq;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
@@ -23,6 +23,7 @@ public sealed class PublicStoryReviewHarness
     public readonly Mock<INotificationService> Notifications = new();
 
     public readonly List<UserAccount> Users = new();
+    public readonly List<StoryGenerationJob> Jobs = new();
     public readonly List<ModerationItem> Items = new();
     public readonly List<Story> Stories = new();
     public readonly List<StoryVersion> Versions = new();
@@ -42,6 +43,7 @@ public sealed class PublicStoryReviewHarness
     {
         Back(Users);
         Back(Items);
+        Back(Jobs);
         Back(Stories);
         Back(Versions);
         Back(Scenes);
@@ -100,6 +102,7 @@ public sealed class PublicStoryReviewHarness
             Id = VersionId,
             StoryId = StoryId,
             VersionNo = 1,
+            IsCurrent = true,
             Title = "Cậu bé và chú rùa",
             Content = "Mở đầu. Giữa truyện. Kết thúc.",
             Lesson = "Kiên nhẫn sẽ thắng",
@@ -200,6 +203,7 @@ public sealed class PublicStoryReviewHarness
             Id = newVersionId,
             StoryId = source.StoryId,
             VersionNo = source.VersionNo + 1,
+            IsCurrent = true,
             Title = source.Title,
             Content = source.Content,
             Lesson = source.Lesson,
@@ -207,6 +211,7 @@ public sealed class PublicStoryReviewHarness
             OutlineDevelopment = source.OutlineDevelopment,
             OutlineEnding = source.OutlineEnding
         };
+        source.IsCurrent = false;
         Versions.Add(copy);
 
         var offset = newVersionId * 100000;
@@ -321,6 +326,12 @@ public sealed class PublicStoryReviewHarness
         var repository = new Mock<IGenericRepository<T>>();
         repository.Setup(r => r.GetByIdAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((object id, CancellationToken _) => list.FirstOrDefault(x => x.Id == (int)id));
+        repository.Setup(r => r.FirstOrDefaultAsync(It.IsAny<Expression<Func<T, bool>>>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Expression<Func<T, bool>> predicate, string? _, CancellationToken _) => list.FirstOrDefault(predicate.Compile()));
+        repository.Setup(r => r.ExistsAsync(It.IsAny<Expression<Func<T, bool>>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Expression<Func<T, bool>> predicate, CancellationToken _) => list.Any(predicate.Compile()));
+        repository.Setup(r => r.CountAsync(It.IsAny<Expression<Func<T, bool>>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Expression<Func<T, bool>>? predicate, CancellationToken _) => predicate == null ? list.Count : list.Count(predicate.Compile()));
         repository.Setup(r => r.FindAsync(
                 It.IsAny<Expression<Func<T, bool>>>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Expression<Func<T, bool>> predicate, string? _, CancellationToken _) =>

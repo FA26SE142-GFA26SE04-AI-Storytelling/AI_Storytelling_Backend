@@ -1,4 +1,5 @@
-using StoryPlatform.Application.Abstractions.Persistence;
+﻿using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Common;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
@@ -28,13 +29,16 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
         _auditLogWriter = auditLogWriter;
     }
 
-    public async Task<PublicStorySubmissionResultDto> SubmitAsync(
+    public Task<PublicStorySubmissionResultDto> SubmitAsync(int actorUserId, SubmitPublicStoryRequestDto request, CancellationToken cancellationToken = default) =>
+        WithStoryLockAsync(request.StoryId, () => SubmitLockedAsync(actorUserId, request, cancellationToken), cancellationToken);
+
+    private async Task<PublicStorySubmissionResultDto> SubmitLockedAsync(
         int actorUserId,
         SubmitPublicStoryRequestDto request,
         CancellationToken cancellationToken = default)
     {
         var actor = await RequireCreatorAsync(actorUserId, cancellationToken);
-        var story = await _unitOfWork.Repository<Story>().GetByIdAsync(request.StoryId, cancellationToken);
+        var story = await _unitOfWork.Repository<Story>().FirstOrDefaultAsync(x => x.Id == request.StoryId, cancellationToken: cancellationToken);
         if (story == null || story.Scope != StoryScope.Creator)
         {
             throw new NotFoundException("Truyện", request.StoryId);
@@ -54,13 +58,20 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
         }
 
         var version = await _unitOfWork.Repository<StoryVersion>()
-                          .GetByIdAsync(request.StoryVersionId, cancellationToken)
+                          .FirstOrDefaultAsync(x => x.Id == request.StoryVersionId, cancellationToken: cancellationToken)
                       ?? throw new NotFoundException("Phiên bản truyện", request.StoryVersionId);
         if (version.StoryId != story.Id)
         {
             throw new BadRequestException("Phiên bản không thuộc truyện này.");
         }
 
+        if (!version.IsCurrent || story.IsPublished) throw new ConflictException("CURRENT_UNPUBLISHED_VERSION_REQUIRED");
+        if (await _unitOfWork.Repository<StoryGenerationJob>().ExistsAsync(x => x.StoryId == story.Id &&
+            (x.Status == GenerationJobStatus.Pending || x.Status == GenerationJobStatus.Processing), cancellationToken))
+            throw new ConflictException("GENERATION_JOB_ACTIVE");
+        if (await _unitOfWork.Repository<ModerationItem>().ExistsAsync(x => x.ItemType == ModerationItemType.PublicStoryRemoval &&
+            x.StoryId == story.Id && (x.Status == ModerationItemStatus.Pending || x.Status == ModerationItemStatus.Claimed), cancellationToken))
+            throw new ConflictException("REMOVAL_REQUEST_PENDING");
         switch (version.ReviewStatus)
         {
             case VersionReviewStatus.Pending:
@@ -73,6 +84,7 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
                     "Phiên bản này đã bị trả về. Hãy sửa thành phiên bản mới rồi gửi lại.");
         }
 
+        await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, story.Id, version.Id, cancellationToken);
         var itemRepository = _unitOfWork.Repository<ModerationItem>();
         var openItems = await itemRepository.CountAsync(
             item => item.ItemType == ModerationItemType.PublicStoryReview
@@ -99,58 +111,55 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
 
         var now = DateTime.UtcNow;
         ModerationItem item;
-        await _unitOfWork.BeginTransactionAsync(cancellationToken);
-        try
+        item = await _queueService.EnqueueAsync(new EnqueueModerationItemCommand
         {
-            item = await _queueService.EnqueueAsync(new EnqueueModerationItemCommand
+            ItemType = ModerationItemType.PublicStoryReview,
+            StoryId = story.Id,
+            StoryVersionId = version.Id,
+            CreatedByUserId = actor.Id,
+            IsResubmission = returned != null,
+            PreviousItemId = returned?.Id
+        }, cancellationToken);
+
+        version.ReviewStatus = VersionReviewStatus.Pending;
+        version.ReviewSubmittedAt = now;
+        _unitOfWork.Repository<StoryVersion>().Update(version);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _auditLogWriter.LogAsync(
+            actor.Id,
+            "PublicStorySubmitted",
+            nameof(ModerationItem),
+            item.Id,
+            beforeState: null,
+            afterState: new
             {
-                ItemType = ModerationItemType.PublicStoryReview,
-                StoryId = story.Id,
-                StoryVersionId = version.Id,
-                CreatedByUserId = actor.Id,
-                IsResubmission = returned != null,
-                PreviousItemId = returned?.Id
-            }, cancellationToken);
-
-            version.ReviewStatus = VersionReviewStatus.Pending;
-            version.ReviewSubmittedAt = now;
-            _unitOfWork.Repository<StoryVersion>().Update(version);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-            await _auditLogWriter.LogAsync(
-                actor.Id,
-                "PublicStorySubmitted",
-                nameof(ModerationItem),
-                item.Id,
-                beforeState: null,
-                afterState: new
-                {
-                    storyId = story.Id,
-                    storyVersionId = version.Id,
-                    isResubmission = returned != null,
-                    previousItemId = returned?.Id
-                },
-                cancellationToken);
-
-            await _unitOfWork.CommitTransactionAsync(cancellationToken);
-        }
-        catch
-        {
-            await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
-            throw;
-        }
+                storyId = story.Id,
+                storyVersionId = version.Id,
+                isResubmission = returned != null,
+                previousItemId = returned?.Id
+            },
+            cancellationToken);
 
         return ToResult(item);
     }
 
-    public async Task<PublicStorySubmissionResultDto> WithdrawAsync(
+    public async Task<PublicStorySubmissionResultDto> WithdrawAsync(int actorUserId, int itemId, CancellationToken cancellationToken = default)
+    {
+        var item = await _unitOfWork.Repository<ModerationItem>().FirstOrDefaultAsync(x => x.Id == itemId, cancellationToken: cancellationToken)
+            ?? throw new NotFoundException("ModerationItem", itemId);
+        if (!item.StoryId.HasValue) throw new BadRequestException("STORY_REQUIRED");
+        return await WithStoryLockAsync(item.StoryId.Value, () => WithdrawLockedAsync(actorUserId, itemId, cancellationToken), cancellationToken);
+    }
+
+    private async Task<PublicStorySubmissionResultDto> WithdrawLockedAsync(
         int actorUserId,
         int itemId,
         CancellationToken cancellationToken = default)
     {
         var actor = await RequireCreatorAsync(actorUserId, cancellationToken);
         var itemRepository = _unitOfWork.Repository<ModerationItem>();
-        var item = await itemRepository.GetByIdAsync(itemId, cancellationToken)
+        var item = await itemRepository.FirstOrDefaultAsync(x => x.Id == itemId, cancellationToken: cancellationToken)
                    ?? throw new NotFoundException("Mục kiểm duyệt", itemId);
 
         if (item.ItemType != ModerationItemType.PublicStoryReview)
@@ -200,6 +209,19 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
         return ToResult(item);
     }
 
+    private async Task<T> WithStoryLockAsync<T>(int storyId, Func<Task<T>> action, CancellationToken ct)
+    {
+        await _unitOfWork.BeginTransactionAsync(ct);
+        try
+        {
+            await _unitOfWork.AcquireTransactionLockAsync(storyId, ct);
+            var result = await action();
+            await _unitOfWork.CommitTransactionAsync(ct);
+            return result;
+        }
+        catch { await _unitOfWork.RollbackTransactionAsync(CancellationToken.None); throw; }
+    }
+
     private async Task<UserAccount> RequireCreatorAsync(
         int actorUserId, CancellationToken cancellationToken)
     {
@@ -207,7 +229,8 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
         if (actor == null
             || actor.IsDeleted
             || actor.Status != AccountStatus.Active
-            || actor.Role != UserRole.ContentCreator)
+            || actor.Role != UserRole.ContentCreator
+            || actor.LockedUntil > DateTime.UtcNow)
         {
             throw new ForbiddenException(
                 "Chỉ Content Creator đang hoạt động mới gửi duyệt truyện Public Library.");

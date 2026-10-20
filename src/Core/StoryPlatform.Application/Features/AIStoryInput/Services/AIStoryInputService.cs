@@ -28,12 +28,15 @@ public sealed class AIStoryInputService : IAIStoryInputService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IInputGuardrail _inputGuardrail;
     private readonly ITokenQuotaService _tokenQuotaService;
+    private readonly StoryPlatform.Application.Features.CreatorAuthoring.CreatorAuthoringOptions _creatorOptions;
 
-    public AIStoryInputService(IUnitOfWork unitOfWork, IInputGuardrail inputGuardrail, ITokenQuotaService tokenQuotaService)
+    public AIStoryInputService(IUnitOfWork unitOfWork, IInputGuardrail inputGuardrail, ITokenQuotaService tokenQuotaService,
+        StoryPlatform.Application.Features.CreatorAuthoring.CreatorAuthoringOptions? creatorOptions = null)
     {
         _unitOfWork = unitOfWork;
         _inputGuardrail = inputGuardrail;
         _tokenQuotaService = tokenQuotaService;
+        _creatorOptions = creatorOptions ?? new();
     }
 
     public async Task<AIStoryInputContextDto> GetContextAsync(
@@ -45,16 +48,44 @@ public sealed class AIStoryInputService : IAIStoryInputService
         return ToContextDto(context);
     }
 
+    public async Task<CreatorAIStoryInputContextDto> GetCreatorContextAsync(int userId, string ageBand,
+        int readingLevel = 2, string language = "vi", CancellationToken cancellationToken = default)
+    {
+        var context = await ResolveCreatorContextAsync(userId, new(ageBand, readingLevel), null, language, cancellationToken);
+        return new(context.AgeBand, context.ReadingLevel, context.Language, ["vi", "en"], VocabularyLevels,
+            context.MaximumLength, "always_manual", context.Snapshot.SafetyScoreThreshold!.Value,
+            context.Snapshot.BlockedCategoryCodes, ["reading_media_only", "learning"]);
+    }
+
+    public Task<AIStoryInputProgressDto> SubmitCreatorAsync(int userId, SubmitCreatorAIStoryInputRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateDataAnnotations(request);
+        return SubmitAsync(userId, new SubmitAIStoryInputRequestDto
+        {
+            CreatorAudience = new(request.AgeBand, request.ReadingLevel),
+            ExistingStoryId = request.ExistingStoryId, IdempotencyKey = request.IdempotencyKey,
+            OutputMode = request.OutputMode, Topic = request.Topic, Genre = request.Genre,
+            CharacterMode = request.CharacterMode, Characters = request.Characters,
+            SettingMode = request.SettingMode, Setting = request.Setting, Lesson = request.Lesson,
+            VocabularyLevel = request.VocabularyLevel, Language = request.Language, TargetLength = request.TargetLength
+        }, cancellationToken);
+    }
+
     public async Task<AIStoryInputProgressDto> SubmitAsync(
         int userId,
         SubmitAIStoryInputRequestDto request,
         CancellationToken cancellationToken = default)
     {
-        ValidateDataAnnotations(request);
+        if (request.CreatorAudience is null) ValidateDataAnnotations(request);
         var outputMode = StoryOutputModeContract.Parse(request.OutputMode);
         var normalized = Normalize(request);
         ValidateCreativeInput(normalized);
-        var context = await ResolveContextAsync(
+        var creator = request.CreatorAudience is not null;
+        if (!creator && request.ChildProfileId <= 0) throw new BadRequestException("CHILD_REQUIRED");
+        var context = creator
+            ? await ResolveCreatorContextAsync(userId, request.CreatorAudience!, normalized.VocabularyLevel, normalized.Language, cancellationToken)
+            : await ResolveContextAsync(
             userId,
             request.ChildProfileId,
             normalized.VocabularyLevel,
@@ -63,7 +94,9 @@ public sealed class AIStoryInputService : IAIStoryInputService
         normalized = normalized with { VocabularyLevel = context.VocabularyLevel, Language = context.Language };
         ValidateAgainstContext(normalized, context);
 
-        var inputFingerprint = InputFingerprint(normalized, outputMode);
+        var inputFingerprint = creator
+            ? Fingerprint(new { input = normalized, outputMode, context = context.Fingerprint })
+            : InputFingerprint(normalized, outputMode);
         var requestRepository = _unitOfWork.Repository<StoryGenerationRequest>();
         var existing = await requestRepository.FirstOrDefaultAsync(
             item => item.SubmittedByUserId == userId && item.IdempotencyKey == request.IdempotencyKey.Trim(),
@@ -72,6 +105,8 @@ public sealed class AIStoryInputService : IAIStoryInputService
 
         if (existing is not null)
         {
+            if (existing.Story is null || existing.Story.Scope != (creator ? StoryScope.Creator : StoryScope.Parent))
+                throw new ConflictException("Idempotency key thuộc luồng tạo truyện khác.");
             if (!CryptographicOperations.FixedTimeEquals(
                     Encoding.ASCII.GetBytes(existing.InputFingerprint),
                     Encoding.ASCII.GetBytes(inputFingerprint)))
@@ -82,12 +117,14 @@ public sealed class AIStoryInputService : IAIStoryInputService
             return await RecoverIfStaleAsync(existing, cancellationToken);
         }
 
-        await _tokenQuotaService.EnsureWithinQuotaAsync(request.ChildProfileId, cancellationToken);
+        if (!creator) await _tokenQuotaService.EnsureWithinQuotaAsync(request.ChildProfileId, cancellationToken);
 
         Story story;
         if (request.ExistingStoryId.HasValue)
         {
-            story = await LoadReusableDraftAsync(userId, request.ChildProfileId, request.ExistingStoryId.Value, cancellationToken);
+            story = creator
+                ? await LoadCreatorDraftAsync(userId, request.ExistingStoryId.Value, cancellationToken)
+                : await LoadReusableDraftAsync(userId, request.ChildProfileId, request.ExistingStoryId.Value, cancellationToken);
             var hasActiveRequest = await requestRepository.ExistsAsync(
                 item => item.StoryId == story.Id &&
                         (item.Status == GenerationInputStatus.PendingInput ||
@@ -102,6 +139,11 @@ public sealed class AIStoryInputService : IAIStoryInputService
                     item => item.StoryId == story.Id, cancellationToken))
                 throw new ConflictException("OUTPUT_MODE_LOCKED: Story draft đã có generation job.");
             story.OutputMode = outputMode;
+            if (creator)
+            {
+                story.AgeBand = context.AgeBand; story.ReadingLevel = context.ReadingLevel;
+                story.Language = context.Language; story.VocabularyLevel = context.VocabularyLevel;
+            }
         }
         else
         {
@@ -109,7 +151,8 @@ public sealed class AIStoryInputService : IAIStoryInputService
             {
                 Title = null,
                 AuthorUserId = userId,
-                ChildProfileId = request.ChildProfileId,
+                ChildProfileId = creator ? null : request.ChildProfileId,
+                Scope = creator ? StoryScope.Creator : StoryScope.Parent,
                 Source = StorySource.Ai,
                 OutputMode = outputMode,
                 Status = StoryStatus.Draft,
@@ -149,8 +192,9 @@ public sealed class AIStoryInputService : IAIStoryInputService
                 _unitOfWork.Repository<Story>().Update(story);
             }
 
+            generationRequest.StoryId = story.Id;
             await requestRepository.AddAsync(generationRequest, cancellationToken);
-            await _tokenQuotaService.IncrementUsageAsync(request.ChildProfileId, cancellationToken);
+            if (!creator) await _tokenQuotaService.IncrementUsageAsync(request.ChildProfileId, cancellationToken);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
         }
         catch
@@ -193,7 +237,8 @@ public sealed class AIStoryInputService : IAIStoryInputService
         CancellationToken cancellationToken = default)
     {
         var request = await LoadRequestAsync(storyId, requestId, cancellationToken);
-        await EnsureGeneratePermissionAsync(userId, StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(request.Story!), cancellationToken);
+        if (!await GenerationStoryAccess.AuthorizeCreatorAsync(_unitOfWork, request.Story!, userId, cancellationToken))
+            await EnsureGeneratePermissionAsync(userId, ParentStoryContext.RequireChildId(request.Story!), cancellationToken);
         return await RecoverIfStaleAsync(request, cancellationToken);
     }
 
@@ -207,14 +252,11 @@ public sealed class AIStoryInputService : IAIStoryInputService
         ValidateDataAnnotations(retry);
         var request = await LoadRequestAsync(storyId, requestId, cancellationToken);
         var story = request.Story!;
+        if (story.Scope == StoryScope.Creator)
+            await GenerationStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, cancellationToken);
         var normalized = Normalize(retry);
         ValidateCreativeInput(normalized);
-        var context = await ResolveContextAsync(
-            userId,
-            StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story),
-            normalized.VocabularyLevel,
-            normalized.Language,
-            cancellationToken);
+        var context = await ResolveStoryContextAsync(userId, story, normalized.VocabularyLevel, normalized.Language, cancellationToken);
         normalized = normalized with { VocabularyLevel = context.VocabularyLevel, Language = context.Language };
         ValidateAgainstContext(normalized, context);
 
@@ -233,7 +275,9 @@ public sealed class AIStoryInputService : IAIStoryInputService
             throw new ConflictException("Yêu cầu đã sử dụng hết số lần kiểm tra input.");
         }
 
-        var fingerprint = InputFingerprint(normalized, story.OutputMode);
+        var fingerprint = story.Scope == StoryScope.Creator
+            ? Fingerprint(new { input = normalized, outputMode = story.OutputMode, context = context.Fingerprint })
+            : InputFingerprint(normalized, story.OutputMode);
         if (!string.Equals(fingerprint, request.InputFingerprint, StringComparison.Ordinal))
         {
             throw new ConflictException("INPUT_CHANGED: hãy tạo request mới trên cùng Story draft.");
@@ -322,12 +366,8 @@ public sealed class AIStoryInputService : IAIStoryInputService
             EffectiveContext currentContext;
             try
             {
-                currentContext = await ResolveContextAsync(
-                    generationRequest.SubmittedByUserId,
-                    StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story),
-                    input.VocabularyLevel,
-                    input.Language,
-                    cancellationToken);
+                currentContext = await ResolveStoryContextAsync(generationRequest.SubmittedByUserId,
+                    story, input.VocabularyLevel, input.Language, cancellationToken);
             }
             catch (AppException)
             {
@@ -338,7 +378,7 @@ public sealed class AIStoryInputService : IAIStoryInputService
             var validStory = await _unitOfWork.Repository<Story>().ExistsAsync(
                 item => item.Id == story.Id &&
                         item.AuthorUserId == generationRequest.SubmittedByUserId &&
-                        item.ChildProfileId == StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story) &&
+                        item.Scope == story.Scope && item.ChildProfileId == story.ChildProfileId &&
                         item.Source == StorySource.Ai &&
                         item.Status == StoryStatus.Draft,
                 cancellationToken);
@@ -515,6 +555,50 @@ public sealed class AIStoryInputService : IAIStoryInputService
         }
 
         return story;
+    }
+
+    private async Task<Story> LoadCreatorDraftAsync(int userId, int storyId, CancellationToken ct)
+    {
+        var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, ct)
+            ?? throw new NotFoundException("Story", storyId);
+        if (!await GenerationStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, ct))
+            throw new NotFoundException("Story", storyId);
+        if (story.Status != StoryStatus.Draft) throw new ConflictException("AI_STORY_DRAFT_REQUIRED");
+        return story;
+    }
+
+    private Task<EffectiveContext> ResolveStoryContextAsync(int userId, Story story, string vocabulary,
+        string language, CancellationToken ct) => story.Scope == StoryScope.Creator
+        ? ResolveCreatorContextAsync(userId, new(story.AgeBand, story.ReadingLevel ?? 2), vocabulary, language, ct)
+        : ResolveContextAsync(userId, ParentStoryContext.RequireChildId(story), vocabulary, language, ct);
+
+    private async Task<EffectiveContext> ResolveCreatorContextAsync(int userId, CreatorGenerationAudience audience,
+        string? vocabulary, string? language, CancellationToken ct)
+    {
+        var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, ct);
+        if (user is null || user.IsDeleted || user.Role != UserRole.ContentCreator || user.Status != AccountStatus.Active ||
+            user.LockedUntil > DateTime.UtcNow)
+            throw new ForbiddenException();
+        if (audience.AgeBand is not ("6-8" or "9-10") || audience.ReadingLevel is < 1 or > 5)
+            throw new BadRequestException("CREATOR_AUDIENCE_INVALID");
+        if (_creatorOptions.GenerationMaximumLength is <= 0 or > 10000 ||
+            _creatorOptions.GenerationSafetyScoreThreshold is < 0m or > 100m)
+            throw new ConflictException("CREATOR_GENERATION_POLICY_INVALID");
+        var selectedLanguage = string.IsNullOrWhiteSpace(language) ? "vi" : NormalizeToken(language);
+        var selectedVocabulary = string.IsNullOrWhiteSpace(vocabulary) ? $"level_{audience.ReadingLevel}" : NormalizeToken(vocabulary);
+        if (selectedLanguage is not ("vi" or "en") || !VocabularyLevels.Contains(selectedVocabulary))
+            throw new BadRequestException("CREATOR_AUDIENCE_INVALID");
+        var categories = await _unitOfWork.Repository<ContentCategory>().FindAsync(x => x.IsActive && !x.IsDeleted, cancellationToken: ct);
+        var band = audience.AgeBand == "6-8" ? "Age_6_8" : "Age_9_10";
+        var blocked = categories.Where(x => x.DefaultBlockedAgeBands.Contains(band)).OrderBy(x => x.Code, StringComparer.Ordinal).ToArray();
+        var terms = blocked.SelectMany(x => new[] { x.Code, x.DisplayName }).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().Order().ToArray();
+        // Platform audience policy, not a fabricated child consent or child quota.
+        var snapshot = new AIStoryInputContextSnapshot(null, audience.AgeBand, audience.ReadingLevel,
+            selectedVocabulary, selectedLanguage, _creatorOptions.GenerationMaximumLength, "always_manual", [], [], [],
+            blocked.Select(x => x.Code).ToArray(), [], [], terms, SafetyScoreThreshold: _creatorOptions.GenerationSafetyScoreThreshold,
+            AudienceScope: "Creator", CreatorUserId: userId);
+        return new("", snapshot.AgeBand, snapshot.ReadingLevel, selectedVocabulary, selectedLanguage,
+            snapshot.MaximumLength, ApprovalMode.AlwaysManual, snapshot, Fingerprint(snapshot), terms, []);
     }
 
     private async Task<EffectiveContext> ResolveContextAsync(
@@ -786,7 +870,7 @@ public sealed class AIStoryInputService : IAIStoryInputService
 
     private static AIStoryInputContextDto ToContextDto(EffectiveContext context) => new()
     {
-        ChildProfileId = context.Snapshot.ChildProfileId,
+        ChildProfileId = context.Snapshot.ChildProfileId ?? throw new InvalidOperationException("CHILD_REQUIRED"),
         ChildNickname = context.ChildNickname,
         AgeBand = context.AgeBand,
         ReadingLevel = context.ReadingLevel,

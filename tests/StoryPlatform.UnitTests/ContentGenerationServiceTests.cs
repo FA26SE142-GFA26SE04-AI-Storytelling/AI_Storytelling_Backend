@@ -20,6 +20,29 @@ namespace StoryPlatform.UnitTests;
 
 public sealed class ContentGenerationServiceTests
 {
+    [Theory]
+    [InlineData(StoryOutputMode.ReadingMediaOnly, 1)]
+    [InlineData(StoryOutputMode.Learning, 4)]
+    public async Task Creator_GenerationReachesContentReviewForBothOutputModes(StoryOutputMode mode, int jobs)
+    {
+        var store = Seed();
+        store.Seed(new UserAccount { Id = 1, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
+        var story = store.Items<Story>().Single();
+        story.OutputMode = mode;
+        CreatorGenerationTestContext.Configure(story, store.Items<StoryGenerationRequest>().Single());
+        var handoff = new StoryPlatform.Application.Features.ExistingStories.Services.StableVersionArtifactHandoffService(store,
+            new Moq.Mock<StoryPlatform.Application.Features.ChildProfiles.Learning.Interfaces.ILearningProfileService>(Moq.MockBehavior.Strict).Object,
+            new Moq.Mock<StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces.ISafetyPolicyService>(Moq.MockBehavior.Strict).Object);
+        var service = new ContentGenerationService(store, new FakeAIClient(), new PassingQualityEvaluator(),
+            new FakeFailureFinalizer(store), handoff, new ContentGenerationOptions());
+        for (var i = 0; i < jobs; i++) Assert.True(await service.ProcessNextAsync());
+        Assert.Equal(StoryStatus.ContentReview, story.Status);
+        Assert.False(story.IsPublished);
+        Assert.Null(story.ChildProfileId);
+        await service.GetProgressAsync(1, 1);
+        await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.NotFoundException>(() => service.GetProgressAsync(99, 1));
+    }
+
     [Fact]
     public async Task ReadingMediaOnly_ProgressMarksLearningArtifactsSkippedAfterStableContent()
     {

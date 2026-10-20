@@ -1,4 +1,5 @@
-using System.Linq.Expressions;
+﻿using System.Linq.Expressions;
+using Moq;
 using System.Text.Json;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Persistence;
@@ -23,6 +24,105 @@ namespace StoryPlatform.UnitTests;
 
 public sealed class StoryReviewServiceTests
 {
+    [Theory]
+    [InlineData(99, true)]
+    [InlineData(20, false)]
+    public async Task Creator_EditsRecheckSafetyAndPreserveVersionHistory(int score, bool accepted)
+    {
+        var store = SeedContentReviewWithAllArtifacts();
+        store.Items<UserAccount>().Single().Role = UserRole.ContentCreator;
+        var story = store.Items<Story>().Single();
+        var request = new StoryGenerationRequest { Id = 1, StoryId = 1, Status = GenerationInputStatus.InputAccepted,
+            ContextSnapshotJson = JsonSerializer.Serialize(new StoryPlatform.Application.Features.AIStoryInput.Models.AIStoryInputContextSnapshot(
+                1, "6-8", 2, "level_2", "vi", 1000, "always_manual", [], [], [], [], SafetyScoreThreshold: 90m),
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)) };
+        CreatorGenerationTestContext.Configure(story, request);
+        store.Seed(request);
+        var ai = new Moq.Mock<IAIStoryGenerationClient>(Moq.MockBehavior.Strict);
+        ai.Setup(x => x.EvaluateContentSafetyAsync(Moq.It.IsAny<EvaluateContentSafetyRequest>(), Moq.It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EvaluateContentSafetyResponse { IsAllowed = true, SafetyScore = score });
+        var service = Service(store, ai.Object);
+        var before = store.Items<StoryVersion>().Single();
+        var update = new UpdateStoryRequestDto { VersionId = before.Id, Title = before.Title,
+            Content = "Lan gặp Minh trong rừng. Hai bạn cùng đọc sách.", Lesson = before.Lesson! };
+        if (!accepted)
+        {
+            await Assert.ThrowsAsync<BadRequestException>(() => service.UpdateStoryAsync(1, 1, update));
+            Assert.Single(store.Items<StoryVersion>());
+            Assert.True(before.IsCurrent);
+        }
+        else
+        {
+            await service.UpdateStoryAsync(1, 1, update);
+            Assert.Equal(2, store.Items<StoryVersion>().Count);
+            Assert.False(before.IsCurrent);
+            Assert.Equal((decimal)score, store.Items<StoryVersion>().Single(x => x.IsCurrent).SafetyScore);
+            story.Status = StoryStatus.Ready;
+            await Assert.ThrowsAsync<ConflictException>(() => service.UpdateStoryAsync(1, 1, update));
+        }
+    }
+
+    [Fact]
+    public async Task Creator_ConfirmsVersionIntoMediaQueueButCannotApproveOrPublish()
+    {
+        var store = SeedContentReviewWithAllArtifacts();
+        store.Items<UserAccount>().Single().Role = UserRole.ContentCreator;
+        var story = store.Items<Story>().Single();
+        story.Scope = StoryScope.Creator; story.ChildProfileId = null;
+        var context = new StoryPlatform.Application.Features.AIStoryInput.Models.AIStoryInputContextSnapshot(
+            null, "6-8", 2, "level_2", "vi", 1000, "always_manual", [], [], [], [],
+            SafetyScoreThreshold: 90m, AudienceScope: "Creator", CreatorUserId: 1);
+        store.Seed(new StoryGenerationRequest { Id = 1, StoryId = 1, SubmittedByUserId = 1,
+            Status = GenerationInputStatus.InputAccepted, ContextSnapshotJson = JsonSerializer.Serialize(context,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)) });
+        store.Items<StoryVersion>().Single().SafetyScore = 99m;
+        var service = Service(store);
+        await Assert.ThrowsAsync<NotFoundException>(() => service.GetReviewPackageAsync(99, 1));
+        await Assert.ThrowsAsync<NotFoundException>(() => service.GetVocabularyForReviewAsync(99, 1));
+        Assert.Null(await service.EvaluateAndApplyAutoPublishAsync(1));
+        await Assert.ThrowsAsync<ForbiddenException>(() => service.ApproveAsync(1, 1));
+        await Assert.ThrowsAsync<NotFoundException>(() => service.ConfirmCreatorContentAsync(99, 1,
+            new ConfirmCreatorContentRequestDto { VersionId = store.Items<StoryVersion>().Single().Id }));
+        await Assert.ThrowsAsync<ConflictException>(() => service.ConfirmCreatorContentAsync(1, 1,
+            new ConfirmCreatorContentRequestDto { VersionId = 999 }));
+        Assert.Empty(store.Items<StoryGenerationJob>());
+        var version = store.Items<StoryVersion>().Single();
+        var reviewStatus = version.ReviewStatus;
+        var validation = await service.ValidateAsync(1, 1);
+        Assert.False(validation.CanApprove);
+        Assert.True(validation.CanConfirmContent);
+        var package = await service.GetReviewPackageAsync(1, 1);
+        Assert.False(package.CanApprove);
+        Assert.True(package.CanConfirmContent);
+        // A previous release's completed media job must not block this version's new media package.
+        store.Seed(new StoryGenerationJob { Id = 99, StoryId = 1, StoryVersionId = 999,
+            Operation = GenerationJobOperation.GenerateMediaPackage, Status = GenerationJobStatus.Completed });
+        var result = await service.ConfirmCreatorContentAsync(1, 1,
+            new ConfirmCreatorContentRequestDto { VersionId = version.Id });
+        Assert.Equal(version.Id, result.VersionId);
+        Assert.Equal("MediaProcessing", result.Status);
+        Assert.Equal(StoryStatus.MediaProcessing, story.Status);
+        Assert.Equal(reviewStatus, version.ReviewStatus);
+        Assert.False(story.IsPublished);
+        await Assert.ThrowsAsync<ConflictException>(() => service.ConfirmCreatorContentAsync(1, 1,
+            new ConfirmCreatorContentRequestDto { VersionId = version.Id }));
+        var job = Assert.Single(store.Items<StoryGenerationJob>().Where(x => x.StoryVersionId == version.Id));
+        Assert.Equal(GenerationJobOperation.GenerateMediaPackage, job.Operation);
+        Assert.Equal(version.Id, job.StoryVersionId);
+        Assert.Equal(version.Id, job.BaseStoryVersionId);
+        Assert.False((await service.ValidateAsync(1, 1)).CanConfirmContent);
+    }
+
+    [Fact]
+    public async Task Parent_CannotUseCreatorContentConfirmation()
+    {
+        var store = SeedContentReviewWithAllArtifacts();
+        await Assert.ThrowsAsync<ForbiddenException>(() => Service(store).ConfirmCreatorContentAsync(1, 1,
+            new ConfirmCreatorContentRequestDto { VersionId = store.Items<StoryVersion>().Single().Id }));
+        Assert.Empty(store.Items<StoryGenerationJob>());
+        Assert.Equal(StoryStatus.ContentReview, store.Items<Story>().Single().Status);
+    }
+
     #region Get Review Package Tests
 
     [Fact]

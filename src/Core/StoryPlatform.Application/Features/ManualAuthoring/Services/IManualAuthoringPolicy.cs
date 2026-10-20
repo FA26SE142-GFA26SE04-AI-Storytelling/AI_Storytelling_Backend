@@ -1,4 +1,4 @@
-using System.Linq.Expressions;
+﻿using System.Linq.Expressions;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -17,8 +17,13 @@ public interface IManualAuthoringPolicy
     Task ValidateAssistanceContextAsync(Story story, string? context, CancellationToken ct) => Task.CompletedTask;
 }
 
-public sealed class CreatorManualAuthoringPolicy : IManualAuthoringPolicy
+public sealed class CreatorManualAuthoringPolicy(StoryPlatform.Application.Abstractions.Persistence.IUnitOfWork uow) : IManualAuthoringPolicy
 {
+    public Task EnsureWritableAsync(Story story, CancellationToken ct)
+    {
+        if (story.Source == StorySource.Ai) throw new ConflictException("AI_STORY_USE_GENERATION_REVIEW_API");
+        return StoryPlatform.Application.Common.CreatorPublicationGuard.EnsureWritableAsync(uow, story.Id, null, ct);
+    }
     public StoryScope Scope => StoryScope.Creator;
     public Expression<Func<Story, bool>> VisibleStories(int userId) =>
         story => story.Scope == StoryScope.Creator && story.AuthorUserId == userId && !story.IsDeleted;

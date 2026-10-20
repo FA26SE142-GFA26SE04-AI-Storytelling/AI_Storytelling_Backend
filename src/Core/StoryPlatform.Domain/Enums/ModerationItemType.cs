@@ -1,4 +1,4 @@
-namespace StoryPlatform.Domain.Enums;
+﻿namespace StoryPlatform.Domain.Enums;
 
 public enum ModerationItemType
 {
@@ -6,5 +6,6 @@ public enum ModerationItemType
     GrayZoneStory = 2,
     ContentReport = 3,
     RoadmapTemplateReview = 4,
-    CommunitySubmission = 5
+    CommunitySubmission = 5,
+    PublicStoryRemoval = 6
 }

@@ -1,4 +1,4 @@
-using System.Linq.Expressions;
+﻿using System.Linq.Expressions;
 using Moq;
 using Microsoft.AspNetCore.DataProtection;
 using StoryPlatform.Application.Features.CreatorAuthoring.Interfaces;
@@ -28,7 +28,7 @@ namespace StoryPlatform.UnitTests;
             Register<ChildProfile>(); Register<SupervisionRelationship>(); Register<SupervisionPermission>();
             Register<ChildSession>(); Register<StoryAssistanceTask>(); Register<StoryAssistanceStep>();
             Register<SafetyPolicy>(); Register<SafetyPolicyCategory>(); Register<ContentCategory>();
-            Register<LearningProfile>(); Register<ParentStoryOperation>(); Register<StoryGenerationJob>(); Register<StoryGenerationRequest>();
+            Register<LearningProfile>(); Register<StoryVocabulary>(); Register<QuizItem>(); Register<DiscussionQuestion>(); Register<ModerationItem>(); Register<ParentStoryOperation>(); Register<StoryGenerationJob>(); Register<StoryGenerationRequest>();
             Uow.Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>())).Returns<CancellationToken>(async ct => {
                 await _transaction.WaitAsync(ct);
                 _snapshot = _data.ToDictionary(x => x.Key, x => System.Text.Json.JsonSerializer.Deserialize(

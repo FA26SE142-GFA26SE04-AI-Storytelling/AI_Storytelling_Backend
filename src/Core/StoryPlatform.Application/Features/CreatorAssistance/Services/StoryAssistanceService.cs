@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -17,7 +17,7 @@ public partial class StoryAssistanceService(IUnitOfWork uow, ICreatorAssistanceA
     CreatorAssistanceOptions options, TimeProvider clock, AssistanceCancellationRegistry? cancellations = null,
     ILogger? logger = null, IAssistanceAccessPolicy? accessPolicy = null)
 {
-    private readonly IAssistanceAccessPolicy _access = accessPolicy ?? new CreatorAssistanceAccessPolicy();
+    private readonly IAssistanceAccessPolicy _access = accessPolicy ?? new CreatorAssistanceAccessPolicy(uow);
     private readonly AssistanceCancellationRegistry _cancellations = cancellations ?? new();
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private DateTime Now => clock.GetUtcNow().UtcDateTime;

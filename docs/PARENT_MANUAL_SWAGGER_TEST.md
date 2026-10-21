@@ -10,7 +10,7 @@ Mỗi lần chạy mới thay prefix `parent-box-001`. Mỗi request mới dùng
 
 `GET /api/v1/authoring-guides?locale=vi&purpose=family_memory&group=opening&pageIndex=1&pageSize=10`
 
-Mong đợi danh sách cố định, không phát sinh Story/version/AI. Có thể bỏ qua bước này.
+Mong đợi danh sách của phiên bản đang phát hành (mặc định `parent-vi-1`; sau khi Moderator phát hành sẽ là `catalogVersion` mới), không phát sinh Story/version/AI. Có thể bỏ qua bước này. Kịch bản quản lý bộ hướng dẫn nằm ở `AUTHORING_GUIDE_MANAGEMENT_SWAGGER_TEST.md`.
 
 ## 2. Tạo nháp
 

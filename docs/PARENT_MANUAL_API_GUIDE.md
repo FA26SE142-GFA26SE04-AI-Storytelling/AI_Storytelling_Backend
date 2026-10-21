@@ -27,7 +27,7 @@ Theo AGENTS.md, chỉ cập nhật source model/configuration; không tạo, s�
 
 `GET /api/v1/authoring-guides?locale=vi&purpose=family_memory&group=starting_point&pageIndex=1&pageSize=10`
 
-Yêu cầu token Parent. Không nhận child/profile/content và không gọi AI. Cùng catalog/filter/page trả cùng danh sách; catalog `parent-vi-1` gồm 12 câu hỏi và 18 mẫu diễn đạt. Cần rà soát nội dung và UX bằng người dùng trước phát hành. Chỉ hỗ trợ catalog tiếng Việt; locale khác trả danh sách rỗng, không thay bằng ngôn ngữ sai. Hỏng kho hướng dẫn không phải dependency của API lưu/import.
+Yêu cầu token Parent. Không nhận child/profile/content và không gọi AI. Nội dung nay lưu trong database và do Moderator/Administrator quản lý (xem `AUTHORING_GUIDE_MANAGEMENT_API_GUIDE.md`); API này chỉ đọc **phiên bản đang phát hành**, không bao giờ trả bản nháp. Phiên bản khởi tạo `parent-vi-1` gồm 12 câu hỏi và 18 mẫu diễn đạt; mỗi lần phát hành sinh `catalogVersion` mới (`parent-vi-2`, ...). Cùng phiên bản/filter/page trả cùng danh sách. Chỉ hỗ trợ catalog tiếng Việt; locale khác trả danh sách rỗng, không thay bằng ngôn ngữ sai. Chưa có bộ đang phát hành → 409 `GUIDE_CATALOG_UNAVAILABLE`. Hỏng kho hướng dẫn không phải dependency của API lưu/import.
 
 Purpose: `free`, `family_memory`, `understanding`, `message`. Group: `starting_point`, `opening`, `events`, `emotion`, `dialogue`, `transition`, `ending`.
 
@@ -38,6 +38,8 @@ Purpose: `free`, `family_memory`, `understanding`, `message`. Group: `starting_p
 ```
 
 Trả plain text; không ghi Story hoặc version. FE phải render dạng text, không dùng innerHTML. Chèn vào editor và undo là trách nhiệm frontend; chỉ Save mới lưu version. Không nội suy lặp placeholder trong giá trị do người dùng nhập.
+
+`catalogVersion` là trường tùy chọn trong body render: nếu gửi mà khác phiên bản đang phát hành thì trả 409 `GUIDE_CATALOG_CHANGED` (frontend tải lại danh sách hướng dẫn); không gửi thì render theo bộ hiện hành (client cũ vẫn chạy); mục đã bị loại khỏi bộ hiện hành trả 404.
 
 ## Authoring
 

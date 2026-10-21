@@ -213,4 +213,19 @@ public sealed class AuthoringGuideCatalogTests
 
     private static void AssertRenderInvalid(string code, AuthoringGuide guide, IReadOnlyDictionary<string, string>? values) =>
         Assert.Equal(code, Assert.Throws<BadRequestException>(() => AuthoringGuideCatalogQuery.RenderText(guide, values)).Message);
+    [Fact]
+    public async Task Parent_never_reads_a_version_that_is_not_published_even_if_the_pointer_targets_it()
+    {
+        var store = new ParentAuthoringTestStore();
+        var catalog = store.Items<AuthoringGuideCatalog>().Single();
+        store.Items<AuthoringGuideCatalogVersion>().Add(new()
+        {
+            Id = 88, CatalogId = catalog.Id, VersionNo = 2, CatalogVersion = "parent-vi-2", Status = AuthoringGuideVersionStatus.Draft,
+            ContentJson = JsonSerializer.Serialize(new AuthoringGuideCatalogContent(1, [Question("draft-only")]), AuthoringGuideCatalogSeeder.Json)
+        });
+        catalog.PublishedVersionId = 88; // corrupted pointer: published pointer aimed at a Draft-status row
+
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => store.Guides.GetAsync("vi", "free", null, 1, 100, Ct));
+        Assert.Equal("GUIDE_CATALOG_UNAVAILABLE", ex.Message);
+    }
 }

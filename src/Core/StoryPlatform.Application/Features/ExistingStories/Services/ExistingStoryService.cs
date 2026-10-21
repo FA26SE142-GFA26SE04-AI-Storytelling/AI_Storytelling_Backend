@@ -1,3 +1,5 @@
+using StoryPlatform.Application.Features.Moderation;
+using StoryPlatform.Application.Features.Moderation.Services;
 using System;
 using System.Linq;
 using System.Text.Json;
@@ -41,6 +43,7 @@ public sealed class ExistingStoryService : IExistingStoryService
     private readonly IInputGuardrail _fullContentGuardrail;
     private readonly IExistingStoryEvaluationService? _evaluationService;
     private readonly IExistingStoryEvaluationCache? _evaluationCache;
+    private readonly GrayZoneContentCheckService? _moderation;
 
     public ExistingStoryService(
         IUnitOfWork unitOfWork,
@@ -50,7 +53,7 @@ public sealed class ExistingStoryService : IExistingStoryService
         IAuditLogWriter auditLog,
         IInputGuardrail? fullContentGuardrail = null,
         IExistingStoryEvaluationService? evaluationService = null,
-        IExistingStoryEvaluationCache? evaluationCache = null)
+        IExistingStoryEvaluationCache? evaluationCache = null, GrayZoneContentCheckService? moderation = null)
     {
         _unitOfWork = unitOfWork;
         _accessGuard = accessGuard;
@@ -59,7 +62,7 @@ public sealed class ExistingStoryService : IExistingStoryService
         _auditLog = auditLog;
         _fullContentGuardrail = fullContentGuardrail ?? new RuleBasedInputGuardrail();
         _evaluationService = evaluationService;
-        _evaluationCache = evaluationCache;
+        _evaluationCache = evaluationCache; _moderation = moderation;
     }
 
     #region Import
@@ -185,7 +188,7 @@ public sealed class ExistingStoryService : IExistingStoryService
                     InputStatus = ToInputStatus(existingRequest.Status),
                     ReasonCode = existingRequest.ReasonCode,
                     FallbackMessage = existingRequest.FallbackMessage,
-                    CanProceed = existingRequest.Status == GenerationInputStatus.InputAccepted
+                    CanProceed = existingRequest.Status == GenerationInputStatus.InputAccepted && !GrayZoneGate.IsBlocked(existingStory, existingVersion)
                 };
             }
         }
@@ -290,6 +293,15 @@ public sealed class ExistingStoryService : IExistingStoryService
                 RuleBasedInputGuardrail.Version);
         }
 
+        var waitingForModeration = false;
+        if (guardrail.Decision == InputGuardrailDecision.Allow && _moderation?.IsConfigured == true)
+        {
+            var moderation = await _moderation.CheckAsync(userId, story.Id, v1.Id, cancellationToken);
+            waitingForModeration = moderation.WaitingForModeration;
+            if (moderation.Status == "HardBlock")
+                guardrail = new InputGuardrailResult(InputGuardrailDecision.Block, "MODERATION_HARD_BLOCK",
+                    "Nội dung không đáp ứng điều kiện an toàn.", false, "moderation-v1");
+        }
         var inputStatus = guardrail.Decision switch
         {
             InputGuardrailDecision.Allow => GenerationInputStatus.InputAccepted,
@@ -321,9 +333,9 @@ public sealed class ExistingStoryService : IExistingStoryService
             EditType = v1.EditType.ToString(),
             ContentLength = normalized.Length,
             InputStatus = ToInputStatus(inputStatus),
-            ReasonCode = guardrail.ReasonCode,
+            ReasonCode = waitingForModeration ? "WAITING_FOR_MODERATION" : guardrail.ReasonCode,
             FallbackMessage = guardrail.FallbackMessage,
-            CanProceed = inputStatus == GenerationInputStatus.InputAccepted,
+            CanProceed = inputStatus == GenerationInputStatus.InputAccepted && !waitingForModeration,
             Warnings = warnings
         };
     }

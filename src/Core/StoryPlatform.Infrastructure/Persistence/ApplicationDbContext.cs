@@ -50,6 +50,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<StorySegment> StorySegments => Set<StorySegment>();
     public DbSet<MediaContext> MediaContexts => Set<MediaContext>();
     public DbSet<PromptCatalogVersion> PromptCatalogVersions => Set<PromptCatalogVersion>();
+    public DbSet<ModerationRubricVersion> ModerationRubricVersions => Set<ModerationRubricVersion>();
+    public DbSet<ModerationRubricAuditLog> ModerationRubricAuditLogs => Set<ModerationRubricAuditLog>();
     public DbSet<ContentReport> ContentReports => Set<ContentReport>();
     public DbSet<ModerationItem> ModerationItems => Set<ModerationItem>();
     public DbSet<ModerationReviewView> ModerationReviewViews => Set<ModerationReviewView>();

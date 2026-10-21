@@ -1,4 +1,6 @@
-﻿using System.Text.Json;
+using StoryPlatform.Application.Features.Moderation.Services;
+using StoryPlatform.Application.Features.Moderation;
+using System.Text.Json;
 using System.Linq;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Persistence;
@@ -22,6 +24,7 @@ public sealed class StoryReviewService : IStoryReviewService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAIStoryGenerationClient _aiClient;
     private readonly IProposalCache _proposalCache;
+    private readonly GrayZoneContentCheckService? _moderation;
     private readonly IReviewCompletionStore? _reviewCompletionStore;
     private readonly IExistingStoryEvaluationCache? _evaluationCache;
     private readonly IGenericRepository<Story> _storyRepo;
@@ -35,13 +38,13 @@ public sealed class StoryReviewService : IStoryReviewService
         IAIStoryGenerationClient aiClient,
         IProposalCache proposalCache,
         IReviewCompletionStore? reviewCompletionStore = null,
-        IExistingStoryEvaluationCache? evaluationCache = null)
+        IExistingStoryEvaluationCache? evaluationCache = null, GrayZoneContentCheckService? moderation = null)
     {
         _unitOfWork = unitOfWork;
         _aiClient = aiClient;
         _proposalCache = proposalCache;
         _reviewCompletionStore = reviewCompletionStore;
-        _evaluationCache = evaluationCache;
+        _evaluationCache = evaluationCache; _moderation = moderation;
         _storyRepo = unitOfWork.Repository<Story>();
         _versionRepo = unitOfWork.Repository<StoryVersion>();
         _vocabRepo = unitOfWork.Repository<StoryVocabulary>();
@@ -886,7 +889,8 @@ public sealed class StoryReviewService : IStoryReviewService
         }
 
         // 3. Check Safety
-        var safetyPassed = true;
+        var safetyPassed = !GrayZoneGate.IsBlocked(story, version);
+        if (!safetyPassed) issues.Add("SAFETY_MODERATION_REQUIRED");
         if (version.SafetyScore.HasValue && version.SafetyScore.Value <= 0)
         {
             safetyPassed = false;
@@ -998,7 +1002,7 @@ public sealed class StoryReviewService : IStoryReviewService
         // 9. Check Review Complete
         var isMarkedComplete = _reviewCompletionStore?.IsReviewCompleted(storyId, version.Id) ?? false;
         var structurallyComplete = storyValid && vocabValid && quizPassed && discussionValid;
-        var autoApproval = safetyPolicy is { ParentalGateEnabled: false, RequiredApprovalMode: ApprovalMode.AutoPublishOnThreshold };
+        var autoApproval = !story.EverGrayZone && safetyPolicy is { ParentalGateEnabled: false, RequiredApprovalMode: ApprovalMode.AutoPublishOnThreshold };
         var reviewComplete = readingMediaOnly
             ? (_reviewCompletionStore?.IsStoryReviewed(storyId, version.Id) ?? false) || autoApproval
             : isMarkedComplete || structurallyComplete;
@@ -1060,6 +1064,15 @@ public sealed class StoryReviewService : IStoryReviewService
         if (storyForAuthorization.Status != StoryStatus.ContentReview)
             throw new ConflictException("INVALID_STORY_STATUS");
 
+        int? evaluatedVersionId = null;
+        if (_moderation?.IsConfigured == true)
+        {
+            var source = await _versionRepo.FirstOrDefaultAsync(x => x.StoryId == storyId && x.IsCurrent, cancellationToken: cancellationToken)
+                ?? throw new ConflictException("SAVED_VERSION_REQUIRED");
+            if (expectedVersionId.HasValue && source.Id != expectedVersionId.Value) throw new ConflictException("STALE_STORY_VERSION");
+            await _moderation.CheckAsync(userId, storyId, source.Id, cancellationToken);
+            evaluatedVersionId = source.Id;
+        }
         // Preserve Parent preflight behavior; Creator validation must follow the locked version check.
         if (!creatorConfirmation)
         {
@@ -1085,7 +1098,8 @@ public sealed class StoryReviewService : IStoryReviewService
                 cancellationToken: cancellationToken)
                 ?? throw new BadRequestException("Cannot prepare media without a current canonical story version.");
 
-            if (expectedVersionId.HasValue && approvedVersion.Id != expectedVersionId.Value)
+            if (expectedVersionId.HasValue && approvedVersion.Id != expectedVersionId.Value
+                || evaluatedVersionId.HasValue && approvedVersion.Id != evaluatedVersionId.Value)
                 throw new ConflictException("STALE_STORY_VERSION");
             if (creatorConfirmation) await RequireActiveCreatorAsync(story, userId, cancellationToken);
             await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, storyId, expectedVersionId, cancellationToken);
@@ -1147,7 +1161,7 @@ public sealed class StoryReviewService : IStoryReviewService
         int storyId, CancellationToken cancellationToken = default)
     {
         var story = await _storyRepo.FirstOrDefaultAsync(s => s.Id == storyId, cancellationToken: cancellationToken);
-        if (story is null || story.Scope != StoryScope.Parent || StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story) || story.Status != StoryStatus.ContentReview)
+        if (story is null || story.Scope != StoryScope.Parent || story.EverGrayZone || StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story) || story.Status != StoryStatus.ContentReview)
             return null;
 
         var safetyPolicy = await _unitOfWork.Repository<SafetyPolicy>().FirstOrDefaultAsync(

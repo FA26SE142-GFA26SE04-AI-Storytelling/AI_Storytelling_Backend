@@ -33,6 +33,7 @@ public sealed class ContentGenerationProgressDto
     public string Quiz { get; init; } = "not_started";
     public string Discussion { get; init; } = "not_started";
     public bool IsComplete { get; init; }
+    public bool WaitingForModeration { get; init; }
     public string? LastErrorCode { get; init; }
     public ContentQualityFailureDto? QualityFailure { get; init; }
     public int? StableStoryVersionId { get; init; }

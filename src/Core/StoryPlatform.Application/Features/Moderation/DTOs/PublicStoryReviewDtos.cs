@@ -110,6 +110,11 @@ public class PublicReviewDiscussionDto
 
 public class PublicReviewFlagDto
 {
+    public int? StartOffset { get; set; }
+    public int? EndOffset { get; set; }
+    public string? CriterionCode { get; set; }
+    public string? EvidenceQuote { get; set; }
+    public string? ContextNote { get; set; }
     public string FlagId { get; set; } = string.Empty;
     public string Kind { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;

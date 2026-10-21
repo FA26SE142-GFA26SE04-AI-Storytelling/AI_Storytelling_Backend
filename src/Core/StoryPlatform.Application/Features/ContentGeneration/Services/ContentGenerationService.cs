@@ -1,3 +1,5 @@
+using StoryPlatform.Application.Features.Moderation;
+using StoryPlatform.Application.Features.Moderation.Services;
 using StoryPlatform.Application.Common;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
@@ -28,6 +30,8 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
     private readonly IContentGenerationJobFailureFinalizer _failureFinalizer;
     private readonly IStableVersionArtifactHandoffService _artifactHandoff;
     private readonly IStoryReviewService? _reviewService;
+    private readonly IGrayZoneEvaluator? _moderation;
+    private readonly GrayZoneWorkflowService? _grayZone;
     private readonly int _maxRefinementAttempts;
     private readonly int _artifactMaxAttempts;
     private readonly TimeSpan _jobLease;
@@ -39,7 +43,8 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
         IContentGenerationJobFailureFinalizer failureFinalizer,
         IStableVersionArtifactHandoffService artifactHandoff,
         ContentGenerationOptions options,
-        IStoryReviewService? reviewService = null)
+        IStoryReviewService? reviewService = null,
+        IGrayZoneEvaluator? moderation = null, GrayZoneWorkflowService? grayZone = null)
     {
         _unitOfWork = unitOfWork;
         _aiClient = aiClient;
@@ -47,6 +52,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
         _failureFinalizer = failureFinalizer;
         _artifactHandoff = artifactHandoff;
         _reviewService = reviewService;
+        _moderation = moderation; _grayZone = grayZone;
         _maxRefinementAttempts = Math.Clamp(options.MaxContentRefinementAttempts, 0, 2);
         _artifactMaxAttempts = Math.Clamp(options.ArtifactMaxAttempts, 1, 3);
         _jobLease = TimeSpan.FromMinutes(Math.Clamp(options.JobLeaseMinutes, 1, 30));
@@ -78,6 +84,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             .OrderByDescending(item => item.Id).FirstOrDefault();
         var failed = jobs.Where(item => item.Status == GenerationJobStatus.Failed)
             .OrderByDescending(item => item.Id).FirstOrDefault();
+        var waiting = jobs.Any(x => x.Status == GenerationJobStatus.WaitingForModeration);
         var qualityFailure = active is null ? ToQualityFailure(failed) : null;
         var readingMediaOnly = story.OutputMode == StoryOutputMode.ReadingMediaOnly;
         var contentComplete = stable is not null && story.Status is
@@ -88,7 +95,8 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             StoryId = story.Id,
             OutputMode = StoryPlatform.Application.Common.StoryOutputModeContract.Format(story.OutputMode),
             StoryStatus = ToSnake(story.Status.ToString()),
-            CurrentStep = contentComplete && (readingMediaOnly || vocabularyDone && quizDone && discussionDone) ? "complete" :
+            WaitingForModeration = waiting,
+            CurrentStep = waiting ? "waiting_for_moderation" : contentComplete && (readingMediaOnly || vocabularyDone && quizDone && discussionDone) ? "complete" :
                 active is not null
                     ? $"{(active.Status == GenerationJobStatus.Processing ? "generating" : "pending")}_{OperationName(active.Operation)}"
                     : failed is not null ? $"failed_{OperationName(failed.Operation)}" : "not_started",
@@ -331,10 +339,36 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
                     quality = quality with { SafetyScore = safetyScore };
                 }
             }
+            GrayZoneAssessment? moderationResult = null;
+            if (_moderation?.IsConfigured == true && _grayZone is not null && quality.Safety.Passed)
+            {
+                var scan = new GrayZoneScan("phase3", handoff.Context.AgeBand, handoff.Context.Language,
+                    GrayZoneEvaluator.TextParts(storyContent.Title, Flatten(storyContent)).Concat(
+                        [new ModerationText("section", "lesson", storyContent.Lesson)]).ToArray(),
+                    PolicyTerms(handoff.Context.BlockedCategoryTerms, handoff.Context.BlockedCategoryCodes).ToArray()) { ReadingLevel = handoff.Context.ReadingLevel };
+                var priorModeration = persistedCandidate is null ? null : GrayZoneWorkflowService.ReadAssessment(persistedCandidate);
+                moderationResult = priorModeration is not null && priorModeration.Fingerprint == GrayZoneEvaluator.Fingerprint(scan)
+                    && await _moderation.CanReuseAsync(priorModeration, cancellationToken) ? priorModeration
+                    : await _moderation.EvaluateAsync(scan, cancellationToken);
+                if (moderationResult.Zone == ModerationZone.HardBlock)
+                    quality = quality with
+                    {
+                        IsPassed = false,
+                        Safety = new ContentQualityGate(false, moderationResult.Provider != "rule-based", "MODERATION_HARD_BLOCK",
+                            moderationResult.Findings.Select(x => x.Category + ": " + x.Reason).ToArray())
+                    };
+            }
             var candidate = persistedCandidate ?? await PersistCandidateAsync(
                 handoff, storyContent, quality, refinement == 0 ? VersionEditType.Initial : VersionEditType.AiRefined,
                 metadata, refinement, claimedToken, cancellationToken);
             persistedCandidate = null;
+            if (moderationResult is not null)
+            {
+                var waitingForReview = await _grayZone!.RecordAsync(handoff.Job.StoryId, candidate.Id, jobId,
+                    moderationResult, quality.IsPassed, cancellationToken, claimedToken,
+                    quality.IsPassed || refinement >= _maxRefinementAttempts || quality.RefinementReasons.Count == 0);
+                if (waitingForReview) return;
+            }
             if (quality.IsPassed)
             {
                 await PromoteStableContentAsync(handoff, candidate, storyContent, claimedToken, cancellationToken);
@@ -506,7 +540,9 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
         {
             try
             {
-                await _reviewService.EvaluateAndApplyAutoPublishAsync(state.Job.StoryId, cancellationToken);
+                var autoStory = await _unitOfWork.Repository<Story>().FirstOrDefaultAsync(x => x.Id == state.Job.StoryId, cancellationToken: cancellationToken);
+                if (autoStory?.EverGrayZone != true)
+                    await _reviewService.EvaluateAndApplyAutoPublishAsync(state.Job.StoryId, cancellationToken);
             }
             catch
             {
@@ -840,6 +876,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
     {
         AIServiceRequestException ai => ai.ErrorCode,
         InvalidOperationException invalid when IsCode(invalid.Message) => invalid.Message,
+        AppException app when IsCode(app.Message) => app.Message,
         JsonException => "CONTENT_SCHEMA_INVALID",
         _ => operation switch
         {

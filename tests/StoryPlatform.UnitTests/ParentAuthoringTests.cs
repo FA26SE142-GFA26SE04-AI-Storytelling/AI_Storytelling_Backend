@@ -37,6 +37,37 @@ public sealed class ParentAuthoringTests
     }
 
     [Fact]
+    public async Task FinalizedCheckDoesNotCallProviderOrBreakChildReading()
+    {
+        var s = new ParentAuthoringTestStore();
+        var (saved, confirmation) = await ConfirmContent(s);
+        var package = await s.Service.PrepareAsync(1, saved.Story.StoryId, new()
+        {
+            OperationId = "prepare-gray", RevisionToken = saved.Story.RevisionToken, BaseVersionId = saved.Version.VersionId,
+            ContentConfirmationId = confirmation.ConfirmationId
+        }, Ct);
+        var grant = await s.Service.ConfirmFamilyAsync(1, saved.Story.StoryId, new()
+        {
+            OperationId = "family-gray", RevisionToken = saved.Story.RevisionToken, BaseVersionId = saved.Version.VersionId,
+            PreparationId = package.PreparationId
+        }, Ct);
+        var evaluator = new Moq.Mock<StoryPlatform.Application.Features.Moderation.IGrayZoneEvaluator>(Moq.MockBehavior.Strict);
+        evaluator.SetupGet(x => x.IsConfigured).Returns(true);
+        var workflow = new StoryPlatform.Application.Features.Moderation.Services.GrayZoneWorkflowService(s.Uow.Object,
+            new Moq.Mock<StoryPlatform.Application.Features.AuditLogs.Interfaces.IAuditLogWriter>().Object);
+        var guard = new StoryPlatform.Application.Features.ChildProfiles.Supervision.Services.SupervisionAccessGuard(s.Uow.Object);
+        var checker = new StoryPlatform.Application.Features.Moderation.Services.GrayZoneContentCheckService(s.Uow.Object, evaluator.Object, workflow, guard);
+        var service = new ParentAuthoringService(s.Uow.Object, new(), s.Protector, guard,
+            new StoryPlatform.Application.Features.MediaGeneration.Services.StorySegmentService(), checker);
+        var error = await Assert.ThrowsAsync<ConflictException>(() => service.CheckAsync(1, saved.Story.StoryId,
+            Check(saved.Story, "finalized-gray-check"), Ct));
+        Assert.Equal("PARENT_STORY_FINALIZED", error.Message);
+        Assert.Empty(s.Items<ModerationItem>());
+        Assert.Null(s.Items<StoryVersion>().Single().GrayZoneFlags);
+        Assert.Equal(saved.Version.VersionId, (await service.ReadChildPackageAsync(3, grant.ConfirmationId, Ct)).StoryVersionId);
+    }
+
+    [Fact]
     public async Task Draft_has_child_no_version_no_AI_and_no_publication()
     {
         var s = new ParentAuthoringTestStore();

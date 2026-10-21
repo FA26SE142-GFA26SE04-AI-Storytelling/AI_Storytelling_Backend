@@ -1,4 +1,6 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using StoryPlatform.Application.Features.Moderation;
+using Microsoft.Extensions.DependencyInjection;
 using StoryPlatform.Application.Features.CreatorAuthoring.Interfaces;
 using StoryPlatform.Application.Features.CreatorAuthoring.Services;
 using StoryPlatform.Application.Features.Auth.Interfaces;
@@ -96,6 +98,12 @@ public static class DependencyInjection
         services.AddScoped<IAuditLogQueryService, AuditLogQueryService>();
         services.AddScoped<IAuditLogWriter, AuditLogWriter>();
         services.AddScoped<IAdminAccountService, AdminAccountService>();
+        services.TryAddSingleton(new GrayZoneOptions());
+        services.AddScoped<IGrayZoneEvaluator, GrayZoneEvaluator>();
+        services.AddScoped<Features.Moderation.Rubrics.ModerationRubricService>();
+        services.AddScoped<Features.Moderation.Rubrics.IModerationRubricSource>(sp => sp.GetRequiredService<Features.Moderation.Rubrics.ModerationRubricService>());
+        services.AddScoped<GrayZoneWorkflowService>();
+        services.AddScoped<GrayZoneContentCheckService>();
         services.AddScoped<IModerationQueueService, ModerationQueueService>();
         services.AddScoped<IModerationReviewViewService, ModerationReviewViewService>();
         services.AddScoped<IModerationSweepService, ModerationSweepService>();

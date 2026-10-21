@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Features.Moderation;
 using StoryPlatform.Application.Common;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
@@ -24,17 +25,18 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
     private readonly IAIStoryGenerationClient _aiClient;
     private readonly IOutlineReviewGuardrail _guardrail;
     private readonly IOutlineJobFailureFinalizer _failureFinalizer;
+    private readonly IGrayZoneEvaluator? _moderation;
 
     public OutlineService(
         IUnitOfWork unitOfWork,
         IAIStoryGenerationClient aiClient,
         IOutlineReviewGuardrail guardrail,
-        IOutlineJobFailureFinalizer failureFinalizer)
+        IOutlineJobFailureFinalizer failureFinalizer, IGrayZoneEvaluator? moderation = null)
     {
         _unitOfWork = unitOfWork;
         _aiClient = aiClient;
         _guardrail = guardrail;
-        _failureFinalizer = failureFinalizer;
+        _failureFinalizer = failureFinalizer; _moderation = moderation;
     }
 
     public async Task<OutlineProgressDto> GetCurrentAsync(int userId, int storyId, CancellationToken cancellationToken = default)
@@ -447,6 +449,34 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
             throw new InvalidOperationException(safety.ReasonCode);
         }
 
+        if (_moderation?.IsConfigured == true)
+        {
+            for (var safetyAttempt = 0; ; safetyAttempt++)
+            {
+                var assessment = await _moderation.EvaluateAsync(new GrayZoneScan("phase2", context.AgeBand, context.Language,
+                    [new("section", "title", result.Title), new("section", "opening", result.Outline.Opening),
+                     new("section", "development", result.Outline.Development), new("section", "ending", result.Outline.Ending)],
+                    PolicyTerms(context.BlockedCategoryTerms, context.BlockedCategoryCodes).ToArray()) { ReadingLevel = context.ReadingLevel }, cancellationToken);
+                if (assessment.Zone == ModerationZone.Safe) break;
+                if (assessment.Zone == ModerationZone.HardBlock) throw new InvalidOperationException("MODERATION_HARD_BLOCK");
+                if (safetyAttempt == 1) throw new InvalidOperationException("OUTLINE_GRAY_ZONE_UNRESOLVED");
+                var saferRequest = aiRequest with
+                {
+                    RequestId = $"outline-job-{job.Id}-safety-retry",
+                    StrongSafetyGuidance = true,
+                    Constraints = aiRequest.Constraints with
+                    {
+                        RestrictedTopics = aiRequest.Constraints.RestrictedTopics.Concat(assessment.Findings.Select(x => x.Category)).Distinct().ToArray()
+                    }
+                };
+                result = await _aiClient.GenerateOutlineAsync(saferRequest, cancellationToken);
+                var retrySafety = _guardrail.Validate(result.Title, result.Outline.Opening, result.Outline.Development, result.Outline.Ending,
+                    PolicyTerms(context.BlockedCategoryTerms, context.BlockedCategoryCodes),
+                    PolicyTerms(context.RestrictedCategoryTerms, context.RestrictedCategoryCodes));
+                if (!retrySafety.IsAllowed) throw new InvalidOperationException(retrySafety.ReasonCode);
+            }
+        }
+
         if (job.Operation == GenerationJobOperation.RegenerateOutline)
         {
             var stillCurrent = await _unitOfWork.Repository<StoryVersion>().ExistsAsync(
@@ -735,8 +765,14 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         "OUTLINE_BLOCKED_CONTENT" => "OUTLINE_BLOCKED_CONTENT",
         "OUTLINE_RESTRICTED_CONTENT" => "OUTLINE_RESTRICTED_CONTENT",
         "OUTLINE_SCHEMA_INVALID" => "OUTLINE_SCHEMA_INVALID",
+        "MODERATION_HARD_BLOCK" => "MODERATION_HARD_BLOCK",
+        "OUTLINE_GRAY_ZONE_UNRESOLVED" => "OUTLINE_GRAY_ZONE_UNRESOLVED",
+        "MODERATION_NOT_CONFIGURED" => "MODERATION_NOT_CONFIGURED",
+        "MODERATION_PROVIDER_NOT_REGISTERED" => "MODERATION_PROVIDER_NOT_REGISTERED",
+        "MODERATION_RESPONSE_INVALID" => "MODERATION_RESPONSE_INVALID",
         "OUTLINE_CONTAINS_PII" => "OUTLINE_CONTAINS_PII",
         "OUTLINE_PROMPT_LEAKAGE" => "OUTLINE_PROMPT_LEAKAGE",
+        _ when exception is AppException && exception.Message.StartsWith("GRAY_ZONE_", StringComparison.Ordinal) => exception.Message,
         _ when exception is AIServiceRequestException aiServiceException => aiServiceException.ErrorCode,
         _ => "OUTLINE_GENERATION_FAILED"
     };

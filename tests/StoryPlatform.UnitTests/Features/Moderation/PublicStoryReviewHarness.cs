@@ -1,4 +1,4 @@
-﻿using System.Linq.Expressions;
+using System.Linq.Expressions;
 using Moq;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
@@ -25,6 +25,7 @@ public sealed class PublicStoryReviewHarness
     public readonly List<UserAccount> Users = new();
     public readonly List<StoryGenerationJob> Jobs = new();
     public readonly List<ModerationItem> Items = new();
+    public readonly List<ParentStoryOperation> ParentOperations = new();
     public readonly List<Story> Stories = new();
     public readonly List<StoryVersion> Versions = new();
     public readonly List<StoryScene> Scenes = new();
@@ -42,7 +43,7 @@ public sealed class PublicStoryReviewHarness
     public PublicStoryReviewHarness()
     {
         Back(Users);
-        Back(Items);
+        Back(Items); Back(ParentOperations);
         Back(Jobs);
         Back(Stories);
         Back(Versions);

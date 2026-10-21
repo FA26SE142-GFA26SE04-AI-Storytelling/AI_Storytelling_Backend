@@ -78,7 +78,7 @@ public sealed class VertexAIGeminiClient : ILlmClient
             prompt.Length);
 
         // Log full prompt in Debug mode (development only - contains user data)
-        if (!schemaName.StartsWith("creator_assistance", StringComparison.Ordinal)) _logger.LogDebug(
+        if (!IsSensitiveSchema(schemaName)) _logger.LogDebug(
             "Vertex request prompt. SchemaName={SchemaName}, Prompt={Prompt}",
             schemaName,
             prompt);
@@ -88,12 +88,12 @@ public sealed class VertexAIGeminiClient : ILlmClient
             ResponseMimeType = "application/json",
             ResponseSchema = BuildSchema(schema)
         };
-        if (schemaName.StartsWith("creator_assistance", StringComparison.Ordinal))
+        if (IsSensitiveSchema(schemaName))
         {
             // SDK defaults to five attempts. Core owns the overall deadline; a retry is an explicit new operation.
             config.HttpOptions = new HttpOptions { RetryOptions = new HttpRetryOptions { Attempts = 1 } };
             // Bound output including reasoning while allowing local prose and up to twenty review findings.
-            config.MaxOutputTokens = schemaName == "creator_assistance_safety" ? 4096 : 16384;
+            config.MaxOutputTokens = schemaName == "creator_assistance_safety" ? 4096 : schemaName.StartsWith("gray_zone", StringComparison.Ordinal) ? 8192 : 16384;
         }
 
         var stopwatch = Stopwatch.StartNew();
@@ -142,7 +142,7 @@ public sealed class VertexAIGeminiClient : ILlmClient
                 result.OutputTokens);
 
             // Log full response in Debug mode
-            if (!schemaName.StartsWith("creator_assistance", StringComparison.Ordinal)) _logger.LogDebug(
+            if (!IsSensitiveSchema(schemaName)) _logger.LogDebug(
                 "Vertex response content. SchemaName={SchemaName}, ContentLength={ContentLength}, Content={Content}",
                 schemaName,
                 content.Length,
@@ -153,15 +153,15 @@ public sealed class VertexAIGeminiClient : ILlmClient
             stopwatch.Stop();
 
             var statusCode = GetStatusCode(ex);
-            if (schemaName.StartsWith("creator_assistance", StringComparison.Ordinal))
+            if (IsSensitiveSchema(schemaName))
             {
                 if (ex is OperationCanceledException && cancellationToken.IsCancellationRequested)
-                    _logger.LogInformation("Creator assistance provider call cancelled by caller. TraceId={TraceId}, SchemaName={SchemaName}, LatencyMs={LatencyMs}", Activity.Current?.TraceId.ToString(), schemaName, stopwatch.ElapsedMilliseconds);
+                    _logger.LogInformation("Sensitive AI provider call cancelled by caller. TraceId={TraceId}, SchemaName={SchemaName}, LatencyMs={LatencyMs}", Activity.Current?.TraceId.ToString(), schemaName, stopwatch.ElapsedMilliseconds);
                 else
-                    _logger.LogWarning("Creator assistance provider failed. TraceId={TraceId}, SchemaName={SchemaName}, LatencyMs={LatencyMs}, StatusCode={StatusCode}, ErrorType={ErrorType}", Activity.Current?.TraceId.ToString(), schemaName, stopwatch.ElapsedMilliseconds, statusCode, ex.GetType().Name);
+                    _logger.LogWarning("Sensitive AI provider failed. TraceId={TraceId}, SchemaName={SchemaName}, LatencyMs={LatencyMs}, StatusCode={StatusCode}, ErrorType={ErrorType}", Activity.Current?.TraceId.ToString(), schemaName, stopwatch.ElapsedMilliseconds, statusCode, ex.GetType().Name);
                 if (ex is OperationCanceledException or TimeoutException) throw;
-                if (statusCode is 408 or 504) throw new TimeoutException("Creator assistance provider timed out.");
-                throw new HttpRequestException("Creator assistance provider failed.", null, statusCode.HasValue ? (HttpStatusCode)statusCode.Value : null);
+                if (statusCode is 408 or 504) throw new TimeoutException("Sensitive AI provider timed out.");
+                throw new HttpRequestException("Sensitive AI provider failed.", null, statusCode.HasValue ? (HttpStatusCode)statusCode.Value : null);
             }
             if (statusCode is 408 or 429 || statusCode >= 500)
             {
@@ -200,6 +200,9 @@ public sealed class VertexAIGeminiClient : ILlmClient
 
         return result;
     }
+
+    private static bool IsSensitiveSchema(string schemaName) => schemaName.StartsWith("creator_assistance", StringComparison.Ordinal)
+        || schemaName.StartsWith("gray_zone", StringComparison.Ordinal);
 
     private static int? GetStatusCode(Exception exception) => exception switch
     {

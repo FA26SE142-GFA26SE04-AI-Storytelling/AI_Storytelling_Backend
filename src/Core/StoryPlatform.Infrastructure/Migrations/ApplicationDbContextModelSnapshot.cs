@@ -1596,6 +1596,137 @@ namespace StoryPlatform.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ModerationRubricAuditLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<int>("ActorUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("AfterJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("BeforeJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("RubricVersionId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("RubricVersionId", "CreatedAt");
+
+                    b.ToTable("moderation_rubric_audit_logs", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ModerationRubricVersion", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("ActivatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ActivatedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CreatedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("DefinitionJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("RetiredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SchemaVersion")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("VersionNo")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActivatedByUserId");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasDatabaseName("UX_moderation_rubric_active")
+                        .HasFilter("\"Status\" = 'Active' AND NOT \"IsDeleted\"");
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("Code", "VersionNo")
+                        .IsUnique()
+                        .HasDatabaseName("UX_moderation_rubric_version");
+
+                    b.ToTable("moderation_rubric_versions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_rubric_revision", "\"Revision\" > 0");
+                        });
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.Notification", b =>
                 {
                     b.Property<int>("Id")
@@ -4559,6 +4690,37 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("Story");
 
                     b.Navigation("StoryVersion");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ModerationRubricAuditLog", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", null)
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.ModerationRubricVersion", "RubricVersion")
+                        .WithMany()
+                        .HasForeignKey("RubricVersionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("RubricVersion");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ModerationRubricVersion", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", null)
+                        .WithMany()
+                        .HasForeignKey("ActivatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.Notification", b =>

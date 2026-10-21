@@ -44,6 +44,11 @@ public class UnitOfWork : IUnitOfWork
             throw new ConflictException(
                 "Dữ liệu vừa được người khác thay đổi. Vui lòng tải lại và thử lại.");
         }
+        catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException
+            { SqlState: "23505", ConstraintName: "UX_moderation_rubric_version" or "UX_moderation_rubric_active" })
+        {
+            throw new ConflictException("RUBRIC_VERSION_CONFLICT");
+        }
     }
 
     public async Task BeginTransactionAsync(CancellationToken cancellationToken = default)

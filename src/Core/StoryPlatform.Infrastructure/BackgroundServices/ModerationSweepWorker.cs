@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StoryPlatform.Application.Features.Moderation.Interfaces;
+using StoryPlatform.Application.Features.Moderation.Services;
 
 namespace StoryPlatform.Infrastructure.BackgroundServices;
 
@@ -40,6 +41,7 @@ public sealed class ModerationSweepWorker : BackgroundService
             {
                 await using var scope = _scopeFactory.CreateAsyncScope();
                 var sweepService = scope.ServiceProvider.GetRequiredService<IModerationSweepService>();
+                await scope.ServiceProvider.GetRequiredService<GrayZoneWorkflowService>().CloseObsoleteAsync(stoppingToken);
                 await sweepService.ReleaseExpiredClaimsAsync(stoppingToken);
                 await sweepService.WarnOverdueSlaAsync(stoppingToken);
                 await sweepService.WithdrawRoadmapReviewsOfInactiveCreatorsAsync(null, stoppingToken);

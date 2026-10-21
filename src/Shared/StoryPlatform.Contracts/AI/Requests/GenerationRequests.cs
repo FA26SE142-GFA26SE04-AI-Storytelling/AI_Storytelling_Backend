@@ -4,6 +4,8 @@ namespace StoryPlatform.Contracts.AI.Requests;
 
 public sealed record GenerateOutlineRequest
 {
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool StrongSafetyGuidance { get; init; }
     public AiGenerationSnapshot? Snapshot { get; init; }
     public string RequestId { get; init; } = string.Empty;
     public string AgeBand { get; init; } = string.Empty;

@@ -1,3 +1,5 @@
+using StoryPlatform.Application.Features.Moderation;
+using StoryPlatform.Application.Features.Moderation.Services;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -24,12 +26,13 @@ public sealed class ParentAuthoringService : ManualAuthoringService
     private readonly ISupervisionAccessGuard _guard;
     private readonly ParentManualAuthoringPolicy _policy;
     private readonly IStorySegmentService _segments;
+    private readonly GrayZoneContentCheckService? _moderation;
 
     public ParentAuthoringService(IUnitOfWork uow, CreatorAuthoringOptions options, IImportPreviewProtector previews,
-        ISupervisionAccessGuard guard, IStorySegmentService segments)
+        ISupervisionAccessGuard guard, IStorySegmentService segments, GrayZoneContentCheckService? moderation = null)
         : base(uow, options, previews, new ParentManualAuthoringPolicy(uow, guard))
     {
-        _uow = uow; _guard = guard; _segments = segments;
+        _uow = uow; _guard = guard; _segments = segments; _moderation = moderation;
         _policy = new ParentManualAuthoringPolicy(uow, guard);
     }
 
@@ -92,12 +95,25 @@ public sealed class ParentAuthoringService : ManualAuthoringService
             return await GetParentDraftAsync(user, id, ct);
         }, ct);
 
-    public Task<ParentCheckDto> CheckAsync(int user, int id, ParentCheckRequest request, CancellationToken ct) =>
+    public async Task<ParentCheckDto> CheckAsync(int user, int id, ParentCheckRequest request, CancellationToken ct)
+    {
+        if (_moderation?.IsConfigured == true)
+        {
+            var story = await StoryAsync(user, id, ct);
+            await _policy.EnsureWritableAsync(story, ct);
+            var version = await SourceAsync(story, request, ct) ?? throw new ConflictException("SAVED_VERSION_REQUIRED");
+            await _moderation.CheckAsync(user, id, version.Id, ct);
+        }
+        return await CheckCoreAsync(user, id, request, ct);
+    }
+
+    private Task<ParentCheckDto> CheckCoreAsync(int user, int id, ParentCheckRequest request, CancellationToken ct) =>
         ExecuteAsync(user, id, "Check", request, async (story, operation) =>
         {
             var version = await SourceAsync(story, request, ct) ?? throw new ConflictException("SAVED_VERSION_REQUIRED");
             var context = await ContextAsync(story, ct);
             var errors = new List<string>(); var warnings = new List<string>();
+            if (GrayZoneGate.IsBlocked(story, version)) errors.Add("SAFETY_MODERATION_REQUIRED");
             var content = version.Content ?? string.Empty;
             var child = await _policy.RequireChildAsync(user, story.ChildProfileId!.Value, ct);
             if (story.Language != child.Language || story.AgeBand != (child.AgeBand == AgeBand.Age_9_10 ? "9-10" : "6-8"))
@@ -290,6 +306,9 @@ public sealed class ParentAuthoringService : ManualAuthoringService
         var row = await _uow.Repository<ParentStoryOperation>().GetByIdAsync(operationId, ct);
         if (row is null || row.IsDeleted || row.RevokedAt.HasValue || row.StoryId != story.Id || row.Kind != kind || row.StoryVersionId != versionId)
             throw new NotFoundException(kind, operationId);
+        var linkedVersion = await _uow.Repository<StoryVersion>().FirstOrDefaultAsync(x => x.Id == versionId && x.StoryId == story.Id, cancellationToken: ct)
+            ?? throw new ConflictException("SAVED_VERSION_REQUIRED");
+        GrayZoneGate.EnsureCanContinue(story, linkedVersion);
         var result = JsonSerializer.Deserialize<T>(row.ResultJson, Json)!;
         var pinned = pinnedSetup ? result as ParentPreparationDto : null;
         if (row.ContextFingerprint != (await ContextAsync(story, ct, pinned)).Fingerprint) throw new ConflictException("CHILD_CONTEXT_CHANGED");

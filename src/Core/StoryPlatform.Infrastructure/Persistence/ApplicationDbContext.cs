@@ -52,6 +52,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<PromptCatalogVersion> PromptCatalogVersions => Set<PromptCatalogVersion>();
     public DbSet<AuthoringGuideCatalog> AuthoringGuideCatalogs => Set<AuthoringGuideCatalog>();
     public DbSet<AuthoringGuideCatalogVersion> AuthoringGuideCatalogVersions => Set<AuthoringGuideCatalogVersion>();
+    public DbSet<ModerationRubricVersion> ModerationRubricVersions => Set<ModerationRubricVersion>();
+    public DbSet<ModerationRubricAuditLog> ModerationRubricAuditLogs => Set<ModerationRubricAuditLog>();
     public DbSet<ContentReport> ContentReports => Set<ContentReport>();
     public DbSet<ModerationItem> ModerationItems => Set<ModerationItem>();
     public DbSet<ModerationReviewView> ModerationReviewViews => Set<ModerationReviewView>();

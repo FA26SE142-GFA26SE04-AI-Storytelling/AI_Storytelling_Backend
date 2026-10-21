@@ -1,3 +1,5 @@
+using StoryPlatform.Application.Features.Moderation.Services;
+using StoryPlatform.Application.Features.Moderation;
 using System;
 using System.Linq;
 using System.Text.Json;
@@ -41,17 +43,18 @@ public sealed class StableVersionArtifactHandoffService : IStableVersionArtifact
     private readonly ILearningProfileService _learningProfileService;
     private readonly ISafetyPolicyService _safetyPolicyService;
     private readonly IStoryReviewService? _reviewService;
+    private readonly GrayZoneContentCheckService? _moderation;
 
     public StableVersionArtifactHandoffService(
         IUnitOfWork unitOfWork,
         ILearningProfileService learningProfileService,
         ISafetyPolicyService safetyPolicyService,
-        IStoryReviewService? reviewService = null)
+        IStoryReviewService? reviewService = null, GrayZoneContentCheckService? moderation = null)
     {
         _unitOfWork = unitOfWork;
         _learningProfileService = learningProfileService;
         _safetyPolicyService = safetyPolicyService;
-        _reviewService = reviewService;
+        _reviewService = reviewService; _moderation = moderation;
     }
 
     public async Task<StableVersionHandoffResult> QueueArtifactsAsync(
@@ -61,6 +64,12 @@ public sealed class StableVersionArtifactHandoffService : IStableVersionArtifact
         int? generationRequestId,
         CancellationToken cancellationToken = default)
     {
+        if (_moderation?.IsConfigured == true)
+        {
+            var source = await _unitOfWork.Repository<Story>().FirstOrDefaultAsync(x => x.Id == storyId, cancellationToken: cancellationToken);
+            if (source?.Source == StorySource.Manual)
+                await _moderation.CheckAsync(requestedByUserId, storyId, storyVersionId, cancellationToken);
+        }
         var readingMediaOnly = false;
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
@@ -76,6 +85,7 @@ public sealed class StableVersionArtifactHandoffService : IStableVersionArtifact
                           ?? throw new NotFoundException("StoryVersion", storyVersionId);
 
             ValidateHandoffContract(story, version);
+            GrayZoneGate.EnsureCanContinue(story, version);
 
             if (story.OutputMode == StoryOutputMode.ReadingMediaOnly)
             {

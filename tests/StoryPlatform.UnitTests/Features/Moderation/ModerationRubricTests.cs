@@ -226,7 +226,7 @@ public sealed class ModerationRubricTests
         var root = new DirectoryInfo(AppContext.BaseDirectory);
         while (root is not null && !File.Exists(Path.Combine(root.FullName, "StoryPlatform.sln"))) root = root.Parent;
         Assert.NotNull(root);
-        var sql = File.ReadAllText(Path.Combine(root.FullName, "Database/Seed/61_moderation_rubric_versions.sql"));
+        var sql = File.ReadAllText(Path.Combine(root.FullName, "Database/Seed/62_moderation_rubric_versions.sql"));
         var match = Regex.Match(sql, "'(?<definition>\\{.*\\})', '(?<hash>[A-F0-9]{64})', 'Draft'");
         Assert.True(match.Success);
         var definition = JsonSerializer.Deserialize<RubricDefinition>(match.Groups["definition"].Value.Replace("''", "'"), RubricRules.Json)!;

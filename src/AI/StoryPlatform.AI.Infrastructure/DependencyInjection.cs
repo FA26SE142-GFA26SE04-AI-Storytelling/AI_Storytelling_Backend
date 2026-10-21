@@ -1,3 +1,4 @@
+using StoryPlatform.AI.Application.Moderation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using StoryPlatform.AI.Application.Abstractions.Evaluation;
@@ -34,6 +35,9 @@ public static class DependencyInjection
                 options.Model = configuration["AI__Google__Model"] ?? options.Model;
                 options.AuthMode = configuration["AI__Google__AuthMode"] ?? options.AuthMode;
             });
+        services.Configure<GrayZoneAiOptions>(configuration.GetSection(GrayZoneAiOptions.SectionName));
+        services.AddSingleton<VertexAIGeminiClient>();
+        services.AddSingleton<IGrayZoneLlmClient, VertexGrayZoneLlmClient>();
         services.Configure<GenerateStoryOptions>(configuration.GetSection(GenerateStoryOptions.SectionName));
         services.Configure<OutlineGenerationOptions>(configuration.GetSection(OutlineGenerationOptions.SectionName));
         services.Configure<StoryContentGenerationOptions>(configuration.GetSection(StoryContentGenerationOptions.SectionName));
@@ -42,7 +46,7 @@ public static class DependencyInjection
         if (string.Equals(provider, "Vertex", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(googleAuthMode, "Adc", StringComparison.OrdinalIgnoreCase))
         {
-            services.AddSingleton<ILlmClient, VertexAIGeminiClient>();
+            services.AddSingleton<ILlmClient>(sp => sp.GetRequiredService<VertexAIGeminiClient>());
         }
         else if (string.Equals(provider, "Gemini", StringComparison.OrdinalIgnoreCase) ||
                  (string.IsNullOrWhiteSpace(provider) && !string.IsNullOrWhiteSpace(configuration["GEMINI_API_KEY"])))

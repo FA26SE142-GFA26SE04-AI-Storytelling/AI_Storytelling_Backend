@@ -25,6 +25,11 @@ public sealed class AIExceptionHandlingMiddleware
             _logger.LogInformation("AI request aborted by caller. TraceId={TraceId}", System.Diagnostics.Activity.Current?.TraceId.ToString() ?? context.TraceIdentifier);
             // The caller is gone. Do not write an error response to the aborted connection.
         }
+        catch (StoryPlatform.AI.Application.Moderation.GrayZoneAiException exception)
+        {
+            _logger.LogWarning("Gray zone evaluation failed: {ErrorCode}", exception.Code);
+            await WriteErrorAsync(context, (HttpStatusCode)exception.StatusCode, "Gray zone evaluation is unavailable.", exception.Code);
+        }
         catch (TimeoutException)
         {
             _logger.LogWarning("AI upstream timed out. TraceId={TraceId}", System.Diagnostics.Activity.Current?.TraceId.ToString() ?? context.TraceIdentifier);

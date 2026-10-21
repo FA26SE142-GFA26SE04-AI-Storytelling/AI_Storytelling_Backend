@@ -12,6 +12,7 @@ public static class DependencyInjection
     public static IServiceCollection AddAIApplication(this IServiceCollection services)
     {
         services.AddScoped<CreatorAssistance.CreatorAssistanceHandler>();
+        services.AddScoped<Moderation.EvaluateGrayZoneHandler>();
         services.AddScoped<GenerateOutlineHandler>();
         services.AddSingleton<IOutlineOutputGuardrail, RuleBasedOutlineOutputGuardrail>();
         services.AddScoped<GenerateStoryHandler>();

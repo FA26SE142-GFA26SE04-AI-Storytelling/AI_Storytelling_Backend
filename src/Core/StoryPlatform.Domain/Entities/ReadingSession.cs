@@ -32,4 +32,8 @@ public class ReadingSession : BaseEntity
     public virtual RefreshToken? SupervisorSession { get; set; }
 
     public DateTime? ForceExitRequestedAt { get; set; }
+
+    /// <summary>Bước lộ trình mà phiên này ghi hoàn thành (WF-L4A UC-L4A-05); null khi đọc ngoài lộ trình.</summary>
+    public int? ChildRoadmapItemId { get; set; }
+    public virtual ChildRoadmapItem? ChildRoadmapItem { get; set; }
 }

@@ -15,4 +15,12 @@ public interface IContentReportReviewService
     Task<ContentReportDecisionResultDto> ArchiveAsync(
         int actorUserId, int itemId, ArchiveReportRequestDto request,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Chuyển ca cho Administrator quyết định cuối (lý do bắt buộc). Chỉ Moderator đang giữ mục; cần ít nhất một
+    /// Administrator đang hoạt động. Không báo người báo cáo.
+    /// </summary>
+    Task<ContentReportDecisionResultDto> EscalateAsync(
+        int actorUserId, int itemId, EscalateReportRequestDto request,
+        CancellationToken cancellationToken = default);
 }

@@ -493,6 +493,104 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("child_profile_version_history", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ChildRoadmapItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AddedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ChildProfileId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ExpectedCompletionAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ExpectedDays")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("OpenedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("RemovedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("RemovedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SkipReason")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime?>("SkippedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("Manual");
+
+                    b.Property<int?>("SourceReadingRoadmapId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("Waiting");
+
+                    b.Property<int>("StoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AddedByUserId");
+
+                    b.HasIndex("ChildProfileId")
+                        .IsUnique()
+                        .HasFilter("\"Status\" = 'Open' AND NOT \"IsDeleted\"");
+
+                    b.HasIndex("RemovedByUserId");
+
+                    b.HasIndex("SourceReadingRoadmapId");
+
+                    b.HasIndex("StoryId");
+
+                    b.HasIndex("ChildProfileId", "StoryId")
+                        .IsUnique()
+                        .HasFilter("\"Status\" IN ('Waiting', 'Open') AND NOT \"IsDeleted\"");
+
+                    b.HasIndex("ChildProfileId", "Status", "Position");
+
+                    b.ToTable("child_roadmap_items", (string)null);
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ChildSession", b =>
                 {
                     b.Property<int>("Id")
@@ -2068,6 +2166,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("ChildProfileId")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("ChildRoadmapItemId")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -2113,6 +2214,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasIndex("ChildAccessCredentialId");
 
                     b.HasIndex("ChildProfileId");
+
+                    b.HasIndex("ChildRoadmapItemId");
 
                     b.HasIndex("StoryId");
 
@@ -4072,6 +4175,47 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("Recommendation");
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ChildRoadmapItem", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "AddedByUser")
+                        .WithMany()
+                        .HasForeignKey("AddedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
+                        .WithMany()
+                        .HasForeignKey("ChildProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "RemovedByUser")
+                        .WithMany()
+                        .HasForeignKey("RemovedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.ReadingRoadmap", "SourceReadingRoadmap")
+                        .WithMany()
+                        .HasForeignKey("SourceReadingRoadmapId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.Story", "Story")
+                        .WithMany()
+                        .HasForeignKey("StoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AddedByUser");
+
+                    b.Navigation("ChildProfile");
+
+                    b.Navigation("RemovedByUser");
+
+                    b.Navigation("SourceReadingRoadmap");
+
+                    b.Navigation("Story");
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ChildSession", b =>
                 {
                     b.HasOne("StoryPlatform.Domain.Entities.ChildAccessCredential", "ChildAccessCredential")
@@ -4665,6 +4809,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("StoryPlatform.Domain.Entities.ChildRoadmapItem", "ChildRoadmapItem")
+                        .WithMany()
+                        .HasForeignKey("ChildRoadmapItemId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("StoryPlatform.Domain.Entities.Story", "Story")
                         .WithMany()
                         .HasForeignKey("StoryId")
@@ -4686,6 +4835,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("ChildAccessCredential");
 
                     b.Navigation("ChildProfile");
+
+                    b.Navigation("ChildRoadmapItem");
 
                     b.Navigation("Story");
 

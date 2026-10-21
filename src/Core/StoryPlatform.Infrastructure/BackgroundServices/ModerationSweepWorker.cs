@@ -44,6 +44,7 @@ public sealed class ModerationSweepWorker : BackgroundService
                 await scope.ServiceProvider.GetRequiredService<GrayZoneWorkflowService>().CloseObsoleteAsync(stoppingToken);
                 await sweepService.ReleaseExpiredClaimsAsync(stoppingToken);
                 await sweepService.WarnOverdueSlaAsync(stoppingToken);
+                await sweepService.WithdrawRoadmapReviewsOfInactiveCreatorsAsync(null, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

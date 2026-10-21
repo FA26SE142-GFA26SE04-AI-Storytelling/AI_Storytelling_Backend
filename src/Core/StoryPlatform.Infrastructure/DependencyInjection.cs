@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Features.Moderation;
 using System.IO;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -90,11 +91,15 @@ public static class DependencyInjection
         });
         services.AddHttpClient<GeminiDirectClient>();
         services.AddHttpClient<IAIStoryGenerationClient, AIStoryGenerationClient>();
+        services.AddHttpClient<IModelModerationProvider, VertexGrayZoneModerationProvider>();
         services.AddHttpClient<StoryPlatform.Application.Features.CreatorAssistance.Interfaces.ICreatorAssistanceAiClient, CreatorAssistanceAiClient>();
         services.Configure<OutlineWorkerOptions>(configuration.GetSection(OutlineWorkerOptions.SectionName));
         services.AddSingleton<IOutlineJobFailureFinalizer, OutlineJobFailureFinalizer>();
         services.AddHostedService<OutlineGenerationWorker>();
         services.Configure<ContentGenerationWorkerOptions>(configuration.GetSection(ContentGenerationWorkerOptions.SectionName));
+        var grayZoneOptions = new GrayZoneOptions();
+        configuration.GetSection(GrayZoneOptions.SectionName).Bind(grayZoneOptions);
+        services.AddSingleton(grayZoneOptions);
         var contentOptions = new ContentGenerationOptions();
         configuration.GetSection(ContentGenerationOptions.SectionName).Bind(contentOptions);
         services.AddSingleton(contentOptions);

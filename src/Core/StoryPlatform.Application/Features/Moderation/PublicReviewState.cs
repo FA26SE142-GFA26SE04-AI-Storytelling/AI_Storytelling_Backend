@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 
 namespace StoryPlatform.Application.Features.Moderation;
 
-public sealed record GrayZoneFlag(string Id, string Kind, string Name, string? Reason);
+public sealed record GrayZoneFlag(string Id, string Kind, string Name, string? Reason, int? StartOffset = null, int? EndOffset = null, string? EvidenceQuote = null, string? ContextNote = null, string? Category = null);
 
 public sealed record ResolvedFlag(string FlagId, string Reason, int ByUserId, DateTime At);
 
@@ -59,6 +59,17 @@ public static class PublicReviewState
         var root = ParseOrNew(grayZoneFlags);
         var reason = ReadString(root["reason"]);
         var flags = new List<GrayZoneFlag>();
+        if (root["flags"] is JsonArray structured)
+        {
+            foreach (var entry in structured.OfType<JsonObject>())
+            {
+                var id = ReadString(entry["id"]);
+                var kind = ReadString(entry["kind"]);
+                var name = ReadString(entry["name"]);
+                if (id != null && kind != null && name != null && flags.All(x => x.Id != id))
+                    flags.Add(new GrayZoneFlag(id, kind, name, ReadString(entry["reason"]), ReadInt(entry["startOffset"]), ReadInt(entry["endOffset"]), ReadString(entry["evidenceQuote"]), ReadString(entry["contextNote"]), ReadString(entry["category"])));
+            }
+        }
         AddFlagNames(flags, root["sections"], "section", reason);
         AddFlagNames(flags, root["artifacts"], "artifact", reason);
         return flags;

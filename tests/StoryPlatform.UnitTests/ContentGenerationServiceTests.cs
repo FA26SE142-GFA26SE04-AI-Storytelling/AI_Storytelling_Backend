@@ -351,6 +351,62 @@ public sealed class ContentGenerationServiceTests
     private static StoryGenerationJob PendingJob(FakeUnitOfWork store) =>
         store.Items<StoryGenerationJob>().Single(item => item.Status == GenerationJobStatus.Pending);
 
+    private sealed class GrayTestProvider : StoryPlatform.Application.Features.Moderation.IModelModerationProvider
+    {
+        public string Name => "test-only";
+        public Task<StoryPlatform.Application.Features.Moderation.ModelModerationResult> EvaluateAsync(
+            StoryPlatform.Application.Features.Moderation.GrayZoneScan scan, CancellationToken ct)
+        {
+            var target = scan.Parts.First(x => x.Kind == "paragraph");
+            return Task.FromResult(new StoryPlatform.Application.Features.Moderation.ModelModerationResult(50, "test-model",
+                [new(target.Kind, target.Name, "context", "Needs context review")]) { RubricVersion = scan.RubricVersion });
+        }
+    }
+
+    [Fact]
+    public async Task GrayZone_ParentPausesAndClearResumesSameCandidateWithoutRegenerating()
+    {
+        var store = Seed(); var ai = new FakeAIClient(); var handoff = new RecordingHandoffService(store);
+        var evaluator = new StoryPlatform.Application.Features.Moderation.GrayZoneEvaluator(new()
+            { Provider = "test-only", WarningThreshold = 30, BlockThreshold = 70, MaximumRiskScore = 100 }, [new GrayTestProvider()], Features.Moderation.RubricTestData.Source());
+        var workflow = new StoryPlatform.Application.Features.Moderation.Services.GrayZoneWorkflowService(store,
+            new Moq.Mock<StoryPlatform.Application.Features.AuditLogs.Interfaces.IAuditLogWriter>().Object);
+        var service = new ContentGenerationService(store, ai, new PassingQualityEvaluator(), new FakeFailureFinalizer(store),
+            handoff, new(), moderation: evaluator, grayZone: workflow);
+        Assert.True(await service.ProcessNextAsync());
+        var job = store.Items<StoryGenerationJob>().Single();
+        Assert.Equal(GenerationJobStatus.WaitingForModeration, job.Status);
+        Assert.Empty(handoff.Calls);
+        Assert.False(await service.ProcessNextAsync());
+        var candidateId = job.StoryVersionId;
+        var item = store.Items<ModerationItem>().Single();
+        store.Seed(new UserAccount { Id = 9, Role = UserRole.Moderator, Status = AccountStatus.Active });
+        item.Status = ModerationItemStatus.Claimed; item.ClaimedByUserId = 9; item.ClaimedAt = DateTime.UtcNow;
+        await workflow.DecideAsync(9, item.Id, new("Clear", "Safe in context", item.RowVersion), default);
+        Assert.True(await service.ProcessNextAsync());
+        Assert.Equal(GenerationJobStatus.Completed, job.Status);
+        Assert.Equal(candidateId, store.Items<StoryVersion>().Single(x => x.IsCurrent).Id);
+        Assert.Single(ai.Calls, x => x == "content");
+        Assert.Single(handoff.Calls);
+    }
+
+    [Fact]
+    public async Task GrayZone_RefinesQualityBeforeQueueingOnlyFinalCandidate()
+    {
+        var store = Seed(); var ai = new FakeAIClient();
+        var evaluator = new StoryPlatform.Application.Features.Moderation.GrayZoneEvaluator(new()
+            { Provider = "test-only", WarningThreshold = 30, BlockThreshold = 70, MaximumRiskScore = 100 }, [new GrayTestProvider()], Features.Moderation.RubricTestData.Source());
+        var workflow = new StoryPlatform.Application.Features.Moderation.Services.GrayZoneWorkflowService(store,
+            new Moq.Mock<StoryPlatform.Application.Features.AuditLogs.Interfaces.IAuditLogWriter>().Object);
+        var service = new ContentGenerationService(store, ai, new FailOnceQualityEvaluator(), new FakeFailureFinalizer(store),
+            new RecordingHandoffService(store), new(), moderation: evaluator, grayZone: workflow);
+        await service.ProcessNextAsync();
+        Assert.Contains("refine", ai.Calls);
+        var item = Assert.Single(store.Items<ModerationItem>());
+        Assert.Equal(store.Items<StoryVersion>().Max(x => x.Id), item.StoryVersionId);
+        Assert.Equal(GenerationJobStatus.WaitingForModeration, store.Items<StoryGenerationJob>().Single().Status);
+    }
+
     private static ContentGenerationService Service(FakeUnitOfWork store, IAIStoryGenerationClient ai) =>
         new(store, ai, new PassingQualityEvaluator(), new FakeFailureFinalizer(store), new RecordingHandoffService(store), new ContentGenerationOptions());
 

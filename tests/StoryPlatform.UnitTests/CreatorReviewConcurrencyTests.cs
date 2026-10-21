@@ -151,6 +151,42 @@ public sealed class CreatorReviewConcurrencyTests
         Assert.Equal(0, edit.BeginCount);
     }
 
+    [Fact]
+    public async Task ParentApproveRejectsReplacementCommittedAfterModerationCheck()
+    {
+        var db = Seed();
+        var story = db.Data[typeof(Story)].Cast<Story>().Single();
+        story.Scope = StoryScope.Parent; story.ChildProfileId = 3; story.OutputMode = StoryOutputMode.ReadingMediaOnly;
+        db.Data[typeof(UserAccount)].Cast<UserAccount>().Single().Role = UserRole.Parent;
+        db.Seed(new SafetyPolicy { Id = 1, ChildProfileId = 3, ConsentRecorded = true, ConsentRecordedAt = DateTime.UtcNow,
+            ConsentPolicyVersion = 1, MaxStoryLength = 5000, RequiredApprovalMode = ApprovalMode.AutoPublishOnThreshold, ParentalGateEnabled = false });
+        await using var session = new Session(db);
+        var changed = false;
+        session.AfterCommit = () =>
+        {
+            if (changed) return;
+            changed = true;
+            var v1 = db.Data[typeof(StoryVersion)].Cast<StoryVersion>().Single(x => x.IsCurrent);
+            var v2 = (StoryVersion)Copy(v1); v2.Id = 2; v2.VersionNo = 2;
+            v2.GrayZoneFlags = null; v2.ModerationZone = null; v2.GrayZoneCleared = false;
+            v1.IsCurrent = false; db.Seed(v2);
+        };
+        var evaluator = new Mock<StoryPlatform.Application.Features.Moderation.IGrayZoneEvaluator>();
+        evaluator.SetupGet(x => x.IsConfigured).Returns(true);
+        evaluator.Setup(x => x.EvaluateAsync(It.IsAny<StoryPlatform.Application.Features.Moderation.GrayZoneScan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((StoryPlatform.Application.Features.Moderation.GrayZoneScan scan, CancellationToken _) =>
+                new StoryPlatform.Application.Features.Moderation.GrayZoneAssessment(ModerationZone.Safe,
+                    StoryPlatform.Application.Features.Moderation.GrayZoneEvaluator.Fingerprint(scan), scan.Phase, "policy", "test", "test", 0, []));
+        var workflow = new StoryPlatform.Application.Features.Moderation.Services.GrayZoneWorkflowService(session,
+            new Mock<StoryPlatform.Application.Features.AuditLogs.Interfaces.IAuditLogWriter>().Object);
+        var checker = new StoryPlatform.Application.Features.Moderation.Services.GrayZoneContentCheckService(session, evaluator.Object, workflow,
+            new Mock<StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces.ISupervisionAccessGuard>().Object);
+        var service = new StoryReviewService(session, new SafetyGate().Client.Object, new InMemoryProposalCache(), moderation: checker);
+        var conflict = await Assert.ThrowsAsync<ConflictException>(() => service.ApproveAsync(1, 1));
+        Assert.Equal("STALE_STORY_VERSION", conflict.Message);
+        Assert.Empty(db.Read<StoryGenerationJob>());
+    }
+
     private static TaskCompletionSource<bool> Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
     private static async Task Wait(Task task) => await task.WaitAsync(TimeSpan.FromSeconds(10));
     private static StoryReviewService Service(Session session, SafetyGate? gate = null) =>
@@ -219,6 +255,7 @@ public sealed class CreatorReviewConcurrencyTests
         private Dictionary<Type, List<object>>? transaction;
         private bool held;
         public int BeginCount { get; private set; }
+        public Action? AfterCommit { get; set; }
         public TaskCompletionSource<bool> LockRequested { get; } = Signal();
         public TaskCompletionSource<bool> LockAcquired { get; } = Signal();
         public TaskCompletionSource<bool>? ContinueAfterLock { get; init; }
@@ -237,7 +274,7 @@ public sealed class CreatorReviewConcurrencyTests
         public Task CommitTransactionAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            db.Data = transaction ?? throw new InvalidOperationException("No transaction"); Release(); return Task.CompletedTask;
+            db.Data = transaction ?? throw new InvalidOperationException("No transaction"); Release(); AfterCommit?.Invoke(); return Task.CompletedTask;
         }
         public Task RollbackTransactionAsync(CancellationToken cancellationToken = default) { Release(); return Task.CompletedTask; }
         private void Release() { transaction = null; if (held) { held = false; db.StoryLock.Release(); } }

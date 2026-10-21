@@ -1,4 +1,4 @@
-﻿using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
@@ -16,17 +16,18 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
     private readonly IModerationQueueService _queueService;
     private readonly IMediaReadinessService _mediaReadinessService;
     private readonly IAuditLogWriter _auditLogWriter;
+    private readonly IGrayZoneEvaluator? _moderation;
 
     public PublicStorySubmissionService(
         IUnitOfWork unitOfWork,
         IModerationQueueService queueService,
         IMediaReadinessService mediaReadinessService,
-        IAuditLogWriter auditLogWriter)
+        IAuditLogWriter auditLogWriter, IGrayZoneEvaluator? moderation = null)
     {
         _unitOfWork = unitOfWork;
         _queueService = queueService;
         _mediaReadinessService = mediaReadinessService;
-        _auditLogWriter = auditLogWriter;
+        _auditLogWriter = auditLogWriter; _moderation = moderation;
     }
 
     public Task<PublicStorySubmissionResultDto> SubmitAsync(int actorUserId, SubmitPublicStoryRequestDto request, CancellationToken cancellationToken = default) =>
@@ -97,6 +98,12 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
             throw new ConflictException("Truyện đang có yêu cầu duyệt chưa xong.");
         }
 
+        if (_moderation?.IsConfigured == true)
+        {
+            var assessment = GrayZoneWorkflowService.ReadAssessment(version);
+            if (assessment is null || !await _moderation.CanReuseAsync(assessment, cancellationToken)) throw new ConflictException("CONTENT_MODERATION_CHECK_REQUIRED");
+        }
+        GrayZoneGate.EnsureCanContinue(story, version);
         var readiness = await _mediaReadinessService.CheckAsync(version.Id, null, cancellationToken);
         if (!readiness.IsReady)
         {

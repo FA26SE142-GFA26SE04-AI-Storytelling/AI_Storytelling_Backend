@@ -276,7 +276,8 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
             var handled = resolved.FirstOrDefault(x => x.FlagId == flag.Id);
             return new PublicReviewFlagDto
             {
-                FlagId = flag.Id,
+                FlagId = flag.Id, StartOffset = flag.StartOffset, EndOffset = flag.EndOffset,
+                CriterionCode = flag.Category, EvidenceQuote = flag.EvidenceQuote, ContextNote = flag.ContextNote,
                 Kind = flag.Kind,
                 Name = flag.Name,
                 Reason = flag.Reason,

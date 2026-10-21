@@ -34,13 +34,15 @@ public sealed class AuthoringGuideCatalogModelTests
         Assert.Equal("jsonb", version.FindProperty(nameof(AuthoringGuideCatalogVersion.ContentJson))!.GetColumnType());
         Assert.False(version.FindProperty(nameof(AuthoringGuideCatalogVersion.ContentJson))!.IsNullable);
         Assert.Equal(typeof(string), version.FindProperty(nameof(AuthoringGuideCatalogVersion.Status))!.GetProviderClrType());
-        Assert.Contains(version.GetIndexes(), index => index.IsUnique &&
+        // Soft-deleted (discarded) drafts must not block reusing their number / code.
+        Assert.Contains(version.GetIndexes(), index => index.IsUnique && index.GetFilter() == "NOT \"IsDeleted\"" &&
             index.Properties.Select(p => p.Name).SequenceEqual(
                 [nameof(AuthoringGuideCatalogVersion.CatalogId), nameof(AuthoringGuideCatalogVersion.VersionNo)]));
-        Assert.Contains(version.GetIndexes(), index => index.IsUnique &&
+        Assert.Contains(version.GetIndexes(), index => index.IsUnique && index.GetFilter() == "NOT \"IsDeleted\"" &&
             index.Properties.Select(p => p.Name).SequenceEqual(
                 [nameof(AuthoringGuideCatalogVersion.CatalogId), nameof(AuthoringGuideCatalogVersion.CatalogVersion)]));
-        Assert.Contains(version.GetIndexes(), index => index.IsUnique && index.GetFilter() is not null &&
+        Assert.Contains(version.GetIndexes(), index => index.IsUnique &&
+            index.GetFilter() == "\"Status\" = 'Draft' AND NOT \"IsDeleted\"" &&
             index.Properties.Select(p => p.Name).SequenceEqual([nameof(AuthoringGuideCatalogVersion.CatalogId)]));
         Assert.Equal(AuthoringGuideVersionStatus.Draft, (AuthoringGuideVersionStatus)1);
     }

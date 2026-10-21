@@ -19,16 +19,10 @@ public sealed class AuthoringGuideService(IUnitOfWork uow)
     public async Task<GuidePage> GetAsync(string locale, string? purpose, string? group, int pageIndex, int pageSize,
         CancellationToken ct = default)
     {
-        if (pageIndex < 1 || pageSize is < 1 or > 100) throw new BadRequestException("PAGINATION_INVALID");
-        ParentManualAuthoringPolicy.ValidatePurpose(purpose);
+        AuthoringGuideCatalogQuery.ValidatePaging(purpose, pageIndex, pageSize);
         var (catalogVersion, catalogLocale, items) = await LoadPublishedAsync(ct);
         if (locale != catalogLocale) return new(catalogVersion, locale, pageIndex, pageSize, 0, []);
-        var all = items.Where(x => group is null || x.SupportGroup == group).ToArray();
-        var filtered = all.Where(x => x.Purposes.Contains(purpose ?? "free")).ToArray();
-        if (filtered.Length == 0) filtered = all.Where(x => x.Purposes.Contains("free")).ToArray();
-        var ordered = filtered.OrderBy(x => x.Order).ThenBy(x => x.Id, StringComparer.Ordinal).ToArray();
-        return new(catalogVersion, locale, pageIndex, pageSize, ordered.Length,
-            ordered.Skip((pageIndex - 1) * pageSize).Take(pageSize).ToArray());
+        return AuthoringGuideCatalogQuery.Page(catalogVersion, locale, purpose, group, pageIndex, pageSize, items);
     }
 
     public async Task<RenderGuideResult> RenderAsync(string id, RenderGuideRequest request, CancellationToken ct = default)
@@ -37,14 +31,7 @@ public sealed class AuthoringGuideService(IUnitOfWork uow)
         if (!string.IsNullOrWhiteSpace(request.CatalogVersion) && request.CatalogVersion != catalogVersion)
             throw new ConflictException("GUIDE_CATALOG_CHANGED");
         var guide = items.SingleOrDefault(x => x.Id == id) ?? throw new NotFoundException("Guide", id);
-        if (guide.TemplateText is null) throw new BadRequestException("GUIDE_HAS_NO_TEMPLATE");
-        var values = request.Values ?? [];
-        if (values.Keys.Except(guide.PlaceholderDefinitions).Any() || guide.PlaceholderDefinitions.Any(x =>
-                !values.TryGetValue(x, out var value) || string.IsNullOrWhiteSpace(value) || value.Length > 500))
-            throw new BadRequestException("PLACEHOLDER_VALUES_INVALID");
-        // One pass: inserted values are text, never recursively interpreted as template syntax/HTML.
-        var text = AuthoringGuideCatalogValidator.PlaceholderPattern.Replace(guide.TemplateText, m => values[m.Groups[1].Value]);
-        return new(catalogVersion, guide.Id, text);
+        return new(catalogVersion, guide.Id, AuthoringGuideCatalogQuery.RenderText(guide, request.Values));
     }
 
     private async Task<(string CatalogVersion, string Locale, AuthoringGuide[] Items)> LoadPublishedAsync(CancellationToken ct)

@@ -243,6 +243,123 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("audit_logs", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.AuthoringGuideCatalog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AudienceRole")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("DraftVersionId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Locale")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<int?>("PublishedVersionId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("RevisionToken")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DraftVersionId");
+
+                    b.HasIndex("PublishedVersionId");
+
+                    b.HasIndex("Locale", "AudienceRole")
+                        .IsUnique();
+
+                    b.ToTable("authoring_guide_catalogs", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.AuthoringGuideCatalogVersion", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CatalogId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("CatalogVersion")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("ContentJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("CreatedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("PublishedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("UpdatedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("VersionNo")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CatalogId")
+                        .IsUnique()
+                        .HasFilter("\"Status\" = 'Draft' AND NOT \"IsDeleted\"");
+
+                    b.HasIndex("CatalogId", "CatalogVersion")
+                        .IsUnique()
+                        .HasFilter("NOT \"IsDeleted\"");
+
+                    b.HasIndex("CatalogId", "VersionNo")
+                        .IsUnique()
+                        .HasFilter("NOT \"IsDeleted\"");
+
+                    b.ToTable("authoring_guide_catalog_versions", (string)null);
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.Badge", b =>
                 {
                     b.Property<int>("Id")
@@ -3978,6 +4095,30 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("ActorUser");
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.AuthoringGuideCatalog", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.AuthoringGuideCatalogVersion", null)
+                        .WithMany()
+                        .HasForeignKey("DraftVersionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.AuthoringGuideCatalogVersion", null)
+                        .WithMany()
+                        .HasForeignKey("PublishedVersionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.AuthoringGuideCatalogVersion", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.AuthoringGuideCatalog", "Catalog")
+                        .WithMany("Versions")
+                        .HasForeignKey("CatalogId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Catalog");
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.Badge", b =>
                 {
                     b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
@@ -5156,6 +5297,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("ChildProfile");
 
                     b.Navigation("StoryVocabulary");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.AuthoringGuideCatalog", b =>
+                {
+                    b.Navigation("Versions");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadingRoadmap", b =>

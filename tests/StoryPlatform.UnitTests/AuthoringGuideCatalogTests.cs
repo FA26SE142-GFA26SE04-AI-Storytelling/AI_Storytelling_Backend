@@ -160,4 +160,57 @@ public sealed class AuthoringGuideCatalogTests
         var unavailable = await Assert.ThrowsAsync<ConflictException>(() => store.Guides.GetAsync("vi", null, null, 1, 10, Ct));
         Assert.Equal("GUIDE_CATALOG_UNAVAILABLE", unavailable.Message);
     }
+
+    [Fact]
+    public void Validator_rejects_ids_that_are_not_url_safe()
+    {
+        AssertInvalid("GUIDE_ID_INVALID", Question("bad id"));
+        AssertInvalid("GUIDE_ID_INVALID", Question("a/b"));
+        AssertInvalid("GUIDE_ID_INVALID", Question(new string('a', 101)));
+        AuthoringGuideCatalogValidator.Validate([Question(new string('a', 100)), Question("ok_id-1")]);
+    }
+
+    [Fact]
+    public void Query_orders_by_order_then_id_filters_group_and_falls_back_to_free()
+    {
+        AuthoringGuide[] items = [Question("b") with { Order = 2 }, Question("a") with { Order = 2 }, Template("c") with { Order = 1 }];
+
+        var all = AuthoringGuideCatalogQuery.Page("parent-vi-1", "vi", null, null, 1, 10, items);
+        Assert.Equal(["c", "a", "b"], all.Items.Select(x => x.Id));
+        Assert.Equal(("parent-vi-1", "vi", 3), (all.CatalogVersion, all.Locale, all.TotalCount));
+
+        Assert.Equal(["c"], AuthoringGuideCatalogQuery.Page("v", "vi", null, "opening", 1, 10, items).Items.Select(x => x.Id));
+        Assert.Equal(3, AuthoringGuideCatalogQuery.Page("v", "vi", "message", null, 1, 10, items).TotalCount);
+
+        var second = AuthoringGuideCatalogQuery.Page("v", "vi", null, null, 2, 2, items);
+        Assert.Equal(["b"], second.Items.Select(x => x.Id));
+        Assert.Equal(3, second.TotalCount);
+    }
+
+    [Fact]
+    public void Query_validates_paging_and_purpose()
+    {
+        Assert.Equal("PAGINATION_INVALID", Assert.Throws<BadRequestException>(() => AuthoringGuideCatalogQuery.ValidatePaging(null, 0, 10)).Message);
+        Assert.Equal("PAGINATION_INVALID", Assert.Throws<BadRequestException>(() => AuthoringGuideCatalogQuery.ValidatePaging(null, 1, 101)).Message);
+        AuthoringGuideCatalogQuery.ValidatePaging("family_memory", 1, 100);
+        Assert.Throws<BadRequestException>(() => AuthoringGuideCatalogQuery.ValidatePaging("bedtime", 1, 10));
+    }
+
+    [Fact]
+    public void Query_renders_plain_text_in_one_pass_and_rejects_bad_values()
+    {
+        var guide = Template();
+        Assert.Equal("Hôm ấy, $1 thử {{x}}.", AuthoringGuideCatalogQuery.RenderText(guide with { TemplateText = "Hôm ấy, {{person}} thử {{activity}}.", PlaceholderDefinitions = ["person", "activity"] },
+            new Dictionary<string, string> { ["person"] = "$1", ["activity"] = "{{x}}" }));
+
+        AssertRenderInvalid("GUIDE_HAS_NO_TEMPLATE", Question(), new Dictionary<string, string>());
+        AssertRenderInvalid("PLACEHOLDER_VALUES_INVALID", guide, new Dictionary<string, string> { ["person"] = "An" });
+        AssertRenderInvalid("PLACEHOLDER_VALUES_INVALID", guide, new Dictionary<string, string> { ["person"] = "An", ["activity"] = "x", ["extra"] = "y" });
+        AssertRenderInvalid("PLACEHOLDER_VALUES_INVALID", guide, new Dictionary<string, string> { ["person"] = " ", ["activity"] = "x" });
+        AssertRenderInvalid("PLACEHOLDER_VALUES_INVALID", guide, new Dictionary<string, string> { ["person"] = new string('a', 501), ["activity"] = "x" });
+        AssertRenderInvalid("PLACEHOLDER_VALUES_INVALID", guide, null);
+    }
+
+    private static void AssertRenderInvalid(string code, AuthoringGuide guide, IReadOnlyDictionary<string, string>? values) =>
+        Assert.Equal(code, Assert.Throws<BadRequestException>(() => AuthoringGuideCatalogQuery.RenderText(guide, values)).Message);
 }

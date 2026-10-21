@@ -13,6 +13,8 @@ public static class AuthoringGuideCatalogValidator
 
     public static readonly Regex PlaceholderPattern = new(@"\{\{([a-z_]+)\}\}", RegexOptions.Compiled);
 
+    private static readonly Regex IdPattern = new(@"^[A-Za-z0-9_-]{1,100}$", RegexOptions.Compiled);
+
     public static void Validate(IReadOnlyCollection<AuthoringGuide> items)
     {
         if (items.Select(x => x.Id).Distinct(StringComparer.Ordinal).Count() != items.Count)
@@ -25,6 +27,7 @@ public static class AuthoringGuideCatalogValidator
         if (string.IsNullOrWhiteSpace(item.Id) || string.IsNullOrWhiteSpace(item.Title) ||
             string.IsNullOrWhiteSpace(item.Instruction))
             throw new BadRequestException("GUIDE_FIELD_REQUIRED");
+        if (!IdPattern.IsMatch(item.Id)) throw new BadRequestException("GUIDE_ID_INVALID");
         if (item.AudienceRole != "Parent") throw new BadRequestException("GUIDE_AUDIENCE_INVALID");
 
         var purposes = item.Purposes ?? [];

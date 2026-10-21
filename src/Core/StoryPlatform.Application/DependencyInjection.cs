@@ -73,7 +73,8 @@ public static class DependencyInjection
         services.AddScoped<ICreatorAuthoringService, CreatorAuthoringService>();
         services.AddScoped<StoryPlatform.Application.Features.ParentAuthoring.ParentAuthoringService>();
         services.AddScoped<StoryPlatform.Application.Features.ParentAuthoring.ParentAssistanceService>();
-        services.AddSingleton<StoryPlatform.Application.Features.ParentAuthoring.AuthoringGuideService>();
+        services.AddScoped<StoryPlatform.Application.Features.ParentAuthoring.AuthoringGuideService>();
+        services.AddScoped<StoryPlatform.Application.Features.ParentAuthoring.AuthoringGuideCatalogSeeder>();
         services.AddScoped<Features.CreatorAssistance.Interfaces.ICreatorAssistanceService, Features.CreatorAssistance.Services.CreatorAssistanceService>();
         services.AddSingleton<Features.CreatorAssistance.Services.AssistanceCancellationRegistry>();
         services.AddScoped<IUserProvisioningService, UserProvisioningService>();

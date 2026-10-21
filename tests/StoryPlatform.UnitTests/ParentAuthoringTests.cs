@@ -338,16 +338,18 @@ public sealed class ParentAuthoringTests
     }
 
     [Fact]
-    public void Catalog_is_shared_deterministic_and_rendering_is_plain_text_not_recursive()
+    public async Task Catalog_is_shared_deterministic_and_rendering_is_plain_text_not_recursive()
     {
-        var guides = new AuthoringGuideService();
-        Assert.Equal(21, guides.Get("vi", "family_memory", null, 1, 100).TotalCount);
-        var a = guides.Get("vi", "message", "dialogue", 1, 10);
-        var b = guides.Get("vi", "message", "dialogue", 1, 10);
-        Assert.Equal(a.Items, b.Items); Assert.Equal(3, a.TotalCount);
-        Assert.Empty(guides.Get("en", null, null, 1, 10).Items);
-        var rendered = guides.Render("dialogue-1", new(new() { ["person"] = "<b>An</b>", ["words"] = "{{person}}" }));
+        var guides = new ParentAuthoringTestStore().Guides;
+        Assert.Equal(21, (await guides.GetAsync("vi", "family_memory", null, 1, 100, Ct)).TotalCount);
+        var a = await guides.GetAsync("vi", "message", "dialogue", 1, 10, Ct);
+        var b = await guides.GetAsync("vi", "message", "dialogue", 1, 10, Ct);
+        // Each call deserializes fresh arrays, so compare content rather than array references.
+        Assert.Equal(System.Text.Json.JsonSerializer.Serialize(a.Items), System.Text.Json.JsonSerializer.Serialize(b.Items));
+        Assert.Equal(3, a.TotalCount);
+        Assert.Empty((await guides.GetAsync("en", null, null, 1, 10, Ct)).Items);
+        var rendered = await guides.RenderAsync("dialogue-1", new(new() { ["person"] = "<b>An</b>", ["words"] = "{{person}}" }), Ct);
         Assert.True(rendered.IsPlainText); Assert.Contains("<b>An</b>", rendered.Text); Assert.Contains("{{person}}", rendered.Text);
-        Assert.Throws<BadRequestException>(() => guides.Render("dialogue-1", new(new() { ["person"] = "An" })));
+        await Assert.ThrowsAsync<BadRequestException>(() => guides.RenderAsync("dialogue-1", new(new() { ["person"] = "An" }), Ct));
     }
 }

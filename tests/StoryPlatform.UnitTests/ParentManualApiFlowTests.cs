@@ -358,7 +358,7 @@ public sealed class ParentManualApiFlowTests
             builder.Services.AddSingleton(new ParentAssistanceService(store.Uow.Object, ai.Object, new(), TimeProvider.System,
                 new SupervisionAccessGuard(store.Uow.Object), new(), NullLogger<ParentAssistanceService>.Instance));
             builder.Services.AddSingleton<ICreatorAssistanceService>(new CreatorAssistanceService(store.Uow.Object, ai.Object, new(), TimeProvider.System));
-            builder.Services.AddSingleton<AuthoringGuideService>();
+            builder.Services.AddSingleton(new AuthoringGuideService(store.Uow.Object));
             builder.Services.AddSingleton<IStoryService>(new StoryService(store.Uow.Object));
             builder.Services.AddJwtAuthentication(builder.Configuration);
             builder.Services.AddAppAuthorization();

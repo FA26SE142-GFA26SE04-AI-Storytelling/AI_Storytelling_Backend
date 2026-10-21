@@ -19,6 +19,7 @@ namespace StoryPlatform.UnitTests;
         private readonly SemaphoreSlim _transaction = new(1, 1);
         public Mock<IUnitOfWork> Uow { get; } = new();
         public ParentAuthoringService Service { get; }
+        public AuthoringGuideService Guides => new(Uow.Object);
         public CreatorAuthoringService Creator { get; }
         public IImportPreviewProtector Protector { get; } = new ImportPreviewProtector(new EphemeralDataProtectionProvider());
 
@@ -28,7 +29,7 @@ namespace StoryPlatform.UnitTests;
             Register<ChildProfile>(); Register<SupervisionRelationship>(); Register<SupervisionPermission>();
             Register<ChildSession>(); Register<StoryAssistanceTask>(); Register<StoryAssistanceStep>();
             Register<SafetyPolicy>(); Register<SafetyPolicyCategory>(); Register<ContentCategory>();
-            Register<LearningProfile>(); Register<StoryVocabulary>(); Register<QuizItem>(); Register<DiscussionQuestion>(); Register<ModerationItem>(); Register<ParentStoryOperation>(); Register<StoryGenerationJob>(); Register<StoryGenerationRequest>();
+            Register<LearningProfile>(); Register<StoryVocabulary>(); Register<QuizItem>(); Register<DiscussionQuestion>(); Register<ModerationItem>(); Register<ParentStoryOperation>(); Register<StoryGenerationJob>(); Register<StoryGenerationRequest>(); Register<AuthoringGuideCatalog>(); Register<AuthoringGuideCatalogVersion>();
             Uow.Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>())).Returns<CancellationToken>(async ct => {
                 await _transaction.WaitAsync(ct);
                 _snapshot = _data.ToDictionary(x => x.Key, x => System.Text.Json.JsonSerializer.Deserialize(
@@ -46,6 +47,7 @@ namespace StoryPlatform.UnitTests;
                 new UserAccount { Id = 2, Status = AccountStatus.Active },
                 new UserAccount { Id = 9, Status = AccountStatus.Active, Role = UserRole.Administrator }
             ]);
+            new AuthoringGuideCatalogSeeder(Uow.Object).SeedAsync(CancellationToken.None).GetAwaiter().GetResult();
             Creator = new CreatorAuthoringService(Uow.Object, options ?? new CreatorAuthoringOptions(), Protector);
             Items<ChildProfile>().Add(new ChildProfile { Id = 3, OwnerUserId = 1, Status = ChildProfileStatus.Active, Language = "vi", AgeBand = AgeBand.Age_6_8 });
             Items<SupervisionRelationship>().Add(new SupervisionRelationship { Id = 1, ChildProfileId = 3, SupervisorUserId = 1, SupervisorRole = SupervisorRole.Owner });

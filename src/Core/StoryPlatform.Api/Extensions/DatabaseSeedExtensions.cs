@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using StoryPlatform.Application.Features.ParentAuthoring;
 
 namespace StoryPlatform.Api.Extensions;
 
@@ -75,6 +76,26 @@ public static class DatabaseSeedExtensions
             // A seed failure must not take down the whole app (unlike a failed migration) -
             // seeding is a one-time bootstrap step, not something the running app depends on.
             logger.LogError(ex, "Failed to apply seed data from '{SeedDirectory}'.", seedDirectory);
+        }
+    }
+
+    /// <summary>
+    /// Nạp bộ hướng dẫn sáng tác mặc định vào database nếu chưa có. Idempotent; lỗi chỉ ghi log để không làm sập ứng dụng.
+    /// </summary>
+    public static async Task SeedAuthoringGuidesAsync(this IHost host)
+    {
+        using var scope = host.Services.CreateScope();
+        var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("AuthoringGuideSeed");
+        try
+        {
+            var seeded = await scope.ServiceProvider.GetRequiredService<AuthoringGuideCatalogSeeder>().SeedAsync(CancellationToken.None);
+            logger.LogInformation(seeded
+                ? "Authoring guide catalog seeded (parent-vi-1)."
+                : "Authoring guide catalog already present; seed skipped.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to seed authoring guide catalog.");
         }
     }
 

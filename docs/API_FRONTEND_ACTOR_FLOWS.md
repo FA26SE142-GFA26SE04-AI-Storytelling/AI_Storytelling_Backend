@@ -1,4 +1,4 @@
-﻿# API backend theo actor và luồng tích hợp frontend
+# API backend theo actor và luồng tích hợp frontend
 
 > Rà soát source ngày **20/10/2026**. Đây là tài liệu contract và checklist tích hợp từ mã nguồn, **không phải biên bản kiểm thử API/DB hoặc xác nhận đã triển khai**.
 
@@ -232,7 +232,7 @@ Nguồn: [luồng 2](HUONG_DAN_SU_DUNG_API_LUONG_2.md), [AIStoryInputService](..
 
 ### M1. Tạo/lưu/nhập
 
-1. GET /authoring-guides → POST /{guideId}/render trả envelope RenderGuideResult. Render text, không innerHTML; chèn/undo không tạo version.
+1. GET /authoring-guides (chỉ phiên bản đang phát hành, có catalogVersion) → POST /{guideId}/render trả envelope RenderGuideResult; có thể gửi catalogVersion, lệch thì 409 GUIDE_CATALOG_CHANGED → tải lại danh sách. Render text, không innerHTML; chèn/undo không tạo version.
 2. POST /parent/stories/manual với operationId/childProfileId/ngữ cảnh → giữ data.story.storyId, revisionToken, selectedVersionId.
 3. GET detail/workflow phục hồi; đổi child tạo tác phẩm/ngữ cảnh riêng.
 4. POST /{storyId}/manual/versions với revisionToken/baseVersionId/nội dung cuối → version mới. GET versions/version; restore tạo version mới.
@@ -396,6 +396,10 @@ GET /ContentReportReview/{itemId} → xem báo cáo/nội dung đã mask → POS
 
 Nguồn: [PublicStoryReviewService](../src/Core/StoryPlatform.Application/Features/Moderation/Services/PublicStoryReviewService.cs), [ModerationQueueService](../src/Core/StoryPlatform.Application/Features/Moderation/Services/ModerationQueueService.cs), [ContentReportReviewService](../src/Core/StoryPlatform.Application/Features/ContentReports/Services/ContentReportReviewService.cs).
 
+### MO4. Quản lý hướng dẫn sáng tác (Moderator hoặc Administrator)
+
+Tiền tố `/api/v1/moderation/authoring-guides`. Luồng: GET `/` (bộ đang phát hành + bản nháp + `revisionToken`) → POST `/draft` → PUT/DELETE `/draft/items/{guideId}` → POST `/draft/preview` → POST `/draft/publish`; DELETE `/draft` hủy bản nháp (xóa mềm); GET `/versions`, `/versions/{versionId}` xem lịch sử. Các thao tác sửa, loại mục, hủy và phát hành cần `revisionToken` mới nhất và trả token mới; 409 `GUIDE_REVISION_CONFLICT` nghĩa là tải lại `GET /`. Phiên bản đã phát hành không sửa được; khôi phục = tạo nháp từ `sourceVersionId` rồi phát hành. Chi tiết, payload mẫu và bảng mã lỗi: `docs/AUTHORING_GUIDE_MANAGEMENT_API_GUIDE.md`.
+
 <a id="admin"></a>
 ## 11. Administrator — vận hành
 
@@ -406,6 +410,7 @@ Nguồn: [PublicStoryReviewService](../src/Core/StoryPlatform.Application/Featur
 - **Báo cáo:** POST /BusinessReport/generate → /{reportId}/publish → GET latest-published. Generate/publish chỉ Admin; latest cho người lớn xác thực.
 - **Đối soát:** GET /Payment/mismatched → xác minh → POST /transactions/{id}/mark-paid. Local badge không chứng minh đã đối soát.
 - **Kiểm duyệt:** MO1–MO3 theo guard Admin; không bỏ cấm tự duyệt/eligibility.
+- **Hướng dẫn sáng tác:** MO4; Administrator và Moderator cùng quản lý bản nháp và phát hành bộ hướng dẫn cho Parent.
 
 Chỉ số AI, catalog prompt phiên bản, ứng tuyển Creator, quản lý Parent/bộ đánh giá frontend còn local; source Core không có đủ controller để coi đã tích hợp.
 
@@ -2230,7 +2235,7 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="controller-authoringguides"></a>
 ### AuthoringGuides — 2 route
 
-M1. Parent token; catalog không AI/không lưu version. Render trả ApiResponse&lt;RenderGuideResult&gt; chứa text, không raw HTML. Query theo signature.
+M1. Parent token; catalog không AI/không lưu version. Render trả ApiResponse&lt;RenderGuideResult&gt; chứa text, không raw HTML. Query theo signature. Catalog lưu trong database, chỉ đọc phiên bản đang phát hành; RenderGuideRequest có thêm catalogVersion tùy chọn (409 GUIDE_CATALOG_CHANGED khi lệch). Quản lý bởi Moderator/Administrator qua /api/v1/moderation/authoring-guides.
 
 Guard/nghiệp vụ: [AuthoringGuideService.cs](../src/Core/StoryPlatform.Application/Features/ParentAuthoring/AuthoringGuideService.cs).
 

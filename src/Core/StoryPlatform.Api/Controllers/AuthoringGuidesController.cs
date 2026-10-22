@@ -11,10 +11,11 @@ namespace StoryPlatform.Api.Controllers;
 public sealed class AuthoringGuidesController(AuthoringGuideService service) : ControllerBase
 {
     [HttpGet]
-    public IActionResult Get(string locale = "vi", string? purpose = null, string? group = null, int pageIndex = 1, int pageSize = 10) =>
-        Ok(ApiResponse<GuidePage>.Ok(service.Get(locale, purpose, group, pageIndex, pageSize)));
+    public async Task<IActionResult> Get(string locale = "vi", string? purpose = null, string? group = null,
+        int pageIndex = 1, int pageSize = 10, CancellationToken cancellationToken = default) =>
+        Ok(ApiResponse<GuidePage>.Ok(await service.GetAsync(locale, purpose, group, pageIndex, pageSize, cancellationToken)));
 
     [HttpPost("{guideId}/render")]
-    public IActionResult Render(string guideId, RenderGuideRequest request) =>
-        Ok(ApiResponse<RenderGuideResult>.Ok(service.Render(guideId, request)));
+    public async Task<IActionResult> Render(string guideId, RenderGuideRequest request, CancellationToken cancellationToken) =>
+        Ok(ApiResponse<RenderGuideResult>.Ok(await service.RenderAsync(guideId, request, cancellationToken)));
 }

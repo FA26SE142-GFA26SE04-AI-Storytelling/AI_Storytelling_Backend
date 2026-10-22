@@ -3021,6 +3021,63 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("story_assistance_tasks", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryAuthoringOperation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ActorUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("OperationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("OperationResponseJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("StoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("StoryVersionId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("StoryId", "OperationId")
+                        .IsUnique();
+
+                    b.HasIndex("StoryVersionId", "StoryId");
+
+                    b.ToTable("story_authoring_operations", (string)null);
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryCategory", b =>
                 {
                     b.Property<int>("Id")
@@ -3392,15 +3449,8 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("AssistanceProvenanceJson")
-                        .HasColumnType("jsonb");
-
                     b.Property<int>("AudienceRevision")
                         .HasColumnType("integer");
-
-                    b.Property<string>("AuthoringOrigin")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
 
                     b.Property<int?>("BaseVersionId")
                         .HasColumnType("integer");
@@ -3419,32 +3469,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int?>("EditorUserId")
                         .HasColumnType("integer");
 
-                    b.Property<bool>("GrayZoneCleared")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
-
-                    b.Property<DateTime?>("GrayZoneClearedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("GrayZoneClearedByUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("GrayZoneFlags")
-                        .HasColumnType("jsonb");
-
-                    b.Property<string>("ImportFileName")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<string>("ImportPreviewHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<string>("ImportSourceHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
                     b.Property<bool>("IsCurrent")
                         .HasColumnType("boolean");
 
@@ -3452,17 +3476,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<string>("Lesson")
-                        .HasColumnType("text");
-
-                    b.Property<string>("ModerationZone")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<string>("OperationId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("OperationResponseJson")
                         .HasColumnType("text");
 
                     b.Property<DateTime?>("OutlineApprovedAt")
@@ -3486,44 +3499,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<decimal?>("ReadabilityFre")
                         .HasColumnType("decimal(6,3)");
 
-                    b.Property<string>("RequestHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
                     b.Property<int?>("RestoredFromVersionId")
                         .HasColumnType("integer");
 
-                    b.Property<string>("ReviewFeedback")
-                        .HasColumnType("jsonb");
-
-                    b.Property<string>("ReviewStatus")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
-                        .HasDefaultValue("None");
-
-                    b.Property<DateTime?>("ReviewSubmittedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("ReviewedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("ReviewedByUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("RightsDeclaration")
-                        .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
                     b.Property<decimal?>("SafetyScore")
                         .HasColumnType("decimal(6,3)");
-
-                    b.Property<string>("SourceDeclaration")
-                        .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
 
                     b.Property<int>("StoryId")
                         .HasColumnType("integer");
@@ -3545,25 +3525,13 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasIndex("EditorUserId");
 
-                    b.HasIndex("GrayZoneClearedByUserId");
-
                     b.HasIndex("OutlineApprovedByUserId");
 
                     b.HasIndex("RestoredFromVersionId");
 
-                    b.HasIndex("ReviewedByUserId");
-
                     b.HasIndex("StoryId")
                         .IsUnique()
                         .HasFilter("\"IsCurrent\" = true AND \"IsDeleted\" = false");
-
-                    b.HasIndex("StoryId", "ImportPreviewHash")
-                        .IsUnique()
-                        .HasFilter("\"ImportPreviewHash\" IS NOT NULL");
-
-                    b.HasIndex("StoryId", "OperationId")
-                        .IsUnique()
-                        .HasFilter("\"OperationId\" IS NOT NULL");
 
                     b.HasIndex("StoryId", "VersionNo")
                         .IsUnique();
@@ -5134,6 +5102,24 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryAuthoringOperation", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", null)
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryVersion", "StoryVersion")
+                        .WithMany("AuthoringOperations")
+                        .HasForeignKey("StoryVersionId", "StoryId")
+                        .HasPrincipalKey("Id", "StoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("StoryVersion");
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryCategory", b =>
                 {
                     b.HasOne("StoryPlatform.Domain.Entities.ContentCategory", "ContentCategory")
@@ -5259,11 +5245,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasForeignKey("EditorUserId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "GrayZoneClearedByUser")
-                        .WithMany()
-                        .HasForeignKey("GrayZoneClearedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "OutlineApprovedByUser")
                         .WithMany()
                         .HasForeignKey("OutlineApprovedByUserId")
@@ -5274,24 +5255,181 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasForeignKey("RestoredFromVersionId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "ReviewedByUser")
-                        .WithMany()
-                        .HasForeignKey("ReviewedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("StoryPlatform.Domain.Entities.Story", "Story")
                         .WithMany()
                         .HasForeignKey("StoryId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.OwnsOne("StoryPlatform.Domain.Entities.StoryVersionAuthoringMetadata", "AuthoringMetadata", b1 =>
+                        {
+                            b1.Property<int>("StoryVersionId")
+                                .HasColumnType("integer");
+
+                            b1.Property<string>("AssistanceProvenanceJson")
+                                .HasColumnType("jsonb");
+
+                            b1.Property<string>("AuthoringOrigin")
+                                .HasMaxLength(20)
+                                .HasColumnType("character varying(20)");
+
+                            b1.Property<string>("ImportFileName")
+                                .HasMaxLength(255)
+                                .HasColumnType("character varying(255)");
+
+                            b1.Property<string>("ImportPreviewHash")
+                                .HasMaxLength(64)
+                                .HasColumnType("character varying(64)");
+
+                            b1.Property<string>("ImportSourceHash")
+                                .HasMaxLength(64)
+                                .HasColumnType("character varying(64)");
+
+                            b1.Property<string>("RightsDeclaration")
+                                .IsRequired()
+                                .HasMaxLength(2000)
+                                .HasColumnType("character varying(2000)");
+
+                            b1.Property<string>("SourceDeclaration")
+                                .IsRequired()
+                                .HasMaxLength(2000)
+                                .HasColumnType("character varying(2000)");
+
+                            b1.Property<int>("StoryId")
+                                .HasColumnType("integer");
+
+                            b1.HasKey("StoryVersionId");
+
+                            b1.HasIndex("StoryId", "ImportPreviewHash")
+                                .IsUnique()
+                                .HasFilter("\"ImportPreviewHash\" IS NOT NULL");
+
+                            b1.ToTable("story_version_authoring_metadata", (string)null);
+
+                            b1.HasOne("StoryPlatform.Domain.Entities.Story", null)
+                                .WithMany()
+                                .HasForeignKey("StoryId")
+                                .OnDelete(DeleteBehavior.Restrict)
+                                .IsRequired();
+
+                            b1.WithOwner()
+                                .HasForeignKey("StoryVersionId");
+                        });
+
+                    b.OwnsOne("StoryPlatform.Domain.Entities.StoryVersionMediaState", "MediaState", b1 =>
+                        {
+                            b1.Property<int>("StoryVersionId")
+                                .HasColumnType("integer");
+
+                            b1.Property<int?>("ConfirmedMediaPackageRevision")
+                                .HasColumnType("integer");
+
+                            b1.Property<DateTime?>("MediaConfirmedAt")
+                                .HasColumnType("timestamp with time zone");
+
+                            b1.Property<int?>("MediaConfirmedByUserId")
+                                .HasColumnType("integer");
+
+                            b1.Property<int>("MediaPackageRevision")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("integer")
+                                .HasDefaultValue(0);
+
+                            b1.HasKey("StoryVersionId");
+
+                            b1.HasIndex("MediaConfirmedByUserId");
+
+                            b1.ToTable("story_version_media_states", (string)null);
+
+                            b1.HasOne("StoryPlatform.Domain.Entities.UserAccount", null)
+                                .WithMany()
+                                .HasForeignKey("MediaConfirmedByUserId")
+                                .OnDelete(DeleteBehavior.Restrict);
+
+                            b1.WithOwner()
+                                .HasForeignKey("StoryVersionId");
+                        });
+
+                    b.OwnsOne("StoryPlatform.Domain.Entities.StoryVersionModerationState", "Moderation", b1 =>
+                        {
+                            b1.Property<int>("StoryVersionId")
+                                .HasColumnType("integer");
+
+                            b1.Property<bool>("GrayZoneCleared")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("boolean")
+                                .HasDefaultValue(false);
+
+                            b1.Property<DateTime?>("GrayZoneClearedAt")
+                                .HasColumnType("timestamp with time zone");
+
+                            b1.Property<int?>("GrayZoneClearedByUserId")
+                                .HasColumnType("integer");
+
+                            b1.Property<string>("GrayZoneFlags")
+                                .HasColumnType("jsonb");
+
+                            b1.Property<string>("ModerationZone")
+                                .HasMaxLength(30)
+                                .HasColumnType("character varying(30)");
+
+                            b1.Property<string>("ReviewFeedback")
+                                .HasColumnType("jsonb");
+
+                            b1.Property<string>("ReviewStatus")
+                                .IsRequired()
+                                .ValueGeneratedOnAdd()
+                                .HasMaxLength(30)
+                                .HasColumnType("character varying(30)")
+                                .HasDefaultValue("None");
+
+                            b1.Property<DateTime?>("ReviewSubmittedAt")
+                                .HasColumnType("timestamp with time zone");
+
+                            b1.Property<DateTime?>("ReviewedAt")
+                                .HasColumnType("timestamp with time zone");
+
+                            b1.Property<int?>("ReviewedByUserId")
+                                .HasColumnType("integer");
+
+                            b1.HasKey("StoryVersionId");
+
+                            b1.HasIndex("GrayZoneClearedByUserId");
+
+                            b1.HasIndex("ReviewedByUserId");
+
+                            b1.ToTable("story_version_moderation_states", (string)null);
+
+                            b1.HasOne("StoryPlatform.Domain.Entities.UserAccount", "GrayZoneClearedByUser")
+                                .WithMany()
+                                .HasForeignKey("GrayZoneClearedByUserId")
+                                .OnDelete(DeleteBehavior.Restrict);
+
+                            b1.HasOne("StoryPlatform.Domain.Entities.UserAccount", "ReviewedByUser")
+                                .WithMany()
+                                .HasForeignKey("ReviewedByUserId")
+                                .OnDelete(DeleteBehavior.Restrict);
+
+                            b1.WithOwner()
+                                .HasForeignKey("StoryVersionId");
+
+                            b1.Navigation("GrayZoneClearedByUser");
+
+                            b1.Navigation("ReviewedByUser");
+                        });
+
+                    b.Navigation("AuthoringMetadata")
+                        .IsRequired();
+
                     b.Navigation("EditorUser");
 
-                    b.Navigation("GrayZoneClearedByUser");
+                    b.Navigation("MediaState")
+                        .IsRequired();
+
+                    b.Navigation("Moderation")
+                        .IsRequired();
 
                     b.Navigation("OutlineApprovedByUser");
-
-                    b.Navigation("ReviewedByUser");
 
                     b.Navigation("Story");
                 });
@@ -5469,6 +5607,11 @@ namespace StoryPlatform.Infrastructure.Migrations
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadingRoadmap", b =>
                 {
                     b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryVersion", b =>
+                {
+                    b.Navigation("AuthoringOperations");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.SupervisionPermissionRequest", b =>

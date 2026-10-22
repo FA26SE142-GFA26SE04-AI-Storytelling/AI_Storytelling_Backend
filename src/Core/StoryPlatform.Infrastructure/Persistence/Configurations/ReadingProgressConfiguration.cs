@@ -12,6 +12,8 @@ public class ReadingProgressConfiguration : IEntityTypeConfiguration<ReadingProg
 
         builder.HasKey(x => x.Id);
 
+        builder.Property(x => x.LastReadingMode).HasMaxLength(30);
+
         builder.HasOne(x => x.ChildProfile)
             .WithMany()
             .HasForeignKey(x => x.ChildProfileId)

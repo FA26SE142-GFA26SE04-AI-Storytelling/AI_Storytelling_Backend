@@ -17,8 +17,9 @@ public class ChildReadingControllerTests
 {
     private readonly Mock<IChildStoryBrowseService> _browse = new(MockBehavior.Strict);
     private readonly Mock<IChildReadingService> _reading = new(MockBehavior.Strict);
+    private readonly Mock<IChildNotebookService> _notebook = new(MockBehavior.Strict);
 
-    private ChildReadingController Controller(params Claim[] claims) => new(_browse.Object, _reading.Object)
+    private ChildReadingController Controller(params Claim[] claims) => new(_browse.Object, _reading.Object, _notebook.Object)
     {
         ControllerContext = new ControllerContext
         {
@@ -43,7 +44,7 @@ public class ChildReadingControllerTests
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Select(method => method.Name).OrderBy(name => name).ToArray();
 
-        Assert.Equal(new[] { "Complete", "GetContent", "SaveProgress", "SearchStories", "SetBookmark", "SetFavorite", "Start" }, methods);
+        Assert.Equal(new[] { "Complete", "GetContent", "GetDefinition", "GetSignal", "LogEvent", "SaveProgress", "SearchStories", "SetBookmark", "SetFavorite", "Start" }, methods);
     }
 
     [Fact]
@@ -230,5 +231,18 @@ public class ChildReadingControllerTests
             controller.SaveProgress(22, new SaveProgressRequestDto { Page = 1 }, CancellationToken.None));
 
         _reading.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public void NotebookController_IsOnlyForChildSessions_AndExposesCollectListRemove()
+    {
+        var type = typeof(ChildNotebookController);
+        var authorize = type.GetCustomAttribute<AuthorizeAttribute>();
+        var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Select(method => method.Name).OrderBy(name => name).ToArray();
+
+        Assert.NotNull(authorize);
+        Assert.Equal("ChildSession", authorize!.Policy);
+        Assert.Equal(new[] { "Collect", "List", "Remove" }, methods);
     }
 }

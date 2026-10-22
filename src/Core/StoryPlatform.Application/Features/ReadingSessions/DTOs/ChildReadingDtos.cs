@@ -117,3 +117,35 @@ public class ReadingFlagsDto
     public bool IsBookmarked { get; set; }
     public bool IsFavorited { get; set; }
 }
+
+public class ReadingEventRequestDto
+{
+    public string EventType { get; set; } = string.Empty;
+    public string? Payload { get; set; }
+}
+
+public class VocabularyDefinitionDto
+{
+    public int VocabularyId { get; set; }
+    public string Term { get; set; } = string.Empty;
+    public string Definition { get; set; } = string.Empty;
+    public bool IsCollected { get; set; }
+}
+
+public class CollectVocabularyRequestDto
+{
+    public int VocabularyId { get; set; }
+}
+
+public class NotebookEntryDto
+{
+    public int EntryId { get; set; }
+    public int VocabularyId { get; set; }
+    public string Term { get; set; } = string.Empty;
+    public string Definition { get; set; } = string.Empty;
+    public int StoryId { get; set; }
+    public string StoryTitle { get; set; } = string.Empty;
+    /// <summary>Cảnh đầu tiên có từ này, để nút "Đọc lại đoạn này" nhảy tới; null nếu không tìm thấy.</summary>
+    public int? SceneIndex { get; set; }
+    public DateTime CollectedAt { get; set; }
+}

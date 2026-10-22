@@ -11,4 +11,7 @@ public interface IChildReadingService
     Task<ReadingCompletedDto> CompleteAsync(int childProfileId, int sessionId, CancellationToken ct = default);
     Task<ReadingFlagsDto> SetBookmarkAsync(int childProfileId, int sessionId, bool value, CancellationToken ct = default);
     Task<ReadingFlagsDto> SetFavoriteAsync(int childProfileId, int sessionId, bool value, CancellationToken ct = default);
+
+    Task<ForceExitSignalDto> GetSignalAsync(int childProfileId, int sessionId, CancellationToken ct = default);
+    Task LogEventAsync(int childProfileId, int sessionId, ReadingEventRequestDto request, CancellationToken ct = default);
 }

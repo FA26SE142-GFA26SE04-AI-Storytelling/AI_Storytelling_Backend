@@ -1124,4 +1124,83 @@ public class ChildReadingServiceTests
         _h.UnitOfWork.Verify(u => u.RollbackTransactionAsync(CancellationToken.None), Times.Once);
         _h.UnitOfWork.Verify(u => u.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    // ---- GetSignalAsync ----
+
+    [Fact]
+    public async Task GetSignalAsync_NoInterrupt_SaysKeepReading()
+    {
+        var session = _h.AddSession();
+
+        var signal = await _sut.GetSignalAsync(ReadingHarness.Child, session.Id);
+
+        Assert.False(signal.ShouldExit);
+        Assert.Equal("Reading", signal.SessionStatus);
+    }
+
+    [Fact]
+    public async Task GetSignalAsync_Interrupted_ExitsToJourneyMapWithFriendlyMessage()
+    {
+        var session = _h.AddSession();
+        session.ForceExitRequestedAt = DateTime.UtcNow;
+
+        var signal = await _sut.GetSignalAsync(ReadingHarness.Child, session.Id);
+
+        Assert.True(signal.ShouldExit);
+        Assert.Equal(ReadingSessionInterruptPolicy.ReturnToJourneyMap, signal.ReturnTo);
+        Assert.Equal(ReadingSessionInterruptPolicy.ChildMessage, signal.Message);
+        Assert.Equal(SessionStatus.ForceExited, session.Status);
+    }
+
+    [Fact]
+    public async Task GetSignalAsync_InterruptedAfterCompletion_KeepsCompleted()
+    {
+        var session = _h.AddSession(SessionStatus.Completed);
+        session.ForceExitRequestedAt = DateTime.UtcNow;
+
+        var signal = await _sut.GetSignalAsync(ReadingHarness.Child, session.Id);
+
+        Assert.True(signal.ShouldExit);
+        Assert.Equal(SessionStatus.Completed, session.Status);
+    }
+
+    // ---- LogEventAsync ----
+
+    [Fact]
+    public async Task LogEventAsync_AllowedEvent_IsStored()
+    {
+        var session = _h.AddSession();
+
+        await _sut.LogEventAsync(ReadingHarness.Child, session.Id,
+            new ReadingEventRequestDto { EventType = "TtsStarted", Payload = "{\"segment\":1}" });
+
+        var log = _h.Telemetry.Single();
+        Assert.Equal(TelemetryEventType.TtsStarted, log.EventType);
+        Assert.Equal("{\"segment\":1}", log.EventPayload);
+    }
+
+    [Theory]
+    [InlineData("RewardGranted")]
+    [InlineData("SessionCompleted")]
+    [InlineData("khong-co")]
+    public async Task LogEventAsync_EventTheAppMayNotSend_IsBadRequest(string eventType)
+    {
+        var session = _h.AddSession();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.LogEventAsync(ReadingHarness.Child, session.Id, new ReadingEventRequestDto { EventType = eventType }));
+    }
+
+    [Fact]
+    public async Task LogEventAsync_PayloadTooLong_IsBadRequest()
+    {
+        var session = _h.AddSession();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.LogEventAsync(ReadingHarness.Child, session.Id, new ReadingEventRequestDto
+            {
+                EventType = "TtsStarted",
+                Payload = new string('x', ChildReadingPolicy.MaxEventPayloadLength + 1)
+            }));
+    }
 }

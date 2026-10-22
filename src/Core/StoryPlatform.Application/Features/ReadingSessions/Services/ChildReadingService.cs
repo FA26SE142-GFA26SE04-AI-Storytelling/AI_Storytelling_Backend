@@ -511,6 +511,52 @@ public class ChildReadingService : IChildReadingService
         }
     }
 
+    public async Task<ForceExitSignalDto> GetSignalAsync(int childProfileId, int sessionId, CancellationToken ct = default)
+    {
+        var session = await RequireSessionAsync(childProfileId, sessionId, ct);
+        var shouldExit = session.ForceExitRequestedAt != null || session.Status == SessionStatus.ForceExited;
+        if (shouldExit && ChildReadingPolicy.IsActive(session.Status))
+        {
+            session.Status = SessionStatus.ForceExited;
+            session.UpdatedAt = DateTime.UtcNow;
+            _unitOfWork.Repository<ReadingSession>().Update(session);
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+
+        return new ForceExitSignalDto
+        {
+            ShouldExit = shouldExit,
+            ReturnTo = shouldExit ? ReadingSessionInterruptPolicy.ReturnToJourneyMap : null,
+            Message = shouldExit ? ReadingSessionInterruptPolicy.ChildMessage : null,
+            SessionStatus = session.Status.ToString()
+        };
+    }
+
+    public async Task LogEventAsync(
+        int childProfileId, int sessionId, ReadingEventRequestDto request, CancellationToken ct = default)
+    {
+        var session = await RequireSessionAsync(childProfileId, sessionId, ct);
+        if (!Enum.TryParse<TelemetryEventType>(request.EventType, ignoreCase: true, out var type)
+            || !ChildReadingPolicy.ClientEvents.Contains(type))
+        {
+            throw new BadRequestException("Sự kiện này không được gửi từ ứng dụng của trẻ.");
+        }
+
+        if ((request.Payload?.Length ?? 0) > ChildReadingPolicy.MaxEventPayloadLength)
+        {
+            throw new BadRequestException("Nội dung sự kiện quá dài.");
+        }
+
+        await _unitOfWork.Repository<TelemetryLog>().AddAsync(new TelemetryLog
+        {
+            ReadingSessionId = session.Id,
+            EventType = type,
+            EventPayload = request.Payload,
+            OccurredAt = DateTime.UtcNow
+        }, ct);
+        await _unitOfWork.SaveChangesAsync(ct);
+    }
+
     private async Task<StoryVersion> RequireSessionVersionAsync(ReadingSession session, CancellationToken ct)
     {
         var versionId = session.StoryVersionId ?? throw new ForbiddenException(ChildReadingPolicy.StoryUnavailableMessage);

@@ -2109,6 +2109,10 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("LastPageRead")
                         .HasColumnType("integer");
 
+                    b.Property<string>("LastReadingMode")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
                     b.Property<int>("StoryId")
                         .HasColumnType("integer");
 

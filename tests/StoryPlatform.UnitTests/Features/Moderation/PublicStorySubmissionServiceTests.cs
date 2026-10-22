@@ -59,7 +59,7 @@ public class PublicStorySubmissionServiceTests
 
     private StoryVersion GivenReturnedV1AndIdenticalV2(ModerationItemStatus returnedAs)
     {
-        _h.Versions[0].ReviewStatus = returnedAs == ModerationItemStatus.Rejected
+        _h.Versions[0].Moderation.ReviewStatus = returnedAs == ModerationItemStatus.Rejected
             ? VersionReviewStatus.Rejected
             : VersionReviewStatus.ChangesRequested;
         AddItem(90, returnedAs, V1, DateTime.UtcNow.AddHours(-1));
@@ -76,8 +76,8 @@ public class PublicStorySubmissionServiceTests
         Assert.False(result.IsResubmission);
         Assert.Equal(ModerationItemStatus.Pending, item.Status);
         Assert.Equal(Creator, item.CreatedByUserId);
-        Assert.Equal(VersionReviewStatus.Pending, _h.Versions[0].ReviewStatus);
-        Assert.NotNull(_h.Versions[0].ReviewSubmittedAt);
+        Assert.Equal(VersionReviewStatus.Pending, _h.Versions[0].Moderation.ReviewStatus);
+        Assert.NotNull(_h.Versions[0].Moderation.ReviewSubmittedAt);
         _h.UnitOfWork.Verify(unit => unit.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
         _h.Audit.Verify(audit => audit.LogAsync(Creator, "PublicStorySubmitted", nameof(ModerationItem), item.Id,
             It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
@@ -125,7 +125,7 @@ public class PublicStorySubmissionServiceTests
     [InlineData(VersionReviewStatus.Rejected)]
     public async Task SubmitAsync_VersionAlreadyInReviewLifecycle_IsRejected(VersionReviewStatus status)
     {
-        _h.Versions[0].ReviewStatus = status;
+        _h.Versions[0].Moderation.ReviewStatus = status;
 
         await Assert.ThrowsAnyAsync<AppException>(() => SubmitAsync());
     }
@@ -164,8 +164,8 @@ public class PublicStorySubmissionServiceTests
     public async Task WithdrawAsync_PendingItem_MarksWithdrawnAndMakesVersionSubmittable()
     {
         var item = AddItem(70, ModerationItemStatus.Pending);
-        _h.Versions[0].ReviewStatus = VersionReviewStatus.Pending;
-        _h.Versions[0].ReviewSubmittedAt = DateTime.UtcNow.AddHours(-1);
+        _h.Versions[0].Moderation.ReviewStatus = VersionReviewStatus.Pending;
+        _h.Versions[0].Moderation.ReviewSubmittedAt = DateTime.UtcNow.AddHours(-1);
 
         var result = await _sut.WithdrawAsync(Creator, item.Id);
 
@@ -173,8 +173,8 @@ public class PublicStorySubmissionServiceTests
         Assert.Equal(ModerationItemStatus.Withdrawn, item.Status);
         Assert.NotNull(item.WithdrawnAt);
         Assert.Equal(1, item.RowVersion);
-        Assert.Equal(VersionReviewStatus.None, _h.Versions[0].ReviewStatus);
-        Assert.Null(_h.Versions[0].ReviewSubmittedAt);
+        Assert.Equal(VersionReviewStatus.None, _h.Versions[0].Moderation.ReviewStatus);
+        Assert.Null(_h.Versions[0].Moderation.ReviewSubmittedAt);
     }
 
     [Fact]

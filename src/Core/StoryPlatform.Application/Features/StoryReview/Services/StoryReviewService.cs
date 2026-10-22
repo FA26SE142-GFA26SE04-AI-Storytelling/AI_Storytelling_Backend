@@ -146,11 +146,16 @@ public sealed class StoryReviewService : IStoryReviewService
             var safety = await _aiClient.EvaluateContentSafetyAsync(new EvaluateContentSafetyRequest
             {
                 RequestId = $"creator-edit-{storyId}-{input.VersionId}-{Guid.NewGuid():N}",
-                AgeBand = context.AgeBand, Language = context.Language,
+                AgeBand = context.AgeBand,
+                Language = context.Language,
                 BlockedTopics = context.BlockedCategoryTerms ?? context.BlockedCategoryCodes,
                 RestrictedTopics = context.RestrictedCategoryTerms ?? context.RestrictedCategoryCodes,
-                Story = new StoryContentDto { Title = input.Title, Lesson = input.Lesson,
-                    StorySections = [new StorySectionDto(1, string.Empty, input.Content)] }
+                Story = new StoryContentDto
+                {
+                    Title = input.Title,
+                    Lesson = input.Lesson,
+                    StorySections = [new StorySectionDto(1, string.Empty, input.Content)]
+                }
             }, cancellationToken);
             creatorSafetyScore = (decimal)(safety.SafetyScore ?? (safety.IsAllowed ? 100d : 0d));
             if (!safety.IsAllowed || creatorSafetyScore < context.SafetyScoreThreshold)
@@ -853,9 +858,13 @@ public sealed class StoryReviewService : IStoryReviewService
         if (story.Scope == StoryScope.Creator)
         {
             var context = await LoadCreatorContextAsync(story, cancellationToken);
-            safetyPolicy = new SafetyPolicy { SafetyScoreThreshold = context.SafetyScoreThreshold,
-                ReadabilityScoreThreshold = context.ReadabilityScoreThreshold, ParentalGateEnabled = true,
-                RequiredApprovalMode = ApprovalMode.AlwaysManual };
+            safetyPolicy = new SafetyPolicy
+            {
+                SafetyScoreThreshold = context.SafetyScoreThreshold,
+                ReadabilityScoreThreshold = context.ReadabilityScoreThreshold,
+                ParentalGateEnabled = true,
+                RequiredApprovalMode = ApprovalMode.AlwaysManual
+            };
             var prohibited = (context.BlockedCategoryTerms ?? context.BlockedCategoryCodes)
                 .Where(term => !string.IsNullOrWhiteSpace(term))
                 .Any(term => System.Text.RegularExpressions.Regex.IsMatch(version.Content ?? "",
@@ -1035,7 +1044,10 @@ public sealed class StoryReviewService : IStoryReviewService
         await QueueReviewedMediaAsync(userId, storyId, false, null, cancellationToken);
         return new ApproveResponseDto
         {
-            Success = true, StoryId = storyId, Status = "Approved", ApprovedAt = DateTime.UtcNow
+            Success = true,
+            StoryId = storyId,
+            Status = "Approved",
+            ApprovedAt = DateTime.UtcNow
         };
     }
 
@@ -1046,7 +1058,10 @@ public sealed class StoryReviewService : IStoryReviewService
         var versionId = await QueueReviewedMediaAsync(userId, storyId, true, input.VersionId, cancellationToken);
         return new ConfirmCreatorContentResponseDto
         {
-            StoryId = storyId, VersionId = versionId, Status = "MediaProcessing", ConfirmedAt = DateTime.UtcNow
+            StoryId = storyId,
+            VersionId = versionId,
+            Status = "MediaProcessing",
+            ConfirmedAt = DateTime.UtcNow
         };
     }
 
@@ -1127,6 +1142,8 @@ public sealed class StoryReviewService : IStoryReviewService
                         cancellationToken: cancellationToken))
                     .OrderByDescending(request => request.Id).FirstOrDefault()
                 : null;
+            StoryPlatform.Application.Features.MediaGeneration.Services.MediaPackageConfirmation.Invalidate(approvedVersion);
+            _versionRepo.Update(approvedVersion);
             await jobs.AddAsync(new StoryGenerationJob
             {
                 StoryId = storyId,

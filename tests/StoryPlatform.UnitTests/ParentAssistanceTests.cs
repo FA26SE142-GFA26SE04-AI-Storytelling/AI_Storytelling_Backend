@@ -27,8 +27,12 @@ public sealed class ParentAssistanceTests
         public AssistanceAiRequest? Input { get; private set; }
         public Func<AssistanceAiRequest, CancellationToken, Task<AssistanceAiResult>> Generate { get; set; } = (r, _) => Task.FromResult(
             r.Mode == "Trial" ? new AssistanceAiResult { ResultType = "Trial", Patch = new("ignored", 0, 0, "Mi rủ mẹ cùng thử một cách mới.", "") } :
-            r.EntryPoint == "ReviewDraft" ? new AssistanceAiResult { ResultType = "ReviewFindings", ChecksPerformed = ["Continuity"],
-                Findings = [new("f1", 0, 2, "Mi", "Làm rõ động cơ của nhân vật.", "Khám phá động cơ")] } : Options());
+            r.EntryPoint == "ReviewDraft" ? new AssistanceAiResult
+            {
+                ResultType = "ReviewFindings",
+                ChecksPerformed = ["Continuity"],
+                Findings = [new("f1", 0, 2, "Mi", "Làm rõ động cơ của nhân vật.", "Khám phá động cơ")]
+            } : Options());
         public Fixture(bool consent = true, int timeout = 120)
         {
             var policy = Store.Items<SafetyPolicy>()[0];
@@ -46,21 +50,43 @@ public sealed class ParentAssistanceTests
         public async Task<(CreatorDraftDto Draft, CreateAssistanceTaskRequest Request)> Draft(string entry = "ContinueWriting")
         {
             var draft = (await Store.Service.CreateParentDraftAsync(1, new() { OperationId = "draft", ChildProfileId = 3 }, default)).Story;
-            return (draft, new() { OperationId = "task", RevisionToken = draft.RevisionToken, EntryPoint = entry,
-                EditorSnapshot = new("Chiếc hộp của Mi", Text), Goal = "Gợi ý để tôi tự viết tiếp",
-                Target = entry == "ContinueWriting" ? new("cursor", Text.Length, 0) : entry == "ReviewDraft" ? new("wholeDraft", 0, Text.Length) : new("selection", 0, 2) });
+            return (draft, new()
+            {
+                OperationId = "task",
+                RevisionToken = draft.RevisionToken,
+                EntryPoint = entry,
+                EditorSnapshot = new("Chiếc hộp của Mi", Text),
+                Goal = "Gợi ý để tôi tự viết tiếp",
+                Target = entry == "ContinueWriting" ? new("cursor", Text.Length, 0) : entry == "ReviewDraft" ? new("wholeDraft", 0, Text.Length) : new("selection", 0, 2)
+            });
         }
         public async Task<int> Grant(CreatorDraftDto draft)
         {
             if (draft.SelectedVersionId is null)
                 draft = (await Store.Service.SaveContentAsync(1, draft.StoryId, new() { OperationId = "v1", RevisionToken = draft.RevisionToken, Title = "Chiếc hộp", Content = Text })).Story;
             var check = await Store.Service.CheckAsync(1, draft.StoryId, new() { OperationId = "check", RevisionToken = draft.RevisionToken, BaseVersionId = draft.SelectedVersionId }, default);
-            var confirmed = await Store.Service.ConfirmContentAsync(1, draft.StoryId, new() { OperationId = "confirm", RevisionToken = draft.RevisionToken,
-                BaseVersionId = draft.SelectedVersionId, CheckId = check.CheckId, Checklist = new(true, true, true, true) }, default);
-            var preparation = await Store.Service.PrepareAsync(1, draft.StoryId, new() { OperationId = "prep", RevisionToken = draft.RevisionToken,
-                BaseVersionId = draft.SelectedVersionId, ContentConfirmationId = confirmed.ConfirmationId }, default);
-            return (await Store.Service.ConfirmFamilyAsync(1, draft.StoryId, new() { OperationId = "grant", RevisionToken = draft.RevisionToken,
-                BaseVersionId = draft.SelectedVersionId, PreparationId = preparation.PreparationId }, default)).ConfirmationId;
+            var confirmed = await Store.Service.ConfirmContentAsync(1, draft.StoryId, new()
+            {
+                OperationId = "confirm",
+                RevisionToken = draft.RevisionToken,
+                BaseVersionId = draft.SelectedVersionId,
+                CheckId = check.CheckId,
+                Checklist = new(true, true, true, true)
+            }, default);
+            var preparation = await Store.Service.PrepareAsync(1, draft.StoryId, new()
+            {
+                OperationId = "prep",
+                RevisionToken = draft.RevisionToken,
+                BaseVersionId = draft.SelectedVersionId,
+                ContentConfirmationId = confirmed.ConfirmationId
+            }, default);
+            return (await Store.Service.ConfirmFamilyAsync(1, draft.StoryId, new()
+            {
+                OperationId = "grant",
+                RevisionToken = draft.RevisionToken,
+                BaseVersionId = draft.SelectedVersionId,
+                PreparationId = preparation.PreparationId
+            }, default)).ConfirmationId;
         }
     }
 
@@ -82,20 +108,43 @@ public sealed class ParentAssistanceTests
         if (entry == "ReviewDraft")
         {
             Assert.Equal("ReviewReady", suggestions.Status);
-            var child = await f.Service.CreateAsync(1, draft.StoryId, request with { OperationId = "finding-task", EntryPoint = "SupportSelection", Goal = "",
-                ParentTaskId = task.TaskId, SourceReviewStepId = suggestions.StepId, FindingId = "f1", Target = new("selection", 0, 2) });
+            var child = await f.Service.CreateAsync(1, draft.StoryId, request with
+            {
+                OperationId = "finding-task",
+                EntryPoint = "SupportSelection",
+                Goal = "",
+                ParentTaskId = task.TaskId,
+                SourceReviewStepId = suggestions.StepId,
+                FindingId = "f1",
+                Target = new("selection", 0, 2)
+            });
             Assert.Equal("Khám phá động cơ", child.Goal);
             return;
         }
-        var direction = await f.Service.DirectionAsync(1, draft.StoryId, task.TaskId, new() { OperationId = "direction",
-            ExpectedTaskRevision = suggestions.TaskRevision, OptionsStepId = suggestions.StepId, OptionId = "a" });
-        var trial = await f.Service.TrialAsync(1, draft.StoryId, task.TaskId, new() { OperationId = "trial",
-            ExpectedTaskRevision = direction.TaskRevision, DirectionStepId = direction.StepId });
+        var direction = await f.Service.DirectionAsync(1, draft.StoryId, task.TaskId, new()
+        {
+            OperationId = "direction",
+            ExpectedTaskRevision = suggestions.TaskRevision,
+            OptionsStepId = suggestions.StepId,
+            OptionId = "a"
+        });
+        var trial = await f.Service.TrialAsync(1, draft.StoryId, task.TaskId, new()
+        {
+            OperationId = "trial",
+            ExpectedTaskRevision = direction.TaskRevision,
+            DirectionStepId = direction.StepId
+        });
         Assert.Empty(f.Store.Items<StoryVersion>());
-        var saved = await f.Store.Service.SaveContentAsync(1, draft.StoryId, new() { OperationId = "save", RevisionToken = draft.RevisionToken,
-            Title = "Chiếc hộp", Content = Text + " Mi đã tìm được cách mới.", AssistanceReferences = [new(task.TaskId, direction.StepId, "DirectionUsed"), new(task.TaskId, trial.StepId, "TrialUsed")] });
+        var saved = await f.Store.Service.SaveContentAsync(1, draft.StoryId, new()
+        {
+            OperationId = "save",
+            RevisionToken = draft.RevisionToken,
+            Title = "Chiếc hộp",
+            Content = Text + " Mi đã tìm được cách mới.",
+            AssistanceReferences = [new(task.TaskId, direction.StepId, "DirectionUsed"), new(task.TaskId, trial.StepId, "TrialUsed")]
+        });
         Assert.Single(f.Store.Items<StoryVersion>());
-        Assert.Contains("newReferences", f.Store.Items<StoryVersion>()[0].AssistanceProvenanceJson);
+        Assert.Contains("newReferences", f.Store.Items<StoryVersion>()[0].AuthoringMetadata.AssistanceProvenanceJson);
         Assert.Equal(StorySource.Manual, f.Store.Items<Story>()[0].Source);
         Assert.Empty(f.Store.Items<StoryGenerationRequest>()); Assert.Empty(f.Store.Items<StoryGenerationJob>());
     }
@@ -104,12 +153,21 @@ public sealed class ParentAssistanceTests
     public async Task Clarification_is_a_choice_not_a_chat_transcript()
     {
         var f = new Fixture(); var (draft, req) = await f.Draft();
-        f.Generate = (r, _) => Task.FromResult(r.Answer is null ? new AssistanceAiResult { ResultType = "Clarification",
-            Question = new("q", "Bạn muốn nhấn mạnh điều gì?", [new("a", "Hợp tác"), new("b", "Kiên trì")]) } : Fixture.Options());
+        f.Generate = (r, _) => Task.FromResult(r.Answer is null ? new AssistanceAiResult
+        {
+            ResultType = "Clarification",
+            Question = new("q", "Bạn muốn nhấn mạnh điều gì?", [new("a", "Hợp tác"), new("b", "Kiên trì")])
+        } : Fixture.Options());
         var task = await f.Service.CreateAsync(1, draft.StoryId, req);
         var question = await f.Service.SuggestAsync(1, draft.StoryId, task.TaskId, new() { OperationId = "ask", ExpectedTaskRevision = task.TaskRevision });
-        var answer = await f.Service.AnswerAsync(1, draft.StoryId, task.TaskId, new() { OperationId = "answer", ExpectedTaskRevision = question.TaskRevision,
-            ClarificationStepId = question.StepId, QuestionId = "q", ChoiceId = "a" });
+        var answer = await f.Service.AnswerAsync(1, draft.StoryId, task.TaskId, new()
+        {
+            OperationId = "answer",
+            ExpectedTaskRevision = question.TaskRevision,
+            ClarificationStepId = question.StepId,
+            QuestionId = "q",
+            ChoiceId = "a"
+        });
         Assert.Equal(1, f.Calls);
         var options = await f.Service.SuggestAsync(1, draft.StoryId, task.TaskId, new() { OperationId = "options", ExpectedTaskRevision = answer.TaskRevision, AnswerStepId = answer.StepId });
         Assert.Equal("OptionsReady", options.Status); Assert.Equal("Hợp tác", f.Input!.Answer);
@@ -193,12 +251,22 @@ public sealed class ParentAssistanceTests
         var f = new Fixture(); var (draft, req) = await f.Draft();
         var task = await f.Service.CreateAsync(1, draft.StoryId, req);
         var options = await f.Service.SuggestAsync(1, draft.StoryId, task.TaskId, new() { OperationId = "suggest", ExpectedTaskRevision = task.TaskRevision });
-        var direction = await f.Service.DirectionAsync(1, draft.StoryId, task.TaskId, new() { OperationId = "direction", ExpectedTaskRevision = options.TaskRevision,
-            OptionsStepId = options.StepId, OptionId = "a" });
+        var direction = await f.Service.DirectionAsync(1, draft.StoryId, task.TaskId, new()
+        {
+            OperationId = "direction",
+            ExpectedTaskRevision = options.TaskRevision,
+            OptionsStepId = options.StepId,
+            OptionId = "a"
+        });
         f.Store.Items<SafetyPolicy>()[0].MaxStoryLength++;
         Assert.True((await f.Service.GetAsync(1, draft.StoryId, task.TaskId)).AudienceContextStale);
-        var save = new SaveCreatorContentRequest { OperationId = "save", RevisionToken = draft.RevisionToken, Content = Text,
-            AssistanceReferences = [new(task.TaskId, direction.StepId, "DirectionUsed")] };
+        var save = new SaveCreatorContentRequest
+        {
+            OperationId = "save",
+            RevisionToken = draft.RevisionToken,
+            Content = Text,
+            AssistanceReferences = [new(task.TaskId, direction.StepId, "DirectionUsed")]
+        };
         var error = await Assert.ThrowsAsync<AssistanceException>(() => f.Store.Service.SaveContentAsync(1, draft.StoryId, save));
         Assert.Equal("AUDIENCE_CONTEXT_STALE", error.Code); Assert.Empty(f.Store.Items<StoryVersion>());
         await f.Store.Service.SaveContentAsync(1, draft.StoryId, save with { AssistanceReferences = [] });
@@ -249,11 +317,24 @@ public sealed class ParentAssistanceTests
         Assert.Equal(saved.Version.VersionId, (await f.Store.Service.SaveContentAsync(1, draft.StoryId, save)).Version.VersionId);
         await Assert.ThrowsAsync<ConflictException>(() => f.Store.Service.SaveContentAsync(1, draft.StoryId,
             save with { OperationId = "blocked-save", RevisionToken = saved.Story.RevisionToken, BaseVersionId = saved.Version.VersionId }));
-        await Assert.ThrowsAsync<ConflictException>(() => f.Store.Service.RestoreVersionAsync(1, draft.StoryId, new() { OperationId = "restore",
-            RevisionToken = saved.Story.RevisionToken, BaseVersionId = saved.Version.VersionId, SourceVersionId = saved.Version.VersionId }));
-        await Assert.ThrowsAsync<ConflictException>(() => f.Store.Service.ConfirmImportAsync(1, draft.StoryId, new() { OperationId = "import",
-            RevisionToken = saved.Story.RevisionToken, BaseVersionId = saved.Version.VersionId, PreviewToken = preview.PreviewToken,
-            Title = "Chiếc hộp", Content = preview.Content, SourceDeclaration = "Tự viết", RightsDeclaration = "Tôi có quyền" }));
+        await Assert.ThrowsAsync<ConflictException>(() => f.Store.Service.RestoreVersionAsync(1, draft.StoryId, new()
+        {
+            OperationId = "restore",
+            RevisionToken = saved.Story.RevisionToken,
+            BaseVersionId = saved.Version.VersionId,
+            SourceVersionId = saved.Version.VersionId
+        }));
+        await Assert.ThrowsAsync<ConflictException>(() => f.Store.Service.ConfirmImportAsync(1, draft.StoryId, new()
+        {
+            OperationId = "import",
+            RevisionToken = saved.Story.RevisionToken,
+            BaseVersionId = saved.Version.VersionId,
+            PreviewToken = preview.PreviewToken,
+            Title = "Chiếc hộp",
+            Content = preview.Content,
+            SourceDeclaration = "Tự viết",
+            RightsDeclaration = "Tôi có quyền"
+        }));
         await f.Service.CloseAsync(1, draft.StoryId, task.TaskId, new() { OperationId = "close", ExpectedTaskRevision = task.TaskRevision });
         Assert.Single(await f.Store.Service.GetVersionsAsync(1, draft.StoryId));
         Assert.NotNull(await f.Store.Service.ReadChildPackageAsync(3, grant, default));
@@ -267,16 +348,34 @@ public sealed class ParentAssistanceTests
         var story = (await f.Store.Service.GetParentDraftAsync(1, draft.StoryId, default)).Story;
         var grant = f.Store.Items<ParentStoryOperation>().Single(x => x.Id == grantId);
         // A historical duplicate grant must not let revoking just one reopen editing.
-        f.Store.Items<ParentStoryOperation>().Add(new() { Id = 999, StoryId = grant.StoryId, ActorUserId = grant.ActorUserId,
-            ChildProfileId = grant.ChildProfileId, StoryVersionId = grant.StoryVersionId, Kind = "FamilyConfirmation", ResultJson = grant.ResultJson });
+        f.Store.Items<ParentStoryOperation>().Add(new()
+        {
+            Id = 999,
+            StoryId = grant.StoryId,
+            ActorUserId = grant.ActorUserId,
+            ChildProfileId = grant.ChildProfileId,
+            StoryVersionId = grant.StoryVersionId,
+            Kind = "FamilyConfirmation",
+            ResultJson = grant.ResultJson
+        });
         f.Store.Items<SafetyPolicy>()[0].MaxStoryLength++;
         Assert.Empty(await f.Store.Service.ChildLibraryAsync(3, default));
         Assert.True((await f.Store.Service.GetParentDraftAsync(1, draft.StoryId, default)).IsReadOnly);
-        await f.Store.Service.RevokeFamilyAsync(1, draft.StoryId, new() { OperationId = "revoke-1", RevisionToken = story.RevisionToken,
-            BaseVersionId = story.SelectedVersionId, ConfirmationId = grantId }, default);
+        await f.Store.Service.RevokeFamilyAsync(1, draft.StoryId, new()
+        {
+            OperationId = "revoke-1",
+            RevisionToken = story.RevisionToken,
+            BaseVersionId = story.SelectedVersionId,
+            ConfirmationId = grantId
+        }, default);
         Assert.True((await f.Store.Service.GetParentDraftAsync(1, draft.StoryId, default)).IsReadOnly);
-        await f.Store.Service.RevokeFamilyAsync(1, draft.StoryId, new() { OperationId = "revoke-2", RevisionToken = story.RevisionToken,
-            BaseVersionId = story.SelectedVersionId, ConfirmationId = 999 }, default);
+        await f.Store.Service.RevokeFamilyAsync(1, draft.StoryId, new()
+        {
+            OperationId = "revoke-2",
+            RevisionToken = story.RevisionToken,
+            BaseVersionId = story.SelectedVersionId,
+            ConfirmationId = 999
+        }, default);
         var reopened = await f.Store.Service.GetParentDraftAsync(1, draft.StoryId, default);
         Assert.False(reopened.IsReadOnly); Assert.NotEqual(story.RevisionToken, reopened.Story.RevisionToken);
     }
@@ -286,8 +385,14 @@ public sealed class ParentAssistanceTests
     {
         var f = new Fixture(); var (draft, _) = await f.Draft();
         var saved = await f.Store.Service.SaveContentAsync(1, draft.StoryId, new() { OperationId = "save", RevisionToken = draft.RevisionToken, Title = "Chiếc hộp", Content = Text });
-        var req = new CreateAssistanceTaskRequest { OperationId = "task", RevisionToken = saved.Story.RevisionToken, BaseVersionId = saved.Version.VersionId,
-            EditorSnapshot = new("Chiếc hộp", Text), Target = new("cursor", Text.Length, 0) };
+        var req = new CreateAssistanceTaskRequest
+        {
+            OperationId = "task",
+            RevisionToken = saved.Story.RevisionToken,
+            BaseVersionId = saved.Version.VersionId,
+            EditorSnapshot = new("Chiếc hộp", Text),
+            Target = new("cursor", Text.Length, 0)
+        };
         var task = await f.Service.CreateAsync(1, draft.StoryId, req);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var result = new TaskCompletionSource<AssistanceAiResult>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -300,8 +405,13 @@ public sealed class ParentAssistanceTests
         Assert.Null(f.Store.Items<StoryAssistanceTask>()[0].ActiveOperationId);
         Assert.True((await f.Store.Service.GetParentDraftAsync(1, draft.StoryId, default)).IsReadOnly);
         await Assert.ThrowsAsync<ConflictException>(() => f.Service.CreateAsync(1, draft.StoryId, req with { OperationId = "another-task" }));
-        await f.Store.Service.RevokeFamilyAsync(1, draft.StoryId, new() { OperationId = "revoke", RevisionToken = saved.Story.RevisionToken,
-            BaseVersionId = saved.Version.VersionId, ConfirmationId = grantId }, default);
+        await f.Store.Service.RevokeFamilyAsync(1, draft.StoryId, new()
+        {
+            OperationId = "revoke",
+            RevisionToken = saved.Story.RevisionToken,
+            BaseVersionId = saved.Version.VersionId,
+            ConfirmationId = grantId
+        }, default);
         var reopened = await f.Store.Service.GetParentDraftAsync(1, draft.StoryId, default);
         Assert.False(reopened.IsReadOnly); Assert.NotEqual(saved.Story.RevisionToken, reopened.Story.RevisionToken);
         await Assert.ThrowsAsync<AssistanceException>(() => f.Service.SuggestAsync(1, draft.StoryId, task.TaskId, new() { OperationId = "stale", ExpectedTaskRevision = 3 }));

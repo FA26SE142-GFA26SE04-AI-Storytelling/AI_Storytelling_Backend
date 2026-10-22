@@ -1,4 +1,4 @@
-﻿using Moq;
+using Moq;
 using Microsoft.Extensions.Logging.Abstractions;
 using StoryPlatform.Application.Features.CreatorAssistance;
 using StoryPlatform.Application.Features.CreatorAssistance.Services;
@@ -71,7 +71,10 @@ public sealed class ParentManualApiFlowTests
         Assert.True(check.GetProperty("canPrepare").GetBoolean());
         var confirmation = await host.SendAsync(HttpMethod.Post, path + "/content/confirm", new
         {
-            operationId = "confirm-content", revisionToken = r1, baseVersionId = v1, checkId = check.GetProperty("checkId").GetInt32(),
+            operationId = "confirm-content",
+            revisionToken = r1,
+            baseVersionId = v1,
+            checkId = check.GetProperty("checkId").GetInt32(),
             checklist = new { intendedMeaning = true, suitableForChild = true, privacyChecked = true, endingChecked = true }
         }, host.Parent, HttpStatusCode.OK);
         var package = await host.SendAsync(HttpMethod.Post, path + "/preparations", new
@@ -121,8 +124,10 @@ public sealed class ParentManualApiFlowTests
         Assert.False(workflow.EnumerateArray().Single(x => x.GetProperty("id").GetInt32() == preparationId).GetProperty("sourceIsCurrent").GetBoolean());
         var setup = await host.SendAsync(new HttpMethod("PATCH"), path + "/setup", new
         {
-            operationId = "setup", revisionToken = restored.GetProperty("story").GetProperty("revisionToken").GetString(),
-            baseVersionId = restored.GetProperty("version").GetProperty("versionId").GetInt32(), purpose = "message"
+            operationId = "setup",
+            revisionToken = restored.GetProperty("story").GetProperty("revisionToken").GetString(),
+            baseVersionId = restored.GetProperty("version").GetProperty("versionId").GetInt32(),
+            purpose = "message"
         }, host.Parent, HttpStatusCode.OK);
         await host.SendAsync(HttpMethod.Get, readPath, null, host.Child, HttpStatusCode.NotFound);
         Assert.Empty((await host.SendAsync(HttpMethod.Get, "/api/v1/child/manual-stories", null, host.Child, HttpStatusCode.OK)).EnumerateArray());
@@ -170,9 +175,14 @@ public sealed class ParentManualApiFlowTests
         Assert.Empty(host.Store.Items<StoryVersion>());
         var request = new
         {
-            operationId = "import-confirm", revisionToken = token, baseVersionId = (int?)null,
-            previewToken = preview.GetProperty("previewToken").GetString(), content = preview.GetProperty("content").GetString(),
-            title = "Chiếc hộp của Mi", sourceDeclaration = "Tự sáng tác", rightsDeclaration = "Tôi có quyền sử dụng"
+            operationId = "import-confirm",
+            revisionToken = token,
+            baseVersionId = (int?)null,
+            previewToken = preview.GetProperty("previewToken").GetString(),
+            content = preview.GetProperty("content").GetString(),
+            title = "Chiếc hộp của Mi",
+            sourceDeclaration = "Tự sáng tác",
+            rightsDeclaration = "Tôi có quyền sử dụng"
         };
         await host.SendAsync(HttpMethod.Post, path + "/imports/confirm", request with { previewToken = "invalid" }, host.Parent, HttpStatusCode.BadRequest);
         var saved = await host.SendAsync(HttpMethod.Post, path + "/imports/confirm", request, host.Parent, HttpStatusCode.Created);
@@ -197,7 +207,10 @@ public sealed class ParentManualApiFlowTests
         Assert.Contains("BLOCKED_CATEGORY:violence", check.GetProperty("errors").EnumerateArray().Select(x => x.GetString()));
         await host.SendAsync(HttpMethod.Post, path + "/content/confirm", new
         {
-            operationId = "confirm", revisionToken = r1, baseVersionId = v1, checkId = check.GetProperty("checkId").GetInt32(),
+            operationId = "confirm",
+            revisionToken = r1,
+            baseVersionId = v1,
+            checkId = check.GetProperty("checkId").GetInt32(),
             checklist = new { intendedMeaning = true, suitableForChild = true, privacyChecked = true, endingChecked = true }
         }, host.Parent, HttpStatusCode.Conflict);
         var otherDraft = await host.CreateAsync("create-other-child", 4);
@@ -221,8 +234,11 @@ public sealed class ParentManualApiFlowTests
         var path = $"/api/v1/parent/stories/{draft.GetProperty("story").GetProperty("storyId").GetInt32()}";
         var saved = await host.SendAsync(HttpMethod.Post, path + "/manual/versions", new
         {
-            operationId = "save", revisionToken = draft.GetProperty("story").GetProperty("revisionToken").GetString(),
-            baseVersionId = (int?)null, title = "Chiếc hộp của Mi", content = Body
+            operationId = "save",
+            revisionToken = draft.GetProperty("story").GetProperty("revisionToken").GetString(),
+            baseVersionId = (int?)null,
+            title = "Chiếc hộp của Mi",
+            content = Body
         }, host.Parent, HttpStatusCode.Created);
         var r1 = saved.GetProperty("story").GetProperty("revisionToken").GetString();
         var v1 = saved.GetProperty("version").GetProperty("versionId").GetInt32();
@@ -230,7 +246,10 @@ public sealed class ParentManualApiFlowTests
         { operationId = "check", revisionToken = r1, baseVersionId = v1 }, host.Parent, HttpStatusCode.OK);
         var confirmRequest = new
         {
-            operationId = "confirm", revisionToken = r1, baseVersionId = v1, checkId = check.GetProperty("checkId").GetInt32(),
+            operationId = "confirm",
+            revisionToken = r1,
+            baseVersionId = v1,
+            checkId = check.GetProperty("checkId").GetInt32(),
             checklist = new { intendedMeaning = true, suitableForChild = true, privacyChecked = true, endingChecked = true }
         };
         if (scenario == "semantic-safety")
@@ -266,10 +285,21 @@ public sealed class ParentManualApiFlowTests
         var story = draft.GetProperty("story"); var id = story.GetProperty("storyId").GetInt32();
         var revision = story.GetProperty("revisionToken").GetString();
         var path = $"/api/v1/parent/stories/{id}/assistance-tasks";
-        var payload = new { operationId = "task", revisionToken = revision, baseVersionId = (int?)null, entryPoint = entry,
-            editorSnapshot = new { title = "Chiếc hộp", content = Body }, goal = "Khám phá hướng tiếp theo",
-            target = new { kind = entry == "ContinueWriting" ? "cursor" : entry == "SupportSelection" ? "selection" : "wholeDraft",
-                start = entry == "ContinueWriting" ? Body.Length : 0, length = entry == "ContinueWriting" ? 0 : entry == "SupportSelection" ? 2 : Body.Length } };
+        var payload = new
+        {
+            operationId = "task",
+            revisionToken = revision,
+            baseVersionId = (int?)null,
+            entryPoint = entry,
+            editorSnapshot = new { title = "Chiếc hộp", content = Body },
+            goal = "Khám phá hướng tiếp theo",
+            target = new
+            {
+                kind = entry == "ContinueWriting" ? "cursor" : entry == "SupportSelection" ? "selection" : "wholeDraft",
+                start = entry == "ContinueWriting" ? Body.Length : 0,
+                length = entry == "ContinueWriting" ? 0 : entry == "SupportSelection" ? 2 : Body.Length
+            }
+        };
         await host.SendAsync(HttpMethod.Post, path, payload, host.Child, HttpStatusCode.Forbidden);
         await host.SendAsync(HttpMethod.Post, path, payload, host.OtherParent, HttpStatusCode.NotFound);
         var task = await host.SendAsync(HttpMethod.Post, path, payload, host.Parent, HttpStatusCode.Created);
@@ -285,10 +315,16 @@ public sealed class ParentManualApiFlowTests
             var trial = await host.SendAsync(HttpMethod.Post, path + $"/{taskId}/trials", new
             { operationId = "trial", expectedTaskRevision = direction.GetProperty("taskRevision").GetInt32(), directionStepId = direction.GetProperty("stepId").GetInt32() }, host.Parent, HttpStatusCode.OK);
             await host.SendAsync(HttpMethod.Post, $"/api/v1/parent/stories/{id}/manual/versions", new
-            { operationId = "save", revisionToken = revision, baseVersionId = (int?)null, title = "Chiếc hộp", content = Body + " Mi đã sửa xong.",
-                assistanceReferences = new[] { new { taskId, stepId = trial.GetProperty("stepId").GetInt32(), usage = "TrialUsed" } } }, host.Parent, HttpStatusCode.Created);
+            {
+                operationId = "save",
+                revisionToken = revision,
+                baseVersionId = (int?)null,
+                title = "Chiếc hộp",
+                content = Body + " Mi đã sửa xong.",
+                assistanceReferences = new[] { new { taskId, stepId = trial.GetProperty("stepId").GetInt32(), usage = "TrialUsed" } }
+            }, host.Parent, HttpStatusCode.Created);
             Assert.Single(host.Store.Items<StoryVersion>());
-            Assert.NotNull(host.Store.Items<StoryVersion>()[0].AssistanceProvenanceJson);
+            Assert.NotNull(host.Store.Items<StoryVersion>()[0].AuthoringMetadata.AssistanceProvenanceJson);
         }
         else Assert.Equal("ReviewReady", options.GetProperty("status").GetString());
         await host.SendAsync(HttpMethod.Get, path + $"/{taskId}/steps", null, host.Parent, HttpStatusCode.OK);
@@ -328,8 +364,11 @@ public sealed class ParentManualApiFlowTests
             builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["JwtSettings:SecretKey"] = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(48)),
-                ["JwtSettings:Issuer"] = "ParentApiHttpTest", ["JwtSettings:Audience"] = "ParentApiHttpTestClient",
-                ["JwtSettings:ExpiryMinutes"] = "15", ["JwtSettings:RefreshTokenExpiryDays"] = "1", ["JwtSettings:ChildTokenExpiryMinutes"] = "15"
+                ["JwtSettings:Issuer"] = "ParentApiHttpTest",
+                ["JwtSettings:Audience"] = "ParentApiHttpTestClient",
+                ["JwtSettings:ExpiryMinutes"] = "15",
+                ["JwtSettings:RefreshTokenExpiryDays"] = "1",
+                ["JwtSettings:ChildTokenExpiryMinutes"] = "15"
             });
             builder.Services.AddControllers().AddApplicationPart(typeof(ParentAuthoringController).Assembly);
             builder.Services.AddSingleton<IUnitOfWork>(store.Uow.Object);
@@ -374,9 +413,11 @@ public sealed class ParentManualApiFlowTests
             return new ApiHost(app, new HttpClient { BaseAddress = new Uri(address), Timeout = TimeSpan.FromSeconds(30) }, store,
                 generator.GenerateAccessToken(store.Items<UserAccount>()[0]), generator.GenerateAccessToken(store.Items<UserAccount>()[1]),
                 generator.GenerateChildAccessToken(3, "http-child-3"), generator.GenerateChildAccessToken(4, "http-child-4"))
-                { Creator = generator.GenerateAccessToken(store.Items<UserAccount>().Single(x => x.Id == 13)),
-                    Moderator = generator.GenerateAccessToken(store.Items<UserAccount>().Single(x => x.Id == 14)),
-                    Administrator = generator.GenerateAccessToken(store.Items<UserAccount>().Single(x => x.Id == 9)) };
+            {
+                Creator = generator.GenerateAccessToken(store.Items<UserAccount>().Single(x => x.Id == 13)),
+                Moderator = generator.GenerateAccessToken(store.Items<UserAccount>().Single(x => x.Id == 14)),
+                Administrator = generator.GenerateAccessToken(store.Items<UserAccount>().Single(x => x.Id == 9))
+            };
         }
 
         public Task<JsonElement> CreateAsync(string operationId = "create", int childId = 3) =>

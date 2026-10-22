@@ -39,6 +39,6 @@ public sealed class CreatorAssistanceContractTests
         Assert.Contains(task.GetIndexes(), x => x.IsUnique && x.Properties.Any(p => p.Name == "CreateOperationId"));
         Assert.Contains(step.GetIndexes(), x => x.IsUnique && x.Properties.Any(p => p.Name == "OperationId"));
         Assert.All(task.GetForeignKeys().Concat(step.GetForeignKeys()), fk => Assert.Equal(DeleteBehavior.Restrict, fk.DeleteBehavior));
-        Assert.True(context.Model.FindEntityType(typeof(StoryVersion))!.FindProperty(nameof(StoryVersion.AssistanceProvenanceJson))!.IsNullable);
+        Assert.True(context.Model.FindEntityType(typeof(StoryVersionAuthoringMetadata))!.FindProperty(nameof(StoryVersionAuthoringMetadata.AssistanceProvenanceJson))!.IsNullable);
     }
 }

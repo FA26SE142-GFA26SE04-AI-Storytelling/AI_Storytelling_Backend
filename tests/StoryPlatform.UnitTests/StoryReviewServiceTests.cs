@@ -1,4 +1,4 @@
-﻿using System.Linq.Expressions;
+using System.Linq.Expressions;
 using Moq;
 using System.Text.Json;
 using StoryPlatform.Application.Abstractions.AI;
@@ -32,10 +32,15 @@ public sealed class StoryReviewServiceTests
         var store = SeedContentReviewWithAllArtifacts();
         store.Items<UserAccount>().Single().Role = UserRole.ContentCreator;
         var story = store.Items<Story>().Single();
-        var request = new StoryGenerationRequest { Id = 1, StoryId = 1, Status = GenerationInputStatus.InputAccepted,
+        var request = new StoryGenerationRequest
+        {
+            Id = 1,
+            StoryId = 1,
+            Status = GenerationInputStatus.InputAccepted,
             ContextSnapshotJson = JsonSerializer.Serialize(new StoryPlatform.Application.Features.AIStoryInput.Models.AIStoryInputContextSnapshot(
                 1, "6-8", 2, "level_2", "vi", 1000, "always_manual", [], [], [], [], SafetyScoreThreshold: 90m),
-                new JsonSerializerOptions(JsonSerializerDefaults.Web)) };
+                new JsonSerializerOptions(JsonSerializerDefaults.Web))
+        };
         CreatorGenerationTestContext.Configure(story, request);
         store.Seed(request);
         var ai = new Moq.Mock<IAIStoryGenerationClient>(Moq.MockBehavior.Strict);
@@ -43,8 +48,13 @@ public sealed class StoryReviewServiceTests
             .ReturnsAsync(new EvaluateContentSafetyResponse { IsAllowed = true, SafetyScore = score });
         var service = Service(store, ai.Object);
         var before = store.Items<StoryVersion>().Single();
-        var update = new UpdateStoryRequestDto { VersionId = before.Id, Title = before.Title,
-            Content = "Lan gặp Minh trong rừng. Hai bạn cùng đọc sách.", Lesson = before.Lesson! };
+        var update = new UpdateStoryRequestDto
+        {
+            VersionId = before.Id,
+            Title = before.Title,
+            Content = "Lan gặp Minh trong rừng. Hai bạn cùng đọc sách.",
+            Lesson = before.Lesson!
+        };
         if (!accepted)
         {
             await Assert.ThrowsAsync<BadRequestException>(() => service.UpdateStoryAsync(1, 1, update));
@@ -72,9 +82,15 @@ public sealed class StoryReviewServiceTests
         var context = new StoryPlatform.Application.Features.AIStoryInput.Models.AIStoryInputContextSnapshot(
             null, "6-8", 2, "level_2", "vi", 1000, "always_manual", [], [], [], [],
             SafetyScoreThreshold: 90m, AudienceScope: "Creator", CreatorUserId: 1);
-        store.Seed(new StoryGenerationRequest { Id = 1, StoryId = 1, SubmittedByUserId = 1,
-            Status = GenerationInputStatus.InputAccepted, ContextSnapshotJson = JsonSerializer.Serialize(context,
-                new JsonSerializerOptions(JsonSerializerDefaults.Web)) });
+        store.Seed(new StoryGenerationRequest
+        {
+            Id = 1,
+            StoryId = 1,
+            SubmittedByUserId = 1,
+            Status = GenerationInputStatus.InputAccepted,
+            ContextSnapshotJson = JsonSerializer.Serialize(context,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web))
+        });
         store.Items<StoryVersion>().Single().SafetyScore = 99m;
         var service = Service(store);
         await Assert.ThrowsAsync<NotFoundException>(() => service.GetReviewPackageAsync(99, 1));
@@ -87,7 +103,7 @@ public sealed class StoryReviewServiceTests
             new ConfirmCreatorContentRequestDto { VersionId = 999 }));
         Assert.Empty(store.Items<StoryGenerationJob>());
         var version = store.Items<StoryVersion>().Single();
-        var reviewStatus = version.ReviewStatus;
+        var reviewStatus = version.Moderation.ReviewStatus;
         var validation = await service.ValidateAsync(1, 1);
         Assert.False(validation.CanApprove);
         Assert.True(validation.CanConfirmContent);
@@ -95,14 +111,20 @@ public sealed class StoryReviewServiceTests
         Assert.False(package.CanApprove);
         Assert.True(package.CanConfirmContent);
         // A previous release's completed media job must not block this version's new media package.
-        store.Seed(new StoryGenerationJob { Id = 99, StoryId = 1, StoryVersionId = 999,
-            Operation = GenerationJobOperation.GenerateMediaPackage, Status = GenerationJobStatus.Completed });
+        store.Seed(new StoryGenerationJob
+        {
+            Id = 99,
+            StoryId = 1,
+            StoryVersionId = 999,
+            Operation = GenerationJobOperation.GenerateMediaPackage,
+            Status = GenerationJobStatus.Completed
+        });
         var result = await service.ConfirmCreatorContentAsync(1, 1,
             new ConfirmCreatorContentRequestDto { VersionId = version.Id });
         Assert.Equal(version.Id, result.VersionId);
         Assert.Equal("MediaProcessing", result.Status);
         Assert.Equal(StoryStatus.MediaProcessing, story.Status);
-        Assert.Equal(reviewStatus, version.ReviewStatus);
+        Assert.Equal(reviewStatus, version.Moderation.ReviewStatus);
         Assert.False(story.IsPublished);
         await Assert.ThrowsAsync<ConflictException>(() => service.ConfirmCreatorContentAsync(1, 1,
             new ConfirmCreatorContentRequestDto { VersionId = version.Id }));
@@ -606,11 +628,16 @@ public sealed class StoryReviewServiceTests
         unitOfWork.Items<Story>().Single().AuthorUserId = 99;
         unitOfWork.Seed(new SupervisionRelationship
         {
-            Id = 2, ChildProfileId = 1, SupervisorUserId = 2, SupervisorRole = SupervisorRole.AdditionalSupervisor
+            Id = 2,
+            ChildProfileId = 1,
+            SupervisorUserId = 2,
+            SupervisorRole = SupervisorRole.AdditionalSupervisor
         });
         unitOfWork.Seed(new SupervisionPermission
         {
-            Id = 2, SupervisionRelationshipId = 2, Permission = Permission.ApproveStory
+            Id = 2,
+            SupervisionRelationshipId = 2,
+            Permission = Permission.ApproveStory
         });
 
         var result = await Service(unitOfWork).ApproveAsync(2, 1);
@@ -624,7 +651,9 @@ public sealed class StoryReviewServiceTests
         var unitOfWork = SeedContentReviewWithAllArtifacts();
         unitOfWork.Seed(new StoryGenerationJob
         {
-            Id = 10, StoryId = 1, StoryVersionId = 1,
+            Id = 10,
+            StoryId = 1,
+            StoryVersionId = 1,
             Operation = GenerationJobOperation.GenerateMediaPackage,
             Status = GenerationJobStatus.Pending
         });
@@ -751,10 +780,15 @@ public sealed class StoryReviewServiceTests
         };
         var id = await cache.CreateAsync(new AIProposalDto
         {
-            RequestedByUserId = 1, StoryId = 1, StoryVersionId = 1,
-            ArtifactType = artifact, OperationType = "regenerate", Status = "pending",
+            RequestedByUserId = 1,
+            StoryId = 1,
+            StoryVersionId = 1,
+            ArtifactType = artifact,
+            OperationType = "regenerate",
+            Status = "pending",
             SuggestedContent = JsonSerializer.SerializeToElement(new { items }),
-            CreatedAt = DateTime.UtcNow, ExpiresAt = DateTime.UtcNow.AddHours(1)
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.AddHours(1)
         });
         var applied = await new ProposalService(cache, store).ApplyProposalAsync(1, 1, id);
         Assert.True(applied.Success);

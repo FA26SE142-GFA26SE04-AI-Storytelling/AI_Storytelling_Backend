@@ -277,10 +277,10 @@ public partial class PublicStoryReviewService
             item.RowVersion += 1;
             _unitOfWork.Repository<ModerationItem>().Update(item);
 
-            version.ReviewStatus = versionStatus;
-            version.ReviewedByUserId = context.Actor.Id;
-            version.ReviewedAt = now;
-            version.ReviewFeedback = feedbackJson;
+            version.Moderation.ReviewStatus = versionStatus;
+            version.Moderation.ReviewedByUserId = context.Actor.Id;
+            version.Moderation.ReviewedAt = now;
+            version.Moderation.ReviewFeedback = feedbackJson;
             _unitOfWork.Repository<StoryVersion>().Update(version);
 
             if (publish)

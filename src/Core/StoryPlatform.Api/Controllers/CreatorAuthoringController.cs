@@ -11,6 +11,19 @@ namespace StoryPlatform.Api.Controllers;
 [Route("api/v1/creator/stories")]
 public sealed class CreatorAuthoringController(ICreatorAuthoringService service) : BaseApiController
 {
+    /// <summary>Chốt bản thủ công và xếp hàng Phase 5 ảnh/audio; không duyệt công khai.</summary>
+    [Authorize(Roles = "ContentCreator")]
+    [HttpPost("{storyId:int}/manual/confirm-content")]
+    [ProducesResponseType(typeof(ApiResponse<StoryPlatform.Application.Features.CreatorAuthoring.Services.ConfirmManualContentResult>), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ConfirmContent(int storyId,
+        StoryPlatform.Application.Features.CreatorAuthoring.Services.ConfirmManualContentRequest request,
+        [FromServices] StoryPlatform.Application.Features.CreatorAuthoring.Services.CreatorManualMediaService media,
+        CancellationToken ct) => Accepted(ApiResponse<StoryPlatform.Application.Features.CreatorAuthoring.Services.ConfirmManualContentResult>.Ok(
+            await media.ConfirmAsync(GetCurrentUserId(), storyId, request, ct)));
+
     [HttpPost("manual")]
     public async Task<ActionResult<ApiResponse<CreatorDraftDto>>> Create(CreateCreatorDraftRequest request, CancellationToken ct) =>
         StatusCode(201, ApiResponse<CreatorDraftDto>.Ok(await service.CreateDraftAsync(GetCurrentUserId(), request, ct)));

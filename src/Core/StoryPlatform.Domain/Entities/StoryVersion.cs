@@ -24,36 +24,17 @@ public class StoryVersion : BaseEntity
     public decimal? SafetyScore { get; set; }
     public bool IsCurrent { get; set; } = false;
 
-    // Authoring provenance and command receipts on the shared version row.
-    public string? AuthoringOrigin { get; set; }
-    public string? AssistanceProvenanceJson { get; set; }
     public int? BaseVersionId { get; set; }
     public int? RestoredFromVersionId { get; set; }
     public int AudienceRevision { get; set; } = 1;
-    public string SourceDeclaration { get; set; } = string.Empty;
-    public string RightsDeclaration { get; set; } = string.Empty;
-    public string? ImportFileName { get; set; }
-    public string? ImportSourceHash { get; set; }
-    public string? ImportPreviewHash { get; set; }
-    public string? OperationId { get; set; }
-    public string? RequestHash { get; set; }
-    public string? OperationResponseJson { get; set; }
+
+    public StoryVersionAuthoringMetadata AuthoringMetadata { get; set; } = new();
+    public StoryVersionModerationState Moderation { get; set; } = new();
+    public StoryVersionMediaState MediaState { get; set; } = new();
+    public virtual ICollection<StoryAuthoringOperation> AuthoringOperations { get; set; } = new List<StoryAuthoringOperation>();
 
     public int? OutlineApprovedByUserId { get; set; }
     public virtual UserAccount? OutlineApprovedByUser { get; set; }
     public DateTime? OutlineApprovedAt { get; set; }
 
-    public ModerationZone? ModerationZone { get; set; }
-    public string? GrayZoneFlags { get; set; }
-    public bool GrayZoneCleared { get; set; } = false;
-    public int? GrayZoneClearedByUserId { get; set; }
-    public virtual UserAccount? GrayZoneClearedByUser { get; set; }
-    public DateTime? GrayZoneClearedAt { get; set; }
-
-    public VersionReviewStatus ReviewStatus { get; set; } = VersionReviewStatus.None;
-    public DateTime? ReviewSubmittedAt { get; set; }
-    public int? ReviewedByUserId { get; set; }
-    public virtual UserAccount? ReviewedByUser { get; set; }
-    public DateTime? ReviewedAt { get; set; }
-    public string? ReviewFeedback { get; set; }
 }

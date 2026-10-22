@@ -8,7 +8,7 @@ using StoryPlatform.Application.Features.MediaGeneration.Models;
 namespace StoryPlatform.Api.Controllers;
 
 [ApiController]
-[Authorize]
+[Authorize(Roles = "Parent,ContentCreator")]
 [Route("api/v1/stories/{storyId:int}/media")]
 public sealed class MediaGenerationController : ControllerBase
 {
@@ -41,11 +41,35 @@ public sealed class MediaGenerationController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> RegenerateIllustrationBeat(
-        int storyId, int beatId, CancellationToken cancellationToken)
+        int storyId, int beatId, RegenerateMediaRequest request, CancellationToken cancellationToken)
     {
         var value = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
         if (!int.TryParse(value, out var userId)) throw new UnauthorizedAccessException();
-        await _service.RegenerateIllustrationBeatAsync(userId, storyId, beatId, cancellationToken);
+        await _service.RegenerateIllustrationBeatAsync(userId, storyId, beatId, request, cancellationToken);
+        return Accepted();
+    }
+
+    [HttpPost("confirm")]
+    [Authorize(Roles = "Parent,ContentCreator")]
+    [ProducesResponseType(typeof(ApiResponse<MediaGenerationProgress>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<ApiResponse<MediaGenerationProgress>>> Confirm(
+        int storyId, ConfirmMediaPackageRequest request, CancellationToken ct)
+    {
+        var value = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (!int.TryParse(value, out var userId)) throw new UnauthorizedAccessException();
+        return Ok(ApiResponse<MediaGenerationProgress>.Ok(await _service.ConfirmAsync(userId, storyId, request, ct)));
+    }
+
+    [HttpPost("segments/{segmentId:int}/regenerate")]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> RegenerateSegmentAudio(
+        int storyId, int segmentId, RegenerateMediaRequest request, CancellationToken ct)
+    {
+        var value = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (!int.TryParse(value, out var userId)) throw new UnauthorizedAccessException();
+        await _service.RegenerateSegmentAudioAsync(userId, storyId, segmentId, request, ct);
         return Accepted();
     }
 

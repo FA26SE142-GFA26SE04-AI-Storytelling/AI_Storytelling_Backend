@@ -44,11 +44,19 @@ public partial class ManualAuthoringService
                 throw new BadRequestException("Chế độ trải nghiệm không hợp lệ.");
             var story = new Story
             {
-                Scope = _policy.Scope, Source = StorySource.Manual, ChildProfileId = null,
-                AuthorUserId = userId, Title = Limited(request.Title, 200, "Tên truyện"),
-                Description = Limited(request.Description, 1000, "Mô tả"), Genre = Limited(request.Genre, 50, "Thể loại"),
-                Language = language, AgeBand = ageBand, ExperienceMode = request.ExperienceMode,
-                OutputMode = StoryOutputMode.ReadingMediaOnly, Status = StoryStatus.Draft, IsPublished = false
+                Scope = _policy.Scope,
+                Source = StorySource.Manual,
+                ChildProfileId = null,
+                AuthorUserId = userId,
+                Title = Limited(request.Title, 200, "Tên truyện"),
+                Description = Limited(request.Description, 1000, "Mô tả"),
+                Genre = Limited(request.Genre, 50, "Thể loại"),
+                Language = language,
+                AgeBand = ageBand,
+                ExperienceMode = request.ExperienceMode,
+                OutputMode = StoryOutputMode.ReadingMediaOnly,
+                Status = StoryStatus.Draft,
+                IsPublished = false
             };
             await _policy.InitializeAsync(userId, story, context, ct);
             await _uow.Repository<Story>().AddAsync(story, ct);
@@ -86,11 +94,16 @@ public partial class ManualAuthoringService
             var assistance = await ValidateAssistanceAsync(userId, story!, request, ct);
             return await AddVersionAsync(userId, story!, new StoryVersion
             {
-                Title = Limited(request.Title, 200, "Tên truyện"), Content = Content(request.Content, false),
-                AuthoringOrigin = "Write", EditType = VersionEditType.HumanEdited,
-                AssistanceProvenanceJson = assistance,
-                SourceDeclaration = Limited(request.SourceDeclaration, 2000, "Nguồn"),
-                RightsDeclaration = Limited(request.RightsDeclaration, 2000, "Quyền sử dụng")
+                Title = Limited(request.Title, 200, "Tên truyện"),
+                Content = Content(request.Content, false),
+                EditType = VersionEditType.HumanEdited,
+                AuthoringMetadata = new StoryVersionAuthoringMetadata
+                {
+                    AuthoringOrigin = "Write",
+                    AssistanceProvenanceJson = assistance,
+                    SourceDeclaration = Limited(request.SourceDeclaration, 2000, "Nguồn"),
+                    RightsDeclaration = Limited(request.RightsDeclaration, 2000, "Quyền sử dụng")
+                }
             }, "creator_manual_content_saved", ct);
         }, ct);
 
@@ -116,10 +129,19 @@ public partial class ManualAuthoringService
             var source = await RequireVersionAsync(storyId, request.SourceVersionId, ct);
             return await AddVersionAsync(userId, story!, new StoryVersion
             {
-                Title = source.Title, Content = source.Content, AuthoringOrigin = "Restore", EditType = VersionEditType.HumanEdited,
-                RestoredFromVersionId = source.Id, SourceDeclaration = source.SourceDeclaration,
-                AssistanceProvenanceJson = RestoreAssistance(source),
-                RightsDeclaration = source.RightsDeclaration, ImportFileName = source.ImportFileName, ImportSourceHash = source.ImportSourceHash
+                Title = source.Title,
+                Content = source.Content,
+                EditType = VersionEditType.HumanEdited,
+                RestoredFromVersionId = source.Id,
+                AuthoringMetadata = new StoryVersionAuthoringMetadata
+                {
+                    AuthoringOrigin = "Restore",
+                    SourceDeclaration = source.AuthoringMetadata.SourceDeclaration,
+                    AssistanceProvenanceJson = RestoreAssistance(source),
+                    RightsDeclaration = source.AuthoringMetadata.RightsDeclaration,
+                    ImportFileName = source.AuthoringMetadata.ImportFileName,
+                    ImportSourceHash = source.AuthoringMetadata.ImportSourceHash
+                }
             }, "creator_content_restored", ct);
         }, ct);
 
@@ -128,12 +150,12 @@ public partial class ManualAuthoringService
         var current = await CurrentVersionAsync(story.Id, ct);
         version.StoryId = story.Id;
         version.BaseVersionId = current?.Id;
-        version.AssistanceProvenanceJson ??= JsonSerializer.Serialize(
+        version.AuthoringMetadata.AssistanceProvenanceJson ??= JsonSerializer.Serialize(
             new StoryPlatform.Application.Features.CreatorAssistance.DTOs.AssistanceProvenance(1, [], current?.Id, version.RestoredFromVersionId), JsonOptions);
-        if (version.AssistanceProvenanceJson is not null)
+        if (version.AuthoringMetadata.AssistanceProvenanceJson is not null)
         {
-            var provenance = JsonSerializer.Deserialize<StoryPlatform.Application.Features.CreatorAssistance.DTOs.AssistanceProvenance>(version.AssistanceProvenanceJson, JsonOptions)!;
-            version.AssistanceProvenanceJson = JsonSerializer.Serialize(provenance with { BaseVersionId = current?.Id }, JsonOptions);
+            var provenance = JsonSerializer.Deserialize<StoryPlatform.Application.Features.CreatorAssistance.DTOs.AssistanceProvenance>(version.AuthoringMetadata.AssistanceProvenanceJson, JsonOptions)!;
+            version.AuthoringMetadata.AssistanceProvenanceJson = JsonSerializer.Serialize(provenance with { BaseVersionId = current?.Id }, JsonOptions);
         }
         var allVersions = await _uow.Repository<StoryVersion>().FindAsync(x => x.StoryId == story.Id, cancellationToken: ct);
         story.AuthoringLastVersionNo = Math.Max(story.AuthoringLastVersionNo, allVersions.Select(x => x.VersionNo).DefaultIfEmpty().Max());
@@ -152,11 +174,28 @@ public partial class ManualAuthoringService
         await _uow.SaveChangesAsync(ct);
         story.Title = version.Title;
         story.Content = version.Content;
+        if (story.Scope == StoryScope.Creator || StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story))
+        {
+            story.Status = StoryStatus.Draft;
+            story.CoverImageUrl = null;
+            // Retire failed work for the old version so Phase 5 cannot keep selecting it ahead of V2.
+            var failedMedia = await _uow.Repository<StoryGenerationJob>().FindAsync(x => x.StoryId == story.Id &&
+                x.Operation == GenerationJobOperation.GenerateMediaPackage && x.Status == GenerationJobStatus.Failed, cancellationToken: ct);
+            foreach (var job in failedMedia)
+            {
+                job.Status = GenerationJobStatus.Cancelled;
+                job.ErrorCode = "MANUAL_VERSION_SUPERSEDED";
+                job.LeaseExpiresAt = null;
+                job.CompletedAt = DateTime.UtcNow;
+                _uow.Repository<StoryGenerationJob>().Update(job);
+                job.ConcurrencyToken = Guid.NewGuid().ToString("N");
+            }
+        }
         story.AuthoringRevisionToken = Guid.NewGuid().ToString("N");
         story.UpdatedAt = DateTime.UtcNow;
         _uow.Repository<Story>().Update(story);
         await AuditAsync(userId, action, nameof(Story), story.Id,
-            new { selectedVersionId = current?.Id }, new { selectedVersionId = version.Id, origin = version.AuthoringOrigin }, ct);
+            new { selectedVersionId = current?.Id }, new { selectedVersionId = version.Id, origin = version.AuthoringMetadata.AuthoringOrigin }, ct);
         return new CreatorContentSavedDto(await ToDraftAsync(story, ct), ToVersion(version));
     }
 
@@ -189,7 +228,7 @@ public partial class ManualAuthoringService
                 if (_policy.Scope == StoryScope.Parent && await _uow.Repository<ParentStoryOperation>().ExistsAsync(
                     x => x.StoryId == storyId && x.ActorUserId == userId && x.OperationId == operationId, ct))
                     throw new ConflictException("OPERATION_ID_REUSED");
-                var previous = await _uow.Repository<StoryVersion>().FirstOrDefaultAsync(x => x.StoryId == storyId &&
+                var previous = await _uow.Repository<StoryAuthoringOperation>().FirstOrDefaultAsync(x => x.StoryId == storyId &&
                     x.OperationId == operationId && !x.IsDeleted, cancellationToken: ct);
                 receipt = previous?.OperationResponseJson;
                 priorHash = previous?.RequestHash;
@@ -216,11 +255,16 @@ public partial class ManualAuthoringService
             }
             else if (result is CreatorContentSavedDto saved)
             {
-                var version = await _uow.Repository<StoryVersion>().GetByIdAsync(saved.Version.VersionId, ct) ?? throw new InvalidOperationException();
-                version.OperationId = operationId;
-                version.RequestHash = hash;
-                version.OperationResponseJson = response;
-                _uow.Repository<StoryVersion>().Update(version);
+                await _uow.Repository<StoryAuthoringOperation>().AddAsync(new StoryAuthoringOperation
+                {
+                    StoryId = storyId,
+                    StoryVersionId = saved.Version.VersionId,
+                    ActorUserId = userId,
+                    Kind = kind,
+                    OperationId = operationId,
+                    RequestHash = hash,
+                    OperationResponseJson = response
+                }, ct);
             }
             await _uow.SaveChangesAsync(ct);
             await _uow.CommitTransactionAsync(ct);
@@ -281,9 +325,13 @@ public partial class ManualAuthoringService
     private Task<AuditLog> AuditAsync(int userId, string action, string type, int entityId, object? before, object after, CancellationToken ct) =>
         _uow.Repository<AuditLog>().AddAsync(new AuditLog
         {
-            ActorUserId = userId, Action = _policy.Scope == StoryScope.Parent ? action.Replace("creator_", "parent_", StringComparison.Ordinal) : action, EntityType = type, EntityId = entityId,
+            ActorUserId = userId,
+            Action = _policy.Scope == StoryScope.Parent ? action.Replace("creator_", "parent_", StringComparison.Ordinal) : action,
+            EntityType = type,
+            EntityId = entityId,
             BeforeState = before is null ? null : JsonSerializer.Serialize(before, JsonOptions),
-            AfterState = JsonSerializer.Serialize(after, JsonOptions), OccurredAt = DateTime.UtcNow
+            AfterState = JsonSerializer.Serialize(after, JsonOptions),
+            OccurredAt = DateTime.UtcNow
         }, ct);
 
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
@@ -300,7 +348,7 @@ public partial class ManualAuthoringService
     }
     private static CreatorVersionDto ToVersion(StoryVersion x) => new(x.Id, x.StoryId, x.VersionNo,
         x.BaseVersionId, x.RestoredFromVersionId, x.EditorUserId ?? 0, x.Title, x.Content ?? string.Empty,
-        x.AuthoringOrigin ?? "Write", x.SourceDeclaration, x.RightsDeclaration, x.ImportFileName, x.ImportSourceHash,
-        x.AudienceRevision, x.CreatedAt, x.AssistanceProvenanceJson is null ? null :
-            JsonSerializer.Deserialize<StoryPlatform.Application.Features.CreatorAssistance.DTOs.AssistanceProvenance>(x.AssistanceProvenanceJson, JsonOptions));
+        x.AuthoringMetadata.AuthoringOrigin ?? "Write", x.AuthoringMetadata.SourceDeclaration, x.AuthoringMetadata.RightsDeclaration, x.AuthoringMetadata.ImportFileName, x.AuthoringMetadata.ImportSourceHash,
+        x.AudienceRevision, x.CreatedAt, x.AuthoringMetadata.AssistanceProvenanceJson is null ? null :
+            JsonSerializer.Deserialize<StoryPlatform.Application.Features.CreatorAssistance.DTOs.AssistanceProvenance>(x.AuthoringMetadata.AssistanceProvenanceJson, JsonOptions));
 }

@@ -73,10 +73,10 @@ public class PendingSubmissionArchiveHandler : IStoryArchiveHandler
             {
                 var version = await _unitOfWork.Repository<StoryVersion>()
                     .GetByIdAsync(item.StoryVersionId.Value, cancellationToken);
-                if (version != null && version.ReviewStatus == VersionReviewStatus.Pending)
+                if (version != null && version.Moderation.ReviewStatus == VersionReviewStatus.Pending)
                 {
-                    version.ReviewStatus = VersionReviewStatus.None;
-                    version.ReviewSubmittedAt = null;
+                    version.Moderation.ReviewStatus = VersionReviewStatus.None;
+                    version.Moderation.ReviewSubmittedAt = null;
                     _unitOfWork.Repository<StoryVersion>().Update(version);
                 }
             }

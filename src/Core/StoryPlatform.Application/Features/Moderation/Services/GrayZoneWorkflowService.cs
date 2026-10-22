@@ -21,7 +21,7 @@ public sealed class GrayZoneWorkflowService(IUnitOfWork uow, IAuditLogWriter aud
 
     public static GrayZoneAssessment? ReadAssessment(StoryVersion version)
     {
-        var root = PublicReviewState.ParseOrNew(version.GrayZoneFlags);
+        var root = PublicReviewState.ParseOrNew(version.Moderation.GrayZoneFlags);
         return root["assessment"]?.Deserialize<GrayZoneAssessment>(Json);
     }
 
@@ -41,7 +41,7 @@ public sealed class GrayZoneWorkflowService(IUnitOfWork uow, IAuditLogWriter aud
                 || assessment.AudienceRevision.HasValue && assessment.AudienceRevision != story.AudienceRevision)
                 throw new ConflictException("MODERATION_CONTEXT_CHANGED");
             if (story.IsDeleted || story.Status == StoryStatus.Archived || story.IsPublished
-                || version.ReviewStatus != VersionReviewStatus.None)
+                || version.Moderation.ReviewStatus != VersionReviewStatus.None)
                 throw new ConflictException("MODERATION_SOURCE_LOCKED");
             if (story.Scope == StoryScope.Parent && !jobId.HasValue && await uow.Repository<ParentStoryOperation>().ExistsAsync(
                 x => x.StoryId == storyId && x.Kind == "FamilyConfirmation" && !x.IsDeleted && x.RevokedAt == null, ct))
@@ -65,23 +65,30 @@ public sealed class GrayZoneWorkflowService(IUnitOfWork uow, IAuditLogWriter aud
                     && x.ItemType == ModerationItemType.GrayZoneStory
                     && (x.Status == ModerationItemStatus.Pending || x.Status == ModerationItemStatus.Claimed), ct))
                 throw new ConflictException("MODERATION_REVIEW_IN_PROGRESS");
-            var cleared = version.GrayZoneCleared && prior?.Fingerprint == assessment.Fingerprint
+            var cleared = version.Moderation.GrayZoneCleared && prior?.Fingerprint == assessment.Fingerprint
                 && prior.PolicyVersion == assessment.PolicyVersion && prior.Provider == assessment.Provider
                 && prior.Model == assessment.Model && prior.RiskScore == assessment.RiskScore;
-            version.ModerationZone = assessment.Zone;
+            version.Moderation.ModerationZone = assessment.Zone;
             if (!cleared)
             {
-                version.GrayZoneCleared = false;
-                version.GrayZoneClearedAt = null;
-                version.GrayZoneClearedByUserId = null;
+                version.Moderation.GrayZoneCleared = false;
+                version.Moderation.GrayZoneClearedAt = null;
+                version.Moderation.GrayZoneClearedByUserId = null;
             }
-            version.GrayZoneFlags = JsonSerializer.Serialize(new
+            version.Moderation.GrayZoneFlags = JsonSerializer.Serialize(new
             {
                 assessment,
                 flags = assessment.Zone == ModerationZone.GrayZone ? assessment.Findings.Select((f, i) => new
                 {
-                    id = $"{assessment.Fingerprint[..16]}:{i}", kind = f.Kind, name = f.Name,
-                    reason = f.Reason, category = f.Category, evidenceQuote = f.EvidenceQuote, contextNote = f.ContextNote, startOffset = f.StartOffset, endOffset = f.EndOffset
+                    id = $"{assessment.Fingerprint[..16]}:{i}",
+                    kind = f.Kind,
+                    name = f.Name,
+                    reason = f.Reason,
+                    category = f.Category,
+                    evidenceQuote = f.EvidenceQuote,
+                    contextNote = f.ContextNote,
+                    startOffset = f.StartOffset,
+                    endOffset = f.EndOffset
                 }).ToArray() : []
             }, Json);
             uow.Repository<StoryVersion>().Update(version);
@@ -100,9 +107,13 @@ public sealed class GrayZoneWorkflowService(IUnitOfWork uow, IAuditLogWriter aud
                     if (existing is null)
                         await uow.Repository<ModerationItem>().AddAsync(new ModerationItem
                         {
-                            ItemType = ModerationItemType.GrayZoneStory, Status = ModerationItemStatus.Pending,
-                            Priority = ModerationPriority.High, StoryId = storyId, StoryVersionId = versionId,
-                            CreatedByUserId = story.AuthorUserId, SlaDueAt = DateTime.UtcNow.AddHours(24),
+                            ItemType = ModerationItemType.GrayZoneStory,
+                            Status = ModerationItemStatus.Pending,
+                            Priority = ModerationPriority.High,
+                            StoryId = storyId,
+                            StoryVersionId = versionId,
+                            CreatedByUserId = story.AuthorUserId,
+                            SlaDueAt = DateTime.UtcNow.AddHours(24),
                             Flags = JsonSerializer.Serialize(new GrayZoneCheckpoint(jobId, assessment.Fingerprint, qualityPassed), Json)
                         }, ct);
                     if (job is not null)
@@ -143,9 +154,19 @@ public sealed class GrayZoneWorkflowService(IUnitOfWork uow, IAuditLogWriter aud
             ?? throw new NotFoundException("Story", item.StoryId ?? 0);
         await audit.LogAsync(userId, "GrayZoneReviewOpened", nameof(ModerationItem), id, null, new { versionId = version.Id }, ct);
         // Do not expose the assessment score, checkpoint or child identity in the package.
-        var flags = PublicReviewState.ParseVersionFlags(version.GrayZoneFlags)
-            .Select(x => new { x.Id, x.Kind, x.Name, CriterionCode = x.Category, Reason = GrayZoneEvaluator.Redact(x.Reason ?? ""), EvidenceQuote = GrayZoneEvaluator.Redact(x.EvidenceQuote ?? ""),
-                ContextNote = GrayZoneEvaluator.Redact(x.ContextNote ?? ""), x.StartOffset, x.EndOffset });
+        var flags = PublicReviewState.ParseVersionFlags(version.Moderation.GrayZoneFlags)
+            .Select(x => new
+            {
+                x.Id,
+                x.Kind,
+                x.Name,
+                CriterionCode = x.Category,
+                Reason = GrayZoneEvaluator.Redact(x.Reason ?? ""),
+                EvidenceQuote = GrayZoneEvaluator.Redact(x.EvidenceQuote ?? ""),
+                ContextNote = GrayZoneEvaluator.Redact(x.ContextNote ?? ""),
+                x.StartOffset,
+                x.EndOffset
+            });
         return new(id, version.Id, version.VersionNo, GrayZoneEvaluator.Redact(version.Title ?? ""),
             GrayZoneEvaluator.Redact(version.Content ?? ""), story.AgeBand, story.ReadingLevel,
             JsonSerializer.Serialize(flags, Json), item.RowVersion);
@@ -185,8 +206,8 @@ public sealed class GrayZoneWorkflowService(IUnitOfWork uow, IAuditLogWriter aud
             item.Status = clear ? ModerationItemStatus.Cleared : ModerationItemStatus.Blocked;
             item.DecisionReason = request.Reason.Trim(); item.DecidedByUserId = userId;
             item.DecidedAt = DateTime.UtcNow; item.RowVersion++;
-            version.GrayZoneCleared = clear; version.GrayZoneClearedByUserId = clear ? userId : null;
-            version.GrayZoneClearedAt = clear ? item.DecidedAt : null;
+            version.Moderation.GrayZoneCleared = clear; version.Moderation.GrayZoneClearedByUserId = clear ? userId : null;
+            version.Moderation.GrayZoneClearedAt = clear ? item.DecidedAt : null;
             if (!clear && job is not null && !version.IsCurrent)
             {
                 var oldCurrent = await uow.Repository<StoryVersion>().FirstOrDefaultAsync(x => x.StoryId == story.Id && x.IsCurrent, cancellationToken: ct)
@@ -211,9 +232,15 @@ public sealed class GrayZoneWorkflowService(IUnitOfWork uow, IAuditLogWriter aud
                 new { versionId = version.Id, reason = request.Reason.Trim() }, ct);
             if (notifications is not null)
                 await notifications.CreateAsync(story.AuthorUserId, NotificationType.ContentModerationResult,
-                    JsonSerializer.Serialize(new { itemId = id, storyId = story.Id, storyVersionId = version.Id,
-                        decision = request.Decision, reason = clear ? null : "SAFETY_REVIEW_BLOCKED",
-                        categories = clear ? Array.Empty<string>() : ReadAssessment(version)!.Findings.Select(x => x.Category).Distinct().ToArray() }, Json), ct);
+                    JsonSerializer.Serialize(new
+                    {
+                        itemId = id,
+                        storyId = story.Id,
+                        storyVersionId = version.Id,
+                        decision = request.Decision,
+                        reason = clear ? null : "SAFETY_REVIEW_BLOCKED",
+                        categories = clear ? Array.Empty<string>() : ReadAssessment(version)!.Findings.Select(x => x.Category).Distinct().ToArray()
+                    }, Json), ct);
             await uow.CommitTransactionAsync(ct);
         }
         catch { await uow.RollbackTransactionAsync(CancellationToken.None); throw; }

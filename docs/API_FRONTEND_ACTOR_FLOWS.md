@@ -10717,6 +10717,18 @@ Source controller/DTO/service hiện tại ưu tiên hơn tài liệu cũ. Khi b
 
 ## Bổ sung triển khai — Creator Manual dùng Phase 5
 
+### Phân biệt nguồn tạo media
+
+Backend tự xác định nguồn từ `Story.Source`; frontend không truyền hoặc thay đổi nguồn khi gọi media API.
+Response confirm Manual, media progress và media package có thêm `generationOrigin`:
+
+- `ManualAuthoring`: tạo ảnh/audio cho bản nội dung Creator tự viết hoặc import đã xác nhận; không chạy outline/content generation, không liên kết generation request.
+- `AiGeneration`: tạo ảnh/audio sau bước xác nhận nội dung trong luồng AI Generation; context có thể kèm outline, accepted input và generation snapshot.
+
+Hai nguồn dùng chung worker Phase 5, kiểm tra chất lượng/an toàn, readiness và API retry. Field này biểu thị nguồn bản truyện, không khẳng định từng câu đều viết tay hoặc đều do AI sinh. Dùng AI hỗ trợ bản nháp không đổi nguồn khởi tạo.
+Context media mới ghi `generationOrigin` để truy vết; context đã tồn tại được giữ nguyên. Response API vẫn xác định nguồn từ story cho các job cũ.
+File media mới lưu dưới `{storyId}/versions/{storyVersionId}/v{contextRevision}/...`; ảnh và audio đều có mã duy nhất, tránh ghi đè file của phiên bản/lần tạo trước. Asset Ready cũ tiếp tục dùng đường dẫn đã lưu.
+
 Endpoint mới: `POST /api/v1/creator/stories/{storyId}/manual/confirm-content`, role ContentCreator, đúng tác giả Active/không khóa. Đây là bước chốt sáng tác để tạo media, không phải Moderator approve/public.
 
 ```json
@@ -10741,3 +10753,102 @@ Sai version/revision trả `409 STALE_STORY_VERSION`; thiếu nội dung/khai b�
 Không tạo outline hoặc StoryGenerationRequest giả; Source vẫn Manual. Dùng StoryGenerationJob GenerateMediaPackage và MediaContext hiện có, không thêm migration. Gói lần này là ReadingMediaOnly, chưa thêm quiz/vocabulary/discussion/tương tác.
 
 Bổ sung này thay thế giới hạn trước đây “Creator Manual chưa có bước Draft → Ready”. Các số inventory ở snapshot e808851 phía trên là baseline trước tính năng; bản này bổ sung một endpoint manual/confirm-content. Không suy từ source rằng database/provider thật đã kiểm thử thành công.
+
+
+## C?p nh?t ? x?c nh?n g?i media tr??c khi Ready
+
+Ph?n n?y thay th? m? t? Phase 5 t? chuy?n Ready ? c?c m?c snapshot ph?a tr?n. ?p d?ng c?ng m?t pipeline cho Creator Manual, Creator AI, Parent AI; Parent th? c?ng c? th? ch? ??ng y?u c?u t?o ?nh/audio. Kh?ng th?m tr??ng ph?n lo?i ngu?n media.
+
+### Tr?ng th?i v? API ??c
+
+- `MediaProcessing`: job ?ang t?o ho?c c?n retry.
+- `MediaReview`: job ?? Completed v? ?? ?nh/audio ??t ki?m tra k? thu?t, ?ang ch? ng??i d?ng ch?t g?i.
+- `Ready`: g?i ?? ???c x?c nh?n; Creator v?n ph?i g?i Moderator ?? duy?t c?ng khai. Parent th? c?ng v?n ph?i th?c hi?n family-confirmation ?? giao cho tr?.
+- `GET /api/v1/stories/{storyId}/media/progress` v? `/package` c? `packageRevision`, `isGenerated`, `isAwaitingConfirmation`, `isConfirmed`, `confirmedByUserId`, `confirmedAt`, `isReady`.
+- `MediaAsset.status=Ready` ch? l? ho?n t?t k? thu?t. Frontend d?ng `isReady` c?a g?i ?? quy?t ??nh b??c ti?p theo.
+- Package cung c?p URL k? 10 ph?t cho media Ready. Ch? xin URL qua API sau khi ??ng nh?p; kh?ng gh?p ???ng d?n storage th?nh URL public. Khi URL h?t h?n, g?i l?i GET package/preview. Metadata l?u trong DB v?n l? storage path, kh?ng l?u URL k?.
+
+### X?c nh?n v? t?o l?i media
+
+`POST /api/v1/stories/{storyId}/media/confirm` (Parent ho?c ContentCreator):
+
+```json
+{ "storyVersionId": 38, "packageRevision": 1 }
+```
+
+Th?nh c?ng `200` tr? progress m?i. Request l?p ??ng g?i tr? k?t qu? ?? c?, kh?ng t?o version/job/file. Backend ki?m tra quy?n, current version, job Completed v? readiness. Kh?ng c? n?t bypass safety ho?c moderator.
+
+Regenerate d?ng m?t trong hai endpoint, tr? `202`:
+
+- `POST /api/v1/stories/{storyId}/media/illustration-beats/{beatId}/regenerate`
+- `POST /api/v1/stories/{storyId}/media/segments/{segmentId}/regenerate`
+
+```json
+{ "storyVersionId": 38, "packageRevision": 1, "expectedConfirmed": false }
+```
+
+C? ba field ??u b?t bu?c; l?y t? response g?i v?a xem. `expectedConfirmed` l? gi? tr? `isConfirmed` ?? quan s?t, gi?p ph?t hi?n confirm/regenerate ??ng th?i m? revision n?i dung ch?a ??i. Sau regenerate, revision t?ng v? x?c nh?n c? b? x?a; poll ??n MediaReview r?i ch?t l?i c? g?i. C?c asset kh?c gi? nguy?n. Kh?ng g?i regenerate b?ng body r?ng nh? contract c?.
+
+`POST /api/v1/stories/{storyId}/media/retry` ti?p t?c job Failed c?ng package revision; gi? asset ?? ??t v? kh?ng t? x?c nh?n. Kh?ng retry job ?ang Processing.
+
+M? l?i `409`: `STALE_MEDIA_PACKAGE`, `MEDIA_JOB_ACTIVE`, `MEDIA_PACKAGE_INCOMPLETE`, `MEDIA_PACKAGE_NOT_AWAITING_CONFIRMATION`, `PARENT_STORY_FINALIZED`. Sai quy?n tr? `403` ho?c `404` theo scope. B?n ?ang g?i duy?t/ph?t h?nh kh?ng cho thay ??i media.
+
+### Parent th? c?ng ch? ??ng t?o media
+
+Sau create/save ? content/checks ? content/confirm, g?i:
+
+`POST /api/v1/parent/stories/{storyId}/manual/media/generate`
+
+```json
+{
+  "operationId": "family-media-001",
+  "revisionToken": "TOKEN_TU_RESPONSE_SAVE",
+  "baseVersionId": 38,
+  "contentConfirmationId": 12
+}
+```
+
+Response `202` c? `storyId`, `storyVersionId`, `jobId`, `packageRevision`, `progressUrl`, `packageUrl`. C?ng operation/payload ???c replay; operation kh?c cho c?ng version ?? c? job tr? conflict, d?ng retry/regenerate ph? h?p.
+
+Parent ph?i c?n quy?n gi?m s?t v? consent h?p l?, n?i dung qua ki?m tra v? policy/context tr? ph?i kh?p snapshot. Pipeline kh?ng t?o outline hay StoryGenerationRequest gi?. Khi job ho?t ??ng, save/import-confirm/restore/setup b? kh?a.
+
+Poll v? xem package ? confirm media ? g?i preparations b?ng contentConfirmationId ? GET preparation ?? l?y media xem tr??c ? family-confirmations ?? giao. Preparation ghim version v? media revision; regenerate l?m preparation c? kh?ng c?n h?p l? ?? giao. Child ch? ??c qua grant ??ng child, ch?a thu h?i v? issuer c?n quy?n. Consent/context thay ??i l?m g?i media c? kh?ng c?n h?p l?.
+
+N?u kh?ng g?i media/generate, b?n Parent ch? v?n b?n v?n c? quy tr?nh prepare/family-confirm hi?n t?i. Listening/combined ch? ???c coi s?n s?ng khi ?? t?o v? x?c nh?n audio.
+
+### D? li?u c? v? tri?n khai schema
+
+G?i ho?n t?t tr??c tri?n khai c? MediaPackageRevision=0 ???c gi? nguy?n. Regenerate g?i c? chuy?n revision=1 v? ph?i ch?t l?i. Job ?ang dang d? chuy?n sang lu?ng x?c nh?n m?i.
+
+C?n migration t?ng d?n `AddMediaPackageConfirmation` cho b?n c?t c?a StoryVersion: MediaPackageRevision (m?c ??nh 0), ConfirmedMediaPackageRevision, MediaConfirmedByUserId, MediaConfirmedAt, c?ng FK ng??i x?c nh?n. Kh?ng s?a migration l?ch s? ho?c t?o th?m b?ng. Ch? ch?y API m?i sau khi schema ?? ???c c?p nh?t b?ng thao t?c migration ???c cho ph?p ri?ng. Bucket storage d?ng cho media ph?i private ?? URL k? b?o v? ???c media ch? x?c nh?n.
+
+
+## C?p nh?t l?u tr? ? t?ch tr?ng th?i kh?i StoryVersion
+
+Contract request/response frontend gi? nguy?n. ??y l? thay ??i c?u tr?c l?u tr? backend; kh?ng c? endpoint m?i ri?ng cho c?c b?ng ph?.
+
+- `story_versions`: n?i dung, outline, lesson, version number, editor, li?n k?t base/restore, audience revision v? ch? s? readability/safety. X?c nh?n outline ti?p t?c n?m c?ng snapshot n?i dung.
+- `story_version_authoring_metadata`: ngu?n s?ng t?c, quy?n s? d?ng, th?ng tin import v? provenance AI h? tr?. Kh?a ch?nh/FK `StoryVersionId`, unique `(StoryId, ImportPreviewHash)` khi c? preview hash.
+- `story_version_moderation_states`: v?ng x?m v? tr?ng th?i duy?t hi?n t?i. C?ng vi?c v? quy?t ??nh c?a Moderator v?n l?u t?i ModerationItem, kh?ng chuy?n l?ch s? sang b?ng m?i.
+- `story_version_media_states`: package revision, revision ?? x?c nh?n, ng??i v? th?i ?i?m x?c nh?n g?i. Thay th? v? tr? b?n thu?c t?nh media v?a th?m tr?n StoryVersion, kh?ng thay ? ngh?a nghi?p v?.
+- `story_authoring_operations`: receipt ch?ng x? l? command tr?ng, li?n k?t ??ng StoryId/StoryVersionId, actor, kind, OperationId, RequestHash v? response. M?t version c? nhi?u receipt; unique `(StoryId, OperationId)`. ParentStoryOperation v?n qu?n l? check/prepare/family grant ri?ng.
+
+Ba nh?m tr?ng th?i ??u ti?n l? owned entities c?a aggregate StoryVersion trong EF, ?nh x? th?nh ba b?ng v?t l? ri?ng, t? ???c ??c c?ng owner. Service truy c?p `version.AuthoringMetadata`, `version.Moderation`, `version.MediaState`; kh?ng t?o repository ri?ng cho owned entities. Receipt l? entity ??c l?p.
+
+Repository ?? x? l? c? b?n tracked l?n b?n no-tracking ?? c?p nh?t ???c c?c b?ng tr?ng th?i, g?m c? FK ng??i quy?t ??nh/x?c nh?n. Chuy?n tr?ng th?i v? l?u receipt v?n di?n ra trong transaction/lock hi?n t?i. Import preview v? replay kh?ng m?t ?i?u ki?n ch?ng tr?ng.
+
+### Migration c?n t?o ri?ng tr??c khi ch?y b?n code n?y
+
+Migration ?? xu?t `SplitStoryVersionState` ph?i ???c cho ph?p ri?ng; thay th? nhu c?u t?o ri?ng AddMediaPackageConfirmation n?u migration ?? ch?a ???c t?o/?p d?ng. Kh?ng s?a migration ho?c snapshot l?ch s? ?? n? ki?m tra schema.
+
+Th? t? b?t bu?c khi x?y d?ng migration:
+
+1. T?o b?n b?ng m?i v? c?c kh?a/index; gi? c?c c?t c? trong story_versions trong l?c chuy?n d? li?u.
+2. Copy metadata s?ng t?c v? moderation cho **m?i** version hi?n h?u, k? c? version ?? soft-delete. StoryId l?y t? owner. C?c owned row b?t bu?c ph?i t?n t?i ?? gi? d? li?u c? khi ??c b?ng model m?i.
+3. Media state: n?u database ch?a c? b?n c?t x?c nh?n m?i, kh?i t?o revision 0 v? th?ng tin x?c nh?n null cho d? li?u c?. N?u c?c c?t n?y ?? ???c ?p d?ng ? m?i tr??ng kh?c, ph?i chuy?n nguy?n gi? tr?, kh?ng reset m?t x?c nh?n.
+4. Chuy?n c?c version c? OperationId sang story_authoring_operations, gi? nguy?n RequestHash v? OperationResponseJson. Actor l?y EditorUserId ho?c AuthorUserId c?a story; x?c ??nh kind theo origin Write/Import/Restore t??ng ?ng save-manual/confirm-import/restore. Kh?ng t?o receipt gi? cho version kh?ng c? OperationId.
+5. ??i chi?u s? l??ng, FK, t?nh duy nh?t v? d? li?u tr??c khi b? c?t/index c?. Kh?ng reset database, kh?ng ch?y seed ?? thay th? d? li?u ng??i d?ng.
+
+Seed ?? chia d? li?u theo b?ng m?i trong c?c file 64?67. File receipt kh?ng t?o d? li?u command gi?. Seed runner b? qua reset sequence cho c?c b?ng shared-PK kh?ng c? c?t Id. Ch?a ch?y seed/database update trong ??t refactor n?y.
+
+Test MigrationChainSchemaTests ph?i ti?p t?c b?o thi?u b?ng cho ??n khi migration th?t ???c t?o; kh?ng b? ho?c h? assertion n?y. Ch? tri?n khai runtime sau khi migration chuy?n d? li?u ?? ???c review v? ?p d?ng tr?n database ??ch.

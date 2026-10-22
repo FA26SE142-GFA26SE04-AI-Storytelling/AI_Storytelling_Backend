@@ -89,7 +89,14 @@ public sealed record IllustrationBeatMediaItem(
     int BeatId, int BeatOrder, int StartOffset, int EndOffset, string VisualFocus,
     int? AssetId, string Status, string? Url);
 
-public sealed record SceneMediaItem(int SceneId, int SceneIndex, IReadOnlyList<IllustrationBeatMediaItem> Illustrations);
+public sealed record SceneMediaItem(int SceneId, int SceneIndex, IReadOnlyList<IllustrationBeatMediaItem> Illustrations)
+{
+    public string Text { get; init; } = string.Empty;
+    public IReadOnlyList<AudioMediaItem> Audio { get; init; } = [];
+}
+
+public sealed record AudioMediaItem(int SegmentId, int SegmentOrder, string Text, int? AssetId,
+    string Status, string? Url, string? WordTimings);
 
 public sealed record StoryMediaPackage(int StoryId, int StoryVersionId, IReadOnlyList<SceneMediaItem> Scenes);
 

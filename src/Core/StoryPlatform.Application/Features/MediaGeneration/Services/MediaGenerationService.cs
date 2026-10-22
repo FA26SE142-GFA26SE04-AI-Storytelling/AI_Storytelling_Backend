@@ -1,4 +1,4 @@
-﻿using StoryPlatform.Application.Common;
+using StoryPlatform.Application.Common;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -84,8 +84,13 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         int userId, int storyId, CancellationToken cancellationToken = default)
     {
         var story = await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
+        var currentManualVersion = story.Scope == StoryScope.Creator && story.Source == StorySource.Manual
+            ? await _unitOfWork.Repository<StoryVersion>().FirstOrDefaultAsync(x => x.StoryId == storyId && x.IsCurrent && !x.IsDeleted, cancellationToken: cancellationToken)
+            : null;
         var job = (await _unitOfWork.Repository<StoryGenerationJob>().FindAsync(
-                x => x.StoryId == storyId && x.Operation == GenerationJobOperation.GenerateMediaPackage,
+                x => x.StoryId == storyId && x.Operation == GenerationJobOperation.GenerateMediaPackage &&
+                     (story.Source != StorySource.Manual || story.Scope != StoryScope.Creator ||
+                      currentManualVersion != null && x.StoryVersionId == currentManualVersion.Id),
                 cancellationToken: cancellationToken))
             .OrderByDescending(x => x.Id).FirstOrDefault();
         if (job?.StoryVersionId is not int versionId)
@@ -113,16 +118,27 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         var beats = await _unitOfWork.Repository<IllustrationBeat>().FindAsync(
             x => sceneIds.Contains(x.StorySceneId), cancellationToken: cancellationToken);
         var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(
-            x => x.StoryVersionId == version.Id && x.Type == MediaType.Illustration,
+            x => x.StoryVersionId == version.Id,
             cancellationToken: cancellationToken);
+        var segments = await _unitOfWork.Repository<StorySegment>().FindAsync(
+            x => sceneIds.Contains(x.StorySceneId), cancellationToken: cancellationToken);
         return new StoryMediaPackage(storyId, version.Id, scenes.Select(scene =>
             new SceneMediaItem(scene.Id, scene.SceneIndex, beats.Where(b => b.StorySceneId == scene.Id)
                 .OrderBy(b => b.BeatOrder).Select(beat =>
                 {
-                    var asset = assets.FirstOrDefault(a => a.IllustrationBeatId == beat.Id);
+                    var asset = assets.FirstOrDefault(a => a.IllustrationBeatId == beat.Id && a.Type == MediaType.Illustration);
                     return new IllustrationBeatMediaItem(beat.Id, beat.BeatOrder, beat.StartOffset, beat.EndOffset,
                         beat.VisualFocus, asset?.Id, asset?.Status.ToString() ?? "Queued", asset?.Url);
-                }).ToArray())).ToArray());
+                }).ToArray())
+            {
+                Text = scene.SceneText,
+                Audio = segments.Where(x => x.StorySceneId == scene.Id).OrderBy(x => x.SegmentOrder).Select(segment =>
+                {
+                    var audio = assets.FirstOrDefault(x => x.StorySegmentId == segment.Id && x.Type == MediaType.TtsAudio);
+                    return new AudioMediaItem(segment.Id, segment.SegmentOrder, segment.TextContent, audio?.Id,
+                        audio?.Status.ToString() ?? "Queued", audio?.Url, audio?.WordTimings);
+                }).ToArray()
+            }).ToArray());
     }
 
     public async Task<MediaGenerationProgress> RetryAsync(
@@ -135,7 +151,8 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
             await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
             var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                         ?? throw new NotFoundException("Story", storyId);
-            GenerationStoryAccess.EnsureSupported(story);
+            MediaStoryAccess.EnsureSupported(story);
+            await MediaStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, cancellationToken);
             await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, storyId, null, cancellationToken);
             if (story.Status != StoryStatus.MediaProcessing)
                 throw new ConflictException("MEDIA_JOB_RETRY_NOT_ALLOWED");
@@ -207,7 +224,8 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
             await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
             var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                 ?? throw new NotFoundException("Story", storyId);
-            GenerationStoryAccess.EnsureSupported(story);
+            MediaStoryAccess.EnsureSupported(story);
+            await MediaStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, cancellationToken);
             await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, storyId, null, cancellationToken);
             if (story.Status is not (StoryStatus.MediaProcessing or StoryStatus.Ready))
                 throw new ConflictException("MEDIA_REGENERATION_NOT_ALLOWED");
@@ -287,10 +305,10 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
                         ?? throw new InvalidOperationException("STORY_NOT_FOUND");
             if (story.Status is not (StoryStatus.Approved or StoryStatus.MediaProcessing))
                 throw new InvalidOperationException("STALE_MEDIA_HANDOFF");
-            GenerationStoryAccess.EnsureSupported(story);
+            MediaStoryAccess.EnsureSupported(story);
             await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, story.Id, job.StoryVersionId, cancellationToken);
             if (story.Scope == StoryScope.Creator)
-                await GenerationStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, job.RequestedByUserId ?? story.AuthorUserId, cancellationToken);
+                await MediaStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, job.RequestedByUserId ?? story.AuthorUserId, cancellationToken);
             var existingActiveJob = (await _unitOfWork.Repository<StoryGenerationJob>().FindAsync(
                 x => x.StoryId == story.Id &&
                      x.Operation == GenerationJobOperation.GenerateMediaPackage &&
@@ -931,8 +949,8 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
     {
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
-        GenerationStoryAccess.EnsureSupported(story);
-        if (await GenerationStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, cancellationToken)) return story;
+        MediaStoryAccess.EnsureSupported(story);
+        if (await MediaStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, cancellationToken)) return story;
         if (story.AuthorUserId == userId) return story;
         var relationship = await _unitOfWork.Repository<SupervisionRelationship>().FirstOrDefaultAsync(
             x => x.ChildProfileId == story.ChildProfileId && x.SupervisorUserId == userId && x.RevokedAt == null,

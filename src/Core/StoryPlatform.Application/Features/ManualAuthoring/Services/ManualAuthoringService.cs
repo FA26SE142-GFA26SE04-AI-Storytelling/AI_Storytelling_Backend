@@ -152,6 +152,23 @@ public partial class ManualAuthoringService
         await _uow.SaveChangesAsync(ct);
         story.Title = version.Title;
         story.Content = version.Content;
+        if (story.Scope == StoryScope.Creator)
+        {
+            story.Status = StoryStatus.Draft;
+            story.CoverImageUrl = null;
+            // Retire failed work for the old version so Phase 5 cannot keep selecting it ahead of V2.
+            var failedMedia = await _uow.Repository<StoryGenerationJob>().FindAsync(x => x.StoryId == story.Id &&
+                x.Operation == GenerationJobOperation.GenerateMediaPackage && x.Status == GenerationJobStatus.Failed, cancellationToken: ct);
+            foreach (var job in failedMedia)
+            {
+                job.Status = GenerationJobStatus.Cancelled;
+                job.ErrorCode = "MANUAL_VERSION_SUPERSEDED";
+                job.LeaseExpiresAt = null;
+                job.CompletedAt = DateTime.UtcNow;
+                _uow.Repository<StoryGenerationJob>().Update(job);
+                job.ConcurrencyToken = Guid.NewGuid().ToString("N");
+            }
+        }
         story.AuthoringRevisionToken = Guid.NewGuid().ToString("N");
         story.UpdatedAt = DateTime.UtcNow;
         _uow.Repository<Story>().Update(story);

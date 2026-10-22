@@ -8,12 +8,80 @@ using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.Infrastructure.AI;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using Xunit;
 
 namespace StoryPlatform.UnitTests;
 
 public sealed class MediaGenerationServiceTests
 {
+    [Fact]
+    public async Task ManualReadySubmitsTheSameVersionToModeratorWithoutPublishing()
+    {
+        var (store, confirm, _) = CreatorManualMediaTests.Setup();
+        await confirm.ConfirmAsync(1, 1, new(10, "rev1"));
+        Assert.True((await Create(store).ProcessNextAsync()).Success);
+        var queue = new Moq.Mock<StoryPlatform.Application.Features.Moderation.Interfaces.IModerationQueueService>();
+        queue.Setup(x => x.EnqueueAsync(Moq.It.IsAny<StoryPlatform.Application.Features.Moderation.DTOs.EnqueueModerationItemCommand>(), Moq.It.IsAny<CancellationToken>()))
+            .ReturnsAsync((StoryPlatform.Application.Features.Moderation.DTOs.EnqueueModerationItemCommand cmd, CancellationToken _) =>
+                new ModerationItem { Id = 99, ItemType = cmd.ItemType, StoryId = cmd.StoryId, StoryVersionId = cmd.StoryVersionId,
+                    CreatedByUserId = cmd.CreatedByUserId, Status = ModerationItemStatus.Pending });
+        var evaluator = new Moq.Mock<StoryPlatform.Application.Features.Moderation.IGrayZoneEvaluator>();
+        evaluator.SetupGet(x => x.IsConfigured).Returns(true);
+        evaluator.Setup(x => x.CanReuseAsync(Moq.It.IsAny<StoryPlatform.Application.Features.Moderation.GrayZoneAssessment>(), Moq.It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var submission = new StoryPlatform.Application.Features.Moderation.Services.PublicStorySubmissionService(store, queue.Object,
+            new MediaReadinessService(store), new Moq.Mock<StoryPlatform.Application.Features.AuditLogs.Interfaces.IAuditLogWriter>().Object, evaluator.Object);
+        var result = await submission.SubmitAsync(1, new() { StoryId = 1, StoryVersionId = 10 });
+        Assert.Equal(10, result.StoryVersionId);
+        Assert.Equal(VersionReviewStatus.Pending, store.Items<StoryVersion>().Single().ReviewStatus);
+        Assert.False(store.Items<Story>().Single().IsPublished);
+    }
+
+    [Fact]
+    public async Task ConfirmedManualUsesSamePhase5WorkerAndReturnsReadyWithNoGeneratedContent()
+    {
+        var (store, confirm, _) = CreatorManualMediaTests.Setup();
+        await confirm.ConfirmAsync(1, 1, new(10, "rev1"));
+        var worker = Create(store);
+        Assert.True((await worker.ProcessNextAsync()).Success);
+        Assert.Equal(StoryStatus.Ready, store.Items<Story>().Single().Status);
+        Assert.False(store.Items<Story>().Single().IsPublished);
+        Assert.True((await worker.GetProgressAsync(1, 1)).IsReady);
+        var package = await worker.GetPackageAsync(1, 1);
+        Assert.NotEmpty(package.Scenes);
+        Assert.All(package.Scenes, scene => Assert.NotEmpty(scene.Audio));
+        Assert.All(package.Scenes.SelectMany(scene => scene.Audio), audio => Assert.NotNull(audio.Url));
+        Assert.Contains(store.Items<MediaAsset>(), x => x.Type == MediaType.TtsAudio && x.Status == MediaStatus.Ready);
+        Assert.Single(store.Items<StoryVersion>());
+        Assert.Empty(store.Items<StoryGenerationRequest>());
+        Assert.Null(store.Items<StoryVersion>().Single().OutlineOpening);
+        Assert.Equal("Na giúp bạn sửa đồ chơi.", store.Items<StoryVersion>().Single().Content);
+        // A later manual draft must not report an old version's media as its own.
+        store.Items<StoryVersion>().Single().IsCurrent = false;
+        store.Seed(new StoryVersion { Id = 11, StoryId = 1, IsCurrent = true, Content = "Bản mới" });
+        store.Items<Story>().Single().Status = StoryStatus.Draft;
+        var progress = await worker.GetProgressAsync(1, 1);
+        Assert.Equal("NotStarted", progress.JobStatus);
+        Assert.False(progress.IsReady);
+        await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.ConflictException>(() => worker.RetryAsync(1, 1));
+    }
+
+    [Fact]
+    public async Task ManualPhase5RetryUsesTheSameJobAndPinnedContext()
+    {
+        var (store, confirm, _) = CreatorManualMediaTests.Setup();
+        await confirm.ConfirmAsync(1, 1, new(10, "rev1"));
+        var job = Assert.Single(store.Items<StoryGenerationJob>());
+        job.Status = GenerationJobStatus.Failed;
+        var context = Assert.Single(store.Items<MediaContext>()).ContextJson;
+        var worker = Create(store);
+        await worker.RetryAsync(1, 1);
+        Assert.True((await worker.ProcessNextAsync()).Success);
+        Assert.Same(job, Assert.Single(store.Items<StoryGenerationJob>()));
+        Assert.Equal(context, Assert.Single(store.Items<MediaContext>()).ContextJson);
+        Assert.Equal(StoryStatus.Ready, store.Items<Story>().Single().Status);
+    }
+
     [Theory]
     [InlineData(VersionReviewStatus.Pending)]
     [InlineData(VersionReviewStatus.Approved)]

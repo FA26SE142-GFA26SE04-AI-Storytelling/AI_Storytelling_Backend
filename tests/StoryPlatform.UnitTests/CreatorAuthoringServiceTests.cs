@@ -19,6 +19,47 @@ namespace StoryPlatform.UnitTests;
 
 public sealed class CreatorAuthoringServiceTests
 {
+    [Theory]
+    [InlineData(GenerationJobStatus.Pending)]
+    [InlineData(GenerationJobStatus.Processing)]
+    public async Task ManualPhase5BlocksSaveImportAndRestoreUntilJobTerminates(GenerationJobStatus status)
+    {
+        var store = new Store();
+        var draft = await store.Service.CreateDraftAsync(1, NewDraft("create"));
+        var saved = await store.Service.SaveContentAsync(1, draft.StoryId, Save(draft, "save", "Lan giúp bạn."));
+        var preview = await store.Service.PreviewImportAsync(1, draft.StoryId, Preview(saved.Story, "preview"));
+        store.Items<Story>().Single().Status = StoryStatus.MediaProcessing;
+        store.Items<StoryGenerationJob>().Add(new() { Id = 1, StoryId = draft.StoryId,
+            StoryVersionId = saved.Version.VersionId, Operation = GenerationJobOperation.GenerateMediaPackage, Status = status });
+        var error = await Assert.ThrowsAsync<ConflictException>(() => store.Service.SaveContentAsync(1, draft.StoryId, Save(saved.Story, "v2", "Bản khác")));
+        Assert.Equal("MEDIA_JOB_ACTIVE", error.Message);
+        await Assert.ThrowsAsync<ConflictException>(() => store.Service.ConfirmImportAsync(1, draft.StoryId, Confirm(saved.Story, preview, "import")));
+        await Assert.ThrowsAsync<ConflictException>(() => store.Service.RestoreVersionAsync(1, draft.StoryId,
+            new() { OperationId = "restore", RevisionToken = saved.Story.RevisionToken, BaseVersionId = saved.Version.VersionId, SourceVersionId = saved.Version.VersionId }));
+        Assert.Single(store.Items<StoryVersion>());
+    }
+
+    [Theory]
+    [InlineData(GenerationJobStatus.Completed, StoryStatus.Ready)]
+    [InlineData(GenerationJobStatus.Failed, StoryStatus.MediaProcessing)]
+    public async Task EditingAfterMediaTerminatesCreatesFreshDraftAndPreservesOldVersion(GenerationJobStatus jobStatus, StoryStatus status)
+    {
+        var store = new Store();
+        var draft = await store.Service.CreateDraftAsync(1, NewDraft("create"));
+        var saved = await store.Service.SaveContentAsync(1, draft.StoryId, Save(draft, "save", "Lan giúp bạn."));
+        store.Items<Story>().Single().Status = status;
+        store.Items<StoryGenerationJob>().Add(new() { Id = 1, StoryId = draft.StoryId,
+            StoryVersionId = saved.Version.VersionId, Operation = GenerationJobOperation.GenerateMediaPackage, Status = jobStatus });
+        var edited = await store.Service.SaveContentAsync(1, draft.StoryId, Save(saved.Story, "v2", "Lan và Na cùng giúp bạn."));
+        Assert.Equal("Draft", edited.Story.Status);
+        Assert.NotEqual(saved.Story.RevisionToken, edited.Story.RevisionToken);
+        Assert.Equal(saved.Version.VersionId, edited.Version.BaseVersionId);
+        Assert.Equal("Lan giúp bạn.", store.Items<StoryVersion>().Single(x => x.Id == saved.Version.VersionId).Content);
+        Assert.Equal(saved.Version.VersionId, Assert.Single(store.Items<StoryGenerationJob>()).StoryVersionId);
+        Assert.Equal(jobStatus == GenerationJobStatus.Failed ? GenerationJobStatus.Cancelled : jobStatus,
+            store.Items<StoryGenerationJob>().Single().Status);
+    }
+
     [Fact]
     public async Task ManualSave_CannotWriteIntoParentStory_EvenForItsAuthor()
     {
@@ -338,7 +379,7 @@ public sealed class CreatorAuthoringServiceTests
 
         public Store(CreatorAuthoringOptions? options = null)
         {
-            Register<UserAccount>(); Register<Story>(); Register<StoryVersion>(); Register<AuditLog>(); Register<ModerationItem>();
+            Register<UserAccount>(); Register<Story>(); Register<StoryVersion>(); Register<AuditLog>(); Register<ModerationItem>(); Register<StoryGenerationJob>();
             Uow.Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>())).Returns<CancellationToken>(ct => _transaction.WaitAsync(ct));
             Uow.Setup(x => x.AcquireTransactionLockAsync(It.IsAny<int>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
             Uow.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);

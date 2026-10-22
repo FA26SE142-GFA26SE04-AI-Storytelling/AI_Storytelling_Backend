@@ -463,6 +463,7 @@ internal sealed class AssistanceStore
     public AssistanceStore(CreatorAssistanceOptions? limits = null)
     {
         Register<UserAccount>(); Register<Story>(); Register<StoryVersion>(); Register<AuditLog>(); Register<ModerationItem>(); Register<StoryAssistanceTask>(); Register<StoryAssistanceStep>();
+        Register<StoryGenerationJob>(); Register<MediaContext>(); Register<ContentCategory>();
         Uow.Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>())).Returns<CancellationToken>(async ct =>
         { await _transaction.WaitAsync(ct); _backup = _data.ToDictionary(x => x.Key, x => JsonSerializer.Serialize(x.Value, x.Value.GetType())); });
         Uow.Setup(x => x.AcquireTransactionLockAsync(It.IsAny<int>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);

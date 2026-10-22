@@ -21,7 +21,7 @@ public sealed class SeedDataAlignmentTests
         foreach (var table in ReadInserts().GroupBy(insert => insert.Table))
         {
             var duplicates = table.SelectMany(insert => insert.Rows.Select(row =>
-                    (Id: row["Id"], File: insert.File)))
+                    (Id: row.GetValueOrDefault("Id", row.GetValueOrDefault("StoryVersionId", "derived")), File: insert.File)))
                 .GroupBy(row => row.Id)
                 .Where(group => group.Count() > 1)
                 .Select(group => $"Id={group.Key} in [{string.Join(", ", group.Select(row => row.File))}]");
@@ -187,7 +187,7 @@ public sealed class SeedDataAlignmentTests
                 if (inserts.Any(i => i.Table == fk.PrincipalTable.Name && i.Derived)) continue;
                 var parentRows = inserts.Where(i => i.Table == fk.PrincipalTable.Name).SelectMany(i => i.Rows);
                 Assert.True(parentRows.Any(p => fk.PrincipalColumns.Select((c, index) => p[c.Name] == values[index]).All(x => x)),
-                    $"{insert.File}: missing parent for {fk.Name}, Id={row["Id"]}");
+                    $"{insert.File}: missing parent for {fk.Name}, Id={row.GetValueOrDefault("Id", row.GetValueOrDefault("StoryVersionId", "derived"))}");
             }
         }
     }
@@ -197,7 +197,7 @@ public sealed class SeedDataAlignmentTests
     {
         var inserts = ReadInserts();
         var stories = Rows(inserts, "stories");
-        var versions = Rows(inserts, "story_versions");
+        var versions = VersionRows(inserts);
         var jobs = Rows(inserts, "story_generation_jobs");
         Assert.Contains(stories, s => StringLiteral(s["Scope"]) == "Creator");
         foreach (var story in stories)
@@ -248,7 +248,7 @@ public sealed class SeedDataAlignmentTests
         var inserts = ReadInserts();
         var users = Rows(inserts, "user_accounts");
         var stories = Rows(inserts, "stories");
-        var versions = Rows(inserts, "story_versions");
+        var versions = VersionRows(inserts);
         var items = Rows(inserts, "moderation_items");
 
         var creator = users.Single(user => user["Id"] == "13");
@@ -263,7 +263,7 @@ public sealed class SeedDataAlignmentTests
         Assert.Equal("Ready", StringLiteral(firstSubmitStory["Status"]));
         Assert.Equal("13", firstSubmitStory["AuthorUserId"]);
         Assert.Equal("true", firstSubmitVersion["IsCurrent"]);
-        Assert.False(firstSubmitVersion.ContainsKey("ReviewStatus"));
+        Assert.Equal("None", StringLiteral(firstSubmitVersion["ReviewStatus"]));
         Assert.DoesNotContain(items, item => item.GetValueOrDefault("ItemType") == "'PublicStoryReview'"
                                               && item.GetValueOrDefault("StoryId") == "11");
 
@@ -344,6 +344,18 @@ public sealed class SeedDataAlignmentTests
             }
         }
         return result;
+    }
+
+    private static Dictionary<string, string>[] VersionRows(List<Insert> inserts)
+    {
+        var versions = Rows(inserts, "story_versions");
+        foreach (var version in versions)
+        foreach (var table in new[] { "story_version_authoring_metadata", "story_version_moderation_states", "story_version_media_states" })
+        {
+            var metadata = Assert.Single(Rows(inserts, table), row => row["StoryVersionId"] == version["Id"]);
+            foreach (var pair in metadata.Where(x => x.Key is not ("Id" or "StoryVersionId" or "StoryId"))) version[pair.Key] = pair.Value;
+        }
+        return versions.ToArray();
     }
 
     private static string? StringLiteral(string raw)

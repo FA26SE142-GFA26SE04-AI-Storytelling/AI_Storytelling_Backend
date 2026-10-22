@@ -14,6 +14,10 @@ using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ParentAuthoring;
+using StoryPlatform.Application.Features.Moderation;
+using StoryPlatform.Application.Features.ChildProfiles.Safety;
 
 namespace StoryPlatform.Application.Features.MediaGeneration.Services;
 
@@ -36,6 +40,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
     private readonly IMediaGenerationJobFailureFinalizer _failureFinalizer;
     private readonly IMediaReadinessService _readinessService;
     private readonly ILogger<MediaGenerationService> _logger;
+    private readonly ISupervisionAccessGuard? _supervision;
     private readonly TimeSpan _jobLease;
     private readonly int _assetMaxAttempts;
 
@@ -57,9 +62,10 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         IMediaGenerationJobFailureFinalizer failureFinalizer,
         IMediaReadinessService readinessService,
         MediaGenerationOptions options,
-        ILogger<MediaGenerationService> logger)
+        ILogger<MediaGenerationService> logger, ISupervisionAccessGuard? supervision = null)
     {
         _unitOfWork = unitOfWork;
+        _supervision = supervision;
         _contextBuilder = contextBuilder;
         _blockParser = blockParser;
         _segmenter = segmenter;
@@ -84,30 +90,41 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         int userId, int storyId, CancellationToken cancellationToken = default)
     {
         var story = await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
-        var currentManualVersion = story.Scope == StoryScope.Creator && story.Source == StorySource.Manual
+        var currentManualVersion = story.Source == StorySource.Manual
             ? await _unitOfWork.Repository<StoryVersion>().FirstOrDefaultAsync(x => x.StoryId == storyId && x.IsCurrent && !x.IsDeleted, cancellationToken: cancellationToken)
             : null;
         var job = (await _unitOfWork.Repository<StoryGenerationJob>().FindAsync(
                 x => x.StoryId == storyId && x.Operation == GenerationJobOperation.GenerateMediaPackage &&
-                     (story.Source != StorySource.Manual || story.Scope != StoryScope.Creator ||
+                     (story.Source != StorySource.Manual ||
                       currentManualVersion != null && x.StoryVersionId == currentManualVersion.Id),
                 cancellationToken: cancellationToken))
             .OrderByDescending(x => x.Id).FirstOrDefault();
         if (job?.StoryVersionId is not int versionId)
             return new MediaGenerationProgress(storyId, null, story.Status.ToString(), "NotStarted", 0, 0, 0, false, null);
         var readiness = await _readinessService.CheckAsync(versionId, expectedSceneCount: null, cancellationToken);
+        var version = await _unitOfWork.Repository<StoryVersion>().GetByIdAsync(versionId, cancellationToken)
+                      ?? throw new NotFoundException("StoryVersion", versionId);
+        var confirmed = MediaPackageConfirmation.IsConfirmed(version);
         return new MediaGenerationProgress(
             storyId, versionId, story.Status.ToString(), job.Status.ToString(), readiness.SceneCount,
             readiness.ReadyIllustrations, readiness.ReadyAudio,
-            story.Status == StoryStatus.Ready && readiness.IsReady, job.ErrorCode, readiness.RequiredIllustrations,
+            story.Status == StoryStatus.Ready && readiness.IsReady && confirmed, job.ErrorCode, readiness.RequiredIllustrations,
             readiness.MissingIllustrationBeatIds, readiness.MissingAudioSegmentIds,
-            readiness.ManualReviewAssetIds, readiness.ScenesWithoutValidBeats);
+            readiness.ManualReviewAssetIds, readiness.ScenesWithoutValidBeats)
+        {
+            PackageRevision = version.MediaState.MediaPackageRevision,
+            IsGenerated = readiness.IsReady,
+            IsAwaitingConfirmation = story.Status == StoryStatus.MediaReview && readiness.IsReady && !confirmed,
+            IsConfirmed = readiness.IsReady && confirmed,
+            ConfirmedByUserId = version.MediaState.MediaConfirmedByUserId,
+            ConfirmedAt = version.MediaState.MediaConfirmedAt
+        };
     }
 
     public async Task<StoryMediaPackage> GetPackageAsync(int userId, int storyId,
         CancellationToken cancellationToken = default)
     {
-        await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
+        var story = await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
         var version = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
             x => x.StoryId == storyId && x.IsCurrent, cancellationToken: cancellationToken)).FirstOrDefault()
             ?? throw new NotFoundException("Current story version", storyId);
@@ -122,7 +139,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
             cancellationToken: cancellationToken);
         var segments = await _unitOfWork.Repository<StorySegment>().FindAsync(
             x => sceneIds.Contains(x.StorySceneId), cancellationToken: cancellationToken);
-        return new StoryMediaPackage(storyId, version.Id, scenes.Select(scene =>
+        var package = new StoryMediaPackage(storyId, version.Id, scenes.Select(scene =>
             new SceneMediaItem(scene.Id, scene.SceneIndex, beats.Where(b => b.StorySceneId == scene.Id)
                 .OrderBy(b => b.BeatOrder).Select(beat =>
                 {
@@ -139,6 +156,55 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
                         audio?.Status.ToString() ?? "Queued", audio?.Url, audio?.WordTimings);
                 }).ToArray()
             }).ToArray());
+        var readiness = await _readinessService.CheckAsync(version.Id, null, cancellationToken);
+        var confirmed = MediaPackageConfirmation.IsConfirmed(version);
+        package = package with
+        {
+            PackageRevision = version.MediaState.MediaPackageRevision,
+            IsGenerated = readiness.IsReady,
+            IsAwaitingConfirmation = story.Status == StoryStatus.MediaReview && readiness.IsReady && !confirmed,
+            IsConfirmed = readiness.IsReady && confirmed,
+            IsReady = story.Status == StoryStatus.Ready && readiness.IsReady && confirmed,
+            ConfirmedByUserId = version.MediaState.MediaConfirmedByUserId,
+            ConfirmedAt = version.MediaState.MediaConfirmedAt
+        };
+        return await SignPackageAsync(package, cancellationToken);
+    }
+
+    private async Task<StoryMediaPackage> SignPackageAsync(StoryMediaPackage package, CancellationToken ct)
+    {
+        var scenes = new List<SceneMediaItem>();
+        foreach (var scene in package.Scenes)
+        {
+            var images = new List<IllustrationBeatMediaItem>();
+            foreach (var image in scene.Illustrations)
+                images.Add(image with
+                {
+                    Url = image.Status == "Ready" && !string.IsNullOrWhiteSpace(image.Url)
+                    ? await PreviewUrlAsync(package, image.Url, ct) : null
+                });
+            var audio = new List<AudioMediaItem>();
+            foreach (var item in scene.Audio)
+                audio.Add(item with
+                {
+                    Url = item.Status == "Ready" && !string.IsNullOrWhiteSpace(item.Url)
+                    ? await PreviewUrlAsync(package, item.Url, ct) : null
+                });
+            scenes.Add(scene with { Illustrations = images, Audio = audio });
+        }
+        return package with { Scenes = scenes };
+    }
+
+    private Task<string> PreviewUrlAsync(StoryMediaPackage package, string path, CancellationToken ct)
+    {
+        // Previously completed seeded packages may contain external HTTPS URLs, not storage keys.
+        if (Uri.TryCreate(path, UriKind.Absolute, out var uri))
+        {
+            if (package.PackageRevision == 0 && package.IsConfirmed && uri.Scheme == Uri.UriSchemeHttps)
+                return Task.FromResult(path);
+            throw new ConflictException("MEDIA_STORAGE_PATH_REQUIRED");
+        }
+        return _mediaStorage.GetSignedUrlAsync(path, TimeSpan.FromMinutes(10), ct);
     }
 
     public async Task<MediaGenerationProgress> RetryAsync(
@@ -152,7 +218,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
             var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                         ?? throw new NotFoundException("Story", storyId);
             MediaStoryAccess.EnsureSupported(story);
-            await MediaStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, cancellationToken);
+            await EnsureMutationPermissionAsync(story, userId, cancellationToken);
             await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, storyId, null, cancellationToken);
             if (story.Status != StoryStatus.MediaProcessing)
                 throw new ConflictException("MEDIA_JOB_RETRY_NOT_ALLOWED");
@@ -186,6 +252,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
                 _unitOfWork.Repository<MediaAsset>().Update(asset);
             }
 
+            await ValidateParentContextAsync(story, versionId, cancellationToken);
             job.Status = GenerationJobStatus.Pending;
             job.Stage = JobStage.MediaPending;
             job.AttemptNo = 0;
@@ -214,49 +281,55 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         return await GetProgressAsync(userId, storyId, cancellationToken);
     }
 
-    public async Task RegenerateIllustrationBeatAsync(int userId, int storyId, int beatId,
-        CancellationToken cancellationToken = default)
+    public Task RegenerateIllustrationBeatAsync(int userId, int storyId, int beatId,
+        RegenerateMediaRequest request, CancellationToken ct = default) =>
+        RegenerateAsync(userId, storyId, beatId, MediaType.Illustration, request, ct);
+
+    public Task RegenerateSegmentAudioAsync(int userId, int storyId, int segmentId,
+        RegenerateMediaRequest request, CancellationToken ct = default) =>
+        RegenerateAsync(userId, storyId, segmentId, MediaType.TtsAudio, request, ct);
+
+    private async Task RegenerateAsync(int userId, int storyId, int targetId, MediaType type,
+        RegenerateMediaRequest input, CancellationToken ct)
     {
-        await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
-        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        await LoadAuthorizedStoryAsync(userId, storyId, ct);
+        await _unitOfWork.BeginTransactionAsync(ct);
         try
         {
-            await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
-            var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
-                ?? throw new NotFoundException("Story", storyId);
-            MediaStoryAccess.EnsureSupported(story);
-            await MediaStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, cancellationToken);
-            await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, storyId, null, cancellationToken);
-            if (story.Status is not (StoryStatus.MediaProcessing or StoryStatus.Ready))
+            await _unitOfWork.AcquireTransactionLockAsync(storyId, ct);
+            var story = await LoadAuthorizedStoryAsync(userId, storyId, ct);
+            await EnsureMutationPermissionAsync(story, userId, ct);
+            await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, storyId, null, ct);
+            if (story.Status is not (StoryStatus.MediaProcessing or StoryStatus.MediaReview or StoryStatus.Ready))
                 throw new ConflictException("MEDIA_REGENERATION_NOT_ALLOWED");
-            var version = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
-                x => x.StoryId == storyId && x.IsCurrent, cancellationToken: cancellationToken)).FirstOrDefault()
+            var version = await _unitOfWork.Repository<StoryVersion>().FirstOrDefaultAsync(
+                x => x.StoryId == storyId && x.IsCurrent && !x.IsDeleted, cancellationToken: ct)
                 ?? throw new ConflictException("INVALID_MEDIA_HANDOFF");
-            var beat = await _unitOfWork.Repository<IllustrationBeat>().GetByIdAsync(beatId, cancellationToken)
-                ?? throw new NotFoundException("Illustration beat", beatId);
-            var scene = await _unitOfWork.Repository<StoryScene>().GetByIdAsync(beat.StorySceneId, cancellationToken);
-            if (scene is null || scene.StoryVersionId != version.Id)
-                throw new ConflictException("BEAT_NOT_IN_CURRENT_VERSION");
-            var asset = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(
-                x => x.IllustrationBeatId == beatId && x.Type == MediaType.Illustration,
-                cancellationToken: cancellationToken)
-                ?? throw new NotFoundException("Illustration asset", beatId);
-            if (asset.StorySceneId != scene.Id || asset.StoryVersionId != version.Id)
-                throw new ConflictException("BEAT_ASSET_NOT_IN_CURRENT_VERSION");
+            if (input.StoryVersionId != version.Id || input.PackageRevision != version.MediaState.MediaPackageRevision ||
+                input.ExpectedConfirmed is null || input.ExpectedConfirmed != MediaPackageConfirmation.IsConfirmed(version))
+                throw new ConflictException("STALE_MEDIA_PACKAGE");
+            await EnsureNoActiveJobAsync(storyId, ct);
             var job = (await _unitOfWork.Repository<StoryGenerationJob>().FindAsync(
                 x => x.StoryId == storyId && x.StoryVersionId == version.Id &&
-                     x.Operation == GenerationJobOperation.GenerateMediaPackage,
-                cancellationToken: cancellationToken)).OrderByDescending(x => x.Id).FirstOrDefault()
-                ?? throw new NotFoundException("Media generation job", storyId);
-            if (job.Status == GenerationJobStatus.Processing)
-                throw new ConflictException("MEDIA_JOB_PROCESSING");
-
+                     x.Operation == GenerationJobOperation.GenerateMediaPackage, cancellationToken: ct))
+                .OrderByDescending(x => x.Id).FirstOrDefault() ?? throw new NotFoundException("Media job", storyId);
+            var asset = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(
+                x => x.StoryVersionId == version.Id && x.Type == type &&
+                     (type == MediaType.Illustration ? x.IllustrationBeatId == targetId : x.StorySegmentId == targetId), cancellationToken: ct)
+                ?? throw new NotFoundException("Media asset", targetId);
+            var scene = asset.StorySceneId.HasValue
+                ? await _unitOfWork.Repository<StoryScene>().GetByIdAsync(asset.StorySceneId.Value, ct) : null;
+            if (scene is null || scene.StoryVersionId != version.Id) throw new ConflictException("MEDIA_NOT_IN_CURRENT_VERSION");
+            await ValidateParentContextAsync(story, version.Id, ct);
+            MediaPackageConfirmation.Invalidate(version);
+            _unitOfWork.Repository<StoryVersion>().Update(version);
             asset.Status = MediaStatus.Queued;
             asset.ValidationStatus = ValidationStatus.Pending;
             asset.AttemptCount = 0;
-            asset.Url = null;
+            // Keep the previous storage object; a new unique path replaces this reference only after success.
             asset.LastValidationReason = null;
             asset.ValidationResultJson = null;
+            asset.WordTimings = null;
             asset.CompletedAt = null;
             _unitOfWork.Repository<MediaAsset>().Update(asset);
             job.Status = GenerationJobStatus.Pending;
@@ -270,15 +343,93 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
             RotateToken(job);
             story.Status = StoryStatus.MediaProcessing;
             _unitOfWork.Repository<Story>().Update(story);
-            await _unitOfWork.CommitTransactionAsync(cancellationToken);
-            _logger.LogInformation("Illustration beat regeneration queued Story={StoryId} Version={VersionId} Beat={BeatId} Asset={AssetId}",
-                storyId, version.Id, beat.Id, asset.Id);
+            await _unitOfWork.CommitTransactionAsync(ct);
         }
-        catch
+        catch { await _unitOfWork.RollbackTransactionAsync(CancellationToken.None); throw; }
+    }
+
+    public async Task<MediaGenerationProgress> ConfirmAsync(int userId, int storyId,
+        ConfirmMediaPackageRequest input, CancellationToken ct = default)
+    {
+        await _unitOfWork.BeginTransactionAsync(ct);
+        try
         {
-            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-            throw;
+            await _unitOfWork.AcquireTransactionLockAsync(storyId, ct);
+            var story = await LoadAuthorizedStoryAsync(userId, storyId, ct);
+            await EnsureMutationPermissionAsync(story, userId, ct, allowFinalizedReplay: true);
+            var version = await _unitOfWork.Repository<StoryVersion>().FirstOrDefaultAsync(
+                x => x.StoryId == storyId && x.IsCurrent && !x.IsDeleted, cancellationToken: ct)
+                ?? throw new ConflictException("CURRENT_STORY_VERSION_REQUIRED");
+            if (version.Id != input.StoryVersionId || input.PackageRevision <= 0 || version.MediaState.MediaPackageRevision != input.PackageRevision)
+                throw new ConflictException("STALE_MEDIA_PACKAGE");
+            await EnsureNoActiveJobAsync(storyId, ct);
+            if (story.Status == StoryStatus.Ready && MediaPackageConfirmation.IsConfirmed(version))
+            {
+                await _unitOfWork.CommitTransactionAsync(ct);
+                return await GetProgressAsync(userId, storyId, ct);
+            }
+            await EnsureMutationPermissionAsync(story, userId, ct);
+            await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, storyId, version.Id, ct);
+            if (story.Status != StoryStatus.MediaReview) throw new ConflictException("MEDIA_PACKAGE_NOT_AWAITING_CONFIRMATION");
+            var job = await _unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(x =>
+                x.StoryId == storyId && x.StoryVersionId == version.Id &&
+                x.Operation == GenerationJobOperation.GenerateMediaPackage && x.Status == GenerationJobStatus.Completed, cancellationToken: ct);
+            if (job is null || !(await _readinessService.CheckAsync(version.Id, null, ct)).IsReady)
+                throw new ConflictException("MEDIA_PACKAGE_INCOMPLETE");
+            GrayZoneGate.EnsureCanContinue(story, version);
+            await ValidateParentContextAsync(story, version.Id, ct);
+            version.MediaState.ConfirmedMediaPackageRevision = version.MediaState.MediaPackageRevision;
+            version.MediaState.MediaConfirmedByUserId = userId;
+            version.MediaState.MediaConfirmedAt = DateTime.UtcNow;
+            _unitOfWork.Repository<StoryVersion>().Update(version);
+            story.Status = StoryStatus.Ready;
+            _unitOfWork.Repository<Story>().Update(story);
+            await _unitOfWork.CommitTransactionAsync(ct);
         }
+        catch { await _unitOfWork.RollbackTransactionAsync(CancellationToken.None); throw; }
+        return await GetProgressAsync(userId, storyId, ct);
+    }
+
+    private async Task EnsureNoActiveJobAsync(int storyId, CancellationToken ct)
+    {
+        if (await _unitOfWork.Repository<StoryGenerationJob>().ExistsAsync(x => x.StoryId == storyId &&
+            (x.Status == GenerationJobStatus.Pending || x.Status == GenerationJobStatus.Processing), ct))
+            throw new ConflictException("MEDIA_JOB_ACTIVE");
+    }
+
+    private async Task EnsureMutationPermissionAsync(Story story, int userId, CancellationToken ct, bool allowFinalizedReplay = false)
+    {
+        if (await MediaStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, ct)) return;
+        if (_supervision is null || !story.ChildProfileId.HasValue) throw new ForbiddenException();
+        var user = await _unitOfWork.Repository<UserAccount>().FirstOrDefaultAsync(x => x.Id == userId, cancellationToken: ct);
+        if (user is null || user.IsDeleted || user.Role != UserRole.Parent || user.Status != AccountStatus.Active || user.LockedUntil > DateTime.UtcNow)
+            throw new ForbiddenException();
+        await _supervision.EnsurePermissionAsync(story.ChildProfileId.Value, userId, Permission.ApproveStory, ct);
+        var child = await _unitOfWork.Repository<ChildProfile>().FirstOrDefaultAsync(x =>
+            x.Id == story.ChildProfileId && !x.IsDeleted, cancellationToken: ct);
+        if (child is null || child.Status != ChildProfileStatus.Active) throw new ConflictException("CHILD_NOT_ACTIVE");
+        if (ParentStoryContext.IsEditorStory(story))
+        {
+            var policy = new ParentManualAuthoringPolicy(_unitOfWork, _supervision);
+            await policy.AuthorizeAsync(userId, story, ct);
+            if (!allowFinalizedReplay && await policy.IsLockedAsync(story.Id, ct)) throw new ConflictException("PARENT_STORY_FINALIZED");
+        }
+    }
+
+    private async Task ValidateParentContextAsync(Story story, int versionId, CancellationToken ct)
+    {
+        if (story.Scope != StoryScope.Parent) return;
+        var policy = await _unitOfWork.Repository<SafetyPolicy>().FirstOrDefaultAsync(x =>
+            x.ChildProfileId == story.ChildProfileId && !x.IsDeleted, cancellationToken: ct);
+        if (policy is null || !policy.ConsentRecorded || !policy.ConsentRecordedAt.HasValue ||
+            ConsentPolicy.IsOutdated(policy.ConsentPolicyVersion)) throw new ForbiddenException("CONSENT_REQUIRED");
+        if (!ParentStoryContext.IsEditorStory(story)) return;
+        if (_supervision is null) throw new ForbiddenException();
+        var context = (await _unitOfWork.Repository<MediaContext>().FindAsync(x => x.StoryVersionId == versionId, cancellationToken: ct))
+            .OrderByDescending(x => x.Revision).FirstOrDefault() ?? throw new ConflictException("MEDIA_CONTEXT_REQUIRED");
+        using var json = JsonDocument.Parse(context.ContextJson);
+        var snapshot = json.RootElement.GetProperty("storyFacts").GetProperty("acceptedContext").GetRawText();
+        await new ParentAssistanceAccessPolicy(_unitOfWork, _supervision).ValidateContextAsync(story, snapshot, ct);
     }
 
     public async Task<MediaJobProcessResult> ProcessNextAsync(CancellationToken cancellationToken = default)
@@ -317,6 +468,16 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
                 cancellationToken: cancellationToken)).FirstOrDefault();
             if (existingActiveJob is not null)
                 throw new InvalidOperationException("DUPLICATE_ACTIVE_JOB");
+            if (job.StoryVersionId is int claimVersionId)
+            {
+                var claimVersion = await _unitOfWork.Repository<StoryVersion>().GetByIdAsync(claimVersionId, cancellationToken)
+                    ?? throw new InvalidOperationException("INVALID_MEDIA_HANDOFF");
+                if (claimVersion.MediaState.MediaPackageRevision == 0)
+                {
+                    MediaPackageConfirmation.Invalidate(claimVersion);
+                    _unitOfWork.Repository<StoryVersion>().Update(claimVersion);
+                }
+            }
             story.Status = StoryStatus.MediaProcessing;
             _unitOfWork.Repository<Story>().Update(story);
             job.Status = GenerationJobStatus.Processing;
@@ -350,35 +511,12 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         {
             var errorCode = PublicErrorCode(exception);
             var isPermanent = IsPermanentFailure(exception);
+            _logger.LogError(exception, "Phase 5 job {JobId} failed with {ErrorCode}", job.Id, errorCode);
             await _failureFinalizer.MarkFailedAsync(
                 job.Id, claimedToken, errorCode, CancellationToken.None);
             return MediaJobProcessResult.Failed(isPermanent, errorCode);
         }
         return MediaJobProcessResult.Completed;
-    }
-
-    /// <summary>
-    /// Resets a segment TTS audio to Queued and triggers regeneration.
-    /// Used when a supervisor manually rejects a segment's audio.
-    /// </summary>
-    public async Task RegenerateSegmentAudioAsync(
-        int userId, int storyId, int segmentId, CancellationToken cancellationToken = default)
-    {
-        await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
-        var segment = await _unitOfWork.Repository<StorySegment>().GetByIdAsync(segmentId, cancellationToken)
-                      ?? throw new NotFoundException("StorySegment", segmentId);
-        var asset = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(
-            x => x.StorySegmentId == segmentId && x.Type == MediaType.TtsAudio,
-            cancellationToken: cancellationToken);
-        if (asset is null) throw new NotFoundException("TTS audio asset", segmentId);
-        asset.Status = MediaStatus.Queued;
-        asset.ValidationStatus = ValidationStatus.Pending;
-        asset.AttemptCount = 0;
-        asset.LastValidationReason = null;
-        asset.Url = null;
-        asset.CompletedAt = null;
-        _unitOfWork.Repository<MediaAsset>().Update(asset);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
     private async Task ProcessClaimedAsync(int jobId, string claimedToken, CancellationToken cancellationToken)
@@ -433,8 +571,11 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
             Revision = 1,
             ContextJson = _contextBuilder.Build(new MediaContextBuildRequest(
                 state.Version.Id, state.Version.Title, state.Version.Content!, state.Version.Lesson,
-                state.Version.OutlineOpening, state.Version.OutlineDevelopment, state.Version.OutlineEnding,
-                request?.AcceptedInputJson, request?.ContextSnapshotJson))
+                state.Story.Source == StorySource.Ai ? state.Version.OutlineOpening : null,
+                state.Story.Source == StorySource.Ai ? state.Version.OutlineDevelopment : null,
+                state.Story.Source == StorySource.Ai ? state.Version.OutlineEnding : null,
+                request?.AcceptedInputJson, request?.ContextSnapshotJson)
+                )
         };
         await AssertHandoffFreshAsync(state.Job.Id, state.Job.ConcurrencyToken, state.Version.Id, cancellationToken);
         await _unitOfWork.Repository<MediaContext>().AddAsync(context, cancellationToken);
@@ -512,8 +653,11 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         await AssertFreshAsync(jobId, token, versionId, mediaContext.Id, cancellationToken);
         var beats = selections.Select(x => new IllustrationBeat
         {
-            StorySceneId = scene.Id, BeatOrder = x.BeatOrder, StartOffset = x.StartOffset,
-            EndOffset = x.EndOffset, VisualFocus = x.VisualFocus.Trim()
+            StorySceneId = scene.Id,
+            BeatOrder = x.BeatOrder,
+            StartOffset = x.StartOffset,
+            EndOffset = x.EndOffset,
+            VisualFocus = x.VisualFocus.Trim()
         }).ToArray();
         await _unitOfWork.Repository<IllustrationBeat>().AddRangeAsync(beats, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -592,7 +736,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
                 }
 
                 await AssertFreshAsync(jobId, claimedToken, versionId, mediaContext.Id, cancellationToken);
-                var storagePath = $"{storyId}/v{mediaContext.Revision}/scene-{scene.SceneIndex}-beat-{beat.BeatOrder}-asset-{asset.Id}-{Guid.NewGuid():N}-a{attempt + 1}{illustration.SuggestedExtension}";
+                var storagePath = $"{storyId}/versions/{versionId}/v{mediaContext.Revision}/scene-{scene.SceneIndex}-beat-{beat.BeatOrder}-asset-{asset.Id}-{Guid.NewGuid():N}-a{attempt + 1}{illustration.SuggestedExtension}";
                 await using var content = illustration.OpenReadStream();
                 asset.Url = await _mediaStorage.UploadAsync(
                     storagePath, content, illustration.MimeType, cancellationToken);
@@ -716,7 +860,7 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
                 }
 
                 await AssertFreshAsync(jobId, claimedToken, versionId, mediaContext.Id, cancellationToken);
-                var storagePath = $"{storyId}/v{mediaContext.Revision}/audio-s{scene.SceneIndex}-{segment.SegmentOrder}-a{attempt + 1}{audio.SuggestedExtension}";
+                var storagePath = $"{storyId}/versions/{versionId}/v{mediaContext.Revision}/audio-s{scene.SceneIndex}-{segment.SegmentOrder}-asset-{asset.Id}-{Guid.NewGuid():N}-a{attempt + 1}{audio.SuggestedExtension}";
                 await using var content = audio.OpenReadStream();
                 asset.Url = await _mediaStorage.UploadAsync(
                     storagePath, content, audio.MimeType, cancellationToken);
@@ -816,36 +960,31 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         int jobId, string token, int versionId, int mediaContextId, int sceneCount,
         CancellationToken cancellationToken)
     {
-        var job = await RequireClaimedJobAsync(jobId, token, cancellationToken);
-        await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, job.StoryId, versionId, cancellationToken);
-        var story = await _unitOfWork.Repository<Story>().GetByIdAsync(job.StoryId, cancellationToken)
-                    ?? throw new InvalidOperationException("STORY_NOT_FOUND");
-        if (story.Status == StoryStatus.Archived) throw new InvalidOperationException("STORY_ARCHIVED");
-        var readiness = await _readinessService.CheckAsync(versionId, sceneCount, cancellationToken);
-        if (!readiness.IsReady)
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
         {
-            _logger.LogWarning(
-                "Media package incomplete Story={StoryId} Version={VersionId} MissingScenes={MissingSceneCount} MissingBeats={MissingBeatCount} MissingAudio={MissingAudioCount} ManualReview={ManualReviewCount}",
-                story.Id, versionId, readiness.ScenesWithoutValidBeats.Count,
-                readiness.MissingIllustrationBeatIds.Count, readiness.MissingAudioSegmentIds.Count,
-                readiness.ManualReviewAssetIds.Count);
-            throw new InvalidOperationException("MEDIA_PACKAGE_INCOMPLETE");
+            await _unitOfWork.AcquireTransactionLockAsync((await RequireClaimedJobAsync(jobId, token, cancellationToken)).StoryId, cancellationToken);
+            var job = await RequireClaimedJobAsync(jobId, token, cancellationToken);
+            await AssertFreshAsync(jobId, token, versionId, mediaContextId, cancellationToken);
+            var story = await _unitOfWork.Repository<Story>().GetByIdAsync(job.StoryId, cancellationToken)
+                ?? throw new InvalidOperationException("STORY_NOT_FOUND");
+            var readiness = await _readinessService.CheckAsync(versionId, sceneCount, cancellationToken);
+            if (!readiness.IsReady)
+            {
+                _logger.LogWarning("Media package incomplete for version {VersionId}: {Readiness}", versionId, JsonSerializer.Serialize(readiness));
+                throw new InvalidOperationException("MEDIA_PACKAGE_INCOMPLETE");
+            }
+            story.Status = StoryStatus.MediaReview;
+            _unitOfWork.Repository<Story>().Update(story);
+            job.Status = GenerationJobStatus.Completed;
+            job.Stage = JobStage.MediaCompleted;
+            job.CompletedAt = DateTime.UtcNow;
+            job.LeaseExpiresAt = null;
+            _unitOfWork.Repository<StoryGenerationJob>().Update(job);
+            RotateToken(job);
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
         }
-
-        // Re-check the current version, latest context, job lease and story state at the handoff.
-        await AssertFreshAsync(jobId, token, versionId, mediaContextId, cancellationToken);
-
-        story.Status = StoryStatus.Ready;
-        _unitOfWork.Repository<Story>().Update(story);
-        job.Status = GenerationJobStatus.Completed;
-        job.Stage = JobStage.MediaCompleted;
-        job.CompletedAt = DateTime.UtcNow;
-        job.LeaseExpiresAt = null;
-        RotateToken(job);
-        _unitOfWork.Repository<StoryGenerationJob>().Update(job);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-        _logger.LogInformation("Media package ready Story={StoryId} Version={VersionId} Beats={BeatCount} Audio={AudioCount}",
-            story.Id, versionId, readiness.RequiredIllustrations, readiness.ReadyAudio);
+        catch { await _unitOfWork.RollbackTransactionAsync(CancellationToken.None); throw; }
     }
 
     private static SceneSpecification BuildSpecificationWithFeedback(
@@ -888,6 +1027,12 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         if (story?.Status != StoryStatus.MediaProcessing || version is null || !version.IsCurrent ||
             job.StoryVersionId != versionId || latestContext is null || latestContext.Id != contextId)
             throw new InvalidOperationException("STALE_MEDIA_RESULT");
+        GrayZoneGate.EnsureCanContinue(story!, version!);
+        if (ParentStoryContext.IsEditorStory(story!))
+        {
+            await EnsureMutationPermissionAsync(story!, job.RequestedByUserId ?? story!.AuthorUserId, cancellationToken);
+            await ValidateParentContextAsync(story!, versionId, cancellationToken);
+        }
     }
 
     private async Task AssertHandoffFreshAsync(
@@ -908,7 +1053,12 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
         var version = await _unitOfWork.Repository<StoryVersion>().GetByIdAsync(job.StoryVersionId.Value, cancellationToken);
         if (version is null || version.StoryId != job.StoryId || !version.IsCurrent || string.IsNullOrEmpty(version.Content))
             throw new InvalidOperationException("INVALID_MEDIA_HANDOFF");
-        return new MediaState(job, version);
+        var story = await _unitOfWork.Repository<Story>().GetByIdAsync(job.StoryId, cancellationToken)
+                    ?? throw new InvalidOperationException("STORY_NOT_FOUND");
+        if (story.Source == StorySource.Manual && job.GenerationRequestId.HasValue)
+            throw new InvalidOperationException("INVALID_MEDIA_HANDOFF");
+
+        return new MediaState(job, version, story);
     }
 
     private async Task<StoryGenerationJob> RequireClaimedJobAsync(
@@ -951,6 +1101,12 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
                     ?? throw new NotFoundException("Story", storyId);
         MediaStoryAccess.EnsureSupported(story);
         if (await MediaStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, cancellationToken)) return story;
+        if (ParentStoryContext.IsEditorStory(story))
+        {
+            if (_supervision is null) throw new ForbiddenException();
+            await new ParentManualAuthoringPolicy(_unitOfWork, _supervision).AuthorizeAsync(userId, story, cancellationToken);
+            return story;
+        }
         if (story.AuthorUserId == userId) return story;
         var relationship = await _unitOfWork.Repository<SupervisionRelationship>().FirstOrDefaultAsync(
             x => x.ChildProfileId == story.ChildProfileId && x.SupervisorUserId == userId && x.RevokedAt == null,
@@ -1058,5 +1214,5 @@ public sealed class MediaGenerationService : IMediaGenerationService, IMediaGene
     }
 
     private static void RotateToken(StoryGenerationJob job) => job.ConcurrencyToken = Guid.NewGuid().ToString("N");
-    private sealed record MediaState(StoryGenerationJob Job, StoryVersion Version);
+    private sealed record MediaState(StoryGenerationJob Job, StoryVersion Version, Story Story);
 }

@@ -16,8 +16,11 @@ public sealed class ParentAuthoringTests
     private static CreateParentDraftRequest Create(string op = "create") => new() { OperationId = op, ChildProfileId = 3 };
     private static SaveCreatorContentRequest Save(CreatorDraftDto draft, string op, string text = Text) => new()
     {
-        OperationId = op, RevisionToken = draft.RevisionToken, BaseVersionId = draft.SelectedVersionId,
-        Title = "Chiều bên con", Content = text
+        OperationId = op,
+        RevisionToken = draft.RevisionToken,
+        BaseVersionId = draft.SelectedVersionId,
+        Title = "Chiều bên con",
+        Content = text
     };
     private static ParentCheckRequest Check(CreatorDraftDto draft, string op = "check") => new()
     { OperationId = op, RevisionToken = draft.RevisionToken, BaseVersionId = draft.SelectedVersionId };
@@ -30,8 +33,11 @@ public sealed class ParentAuthoringTests
         Assert.True(check.CanPrepare);
         var confirmation = await s.Service.ConfirmContentAsync(1, saved.Story.StoryId, new()
         {
-            OperationId = "content-confirm", RevisionToken = saved.Story.RevisionToken, BaseVersionId = saved.Version.VersionId,
-            CheckId = check.CheckId, Checklist = new(true, true, true, true)
+            OperationId = "content-confirm",
+            RevisionToken = saved.Story.RevisionToken,
+            BaseVersionId = saved.Version.VersionId,
+            CheckId = check.CheckId,
+            Checklist = new(true, true, true, true)
         }, Ct);
         return (saved, confirmation);
     }
@@ -43,12 +49,16 @@ public sealed class ParentAuthoringTests
         var (saved, confirmation) = await ConfirmContent(s);
         var package = await s.Service.PrepareAsync(1, saved.Story.StoryId, new()
         {
-            OperationId = "prepare-gray", RevisionToken = saved.Story.RevisionToken, BaseVersionId = saved.Version.VersionId,
+            OperationId = "prepare-gray",
+            RevisionToken = saved.Story.RevisionToken,
+            BaseVersionId = saved.Version.VersionId,
             ContentConfirmationId = confirmation.ConfirmationId
         }, Ct);
         var grant = await s.Service.ConfirmFamilyAsync(1, saved.Story.StoryId, new()
         {
-            OperationId = "family-gray", RevisionToken = saved.Story.RevisionToken, BaseVersionId = saved.Version.VersionId,
+            OperationId = "family-gray",
+            RevisionToken = saved.Story.RevisionToken,
+            BaseVersionId = saved.Version.VersionId,
             PreparationId = package.PreparationId
         }, Ct);
         var evaluator = new Moq.Mock<StoryPlatform.Application.Features.Moderation.IGrayZoneEvaluator>(Moq.MockBehavior.Strict);
@@ -63,7 +73,7 @@ public sealed class ParentAuthoringTests
             Check(saved.Story, "finalized-gray-check"), Ct));
         Assert.Equal("PARENT_STORY_FINALIZED", error.Message);
         Assert.Empty(s.Items<ModerationItem>());
-        Assert.Null(s.Items<StoryVersion>().Single().GrayZoneFlags);
+        Assert.Null(s.Items<StoryVersion>().Single().Moderation.GrayZoneFlags);
         Assert.Equal(saved.Version.VersionId, (await service.ReadChildPackageAsync(3, grant.ConfirmationId, Ct)).StoryVersionId);
     }
 
@@ -112,15 +122,22 @@ public sealed class ParentAuthoringTests
         Assert.Empty(s.Items<StoryVersion>());
         var req = new ConfirmCreatorImportRequest
         {
-            OperationId = "import", RevisionToken = d.Story.RevisionToken, PreviewToken = preview.PreviewToken,
-            Content = preview.Content, Title = "Kỷ niệm", SourceDeclaration = "Tự viết", RightsDeclaration = "Tôi có quyền sử dụng"
+            OperationId = "import",
+            RevisionToken = d.Story.RevisionToken,
+            PreviewToken = preview.PreviewToken,
+            Content = preview.Content,
+            Title = "Kỷ niệm",
+            SourceDeclaration = "Tự viết",
+            RightsDeclaration = "Tôi có quyền sử dụng"
         };
         var imported = await s.Service.ConfirmImportAsync(1, d.Story.StoryId, req, Ct);
         Assert.Equal(imported, await s.Service.ConfirmImportAsync(1, d.Story.StoryId, req, Ct));
         var second = await s.Service.SaveContentAsync(1, d.Story.StoryId, Save(imported.Story, "v2", "Bản mới"), Ct);
         var restored = await s.Service.RestoreVersionAsync(1, d.Story.StoryId, new()
         {
-            OperationId = "restore", RevisionToken = second.Story.RevisionToken, BaseVersionId = second.Version.VersionId,
+            OperationId = "restore",
+            RevisionToken = second.Story.RevisionToken,
+            BaseVersionId = second.Version.VersionId,
             SourceVersionId = imported.Version.VersionId
         }, Ct);
         Assert.Equal(3, restored.Version.VersionNo); Assert.Equal(imported.Version.Content, restored.Version.Content);
@@ -139,8 +156,11 @@ public sealed class ParentAuthoringTests
         Assert.Null(s.Items<StoryVersion>()[0].SafetyScore);
         await Assert.ThrowsAsync<ConflictException>(() => s.Service.ConfirmContentAsync(1, d.Story.StoryId, new()
         {
-            OperationId = "confirm", RevisionToken = saved.Story.RevisionToken, BaseVersionId = saved.Version.VersionId,
-            CheckId = check.CheckId, Checklist = new(true, true, true, true)
+            OperationId = "confirm",
+            RevisionToken = saved.Story.RevisionToken,
+            BaseVersionId = saved.Version.VersionId,
+            CheckId = check.CheckId,
+            Checklist = new(true, true, true, true)
         }, Ct));
         Assert.Empty(s.Items<StoryGenerationJob>());
     }
@@ -170,15 +190,19 @@ public sealed class ParentAuthoringTests
         s.Items<SafetyPolicyCategory>().Add(new() { Id = 1, SafetyPolicyId = 1, ContentCategoryId = 1, Rule = PolicyRule.Blocked });
         var draft = await s.Service.CreateParentDraftAsync(1, Create(), Ct);
         var request = Save(draft.Story, "save", field is "content" or "both" ? "Nội dung có bạo lực." : "Mẹ cùng con lau bàn.")
-            with { Title = field is "title" or "both" ? "VIOLENCE" : "Chiều bên con" };
+            with
+        { Title = field is "title" or "both" ? "VIOLENCE" : "Chiều bên con" };
         var saved = await s.Service.SaveContentAsync(1, draft.Story.StoryId, request, Ct);
         var check = await s.Service.CheckAsync(1, saved.Story.StoryId, Check(saved.Story), Ct);
         Assert.False(check.CanPrepare);
         Assert.Equal("BLOCKED_CATEGORY:violence", Assert.Single(check.Errors));
         await Assert.ThrowsAsync<ConflictException>(() => s.Service.ConfirmContentAsync(1, saved.Story.StoryId, new()
         {
-            OperationId = "confirm", RevisionToken = saved.Story.RevisionToken, BaseVersionId = saved.Version.VersionId,
-            CheckId = check.CheckId, Checklist = new(true, true, true, true)
+            OperationId = "confirm",
+            RevisionToken = saved.Story.RevisionToken,
+            BaseVersionId = saved.Version.VersionId,
+            CheckId = check.CheckId,
+            Checklist = new(true, true, true, true)
         }, Ct));
     }
 
@@ -228,7 +252,9 @@ public sealed class ParentAuthoringTests
         s.Items<SafetyPolicy>()[0].MaxStoryLength = 1;
         await Assert.ThrowsAsync<ConflictException>(() => s.Service.PrepareAsync(1, saved.Story.StoryId, new()
         {
-            OperationId = "prepare", RevisionToken = saved.Story.RevisionToken, BaseVersionId = saved.Version.VersionId,
+            OperationId = "prepare",
+            RevisionToken = saved.Story.RevisionToken,
+            BaseVersionId = saved.Version.VersionId,
             ContentConfirmationId = confirmation.ConfirmationId
         }, Ct));
     }
@@ -237,14 +263,24 @@ public sealed class ParentAuthoringTests
     public async Task Preparation_preserves_all_UTF16_text_and_old_grant_after_new_draft_save()
     {
         var s = new ParentAuthoringTestStore(); var (saved, confirmation) = await ConfirmContent(s);
-        var prepareReq = new ParentPrepareRequest { OperationId = "prepare", RevisionToken = saved.Story.RevisionToken,
-            BaseVersionId = saved.Version.VersionId, ContentConfirmationId = confirmation.ConfirmationId };
+        var prepareReq = new ParentPrepareRequest
+        {
+            OperationId = "prepare",
+            RevisionToken = saved.Story.RevisionToken,
+            BaseVersionId = saved.Version.VersionId,
+            ContentConfirmationId = confirmation.ConfirmationId
+        };
         var package = await s.Service.PrepareAsync(1, saved.Story.StoryId, prepareReq, Ct);
         Assert.True(package.IsReady); Assert.Equal(Text, string.Concat(package.Segments.Select(x => x.Text)));
         Assert.Equal(0, package.Segments[0].StartOffset); Assert.Equal(Text.Length, package.Segments[^1].EndOffset);
         Assert.DoesNotContain(s.Items<ParentStoryOperation>(), x => x.Kind == "FamilyConfirmation");
-        var request = new ParentFamilyConfirmRequest { OperationId = "family", RevisionToken = saved.Story.RevisionToken,
-            BaseVersionId = saved.Version.VersionId, PreparationId = package.PreparationId };
+        var request = new ParentFamilyConfirmRequest
+        {
+            OperationId = "family",
+            RevisionToken = saved.Story.RevisionToken,
+            BaseVersionId = saved.Version.VersionId,
+            PreparationId = package.PreparationId
+        };
         var grant = await s.Service.ConfirmFamilyAsync(1, saved.Story.StoryId, request, Ct);
         Assert.Equal(grant, await s.Service.ConfirmFamilyAsync(1, saved.Story.StoryId, request, Ct));
         await Assert.ThrowsAsync<NotFoundException>(() => s.Service.ReadChildPackageAsync(99, grant.ConfirmationId, Ct));
@@ -267,18 +303,25 @@ public sealed class ParentAuthoringTests
         var check = await s.Service.CheckAsync(1, d.Story.StoryId, Check(saved.Story), Ct);
         var confirm = await s.Service.ConfirmContentAsync(1, d.Story.StoryId, new()
         {
-            OperationId = "confirm", RevisionToken = saved.Story.RevisionToken, BaseVersionId = saved.Version.VersionId,
-            CheckId = check.CheckId, Checklist = new(true, true, true, true)
+            OperationId = "confirm",
+            RevisionToken = saved.Story.RevisionToken,
+            BaseVersionId = saved.Version.VersionId,
+            CheckId = check.CheckId,
+            Checklist = new(true, true, true, true)
         }, Ct);
         var pkg = await s.Service.PrepareAsync(1, d.Story.StoryId, new()
         {
-            OperationId = "prep", RevisionToken = saved.Story.RevisionToken, BaseVersionId = saved.Version.VersionId,
+            OperationId = "prep",
+            RevisionToken = saved.Story.RevisionToken,
+            BaseVersionId = saved.Version.VersionId,
             ContentConfirmationId = confirm.ConfirmationId
         }, Ct);
         Assert.False(pkg.IsReady);
         await Assert.ThrowsAsync<ConflictException>(() => s.Service.ConfirmFamilyAsync(1, d.Story.StoryId, new()
         {
-            OperationId = "grant", RevisionToken = saved.Story.RevisionToken, BaseVersionId = saved.Version.VersionId,
+            OperationId = "grant",
+            RevisionToken = saved.Story.RevisionToken,
+            BaseVersionId = saved.Version.VersionId,
             PreparationId = pkg.PreparationId
         }, Ct));
     }
@@ -287,9 +330,14 @@ public sealed class ParentAuthoringTests
     public async Task Explicit_split_cannot_cut_surrogate_pair_or_drop_suffix()
     {
         var s = new ParentAuthoringTestStore(); var (saved, confirmation) = await ConfirmContent(s);
-        var req = new ParentPrepareRequest { OperationId = "prep", RevisionToken = saved.Story.RevisionToken,
-            BaseVersionId = saved.Version.VersionId, ContentConfirmationId = confirmation.ConfirmationId,
-            SegmentEnds = [Text.IndexOf("🌱", StringComparison.Ordinal) + 1, Text.Length] };
+        var req = new ParentPrepareRequest
+        {
+            OperationId = "prep",
+            RevisionToken = saved.Story.RevisionToken,
+            BaseVersionId = saved.Version.VersionId,
+            ContentConfirmationId = confirmation.ConfirmationId,
+            SegmentEnds = [Text.IndexOf("🌱", StringComparison.Ordinal) + 1, Text.Length]
+        };
         await Assert.ThrowsAsync<BadRequestException>(() => s.Service.PrepareAsync(1, saved.Story.StoryId, req, Ct));
         await Assert.ThrowsAsync<BadRequestException>(() => s.Service.PrepareAsync(1, saved.Story.StoryId,
             req with { OperationId = "prep-2", SegmentEnds = [Text.Length - 1] }, Ct));
@@ -301,11 +349,18 @@ public sealed class ParentAuthoringTests
         var s = new ParentAuthoringTestStore(); var (saved, confirmation) = await ConfirmContent(s);
         var pkg = await s.Service.PrepareAsync(1, saved.Story.StoryId, new()
         {
-            OperationId = "prep", RevisionToken = saved.Story.RevisionToken, BaseVersionId = saved.Version.VersionId,
+            OperationId = "prep",
+            RevisionToken = saved.Story.RevisionToken,
+            BaseVersionId = saved.Version.VersionId,
             ContentConfirmationId = confirmation.ConfirmationId
         }, Ct);
-        var setup = new ParentSetupRequest { OperationId = "purpose", RevisionToken = saved.Story.RevisionToken,
-            BaseVersionId = saved.Version.VersionId, Purpose = "message" };
+        var setup = new ParentSetupRequest
+        {
+            OperationId = "purpose",
+            RevisionToken = saved.Story.RevisionToken,
+            BaseVersionId = saved.Version.VersionId,
+            Purpose = "message"
+        };
         var changed = await s.Service.SetupAsync(1, saved.Story.StoryId, setup, Ct);
         var preview = await s.Service.PreviewAsync(1, saved.Story.StoryId, pkg.PreparationId, Ct);
         Assert.Equal(pkg.ContextFingerprint, preview.ContextFingerprint);
@@ -322,7 +377,9 @@ public sealed class ParentAuthoringTests
         var second = await s.Service.SaveContentAsync(1, saved.Story.StoryId, Save(saved.Story, "v2"), Ct);
         await Assert.ThrowsAsync<NotFoundException>(() => s.Service.PrepareAsync(1, saved.Story.StoryId, new()
         {
-            OperationId = "bad-prep", RevisionToken = second.Story.RevisionToken, BaseVersionId = second.Version.VersionId,
+            OperationId = "bad-prep",
+            RevisionToken = second.Story.RevisionToken,
+            BaseVersionId = second.Version.VersionId,
             ContentConfirmationId = confirmation.ConfirmationId
         }, Ct));
         Assert.DoesNotContain(s.Items<ParentStoryOperation>(), x => x.OperationId == "bad-prep");
@@ -334,11 +391,18 @@ public sealed class ParentAuthoringTests
         var s = new ParentAuthoringTestStore(); var (saved, confirmation) = await ConfirmContent(s);
         var pkg = await s.Service.PrepareAsync(1, saved.Story.StoryId, new()
         {
-            OperationId = "prep", RevisionToken = saved.Story.RevisionToken, BaseVersionId = saved.Version.VersionId,
+            OperationId = "prep",
+            RevisionToken = saved.Story.RevisionToken,
+            BaseVersionId = saved.Version.VersionId,
             ContentConfirmationId = confirmation.ConfirmationId
         }, Ct);
-        var request = new ParentFamilyConfirmRequest { OperationId = "grant", RevisionToken = saved.Story.RevisionToken,
-            BaseVersionId = saved.Version.VersionId, PreparationId = pkg.PreparationId };
+        var request = new ParentFamilyConfirmRequest
+        {
+            OperationId = "grant",
+            RevisionToken = saved.Story.RevisionToken,
+            BaseVersionId = saved.Version.VersionId,
+            PreparationId = pkg.PreparationId
+        };
         var grant = await s.Service.ConfirmFamilyAsync(1, saved.Story.StoryId, request, Ct);
         s.Items<SupervisionRelationship>()[0].RevokedAt = DateTime.UtcNow;
         await Assert.ThrowsAsync<ForbiddenException>(() => s.Service.ReadChildPackageAsync(3, grant.ConfirmationId, Ct));
@@ -354,8 +418,13 @@ public sealed class ParentAuthoringTests
         var d2 = await s.Service.CreateParentDraftAsync(1, Create("create-2"), Ct);
         await Assert.ThrowsAsync<NotFoundException>(() => s.Service.ConfirmImportAsync(1, d2.Story.StoryId, new()
         {
-            OperationId = "import", RevisionToken = d2.Story.RevisionToken, PreviewToken = preview.PreviewToken,
-            Title = "Truyện", Content = preview.Content, SourceDeclaration = "Tự viết", RightsDeclaration = "Tôi có quyền"
+            OperationId = "import",
+            RevisionToken = d2.Story.RevisionToken,
+            PreviewToken = preview.PreviewToken,
+            Title = "Truyện",
+            Content = preview.Content,
+            SourceDeclaration = "Tự viết",
+            RightsDeclaration = "Tôi có quyền"
         }, Ct));
         Assert.Empty(s.Items<StoryVersion>());
     }

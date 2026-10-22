@@ -73,6 +73,10 @@ public sealed class ParentManualAuthoringPolicy(IUnitOfWork uow, ISupervisionAcc
     public async Task EnsureWritableAsync(Story story, CancellationToken ct)
     {
         if (await IsLockedAsync(story.Id, ct)) throw new ConflictException("PARENT_STORY_FINALIZED");
+        if (await uow.Repository<StoryGenerationJob>().ExistsAsync(x => x.StoryId == story.Id &&
+            x.Operation == GenerationJobOperation.GenerateMediaPackage &&
+            (x.Status == GenerationJobStatus.Pending || x.Status == GenerationJobStatus.Processing), ct))
+            throw new ConflictException("MEDIA_JOB_ACTIVE");
     }
 
     public static void ValidatePurpose(string? purpose)

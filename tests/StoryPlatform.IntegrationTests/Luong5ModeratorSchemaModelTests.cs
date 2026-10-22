@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using StoryPlatform.Domain.Entities;
@@ -201,14 +201,14 @@ public sealed class Luong5ModeratorSchemaModelTests
         Assert.NotNull(story.FindProperty(nameof(Story.PublishedAt)));
         Assert.NotNull(story.FindProperty(nameof(Story.ArchivedAt)));
 
-        var version = context.Model.FindEntityType(typeof(StoryVersion))!;
-        Assert.Equal(VersionReviewStatus.None, version.FindProperty(nameof(StoryVersion.ReviewStatus))!.GetDefaultValue());
-        Assert.Equal(false, version.FindProperty(nameof(StoryVersion.GrayZoneCleared))!.GetDefaultValue());
-        Assert.Equal("jsonb", version.FindProperty(nameof(StoryVersion.GrayZoneFlags))!.GetColumnType());
-        Assert.Equal("jsonb", version.FindProperty(nameof(StoryVersion.ReviewFeedback))!.GetColumnType());
-        Assert.NotNull(version.FindProperty(nameof(StoryVersion.ModerationZone)));
-        Assert.NotNull(version.FindProperty(nameof(StoryVersion.ReviewedByUserId)));
-        Assert.NotNull(version.FindProperty(nameof(StoryVersion.GrayZoneClearedByUserId)));
+        var version = context.Model.FindEntityType(typeof(StoryVersionModerationState))!;
+        Assert.Equal(VersionReviewStatus.None, version.FindProperty(nameof(StoryVersionModerationState.ReviewStatus))!.GetDefaultValue());
+        Assert.Equal(false, version.FindProperty(nameof(StoryVersionModerationState.GrayZoneCleared))!.GetDefaultValue());
+        Assert.Equal("jsonb", version.FindProperty(nameof(StoryVersionModerationState.GrayZoneFlags))!.GetColumnType());
+        Assert.Equal("jsonb", version.FindProperty(nameof(StoryVersionModerationState.ReviewFeedback))!.GetColumnType());
+        Assert.NotNull(version.FindProperty(nameof(StoryVersionModerationState.ModerationZone)));
+        Assert.NotNull(version.FindProperty(nameof(StoryVersionModerationState.ReviewedByUserId)));
+        Assert.NotNull(version.FindProperty(nameof(StoryVersionModerationState.GrayZoneClearedByUserId)));
     }
 
     [Fact]

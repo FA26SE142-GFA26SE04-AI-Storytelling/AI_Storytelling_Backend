@@ -24,7 +24,8 @@ public sealed class CreatorManualMediaPersistenceTests
         protected override void OnModelCreating(ModelBuilder b)
         {
             Type[] types = [typeof(UserAccount), typeof(Story), typeof(StoryVersion), typeof(StoryGenerationJob),
-                typeof(MediaContext), typeof(ModerationItem), typeof(ContentCategory)];
+                typeof(MediaContext), typeof(ModerationItem), typeof(ContentCategory), typeof(StoryScene),
+                typeof(StorySegment), typeof(IllustrationBeat), typeof(MediaAsset), typeof(StoryAuthoringOperation)];
             foreach (var type in types)
                 foreach (var p in type.GetProperties().Where(p => typeof(BaseEntity).IsAssignableFrom(p.PropertyType) ||
                     p.PropertyType.IsGenericType && p.PropertyType.GetGenericArguments().Any(t => typeof(BaseEntity).IsAssignableFrom(t))))
@@ -33,6 +34,8 @@ public sealed class CreatorManualMediaPersistenceTests
                 if (!types.Contains(type)) b.Ignore(type);
             foreach (var type in types) b.Entity(type).HasKey("Id");
             b.Entity<StoryGenerationJob>().HasIndex(x => x.OperationKey).IsUnique();
+            new StoryPlatform.Infrastructure.Persistence.Configurations.StoryVersionConfiguration().Configure(b.Entity<StoryVersion>());
+            new StoryPlatform.Infrastructure.Persistence.Configurations.StoryAuthoringOperationConfiguration().Configure(b.Entity<StoryAuthoringOperation>());
         }
     }
 
@@ -46,10 +49,29 @@ public sealed class CreatorManualMediaPersistenceTests
         await using var db = new Db(new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options);
         await db.Database.EnsureCreatedAsync();
         db.Users.Add(new() { Id = 1, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
-        db.Stories.Add(new() { Id = 1, AuthorUserId = 1, Scope = StoryScope.Creator, Source = StorySource.Manual,
-            Status = StoryStatus.Draft, OutputMode = StoryOutputMode.ReadingMediaOnly, AuthoringRevisionToken = "rev1" });
-        db.StoryVersions.Add(new() { Id = 10, StoryId = 1, IsCurrent = true, Title = "Na giúp bạn", Content = "Na cùng bạn sửa đồ chơi.",
-            SourceDeclaration = "Tự viết", RightsDeclaration = "Tôi có quyền" });
+        db.Stories.Add(new()
+        {
+            Id = 1,
+            AuthorUserId = 1,
+            Scope = StoryScope.Creator,
+            Source = StorySource.Manual,
+            Status = StoryStatus.Draft,
+            OutputMode = StoryOutputMode.ReadingMediaOnly,
+            AuthoringRevisionToken = "rev1"
+        });
+        db.StoryVersions.Add(new()
+        {
+            Id = 10,
+            StoryId = 1,
+            IsCurrent = true,
+            Title = "Na giúp bạn",
+            Content = "Na cùng bạn sửa đồ chơi.",
+            AuthoringMetadata = new StoryVersionAuthoringMetadata
+            {
+                SourceDeclaration = "Tự viết",
+                RightsDeclaration = "Tôi có quyền"
+            }
+        });
         await db.SaveChangesAsync(); db.ChangeTracker.Clear();
         await using var real = new UnitOfWork(db);
         var uow = new Mock<IUnitOfWork>();
@@ -87,4 +109,143 @@ public sealed class CreatorManualMediaPersistenceTests
         Assert.Equal(failAudit ? StoryStatus.Draft : StoryStatus.MediaProcessing, (await db.Stories.SingleAsync()).Status);
         Assert.Equal("Na cùng bạn sửa đồ chơi.", (await db.StoryVersions.SingleAsync()).Content);
     }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MediaApprovalPersistsAtomicallyOrRollsBackOnCommitFailure(bool failCommit)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new Db(new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        db.Users.Add(new() { Id = 1, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
+        db.Stories.Add(new()
+        {
+            Id = 1,
+            AuthorUserId = 1,
+            Scope = StoryScope.Creator,
+            Source = StorySource.Manual,
+            Status = StoryStatus.MediaReview
+        });
+        db.StoryVersions.Add(new()
+        {
+            Id = 10,
+            StoryId = 1,
+            IsCurrent = true,
+            Title = "Story",
+            Content = "Content",
+            MediaState = new StoryVersionMediaState
+            {
+                MediaPackageRevision = 1
+            }
+        });
+        db.StoryGenerationJobs.Add(new()
+        {
+            Id = 20,
+            StoryId = 1,
+            StoryVersionId = 10,
+            Operation = GenerationJobOperation.GenerateMediaPackage,
+            Status = GenerationJobStatus.Completed
+        });
+        await db.SaveChangesAsync(); db.ChangeTracker.Clear();
+        await using var real = new UnitOfWork(db);
+        var uow = new Mock<IUnitOfWork>();
+        uow.Setup(x => x.Repository<UserAccount>()).Returns(real.Repository<UserAccount>());
+        uow.Setup(x => x.Repository<Story>()).Returns(real.Repository<Story>());
+        uow.Setup(x => x.Repository<StoryVersion>()).Returns(real.Repository<StoryVersion>());
+        uow.Setup(x => x.Repository<StoryGenerationJob>()).Returns(real.Repository<StoryGenerationJob>());
+        uow.Setup(x => x.Repository<ModerationItem>()).Returns(real.Repository<ModerationItem>());
+        uow.Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.BeginTransactionAsync(ct));
+        uow.Setup(x => x.RollbackTransactionAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.RollbackTransactionAsync(ct));
+        uow.Setup(x => x.CommitTransactionAsync(It.IsAny<CancellationToken>())).Returns(async (CancellationToken ct) =>
+        {
+            await real.SaveChangesAsync(ct);
+            if (failCommit) throw new InvalidOperationException("Commit failed");
+            await real.CommitTransactionAsync(ct);
+        });
+        uow.Setup(x => x.AcquireTransactionLockAsync(It.IsAny<int>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var readiness = new Mock<StoryPlatform.Application.Features.MediaGeneration.Interfaces.IMediaReadinessService>();
+        readiness.Setup(x => x.CheckAsync(10, null, It.IsAny<CancellationToken>())).ReturnsAsync(
+            new StoryPlatform.Application.Features.MediaGeneration.Models.MediaReadinessResult(true, 1, 1, 1, 1, [], [], [], []));
+        var service = MediaGenerationServiceTests.Create(uow.Object, readiness: readiness.Object);
+        if (failCommit) await Assert.ThrowsAsync<InvalidOperationException>(() => service.ConfirmAsync(1, 1, new(10, 1)));
+        else Assert.True((await service.ConfirmAsync(1, 1, new(10, 1))).IsReady);
+        db.ChangeTracker.Clear();
+        var saved = await db.StoryVersions.SingleAsync();
+        Assert.Equal(failCommit ? null : 1, saved.MediaState.ConfirmedMediaPackageRevision);
+        Assert.Equal(failCommit ? null : 1, saved.MediaState.MediaConfirmedByUserId);
+        Assert.Equal(failCommit, saved.MediaState.MediaConfirmedAt is null);
+        Assert.Equal(failCommit ? StoryStatus.MediaReview : StoryStatus.Ready, (await db.Stories.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task SplitVersionRoundTripPreservesOwnedStateWhenUpdatingAnAlreadyTrackedVersion()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new Db(new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        db.Users.AddRange(new UserAccount { Id = 1 }, new UserAccount { Id = 2 });
+        db.Stories.Add(new() { Id = 1, AuthorUserId = 1, Scope = StoryScope.Creator });
+        var added = db.StoryVersions.Add(new() { Id = 10, StoryId = 1, IsCurrent = true, Title = "Original", Content = "Content" }).Entity;
+        var repository = new GenericRepository<StoryVersion>(db);
+        added.AuthoringMetadata.SourceDeclaration = "Draft";
+        repository.Update(added);
+        Assert.Equal(EntityState.Added, db.Entry(added).State);
+        await db.SaveChangesAsync(); db.ChangeTracker.Clear();
+        var tracked = await repository.GetByIdAsync(10);
+        Assert.NotNull(tracked);
+        var detached = await repository.FirstOrDefaultAsync(x => x.Id == 10);
+        Assert.NotNull(detached);
+        Assert.NotSame(tracked, detached);
+        detached.AuthoringMetadata.SourceDeclaration = "Author";
+        detached.AuthoringMetadata.RightsDeclaration = "Own work";
+        detached.AuthoringMetadata.StoryId = 999;
+        detached.Moderation.ReviewStatus = VersionReviewStatus.Pending;
+        detached.Moderation.ReviewedByUserId = 2;
+        detached.Moderation.GrayZoneClearedByUserId = 2;
+        detached.MediaState.MediaPackageRevision = 1;
+        detached.MediaState.ConfirmedMediaPackageRevision = 1;
+        detached.MediaState.MediaConfirmedByUserId = 1;
+        detached.MediaState.MediaConfirmedAt = DateTime.UtcNow;
+        repository.Update(detached);
+        await db.SaveChangesAsync(); db.ChangeTracker.Clear();
+        var saved = await repository.FirstOrDefaultAsync(x => x.Id == 10);
+        Assert.Equal("Author", saved!.AuthoringMetadata.SourceDeclaration);
+        Assert.Equal("Own work", saved.AuthoringMetadata.RightsDeclaration);
+        Assert.Equal(1, saved.AuthoringMetadata.StoryId);
+        Assert.Equal(10, saved.AuthoringMetadata.StoryVersionId);
+        Assert.Equal(VersionReviewStatus.Pending, saved.Moderation.ReviewStatus);
+        Assert.Equal(2, saved.Moderation.ReviewedByUserId);
+        Assert.Equal(2, saved.Moderation.GrayZoneClearedByUserId);
+        Assert.Equal(1, saved.MediaState.MediaConfirmedByUserId);
+        Assert.Equal(1, saved.MediaState.ConfirmedMediaPackageRevision);
+        Assert.NotNull(saved.MediaState.MediaConfirmedAt);
+        Assert.Equal("Original", saved.Title);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AuthoringReceiptsAllowMultipleCommandsButRejectDuplicateKeysAndMismatchedStories(bool wrongStory)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new Db(new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        db.Users.Add(new() { Id = 1 });
+        db.Stories.Add(new() { Id = 1, AuthorUserId = 1, Scope = StoryScope.Creator });
+        db.StoryVersions.Add(new() { Id = 10, StoryId = 1, IsCurrent = true, Title = "Title" });
+        await db.SaveChangesAsync();
+        db.StoryAuthoringOperations.AddRange(new StoryAuthoringOperation { StoryId = 1, StoryVersionId = 10, ActorUserId = 1,
+                Kind = "save-manual", OperationId = "save-1", RequestHash = "hash1", OperationResponseJson = "{}" },
+            new StoryAuthoringOperation { StoryId = 1, StoryVersionId = 10, ActorUserId = 1,
+                Kind = "confirm-import", OperationId = "save-2", RequestHash = "hash2", OperationResponseJson = "{}" });
+        await db.SaveChangesAsync();
+        Assert.Equal(2, await db.StoryAuthoringOperations.CountAsync());
+        db.StoryAuthoringOperations.Add(new() { StoryId = wrongStory ? 2 : 1, StoryVersionId = 10, ActorUserId = 1,
+            Kind = "save-manual", OperationId = wrongStory ? "save-3" : "save-1", RequestHash = "other", OperationResponseJson = "{}" });
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
 }

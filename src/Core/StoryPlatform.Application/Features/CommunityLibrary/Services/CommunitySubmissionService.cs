@@ -1,5 +1,6 @@
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
+using StoryPlatform.Application.Common;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
 using StoryPlatform.Application.Features.CommunityLibrary.Interfaces;
@@ -68,7 +69,7 @@ public partial class CommunitySubmissionService : ICommunitySubmissionService
     {
         var dto = new CommunityEligibilityDto { StoryId = story.Id };
 
-        if (story.Scope != StoryScope.Parent || !story.ChildProfileId.HasValue)
+        if (story.Scope != StoryScope.Parent || !story.ChildProfileId.HasValue || ParentStoryContext.IsEditorStory(story))
         {
             AddBlocker(dto, CommunityBlockerCodes.StoryNotPrivate,
                 "Chỉ nộp được truyện riêng của bé; truyện Public Library không nộp Community.");

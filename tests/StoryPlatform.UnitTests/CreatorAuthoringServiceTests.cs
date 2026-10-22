@@ -1,4 +1,4 @@
-﻿using System.IO.Compression;
+using System.IO.Compression;
 using System.Linq.Expressions;
 using System.Text;
 using Moq;
@@ -379,7 +379,7 @@ public sealed class CreatorAuthoringServiceTests
 
         public Store(CreatorAuthoringOptions? options = null)
         {
-            Register<UserAccount>(); Register<Story>(); Register<StoryVersion>(); Register<AuditLog>(); Register<ModerationItem>(); Register<StoryGenerationJob>();
+            Register<UserAccount>(); Register<Story>(); Register<StoryVersion>(); Register<StoryAuthoringOperation>(); Register<AuditLog>(); Register<ModerationItem>(); Register<StoryGenerationJob>();
             Uow.Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>())).Returns<CancellationToken>(ct => _transaction.WaitAsync(ct));
             Uow.Setup(x => x.AcquireTransactionLockAsync(It.IsAny<int>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
             Uow.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);

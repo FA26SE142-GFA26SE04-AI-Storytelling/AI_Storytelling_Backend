@@ -6,6 +6,7 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
+using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Application.Features.Moderation;
 using StoryPlatform.Application.Features.Moderation.Services;
 using StoryPlatform.Domain.Entities;
@@ -65,14 +66,32 @@ public sealed class CreatorManualMediaService(IUnitOfWork uow, GrayZoneContentCh
 
             // Pin manual audience/metadata without inventing an outline or a generation request.
             var contextJson = contexts.Build(new MediaContextBuildRequest(version.Id, version.Title, version.Content!, version.Lesson,
-                null, null, null, null, JsonSerializer.Serialize(new { audienceScope = "Creator", creatorUserId = userId,
-                    story.AgeBand, story.Language, story.ReadingLevel, story.Genre, story.MoralLesson, story.AudienceRevision })));
+                null, null, null, null, JsonSerializer.Serialize(new
+                {
+                    audienceScope = "Creator",
+                    creatorUserId = userId,
+                    story.AgeBand,
+                    story.Language,
+                    story.ReadingLevel,
+                    story.Genre,
+                    story.MoralLesson,
+                    story.AudienceRevision
+                })));
             await uow.Repository<MediaContext>().AddAsync(new MediaContext { StoryVersionId = version.Id, Revision = 1, ContextJson = contextJson }, ct);
+            MediaPackageConfirmation.Invalidate(version);
+            uow.Repository<StoryVersion>().Update(version);
             var job = new StoryGenerationJob
             {
-                StoryId = storyId, StoryVersionId = version.Id, BaseStoryVersionId = version.Id, RequestedByUserId = userId,
-                OperationKey = $"p5:{storyId}:{version.Id}", Operation = GenerationJobOperation.GenerateMediaPackage,
-                Stage = JobStage.MediaPending, Status = GenerationJobStatus.Pending, MaxAttempts = 3, StartedAt = DateTime.UtcNow
+                StoryId = storyId,
+                StoryVersionId = version.Id,
+                BaseStoryVersionId = version.Id,
+                RequestedByUserId = userId,
+                OperationKey = $"p5:{storyId}:{version.Id}",
+                Operation = GenerationJobOperation.GenerateMediaPackage,
+                Stage = JobStage.MediaPending,
+                Status = GenerationJobStatus.Pending,
+                MaxAttempts = 3,
+                StartedAt = DateTime.UtcNow
             };
             await uow.Repository<StoryGenerationJob>().AddAsync(job, ct);
             story.Status = StoryStatus.MediaProcessing;
@@ -105,7 +124,7 @@ public sealed class CreatorManualMediaService(IUnitOfWork uow, GrayZoneContentCh
         if (story.Status != StoryStatus.Draft) throw new ConflictException("INVALID_STORY_STATUS");
         if (story.OutputMode != StoryOutputMode.ReadingMediaOnly) throw new ConflictException("OUTPUT_MODE_CONFLICT");
         if (string.IsNullOrWhiteSpace(version.Title) || string.IsNullOrWhiteSpace(version.Content) ||
-            string.IsNullOrWhiteSpace(version.SourceDeclaration) || string.IsNullOrWhiteSpace(version.RightsDeclaration))
+            string.IsNullOrWhiteSpace(version.AuthoringMetadata.SourceDeclaration) || string.IsNullOrWhiteSpace(version.AuthoringMetadata.RightsDeclaration))
             throw new BadRequestException("MANUAL_CONTENT_INCOMPLETE");
         if (version.Title.Length > 200 || version.Content.Length > options.MaximumContentCharacters ||
             !options.SupportedLanguages.Contains(story.Language) || !options.SupportedAgeBands.Contains(story.AgeBand))
@@ -116,8 +135,19 @@ public sealed class CreatorManualMediaService(IUnitOfWork uow, GrayZoneContentCh
         uow.Repository<StoryGenerationJob>().FirstOrDefaultAsync(x => x.StoryId == storyId && x.StoryVersionId == versionId &&
             x.Operation == GenerationJobOperation.GenerateMediaPackage, cancellationToken: ct);
 
-    private static string Source(Story s, StoryVersion v) => JsonSerializer.Serialize(new { v.Id, v.Title, v.Content, v.Lesson,
-        s.AgeBand, s.Language, s.ReadingLevel, s.Genre, s.MoralLesson, s.AudienceRevision });
+    private static string Source(Story s, StoryVersion v) => JsonSerializer.Serialize(new
+    {
+        v.Id,
+        v.Title,
+        v.Content,
+        v.Lesson,
+        s.AgeBand,
+        s.Language,
+        s.ReadingLevel,
+        s.Genre,
+        s.MoralLesson,
+        s.AudienceRevision
+    });
 
     private static ConfirmManualContentResult Result(Story s, StoryGenerationJob j) => new(s.Id, j.StoryVersionId!.Value, j.Id,
         s.Status.ToString(), j.Status.ToString(), $"/api/v1/stories/{s.Id}/media/progress", $"/api/v1/stories/{s.Id}/media/package");

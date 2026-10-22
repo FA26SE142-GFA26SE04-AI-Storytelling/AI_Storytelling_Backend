@@ -37,9 +37,15 @@ public class CommunityLibraryServiceTests
     {
         var item = new ModerationItem
         {
-            Id = id, ItemType = ModerationItemType.CommunitySubmission, Status = ModerationItemStatus.Approved,
-            StoryId = storyId, StoryVersionId = versionId, CreatedByUserId = Submitter,
-            SourceChildProfileId = SourceChild, DecidedByUserId = 12, DecidedAt = DateTime.UtcNow.AddDays(-1)
+            Id = id,
+            ItemType = ModerationItemType.CommunitySubmission,
+            Status = ModerationItemStatus.Approved,
+            StoryId = storyId,
+            StoryVersionId = versionId,
+            CreatedByUserId = Submitter,
+            SourceChildProfileId = SourceChild,
+            DecidedByUserId = 12,
+            DecidedAt = DateTime.UtcNow.AddDays(-1)
         };
         _h.Items.Add(item);
         return item;
@@ -98,8 +104,11 @@ public class CommunityLibraryServiceTests
     {
         _h.Items.Add(new ModerationItem
         {
-            Id = 81, ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.Approved,
-            StoryId = Story, StoryVersionId = 60
+            Id = 81,
+            ItemType = ModerationItemType.PublicStoryReview,
+            Status = ModerationItemStatus.Approved,
+            StoryId = Story,
+            StoryVersionId = 60
         });
 
         Assert.Empty((await ListAsync()).Items);

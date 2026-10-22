@@ -10,6 +10,8 @@ public static class MediaStoryAccess
 {
     public static void EnsureSupported(Story story)
     {
+        if (ParentStoryContext.IsEditorStory(story) && !story.IsDeleted && story.ChildProfileId.HasValue)
+            return;
         if (story.Scope == StoryScope.Creator && story.Source == StorySource.Manual && !story.IsDeleted && story.ChildProfileId is null)
             return;
         GenerationStoryAccess.EnsureSupported(story);

@@ -66,9 +66,12 @@ public sealed class StoryReviewPhase4FinalValidationTests
         ((FakeRepo<DiscussionQuestion>)uow.Repository<DiscussionQuestion>()).Items.Clear();
         uow.Seed(new StoryGenerationRequest
         {
-            Id = 19, StoryId = 1, SubmittedByUserId = 1,
+            Id = 19,
+            StoryId = 1,
+            SubmittedByUserId = 1,
             Status = GenerationInputStatus.InputAccepted,
-            ContextSnapshotJson = "{}", AcceptedInputJson = "{}"
+            ContextSnapshotJson = "{}",
+            AcceptedInputJson = "{}"
         });
         var reviewStore = new InMemoryReviewCompletionStore();
         var service = BuildReviewService(uow, reviewStore: reviewStore);

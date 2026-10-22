@@ -9,5 +9,6 @@ public enum StoryStatus
     MediaProcessing = 5,
     Ready = 6,
     Rejected = 7,
-    Archived = 8
+    Archived = 8,
+    MediaReview = 9
 }

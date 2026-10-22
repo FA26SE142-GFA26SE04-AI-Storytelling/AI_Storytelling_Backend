@@ -72,7 +72,15 @@ public sealed record MediaGenerationProgress(
     IReadOnlyList<int>? MissingIllustrationBeatIds = null,
     IReadOnlyList<int>? MissingAudioSegmentIds = null,
     IReadOnlyList<int>? ManualReviewAssetIds = null,
-    IReadOnlyList<int>? ScenesWithoutValidBeats = null);
+    IReadOnlyList<int>? ScenesWithoutValidBeats = null)
+{
+    public int PackageRevision { get; init; }
+    public bool IsGenerated { get; init; }
+    public bool IsAwaitingConfirmation { get; init; }
+    public bool IsConfirmed { get; init; }
+    public int? ConfirmedByUserId { get; init; }
+    public DateTime? ConfirmedAt { get; init; }
+}
 
 public sealed record MediaReadinessResult(
     bool IsReady,
@@ -98,7 +106,16 @@ public sealed record SceneMediaItem(int SceneId, int SceneIndex, IReadOnlyList<I
 public sealed record AudioMediaItem(int SegmentId, int SegmentOrder, string Text, int? AssetId,
     string Status, string? Url, string? WordTimings);
 
-public sealed record StoryMediaPackage(int StoryId, int StoryVersionId, IReadOnlyList<SceneMediaItem> Scenes);
+public sealed record StoryMediaPackage(int StoryId, int StoryVersionId, IReadOnlyList<SceneMediaItem> Scenes)
+{
+    public bool IsReady { get; init; }
+    public int PackageRevision { get; init; }
+    public bool IsGenerated { get; init; }
+    public bool IsAwaitingConfirmation { get; init; }
+    public bool IsConfirmed { get; init; }
+    public int? ConfirmedByUserId { get; init; }
+    public DateTime? ConfirmedAt { get; init; }
+}
 
 public sealed record MediaJobProcessResult(
     bool JobFound,
@@ -111,3 +128,12 @@ public sealed record MediaJobProcessResult(
     public static MediaJobProcessResult Failed(bool permanent, string errorCode) =>
         new(true, false, permanent, errorCode);
 }
+
+public sealed record ConfirmMediaPackageRequest(
+    [System.ComponentModel.DataAnnotations.Range(1, int.MaxValue)] int StoryVersionId,
+    [System.ComponentModel.DataAnnotations.Range(1, int.MaxValue)] int PackageRevision);
+
+public sealed record RegenerateMediaRequest(
+    [System.ComponentModel.DataAnnotations.Range(1, int.MaxValue)] int StoryVersionId,
+    [System.ComponentModel.DataAnnotations.Range(0, int.MaxValue)] int PackageRevision,
+    [System.ComponentModel.DataAnnotations.Required] bool? ExpectedConfirmed);

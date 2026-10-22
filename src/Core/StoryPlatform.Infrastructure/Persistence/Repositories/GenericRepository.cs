@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Infrastructure.Persistence;
+using StoryPlatform.Domain.Entities;
 
 namespace StoryPlatform.Infrastructure.Persistence.Repositories;
 
@@ -36,8 +37,8 @@ public class GenericRepository<T> : IGenericRepository<T> where T : class
     }
 
     public virtual async Task<IReadOnlyList<T>> FindAsync(
-        Expression<Func<T, bool>> predicate, 
-        string? includeProperties = null, 
+        Expression<Func<T, bool>> predicate,
+        string? includeProperties = null,
         CancellationToken cancellationToken = default)
     {
         IQueryable<T> query = _dbSet.AsNoTracking().Where(predicate);
@@ -54,8 +55,8 @@ public class GenericRepository<T> : IGenericRepository<T> where T : class
     }
 
     public virtual async Task<T?> FirstOrDefaultAsync(
-        Expression<Func<T, bool>> predicate, 
-        string? includeProperties = null, 
+        Expression<Func<T, bool>> predicate,
+        string? includeProperties = null,
         CancellationToken cancellationToken = default)
     {
         IQueryable<T> query = _dbSet.AsNoTracking();
@@ -121,6 +122,11 @@ public class GenericRepository<T> : IGenericRepository<T> where T : class
 
     public virtual void Update(T entity)
     {
+        if (entity is StoryVersion version)
+        {
+            UpdateVersion(version);
+            return;
+        }
         var entry = _context.Entry(entity);
         if (entry.State == EntityState.Detached)
         {
@@ -143,6 +149,40 @@ public class GenericRepository<T> : IGenericRepository<T> where T : class
             _dbSet.Attach(entity);
         }
 
+        entry.State = EntityState.Modified;
+    }
+
+    private void UpdateVersion(StoryVersion version)
+    {
+        if (_context.Entry(version).State == EntityState.Added) return;
+        var tracked = _context.StoryVersions.Local.FirstOrDefault(x => x.Id == version.Id);
+        if (tracked is not null && !ReferenceEquals(tracked, version))
+        {
+            _context.Entry(tracked).CurrentValues.SetValues(version);
+            CopyOwned(tracked.AuthoringMetadata, version.AuthoringMetadata);
+            CopyOwned(tracked.Moderation, version.Moderation);
+            CopyOwned(tracked.MediaState, version.MediaState);
+            _context.Entry(tracked).State = EntityState.Modified;
+            return;
+        }
+        version.AuthoringMetadata.StoryVersionId = version.Id;
+        version.AuthoringMetadata.StoryId = version.StoryId;
+        version.Moderation.StoryVersionId = version.Id;
+        version.MediaState.StoryVersionId = version.Id;
+        if (_context.Entry(version).State == EntityState.Detached) _context.Attach(version);
+        _context.Entry(version).State = EntityState.Modified;
+        _context.Entry(version.AuthoringMetadata).State = EntityState.Modified;
+        _context.Entry(version.Moderation).State = EntityState.Modified;
+        _context.Entry(version.MediaState).State = EntityState.Modified;
+    }
+
+    private void CopyOwned<TOwned>(TOwned target, TOwned source) where TOwned : class
+    {
+        // Never overwrite an owned primary/FK key from a default-constructed input object.
+        var entry = _context.Entry(target);
+        foreach (var property in entry.Properties.Where(x => !x.Metadata.IsPrimaryKey() &&
+            !x.Metadata.GetContainingForeignKeys().Any(fk => fk.IsOwnership)))
+            property.CurrentValue = _context.Entry(source).Property(property.Metadata.Name).CurrentValue;
         entry.State = EntityState.Modified;
     }
 

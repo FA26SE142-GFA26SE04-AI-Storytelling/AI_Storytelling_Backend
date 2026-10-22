@@ -44,8 +44,35 @@ public sealed class CreatorAuthoringModelTests
         var version = context.Model.FindEntityType(typeof(StoryVersion))!;
         Assert.Contains(version.GetIndexes(), x => x.IsUnique &&
             x.Properties.Select(p => p.Name).SequenceEqual([nameof(StoryVersion.StoryId), nameof(StoryVersion.VersionNo)]));
-        Assert.Contains(version.GetIndexes(), x => x.IsUnique && x.Properties.Any(p => p.Name == nameof(StoryVersion.OperationId)));
-        Assert.Contains(version.GetIndexes(), x => x.IsUnique && x.Properties.Any(p => p.Name == nameof(StoryVersion.ImportPreviewHash)));
+        Assert.Contains(context.Model.FindEntityType(typeof(StoryAuthoringOperation))!.GetIndexes(), x => x.IsUnique && x.Properties.Any(p => p.Name == nameof(StoryAuthoringOperation.OperationId)));
+        Assert.Contains(context.Model.FindEntityType(typeof(StoryVersionAuthoringMetadata))!.GetIndexes(), x => x.IsUnique && x.Properties.Any(p => p.Name == nameof(StoryVersionAuthoringMetadata.ImportPreviewHash)));
         Assert.DoesNotContain(context.Model.GetEntityTypes(), x => x.GetTableName()!.StartsWith("creator_"));
     }
+    [Fact]
+    public void VersionStateIsMappedToSeparateTablesAndNavigationPredicatesRemainServerSide()
+    {
+        using var context = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql("Host=localhost;Database=metadata_only;Username=unused;Password=unused").Options);
+        var version = context.Model.FindEntityType(typeof(StoryVersion))!;
+        Assert.Null(version.FindProperty("ReviewStatus"));
+        Assert.Null(version.FindProperty("SourceDeclaration"));
+        Assert.Null(version.FindProperty("MediaPackageRevision"));
+        Assert.Null(version.FindProperty("OperationId"));
+        foreach (var (type, table) in new[] {
+            (typeof(StoryVersionAuthoringMetadata), "story_version_authoring_metadata"),
+            (typeof(StoryVersionModerationState), "story_version_moderation_states"),
+            (typeof(StoryVersionMediaState), "story_version_media_states") })
+        {
+            var state = context.Model.FindEntityType(type)!;
+            Assert.True(state.IsOwned());
+            Assert.Equal(table, state.GetTableName());
+            Assert.Equal("StoryVersionId", Assert.Single(state.FindPrimaryKey()!.Properties).Name);
+        }
+        var sql = context.StoryVersions.Where(x => x.Moderation.ReviewStatus == StoryPlatform.Domain.Enums.VersionReviewStatus.Pending
+            && x.MediaState.MediaPackageRevision > 0 && x.AuthoringMetadata.SourceDeclaration != "").ToQueryString();
+        Assert.Contains("story_version_authoring_metadata", sql);
+        Assert.Contains("story_version_moderation_states", sql);
+        Assert.Contains("story_version_media_states", sql);
+    }
+
 }

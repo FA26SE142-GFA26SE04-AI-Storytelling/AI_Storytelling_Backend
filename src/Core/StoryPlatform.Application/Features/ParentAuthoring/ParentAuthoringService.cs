@@ -13,6 +13,8 @@ using StoryPlatform.Application.Features.CreatorAuthoring.DTOs;
 using StoryPlatform.Application.Features.CreatorAuthoring.Interfaces;
 using StoryPlatform.Application.Features.ManualAuthoring.Services;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
+using StoryPlatform.Application.Features.MediaGeneration.Models;
+using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -27,12 +29,17 @@ public sealed class ParentAuthoringService : ManualAuthoringService
     private readonly ParentManualAuthoringPolicy _policy;
     private readonly IStorySegmentService _segments;
     private readonly GrayZoneContentCheckService? _moderation;
+    private readonly IMediaContextBuilder? _mediaContexts;
+    private readonly IMediaGenerationService? _media;
+    private readonly IGrayZoneEvaluator? _evaluator;
 
     public ParentAuthoringService(IUnitOfWork uow, CreatorAuthoringOptions options, IImportPreviewProtector previews,
-        ISupervisionAccessGuard guard, IStorySegmentService segments, GrayZoneContentCheckService? moderation = null)
+        ISupervisionAccessGuard guard, IStorySegmentService segments, GrayZoneContentCheckService? moderation = null,
+        IMediaContextBuilder? mediaContexts = null, IMediaGenerationService? media = null, IGrayZoneEvaluator? evaluator = null)
         : base(uow, options, previews, new ParentManualAuthoringPolicy(uow, guard))
     {
         _uow = uow; _guard = guard; _segments = segments; _moderation = moderation;
+        _mediaContexts = mediaContexts; _media = media; _evaluator = evaluator;
         _policy = new ParentManualAuthoringPolicy(uow, guard);
     }
 
@@ -41,7 +48,8 @@ public sealed class ParentAuthoringService : ManualAuthoringService
         var child = await _policy.RequireChildAsync(user, request.ChildProfileId, ct);
         var draft = await CreateDraftWithContextAsync(user, new CreateCreatorDraftRequest
         {
-            OperationId = request.OperationId, Title = request.Title,
+            OperationId = request.OperationId,
+            Title = request.Title,
             Language = request.Language ?? child.Language,
             AgeBand = child.AgeBand == AgeBand.Age_9_10 ? "9-10" : "6-8",
             ExperienceMode = request.ExperienceMode
@@ -90,6 +98,7 @@ public sealed class ParentAuthoringService : ManualAuthoringService
             var age = child.AgeBand == AgeBand.Age_9_10 ? "9-10" : "6-8";
             if (story.AgeBand != age) { story.AgeBand = age; story.AudienceRevision++; }
             story.WritingPurpose = request.Purpose ?? story.WritingPurpose;
+            if ((await CurrentAsync(id, ct))?.MediaState.MediaPackageRevision > 0) story.Status = StoryStatus.Draft;
             story.AuthoringRevisionToken = Guid.NewGuid().ToString("N");
             _uow.Repository<Story>().Update(story);
             return await GetParentDraftAsync(user, id, ct);
@@ -158,6 +167,64 @@ public sealed class ParentAuthoringService : ManualAuthoringService
             return new ParentContentConfirmationDto(operation.Id, version.Id, check.CheckId, request.Checklist);
         }, ct);
 
+    public async Task<ParentMediaGenerationDto> GenerateMediaAsync(int user, int id, ParentMediaGenerateRequest request, CancellationToken ct)
+    {
+        await GetDraftAsync(user, id, ct);
+        var story = await StoryAsync(user, id, ct);
+        string? contextSnapshot = null;
+        var previous = await _uow.Repository<ParentStoryOperation>().FirstOrDefaultAsync(x => x.StoryId == id &&
+            x.ActorUserId == user && x.OperationId == request.OperationId, cancellationToken: ct);
+        if (previous is null)
+        {
+            await _policy.EnsureWritableAsync(story, ct);
+            var version = await SourceAsync(story, request, ct) ?? throw new ConflictException("SAVED_VERSION_REQUIRED");
+            await LinkedAsync<ParentContentConfirmationDto>(story, request.ContentConfirmationId, "ContentConfirmation", version.Id, ct);
+            contextSnapshot = await new ParentAssistanceAccessPolicy(_uow, _guard).CaptureContextAsync(story, ct);
+            if (_moderation?.IsConfigured != true || _evaluator?.IsConfigured != true || _mediaContexts is null)
+                throw new ConflictException("MODERATION_NOT_CONFIGURED");
+            await _moderation.CheckAsync(user, id, version.Id, ct);
+        }
+        return await ExecuteAsync(user, id, "MediaGeneration", request, async (locked, operation) =>
+        {
+            var version = await SourceAsync(locked, request, ct) ?? throw new ConflictException("SAVED_VERSION_REQUIRED");
+            await LinkedAsync<ParentContentConfirmationDto>(locked, request.ContentConfirmationId, "ContentConfirmation", version.Id, ct);
+            await new ParentAssistanceAccessPolicy(_uow, _guard).ValidateContextAsync(locked, contextSnapshot, ct);
+            var assessment = GrayZoneWorkflowService.ReadAssessment(version);
+            if (assessment is null || _evaluator is null || !await _evaluator.CanReuseAsync(assessment, ct))
+                throw new ConflictException("CONTENT_MODERATION_CHECK_REQUIRED");
+            GrayZoneGate.EnsureCanContinue(locked, version);
+            if (await _uow.Repository<StoryGenerationJob>().ExistsAsync(x => x.StoryId == id &&
+                x.StoryVersionId == version.Id && x.Operation == GenerationJobOperation.GenerateMediaPackage, ct))
+                throw new ConflictException("MEDIA_JOB_ALREADY_EXISTS");
+            var contextJson = _mediaContexts!.Build(new MediaContextBuildRequest(version.Id, version.Title, version.Content!, version.Lesson,
+                null, null, null, null, contextSnapshot));
+            await _uow.Repository<MediaContext>().AddAsync(new MediaContext { StoryVersionId = version.Id, Revision = 1, ContextJson = contextJson }, ct);
+            MediaPackageConfirmation.Invalidate(version);
+            _uow.Repository<StoryVersion>().Update(version);
+            var job = new StoryGenerationJob
+            {
+                StoryId = id,
+                StoryVersionId = version.Id,
+                BaseStoryVersionId = version.Id,
+                RequestedByUserId = user,
+                OperationKey = $"p5:{id}:{version.Id}",
+                Operation = GenerationJobOperation.GenerateMediaPackage,
+                Status = GenerationJobStatus.Pending,
+                Stage = JobStage.MediaPending,
+                MaxAttempts = 3,
+                StartedAt = DateTime.UtcNow
+            };
+            await _uow.Repository<StoryGenerationJob>().AddAsync(job, ct);
+            locked.Status = StoryStatus.MediaProcessing;
+            _uow.Repository<Story>().Update(locked);
+            await _uow.SaveChangesAsync(ct);
+            operation.StoryVersionId = version.Id;
+            operation.ContextFingerprint = (await ContextAsync(locked, ct)).Fingerprint;
+            return new ParentMediaGenerationDto(id, version.Id, job.Id, version.MediaState.MediaPackageRevision,
+                $"/api/v1/stories/{id}/media/progress", $"/api/v1/stories/{id}/media/package");
+        }, ct);
+    }
+
     public Task<ParentPreparationDto> PrepareAsync(int user, int id, ParentPrepareRequest request, CancellationToken ct) =>
         ExecuteAsync(user, id, "Preparation", request, async (story, operation) =>
         {
@@ -165,12 +232,15 @@ public sealed class ParentAuthoringService : ManualAuthoringService
             await LinkedAsync<ParentContentConfirmationDto>(story, request.ContentConfirmationId, "ContentConfirmation", version.Id, ct);
             var context = await ContextAsync(story, ct);
             var parts = Segment(version.Content ?? string.Empty, request.SegmentEnds);
-            // The initial backend contract supports full-text reading. Listening is explicitly NOT ready
-            // until a manual audio upload/alignment contract exists; never fall back to paid TTS.
-            string[] missing = story.ExperienceMode == "reading" ? [] : ["MANUAL_AUDIO_PREPARATION_NOT_AVAILABLE"];
+            // Text-only preparation never implicitly invokes providers. Opted-in media must be confirmed first.
+            string[] missing = version.MediaState.MediaPackageRevision > 0
+                ? story.Status == StoryStatus.Ready && MediaPackageConfirmation.IsConfirmed(version)
+                    ? [] : ["MEDIA_PACKAGE_CONFIRMATION_REQUIRED"]
+                : story.ExperienceMode == "reading" ? [] : ["MANUAL_AUDIO_PREPARATION_NOT_AVAILABLE"];
             operation.StoryVersionId = version.Id; operation.ContextFingerprint = context.Fingerprint;
             return new ParentPreparationDto(operation.Id, id, version.Id, story.ChildProfileId!.Value, story.AudienceRevision, context.Fingerprint,
-                version.Title, story.Language, story.ExperienceMode, parts, missing.Length == 0, missing);
+                version.Title, story.Language, story.ExperienceMode, parts, missing.Length == 0, missing)
+            { MediaPackageRevision = version.MediaState.MediaPackageRevision > 0 ? version.MediaState.MediaPackageRevision : null };
         }, ct);
 
     public async Task<ParentPreparationDto> PreviewAsync(int user, int id, int preparationId, CancellationToken ct)
@@ -178,7 +248,8 @@ public sealed class ParentAuthoringService : ManualAuthoringService
         await GetDraftAsync(user, id, ct); // Account status and current supervision, even for read-only preview.
         var story = await StoryAsync(user, id, ct);
         var version = await CurrentAsync(id, ct) ?? throw new ConflictException("SAVED_VERSION_REQUIRED");
-        return await LinkedAsync<ParentPreparationDto>(story, preparationId, "Preparation", version.Id, ct);
+        var preparation = await LinkedAsync<ParentPreparationDto>(story, preparationId, "Preparation", version.Id, ct);
+        return await WithMediaAsync(story, preparation, user, ct);
     }
 
     public Task<ParentFamilyConfirmationDto> ConfirmFamilyAsync(int user, int id, ParentFamilyConfirmRequest request, CancellationToken ct) =>
@@ -189,6 +260,7 @@ public sealed class ParentAuthoringService : ManualAuthoringService
             var version = await SourceAsync(story, request, ct) ?? throw new ConflictException("SAVED_VERSION_REQUIRED");
             var package = await LinkedAsync<ParentPreparationDto>(story, request.PreparationId, "Preparation", version.Id, ct);
             if (!package.IsReady) throw new ConflictException("PREPARATION_NOT_READY");
+            await ValidatePreparationMediaAsync(story, version, package, ct);
             operation.StoryVersionId = version.Id; operation.ContextFingerprint = package.ContextFingerprint;
             // Deliberately do not set Ready, IsPublished or replace any older child's pinned grant.
             return new ParentFamilyConfirmationDto(operation.Id, id, version.Id, package.ChildProfileId, package.PreparationId, DateTime.UtcNow);
@@ -208,7 +280,11 @@ public sealed class ParentAuthoringService : ManualAuthoringService
         var issuer = await _uow.Repository<UserAccount>().GetByIdAsync(grant.ActorUserId, ct);
         if (issuer is null || issuer.IsDeleted || issuer.Status != AccountStatus.Active || issuer.LockedUntil > DateTime.UtcNow)
             throw new ForbiddenException("GRANT_ISSUER_INACTIVE");
-        return await LinkedAsync<ParentPreparationDto>(story, decision.PreparationId, "Preparation", decision.StoryVersionId, ct, pinnedSetup: true);
+        var preparation = await LinkedAsync<ParentPreparationDto>(story, decision.PreparationId, "Preparation", decision.StoryVersionId, ct, pinnedSetup: true);
+        var version = await _uow.Repository<StoryVersion>().GetByIdAsync(decision.StoryVersionId, ct)
+            ?? throw new NotFoundException("StoryVersion", decision.StoryVersionId);
+        await ValidatePreparationMediaAsync(story, version, preparation, ct);
+        return await WithMediaAsync(story, preparation, grant.ActorUserId, ct);
     }
 
     public Task<bool> RevokeFamilyAsync(int user, int id, ParentFamilyRevokeRequest request, CancellationToken ct) =>
@@ -241,9 +317,36 @@ public sealed class ParentAuthoringService : ManualAuthoringService
             var grant = JsonSerializer.Deserialize<ParentFamilyConfirmationDto>(row.ResultJson, Json)!;
             if (grant.ChildProfileId != childId || result.Any(x => x.StoryId == grant.StoryId)) continue;
             try { await ReadChildPackageAsync(childId, grant.ConfirmationId, ct); result.Add(grant); }
-            catch (ForbiddenException) { } catch (ConflictException) { } catch (NotFoundException) { }
+            catch (ForbiddenException) { }
+            catch (ConflictException) { }
+            catch (NotFoundException) { }
         }
         return result;
+    }
+
+    private async Task ValidatePreparationMediaAsync(Story story, StoryVersion version, ParentPreparationDto preparation, CancellationToken ct)
+    {
+        if (version.MediaState.MediaPackageRevision == 0 && preparation.MediaPackageRevision is null) return;
+        if (story.Status != StoryStatus.Ready || preparation.MediaPackageRevision != version.MediaState.MediaPackageRevision ||
+            !MediaPackageConfirmation.IsConfirmed(version)) throw new ConflictException("MEDIA_PACKAGE_CONFIRMATION_REQUIRED");
+        if (_media is null) throw new ConflictException("MEDIA_SERVICE_NOT_CONFIGURED");
+        var package = await _media.GetPackageAsync(story.AuthorUserId, story.Id, ct);
+        if (package.StoryVersionId != version.Id || !package.IsReady) throw new ConflictException("MEDIA_PACKAGE_INCOMPLETE");
+        // Revalidate consent/context even if a previously confirmed package is read later.
+        var contexts = await _uow.Repository<MediaContext>().FindAsync(x => x.StoryVersionId == version.Id, cancellationToken: ct);
+        var context = contexts.OrderByDescending(x => x.Revision).FirstOrDefault() ?? throw new ConflictException("MEDIA_CONTEXT_REQUIRED");
+        using var json = JsonDocument.Parse(context.ContextJson);
+        await new ParentAssistanceAccessPolicy(_uow, _guard).ValidateContextAsync(story,
+            json.RootElement.GetProperty("storyFacts").GetProperty("acceptedContext").GetRawText(), ct);
+    }
+
+    private async Task<ParentPreparationDto> WithMediaAsync(Story story, ParentPreparationDto preparation, int user, CancellationToken ct)
+    {
+        if (preparation.MediaPackageRevision is null) return preparation;
+        var version = await _uow.Repository<StoryVersion>().GetByIdAsync(preparation.StoryVersionId, ct)
+            ?? throw new NotFoundException("StoryVersion", preparation.StoryVersionId);
+        await ValidatePreparationMediaAsync(story, version, preparation, ct);
+        return preparation with { Media = await _media!.GetPackageAsync(user, story.Id, ct) };
     }
 
     private async Task<T> ExecuteAsync<T>(int user, int id, string kind, CreatorCommand request,
@@ -263,7 +366,7 @@ public sealed class ParentAuthoringService : ManualAuthoringService
                 await _guard.EnsurePermissionAsync(story.ChildProfileId!.Value, user, Permission.ApproveStory, ct);
                 await _guard.EnsurePermissionAsync(story.ChildProfileId.Value, user, Permission.AssignActivity, ct);
             }
-            if (await _uow.Repository<StoryVersion>().ExistsAsync(x => x.StoryId == id && x.OperationId == request.OperationId, ct))
+            if (await _uow.Repository<StoryAuthoringOperation>().ExistsAsync(x => x.StoryId == id && x.OperationId == request.OperationId, ct))
                 throw new ConflictException("OPERATION_ID_REUSED");
             var previous = await _uow.Repository<ParentStoryOperation>().FirstOrDefaultAsync(x => x.StoryId == id && x.ActorUserId == user && x.OperationId == request.OperationId, cancellationToken: ct);
             if (previous is not null)
@@ -332,13 +435,26 @@ public sealed class ParentAuthoringService : ManualAuthoringService
         return new Context(policy, learning, rules, Digest(new
         {
             // Version 2 includes title keyword checks. Old body-only checks/packages must be rechecked.
-            schema = 2, child.Id, child.Status, child.AgeBand, ChildLanguage = child.Language,
+            schema = 2,
+            child.Id,
+            child.Status,
+            child.AgeBand,
+            ChildLanguage = child.Language,
             Language = pinned?.Language ?? story.Language,
             ExperienceMode = pinned?.ExperienceMode ?? story.ExperienceMode,
             AudienceRevision = pinned?.AudienceRevision ?? story.AudienceRevision,
-            policy = policy is null ? null : new { policy.Id, policy.MaxStoryLength, policy.SafetyScoreThreshold,
-                policy.ReadabilityScoreThreshold, policy.RequiredApprovalMode, policy.ParentalGateEnabled, policy.AllowInteractiveStories },
-            readingLevel = learning?.ReadingLevel, rules
+            policy = policy is null ? null : new
+            {
+                policy.Id,
+                policy.MaxStoryLength,
+                policy.SafetyScoreThreshold,
+                policy.ReadabilityScoreThreshold,
+                policy.RequiredApprovalMode,
+                policy.ParentalGateEnabled,
+                policy.AllowInteractiveStories
+            },
+            readingLevel = learning?.ReadingLevel,
+            rules
         }));
     }
 

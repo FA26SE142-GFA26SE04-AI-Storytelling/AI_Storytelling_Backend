@@ -22,26 +22,35 @@ public class PublicStoryReviewServiceTests
         _h.AddScene(1, 1);
         _h.Quizzes.Add(new QuizItem
         {
-            Id = 1, StoryVersionId = PublicStoryReviewHarness.VersionId,
-            Type = QuizType.MultipleChoice, Question = "Ai thắng?", CorrectAnswer = "Rùa",
+            Id = 1,
+            StoryVersionId = PublicStoryReviewHarness.VersionId,
+            Type = QuizType.MultipleChoice,
+            Question = "Ai thắng?",
+            CorrectAnswer = "Rùa",
             Choices = "[\"Rùa\",\"Thỏ\"]"
         });
         _h.Vocabulary.Add(new StoryVocabulary
         {
-            Id = 1, StoryVersionId = PublicStoryReviewHarness.VersionId,
-            Term = "kiên nhẫn", Definition = "bền bỉ chờ đợi"
+            Id = 1,
+            StoryVersionId = PublicStoryReviewHarness.VersionId,
+            Term = "kiên nhẫn",
+            Definition = "bền bỉ chờ đợi"
         });
         _h.Discussions.Add(new DiscussionQuestion
         {
-            Id = 1, StoryVersionId = PublicStoryReviewHarness.VersionId,
-            Question = "Vì sao rùa thắng?", IsMoralLesson = true
+            Id = 1,
+            StoryVersionId = PublicStoryReviewHarness.VersionId,
+            Question = "Vì sao rùa thắng?",
+            IsMoralLesson = true
         });
         _h.ContentCategories.Add(new ContentCategory
-            { Id = 5, Code = "friendship", DisplayName = "Tình bạn" });
+        { Id = 5, Code = "friendship", DisplayName = "Tình bạn" });
         _h.StoryCategories.Add(new StoryCategory
         {
-            Id = 1, StoryId = PublicStoryReviewHarness.StoryId,
-            ContentCategoryId = 5, Source = TagSource.Ai
+            Id = 1,
+            StoryId = PublicStoryReviewHarness.StoryId,
+            ContentCategoryId = 5,
+            Source = TagSource.Ai
         });
 
         var package = await _h.Sut.GetPackageAsync(
@@ -126,7 +135,7 @@ public class PublicStoryReviewServiceTests
     {
         _h.AddScene(1, 1);
         var warningSegment = _h.AddScene(2, 2, withWordTimings: false);
-        _h.Versions[0].GrayZoneFlags =
+        _h.Versions[0].Moderation.GrayZoneFlags =
             "{\"sections\":[\"development\"],\"artifacts\":[\"quiz\"],\"reason\":\"age_band_review\"}";
 
         var package = await _h.Sut.GetPackageAsync(
@@ -251,8 +260,8 @@ public class PublicStoryReviewServiceTests
 
         Assert.True(result.AllFlagsResolved);
         Assert.True(result.VersionCleared);
-        Assert.Equal(actor, _h.Versions[0].GrayZoneClearedByUserId);
-        Assert.NotNull(_h.Versions[0].GrayZoneClearedAt);
+        Assert.Equal(actor, _h.Versions[0].Moderation.GrayZoneClearedByUserId);
+        Assert.NotNull(_h.Versions[0].Moderation.GrayZoneClearedAt);
         _h.Audit.Verify(a => a.LogAsync(actor, "PublicStoryReviewFlagResolved", nameof(ModerationItem), id,
             It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
@@ -304,8 +313,13 @@ public class PublicStoryReviewServiceTests
 
         var second = await _h.Sut.SaveChecklistAsync(actor, id, new PublicReviewChecklistDto
         {
-            AgeFit = true, Education = true, Language = true, Copyright = true,
-            Image = true, Audio = true, Interaction = true
+            AgeFit = true,
+            Education = true,
+            Language = true,
+            Copyright = true,
+            Image = true,
+            Audio = true,
+            Interaction = true
         });
 
         Assert.True(first.Safety);
@@ -403,7 +417,7 @@ public class PublicStoryReviewServiceTests
     public async Task GetPackageAsync_IncompleteWork_ListsStableApproveBlockers()
     {
         _h.AddScene(1, 1);
-        _h.Versions[0].GrayZoneFlags = "{\"sections\":[\"development\"]}";
+        _h.Versions[0].Moderation.GrayZoneFlags = "{\"sections\":[\"development\"]}";
 
         var package = await _h.Sut.GetPackageAsync(
             PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId);
@@ -455,7 +469,7 @@ public class PublicStoryReviewServiceTests
         Assert.True(result.StoryPublished);
         Assert.Equal(ModerationItemStatus.Approved, _h.Items[0].Status);
         Assert.Equal(PublicStoryReviewHarness.ModeratorId, _h.Items[0].DecidedByUserId);
-        Assert.Equal(VersionReviewStatus.Approved, _h.Versions[0].ReviewStatus);
+        Assert.Equal(VersionReviewStatus.Approved, _h.Versions[0].Moderation.ReviewStatus);
         Assert.True(_h.Stories[0].IsPublished);
         Assert.True(_h.Stories[0].PublishedAt >= before);
         Assert.True(_h.Stories[0].ChildVisibleAt >= before);
@@ -563,8 +577,8 @@ public class PublicStoryReviewServiceTests
         Assert.Equal("ChangesRequested", result.Decision);
         Assert.False(result.StoryPublished);
         Assert.Equal(ModerationItemStatus.ChangesRequested, _h.Items[0].Status);
-        Assert.Equal(VersionReviewStatus.ChangesRequested, _h.Versions[0].ReviewStatus);
-        using var feedback = JsonDocument.Parse(_h.Versions[0].ReviewFeedback!);
+        Assert.Equal(VersionReviewStatus.ChangesRequested, _h.Versions[0].Moderation.ReviewStatus);
+        using var feedback = JsonDocument.Parse(_h.Versions[0].Moderation.ReviewFeedback!);
         Assert.Equal("Cần sửa phần mở đầu.", feedback.RootElement.GetProperty("generalNote").GetString());
         Assert.Equal("scene_text", feedback.RootElement.GetProperty("parts")[0]
             .GetProperty("partType").GetString());
@@ -609,7 +623,7 @@ public class PublicStoryReviewServiceTests
         _h.AddScene(1, 1);
         var request = ValidChanges();
         request.Parts[0] = new ChangeRequestPartDto
-            { PartType = partType, PartId = partId, Note = "x" };
+        { PartType = partType, PartId = partId, Note = "x" };
 
         await Assert.ThrowsAsync<BadRequestException>(() => RequestChangesDecisionAsync(request));
     }
@@ -619,13 +633,16 @@ public class PublicStoryReviewServiceTests
     {
         _h.AddScene(1, 1);
         _h.Quizzes.Add(new QuizItem
-            { Id = 3, StoryVersionId = PublicStoryReviewHarness.VersionId, Question = "?" });
+        { Id = 3, StoryVersionId = PublicStoryReviewHarness.VersionId, Question = "?" });
         _h.Vocabulary.Add(new StoryVocabulary
         {
-            Id = 4, StoryVersionId = PublicStoryReviewHarness.VersionId, Term = "a", Definition = "b"
+            Id = 4,
+            StoryVersionId = PublicStoryReviewHarness.VersionId,
+            Term = "a",
+            Definition = "b"
         });
         _h.Discussions.Add(new DiscussionQuestion
-            { Id = 5, StoryVersionId = PublicStoryReviewHarness.VersionId, Question = "Vì sao?" });
+        { Id = 5, StoryVersionId = PublicStoryReviewHarness.VersionId, Question = "Vì sao?" });
         var request = new RequestChangesDto
         {
             GeneralNote = "Sửa nhiều phần.",
@@ -657,9 +674,9 @@ public class PublicStoryReviewServiceTests
         Assert.Equal("Rejected", result.Decision);
         Assert.True(result.StoryPublished);
         Assert.Equal(ModerationItemStatus.Rejected, _h.Items[0].Status);
-        Assert.Equal(VersionReviewStatus.Rejected, _h.Versions[0].ReviewStatus);
+        Assert.Equal(VersionReviewStatus.Rejected, _h.Versions[0].Moderation.ReviewStatus);
         Assert.Equal(StoryStatus.Ready, _h.Stories[0].Status);
-        using var feedback = JsonDocument.Parse(_h.Versions[0].ReviewFeedback!);
+        using var feedback = JsonDocument.Parse(_h.Versions[0].Moderation.ReviewFeedback!);
         Assert.Equal("Bản mới vi phạm bản quyền.", feedback.RootElement.GetProperty("reason").GetString());
     }
 
@@ -785,11 +802,11 @@ public class PublicStoryReviewServiceTests
     public async Task CompareAsync_Public_UsesLatestApprovedVersion()
     {
         var older = _h.CloneVersion(PublicStoryReviewHarness.VersionId, 48);
-        older.ReviewStatus = VersionReviewStatus.Approved;
-        older.ReviewedAt = DateTime.UtcNow.AddDays(-2);
+        older.Moderation.ReviewStatus = VersionReviewStatus.Approved;
+        older.Moderation.ReviewedAt = DateTime.UtcNow.AddDays(-2);
         var latest = _h.CloneVersion(PublicStoryReviewHarness.VersionId, 49);
-        latest.ReviewStatus = VersionReviewStatus.Approved;
-        latest.ReviewedAt = DateTime.UtcNow.AddDays(-1);
+        latest.Moderation.ReviewStatus = VersionReviewStatus.Approved;
+        latest.Moderation.ReviewedAt = DateTime.UtcNow.AddDays(-1);
 
         var result = await _h.Sut.CompareAsync(
             PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId, "public");
@@ -817,22 +834,24 @@ public class PublicStoryReviewServiceTests
 
     private void GivenTwoFlags()
     {
-        _h.Versions[0].GrayZoneFlags =
+        _h.Versions[0].Moderation.GrayZoneFlags =
             "{\"sections\":[\"development\",\"ending\"],\"reason\":\"safety_review\"}";
     }
 
     private void GivenCategories()
     {
         _h.ContentCategories.Add(new ContentCategory
-            { Id = 5, Code = "friendship", DisplayName = "Tình bạn", IsActive = true });
+        { Id = 5, Code = "friendship", DisplayName = "Tình bạn", IsActive = true });
         _h.ContentCategories.Add(new ContentCategory
-            { Id = 6, Code = "animals", DisplayName = "Động vật", IsActive = true });
+        { Id = 6, Code = "animals", DisplayName = "Động vật", IsActive = true });
         _h.ContentCategories.Add(new ContentCategory
-            { Id = 7, Code = "old", DisplayName = "Cũ", IsActive = false });
+        { Id = 7, Code = "old", DisplayName = "Cũ", IsActive = false });
         _h.StoryCategories.Add(new StoryCategory
         {
-            Id = 1, StoryId = PublicStoryReviewHarness.StoryId,
-            ContentCategoryId = 5, Source = TagSource.Ai
+            Id = 1,
+            StoryId = PublicStoryReviewHarness.StoryId,
+            ContentCategoryId = 5,
+            Source = TagSource.Ai
         });
     }
 }

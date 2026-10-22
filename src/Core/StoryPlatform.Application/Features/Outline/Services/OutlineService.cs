@@ -456,7 +456,8 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
                 var assessment = await _moderation.EvaluateAsync(new GrayZoneScan("phase2", context.AgeBand, context.Language,
                     [new("section", "title", result.Title), new("section", "opening", result.Outline.Opening),
                      new("section", "development", result.Outline.Development), new("section", "ending", result.Outline.Ending)],
-                    PolicyTerms(context.BlockedCategoryTerms, context.BlockedCategoryCodes).ToArray()) { ReadingLevel = context.ReadingLevel }, cancellationToken);
+                    PolicyTerms(context.BlockedCategoryTerms, context.BlockedCategoryCodes).ToArray())
+                { ReadingLevel = context.ReadingLevel }, cancellationToken);
                 if (assessment.Zone == ModerationZone.Safe) break;
                 if (assessment.Zone == ModerationZone.HardBlock) throw new InvalidOperationException("MODERATION_HARD_BLOCK");
                 if (safetyAttempt == 1) throw new InvalidOperationException("OUTLINE_GRAY_ZONE_UNRESOLVED");
@@ -703,19 +704,19 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
     private static StoryVersion NewVersion(
         int storyId, int versionNo, VersionEditType editType, int? editorUserId,
         string title, string opening, string development, string ending) => new()
-    {
-        StoryId = storyId,
-        VersionNo = versionNo,
-        EditType = editType,
-        EditorUserId = editorUserId,
-        Title = title.Trim(),
-        OutlineOpening = opening.Trim(),
-        OutlineDevelopment = development.Trim(),
-        OutlineEnding = ending.Trim(),
-        Content = null,
-        Lesson = null,
-        IsCurrent = true
-    };
+        {
+            StoryId = storyId,
+            VersionNo = versionNo,
+            EditType = editType,
+            EditorUserId = editorUserId,
+            Title = title.Trim(),
+            OutlineOpening = opening.Trim(),
+            OutlineDevelopment = development.Trim(),
+            OutlineEnding = ending.Trim(),
+            Content = null,
+            Lesson = null,
+            IsCurrent = true
+        };
 
     private static OutlineVersionDto ToDto(StoryVersion version) => new()
     {

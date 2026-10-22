@@ -35,8 +35,8 @@ public partial class ManualAuthoringService
         return JsonSerializer.Serialize(new AssistanceProvenance(1, references.ToArray(), request.BaseVersionId, null), JsonOptions);
     }
 
-    private static string? RestoreAssistance(StoryVersion source) => source.AssistanceProvenanceJson is null ? null :
+    private static string? RestoreAssistance(StoryVersion source) => source.AuthoringMetadata.AssistanceProvenanceJson is null ? null :
         JsonSerializer.Serialize(new AssistanceProvenance(1, [], null, source.Id,
             // Keep a bounded summary, rather than recursively copying the whole restore ancestry.
-            JsonSerializer.Serialize(JsonSerializer.Deserialize<AssistanceProvenance>(source.AssistanceProvenanceJson, JsonOptions)! with { RestoredSourceSummary = null }, JsonOptions)), JsonOptions);
+            JsonSerializer.Serialize(JsonSerializer.Deserialize<AssistanceProvenance>(source.AuthoringMetadata.AssistanceProvenanceJson, JsonOptions)! with { RestoredSourceSummary = null }, JsonOptions)), JsonOptions);
 }

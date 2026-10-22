@@ -214,7 +214,10 @@ public class CommunitySubmissionServiceTests
     {
         _h.Items.Add(new ModerationItem
         {
-            Id = 80, ItemType = ModerationItemType.CommunitySubmission, Status = status, StoryId = Story,
+            Id = 80,
+            ItemType = ModerationItemType.CommunitySubmission,
+            Status = status,
+            StoryId = Story,
             CreatedByUserId = Second
         });
 
@@ -230,7 +233,10 @@ public class CommunitySubmissionServiceTests
     {
         _h.Items.Add(new ModerationItem
         {
-            Id = 80, ItemType = ModerationItemType.CommunitySubmission, Status = status, StoryId = Story,
+            Id = 80,
+            ItemType = ModerationItemType.CommunitySubmission,
+            Status = status,
+            StoryId = Story,
             CreatedByUserId = Owner
         });
 
@@ -327,12 +333,19 @@ public class CommunitySubmissionServiceTests
         CurrentVersion.Title = "Thỏ ở lớp 2A";
         _h.Scenes.Add(new StoryScene
         {
-            Id = 1, StoryVersionId = 60, SceneIndex = 3, TextRangeStart = 0, TextRangeEnd = 1,
+            Id = 1,
+            StoryVersionId = 60,
+            SceneIndex = 3,
+            TextRangeStart = 0,
+            TextRangeEnd = 1,
             SceneText = "Gọi 0912345678 ngay"
         });
         _h.Quizzes.Add(new QuizItem
         {
-            Id = 1, StoryVersionId = 60, Question = "Email là gì? an@example.com", CorrectAnswer = "x"
+            Id = 1,
+            StoryVersionId = 60,
+            Question = "Email là gì? an@example.com",
+            CorrectAnswer = "x"
         });
 
         var dto = await _sut.CheckAsync(Owner, Request());
@@ -474,13 +487,19 @@ public class CommunitySubmissionServiceTests
     {
         _h.Items.Add(new ModerationItem
         {
-            Id = 70, ItemType = ModerationItemType.CommunitySubmission, Status = ModerationItemStatus.Rejected,
-            StoryId = Story, CreatedByUserId = Owner
+            Id = 70,
+            ItemType = ModerationItemType.CommunitySubmission,
+            Status = ModerationItemStatus.Rejected,
+            StoryId = Story,
+            CreatedByUserId = Owner
         });
         _h.Items.Add(new ModerationItem
         {
-            Id = 71, ItemType = ModerationItemType.CommunitySubmission, Status = ModerationItemStatus.Rejected,
-            StoryId = Story, CreatedByUserId = Owner
+            Id = 71,
+            ItemType = ModerationItemType.CommunitySubmission,
+            Status = ModerationItemStatus.Rejected,
+            StoryId = Story,
+            CreatedByUserId = Owner
         });
 
         await _sut.SubmitAsync(Owner, Request());
@@ -495,8 +514,11 @@ public class CommunitySubmissionServiceTests
     {
         _h.Items.Add(new ModerationItem
         {
-            Id = 70, ItemType = ModerationItemType.CommunitySubmission, Status = ModerationItemStatus.Withdrawn,
-            StoryId = Story, CreatedByUserId = Owner
+            Id = 70,
+            ItemType = ModerationItemType.CommunitySubmission,
+            Status = ModerationItemStatus.Withdrawn,
+            StoryId = Story,
+            CreatedByUserId = Owner
         });
 
         await _sut.SubmitAsync(Owner, Request());
@@ -559,8 +581,12 @@ public class CommunitySubmissionServiceTests
     {
         var item = new ModerationItem
         {
-            Id = id, ItemType = ModerationItemType.CommunitySubmission, Status = status, StoryId = storyId,
-            StoryVersionId = 60, CreatedByUserId = createdBy
+            Id = id,
+            ItemType = ModerationItemType.CommunitySubmission,
+            Status = status,
+            StoryId = storyId,
+            StoryVersionId = 60,
+            CreatedByUserId = createdBy
         };
         _h.Items.Add(item);
         return item;
@@ -612,7 +638,9 @@ public class CommunitySubmissionServiceTests
         Item(80, ModerationItemStatus.Pending, createdBy: Second);
         _h.Items.Add(new ModerationItem
         {
-            Id = 81, ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.Pending,
+            Id = 81,
+            ItemType = ModerationItemType.PublicStoryReview,
+            Status = ModerationItemStatus.Pending,
             CreatedByUserId = Owner
         });
 
@@ -710,7 +738,9 @@ public class CommunitySubmissionServiceTests
         Item(85, ModerationItemStatus.Pending, createdBy: Second);
         _h.Items.Add(new ModerationItem
         {
-            Id = 86, ItemType = ModerationItemType.ContentReport, Status = ModerationItemStatus.Pending,
+            Id = 86,
+            ItemType = ModerationItemType.ContentReport,
+            Status = ModerationItemStatus.Pending,
             CreatedByUserId = Owner
         });
 

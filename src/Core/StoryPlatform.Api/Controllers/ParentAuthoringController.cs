@@ -77,6 +77,13 @@ public sealed class ParentAuthoringController(ParentAuthoringService service) : 
     public async Task<ActionResult<ApiResponse<ParentPreparationDto>>> Prepare(int storyId, ParentPrepareRequest request, CancellationToken ct) =>
         StatusCode(201, ApiResponse<ParentPreparationDto>.Ok(await service.PrepareAsync(GetCurrentUserId(), storyId, request, ct)));
 
+    [HttpPost("{storyId:int}/manual/media/generate")]
+    [ProducesResponseType(typeof(ApiResponse<ParentMediaGenerationDto>), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<ApiResponse<ParentMediaGenerationDto>>> GenerateMedia(
+        int storyId, ParentMediaGenerateRequest request, CancellationToken ct) =>
+        Accepted(ApiResponse<ParentMediaGenerationDto>.Ok(await service.GenerateMediaAsync(GetCurrentUserId(), storyId, request, ct)));
+
     [HttpGet("{storyId:int}/preparations/{preparationId:int}")]
     public async Task<ActionResult<ApiResponse<ParentPreparationDto>>> Preview(int storyId, int preparationId, CancellationToken ct) =>
         Ok(ApiResponse<ParentPreparationDto>.Ok(await service.PreviewAsync(GetCurrentUserId(), storyId, preparationId, ct)));

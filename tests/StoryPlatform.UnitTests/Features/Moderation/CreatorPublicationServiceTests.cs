@@ -20,8 +20,8 @@ public sealed class CreatorPublicationServiceTests
     private const int StoryId = PublicStoryReviewHarness.StoryId, VersionId = PublicStoryReviewHarness.VersionId;
     public CreatorPublicationServiceTests()
     {
-        h.Items.Clear(); h.Stories[0].IsPublished = true; h.Versions[0].ReviewStatus = VersionReviewStatus.Approved;
-        h.Versions[0].ReviewSubmittedAt = DateTime.UtcNow.AddDays(-1);
+        h.Items.Clear(); h.Stories[0].IsPublished = true; h.Versions[0].Moderation.ReviewStatus = VersionReviewStatus.Approved;
+        h.Versions[0].Moderation.ReviewSubmittedAt = DateTime.UtcNow.AddDays(-1);
         queue = new(h.UnitOfWork.Object, h.Audit.Object);
         service = new(h.UnitOfWork.Object, queue, h.Audit.Object);
     }
@@ -48,10 +48,10 @@ public sealed class CreatorPublicationServiceTests
         Assert.NotEqual(old.Id, revision.VersionId);
         Assert.Equal("ContentReview", revision.Status);
         Assert.False(old.IsCurrent);
-        Assert.Equal(VersionReviewStatus.Approved, old.ReviewStatus);
+        Assert.Equal(VersionReviewStatus.Approved, old.Moderation.ReviewStatus);
         var current = h.Versions.Single(x => x.IsCurrent);
-        Assert.Equal(VersionReviewStatus.None, current.ReviewStatus);
-        Assert.Null(current.ReviewSubmittedAt);
+        Assert.Equal(VersionReviewStatus.None, current.Moderation.ReviewStatus);
+        Assert.Null(current.Moderation.ReviewSubmittedAt);
         Assert.Equal(old.Id, current.BaseVersionId);
         Assert.Equal(old.Content, current.Content);
         Assert.Equal(2, h.Vocabulary.Count);
@@ -77,13 +77,20 @@ public sealed class CreatorPublicationServiceTests
     [InlineData(ModerationItemStatus.Rejected, VersionReviewStatus.Rejected)]
     public async Task ReturnedOrWithdrawnVersion_StaysImmutable_RevisionIsEditable(ModerationItemStatus status, VersionReviewStatus review)
     {
-        h.Stories[0].IsPublished = false; h.Versions[0].ReviewStatus = review;
-        h.Items.Add(new() { Id = 1, ItemType = ModerationItemType.PublicStoryReview, StoryId = StoryId,
-            StoryVersionId = VersionId, Status = status, CreatedByUserId = Creator });
+        h.Stories[0].IsPublished = false; h.Versions[0].Moderation.ReviewStatus = review;
+        h.Items.Add(new()
+        {
+            Id = 1,
+            ItemType = ModerationItemType.PublicStoryReview,
+            StoryId = StoryId,
+            StoryVersionId = VersionId,
+            Status = status,
+            CreatedByUserId = Creator
+        });
         await Assert.ThrowsAsync<ConflictException>(() => CreatorPublicationGuard.EnsureWritableAsync(h.UnitOfWork.Object, StoryId, VersionId, default));
         var revision = await service.CreateRevisionAsync(Creator, StoryId, new() { SourceVersionId = VersionId });
         await CreatorPublicationGuard.EnsureWritableAsync(h.UnitOfWork.Object, StoryId, revision.VersionId, default);
-        Assert.Equal(review, h.Versions.Single(x => x.Id == VersionId).ReviewStatus);
+        Assert.Equal(review, h.Versions.Single(x => x.Id == VersionId).Moderation.ReviewStatus);
     }
 
     [Theory]
@@ -91,7 +98,7 @@ public sealed class CreatorPublicationServiceTests
     [InlineData(ModerationItemStatus.Claimed)]
     public async Task OpenSubmission_BlocksRevisionAndAllArtifactUpdates(ModerationItemStatus status)
     {
-        h.Stories[0].IsPublished = false; h.Versions[0].ReviewStatus = VersionReviewStatus.Pending;
+        h.Stories[0].IsPublished = false; h.Versions[0].Moderation.ReviewStatus = VersionReviewStatus.Pending;
         h.Items.Add(new() { Id = 1, ItemType = ModerationItemType.PublicStoryReview, StoryId = StoryId, StoryVersionId = VersionId, Status = status });
         var review = new StoryReviewService(h.UnitOfWork.Object, new Mock<IAIStoryGenerationClient>(MockBehavior.Strict).Object, new InMemoryProposalCache());
         await Assert.ThrowsAsync<ConflictException>(() => review.UpdateVocabularyAsync(Creator, StoryId, new() { VersionId = VersionId }));

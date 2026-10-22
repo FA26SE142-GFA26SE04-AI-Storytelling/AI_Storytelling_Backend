@@ -29,8 +29,8 @@ public class PendingSubmissionArchiveHandlerTests
     private ModerationItem Submitted(ModerationItemStatus status)
     {
         var version = _h.Versions.Single(existing => existing.Id == 51);
-        version.ReviewStatus = VersionReviewStatus.Pending;
-        version.ReviewSubmittedAt = DateTime.UtcNow.AddHours(-1);
+        version.Moderation.ReviewStatus = VersionReviewStatus.Pending;
+        version.Moderation.ReviewSubmittedAt = DateTime.UtcNow.AddHours(-1);
         var item = new ModerationItem
         {
             Id = 40,
@@ -65,8 +65,8 @@ public class PendingSubmissionArchiveHandlerTests
         Assert.NotNull(item.WithdrawnAt);
         Assert.Equal(1, item.RowVersion);
         var version = _h.Versions.Single(existing => existing.Id == 51);
-        Assert.Equal(VersionReviewStatus.None, version.ReviewStatus);
-        Assert.Null(version.ReviewSubmittedAt);
+        Assert.Equal(VersionReviewStatus.None, version.Moderation.ReviewStatus);
+        Assert.Null(version.Moderation.ReviewSubmittedAt);
         _h.Notifications.Verify(notification => notification.CreateAsync(
             It.IsAny<int>(), It.IsAny<NotificationType>(), It.IsAny<string?>(),
             It.IsAny<CancellationToken>()), Times.Never);

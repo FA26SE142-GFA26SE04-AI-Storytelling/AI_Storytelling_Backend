@@ -97,13 +97,22 @@ public partial class ManualAuthoringService
             if (Hash(Encoding.UTF8.GetBytes(text)) != payload.TextHash)
                 throw new BadRequestException("Nội dung khác bản xem trước; cần preview lại.");
             var tokenHash = Hash(Encoding.UTF8.GetBytes(request.PreviewToken));
-            if (await _uow.Repository<StoryVersion>().ExistsAsync(x => x.StoryId == storyId && x.ImportPreviewHash == tokenHash, ct))
+            if (await _uow.Repository<StoryVersion>().ExistsAsync(x => x.StoryId == storyId && x.AuthoringMetadata.ImportPreviewHash == tokenHash, ct))
                 throw new ConflictException("Preview đã được xác nhận.");
             return await AddVersionAsync(userId, story, new StoryVersion
             {
-                Title = Limited(request.Title, 200, "Tên truyện"), Content = text, AuthoringOrigin = "Import",
-                EditType = VersionEditType.HumanEdited, SourceDeclaration = source, RightsDeclaration = rights,
-                ImportFileName = payload.FileName, ImportSourceHash = payload.SourceHash, ImportPreviewHash = tokenHash
+                Title = Limited(request.Title, 200, "Tên truyện"),
+                Content = text,
+                EditType = VersionEditType.HumanEdited,
+                AuthoringMetadata = new StoryVersionAuthoringMetadata
+                {
+                    AuthoringOrigin = "Import",
+                    SourceDeclaration = source,
+                    RightsDeclaration = rights,
+                    ImportFileName = payload.FileName,
+                    ImportSourceHash = payload.SourceHash,
+                    ImportPreviewHash = tokenHash
+                }
             }, "creator_import_confirmed", ct);
         }, ct);
 

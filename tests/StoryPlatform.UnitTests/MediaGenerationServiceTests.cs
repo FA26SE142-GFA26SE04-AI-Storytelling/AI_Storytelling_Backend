@@ -1,4 +1,4 @@
-﻿using StoryPlatform.Application.Features.MediaGeneration;
+using StoryPlatform.Application.Features.MediaGeneration;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
@@ -7,13 +7,93 @@ using StoryPlatform.Application.Features.MediaStorage.Models;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.Infrastructure.AI;
+using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using Xunit;
 
 namespace StoryPlatform.UnitTests;
 
 public sealed class MediaGenerationServiceTests
 {
+    [Fact]
+    public async Task ManualReadySubmitsTheSameVersionToModeratorWithoutPublishing()
+    {
+        var (store, confirm, _) = CreatorManualMediaTests.Setup();
+        await confirm.ConfirmAsync(1, 1, new(10, "rev1"));
+        Assert.True((await Create(store).ProcessNextAsync()).Success);
+        var queue = new Moq.Mock<StoryPlatform.Application.Features.Moderation.Interfaces.IModerationQueueService>();
+        queue.Setup(x => x.EnqueueAsync(Moq.It.IsAny<StoryPlatform.Application.Features.Moderation.DTOs.EnqueueModerationItemCommand>(), Moq.It.IsAny<CancellationToken>()))
+            .ReturnsAsync((StoryPlatform.Application.Features.Moderation.DTOs.EnqueueModerationItemCommand cmd, CancellationToken _) =>
+                new ModerationItem
+                {
+                    Id = 99,
+                    ItemType = cmd.ItemType,
+                    StoryId = cmd.StoryId,
+                    StoryVersionId = cmd.StoryVersionId,
+                    CreatedByUserId = cmd.CreatedByUserId,
+                    Status = ModerationItemStatus.Pending
+                });
+        var evaluator = new Moq.Mock<StoryPlatform.Application.Features.Moderation.IGrayZoneEvaluator>();
+        evaluator.SetupGet(x => x.IsConfigured).Returns(true);
+        evaluator.Setup(x => x.CanReuseAsync(Moq.It.IsAny<StoryPlatform.Application.Features.Moderation.GrayZoneAssessment>(), Moq.It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var submission = new StoryPlatform.Application.Features.Moderation.Services.PublicStorySubmissionService(store, queue.Object,
+            new MediaReadinessService(store), new Moq.Mock<StoryPlatform.Application.Features.AuditLogs.Interfaces.IAuditLogWriter>().Object, evaluator.Object);
+        await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.BadRequestException>(() =>
+            submission.SubmitAsync(1, new() { StoryId = 1, StoryVersionId = 10 }));
+        await Create(store).ConfirmAsync(1, 1, new(10, store.Items<StoryVersion>().Single().MediaState.MediaPackageRevision));
+        var result = await submission.SubmitAsync(1, new() { StoryId = 1, StoryVersionId = 10 });
+        Assert.Equal(10, result.StoryVersionId);
+        Assert.Equal(VersionReviewStatus.Pending, store.Items<StoryVersion>().Single().Moderation.ReviewStatus);
+        Assert.False(store.Items<Story>().Single().IsPublished);
+    }
+
+    [Fact]
+    public async Task ConfirmedManualUsesSamePhase5WorkerAndReturnsReadyWithNoGeneratedContent()
+    {
+        var (store, confirm, _) = CreatorManualMediaTests.Setup();
+        await confirm.ConfirmAsync(1, 1, new(10, "rev1"));
+        var worker = Create(store);
+        Assert.True((await worker.ProcessNextAsync()).Success);
+        Assert.Equal(StoryStatus.MediaReview, store.Items<Story>().Single().Status);
+        Assert.False(store.Items<Story>().Single().IsPublished);
+        Assert.False((await worker.GetProgressAsync(1, 1)).IsReady);
+        Assert.True((await worker.GetProgressAsync(1, 1)).IsAwaitingConfirmation);
+        var package = await worker.GetPackageAsync(1, 1);
+        Assert.NotEmpty(package.Scenes);
+        Assert.All(package.Scenes, scene => Assert.NotEmpty(scene.Audio));
+        Assert.All(package.Scenes.SelectMany(scene => scene.Audio), audio => Assert.NotNull(audio.Url));
+        Assert.Contains(store.Items<MediaAsset>(), x => x.Type == MediaType.TtsAudio && x.Status == MediaStatus.Ready);
+        Assert.Single(store.Items<StoryVersion>());
+        Assert.Empty(store.Items<StoryGenerationRequest>());
+        Assert.Null(store.Items<StoryVersion>().Single().OutlineOpening);
+        Assert.Equal("Na giúp bạn sửa đồ chơi.", store.Items<StoryVersion>().Single().Content);
+        // A later manual draft must not report an old version's media as its own.
+        store.Items<StoryVersion>().Single().IsCurrent = false;
+        store.Seed(new StoryVersion { Id = 11, StoryId = 1, IsCurrent = true, Content = "Bản mới" });
+        store.Items<Story>().Single().Status = StoryStatus.Draft;
+        var progress = await worker.GetProgressAsync(1, 1);
+        Assert.Equal("NotStarted", progress.JobStatus);
+        Assert.False(progress.IsReady);
+        await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.ConflictException>(() => worker.RetryAsync(1, 1));
+    }
+
+    [Fact]
+    public async Task ManualPhase5RetryUsesTheSameJobAndPinnedContext()
+    {
+        var (store, confirm, _) = CreatorManualMediaTests.Setup();
+        await confirm.ConfirmAsync(1, 1, new(10, "rev1"));
+        var job = Assert.Single(store.Items<StoryGenerationJob>());
+        job.Status = GenerationJobStatus.Failed;
+        var context = Assert.Single(store.Items<MediaContext>()).ContextJson;
+        var worker = Create(store);
+        await worker.RetryAsync(1, 1);
+        Assert.True((await worker.ProcessNextAsync()).Success);
+        Assert.Same(job, Assert.Single(store.Items<StoryGenerationJob>()));
+        Assert.Equal(context, Assert.Single(store.Items<MediaContext>()).ContextJson);
+        Assert.Equal(StoryStatus.MediaReview, store.Items<Story>().Single().Status);
+    }
+
     [Theory]
     [InlineData(VersionReviewStatus.Pending)]
     [InlineData(VersionReviewStatus.Approved)]
@@ -23,18 +103,18 @@ public sealed class MediaGenerationServiceTests
         var store = Seed();
         var story = store.Items<Story>().Single();
         story.Scope = StoryScope.Creator; story.Source = StorySource.Ai; story.ChildProfileId = null;
-        store.Seed(new UserAccount { Id = 1, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
+        store.Items<UserAccount>().Single().Role = UserRole.ContentCreator;
         var service = Create(store);
         Assert.True((await service.ProcessNextAsync()).Success);
         var version = store.Items<StoryVersion>().Single();
-        version.ReviewStatus = reviewStatus;
+        version.Moderation.ReviewStatus = reviewStatus;
         story.IsPublished = reviewStatus == VersionReviewStatus.Approved;
         var before = store.Items<MediaAsset>().Select(x => (x.Id, x.Url, x.Status)).ToArray();
         var beat = store.Items<IllustrationBeat>().First();
         await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.ConflictException>(() =>
-            service.RegenerateIllustrationBeatAsync(1, story.Id, beat.Id));
+            service.RegenerateIllustrationBeatAsync(1, story.Id, beat.Id, RegenerationRequest(store)));
         Assert.Equal(before, store.Items<MediaAsset>().Select(x => (x.Id, x.Url, x.Status)).ToArray());
-        Assert.Equal(StoryStatus.Ready, story.Status);
+        Assert.Equal(StoryStatus.MediaReview, story.Status);
     }
 
     [Fact]
@@ -44,10 +124,10 @@ public sealed class MediaGenerationServiceTests
         var story = store.Items<Story>().Single();
         story.Scope = StoryScope.Creator; story.Source = StorySource.Ai; story.ChildProfileId = null;
         story.Status = StoryStatus.MediaProcessing;
-        store.Seed(new UserAccount { Id = 1, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
+        store.Items<UserAccount>().Single().Role = UserRole.ContentCreator;
         var service = Create(store);
         Assert.True((await service.ProcessNextAsync()).Success);
-        Assert.Equal(StoryStatus.Ready, story.Status);
+        Assert.Equal(StoryStatus.MediaReview, story.Status);
         Assert.False(story.IsPublished);
         await service.GetProgressAsync(1, 1);
         await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.NotFoundException>(() => service.GetProgressAsync(99, 1));
@@ -64,7 +144,7 @@ public sealed class MediaGenerationServiceTests
         var result = await service.ProcessNextAsync();
         Assert.True(result.Success);
 
-        Assert.Equal(StoryStatus.Ready, uow.Items<Story>().Single().Status);
+        Assert.Equal(StoryStatus.MediaReview, uow.Items<Story>().Single().Status);
         var scenes = uow.Items<StoryScene>().OrderBy(x => x.SceneIndex).ToArray();
         Assert.Equal(2, scenes.Length);
         Assert.Equal("A\n\nB", string.Concat(scenes.Select(x => x.SceneText)));
@@ -74,11 +154,64 @@ public sealed class MediaGenerationServiceTests
         // Phase 5: audio is generated per-segment (one paragraph per scene → one segment per scene).
         Assert.Equal(new[] { "A", "B" }, tts.Inputs);
         Assert.Equal(4, storage.UploadedPaths.Count);
-        Assert.StartsWith("1/v1/scene-0-beat-1-asset-", storage.UploadedPaths[0]);
-        Assert.Equal("1/v1/audio-s0-1-a1.mp3", storage.UploadedPaths[1]);
-        Assert.StartsWith("1/v1/scene-1-beat-1-asset-", storage.UploadedPaths[2]);
-        Assert.Equal("1/v1/audio-s1-1-a1.mp3", storage.UploadedPaths[3]);
+        Assert.StartsWith("1/versions/10/v1/scene-0-beat-1-asset-", storage.UploadedPaths[0]);
+        Assert.StartsWith("1/versions/10/v1/audio-s0-1-asset-", storage.UploadedPaths[1]);
+        Assert.StartsWith("1/versions/10/v1/scene-1-beat-1-asset-", storage.UploadedPaths[2]);
+        Assert.StartsWith("1/versions/10/v1/audio-s1-1-asset-", storage.UploadedPaths[3]);
         Assert.All(uow.Items<MediaAsset>(), asset => Assert.DoesNotContain("://", asset.Url));
+    }
+
+    [Fact]
+    public async Task ManualVersionsKeepSeparateAudioFiles()
+    {
+        var (store, confirm, _) = CreatorManualMediaTests.Setup();
+        var storage = new RecordingMediaStorage();
+        var worker = Create(store, storage: storage);
+        await confirm.ConfirmAsync(1, 1, new(10, "rev1"));
+        Assert.True((await worker.ProcessNextAsync()).Success);
+        var firstAudio = store.Items<MediaAsset>().Where(x => x.Type == MediaType.TtsAudio).Select(x => x.Url).ToArray();
+        Assert.NotEmpty(firstAudio);
+        var oldVersion = store.Items<StoryVersion>().Single();
+        oldVersion.IsCurrent = false;
+        store.Seed(new StoryVersion
+        {
+            Id = 11,
+            StoryId = 1,
+            IsCurrent = true,
+            VersionNo = 2,
+            Title = oldVersion.Title,
+            Content = "Na cùng bạn trồng cây.",
+            AuthoringMetadata = new StoryVersionAuthoringMetadata
+            {
+                SourceDeclaration = oldVersion.AuthoringMetadata.SourceDeclaration,
+                RightsDeclaration = oldVersion.AuthoringMetadata.RightsDeclaration
+            }
+        });
+        var story = store.Items<Story>().Single();
+        story.Status = StoryStatus.Draft;
+        story.AuthoringRevisionToken = "rev2";
+        await confirm.ConfirmAsync(1, 1, new(11, "rev2"));
+        Assert.True((await worker.ProcessNextAsync()).Success);
+        var package = await worker.GetPackageAsync(1, 1);
+        Assert.All(package.Scenes.SelectMany(x => x.Audio), audio =>
+        {
+            Assert.Contains("/versions/11/", audio.Url);
+            Assert.DoesNotContain(audio.Url, firstAudio);
+        });
+        Assert.Equal(storage.UploadedPaths.Count, storage.UploadedPaths.Distinct().Count());
+    }
+
+    [Fact]
+    public async Task ManualMediaRejectsAnAutomationGenerationRequest()
+    {
+        var (store, confirm, _) = CreatorManualMediaTests.Setup();
+        await confirm.ConfirmAsync(1, 1, new(10, "rev1"));
+        store.Items<StoryGenerationJob>().Single().GenerationRequestId = 123;
+        var storage = new RecordingMediaStorage();
+        var result = await Create(store, storage: storage).ProcessNextAsync();
+        Assert.False(result.Success);
+        Assert.Equal("INVALID_MEDIA_HANDOFF", result.ErrorCode);
+        Assert.Empty(storage.UploadedPaths);
     }
 
     [Fact]
@@ -269,20 +402,35 @@ public sealed class MediaGenerationServiceTests
         job.CompletedAt = DateTime.UtcNow;
         uow.Seed(new StoryScene
         {
-            Id = 30, StoryVersionId = 10, SceneIndex = 0,
-            TextRangeStart = 0, TextRangeEnd = 1, SceneText = "A"
+            Id = 30,
+            StoryVersionId = 10,
+            SceneIndex = 0,
+            TextRangeStart = 0,
+            TextRangeEnd = 1,
+            SceneText = "A"
         });
         uow.Seed(new MediaAsset
         {
-            Id = 40, StoryVersionId = 10, StorySceneId = 30, Type = MediaType.Illustration,
-            Status = MediaStatus.ManualReview, ValidationStatus = ValidationStatus.Failed,
-            AttemptCount = 3, LastValidationReason = "temporary failure"
+            Id = 40,
+            StoryVersionId = 10,
+            StorySceneId = 30,
+            Type = MediaType.Illustration,
+            Status = MediaStatus.ManualReview,
+            ValidationStatus = ValidationStatus.Failed,
+            AttemptCount = 3,
+            LastValidationReason = "temporary failure"
         });
         uow.Seed(new MediaAsset
         {
-            Id = 41, StoryVersionId = 10, StorySceneId = 30, Type = MediaType.TtsAudio,
-            Status = MediaStatus.Ready, ValidationStatus = ValidationStatus.Passed,
-            AttemptCount = 1, Url = "ready.mp3", CompletedAt = DateTime.UtcNow
+            Id = 41,
+            StoryVersionId = 10,
+            StorySceneId = 30,
+            Type = MediaType.TtsAudio,
+            Status = MediaStatus.Ready,
+            ValidationStatus = ValidationStatus.Passed,
+            AttemptCount = 1,
+            Url = "ready.mp3",
+            CompletedAt = DateTime.UtcNow
         });
         var service = Create(uow);
 
@@ -313,8 +461,12 @@ public sealed class MediaGenerationServiceTests
         uow.Items<StoryVersion>().Single().Content = text;
         uow.Seed(new StoryScene
         {
-            Id = 30, StoryVersionId = 10, SceneIndex = 0, SceneText = text,
-            TextRangeStart = 0, TextRangeEnd = text.Length
+            Id = 30,
+            StoryVersionId = 10,
+            SceneIndex = 0,
+            SceneText = text,
+            TextRangeStart = 0,
+            TextRangeEnd = text.Length
         });
         var tts = new RecordingTtsProvider();
         var service = Create(uow, tts: tts, planner: new FixedBeatPlanner([
@@ -324,7 +476,7 @@ public sealed class MediaGenerationServiceTests
         var result = await service.ProcessNextAsync();
 
         Assert.True(result.Success);
-        Assert.Equal(StoryStatus.Ready, uow.Items<Story>().Single().Status);
+        Assert.Equal(StoryStatus.MediaReview, uow.Items<Story>().Single().Status);
         Assert.Equal(2, uow.Items<IllustrationBeat>().Count);
         Assert.Equal(2, uow.Items<MediaAsset>().Count(x => x.Type == MediaType.Illustration));
         Assert.Equal(new[] { "The fox jumps and waves.", "The rabbit smiles." }, tts.Inputs);
@@ -368,8 +520,12 @@ public sealed class MediaGenerationServiceTests
         uow.Items<StoryVersion>().Single().Content = text;
         uow.Seed(new StoryScene
         {
-            Id = 30, StoryVersionId = 10, SceneIndex = 0, SceneText = text,
-            TextRangeStart = 0, TextRangeEnd = text.Length
+            Id = 30,
+            StoryVersionId = 10,
+            SceneIndex = 0,
+            SceneText = text,
+            TextRangeStart = 0,
+            TextRangeEnd = text.Length
         });
         var service = Create(uow, planner: new FixedBeatPlanner([
             new(1, 0, 13, "Jumping"), new(2, 14, 20, "Waving"), new(3, 21, text.Length, "Smiling")]));
@@ -377,7 +533,7 @@ public sealed class MediaGenerationServiceTests
         Assert.True((await service.ProcessNextAsync()).Success);
         Assert.Equal(3, uow.Items<IllustrationBeat>().Count);
         Assert.Equal(3, (await service.GetProgressAsync(1, 1)).ReadyIllustrations);
-        Assert.Equal(StoryStatus.Ready, uow.Items<Story>().Single().Status);
+        Assert.Equal(StoryStatus.MediaReview, uow.Items<Story>().Single().Status);
     }
 
     [Fact]
@@ -388,8 +544,12 @@ public sealed class MediaGenerationServiceTests
         uow.Items<StoryVersion>().Single().Content = text;
         uow.Seed(new StoryScene
         {
-            Id = 30, StoryVersionId = 10, SceneIndex = 0, SceneText = text,
-            TextRangeStart = 0, TextRangeEnd = text.Length
+            Id = 30,
+            StoryVersionId = 10,
+            SceneIndex = 0,
+            SceneText = text,
+            TextRangeStart = 0,
+            TextRangeEnd = text.Length
         });
         var service = Create(uow, image: new FailSecondImageProvider(), planner: new FixedBeatPlanner([
             new(1, 0, 13, "Jumping"), new(2, 14, text.Length, "Waving")]));
@@ -414,7 +574,7 @@ public sealed class MediaGenerationServiceTests
         var otherUrl = other.Url;
         var firstPath = storage.UploadedPaths.First(p => p.Contains("scene-0-beat-1-"));
 
-        await service.RegenerateIllustrationBeatAsync(1, 1, beats[0].Id);
+        await service.RegenerateIllustrationBeatAsync(1, 1, beats[0].Id, RegenerationRequest(uow));
         Assert.Equal(StoryStatus.MediaProcessing, uow.Items<Story>().Single().Status);
         Assert.True((await service.ProcessNextAsync()).Success);
 
@@ -422,7 +582,7 @@ public sealed class MediaGenerationServiceTests
         Assert.Equal(2, tts.Inputs.Count);
         Assert.Equal(otherUrl, other.Url);
         Assert.NotEqual(firstPath, storage.UploadedPaths.Last(p => p.Contains("scene-0-beat-1-")));
-        Assert.Equal(StoryStatus.Ready, uow.Items<Story>().Single().Status);
+        Assert.Equal(StoryStatus.MediaReview, uow.Items<Story>().Single().Status);
     }
 
     [Fact]
@@ -434,11 +594,15 @@ public sealed class MediaGenerationServiceTests
         uow.Seed(new StoryScene { Id = 90, StoryVersionId = 99, SceneText = "Other", TextRangeEnd = 5 });
         uow.Seed(new IllustrationBeat
         {
-            Id = 91, StorySceneId = 90, BeatOrder = 1, StartOffset = 0,
-            EndOffset = 5, VisualFocus = "Other"
+            Id = 91,
+            StorySceneId = 90,
+            BeatOrder = 1,
+            StartOffset = 0,
+            EndOffset = 5,
+            VisualFocus = "Other"
         });
-        await Assert.ThrowsAnyAsync<Exception>(() => service.RegenerateIllustrationBeatAsync(1, 1, 91));
-        Assert.Equal(StoryStatus.Ready, uow.Items<Story>().Single().Status);
+        await Assert.ThrowsAnyAsync<Exception>(() => service.RegenerateIllustrationBeatAsync(1, 1, 91, RegenerationRequest(uow)));
+        Assert.Equal(StoryStatus.MediaReview, uow.Items<Story>().Single().Status);
     }
 
     [Fact]
@@ -452,23 +616,48 @@ public sealed class MediaGenerationServiceTests
         uow.Seed(new StoryVersion { Id = 99, StoryId = 1, VersionNo = 2, IsCurrent = true, Content = "New" });
         var oldBeatId = uow.Items<IllustrationBeat>().First().Id;
 
-        await Assert.ThrowsAnyAsync<Exception>(() => service.RegenerateIllustrationBeatAsync(1, 1, oldBeatId));
+        await Assert.ThrowsAnyAsync<Exception>(() => service.RegenerateIllustrationBeatAsync(1, 1, oldBeatId, RegenerationRequest(uow)));
     }
 
     [Fact]
     public async Task Readiness_TwoBeats_RequiresBothImagesAndAudio()
     {
         var uow = new StoryReviewServiceTests.FakeUnitOfWork();
+        uow.Seed(new UserAccount { Id = 1, Role = UserRole.Parent, Status = AccountStatus.Active });
+        uow.Seed(new ChildProfile { Id = 1, Status = ChildProfileStatus.Active });
+        uow.Seed(new SafetyPolicy { Id = 1, ChildProfileId = 1, ConsentRecorded = true, ConsentRecordedAt = DateTime.UtcNow, ConsentPolicyVersion = 1 });
         uow.Seed(new StoryScene { Id = 30, StoryVersionId = 10, SceneIndex = 0, SceneText = "A B", TextRangeEnd = 3 });
         uow.Seed(new IllustrationBeat { Id = 31, StorySceneId = 30, BeatOrder = 1, StartOffset = 0, EndOffset = 1, VisualFocus = "A" });
         uow.Seed(new IllustrationBeat { Id = 32, StorySceneId = 30, BeatOrder = 2, StartOffset = 2, EndOffset = 3, VisualFocus = "B" });
         uow.Seed(new StorySegment { Id = 33, StorySceneId = 30, SegmentOrder = 1, StartOffset = 0, EndOffset = 3, TextContent = "A B" });
-        uow.Seed(new MediaAsset { Id = 40, StoryVersionId = 10, StorySceneId = 30, IllustrationBeatId = 31,
-            Type = MediaType.Illustration, Status = MediaStatus.Ready, ValidationStatus = ValidationStatus.Passed });
-        uow.Seed(new MediaAsset { Id = 41, StoryVersionId = 10, StorySceneId = 30, IllustrationBeatId = 32,
-            Type = MediaType.Illustration, Status = MediaStatus.Failed });
-        uow.Seed(new MediaAsset { Id = 42, StoryVersionId = 10, StorySceneId = 30, StorySegmentId = 33,
-            Type = MediaType.TtsAudio, Status = MediaStatus.Ready });
+        uow.Seed(new MediaAsset
+        {
+            Id = 40,
+            StoryVersionId = 10,
+            StorySceneId = 30,
+            IllustrationBeatId = 31,
+            Type = MediaType.Illustration,
+            Status = MediaStatus.Ready,
+            ValidationStatus = ValidationStatus.Passed
+        });
+        uow.Seed(new MediaAsset
+        {
+            Id = 41,
+            StoryVersionId = 10,
+            StorySceneId = 30,
+            IllustrationBeatId = 32,
+            Type = MediaType.Illustration,
+            Status = MediaStatus.Failed
+        });
+        uow.Seed(new MediaAsset
+        {
+            Id = 42,
+            StoryVersionId = 10,
+            StorySceneId = 30,
+            StorySegmentId = 33,
+            Type = MediaType.TtsAudio,
+            Status = MediaStatus.Ready
+        });
         var readiness = new MediaReadinessService(uow);
 
         var incomplete = await readiness.CheckAsync(10, 1);
@@ -497,15 +686,169 @@ public sealed class MediaGenerationServiceTests
         Assert.NotEqual(GenerationJobStatus.Completed, uow.Items<StoryGenerationJob>().Single().Status);
     }
 
-    private static MediaGenerationService Create(
-        StoryReviewServiceTests.FakeUnitOfWork uow,
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GeneratedPackageWaitsForOwnerConfirmationAndReplayIsIdempotent(bool creator)
+    {
+        var store = Seed();
+        if (creator)
+        {
+            store.Items<Story>().Single().Scope = StoryScope.Creator;
+            store.Items<Story>().Single().ChildProfileId = null;
+            store.Items<UserAccount>().Single().Role = UserRole.ContentCreator;
+        }
+        var service = Create(store);
+        Assert.True((await service.ProcessNextAsync()).Success);
+        var pending = await service.GetProgressAsync(1, 1);
+        Assert.True(pending.IsGenerated);
+        Assert.True(pending.IsAwaitingConfirmation);
+        Assert.False(pending.IsReady);
+        Assert.False(pending.IsConfirmed);
+        var paths = store.Items<MediaAsset>().Select(x => x.Url).ToArray();
+        var result = await service.ConfirmAsync(1, 1, new(10, pending.PackageRevision));
+        Assert.True(result.IsReady);
+        Assert.True(result.IsConfirmed);
+        Assert.Equal(1, result.ConfirmedByUserId);
+        Assert.NotNull(result.ConfirmedAt);
+        Assert.Equal(result, await service.ConfirmAsync(1, 1, new(10, pending.PackageRevision)));
+        Assert.Single(store.Items<StoryVersion>());
+        Assert.Single(store.Items<StoryGenerationJob>());
+        Assert.Equal(paths, store.Items<MediaAsset>().Select(x => x.Url).ToArray());
+        var package = await service.GetPackageAsync(1, 1);
+        Assert.All(package.Scenes.SelectMany(x => x.Audio), x => Assert.StartsWith("https://media.test/", x.Url));
+    }
+
+    [Fact]
+    public async Task ConfirmRejectsStaleVersionRevisionAndActiveJob()
+    {
+        var (store, queue, _) = CreatorManualMediaTests.Setup();
+        await queue.ConfirmAsync(1, 1, new(10, "rev1"));
+        var service = Create(store);
+        await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.ConflictException>(() => service.ConfirmAsync(1, 1, new(10, 1)));
+        Assert.True((await service.ProcessNextAsync()).Success);
+        await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.ConflictException>(() => service.ConfirmAsync(1, 1, new(11, 1)));
+        await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.ConflictException>(() => service.ConfirmAsync(1, 1, new(10, 9)));
+        await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.NotFoundException>(() => service.ConfirmAsync(2, 1, new(10, 1)));
+        Assert.Null(store.Items<StoryVersion>().Single().MediaState.MediaConfirmedAt);
+    }
+
+    [Fact]
+    public async Task ConfirmRejectsIncompleteMediaAndRevokedParentPermission()
+    {
+        var store = Seed();
+        var guard = new Mock<ISupervisionAccessGuard>();
+        var service = Create(store, supervision: guard.Object);
+        Assert.True((await service.ProcessNextAsync()).Success);
+        var asset = store.Items<MediaAsset>().First();
+        asset.Status = MediaStatus.Failed;
+        await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.ConflictException>(() => service.ConfirmAsync(1, 1, new(10, 1)));
+        asset.Status = MediaStatus.Ready;
+        guard.Setup(x => x.EnsurePermissionAsync(1, 1, Permission.ApproveStory, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new StoryPlatform.Application.Common.Exceptions.ForbiddenException());
+        await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.ForbiddenException>(() => service.ConfirmAsync(1, 1, new(10, 1)));
+    }
+
+    [Fact]
+    public async Task RegenerateAudioInvalidatesConfirmationAndKeepsOtherFiles()
+    {
+        var store = Seed();
+        var storage = new RecordingMediaStorage();
+        var service = Create(store, storage: storage);
+        Assert.True((await service.ProcessNextAsync()).Success);
+        await service.ConfirmAsync(1, 1, new(10, 1));
+        var target = store.Items<MediaAsset>().First(x => x.Type == MediaType.TtsAudio);
+        var oldPath = target.Url;
+        var other = store.Items<MediaAsset>().Where(x => x.Id != target.Id).Select(x => x.Url).ToArray();
+        await service.RegenerateSegmentAudioAsync(1, 1, target.StorySegmentId!.Value, new(10, 1, true));
+        Assert.Equal(2, store.Items<StoryVersion>().Single().MediaState.MediaPackageRevision);
+        Assert.Null(store.Items<StoryVersion>().Single().MediaState.MediaConfirmedAt);
+        Assert.True((await service.ProcessNextAsync()).Success);
+        Assert.NotEqual(oldPath, target.Url);
+        Assert.Equal(other, store.Items<MediaAsset>().Where(x => x.Id != target.Id).Select(x => x.Url).ToArray());
+        Assert.False((await service.GetProgressAsync(1, 1)).IsReady);
+        await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.ConflictException>(() => service.ConfirmAsync(1, 1, new(10, 1)));
+        Assert.True((await service.ConfirmAsync(1, 1, new(10, 2))).IsReady);
+    }
+
+    [Fact]
+    public async Task LegacyReadyPackageIsPreservedUntilRegeneration()
+    {
+        var store = Seed();
+        var service = Create(store);
+        Assert.True((await service.ProcessNextAsync()).Success);
+        store.Items<Story>().Single().Status = StoryStatus.Ready;
+        store.Items<StoryVersion>().Single().MediaState.MediaPackageRevision = 0;
+        var progress = await service.GetProgressAsync(1, 1);
+        Assert.True(progress.IsReady);
+        var beat = store.Items<IllustrationBeat>().First();
+        await service.RegenerateIllustrationBeatAsync(1, 1, beat.Id, new(10, 0, true));
+        Assert.Equal(1, store.Items<StoryVersion>().Single().MediaState.MediaPackageRevision);
+        Assert.False((await service.GetProgressAsync(1, 1)).IsReady);
+    }
+
+    [Fact]
+    public async Task ConcurrentConfirmAndRegenerateCannotApplyToTheSameObservedPackage()
+    {
+        var store = new ParentAuthoringTestStore();
+        store.Items<UserAccount>().Single(x => x.Id == 1).Role = UserRole.ContentCreator;
+        store.Items<Story>().Add(new Story { Id = 1, AuthorUserId = 1, Scope = StoryScope.Creator, Source = StorySource.Ai, Status = StoryStatus.MediaReview });
+        store.Items<StoryVersion>().Add(new StoryVersion
+        {
+            Id = 10,
+            StoryId = 1,
+            IsCurrent = true,
+            Content = "Story",
+            MediaState = new StoryVersionMediaState
+            {
+                MediaPackageRevision = 1
+            }
+        });
+        store.Items<StoryGenerationJob>().Add(new StoryGenerationJob
+        {
+            Id = 20,
+            StoryId = 1,
+            StoryVersionId = 10,
+            Operation = GenerationJobOperation.GenerateMediaPackage,
+            Status = GenerationJobStatus.Completed
+        });
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var readiness = new Mock<IMediaReadinessService>();
+        readiness.Setup(x => x.CheckAsync(10, null, It.IsAny<CancellationToken>())).Returns(async () =>
+        {
+            entered.TrySetResult();
+            await release.Task;
+            return new MediaReadinessResult(true, 1, 1, 1, 1, [], [], [], []);
+        });
+        var service = Create(store.Uow.Object, readiness: readiness.Object);
+        var confirmation = service.ConfirmAsync(1, 1, new(10, 1));
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var regeneration = Create(store.Uow.Object).RegenerateIllustrationBeatAsync(1, 1, 999, new(10, 1, false));
+        release.SetResult();
+        Assert.True((await confirmation.WaitAsync(TimeSpan.FromSeconds(10))).IsReady);
+        var error = await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.ConflictException>(() => regeneration.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Equal("STALE_MEDIA_PACKAGE", error.Message);
+        Assert.Equal(StoryStatus.Ready, store.Items<Story>().Single().Status);
+    }
+
+    private static RegenerateMediaRequest RegenerationRequest(StoryReviewServiceTests.FakeUnitOfWork store)
+    {
+        var v = store.Items<StoryVersion>().Single(x => x.IsCurrent);
+        return new(v.Id, v.MediaState.MediaPackageRevision, MediaPackageConfirmation.IsConfirmed(v));
+    }
+
+    internal static MediaGenerationService Create(
+        StoryPlatform.Application.Abstractions.Persistence.IUnitOfWork uow,
         IImageGenerationProvider? image = null,
         ITtsProvider? tts = null,
         IMediaStorage? storage = null,
         IMediaAlignmentEvaluator? evaluator = null,
         IAudioQualityGate? audioGate = null,
         RecordingFinalizer? finalizer = null,
-        IIllustrationBeatPlanner? planner = null)
+        IIllustrationBeatPlanner? planner = null,
+        IMediaReadinessService? readiness = null, ISupervisionAccessGuard? supervision = null,
+        Microsoft.Extensions.Logging.ILogger<MediaGenerationService>? logger = null)
     {
         var evaluatorImpl = evaluator ?? new PassingEvaluator();
         return new MediaGenerationService(
@@ -524,9 +867,9 @@ public sealed class MediaGenerationServiceTests
             audioGate ?? new PassingAudioQualityGate(),
             new StorySegmentService(),
             finalizer ?? new RecordingFinalizer(),
-            new MediaReadinessService(uow),
+            readiness ?? new MediaReadinessService(uow),
             new MediaGenerationOptions { AssetMaxAttempts = 3, JobLeaseMinutes = 5 },
-            NullLogger<MediaGenerationService>.Instance);
+            logger ?? NullLogger<MediaGenerationService>.Instance, supervision ?? new Mock<ISupervisionAccessGuard>().Object);
     }
 
     private sealed class SingleBeatPlanner : IIllustrationBeatPlanner
@@ -566,16 +909,30 @@ public sealed class MediaGenerationServiceTests
     private static StoryReviewServiceTests.FakeUnitOfWork Seed()
     {
         var uow = new StoryReviewServiceTests.FakeUnitOfWork();
+        uow.Seed(new UserAccount { Id = 1, Role = UserRole.Parent, Status = AccountStatus.Active });
+        uow.Seed(new ChildProfile { Id = 1, Status = ChildProfileStatus.Active });
+        uow.Seed(new SafetyPolicy { Id = 1, ChildProfileId = 1, ConsentRecorded = true, ConsentRecordedAt = DateTime.UtcNow, ConsentPolicyVersion = 1 });
         uow.Seed(new Story { Id = 1, AuthorUserId = 1, ChildProfileId = 1, Status = StoryStatus.Approved });
         uow.Seed(new StoryVersion
         {
-            Id = 10, StoryId = 1, VersionNo = 1, IsCurrent = true, Title = "Story", Content = "A\n\nB"
+            Id = 10,
+            StoryId = 1,
+            VersionNo = 1,
+            IsCurrent = true,
+            Title = "Story",
+            Content = "A\n\nB"
         });
         uow.Seed(new StoryGenerationJob
         {
-            Id = 20, StoryId = 1, StoryVersionId = 10, BaseStoryVersionId = 10,
-            Operation = GenerationJobOperation.GenerateMediaPackage, Stage = JobStage.MediaPending,
-            Status = GenerationJobStatus.Pending, MaxAttempts = 3, ConcurrencyToken = "initial"
+            Id = 20,
+            StoryId = 1,
+            StoryVersionId = 10,
+            BaseStoryVersionId = 10,
+            Operation = GenerationJobOperation.GenerateMediaPackage,
+            Stage = JobStage.MediaPending,
+            Status = GenerationJobStatus.Pending,
+            MaxAttempts = 3,
+            ConcurrencyToken = "initial"
         });
         return uow;
     }
@@ -701,7 +1058,7 @@ public sealed class MediaGenerationServiceTests
         public Task DeleteAsync(string storagePath, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
-    private sealed class RecordingFinalizer : IMediaGenerationJobFailureFinalizer
+    internal sealed class RecordingFinalizer : IMediaGenerationJobFailureFinalizer
     {
         public string? ErrorCode { get; private set; }
         public Task MarkFailedAsync(int jobId, string expectedConcurrencyToken, string errorCode,

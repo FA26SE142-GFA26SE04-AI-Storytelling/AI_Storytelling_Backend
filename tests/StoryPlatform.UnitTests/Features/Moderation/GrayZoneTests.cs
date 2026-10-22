@@ -48,7 +48,8 @@ public sealed class GrayZoneTests
     }
 
     [Theory]
-    [InlineData(-1)] [InlineData(101)]
+    [InlineData(-1)]
+    [InlineData(101)]
     public async Task InvalidScoreNeverBecomesSafe(int risk) => await Assert.ThrowsAsync<InvalidOperationException>(() =>
         new GrayZoneEvaluator(Options(), [new Provider(risk)], RubricTestData.Source()).EvaluateAsync(Scan, default));
 
@@ -111,7 +112,7 @@ public sealed class GrayZoneTests
         await Assert.ThrowsAsync<ConflictException>(() => service.RecordAsync(h.Stories[0].Id, h.Versions[0].Id,
             null, Assessment() with { AgeBand = "9-10" }, true, default));
         Assert.Empty(h.Items);
-        Assert.Null(h.Versions[0].ModerationZone);
+        Assert.Null(h.Versions[0].Moderation.ModerationZone);
     }
 
     [Fact]
@@ -132,7 +133,7 @@ public sealed class GrayZoneTests
         var h = new PublicStoryReviewHarness(); h.Items.Clear();
         h.Stories[0].Scope = parent ? StoryScope.Parent : StoryScope.Creator;
         h.Stories[0].Status = StoryStatus.Draft;
-        h.Versions[0].ReviewStatus = VersionReviewStatus.None;
+        h.Versions[0].Moderation.ReviewStatus = VersionReviewStatus.None;
         return (h, new(h.UnitOfWork.Object, h.Audit.Object));
     }
 
@@ -150,7 +151,7 @@ public sealed class GrayZoneTests
         Assert.True(GrayZoneGate.IsBlocked(story, v));
         item.Status = ModerationItemStatus.Claimed; item.ClaimedByUserId = PublicStoryReviewHarness.ModeratorId; item.ClaimedAt = DateTime.UtcNow;
         await service.DecideAsync(PublicStoryReviewHarness.ModeratorId, item.Id, new("Clear", "Đã xem ngữ cảnh", item.RowVersion), default);
-        Assert.True(v.GrayZoneCleared); Assert.Equal(StoryStatus.Draft, story.Status);
+        Assert.True(v.Moderation.GrayZoneCleared); Assert.Equal(StoryStatus.Draft, story.Status);
         Assert.False(GrayZoneGate.IsBlocked(story, v)); Assert.True(story.EverGrayZone);
     }
 
@@ -160,7 +161,7 @@ public sealed class GrayZoneTests
         var (h, service) = Seed(false);
         Assert.False(await service.RecordAsync(h.Stories[0].Id, h.Versions[0].Id, null, Assessment(), true, default));
         Assert.Empty(h.Items); Assert.Equal(StoryStatus.Draft, h.Stories[0].Status);
-        Assert.True(h.Stories[0].EverGrayZone); Assert.Single(PublicReviewState.ParseVersionFlags(h.Versions[0].GrayZoneFlags));
+        Assert.True(h.Stories[0].EverGrayZone); Assert.Single(PublicReviewState.ParseVersionFlags(h.Versions[0].Moderation.GrayZoneFlags));
         Assert.False(GrayZoneGate.IsBlocked(h.Stories[0], h.Versions[0]));
     }
 
@@ -178,7 +179,8 @@ public sealed class GrayZoneTests
             });
         var evaluator = new GrayZoneEvaluator(Options(), [provider.Object], RubricTestData.Source());
         var scan = new GrayZoneScan("phase3", story.AgeBand, story.Language,
-            GrayZoneEvaluator.TextParts(version.Title, version.Content!).Concat([new ModerationText("section", "lesson", version.Lesson!)]).ToArray(), []) { ReadingLevel = story.ReadingLevel };
+            GrayZoneEvaluator.TextParts(version.Title, version.Content!).Concat([new ModerationText("section", "lesson", version.Lesson!)]).ToArray(), [])
+        { ReadingLevel = story.ReadingLevel };
         var assessment = await evaluator.EvaluateAsync(scan, default);
         await workflow.RecordAsync(story.Id, version.Id, null, assessment, true, default);
         var checks = new GrayZoneContentCheckService(h.UnitOfWork.Object, evaluator, workflow,
@@ -194,14 +196,21 @@ public sealed class GrayZoneTests
         var (h, service) = Seed(false);
         await service.RecordAsync(h.Stories[0].Id, h.Versions[0].Id, null, Assessment(), true, default);
         h.Stories[0].Status = StoryStatus.Ready;
-        h.Items.Add(new ModerationItem { Id = 100, ItemType = ModerationItemType.PublicStoryReview,
-            StoryId = h.Stories[0].Id, StoryVersionId = h.Versions[0].Id, Status = ModerationItemStatus.Claimed,
-            ClaimedByUserId = PublicStoryReviewHarness.ModeratorId, ClaimedAt = DateTime.UtcNow,
-            CreatedByUserId = PublicStoryReviewHarness.CreatorId });
+        h.Items.Add(new ModerationItem
+        {
+            Id = 100,
+            ItemType = ModerationItemType.PublicStoryReview,
+            StoryId = h.Stories[0].Id,
+            StoryVersionId = h.Versions[0].Id,
+            Status = ModerationItemStatus.Claimed,
+            ClaimedByUserId = PublicStoryReviewHarness.ModeratorId,
+            ClaimedAt = DateTime.UtcNow,
+            CreatedByUserId = PublicStoryReviewHarness.CreatorId
+        });
         var package = await h.Sut.GetPackageAsync(PublicStoryReviewHarness.ModeratorId, 100);
         Assert.False(package.CanApprove); Assert.Contains(package.ApproveBlockers, x => x.Code == "flags_unresolved");
         await h.Sut.ResolveFlagAsync(PublicStoryReviewHarness.ModeratorId, 100, new() { FlagId = package.Flags[0].FlagId, Reason = "Đã xem" });
-        Assert.True(h.Versions[0].GrayZoneCleared);
+        Assert.True(h.Versions[0].Moderation.GrayZoneCleared);
     }
 
     [Fact]
@@ -214,7 +223,7 @@ public sealed class GrayZoneTests
         await Assert.ThrowsAsync<ConflictException>(() => service.DecideAsync(PublicStoryReviewHarness.ModeratorId, item.Id, new("Clear", "reason", 99), default));
         item.ClaimedAt = DateTime.UtcNow.AddHours(-3);
         await Assert.ThrowsAsync<ForbiddenException>(() => service.GetAsync(PublicStoryReviewHarness.ModeratorId, item.Id, default));
-        Assert.False(h.Versions[0].GrayZoneCleared);
+        Assert.False(h.Versions[0].Moderation.GrayZoneCleared);
     }
 
     [Fact]
@@ -228,14 +237,24 @@ public sealed class GrayZoneTests
     }
 
     [Theory]
-    [InlineData(null)] [InlineData("{}")] [InlineData("not-json")] [InlineData("null")]
+    [InlineData(null)]
+    [InlineData("{}")]
+    [InlineData("not-json")]
+    [InlineData("null")]
     public async Task SweepIgnoresMissingOrLegacyCheckpointAndContinues(string? flags)
     {
         var (h, service) = Seed(true);
         await service.RecordAsync(h.Stories[0].Id, h.Versions[0].Id, null, Assessment(), true, default);
         var valid = h.Items[0];
-        h.Items.Insert(0, new ModerationItem { Id = 99, ItemType = ModerationItemType.GrayZoneStory,
-            StoryId = h.Stories[0].Id, StoryVersionId = h.Versions[0].Id, Status = ModerationItemStatus.Pending, Flags = flags });
+        h.Items.Insert(0, new ModerationItem
+        {
+            Id = 99,
+            ItemType = ModerationItemType.GrayZoneStory,
+            StoryId = h.Stories[0].Id,
+            StoryVersionId = h.Versions[0].Id,
+            Status = ModerationItemStatus.Pending,
+            Flags = flags
+        });
         h.Versions[0].IsCurrent = false;
         await service.CloseObsoleteAsync(default);
         Assert.Equal(ModerationItemStatus.Closed, valid.Status);
@@ -250,6 +269,6 @@ public sealed class GrayZoneTests
         var error = await Assert.ThrowsAsync<ConflictException>(() => service.RecordAsync(h.Stories[0].Id, h.Versions[0].Id,
             null, Assessment(), true, default));
         Assert.Equal("PARENT_STORY_FINALIZED", error.Message);
-        Assert.Empty(h.Items); Assert.Null(h.Versions[0].GrayZoneFlags);
+        Assert.Empty(h.Items); Assert.Null(h.Versions[0].Moderation.GrayZoneFlags);
     }
 }

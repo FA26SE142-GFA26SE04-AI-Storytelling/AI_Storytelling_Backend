@@ -141,8 +141,14 @@ public sealed class CreatorReviewConcurrencyTests
     [Fact]
     public async Task ActiveMediaJob_PreventsEditBeforeCallingSafety()
     {
-        var db = Seed(); db.Seed(new StoryGenerationJob { Id = 1, StoryId = 1, StoryVersionId = 1,
-            Operation = GenerationJobOperation.GenerateMediaPackage, Status = GenerationJobStatus.Pending });
+        var db = Seed(); db.Seed(new StoryGenerationJob
+        {
+            Id = 1,
+            StoryId = 1,
+            StoryVersionId = 1,
+            Operation = GenerationJobOperation.GenerateMediaPackage,
+            Status = GenerationJobStatus.Pending
+        });
         var gate = new SafetyGate(); await using var edit = new Session(db);
         var conflict = await Assert.ThrowsAsync<ConflictException>(() => Service(edit, gate).UpdateStoryAsync(1, 1, Input(db)));
         Assert.Equal(409, conflict.StatusCode);
@@ -158,8 +164,17 @@ public sealed class CreatorReviewConcurrencyTests
         var story = db.Data[typeof(Story)].Cast<Story>().Single();
         story.Scope = StoryScope.Parent; story.ChildProfileId = 3; story.OutputMode = StoryOutputMode.ReadingMediaOnly;
         db.Data[typeof(UserAccount)].Cast<UserAccount>().Single().Role = UserRole.Parent;
-        db.Seed(new SafetyPolicy { Id = 1, ChildProfileId = 3, ConsentRecorded = true, ConsentRecordedAt = DateTime.UtcNow,
-            ConsentPolicyVersion = 1, MaxStoryLength = 5000, RequiredApprovalMode = ApprovalMode.AutoPublishOnThreshold, ParentalGateEnabled = false });
+        db.Seed(new SafetyPolicy
+        {
+            Id = 1,
+            ChildProfileId = 3,
+            ConsentRecorded = true,
+            ConsentRecordedAt = DateTime.UtcNow,
+            ConsentPolicyVersion = 1,
+            MaxStoryLength = 5000,
+            RequiredApprovalMode = ApprovalMode.AutoPublishOnThreshold,
+            ParentalGateEnabled = false
+        });
         await using var session = new Session(db);
         var changed = false;
         session.AfterCommit = () =>
@@ -168,7 +183,7 @@ public sealed class CreatorReviewConcurrencyTests
             changed = true;
             var v1 = db.Data[typeof(StoryVersion)].Cast<StoryVersion>().Single(x => x.IsCurrent);
             var v2 = (StoryVersion)Copy(v1); v2.Id = 2; v2.VersionNo = 2;
-            v2.GrayZoneFlags = null; v2.ModerationZone = null; v2.GrayZoneCleared = false;
+            v2.Moderation.GrayZoneFlags = null; v2.Moderation.ModerationZone = null; v2.Moderation.GrayZoneCleared = false;
             v1.IsCurrent = false; db.Seed(v2);
         };
         var evaluator = new Mock<StoryPlatform.Application.Features.Moderation.IGrayZoneEvaluator>();
@@ -202,11 +217,16 @@ public sealed class CreatorReviewConcurrencyTests
         source.Items<UserAccount>().Single().Role = UserRole.ContentCreator;
         var story = source.Items<Story>().Single(); story.Scope = StoryScope.Creator; story.ChildProfileId = null;
         source.Items<StoryVersion>().Single().SafetyScore = 99m;
-        source.Seed(new StoryGenerationRequest { Id = 1, StoryId = 1, SubmittedByUserId = 1,
+        source.Seed(new StoryGenerationRequest
+        {
+            Id = 1,
+            StoryId = 1,
+            SubmittedByUserId = 1,
             Status = GenerationInputStatus.InputAccepted,
             ContextSnapshotJson = JsonSerializer.Serialize(new AIStoryInputContextSnapshot(null, "6-8", 2, "level_2", "vi", 1000,
                 "always_manual", [], [], [], [], SafetyScoreThreshold: 90m, AudienceScope: "Creator", CreatorUserId: 1),
-                new JsonSerializerOptions(JsonSerializerDefaults.Web)) });
+                new JsonSerializerOptions(JsonSerializerDefaults.Web))
+        });
         var db = new Database();
         foreach (var x in source.Items<UserAccount>()) db.Seed(x);
         foreach (var x in source.Items<Story>()) db.Seed(x);

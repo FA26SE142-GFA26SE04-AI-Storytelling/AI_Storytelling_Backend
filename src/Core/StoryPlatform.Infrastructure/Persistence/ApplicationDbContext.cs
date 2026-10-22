@@ -37,6 +37,7 @@ public class ApplicationDbContext : DbContext
     // Story content & generation
     public DbSet<StoryCategory> StoryCategories => Set<StoryCategory>();
     public DbSet<StoryVersion> StoryVersions => Set<StoryVersion>();
+    public DbSet<StoryAuthoringOperation> StoryAuthoringOperations => Set<StoryAuthoringOperation>();
     public DbSet<StoryAssistanceTask> StoryAssistanceTasks => Set<StoryAssistanceTask>();
     public DbSet<StoryAssistanceStep> StoryAssistanceSteps => Set<StoryAssistanceStep>();
     public DbSet<StoryGenerationJob> StoryGenerationJobs => Set<StoryGenerationJob>();
@@ -97,6 +98,9 @@ public class ApplicationDbContext : DbContext
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
+        // Owned metadata shares the version lifetime; keep its denormalized story index key authoritative.
+        foreach (var version in ChangeTracker.Entries<StoryVersion>())
+            version.Entity.AuthoringMetadata.StoryId = version.Entity.StoryId;
         foreach (var entry in ChangeTracker.Entries<BaseEntity>())
         {
             switch (entry.State)

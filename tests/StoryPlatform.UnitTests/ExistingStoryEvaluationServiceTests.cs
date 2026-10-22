@@ -65,13 +65,22 @@ public sealed class ExistingStoryEvaluationServiceTests
     {
         var story = new Story
         {
-            Id = 1, ChildProfileId = 1, AuthorUserId = 1, Source = StorySource.Manual,
-            Status = StoryStatus.Draft, AgeBand = "9-12", Language = "vi"
+            Id = 1,
+            ChildProfileId = 1,
+            AuthorUserId = 1,
+            Source = StorySource.Manual,
+            Status = StoryStatus.Draft,
+            AgeBand = "9-12",
+            Language = "vi"
         };
         var version = new StoryVersion
         {
-            Id = 1, StoryId = 1, VersionNo = 1, Title = "Truyện",
-            Content = content, IsCurrent = true
+            Id = 1,
+            StoryId = 1,
+            VersionNo = 1,
+            Title = "Truyện",
+            Content = content,
+            IsCurrent = true
         };
 
         var storyRepository = new Mock<IGenericRepository<Story>>();

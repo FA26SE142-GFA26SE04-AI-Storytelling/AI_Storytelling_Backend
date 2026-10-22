@@ -11,18 +11,18 @@ internal static class ReportedContentBuilder
 {
     public static ReportedStoryDto BuildStory(
         Story story, List<ReportedLabelDto> labels, Func<string?, string?> mask) => new()
-    {
-        StoryId = story.Id,
-        Title = mask(story.Title),
-        Description = mask(story.Description),
-        Genre = story.Genre,
-        AgeBand = story.AgeBand,
-        ReadingLevel = story.ReadingLevel,
-        Language = story.Language,
-        Scope = story.Scope.ToString(),
-        IsArchived = story.Status == StoryStatus.Archived || story.ArchivedAt != null,
-        Labels = labels
-    };
+        {
+            StoryId = story.Id,
+            Title = mask(story.Title),
+            Description = mask(story.Description),
+            Genre = story.Genre,
+            AgeBand = story.AgeBand,
+            ReadingLevel = story.ReadingLevel,
+            Language = story.Language,
+            Scope = story.Scope.ToString(),
+            IsArchived = story.Status == StoryStatus.Archived || story.ArchivedAt != null,
+            Labels = labels
+        };
 
     public static ReportedVersionDto BuildVersion(StoryVersion version, Func<string?, string?> mask) => new()
     {
@@ -100,8 +100,8 @@ internal static class ReportedContentBuilder
         }
 
         return versions
-            .Where(version => version.ReviewStatus == VersionReviewStatus.Approved)
-            .OrderByDescending(version => version.ReviewedAt)
+            .Where(version => version.Moderation.ReviewStatus == VersionReviewStatus.Approved)
+            .OrderByDescending(version => version.Moderation.ReviewedAt)
             .ThenByDescending(version => version.VersionNo)
             .FirstOrDefault();
     }

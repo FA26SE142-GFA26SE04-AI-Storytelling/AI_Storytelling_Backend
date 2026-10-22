@@ -88,7 +88,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
         var qualityFailure = active is null ? ToQualityFailure(failed) : null;
         var readingMediaOnly = story.OutputMode == StoryOutputMode.ReadingMediaOnly;
         var contentComplete = stable is not null && story.Status is
-            (StoryStatus.ContentReview or StoryStatus.Approved or StoryStatus.MediaProcessing or StoryStatus.Ready);
+            (StoryStatus.ContentReview or StoryStatus.Approved or StoryStatus.MediaProcessing or StoryStatus.MediaReview or StoryStatus.Ready);
 
         return new ContentGenerationProgressDto
         {
@@ -300,7 +300,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
                     cancellationToken: cancellationToken)).Count;
         }
 
-        for (;;)
+        for (; ; )
         {
             var quality = _qualityEvaluator.Evaluate(storyContent, ToOutline(handoff.BaseVersion), handoff.Input, handoff.Context);
             if (quality.Safety.Passed)
@@ -345,7 +345,8 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
                 var scan = new GrayZoneScan("phase3", handoff.Context.AgeBand, handoff.Context.Language,
                     GrayZoneEvaluator.TextParts(storyContent.Title, Flatten(storyContent)).Concat(
                         [new ModerationText("section", "lesson", storyContent.Lesson)]).ToArray(),
-                    PolicyTerms(handoff.Context.BlockedCategoryTerms, handoff.Context.BlockedCategoryCodes).ToArray()) { ReadingLevel = handoff.Context.ReadingLevel };
+                    PolicyTerms(handoff.Context.BlockedCategoryTerms, handoff.Context.BlockedCategoryCodes).ToArray())
+                { ReadingLevel = handoff.Context.ReadingLevel };
                 var priorModeration = persistedCandidate is null ? null : GrayZoneWorkflowService.ReadAssessment(persistedCandidate);
                 moderationResult = priorModeration is not null && priorModeration.Fingerprint == GrayZoneEvaluator.Fingerprint(scan)
                     && await _moderation.CanReuseAsync(priorModeration, cancellationToken) ? priorModeration
@@ -411,8 +412,11 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
         {
             response = await _aiClient.GenerateVocabularyAsync(new GenerateVocabularyRequest
             {
-                RequestId = $"vocabulary-job-{jobId}-attempt-{attempt}", Story = ToContent(state.Version), AgeBand = state.Context.AgeBand,
-                ReadingLevel = state.Context.ReadingLevel.ToString(), VocabularyLevel = state.Context.VocabularyLevel,
+                RequestId = $"vocabulary-job-{jobId}-attempt-{attempt}",
+                Story = ToContent(state.Version),
+                AgeBand = state.Context.AgeBand,
+                ReadingLevel = state.Context.ReadingLevel.ToString(),
+                VocabularyLevel = state.Context.VocabularyLevel,
                 Language = state.Context.Language
             }, cancellationToken);
             items = response.Items.Where(item => !string.IsNullOrWhiteSpace(item.Term) && !string.IsNullOrWhiteSpace(item.Definition))
@@ -428,7 +432,9 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             {
                 await _unitOfWork.Repository<StoryVocabulary>().AddRangeAsync(items.Select(item => new StoryVocabulary
                 {
-                    StoryVersionId = state.Version.Id, Term = item.Term.Trim(), Definition = item.Definition.Trim()
+                    StoryVersionId = state.Version.Id,
+                    Term = item.Term.Trim(),
+                    Definition = item.Definition.Trim()
                 }), cancellationToken);
             }
         }, GenerationJobOperation.GenerateQuiz, cancellationToken);
@@ -446,7 +452,9 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
         {
             response = await _aiClient.GenerateQuizAsync(new GenerateQuizRequest
             {
-                RequestId = $"quiz-job-{jobId}-attempt-{attempt}", Story = ToContent(state.Version), AgeBand = state.Context.AgeBand,
+                RequestId = $"quiz-job-{jobId}-attempt-{attempt}",
+                Story = ToContent(state.Version),
+                AgeBand = state.Context.AgeBand,
                 Language = state.Context.Language,
                 ComprehensionGoal = state.Context.ComprehensionGoal,
                 ComprehensionThresholdPercent = state.Context.ComprehensionThresholdPercent,
@@ -484,7 +492,9 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
         {
             response = await _aiClient.GenerateDiscussionAsync(new GenerateDiscussionRequest
             {
-                RequestId = $"discussion-job-{jobId}-attempt-{attempt}", Story = ToContent(state.Version), AgeBand = state.Context.AgeBand,
+                RequestId = $"discussion-job-{jobId}-attempt-{attempt}",
+                Story = ToContent(state.Version),
+                AgeBand = state.Context.AgeBand,
                 Language = state.Context.Language,
                 ComprehensionGoal = state.Context.ComprehensionGoal
             }, cancellationToken);
@@ -500,7 +510,9 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             if (!await _unitOfWork.Repository<DiscussionQuestion>().ExistsAsync(item => item.StoryVersionId == state.Version.Id, cancellationToken))
                 await _unitOfWork.Repository<DiscussionQuestion>().AddRangeAsync(questions.Select((question, index) => new DiscussionQuestion
                 {
-                    StoryVersionId = state.Version.Id, Question = question, IsMoralLesson = index == 0
+                    StoryVersionId = state.Version.Id,
+                    Question = question,
+                    IsMoralLesson = index == 0
                 }), cancellationToken);
         }, null, cancellationToken);
     }
@@ -762,19 +774,28 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
 
     private static GenerateStoryContentRequest BuildContentRequest(
         StoryGenerationJob job, StoryVersion version, AcceptedAIStoryInputSnapshot input, AIStoryInputContextSnapshot context) => new()
-    {
-        RequestId = $"content-job-{job.Id}", ApprovedOutlineReference = $"story-version-{version.Id}",
-        Outline = ToOutline(version), AgeBand = context.AgeBand, ReadingLevel = context.ReadingLevel.ToString(),
-        VocabularyLevel = context.VocabularyLevel, Language = context.Language,
-        ComprehensionGoal = context.ComprehensionGoal,
-        StoryParameters = new StoryParametersDto
         {
-            Genre = input.Genre, CharacterMode = input.CharacterMode, Characters = input.Characters,
-            SettingMode = input.SettingMode, Setting = input.Setting ?? string.Empty, Topic = input.Topic,
-            Lesson = input.Lesson, RequestedLength = input.TargetLength
-        },
-        Constraints = Constraints(context)
-    };
+            RequestId = $"content-job-{job.Id}",
+            ApprovedOutlineReference = $"story-version-{version.Id}",
+            Outline = ToOutline(version),
+            AgeBand = context.AgeBand,
+            ReadingLevel = context.ReadingLevel.ToString(),
+            VocabularyLevel = context.VocabularyLevel,
+            Language = context.Language,
+            ComprehensionGoal = context.ComprehensionGoal,
+            StoryParameters = new StoryParametersDto
+            {
+                Genre = input.Genre,
+                CharacterMode = input.CharacterMode,
+                Characters = input.Characters,
+                SettingMode = input.SettingMode,
+                Setting = input.Setting ?? string.Empty,
+                Topic = input.Topic,
+                Lesson = input.Lesson,
+                RequestedLength = input.TargetLength
+            },
+            Constraints = Constraints(context)
+        };
 
     private static GenerationConstraintsDto Constraints(AIStoryInputContextSnapshot context) => new()
     {
@@ -975,8 +996,11 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
         public int StoryVersionId { get; init; }
         public static implicit operator QuizItem(QuizItemSeed item) => new()
         {
-            StoryVersionId = item.StoryVersionId, Type = item.Type, Question = item.Question,
-            CorrectAnswer = item.CorrectAnswer, Choices = item.Choices
+            StoryVersionId = item.StoryVersionId,
+            Type = item.Type,
+            Question = item.Question,
+            CorrectAnswer = item.CorrectAnswer,
+            Choices = item.Choices
         };
     }
 }

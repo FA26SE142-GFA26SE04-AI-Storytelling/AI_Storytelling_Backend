@@ -107,10 +107,10 @@ public partial class PublicStoryReviewService
             case PublicReviewRequirements.ComparePublic:
                 var approved = await _unitOfWork.Repository<StoryVersion>().FindAsync(
                     version => version.StoryId == context.Story.Id
-                               && version.ReviewStatus == VersionReviewStatus.Approved
+                               && version.Moderation.ReviewStatus == VersionReviewStatus.Approved
                                && version.Id != context.Version.Id,
                     cancellationToken: cancellationToken);
-                return approved.OrderByDescending(version => version.ReviewedAt)
+                return approved.OrderByDescending(version => version.Moderation.ReviewedAt)
                            .ThenByDescending(version => version.VersionNo)
                            .FirstOrDefault()
                        ?? throw new BadRequestException("Truyện chưa có bản công khai để so sánh.");

@@ -343,6 +343,7 @@ public sealed class ParentManualApiFlowTests
         public string OtherChild { get; } = otherChild;
         public string Creator { get; private set; } = string.Empty;
         public string Moderator { get; private set; } = string.Empty;
+        public string Administrator { get; private set; } = string.Empty;
 
         public static async Task<ApiHost> StartAsync(StoryPlatform.Application.Features.StoryReview.Interfaces.IStoryReviewService? reviewService = null)
         {
@@ -397,7 +398,9 @@ public sealed class ParentManualApiFlowTests
             builder.Services.AddSingleton(new ParentAssistanceService(store.Uow.Object, ai.Object, new(), TimeProvider.System,
                 new SupervisionAccessGuard(store.Uow.Object), new(), NullLogger<ParentAssistanceService>.Instance));
             builder.Services.AddSingleton<ICreatorAssistanceService>(new CreatorAssistanceService(store.Uow.Object, ai.Object, new(), TimeProvider.System));
-            builder.Services.AddSingleton<AuthoringGuideService>();
+            builder.Services.AddSingleton(new AuthoringGuideService(store.Uow.Object));
+            builder.Services.AddSingleton<StoryPlatform.Application.Features.AuthoringGuideManagement.Interfaces.IAuthoringGuideManagementService>(
+                new StoryPlatform.Application.Features.AuthoringGuideManagement.Services.AuthoringGuideManagementService(store.Uow.Object, audit.Object));
             builder.Services.AddSingleton<IStoryService>(new StoryService(store.Uow.Object));
             builder.Services.AddJwtAuthentication(builder.Configuration);
             builder.Services.AddAppAuthorization();
@@ -412,7 +415,8 @@ public sealed class ParentManualApiFlowTests
                 generator.GenerateChildAccessToken(3, "http-child-3"), generator.GenerateChildAccessToken(4, "http-child-4"))
             {
                 Creator = generator.GenerateAccessToken(store.Items<UserAccount>().Single(x => x.Id == 13)),
-                Moderator = generator.GenerateAccessToken(store.Items<UserAccount>().Single(x => x.Id == 14))
+                Moderator = generator.GenerateAccessToken(store.Items<UserAccount>().Single(x => x.Id == 14)),
+                Administrator = generator.GenerateAccessToken(store.Items<UserAccount>().Single(x => x.Id == 9))
             };
         }
 

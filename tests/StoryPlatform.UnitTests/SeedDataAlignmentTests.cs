@@ -145,7 +145,10 @@ public sealed class SeedDataAlignmentTests
             .UseNpgsql("Host=localhost;Database=metadata_only;Username=unused;Password=unused").Options);
         var model = db.GetService<IDesignTimeModel>().Model.GetRelationalModel();
         var inserts = ReadInserts();
-        var modelTables = model.Tables.Select(t => t.Name).OrderBy(x => x, StringComparer.Ordinal).ToArray();
+        // Seeded once at application startup by AuthoringGuideCatalogSeeder (embedded JSON), not by SQL seed files.
+        string[] seededByCode = ["authoring_guide_catalog_versions", "authoring_guide_catalogs"];
+        var modelTables = model.Tables.Select(t => t.Name).Where(name => !seededByCode.Contains(name))
+            .OrderBy(x => x, StringComparer.Ordinal).ToArray();
         var seedTables = inserts.Select(i => i.Table).Distinct(StringComparer.Ordinal).OrderBy(x => x, StringComparer.Ordinal).ToArray();
         var missingInserts = modelTables.Except(seedTables, StringComparer.Ordinal).ToArray();
         var extraInserts = seedTables.Except(modelTables, StringComparer.Ordinal).ToArray();

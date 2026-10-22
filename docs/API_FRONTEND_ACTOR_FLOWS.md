@@ -263,7 +263,7 @@ Nguồn: [luồng 2](HUONG_DAN_SU_DUNG_API_LUONG_2.md), [AIStoryInputService](..
 
 ### M1. Tạo/lưu/nhập
 
-1. GET /authoring-guides → POST /{guideId}/render trả envelope RenderGuideResult. Render text, không innerHTML; chèn/undo không tạo version.
+1. GET /authoring-guides (chỉ phiên bản đang phát hành, có catalogVersion) → POST /{guideId}/render trả envelope RenderGuideResult; có thể gửi catalogVersion, lệch thì 409 GUIDE_CATALOG_CHANGED → tải lại danh sách. Render text, không innerHTML; chèn/undo không tạo version.
 2. POST /parent/stories/manual với operationId/childProfileId/ngữ cảnh → giữ data.story.storyId, revisionToken, selectedVersionId.
 3. GET detail/workflow phục hồi; đổi child tạo tác phẩm/ngữ cảnh riêng.
 4. POST /{storyId}/manual/versions với revisionToken/baseVersionId/nội dung cuối → version mới. GET versions/version; restore tạo version mới.
@@ -493,6 +493,10 @@ Report đang Claimed: Moderator có thể POST /api/v1/ContentReportReview/{item
 
 Nguồn: [PublishedContentReviewService](../src/Core/StoryPlatform.Application/Features/ContentReports/Services/PublishedContentReviewService.cs), [ContentReportReviewService escalation](../src/Core/StoryPlatform.Application/Features/ContentReports/Services/ContentReportReviewService.Escalation.cs).
 
+### MO10. Quản lý hướng dẫn sáng tác (Moderator hoặc Administrator)
+
+Tiền tố `/api/v1/moderation/authoring-guides`. Luồng: GET `/` (bộ đang phát hành + bản nháp + `revisionToken`) → POST `/draft` → PUT/DELETE `/draft/items/{guideId}` → POST `/draft/preview` → POST `/draft/publish`; DELETE `/draft` hủy bản nháp (xóa mềm); GET `/versions`, `/versions/{versionId}` xem lịch sử. Các thao tác sửa, loại mục, hủy và phát hành cần `revisionToken` mới nhất và trả token mới; 409 `GUIDE_REVISION_CONFLICT` nghĩa là tải lại `GET /`. Phiên bản đã phát hành không sửa được; khôi phục = tạo nháp từ `sourceVersionId` rồi phát hành. Chi tiết, payload mẫu và bảng mã lỗi: `docs/AUTHORING_GUIDE_MANAGEMENT_API_GUIDE.md`.
+
 <a id="admin"></a>
 ## 11. Administrator — vận hành
 
@@ -502,7 +506,8 @@ Nguồn: [PublishedContentReviewService](../src/Core/StoryPlatform.Application/F
 - **Dữ liệu:** GET /DataRequest/pending → resolve-export/resolve-delete/reject. Format=xlsx tải workbook; **format=csv trả ZIP application/zip**, không text CSV thuần. Đọc Content-Disposition, không parse JSON cho file.
 - **Báo cáo:** POST /BusinessReport/generate → /{reportId}/publish → GET latest-published. Generate/publish chỉ Admin; latest cho người lớn xác thực.
 - **Đối soát:** GET /Payment/mismatched → xác minh → POST /transactions/{id}/mark-paid. Local badge không chứng minh đã đối soát.
-- **Kiểm duyệt:** MO1–MO9 theo guard từng luồng; không bỏ cấm tự duyệt/eligibility. Admin không được suy có quyền tạo/sửa RoadmapTemplate hoặc tạo PublishedContentReview review-item khi action chỉ cho Moderator.
+- **Kiểm duyệt:** MO1–MO10 theo guard từng luồng; không bỏ cấm tự duyệt/eligibility. Admin không được suy có quyền tạo/sửa RoadmapTemplate hoặc tạo PublishedContentReview review-item khi action chỉ cho Moderator.
+- **Hướng dẫn sáng tác:** MO10; Administrator và Moderator cùng quản lý bản nháp và phát hành bộ hướng dẫn cho Parent.
 
 Rubric phiên bản đã có controller thật (AD1), cần nối frontend đúng contract; không còn xếp chung với chức năng chưa có backend. Chỉ số AI tổng hợp, catalog prompt, ứng tuyển Creator và quản lý Parent tổng quát vẫn cần đối chiếu riêng, không suy từ rubric rằng các module đó đã tích hợp.
 
@@ -2337,7 +2342,7 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="controller-authoringguides"></a>
 ### AuthoringGuides — 2 route
 
-M1. Parent token; catalog không AI/không lưu version. Render trả ApiResponse&lt;RenderGuideResult&gt; chứa text, không raw HTML. Query theo signature.
+M1. Parent token; catalog không AI/không lưu version. Render trả ApiResponse&lt;RenderGuideResult&gt; chứa text, không raw HTML. Query theo signature. Catalog lưu trong database, chỉ đọc phiên bản đang phát hành; RenderGuideRequest có thêm catalogVersion tùy chọn (409 GUIDE_CATALOG_CHANGED khi lệch). Quản lý bởi Moderator/Administrator qua /api/v1/moderation/authoring-guides.
 
 Guard/nghiệp vụ: [AuthoringGuideService.cs](../src/Core/StoryPlatform.Application/Features/ParentAuthoring/AuthoringGuideService.cs).
 

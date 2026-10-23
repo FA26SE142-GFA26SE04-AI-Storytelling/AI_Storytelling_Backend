@@ -21,11 +21,24 @@ public sealed class ChildRewardsController : ControllerBase
         _rewards = rewards;
     }
 
-    private int ChildId => int.TryParse(
-        User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var id)
-        ? id : throw new UnauthorizedAccessException();
+    private int ChildId
+    {
+        get
+        {
+            var claim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+            if (!int.TryParse(claim, out var id))
+            {
+                throw new UnauthorizedAccessException();
+            }
+
+            return id;
+        }
+    }
 
     [HttpGet]
-    public async Task<ActionResult<ApiResponse<ChildRewardsDto>>> Get(CancellationToken ct) =>
-        Ok(ApiResponse<ChildRewardsDto>.Ok(await _rewards.GetSummaryAsync(ChildId, ct)));
+    public async Task<ActionResult<ApiResponse<ChildRewardsDto>>> Get(CancellationToken ct)
+    {
+        var result = await _rewards.GetSummaryAsync(ChildId, ct);
+        return Ok(ApiResponse<ChildRewardsDto>.Ok(result));
+    }
 }

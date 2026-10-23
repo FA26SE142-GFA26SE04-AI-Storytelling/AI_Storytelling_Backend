@@ -112,8 +112,11 @@ public sealed class ChildReadingController : ControllerBase
     /// <summary>Trẻ chọn cảm nhận sau khi đọc xong. Chỉ ghi lại, không có phản hồi hay thưởng.</summary>
     [HttpPut("sessions/{sessionId:int}/feeling")]
     public async Task<ActionResult<ApiResponse<ReadingFeelingDto>>> SetFeeling(
-        int sessionId, [FromBody] SetFeelingRequestDto request, CancellationToken ct) =>
-        Ok(ApiResponse<ReadingFeelingDto>.Ok(await _reading.SetFeelingAsync(ChildId, sessionId, request, ct)));
+        int sessionId, [FromBody] SetFeelingRequestDto request, CancellationToken ct)
+    {
+        var result = await _reading.SetFeelingAsync(ChildId, sessionId, request, ct);
+        return Ok(ApiResponse<ReadingFeelingDto>.Ok(result));
+    }
 
     /// <summary>App của trẻ gọi mỗi ≤10 giây để biết phiên có bị ngắt không (thông báo trong vòng 15 giây).</summary>
     [HttpGet("sessions/{sessionId:int}/signal")]

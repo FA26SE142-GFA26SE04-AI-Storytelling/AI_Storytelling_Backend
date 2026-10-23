@@ -39,13 +39,15 @@ public sealed class ReadingHarness
     public readonly List<SafetyPolicy> Policies = new();
     public readonly List<SafetyPolicyCategory> PolicyCategories = new();
     public readonly List<StoryCategory> StoryCategories = new();
+    public readonly List<WishCard> WishCards = new();
+    public readonly List<ContentCategory> Categories = new();
 
     public ReadingHarness()
     {
         Back(Children); Back(ChildSessions); Back(Stories); Back(Versions); Back(Scenes); Back(Segments);
         Back(Assets); Back(Sessions); Back(Progress); Back(Vocabulary); Back(Notebook); Back(Telemetry);
         Back(Cases); Back(ModerationItems); Back(Quizzes); Back(Attempts); Back(Achievements); Back(Badges);
-        Back(Policies); Back(PolicyCategories); Back(StoryCategories);
+        Back(Policies); Back(PolicyCategories); Back(StoryCategories); Back(WishCards); Back(Categories);
 
         Children.Add(new ChildProfile
         {
@@ -143,6 +145,26 @@ public sealed class ReadingHarness
         };
         Cases.Add(holdCase);
         return holdCase;
+    }
+
+    public WishCard AddCard(
+        WishCardGroup group, string label, int sortOrder = 0, AgeBand? ageBand = null,
+        int? categoryId = null, bool isActive = true)
+    {
+        var card = new WishCard
+        {
+            Id = WishCards.Count + 1, Group = group, Label = label, ImageUrl = $"https://cdn.test/{WishCards.Count + 1}.png",
+            SortOrder = sortOrder, AgeBand = ageBand, ContentCategoryId = categoryId, IsActive = isActive
+        };
+        WishCards.Add(card);
+        return card;
+    }
+
+    public ContentCategory AddCategory(int id, string code, bool isActive = true)
+    {
+        var category = new ContentCategory { Id = id, Code = code, DisplayName = code, IsActive = isActive };
+        Categories.Add(category);
+        return category;
     }
 
     private void Back<T>(List<T> list) where T : BaseEntity

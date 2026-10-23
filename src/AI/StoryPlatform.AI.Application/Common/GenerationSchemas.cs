@@ -4,6 +4,28 @@ namespace StoryPlatform.AI.Application.Common;
 
 internal static class GenerationSchemas
 {
+    public static JsonElement GroundedVocabulary => Grounded(Vocabulary, false);
+    public static JsonElement GroundedQuiz => Grounded(Quiz, true);
+    private static JsonElement Grounded(JsonElement original, bool quiz)
+    {
+        var root = System.Text.Json.Nodes.JsonNode.Parse(original.GetRawText())!;
+        root["properties"]!["shortfallReason"] = System.Text.Json.Nodes.JsonNode.Parse("{\"type\":\"string\"}");
+        root["required"]!.AsArray().Add("shortfallReason");
+        var items = root["properties"]!["items"]!;
+        items["minItems"] = 0;
+        var item = items["items"]!;
+        foreach (var name in quiz ? new[] { "sourceQuote", "learningGoal", "hint" } : new[] { "sourceQuote", "example" })
+        {
+            item["properties"]![name] = System.Text.Json.Nodes.JsonNode.Parse("{\"type\":\"string\"}");
+            item["required"]!.AsArray().Add(name);
+        }
+        if (quiz)
+        {
+            item["properties"]!["optionFeedback"] = System.Text.Json.Nodes.JsonNode.Parse("{\"type\":\"array\",\"items\":{\"type\":\"string\"}}");
+            item["required"]!.AsArray().Add("optionFeedback");
+        }
+        return JsonSerializer.SerializeToElement(root);
+    }
     public static JsonElement Outline => Parse("""
         {
           "type":"object",

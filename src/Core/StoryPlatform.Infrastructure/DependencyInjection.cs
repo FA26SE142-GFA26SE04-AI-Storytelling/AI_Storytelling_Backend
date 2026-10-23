@@ -3,6 +3,7 @@ using System.IO;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Security;
@@ -101,6 +102,13 @@ public static class DependencyInjection
         configuration.GetSection(GrayZoneOptions.SectionName).Bind(grayZoneOptions);
         services.AddSingleton(grayZoneOptions);
         var contentOptions = new ContentGenerationOptions();
+        var learningOptions = new LearningBatchOptions();
+        configuration.GetSection(LearningBatchOptions.SectionName).Bind(learningOptions);
+        services.AddSingleton(learningOptions);
+        services.AddSingleton<StoryPlatform.Application.Features.ContentGeneration.Interfaces.ILearningBatchRunner, LearningBatchRunner>();
+        services.AddSingleton<StoryPlatform.Application.Features.ContentGeneration.Interfaces.ILearningRequestGate, LearningRequestGate>();
+        services.AddScoped<StoryPlatform.Application.Features.ContentGeneration.Interfaces.ILearningBatchProcessor, StoryPlatform.Application.Features.ContentGeneration.Services.LearningBatchProcessor>();
+        services.AddScoped<StoryPlatform.Application.Features.ContentGeneration.Interfaces.ILearningBatchService, StoryPlatform.Application.Features.ContentGeneration.Services.LearningBatchService>();
         configuration.GetSection(ContentGenerationOptions.SectionName).Bind(contentOptions);
         services.AddSingleton(contentOptions);
         services.AddSingleton<IContentGenerationJobFailureFinalizer, ContentGenerationJobFailureFinalizer>();
@@ -183,7 +191,8 @@ public static class DependencyInjection
             mediaOptions, geminiOptions.TransportRetryCount, geminiOptions.TransportRetryBaseDelayMs);
 
         // Application-layer interfaces → Infrastructure implementations
-        services.AddSingleton<IImageGenerationProvider>(sp => new GatedImageProvider(sp.GetRequiredService<GeminiImageGenerationProvider>(), new MediaBranchProviderGate(mediaOptions.Images)));
+        services.AddSingleton<IImageGenerationProvider>(sp => new GatedImageProvider(sp.GetRequiredService<GeminiImageGenerationProvider>(),
+            new MediaBranchProviderGate(mediaOptions.Images, sp.GetRequiredService<ILoggerFactory>().CreateLogger("MediaProviderTiming"), "Image")));
         services.AddSingleton<GoogleCloudTtsProvider>();
         services.AddSingleton<ITtsProvider>(sp => new GatedTtsProvider(ttsOptions.Provider.Trim().ToUpperInvariant() switch
         {
@@ -191,7 +200,7 @@ public static class DependencyInjection
             "GOOGLECLOUD" or "GOOGLECLOUDTTS" => sp.GetRequiredService<GoogleCloudTtsProvider>(),
             _ => throw new InvalidOperationException(
                 $"Unsupported AI:TTS:Provider '{ttsOptions.Provider}'. Supported values: GeminiTTS, GoogleCloudTTS.")
-        }, new MediaBranchProviderGate(mediaOptions.Audio)));
+        }, new MediaBranchProviderGate(mediaOptions.Audio, sp.GetRequiredService<ILoggerFactory>().CreateLogger("MediaProviderTiming"), "Audio")));
         services.AddSingleton<IMediaAlignmentEvaluator>(sp => sp.GetRequiredService<GeminiMediaAlignmentEvaluator>());
         services.AddSingleton<IMediaSafetyEvaluator>(sp => sp.GetRequiredService<GeminiMediaSafetyEvaluator>());
         services.AddSingleton<ISemanticSceneSegmentationProvider>(sp => sp.GetRequiredService<GeminiSemanticSceneSegmentationProvider>());

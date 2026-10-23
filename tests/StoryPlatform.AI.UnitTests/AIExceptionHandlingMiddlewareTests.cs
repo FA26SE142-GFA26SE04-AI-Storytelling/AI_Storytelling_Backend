@@ -8,6 +8,23 @@ namespace StoryPlatform.AI.UnitTests;
 
 public sealed class AIExceptionHandlingMiddlewareTests
 {
+    [Theory]
+    [InlineData(400, 400, "AI_PROVIDER_CONFIGURATION_REJECTED")]
+    [InlineData(403, 400, "AI_PROVIDER_CONFIGURATION_REJECTED")]
+    [InlineData(429, 429, "AI_PROVIDER_429")]
+    [InlineData(500, 502, "AI_PROVIDER_FAILED")]
+    public async Task Provider_errors_keep_retryable_and_permanent_failures_distinct(int upstream, int expected, string code)
+    {
+        var context = new DefaultHttpContext(); context.Response.Body = new MemoryStream();
+        await new AIExceptionHandlingMiddleware(_ => throw new HttpRequestException("private provider body", null, (System.Net.HttpStatusCode)upstream),
+            new RecordingLogger<AIExceptionHandlingMiddleware>()).InvokeAsync(context);
+        Assert.Equal(expected, context.Response.StatusCode);
+        context.Response.Body.Position = 0;
+        using var body = await JsonDocument.ParseAsync(context.Response.Body);
+        Assert.Equal(code, body.RootElement.GetProperty("errorCode").GetString());
+        Assert.DoesNotContain("private provider body", body.RootElement.GetRawText());
+    }
+
     [Fact]
     public async Task DisconnectedCallerDoesNotReceiveResponseOrUnhandledError()
     {

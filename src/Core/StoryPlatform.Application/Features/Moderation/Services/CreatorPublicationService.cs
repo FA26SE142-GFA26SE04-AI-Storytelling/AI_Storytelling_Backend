@@ -136,9 +136,12 @@ public sealed class CreatorPublicationService(IUnitOfWork uow, IModerationQueueS
             await uow.Repository<StoryVersion>().AddAsync(revision, ct);
             await uow.SaveChangesAsync(ct);
             foreach (var x in await uow.Repository<StoryVocabulary>().FindAsync(x => x.StoryVersionId == source.Id, cancellationToken: ct))
-                await uow.Repository<StoryVocabulary>().AddAsync(new() { StoryVersionId = revision.Id, Term = x.Term, Definition = x.Definition }, ct);
+                await uow.Repository<StoryVocabulary>().AddAsync(new() { StoryVersionId = revision.Id, Term = x.Term, Definition = x.Definition,
+                    SourceQuote = x.SourceQuote, SourceStart = x.SourceStart, SourceEnd = x.SourceEnd, Example = x.Example }, ct);
             foreach (var x in await uow.Repository<QuizItem>().FindAsync(x => x.StoryVersionId == source.Id, cancellationToken: ct))
-                await uow.Repository<QuizItem>().AddAsync(new() { StoryVersionId = revision.Id, Type = x.Type, Question = x.Question, CorrectAnswer = x.CorrectAnswer, Choices = x.Choices }, ct);
+                await uow.Repository<QuizItem>().AddAsync(new() { StoryVersionId = revision.Id, Type = x.Type, Question = x.Question, CorrectAnswer = x.CorrectAnswer, Choices = x.Choices,
+                    SourceQuote = x.SourceQuote, SourceStart = x.SourceStart, SourceEnd = x.SourceEnd, Explanation = x.Explanation,
+                    Hint = x.Hint, LearningGoal = x.LearningGoal, OptionFeedbackJson = x.OptionFeedbackJson }, ct);
             foreach (var x in await uow.Repository<DiscussionQuestion>().FindAsync(x => x.StoryVersionId == source.Id, cancellationToken: ct))
                 await uow.Repository<DiscussionQuestion>().AddAsync(new() { StoryVersionId = revision.Id, Question = x.Question, IsMoralLesson = x.IsMoralLesson }, ct);
             // Media remain bound to the historical version; the new version must prepare its own media.

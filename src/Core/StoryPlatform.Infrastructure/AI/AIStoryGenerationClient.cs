@@ -80,7 +80,8 @@ public sealed class AIStoryGenerationClient : IAIStoryGenerationClient
             throw new AIServiceRequestException(
                 (int)response.StatusCode,
                 string.IsNullOrWhiteSpace(error?.ErrorCode) ? "AI_SERVICE_REQUEST_FAILED" : error.ErrorCode,
-                string.IsNullOrWhiteSpace(error?.Error) ? "AI service request failed." : error.Error);
+                string.IsNullOrWhiteSpace(error?.Error) ? "AI service request failed." : error.Error,
+                response.Headers.RetryAfter?.Delta ?? (response.Headers.RetryAfter?.Date - DateTimeOffset.UtcNow));
         }
         return await response.Content.ReadFromJsonAsync<TResponse>(cancellationToken: cancellationToken)
                ?? throw new InvalidOperationException($"AI service returned an empty response for '{path}'.");

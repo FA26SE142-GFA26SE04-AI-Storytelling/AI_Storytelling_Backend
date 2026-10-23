@@ -209,6 +209,7 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
                 Id = x.Id,
                 Term = x.Term,
                 Definition = x.Definition
+                , SourceQuote = x.SourceQuote, Example = x.Example
             }).ToList(),
             Quizzes = content.Quizzes.OrderBy(x => x.Id).Select(x => new PublicReviewQuizDto
             {
@@ -216,6 +217,8 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
                 Type = x.Type.ToString(),
                 Question = x.Question,
                 CorrectAnswer = x.CorrectAnswer,
+                SourceQuote = x.SourceQuote, Explanation = x.Explanation, Hint = x.Hint,
+                LearningGoal = x.LearningGoal, OptionFeedbackJson = x.OptionFeedbackJson,
                 Choices = x.Choices
             }).ToList(),
             DiscussionQuestions = content.Discussions.OrderBy(x => x.Id).Select(x => new PublicReviewDiscussionDto

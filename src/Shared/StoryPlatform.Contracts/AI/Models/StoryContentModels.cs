@@ -23,6 +23,10 @@ public sealed record QuizItemDto
     public int CorrectOptionIndex { get; init; }
     public string CorrectAnswer { get; init; } = string.Empty;
     public string Explanation { get; init; } = string.Empty;
+    public string LearningGoal { get; init; } = string.Empty;
+    public string SourceQuote { get; init; } = string.Empty;
+    public string Hint { get; init; } = string.Empty;
+    public IReadOnlyList<string> OptionFeedback { get; init; } = [];
 }
 
 public sealed record DiscussionQuestionDto(string Question);
@@ -35,7 +39,11 @@ public sealed record StoryContentDto
     public string Lesson { get; init; } = string.Empty;
 }
 
-public sealed record GeneratedVocabularyItemDto(string Term, string Definition);
+public sealed record GeneratedVocabularyItemDto(string Term, string Definition)
+{
+    public string SourceQuote { get; init; } = string.Empty;
+    public string Example { get; init; } = string.Empty;
+}
 
 public sealed record StoryPackageDto
 {

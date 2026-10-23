@@ -10859,3 +10859,32 @@ Th? t? b?t bu?c khi x?y d?ng migration:
 Seed ?? chia d? li?u theo b?ng m?i trong c?c file 64?67. File receipt kh?ng t?o d? li?u command gi?. Seed runner b? qua reset sequence cho c?c b?ng shared-PK kh?ng c? c?t Id. Ch?a ch?y seed/database update trong ??t refactor n?y.
 
 Test MigrationChainSchemaTests ph?i ti?p t?c b?o thi?u b?ng cho ??n khi migration th?t ???c t?o; kh?ng b? ho?c h? assertion n?y. Ch? tri?n khai runtime sau khi migration chuy?n d? li?u ?? ???c review v? ?p d?ng tr?n database ??ch.
+# Nâng cấp AI story và học liệu theo tuổi (2026-10-23)
+
+Áp dụng cho request AI generation mới của Parent và Content Creator. Gửi `targetLength: 0` hoặc bỏ trường này để dùng mặc định: tuổi 6–8 là 900 đơn vị từ, 12 vocabulary và 24 quiz; tuổi 9–10 là 1.500 đơn vị từ, 18 vocabulary và 36 quiz. Nếu gửi độ dài cụ thể, hệ thống vẫn dùng giá trị đó. Snapshot lưu mục tiêu tại thời điểm nhận request; request cũ không có learning profile giữ cách kiểm tra cũ.
+
+Core và AI dùng chung bộ đếm Unicode. Trong tiếng Việt, các âm tiết tách bằng khoảng trắng được đếm riêng; đây không phải bộ tách từ ngôn ngữ học. Biên độ nội dung mới là ±10%. Giới hạn SafetyPolicy của trẻ và cấu hình Creator vẫn có hiệu lực: backend không tự nâng giới hạn để chấp nhận truyện dài hơn. Độ dài này không bảo đảm audio dài 3–4 phút; thời lượng phải đo từ TTS thực tế.
+
+## Thực thi bất đồng bộ và hiển thị tiến độ
+
+Sau khi nội dung ổn định, Core lưu các batch độc lập cho vocabulary, quiz sự kiện và quiz suy luận. Mỗi batch dùng scope/DbContext riêng. Quiz từ vựng chỉ chạy sau khi vocabulary đã được xác thực. Mặc định tối đa hai batch/truyện, bốn request học liệu đồng thời trong một tiến trình; có thêm giới hạn 30 request/phút và burst 4. Giới hạn theo tiến trình không thay thế quota toàn cụm của provider.
+
+Frontend tiếp tục dùng `GET /api/v1/stories/{storyId}/generation/progress`. Các trường bổ sung: `vocabularyTarget`, `vocabularyCount`, `quizTarget`, `quizCount`, `totalLearningBatches`, `completedLearningBatches`, `learningWarnings`. Target là mục tiêu; count là dữ liệu đã lưu vào học liệu chính thức, nên có thể chưa tăng khi batch đang xử lý. Không coi response `202` hoặc một batch hoàn tất là toàn bộ câu chuyện đã xong.
+
+Khi lỗi, dùng `POST /api/v1/stories/{storyId}/generation/retry` với operation ID mới theo DTO hiện tại. Backend giữ batch đã hoàn tất và hợp lệ; replay cùng operation ID không tạo thêm công việc. Riêng `QUIZ_VALIDATION_FAILED` ở bước kiểm tra gói tổng hợp, retry hủy cache các batch quiz và xếp lại bước điều phối để sinh quiz mới, giữ nguyên vocabulary đã đạt. Job quiz chờ bước điều phối hoàn tất rồi mới được chạy lại; không đọc gói đang sinh dở. Không retry khi context, nội dung hoặc quyền đã thay đổi. Timeout mặc định 120 giây/lượt, tối đa ba lượt; Core quản lý retry batch, AI không lặp retry kỹ thuật bên trong batch. 429 có backoff; Retry-After được dùng khi phản hồi upstream cung cấp.
+
+## Dữ liệu dùng cho tương tác với trẻ
+
+Vocabulary có `sourceQuote`, `sourceStart`, `sourceEnd`, `example`. Quiz có `sourceQuote`, `sourceStart`, `sourceEnd`, `learningGoal`, `explanation`, `hint`, `optionFeedback`. Offset dùng chỉ số UTF-16, end không bao gồm ký tự cuối, tính trên `StoryVersion.Content` đã lưu. Frontend không tự tính lại trên HTML đã render. Không có quote hợp lệ thì không tạo offset giả cho dữ liệu cũ.
+
+AI phải trích nguyên văn bằng chứng từ truyện; vocabulary phải xuất hiện trong cả truyện và bằng chứng. Quiz được kiểm tra đáp án, lựa chọn, feedback, bằng chứng và câu hỏi trùng sau chuẩn hóa. Quote khớp không tự chứng minh câu trả lời đúng về ngữ nghĩa; Moderator vẫn kiểm duyệt. Nếu nguồn không đủ ý để tạo số lượng yêu cầu, cho phép ít hơn kèm lý do; không bịa kiến thức ngoài truyện để đủ chỉ tiêu. Ngân hàng câu hỏi này không có nghĩa hiển thị tất cả câu hỏi trong một lượt trẻ đọc.
+
+Các API review trả và nhận thông tin học liệu bổ sung; backend tính lại offset khi chỉnh quote. Snapshot và so sánh phiên bản công khai bao gồm nội dung bổ sung này. Cơ chế khóa phiên bản đã gửi Moderator/đã phát hành giữ nguyên.
+
+## Cấu hình, schema và kiểm chứng
+
+Các giá trị thuộc section `AI:LearningGeneration`, theo `LearningBatchOptions`: mục tiêu từng tuổi, concurrency, rate limit, timeout và retry. Learning profile được ghim trong request, batch ghim request/context và fingerprint nội dung. Thay đổi cấu hình không đổi mục tiêu của request đã nhận. Những luồng legacy không có learning profile và API tạo lại học liệu riêng chưa được chuyển toàn bộ sang batch.
+
+Hai nhóm schema đã được gom vào migration tăng dần [`20261023113952_AddMediaAssetTasksAndLearningArtifactBatches`](../src/Core/StoryPlatform.Infrastructure/Migrations/20261023113952_AddMediaAssetTasksAndLearningArtifactBatches.cs): tạo `learning_artifact_generation_batches` và `media_asset_generation_tasks`, thêm 11 cột nullable cho bằng chứng/chi tiết vocabulary và quiz, cùng index và khóa ngoại. Migration thay thế hai tên dự kiến `UpgradeLearningArtifactsAndGenerationBatches` và `AddMediaAssetGenerationTasks`; không cần tạo lại hai migration đó. Đã cập nhật snapshot và áp dụng thành công trên PostgreSQL local `localhost:5432/AIStorytellingDB` ngày 2026-10-23 sau khi sao lưu. Không backfill bằng chứng giả, không reset hoặc chạy seed. Các môi trường khác vẫn phải áp dụng migration trước khi chạy runtime mới.
+
+Benchmark provider thật cần ghi riêng thời gian queue, chờ gate, gọi AI, retry và tổng thời gian đến content review; so sánh p50/p95 cho cùng tuổi, model và quota. Test dùng client giả/SQLite xác minh nghiệp vụ, không chứng minh mức giảm độ trễ Vertex hoặc tính đúng của PostgreSQL advisory lock.

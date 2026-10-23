@@ -87,11 +87,23 @@ Kiểm thử thất bại: gây lỗi provider bằng test double → audio vẫ
 
 ## Cấu hình và triển khai
 
-`AI:MediaGeneration:Images` và `Audio` có `Concurrency` (mặc định 1), `ProviderTimeoutSeconds` (120), `RateLimit` và `CircuitBreaker` riêng. Shared HTTP rate limiter hiện có vẫn giới hạn tổng request HTTP. Cấu hình timeout của provider hiện hữu cũng được giữ; timeout hiệu lực không vượt giới hạn thấp hơn của transport/provider.
+`AI:MediaGeneration:Images` và `Audio` có `Concurrency` (mặc định Image = 2, Audio = 1), `ProviderTimeoutSeconds` (120), `RateLimit` và `CircuitBreaker` riêng. Image concurrency là số tác vụ tranh mỗi tiến trình; mỗi vòng lặp tạo DI scope/DbContext riêng. `AI:MediaGeneration:MaxConcurrentImagesPerStory` mặc định 2, được kiểm tra dưới transaction/story lock trong database, kể cả khi chạy nhiều tiến trình. Cấu hình Images.Concurrency đã có trước vẫn được ưu tiên nếu có giá trị explicit. Shared HTTP rate limiter hiện có vẫn giới hạn tổng request HTTP. Cấu hình timeout của provider hiện hữu cũng được giữ; timeout hiệu lực không vượt giới hạn thấp hơn của transport/provider.
+
+### Tác vụ từng tranh và đo thời gian
+
+Nhánh Image tổng không gọi provider tuần tự cho toàn truyện. Coordinator tạo asset chờ và `MediaAssetGenerationTask` cho từng tranh cần xử lý, sau khi đã chuẩn bị context/scenes/beats. Mỗi tác vụ có claim token, lease và lịch retry riêng. Một tranh lỗi không chặn các tranh còn lại hoặc audio. Nhánh Image chỉ hoàn tất khi mọi tác vụ đã hoàn tất; gói vẫn cần readiness và xác nhận như trước. Retry không tạo thêm tác vụ cho cùng asset. Regenerate tạo candidate asset mới và tác vụ riêng, giữ file cũ đến khi đổi current thành công.
+
+Progress `images` bổ sung `queuedCount`, `runningCount`, `failedCount`. `nextRetryAt` là lịch retry sớm nhất của tác vụ tranh đang chờ. Số lượng media ready vẫn tính theo asset current; không đồng nhất nó với số tác vụ hoàn tất.
+
+Log `Media stage` đo `ImageGeneration`, `ImageAlignment`, `ImageSafety`, `ImageUpload`, `TtsGeneration`, `AudioUpload`; log `Media timing` có queue/total milliseconds, task/story/version/revision/asset/attempt. Provider gate và HTTP limiter ghi thời gian chờ giới hạn request. Dùng logging scope để liên kết task với log provider; không ghi nội dung truyện hoặc credentials. Khi thử nghiệm hiệu năng, báo riêng tổng thời gian gói, thời gian đến ảnh đầu tiên, p50/p95 của từng công đoạn, số tranh, số lần gọi và tỷ lệ 429/retry trên cùng workload.
+
+`AI:MediaGeneration:ParallelImageEvaluation` mặc định false. Khi bật, alignment và safety chạy đồng thời trên cùng ảnh bất biến, cùng cancellation/timeout; cả hai phải đạt trước upload. Chỉ bật sau khi kiểm tra provider/client và so sánh số đo; không giảm số tranh mặc định hoặc bỏ kiểm tra an toàn.
+
+Schema tác vụ ảnh đã được gom cùng học liệu vào [`AddMediaAssetTasksAndLearningArtifactBatches`](../src/Core/StoryPlatform.Infrastructure/Migrations/20261023113952_AddMediaAssetTasksAndLearningArtifactBatches.cs), tạo `media_asset_generation_tasks`, FK/index/unique MediaAssetId. Đã cập nhật snapshot và database local `localhost:5432/AIStorytellingDB` ngày 2026-10-23; không cần tạo riêng migration `AddMediaAssetGenerationTasks`. Các môi trường khác cần áp dụng migration trước khi chạy worker mới. Các job Image đã chuẩn bị ở bản cũ được coordinator đối chiếu, tạo tác vụ còn thiếu và giữ media Ready; không chạy worker cũ/mới đồng thời.
 
 Retry asset được scheduler quản lý; Image/TTS REST không cộng thêm retry transport. Giữ tối đa AssetMaxAttempts (mặc định 3) lần gọi cho một lượt thử. Retry có backoff/jitter, tôn trọng Retry-After. Circuit đang mở không tiêu tốn lượt gọi sinh nội dung. Retry chủ động mở lượt thử mới. Alignment/safety evaluator vẫn giữ pipeline kiểm tra riêng.
 
-Migration đã tạo, chưa áp dụng database: [`SplitPhaseFiveMediaJobs`](../src/Core/StoryPlatform.Infrastructure/Migrations/20261023033058_SplitPhaseFiveMediaJobs.cs), thêm trường job và asset, thay index unique theo asset current, thêm FK/unique cho ứng viên chưa xử lý. `ReplacementResolvedAt` phân biệt ứng viên đã bị bỏ qua với ứng viên còn cần xử lý. Rollback bị chặn nếu đã có job con hoặc dữ liệu thay thế mà schema cũ không thể lưu đầy đủ.
+Migration [`SplitPhaseFiveMediaJobs`](../src/Core/StoryPlatform.Infrastructure/Migrations/20261023033058_SplitPhaseFiveMediaJobs.cs) đã có trong lịch sử database local được kiểm tra ngày 2026-10-23; các môi trường khác cần kiểm tra riêng. Migration thêm trường job và asset, thay index unique theo asset current, thêm FK/unique cho ứng viên chưa xử lý. `ReplacementResolvedAt` phân biệt ứng viên đã bị bỏ qua với ứng viên còn cần xử lý. Rollback bị chặn nếu đã có job con hoặc dữ liệu thay thế mà schema cũ không thể lưu đầy đủ.
 
 Backfill asset cũ là current theo liên kết đang dùng; giữ RequestedPackageRevision NULL cho media cũ. Không tự chọn một bản nếu dữ liệu cũ có nhiều asset hợp lệ cùng target. Giữ revision và xác nhận gói cũ; không reset hoặc seed thay thế dữ liệu.
 

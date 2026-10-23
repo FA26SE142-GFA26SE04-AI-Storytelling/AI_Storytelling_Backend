@@ -313,16 +313,21 @@ $sqlFooterTemplate = @'
 -- Reset identity sequences tu chinh cac bang co file seed.
 DO $seed_sequences$
 DECLARE
-    table_name text;
+    seed_table_name text;
     sequence_name text;
     schema_name text := current_schema();
     maximum_id bigint;
     seed_tables text[] := ARRAY[__SEED_TABLES__];
 BEGIN
-    FOREACH table_name IN ARRAY seed_tables LOOP
-        sequence_name := pg_get_serial_sequence(format('%I.%I', schema_name, table_name), 'Id');
+    FOREACH seed_table_name IN ARRAY seed_tables LOOP
+        -- Shared-PK dependent tables use StoryVersionId and have no identity sequence.
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns c
+            WHERE c.table_schema = schema_name AND c.table_name = seed_table_name AND c.column_name = 'Id') THEN
+            CONTINUE;
+        END IF;
+        sequence_name := pg_get_serial_sequence(format('%I.%I', schema_name, seed_table_name), 'Id');
         IF sequence_name IS NOT NULL THEN
-            EXECUTE format('SELECT MAX("Id") FROM %I.%I', schema_name, table_name) INTO maximum_id;
+            EXECUTE format('SELECT MAX("Id") FROM %I.%I', schema_name, seed_table_name) INTO maximum_id;
             IF maximum_id IS NULL THEN
                 PERFORM setval(sequence_name, 1, false);
             ELSE

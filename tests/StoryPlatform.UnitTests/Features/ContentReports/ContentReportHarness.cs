@@ -60,7 +60,9 @@ public sealed class ContentReportHarness
         var policy = Policies.FirstOrDefault(existing => existing.ChildProfileId == childId) ?? AddPolicy(childId);
         PolicyCategories.Add(new SafetyPolicyCategory
         {
-            Id = PolicyCategories.Count + 1, SafetyPolicyId = policy.Id, ContentCategoryId = categoryId,
+            Id = PolicyCategories.Count + 1,
+            SafetyPolicyId = policy.Id,
+            ContentCategoryId = categoryId,
             Rule = PolicyRule.Blocked
         });
     }
@@ -113,12 +115,18 @@ public sealed class ContentReportHarness
             StoryId = PublicStoryId,
             VersionNo = 1,
             Title = "v1",
-            ReviewStatus = VersionReviewStatus.Approved,
-            ReviewedAt = DateTime.UtcNow.AddDays(-5)
+            Moderation = new StoryVersionModerationState
+            {
+                ReviewStatus = VersionReviewStatus.Approved,
+                ReviewedAt = DateTime.UtcNow.AddDays(-5)
+            }
         });
         Versions.Add(new StoryVersion
         {
-            Id = 51, StoryId = PublicStoryId, VersionNo = 2, Title = "v2"
+            Id = 51,
+            StoryId = PublicStoryId,
+            VersionNo = 2,
+            Title = "v2"
         });
 
         Stories.Add(new Story

@@ -28,8 +28,11 @@ public class ReportableStoryResolverTests
             StoryId = ContentReportHarness.PublicStoryId,
             VersionNo = 3,
             Title = "v3",
-            ReviewStatus = VersionReviewStatus.Approved,
-            ReviewedAt = DateTime.UtcNow.AddDays(-1)
+            Moderation = new StoryVersionModerationState
+            {
+                ReviewStatus = VersionReviewStatus.Approved,
+                ReviewedAt = DateTime.UtcNow.AddDays(-1)
+            }
         });
 
         var result = await Resolve(ContentReportHarness.PublicStoryId);

@@ -55,10 +55,17 @@ public sealed class StableVersionArtifactHandoffServiceTests
         var store = Seed();
         store.Seed(new StoryGenerationRequest
         {
-            Id = 1, StoryId = 1, SubmittedByUserId = 1, IdempotencyKey = "existing-key",
-            InputFingerprint = "abc", ContextFingerprint = "def",
-            ContextSnapshotJson = "{}", AcceptedInputJson = "{\"Topic\":\"X\"}",
-            Status = GenerationInputStatus.InputAccepted, AttemptCount = 0, MaxAttempts = 1
+            Id = 1,
+            StoryId = 1,
+            SubmittedByUserId = 1,
+            IdempotencyKey = "existing-key",
+            InputFingerprint = "abc",
+            ContextFingerprint = "def",
+            ContextSnapshotJson = "{}",
+            AcceptedInputJson = "{\"Topic\":\"X\"}",
+            Status = GenerationInputStatus.InputAccepted,
+            AttemptCount = 0,
+            MaxAttempts = 1
         });
         var service = BuildService(store);
 
@@ -78,10 +85,17 @@ public sealed class StableVersionArtifactHandoffServiceTests
         var store = Seed();
         store.Seed(new StoryGenerationRequest
         {
-            Id = 7, StoryId = 1, SubmittedByUserId = 1, IdempotencyKey = $"request-{status}",
-            InputFingerprint = "abc", ContextFingerprint = "def",
-            ContextSnapshotJson = "{}", AcceptedInputJson = "{}",
-            Status = status, AttemptCount = 1, MaxAttempts = 1
+            Id = 7,
+            StoryId = 1,
+            SubmittedByUserId = 1,
+            IdempotencyKey = $"request-{status}",
+            InputFingerprint = "abc",
+            ContextFingerprint = "def",
+            ContextSnapshotJson = "{}",
+            AcceptedInputJson = "{}",
+            Status = status,
+            AttemptCount = 1,
+            MaxAttempts = 1
         });
         var service = BuildService(store);
 
@@ -208,7 +222,9 @@ public sealed class StableVersionArtifactHandoffServiceTests
         store.Items<Story>().Single().OutputMode = StoryOutputMode.ReadingMediaOnly;
         store.Seed(new StoryGenerationJob
         {
-            Id = 7, StoryId = 1, StoryVersionId = 1,
+            Id = 7,
+            StoryId = 1,
+            StoryVersionId = 1,
             Operation = GenerationJobOperation.GenerateVocabulary,
             Status = GenerationJobStatus.Pending
         });
@@ -226,23 +242,36 @@ public sealed class StableVersionArtifactHandoffServiceTests
         store.Seed(new UserAccount { Id = 1, Role = UserRole.Parent });
         store.Seed(new ChildProfile
         {
-            Id = 1, OwnerUserId = 1, Nickname = "Mây",
-            AgeBand = AgeBand.Age_6_8, Language = "vi", Status = ChildProfileStatus.Active
+            Id = 1,
+            OwnerUserId = 1,
+            Nickname = "Mây",
+            AgeBand = AgeBand.Age_6_8,
+            Language = "vi",
+            Status = ChildProfileStatus.Active
         });
         store.Seed(new Story
         {
-            Id = 1, Title = "Mây và khu rừng",
+            Id = 1,
+            Title = "Mây và khu rừng",
             Content = "Lan và Minh cùng nhau vào rừng khám phá.",
-            AgeBand = "6-8", Language = "vi", VocabularyLevel = "level_2",
-            Source = StorySource.Manual, Status = StoryStatus.Draft,
-            AuthorUserId = 1, ChildProfileId = 1
+            AgeBand = "6-8",
+            Language = "vi",
+            VocabularyLevel = "level_2",
+            Source = StorySource.Manual,
+            Status = StoryStatus.Draft,
+            AuthorUserId = 1,
+            ChildProfileId = 1
         });
         store.Seed(new StoryVersion
         {
-            Id = 1, StoryId = 1, VersionNo = 1, EditType = VersionEditType.Initial,
+            Id = 1,
+            StoryId = 1,
+            VersionNo = 1,
+            EditType = VersionEditType.Initial,
             Title = "Mây và khu rừng",
             Content = "Lan và Minh cùng nhau vào rừng khám phá.",
-            Lesson = "Tình bạn", IsCurrent = true
+            Lesson = "Tình bạn",
+            IsCurrent = true
         });
         return store;
     }

@@ -34,10 +34,16 @@ public class CommunityReviewServiceTests
     {
         var item = new ModerationItem
         {
-            Id = 80, ItemType = ModerationItemType.CommunitySubmission, Status = ModerationItemStatus.Claimed,
-            StoryId = Story, StoryVersionId = 60, CreatedByUserId = createdBy,
-            SourceChildProfileId = ContentReportHarness.ChildId, ClaimedByUserId = claimedBy,
-            ClaimedAt = DateTime.UtcNow.AddMinutes(-5), CopyrightDeclaration = CopyrightDeclaration.AiGenerated,
+            Id = 80,
+            ItemType = ModerationItemType.CommunitySubmission,
+            Status = ModerationItemStatus.Claimed,
+            StoryId = Story,
+            StoryVersionId = 60,
+            CreatedByUserId = createdBy,
+            SourceChildProfileId = ContentReportHarness.ChildId,
+            ClaimedByUserId = claimedBy,
+            ClaimedAt = DateTime.UtcNow.AddMinutes(-5),
+            CopyrightDeclaration = CopyrightDeclaration.AiGenerated,
             PiiCheckResult = "{\"findings\":[]}"
         };
         _h.Items.Add(item);
@@ -666,7 +672,8 @@ public class CommunityReviewServiceTests
 
         var result = await submissions.SubmitAsync(Submitter, new CommunitySubmitRequestDto
         {
-            StoryId = Story, ConfirmNoPersonalInfo = true
+            StoryId = Story,
+            ConfirmNoPersonalInfo = true
         });
 
         Assert.NotEqual(80, result.ItemId);

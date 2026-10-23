@@ -33,6 +33,12 @@ public sealed record ParentPrepareRequest : CreatorVersionCommand
     // UTF-16 exclusive ends. Null uses the shared deterministic paragraph splitter.
     public int[]? SegmentEnds { get; init; }
 }
+public sealed record ParentMediaGenerateRequest : CreatorVersionCommand
+{
+    [Range(1, int.MaxValue)] public int ContentConfirmationId { get; init; }
+}
+public sealed record ParentMediaGenerationDto(int StoryId, int StoryVersionId, int JobId, int PackageRevision,
+    string ProgressUrl, string PackageUrl);
 public sealed record ParentFamilyConfirmRequest : CreatorVersionCommand
 {
     public int PreparationId { get; init; }
@@ -47,7 +53,11 @@ public sealed record ParentContentConfirmationDto(int ConfirmationId, int StoryV
 public sealed record ParentSegmentDto(int Order, int StartOffset, int EndOffset, string Text);
 public sealed record ParentPreparationDto(int PreparationId, int StoryId, int StoryVersionId, int ChildProfileId, int AudienceRevision,
     string ContextFingerprint, string Title, string Language, string ExperienceMode,
-    ParentSegmentDto[] Segments, bool IsReady, string[] MissingRequirements);
+    ParentSegmentDto[] Segments, bool IsReady, string[] MissingRequirements)
+{
+    public int? MediaPackageRevision { get; init; }
+    public StoryPlatform.Application.Features.MediaGeneration.Models.StoryMediaPackage? Media { get; init; }
+}
 public sealed record ParentFamilyConfirmationDto(int ConfirmationId, int StoryId, int StoryVersionId,
     int ChildProfileId, int PreparationId, DateTime ConfirmedAt);
 public sealed record ParentOperationDto(int Id, string Kind, int? StoryVersionId, bool SourceIsCurrent,

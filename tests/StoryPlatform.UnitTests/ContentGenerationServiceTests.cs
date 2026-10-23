@@ -167,9 +167,17 @@ public sealed class ContentGenerationServiceTests
         job.StoryVersionId = 2;
         store.Seed(new StoryVersion
         {
-            Id = 2, StoryId = 1, VersionNo = 2, EditType = VersionEditType.Initial, Title = "Tình bạn",
-            OutlineOpening = "Lan gặp Minh", OutlineDevelopment = "Hai bạn giúp nhau", OutlineEnding = "Hai bạn biết chia sẻ",
-            Content = "Lan và Minh cùng chia sẻ một quyển sách.", Lesson = "Biết chia sẻ", IsCurrent = false
+            Id = 2,
+            StoryId = 1,
+            VersionNo = 2,
+            EditType = VersionEditType.Initial,
+            Title = "Tình bạn",
+            OutlineOpening = "Lan gặp Minh",
+            OutlineDevelopment = "Hai bạn giúp nhau",
+            OutlineEnding = "Hai bạn biết chia sẻ",
+            Content = "Lan và Minh cùng chia sẻ một quyển sách.",
+            Lesson = "Biết chia sẻ",
+            IsCurrent = false
         });
         var ai = new FakeAIClient();
 
@@ -359,7 +367,8 @@ public sealed class ContentGenerationServiceTests
         {
             var target = scan.Parts.First(x => x.Kind == "paragraph");
             return Task.FromResult(new StoryPlatform.Application.Features.Moderation.ModelModerationResult(50, "test-model",
-                [new(target.Kind, target.Name, "context", "Needs context review")]) { RubricVersion = scan.RubricVersion });
+                [new(target.Kind, target.Name, "context", "Needs context review")])
+            { RubricVersion = scan.RubricVersion });
         }
     }
 
@@ -368,7 +377,7 @@ public sealed class ContentGenerationServiceTests
     {
         var store = Seed(); var ai = new FakeAIClient(); var handoff = new RecordingHandoffService(store);
         var evaluator = new StoryPlatform.Application.Features.Moderation.GrayZoneEvaluator(new()
-            { Provider = "test-only", WarningThreshold = 30, BlockThreshold = 70, MaximumRiskScore = 100 }, [new GrayTestProvider()], Features.Moderation.RubricTestData.Source());
+        { Provider = "test-only", WarningThreshold = 30, BlockThreshold = 70, MaximumRiskScore = 100 }, [new GrayTestProvider()], Features.Moderation.RubricTestData.Source());
         var workflow = new StoryPlatform.Application.Features.Moderation.Services.GrayZoneWorkflowService(store,
             new Moq.Mock<StoryPlatform.Application.Features.AuditLogs.Interfaces.IAuditLogWriter>().Object);
         var service = new ContentGenerationService(store, ai, new PassingQualityEvaluator(), new FakeFailureFinalizer(store),
@@ -395,7 +404,7 @@ public sealed class ContentGenerationServiceTests
     {
         var store = Seed(); var ai = new FakeAIClient();
         var evaluator = new StoryPlatform.Application.Features.Moderation.GrayZoneEvaluator(new()
-            { Provider = "test-only", WarningThreshold = 30, BlockThreshold = 70, MaximumRiskScore = 100 }, [new GrayTestProvider()], Features.Moderation.RubricTestData.Source());
+        { Provider = "test-only", WarningThreshold = 30, BlockThreshold = 70, MaximumRiskScore = 100 }, [new GrayTestProvider()], Features.Moderation.RubricTestData.Source());
         var workflow = new StoryPlatform.Application.Features.Moderation.Services.GrayZoneWorkflowService(store,
             new Moq.Mock<StoryPlatform.Application.Features.AuditLogs.Interfaces.IAuditLogWriter>().Object);
         var service = new ContentGenerationService(store, ai, new FailOnceQualityEvaluator(), new FakeFailureFinalizer(store),
@@ -416,9 +425,17 @@ public sealed class ContentGenerationServiceTests
         store.Seed(new Story { Id = 1, AuthorUserId = 1, ChildProfileId = 1, Source = StorySource.Ai, Status = StoryStatus.OutlineReview });
         var outline = new StoryVersion
         {
-            Id = 1, StoryId = 1, VersionNo = 1, EditType = VersionEditType.Initial, Title = "Tình bạn",
-            OutlineOpening = "Lan gặp Minh", OutlineDevelopment = "Hai bạn giúp nhau", OutlineEnding = "Hai bạn biết chia sẻ",
-            IsCurrent = true, OutlineApprovedByUserId = 1, OutlineApprovedAt = DateTime.UtcNow
+            Id = 1,
+            StoryId = 1,
+            VersionNo = 1,
+            EditType = VersionEditType.Initial,
+            Title = "Tình bạn",
+            OutlineOpening = "Lan gặp Minh",
+            OutlineDevelopment = "Hai bạn giúp nhau",
+            OutlineEnding = "Hai bạn biết chia sẻ",
+            IsCurrent = true,
+            OutlineApprovedByUserId = 1,
+            OutlineApprovedAt = DateTime.UtcNow
         };
         store.Seed(outline);
         var input = new AcceptedAIStoryInputSnapshot("Tình bạn", null, "ai_suggested", [], "ai_suggested", null,
@@ -431,15 +448,26 @@ public sealed class ContentGenerationServiceTests
         };
         store.Seed(new StoryGenerationRequest
         {
-            Id = 1, StoryId = 1, SubmittedByUserId = 1, IdempotencyKey = "input-key", Status = GenerationInputStatus.InputAccepted,
+            Id = 1,
+            StoryId = 1,
+            SubmittedByUserId = 1,
+            IdempotencyKey = "input-key",
+            Status = GenerationInputStatus.InputAccepted,
             AcceptedInputJson = JsonSerializer.Serialize(input, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
             ContextSnapshotJson = JsonSerializer.Serialize(context, new JsonSerializerOptions(JsonSerializerDefaults.Web))
         });
         store.Seed(new StoryGenerationJob
         {
-            Id = 1, StoryId = 1, GenerationRequestId = 1, BaseStoryVersionId = 1, RequestedByUserId = 1,
-            OperationKey = "approval-key", Operation = GenerationJobOperation.GenerateContent,
-            Stage = JobStage.ContentPending, Status = GenerationJobStatus.Pending, MaxAttempts = 3
+            Id = 1,
+            StoryId = 1,
+            GenerationRequestId = 1,
+            BaseStoryVersionId = 1,
+            RequestedByUserId = 1,
+            OperationKey = "approval-key",
+            Operation = GenerationJobOperation.GenerateContent,
+            Stage = JobStage.ContentPending,
+            Status = GenerationJobStatus.Pending,
+            MaxAttempts = 3
         });
         return store;
     }
@@ -501,7 +529,9 @@ public sealed class ContentGenerationServiceTests
                 RequestId = request.RequestId,
                 Story = new StoryContentDto
                 {
-                    Title = "Tình bạn", Description = "Một câu chuyện về tình bạn và sự sẻ chia.", Lesson = "Biết chia sẻ",
+                    Title = "Tình bạn",
+                    Description = "Một câu chuyện về tình bạn và sự sẻ chia.",
+                    Lesson = "Biết chia sẻ",
                     StorySections = [new StorySectionDto(1, "Câu chuyện", "Lan và Minh cùng chia sẻ một quyển sách.")]
                 }
             });
@@ -537,7 +567,8 @@ public sealed class ContentGenerationServiceTests
             Calls.Add("discussion");
             return Task.FromResult(new GenerateDiscussionResponse
             {
-                RequestId = request.RequestId, Items = [new DiscussionQuestionDto("Em đã từng chia sẻ điều gì?")]
+                RequestId = request.RequestId,
+                Items = [new DiscussionQuestionDto("Em đã từng chia sẻ điều gì?")]
             });
         }
         public Task<EvaluateContentSafetyResponse> EvaluateContentSafetyAsync(EvaluateContentSafetyRequest request, CancellationToken cancellationToken = default)

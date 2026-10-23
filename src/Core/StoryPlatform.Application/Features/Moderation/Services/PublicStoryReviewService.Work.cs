@@ -59,7 +59,7 @@ public partial class PublicStoryReviewService
 
         var item = context.Item;
         var version = context.Version;
-        var flags = PublicReviewState.ParseVersionFlags(version.GrayZoneFlags);
+        var flags = PublicReviewState.ParseVersionFlags(version.Moderation.GrayZoneFlags);
         if (!flags.Any(flag => flag.Id == request.FlagId))
         {
             throw new BadRequestException("Không có cờ này trong phiên bản đang duyệt.");
@@ -74,11 +74,11 @@ public partial class PublicStoryReviewService
                 item.Flags, new ResolvedFlag(request.FlagId, reason, context.Actor.Id, now));
 
             var remaining = BuildFlags(version, item).Any(flag => !flag.Resolved);
-            if (!remaining && !version.GrayZoneCleared)
+            if (!remaining && !version.Moderation.GrayZoneCleared)
             {
-                version.GrayZoneCleared = true;
-                version.GrayZoneClearedByUserId = context.Actor.Id;
-                version.GrayZoneClearedAt = now;
+                version.Moderation.GrayZoneCleared = true;
+                version.Moderation.GrayZoneClearedByUserId = context.Actor.Id;
+                version.Moderation.GrayZoneClearedAt = now;
                 _unitOfWork.Repository<StoryVersion>().Update(version);
             }
 
@@ -95,7 +95,7 @@ public partial class PublicStoryReviewService
         {
             Flags = result,
             AllFlagsResolved = result.All(flag => flag.Resolved),
-            VersionCleared = version.GrayZoneCleared
+            VersionCleared = version.Moderation.GrayZoneCleared
         };
     }
 

@@ -67,13 +67,15 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
         }
 
         if (!version.IsCurrent || story.IsPublished) throw new ConflictException("CURRENT_UNPUBLISHED_VERSION_REQUIRED");
+        if (!StoryPlatform.Application.Features.MediaGeneration.Services.MediaPackageConfirmation.IsConfirmed(version))
+            throw new ConflictException("MEDIA_PACKAGE_CONFIRMATION_REQUIRED");
         if (await _unitOfWork.Repository<StoryGenerationJob>().ExistsAsync(x => x.StoryId == story.Id &&
             (x.Status == GenerationJobStatus.Pending || x.Status == GenerationJobStatus.Processing), cancellationToken))
             throw new ConflictException("GENERATION_JOB_ACTIVE");
         if (await _unitOfWork.Repository<ModerationItem>().ExistsAsync(x => x.ItemType == ModerationItemType.PublicStoryRemoval &&
             x.StoryId == story.Id && (x.Status == ModerationItemStatus.Pending || x.Status == ModerationItemStatus.Claimed), cancellationToken))
             throw new ConflictException("REMOVAL_REQUEST_PENDING");
-        switch (version.ReviewStatus)
+        switch (version.Moderation.ReviewStatus)
         {
             case VersionReviewStatus.Pending:
                 throw new ConflictException("Phiên bản này đang chờ duyệt.");
@@ -128,8 +130,8 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
             PreviousItemId = returned?.Id
         }, cancellationToken);
 
-        version.ReviewStatus = VersionReviewStatus.Pending;
-        version.ReviewSubmittedAt = now;
+        version.Moderation.ReviewStatus = VersionReviewStatus.Pending;
+        version.Moderation.ReviewSubmittedAt = now;
         _unitOfWork.Repository<StoryVersion>().Update(version);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -191,10 +193,10 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
         {
             var version = await _unitOfWork.Repository<StoryVersion>()
                 .GetByIdAsync(item.StoryVersionId.Value, cancellationToken);
-            if (version != null && version.ReviewStatus == VersionReviewStatus.Pending)
+            if (version != null && version.Moderation.ReviewStatus == VersionReviewStatus.Pending)
             {
-                version.ReviewStatus = VersionReviewStatus.None;
-                version.ReviewSubmittedAt = null;
+                version.Moderation.ReviewStatus = VersionReviewStatus.None;
+                version.Moderation.ReviewSubmittedAt = null;
                 _unitOfWork.Repository<StoryVersion>().Update(version);
             }
         }

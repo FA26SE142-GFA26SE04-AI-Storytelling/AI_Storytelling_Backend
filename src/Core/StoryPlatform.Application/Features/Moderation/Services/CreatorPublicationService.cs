@@ -18,7 +18,7 @@ public sealed class CreatorPublicationService(IUnitOfWork uow, IModerationQueueS
         var open = (await uow.Repository<ModerationItem>().FindAsync(x => x.StoryId == storyId && !x.IsDeleted &&
             (x.ItemType == ModerationItemType.PublicStoryReview || x.ItemType == ModerationItemType.PublicStoryRemoval) &&
             (x.Status == ModerationItemStatus.Pending || x.Status == ModerationItemStatus.Claimed), cancellationToken: ct)).OrderByDescending(x => x.Id).FirstOrDefault();
-        return new(storyId, version.Id, story.IsPublished, version.ReviewStatus.ToString(), open?.Id, open?.ItemType.ToString(), open?.Status.ToString());
+        return new(storyId, version.Id, story.IsPublished, version.Moderation.ReviewStatus.ToString(), open?.Id, open?.ItemType.ToString(), open?.Status.ToString());
     }
 
     public Task<CreatorPublicationResult> RequestRemovalAsync(int userId, int storyId, CreatorRemovalRequest input, CancellationToken ct = default) =>
@@ -29,7 +29,7 @@ public sealed class CreatorPublicationService(IUnitOfWork uow, IModerationQueueS
             if (!story.IsPublished) throw new ConflictException("STORY_NOT_PUBLISHED");
             await EnsureNoOpenReview(storyId, ct);
             var version = await Current(storyId, ct);
-            if (version.ReviewStatus != VersionReviewStatus.Approved) throw new ConflictException("PUBLISHED_VERSION_REQUIRED");
+            if (version.Moderation.ReviewStatus != VersionReviewStatus.Approved) throw new ConflictException("PUBLISHED_VERSION_REQUIRED");
             var item = await queue.EnqueueAsync(new EnqueueModerationItemCommand
             { ItemType = ModerationItemType.PublicStoryRemoval, StoryId = storyId, StoryVersionId = version.Id, CreatedByUserId = userId }, ct);
             item.Flags = JsonSerializer.Serialize(new { requestReason = input.Reason.Trim() });
@@ -90,30 +90,45 @@ public sealed class CreatorPublicationService(IUnitOfWork uow, IModerationQueueS
             await EnsureNoOpenReview(storyId, ct);
             var source = await Current(storyId, ct);
             if (source.Id != input.SourceVersionId) throw new ConflictException("STALE_STORY_VERSION");
-            if (source.ReviewStatus == VersionReviewStatus.Approved && !await uow.Repository<ModerationItem>().ExistsAsync(x =>
+            if (source.Moderation.ReviewStatus == VersionReviewStatus.Approved && !await uow.Repository<ModerationItem>().ExistsAsync(x =>
                 x.ItemType == ModerationItemType.PublicStoryRemoval && x.StoryId == storyId && x.StoryVersionId == source.Id &&
                 x.Status == ModerationItemStatus.Approved && x.RemovedAt != null, ct))
                 throw new ConflictException("MODERATOR_REMOVAL_REQUIRED");
             var submitted = await uow.Repository<ModerationItem>().ExistsAsync(x =>
                 x.ItemType == ModerationItemType.PublicStoryReview && x.StoryVersionId == source.Id, ct);
-            if (!submitted && source.ReviewStatus == VersionReviewStatus.None && story.Status != StoryStatus.Ready)
+            if (!submitted && source.Moderation.ReviewStatus == VersionReviewStatus.None && story.Status != StoryStatus.Ready)
                 throw new ConflictException("REVISION_NOT_REQUIRED");
             var versions = await uow.Repository<StoryVersion>().FindAsync(x => x.StoryId == storyId, cancellationToken: ct);
             var revision = new StoryVersion
             {
-                StoryId = storyId, VersionNo = versions.Max(x => x.VersionNo) + 1, BaseVersionId = source.Id,
-                EditorUserId = userId, EditType = VersionEditType.HumanEdited, IsCurrent = true,
-                Title = source.Title, Content = source.Content, Lesson = source.Lesson,
-                OutlineOpening = source.OutlineOpening, OutlineDevelopment = source.OutlineDevelopment, OutlineEnding = source.OutlineEnding,
-                ReadabilityFkgl = source.ReadabilityFkgl, ReadabilityFre = source.ReadabilityFre, SafetyScore = source.SafetyScore,
-                OutlineApprovedAt = source.OutlineApprovedAt, OutlineApprovedByUserId = source.OutlineApprovedByUserId,
-                AuthoringOrigin = source.AuthoringOrigin,
-                AssistanceProvenanceJson = JsonSerializer.Serialize(
-                    new StoryPlatform.Application.Features.CreatorAssistance.DTOs.AssistanceProvenance(1, [], source.Id, null),
-                    new JsonSerializerOptions(JsonSerializerDefaults.Web)),
-                ImportFileName = source.ImportFileName, ImportSourceHash = source.ImportSourceHash,
-                SourceDeclaration = source.SourceDeclaration, RightsDeclaration = source.RightsDeclaration,
+                StoryId = storyId,
+                VersionNo = versions.Max(x => x.VersionNo) + 1,
+                BaseVersionId = source.Id,
+                EditorUserId = userId,
+                EditType = VersionEditType.HumanEdited,
+                IsCurrent = true,
+                Title = source.Title,
+                Content = source.Content,
+                Lesson = source.Lesson,
+                OutlineOpening = source.OutlineOpening,
+                OutlineDevelopment = source.OutlineDevelopment,
+                OutlineEnding = source.OutlineEnding,
+                ReadabilityFkgl = source.ReadabilityFkgl,
+                ReadabilityFre = source.ReadabilityFre,
+                SafetyScore = source.SafetyScore,
+                OutlineApprovedAt = source.OutlineApprovedAt,
+                OutlineApprovedByUserId = source.OutlineApprovedByUserId,
                 AudienceRevision = story.AudienceRevision
+,
+                AuthoringMetadata = new StoryVersionAuthoringMetadata
+                {
+                    AuthoringOrigin = source.AuthoringMetadata.AuthoringOrigin,
+                    AssistanceProvenanceJson = JsonSerializer.Serialize(new StoryPlatform.Application.Features.CreatorAssistance.DTOs.AssistanceProvenance(1, [], source.Id, null), new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+                    ImportFileName = source.AuthoringMetadata.ImportFileName,
+                    ImportSourceHash = source.AuthoringMetadata.ImportSourceHash,
+                    SourceDeclaration = source.AuthoringMetadata.SourceDeclaration,
+                    RightsDeclaration = source.AuthoringMetadata.RightsDeclaration
+                }
             };
             source.IsCurrent = false;
             uow.Repository<StoryVersion>().Update(source);

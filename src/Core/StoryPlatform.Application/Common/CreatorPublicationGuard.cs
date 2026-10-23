@@ -24,8 +24,8 @@ public static class CreatorPublicationGuard
         var version = await uow.Repository<StoryVersion>().FirstOrDefaultAsync(x => x.StoryId == storyId &&
             (versionId.HasValue ? x.Id == versionId.Value : x.IsCurrent), cancellationToken: ct);
         if (versionId.HasValue && version == null) throw new ConflictException("STALE_STORY_VERSION");
-        if (version != null && (!version.IsCurrent || version.ReviewStatus != VersionReviewStatus.None ||
-            version.ReviewSubmittedAt != null || await uow.Repository<ModerationItem>().ExistsAsync(x =>
+        if (version != null && (!version.IsCurrent || version.Moderation.ReviewStatus != VersionReviewStatus.None ||
+            version.Moderation.ReviewSubmittedAt != null || await uow.Repository<ModerationItem>().ExistsAsync(x =>
                 x.ItemType == ModerationItemType.PublicStoryReview && x.StoryVersionId == version.Id, ct)))
             throw new ConflictException("SUBMITTED_VERSION_IMMUTABLE_CREATE_REVISION");
     }

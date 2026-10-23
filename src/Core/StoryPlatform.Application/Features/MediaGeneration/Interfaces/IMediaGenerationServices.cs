@@ -65,7 +65,9 @@ public interface IMediaGenerationService
     Task<MediaGenerationProgress> GetProgressAsync(int userId, int storyId, CancellationToken cancellationToken = default);
     Task<StoryMediaPackage> GetPackageAsync(int userId, int storyId, CancellationToken cancellationToken = default);
     Task<MediaGenerationProgress> RetryAsync(int userId, int storyId, CancellationToken cancellationToken = default);
-    Task RegenerateIllustrationBeatAsync(int userId, int storyId, int beatId, CancellationToken cancellationToken = default);
+    Task RegenerateIllustrationBeatAsync(int userId, int storyId, int beatId, RegenerateMediaRequest request, CancellationToken cancellationToken = default);
+    Task RegenerateSegmentAudioAsync(int userId, int storyId, int segmentId, RegenerateMediaRequest request, CancellationToken cancellationToken = default);
+    Task<MediaGenerationProgress> ConfirmAsync(int userId, int storyId, ConfirmMediaPackageRequest request, CancellationToken cancellationToken = default);
 }
 
 public interface IMediaReadinessService

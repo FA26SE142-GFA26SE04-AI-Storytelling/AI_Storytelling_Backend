@@ -24,6 +24,11 @@ public class ChildRoadmapEligibility : IChildRoadmapEligibility
             return ChildRoadmapSkipReason.SourceDeleted;
         }
 
+        // Family editor packages are delivered only through pinned family confirmations.
+        // Ready media must not open the legacy roadmap reader for this separate workflow.
+        if (StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story))
+            return ChildRoadmapSkipReason.StoryUnavailable;
+
         if (story.Status != StoryStatus.Ready
             || story.ArchivedAt != null
             || (story.Scope == StoryScope.Creator && !story.IsPublished))

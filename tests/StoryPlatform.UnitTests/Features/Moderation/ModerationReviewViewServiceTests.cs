@@ -24,8 +24,12 @@ public class ModerationReviewViewServiceTests
 
     private readonly UserAccount _moderator = new()
     {
-        Id = 11, Username = "moderator_demo1", Email = "moderator1@example.com", FullName = "Nguyen Thi Lan",
-        Role = UserRole.Moderator, Status = AccountStatus.Active
+        Id = 11,
+        Username = "moderator_demo1",
+        Email = "moderator1@example.com",
+        FullName = "Nguyen Thi Lan",
+        Role = UserRole.Moderator,
+        Status = AccountStatus.Active
     };
 
     public ModerationReviewViewServiceTests()
@@ -52,8 +56,12 @@ public class ModerationReviewViewServiceTests
         ReturnStory(published: true);
         var expired = new ModerationReviewView
         {
-            Id = 5, ModeratorUserId = 11, StoryId = 10, SourceTab = "published_content",
-            GrantedAt = DateTime.UtcNow.AddHours(-3), ExpiresAt = DateTime.UtcNow.AddHours(-1)
+            Id = 5,
+            ModeratorUserId = 11,
+            StoryId = 10,
+            SourceTab = "published_content",
+            GrantedAt = DateTime.UtcNow.AddHours(-3),
+            ExpiresAt = DateTime.UtcNow.AddHours(-1)
         };
         _viewRepoMock.Setup(r => r.FirstOrDefaultAsync(
                 It.IsAny<Expression<Func<ModerationReviewView, bool>>>(), null, It.IsAny<CancellationToken>()))
@@ -77,8 +85,12 @@ public class ModerationReviewViewServiceTests
             .ReturnsAsync(new StoryVersion { Id = 55, StoryId = 10 });
         var existing = new ModerationReviewView
         {
-            Id = 5, ModeratorUserId = 11, StoryId = 10, StoryVersionId = 54,
-            SourceTab = "published_content", ExpiresAt = DateTime.UtcNow.AddHours(1)
+            Id = 5,
+            ModeratorUserId = 11,
+            StoryId = 10,
+            StoryVersionId = 54,
+            SourceTab = "published_content",
+            ExpiresAt = DateTime.UtcNow.AddHours(1)
         };
         _viewRepoMock.Setup(r => r.FirstOrDefaultAsync(
                 It.IsAny<Expression<Func<ModerationReviewView, bool>>>(), null, It.IsAny<CancellationToken>()))
@@ -87,7 +99,9 @@ public class ModerationReviewViewServiceTests
 
         var result = await _sut.GrantAsync(11, new GrantReviewViewRequestDto
         {
-            SourceTab = "published_content", StoryId = 10, StoryVersionId = 55
+            SourceTab = "published_content",
+            StoryId = 10,
+            StoryVersionId = 55
         });
 
         Assert.Equal(55, result.StoryVersionId);
@@ -106,7 +120,9 @@ public class ModerationReviewViewServiceTests
     {
         var view = new ModerationReviewView
         {
-            ModeratorUserId = ownerId, StoryId = storyId, ReadingRoadmapId = roadmapId,
+            ModeratorUserId = ownerId,
+            StoryId = storyId,
+            ReadingRoadmapId = roadmapId,
             ExpiresAt = DateTime.UtcNow.AddMinutes(remainingMinutes)
         };
         _viewRepoMock.Setup(r => r.ExistsAsync(
@@ -170,8 +186,12 @@ public class ModerationReviewViewServiceTests
         ReturnStory(published: true);
         var existing = new ModerationReviewView
         {
-            Id = 7, ModeratorUserId = _moderator.Id, StoryId = 10, SourceTab = "published_content",
-            GrantedAt = DateTime.UtcNow.AddMinutes(-30), ExpiresAt = DateTime.UtcNow.AddMinutes(90)
+            Id = 7,
+            ModeratorUserId = _moderator.Id,
+            StoryId = 10,
+            SourceTab = "published_content",
+            GrantedAt = DateTime.UtcNow.AddMinutes(-30),
+            ExpiresAt = DateTime.UtcNow.AddMinutes(90)
         };
         _viewRepoMock
             .Setup(r => r.FirstOrDefaultAsync(

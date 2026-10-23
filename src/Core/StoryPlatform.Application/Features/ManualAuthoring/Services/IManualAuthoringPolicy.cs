@@ -19,10 +19,14 @@ public interface IManualAuthoringPolicy
 
 public sealed class CreatorManualAuthoringPolicy(StoryPlatform.Application.Abstractions.Persistence.IUnitOfWork uow) : IManualAuthoringPolicy
 {
-    public Task EnsureWritableAsync(Story story, CancellationToken ct)
+    public async Task EnsureWritableAsync(Story story, CancellationToken ct)
     {
         if (story.Source == StorySource.Ai) throw new ConflictException("AI_STORY_USE_GENERATION_REVIEW_API");
-        return StoryPlatform.Application.Common.CreatorPublicationGuard.EnsureWritableAsync(uow, story.Id, null, ct);
+        await StoryPlatform.Application.Common.CreatorPublicationGuard.EnsureWritableAsync(uow, story.Id, null, ct);
+        if (await uow.Repository<StoryGenerationJob>().ExistsAsync(x => x.StoryId == story.Id &&
+            x.Operation == GenerationJobOperation.GenerateMediaPackage &&
+            (x.Status == GenerationJobStatus.Pending || x.Status == GenerationJobStatus.Processing), ct))
+            throw new ConflictException("MEDIA_JOB_ACTIVE");
     }
     public StoryScope Scope => StoryScope.Creator;
     public Expression<Func<Story, bool>> VisibleStories(int userId) =>

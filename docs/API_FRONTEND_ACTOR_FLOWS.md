@@ -1,6 +1,6 @@
 # API backend theo actor và luồng tích hợp frontend
 
-> Rà soát source ngày **20/10/2026**. Đây là tài liệu contract và checklist tích hợp từ mã nguồn, **không phải biên bản kiểm thử API/DB hoặc xác nhận đã triển khai**.
+> Rà soát source ngày **21/10/2026**. Đây là tài liệu contract và checklist tích hợp từ mã nguồn, **không phải biên bản kiểm thử API/DB hoặc xác nhận đã triển khai**.
 
 ## Mục lục
 
@@ -24,10 +24,10 @@
 <a id="phien-ban"></a>
 ## 1. Phạm vi, phiên bản và cách dùng
 
-- Backend: branch **feat/cont_creator**; bao gồm AI generation, xác nhận nội dung, khóa bản đã nộp và luồng gỡ/revision của Creator.
-- Frontend: branch **main**, HEAD **93d00ef**.
-- Inventory: **249 cặp method + route**, **36 controller có action**; gồm 1 alias, 1 webhook; không gồm health/SignalR/Swagger.
-- Controller chuyên biệt cho Creator: [CreatorAIStoryInputController.cs](../src/Core/StoryPlatform.Api/Controllers/CreatorAIStoryInputController.cs), [CreatorPublicationController.cs](../src/Core/StoryPlatform.Api/Controllers/CreatorPublicationController.cs).
+- Backend: branch **feat/cont_creator**, HEAD **e808851**; khảo sát controller, authorization, DTO và service hiện tại. Bao gồm lộ trình, cộng đồng, rubric, vùng xám và quản lý phát hành Creator.
+- Frontend baseline từ lần đối chiếu trước: branch **main**, HEAD **93d00ef**. Lần này cập nhật backend contract; mapping service/màn hình được giữ theo baseline đó, không xác nhận frontend ở commit khác hoặc môi trường đang chạy.
+- Inventory: **305 cặp method + route**, **48 controller có action**; gồm 1 alias, 1 webhook; không gồm health/SignalR/Swagger.
+- Một số controller chuyên biệt cho Creator: [CreatorAIStoryInputController.cs](../src/Core/StoryPlatform.Api/Controllers/CreatorAIStoryInputController.cs), [CreatorPublicationController.cs](../src/Core/StoryPlatform.Api/Controllers/CreatorPublicationController.cs).
 
 
 - Nguồn chính: [controllers](../src/Core/StoryPlatform.Api/Controllers), [Program.cs](../src/Core/StoryPlatform.Api/Program.cs), [authorization](../src/Core/StoryPlatform.Api/Extensions/ServiceExtensions.cs), DTO/service Application và shared contract được controller sử dụng.
@@ -35,8 +35,16 @@
 - Đọc luồng theo actor trước, sau đó tra controller ở mục 14. Mỗi endpoint dẫn đến schema request/response, source và nơi frontend gọi. API dùng chung chỉ đếm một lần, không nhân theo actor.
 - Mọi ID, revision, token và key trong ví dụ là minh họa. Thay bằng giá trị từ response/phiên thật. Mẫu schema thể hiện hình dạng JSON, không bảo đảm thỏa điều kiện dữ liệu/quyền trong DB.
 - Mapping frontend dựa trên source, không đọc biến môi trường bí mật, không suy ra môi trường đang gọi thật từ sự tồn tại của service.
-- Cập nhật cùng thay đổi backend: tách Creator confirm-content khỏi Parent review/approve. Đợt này không triển khai frontend hoặc migration/database.
+- Cập nhật 60 mục endpoint còn thiếu trong catalog cũ, 90 schema bổ sung; đồng bộ field mới và enum hiện hành. Creator confirm-content tách khỏi Parent review/approve. Đợt này chỉ sửa tài liệu.
 - `.gitignore` có ngoại lệ để theo dõi tài liệu này và hướng dẫn AI generation của Creator trong Git.
+
+### Thay đổi đáng chú ý so với bản trước
+
+- Bổ sung luồng Parent giao/sắp xếp lộ trình, sao chép bộ mẫu và gửi truyện cộng đồng; ChildSession có MyRoadmap/CommunityLibrary.
+- Moderator có soạn/duyệt bộ mẫu, duyệt cộng đồng, quyết định vùng xám, xử lý yêu cầu gỡ Creator và rà soát nội dung đang public; report có bước escalate sang Administrator.
+- Rubric có Draft/Active/Retired, revision, clone, validate, thử AI và audit; chỉ Administrator activate.
+- Sửa kết luận Creator approve/archive: đây là route Parent; Creator đã có confirm-content riêng. Chênh lệch role ở manual/assistance vẫn được ghi riêng tại CR1.
+- Cập nhật waitingForModeration, bằng chứng/offset của public-review flags, field escalation và enum moderation; ghi rõ các ngoại lệ response để frontend không ép cùng một parser.
 
 <a id="quy-uoc"></a>
 ## 2. Quy ước gọi API, lỗi và phiên
@@ -71,7 +79,7 @@ T có thể là object, array, bool hoặc null. Thành công với data=null h�
 - **400:** input/điều kiện nghiệp vụ sai; **401:** phiên không hợp lệ; **403:** thiếu quyền; **404:** không tìm thấy hoặc bị che theo scope; **409:** xung đột state/version/revision/operation.
 - Input guardrail có thể trả 422/503 với **data progress dù success=false**. Giữ reasonCode/canRetry và các ID, không làm mất tiến trình chỉ vì HTTP lỗi.
 - Assistance có 429/502/504; mã ổn định nằm trong errors[0] khi là AssistanceException. Không parse message để điều khiển UX.
-- Ngoại lệ envelope: download file DataRequest, webhook thành công body rỗng, health check, handshake/event SignalR. Authentication challenge có thể không có JSON.
+- Ngoại lệ envelope: download file DataRequest, webhook thành công body rỗng, health check, handshake/event SignalR. GrayZoneReview decision trả {success,message} không có data/errors. Rubric list/audit là object phân trang riêng, không phải PagedResult. Authentication challenge có thể không có JSON.
 - [ExceptionHandlingMiddleware](../src/Core/StoryPlatform.Api/Middleware/ExceptionHandlingMiddleware.cs) ánh xạ AppException sang status thực; lỗi chưa phân loại trả 500. HTTP trong contract là nhánh nhìn thấy ở controller, không phải toàn bộ lỗi của mọi tầng.
 
 ### 2.3 Retry, hủy và đồng bộ
@@ -175,6 +183,29 @@ GET /Supervision/{childId}/relationships lấy relationshipId/role. DELETE relat
 - Owner POST /DataRequest loại export/delete → GET /DataRequest/mine?childProfileId=... → cancel khi pending. Delete cần currentPassword/confirmNickname theo service.
 - GET /Payment/plans → POST /Payment/transactions → hiển thị QR/transaction. Parent không gọi webhook/mark-paid.
 - POST /ContentReport với storyId/reason/description/attachmentUrl để báo truyện được phép truy cập. Gửi report chưa tự ẩn/xóa truyện.
+
+### P6. Lộ trình riêng của trẻ và sao chép bộ mẫu
+
+1. GET /api/v1/ChildRoadmap/{childProfileId}: cần giám sát hiện hành; trả open/waiting/history và số lượng. Dùng item.id cho thao tác lộ trình, storyId để nhận diện truyện.
+2. POST /api/v1/ChildRoadmap/stories: storyId, childProfileIds (1–20 trẻ phân biệt), position ("NextUp" hoặc "End"), expectedDays (1–90 nếu có), note (tối đa 500 ký tự). Backend xét AssignActivity và eligibility cho từng trẻ; hiển thị results[].outcome/skipCode/message/warnings, không coi 200 là tất cả thành công.
+3. PUT /{childProfileId}/order gửi đúng toàn bộ itemIds Waiting, mỗi ID một lần; không kéo thả Open. DELETE /items/{itemId} chỉ Open/Waiting; gỡ Open có thể tiến sang bước tiếp theo. DELETE /items gỡ Open/Waiting, giữ lịch sử.
+4. GET /api/v1/RoadmapLibrary theo ageBand/readingLevel/contentCategoryId và phân trang → GET /{roadmapId} xem bộ cùng isAvailable.
+5. POST /{roadmapId}/preview với childProfileIds/position/daysPerStory → hiển thị children[].steps[].action và cảnh báo → POST /copy cùng hình dạng request. Preview không giữ chỗ; copy kiểm lại quyền, tuổi, policy và khả dụng. Không dùng API template của Moderator để giao trực tiếp cho trẻ.
+
+Nguồn: [ChildRoadmapService](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/Services/ChildRoadmapService.cs), [thao tác lộ trình](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/Services/ChildRoadmapService.Manage.cs), [RoadmapLibraryService](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/Services/RoadmapLibraryService.Copy.cs).
+
+
+Gợi ý adapter roadmap: skipCode có thể là no_permission, profile_inactive, no_access_to_story, blocked_topic, wrong_age, too_long, story_unavailable, already_in_roadmap. Dùng mã thay vì parse message; giữ warnings và kết quả riêng từng trẻ. Template days (1–30) khác expectedDays của lộ trình riêng (1–90).
+
+### P7. Chia sẻ truyện gia đình lên thư viện cộng đồng
+
+1. POST /api/v1/CommunitySubmission/check với storyId, confirmNoPersonalInfo, copyrightDeclaration → canSubmit, storyVersionId, requiredDeclaration, blockers và piiFindings. Check không tự nộp hoặc sửa truyện. Excerpt chỉ để người nộp sửa, không lưu lại vào log/client analytics.
+2. Parent cần ApproveStory trên hồ sơ nguồn. Truyện phải đủ điều kiện private/Ready, có phiên bản hiện hành, không bị archive/report mở/nộp trùng. Truyện tự viết/nhập phải khai OwnWork; FamilyUse không được nộp. Field copyrightDeclaration không có JsonStringEnumConverter: dùng số enum trong JSON, xem schema.
+3. POST /api/v1/CommunitySubmission với confirmNoPersonalInfo=true; nhận itemId/storyVersionId/status=Pending. Backend ghim phiên bản cho kiểm duyệt; không lấy version hiện hành khác để thay nội dung đã nộp.
+4. GET /mine dùng canWithdraw/canRemove để bật nút. POST /{itemId}/withdraw khi Pending chưa có người nhận; POST /{itemId}/remove với bản đã Approved. Sau khi có Moderator claim, không tự rút bằng cách đổi trạng thái ở frontend.
+5. Sau kiểm duyệt, trẻ xem metadata qua CommunityLibrary theo submissionId; nguồn trẻ/người nộp/người duyệt không được công khai.
+
+Nguồn: [CommunitySubmissionService](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/Services/CommunitySubmissionService.cs), [Submit](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/Services/CommunitySubmissionService.Submit.cs), [Manage](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/Services/CommunitySubmissionService.Manage.cs).
 
 <a id="pipeline"></a>
 ## 6. Pipeline truyện AI và truyện nhập dùng chung
@@ -294,7 +325,17 @@ Grant thu hồi hoặc quyền/policy/context đổi có thể làm mất quyề
 
 POST /ParentalGate/verify email/password kiểm người lớn, **không cấp token mới**. FE khôi phục/đăng nhập phiên đúng luồng; gate có lockout, không bypass sau lỗi.
 
-API /reading/sessions, /children/{id}/reading/home, progress, quiz trẻ, notebook, achievements, telemetry frontend đề xuất **chưa có controller tương ứng** trong Core hiện tại. Hai GET /Story công khai không thay gói cấp quyền child manual.
+Core đã có MyRoadmap và CommunityLibrary cho ChildSession (C4–C5). Chưa có controller cho /reading/sessions, /children/{id}/reading/home, API ghi hoàn thành truyện/quiz trẻ, notebook, achievements hay telemetry như frontend đề xuất. Roadmap progress recorder nội bộ không tạo thêm HTTP endpoint. Hai GET /Story công khai không thay gói cấp quyền child manual.
+
+### C4. Xem lộ trình của chính trẻ
+
+GET /api/v1/MyRoadmap bằng ChildSession, không truyền childProfileId. Response phân open/upcoming/done, completedCount/totalCount/isFinished. Tôn trọng isLocked; expectedBy chỉ có trên bước mở khi còn thời hạn, danh sách done có giới hạn 50. API này không ghi việc đọc xong; không mô phỏng POST completion rồi coi đã lưu backend.
+
+### C5. Khám phá thư viện cộng đồng
+
+GET /api/v1/CommunityLibrary?pageIndex=1&pageSize=20 → GET /{submissionId}. Backend lọc theo hồ sơ/chính sách của trẻ, chỉ hiện bản Approved còn khả dụng và che ID nguồn. Response hiện tại chỉ là CommunityStoryDto (metadata/labels/author), chưa có text/audio/media package riêng cho reader cộng đồng. UI cần xử lý 404 khi truyện bị gỡ hoặc không còn hợp lệ.
+
+Nguồn: [MyRoadmapService](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/Services/MyRoadmapService.cs), [CommunityLibraryService](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/Services/CommunityLibraryService.cs).
 
 <a id="creator"></a>
 ## 9. ContentCreator — sáng tác và gửi duyệt
@@ -371,6 +412,14 @@ flowchart TD
 
 Source: [CreatorPublicationController](../src/Core/StoryPlatform.Api/Controllers/CreatorPublicationController.cs), [CreatorPublicationService](../src/Core/StoryPlatform.Application/Features/Moderation/Services/CreatorPublicationService.cs), [CreatorPublicationGuard](../src/Core/StoryPlatform.Application/Common/CreatorPublicationGuard.cs), [DTO](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/CreatorPublicationDtos.cs).
 
+### CR5. Kiểm tra vùng xám cho phiên bản Creator
+
+POST /api/v1/creator/stories/{storyId}/content/check với versionId hiện hành; role ContentCreator, tác giả/scope đúng, tài khoản hoạt động. Trả storyVersionId/status/waitingForModeration. Check có thể gọi AI và lưu assessment; không gọi tự động theo mỗi phím gõ, không coi như submit Public Library hoặc confirm-content.
+
+GrayZoneWorkflow chỉ tạo mục chờ GrayZoneStory cho Parent khi điều kiện finalCandidate được đáp ứng. Với Creator, assessment/flags được dùng trong luồng public review; không hứa mọi response GrayZone đều tạo queue item hoặc dừng job theo cùng cách Parent. Provider chưa cấu hình trả lỗi, không tự chuyển UI sang trạng thái đã kiểm an toàn.
+
+Nguồn: [GrayZoneContentCheckService](../src/Core/StoryPlatform.Application/Features/Moderation/Services/GrayZoneContentCheckService.cs), [GrayZoneWorkflowService](../src/Core/StoryPlatform.Application/Features/Moderation/Services/GrayZoneWorkflowService.cs).
+
 <a id="moderator"></a>
 ## 10. Moderator — nhận và xử lý kiểm duyệt
 
@@ -380,12 +429,14 @@ GET /ModerationQueue theo itemType/status/priority/onlyOverdue/page → POST /{i
 
 Queue detail không chứa đầy đủ truyện, dùng package chuyên biệt theo itemType. Không GET /Story thay review package. /ModerationQueue/review-views cấp xem tạm nội dung công khai, không thay claim/quyền quyết định.
 
+Phân nhánh đầy đủ 6 itemType: PublicStoryReview → MO2; ContentReport → MO3/MO9; RoadmapTemplateReview → MO4; CommunitySubmission → MO5; GrayZoneStory → MO6; PublicStoryRemoval → MO7. Enum là định danh loại, không suy mọi loại dùng cùng request/decision endpoint.
+
 ### MO2. PublicStoryReview
 
 1. GET /PublicStoryReview/{itemId} sau claim → storyVersionId/flags/progress/checklist/approveBlockers.
 2. Xem cảnh/nghe audio theo yêu cầu; POST /views với partType/partId. Không gửi viewed trước thao tác người dùng.
 3. POST /flags/resolve với flagId/reason; PUT checklist/labels.
-4. GET package lấy canApprove/blockers; GET /compare?against=... khi so phiên.
+4. GET package lấy canApprove/approveBlockers; GET /compare?against=... khi so phiên.
 5. POST approve/request-changes/reject theo quyết định thật; tải lại queue.
 
 canApprove phản ánh gates view/audio/checklist/flags. Hết claim phải nhận lại, không tự chuyển claim.
@@ -396,7 +447,53 @@ GET /ContentReportReview/{itemId} → xem báo cáo/nội dung đã mask → POS
 
 Nguồn: [PublicStoryReviewService](../src/Core/StoryPlatform.Application/Features/Moderation/Services/PublicStoryReviewService.cs), [ModerationQueueService](../src/Core/StoryPlatform.Application/Features/Moderation/Services/ModerationQueueService.cs), [ContentReportReviewService](../src/Core/StoryPlatform.Application/Features/ContentReports/Services/ContentReportReviewService.cs).
 
-### MO4. Quản lý hướng dẫn sáng tác (Moderator hoặc Administrator)
+### MO4. Soạn bộ truyện mẫu và kiểm duyệt bộ
+
+1. Moderator GET /api/v1/RoadmapTemplate?group=Drafts|Pending|Published|Archived|Orphaned; GET /candidates chọn truyện Creator đang public/Ready. Moderator/Administrator đọc list/detail/candidates, nhưng các lệnh tạo/sửa/submit/withdraw/clone/archive dành cho Moderator.
+2. POST tạo bộ → PUT /{id} metadata → PUT /{id}/items danh sách storyId/days theo thứ tự. Metadata gồm name (≤200), description (≤2000), ageBand 6-8/9-10, mainCategoryId, readingLevelMin/Max (1–10), defaultDaysPerStory (1–30); days của item nếu có theo policy bộ. Không sửa trực tiếp bản đã Published.
+3. GET detail kiểm checks/canSubmit → POST /{id}/submit nhận itemId/status. Withdraw khi còn đủ điều kiện; bản Published muốn sửa phải clone. Nhân bản có thể trả alreadyExisted và ID draft đang mở; Orphaned dành cho draft của Moderator bị vô hiệu hóa.
+4. Reviewer khác nhận claim RoadmapTemplateReview qua ModerationQueue → GET /api/v1/RoadmapReview/{itemId} → PUT /checklist với tiêu chí order/theme/name_description/age_level → POST /approve, /request-changes hoặc /reject. Dùng blockers/canApprove của package; không tự duyệt bộ mình tạo.
+5. Request-changes gồm generalNote và parts (tối đa 20), theo schema; reject cần reason. Approve clone có thể thay thế/archive bộ Published nguồn, kiểm replacedRoadmapId và tải lại danh sách. Archive riêng cần reason 3–500 ký tự. Parent chỉ sao chép bộ còn public qua RoadmapLibrary.
+
+Nguồn: [RoadmapTemplateService](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/Services/RoadmapTemplateService.cs), [RoadmapReviewService](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/Services/RoadmapReviewService.cs), [review policy](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/RoadmapReviewPolicy.cs).
+
+### MO5. Kiểm duyệt truyện cộng đồng do Parent nộp
+
+Claim itemType=CommunitySubmission → GET /api/v1/CommunityReview/{itemId}. Duyệt đúng bản ghim đã mask; PUT /checklist (safety_baseline/no_personal_info/metadata_labels), PUT /labels với danh mục hợp lệ → đọc canApprove/blockers → POST /approve hoặc /reject với reason. Claim phải còn hiệu lực và không tự duyệt mục mình nộp. Không dùng PublicStoryReview cho loại item này; giữ riêng moderation itemId và submissionId mà trẻ dùng ở CommunityLibrary.
+
+Nguồn: [CommunityReviewService](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/Services/CommunityReviewService.cs), [quyết định](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/Services/CommunityReviewService.Decision.cs).
+
+### MO6. Quyết định vùng xám và tiếp tục job đang chờ
+
+Claim GrayZoneStory → GET /api/v1/moderation/gray-zone-stories/{itemId} → POST /decision với decision="Clear" hoặc "Block", reason bắt buộc ≤2000, rowVersion từ package. Package gồm storyVersionId/versionNo/title/content/ageBand/readingLevel/flags đã mask, không công khai riskScore hoặc checkpoint nội bộ.
+
+Backend kiểm claim, rowVersion và fingerprint nguồn; gặp STALE_MODERATION_ITEM/MODERATION_SOURCE_CHANGED phải tải lại, không tăng rowVersion rồi replay. Clear tiếp tục đúng checkpoint Parent đang chờ, Block chặn nội dung; không tương đương Published. Job có WaitingForModeration và ContentGenerationProgressDto.waitingForModeration: UI hiển thị chờ duyệt, không tự tạo retry job mới chỉ vì polling lâu. Decision trả {success,message} không có data/errors.
+
+Nguồn: [GrayZoneWorkflowService](../src/Core/StoryPlatform.Application/Features/Moderation/Services/GrayZoneWorkflowService.cs).
+
+### MO7. Xử lý yêu cầu gỡ bản Creator đã công khai
+
+Claim PublicStoryRemoval → POST /api/v1/moderation/public-story-removals/{itemId}/decision với approve/reason/rowVersion; thực hiện guard CR4, cấm tự quyết. Không dùng report/archive hoặc public approve thay cho quyết định yêu cầu gỡ. Tải lại publication status sau phản hồi.
+
+### MO8. Soạn và thử bộ tiêu chí vùng xám
+
+GET /api/v1/moderation/rubrics?status=Draft|Active|Retired&pageIndex=1&pageSize=20 (pageSize 1–100) → GET /{id} hoặc /active. POST tạo Draft; PUT sửa Draft với revision; DELETE /{id}?revision=...; POST /{id}/clone tạo version mới để chỉnh bộ đã Active/Retired.
+
+versionNo dài ≤50, khớp ^[a-zA-Z0-9][a-zA-Z0-9._-]*$, duy nhất, không đổi khi update; name ≤200. Definition phải đủ 5 mã GZ01–GZ05, levels đủ khóa "0"–"4"; mỗi criterion có name/check/context và tối đa 10 examples. Xem RubricDefinition và [RubricRules](../src/Shared/StoryPlatform.Contracts/AI/Moderation/RubricSnapshot.cs) để kiểm các giới hạn.
+
+POST /{id}/validate với revision kiểm cấu trúc/hash; POST /{id}/evaluations với revision/phase/ageBand/language/title/content gọi provider thực trên snapshot ghim và ghi audit. phase thuộc phase1–phase4, ageBand 6-8/9-10, language vi/en. Xử lý RUBRIC_REVISION_STALE, RUBRIC_IMMUTABLE, RUBRIC_DEFINITION_INVALID và MODERATION_PROVIDER_NOT_REGISTERED; không coi Validate là thử chất lượng AI. GET /{id}/audit-logs đọc lịch sử, kể cả draft đã xóa. List/audit/validate/evaluate dùng object shape riêng trong catalog, không ép về PagedResult.
+
+Nguồn: [ModerationRubricService](../src/Core/StoryPlatform.Application/Features/Moderation/Rubrics/ModerationRubricService.cs).
+
+### MO9. Rà soát lại nội dung đang công khai và chuyển cấp report
+
+GET /api/v1/PublishedContentReview theo query → GET /stories/{storyId} hoặc /roadmaps/{roadmapId}. Moderator tạo POST /review-items với storyId, reason, description/attachmentUrl và readingRoadmapId tùy chọn; bộ phải công khai và chứa truyện. Tạo item cần xử lý qua queue, không trực tiếp gỡ nội dung. Administrator đọc nhưng action tạo review-item chỉ cho Moderator.
+
+Report đang Claimed: Moderator có thể POST /api/v1/ContentReportReview/{itemId}/escalate với reason bắt buộc ≤1000. Ca chuyển Escalated không còn do Moderator quyết định; Administrator GET package rồi POST dismiss/archive. Theo itemStatus/escalatedAt/escalationReason từ package và tải lại sau quyết định. Phân biệt archive report với archive draft, archive bộ mẫu và yêu cầu gỡ Creator.
+
+Nguồn: [PublishedContentReviewService](../src/Core/StoryPlatform.Application/Features/ContentReports/Services/PublishedContentReviewService.cs), [ContentReportReviewService escalation](../src/Core/StoryPlatform.Application/Features/ContentReports/Services/ContentReportReviewService.Escalation.cs).
+
+### MO10. Quản lý hướng dẫn sáng tác (Moderator hoặc Administrator)
 
 Tiền tố `/api/v1/moderation/authoring-guides`. Luồng: GET `/` (bộ đang phát hành + bản nháp + `revisionToken`) → POST `/draft` → PUT/DELETE `/draft/items/{guideId}` → POST `/draft/preview` → POST `/draft/publish`; DELETE `/draft` hủy bản nháp (xóa mềm); GET `/versions`, `/versions/{versionId}` xem lịch sử. Các thao tác sửa, loại mục, hủy và phát hành cần `revisionToken` mới nhất và trả token mới; 409 `GUIDE_REVISION_CONFLICT` nghĩa là tải lại `GET /`. Phiên bản đã phát hành không sửa được; khôi phục = tạo nháp từ `sourceVersionId` rồi phát hành. Chi tiết, payload mẫu và bảng mã lỗi: `docs/AUTHORING_GUIDE_MANAGEMENT_API_GUIDE.md`.
 
@@ -409,10 +506,16 @@ Tiền tố `/api/v1/moderation/authoring-guides`. Luồng: GET `/` (bộ đang 
 - **Dữ liệu:** GET /DataRequest/pending → resolve-export/resolve-delete/reject. Format=xlsx tải workbook; **format=csv trả ZIP application/zip**, không text CSV thuần. Đọc Content-Disposition, không parse JSON cho file.
 - **Báo cáo:** POST /BusinessReport/generate → /{reportId}/publish → GET latest-published. Generate/publish chỉ Admin; latest cho người lớn xác thực.
 - **Đối soát:** GET /Payment/mismatched → xác minh → POST /transactions/{id}/mark-paid. Local badge không chứng minh đã đối soát.
-- **Kiểm duyệt:** MO1–MO3 theo guard Admin; không bỏ cấm tự duyệt/eligibility.
-- **Hướng dẫn sáng tác:** MO4; Administrator và Moderator cùng quản lý bản nháp và phát hành bộ hướng dẫn cho Parent.
+- **Kiểm duyệt:** MO1–MO10 theo guard từng luồng; không bỏ cấm tự duyệt/eligibility. Admin không được suy có quyền tạo/sửa RoadmapTemplate hoặc tạo PublishedContentReview review-item khi action chỉ cho Moderator.
+- **Hướng dẫn sáng tác:** MO10; Administrator và Moderator cùng quản lý bản nháp và phát hành bộ hướng dẫn cho Parent.
 
-Chỉ số AI, catalog prompt phiên bản, ứng tuyển Creator, quản lý Parent/bộ đánh giá frontend còn local; source Core không có đủ controller để coi đã tích hợp.
+Rubric phiên bản đã có controller thật (AD1), cần nối frontend đúng contract; không còn xếp chung với chức năng chưa có backend. Chỉ số AI tổng hợp, catalog prompt, ứng tuyển Creator và quản lý Parent tổng quát vẫn cần đối chiếu riêng, không suy từ rubric rằng các module đó đã tích hợp.
+
+### AD1. Kích hoạt rubric và xử lý report chuyển cấp
+
+Chỉ Administrator gọi POST /api/v1/moderation/rubrics/{id}/activate với revision hiện hành của Draft. Backend validate snapshot, chuyển Active trước sang Retired rồi kích hoạt bản mới trong transaction; không sửa trực tiếp bộ đang Active. Tải lại /active sau phản hồi; RUBRIC_ACTIVE_REQUIRED nghĩa không có đúng một bộ active hợp lệ, không tự chọn bộ mới nhất ở frontend.
+
+Ca ContentReport đã Escalated được Administrator xử lý theo MO9. Quyền Administrator không tự thay thế yêu cầu claim/noself-review trong các loại moderation khác.
 
 <a id="he-thong"></a>
 ## 12. API dùng chung và hệ thống
@@ -441,11 +544,12 @@ Nguồn: [hub](../src/Core/StoryPlatform.Api/Hubs/NotificationHub.cs), [publishe
 | API_CÓ_MOCK_LOCAL | 5 |
 | SERVICE_CHƯA_DÙNG | 3 |
 | LỆCH_CONTRACT | 1 |
-| CHƯA_MAP | 88 |
+| CHƯA_MAP (baseline) | 84 |
+| CHƯA_RÀ_FRONTEND (contract bổ sung) | 60 |
 | ALIAS | 1 |
 | WEBHOOK | 1 |
 
-Tổng **249**; có service cho **158** route. Đây không phải tỷ lệ kiểm thử end-to-end.
+Tổng **305**. Mapping cũ có **158** route gọi đúng qua service (150 + 5 + 3); 1 route lệch contract tính riêng. 60 mục endpoint bổ sung ghi CHƯA_RÀ_FRONTEND, không suy thiếu mapping từ việc tài liệu cũ chưa có endpoint card; cần đối chiếu frontend trước khi phân loại. Đây không phải kết quả audit frontend mới hoặc tỷ lệ kiểm thử end-to-end.
 
 Trạng thái ở mức **method + route**, không bảo đảm mọi actor/nhánh UI:
 - **GỌI_API:** có service và nơi tham chiếu trong app, gồm callback polling; xem source hook/màn hình/chuỗi service.
@@ -453,6 +557,7 @@ Trạng thái ở mức **method + route**, không bảo đảm mọi actor/nhá
 - **API_CÓ_MOCK_LOCAL:** mapping notification có thể bị USE_MOCK bỏ gọi thật, còn ghép notificationLocal.
 - **LỆCH_CONTRACT:** chức năng tương ứng nhưng request sai đường dẫn/shape.
 - **CHƯA_MAP:** chưa có service gọi đúng, gồm API chưa UI, API cũ hoặc có phương án thay thế; không đồng nghĩa tất cả cần nút mới.
+- **CHƯA_RÀ_FRONTEND:** lần này mới bổ sung contract backend, chưa đánh giá service/call site tương ứng; không đồng nghĩa CHƯA_MAP.
 - **ALIAS:** route phụ; **WEBHOOK:** server-to-server.
 
 ### 13.1 Việc cần xử lý trước
@@ -461,18 +566,20 @@ Trạng thái ở mức **method + route**, không bảo đảm mọi actor/nhá
 2. Moderation.tsx còn khóa quyết định và GET /Story. Nối PublicStoryReview/ContentReportReview theo itemType, gồm view/checklist/flags trước approve.
 3. Parent manual/assistance/child manual reader/guides chưa map; không gộp vào studio generation.
 4. Creator assistance/AI input và confirm-content chưa map ở frontend. Cần nối nút xác nhận nội dung với API Creator riêng; route dùng chung Parent đã gọi không tính Creator hoàn tất.
-5. Community submissions giả định của Parent không thay trực tiếp bằng PublicStorySubmission ContentCreator.
+5. Nối Parent bằng CommunitySubmission/check → submit → mine/withdraw/remove; PublicStorySubmission vẫn dành riêng cho ContentCreator. Child dùng CommunityLibrary, không dùng itemId của moderation.
 6. History outline/regenerate illustration cần UI nếu sản phẩm sử dụng; service tồn tại chưa là đã tích hợp.
 7. Permission frontend chỉ có 7 quyền trong khi backend có GenerateStory; cần rà UX supervisor.
 8. readingService/guardianService/adaptiveService dùng backendReady toàn module; lỗi đầu có thể chuyển cả module sang local. LocalStorage không chứng minh backend ghi tiến độ.
 9. USE_MOCK mặc định true nếu NEXT_PUBLIC_USE_MOCK không bằng "false"; không kết luận giá trị môi trường đang chạy.
 10. API client cần xử lý null/bool/binary/202 body rỗng và progress trong lỗi; giữ draft khi conflict, tách child/adult token.
+11. Nối các luồng roadmap P6/MO4/C4; copy trả kết quả theo từng trẻ, không giả định mọi bước đều được thêm.
+12. Moderation dispatch đủ 6 itemType; GrayZone decision không có data, ContentReport Escalated chỉ Administrator quyết định. Rubric activate chỉ Administrator.
 
 ### 13.2 Có thể giữ endpoint chưa nối khi chủ động chọn phương án khác
 
 Permission/Supervision trùng chức năng, POST learning/safety thay bằng PUT, alias artifacts và Story CRUD cũ không nhất thiết cần UI mới. Ghi lựa chọn vào checklist sản phẩm.
 
-API reading/roadmap/adaptive frontend đề xuất chưa có backend không được tính thêm vào inventory Core. Không sửa frontend/backend trong lần tài liệu này.
+Roadmap đã có API thật: ChildRoadmap, MyRoadmap, RoadmapTemplate, RoadmapReview và RoadmapLibrary. Frontend cần adapter đúng route/DTO; đường dẫn roadmap tự giả định không được xem là đã map. Những HTTP API reading-session/adaptive còn thiếu không được tính thêm vào inventory. Lần này chỉ cập nhật tài liệu.
 
 <a id="contracts"></a>
 ## 14. Danh mục contract từng endpoint
@@ -484,7 +591,7 @@ HTTP là nhánh response controller; kết hợp lỗi chung mục 2 và guard n
 
 ### Tra nhanh controller
 
-[Auth](#controller-auth) · [ChildProfile](#controller-childprofile) · [LearningProfile](#controller-learningprofile) · [SafetyPolicy](#controller-safetypolicy) · [Supervision](#controller-supervision) · [Permission](#controller-permission) · [ChildAccessCredential](#controller-childaccesscredential) · [ParentalGate](#controller-parentalgate) · [AIStoryInput](#controller-aistoryinput) · [Outline](#controller-outline) · [ContentGeneration](#controller-contentgeneration) · [Review](#controller-review) · [MediaGeneration](#controller-mediageneration) · [ExistingStories](#controller-existingstories) · [ParentAuthoring](#controller-parentauthoring) · [ParentAssistance](#controller-parentassistance) · [AuthoringGuides](#controller-authoringguides) · [ChildManualStories](#controller-childmanualstories) · [CreatorAuthoring](#controller-creatorauthoring) · [CreatorAssistance](#controller-creatorassistance) · [CreatorAIStoryInput](#controller-creatoraistoryinput) · [PublicStorySubmission](#controller-publicstorysubmission) · [ModerationQueue](#controller-moderationqueue) · [PublicStoryReview](#controller-publicstoryreview) · [ContentReport](#controller-contentreport) · [ContentReportReview](#controller-contentreportreview) · [AdminAccount](#controller-adminaccount) · [ModeratorAccount](#controller-moderatoraccount) · [ContentCategory](#controller-contentcategory) · [TokenQuota](#controller-tokenquota) · [DataRequest](#controller-datarequest) · [BusinessReport](#controller-businessreport) · [Payment](#controller-payment) · [Notification](#controller-notification) · [Story](#controller-story)
+[AIStoryInput](#controller-aistoryinput) · [AdminAccount](#controller-adminaccount) · [Auth](#controller-auth) · [AuthoringGuides](#controller-authoringguides) · [BusinessReport](#controller-businessreport) · [ChildAccessCredential](#controller-childaccesscredential) · [ChildManualStories](#controller-childmanualstories) · [ChildProfile](#controller-childprofile) · [ChildRoadmap](#controller-childroadmap) · [CommunityLibrary](#controller-communitylibrary) · [CommunityReview](#controller-communityreview) · [CommunitySubmission](#controller-communitysubmission) · [ContentCategory](#controller-contentcategory) · [ContentGeneration](#controller-contentgeneration) · [ContentReport](#controller-contentreport) · [ContentReportReview](#controller-contentreportreview) · [CreatorAIStoryInput](#controller-creatoraistoryinput) · [CreatorAssistance](#controller-creatorassistance) · [CreatorAuthoring](#controller-creatorauthoring) · [CreatorModerationCheck](#controller-creatormoderationcheck) · [CreatorPublication](#controller-creatorpublication) · [DataRequest](#controller-datarequest) · [ExistingStories](#controller-existingstories) · [GrayZoneReview](#controller-grayzonereview) · [LearningProfile](#controller-learningprofile) · [MediaGeneration](#controller-mediageneration) · [ModerationQueue](#controller-moderationqueue) · [ModerationRubrics](#controller-moderationrubrics) · [ModeratorAccount](#controller-moderatoraccount) · [MyRoadmap](#controller-myroadmap) · [Notification](#controller-notification) · [Outline](#controller-outline) · [ParentAssistance](#controller-parentassistance) · [ParentAuthoring](#controller-parentauthoring) · [ParentalGate](#controller-parentalgate) · [Payment](#controller-payment) · [Permission](#controller-permission) · [PublicStoryReview](#controller-publicstoryreview) · [PublicStorySubmission](#controller-publicstorysubmission) · [PublishedContentReview](#controller-publishedcontentreview) · [Review](#controller-review) · [RoadmapLibrary](#controller-roadmaplibrary) · [RoadmapReview](#controller-roadmapreview) · [RoadmapTemplate](#controller-roadmaptemplate) · [SafetyPolicy](#controller-safetypolicy) · [Story](#controller-story) · [Supervision](#controller-supervision) · [TokenQuota](#controller-tokenquota)
 
 <a id="controller-auth"></a>
 ### Auth — 21 route
@@ -518,8 +625,8 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-register-post"></a>
 #### POST /api/v1/Auth/register
 
-- Action/chức năng: **Register** — Đăng ký tài khoản người dùng mới. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L35).
-- Quyền: Khách/AllowAnonymous. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Register** — Đăng ký tài khoản người dùng mới. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L37).
+- Quyền: AllowAnonymous
 - Request: **body** request: [RegisterRequestDto](#dto-registerrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [authService.register](../../AI_Storytelling_Frontend/src/app/services/authService.ts#L252); nơi dùng: [AuthContext.tsx](../../AI_Storytelling_Frontend/src/app/context/AuthContext.tsx#L141)
@@ -527,8 +634,8 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-login-post"></a>
 #### POST /api/v1/Auth/login
 
-- Action/chức năng: **Login** — Đăng nhập hệ thống (hỗ trợ cả Email hoặc Username). [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L48).
-- Quyền: Khách/AllowAnonymous. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Login** — Đăng nhập hệ thống (hỗ trợ cả Email hoặc Username). [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L50).
+- Quyền: AllowAnonymous
 - Request: **body** request: [LoginRequestDto](#dto-loginrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AuthResponseDto](#dto-authresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [authService.login](../../AI_Storytelling_Frontend/src/app/services/authService.ts#L64); nơi dùng: [AuthContext.tsx](../../AI_Storytelling_Frontend/src/app/context/AuthContext.tsx#L120)
@@ -536,8 +643,8 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-verifymfa-post"></a>
 #### POST /api/v1/Auth/mfa/verify
 
-- Action/chức năng: **VerifyMfa** — Bước 2 của đăng nhập Administrator: xác thực mã TOTP (Mục 9 — MFA bắt buộc cho Administrator).. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L61).
-- Quyền: Khách/AllowAnonymous. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **VerifyMfa** — Bước 2 của đăng nhập Administrator: xác thực mã TOTP (Mục 9 — MFA bắt buộc cho Administrator).. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L63).
+- Quyền: AllowAnonymous
 - Request: **body** request: [VerifyMfaRequestDto](#dto-verifymfarequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AuthResponseDto](#dto-authresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [authService.verifyMfa](../../AI_Storytelling_Frontend/src/app/services/authService.ts#L112); nơi dùng: [AuthContext.tsx](../../AI_Storytelling_Frontend/src/app/context/AuthContext.tsx#L180)
@@ -545,8 +652,8 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-activatestaffaccount-post"></a>
 #### POST /api/v1/Auth/staff-activation
 
-- Action/chức năng: **ActivateStaffAccount** — Kích hoạt tài khoản Moderator bằng mã mời: đặt mật khẩu và xác nhận cam kết.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L74).
-- Quyền: Khách/AllowAnonymous. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ActivateStaffAccount** — Kích hoạt tài khoản Moderator bằng mã mời: đặt mật khẩu và xác nhận cam kết.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L76).
+- Quyền: AllowAnonymous
 - Request: **body** request: [StaffActivationRequestDto](#dto-staffactivationrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [accountService.activateStaff](../../AI_Storytelling_Frontend/src/app/services/accountService.ts#L13); nơi dùng: [LoginScreen.tsx](../../AI_Storytelling_Frontend/src/app/components/shell/LoginScreen.tsx#L108)
@@ -554,8 +661,8 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-verifyemail-post"></a>
 #### POST /api/v1/Auth/verify-email
 
-- Action/chức năng: **VerifyEmail** — Xác thực email bằng mã đã gửi lúc đăng ký — bắt buộc trước khi đăng nhập lần đầu.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L89).
-- Quyền: Khách/AllowAnonymous. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **VerifyEmail** — Xác thực email bằng mã đã gửi lúc đăng ký — bắt buộc trước khi đăng nhập lần đầu.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L91).
+- Quyền: AllowAnonymous
 - Request: **body** request: [VerifyEmailRequestDto](#dto-verifyemailrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [accountService.verifyEmail](../../AI_Storytelling_Frontend/src/app/services/accountService.ts#L8); nơi dùng: [LoginScreen.tsx](../../AI_Storytelling_Frontend/src/app/components/shell/LoginScreen.tsx#L102)
@@ -563,8 +670,8 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-resendverificationemail-post"></a>
 #### POST /api/v1/Auth/resend-verification-email
 
-- Action/chức năng: **ResendVerificationEmail** — Gửi lại mã xác thực email mới và vô hiệu hóa mã cũ.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L102).
-- Quyền: Khách/AllowAnonymous. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ResendVerificationEmail** — Gửi lại mã xác thực email mới và vô hiệu hóa mã cũ.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L104).
+- Quyền: AllowAnonymous
 - Request: **body** request: [ResendVerificationEmailRequestDto](#dto-resendverificationemailrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [accountService.resendVerificationEmail](../../AI_Storytelling_Frontend/src/app/services/accountService.ts#L17); nơi dùng: [LoginScreen.tsx](../../AI_Storytelling_Frontend/src/app/components/shell/LoginScreen.tsx#L130)
@@ -572,8 +679,8 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-forgotpassword-post"></a>
 #### POST /api/v1/Auth/forgot-password
 
-- Action/chức năng: **ForgotPassword** — Yêu cầu đặt lại mật khẩu — nếu email tồn tại, hệ thống sẽ gửi token đặt lại mật khẩu. Luôn trả về cùng 1 thông điệp bất kể email có tồn tại hay không (tránh dò quét email).. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L117).
-- Quyền: Khách/AllowAnonymous. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ForgotPassword** — Yêu cầu đặt lại mật khẩu — nếu email tồn tại, hệ thống sẽ gửi token đặt lại mật khẩu. Luôn trả về cùng 1 thông điệp bất kể email có tồn tại hay không (tránh dò quét email).. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L119).
+- Quyền: AllowAnonymous
 - Request: **body** request: [ForgotPasswordRequestDto](#dto-forgotpasswordrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [authService.forgotPassword](../../AI_Storytelling_Frontend/src/app/services/authService.ts#L304); nơi dùng: [AuthContext.tsx](../../AI_Storytelling_Frontend/src/app/context/AuthContext.tsx#L155)
@@ -581,8 +688,8 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-resetpassword-post"></a>
 #### POST /api/v1/Auth/reset-password
 
-- Action/chức năng: **ResetPassword** — Đặt lại mật khẩu bằng token nhận được từ bước Quên mật khẩu. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L130).
-- Quyền: Khách/AllowAnonymous. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ResetPassword** — Đặt lại mật khẩu bằng token nhận được từ bước Quên mật khẩu. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L132).
+- Quyền: AllowAnonymous
 - Request: **body** request: [ResetPasswordRequestDto](#dto-resetpasswordrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [authService.resetPassword](../../AI_Storytelling_Frontend/src/app/services/authService.ts#L330); nơi dùng: [AuthContext.tsx](../../AI_Storytelling_Frontend/src/app/context/AuthContext.tsx#L162)
@@ -590,8 +697,8 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-changepassword-post"></a>
 #### POST /api/v1/Auth/change-password
 
-- Action/chức năng: **ChangePassword** — Đổi mật khẩu; gửi CurrentRefreshToken để giữ phiên hiện tại.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L143).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ChangePassword** — Đổi mật khẩu; gửi CurrentRefreshToken để giữ phiên hiện tại.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L145).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [ChangePasswordRequestDto](#dto-changepasswordrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [accountService.changePassword](../../AI_Storytelling_Frontend/src/app/services/accountService.ts#L22); nơi dùng: [AccountWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/account/AccountWorkspace.tsx#L37)
@@ -599,8 +706,8 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-refreshtoken-post"></a>
 #### POST /api/v1/Auth/refresh-token
 
-- Action/chức năng: **RefreshToken** — Làm mới Access Token bằng Refresh Token còn hiệu lực (xoay vòng: refresh token cũ sẽ bị vô hiệu hoá). [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L157).
-- Quyền: Khách/AllowAnonymous. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RefreshToken** — Làm mới Access Token bằng Refresh Token còn hiệu lực (xoay vòng: refresh token cũ sẽ bị vô hiệu hoá). [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L159).
+- Quyền: AllowAnonymous
 - Request: **body** request: [RefreshTokenRequestDto](#dto-refreshtokenrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AuthResponseDto](#dto-authresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [authService.refreshToken](../../AI_Storytelling_Frontend/src/app/services/authService.ts#L136); nơi dùng: [AuthContext.tsx](../../AI_Storytelling_Frontend/src/app/context/AuthContext.tsx#L168)
@@ -608,8 +715,8 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-getprofile-get"></a>
 #### GET /api/v1/Auth/me
 
-- Action/chức năng: **GetProfile** — Lấy thông tin hồ sơ của tài khoản đang đăng nhập. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L170).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetProfile** — Lấy thông tin hồ sơ của tài khoản đang đăng nhập. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L172).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: Không có tham số action; dùng token/header theo quyền..
 - Response: ApiResponse.data: [UserProfileDto](#dto-userprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [authService.getProfile](../../AI_Storytelling_Frontend/src/app/services/authService.ts#L357); nơi dùng: [AuthContext.tsx](../../AI_Storytelling_Frontend/src/app/context/AuthContext.tsx#L97)
@@ -617,8 +724,8 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-updateprofile-put"></a>
 #### PUT /api/v1/Auth/me
 
-- Action/chức năng: **UpdateProfile** — Sửa họ tên và ảnh đại diện của tài khoản đang đăng nhập.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L180).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **UpdateProfile** — Sửa họ tên và ảnh đại diện của tài khoản đang đăng nhập.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L182).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [UpdateProfileRequestDto](#dto-updateprofilerequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [UserProfileDto](#dto-userprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [accountService.updateProfile](../../AI_Storytelling_Frontend/src/app/services/accountService.ts#L27); nơi dùng: [ProfileSection.tsx](../../AI_Storytelling_Frontend/src/app/features/account/ProfileSection.tsx#L27)
@@ -626,8 +733,8 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-requestemailchange-post"></a>
 #### POST /api/v1/Auth/change-email
 
-- Action/chức năng: **RequestEmailChange** — Yêu cầu đổi email Parent; OTP được gửi tới email mới.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L191).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RequestEmailChange** — Yêu cầu đổi email Parent; OTP được gửi tới email mới.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L193).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [RequestEmailChangeRequestDto](#dto-requestemailchangerequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [accountService.requestEmailChange](../../AI_Storytelling_Frontend/src/app/services/accountService.ts#L32); nơi dùng: [ProfileSection.tsx](../../AI_Storytelling_Frontend/src/app/features/account/ProfileSection.tsx#L38)
@@ -635,8 +742,8 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-confirmemailchange-post"></a>
 #### POST /api/v1/Auth/change-email/confirm
 
-- Action/chức năng: **ConfirmEmailChange** — Xác nhận đổi email bằng OTP gửi tới email mới.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L203).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ConfirmEmailChange** — Xác nhận đổi email bằng OTP gửi tới email mới.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L205).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [ConfirmEmailChangeRequestDto](#dto-confirmemailchangerequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [accountService.confirmEmailChange](../../AI_Storytelling_Frontend/src/app/services/accountService.ts#L36); nơi dùng: [ProfileSection.tsx](../../AI_Storytelling_Frontend/src/app/features/account/ProfileSection.tsx#L48)
@@ -644,8 +751,8 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-getdeleteaccountpreview-get"></a>
 #### GET /api/v1/Auth/me/delete-preview
 
-- Action/chức năng: **GetDeleteAccountPreview** — Xem các hồ sơ đang chặn hoặc sẽ bị xóa cùng tài khoản Parent.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L215).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetDeleteAccountPreview** — Xem các hồ sơ đang chặn hoặc sẽ bị xóa cùng tài khoản Parent.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L217).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: Không có tham số action; dùng token/header theo quyền..
 - Response: ApiResponse.data: [DeleteAccountPreviewDto](#dto-deleteaccountpreviewdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [accountService.getDeleteAccountPreview](../../AI_Storytelling_Frontend/src/app/services/accountService.ts#L40); nơi dùng: [DeleteAccountSection.tsx](../../AI_Storytelling_Frontend/src/app/features/account/DeleteAccountSection.tsx#L21)
@@ -653,8 +760,8 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-deleteaccount-delete"></a>
 #### DELETE /api/v1/Auth/me
 
-- Action/chức năng: **DeleteAccount** — Xóa và ẩn danh hóa tài khoản Parent.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L226).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **DeleteAccount** — Xóa và ẩn danh hóa tài khoản Parent.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L228).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [DeleteAccountRequestDto](#dto-deleteaccountrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [accountService.deleteAccount](../../AI_Storytelling_Frontend/src/app/services/accountService.ts#L44); nơi dùng: [DeleteAccountSection.tsx](../../AI_Storytelling_Frontend/src/app/features/account/DeleteAccountSection.tsx#L32)
@@ -662,8 +769,8 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-logout-post"></a>
 #### POST /api/v1/Auth/logout
 
-- Action/chức năng: **Logout** — Đăng xuất — vô hiệu hoá refresh token hiện tại của tài khoản đang đăng nhập. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L239).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Logout** — Đăng xuất — vô hiệu hoá refresh token hiện tại của tài khoản đang đăng nhập. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L241).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [LogoutRequestDto](#dto-logoutrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [authService.logout](../../AI_Storytelling_Frontend/src/app/services/authService.ts#L437); nơi dùng: [AuthContext.tsx](../../AI_Storytelling_Frontend/src/app/context/AuthContext.tsx#L191)
@@ -671,8 +778,8 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-logoutalldevices-post"></a>
 #### POST /api/v1/Auth/logout-all-devices
 
-- Action/chức năng: **LogoutAllDevices** — Đăng xuất khỏi mọi thiết bị và thu hồi toàn bộ token của tài khoản.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L253).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **LogoutAllDevices** — Đăng xuất khỏi mọi thiết bị và thu hồi toàn bộ token của tài khoản.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L255).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: Không có tham số action; dùng token/header theo quyền..
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [accountService.logoutAllDevices](../../AI_Storytelling_Frontend/src/app/services/accountService.ts#L56); nơi dùng: [AccountWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/account/AccountWorkspace.tsx#L51)
@@ -680,8 +787,8 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-listsessions-get"></a>
 #### GET /api/v1/Auth/sessions
 
-- Action/chức năng: **ListSessions** — Danh sách refresh-token session còn hiệu lực của tài khoản hiện tại.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L264).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ListSessions** — Danh sách refresh-token session còn hiệu lực của tài khoản hiện tại.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L266).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: Không có tham số action; dùng token/header theo quyền..
 - Response: ApiResponse.data: [List&lt;SessionDto&gt;](#dto-sessiondto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [accountService.listSessions](../../AI_Storytelling_Frontend/src/app/services/accountService.ts#L48); nơi dùng: [AccountWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/account/AccountWorkspace.tsx#L25)
@@ -689,8 +796,8 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-revokesession-delete"></a>
 #### DELETE /api/v1/Auth/sessions/{id}
 
-- Action/chức năng: **RevokeSession** — Thu hồi refresh token của một phiên thuộc tài khoản hiện tại. Access token đã cấp cho phiên đó vẫn có hiệu lực đến khi hết hạn.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L277).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RevokeSession** — Thu hồi refresh token của một phiên thuộc tài khoản hiện tại. Access token đã cấp cho phiên đó vẫn có hiệu lực đến khi hết hạn.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L279).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [accountService.revokeSession](../../AI_Storytelling_Frontend/src/app/services/accountService.ts#L52); nơi dùng: [AccountWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/account/AccountWorkspace.tsx#L44)
@@ -698,8 +805,8 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-getmyauditlog-get"></a>
 #### GET /api/v1/Auth/me/audit-log
 
-- Action/chức năng: **GetMyAuditLog** — Lịch sử hoạt động do tài khoản hiện tại thực hiện.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L289).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetMyAuditLog** — Lịch sử hoạt động do tài khoản hiện tại thực hiện.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L291).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **query** pageRequest: [PageRequest](#dto-pagerequest).
 - Response: ApiResponse.data: [PagedResult&lt;AuditLogDto&gt;](#dto-pagedresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -727,8 +834,8 @@ Guard/nghiệp vụ: [ChildProfileService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-childprofile-createchildprofile-post"></a>
 #### POST /api/v1/ChildProfile
 
-- Action/chức năng: **CreateChildProfile** — Tạo hồ sơ trẻ và quan hệ giám sát Owner trong cùng giao dịch.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L30).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **CreateChildProfile** — Tạo hồ sơ trẻ và quan hệ giám sát Owner trong cùng giao dịch.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L32).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [CreateChildProfileRequestDto](#dto-createchildprofilerequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ChildProfileDto](#dto-childprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **GỌI_API** — [childProfileService.createChildProfile](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L27); nơi dùng: [CreateChildWizard.tsx](../../AI_Storytelling_Frontend/src/app/features/children/CreateChildWizard.tsx#L53)
@@ -736,8 +843,8 @@ Guard/nghiệp vụ: [ChildProfileService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-childprofile-listmychildprofiles-get"></a>
 #### GET /api/v1/ChildProfile/mine
 
-- Action/chức năng: **ListMyChildProfiles** — Danh sách hồ sơ trẻ mà tài khoản đang đăng nhập đang giám sát (Bước 1.9a — ProfileSwitcher).. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L46).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ListMyChildProfiles** — Danh sách hồ sơ trẻ mà tài khoản đang đăng nhập đang giám sát (Bước 1.9a — ProfileSwitcher).. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L48).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: Không có tham số action; dùng token/header theo quyền..
 - Response: ApiResponse.data: [List&lt;ChildProfileDto&gt;](#dto-childprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.getMyChildProfiles](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L18); nơi dùng: [WorkspaceDataContext.tsx](../../AI_Storytelling_Frontend/src/app/context/WorkspaceDataContext.tsx#L42)
@@ -745,8 +852,8 @@ Guard/nghiệp vụ: [ChildProfileService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-childprofile-getchildprofilebyid-get"></a>
 #### GET /api/v1/ChildProfile/{id}
 
-- Action/chức năng: **GetChildProfileById** — Lấy chi tiết 1 hồ sơ trẻ.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L58).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetChildProfileById** — Lấy chi tiết 1 hồ sơ trẻ.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L60).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc.
 - Response: ApiResponse.data: [ChildProfileDto](#dto-childprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.getChildProfileById](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L22); nơi dùng: [readingService.ts](../../AI_Storytelling_Frontend/src/app/services/readingService.ts#L53)
@@ -754,8 +861,8 @@ Guard/nghiệp vụ: [ChildProfileService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-childprofile-getchildprofileauditlog-get"></a>
 #### GET /api/v1/ChildProfile/{id}/audit-log
 
-- Action/chức năng: **GetChildProfileAuditLog** — Lịch sử thay đổi hồ sơ trẻ; chỉ supervisor còn hiệu lực được xem.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L70).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetChildProfileAuditLog** — Lịch sử thay đổi hồ sơ trẻ; chỉ supervisor còn hiệu lực được xem.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L72).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc<br>**query** pageRequest: [PageRequest](#dto-pagerequest).
 - Response: ApiResponse.data: [PagedResult&lt;AuditLogDto&gt;](#dto-pagedresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -763,8 +870,8 @@ Guard/nghiệp vụ: [ChildProfileService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-childprofile-updatechildprofile-put"></a>
 #### PUT /api/v1/ChildProfile/{id}
 
-- Action/chức năng: **UpdateChildProfile** — Cập nhật Nickname/AgeBand/Language của hồ sơ trẻ — chỉ Owner (KHÔNG đổi scope/organization).. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L84).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **UpdateChildProfile** — Cập nhật Nickname/AgeBand/Language của hồ sơ trẻ — chỉ Owner (KHÔNG đổi scope/organization).. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L86).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc<br>**body** request: [UpdateChildProfileRequestDto](#dto-updatechildprofilerequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ChildProfileDto](#dto-childprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.updateChildProfile](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L35); nơi dùng: [ProfileTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/ProfileTab.tsx#L54)
@@ -772,8 +879,8 @@ Guard/nghiệp vụ: [ChildProfileService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-childprofile-activatechildprofile-patch"></a>
 #### PATCH /api/v1/ChildProfile/{id}/activate
 
-- Action/chức năng: **ActivateChildProfile** — Kích hoạt hồ sơ trẻ (Bước 1.8) — chỉ Active khi consent đúng phiên bản hiện hành.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L96).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ActivateChildProfile** — Kích hoạt hồ sơ trẻ (Bước 1.8) — chỉ Active khi consent đúng phiên bản hiện hành.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L98).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc.
 - Response: ApiResponse.data: [ChildProfileDto](#dto-childprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.activateChildProfile](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L43); nơi dùng: [CreateChildWizard.tsx](../../AI_Storytelling_Frontend/src/app/features/children/CreateChildWizard.tsx#L68); [ProfileTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/ProfileTab.tsx#L68)
@@ -781,8 +888,8 @@ Guard/nghiệp vụ: [ChildProfileService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-childprofile-suspendchildprofile-patch"></a>
 #### PATCH /api/v1/ChildProfile/{id}/suspend
 
-- Action/chức năng: **SuspendChildProfile** — Tạm dừng hồ sơ trẻ (Bước 1.8b) — chỉ Owner; thu hồi Child Session và Easy Login.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L108).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **SuspendChildProfile** — Tạm dừng hồ sơ trẻ (Bước 1.8b) — chỉ Owner; thu hồi Child Session và Easy Login.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L110).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc.
 - Response: ApiResponse.data: [ChildProfileDto](#dto-childprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.suspendChildProfile](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L48); nơi dùng: [ProfileTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/ProfileTab.tsx#L73)
@@ -790,8 +897,8 @@ Guard/nghiệp vụ: [ChildProfileService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-childprofile-resumechildprofile-patch"></a>
 #### PATCH /api/v1/ChildProfile/{id}/resume
 
-- Action/chức năng: **ResumeChildProfile** — Kích hoạt lại hồ sơ đang tạm dừng (Bước 1.8b) — chỉ Owner; có thể kèm đồng ý lại consent.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L120).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ResumeChildProfile** — Kích hoạt lại hồ sơ đang tạm dừng (Bước 1.8b) — chỉ Owner; có thể kèm đồng ý lại consent.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L122).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc<br>**body** request: [ResumeChildProfileRequestDto?](#dto-resumechildprofilerequestdto); nullable; field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ChildProfileDto](#dto-childprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.resumeChildProfile](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L53); nơi dùng: [ProfileTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/ProfileTab.tsx#L79)
@@ -799,8 +906,8 @@ Guard/nghiệp vụ: [ChildProfileService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-childprofile-restorechildprofile-patch"></a>
 #### PATCH /api/v1/ChildProfile/{id}/restore
 
-- Action/chức năng: **RestoreChildProfile** — Khôi phục hồ sơ đã lưu trữ về Active (Bước 1.8b) — chỉ Owner; Easy Login phải tạo mới.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L133).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RestoreChildProfile** — Khôi phục hồ sơ đã lưu trữ về Active (Bước 1.8b) — chỉ Owner; Easy Login phải tạo mới.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L135).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc<br>**body** request: [ResumeChildProfileRequestDto?](#dto-resumechildprofilerequestdto); nullable; field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ChildProfileDto](#dto-childprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -808,8 +915,8 @@ Guard/nghiệp vụ: [ChildProfileService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-childprofile-archivechildprofile-delete"></a>
 #### DELETE /api/v1/ChildProfile/{id}
 
-- Action/chức năng: **ArchiveChildProfile** — Lưu trữ hồ sơ trẻ — chỉ Owner; thu hồi Child Session và Easy Login, giữ nguyên lịch sử.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L146).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ArchiveChildProfile** — Lưu trữ hồ sơ trẻ — chỉ Owner; thu hồi Child Session và Easy Login, giữ nguyên lịch sử.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L148).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.archiveChildProfile](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L58); nơi dùng: [ProfileTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/ProfileTab.tsx#L84)
@@ -831,8 +938,8 @@ Guard/nghiệp vụ: [LearningProfileService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-learningprofile-setlearningprofile-put"></a>
 #### PUT /api/v1/LearningProfile/{childProfileId}
 
-- Action/chức năng: **SetLearningProfile** — Tạo/cập nhật Learning Profile của một hồ sơ trẻ (Bước 1.3).. [LearningProfileController](../src/Core/StoryPlatform.Api/Controllers/LearningProfileController.cs#L23).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **SetLearningProfile** — Tạo/cập nhật Learning Profile của một hồ sơ trẻ (Bước 1.3).. [LearningProfileController](../src/Core/StoryPlatform.Api/Controllers/LearningProfileController.cs#L25).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc<br>**body** request: [SetLearningProfileRequestDto](#dto-setlearningprofilerequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [LearningProfileDto](#dto-learningprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.setLearningProfile](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L67); nơi dùng: [CreateChildWizard.tsx](../../AI_Storytelling_Frontend/src/app/features/children/CreateChildWizard.tsx#L58); [LearningTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/LearningTab.tsx#L41)
@@ -840,8 +947,8 @@ Guard/nghiệp vụ: [LearningProfileService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-learningprofile-createlearningprofile-post"></a>
 #### POST /api/v1/LearningProfile/{childProfileId}
 
-- Action/chức năng: **CreateLearningProfile** — Tạo mới Learning Profile của một hồ sơ trẻ (dùng cùng logic upsert với PUT).. [LearningProfileController](../src/Core/StoryPlatform.Api/Controllers/LearningProfileController.cs#L39).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **CreateLearningProfile** — Tạo mới Learning Profile của một hồ sơ trẻ (dùng cùng logic upsert với PUT).. [LearningProfileController](../src/Core/StoryPlatform.Api/Controllers/LearningProfileController.cs#L41).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc<br>**body** request: [SetLearningProfileRequestDto](#dto-setlearningprofilerequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [LearningProfileDto](#dto-learningprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -849,8 +956,8 @@ Guard/nghiệp vụ: [LearningProfileService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-learningprofile-getlearningprofile-get"></a>
 #### GET /api/v1/LearningProfile/{childProfileId}
 
-- Action/chức năng: **GetLearningProfile** — Lấy Learning Profile hiện tại của hồ sơ trẻ.. [LearningProfileController](../src/Core/StoryPlatform.Api/Controllers/LearningProfileController.cs#L55).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetLearningProfile** — Lấy Learning Profile hiện tại của hồ sơ trẻ.. [LearningProfileController](../src/Core/StoryPlatform.Api/Controllers/LearningProfileController.cs#L57).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: [LearningProfileDto](#dto-learningprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.getLearningProfile](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L62); nơi dùng: [LearningTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/LearningTab.tsx#L27); [ProfileTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/ProfileTab.tsx#L35)
@@ -858,8 +965,8 @@ Guard/nghiệp vụ: [LearningProfileService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-learningprofile-deletelearningprofile-delete"></a>
 #### DELETE /api/v1/LearningProfile/{childProfileId}
 
-- Action/chức năng: **DeleteLearningProfile** — Xoá hẳn Learning Profile của hồ sơ trẻ (xoá cứng — chỉ là cấu hình, không phải lịch sử học tập).. [LearningProfileController](../src/Core/StoryPlatform.Api/Controllers/LearningProfileController.cs#L67).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **DeleteLearningProfile** — Xoá hẳn Learning Profile của hồ sơ trẻ (xoá cứng — chỉ là cấu hình, không phải lịch sử học tập).. [LearningProfileController](../src/Core/StoryPlatform.Api/Controllers/LearningProfileController.cs#L69).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -884,8 +991,8 @@ Guard/nghiệp vụ: [SafetyPolicyService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-safetypolicy-setsafetypolicy-put"></a>
 #### PUT /api/v1/SafetyPolicy/{childProfileId}
 
-- Action/chức năng: **SetSafetyPolicy** — Tạo/cập nhật Safety Policy của một hồ sơ trẻ (Bước 1.4) — yêu cầu quyền ManageSafetySettings.. [SafetyPolicyController](../src/Core/StoryPlatform.Api/Controllers/SafetyPolicyController.cs#L23).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **SetSafetyPolicy** — Tạo/cập nhật Safety Policy của một hồ sơ trẻ (Bước 1.4) — yêu cầu quyền ManageSafetySettings.. [SafetyPolicyController](../src/Core/StoryPlatform.Api/Controllers/SafetyPolicyController.cs#L25).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc<br>**body** request: [SetSafetyPolicyRequestDto](#dto-setsafetypolicyrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [SafetyPolicyDto](#dto-safetypolicydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.setSafetyPolicy](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L87); nơi dùng: [CreateChildWizard.tsx](../../AI_Storytelling_Frontend/src/app/features/children/CreateChildWizard.tsx#L62); [SafetyWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/safety/SafetyWorkspace.tsx#L110)
@@ -893,8 +1000,8 @@ Guard/nghiệp vụ: [SafetyPolicyService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-safetypolicy-createsafetypolicy-post"></a>
 #### POST /api/v1/SafetyPolicy/{childProfileId}
 
-- Action/chức năng: **CreateSafetyPolicy** — Tạo mới Safety Policy của một hồ sơ trẻ (dùng cùng logic upsert với PUT) — yêu cầu quyền ManageSafetySettings.. [SafetyPolicyController](../src/Core/StoryPlatform.Api/Controllers/SafetyPolicyController.cs#L39).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **CreateSafetyPolicy** — Tạo mới Safety Policy của một hồ sơ trẻ (dùng cùng logic upsert với PUT) — yêu cầu quyền ManageSafetySettings.. [SafetyPolicyController](../src/Core/StoryPlatform.Api/Controllers/SafetyPolicyController.cs#L41).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc<br>**body** request: [SetSafetyPolicyRequestDto](#dto-setsafetypolicyrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [SafetyPolicyDto](#dto-safetypolicydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -902,8 +1009,8 @@ Guard/nghiệp vụ: [SafetyPolicyService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-safetypolicy-getsafetypolicy-get"></a>
 #### GET /api/v1/SafetyPolicy/{childProfileId}
 
-- Action/chức năng: **GetSafetyPolicy** — Lấy Safety Policy hiện tại của hồ sơ trẻ.. [SafetyPolicyController](../src/Core/StoryPlatform.Api/Controllers/SafetyPolicyController.cs#L55).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetSafetyPolicy** — Lấy Safety Policy hiện tại của hồ sơ trẻ.. [SafetyPolicyController](../src/Core/StoryPlatform.Api/Controllers/SafetyPolicyController.cs#L57).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: [SafetyPolicyDto](#dto-safetypolicydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.getSafetyPolicy](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L79); nơi dùng: [ProfileTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/ProfileTab.tsx#L35); [KidMode.tsx](../../AI_Storytelling_Frontend/src/app/features/kid/KidMode.tsx#L29)
@@ -911,8 +1018,8 @@ Guard/nghiệp vụ: [SafetyPolicyService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-safetypolicy-reconsent-post"></a>
 #### POST /api/v1/SafetyPolicy/{childProfileId}/reconsent
 
-- Action/chức năng: **Reconsent** — Owner đồng ý lại điều khoản khi consent_policy_version đã đổi.. [SafetyPolicyController](../src/Core/StoryPlatform.Api/Controllers/SafetyPolicyController.cs#L65).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Reconsent** — Owner đồng ý lại điều khoản khi consent_policy_version đã đổi.. [SafetyPolicyController](../src/Core/StoryPlatform.Api/Controllers/SafetyPolicyController.cs#L67).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: [SafetyPolicyDto](#dto-safetypolicydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.reconsent](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L92); nơi dùng: [SafetyWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/safety/SafetyWorkspace.tsx#L107)
@@ -920,8 +1027,8 @@ Guard/nghiệp vụ: [SafetyPolicyService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-safetypolicy-getagepreset-get"></a>
 #### GET /api/v1/SafetyPolicy/{childProfileId}/age-preset
 
-- Action/chức năng: **GetAgePreset** — Danh sách danh mục Blocked mặc định theo age_band của trẻ.. [SafetyPolicyController](../src/Core/StoryPlatform.Api/Controllers/SafetyPolicyController.cs#L76).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetAgePreset** — Danh sách danh mục Blocked mặc định theo age_band của trẻ.. [SafetyPolicyController](../src/Core/StoryPlatform.Api/Controllers/SafetyPolicyController.cs#L78).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: [AgePresetDto](#dto-agepresetdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -929,8 +1036,8 @@ Guard/nghiệp vụ: [SafetyPolicyService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-safetypolicy-applyagepreset-post"></a>
 #### POST /api/v1/SafetyPolicy/{childProfileId}/age-preset/apply
 
-- Action/chức năng: **ApplyAgePreset** — Thay danh sách Blocked bằng preset theo age_band hiện tại.. [SafetyPolicyController](../src/Core/StoryPlatform.Api/Controllers/SafetyPolicyController.cs#L87).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ApplyAgePreset** — Thay danh sách Blocked bằng preset theo age_band hiện tại.. [SafetyPolicyController](../src/Core/StoryPlatform.Api/Controllers/SafetyPolicyController.cs#L89).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: [SafetyPolicyDto](#dto-safetypolicydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.applyAgePreset](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L97); nơi dùng: [SafetyWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/safety/SafetyWorkspace.tsx#L135)
@@ -938,8 +1045,8 @@ Guard/nghiệp vụ: [SafetyPolicyService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-safetypolicy-deletesafetypolicy-delete"></a>
 #### DELETE /api/v1/SafetyPolicy/{childProfileId}
 
-- Action/chức năng: **DeleteSafetyPolicy** — Xoá hẳn Safety Policy của hồ sơ trẻ (xoá cứng — chỉ là cấu hình).. [SafetyPolicyController](../src/Core/StoryPlatform.Api/Controllers/SafetyPolicyController.cs#L100).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **DeleteSafetyPolicy** — Xoá hẳn Safety Policy của hồ sơ trẻ (xoá cứng — chỉ là cấu hình).. [SafetyPolicyController](../src/Core/StoryPlatform.Api/Controllers/SafetyPolicyController.cs#L102).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -975,8 +1082,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-supervision-createinvitation-post"></a>
 #### POST /api/v1/Supervision/{childProfileId}/invitations
 
-- Action/chức năng: **CreateInvitation** — Tạo lời mời giám sát cho một hồ sơ trẻ (Bước 1.5).. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L25).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **CreateInvitation** — Tạo lời mời giám sát cho một hồ sơ trẻ (Bước 1.5).. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L27).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc<br>**body** request: [CreateInvitationRequestDto](#dto-createinvitationrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [InvitationDto](#dto-invitationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **GỌI_API** — [supervisionService.createInvitation](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L22); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L84)
@@ -984,8 +1091,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-supervision-listinvitations-get"></a>
 #### GET /api/v1/Supervision/{childProfileId}/invitations
 
-- Action/chức năng: **ListInvitations** — Danh sách toàn bộ lời mời giám sát (mọi trạng thái) của 1 hồ sơ trẻ.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L42).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ListInvitations** — Danh sách toàn bộ lời mời giám sát (mọi trạng thái) của 1 hồ sơ trẻ.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L44).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: [List&lt;InvitationDto&gt;](#dto-invitationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [supervisionService.listInvitations](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L18); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L43)
@@ -993,8 +1100,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-supervision-claiminvitation-post"></a>
 #### POST /api/v1/Supervision/invitations/claim
 
-- Action/chức năng: **ClaimInvitation** — Nhập mã mời để nhận OTP gửi tới email được mời (Bước 1.6, BR-1.4).. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L54).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ClaimInvitation** — Nhập mã mời để nhận OTP gửi tới email được mời (Bước 1.6, BR-1.4).. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L56).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [ClaimInvitationRequestDto](#dto-claiminvitationrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ClaimInvitationResultDto](#dto-claiminvitationresultdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [supervisionService.claimInvitation](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L36); nơi dùng: [JoinInvitation.tsx](../../AI_Storytelling_Frontend/src/app/features/children/JoinInvitation.tsx#L34)
@@ -1002,8 +1109,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-supervision-verifyinvitationotp-post"></a>
 #### POST /api/v1/Supervision/invitations/verify-otp
 
-- Action/chức năng: **VerifyInvitationOtp** — Xác thực OTP và xem thông tin hồ sơ ở phạm vi cho phép trước khi Accept/Reject.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L69).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **VerifyInvitationOtp** — Xác thực OTP và xem thông tin hồ sơ ở phạm vi cho phép trước khi Accept/Reject.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L71).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [VerifyInvitationOtpRequestDto](#dto-verifyinvitationotprequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [InvitationPreviewDto](#dto-invitationpreviewdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [supervisionService.verifyInvitationOtp](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L41); nơi dùng: [JoinInvitation.tsx](../../AI_Storytelling_Frontend/src/app/features/children/JoinInvitation.tsx#L39)
@@ -1011,8 +1118,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-supervision-rejectinvitation-post"></a>
 #### POST /api/v1/Supervision/invitations/reject
 
-- Action/chức năng: **RejectInvitation** — Từ chối lời mời giám sát (sau khi đã xác thực OTP).. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L84).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RejectInvitation** — Từ chối lời mời giám sát (sau khi đã xác thực OTP).. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L86).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [RejectInvitationRequestDto](#dto-rejectinvitationrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [supervisionService.rejectInvitation](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L51); nơi dùng: [JoinInvitation.tsx](../../AI_Storytelling_Frontend/src/app/features/children/JoinInvitation.tsx#L52)
@@ -1020,8 +1127,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-supervision-acceptinvitation-post"></a>
 #### POST /api/v1/Supervision/invitations/accept
 
-- Action/chức năng: **AcceptInvitation** — Chấp nhận lời mời giám sát — yêu cầu đã xác thực OTP (Bước 1.6); cấp preset quyền mặc định.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L99).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **AcceptInvitation** — Chấp nhận lời mời giám sát — yêu cầu đã xác thực OTP (Bước 1.6); cấp preset quyền mặc định.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L101).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [AcceptInvitationRequestDto](#dto-acceptinvitationrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [SupervisionRelationshipDto](#dto-supervisionrelationshipdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [supervisionService.acceptInvitation](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L46); nơi dùng: [JoinInvitation.tsx](../../AI_Storytelling_Frontend/src/app/features/children/JoinInvitation.tsx#L44)
@@ -1029,8 +1136,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-supervision-cancelinvitation-delete"></a>
 #### DELETE /api/v1/Supervision/invitations/{invitationId}
 
-- Action/chức năng: **CancelInvitation** — Huỷ 1 lời mời giám sát còn đang Pending.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L114).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **CancelInvitation** — Huỷ 1 lời mời giám sát còn đang Pending.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L116).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** invitationId: `int`; bắt buộc.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [supervisionService.cancelInvitation](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L26); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L210)
@@ -1038,8 +1145,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-supervision-regenerateinvitationcode-post"></a>
 #### POST /api/v1/Supervision/invitations/{invitationId}/regenerate
 
-- Action/chức năng: **RegenerateInvitationCode** — Owner cấp lại mã cho lời mời đang chờ hoặc đã hết hạn (UC-L1C-01); gia hạn 7 ngày và gửi lại email.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L126).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RegenerateInvitationCode** — Owner cấp lại mã cho lời mời đang chờ hoặc đã hết hạn (UC-L1C-01); gia hạn 7 ngày và gửi lại email.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L128).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** invitationId: `int`; bắt buộc.
 - Response: ApiResponse.data: [InvitationDto](#dto-invitationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [supervisionService.regenerateInvitation](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L31); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L214)
@@ -1047,8 +1154,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-supervision-listsupervisors-get"></a>
 #### GET /api/v1/Supervision/{childProfileId}/relationships
 
-- Action/chức năng: **ListSupervisors** — Danh sách người đang giám sát hiệu lực (chưa bị thu hồi) của 1 hồ sơ trẻ.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L139).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ListSupervisors** — Danh sách người đang giám sát hiệu lực (chưa bị thu hồi) của 1 hồ sơ trẻ.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L141).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: [List&lt;SupervisionRelationshipDto&gt;](#dto-supervisionrelationshipdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [supervisionService.listSupervisors](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L9); nơi dùng: [ChildrenWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/children/ChildrenWorkspace.tsx#L45); [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L36)
@@ -1056,8 +1163,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-supervision-revokesupervision-delete"></a>
 #### DELETE /api/v1/Supervision/relationships/{relationshipId}
 
-- Action/chức năng: **RevokeSupervision** — Thu hồi một quan hệ giám sát (Bước 1.6b) — Owner gỡ người giám sát, hoặc Additional Supervisor tự rời hồ sơ. Không áp dụng cho Owner.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L152).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RevokeSupervision** — Thu hồi một quan hệ giám sát (Bước 1.6b) — Owner gỡ người giám sát, hoặc Additional Supervisor tự rời hồ sơ. Không áp dụng cho Owner.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L154).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** relationshipId: `int`; bắt buộc.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [supervisionService.revokeSupervisor](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L14); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L138)
@@ -1065,8 +1172,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-supervision-requestownershiptransfer-post"></a>
 #### POST /api/v1/Supervision/{childProfileId}/transfer-ownership
 
-- Action/chức năng: **RequestOwnershipTransfer** — Owner gửi yêu cầu chuyển quyền Owner cho một Additional Supervisor (Bước 1.7b); yêu cầu chờ đến khi người nhận phản hồi hoặc Owner hủy.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L168).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RequestOwnershipTransfer** — Owner gửi yêu cầu chuyển quyền Owner cho một Additional Supervisor (Bước 1.7b); yêu cầu chờ đến khi người nhận phản hồi hoặc Owner hủy.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L170).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc<br>**body** request: [TransferOwnershipRequestDto](#dto-transferownershiprequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [OwnershipTransferRequestDto](#dto-ownershiptransferrequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **GỌI_API** — [supervisionService.requestOwnershipTransfer](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L81); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L136)
@@ -1074,8 +1181,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-supervision-listownershiptransfers-get"></a>
 #### GET /api/v1/Supervision/{childProfileId}/ownership-transfers
 
-- Action/chức năng: **ListOwnershipTransfers** — Danh sách yêu cầu chuyển nhượng quyền Owner của một hồ sơ trẻ.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L186).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ListOwnershipTransfers** — Danh sách yêu cầu chuyển nhượng quyền Owner của một hồ sơ trẻ.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L188).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: [List&lt;OwnershipTransferRequestDto&gt;](#dto-ownershiptransferrequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [supervisionService.listOwnershipTransfers](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L85); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L44); [SupervisionTodos.tsx](../../AI_Storytelling_Frontend/src/app/features/home/SupervisionTodos.tsx#L24)
@@ -1083,8 +1190,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-supervision-acceptownershiptransfer-post"></a>
 #### POST /api/v1/Supervision/ownership-transfers/{ownershipTransferRequestId}/accept
 
-- Action/chức năng: **AcceptOwnershipTransfer** — Người được đề nghị chấp nhận yêu cầu chuyển nhượng quyền Owner — thực hiện đổi role ngay.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L200).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **AcceptOwnershipTransfer** — Người được đề nghị chấp nhận yêu cầu chuyển nhượng quyền Owner — thực hiện đổi role ngay.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L202).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** ownershipTransferRequestId: `int`; bắt buộc.
 - Response: ApiResponse.data: [SupervisionRelationshipDto](#dto-supervisionrelationshipdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [supervisionService.answerOwnershipTransfer](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L89); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L97); [SupervisionTodos.tsx](../../AI_Storytelling_Frontend/src/app/features/home/SupervisionTodos.tsx#L45)
@@ -1092,8 +1199,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-supervision-rejectownershiptransfer-post"></a>
 #### POST /api/v1/Supervision/ownership-transfers/{ownershipTransferRequestId}/reject
 
-- Action/chức năng: **RejectOwnershipTransfer** — Người được đề nghị từ chối yêu cầu chuyển nhượng quyền Owner.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L214).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RejectOwnershipTransfer** — Người được đề nghị từ chối yêu cầu chuyển nhượng quyền Owner.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L216).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** ownershipTransferRequestId: `int`; bắt buộc.
 - Response: ApiResponse.data: [OwnershipTransferRequestDto](#dto-ownershiptransferrequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [supervisionService.answerOwnershipTransfer](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L89); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L97); [SupervisionTodos.tsx](../../AI_Storytelling_Frontend/src/app/features/home/SupervisionTodos.tsx#L45)
@@ -1101,8 +1208,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-supervision-cancelownershiptransfer-post"></a>
 #### POST /api/v1/Supervision/ownership-transfers/{ownershipTransferRequestId}/cancel
 
-- Action/chức năng: **CancelOwnershipTransfer** — Owner thu hồi yêu cầu chuyển quyền Owner đang chờ phản hồi.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L228).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **CancelOwnershipTransfer** — Owner thu hồi yêu cầu chuyển quyền Owner đang chờ phản hồi.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L230).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** ownershipTransferRequestId: `int`; bắt buộc.
 - Response: ApiResponse.data: [OwnershipTransferRequestDto](#dto-ownershiptransferrequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [supervisionService.cancelOwnershipTransfer](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L94); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L134)
@@ -1110,8 +1217,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-supervision-listpermissions-get"></a>
 #### GET /api/v1/Supervision/relationships/{relationshipId}/permissions
 
-- Action/chức năng: **ListPermissions** — Danh sách permission đã cấp cho 1 Additional Supervisor. Chỉ Owner xem được.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L242).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ListPermissions** — Danh sách permission đã cấp cho 1 Additional Supervisor. Chỉ Owner xem được.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L244).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** relationshipId: `int`; bắt buộc.
 - Response: ApiResponse.data: `List<string>`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [supervisionService.listPermissions](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L55); nơi dùng: [ChildrenWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/children/ChildrenWorkspace.tsx#L48); [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L41)
@@ -1119,8 +1226,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-supervision-grantpermission-post"></a>
 #### POST /api/v1/Supervision/relationships/{relationshipId}/permissions/{permission}
 
-- Action/chức năng: **GrantPermission** — Cấp 1 permission cho Additional Supervisor (Bước 1.7, Mục 3 Bước D).. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L254).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GrantPermission** — Cấp 1 permission cho Additional Supervisor (Bước 1.7, Mục 3 Bước D).. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L256).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** relationshipId: `int`; bắt buộc<br>**path** permission: [Permission](#dto-permission); bắt buộc.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [supervisionService.grantPermission](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L59); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L79)
@@ -1128,8 +1235,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-supervision-revokepermission-delete"></a>
 #### DELETE /api/v1/Supervision/relationships/{relationshipId}/permissions/{permission}
 
-- Action/chức năng: **RevokePermission** — Thu hồi 1 permission cụ thể của Additional Supervisor (Bước 1.7, Mục 3 Bước F).. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L270).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RevokePermission** — Thu hồi 1 permission cụ thể của Additional Supervisor (Bước 1.7, Mục 3 Bước F).. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L272).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** relationshipId: `int`; bắt buộc<br>**path** permission: [Permission](#dto-permission); bắt buộc.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [supervisionService.revokePermission](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L63); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L79)
@@ -1156,8 +1263,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-permission-listsystempermissions-get"></a>
 #### GET /api/v1/Permission
 
-- Action/chức năng: **ListSystemPermissions** — Lấy danh sách toàn bộ quyền có trong hệ thống.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L25).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ListSystemPermissions** — Lấy danh sách toàn bộ quyền có trong hệ thống.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L27).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: Không có tham số action; dùng token/header theo quyền..
 - Response: ApiResponse.data: `List<string>`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -1165,8 +1272,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-permission-listrelationshippermissions-get"></a>
 #### GET /api/v1/Permission/relationships/{relationshipId}
 
-- Action/chức năng: **ListRelationshipPermissions** — Lấy danh sách quyền của một quan hệ giám sát.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L36).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ListRelationshipPermissions** — Lấy danh sách quyền của một quan hệ giám sát.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L38).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** relationshipId: `int`; bắt buộc.
 - Response: ApiResponse.data: `List<string>`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -1174,8 +1281,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-permission-grantpermission-post"></a>
 #### POST /api/v1/Permission/relationships/{relationshipId}/{permission}
 
-- Action/chức năng: **GrantPermission** — Cấp một quyền cho quan hệ giám sát.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L49).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GrantPermission** — Cấp một quyền cho quan hệ giám sát.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L51).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** relationshipId: `int`; bắt buộc<br>**path** permission: [Permission](#dto-permission); bắt buộc.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -1183,8 +1290,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-permission-revokepermission-delete"></a>
 #### DELETE /api/v1/Permission/relationships/{relationshipId}/{permission}
 
-- Action/chức năng: **RevokePermission** — Thu hồi một quyền khỏi quan hệ giám sát.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L62).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RevokePermission** — Thu hồi một quyền khỏi quan hệ giám sát.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L64).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** relationshipId: `int`; bắt buộc<br>**path** permission: [Permission](#dto-permission); bắt buộc.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -1192,8 +1299,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-permission-createpermissionrequest-post"></a>
 #### POST /api/v1/Permission/relationships/{relationshipId}/requests
 
-- Action/chức năng: **CreatePermissionRequest** — Tạo yêu cầu xin cấp quyền cho quan hệ giám sát của chính Additional Supervisor.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L75).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **CreatePermissionRequest** — Tạo yêu cầu xin cấp quyền cho quan hệ giám sát của chính Additional Supervisor.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L77).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** relationshipId: `int`; bắt buộc<br>**body** request: [CreatePermissionRequestRequestDto](#dto-createpermissionrequestrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [PermissionRequestDto](#dto-permissionrequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **GỌI_API** — [supervisionService.requestPermission](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L68); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L178)
@@ -1201,8 +1308,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-permission-listpermissionrequests-get"></a>
 #### GET /api/v1/Permission/relationships/{relationshipId}/requests
 
-- Action/chức năng: **ListPermissionRequests** — Danh sách yêu cầu xin quyền của một quan hệ giám sát.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L92).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ListPermissionRequests** — Danh sách yêu cầu xin quyền của một quan hệ giám sát.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L94).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** relationshipId: `int`; bắt buộc.
 - Response: ApiResponse.data: [List&lt;PermissionRequestDto&gt;](#dto-permissionrequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [supervisionService.listPermissionRequests](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L72); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L42); [HomeWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/home/HomeWorkspace.tsx#L82)
@@ -1210,8 +1317,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-permission-acceptpermissionrequest-post"></a>
 #### POST /api/v1/Permission/requests/{permissionRequestId}/accept
 
-- Action/chức năng: **AcceptPermissionRequest** — Owner chấp nhận yêu cầu xin quyền — cấp toàn bộ permission trong yêu cầu.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L105).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **AcceptPermissionRequest** — Owner chấp nhận yêu cầu xin quyền — cấp toàn bộ permission trong yêu cầu.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L107).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** permissionRequestId: `int`; bắt buộc.
 - Response: ApiResponse.data: [PermissionRequestDto](#dto-permissionrequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [supervisionService.answerPermissionRequest](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L76); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L155)
@@ -1219,8 +1326,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-permission-rejectpermissionrequest-post"></a>
 #### POST /api/v1/Permission/requests/{permissionRequestId}/reject
 
-- Action/chức năng: **RejectPermissionRequest** — Owner từ chối yêu cầu xin quyền.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L119).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RejectPermissionRequest** — Owner từ chối yêu cầu xin quyền.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L121).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** permissionRequestId: `int`; bắt buộc.
 - Response: ApiResponse.data: [PermissionRequestDto](#dto-permissionrequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [supervisionService.answerPermissionRequest](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L76); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L155)
@@ -1228,8 +1335,8 @@ Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-permission-cancelpermissionrequest-post"></a>
 #### POST /api/v1/Permission/requests/{permissionRequestId}/cancel
 
-- Action/chức năng: **CancelPermissionRequest** — Additional Supervisor tự huỷ yêu cầu xin quyền do chính mình tạo, khi Owner chưa xử lý (BR-1.14).. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L133).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **CancelPermissionRequest** — Additional Supervisor tự huỷ yêu cầu xin quyền do chính mình tạo, khi Owner chưa xử lý (BR-1.14).. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L135).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** permissionRequestId: `int`; bắt buộc.
 - Response: ApiResponse.data: [PermissionRequestDto](#dto-permissionrequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [supervisionService.answerPermissionRequest](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L76); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L155)
@@ -1253,8 +1360,8 @@ Guard/nghiệp vụ: [ChildAccessCredentialService.cs](../src/Core/StoryPlatform
 <a id="ep-childaccesscredential-getcredential-get"></a>
 #### GET /api/v1/ChildAccessCredential/{childProfileId}
 
-- Action/chức năng: **GetCredential** — Trạng thái Easy Login của hồ sơ (đã có chưa, tạo lúc nào) — KHÔNG bao giờ trả secret hay hash.. [ChildAccessCredentialController](../src/Core/StoryPlatform.Api/Controllers/ChildAccessCredentialController.cs#L23).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetCredential** — Trạng thái Easy Login của hồ sơ (đã có chưa, tạo lúc nào) — KHÔNG bao giờ trả secret hay hash.. [ChildAccessCredentialController](../src/Core/StoryPlatform.Api/Controllers/ChildAccessCredentialController.cs#L25).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ChildAccessCredentialDto](#dto-childaccesscredentialdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childAccessService.getCredential](../../AI_Storytelling_Frontend/src/app/services/childAccessService.ts#L13); nơi dùng: [AccessTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/AccessTab.tsx#L27)
@@ -1262,8 +1369,8 @@ Guard/nghiệp vụ: [ChildAccessCredentialService.cs](../src/Core/StoryPlatform
 <a id="ep-childaccesscredential-revokecredential-delete"></a>
 #### DELETE /api/v1/ChildAccessCredential/{childProfileId}
 
-- Action/chức năng: **RevokeCredential** — Thu hồi Easy Login (soft delete): trẻ bị đăng xuất ngay và mất lối vào độc lập cho tới khi tạo Easy Login mới. Cần quyền manage_safety_settings (Owner luôn có).. [ChildAccessCredentialController](../src/Core/StoryPlatform.Api/Controllers/ChildAccessCredentialController.cs#L36).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RevokeCredential** — Thu hồi Easy Login (soft delete): trẻ bị đăng xuất ngay và mất lối vào độc lập cho tới khi tạo Easy Login mới. Cần quyền manage_safety_settings (Owner luôn có).. [ChildAccessCredentialController](../src/Core/StoryPlatform.Api/Controllers/ChildAccessCredentialController.cs#L38).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childAccessService.revokeCredential](../../AI_Storytelling_Frontend/src/app/services/childAccessService.ts#L18); nơi dùng: [AccessTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/AccessTab.tsx#L48)
@@ -1271,8 +1378,8 @@ Guard/nghiệp vụ: [ChildAccessCredentialService.cs](../src/Core/StoryPlatform
 <a id="ep-childaccesscredential-createorregenerateeasylogin-post"></a>
 #### POST /api/v1/ChildAccessCredential/{childProfileId}/easylogin
 
-- Action/chức năng: **CreateOrRegenerateEasyLogin** — Tạo Easy Login lâu dài (lần đầu) hoặc TẠO LẠI secret mới (secret cũ vô hiệu ngay, mọi phiên của trẻ từ secret cũ bị kết thúc). Secret chỉ trả đúng một lần — client dựng QR từ giá trị này. Cần quyền manage_safety_settings. [ChildAccessCredentialController](../src/Core/StoryPlatform.Api/Controllers/ChildAccessCredentialController.cs#L49).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **CreateOrRegenerateEasyLogin** — Tạo Easy Login lâu dài (lần đầu) hoặc TẠO LẠI secret mới (secret cũ vô hiệu ngay, mọi phiên của trẻ từ secret cũ bị kết thúc). Secret chỉ trả đúng một lần — client dựng QR từ giá trị này. Cần quyền manage_safety_settings. [ChildAccessCredentialController](../src/Core/StoryPlatform.Api/Controllers/ChildAccessCredentialController.cs#L51).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: [EasyLoginSecretDto](#dto-easyloginsecretdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childAccessService.generateEasyLogin](../../AI_Storytelling_Frontend/src/app/services/childAccessService.ts#L23); nơi dùng: [AccessTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/AccessTab.tsx#L38)
@@ -1280,8 +1387,8 @@ Guard/nghiệp vụ: [ChildAccessCredentialService.cs](../src/Core/StoryPlatform
 <a id="ep-childaccesscredential-startsupervisedsession-post"></a>
 #### POST /api/v1/ChildAccessCredential/{childProfileId}/handover
 
-- Action/chức năng: **StartSupervisedSession** — Supervisor bàn giao thiết bị cho trẻ sau khi chọn hồ sơ qua ProfileSwitcher (Luồng 3, Bước 3.0) — phát sinh Child Session riêng, tách khỏi phiên Supervisor.. [ChildAccessCredentialController](../src/Core/StoryPlatform.Api/Controllers/ChildAccessCredentialController.cs#L63).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **StartSupervisedSession** — Supervisor bàn giao thiết bị cho trẻ sau khi chọn hồ sơ qua ProfileSwitcher (Luồng 3, Bước 3.0) — phát sinh Child Session riêng, tách khỏi phiên Supervisor.. [ChildAccessCredentialController](../src/Core/StoryPlatform.Api/Controllers/ChildAccessCredentialController.cs#L65).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc<br>**body** request: [StartSupervisedChildSessionRequestDto](#dto-startsupervisedchildsessionrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ChildSessionDto](#dto-childsessiondto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childAccessService.startSupervisedSession](../../AI_Storytelling_Frontend/src/app/services/childAccessService.ts#L28); nơi dùng: [KidMode.tsx](../../AI_Storytelling_Frontend/src/app/features/kid/KidMode.tsx#L29)
@@ -1289,8 +1396,8 @@ Guard/nghiệp vụ: [ChildAccessCredentialService.cs](../src/Core/StoryPlatform
 <a id="ep-childaccesscredential-loginwitheasylogin-post"></a>
 #### POST /api/v1/ChildAccessCredential/easylogin/login
 
-- Action/chức năng: **LoginWithEasyLogin** — Trẻ quét QR Easy Login để vào Child Session, không cần phiên Supervisor. Quét sai 5 lần liên tiếp trên cùng thiết bị (IP client) thì khóa 5 phút.. [ChildAccessCredentialController](../src/Core/StoryPlatform.Api/Controllers/ChildAccessCredentialController.cs#L79).
-- Quyền: Khách/AllowAnonymous. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **LoginWithEasyLogin** — Trẻ quét QR Easy Login để vào Child Session, không cần phiên Supervisor. Quét sai 5 lần liên tiếp trên cùng thiết bị (IP client) thì khóa 5 phút.. [ChildAccessCredentialController](../src/Core/StoryPlatform.Api/Controllers/ChildAccessCredentialController.cs#L81).
+- Quyền: AllowAnonymous
 - Request: **body** request: [LoginWithEasyLoginRequestDto](#dto-loginwitheasyloginrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ChildSessionDto](#dto-childsessiondto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childAccessService.loginWithEasyLogin](../../AI_Storytelling_Frontend/src/app/services/childAccessService.ts#L33); nơi dùng: [KidEntry.tsx](../../AI_Storytelling_Frontend/src/app/features/kid/KidEntry.tsx#L25)
@@ -1298,8 +1405,8 @@ Guard/nghiệp vụ: [ChildAccessCredentialService.cs](../src/Core/StoryPlatform
 <a id="ep-childaccesscredential-getmysession-get"></a>
 #### GET /api/v1/ChildAccessCredential/me
 
-- Action/chức năng: **GetMySession** — Trẻ đã đăng nhập bằng Child Access Token tự lấy thông tin hồ sơ của mình.. [ChildAccessCredentialController](../src/Core/StoryPlatform.Api/Controllers/ChildAccessCredentialController.cs#L94).
-- Quyền: ChildSession token (không token người lớn). Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetMySession** — Trẻ đã đăng nhập bằng Child Access Token tự lấy thông tin hồ sơ của mình.. [ChildAccessCredentialController](../src/Core/StoryPlatform.Api/Controllers/ChildAccessCredentialController.cs#L96).
+- Quyền: Policy ChildSession; kèm guard nghiệp vụ của nhóm.
 - Request: Không có tham số action; dùng token/header theo quyền..
 - Response: ApiResponse.data: [ChildSessionProfileDto](#dto-childsessionprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childAccessService.getSessionProfile](../../AI_Storytelling_Frontend/src/app/services/childAccessService.ts#L37); nơi dùng: [KidEntry.tsx](../../AI_Storytelling_Frontend/src/app/features/kid/KidEntry.tsx#L28); [readingService.ts](../../AI_Storytelling_Frontend/src/app/services/readingService.ts#L61)
@@ -1318,8 +1425,8 @@ Guard/nghiệp vụ: [ParentalGateService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-parentalgate-verify-post"></a>
 #### POST /api/v1/ParentalGate/verify
 
-- Action/chức năng: **Verify**. [ParentalGateController](../src/Core/StoryPlatform.Api/Controllers/ParentalGateController.cs#L22).
-- Quyền: Khách/AllowAnonymous. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Verify**. [ParentalGateController](../src/Core/StoryPlatform.Api/Controllers/ParentalGateController.cs#L24).
+- Quyền: AllowAnonymous
 - Request: **body** request: [VerifyParentalGateRequestDto](#dto-verifyparentalgaterequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childAccessService.verifyParentalGate](../../AI_Storytelling_Frontend/src/app/services/childAccessService.ts#L58); nơi dùng: [ParentalGate.tsx](../../AI_Storytelling_Frontend/src/app/features/kid/ParentalGate.tsx#L18)
@@ -1341,8 +1448,8 @@ Guard/nghiệp vụ: [AIStoryInputService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-aistoryinput-getcontext-get"></a>
 #### GET /api/v1/ai-story-input/children/{childProfileId}/context
 
-- Action/chức năng: **GetContext**. [AIStoryInputController](../src/Core/StoryPlatform.Api/Controllers/AIStoryInputController.cs#L22).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetContext**. [AIStoryInputController](../src/Core/StoryPlatform.Api/Controllers/AIStoryInputController.cs#L23).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: [AIStoryInputContextDto](#dto-aistoryinputcontextdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.getCreationContext](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L95); nơi dùng: [useAIStoryInputFlow.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useAIStoryInputFlow.ts#L120)
@@ -1350,8 +1457,8 @@ Guard/nghiệp vụ: [AIStoryInputService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-aistoryinput-submit-post"></a>
 #### POST /api/v1/ai-story-input/requests
 
-- Action/chức năng: **Submit**. [AIStoryInputController](../src/Core/StoryPlatform.Api/Controllers/AIStoryInputController.cs#L31).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Submit**. [AIStoryInputController](../src/Core/StoryPlatform.Api/Controllers/AIStoryInputController.cs#L32).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [SubmitAIStoryInputRequestDto](#dto-submitaistoryinputrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AIStoryInputProgressDto](#dto-aistoryinputprogressdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202, 409, 422, 503.
 - Giữ progress cả khi success=false (422/409/503); accepted/checking trả 202. Poll bằng storyId/requestId đúng prefix.
@@ -1360,8 +1467,8 @@ Guard/nghiệp vụ: [AIStoryInputService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-aistoryinput-getprogress-get"></a>
 #### GET /api/v1/ai-story-input/stories/{storyId}/requests/{requestId}
 
-- Action/chức năng: **GetProgress**. [AIStoryInputController](../src/Core/StoryPlatform.Api/Controllers/AIStoryInputController.cs#L40).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetProgress**. [AIStoryInputController](../src/Core/StoryPlatform.Api/Controllers/AIStoryInputController.cs#L41).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** requestId: `int`; bắt buộc.
 - Response: ApiResponse.data: [AIStoryInputProgressDto](#dto-aistoryinputprogressdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.getInputProgress](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L97); nơi dùng: [useAIStoryInputFlow.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useAIStoryInputFlow.ts#L127)
@@ -1369,8 +1476,8 @@ Guard/nghiệp vụ: [AIStoryInputService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-aistoryinput-retry-post"></a>
 #### POST /api/v1/ai-story-input/stories/{storyId}/requests/{requestId}/retry
 
-- Action/chức năng: **Retry**. [AIStoryInputController](../src/Core/StoryPlatform.Api/Controllers/AIStoryInputController.cs#L50).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Retry**. [AIStoryInputController](../src/Core/StoryPlatform.Api/Controllers/AIStoryInputController.cs#L51).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** requestId: `int`; bắt buộc<br>**body** request: [RetryAIStoryInputRequestDto](#dto-retryaistoryinputrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AIStoryInputProgressDto](#dto-aistoryinputprogressdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202, 409, 422, 503.
 - Giữ progress cả khi success=false (422/409/503); accepted/checking trả 202. Poll bằng storyId/requestId đúng prefix.
@@ -1397,8 +1504,8 @@ Guard/nghiệp vụ: [OutlineService.cs](../src/Core/StoryPlatform.Application/F
 <a id="ep-outline-getcurrent-get"></a>
 #### GET /api/v1/stories/{storyId}/outline
 
-- Action/chức năng: **GetCurrent**. [OutlineController](../src/Core/StoryPlatform.Api/Controllers/OutlineController.cs#L22).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetCurrent**. [OutlineController](../src/Core/StoryPlatform.Api/Controllers/OutlineController.cs#L23).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [OutlineProgressDto](#dto-outlineprogressdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.getOutline](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L99); nơi dùng: [useStoryPipeline.ts](../../AI_Storytelling_Frontend/src/app/features/studio/useStoryPipeline.ts#L20)
@@ -1406,8 +1513,8 @@ Guard/nghiệp vụ: [OutlineService.cs](../src/Core/StoryPlatform.Application/F
 <a id="ep-outline-getversions-get"></a>
 #### GET /api/v1/stories/{storyId}/outline/versions
 
-- Action/chức năng: **GetVersions**. [OutlineController](../src/Core/StoryPlatform.Api/Controllers/OutlineController.cs#L30).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetVersions**. [OutlineController](../src/Core/StoryPlatform.Api/Controllers/OutlineController.cs#L31).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [IReadOnlyList&lt;OutlineVersionDto&gt;](#dto-outlineversiondto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **SERVICE_CHƯA_DÙNG** — [aiStoryCreationService.getOutlineVersions](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L100); chưa thấy nơi dùng ngoài file service.
@@ -1415,8 +1522,8 @@ Guard/nghiệp vụ: [OutlineService.cs](../src/Core/StoryPlatform.Application/F
 <a id="ep-outline-getversion-get"></a>
 #### GET /api/v1/stories/{storyId}/outline/versions/{versionNo}
 
-- Action/chức năng: **GetVersion**. [OutlineController](../src/Core/StoryPlatform.Api/Controllers/OutlineController.cs#L38).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetVersion**. [OutlineController](../src/Core/StoryPlatform.Api/Controllers/OutlineController.cs#L39).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** versionNo: `int`; bắt buộc.
 - Response: ApiResponse.data: [OutlineVersionDto](#dto-outlineversiondto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **SERVICE_CHƯA_DÙNG** — [aiStoryCreationService.getOutlineVersion](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L101); chưa thấy nơi dùng ngoài file service.
@@ -1424,8 +1531,8 @@ Guard/nghiệp vụ: [OutlineService.cs](../src/Core/StoryPlatform.Application/F
 <a id="ep-outline-edit-put"></a>
 #### PUT /api/v1/stories/{storyId}/outline/versions/{versionNo}
 
-- Action/chức năng: **Edit**. [OutlineController](../src/Core/StoryPlatform.Api/Controllers/OutlineController.cs#L46).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Edit**. [OutlineController](../src/Core/StoryPlatform.Api/Controllers/OutlineController.cs#L47).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** versionNo: `int`; bắt buộc<br>**body** input: [EditOutlineRequestDto](#dto-editoutlinerequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [OutlineVersionDto](#dto-outlineversiondto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.editOutline](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L102); nơi dùng: [OutlinePanel.tsx](../../AI_Storytelling_Frontend/src/app/features/studio/OutlinePanel.tsx#L56)
@@ -1433,8 +1540,8 @@ Guard/nghiệp vụ: [OutlineService.cs](../src/Core/StoryPlatform.Application/F
 <a id="ep-outline-regenerate-post"></a>
 #### POST /api/v1/stories/{storyId}/outline/versions/{versionNo}/regenerate
 
-- Action/chức năng: **Regenerate**. [OutlineController](../src/Core/StoryPlatform.Api/Controllers/OutlineController.cs#L54).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Regenerate**. [OutlineController](../src/Core/StoryPlatform.Api/Controllers/OutlineController.cs#L55).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** versionNo: `int`; bắt buộc<br>**body** input: [RegenerateOutlineRequestDto](#dto-regenerateoutlinerequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [OutlineProgressDto](#dto-outlineprogressdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 202.
 - Frontend: **GỌI_API** — [aiStoryCreationService.regenerateOutline](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L103); nơi dùng: [OutlinePanel.tsx](../../AI_Storytelling_Frontend/src/app/features/studio/OutlinePanel.tsx#L75)
@@ -1442,8 +1549,8 @@ Guard/nghiệp vụ: [OutlineService.cs](../src/Core/StoryPlatform.Application/F
 <a id="ep-outline-retryinitial-post"></a>
 #### POST /api/v1/stories/{storyId}/outline/retry
 
-- Action/chức năng: **RetryInitial**. [OutlineController](../src/Core/StoryPlatform.Api/Controllers/OutlineController.cs#L62).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RetryInitial**. [OutlineController](../src/Core/StoryPlatform.Api/Controllers/OutlineController.cs#L63).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** input: [RetryOutlineRequestDto](#dto-retryoutlinerequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [OutlineProgressDto](#dto-outlineprogressdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 202.
 - Frontend: **GỌI_API** — [aiStoryCreationService.retryOutline](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L104); nơi dùng: [useStoryPipeline.ts](../../AI_Storytelling_Frontend/src/app/features/studio/useStoryPipeline.ts#L81)
@@ -1451,8 +1558,8 @@ Guard/nghiệp vụ: [OutlineService.cs](../src/Core/StoryPlatform.Application/F
 <a id="ep-outline-approve-post"></a>
 #### POST /api/v1/stories/{storyId}/outline/versions/{versionNo}/approve
 
-- Action/chức năng: **Approve**. [OutlineController](../src/Core/StoryPlatform.Api/Controllers/OutlineController.cs#L70).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Approve**. [OutlineController](../src/Core/StoryPlatform.Api/Controllers/OutlineController.cs#L71).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** versionNo: `int`; bắt buộc<br>**body** input: [ApproveOutlineRequestDto](#dto-approveoutlinerequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [OutlineProgressDto](#dto-outlineprogressdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 202.
 - Frontend: **GỌI_API** — [aiStoryCreationService.approveOutline](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L105); nơi dùng: [OutlinePanel.tsx](../../AI_Storytelling_Frontend/src/app/features/studio/OutlinePanel.tsx#L58)
@@ -1460,8 +1567,8 @@ Guard/nghiệp vụ: [OutlineService.cs](../src/Core/StoryPlatform.Application/F
 <a id="ep-outline-reject-post"></a>
 #### POST /api/v1/stories/{storyId}/outline/versions/{versionNo}/reject
 
-- Action/chức năng: **Reject**. [OutlineController](../src/Core/StoryPlatform.Api/Controllers/OutlineController.cs#L78).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Reject**. [OutlineController](../src/Core/StoryPlatform.Api/Controllers/OutlineController.cs#L79).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** versionNo: `int`; bắt buộc<br>**body** input: [RejectOutlineRequestDto](#dto-rejectoutlinerequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [OutlineProgressDto](#dto-outlineprogressdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.rejectOutline](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L106); nơi dùng: [useStoryPipeline.ts](../../AI_Storytelling_Frontend/src/app/features/studio/useStoryPipeline.ts#L68)
@@ -1481,8 +1588,8 @@ Guard/nghiệp vụ: [ContentGenerationService.cs](../src/Core/StoryPlatform.App
 <a id="ep-contentgeneration-getprogress-get"></a>
 #### GET /api/v1/stories/{storyId}/generation/progress
 
-- Action/chức năng: **GetProgress**. [ContentGenerationController](../src/Core/StoryPlatform.Api/Controllers/ContentGenerationController.cs#L18).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetProgress**. [ContentGenerationController](../src/Core/StoryPlatform.Api/Controllers/ContentGenerationController.cs#L20).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ContentGenerationProgressDto](#dto-contentgenerationprogressdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.getGenerationProgress](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L107); nơi dùng: [useStoryPipeline.ts](../../AI_Storytelling_Frontend/src/app/features/studio/useStoryPipeline.ts#L20)
@@ -1490,16 +1597,16 @@ Guard/nghiệp vụ: [ContentGenerationService.cs](../src/Core/StoryPlatform.App
 <a id="ep-contentgeneration-retry-post"></a>
 #### POST /api/v1/stories/{storyId}/generation/retry
 
-- Action/chức năng: **Retry**. [ContentGenerationController](../src/Core/StoryPlatform.Api/Controllers/ContentGenerationController.cs#L29).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Retry**. [ContentGenerationController](../src/Core/StoryPlatform.Api/Controllers/ContentGenerationController.cs#L35).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** input: [RetryContentGenerationRequestDto](#dto-retrycontentgenerationrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ContentGenerationProgressDto](#dto-contentgenerationprogressdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 202.
 - Frontend: **GỌI_API** — [aiStoryCreationService.retryGeneration](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L108); nơi dùng: [useStoryPipeline.ts](../../AI_Storytelling_Frontend/src/app/features/studio/useStoryPipeline.ts#L81)
 
 <a id="controller-review"></a>
-### Review — 26 route
+### Review — 27 route
 
-G3. Guard scope/tác giả/quyền. UpdateStoryRequestDto namespace StoryReview khác Stories. Approve/archive chỉ Parent,Administrator đang chặn Creator; alias artifacts ghi riêng.
+G3. Guard scope/tác giả/quyền. UpdateStoryRequestDto namespace StoryReview khác Stories. Approve/archive dành cho Parent,Administrator; Creator dùng confirm-content riêng, không coi đây là blocker thiếu role. Alias artifacts ghi riêng.
 
 Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/Services/StoryReviewService.cs).
 
@@ -1536,8 +1643,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-getreviewpackage-get"></a>
 #### GET /api/v1/stories/{storyId}/review
 
-- Action/chức năng: **GetReviewPackage**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L37).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetReviewPackage**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L38).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ReviewPackageDto](#dto-reviewpackagedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.getReviewPackage](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L109); nơi dùng: [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L34)
@@ -1545,8 +1652,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-generateartifacts-post"></a>
 #### POST /api/v1/stories/{storyId}/review/artifacts/generate
 
-- Action/chức năng: **GenerateArtifacts**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L49).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GenerateArtifacts**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L51).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** input: [GenerateArtifactsRequestDto?](#dto-generateartifactsrequestdto); nullable; field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ArtifactGenerationResultDto](#dto-artifactgenerationresultdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.generateArtifacts](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L110); nơi dùng: [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L131)
@@ -1554,8 +1661,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-generateartifacts-post-alias"></a>
 #### POST /api/v1/stories/{storyId}/artifacts/generate
 
-- Action/chức năng: **GenerateArtifacts**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L49).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GenerateArtifacts**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L51).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** input: [GenerateArtifactsRequestDto?](#dto-generateartifactsrequestdto); nullable; field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ArtifactGenerationResultDto](#dto-artifactgenerationresultdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **ALIAS** — frontend dùng /review/artifacts/generate.
@@ -1563,8 +1670,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-getstory-get"></a>
 #### GET /api/v1/stories/{storyId}/review/story
 
-- Action/chức năng: **GetStory**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L63).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetStory**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L64).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [StoryReviewDto](#dto-storyreviewdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.getStoryReview](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L111); nơi dùng: [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L34)
@@ -1572,8 +1679,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-updatestory-put"></a>
 #### PUT /api/v1/stories/{storyId}/review/story
 
-- Action/chức năng: **UpdateStory**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L71).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **UpdateStory**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L72).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** input: [StoryReview.UpdateStoryRequestDto](#dto-storyreview-updatestoryrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [StoryReviewDto](#dto-storyreviewdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.updateStoryReview](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L112); nơi dùng: [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L117)
@@ -1581,8 +1688,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-partialedit-post"></a>
 #### POST /api/v1/stories/{storyId}/review/story/ai/partial-edit
 
-- Action/chức năng: **PartialEdit**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L79).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **PartialEdit**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L80).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** input: [PartialEditRequestDto](#dto-partialeditrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [CreateProposalResponseDto](#dto-createproposalresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 202.
 - Frontend: **GỌI_API** — [aiStoryCreationService.partialEditStory](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L124); nơi dùng: [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L110)
@@ -1590,8 +1697,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-completestory-post"></a>
 #### POST /api/v1/stories/{storyId}/review/story/complete
 
-- Action/chức năng: **CompleteStory**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L87).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **CompleteStory**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L88).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: `bool`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.completeReview](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L120); nơi dùng: [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L88)
@@ -1599,8 +1706,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-getvocabulary-get"></a>
 #### GET /api/v1/stories/{storyId}/review/vocabulary
 
-- Action/chức năng: **GetVocabulary**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L99).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetVocabulary**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L100).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [VocabularyReviewDto](#dto-vocabularyreviewdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.getVocabularyReview](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L113); nơi dùng: [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L42); [readingService.ts](../../AI_Storytelling_Frontend/src/app/services/readingService.ts#L79)
@@ -1608,8 +1715,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-updatevocabulary-put"></a>
 #### PUT /api/v1/stories/{storyId}/review/vocabulary
 
-- Action/chức năng: **UpdateVocabulary**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L107).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **UpdateVocabulary**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L108).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** input: [UpdateVocabularyRequestDto](#dto-updatevocabularyrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [VocabularyReviewDto](#dto-vocabularyreviewdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.updateVocabularyReview](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L114); nơi dùng: [ReviewTools.tsx](../../AI_Storytelling_Frontend/src/app/features/review/ReviewTools.tsx#L55)
@@ -1617,8 +1724,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-regeneratevocabulary-post"></a>
 #### POST /api/v1/stories/{storyId}/review/vocabulary/ai/regenerate
 
-- Action/chức năng: **RegenerateVocabulary**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L115).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RegenerateVocabulary**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L116).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [CreateProposalResponseDto](#dto-createproposalresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 202.
 - Frontend: **GỌI_API** — [aiStoryCreationService.regenerateReviewArtifact](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L125); nơi dùng: [ReviewTools.tsx](../../AI_Storytelling_Frontend/src/app/features/review/ReviewTools.tsx#L64); [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L113)
@@ -1626,8 +1733,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-completevocabulary-post"></a>
 #### POST /api/v1/stories/{storyId}/review/vocabulary/complete
 
-- Action/chức năng: **CompleteVocabulary**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L123).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **CompleteVocabulary**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L124).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: `bool`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.completeReview](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L120); nơi dùng: [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L88)
@@ -1635,8 +1742,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-getquiz-get"></a>
 #### GET /api/v1/stories/{storyId}/review/quiz
 
-- Action/chức năng: **GetQuiz**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L135).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetQuiz**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L136).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [QuizReviewDto](#dto-quizreviewdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.getQuizReview](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L115); nơi dùng: [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L42); [readingService.ts](../../AI_Storytelling_Frontend/src/app/services/readingService.ts#L78)
@@ -1644,8 +1751,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-updatequiz-put"></a>
 #### PUT /api/v1/stories/{storyId}/review/quiz
 
-- Action/chức năng: **UpdateQuiz**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L143).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **UpdateQuiz**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L144).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** input: [UpdateQuizRequestDto](#dto-updatequizrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [QuizReviewDto](#dto-quizreviewdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.updateQuizReview](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L116); nơi dùng: [ReviewTools.tsx](../../AI_Storytelling_Frontend/src/app/features/review/ReviewTools.tsx#L56)
@@ -1653,8 +1760,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-regeneratequiz-post"></a>
 #### POST /api/v1/stories/{storyId}/review/quiz/ai/regenerate
 
-- Action/chức năng: **RegenerateQuiz**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L151).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RegenerateQuiz**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L152).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [CreateProposalResponseDto](#dto-createproposalresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 202.
 - Frontend: **GỌI_API** — [aiStoryCreationService.regenerateReviewArtifact](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L125); nơi dùng: [ReviewTools.tsx](../../AI_Storytelling_Frontend/src/app/features/review/ReviewTools.tsx#L64); [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L113)
@@ -1662,8 +1769,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-completequiz-post"></a>
 #### POST /api/v1/stories/{storyId}/review/quiz/complete
 
-- Action/chức năng: **CompleteQuiz**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L159).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **CompleteQuiz**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L160).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: `bool`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.completeReview](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L120); nơi dùng: [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L88)
@@ -1671,8 +1778,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-getdiscussion-get"></a>
 #### GET /api/v1/stories/{storyId}/review/discussion
 
-- Action/chức năng: **GetDiscussion**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L171).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetDiscussion**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L172).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [DiscussionReviewDto](#dto-discussionreviewdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.getDiscussionReview](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L117); nơi dùng: [CompletionCard.tsx](../../AI_Storytelling_Frontend/src/app/features/home/CompletionCard.tsx#L28); [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L42)
@@ -1680,8 +1787,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-updatediscussion-put"></a>
 #### PUT /api/v1/stories/{storyId}/review/discussion
 
-- Action/chức năng: **UpdateDiscussion**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L179).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **UpdateDiscussion**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L180).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** input: [UpdateDiscussionRequestDto](#dto-updatediscussionrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [DiscussionReviewDto](#dto-discussionreviewdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.updateDiscussionReview](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L118); nơi dùng: [ReviewTools.tsx](../../AI_Storytelling_Frontend/src/app/features/review/ReviewTools.tsx#L57)
@@ -1689,8 +1796,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-regeneratediscussion-post"></a>
 #### POST /api/v1/stories/{storyId}/review/discussion/ai/regenerate
 
-- Action/chức năng: **RegenerateDiscussion**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L187).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RegenerateDiscussion**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L188).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [CreateProposalResponseDto](#dto-createproposalresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 202.
 - Frontend: **GỌI_API** — [aiStoryCreationService.regenerateReviewArtifact](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L125); nơi dùng: [ReviewTools.tsx](../../AI_Storytelling_Frontend/src/app/features/review/ReviewTools.tsx#L64); [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L113)
@@ -1698,8 +1805,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-completediscussion-post"></a>
 #### POST /api/v1/stories/{storyId}/review/discussion/complete
 
-- Action/chức năng: **CompleteDiscussion**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L195).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **CompleteDiscussion**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L196).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: `bool`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.completeReview](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L120); nơi dùng: [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L88)
@@ -1707,8 +1814,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-validate-get"></a>
 #### GET /api/v1/stories/{storyId}/review/validation
 
-- Action/chức năng: **Validate**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L207).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Validate**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L208).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ValidationResultDto](#dto-validationresultdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.validateReview](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L121); nơi dùng: [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L92)
@@ -1716,8 +1823,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-autopublishcheck-post"></a>
 #### POST /api/v1/stories/{storyId}/review/auto-publish-check
 
-- Action/chức năng: **AutoPublishCheck**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L215).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **AutoPublishCheck**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L216).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ApproveResponseDto?](#dto-approveresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -1726,7 +1833,7 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 #### POST /api/v1/creator/stories/{storyId}/generation/confirm-content
 
 - Mục đích: Creator xác nhận đúng phiên nội dung AI hiện tại và xếp hàng tạo media. Không thay `StoryVersion.ReviewStatus`, không đặt `IsPublished=true`.
-- Quyền: JWT `ContentCreator`, tài khoản Active/không khóa, đúng tác giả; story scope `Creator`, source `Ai`, không childProfileId. Parent/Child/Moderator không được gọi API này.
+- Quyền: (ContentCreator); kèm guard nghiệp vụ của nhóm.
 - Request: path `storyId`; body `ConfirmCreatorContentRequestDto`, chỉ gồm `versionId` (số nguyên > 0). Lấy từ `GET /api/v1/stories/{storyId}/review` → `storyVersionId`, hoặc GET review/story → versionId; không dùng outline versionNo.
 
 ```json
@@ -1738,33 +1845,33 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 - Lỗi: 400 version không hợp lệ/validation chưa đạt; 401 chưa đăng nhập; 403 sai role/tài khoản bị khóa; 404 không có truyện hoặc sai tác giả; 409 sai trạng thái, `STALE_STORY_VERSION`, hoặc `MEDIA_JOB_ALREADY_EXISTS`. Không gửi lại mù sau timeout: đọc media progress/trạng thái trước; gọi lại sau xác nhận đã thành công trả 409, không tạo job thứ hai.
 - Tiếp theo: poll `GET /api/v1/stories/{storyId}/media/progress`; chỉ khi Ready/readiness đạt mới preview và gửi `POST /api/v1/PublicStorySubmission/submit`. Moderator dùng Public Story Review hiện có để quyết định duyệt/công khai phiên bản gửi lên. Media Ready không đồng nghĩa public.
 - Frontend: **CHƯA_MAP**. Nút “Xác nhận nội dung và tạo media”; nút “Gửi kiểm duyệt” là thao tác riêng khi Ready.
-- Source: [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs), [StoryReviewService](../src/Core/StoryPlatform.Application/Features/StoryReview/Services/StoryReviewService.cs), [DTO](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs).
+- Source: [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L230), [StoryReviewService](../src/Core/StoryPlatform.Application/Features/StoryReview/Services/StoryReviewService.cs), [DTO](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs).
 
 <a id="ep-review-approve-post"></a>
 #### POST /api/v1/stories/{storyId}/review/approve
 
 - Action/chức năng: **Approve**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L240).
-- Quyền: Adult AND role ∈ Parent,Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Quyền: (Parent hoặc Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ApproveResponseDto](#dto-approveresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- **Blocker Creator:** role ContentCreator không có trong Authorize action dù service có nhánh Creator.
+- **Phạm vi actor:** Parent/Administrator; Creator không dùng endpoint này. Xác nhận nội dung qua POST /api/v1/creator/stories/{storyId}/generation/confirm-content; gỡ bản công khai qua removal-requests. Không mở role chỉ để tái sử dụng nút UI.
 - Frontend: **GỌI_API** — [aiStoryCreationService.approveStory](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L122); nơi dùng: [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L96)
 
 <a id="ep-review-archive-post"></a>
 #### POST /api/v1/stories/{storyId}/review/archive
 
 - Action/chức năng: **Archive**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L249).
-- Quyền: Adult AND role ∈ Parent,Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Quyền: (Parent hoặc Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** input: [ArchiveRequestDto](#dto-archiverequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ArchiveResponseDto](#dto-archiveresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- **Blocker Creator:** role ContentCreator không có trong Authorize action dù service có nhánh Creator.
+- **Phạm vi actor:** Parent/Administrator; Creator không dùng endpoint này. Xác nhận nội dung qua POST /api/v1/creator/stories/{storyId}/generation/confirm-content; gỡ bản công khai qua removal-requests. Không mở role chỉ để tái sử dụng nút UI.
 - Frontend: **GỌI_API** — [aiStoryCreationService.archiveStory](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L123); nơi dùng: [ReviewTools.tsx](../../AI_Storytelling_Frontend/src/app/features/review/ReviewTools.tsx#L152); [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L125)
 
 <a id="ep-review-getproposal-get"></a>
 #### GET /api/v1/stories/{storyId}/review/proposals/{proposalId}
 
-- Action/chức năng: **GetProposal**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L262).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetProposal**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L261).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** proposalId: `string`; bắt buộc.
 - Response: ApiResponse.data: [AIProposalDto](#dto-aiproposaldto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 404.
 - Frontend: **GỌI_API** — [aiStoryCreationService.getProposal](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L126); nơi dùng: [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L72)
@@ -1772,8 +1879,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-applyproposal-post"></a>
 #### POST /api/v1/stories/{storyId}/review/proposals/{proposalId}/apply
 
-- Action/chức năng: **ApplyProposal**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L274).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ApplyProposal**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L273).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** proposalId: `string`; bắt buộc.
 - Response: ApiResponse.data: [ApplyDiscardResponseDto](#dto-applydiscardresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.applyProposal](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L127); nơi dùng: [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L78)
@@ -1781,8 +1888,8 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 <a id="ep-review-discardproposal-post"></a>
 #### POST /api/v1/stories/{storyId}/review/proposals/{proposalId}/discard
 
-- Action/chức năng: **DiscardProposal**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L282).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **DiscardProposal**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L281).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** proposalId: `string`; bắt buộc.
 - Response: ApiResponse.data: [ApplyDiscardResponseDto](#dto-applydiscardresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.discardProposal](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L128); nơi dùng: [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L78)
@@ -1804,8 +1911,8 @@ Guard/nghiệp vụ: [MediaGenerationService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-mediageneration-getprogress-get"></a>
 #### GET /api/v1/stories/{storyId}/media/progress
 
-- Action/chức năng: **GetProgress**. [MediaGenerationController](../src/Core/StoryPlatform.Api/Controllers/MediaGenerationController.cs#L18).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetProgress**. [MediaGenerationController](../src/Core/StoryPlatform.Api/Controllers/MediaGenerationController.cs#L19).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [MediaGenerationProgress](#dto-mediagenerationprogress). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.getMediaProgress](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L129); nơi dùng: [useStoryPipeline.ts](../../AI_Storytelling_Frontend/src/app/features/studio/useStoryPipeline.ts#L91)
@@ -1813,8 +1920,8 @@ Guard/nghiệp vụ: [MediaGenerationService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-mediageneration-getpackage-get"></a>
 #### GET /api/v1/stories/{storyId}/media/package
 
-- Action/chức năng: **GetPackage**. [MediaGenerationController](../src/Core/StoryPlatform.Api/Controllers/MediaGenerationController.cs#L28).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetPackage**. [MediaGenerationController](../src/Core/StoryPlatform.Api/Controllers/MediaGenerationController.cs#L29).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [StoryMediaPackage](#dto-storymediapackage). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.getMediaPackage](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L130); nơi dùng: [readingService.ts](../../AI_Storytelling_Frontend/src/app/services/readingService.ts#L79)
@@ -1822,8 +1929,8 @@ Guard/nghiệp vụ: [MediaGenerationService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-mediageneration-regenerateillustrationbeat-post"></a>
 #### POST /api/v1/stories/{storyId}/media/illustration-beats/{beatId}/regenerate
 
-- Action/chức năng: **RegenerateIllustrationBeat**. [MediaGenerationController](../src/Core/StoryPlatform.Api/Controllers/MediaGenerationController.cs#L38).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RegenerateIllustrationBeat**. [MediaGenerationController](../src/Core/StoryPlatform.Api/Controllers/MediaGenerationController.cs#L43).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** beatId: `int`; bắt buộc.
 - Response: Body rỗng, không parse JSON bắt buộc. HTTP nhánh controller: 202.
 - Sau 202 rỗng GET progress/package; request chưa có nghĩa ảnh mới đã hoàn tất.
@@ -1832,8 +1939,8 @@ Guard/nghiệp vụ: [MediaGenerationService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-mediageneration-retry-post"></a>
 #### POST /api/v1/stories/{storyId}/media/retry
 
-- Action/chức năng: **Retry**. [MediaGenerationController](../src/Core/StoryPlatform.Api/Controllers/MediaGenerationController.cs#L52).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Retry**. [MediaGenerationController](../src/Core/StoryPlatform.Api/Controllers/MediaGenerationController.cs#L58).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [MediaGenerationProgress](#dto-mediagenerationprogress). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.retryMedia](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L131); nơi dùng: [StudioMedia.tsx](../../AI_Storytelling_Frontend/src/app/features/studio/StudioMedia.tsx#L65)
@@ -1857,8 +1964,8 @@ G5. Parent pipeline nhập cũ. Body StoryId phải khớp path ở adapt/update
 <a id="ep-existingstories-import-post"></a>
 #### POST /api/v1/stories/import
 
-- Action/chức năng: **Import**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L45).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Import**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L46).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [ImportStoryRequestDto](#dto-importstoryrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ImportStoryResponseDto](#dto-importstoryresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [existingStoryService.importStory](../../AI_Storytelling_Frontend/src/app/services/existingStoryService.ts#L10); nơi dùng: [ImportStoryPanel.tsx](../../AI_Storytelling_Frontend/src/app/features/studio/ImportStoryPanel.tsx#L67)
@@ -1866,8 +1973,8 @@ G5. Parent pipeline nhập cũ. Body StoryId phải khớp path ở adapt/update
 <a id="ep-existingstories-importfile-post"></a>
 #### POST /api/v1/stories/import-file
 
-- Action/chức năng: **ImportFile**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L54).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ImportFile**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L57).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **form** form: [ImportExistingStoryFileForm](#dto-importexistingstoryfileform); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ImportStoryResponseDto](#dto-importstoryresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [existingStoryService.importFile](../../AI_Storytelling_Frontend/src/app/services/existingStoryService.ts#L15); nơi dùng: [ImportStoryPanel.tsx](../../AI_Storytelling_Frontend/src/app/features/studio/ImportStoryPanel.tsx#L65)
@@ -1875,8 +1982,8 @@ G5. Parent pipeline nhập cũ. Body StoryId phải khớp path ở adapt/update
 <a id="ep-existingstories-evaluate-post"></a>
 #### POST /api/v1/stories/{storyId}/existing/evaluate
 
-- Action/chức năng: **Evaluate**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L85).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Evaluate**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L86).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [EvaluateExistingStoryRequestDto](#dto-evaluateexistingstoryrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ExistingStoryEvaluationDto](#dto-existingstoryevaluationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [existingStoryService.evaluate](../../AI_Storytelling_Frontend/src/app/services/existingStoryService.ts#L35); nơi dùng: [ImportStoryPanel.tsx](../../AI_Storytelling_Frontend/src/app/features/studio/ImportStoryPanel.tsx#L53)
@@ -1884,8 +1991,8 @@ G5. Parent pipeline nhập cũ. Body StoryId phải khớp path ở adapt/update
 <a id="ep-existingstories-getlatestevaluation-get"></a>
 #### GET /api/v1/stories/{storyId}/existing/evaluation
 
-- Action/chức năng: **GetLatestEvaluation**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L96).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetLatestEvaluation**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L97).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**query** storyVersionId: `int`.
 - Response: ApiResponse.data: [ExistingStoryEvaluationDto](#dto-existingstoryevaluationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -1893,8 +2000,8 @@ G5. Parent pipeline nhập cũ. Body StoryId phải khớp path ở adapt/update
 <a id="ep-existingstories-adapt-post"></a>
 #### POST /api/v1/stories/{storyId}/existing/adapt
 
-- Action/chức năng: **Adapt**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L111).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Adapt**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L112).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [AdaptExistingStoryRequestDto](#dto-adaptexistingstoryrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [VersionMutationResponseDto](#dto-versionmutationresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [existingStoryService.adapt](../../AI_Storytelling_Frontend/src/app/services/existingStoryService.ts#L40); nơi dùng: [ImportStoryPanel.tsx](../../AI_Storytelling_Frontend/src/app/features/studio/ImportStoryPanel.tsx#L135)
@@ -1902,8 +2009,8 @@ G5. Parent pipeline nhập cũ. Body StoryId phải khớp path ở adapt/update
 <a id="ep-existingstories-updatecontent-put"></a>
 #### PUT /api/v1/stories/{storyId}/existing/content
 
-- Action/chức năng: **UpdateContent**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L134).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **UpdateContent**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L135).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [ManualEditRequestDto](#dto-manualeditrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [VersionMutationResponseDto](#dto-versionmutationresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [existingStoryService.manualEdit](../../AI_Storytelling_Frontend/src/app/services/existingStoryService.ts#L44); nơi dùng: [ImportStoryPanel.tsx](../../AI_Storytelling_Frontend/src/app/features/studio/ImportStoryPanel.tsx#L120)
@@ -1911,8 +2018,8 @@ G5. Parent pipeline nhập cũ. Body StoryId phải khớp path ở adapt/update
 <a id="ep-existingstories-keeporiginal-post"></a>
 #### POST /api/v1/stories/{storyId}/existing/keep-original
 
-- Action/chức năng: **KeepOriginal**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L156).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **KeepOriginal**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L157).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [KeepOriginalRequestDto](#dto-keeporiginalrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [VersionMutationResponseDto](#dto-versionmutationresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [existingStoryService.keepOriginal](../../AI_Storytelling_Frontend/src/app/services/existingStoryService.ts#L49); nơi dùng: [ImportStoryPanel.tsx](../../AI_Storytelling_Frontend/src/app/features/studio/ImportStoryPanel.tsx#L76)
@@ -1920,8 +2027,8 @@ G5. Parent pipeline nhập cũ. Body StoryId phải khớp path ở adapt/update
 <a id="ep-existingstories-archive-post"></a>
 #### POST /api/v1/stories/{storyId}/existing/archive
 
-- Action/chức năng: **Archive**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L172).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Archive**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L173).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [ArchiveExistingStoryRequestDto](#dto-archiveexistingstoryrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: `bool`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [existingStoryService.archive](../../AI_Storytelling_Frontend/src/app/services/existingStoryService.ts#L53); nơi dùng: [ImportStoryPanel.tsx](../../AI_Storytelling_Frontend/src/app/features/studio/ImportStoryPanel.tsx#L160)
@@ -1957,8 +2064,8 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-parentauthoring-create-post"></a>
 #### POST /api/v1/parent/stories/manual
 
-- Action/chức năng: **Create**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L13).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Create**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L14).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [CreateParentDraftRequest](#dto-createparentdraftrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ParentDraftDto](#dto-parentdraftdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -1966,8 +2073,8 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-parentauthoring-mine-get"></a>
 #### GET /api/v1/parent/stories
 
-- Action/chức năng: **Mine**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L17).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Mine**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L18).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **query** pageIndex: `int`; default 1<br>**query** pageSize: `int`; default 20.
 - Response: ApiResponse.data: [PagedResult&lt;CreatorDraftDto&gt;](#dto-pagedresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -1975,8 +2082,8 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-parentauthoring-get-get"></a>
 #### GET /api/v1/parent/stories/{storyId}
 
-- Action/chức năng: **Get**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L21).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Get**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L22).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ParentDraftDto](#dto-parentdraftdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -1984,8 +2091,8 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-parentauthoring-workflow-get"></a>
 #### GET /api/v1/parent/stories/{storyId}/workflow
 
-- Action/chức năng: **Workflow**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L25).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Workflow**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L26).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [IReadOnlyList&lt;ParentOperationDto&gt;](#dto-parentoperationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -1993,8 +2100,8 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-parentauthoring-setup-patch"></a>
 #### PATCH /api/v1/parent/stories/{storyId}/setup
 
-- Action/chức năng: **Setup**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L29).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Setup**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L30).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [ParentSetupRequest](#dto-parentsetuprequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ParentDraftDto](#dto-parentdraftdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2002,8 +2109,8 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-parentauthoring-save-post"></a>
 #### POST /api/v1/parent/stories/{storyId}/manual/versions
 
-- Action/chức năng: **Save**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L33).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Save**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L34).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [SaveCreatorContentRequest](#dto-savecreatorcontentrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [CreatorContentSavedDto](#dto-creatorcontentsaveddto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2011,8 +2118,8 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-parentauthoring-versions-get"></a>
 #### GET /api/v1/parent/stories/{storyId}/content/versions
 
-- Action/chức năng: **Versions**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L37).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Versions**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L38).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [IReadOnlyList&lt;CreatorVersionDto&gt;](#dto-creatorversiondto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2020,8 +2127,8 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-parentauthoring-version-get"></a>
 #### GET /api/v1/parent/stories/{storyId}/content/versions/{versionId}
 
-- Action/chức năng: **Version**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L41).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Version**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L42).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** versionId: `int`; bắt buộc.
 - Response: ApiResponse.data: [CreatorVersionDto](#dto-creatorversiondto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2029,8 +2136,8 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-parentauthoring-restore-post"></a>
 #### POST /api/v1/parent/stories/{storyId}/content/restore
 
-- Action/chức năng: **Restore**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L45).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Restore**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L46).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [RestoreCreatorVersionRequest](#dto-restorecreatorversionrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [CreatorContentSavedDto](#dto-creatorcontentsaveddto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2038,8 +2145,8 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-parentauthoring-previewimport-post"></a>
 #### POST /api/v1/parent/stories/{storyId}/imports/preview
 
-- Action/chức năng: **PreviewImport**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L49).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **PreviewImport**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L50).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [PreviewCreatorImportRequest](#dto-previewcreatorimportrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [CreatorImportPreviewDto](#dto-creatorimportpreviewdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2047,8 +2154,8 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-parentauthoring-previewfile-post"></a>
 #### POST /api/v1/parent/stories/{storyId}/imports/preview-file
 
-- Action/chức năng: **PreviewFile**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L53).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **PreviewFile**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L56).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**form** form: [CreatorImportFileForm](#dto-creatorimportfileform); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [CreatorImportPreviewDto](#dto-creatorimportpreviewdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2056,8 +2163,8 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-parentauthoring-confirmimport-post"></a>
 #### POST /api/v1/parent/stories/{storyId}/imports/confirm
 
-- Action/chức năng: **ConfirmImport**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L64).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ConfirmImport**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L65).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [ConfirmCreatorImportRequest](#dto-confirmcreatorimportrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [CreatorContentSavedDto](#dto-creatorcontentsaveddto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2065,8 +2172,8 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-parentauthoring-check-post"></a>
 #### POST /api/v1/parent/stories/{storyId}/content/checks
 
-- Action/chức năng: **Check**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L68).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Check**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L69).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [ParentCheckRequest](#dto-parentcheckrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ParentCheckDto](#dto-parentcheckdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2074,8 +2181,8 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-parentauthoring-confirmcontent-post"></a>
 #### POST /api/v1/parent/stories/{storyId}/content/confirm
 
-- Action/chức năng: **ConfirmContent**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L72).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ConfirmContent**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L73).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [ParentContentConfirmRequest](#dto-parentcontentconfirmrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ParentContentConfirmationDto](#dto-parentcontentconfirmationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2083,8 +2190,8 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-parentauthoring-prepare-post"></a>
 #### POST /api/v1/parent/stories/{storyId}/preparations
 
-- Action/chức năng: **Prepare**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L76).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Prepare**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L77).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [ParentPrepareRequest](#dto-parentpreparerequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ParentPreparationDto](#dto-parentpreparationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2092,8 +2199,8 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-parentauthoring-preview-get"></a>
 #### GET /api/v1/parent/stories/{storyId}/preparations/{preparationId}
 
-- Action/chức năng: **Preview**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L80).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Preview**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L81).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** preparationId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ParentPreparationDto](#dto-parentpreparationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2101,8 +2208,8 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-parentauthoring-confirmfamily-post"></a>
 #### POST /api/v1/parent/stories/{storyId}/family-confirmations
 
-- Action/chức năng: **ConfirmFamily**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L84).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ConfirmFamily**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L85).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [ParentFamilyConfirmRequest](#dto-parentfamilyconfirmrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ParentFamilyConfirmationDto](#dto-parentfamilyconfirmationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2110,8 +2217,8 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-parentauthoring-revokefamily-post"></a>
 #### POST /api/v1/parent/stories/{storyId}/family-confirmations/revoke
 
-- Action/chức năng: **RevokeFamily**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L88).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RevokeFamily**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L89).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [ParentFamilyRevokeRequest](#dto-parentfamilyrevokerequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: `bool`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2139,8 +2246,8 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="ep-parentassistance-create-post"></a>
 #### POST /api/v1/parent/stories/{storyId}/assistance-tasks
 
-- Action/chức năng: **Create**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L22).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Create**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L24).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [CreateAssistanceTaskRequest](#dto-createassistancetaskrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AssistanceTaskDto](#dto-assistancetaskdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2148,8 +2255,8 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="ep-parentassistance-list-get"></a>
 #### GET /api/v1/parent/stories/{storyId}/assistance-tasks
 
-- Action/chức năng: **List**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L26).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **List**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L27).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**query** pageIndex: `int`; default 1<br>**query** pageSize: `int`; default 20.
 - Response: ApiResponse.data: [PagedResult&lt;AssistanceTaskSummary&gt;](#dto-pagedresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2157,8 +2264,8 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="ep-parentassistance-get-get"></a>
 #### GET /api/v1/parent/stories/{storyId}/assistance-tasks/{taskId}
 
-- Action/chức năng: **Get**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L29).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Get**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L30).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc.
 - Response: ApiResponse.data: [AssistanceTaskDto](#dto-assistancetaskdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2166,8 +2273,8 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="ep-parentassistance-steps-get"></a>
 #### GET /api/v1/parent/stories/{storyId}/assistance-tasks/{taskId}/steps
 
-- Action/chức năng: **Steps**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L32).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Steps**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L33).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc<br>**query** pageIndex: `int`; default 1<br>**query** pageSize: `int`; default 20.
 - Response: ApiResponse.data: [PagedResult&lt;AssistanceStepDto&gt;](#dto-pagedresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2175,8 +2282,8 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="ep-parentassistance-suggestions-post"></a>
 #### POST /api/v1/parent/stories/{storyId}/assistance-tasks/{taskId}/suggestions
 
-- Action/chức năng: **Suggestions**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L35).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Suggestions**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L38).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc<br>**body** request: [SuggestAssistanceRequest](#dto-suggestassistancerequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AssistanceCommandResult](#dto-assistancecommandresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202.
 - IsRunning=true: đọc Location/pollUrl, GET task; giữ operationId/payload và revision theo M3.
@@ -2185,8 +2292,8 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="ep-parentassistance-answer-post"></a>
 #### POST /api/v1/parent/stories/{storyId}/assistance-tasks/{taskId}/clarification-answer
 
-- Action/chức năng: **Answer**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L40).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Answer**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L41).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc<br>**body** request: [AnswerAssistanceRequest](#dto-answerassistancerequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AssistanceCommandResult](#dto-assistancecommandresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202.
 - IsRunning=true: đọc Location/pollUrl, GET task; giữ operationId/payload và revision theo M3.
@@ -2195,8 +2302,8 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="ep-parentassistance-direction-post"></a>
 #### POST /api/v1/parent/stories/{storyId}/assistance-tasks/{taskId}/direction
 
-- Action/chức năng: **Direction**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L43).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Direction**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L44).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc<br>**body** request: [ConfirmAssistanceDirectionRequest](#dto-confirmassistancedirectionrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AssistanceCommandResult](#dto-assistancecommandresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202.
 - IsRunning=true: đọc Location/pollUrl, GET task; giữ operationId/payload và revision theo M3.
@@ -2205,8 +2312,8 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="ep-parentassistance-trial-post"></a>
 #### POST /api/v1/parent/stories/{storyId}/assistance-tasks/{taskId}/trials
 
-- Action/chức năng: **Trial**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L46).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Trial**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L49).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc<br>**body** request: [CreateAssistanceTrialRequest](#dto-createassistancetrialrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AssistanceCommandResult](#dto-assistancecommandresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202.
 - IsRunning=true: đọc Location/pollUrl, GET task; giữ operationId/payload và revision theo M3.
@@ -2215,8 +2322,8 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="ep-parentassistance-cancel-post"></a>
 #### POST /api/v1/parent/stories/{storyId}/assistance-tasks/{taskId}/cancel
 
-- Action/chức năng: **Cancel**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L51).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Cancel**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L52).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc<br>**body** request: [CancelAssistanceRequest](#dto-cancelassistancerequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AssistanceCommandResult](#dto-assistancecommandresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202.
 - IsRunning=true: đọc Location/pollUrl, GET task; giữ operationId/payload và revision theo M3.
@@ -2225,8 +2332,8 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="ep-parentassistance-close-post"></a>
 #### POST /api/v1/parent/stories/{storyId}/assistance-tasks/{taskId}/close
 
-- Action/chức năng: **Close**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L54).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Close**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L55).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc<br>**body** request: [AssistanceCommand](#dto-assistancecommand); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AssistanceCommandResult](#dto-assistancecommandresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202.
 - IsRunning=true: đọc Location/pollUrl, GET task; giữ operationId/payload và revision theo M3.
@@ -2247,8 +2354,8 @@ Guard/nghiệp vụ: [AuthoringGuideService.cs](../src/Core/StoryPlatform.Applic
 <a id="ep-authoringguides-get-get"></a>
 #### GET /api/v1/authoring-guides
 
-- Action/chức năng: **Get**. [AuthoringGuidesController](../src/Core/StoryPlatform.Api/Controllers/AuthoringGuidesController.cs#L13).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Get**. [AuthoringGuidesController](../src/Core/StoryPlatform.Api/Controllers/AuthoringGuidesController.cs#L14).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **query** locale: `string`; default "vi"<br>**query** purpose: `string?`; default null<br>**query** group: `string?`; default null<br>**query** pageIndex: `int`; default 1<br>**query** pageSize: `int`; default 10.
 - Response: ApiResponse.data: [GuidePage](#dto-guidepage). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2256,8 +2363,8 @@ Guard/nghiệp vụ: [AuthoringGuideService.cs](../src/Core/StoryPlatform.Applic
 <a id="ep-authoringguides-render-post"></a>
 #### POST /api/v1/authoring-guides/{guideId}/render
 
-- Action/chức năng: **Render**. [AuthoringGuidesController](../src/Core/StoryPlatform.Api/Controllers/AuthoringGuidesController.cs#L17).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Render**. [AuthoringGuidesController](../src/Core/StoryPlatform.Api/Controllers/AuthoringGuidesController.cs#L18).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** guideId: `string`; bắt buộc<br>**body** request: [RenderGuideRequest](#dto-renderguiderequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [RenderGuideResult](#dto-renderguideresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2275,8 +2382,8 @@ C2. ChildSession từ claim; package theo confirmationId, không current tùy ý
 <a id="ep-childmanualstories-library-get"></a>
 #### GET /api/v1/child/manual-stories
 
-- Action/chức năng: **Library**. [ChildManualStoriesController](../src/Core/StoryPlatform.Api/Controllers/ChildManualStoriesController.cs#L18).
-- Quyền: ChildSession token (không token người lớn). Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Library**. [ChildManualStoriesController](../src/Core/StoryPlatform.Api/Controllers/ChildManualStoriesController.cs#L19).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: Không có tham số action; dùng token/header theo quyền..
 - Response: ApiResponse.data: [IReadOnlyList&lt;ParentFamilyConfirmationDto&gt;](#dto-parentfamilyconfirmationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2284,8 +2391,8 @@ C2. ChildSession từ claim; package theo confirmationId, không current tùy ý
 <a id="ep-childmanualstories-package-get"></a>
 #### GET /api/v1/child/manual-stories/{confirmationId}/package
 
-- Action/chức năng: **Package**. [ChildManualStoriesController](../src/Core/StoryPlatform.Api/Controllers/ChildManualStoriesController.cs#L22).
-- Quyền: ChildSession token (không token người lớn). Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Package**. [ChildManualStoriesController](../src/Core/StoryPlatform.Api/Controllers/ChildManualStoriesController.cs#L23).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** confirmationId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ParentPreparationDto](#dto-parentpreparationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2313,8 +2420,8 @@ Guard/nghiệp vụ: [ManualAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-creatorauthoring-create-post"></a>
 #### POST /api/v1/creator/stories/manual
 
-- Action/chức năng: **Create**. [CreatorAuthoringController](../src/Core/StoryPlatform.Api/Controllers/CreatorAuthoringController.cs#L14).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Create**. [CreatorAuthoringController](../src/Core/StoryPlatform.Api/Controllers/CreatorAuthoringController.cs#L15).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [CreateCreatorDraftRequest](#dto-createcreatordraftrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [CreatorDraftDto](#dto-creatordraftdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **GỌI_API** — [creatorService.create](../../AI_Storytelling_Frontend/src/app/services/creatorService.ts#L38); nơi dùng: [CreatorStories.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/CreatorStories.tsx#L39)
@@ -2322,8 +2429,8 @@ Guard/nghiệp vụ: [ManualAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-creatorauthoring-mine-get"></a>
 #### GET /api/v1/creator/stories
 
-- Action/chức năng: **Mine**. [CreatorAuthoringController](../src/Core/StoryPlatform.Api/Controllers/CreatorAuthoringController.cs#L18).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Mine**. [CreatorAuthoringController](../src/Core/StoryPlatform.Api/Controllers/CreatorAuthoringController.cs#L19).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **query** pageIndex: `int`; default 1<br>**query** pageSize: `int`; default 20.
 - Response: ApiResponse.data: [PagedResult&lt;CreatorDraftDto&gt;](#dto-pagedresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [creatorService.list](../../AI_Storytelling_Frontend/src/app/services/creatorService.ts#L33); nơi dùng: [CreatorStories.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/CreatorStories.tsx#L26)
@@ -2331,8 +2438,8 @@ Guard/nghiệp vụ: [ManualAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-creatorauthoring-get-get"></a>
 #### GET /api/v1/creator/stories/{storyId}
 
-- Action/chức năng: **Get**. [CreatorAuthoringController](../src/Core/StoryPlatform.Api/Controllers/CreatorAuthoringController.cs#L23).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Get**. [CreatorAuthoringController](../src/Core/StoryPlatform.Api/Controllers/CreatorAuthoringController.cs#L24).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [CreatorDraftDto](#dto-creatordraftdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [creatorService.get](../../AI_Storytelling_Frontend/src/app/services/creatorService.ts#L36); nơi dùng: [CreatorEditor.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/CreatorEditor.tsx#L48)
@@ -2340,8 +2447,8 @@ Guard/nghiệp vụ: [ManualAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-creatorauthoring-save-post"></a>
 #### POST /api/v1/creator/stories/{storyId}/manual/versions
 
-- Action/chức năng: **Save**. [CreatorAuthoringController](../src/Core/StoryPlatform.Api/Controllers/CreatorAuthoringController.cs#L27).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Save**. [CreatorAuthoringController](../src/Core/StoryPlatform.Api/Controllers/CreatorAuthoringController.cs#L28).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [SaveCreatorContentRequest](#dto-savecreatorcontentrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [CreatorContentSavedDto](#dto-creatorcontentsaveddto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **GỌI_API** — [creatorService.save](../../AI_Storytelling_Frontend/src/app/services/creatorService.ts#L42); nơi dùng: [CreatorEditor.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/CreatorEditor.tsx#L93)
@@ -2349,8 +2456,8 @@ Guard/nghiệp vụ: [ManualAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-creatorauthoring-versions-get"></a>
 #### GET /api/v1/creator/stories/{storyId}/content/versions
 
-- Action/chức năng: **Versions**. [CreatorAuthoringController](../src/Core/StoryPlatform.Api/Controllers/CreatorAuthoringController.cs#L31).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Versions**. [CreatorAuthoringController](../src/Core/StoryPlatform.Api/Controllers/CreatorAuthoringController.cs#L32).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [IReadOnlyList&lt;CreatorVersionDto&gt;](#dto-creatorversiondto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [creatorService.versions](../../AI_Storytelling_Frontend/src/app/services/creatorService.ts#L45); nơi dùng: [CreatorEditor.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/CreatorEditor.tsx#L43)
@@ -2358,8 +2465,8 @@ Guard/nghiệp vụ: [ManualAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-creatorauthoring-version-get"></a>
 #### GET /api/v1/creator/stories/{storyId}/content/versions/{versionId}
 
-- Action/chức năng: **Version**. [CreatorAuthoringController](../src/Core/StoryPlatform.Api/Controllers/CreatorAuthoringController.cs#L35).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Version**. [CreatorAuthoringController](../src/Core/StoryPlatform.Api/Controllers/CreatorAuthoringController.cs#L36).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** versionId: `int`; bắt buộc.
 - Response: ApiResponse.data: [CreatorVersionDto](#dto-creatorversiondto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [creatorService.version](../../AI_Storytelling_Frontend/src/app/services/creatorService.ts#L47); nơi dùng: [CreatorEditor.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/CreatorEditor.tsx#L52)
@@ -2367,8 +2474,8 @@ Guard/nghiệp vụ: [ManualAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-creatorauthoring-restore-post"></a>
 #### POST /api/v1/creator/stories/{storyId}/content/restore
 
-- Action/chức năng: **Restore**. [CreatorAuthoringController](../src/Core/StoryPlatform.Api/Controllers/CreatorAuthoringController.cs#L39).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Restore**. [CreatorAuthoringController](../src/Core/StoryPlatform.Api/Controllers/CreatorAuthoringController.cs#L40).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [RestoreCreatorVersionRequest](#dto-restorecreatorversionrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [CreatorContentSavedDto](#dto-creatorcontentsaveddto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **GỌI_API** — [creatorService.restore](../../AI_Storytelling_Frontend/src/app/services/creatorService.ts#L51); nơi dùng: [CreatorEditor.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/CreatorEditor.tsx#L101)
@@ -2376,8 +2483,8 @@ Guard/nghiệp vụ: [ManualAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-creatorauthoring-preview-post"></a>
 #### POST /api/v1/creator/stories/{storyId}/imports/preview
 
-- Action/chức năng: **Preview**. [CreatorAuthoringController](../src/Core/StoryPlatform.Api/Controllers/CreatorAuthoringController.cs#L43).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Preview**. [CreatorAuthoringController](../src/Core/StoryPlatform.Api/Controllers/CreatorAuthoringController.cs#L44).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [PreviewCreatorImportRequest](#dto-previewcreatorimportrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [CreatorImportPreviewDto](#dto-creatorimportpreviewdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **GỌI_API** — [creatorService.previewText](../../AI_Storytelling_Frontend/src/app/services/creatorService.ts#L55); nơi dùng: [CreatorImport.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/CreatorImport.tsx#L40)
@@ -2385,8 +2492,8 @@ Guard/nghiệp vụ: [ManualAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-creatorauthoring-previewfile-post"></a>
 #### POST /api/v1/creator/stories/{storyId}/imports/preview-file
 
-- Action/chức năng: **PreviewFile**. [CreatorAuthoringController](../src/Core/StoryPlatform.Api/Controllers/CreatorAuthoringController.cs#L47).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **PreviewFile**. [CreatorAuthoringController](../src/Core/StoryPlatform.Api/Controllers/CreatorAuthoringController.cs#L50).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**form** form: [CreatorImportFileForm](#dto-creatorimportfileform); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [CreatorImportPreviewDto](#dto-creatorimportpreviewdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **GỌI_API** — [creatorService.previewFile](../../AI_Storytelling_Frontend/src/app/services/creatorService.ts#L58); nơi dùng: [CreatorImport.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/CreatorImport.tsx#L39)
@@ -2394,8 +2501,8 @@ Guard/nghiệp vụ: [ManualAuthoringService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-creatorauthoring-confirm-post"></a>
 #### POST /api/v1/creator/stories/{storyId}/imports/confirm
 
-- Action/chức năng: **Confirm**. [CreatorAuthoringController](../src/Core/StoryPlatform.Api/Controllers/CreatorAuthoringController.cs#L59).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Confirm**. [CreatorAuthoringController](../src/Core/StoryPlatform.Api/Controllers/CreatorAuthoringController.cs#L60).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [ConfirmCreatorImportRequest](#dto-confirmcreatorimportrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [CreatorContentSavedDto](#dto-creatorcontentsaveddto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **GỌI_API** — [creatorService.confirmImport](../../AI_Storytelling_Frontend/src/app/services/creatorService.ts#L67); nơi dùng: [CreatorImport.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/CreatorImport.tsx#L50)
@@ -2423,8 +2530,8 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="ep-creatorassistance-create-post"></a>
 #### POST /api/v1/creator/stories/{storyId}/assistance-tasks
 
-- Action/chức năng: **Create**. [CreatorAssistanceController](../src/Core/StoryPlatform.Api/Controllers/CreatorAssistanceController.cs#L22).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Create**. [CreatorAssistanceController](../src/Core/StoryPlatform.Api/Controllers/CreatorAssistanceController.cs#L24).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [CreateAssistanceTaskRequest](#dto-createassistancetaskrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AssistanceTaskDto](#dto-assistancetaskdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2432,8 +2539,8 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="ep-creatorassistance-list-get"></a>
 #### GET /api/v1/creator/stories/{storyId}/assistance-tasks
 
-- Action/chức năng: **List**. [CreatorAssistanceController](../src/Core/StoryPlatform.Api/Controllers/CreatorAssistanceController.cs#L26).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **List**. [CreatorAssistanceController](../src/Core/StoryPlatform.Api/Controllers/CreatorAssistanceController.cs#L27).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**query** pageIndex: `int`; default 1<br>**query** pageSize: `int`; default 20.
 - Response: ApiResponse.data: [PagedResult&lt;AssistanceTaskSummary&gt;](#dto-pagedresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2441,8 +2548,8 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="ep-creatorassistance-get-get"></a>
 #### GET /api/v1/creator/stories/{storyId}/assistance-tasks/{taskId}
 
-- Action/chức năng: **Get**. [CreatorAssistanceController](../src/Core/StoryPlatform.Api/Controllers/CreatorAssistanceController.cs#L29).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Get**. [CreatorAssistanceController](../src/Core/StoryPlatform.Api/Controllers/CreatorAssistanceController.cs#L30).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc.
 - Response: ApiResponse.data: [AssistanceTaskDto](#dto-assistancetaskdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2450,8 +2557,8 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="ep-creatorassistance-steps-get"></a>
 #### GET /api/v1/creator/stories/{storyId}/assistance-tasks/{taskId}/steps
 
-- Action/chức năng: **Steps**. [CreatorAssistanceController](../src/Core/StoryPlatform.Api/Controllers/CreatorAssistanceController.cs#L32).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Steps**. [CreatorAssistanceController](../src/Core/StoryPlatform.Api/Controllers/CreatorAssistanceController.cs#L33).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc<br>**query** pageIndex: `int`; default 1<br>**query** pageSize: `int`; default 20.
 - Response: ApiResponse.data: [PagedResult&lt;AssistanceStepDto&gt;](#dto-pagedresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2459,8 +2566,8 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="ep-creatorassistance-suggestions-post"></a>
 #### POST /api/v1/creator/stories/{storyId}/assistance-tasks/{taskId}/suggestions
 
-- Action/chức năng: **Suggestions**. [CreatorAssistanceController](../src/Core/StoryPlatform.Api/Controllers/CreatorAssistanceController.cs#L35).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Suggestions**. [CreatorAssistanceController](../src/Core/StoryPlatform.Api/Controllers/CreatorAssistanceController.cs#L38).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc<br>**body** request: [SuggestAssistanceRequest](#dto-suggestassistancerequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AssistanceCommandResult](#dto-assistancecommandresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202.
 - IsRunning=true: đọc Location/pollUrl, GET task; giữ operationId/payload và revision theo M3.
@@ -2469,8 +2576,8 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="ep-creatorassistance-answer-post"></a>
 #### POST /api/v1/creator/stories/{storyId}/assistance-tasks/{taskId}/clarification-answer
 
-- Action/chức năng: **Answer**. [CreatorAssistanceController](../src/Core/StoryPlatform.Api/Controllers/CreatorAssistanceController.cs#L40).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Answer**. [CreatorAssistanceController](../src/Core/StoryPlatform.Api/Controllers/CreatorAssistanceController.cs#L41).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc<br>**body** request: [AnswerAssistanceRequest](#dto-answerassistancerequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AssistanceCommandResult](#dto-assistancecommandresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202.
 - IsRunning=true: đọc Location/pollUrl, GET task; giữ operationId/payload và revision theo M3.
@@ -2479,8 +2586,8 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="ep-creatorassistance-direction-post"></a>
 #### POST /api/v1/creator/stories/{storyId}/assistance-tasks/{taskId}/direction
 
-- Action/chức năng: **Direction**. [CreatorAssistanceController](../src/Core/StoryPlatform.Api/Controllers/CreatorAssistanceController.cs#L43).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Direction**. [CreatorAssistanceController](../src/Core/StoryPlatform.Api/Controllers/CreatorAssistanceController.cs#L44).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc<br>**body** request: [ConfirmAssistanceDirectionRequest](#dto-confirmassistancedirectionrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AssistanceCommandResult](#dto-assistancecommandresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202.
 - IsRunning=true: đọc Location/pollUrl, GET task; giữ operationId/payload và revision theo M3.
@@ -2489,8 +2596,8 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="ep-creatorassistance-trial-post"></a>
 #### POST /api/v1/creator/stories/{storyId}/assistance-tasks/{taskId}/trials
 
-- Action/chức năng: **Trial**. [CreatorAssistanceController](../src/Core/StoryPlatform.Api/Controllers/CreatorAssistanceController.cs#L46).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Trial**. [CreatorAssistanceController](../src/Core/StoryPlatform.Api/Controllers/CreatorAssistanceController.cs#L49).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc<br>**body** request: [CreateAssistanceTrialRequest](#dto-createassistancetrialrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AssistanceCommandResult](#dto-assistancecommandresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202.
 - IsRunning=true: đọc Location/pollUrl, GET task; giữ operationId/payload và revision theo M3.
@@ -2499,8 +2606,8 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="ep-creatorassistance-cancel-post"></a>
 #### POST /api/v1/creator/stories/{storyId}/assistance-tasks/{taskId}/cancel
 
-- Action/chức năng: **Cancel**. [CreatorAssistanceController](../src/Core/StoryPlatform.Api/Controllers/CreatorAssistanceController.cs#L51).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Cancel**. [CreatorAssistanceController](../src/Core/StoryPlatform.Api/Controllers/CreatorAssistanceController.cs#L52).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc<br>**body** request: [CancelAssistanceRequest](#dto-cancelassistancerequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AssistanceCommandResult](#dto-assistancecommandresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202.
 - IsRunning=true: đọc Location/pollUrl, GET task; giữ operationId/payload và revision theo M3.
@@ -2509,8 +2616,8 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="ep-creatorassistance-close-post"></a>
 #### POST /api/v1/creator/stories/{storyId}/assistance-tasks/{taskId}/close
 
-- Action/chức năng: **Close**. [CreatorAssistanceController](../src/Core/StoryPlatform.Api/Controllers/CreatorAssistanceController.cs#L54).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Close**. [CreatorAssistanceController](../src/Core/StoryPlatform.Api/Controllers/CreatorAssistanceController.cs#L55).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc<br>**body** request: [AssistanceCommand](#dto-assistancecommand); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AssistanceCommandResult](#dto-assistancecommandresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202.
 - IsRunning=true: đọc Location/pollUrl, GET task; giữ operationId/payload và revision theo M3.
@@ -2533,8 +2640,8 @@ Guard/nghiệp vụ: [AIStoryInputService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-creatoraistoryinput-getcontext-get"></a>
 #### GET /api/v1/creator/ai-story-input/context
 
-- Action/chức năng: **GetContext**. [CreatorAIStoryInputController](../src/Core/StoryPlatform.Api/Controllers/CreatorAIStoryInputController.cs#L22).
-- Quyền: role ∈ ContentCreator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetContext**. [CreatorAIStoryInputController](../src/Core/StoryPlatform.Api/Controllers/CreatorAIStoryInputController.cs#L23).
+- Quyền: (ContentCreator); kèm guard nghiệp vụ của nhóm.
 - Request: **query** ageBand: `string`; default "6-8"<br>**query** readingLevel: `int`; default 2<br>**query** language: `string`; default "vi".
 - Response: ApiResponse.data: [CreatorAIStoryInputContextDto](#dto-creatoraistoryinputcontextdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2542,8 +2649,8 @@ Guard/nghiệp vụ: [AIStoryInputService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-creatoraistoryinput-submit-post"></a>
 #### POST /api/v1/creator/ai-story-input/requests
 
-- Action/chức năng: **Submit**. [CreatorAIStoryInputController](../src/Core/StoryPlatform.Api/Controllers/CreatorAIStoryInputController.cs#L29).
-- Quyền: role ∈ ContentCreator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Submit**. [CreatorAIStoryInputController](../src/Core/StoryPlatform.Api/Controllers/CreatorAIStoryInputController.cs#L30).
+- Quyền: (ContentCreator); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [SubmitCreatorAIStoryInputRequestDto](#dto-submitcreatoraistoryinputrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AIStoryInputProgressDto](#dto-aistoryinputprogressdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202, 409, 422, 503.
 - Giữ progress cả khi success=false (422/409/503); accepted/checking trả 202. Poll bằng storyId/requestId đúng prefix.
@@ -2552,8 +2659,8 @@ Guard/nghiệp vụ: [AIStoryInputService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-creatoraistoryinput-getprogress-get"></a>
 #### GET /api/v1/creator/ai-story-input/stories/{storyId}/requests/{requestId}
 
-- Action/chức năng: **GetProgress**. [CreatorAIStoryInputController](../src/Core/StoryPlatform.Api/Controllers/CreatorAIStoryInputController.cs#L38).
-- Quyền: role ∈ ContentCreator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetProgress**. [CreatorAIStoryInputController](../src/Core/StoryPlatform.Api/Controllers/CreatorAIStoryInputController.cs#L39).
+- Quyền: (ContentCreator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** requestId: `int`; bắt buộc.
 - Response: ApiResponse.data: [AIStoryInputProgressDto](#dto-aistoryinputprogressdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2561,8 +2668,8 @@ Guard/nghiệp vụ: [AIStoryInputService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-creatoraistoryinput-retry-post"></a>
 #### POST /api/v1/creator/ai-story-input/stories/{storyId}/requests/{requestId}/retry
 
-- Action/chức năng: **Retry**. [CreatorAIStoryInputController](../src/Core/StoryPlatform.Api/Controllers/CreatorAIStoryInputController.cs#L48).
-- Quyền: role ∈ ContentCreator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Retry**. [CreatorAIStoryInputController](../src/Core/StoryPlatform.Api/Controllers/CreatorAIStoryInputController.cs#L49).
+- Quyền: (ContentCreator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** requestId: `int`; bắt buộc<br>**body** request: [RetryAIStoryInputRequestDto](#dto-retryaistoryinputrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AIStoryInputProgressDto](#dto-aistoryinputprogressdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202, 409, 422, 503.
 - Giữ progress cả khi success=false (422/409/503); accepted/checking trả 202. Poll bằng storyId/requestId đúng prefix.
@@ -2583,8 +2690,8 @@ Guard/nghiệp vụ: [PublicStorySubmissionService.cs](../src/Core/StoryPlatform
 <a id="ep-publicstorysubmission-submit-post"></a>
 #### POST /api/v1/PublicStorySubmission/submit
 
-- Action/chức năng: **Submit** — Gửi một phiên bản truyện vào hàng đợi kiểm duyệt Public Library.. [PublicStorySubmissionController](../src/Core/StoryPlatform.Api/Controllers/PublicStorySubmissionController.cs#L26).
-- Quyền: role ∈ ContentCreator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Submit** — Gửi một phiên bản truyện vào hàng đợi kiểm duyệt Public Library.. [PublicStorySubmissionController](../src/Core/StoryPlatform.Api/Controllers/PublicStorySubmissionController.cs#L27).
+- Quyền: (ContentCreator); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [SubmitPublicStoryRequestDto](#dto-submitpublicstoryrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [PublicStorySubmissionResultDto](#dto-publicstorysubmissionresultdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2592,8 +2699,8 @@ Guard/nghiệp vụ: [PublicStorySubmissionService.cs](../src/Core/StoryPlatform
 <a id="ep-publicstorysubmission-withdraw-post"></a>
 #### POST /api/v1/PublicStorySubmission/{itemId}/withdraw
 
-- Action/chức năng: **Withdraw** — Rút yêu cầu duyệt khi chưa có Moderator nhận mục.. [PublicStorySubmissionController](../src/Core/StoryPlatform.Api/Controllers/PublicStorySubmissionController.cs#L39).
-- Quyền: role ∈ ContentCreator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Withdraw** — Rút yêu cầu duyệt khi chưa có Moderator nhận mục.. [PublicStorySubmissionController](../src/Core/StoryPlatform.Api/Controllers/PublicStorySubmissionController.cs#L40).
+- Quyền: (ContentCreator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** itemId: `int`; bắt buộc.
 - Response: ApiResponse.data: [PublicStorySubmissionResultDto](#dto-publicstorysubmissionresultdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2615,8 +2722,8 @@ Guard/nghiệp vụ: [ModerationQueueService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-moderationqueue-grantreviewview-post"></a>
 #### POST /api/v1/ModerationQueue/review-views
 
-- Action/chức năng: **GrantReviewView** — "Xem để rà soát": cấp quyền đọc tạm 2 giờ cho nội dung đã công khai (ghi audit).. [ModerationQueueController](../src/Core/StoryPlatform.Api/Controllers/ModerationQueueController.cs#L27).
-- Quyền: role ∈ Moderator,Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GrantReviewView** — "Xem để rà soát": cấp quyền đọc tạm 2 giờ cho nội dung đã công khai (ghi audit).. [ModerationQueueController](../src/Core/StoryPlatform.Api/Controllers/ModerationQueueController.cs#L28).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [GrantReviewViewRequestDto](#dto-grantreviewviewrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ModerationReviewViewDto](#dto-moderationreviewviewdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2624,8 +2731,8 @@ Guard/nghiệp vụ: [ModerationQueueService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-moderationqueue-list-get"></a>
 #### GET /api/v1/ModerationQueue
 
-- Action/chức năng: **List** — Xem hàng đợi: lọc theo loại, ưu tiên, trạng thái, quá hạn.. [ModerationQueueController](../src/Core/StoryPlatform.Api/Controllers/ModerationQueueController.cs#L36).
-- Quyền: role ∈ Moderator,Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **List** — Xem hàng đợi: lọc theo loại, ưu tiên, trạng thái, quá hạn.. [ModerationQueueController](../src/Core/StoryPlatform.Api/Controllers/ModerationQueueController.cs#L37).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **query** query: [ModerationQueueQueryDto](#dto-moderationqueuequerydto).
 - Response: ApiResponse.data: [PagedResult&lt;ModerationItemSummaryDto&gt;](#dto-pagedresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.queue](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L97); nơi dùng: [Moderation.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/Moderation.tsx#L53)
@@ -2633,8 +2740,8 @@ Guard/nghiệp vụ: [ModerationQueueService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-moderationqueue-claim-post"></a>
 #### POST /api/v1/ModerationQueue/{itemId}/claim
 
-- Action/chức năng: **Claim** — Nhận xử lý một mục đang chờ.. [ModerationQueueController](../src/Core/StoryPlatform.Api/Controllers/ModerationQueueController.cs#L45).
-- Quyền: role ∈ Moderator,Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Claim** — Nhận xử lý một mục đang chờ.. [ModerationQueueController](../src/Core/StoryPlatform.Api/Controllers/ModerationQueueController.cs#L46).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** itemId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ModerationItemDetailDto](#dto-moderationitemdetaildto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.claim](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L102); nơi dùng: [Moderation.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/Moderation.tsx#L124)
@@ -2642,8 +2749,8 @@ Guard/nghiệp vụ: [ModerationQueueService.cs](../src/Core/StoryPlatform.Appli
 <a id="ep-moderationqueue-open-get"></a>
 #### GET /api/v1/ModerationQueue/{itemId}
 
-- Action/chức năng: **Open** — Mở mục đang do mình nhận (ghi audit mỗi lượt mở).. [ModerationQueueController](../src/Core/StoryPlatform.Api/Controllers/ModerationQueueController.cs#L54).
-- Quyền: role ∈ Moderator,Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Open** — Mở mục đang do mình nhận (ghi audit mỗi lượt mở).. [ModerationQueueController](../src/Core/StoryPlatform.Api/Controllers/ModerationQueueController.cs#L55).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** itemId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ModerationItemDetailDto](#dto-moderationitemdetaildto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.openItem](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L104); nơi dùng: [Moderation.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/Moderation.tsx#L76)
@@ -2651,7 +2758,7 @@ Guard/nghiệp vụ: [ModerationQueueService.cs](../src/Core/StoryPlatform.Appli
 <a id="controller-publicstoryreview"></a>
 ### PublicStoryReview — 9 route
 
-MO2. Claim đúng loại và còn hạn. Package có flags/views/checklist/blockers; gates phải đạt trước approve, đúng version của item.
+MO2. Claim đúng loại và còn hạn. Package có flags/views/checklist/approveBlockers; gates phải đạt trước approve, đúng version của item.
 
 Guard/nghiệp vụ: [PublicStoryReviewService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Services/PublicStoryReviewService.cs).
 
@@ -2670,8 +2777,8 @@ Guard/nghiệp vụ: [PublicStoryReviewService.cs](../src/Core/StoryPlatform.App
 <a id="ep-publicstoryreview-getpackage-get"></a>
 #### GET /api/v1/PublicStoryReview/{itemId}
 
-- Action/chức năng: **GetPackage** — Lấy gói nội dung của đúng phiên bản đang được duyệt cùng trạng thái lượt duyệt.. [PublicStoryReviewController](../src/Core/StoryPlatform.Api/Controllers/PublicStoryReviewController.cs#L26).
-- Quyền: role ∈ Moderator,Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetPackage** — Lấy gói nội dung của đúng phiên bản đang được duyệt cùng trạng thái lượt duyệt.. [PublicStoryReviewController](../src/Core/StoryPlatform.Api/Controllers/PublicStoryReviewController.cs#L27).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** itemId: `int`; bắt buộc.
 - Response: ApiResponse.data: [PublicReviewPackageDto](#dto-publicreviewpackagedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2679,8 +2786,8 @@ Guard/nghiệp vụ: [PublicStoryReviewService.cs](../src/Core/StoryPlatform.App
 <a id="ep-publicstoryreview-markviewed-post"></a>
 #### POST /api/v1/PublicStoryReview/{itemId}/views
 
-- Action/chức năng: **MarkViewed** — Đánh dấu một scene đã xem hoặc một đoạn audio đã nghe.. [PublicStoryReviewController](../src/Core/StoryPlatform.Api/Controllers/PublicStoryReviewController.cs#L40).
-- Quyền: role ∈ Moderator,Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **MarkViewed** — Đánh dấu một scene đã xem hoặc một đoạn audio đã nghe.. [PublicStoryReviewController](../src/Core/StoryPlatform.Api/Controllers/PublicStoryReviewController.cs#L41).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** itemId: `int`; bắt buộc<br>**body** request: [MarkPartViewedRequestDto](#dto-markpartviewedrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [PublicReviewProgressDto](#dto-publicreviewprogressdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2688,8 +2795,8 @@ Guard/nghiệp vụ: [PublicStoryReviewService.cs](../src/Core/StoryPlatform.App
 <a id="ep-publicstoryreview-resolveflag-post"></a>
 #### POST /api/v1/PublicStoryReview/{itemId}/flags/resolve
 
-- Action/chức năng: **ResolveFlag** — Đánh dấu một cờ vùng xám là đã xem và an toàn.. [PublicStoryReviewController](../src/Core/StoryPlatform.Api/Controllers/PublicStoryReviewController.cs#L54).
-- Quyền: role ∈ Moderator,Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ResolveFlag** — Đánh dấu một cờ vùng xám là đã xem và an toàn.. [PublicStoryReviewController](../src/Core/StoryPlatform.Api/Controllers/PublicStoryReviewController.cs#L55).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** itemId: `int`; bắt buộc<br>**body** request: [ResolveFlagRequestDto](#dto-resolveflagrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [PublicReviewFlagsResultDto](#dto-publicreviewflagsresultdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2697,8 +2804,8 @@ Guard/nghiệp vụ: [PublicStoryReviewService.cs](../src/Core/StoryPlatform.App
 <a id="ep-publicstoryreview-savechecklist-put"></a>
 #### PUT /api/v1/PublicStoryReview/{itemId}/checklist
 
-- Action/chức năng: **SaveChecklist** — Lưu kết quả chấm checklist 8 tiêu chí của lượt duyệt.. [PublicStoryReviewController](../src/Core/StoryPlatform.Api/Controllers/PublicStoryReviewController.cs#L68).
-- Quyền: role ∈ Moderator,Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **SaveChecklist** — Lưu kết quả chấm checklist 8 tiêu chí của lượt duyệt.. [PublicStoryReviewController](../src/Core/StoryPlatform.Api/Controllers/PublicStoryReviewController.cs#L69).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** itemId: `int`; bắt buộc<br>**body** request: [PublicReviewChecklistDto](#dto-publicreviewchecklistdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [PublicReviewChecklistDto](#dto-publicreviewchecklistdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2706,8 +2813,8 @@ Guard/nghiệp vụ: [PublicStoryReviewService.cs](../src/Core/StoryPlatform.App
 <a id="ep-publicstoryreview-setlabels-put"></a>
 #### PUT /api/v1/PublicStoryReview/{itemId}/labels
 
-- Action/chức năng: **SetLabels** — Thay toàn bộ nhãn nội dung của truyện đang được duyệt.. [PublicStoryReviewController](../src/Core/StoryPlatform.Api/Controllers/PublicStoryReviewController.cs#L82).
-- Quyền: role ∈ Moderator,Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **SetLabels** — Thay toàn bộ nhãn nội dung của truyện đang được duyệt.. [PublicStoryReviewController](../src/Core/StoryPlatform.Api/Controllers/PublicStoryReviewController.cs#L83).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** itemId: `int`; bắt buộc<br>**body** request: [SetContentLabelsRequestDto](#dto-setcontentlabelsrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [List&lt;PublicReviewLabelDto&gt;](#dto-publicreviewlabeldto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2715,8 +2822,8 @@ Guard/nghiệp vụ: [PublicStoryReviewService.cs](../src/Core/StoryPlatform.App
 <a id="ep-publicstoryreview-approve-post"></a>
 #### POST /api/v1/PublicStoryReview/{itemId}/approve
 
-- Action/chức năng: **Approve** — Approve phiên bản và công khai truyện ngay khi đủ mọi điều kiện.. [PublicStoryReviewController](../src/Core/StoryPlatform.Api/Controllers/PublicStoryReviewController.cs#L97).
-- Quyền: role ∈ Moderator,Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Approve** — Approve phiên bản và công khai truyện ngay khi đủ mọi điều kiện.. [PublicStoryReviewController](../src/Core/StoryPlatform.Api/Controllers/PublicStoryReviewController.cs#L98).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** itemId: `int`; bắt buộc.
 - Response: ApiResponse.data: [PublicReviewDecisionResultDto](#dto-publicreviewdecisionresultdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2724,8 +2831,8 @@ Guard/nghiệp vụ: [PublicStoryReviewService.cs](../src/Core/StoryPlatform.App
 <a id="ep-publicstoryreview-requestchanges-post"></a>
 #### POST /api/v1/PublicStoryReview/{itemId}/request-changes
 
-- Action/chức năng: **RequestChanges** — Yêu cầu Content Creator sửa các phần cụ thể của phiên bản.. [PublicStoryReviewController](../src/Core/StoryPlatform.Api/Controllers/PublicStoryReviewController.cs#L111).
-- Quyền: role ∈ Moderator,Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RequestChanges** — Yêu cầu Content Creator sửa các phần cụ thể của phiên bản.. [PublicStoryReviewController](../src/Core/StoryPlatform.Api/Controllers/PublicStoryReviewController.cs#L112).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** itemId: `int`; bắt buộc<br>**body** request: [RequestChangesDto](#dto-requestchangesdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [PublicReviewDecisionResultDto](#dto-publicreviewdecisionresultdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2733,8 +2840,8 @@ Guard/nghiệp vụ: [PublicStoryReviewService.cs](../src/Core/StoryPlatform.App
 <a id="ep-publicstoryreview-reject-post"></a>
 #### POST /api/v1/PublicStoryReview/{itemId}/reject
 
-- Action/chức năng: **Reject** — Từ chối phiên bản đang duyệt.. [PublicStoryReviewController](../src/Core/StoryPlatform.Api/Controllers/PublicStoryReviewController.cs#L125).
-- Quyền: role ∈ Moderator,Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Reject** — Từ chối phiên bản đang duyệt.. [PublicStoryReviewController](../src/Core/StoryPlatform.Api/Controllers/PublicStoryReviewController.cs#L126).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** itemId: `int`; bắt buộc<br>**body** request: [RejectRequestDto](#dto-rejectrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [PublicReviewDecisionResultDto](#dto-publicreviewdecisionresultdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2742,8 +2849,8 @@ Guard/nghiệp vụ: [PublicStoryReviewService.cs](../src/Core/StoryPlatform.App
 <a id="ep-publicstoryreview-compare-get"></a>
 #### GET /api/v1/PublicStoryReview/{itemId}/compare
 
-- Action/chức năng: **Compare** — So sánh bản đang duyệt với bản đã gửi trước hoặc bản đang công khai.. [PublicStoryReviewController](../src/Core/StoryPlatform.Api/Controllers/PublicStoryReviewController.cs#L138).
-- Quyền: role ∈ Moderator,Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Compare** — So sánh bản đang duyệt với bản đã gửi trước hoặc bản đang công khai.. [PublicStoryReviewController](../src/Core/StoryPlatform.Api/Controllers/PublicStoryReviewController.cs#L139).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** itemId: `int`; bắt buộc<br>**query** against: `string?`; nullable.
 - Response: ApiResponse.data: [PublicVersionComparisonDto](#dto-publicversioncomparisondto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2762,14 +2869,14 @@ Guard/nghiệp vụ: [ContentReportService.cs](../src/Core/StoryPlatform.Applica
 <a id="ep-contentreport-create-post"></a>
 #### POST /api/v1/ContentReport
 
-- Action/chức năng: **Create** — Báo cáo một truyện mà con của người gọi truy cập được.. [ContentReportController](../src/Core/StoryPlatform.Api/Controllers/ContentReportController.cs#L26).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Create** — Báo cáo một truyện mà con của người gọi truy cập được.. [ContentReportController](../src/Core/StoryPlatform.Api/Controllers/ContentReportController.cs#L27).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [CreateContentReportRequestDto](#dto-createcontentreportrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ContentReportResultDto](#dto-contentreportresultdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **LỆCH_CONTRACT** — [guardianService.reportStory](../../AI_Storytelling_Frontend/src/app/services/guardianService.ts#L98) gọi /content-reports, enum/model local. [UI](../../AI_Storytelling_Frontend/src/app/features/library/ModerationDialogs.tsx#L40)
 
 <a id="controller-contentreportreview"></a>
-### ContentReportReview — 3 route
+### ContentReportReview — 4 route
 
 MO3. Moderator/Admin claim report. Dismiss/archive cần lý do, ArchiveReason enum; đọc package mask, không thay bằng Story public.
 
@@ -2780,12 +2887,14 @@ Guard/nghiệp vụ: [ContentReportReviewService.cs](../src/Core/StoryPlatform.A
 | [GET /api/v1/ContentReportReview/{itemId}](#ep-contentreportreview-getdetail-get) | CHƯA_MAP |
 | [POST /api/v1/ContentReportReview/{itemId}/dismiss](#ep-contentreportreview-dismiss-post) | CHƯA_MAP |
 | [POST /api/v1/ContentReportReview/{itemId}/archive](#ep-contentreportreview-archive-post) | CHƯA_MAP |
+| [POST /api/v1/ContentReportReview/{itemId}/escalate](#ep-contentreportreview-escalate-post) | CHƯA_RÀ_FRONTEND |
+
 
 <a id="ep-contentreportreview-getdetail-get"></a>
 #### GET /api/v1/ContentReportReview/{itemId}
 
-- Action/chức năng: **GetDetail** — Chi tiết report và truyện bị báo cáo; nội dung đã che thông tin cá nhân.. [ContentReportReviewController](../src/Core/StoryPlatform.Api/Controllers/ContentReportReviewController.cs#L23).
-- Quyền: role ∈ Moderator,Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetDetail** — Chi tiết report và truyện bị báo cáo; nội dung đã che thông tin cá nhân.. [ContentReportReviewController](../src/Core/StoryPlatform.Api/Controllers/ContentReportReviewController.cs#L24).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** itemId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ContentReportDetailDto](#dto-contentreportdetaildto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2793,8 +2902,8 @@ Guard/nghiệp vụ: [ContentReportReviewService.cs](../src/Core/StoryPlatform.A
 <a id="ep-contentreportreview-dismiss-post"></a>
 #### POST /api/v1/ContentReportReview/{itemId}/dismiss
 
-- Action/chức năng: **Dismiss** — Bỏ qua report vì không vi phạm; lý do là bắt buộc.. [ContentReportReviewController](../src/Core/StoryPlatform.Api/Controllers/ContentReportReviewController.cs#L33).
-- Quyền: role ∈ Moderator,Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Dismiss** — Bỏ qua report vì không vi phạm; lý do là bắt buộc.. [ContentReportReviewController](../src/Core/StoryPlatform.Api/Controllers/ContentReportReviewController.cs#L34).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** itemId: `int`; bắt buộc<br>**body** request: [DismissReportRequestDto](#dto-dismissreportrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ContentReportDecisionResultDto](#dto-contentreportdecisionresultdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2802,11 +2911,25 @@ Guard/nghiệp vụ: [ContentReportReviewService.cs](../src/Core/StoryPlatform.A
 <a id="ep-contentreportreview-archive-post"></a>
 #### POST /api/v1/ContentReportReview/{itemId}/archive
 
-- Action/chức năng: **Archive** — Gỡ truyện (Archive), không xóa cứng; lý do gỡ và lý do chi tiết là bắt buộc.. [ContentReportReviewController](../src/Core/StoryPlatform.Api/Controllers/ContentReportReviewController.cs#L45).
-- Quyền: role ∈ Moderator,Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Archive** — Gỡ truyện (Archive), không xóa cứng; lý do gỡ và lý do chi tiết là bắt buộc.. [ContentReportReviewController](../src/Core/StoryPlatform.Api/Controllers/ContentReportReviewController.cs#L46).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** itemId: `int`; bắt buộc<br>**body** request: [ArchiveReportRequestDto](#dto-archivereportrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ContentReportDecisionResultDto](#dto-contentreportdecisionresultdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
+
+MO3. Mục Claimed thuộc người nhận còn hạn; ca Escalated do Administrator xử lý. Escalate chuyển trách nhiệm, không phải gỡ truyện. Đọc lại itemStatus trước quyết định.
+
+<a id="ep-contentreportreview-escalate-post"></a>
+#### POST /api/v1/ContentReportReview/{itemId}/escalate
+
+Service chỉ cho Moderator đang giữ claim chuyển cấp; Administrator không gọi escalate.
+
+- Action: **Escalate**. [ContentReportReviewController](../src/Core/StoryPlatform.Api/Controllers/ContentReportReviewController.cs#L58).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `itemId`: `int`; **body** `request`: [EscalateReportRequestDto](#dto-escalatereportrequestdto).
+- Response: ApiResponse.data: [ContentReportDecisionResultDto](#dto-contentreportdecisionresultdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
 
 <a id="controller-adminaccount"></a>
 ### AdminAccount — 2 route
@@ -2821,8 +2944,8 @@ Admin. Grant/revoke theo guard tài khoản; controller không có list Admin.
 <a id="ep-adminaccount-grantadministrator-post"></a>
 #### POST /api/v1/AdminAccount/grant
 
-- Action/chức năng: **GrantAdministrator** — Cấp quyền Administrator cho một tài khoản đích theo email.. [AdminAccountController](../src/Core/StoryPlatform.Api/Controllers/AdminAccountController.cs#L25).
-- Quyền: role ∈ Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GrantAdministrator** — Cấp quyền Administrator cho một tài khoản đích theo email.. [AdminAccountController](../src/Core/StoryPlatform.Api/Controllers/AdminAccountController.cs#L26).
+- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [GrantAdministratorRequestDto](#dto-grantadministratorrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AdministratorAccountDto](#dto-administratoraccountdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.grantAdmin](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L78); nơi dùng: [AdminSystem.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminSystem.tsx#L185)
@@ -2830,8 +2953,8 @@ Admin. Grant/revoke theo guard tài khoản; controller không có list Admin.
 <a id="ep-adminaccount-revokeadministrator-post"></a>
 #### POST /api/v1/AdminAccount/{targetUserId}/revoke
 
-- Action/chức năng: **RevokeAdministrator** — Thu hồi quyền Administrator của một tài khoản đích, khôi phục về vai trò trước đó.. [AdminAccountController](../src/Core/StoryPlatform.Api/Controllers/AdminAccountController.cs#L36).
-- Quyền: role ∈ Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RevokeAdministrator** — Thu hồi quyền Administrator của một tài khoản đích, khôi phục về vai trò trước đó.. [AdminAccountController](../src/Core/StoryPlatform.Api/Controllers/AdminAccountController.cs#L37).
+- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** targetUserId: `int`; bắt buộc.
 - Response: ApiResponse.data: [AdministratorAccountDto](#dto-administratoraccountdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.revokeAdmin](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L79); nơi dùng: [AdminSystem.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminSystem.tsx#L187)
@@ -2852,8 +2975,8 @@ Admin. Invite/resend/activation khác register. Deactivate cần reason, reactiv
 <a id="ep-moderatoraccount-list-get"></a>
 #### GET /api/v1/ModeratorAccount
 
-- Action/chức năng: **List** — Danh sách Moderator và trạng thái từng người.. [ModeratorAccountController](../src/Core/StoryPlatform.Api/Controllers/ModeratorAccountController.cs#L21).
-- Quyền: role ∈ Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **List** — Danh sách Moderator và trạng thái từng người.. [ModeratorAccountController](../src/Core/StoryPlatform.Api/Controllers/ModeratorAccountController.cs#L22).
+- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: Không có tham số action; dùng token/header theo quyền..
 - Response: ApiResponse.data: [List&lt;ModeratorAccountDto&gt;](#dto-moderatoraccountdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.staff](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L81); nơi dùng: [AdminPeople.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminPeople.tsx#L22)
@@ -2861,8 +2984,8 @@ Admin. Invite/resend/activation khác register. Deactivate cần reason, reactiv
 <a id="ep-moderatoraccount-invite-post"></a>
 #### POST /api/v1/ModeratorAccount/invite
 
-- Action/chức năng: **Invite** — Mời Moderator mới qua email; mã mời có hiệu lực 72 giờ.. [ModeratorAccountController](../src/Core/StoryPlatform.Api/Controllers/ModeratorAccountController.cs#L30).
-- Quyền: role ∈ Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Invite** — Mời Moderator mới qua email; mã mời có hiệu lực 72 giờ.. [ModeratorAccountController](../src/Core/StoryPlatform.Api/Controllers/ModeratorAccountController.cs#L31).
+- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [InviteModeratorRequestDto](#dto-invitemoderatorrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ModeratorAccountDto](#dto-moderatoraccountdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.inviteModerator](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L86); nơi dùng: [AdminPeople.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminPeople.tsx#L41)
@@ -2870,8 +2993,8 @@ Admin. Invite/resend/activation khác register. Deactivate cần reason, reactiv
 <a id="ep-moderatoraccount-resendinvite-post"></a>
 #### POST /api/v1/ModeratorAccount/{userId}/resend-invite
 
-- Action/chức năng: **ResendInvite** — Cấp mã mời mới cho Moderator chưa kích hoạt.. [ModeratorAccountController](../src/Core/StoryPlatform.Api/Controllers/ModeratorAccountController.cs#L41).
-- Quyền: role ∈ Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ResendInvite** — Cấp mã mời mới cho Moderator chưa kích hoạt.. [ModeratorAccountController](../src/Core/StoryPlatform.Api/Controllers/ModeratorAccountController.cs#L42).
+- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** userId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ModeratorAccountDto](#dto-moderatoraccountdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.resendInvite](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L88); nơi dùng: [AdminPeople.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminPeople.tsx#L82)
@@ -2879,8 +3002,8 @@ Admin. Invite/resend/activation khác register. Deactivate cần reason, reactiv
 <a id="ep-moderatoraccount-deactivate-post"></a>
 #### POST /api/v1/ModeratorAccount/{userId}/deactivate
 
-- Action/chức năng: **Deactivate** — Vô hiệu hóa Moderator và đăng xuất mọi phiên ngay.. [ModeratorAccountController](../src/Core/StoryPlatform.Api/Controllers/ModeratorAccountController.cs#L51).
-- Quyền: role ∈ Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Deactivate** — Vô hiệu hóa Moderator và đăng xuất mọi phiên ngay.. [ModeratorAccountController](../src/Core/StoryPlatform.Api/Controllers/ModeratorAccountController.cs#L52).
+- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** userId: `int`; bắt buộc<br>**body** request: [ReasonRequestDto](#dto-reasonrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ModeratorAccountDto](#dto-moderatoraccountdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.deactivateModerator](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L91); nơi dùng: [AdminPeople.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminPeople.tsx#L85)
@@ -2888,8 +3011,8 @@ Admin. Invite/resend/activation khác register. Deactivate cần reason, reactiv
 <a id="ep-moderatoraccount-reactivate-post"></a>
 #### POST /api/v1/ModeratorAccount/{userId}/reactivate
 
-- Action/chức năng: **Reactivate** — Kích hoạt lại Moderator đã bị vô hiệu hóa.. [ModeratorAccountController](../src/Core/StoryPlatform.Api/Controllers/ModeratorAccountController.cs#L62).
-- Quyền: role ∈ Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Reactivate** — Kích hoạt lại Moderator đã bị vô hiệu hóa.. [ModeratorAccountController](../src/Core/StoryPlatform.Api/Controllers/ModeratorAccountController.cs#L63).
+- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** userId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ModeratorAccountDto](#dto-moderatoraccountdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.reactivateModerator](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L93); nơi dùng: [AdminPeople.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminPeople.tsx#L87)
@@ -2910,8 +3033,8 @@ Admin ghi, adult đọc. ID danh mục/enum tuổi thật; frontend có thể ch
 <a id="ep-contentcategory-createcontentcategory-post"></a>
 #### POST /api/v1/ContentCategory
 
-- Action/chức năng: **CreateContentCategory** — Tạo mới một danh mục nội dung.. [ContentCategoryController](../src/Core/StoryPlatform.Api/Controllers/ContentCategoryController.cs#L24).
-- Quyền: role ∈ Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **CreateContentCategory** — Tạo mới một danh mục nội dung.. [ContentCategoryController](../src/Core/StoryPlatform.Api/Controllers/ContentCategoryController.cs#L26).
+- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [CreateContentCategoryRequestDto](#dto-createcontentcategoryrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ContentCategoryDto](#dto-contentcategorydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **GỌI_API** — [staffService.createCategory](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L37); nơi dùng: [AdminCatalog.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminCatalog.tsx#L67)
@@ -2919,8 +3042,8 @@ Admin ghi, adult đọc. ID danh mục/enum tuổi thật; frontend có thể ch
 <a id="ep-contentcategory-updatecontentcategory-put"></a>
 #### PUT /api/v1/ContentCategory/{contentCategoryId}
 
-- Action/chức năng: **UpdateContentCategory** — Cập nhật tên hiển thị và trạng thái hoạt động của danh mục nội dung.. [ContentCategoryController](../src/Core/StoryPlatform.Api/Controllers/ContentCategoryController.cs#L37).
-- Quyền: role ∈ Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **UpdateContentCategory** — Cập nhật tên hiển thị và trạng thái hoạt động của danh mục nội dung.. [ContentCategoryController](../src/Core/StoryPlatform.Api/Controllers/ContentCategoryController.cs#L39).
+- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** contentCategoryId: `int`; bắt buộc<br>**body** request: [UpdateContentCategoryRequestDto](#dto-updatecontentcategoryrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ContentCategoryDto](#dto-contentcategorydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.updateCategory](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L40); nơi dùng: [AdminCatalog.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminCatalog.tsx#L51)
@@ -2928,8 +3051,8 @@ Admin ghi, adult đọc. ID danh mục/enum tuổi thật; frontend có thể ch
 <a id="ep-contentcategory-deletecontentcategory-delete"></a>
 #### DELETE /api/v1/ContentCategory/{contentCategoryId}
 
-- Action/chức năng: **DeleteContentCategory** — Xoá hẳn một danh mục nội dung.. [ContentCategoryController](../src/Core/StoryPlatform.Api/Controllers/ContentCategoryController.cs#L50).
-- Quyền: role ∈ Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **DeleteContentCategory** — Xoá hẳn một danh mục nội dung.. [ContentCategoryController](../src/Core/StoryPlatform.Api/Controllers/ContentCategoryController.cs#L52).
+- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** contentCategoryId: `int`; bắt buộc.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2937,8 +3060,8 @@ Admin ghi, adult đọc. ID danh mục/enum tuổi thật; frontend có thể ch
 <a id="ep-contentcategory-getcontentcategory-get"></a>
 #### GET /api/v1/ContentCategory/{contentCategoryId}
 
-- Action/chức năng: **GetContentCategory** — Lấy chi tiết một danh mục nội dung theo mã định danh.. [ContentCategoryController](../src/Core/StoryPlatform.Api/Controllers/ContentCategoryController.cs#L62).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetContentCategory** — Lấy chi tiết một danh mục nội dung theo mã định danh.. [ContentCategoryController](../src/Core/StoryPlatform.Api/Controllers/ContentCategoryController.cs#L64).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** contentCategoryId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ContentCategoryDto](#dto-contentcategorydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2946,8 +3069,8 @@ Admin ghi, adult đọc. ID danh mục/enum tuổi thật; frontend có thể ch
 <a id="ep-contentcategory-listcontentcategories-get"></a>
 #### GET /api/v1/ContentCategory
 
-- Action/chức năng: **ListContentCategories** — Lấy danh sách toàn bộ danh mục nội dung.. [ContentCategoryController](../src/Core/StoryPlatform.Api/Controllers/ContentCategoryController.cs#L74).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ListContentCategories** — Lấy danh sách toàn bộ danh mục nội dung.. [ContentCategoryController](../src/Core/StoryPlatform.Api/Controllers/ContentCategoryController.cs#L76).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: Không có tham số action; dùng token/header theo quyền..
 - Response: ApiResponse.data: [List&lt;ContentCategoryDto&gt;](#dto-contentcategorydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.getContentCategories](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L101); nơi dùng: [CreateChildWizard.tsx](../../AI_Storytelling_Frontend/src/app/features/children/CreateChildWizard.tsx#L29); [SafetyWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/safety/SafetyWorkspace.tsx#L82)
@@ -2966,8 +3089,8 @@ Config chỉ Admin; child status guard giám sát. Scope System/Personal/Child, 
 <a id="ep-tokenquota-setconfig-post"></a>
 #### POST /api/v1/TokenQuota/config
 
-- Action/chức năng: **SetConfig** — Tạo mới hoặc cập nhật cấu hình Token Quota cho 1 scope cụ thể.. [TokenQuotaController](../src/Core/StoryPlatform.Api/Controllers/TokenQuotaController.cs#L24).
-- Quyền: role ∈ Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **SetConfig** — Tạo mới hoặc cập nhật cấu hình Token Quota cho 1 scope cụ thể.. [TokenQuotaController](../src/Core/StoryPlatform.Api/Controllers/TokenQuotaController.cs#L26).
+- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [SetTokenQuotaConfigRequestDto](#dto-settokenquotaconfigrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [TokenQuotaConfigDto](#dto-tokenquotaconfigdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.setQuota](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L45); nơi dùng: [AdminSystem.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminSystem.tsx#L45)
@@ -2975,8 +3098,8 @@ Config chỉ Admin; child status guard giám sát. Scope System/Personal/Child, 
 <a id="ep-tokenquota-listconfigs-get"></a>
 #### GET /api/v1/TokenQuota/config
 
-- Action/chức năng: **ListConfigs** — Danh sách toàn bộ cấu hình Token Quota hiện có.. [TokenQuotaController](../src/Core/StoryPlatform.Api/Controllers/TokenQuotaController.cs#L36).
-- Quyền: role ∈ Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ListConfigs** — Danh sách toàn bộ cấu hình Token Quota hiện có.. [TokenQuotaController](../src/Core/StoryPlatform.Api/Controllers/TokenQuotaController.cs#L38).
+- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: Không có tham số action; dùng token/header theo quyền..
 - Response: ApiResponse.data: [List&lt;TokenQuotaConfigDto&gt;](#dto-tokenquotaconfigdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.quotaConfigs](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L44); nơi dùng: [AdminSystem.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminSystem.tsx#L19)
@@ -2984,8 +3107,8 @@ Config chỉ Admin; child status guard giám sát. Scope System/Personal/Child, 
 <a id="ep-tokenquota-getchildstatus-get"></a>
 #### GET /api/v1/TokenQuota/child/{childProfileId}
 
-- Action/chức năng: **GetChildStatus** — Xem mức dùng Token Quota hiện tại của 1 trẻ (Owner/Supervisor/Administrator).. [TokenQuotaController](../src/Core/StoryPlatform.Api/Controllers/TokenQuotaController.cs#L47).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetChildStatus** — Xem mức dùng Token Quota hiện tại của 1 trẻ (Owner/Supervisor/Administrator).. [TokenQuotaController](../src/Core/StoryPlatform.Api/Controllers/TokenQuotaController.cs#L49).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: [TokenQuotaStatusDto](#dto-tokenquotastatusdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.getTokenQuotaForChild](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L105); nơi dùng: [HomeWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/home/HomeWorkspace.tsx#L71); [BriefForm.tsx](../../AI_Storytelling_Frontend/src/app/features/studio/BriefForm.tsx#L37)
@@ -3008,8 +3131,8 @@ Parent tạo/mine/cancel của mình; Admin resolve/reject. Export binary, csv �
 <a id="ep-datarequest-createdatarequest-post"></a>
 #### POST /api/v1/DataRequest
 
-- Action/chức năng: **CreateDataRequest** — Tạo yêu cầu Export hoặc Delete dữ liệu cho Child Profile do chính mình sở hữu.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L24).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **CreateDataRequest** — Tạo yêu cầu Export hoặc Delete dữ liệu cho Child Profile do chính mình sở hữu.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L26).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [CreateDataRequestDto](#dto-createdatarequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [DataRequestDto](#dto-datarequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **GỌI_API** — [staffService.createDataRequest](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L50); nơi dùng: [DataRequestSection.tsx](../../AI_Storytelling_Frontend/src/app/features/children/DataRequestSection.tsx#L49)
@@ -3017,8 +3140,8 @@ Parent tạo/mine/cancel của mình; Admin resolve/reject. Export binary, csv �
 <a id="ep-datarequest-listpendingdatarequests-get"></a>
 #### GET /api/v1/DataRequest/pending
 
-- Action/chức năng: **ListPendingDataRequests** — Lấy danh sách Data Request đang chờ Administrator xử lý.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L37).
-- Quyền: role ∈ Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ListPendingDataRequests** — Lấy danh sách Data Request đang chờ Administrator xử lý.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L39).
+- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: Không có tham số action; dùng token/header theo quyền..
 - Response: ApiResponse.data: [List&lt;DataRequestDto&gt;](#dto-datarequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.pendingDataRequests](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L54); nơi dùng: [AdminSystem.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminSystem.tsx#L59)
@@ -3026,8 +3149,8 @@ Parent tạo/mine/cancel của mình; Admin resolve/reject. Export binary, csv �
 <a id="ep-datarequest-listmydatarequests-get"></a>
 #### GET /api/v1/DataRequest/mine
 
-- Action/chức năng: **ListMyDataRequests** — Danh sách Data Request do chính Owner gửi.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L47).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ListMyDataRequests** — Danh sách Data Request do chính Owner gửi.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L49).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **query** childProfileId: `int?`; nullable.
 - Response: ApiResponse.data: [List&lt;DataRequestDto&gt;](#dto-datarequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.myDataRequests](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L52); nơi dùng: [DataRequestSection.tsx](../../AI_Storytelling_Frontend/src/app/features/children/DataRequestSection.tsx#L27)
@@ -3035,8 +3158,8 @@ Parent tạo/mine/cancel của mình; Admin resolve/reject. Export binary, csv �
 <a id="ep-datarequest-canceldatarequest-post"></a>
 #### POST /api/v1/DataRequest/{dataRequestId}/cancel
 
-- Action/chức năng: **CancelDataRequest** — Owner hủy Data Request của mình khi còn pending.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L58).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **CancelDataRequest** — Owner hủy Data Request của mình khi còn pending.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L60).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** dataRequestId: `int`; bắt buộc.
 - Response: ApiResponse.data: [DataRequestDto](#dto-datarequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.cancelDataRequest](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L53); nơi dùng: [DataRequestSection.tsx](../../AI_Storytelling_Frontend/src/app/features/children/DataRequestSection.tsx#L80)
@@ -3044,8 +3167,8 @@ Parent tạo/mine/cancel của mình; Admin resolve/reject. Export binary, csv �
 <a id="ep-datarequest-resolveexport-post"></a>
 #### POST /api/v1/DataRequest/{dataRequestId}/resolve-export
 
-- Action/chức năng: **ResolveExport** — Xử lý một Data Request loại Export: trả về file .xlsx tổng hợp dữ liệu của trẻ.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L71).
-- Quyền: role ∈ Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ResolveExport** — Xử lý một Data Request loại Export: trả về file .xlsx tổng hợp dữ liệu của trẻ.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L73).
+- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** dataRequestId: `int`; bắt buộc<br>**query** format: `string`.
 - Response: Binary: xlsx hoặc ZIP chứa CSV; Content-Disposition tên file, không envelope JSON. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.resolveExport](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L56); nơi dùng: [AdminSystem.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminSystem.tsx#L64)
@@ -3053,8 +3176,8 @@ Parent tạo/mine/cancel của mình; Admin resolve/reject. Export binary, csv �
 <a id="ep-datarequest-resolvedelete-post"></a>
 #### POST /api/v1/DataRequest/{dataRequestId}/resolve-delete
 
-- Action/chức năng: **ResolveDelete** — Xử lý một Data Request loại Delete: anonymize dữ liệu định danh của trẻ.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L88).
-- Quyền: role ∈ Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ResolveDelete** — Xử lý một Data Request loại Delete: anonymize dữ liệu định danh của trẻ.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L90).
+- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** dataRequestId: `int`; bắt buộc.
 - Response: ApiResponse.data: [DataRequestDto](#dto-datarequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.resolveDelete](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L64); nơi dùng: [AdminSystem.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminSystem.tsx#L86)
@@ -3062,8 +3185,8 @@ Parent tạo/mine/cancel của mình; Admin resolve/reject. Export binary, csv �
 <a id="ep-datarequest-rejectdatarequest-post"></a>
 #### POST /api/v1/DataRequest/{dataRequestId}/reject
 
-- Action/chức năng: **RejectDataRequest** — Administrator từ chối Data Request kèm lý do.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L98).
-- Quyền: role ∈ Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **RejectDataRequest** — Administrator từ chối Data Request kèm lý do.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L100).
+- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** dataRequestId: `int`; bắt buộc<br>**body** request: [RejectDataRequestDto](#dto-rejectdatarequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [DataRequestDto](#dto-datarequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.rejectDataRequest](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L65); nơi dùng: [AdminSystem.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminSystem.tsx#L90)
@@ -3082,8 +3205,8 @@ Generate/publish chỉ Admin, latest-published adult. Giữ reportId; dữ liệ
 <a id="ep-businessreport-generate-post"></a>
 #### POST /api/v1/BusinessReport/generate
 
-- Action/chức năng: **Generate** — Tổng hợp một Business Report mới cho một kỳ báo cáo (trạng thái Compiling).. [BusinessReportController](../src/Core/StoryPlatform.Api/Controllers/BusinessReportController.cs#L24).
-- Quyền: role ∈ Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Generate** — Tổng hợp một Business Report mới cho một kỳ báo cáo (trạng thái Compiling).. [BusinessReportController](../src/Core/StoryPlatform.Api/Controllers/BusinessReportController.cs#L26).
+- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [GenerateBusinessReportRequestDto](#dto-generatebusinessreportrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [BusinessReportDto](#dto-businessreportdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **GỌI_API** — [staffService.generateReport](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L70); nơi dùng: [AdminSystem.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminSystem.tsx#L130)
@@ -3091,8 +3214,8 @@ Generate/publish chỉ Admin, latest-published adult. Giữ reportId; dữ liệ
 <a id="ep-businessreport-publish-post"></a>
 #### POST /api/v1/BusinessReport/{reportId}/publish
 
-- Action/chức năng: **Publish** — Publish một Business Report đang Compiling để hiển thị trên Parent Dashboard.. [BusinessReportController](../src/Core/StoryPlatform.Api/Controllers/BusinessReportController.cs#L37).
-- Quyền: role ∈ Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **Publish** — Publish một Business Report đang Compiling để hiển thị trên Parent Dashboard.. [BusinessReportController](../src/Core/StoryPlatform.Api/Controllers/BusinessReportController.cs#L39).
+- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** reportId: `int`; bắt buộc.
 - Response: ApiResponse.data: [BusinessReportDto](#dto-businessreportdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.publishReport](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L72); nơi dùng: [AdminSystem.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminSystem.tsx#L136)
@@ -3100,8 +3223,8 @@ Generate/publish chỉ Admin, latest-published adult. Giữ reportId; dữ liệ
 <a id="ep-businessreport-getlatestpublished-get"></a>
 #### GET /api/v1/BusinessReport/latest-published
 
-- Action/chức năng: **GetLatestPublished** — Lấy Business Report được publish gần nhất, phục vụ Parent Dashboard.. [BusinessReportController](../src/Core/StoryPlatform.Api/Controllers/BusinessReportController.cs#L49).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetLatestPublished** — Lấy Business Report được publish gần nhất, phục vụ Parent Dashboard.. [BusinessReportController](../src/Core/StoryPlatform.Api/Controllers/BusinessReportController.cs#L51).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: Không có tham số action; dùng token/header theo quyền..
 - Response: ApiResponse.data: [BusinessReportDto](#dto-businessreportdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.latestReport](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L69); nơi dùng: [AdminSystem.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminSystem.tsx#L119)
@@ -3122,8 +3245,8 @@ Plans/transactions adult; mismatch/mark-paid Admin. Webhook có header xác th�
 <a id="ep-payment-listactiveplans-get"></a>
 #### GET /api/v1/Payment/plans
 
-- Action/chức năng: **ListActivePlans** — Danh sách gói Subscription đang active để chọn mua.. [PaymentController](../src/Core/StoryPlatform.Api/Controllers/PaymentController.cs#L24).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ListActivePlans** — Danh sách gói Subscription đang active để chọn mua.. [PaymentController](../src/Core/StoryPlatform.Api/Controllers/PaymentController.cs#L26).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: Không có tham số action; dùng token/header theo quyền..
 - Response: ApiResponse.data: [List&lt;SubscriptionPlanDto&gt;](#dto-subscriptionplandto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -3131,8 +3254,8 @@ Plans/transactions adult; mismatch/mark-paid Admin. Webhook có header xác th�
 <a id="ep-payment-createtransaction-post"></a>
 #### POST /api/v1/Payment/transactions
 
-- Action/chức năng: **CreateTransaction** — Tạo giao dịch thanh toán và sinh mã QR VietQR (Bước 5.6.1).. [PaymentController](../src/Core/StoryPlatform.Api/Controllers/PaymentController.cs#L36).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **CreateTransaction** — Tạo giao dịch thanh toán và sinh mã QR VietQR (Bước 5.6.1).. [PaymentController](../src/Core/StoryPlatform.Api/Controllers/PaymentController.cs#L38).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [CreatePaymentTransactionRequestDto](#dto-createpaymenttransactionrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [PaymentTransactionDto](#dto-paymenttransactiondto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -3140,8 +3263,8 @@ Plans/transactions adult; mismatch/mark-paid Admin. Webhook có header xác th�
 <a id="ep-payment-sepaywebhook-post"></a>
 #### POST /api/v1/Payment/webhook/sepay
 
-- Action/chức năng: **SePayWebhook** — Webhook SePay gọi về khi phát hiện giao dịch chuyển khoản (Bước 5.6.2). Xác thực bằng header Authorization.. [PaymentController](../src/Core/StoryPlatform.Api/Controllers/PaymentController.cs#L49).
-- Quyền: SePay; Authorization riêng do service kiểm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **SePayWebhook** — Webhook SePay gọi về khi phát hiện giao dịch chuyển khoản (Bước 5.6.2). Xác thực bằng header Authorization.. [PaymentController](../src/Core/StoryPlatform.Api/Controllers/PaymentController.cs#L51).
+- Quyền: AllowAnonymous
 - Request: **body** payload: [SePayWebhookPayloadDto](#dto-sepaywebhookpayloaddto); field/validation/ví dụ tại schema.
 - Response: Body rỗng, không parse JSON bắt buộc. HTTP nhánh controller: 200.
 - Frontend: **WEBHOOK** — không cần frontend.
@@ -3149,8 +3272,8 @@ Plans/transactions adult; mismatch/mark-paid Admin. Webhook có header xác th�
 <a id="ep-payment-listmismatched-get"></a>
 #### GET /api/v1/Payment/mismatched
 
-- Action/chức năng: **ListMismatched** — Danh sách giao dịch mismatch_amount cần Administrator xử lý thủ công.. [PaymentController](../src/Core/StoryPlatform.Api/Controllers/PaymentController.cs#L61).
-- Quyền: role ∈ Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ListMismatched** — Danh sách giao dịch mismatch_amount cần Administrator xử lý thủ công.. [PaymentController](../src/Core/StoryPlatform.Api/Controllers/PaymentController.cs#L63).
+- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: Không có tham số action; dùng token/header theo quyền..
 - Response: ApiResponse.data: [List&lt;PaymentTransactionDto&gt;](#dto-paymenttransactiondto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.mismatchedPayments](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L74); nơi dùng: [AdminSystem.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminSystem.tsx#L151)
@@ -3158,8 +3281,8 @@ Plans/transactions adult; mismatch/mark-paid Admin. Webhook có header xác th�
 <a id="ep-payment-markpaidmanually-post"></a>
 #### POST /api/v1/Payment/transactions/{transactionId}/mark-paid
 
-- Action/chức năng: **MarkPaidManually** — Administrator xác nhận thủ công một giao dịch đã nhận được tiền (có audit log).. [PaymentController](../src/Core/StoryPlatform.Api/Controllers/PaymentController.cs#L73).
-- Quyền: role ∈ Administrator; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **MarkPaidManually** — Administrator xác nhận thủ công một giao dịch đã nhận được tiền (có audit log).. [PaymentController](../src/Core/StoryPlatform.Api/Controllers/PaymentController.cs#L75).
+- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** transactionId: `int`; bắt buộc.
 - Response: ApiResponse.data: [PaymentTransactionDto](#dto-paymenttransactiondto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.markPaid](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L75); nơi dùng: [AdminSystem.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminSystem.tsx#L163)
@@ -3180,8 +3303,8 @@ Adult theo người nhận, SignalR mục 12. Frontend USE_MOCK/notificationLoca
 <a id="ep-notification-listnotifications-get"></a>
 #### GET /api/v1/Notification
 
-- Action/chức năng: **ListNotifications** — Lấy thông báo mới nhất trước; lọc bằng ?group=stories|children|supervisors|account|moderation.. [NotificationController](../src/Core/StoryPlatform.Api/Controllers/NotificationController.cs#L25).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **ListNotifications** — Lấy thông báo mới nhất trước; lọc bằng ?group=stories|children|supervisors|account|moderation.. [NotificationController](../src/Core/StoryPlatform.Api/Controllers/NotificationController.cs#L26).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **query** group: `string?`; nullable.
 - Response: ApiResponse.data: [List&lt;NotificationDto&gt;](#dto-notificationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **API_CÓ_MOCK_LOCAL** — [guardianService.notifications](../../AI_Storytelling_Frontend/src/app/services/guardianService.ts#L111); nơi dùng: [NotificationBell.tsx](../../AI_Storytelling_Frontend/src/app/components/shell/NotificationBell.tsx#L23); [SupervisionTodos.tsx](../../AI_Storytelling_Frontend/src/app/features/home/SupervisionTodos.tsx#L24)
@@ -3189,8 +3312,8 @@ Adult theo người nhận, SignalR mục 12. Frontend USE_MOCK/notificationLoca
 <a id="ep-notification-getunreadcount-get"></a>
 #### GET /api/v1/Notification/unread-count
 
-- Action/chức năng: **GetUnreadCount** — Số thông báo chưa đọc của người dùng hiện tại.. [NotificationController](../src/Core/StoryPlatform.Api/Controllers/NotificationController.cs#L35).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetUnreadCount** — Số thông báo chưa đọc của người dùng hiện tại.. [NotificationController](../src/Core/StoryPlatform.Api/Controllers/NotificationController.cs#L36).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: Không có tham số action; dùng token/header theo quyền..
 - Response: ApiResponse.data: `int`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **API_CÓ_MOCK_LOCAL** — [guardianService.unreadNotificationCount](../../AI_Storytelling_Frontend/src/app/services/guardianService.ts#L126); nơi dùng: [NotificationBell.tsx](../../AI_Storytelling_Frontend/src/app/components/shell/NotificationBell.tsx#L33)
@@ -3198,8 +3321,8 @@ Adult theo người nhận, SignalR mục 12. Frontend USE_MOCK/notificationLoca
 <a id="ep-notification-markasread-put"></a>
 #### PUT /api/v1/Notification/{notificationId}/read
 
-- Action/chức năng: **MarkAsRead** — Đánh dấu một thông báo là đã đọc.. [NotificationController](../src/Core/StoryPlatform.Api/Controllers/NotificationController.cs#L47).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **MarkAsRead** — Đánh dấu một thông báo là đã đọc.. [NotificationController](../src/Core/StoryPlatform.Api/Controllers/NotificationController.cs#L48).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** notificationId: `int`; bắt buộc.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **API_CÓ_MOCK_LOCAL** — [guardianService.markNotificationRead](../../AI_Storytelling_Frontend/src/app/services/guardianService.ts#L117); nơi dùng: [NotificationBell.tsx](../../AI_Storytelling_Frontend/src/app/components/shell/NotificationBell.tsx#L54); [SupervisionTodos.tsx](../../AI_Storytelling_Frontend/src/app/features/home/SupervisionTodos.tsx#L52)
@@ -3207,8 +3330,8 @@ Adult theo người nhận, SignalR mục 12. Frontend USE_MOCK/notificationLoca
 <a id="ep-notification-markallasread-put"></a>
 #### PUT /api/v1/Notification/read-all
 
-- Action/chức năng: **MarkAllAsRead** — Đánh dấu toàn bộ thông báo chưa đọc của người dùng hiện tại là đã đọc.. [NotificationController](../src/Core/StoryPlatform.Api/Controllers/NotificationController.cs#L58).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **MarkAllAsRead** — Đánh dấu toàn bộ thông báo chưa đọc của người dùng hiện tại là đã đọc.. [NotificationController](../src/Core/StoryPlatform.Api/Controllers/NotificationController.cs#L59).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: Không có tham số action; dùng token/header theo quyền..
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **API_CÓ_MOCK_LOCAL** — [guardianService.markAllNotificationsRead](../../AI_Storytelling_Frontend/src/app/services/guardianService.ts#L121); nơi dùng: [NotificationBell.tsx](../../AI_Storytelling_Frontend/src/app/components/shell/NotificationBell.tsx#L72)
@@ -3216,8 +3339,8 @@ Adult theo người nhận, SignalR mục 12. Frontend USE_MOCK/notificationLoca
 <a id="ep-notification-deletenotification-delete"></a>
 #### DELETE /api/v1/Notification/{notificationId}
 
-- Action/chức năng: **DeleteNotification** — Xoá một thông báo của người dùng hiện tại.. [NotificationController](../src/Core/StoryPlatform.Api/Controllers/NotificationController.cs#L69).
-- Quyền: JWT người lớn; quyền resource xem guard nhóm. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **DeleteNotification** — Xoá một thông báo của người dùng hiện tại.. [NotificationController](../src/Core/StoryPlatform.Api/Controllers/NotificationController.cs#L70).
+- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** notificationId: `int`; bắt buộc.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **API_CÓ_MOCK_LOCAL** — [guardianService.deleteNotification](../../AI_Storytelling_Frontend/src/app/services/guardianService.ts#L132); nơi dùng: [NotificationBell.tsx](../../AI_Storytelling_Frontend/src/app/components/shell/NotificationBell.tsx#L61)
@@ -3239,8 +3362,8 @@ GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PU
 <a id="ep-story-getstories-get"></a>
 #### GET /api/v1/Story
 
-- Action/chức năng: **GetStories** — Lấy danh sách câu chuyện có hỗ trợ bộ lọc và phân trang. [StoryController](../src/Core/StoryPlatform.Api/Controllers/StoryController.cs#L23).
-- Quyền: Khách/AllowAnonymous. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetStories** — Lấy danh sách câu chuyện có hỗ trợ bộ lọc và phân trang. [StoryController](../src/Core/StoryPlatform.Api/Controllers/StoryController.cs#L25).
+- Quyền: AllowAnonymous
 - Request: **query** filter: [StoryFilterRequestDto](#dto-storyfilterrequestdto).
 - Response: ApiResponse.data: [PagedResult&lt;StoryDto&gt;](#dto-pagedresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [storyService.getStories](../../AI_Storytelling_Frontend/src/app/services/storyService.ts#L15); nơi dùng: [WorkspaceDataContext.tsx](../../AI_Storytelling_Frontend/src/app/context/WorkspaceDataContext.tsx#L58); [readingService.ts](../../AI_Storytelling_Frontend/src/app/services/readingService.ts#L68)
@@ -3248,8 +3371,8 @@ GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PU
 <a id="ep-story-getstorybyid-get"></a>
 #### GET /api/v1/Story/{id}
 
-- Action/chức năng: **GetStoryById** — Lấy chi tiết câu chuyện theo ID. [StoryController](../src/Core/StoryPlatform.Api/Controllers/StoryController.cs#L36).
-- Quyền: Khách/AllowAnonymous. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **GetStoryById** — Lấy chi tiết câu chuyện theo ID. [StoryController](../src/Core/StoryPlatform.Api/Controllers/StoryController.cs#L38).
+- Quyền: AllowAnonymous
 - Request: **path** id: `int`; bắt buộc.
 - Response: ApiResponse.data: [StoryDto](#dto-storydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [storyService.getStoryById](../../AI_Storytelling_Frontend/src/app/services/storyService.ts#L24); nơi dùng: [LibraryWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/library/LibraryWorkspace.tsx#L44); [ModerationDialogs.tsx](../../AI_Storytelling_Frontend/src/app/features/library/ModerationDialogs.tsx#L76)
@@ -3257,8 +3380,8 @@ GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PU
 <a id="ep-story-createstory-post"></a>
 #### POST /api/v1/Story
 
-- Action/chức năng: **CreateStory** — Tạo câu chuyện mới (yêu cầu đăng nhập). [StoryController](../src/Core/StoryPlatform.Api/Controllers/StoryController.cs#L49).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **CreateStory** — Tạo câu chuyện mới (yêu cầu đăng nhập). [StoryController](../src/Core/StoryPlatform.Api/Controllers/StoryController.cs#L51).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [CreateStoryRequestDto](#dto-createstoryrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [StoryDto](#dto-storydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -3266,8 +3389,8 @@ GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PU
 <a id="ep-story-updatestory-put"></a>
 #### PUT /api/v1/Story/{id}
 
-- Action/chức năng: **UpdateStory** — Chỉnh sửa câu chuyện (yêu cầu là tác giả). [StoryController](../src/Core/StoryPlatform.Api/Controllers/StoryController.cs#L63).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **UpdateStory** — Chỉnh sửa câu chuyện (yêu cầu là tác giả). [StoryController](../src/Core/StoryPlatform.Api/Controllers/StoryController.cs#L65).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc<br>**body** request: [Stories.UpdateStoryRequestDto](#dto-stories-updatestoryrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [StoryDto](#dto-storydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -3275,8 +3398,8 @@ GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PU
 <a id="ep-story-deletestory-delete"></a>
 #### DELETE /api/v1/Story/{id}
 
-- Action/chức năng: **DeleteStory** — Xóa câu chuyện (Soft Delete - yêu cầu là tác giả). [StoryController](../src/Core/StoryPlatform.Api/Controllers/StoryController.cs#L78).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **DeleteStory** — Xóa câu chuyện (Soft Delete - yêu cầu là tác giả). [StoryController](../src/Core/StoryPlatform.Api/Controllers/StoryController.cs#L80).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc.
 - Response: ApiResponse.data: `bool`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -3284,11 +3407,731 @@ GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PU
 <a id="ep-story-publishstory-patch"></a>
 #### PATCH /api/v1/Story/{id}/publish
 
-- Action/chức năng: **PublishStory** — Phát hành câu chuyện công khai (Publish). [StoryController](../src/Core/StoryPlatform.Api/Controllers/StoryController.cs#L92).
-- Quyền: role ∈ Parent; guard nhóm vẫn áp dụng. Điều kiện nghiệp vụ: xem ghi chú nhóm và luồng actor.
+- Action/chức năng: **PublishStory** — Phát hành câu chuyện công khai (Publish). [StoryController](../src/Core/StoryPlatform.Api/Controllers/StoryController.cs#L94).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc.
 - Response: ApiResponse.data: `bool`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
+
+<a id="controller-childroadmap"></a>
+### ChildRoadmap — 5 route
+
+Guard/nghiệp vụ: [ChildRoadmapService.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/Services/ChildRoadmapService.cs).
+
+P6. Parent đọc theo giám sát hiện hành; thay đổi cần AssignActivity. Add trả kết quả riêng từng trẻ. Reorder chỉ gồm đúng toàn bộ item Waiting; Open không kéo thả. Remove Open sẽ mở bước tiếp theo; clear gỡ Open/Waiting, giữ lịch sử.
+
+| Method + route | Mapping |
+|---|---|
+| [POST /api/v1/ChildRoadmap/stories](#ep-childroadmap-addstory-post) | CHƯA_RÀ_FRONTEND |
+| [GET /api/v1/ChildRoadmap/{childProfileId}](#ep-childroadmap-get-get) | CHƯA_RÀ_FRONTEND |
+| [DELETE /api/v1/ChildRoadmap/{childProfileId}/items/{itemId}](#ep-childroadmap-remove-delete) | CHƯA_RÀ_FRONTEND |
+| [PUT /api/v1/ChildRoadmap/{childProfileId}/order](#ep-childroadmap-reorder-put) | CHƯA_RÀ_FRONTEND |
+| [DELETE /api/v1/ChildRoadmap/{childProfileId}/items](#ep-childroadmap-clear-delete) | CHƯA_RÀ_FRONTEND |
+
+<a id="ep-childroadmap-addstory-post"></a>
+#### POST /api/v1/ChildRoadmap/stories
+
+- Action: **AddStory**. [ChildRoadmapController](../src/Core/StoryPlatform.Api/Controllers/ChildRoadmapController.cs#L21).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Request: **body** `request`: [AddRoadmapStoryRequestDto](#dto-addroadmapstoryrequestdto).
+- Response: ApiResponse.data: [AddRoadmapStoryResultDto](#dto-addroadmapstoryresultdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-childroadmap-get-get"></a>
+#### GET /api/v1/ChildRoadmap/{childProfileId}
+
+- Action: **Get**. [ChildRoadmapController](../src/Core/StoryPlatform.Api/Controllers/ChildRoadmapController.cs#L29).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `childProfileId`: `int`.
+- Response: ApiResponse.data: [ChildRoadmapDto](#dto-childroadmapdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-childroadmap-remove-delete"></a>
+#### DELETE /api/v1/ChildRoadmap/{childProfileId}/items/{itemId}
+
+- Action: **Remove**. [ChildRoadmapController](../src/Core/StoryPlatform.Api/Controllers/ChildRoadmapController.cs#L37).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `childProfileId`: `int`; **path** `itemId`: `int`.
+- Response: ApiResponse.data: [ChildRoadmapDto](#dto-childroadmapdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-childroadmap-reorder-put"></a>
+#### PUT /api/v1/ChildRoadmap/{childProfileId}/order
+
+- Action: **Reorder**. [ChildRoadmapController](../src/Core/StoryPlatform.Api/Controllers/ChildRoadmapController.cs#L45).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `childProfileId`: `int`; **body** `request`: [ReorderRoadmapRequestDto](#dto-reorderroadmaprequestdto).
+- Response: ApiResponse.data: [ChildRoadmapDto](#dto-childroadmapdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-childroadmap-clear-delete"></a>
+#### DELETE /api/v1/ChildRoadmap/{childProfileId}/items
+
+- Action: **Clear**. [ChildRoadmapController](../src/Core/StoryPlatform.Api/Controllers/ChildRoadmapController.cs#L53).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `childProfileId`: `int`.
+- Response: ApiResponse.data: [ChildRoadmapDto](#dto-childroadmapdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="controller-communitylibrary"></a>
+### CommunityLibrary — 2 route
+
+Guard/nghiệp vụ: [CommunityLibraryService.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/Services/CommunityLibraryService.cs).
+
+C5. ChildSession; lọc tuổi/chính sách, tác giả luôn Cộng đồng. Hai GET trả metadata CommunityStoryDto, không trả toàn bộ văn bản/media để tự triển khai reader. Detail dùng submissionId, không phải storyId/itemId.
+
+| Method + route | Mapping |
+|---|---|
+| [GET /api/v1/CommunityLibrary](#ep-communitylibrary-list-get) | CHƯA_RÀ_FRONTEND |
+| [GET /api/v1/CommunityLibrary/{submissionId}](#ep-communitylibrary-get-get) | CHƯA_RÀ_FRONTEND |
+
+<a id="ep-communitylibrary-list-get"></a>
+#### GET /api/v1/CommunityLibrary
+
+- Action: **List**. [CommunityLibraryController](../src/Core/StoryPlatform.Api/Controllers/CommunityLibraryController.cs#L26).
+- Quyền: Policy ChildSession; kèm guard nghiệp vụ của nhóm.
+- Request: **query** `query`: [CommunityLibraryQueryDto](#dto-communitylibraryquerydto).
+- Response: ApiResponse.data: [PagedResult&lt;CommunityStoryDto&gt;](#dto-communitystorydto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-communitylibrary-get-get"></a>
+#### GET /api/v1/CommunityLibrary/{submissionId}
+
+- Action: **Get**. [CommunityLibraryController](../src/Core/StoryPlatform.Api/Controllers/CommunityLibraryController.cs#L35).
+- Quyền: Policy ChildSession; kèm guard nghiệp vụ của nhóm.
+- Request: **path** `submissionId`: `int`.
+- Response: ApiResponse.data: [CommunityStoryDto](#dto-communitystorydto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="controller-communityreview"></a>
+### CommunityReview — 5 route
+
+Guard/nghiệp vụ: [CommunityReviewService.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/Services/CommunityReviewService.cs).
+
+MO5. Claim đúng CommunitySubmission còn hiệu lực, cấm tự duyệt. Checklist safety_baseline/no_personal_info/metadata_labels, nhãn hợp lệ và PII sạch trước approve. Nội dung duyệt là bản ghim và đã che thông tin cá nhân.
+
+| Method + route | Mapping |
+|---|---|
+| [GET /api/v1/CommunityReview/{itemId}](#ep-communityreview-getpackage-get) | CHƯA_RÀ_FRONTEND |
+| [PUT /api/v1/CommunityReview/{itemId}/checklist](#ep-communityreview-savechecklist-put) | CHƯA_RÀ_FRONTEND |
+| [PUT /api/v1/CommunityReview/{itemId}/labels](#ep-communityreview-setlabels-put) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/CommunityReview/{itemId}/approve](#ep-communityreview-approve-post) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/CommunityReview/{itemId}/reject](#ep-communityreview-reject-post) | CHƯA_RÀ_FRONTEND |
+
+<a id="ep-communityreview-getpackage-get"></a>
+#### GET /api/v1/CommunityReview/{itemId}
+
+- Action: **GetPackage**. [CommunityReviewController](../src/Core/StoryPlatform.Api/Controllers/CommunityReviewController.cs#L26).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `itemId`: `int`.
+- Response: ApiResponse.data: [CommunityReviewPackageDto](#dto-communityreviewpackagedto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-communityreview-savechecklist-put"></a>
+#### PUT /api/v1/CommunityReview/{itemId}/checklist
+
+- Action: **SaveChecklist**. [CommunityReviewController](../src/Core/StoryPlatform.Api/Controllers/CommunityReviewController.cs#L35).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `itemId`: `int`; **body** `request`: [SaveCommunityChecklistRequestDto](#dto-savecommunitychecklistrequestdto).
+- Response: ApiResponse.data: [List&lt;CommunityChecklistEntryDto&gt;](#dto-communitychecklistentrydto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-communityreview-setlabels-put"></a>
+#### PUT /api/v1/CommunityReview/{itemId}/labels
+
+- Action: **SetLabels**. [CommunityReviewController](../src/Core/StoryPlatform.Api/Controllers/CommunityReviewController.cs#L44).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `itemId`: `int`; **body** `request`: [SetCommunityLabelsRequestDto](#dto-setcommunitylabelsrequestdto).
+- Response: ApiResponse.data: [List&lt;CommunityLabelDto&gt;](#dto-communitylabeldto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-communityreview-approve-post"></a>
+#### POST /api/v1/CommunityReview/{itemId}/approve
+
+- Action: **Approve**. [CommunityReviewController](../src/Core/StoryPlatform.Api/Controllers/CommunityReviewController.cs#L57).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `itemId`: `int`.
+- Response: ApiResponse.data: [CommunityReviewDecisionResultDto](#dto-communityreviewdecisionresultdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-communityreview-reject-post"></a>
+#### POST /api/v1/CommunityReview/{itemId}/reject
+
+- Action: **Reject**. [CommunityReviewController](../src/Core/StoryPlatform.Api/Controllers/CommunityReviewController.cs#L66).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `itemId`: `int`; **body** `request`: [RejectCommunityRequestDto](#dto-rejectcommunityrequestdto).
+- Response: ApiResponse.data: [CommunityReviewDecisionResultDto](#dto-communityreviewdecisionresultdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="controller-communitysubmission"></a>
+### CommunitySubmission — 5 route
+
+Guard/nghiệp vụ: [CommunitySubmissionService.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/Services/CommunitySubmissionService.cs).
+
+P7. Parent + ApproveStory trên hồ sơ nguồn, kiểm eligibility/PII. Check không nộp; Submit ghim phiên bản hiện hành. Dùng itemId cho withdraw/remove; tôn trọng canWithdraw/canRemove.
+
+| Method + route | Mapping |
+|---|---|
+| [POST /api/v1/CommunitySubmission/check](#ep-communitysubmission-check-post) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/CommunitySubmission](#ep-communitysubmission-submit-post) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/CommunitySubmission/{itemId}/withdraw](#ep-communitysubmission-withdraw-post) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/CommunitySubmission/{itemId}/remove](#ep-communitysubmission-remove-post) | CHƯA_RÀ_FRONTEND |
+| [GET /api/v1/CommunitySubmission/mine](#ep-communitysubmission-listmine-get) | CHƯA_RÀ_FRONTEND |
+
+<a id="ep-communitysubmission-check-post"></a>
+#### POST /api/v1/CommunitySubmission/check
+
+- Action: **Check**. [CommunitySubmissionController](../src/Core/StoryPlatform.Api/Controllers/CommunitySubmissionController.cs#L26).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Request: **body** `request`: [CommunitySubmitRequestDto](#dto-communitysubmitrequestdto).
+- Response: ApiResponse.data: [CommunityEligibilityDto](#dto-communityeligibilitydto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-communitysubmission-submit-post"></a>
+#### POST /api/v1/CommunitySubmission
+
+- Action: **Submit**. [CommunitySubmissionController](../src/Core/StoryPlatform.Api/Controllers/CommunitySubmissionController.cs#L39).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Request: **body** `request`: [CommunitySubmitRequestDto](#dto-communitysubmitrequestdto).
+- Response: ApiResponse.data: [CommunitySubmitResultDto](#dto-communitysubmitresultdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-communitysubmission-withdraw-post"></a>
+#### POST /api/v1/CommunitySubmission/{itemId}/withdraw
+
+- Action: **Withdraw**. [CommunitySubmissionController](../src/Core/StoryPlatform.Api/Controllers/CommunitySubmissionController.cs#L48).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `itemId`: `int`.
+- Response: ApiResponse.data: [CommunitySubmissionDto](#dto-communitysubmissiondto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-communitysubmission-remove-post"></a>
+#### POST /api/v1/CommunitySubmission/{itemId}/remove
+
+- Action: **Remove**. [CommunitySubmissionController](../src/Core/StoryPlatform.Api/Controllers/CommunitySubmissionController.cs#L57).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `itemId`: `int`.
+- Response: ApiResponse.data: [CommunitySubmissionDto](#dto-communitysubmissiondto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-communitysubmission-listmine-get"></a>
+#### GET /api/v1/CommunitySubmission/mine
+
+- Action: **ListMine**. [CommunitySubmissionController](../src/Core/StoryPlatform.Api/Controllers/CommunitySubmissionController.cs#L66).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Request: không có body/query/path ngoài ngữ cảnh xác thực..
+- Response: ApiResponse.data: [List&lt;CommunitySubmissionDto&gt;](#dto-communitysubmissiondto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="controller-creatormoderationcheck"></a>
+### CreatorModerationCheck — 1 route
+
+Guard/nghiệp vụ: [GrayZoneContentCheckService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Services/GrayZoneContentCheckService.cs).
+
+CR5. ContentCreator đang hoạt động, đúng scope/tác giả và version hiện hành. Check đánh giá vùng xám và có thể gọi AI; không đồng nghĩa xác nhận nội dung, public approve hay tạo yêu cầu PublicStorySubmission.
+
+| Method + route | Mapping |
+|---|---|
+| [POST /api/v1/creator/stories/{storyId}/content/check](#ep-creatormoderationcheck-check-post) | CHƯA_RÀ_FRONTEND |
+
+<a id="ep-creatormoderationcheck-check-post"></a>
+#### POST /api/v1/creator/stories/{storyId}/content/check
+
+- Action: **Check**. [CreatorModerationCheckController](../src/Core/StoryPlatform.Api/Controllers/CreatorModerationCheckController.cs#L14).
+- Quyền: (ContentCreator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `storyId`: `int`; **body** `request`: [CheckRequest](#dto-checkrequest).
+- Response: ApiResponse.data: [GrayZoneContentCheckDto](#dto-grayzonecontentcheckdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="controller-creatorpublication"></a>
+### CreatorPublication — 4 route
+
+Guard/nghiệp vụ: [CreatorPublicationService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Services/CreatorPublicationService.cs).
+
+CR4/MO7. Nội dung bản nộp bị khóa; status, removal và revision là luồng riêng. Quyết định gỡ dùng itemId và rowVersion, có claim/guard. HTTP 200 không suy toàn bộ truyện đã được publish lại.
+
+| Method + route | Mapping |
+|---|---|
+| [GET /api/v1/creator/stories/{storyId}/publication](#ep-creatorpublication-getstatus-get) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/creator/stories/{storyId}/removal-requests](#ep-creatorpublication-requestremoval-post) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/creator/stories/{storyId}/revisions](#ep-creatorpublication-createrevision-post) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/moderation/public-story-removals/{itemId}/decision](#ep-creatorpublication-decideremoval-post) | CHƯA_RÀ_FRONTEND |
+
+<a id="ep-creatorpublication-getstatus-get"></a>
+#### GET /api/v1/creator/stories/{storyId}/publication
+
+- Action: **GetStatus**. [CreatorPublicationController](../src/Core/StoryPlatform.Api/Controllers/CreatorPublicationController.cs#L12).
+- Quyền: (ContentCreator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `storyId`: `int`.
+- Response: ApiResponse.data: [CreatorPublicationStatus](#dto-creatorpublicationstatus). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-creatorpublication-requestremoval-post"></a>
+#### POST /api/v1/creator/stories/{storyId}/removal-requests
+
+- Action: **RequestRemoval**. [CreatorPublicationController](../src/Core/StoryPlatform.Api/Controllers/CreatorPublicationController.cs#L16).
+- Quyền: (ContentCreator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `storyId`: `int`; **body** `input`: [CreatorRemovalRequest](#dto-creatorremovalrequest).
+- Response: ApiResponse.data: [CreatorPublicationResult](#dto-creatorpublicationresult). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-creatorpublication-createrevision-post"></a>
+#### POST /api/v1/creator/stories/{storyId}/revisions
+
+- Action: **CreateRevision**. [CreatorPublicationController](../src/Core/StoryPlatform.Api/Controllers/CreatorPublicationController.cs#L20).
+- Quyền: (ContentCreator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `storyId`: `int`; **body** `input`: [CreatorRevisionRequest](#dto-creatorrevisionrequest).
+- Response: ApiResponse.data: [CreatorPublicationResult](#dto-creatorpublicationresult). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-creatorpublication-decideremoval-post"></a>
+#### POST /api/v1/moderation/public-story-removals/{itemId}/decision
+
+- Action: **DecideRemoval**. [CreatorPublicationController](../src/Core/StoryPlatform.Api/Controllers/CreatorPublicationController.cs#L24).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `itemId`: `int`; **body** `input`: [RemovalDecisionRequest](#dto-removaldecisionrequest).
+- Response: ApiResponse.data: [CreatorPublicationResult](#dto-creatorpublicationresult). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="controller-grayzonereview"></a>
+### GrayZoneReview — 2 route
+
+Guard/nghiệp vụ: [GrayZoneWorkflowService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Services/GrayZoneWorkflowService.cs).
+
+MO6. Claim GrayZoneStory còn hiệu lực; cấm tự duyệt. Package đã mask, giữ rowVersion. Clear/Block kiểm fingerprint/checkpoint; Clear tiếp tục luồng Parent bị chờ, không publish Creator. Decision trả object success/message không có data/errors.
+
+| Method + route | Mapping |
+|---|---|
+| [GET /api/v1/moderation/gray-zone-stories/{itemId}](#ep-grayzonereview-get-get) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/moderation/gray-zone-stories/{itemId}/decision](#ep-grayzonereview-decide-post) | CHƯA_RÀ_FRONTEND |
+
+<a id="ep-grayzonereview-get-get"></a>
+#### GET /api/v1/moderation/gray-zone-stories/{itemId}
+
+- Action: **Get**. [GrayZoneReviewController](../src/Core/StoryPlatform.Api/Controllers/GrayZoneReviewController.cs#L12).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `itemId`: `int`.
+- Response: ApiResponse.data: [GrayZoneReviewDto](#dto-grayzonereviewdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-grayzonereview-decide-post"></a>
+#### POST /api/v1/moderation/gray-zone-stories/{itemId}/decision
+
+- Action: **Decide**. [GrayZoneReviewController](../src/Core/StoryPlatform.Api/Controllers/GrayZoneReviewController.cs#L16).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `itemId`: `int`; **body** `request`: [GrayZoneDecisionRequest](#dto-grayzonedecisionrequest).
+- Response: Object JSON {success: true, message: string}; không có data/errors. HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="controller-moderationrubrics"></a>
+### ModerationRubrics — 11 route
+
+Guard/nghiệp vụ: [ModerationRubricService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Rubrics/ModerationRubricService.cs).
+
+MO8/AD1. Moderator/Administrator xem và soạn; chỉ Administrator activate. Draft mới được update/delete/activate, revision chống ghi đè. Active/Retired muốn sửa phải clone. Evaluate gọi provider thật và ghi audit. Các response object có hình dạng riêng ở dưới.
+
+| Method + route | Mapping |
+|---|---|
+| [GET /api/v1/moderation/rubrics](#ep-moderationrubrics-list-get) | CHƯA_RÀ_FRONTEND |
+| [GET /api/v1/moderation/rubrics/active](#ep-moderationrubrics-active-get) | CHƯA_RÀ_FRONTEND |
+| [GET /api/v1/moderation/rubrics/{id}](#ep-moderationrubrics-get-get) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/moderation/rubrics](#ep-moderationrubrics-create-post) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/moderation/rubrics/{id}/clone](#ep-moderationrubrics-clone-post) | CHƯA_RÀ_FRONTEND |
+| [PUT /api/v1/moderation/rubrics/{id}](#ep-moderationrubrics-update-put) | CHƯA_RÀ_FRONTEND |
+| [DELETE /api/v1/moderation/rubrics/{id}](#ep-moderationrubrics-delete-delete) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/moderation/rubrics/{id}/validate](#ep-moderationrubrics-validate-post) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/moderation/rubrics/{id}/evaluations](#ep-moderationrubrics-evaluate-post) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/moderation/rubrics/{id}/activate](#ep-moderationrubrics-activate-post) | CHƯA_RÀ_FRONTEND |
+| [GET /api/v1/moderation/rubrics/{id}/audit-logs](#ep-moderationrubrics-logs-get) | CHƯA_RÀ_FRONTEND |
+
+<a id="ep-moderationrubrics-list-get"></a>
+#### GET /api/v1/moderation/rubrics
+
+- Action: **List**. [ModerationRubricsController](../src/Core/StoryPlatform.Api/Controllers/ModerationRubricsController.cs#L12).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **query** `status`: `string?`; **query** `pageIndex`: `int` (mặc định `1`); **query** `pageSize`: `int` (mặc định `20`).
+- Response: ApiResponse.data = {items: RubricDto[], totalCount: int, pageIndex: int, pageSize: int}; không có totalPages/hasNextPage của PagedResult. HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-moderationrubrics-active-get"></a>
+#### GET /api/v1/moderation/rubrics/active
+
+- Action: **Active**. [ModerationRubricsController](../src/Core/StoryPlatform.Api/Controllers/ModerationRubricsController.cs#L15).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: không có body/query/path ngoài ngữ cảnh xác thực..
+- Response: ApiResponse.data: [RubricSnapshot](#dto-rubricsnapshot). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-moderationrubrics-get-get"></a>
+#### GET /api/v1/moderation/rubrics/{id}
+
+- Action: **Get**. [ModerationRubricsController](../src/Core/StoryPlatform.Api/Controllers/ModerationRubricsController.cs#L17).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `id`: `int`.
+- Response: ApiResponse.data: [RubricDto](#dto-rubricdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-moderationrubrics-create-post"></a>
+#### POST /api/v1/moderation/rubrics
+
+- Action: **Create**. [ModerationRubricsController](../src/Core/StoryPlatform.Api/Controllers/ModerationRubricsController.cs#L19).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **body** `request`: [RubricWriteRequest](#dto-rubricwriterequest).
+- Response: ApiResponse.data: [RubricDto](#dto-rubricdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-moderationrubrics-clone-post"></a>
+#### POST /api/v1/moderation/rubrics/{id}/clone
+
+- Action: **Clone**. [ModerationRubricsController](../src/Core/StoryPlatform.Api/Controllers/ModerationRubricsController.cs#L21).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `id`: `int`; **body** `request`: [RubricCloneRequest](#dto-rubricclonerequest).
+- Response: ApiResponse.data: [RubricDto](#dto-rubricdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-moderationrubrics-update-put"></a>
+#### PUT /api/v1/moderation/rubrics/{id}
+
+- Action: **Update**. [ModerationRubricsController](../src/Core/StoryPlatform.Api/Controllers/ModerationRubricsController.cs#L23).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `id`: `int`; **body** `request`: [RubricWriteRequest](#dto-rubricwriterequest).
+- Response: ApiResponse.data: [RubricDto](#dto-rubricdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-moderationrubrics-delete-delete"></a>
+#### DELETE /api/v1/moderation/rubrics/{id}
+
+- Action: **Delete**. [ModerationRubricsController](../src/Core/StoryPlatform.Api/Controllers/ModerationRubricsController.cs#L25).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `id`: `int`; **query** `revision`: `int`.
+- Response: ApiResponse.data: `bool`. HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-moderationrubrics-validate-post"></a>
+#### POST /api/v1/moderation/rubrics/{id}/validate
+
+- Action: **Validate**. [ModerationRubricsController](../src/Core/StoryPlatform.Api/Controllers/ModerationRubricsController.cs#L27).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `id`: `int`; **body** `request`: [RubricRevisionRequest](#dto-rubricrevisionrequest).
+- Response: ApiResponse.data = {valid: true, id: int, revision: int, contentHash: string, schemaVersion: string}. HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-moderationrubrics-evaluate-post"></a>
+#### POST /api/v1/moderation/rubrics/{id}/evaluations
+
+- Action: **Evaluate**. [ModerationRubricsController](../src/Core/StoryPlatform.Api/Controllers/ModerationRubricsController.cs#L29).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `id`: `int`; **body** `request`: [RubricEvaluationRequest](#dto-rubricevaluationrequest).
+- Response: ApiResponse.data = {rubricId: int, version: string, contentHash: string, revision: int, provider: string, model: string, riskScore: decimal, scores: GrayZoneCriterionScore[], findings: GrayZoneFinding[]}. HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-moderationrubrics-activate-post"></a>
+#### POST /api/v1/moderation/rubrics/{id}/activate
+
+- Action: **Activate**. [ModerationRubricsController](../src/Core/StoryPlatform.Api/Controllers/ModerationRubricsController.cs#L32).
+- Quyền: (Moderator hoặc Administrator) AND (Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `id`: `int`; **body** `request`: [RubricRevisionRequest](#dto-rubricrevisionrequest).
+- Response: ApiResponse.data: [RubricDto](#dto-rubricdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-moderationrubrics-logs-get"></a>
+#### GET /api/v1/moderation/rubrics/{id}/audit-logs
+
+- Action: **Logs**. [ModerationRubricsController](../src/Core/StoryPlatform.Api/Controllers/ModerationRubricsController.cs#L34).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `id`: `int`; **query** `pageIndex`: `int` (mặc định `1`); **query** `pageSize`: `int` (mặc định `20`).
+- Response: ApiResponse.data = {items: [{id, actorUserId, action, createdAt, beforeJson, afterJson}], totalCount: int, pageIndex: int, pageSize: int}; beforeJson/afterJson là chuỗi JSON nullable, không tự coi là object đã parse. HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="controller-myroadmap"></a>
+### MyRoadmap — 1 route
+
+Guard/nghiệp vụ: [MyRoadmapService.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/Services/MyRoadmapService.cs).
+
+C4. ChildSession; childProfileId lấy từ token, không nhận ID trẻ tùy ý. Đây là danh sách bước và khả năng mở, chưa phải API ghi reading session/completion.
+
+| Method + route | Mapping |
+|---|---|
+| [GET /api/v1/MyRoadmap](#ep-myroadmap-get-get) | CHƯA_RÀ_FRONTEND |
+
+<a id="ep-myroadmap-get-get"></a>
+#### GET /api/v1/MyRoadmap
+
+- Action: **Get**. [MyRoadmapController](../src/Core/StoryPlatform.Api/Controllers/MyRoadmapController.cs#L22).
+- Quyền: Policy ChildSession; kèm guard nghiệp vụ của nhóm.
+- Request: không có body/query/path ngoài ngữ cảnh xác thực..
+- Response: ApiResponse.data: [MyRoadmapDto](#dto-myroadmapdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="controller-publishedcontentreview"></a>
+### PublishedContentReview — 4 route
+
+Guard/nghiệp vụ: [PublishedContentReviewService.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/Services/PublishedContentReviewService.cs).
+
+MO9. Moderator/Administrator đọc nội dung đang public; chỉ Moderator tạo review-item. readingRoadmapId tùy chọn phải là bộ công khai chứa truyện. Tạo report/moderation item, không trực tiếp archive.
+
+| Method + route | Mapping |
+|---|---|
+| [GET /api/v1/PublishedContentReview](#ep-publishedcontentreview-list-get) | CHƯA_RÀ_FRONTEND |
+| [GET /api/v1/PublishedContentReview/stories/{storyId}](#ep-publishedcontentreview-getstory-get) | CHƯA_RÀ_FRONTEND |
+| [GET /api/v1/PublishedContentReview/roadmaps/{roadmapId}](#ep-publishedcontentreview-getroadmap-get) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/PublishedContentReview/review-items](#ep-publishedcontentreview-createreviewitem-post) | CHƯA_RÀ_FRONTEND |
+
+<a id="ep-publishedcontentreview-list-get"></a>
+#### GET /api/v1/PublishedContentReview
+
+- Action: **List**. [PublishedContentReviewController](../src/Core/StoryPlatform.Api/Controllers/PublishedContentReviewController.cs#L25).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **query** `query`: [PublishedContentQueryDto](#dto-publishedcontentquerydto).
+- Response: ApiResponse.data: [PagedResult&lt;PublishedContentItemDto&gt;](#dto-publishedcontentitemdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-publishedcontentreview-getstory-get"></a>
+#### GET /api/v1/PublishedContentReview/stories/{storyId}
+
+- Action: **GetStory**. [PublishedContentReviewController](../src/Core/StoryPlatform.Api/Controllers/PublishedContentReviewController.cs#L34).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `storyId`: `int`.
+- Response: ApiResponse.data: [PublishedStoryContentDto](#dto-publishedstorycontentdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-publishedcontentreview-getroadmap-get"></a>
+#### GET /api/v1/PublishedContentReview/roadmaps/{roadmapId}
+
+- Action: **GetRoadmap**. [PublishedContentReviewController](../src/Core/StoryPlatform.Api/Controllers/PublishedContentReviewController.cs#L43).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `roadmapId`: `int`.
+- Response: ApiResponse.data: [PublishedRoadmapDto](#dto-publishedroadmapdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-publishedcontentreview-createreviewitem-post"></a>
+#### POST /api/v1/PublishedContentReview/review-items
+
+- Action: **CreateReviewItem**. [PublishedContentReviewController](../src/Core/StoryPlatform.Api/Controllers/PublishedContentReviewController.cs#L53).
+- Quyền: (Moderator hoặc Administrator) AND (Moderator); kèm guard nghiệp vụ của nhóm.
+- Request: **body** `request`: [CreateReviewItemRequestDto](#dto-createreviewitemrequestdto).
+- Response: ApiResponse.data: [ContentReportResultDto](#dto-contentreportresultdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="controller-roadmaplibrary"></a>
+### RoadmapLibrary — 4 route
+
+Guard/nghiệp vụ: [RoadmapLibraryService.Copy.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/Services/RoadmapLibraryService.Copy.cs).
+
+P6. Parent duyệt thư viện bộ đã công khai, preview kế hoạch rồi copy cho các trẻ. Copy kiểm lại điều kiện; đọc từng outcome/skipCode/action/warnings, không coi HTTP 200 là mọi trẻ đều đã được thêm.
+
+| Method + route | Mapping |
+|---|---|
+| [GET /api/v1/RoadmapLibrary](#ep-roadmaplibrary-list-get) | CHƯA_RÀ_FRONTEND |
+| [GET /api/v1/RoadmapLibrary/{roadmapId}](#ep-roadmaplibrary-get-get) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/RoadmapLibrary/{roadmapId}/preview](#ep-roadmaplibrary-preview-post) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/RoadmapLibrary/{roadmapId}/copy](#ep-roadmaplibrary-copy-post) | CHƯA_RÀ_FRONTEND |
+
+<a id="ep-roadmaplibrary-list-get"></a>
+#### GET /api/v1/RoadmapLibrary
+
+- Action: **List**. [RoadmapLibraryController](../src/Core/StoryPlatform.Api/Controllers/RoadmapLibraryController.cs#L21).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Request: **query** `query`: [RoadmapLibraryQueryDto](#dto-roadmaplibraryquerydto).
+- Response: ApiResponse.data: [PagedResult&lt;RoadmapLibraryItemDto&gt;](#dto-roadmaplibraryitemdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-roadmaplibrary-get-get"></a>
+#### GET /api/v1/RoadmapLibrary/{roadmapId}
+
+- Action: **Get**. [RoadmapLibraryController](../src/Core/StoryPlatform.Api/Controllers/RoadmapLibraryController.cs#L29).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `roadmapId`: `int`.
+- Response: ApiResponse.data: [RoadmapLibraryDetailDto](#dto-roadmaplibrarydetaildto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-roadmaplibrary-preview-post"></a>
+#### POST /api/v1/RoadmapLibrary/{roadmapId}/preview
+
+- Action: **Preview**. [RoadmapLibraryController](../src/Core/StoryPlatform.Api/Controllers/RoadmapLibraryController.cs#L37).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `roadmapId`: `int`; **body** `request`: [RoadmapCopyRequestDto](#dto-roadmapcopyrequestdto).
+- Response: ApiResponse.data: [RoadmapCopyPlanDto](#dto-roadmapcopyplandto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-roadmaplibrary-copy-post"></a>
+#### POST /api/v1/RoadmapLibrary/{roadmapId}/copy
+
+- Action: **Copy**. [RoadmapLibraryController](../src/Core/StoryPlatform.Api/Controllers/RoadmapLibraryController.cs#L45).
+- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `roadmapId`: `int`; **body** `request`: [RoadmapCopyRequestDto](#dto-roadmapcopyrequestdto).
+- Response: ApiResponse.data: [RoadmapCopyPlanDto](#dto-roadmapcopyplandto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="controller-roadmapreview"></a>
+### RoadmapReview — 5 route
+
+Guard/nghiệp vụ: [RoadmapReviewService.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/Services/RoadmapReviewService.cs).
+
+MO4. Claim RoadmapTemplateReview còn hạn, cấm tự duyệt. Checklist order/theme/name_description/age_level và checks phải đạt. Approve bản clone có thể archive bộ nguồn, trả replacedRoadmapId.
+
+| Method + route | Mapping |
+|---|---|
+| [GET /api/v1/RoadmapReview/{itemId}](#ep-roadmapreview-getpackage-get) | CHƯA_RÀ_FRONTEND |
+| [PUT /api/v1/RoadmapReview/{itemId}/checklist](#ep-roadmapreview-savechecklist-put) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/RoadmapReview/{itemId}/approve](#ep-roadmapreview-approve-post) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/RoadmapReview/{itemId}/request-changes](#ep-roadmapreview-requestchanges-post) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/RoadmapReview/{itemId}/reject](#ep-roadmapreview-reject-post) | CHƯA_RÀ_FRONTEND |
+
+<a id="ep-roadmapreview-getpackage-get"></a>
+#### GET /api/v1/RoadmapReview/{itemId}
+
+- Action: **GetPackage**. [RoadmapReviewController](../src/Core/StoryPlatform.Api/Controllers/RoadmapReviewController.cs#L20).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `itemId`: `int`.
+- Response: ApiResponse.data: [RoadmapReviewPackageDto](#dto-roadmapreviewpackagedto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-roadmapreview-savechecklist-put"></a>
+#### PUT /api/v1/RoadmapReview/{itemId}/checklist
+
+- Action: **SaveChecklist**. [RoadmapReviewController](../src/Core/StoryPlatform.Api/Controllers/RoadmapReviewController.cs#L29).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `itemId`: `int`; **body** `request`: [SaveRoadmapChecklistRequestDto](#dto-saveroadmapchecklistrequestdto).
+- Response: ApiResponse.data: [List&lt;RoadmapChecklistEntryDto&gt;](#dto-roadmapchecklistentrydto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-roadmapreview-approve-post"></a>
+#### POST /api/v1/RoadmapReview/{itemId}/approve
+
+- Action: **Approve**. [RoadmapReviewController](../src/Core/StoryPlatform.Api/Controllers/RoadmapReviewController.cs#L40).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `itemId`: `int`.
+- Response: ApiResponse.data: [RoadmapReviewDecisionResultDto](#dto-roadmapreviewdecisionresultdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-roadmapreview-requestchanges-post"></a>
+#### POST /api/v1/RoadmapReview/{itemId}/request-changes
+
+- Action: **RequestChanges**. [RoadmapReviewController](../src/Core/StoryPlatform.Api/Controllers/RoadmapReviewController.cs#L49).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `itemId`: `int`; **body** `request`: [RequestRoadmapChangesDto](#dto-requestroadmapchangesdto).
+- Response: ApiResponse.data: [RoadmapReviewDecisionResultDto](#dto-roadmapreviewdecisionresultdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-roadmapreview-reject-post"></a>
+#### POST /api/v1/RoadmapReview/{itemId}/reject
+
+- Action: **Reject**. [RoadmapReviewController](../src/Core/StoryPlatform.Api/Controllers/RoadmapReviewController.cs#L60).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `itemId`: `int`; **body** `request`: [RejectRoadmapRequestDto](#dto-rejectroadmaprequestdto).
+- Response: ApiResponse.data: [RoadmapReviewDecisionResultDto](#dto-roadmapreviewdecisionresultdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="controller-roadmaptemplate"></a>
+### RoadmapTemplate — 10 route
+
+Guard/nghiệp vụ: [RoadmapTemplateService.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/Services/RoadmapTemplateService.cs).
+
+MO4. Moderator tạo/sửa bản của mình; Moderator/Administrator xem. Dùng candidates rồi set items → checks/canSubmit → submit. Withdraw chỉ khi cho phép; clone bộ Published hoặc Draft của Moderator bị vô hiệu hóa. Archive cần reason 3–500 ký tự.
+
+| Method + route | Mapping |
+|---|---|
+| [GET /api/v1/RoadmapTemplate](#ep-roadmaptemplate-list-get) | CHƯA_RÀ_FRONTEND |
+| [GET /api/v1/RoadmapTemplate/{id}](#ep-roadmaptemplate-get-get) | CHƯA_RÀ_FRONTEND |
+| [GET /api/v1/RoadmapTemplate/candidates](#ep-roadmaptemplate-listcandidates-get) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/RoadmapTemplate](#ep-roadmaptemplate-create-post) | CHƯA_RÀ_FRONTEND |
+| [PUT /api/v1/RoadmapTemplate/{id}](#ep-roadmaptemplate-update-put) | CHƯA_RÀ_FRONTEND |
+| [PUT /api/v1/RoadmapTemplate/{id}/items](#ep-roadmaptemplate-setitems-put) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/RoadmapTemplate/{id}/submit](#ep-roadmaptemplate-submit-post) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/RoadmapTemplate/{id}/withdraw](#ep-roadmaptemplate-withdraw-post) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/RoadmapTemplate/{id}/clone](#ep-roadmaptemplate-clone-post) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/RoadmapTemplate/{id}/archive](#ep-roadmaptemplate-archive-post) | CHƯA_RÀ_FRONTEND |
+
+<a id="ep-roadmaptemplate-list-get"></a>
+#### GET /api/v1/RoadmapTemplate
+
+- Action: **List**. [RoadmapTemplateController](../src/Core/StoryPlatform.Api/Controllers/RoadmapTemplateController.cs#L20).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **query** `query`: [RoadmapListQueryDto](#dto-roadmaplistquerydto).
+- Response: ApiResponse.data: [PagedResult&lt;RoadmapListItemDto&gt;](#dto-roadmaplistitemdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-roadmaptemplate-get-get"></a>
+#### GET /api/v1/RoadmapTemplate/{id}
+
+- Action: **Get**. [RoadmapTemplateController](../src/Core/StoryPlatform.Api/Controllers/RoadmapTemplateController.cs#L28).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `id`: `int`.
+- Response: ApiResponse.data: [RoadmapDetailDto](#dto-roadmapdetaildto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-roadmaptemplate-listcandidates-get"></a>
+#### GET /api/v1/RoadmapTemplate/candidates
+
+- Action: **ListCandidates**. [RoadmapTemplateController](../src/Core/StoryPlatform.Api/Controllers/RoadmapTemplateController.cs#L36).
+- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Request: **query** `query`: [CandidateQueryDto](#dto-candidatequerydto).
+- Response: ApiResponse.data: [PagedResult&lt;CandidateStoryDto&gt;](#dto-candidatestorydto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-roadmaptemplate-create-post"></a>
+#### POST /api/v1/RoadmapTemplate
+
+- Action: **Create**. [RoadmapTemplateController](../src/Core/StoryPlatform.Api/Controllers/RoadmapTemplateController.cs#L46).
+- Quyền: (Moderator hoặc Administrator) AND (Moderator); kèm guard nghiệp vụ của nhóm.
+- Request: **body** `request`: [SaveRoadmapRequestDto](#dto-saveroadmaprequestdto).
+- Response: ApiResponse.data: [RoadmapDetailDto](#dto-roadmapdetaildto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-roadmaptemplate-update-put"></a>
+#### PUT /api/v1/RoadmapTemplate/{id}
+
+- Action: **Update**. [RoadmapTemplateController](../src/Core/StoryPlatform.Api/Controllers/RoadmapTemplateController.cs#L55).
+- Quyền: (Moderator hoặc Administrator) AND (Moderator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `id`: `int`; **body** `request`: [SaveRoadmapRequestDto](#dto-saveroadmaprequestdto).
+- Response: ApiResponse.data: [RoadmapDetailDto](#dto-roadmapdetaildto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-roadmaptemplate-setitems-put"></a>
+#### PUT /api/v1/RoadmapTemplate/{id}/items
+
+- Action: **SetItems**. [RoadmapTemplateController](../src/Core/StoryPlatform.Api/Controllers/RoadmapTemplateController.cs#L64).
+- Quyền: (Moderator hoặc Administrator) AND (Moderator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `id`: `int`; **body** `request`: [SetRoadmapItemsRequestDto](#dto-setroadmapitemsrequestdto).
+- Response: ApiResponse.data: [RoadmapDetailDto](#dto-roadmapdetaildto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-roadmaptemplate-submit-post"></a>
+#### POST /api/v1/RoadmapTemplate/{id}/submit
+
+- Action: **Submit**. [RoadmapTemplateController](../src/Core/StoryPlatform.Api/Controllers/RoadmapTemplateController.cs#L73).
+- Quyền: (Moderator hoặc Administrator) AND (Moderator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `id`: `int`.
+- Response: ApiResponse.data: [RoadmapSubmitResultDto](#dto-roadmapsubmitresultdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-roadmaptemplate-withdraw-post"></a>
+#### POST /api/v1/RoadmapTemplate/{id}/withdraw
+
+- Action: **Withdraw**. [RoadmapTemplateController](../src/Core/StoryPlatform.Api/Controllers/RoadmapTemplateController.cs#L82).
+- Quyền: (Moderator hoặc Administrator) AND (Moderator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `id`: `int`.
+- Response: ApiResponse.data: [RoadmapSubmitResultDto](#dto-roadmapsubmitresultdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-roadmaptemplate-clone-post"></a>
+#### POST /api/v1/RoadmapTemplate/{id}/clone
+
+- Action: **Clone**. [RoadmapTemplateController](../src/Core/StoryPlatform.Api/Controllers/RoadmapTemplateController.cs#L92).
+- Quyền: (Moderator hoặc Administrator) AND (Moderator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `id`: `int`.
+- Response: ApiResponse.data: [RoadmapCloneResultDto](#dto-roadmapcloneresultdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+
+<a id="ep-roadmaptemplate-archive-post"></a>
+#### POST /api/v1/RoadmapTemplate/{id}/archive
+
+- Action: **Archive**. [RoadmapTemplateController](../src/Core/StoryPlatform.Api/Controllers/RoadmapTemplateController.cs#L104).
+- Quyền: (Moderator hoặc Administrator) AND (Moderator); kèm guard nghiệp vụ của nhóm.
+- Request: **path** `id`: `int`; **body** `request`: [ArchiveRoadmapRequestDto](#dto-archiveroadmaprequestdto).
+- Response: ApiResponse.data: [RoadmapDetailDto](#dto-roadmapdetaildto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
+- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
 
 <a id="schemas"></a>
 ## 15. Schema DTO, enum và ví dụ request
@@ -3301,7 +4144,7 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 
 | Schema | Source |
 |---|---|
-| [AIProposalDto](#dto-aiproposaldto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L194) |
+| [AIProposalDto](#dto-aiproposaldto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L210) |
 | [AIStoryCreativeInputDto](#dto-aistorycreativeinputdto) | [AIStoryInputDtos.cs](../src/Core/StoryPlatform.Application/Features/AIStoryInput/DTOs/AIStoryInputDtos.cs#L32) |
 | [AIStoryInputContextDto](#dto-aistoryinputcontextdto) | [AIStoryInputDtos.cs](../src/Core/StoryPlatform.Application/Features/AIStoryInput/DTOs/AIStoryInputDtos.cs#L5) |
 | [AIStoryInputProgressDto](#dto-aistoryinputprogressdto) | [AIStoryInputDtos.cs](../src/Core/StoryPlatform.Application/Features/AIStoryInput/DTOs/AIStoryInputDtos.cs#L102) |
@@ -3312,19 +4155,19 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [AgePresetDto](#dto-agepresetdto) | [SafetyPolicyDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Safety/DTOs/SafetyPolicyDtos.cs#L82) |
 | [AnswerAssistanceRequest](#dto-answerassistancerequest) | [CreatorAssistanceDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAssistance/DTOs/CreatorAssistanceDtos.cs#L26) |
 | [ApiResponse](#dto-apiresponse) | [ApiResponse.cs](../src/Core/StoryPlatform.Application/Common/Models/ApiResponse.cs#L9) |
-| [ApplyDiscardResponseDto](#dto-applydiscardresponsedto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L215) |
+| [ApplyDiscardResponseDto](#dto-applydiscardresponsedto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L231) |
 | [ApprovalMode](#dto-approvalmode) | [ApprovalMode.cs](../src/Core/StoryPlatform.Domain/Enums/ApprovalMode.cs#L3) |
-| [ApproveBlockerDto](#dto-approveblockerdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L171) |
+| [ApproveBlockerDto](#dto-approveblockerdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L176) |
 | [ApproveOutlineRequestDto](#dto-approveoutlinerequestdto) | [OutlineDtos.cs](../src/Core/StoryPlatform.Application/Features/Outline/DTOs/OutlineDtos.cs#L58) |
-| [ApproveResponseDto](#dto-approveresponsedto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L170) |
+| [ApproveResponseDto](#dto-approveresponsedto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L186) |
 | [ArchiveExistingStoryRequestDto](#dto-archiveexistingstoryrequestdto) | [ExistingStoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ExistingStories/DTOs/ExistingStoryDtos.cs#L124) |
-| [ArchiveReportRequestDto](#dto-archivereportrequestdto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L114) |
-| [ArchiveRequestDto](#dto-archiverequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L178) |
-| [ArchiveResponseDto](#dto-archiveresponsedto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L183) |
+| [ArchiveReportRequestDto](#dto-archivereportrequestdto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L120) |
+| [ArchiveRequestDto](#dto-archiverequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L194) |
+| [ArchiveResponseDto](#dto-archiveresponsedto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L199) |
 | [ArchivedReason](#dto-archivedreason) | [ArchivedReason.cs](../src/Core/StoryPlatform.Domain/Enums/ArchivedReason.cs#L3) |
-| [ArtifactChangeDto](#dto-artifactchangedto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L275) |
-| [ArtifactGenerationResultDto](#dto-artifactgenerationresultdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L233) |
-| [ArtifactStatusDto](#dto-artifactstatusdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L29) |
+| [ArtifactChangeDto](#dto-artifactchangedto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L280) |
+| [ArtifactGenerationResultDto](#dto-artifactgenerationresultdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L249) |
+| [ArtifactStatusDto](#dto-artifactstatusdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L30) |
 | [AssistanceActiveOperation](#dto-assistanceactiveoperation) | [CreatorAssistanceDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAssistance/DTOs/CreatorAssistanceDtos.cs#L44) |
 | [AssistanceAiResult](#dto-assistanceairesult) | [AssistanceModels.cs](../src/Shared/StoryPlatform.Contracts/AI/CreatorAssistance/AssistanceModels.cs#L32) |
 | [AssistanceChoice](#dto-assistancechoice) | [AssistanceModels.cs](../src/Shared/StoryPlatform.Contracts/AI/CreatorAssistance/AssistanceModels.cs#L6) |
@@ -3349,7 +4192,7 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [BusinessReportDto](#dto-businessreportdto) | [BusinessReportDtos.cs](../src/Core/StoryPlatform.Application/Features/BusinessReports/DTOs/BusinessReportDtos.cs#L9) |
 | [CancelAssistanceRequest](#dto-cancelassistancerequest) | [CreatorAssistanceDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAssistance/DTOs/CreatorAssistanceDtos.cs#L42) |
 | [ChangePasswordRequestDto](#dto-changepasswordrequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L119) |
-| [ChangeRequestPartDto](#dto-changerequestpartdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L187) |
+| [ChangeRequestPartDto](#dto-changerequestpartdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L192) |
 | [ChildAccessCredentialDto](#dto-childaccesscredentialdto) | [ChildAccessCredentialDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/AccessCredentials/DTOs/ChildAccessCredentialDtos.cs#L13) |
 | [ChildCreationMode](#dto-childcreationmode) | [ChildCreationMode.cs](../src/Core/StoryPlatform.Domain/Enums/ChildCreationMode.cs#L4) |
 | [ChildProfileDto](#dto-childprofiledto) | [ChildProfileDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Profiles/DTOs/ChildProfileDtos.cs#L8) |
@@ -3358,15 +4201,15 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [ClaimInvitationRequestDto](#dto-claiminvitationrequestdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L41) |
 | [ClaimInvitationResultDto](#dto-claiminvitationresultdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L47) |
 | [ConfirmAssistanceDirectionRequest](#dto-confirmassistancedirectionrequest) | [CreatorAssistanceDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAssistance/DTOs/CreatorAssistanceDtos.cs#L34) |
-| [ConfirmCreatorContentRequestDto](#dto-confirmcreatorcontentrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs) |
-| [ConfirmCreatorContentResponseDto](#dto-confirmcreatorcontentresponsedto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs) |
+| [ConfirmCreatorContentRequestDto](#dto-confirmcreatorcontentrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L172) |
+| [ConfirmCreatorContentResponseDto](#dto-confirmcreatorcontentresponsedto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L178) |
 | [ConfirmCreatorImportRequest](#dto-confirmcreatorimportrequest) | [CreatorAuthoringDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAuthoring/DTOs/CreatorAuthoringDtos.cs#L43) |
 | [ConfirmEmailChangeRequestDto](#dto-confirmemailchangerequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L164) |
 | [ContentCategoryDto](#dto-contentcategorydto) | [ContentCategoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentCategories/DTOs/ContentCategoryDtos.cs#L5) |
 | [ContentGenerationProgressDto](#dto-contentgenerationprogressdto) | [ContentGenerationDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentGeneration/DTOs/ContentGenerationDtos.cs#L25) |
 | [ContentQualityFailureDto](#dto-contentqualityfailuredto) | [ContentGenerationDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentGeneration/DTOs/ContentGenerationDtos.cs#L18) |
 | [ContentQualityGateFailureDto](#dto-contentqualitygatefailuredto) | [ContentGenerationDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentGeneration/DTOs/ContentGenerationDtos.cs#L11) |
-| [ContentReportDecisionResultDto](#dto-contentreportdecisionresultdto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L124) |
+| [ContentReportDecisionResultDto](#dto-contentreportdecisionresultdto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L130) |
 | [ContentReportDetailDto](#dto-contentreportdetaildto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L34) |
 | [ContentReportReason](#dto-contentreportreason) | [ContentReportReason.cs](../src/Core/StoryPlatform.Domain/Enums/ContentReportReason.cs#L3) |
 | [ContentReportResultDto](#dto-contentreportresultdto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L21) |
@@ -3381,7 +4224,7 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [CreateParentDraftRequest](#dto-createparentdraftrequest) | [ParentAuthoringDtos.cs](../src/Core/StoryPlatform.Application/Features/ParentAuthoring/ParentAuthoringDtos.cs#L6) |
 | [CreatePaymentTransactionRequestDto](#dto-createpaymenttransactionrequestdto) | [PaymentDtos.cs](../src/Core/StoryPlatform.Application/Features/Payments/DTOs/PaymentDtos.cs#L13) |
 | [CreatePermissionRequestRequestDto](#dto-createpermissionrequestrequestdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L85) |
-| [CreateProposalResponseDto](#dto-createproposalresponsedto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L209) |
+| [CreateProposalResponseDto](#dto-createproposalresponsedto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L225) |
 | [CreateStoryRequestDto](#dto-createstoryrequestdto) | [StoryDtos.cs](../src/Core/StoryPlatform.Application/Features/Stories/DTOs/StoryDtos.cs#L28) |
 | [CreatorAIStoryInputContextDto](#dto-creatoraistoryinputcontextdto) | [AIStoryInputDtos.cs](../src/Core/StoryPlatform.Application/Features/AIStoryInput/DTOs/AIStoryInputDtos.cs#L91) |
 | [CreatorCommand](#dto-creatorcommand) | [CreatorAuthoringDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAuthoring/DTOs/CreatorAuthoringDtos.cs#L5) |
@@ -3394,9 +4237,9 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [DataRequestDto](#dto-datarequestdto) | [DataRequestDtos.cs](../src/Core/StoryPlatform.Application/Features/DataRequests/DTOs/DataRequestDtos.cs#L13) |
 | [DeleteAccountPreviewDto](#dto-deleteaccountpreviewdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L188) |
 | [DeleteAccountRequestDto](#dto-deleteaccountrequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L195) |
-| [DiscussionItemDto](#dto-discussionitemdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L135) |
-| [DiscussionReviewDto](#dto-discussionreviewdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L128) |
-| [DismissReportRequestDto](#dto-dismissreportrequestdto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L108) |
+| [DiscussionItemDto](#dto-discussionitemdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L136) |
+| [DiscussionReviewDto](#dto-discussionreviewdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L129) |
+| [DismissReportRequestDto](#dto-dismissreportrequestdto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L114) |
 | [EasyLoginSecretDto](#dto-easyloginsecretdto) | [ChildAccessCredentialDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/AccessCredentials/DTOs/ChildAccessCredentialDtos.cs#L31) |
 | [EditOutlineRequestDto](#dto-editoutlinerequestdto) | [OutlineDtos.cs](../src/Core/StoryPlatform.Application/Features/Outline/DTOs/OutlineDtos.cs#L31) |
 | [EditorSnapshot](#dto-editorsnapshot) | [AssistanceModels.cs](../src/Shared/StoryPlatform.Contracts/AI/CreatorAssistance/AssistanceModels.cs#L3) |
@@ -3405,10 +4248,10 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [ExistingStoryDecision](#dto-existingstorydecision) | [ExistingStoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ExistingStories/DTOs/ExistingStoryDtos.cs#L66) |
 | [ExistingStoryEvaluationDto](#dto-existingstoryevaluationdto) | [ExistingStoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ExistingStories/DTOs/ExistingStoryDtos.cs#L73) |
 | [ForgotPasswordRequestDto](#dto-forgotpasswordrequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L93) |
-| [GenerateArtifactsRequestDto](#dto-generateartifactsrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L225) |
+| [GenerateArtifactsRequestDto](#dto-generateartifactsrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L241) |
 | [GenerateBusinessReportRequestDto](#dto-generatebusinessreportrequestdto) | [BusinessReportDtos.cs](../src/Core/StoryPlatform.Application/Features/BusinessReports/DTOs/BusinessReportDtos.cs#L3) |
 | [GrantAdministratorRequestDto](#dto-grantadministratorrequestdto) | [AdministratorDtos.cs](../src/Core/StoryPlatform.Application/Features/Administration/DTOs/AdministratorDtos.cs#L5) |
-| [GrantReviewViewRequestDto](#dto-grantreviewviewrequestdto) | [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs#L67) |
+| [GrantReviewViewRequestDto](#dto-grantreviewviewrequestdto) | [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs#L68) |
 | [GuidePage](#dto-guidepage) | [AuthoringGuideService.cs](../src/Core/StoryPlatform.Application/Features/ParentAuthoring/AuthoringGuideService.cs#L10) |
 | [IllustrationBeatMediaItem](#dto-illustrationbeatmediaitem) | [MediaGenerationModels.cs](../src/Core/StoryPlatform.Application/Features/MediaGeneration/Models/MediaGenerationModels.cs#L88) |
 | [ImportExistingStoryFileForm](#dto-importexistingstoryfileform) | [ExistingStoriesController.cs](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L192) |
@@ -3424,7 +4267,7 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [LoginWithEasyLoginRequestDto](#dto-loginwitheasyloginrequestdto) | [ChildAccessCredentialDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/AccessCredentials/DTOs/ChildAccessCredentialDtos.cs#L37) |
 | [LogoutRequestDto](#dto-logoutrequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L137) |
 | [ManualEditRequestDto](#dto-manualeditrequestdto) | [ExistingStoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ExistingStories/DTOs/ExistingStoryDtos.cs#L107) |
-| [MarkPartViewedRequestDto](#dto-markpartviewedrequestdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L147) |
+| [MarkPartViewedRequestDto](#dto-markpartviewedrequestdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L152) |
 | [MediaGenerationProgress](#dto-mediagenerationprogress) | [MediaGenerationModels.cs](../src/Core/StoryPlatform.Application/Features/MediaGeneration/Models/MediaGenerationModels.cs#L61) |
 | [ModerationItemDetailDto](#dto-moderationitemdetaildto) | [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs#L60) |
 | [ModerationItemStatus](#dto-moderationitemstatus) | [ModerationItemStatus.cs](../src/Core/StoryPlatform.Domain/Enums/ModerationItemStatus.cs#L3) |
@@ -3432,7 +4275,7 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [ModerationItemType](#dto-moderationitemtype) | [ModerationItemType.cs](../src/Core/StoryPlatform.Domain/Enums/ModerationItemType.cs#L3) |
 | [ModerationPriority](#dto-moderationpriority) | [ModerationPriority.cs](../src/Core/StoryPlatform.Domain/Enums/ModerationPriority.cs#L3) |
 | [ModerationQueueQueryDto](#dto-moderationqueuequerydto) | [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs#L24) |
-| [ModerationReviewViewDto](#dto-moderationreviewviewdto) | [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs#L76) |
+| [ModerationReviewViewDto](#dto-moderationreviewviewdto) | [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs#L77) |
 | [ModeratorAccountDto](#dto-moderatoraccountdto) | [AdministratorDtos.cs](../src/Core/StoryPlatform.Application/Features/Administration/DTOs/AdministratorDtos.cs#L45) |
 | [NotificationDto](#dto-notificationdto) | [NotificationDtos.cs](../src/Core/StoryPlatform.Application/Features/Notifications/DTOs/NotificationDtos.cs#L3) |
 | [OutlineProgressDto](#dto-outlineprogressdto) | [OutlineDtos.cs](../src/Core/StoryPlatform.Application/Features/Outline/DTOs/OutlineDtos.cs#L5) |
@@ -3455,34 +4298,34 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [ParentPrepareRequest](#dto-parentpreparerequest) | [ParentAuthoringDtos.cs](../src/Core/StoryPlatform.Application/Features/ParentAuthoring/ParentAuthoringDtos.cs#L30) |
 | [ParentSegmentDto](#dto-parentsegmentdto) | [ParentAuthoringDtos.cs](../src/Core/StoryPlatform.Application/Features/ParentAuthoring/ParentAuthoringDtos.cs#L47) |
 | [ParentSetupRequest](#dto-parentsetuprequest) | [ParentAuthoringDtos.cs](../src/Core/StoryPlatform.Application/Features/ParentAuthoring/ParentAuthoringDtos.cs#L17) |
-| [PartialEditRequestDto](#dto-partialeditrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L60) |
+| [PartialEditRequestDto](#dto-partialeditrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L61) |
 | [PasswordPolicy](#dto-passwordpolicy) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L240) |
 | [PaymentTransactionDto](#dto-paymenttransactiondto) | [PaymentDtos.cs](../src/Core/StoryPlatform.Application/Features/Payments/DTOs/PaymentDtos.cs#L18) |
 | [Permission](#dto-permission) | [Permission.cs](../src/Core/StoryPlatform.Domain/Enums/Permission.cs#L3) |
 | [PermissionRequestDto](#dto-permissionrequestdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L93) |
 | [PolicyRule](#dto-policyrule) | [PolicyRule.cs](../src/Core/StoryPlatform.Domain/Enums/PolicyRule.cs#L3) |
 | [PreviewCreatorImportRequest](#dto-previewcreatorimportrequest) | [CreatorAuthoringDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAuthoring/DTOs/CreatorAuthoringDtos.cs#L37) |
-| [PublicReviewChecklistDto](#dto-publicreviewchecklistdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L131) |
-| [PublicReviewDecisionResultDto](#dto-publicreviewdecisionresultdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L177) |
+| [PublicReviewChecklistDto](#dto-publicreviewchecklistdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L136) |
+| [PublicReviewDecisionResultDto](#dto-publicreviewdecisionresultdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L182) |
 | [PublicReviewDiscussionDto](#dto-publicreviewdiscussiondto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L104) |
 | [PublicReviewFlagDto](#dto-publicreviewflagdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L111) |
-| [PublicReviewFlagsResultDto](#dto-publicreviewflagsresultdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L159) |
-| [PublicReviewHistoryEntryDto](#dto-publicreviewhistoryentrydto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L221) |
+| [PublicReviewFlagsResultDto](#dto-publicreviewflagsresultdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L164) |
+| [PublicReviewHistoryEntryDto](#dto-publicreviewhistoryentrydto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L226) |
 | [PublicReviewIllustrationDto](#dto-publicreviewillustrationdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L69) |
 | [PublicReviewLabelDto](#dto-publicreviewlabeldto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L40) |
 | [PublicReviewPackageDto](#dto-publicreviewpackagedto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L3) |
-| [PublicReviewProgressDto](#dto-publicreviewprogressdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L121) |
+| [PublicReviewProgressDto](#dto-publicreviewprogressdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L126) |
 | [PublicReviewQuizDto](#dto-publicreviewquizdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L95) |
 | [PublicReviewSceneDto](#dto-publicreviewscenedto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L58) |
 | [PublicReviewSegmentDto](#dto-publicreviewsegmentdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L77) |
 | [PublicReviewStoryDto](#dto-publicreviewstorydto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L26) |
 | [PublicReviewVersionDto](#dto-publicreviewversiondto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L48) |
 | [PublicReviewVocabularyDto](#dto-publicreviewvocabularydto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L88) |
-| [PublicStorySubmissionResultDto](#dto-publicstorysubmissionresultdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L211) |
-| [PublicVersionComparisonDto](#dto-publicversioncomparisondto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L234) |
-| [PublicVersionMetricsDto](#dto-publicversionmetricsdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L257) |
-| [QuizItemDto](#dto-quizitemdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L109) |
-| [QuizReviewDto](#dto-quizreviewdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L102) |
+| [PublicStorySubmissionResultDto](#dto-publicstorysubmissionresultdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L216) |
+| [PublicVersionComparisonDto](#dto-publicversioncomparisondto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L239) |
+| [PublicVersionMetricsDto](#dto-publicversionmetricsdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L262) |
+| [QuizItemDto](#dto-quizitemdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L110) |
+| [QuizReviewDto](#dto-quizreviewdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L103) |
 | [ReadingMode](#dto-readingmode) | [ReadingMode.cs](../src/Core/StoryPlatform.Domain/Enums/ReadingMode.cs#L4) |
 | [ReasonRequestDto](#dto-reasonrequestdto) | [AdministratorDtos.cs](../src/Core/StoryPlatform.Application/Features/Administration/DTOs/AdministratorDtos.cs#L38) |
 | [RefreshTokenRequestDto](#dto-refreshtokenrequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L87) |
@@ -3491,21 +4334,21 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [RejectDataRequestDto](#dto-rejectdatarequestdto) | [DataRequestDtos.cs](../src/Core/StoryPlatform.Application/Features/DataRequests/DTOs/DataRequestDtos.cs#L25) |
 | [RejectInvitationRequestDto](#dto-rejectinvitationrequestdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L72) |
 | [RejectOutlineRequestDto](#dto-rejectoutlinerequestdto) | [OutlineDtos.cs](../src/Core/StoryPlatform.Application/Features/Outline/DTOs/OutlineDtos.cs#L64) |
-| [RejectRequestDto](#dto-rejectrequestdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L200) |
+| [RejectRequestDto](#dto-rejectrequestdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L205) |
 | [RenderGuideRequest](#dto-renderguiderequest) | [AuthoringGuideService.cs](../src/Core/StoryPlatform.Application/Features/ParentAuthoring/AuthoringGuideService.cs#L11) |
 | [RenderGuideResult](#dto-renderguideresult) | [AuthoringGuideService.cs](../src/Core/StoryPlatform.Application/Features/ParentAuthoring/AuthoringGuideService.cs#L12) |
-| [ReportedDiscussionDto](#dto-reporteddiscussiondto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L102) |
-| [ReportedLabelDto](#dto-reportedlabeldto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L65) |
-| [ReportedQuizDto](#dto-reportedquizdto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L94) |
-| [ReportedSceneDto](#dto-reportedscenedto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L80) |
-| [ReportedStoryDto](#dto-reportedstorydto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L51) |
-| [ReportedVersionDto](#dto-reportedversiondto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L71) |
-| [ReportedVocabularyDto](#dto-reportedvocabularydto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L88) |
-| [RequestChangesDto](#dto-requestchangesdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L194) |
+| [ReportedDiscussionDto](#dto-reporteddiscussiondto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L108) |
+| [ReportedLabelDto](#dto-reportedlabeldto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L71) |
+| [ReportedQuizDto](#dto-reportedquizdto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L100) |
+| [ReportedSceneDto](#dto-reportedscenedto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L86) |
+| [ReportedStoryDto](#dto-reportedstorydto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L57) |
+| [ReportedVersionDto](#dto-reportedversiondto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L77) |
+| [ReportedVocabularyDto](#dto-reportedvocabularydto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L94) |
+| [RequestChangesDto](#dto-requestchangesdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L199) |
 | [RequestEmailChangeRequestDto](#dto-requestemailchangerequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L154) |
 | [ResendVerificationEmailRequestDto](#dto-resendverificationemailrequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L203) |
 | [ResetPasswordRequestDto](#dto-resetpasswordrequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L100) |
-| [ResolveFlagRequestDto](#dto-resolveflagrequestdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L153) |
+| [ResolveFlagRequestDto](#dto-resolveflagrequestdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L158) |
 | [RestoreCreatorVersionRequest](#dto-restorecreatorversionrequest) | [CreatorAuthoringDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAuthoring/DTOs/CreatorAuthoringDtos.cs#L52) |
 | [ResumeChildProfileRequestDto](#dto-resumechildprofilerequestdto) | [ChildProfileDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Profiles/DTOs/ChildProfileDtos.cs#L54) |
 | [RetryAIStoryInputRequestDto](#dto-retryaistoryinputrequestdto) | [AIStoryInputDtos.cs](../src/Core/StoryPlatform.Application/Features/AIStoryInput/DTOs/AIStoryInputDtos.cs#L96) |
@@ -3515,11 +4358,11 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [SafetyPolicyCategoryDto](#dto-safetypolicycategorydto) | [SafetyPolicyDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Safety/DTOs/SafetyPolicyDtos.cs#L34) |
 | [SafetyPolicyDto](#dto-safetypolicydto) | [SafetyPolicyDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Safety/DTOs/SafetyPolicyDtos.cs#L7) |
 | [SaveCreatorContentRequest](#dto-savecreatorcontentrequest) | [CreatorAuthoringDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAuthoring/DTOs/CreatorAuthoringDtos.cs#L27) |
-| [SceneChangeDto](#dto-scenechangedto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L266) |
+| [SceneChangeDto](#dto-scenechangedto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L271) |
 | [SceneMediaItem](#dto-scenemediaitem) | [MediaGenerationModels.cs](../src/Core/StoryPlatform.Application/Features/MediaGeneration/Models/MediaGenerationModels.cs#L92) |
 | [SePayWebhookPayloadDto](#dto-sepaywebhookpayloaddto) | [PaymentDtos.cs](../src/Core/StoryPlatform.Application/Features/Payments/DTOs/PaymentDtos.cs#L35) |
 | [SessionDto](#dto-sessiondto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L210) |
-| [SetContentLabelsRequestDto](#dto-setcontentlabelsrequestdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L166) |
+| [SetContentLabelsRequestDto](#dto-setcontentlabelsrequestdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L171) |
 | [SetLearningProfileRequestDto](#dto-setlearningprofilerequestdto) | [LearningProfileDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Learning/DTOs/LearningProfileDtos.cs#L23) |
 | [SetLearningProfileTopicRequestDto](#dto-setlearningprofiletopicrequestdto) | [LearningProfileDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Learning/DTOs/LearningProfileDtos.cs#L38) |
 | [SetSafetyPolicyCategoryRequestDto](#dto-setsafetypolicycategoryrequestdto) | [SafetyPolicyDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Safety/DTOs/SafetyPolicyDtos.cs#L88) |
@@ -3531,43 +4374,133 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [StoryDto](#dto-storydto) | [StoryDtos.cs](../src/Core/StoryPlatform.Application/Features/Stories/DTOs/StoryDtos.cs#L7) |
 | [StoryFilterRequestDto](#dto-storyfilterrequestdto) | [StoryDtos.cs](../src/Core/StoryPlatform.Application/Features/Stories/DTOs/StoryDtos.cs#L59) |
 | [StoryMediaPackage](#dto-storymediapackage) | [MediaGenerationModels.cs](../src/Core/StoryPlatform.Application/Features/MediaGeneration/Models/MediaGenerationModels.cs#L94) |
-| [StoryReview.UpdateStoryRequestDto](#dto-storyreview-updatestoryrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L52) |
-| [StoryReviewDto](#dto-storyreviewdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L39) |
+| [StoryReview.UpdateStoryRequestDto](#dto-storyreview-updatestoryrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L53) |
+| [StoryReviewDto](#dto-storyreviewdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L40) |
 | [StoryStatus](#dto-storystatus) | [StoryStatus.cs](../src/Core/StoryPlatform.Domain/Enums/StoryStatus.cs#L3) |
 | [SubmitAIStoryInputRequestDto](#dto-submitaistoryinputrequestdto) | [AIStoryInputDtos.cs](../src/Core/StoryPlatform.Application/Features/AIStoryInput/DTOs/AIStoryInputDtos.cs#L64) |
 | [SubmitCreatorAIStoryInputRequestDto](#dto-submitcreatoraistoryinputrequestdto) | [AIStoryInputDtos.cs](../src/Core/StoryPlatform.Application/Features/AIStoryInput/DTOs/AIStoryInputDtos.cs#L81) |
-| [SubmitPublicStoryRequestDto](#dto-submitpublicstoryrequestdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L205) |
+| [SubmitPublicStoryRequestDto](#dto-submitpublicstoryrequestdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L210) |
 | [SubscriptionPlanDto](#dto-subscriptionplandto) | [PaymentDtos.cs](../src/Core/StoryPlatform.Application/Features/Payments/DTOs/PaymentDtos.cs#L5) |
 | [SuggestAssistanceRequest](#dto-suggestassistancerequest) | [CreatorAssistanceDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAssistance/DTOs/CreatorAssistanceDtos.cs#L25) |
 | [SupervisionRelationshipDto](#dto-supervisionrelationshipdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L27) |
-| [TextDiffEntryDto](#dto-textdiffentrydto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L250) |
-| [TextSelectionDto](#dto-textselectiondto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L67) |
+| [TextDiffEntryDto](#dto-textdiffentrydto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L255) |
+| [TextSelectionDto](#dto-textselectiondto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L68) |
 | [TokenQuotaConfigDto](#dto-tokenquotaconfigdto) | [TokenQuotaDtos.cs](../src/Core/StoryPlatform.Application/Features/TokenQuota/DTOs/TokenQuotaDtos.cs#L13) |
 | [TokenQuotaStatusDto](#dto-tokenquotastatusdto) | [TokenQuotaDtos.cs](../src/Core/StoryPlatform.Application/Features/TokenQuota/DTOs/TokenQuotaDtos.cs#L25) |
 | [TopicRelation](#dto-topicrelation) | [TopicRelation.cs](../src/Core/StoryPlatform.Domain/Enums/TopicRelation.cs#L3) |
 | [TransferOwnershipRequestDto](#dto-transferownershiprequestdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L78) |
 | [UpdateChildProfileRequestDto](#dto-updatechildprofilerequestdto) | [ChildProfileDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Profiles/DTOs/ChildProfileDtos.cs#L37) |
 | [UpdateContentCategoryRequestDto](#dto-updatecontentcategoryrequestdto) | [ContentCategoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentCategories/DTOs/ContentCategoryDtos.cs#L28) |
-| [UpdateDiscussionRequestDto](#dto-updatediscussionrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L142) |
+| [UpdateDiscussionRequestDto](#dto-updatediscussionrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L143) |
 | [UpdateProfileRequestDto](#dto-updateprofilerequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L171) |
-| [UpdateQuizRequestDto](#dto-updatequizrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L118) |
-| [UpdateVocabularyRequestDto](#dto-updatevocabularyrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L92) |
+| [UpdateQuizRequestDto](#dto-updatequizrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L119) |
+| [UpdateVocabularyRequestDto](#dto-updatevocabularyrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L93) |
 | [UserProfileDto](#dto-userprofiledto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L49) |
 | [UserRole](#dto-userrole) | [UserRole.cs](../src/Core/StoryPlatform.Domain/Enums/UserRole.cs#L3) |
-| [ValidationCheckDto](#dto-validationcheckdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L159) |
-| [ValidationResultDto](#dto-validationresultdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L152) |
+| [ValidationCheckDto](#dto-validationcheckdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L161) |
+| [ValidationResultDto](#dto-validationresultdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L153) |
 | [VerifyEmailRequestDto](#dto-verifyemailrequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L143) |
 | [VerifyInvitationOtpRequestDto](#dto-verifyinvitationotprequestdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L53) |
 | [VerifyMfaRequestDto](#dto-verifymfarequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L14) |
 | [VerifyParentalGateRequestDto](#dto-verifyparentalgaterequestdto) | [ParentalGateDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/ParentalGate/DTOs/ParentalGateDtos.cs#L5) |
 | [VersionMutationResponseDto](#dto-versionmutationresponsedto) | [ExistingStoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ExistingStories/DTOs/ExistingStoryDtos.cs#L130) |
-| [VocabularyItemDto](#dto-vocabularyitemdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L85) |
-| [VocabularyReviewDto](#dto-vocabularyreviewdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L78) |
+| [VocabularyItemDto](#dto-vocabularyitemdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L86) |
+| [VocabularyReviewDto](#dto-vocabularyreviewdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L79) |
+| [AddRoadmapStoryRequestDto](#dto-addroadmapstoryrequestdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L33) |
+| [AddRoadmapStoryResultDto](#dto-addroadmapstoryresultdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L55) |
+| [ArchiveRoadmapRequestDto](#dto-archiveroadmaprequestdto) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L161) |
+| [CandidateQueryDto](#dto-candidatequerydto) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L67) |
+| [CandidateStoryDto](#dto-candidatestorydto) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L77) |
+| [CheckRequest](#dto-checkrequest) | [CreatorModerationCheckController.cs](../src/Core/StoryPlatform.Api/Controllers/CreatorModerationCheckController.cs#L11) |
+| [ChildAddResultDto](#dto-childaddresultdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L45) |
+| [ChildRoadmapDto](#dto-childroadmapdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L89) |
+| [ChildRoadmapItemDto](#dto-childroadmapitemdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L71) |
+| [CommunityBlockerDto](#dto-communityblockerdto) | [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L33) |
+| [CommunityChecklistEntryDto](#dto-communitychecklistentrydto) | [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L5) |
+| [CommunityEligibilityDto](#dto-communityeligibilitydto) | [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L51) |
+| [CommunityLabelDto](#dto-communitylabeldto) | [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L24) |
+| [CommunityLibraryQueryDto](#dto-communitylibraryquerydto) | [CommunityLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityLibraryDtos.cs#L9) |
+| [CommunityPiiLocationDto](#dto-communitypiilocationdto) | [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L44) |
+| [CommunityReviewBlockerDto](#dto-communityreviewblockerdto) | [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L37) |
+| [CommunityReviewDecisionResultDto](#dto-communityreviewdecisionresultdto) | [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L86) |
+| [CommunityReviewPackageDto](#dto-communityreviewpackagedto) | [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L50) |
+| [CommunityStoryDto](#dto-communitystorydto) | [CommunityLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityLibraryDtos.cs#L16) |
+| [CommunitySubmissionDto](#dto-communitysubmissiondto) | [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L77) |
+| [CommunitySubmitRequestDto](#dto-communitysubmitrequestdto) | [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L19) |
+| [CommunitySubmitResultDto](#dto-communitysubmitresultdto) | [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L65) |
+| [CopyrightDeclaration](#dto-copyrightdeclaration) | [CopyrightDeclaration.cs](../src/Core/StoryPlatform.Domain/Enums/CopyrightDeclaration.cs#L3) |
+| [CreateReviewItemRequestDto](#dto-createreviewitemrequestdto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L146) |
+| [CreatorPublicationResult](#dto-creatorpublicationresult) | [CreatorPublicationDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/CreatorPublicationDtos.cs#L17) |
+| [CreatorPublicationStatus](#dto-creatorpublicationstatus) | [CreatorPublicationDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/CreatorPublicationDtos.cs#L19) |
+| [CreatorRemovalRequest](#dto-creatorremovalrequest) | [CreatorPublicationDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/CreatorPublicationDtos.cs#L3) |
+| [CreatorRevisionRequest](#dto-creatorrevisionrequest) | [CreatorPublicationDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/CreatorPublicationDtos.cs#L7) |
+| [EscalateReportRequestDto](#dto-escalatereportrequestdto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L140) |
+| [GrayZoneContentCheckDto](#dto-grayzonecontentcheckdto) | [GrayZoneContentCheckService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Services/GrayZoneContentCheckService.cs#L10) |
+| [GrayZoneCriterionScore](#dto-grayzonecriterionscore) | [GrayZoneContracts.cs](../src/Shared/StoryPlatform.Contracts/AI/Moderation/GrayZoneContracts.cs#L4) |
+| [GrayZoneDecisionRequest](#dto-grayzonedecisionrequest) | [GrayZoneWorkflowService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Services/GrayZoneWorkflowService.cs#L13) |
+| [GrayZoneFinding](#dto-grayzonefinding) | [GrayZoneContracts.cs](../src/Shared/StoryPlatform.Contracts/AI/Moderation/GrayZoneContracts.cs#L5) |
+| [GrayZoneReviewDto](#dto-grayzonereviewdto) | [GrayZoneWorkflowService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Services/GrayZoneWorkflowService.cs#L14) |
+| [MyRoadmapDoneDto](#dto-myroadmapdonedto) | [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/MyRoadmapDtos.cs#L34) |
+| [MyRoadmapDto](#dto-myroadmapdto) | [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/MyRoadmapDtos.cs#L42) |
+| [MyRoadmapOpenStoryDto](#dto-myroadmapopenstorydto) | [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/MyRoadmapDtos.cs#L10) |
+| [MyRoadmapUpcomingDto](#dto-myroadmapupcomingdto) | [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/MyRoadmapDtos.cs#L25) |
+| [PiiFindingDto](#dto-piifindingdto) | [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L39) |
+| [PublishedContentItemDto](#dto-publishedcontentitemdto) | [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L25) |
+| [PublishedContentQueryDto](#dto-publishedcontentquerydto) | [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L11) |
+| [PublishedContentSource](#dto-publishedcontentsource) | [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L5) |
+| [PublishedRoadmapDto](#dto-publishedroadmapdto) | [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L48) |
+| [PublishedRoadmapStoryDto](#dto-publishedroadmapstorydto) | [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L63) |
+| [PublishedStoryContentDto](#dto-publishedstorycontentdto) | [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L38) |
+| [RejectCommunityRequestDto](#dto-rejectcommunityrequestdto) | [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L80) |
+| [RejectRoadmapRequestDto](#dto-rejectroadmaprequestdto) | [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L65) |
+| [RemovalDecisionRequest](#dto-removaldecisionrequest) | [CreatorPublicationDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/CreatorPublicationDtos.cs#L11) |
+| [ReorderRoadmapRequestDto](#dto-reorderroadmaprequestdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L66) |
+| [RequestRoadmapChangesDto](#dto-requestroadmapchangesdto) | [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L59) |
+| [RoadmapCategoryDto](#dto-roadmapcategorydto) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L16) |
+| [RoadmapChangePartDto](#dto-roadmapchangepartdto) | [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L51) |
+| [RoadmapCheckDto](#dto-roadmapcheckdto) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L34) |
+| [RoadmapChecklistEntryDto](#dto-roadmapchecklistentrydto) | [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L3) |
+| [RoadmapChildPlanDto](#dto-roadmapchildplandto) | [RoadmapLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/RoadmapLibraryDtos.cs#L67) |
+| [RoadmapCloneResultDto](#dto-roadmapcloneresultdto) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L154) |
+| [RoadmapCopyPlanDto](#dto-roadmapcopyplandto) | [RoadmapLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/RoadmapLibraryDtos.cs#L77) |
+| [RoadmapCopyRequestDto](#dto-roadmapcopyrequestdto) | [RoadmapLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/RoadmapLibraryDtos.cs#L46) |
+| [RoadmapDetailDto](#dto-roadmapdetaildto) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L42) |
+| [RoadmapInsertPosition](#dto-roadmapinsertposition) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L5) |
+| [RoadmapItemInputDto](#dto-roadmapiteminputdto) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L87) |
+| [RoadmapLastReviewDto](#dto-roadmaplastreviewdto) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L144) |
+| [RoadmapLibraryDetailDto](#dto-roadmaplibrarydetaildto) | [RoadmapLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/RoadmapLibraryDtos.cs#L41) |
+| [RoadmapLibraryItemDto](#dto-roadmaplibraryitemdto) | [RoadmapLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/RoadmapLibraryDtos.cs#L15) |
+| [RoadmapLibraryQueryDto](#dto-roadmaplibraryquerydto) | [RoadmapLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/RoadmapLibraryDtos.cs#L6) |
+| [RoadmapLibraryStoryDto](#dto-roadmaplibrarystorydto) | [RoadmapLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/RoadmapLibraryDtos.cs#L30) |
+| [RoadmapListGroup](#dto-roadmaplistgroup) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L105) |
+| [RoadmapListItemDto](#dto-roadmaplistitemdto) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L124) |
+| [RoadmapListQueryDto](#dto-roadmaplistquerydto) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L116) |
+| [RoadmapReviewBlockerDto](#dto-roadmapreviewblockerdto) | [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L16) |
+| [RoadmapReviewDecisionResultDto](#dto-roadmapreviewdecisionresultdto) | [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L70) |
+| [RoadmapReviewInfoDto](#dto-roadmapreviewinfodto) | [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L23) |
+| [RoadmapReviewPackageDto](#dto-roadmapreviewpackagedto) | [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L39) |
+| [RoadmapStepPlanDto](#dto-roadmapstepplandto) | [RoadmapLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/RoadmapLibraryDtos.cs#L56) |
+| [RoadmapStoryDto](#dto-roadmapstorydto) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L23) |
+| [RoadmapSubmitResultDto](#dto-roadmapsubmitresultdto) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L98) |
+| [RubricCloneRequest](#dto-rubricclonerequest) | [ModerationRubricService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Rubrics/ModerationRubricService.cs#L17) |
+| [RubricCriterion](#dto-rubriccriterion) | [RubricSnapshot.cs](../src/Shared/StoryPlatform.Contracts/AI/Moderation/RubricSnapshot.cs#L8) |
+| [RubricDefinition](#dto-rubricdefinition) | [RubricSnapshot.cs](../src/Shared/StoryPlatform.Contracts/AI/Moderation/RubricSnapshot.cs#L10) |
+| [RubricDto](#dto-rubricdto) | [ModerationRubricService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Rubrics/ModerationRubricService.cs#L19) |
+| [RubricEvaluationRequest](#dto-rubricevaluationrequest) | [ModerationRubricService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Rubrics/ModerationRubricService.cs#L18) |
+| [RubricExample](#dto-rubricexample) | [RubricSnapshot.cs](../src/Shared/StoryPlatform.Contracts/AI/Moderation/RubricSnapshot.cs#L7) |
+| [RubricRevisionRequest](#dto-rubricrevisionrequest) | [ModerationRubricService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Rubrics/ModerationRubricService.cs#L16) |
+| [RubricSnapshot](#dto-rubricsnapshot) | [RubricSnapshot.cs](../src/Shared/StoryPlatform.Contracts/AI/Moderation/RubricSnapshot.cs#L11) |
+| [RubricWriteRequest](#dto-rubricwriterequest) | [ModerationRubricService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Rubrics/ModerationRubricService.cs#L15) |
+| [SaveCommunityChecklistRequestDto](#dto-savecommunitychecklistrequestdto) | [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L18) |
+| [SaveRoadmapChecklistRequestDto](#dto-saveroadmapchecklistrequestdto) | [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L11) |
+| [SaveRoadmapRequestDto](#dto-saveroadmaprequestdto) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L5) |
+| [SetCommunityLabelsRequestDto](#dto-setcommunitylabelsrequestdto) | [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L31) |
+| [SetRoadmapItemsRequestDto](#dto-setroadmapitemsrequestdto) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L93) |
 
 <a id="dto-aiproposaldto"></a>
 ### AIProposalDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L194).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L210).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -3711,10 +4644,13 @@ Nguồn: [AdministratorDtos.cs](../src/Core/StoryPlatform.Application/Features/A
 
 Nguồn: [AgeBand.cs](../src/Core/StoryPlatform.Domain/Enums/AgeBand.cs#L3).
 
-Giá trị C# (JSON số trừ khi field có converter chuỗi):
+| Tên | Giá trị |
+|---|---|
+| `Age_6_8` | 1 |
+| `Age_9_10` | 2 |
 
-- `Age_6_8 = 1`
-- `Age_9_10 = 2`
+Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
+
 
 <a id="dto-agepresetdto"></a>
 ### AgePresetDto
@@ -3770,7 +4706,7 @@ Nguồn: [ApiResponse.cs](../src/Core/StoryPlatform.Application/Common/Models/Ap
 <a id="dto-applydiscardresponsedto"></a>
 ### ApplyDiscardResponseDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L215).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L231).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -3782,15 +4718,18 @@ Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRev
 
 Nguồn: [ApprovalMode.cs](../src/Core/StoryPlatform.Domain/Enums/ApprovalMode.cs#L3).
 
-Giá trị C# (JSON số trừ khi field có converter chuỗi):
+| Tên | Giá trị |
+|---|---|
+| `AlwaysManual` | 1 |
+| `AutoPublishOnThreshold` | 2 |
 
-- `AlwaysManual = 1`
-- `AutoPublishOnThreshold = 2`
+Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
+
 
 <a id="dto-approveblockerdto"></a>
 ### ApproveBlockerDto
 
-Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L171).
+Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L176).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -3817,17 +4756,30 @@ Ví dụ JSON minh họa shape request:
 <a id="dto-confirmcreatorcontentrequestdto"></a>
 ### ConfirmCreatorContentRequestDto
 
-Source: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs). Body: `versionId` (int, bắt buộc > 0), phiên nội dung hiện tại đang xác nhận; kiểm tra lại sau khi khóa story.
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L172).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `versionId` | `int` | Không | [System.ComponentModel.DataAnnotations.Range(1, int.MaxValue)] |
+
 
 <a id="dto-confirmcreatorcontentresponsedto"></a>
 ### ConfirmCreatorContentResponseDto
 
-Source: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs). Fields: `storyId` (int), `versionId` (int), `status` (string, `MediaProcessing`), `confirmedAt` (UTC datetime). Không có `approvedAt`; đây là xác nhận sáng tác, không phải quyết định Moderator.
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L178).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `storyId` | `int` | Không | — |
+| `versionId` | `int` | Không | — |
+| `status` | `string` | Không | default `string.Empty` |
+| `confirmedAt` | `DateTime` | Không | — |
+
 
 <a id="dto-approveresponsedto"></a>
 ### ApproveResponseDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L170).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L186).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -3858,7 +4810,7 @@ Ví dụ JSON minh họa shape request:
 <a id="dto-archivereportrequestdto"></a>
 ### ArchiveReportRequestDto
 
-Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L114).
+Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L120).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -3877,7 +4829,7 @@ Ví dụ JSON minh họa shape request:
 <a id="dto-archiverequestdto"></a>
 ### ArchiveRequestDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L178).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L194).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -3894,7 +4846,7 @@ Ví dụ JSON minh họa shape request:
 <a id="dto-archiveresponsedto"></a>
 ### ArchiveResponseDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L183).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L199).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -3907,17 +4859,20 @@ Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRev
 
 Nguồn: [ArchivedReason.cs](../src/Core/StoryPlatform.Domain/Enums/ArchivedReason.cs#L3).
 
-Giá trị C# (JSON số trừ khi field có converter chuỗi):
+| Tên | Giá trị |
+|---|---|
+| `SupervisorPreference` | 1 |
+| `SafetyConcern` | 2 |
+| `Copyright` | 3 |
+| `Inappropriate` | 4 |
 
-- `SupervisorPreference = 1`
-- `SafetyConcern = 2`
-- `Copyright = 3`
-- `Inappropriate = 4`
+Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
+
 
 <a id="dto-artifactchangedto"></a>
 ### ArtifactChangeDto
 
-Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L275).
+Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L280).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -3928,7 +4883,7 @@ Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Featur
 <a id="dto-artifactgenerationresultdto"></a>
 ### ArtifactGenerationResultDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L233).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L249).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -3943,7 +4898,7 @@ Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRev
 <a id="dto-artifactstatusdto"></a>
 ### ArtifactStatusDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L29).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L30).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -4335,7 +5290,7 @@ Ví dụ JSON minh họa shape request:
 <a id="dto-changerequestpartdto"></a>
 ### ChangeRequestPartDto
 
-Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L187).
+Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L192).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -4359,10 +5314,13 @@ Nguồn: [ChildAccessCredentialDtos.cs](../src/Core/StoryPlatform.Application/Fe
 
 Nguồn: [ChildCreationMode.cs](../src/Core/StoryPlatform.Domain/Enums/ChildCreationMode.cs#L4).
 
-Giá trị C# (JSON số trừ khi field có converter chuỗi):
+| Tên | Giá trị |
+|---|---|
+| `ReviewFirst` | 1 |
+| `ListenNow` | 2 |
 
-- `ReviewFirst = 1`
-- `ListenNow = 2`
+Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
+
 
 <a id="dto-childprofiledto"></a>
 ### ChildProfileDto
@@ -4539,9 +5497,11 @@ Nguồn: [ContentGenerationDtos.cs](../src/Core/StoryPlatform.Application/Featur
 | `quiz` | `string` | Không | default `"not_started"` |
 | `discussion` | `string` | Không | default `"not_started"` |
 | `isComplete` | `bool` | Không | — |
+| `waitingForModeration` | `bool` | Không | — |
 | `lastErrorCode` | `string?` | Có | — |
 | `qualityFailure` | [ContentQualityFailureDto?](#dto-contentqualityfailuredto) | Có | — |
 | `stableStoryVersionId` | `int?` | Có | — |
+
 
 <a id="dto-contentqualityfailuredto"></a>
 ### ContentQualityFailureDto
@@ -4568,7 +5528,7 @@ Nguồn: [ContentGenerationDtos.cs](../src/Core/StoryPlatform.Application/Featur
 <a id="dto-contentreportdecisionresultdto"></a>
 ### ContentReportDecisionResultDto
 
-Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L124).
+Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L130).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -4592,6 +5552,9 @@ Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/C
 | `description` | `string?` | Có | — |
 | `attachmentUrl` | `string?` | Có | — |
 | `isReviewItem` | `bool` | Không | — |
+| `itemStatus` | `string` | Không | default `string.Empty`; "Claimed" (đang do Moderator giữ) hoặc "Escalated" (đã chuyển Administrator). |
+| `escalationReason` | `string?` | Có | — |
+| `escalatedAt` | `DateTime?` | Có | — |
 | `createdAt` | `DateTime` | Không | — |
 | `story` | [ReportedStoryDto](#dto-reportedstorydto) | Không | default `new()` |
 | `version` | [ReportedVersionDto?](#dto-reportedversiondto) | Có | — |
@@ -4600,19 +5563,23 @@ Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/C
 | `quizzes` | [List&lt;ReportedQuizDto&gt;](#dto-reportedquizdto) | Không | default `new()` |
 | `discussionQuestions` | [List&lt;ReportedDiscussionDto&gt;](#dto-reporteddiscussiondto) | Không | default `new()` |
 
+
 <a id="dto-contentreportreason"></a>
 ### ContentReportReason
 
 Nguồn: [ContentReportReason.cs](../src/Core/StoryPlatform.Domain/Enums/ContentReportReason.cs#L3).
 
-Giá trị C# (JSON số trừ khi field có converter chuỗi):
+| Tên | Giá trị |
+|---|---|
+| `SafetyConcern` | 1 |
+| `Inappropriate` | 2 |
+| `WrongAgeBand` | 3 |
+| `Other` | 4 |
+| `Copyright` | 5 |
+| `Cultural` | 6 |
 
-- `SafetyConcern = 1`
-- `Inappropriate = 2`
-- `WrongAgeBand = 3`
-- `Other = 4`
-- `Copyright = 5`
-- `Cultural = 6`
+Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
+
 
 <a id="dto-contentreportresultdto"></a>
 ### ContentReportResultDto
@@ -4899,7 +5866,7 @@ Ví dụ JSON minh họa shape request:
 <a id="dto-createproposalresponsedto"></a>
 ### CreateProposalResponseDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L209).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L225).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -5116,7 +6083,7 @@ Ví dụ JSON minh họa shape request:
 <a id="dto-discussionitemdto"></a>
 ### DiscussionItemDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L135).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L136).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -5127,7 +6094,7 @@ Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRev
 <a id="dto-discussionreviewdto"></a>
 ### DiscussionReviewDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L128).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L129).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -5138,7 +6105,7 @@ Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRev
 <a id="dto-dismissreportrequestdto"></a>
 ### DismissReportRequestDto
 
-Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L108).
+Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L114).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -5227,11 +6194,14 @@ Nguồn: [ExistingStoryDtos.cs](../src/Core/StoryPlatform.Application/Features/E
 
 Nguồn: [ExistingStoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ExistingStories/DTOs/ExistingStoryDtos.cs#L66).
 
-Giá trị C# (JSON số trừ khi field có converter chuỗi):
+| Tên | Giá trị |
+|---|---|
+| `Suitable` | 1 |
+| `AdaptRecommended` | 2 |
+| `Blocked` | 3 |
 
-- `Suitable = 1`
-- `AdaptRecommended = 2`
-- `Blocked = 3`
+Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
+
 
 <a id="dto-existingstoryevaluationdto"></a>
 ### ExistingStoryEvaluationDto
@@ -5273,7 +6243,7 @@ Ví dụ JSON minh họa shape request:
 <a id="dto-generateartifactsrequestdto"></a>
 ### GenerateArtifactsRequestDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L225).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L241).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -5332,7 +6302,7 @@ Ví dụ JSON minh họa shape request:
 <a id="dto-grantreviewviewrequestdto"></a>
 ### GrantReviewViewRequestDto
 
-Nguồn: [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs#L67).
+Nguồn: [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs#L68).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -5627,7 +6597,7 @@ Ví dụ JSON minh họa shape request:
 <a id="dto-markpartviewedrequestdto"></a>
 ### MarkPartViewedRequestDto
 
-Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L147).
+Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L152).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -5697,21 +6667,24 @@ Nguồn: [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features
 
 Nguồn: [ModerationItemStatus.cs](../src/Core/StoryPlatform.Domain/Enums/ModerationItemStatus.cs#L3).
 
-Giá trị C# (JSON số trừ khi field có converter chuỗi):
+| Tên | Giá trị |
+|---|---|
+| `Pending` | 1 |
+| `Claimed` | 2 |
+| `Approved` | 3 |
+| `ChangesRequested` | 4 |
+| `Rejected` | 5 |
+| `Cleared` | 6 |
+| `Blocked` | 7 |
+| `Dismissed` | 8 |
+| `Archived` | 9 |
+| `Escalated` | 10 |
+| `Withdrawn` | 11 |
+| `Removed` | 12 |
+| `Closed` | 13 |
 
-- `Pending = 1`
-- `Claimed = 2`
-- `Approved = 3`
-- `ChangesRequested = 4`
-- `Rejected = 5`
-- `Cleared = 6`
-- `Blocked = 7`
-- `Dismissed = 8`
-- `Archived = 9`
-- `Escalated = 10`
-- `Withdrawn = 11`
-- `Removed = 12`
-- `Closed = 13`
+Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
+
 
 <a id="dto-moderationitemsummarydto"></a>
 ### ModerationItemSummaryDto
@@ -5741,25 +6714,31 @@ Nguồn: [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features
 
 Nguồn: [ModerationItemType.cs](../src/Core/StoryPlatform.Domain/Enums/ModerationItemType.cs#L3).
 
-Giá trị C# (JSON số trừ khi field có converter chuỗi):
+| Tên | Giá trị |
+|---|---|
+| `PublicStoryReview` | 1 |
+| `GrayZoneStory` | 2 |
+| `ContentReport` | 3 |
+| `RoadmapTemplateReview` | 4 |
+| `CommunitySubmission` | 5 |
+| `PublicStoryRemoval` | 6 |
 
-- `PublicStoryReview = 1`
-- `GrayZoneStory = 2`
-- `ContentReport = 3`
-- `RoadmapTemplateReview = 4`
-- `CommunitySubmission = 5`
-- `PublicStoryRemoval = 6`
+Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
+
 
 <a id="dto-moderationpriority"></a>
 ### ModerationPriority
 
 Nguồn: [ModerationPriority.cs](../src/Core/StoryPlatform.Domain/Enums/ModerationPriority.cs#L3).
 
-Giá trị C# (JSON số trừ khi field có converter chuỗi):
+| Tên | Giá trị |
+|---|---|
+| `High` | 1 |
+| `Medium` | 2 |
+| `Low` | 3 |
 
-- `High = 1`
-- `Medium = 2`
-- `Low = 3`
+Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
+
 
 <a id="dto-moderationqueuequerydto"></a>
 ### ModerationQueueQueryDto
@@ -5778,7 +6757,7 @@ Nguồn: [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features
 <a id="dto-moderationreviewviewdto"></a>
 ### ModerationReviewViewDto
 
-Nguồn: [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs#L76).
+Nguồn: [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs#L77).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -6179,7 +7158,7 @@ Ví dụ JSON minh họa shape request:
 <a id="dto-partialeditrequestdto"></a>
 ### PartialEditRequestDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L60).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L61).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -6231,16 +7210,19 @@ Nguồn: [PaymentDtos.cs](../src/Core/StoryPlatform.Application/Features/Payment
 
 Nguồn: [Permission.cs](../src/Core/StoryPlatform.Domain/Enums/Permission.cs#L3).
 
-Giá trị C# (JSON số trừ khi field có converter chuỗi):
+| Tên | Giá trị |
+|---|---|
+| `ViewProgress` | 1 |
+| `ViewResults` | 2 |
+| `AssignActivity` | 3 |
+| `ReceiveReport` | 4 |
+| `ApproveReadingLevel` | 5 |
+| `ApproveStory` | 6 |
+| `ManageSafetySettings` | 7 |
+| `GenerateStory` | 8 |
 
-- `ViewProgress = 1`
-- `ViewResults = 2`
-- `AssignActivity = 3`
-- `ReceiveReport = 4`
-- `ApproveReadingLevel = 5`
-- `ApproveStory = 6`
-- `ManageSafetySettings = 7`
-- `GenerateStory = 8`
+Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
+
 
 <a id="dto-permissionrequestdto"></a>
 ### PermissionRequestDto
@@ -6262,11 +7244,14 @@ Nguồn: [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/Chi
 
 Nguồn: [PolicyRule.cs](../src/Core/StoryPlatform.Domain/Enums/PolicyRule.cs#L3).
 
-Giá trị C# (JSON số trừ khi field có converter chuỗi):
+| Tên | Giá trị |
+|---|---|
+| `Allowed` | 1 |
+| `Restricted` | 2 |
+| `Blocked` | 3 |
 
-- `Allowed = 1`
-- `Restricted = 2`
-- `Blocked = 3`
+Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
+
 
 <a id="dto-previewcreatorimportrequest"></a>
 ### PreviewCreatorImportRequest
@@ -6292,7 +7277,7 @@ Ví dụ JSON minh họa shape request:
 <a id="dto-publicreviewchecklistdto"></a>
 ### PublicReviewChecklistDto
 
-Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L131).
+Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L136).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -6324,7 +7309,7 @@ Ví dụ JSON minh họa shape request:
 <a id="dto-publicreviewdecisionresultdto"></a>
 ### PublicReviewDecisionResultDto
 
-Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L177).
+Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L182).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -6353,6 +7338,11 @@ Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Featur
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
+| `startOffset` | `int?` | Có | — |
+| `endOffset` | `int?` | Có | — |
+| `criterionCode` | `string?` | Có | — |
+| `evidenceQuote` | `string?` | Có | — |
+| `contextNote` | `string?` | Có | — |
 | `flagId` | `string` | Không | default `string.Empty` |
 | `kind` | `string` | Không | default `string.Empty` |
 | `name` | `string` | Không | default `string.Empty` |
@@ -6360,10 +7350,11 @@ Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Featur
 | `resolved` | `bool` | Không | — |
 | `resolvedReason` | `string?` | Có | — |
 
+
 <a id="dto-publicreviewflagsresultdto"></a>
 ### PublicReviewFlagsResultDto
 
-Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L159).
+Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L164).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -6374,7 +7365,7 @@ Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Featur
 <a id="dto-publicreviewhistoryentrydto"></a>
 ### PublicReviewHistoryEntryDto
 
-Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L221).
+Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L226).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -6442,7 +7433,7 @@ Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Featur
 <a id="dto-publicreviewprogressdto"></a>
 ### PublicReviewProgressDto
 
-Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L121).
+Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L126).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -6542,7 +7533,7 @@ Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Featur
 <a id="dto-publicstorysubmissionresultdto"></a>
 ### PublicStorySubmissionResultDto
 
-Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L211).
+Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L216).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -6556,7 +7547,7 @@ Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Featur
 <a id="dto-publicversioncomparisondto"></a>
 ### PublicVersionComparisonDto
 
-Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L234).
+Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L239).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -6576,7 +7567,7 @@ Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Featur
 <a id="dto-publicversionmetricsdto"></a>
 ### PublicVersionMetricsDto
 
-Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L257).
+Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L262).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -6589,7 +7580,7 @@ Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Featur
 <a id="dto-quizitemdto"></a>
 ### QuizItemDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L109).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L110).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -6602,7 +7593,7 @@ Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRev
 <a id="dto-quizreviewdto"></a>
 ### QuizReviewDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L102).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L103).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -6615,10 +7606,13 @@ Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRev
 
 Nguồn: [ReadingMode.cs](../src/Core/StoryPlatform.Domain/Enums/ReadingMode.cs#L4).
 
-Giá trị C# (JSON số trừ khi field có converter chuỗi):
+| Tên | Giá trị |
+|---|---|
+| `ListenFirst` | 1 |
+| `ReadFirst` | 2 |
 
-- `ListenFirst = 1`
-- `ReadFirst = 2`
+Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
+
 
 <a id="dto-reasonrequestdto"></a>
 ### ReasonRequestDto
@@ -6752,7 +7746,7 @@ Ví dụ JSON minh họa shape request:
 <a id="dto-rejectrequestdto"></a>
 ### RejectRequestDto
 
-Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L200).
+Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L205).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -6798,7 +7792,7 @@ Nguồn: [AuthoringGuideService.cs](../src/Core/StoryPlatform.Application/Featur
 <a id="dto-reporteddiscussiondto"></a>
 ### ReportedDiscussionDto
 
-Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L102).
+Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L108).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -6808,7 +7802,7 @@ Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/C
 <a id="dto-reportedlabeldto"></a>
 ### ReportedLabelDto
 
-Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L65).
+Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L71).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -6818,7 +7812,7 @@ Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/C
 <a id="dto-reportedquizdto"></a>
 ### ReportedQuizDto
 
-Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L94).
+Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L100).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -6830,7 +7824,7 @@ Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/C
 <a id="dto-reportedscenedto"></a>
 ### ReportedSceneDto
 
-Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L80).
+Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L86).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -6842,7 +7836,7 @@ Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/C
 <a id="dto-reportedstorydto"></a>
 ### ReportedStoryDto
 
-Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L51).
+Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L57).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -6860,7 +7854,7 @@ Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/C
 <a id="dto-reportedversiondto"></a>
 ### ReportedVersionDto
 
-Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L71).
+Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L77).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -6873,7 +7867,7 @@ Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/C
 <a id="dto-reportedvocabularydto"></a>
 ### ReportedVocabularyDto
 
-Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L88).
+Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L94).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -6883,7 +7877,7 @@ Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/C
 <a id="dto-requestchangesdto"></a>
 ### RequestChangesDto
 
-Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L194).
+Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L199).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -6967,7 +7961,7 @@ Ví dụ JSON minh họa shape request:
 <a id="dto-resolveflagrequestdto"></a>
 ### ResolveFlagRequestDto
 
-Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L153).
+Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L158).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -7196,7 +8190,7 @@ Ví dụ JSON minh họa shape request:
 <a id="dto-scenechangedto"></a>
 ### SceneChangeDto
 
-Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L266).
+Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L271).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -7252,7 +8246,7 @@ Nguồn: [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/
 <a id="dto-setcontentlabelsrequestdto"></a>
 ### SetContentLabelsRequestDto
 
-Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L166).
+Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L171).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -7513,7 +8507,7 @@ Nguồn: [MediaGenerationModels.cs](../src/Core/StoryPlatform.Application/Featur
 <a id="dto-storyreview-updatestoryrequestdto"></a>
 ### StoryReview.UpdateStoryRequestDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L52).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L53).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -7536,7 +8530,7 @@ Ví dụ JSON minh họa shape request:
 <a id="dto-storyreviewdto"></a>
 ### StoryReviewDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L39).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L40).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -7555,16 +8549,19 @@ Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRev
 
 Nguồn: [StoryStatus.cs](../src/Core/StoryPlatform.Domain/Enums/StoryStatus.cs#L3).
 
-Giá trị C# (JSON số trừ khi field có converter chuỗi):
+| Tên | Giá trị |
+|---|---|
+| `Draft` | 1 |
+| `OutlineReview` | 2 |
+| `ContentReview` | 3 |
+| `Approved` | 4 |
+| `MediaProcessing` | 5 |
+| `Ready` | 6 |
+| `Rejected` | 7 |
+| `Archived` | 8 |
 
-- `Draft = 1`
-- `OutlineReview = 2`
-- `ContentReview = 3`
-- `Approved = 4`
-- `MediaProcessing = 5`
-- `Ready = 6`
-- `Rejected = 7`
-- `Archived = 8`
+Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
+
 
 <a id="dto-submitaistoryinputrequestdto"></a>
 ### SubmitAIStoryInputRequestDto
@@ -7661,7 +8658,7 @@ Ví dụ JSON minh họa shape request:
 <a id="dto-submitpublicstoryrequestdto"></a>
 ### SubmitPublicStoryRequestDto
 
-Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L205).
+Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L210).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -7725,7 +8722,7 @@ Nguồn: [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/Chi
 <a id="dto-textdiffentrydto"></a>
 ### TextDiffEntryDto
 
-Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L250).
+Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L255).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -7736,7 +8733,7 @@ Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Featur
 <a id="dto-textselectiondto"></a>
 ### TextSelectionDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L67).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L68).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -7780,10 +8777,13 @@ Nguồn: [TokenQuotaDtos.cs](../src/Core/StoryPlatform.Application/Features/Toke
 
 Nguồn: [TopicRelation.cs](../src/Core/StoryPlatform.Domain/Enums/TopicRelation.cs#L3).
 
-Giá trị C# (JSON số trừ khi field có converter chuỗi):
+| Tên | Giá trị |
+|---|---|
+| `FavoriteTopic` | 1 |
+| `PriorityFocusArea` | 2 |
 
-- `FavoriteTopic = 1`
-- `PriorityFocusArea = 2`
+Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
+
 
 <a id="dto-transferownershiprequestdto"></a>
 ### TransferOwnershipRequestDto
@@ -7849,7 +8849,7 @@ Ví dụ JSON minh họa shape request:
 <a id="dto-updatediscussionrequestdto"></a>
 ### UpdateDiscussionRequestDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L142).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L143).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -7893,7 +8893,7 @@ Ví dụ JSON minh họa shape request:
 <a id="dto-updatequizrequestdto"></a>
 ### UpdateQuizRequestDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L118).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L119).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -7920,7 +8920,7 @@ Ví dụ JSON minh họa shape request:
 <a id="dto-updatevocabularyrequestdto"></a>
 ### UpdateVocabularyRequestDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L92).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L93).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -7963,17 +8963,20 @@ Nguồn: [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/
 
 Nguồn: [UserRole.cs](../src/Core/StoryPlatform.Domain/Enums/UserRole.cs#L3).
 
-Giá trị C# (JSON số trừ khi field có converter chuỗi):
+| Tên | Giá trị |
+|---|---|
+| `Parent` | 1 |
+| `Moderator` | 2 |
+| `Administrator` | 3 |
+| `ContentCreator` | 4 |
 
-- `Parent = 1`
-- `Moderator = 2`
-- `Administrator = 3`
-- `ContentCreator = 4`
+Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
+
 
 <a id="dto-validationcheckdto"></a>
 ### ValidationCheckDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L159).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L161).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -7984,7 +8987,7 @@ Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRev
 <a id="dto-validationresultdto"></a>
 ### ValidationResultDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L152).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L153).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -8085,7 +9088,7 @@ Nguồn: [ExistingStoryDtos.cs](../src/Core/StoryPlatform.Application/Features/E
 <a id="dto-vocabularyitemdto"></a>
 ### VocabularyItemDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L85).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L86).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -8096,13 +9099,1576 @@ Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRev
 <a id="dto-vocabularyreviewdto"></a>
 ### VocabularyReviewDto
 
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L78).
+Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L79).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
 | `storyId` | `int` | Không | — |
 | `versionId` | `int` | Không | — |
 | `items` | [List&lt;VocabularyItemDto&gt;](#dto-vocabularyitemdto) | Không | default `new()` |
+
+<a id="dto-addroadmapstoryrequestdto"></a>
+### AddRoadmapStoryRequestDto
+
+Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L33).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `storyId` | `int` | Không | — |
+| `childProfileIds` | `List&lt;int&gt;` | Không | default `new()` |
+| `position` | [RoadmapInsertPosition](#dto-roadmapinsertposition) | Không | default `RoadmapInsertPosition.End`; [JsonConverter(typeof(JsonStringEnumConverter))] |
+| `expectedDays` | `int?` | Có | — |
+| `note` | `string?` | Có | — |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "storyId": 123,
+  "childProfileIds": [
+    10,
+    11
+  ],
+  "position": "End",
+  "expectedDays": 7,
+  "note": "Đọc cùng gia đình"
+}
+~~~
+
+
+<a id="dto-addroadmapstoryresultdto"></a>
+### AddRoadmapStoryResultDto
+
+Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L55).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `results` | [List&lt;ChildAddResultDto&gt;](#dto-childaddresultdto) | Không | default `new()` |
+
+<a id="dto-archiveroadmaprequestdto"></a>
+### ArchiveRoadmapRequestDto
+
+Nguồn: [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L161).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `reason` | `string` | Không | default `string.Empty`; Lý do Archive, bắt buộc từ 3 đến 500 ký tự. |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "reason": "Bộ truyện cần cập nhật."
+}
+~~~
+
+
+<a id="dto-candidatequerydto"></a>
+### CandidateQueryDto
+
+Nguồn: [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L67).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `ageBand` | `string?` | Có | — |
+| `readingLevelMin` | `int?` | Có | — |
+| `readingLevelMax` | `int?` | Có | — |
+| `contentCategoryId` | `int?` | Có | — |
+| `pageIndex` | `int` | Không | default `1` |
+| `pageSize` | `int` | Không | default `20` |
+
+<a id="dto-candidatestorydto"></a>
+### CandidateStoryDto
+
+Nguồn: [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L77).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `storyId` | `int` | Không | — |
+| `title` | `string?` | Có | — |
+| `ageBand` | `string` | Không | default `string.Empty` |
+| `readingLevel` | `int?` | Có | — |
+| `labels` | [List&lt;RoadmapCategoryDto&gt;](#dto-roadmapcategorydto) | Không | default `new()` |
+| `publishedAt` | `DateTime?` | Có | — |
+
+<a id="dto-checkrequest"></a>
+### CheckRequest
+
+Kiểu lồng CreatorModerationCheckController.CheckRequest; body JSON chỉ có versionId.
+
+Nguồn: [CreatorModerationCheckController.cs](../src/Core/StoryPlatform.Api/Controllers/CreatorModerationCheckController.cs#L11).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `versionId` | `int` | Không | — |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "versionId": 123
+}
+~~~
+
+
+<a id="dto-childaddresultdto"></a>
+### ChildAddResultDto
+
+Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L45).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `childProfileId` | `int` | Không | — |
+| `outcome` | `string` | Không | default `string.Empty` |
+| `skipCode` | `string?` | Có | — |
+| `message` | `string?` | Có | — |
+| `itemId` | `int?` | Có | — |
+| `warnings` | `List&lt;string&gt;` | Không | default `new()` |
+
+<a id="dto-childroadmapdto"></a>
+### ChildRoadmapDto
+
+Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L89).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `childProfileId` | `int` | Không | — |
+| `open` | [ChildRoadmapItemDto?](#dto-childroadmapitemdto) | Có | — |
+| `waiting` | [List&lt;ChildRoadmapItemDto&gt;](#dto-childroadmapitemdto) | Không | default `new()` |
+| `history` | [List&lt;ChildRoadmapItemDto&gt;](#dto-childroadmapitemdto) | Không | default `new()` |
+| `completedCount` | `int` | Không | — |
+| `totalCount` | `int` | Không | — |
+
+<a id="dto-childroadmapitemdto"></a>
+### ChildRoadmapItemDto
+
+Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L71).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `id` | `int` | Không | — |
+| `storyId` | `int` | Không | — |
+| `title` | `string?` | Có | — |
+| `position` | `int` | Không | — |
+| `status` | `string` | Không | default `string.Empty` |
+| `source` | `string` | Không | default `string.Empty` |
+| `skipReason` | `string?` | Có | — |
+| `note` | `string?` | Có | — |
+| `expectedDays` | `int?` | Có | — |
+| `expectedCompletionAt` | `DateTime?` | Có | — |
+| `openedAt` | `DateTime?` | Có | — |
+| `completedAt` | `DateTime?` | Có | — |
+| `addedByUserId` | `int` | Không | — |
+| `isStoryAvailable` | `bool` | Không | — |
+
+<a id="dto-communityblockerdto"></a>
+### CommunityBlockerDto
+
+Nguồn: [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L33).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `code` | `string` | Không | default `string.Empty` |
+| `message` | `string` | Không | default `string.Empty` |
+
+<a id="dto-communitychecklistentrydto"></a>
+### CommunityChecklistEntryDto
+
+Nguồn: [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L5).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `code` | `string` | Không | default `string.Empty`; safety_baseline, no_personal_info hoặc metadata_labels. |
+| `label` | `string` | Không | default `string.Empty` |
+| `passed` | `bool` | Không | — |
+| `note` | `string?` | Có | Ghi chú tùy chọn, tối đa 500 ký tự. |
+
+<a id="dto-communityeligibilitydto"></a>
+### CommunityEligibilityDto
+
+Nguồn: [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L51).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `storyId` | `int` | Không | — |
+| `canSubmit` | `bool` | Không | — |
+| `storyVersionId` | `int?` | Có | — |
+| `requiredDeclaration` | `string` | Không | default `"none"`; "none" (truyện AI) hoặc "own_work" (truyện tự viết / nhập). |
+| `blockers` | [List&lt;CommunityBlockerDto&gt;](#dto-communityblockerdto) | Không | default `new()` |
+| `piiFindings` | [List&lt;PiiFindingDto&gt;](#dto-piifindingdto) | Không | default `new()` |
+
+<a id="dto-communitylabeldto"></a>
+### CommunityLabelDto
+
+Nguồn: [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L24).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `id` | `int` | Không | — |
+| `code` | `string` | Không | default `string.Empty` |
+| `displayName` | `string` | Không | default `string.Empty` |
+
+<a id="dto-communitylibraryquerydto"></a>
+### CommunityLibraryQueryDto
+
+Nguồn: [CommunityLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityLibraryDtos.cs#L9).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `pageIndex` | `int` | Không | default `1` |
+| `pageSize` | `int` | Không | default `20` |
+
+<a id="dto-communitypiilocationdto"></a>
+### CommunityPiiLocationDto
+
+Nguồn: [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L44).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `kind` | `string` | Không | default `string.Empty` |
+| `location` | `string` | Không | default `string.Empty` |
+
+<a id="dto-communityreviewblockerdto"></a>
+### CommunityReviewBlockerDto
+
+Nguồn: [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L37).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `code` | `string` | Không | default `string.Empty`; own_submission, checklist_incomplete, story_archived, pii_found hoặc no_labels. |
+| `message` | `string` | Không | default `string.Empty` |
+
+<a id="dto-communityreviewdecisionresultdto"></a>
+### CommunityReviewDecisionResultDto
+
+Nguồn: [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L86).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `itemId` | `int` | Không | — |
+| `decision` | `string` | Không | default `string.Empty`; "Approved" hoặc "Rejected". |
+| `storyId` | `int` | Không | — |
+| `decidedAt` | `DateTime` | Không | — |
+
+<a id="dto-communityreviewpackagedto"></a>
+### CommunityReviewPackageDto
+
+Nguồn: [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L50).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `itemId` | `int` | Không | — |
+| `story` | [ReportedStoryDto](#dto-reportedstorydto) | Không | default `new()` |
+| `version` | [ReportedVersionDto](#dto-reportedversiondto) | Không | default `new()`; Đúng phiên bản đã ghim lúc nộp (không phải phiên bản hiện hành). |
+| `scenes` | [List&lt;ReportedSceneDto&gt;](#dto-reportedscenedto) | Không | default `new()` |
+| `vocabulary` | [List&lt;ReportedVocabularyDto&gt;](#dto-reportedvocabularydto) | Không | default `new()` |
+| `quizzes` | [List&lt;ReportedQuizDto&gt;](#dto-reportedquizdto) | Không | default `new()` |
+| `discussionQuestions` | [List&lt;ReportedDiscussionDto&gt;](#dto-reporteddiscussiondto) | Không | default `new()` |
+| `labels` | [List&lt;CommunityLabelDto&gt;](#dto-communitylabeldto) | Không | default `new()` |
+| `copyrightDeclaration` | `string?` | Có | AiGenerated hoặc OwnWork (người nộp khai). |
+| `piiCheckSummary` | `string?` | Có | JSON kết quả dò PII lúc nộp (chỉ loại và vị trí). |
+| `piiRescan` | [List&lt;CommunityPiiLocationDto&gt;](#dto-communitypiilocationdto) | Không | default `new()`; Kết quả dò PII lại trên bản ghim ngay bây giờ (chỉ loại và vị trí). |
+| `isResubmission` | `bool` | Không | — |
+| `checklist` | [List&lt;CommunityChecklistEntryDto&gt;](#dto-communitychecklistentrydto) | Không | default `new()` |
+| `blockers` | [List&lt;CommunityReviewBlockerDto&gt;](#dto-communityreviewblockerdto) | Không | default `new()` |
+| `canApprove` | `bool` | Không | True khi không còn khóa nào (mở nút Approve). |
+| `claimExpiresAt` | `DateTime` | Không | — |
+
+<a id="dto-communitystorydto"></a>
+### CommunityStoryDto
+
+Nguồn: [CommunityLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityLibraryDtos.cs#L16).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `submissionId` | `int` | Không | Mã dùng để mở truyện (không phải Id truyện gốc). |
+| `title` | `string` | Không | default `string.Empty` |
+| `description` | `string?` | Có | — |
+| `ageBand` | `string` | Không | default `string.Empty` |
+| `readingLevel` | `int?` | Có | — |
+| `labels` | [List&lt;CommunityLabelDto&gt;](#dto-communitylabeldto) | Không | default `new()` |
+| `author` | `string` | Không | default `CommunityLibraryPolicy.AuthorName`; Luôn là "Cộng đồng". |
+| `approvedAt` | `DateTime?` | Có | — |
+
+<a id="dto-communitysubmissiondto"></a>
+### CommunitySubmissionDto
+
+Nguồn: [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L77).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `itemId` | `int` | Không | — |
+| `storyId` | `int` | Không | — |
+| `storyTitle` | `string?` | Có | — |
+| `status` | `string` | Không | default `string.Empty`; "Pending" (kể cả đã có người nhận), "Approved", "Rejected", "Withdrawn" hoặc "Removed". |
+| `submittedAt` | `DateTime` | Không | — |
+| `decidedAt` | `DateTime?` | Có | — |
+| `rejectReason` | `string?` | Có | — |
+| `canWithdraw` | `bool` | Không | — |
+| `canRemove` | `bool` | Không | — |
+
+<a id="dto-communitysubmitrequestdto"></a>
+### CommunitySubmitRequestDto
+
+Nguồn: [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L19).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `storyId` | `int` | Không | — |
+| `confirmNoPersonalInfo` | `bool` | Không | Xác nhận truyện không chứa thông tin định danh của bé / gia đình (bắt buộc khi nộp). |
+| `copyrightDeclaration` | [CopyrightDeclaration?](#dto-copyrightdeclaration) | Có | cần khai. FamilyUse (chỉ dùng trong gia đình) không nộp được. |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "storyId": 123,
+  "confirmNoPersonalInfo": true,
+  "copyrightDeclaration": 2
+}
+~~~
+
+
+<a id="dto-communitysubmitresultdto"></a>
+### CommunitySubmitResultDto
+
+Nguồn: [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L65).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `itemId` | `int` | Không | — |
+| `storyId` | `int` | Không | — |
+| `storyVersionId` | `int` | Không | Phiên bản đã được ghim cho thư viện. |
+| `status` | `string` | Không | default `string.Empty`; "Pending" sau khi nộp. |
+
+<a id="dto-copyrightdeclaration"></a>
+### CopyrightDeclaration
+
+Nguồn: [CopyrightDeclaration.cs](../src/Core/StoryPlatform.Domain/Enums/CopyrightDeclaration.cs#L3).
+
+| Tên | Giá trị |
+|---|---|
+| `AiGenerated` | 1 |
+| `OwnWork` | 2 |
+| `FamilyUse` | 3 |
+
+Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
+
+<a id="dto-createreviewitemrequestdto"></a>
+### CreateReviewItemRequestDto
+
+Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L146).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `storyId` | `int` | Không | — |
+| `readingRoadmapId` | `int?` | Có | Khi rà soát một truyện trong bộ truyện mẫu: Id bộ (bộ phải đang công khai và chứa truyện). |
+| `reason` | [ContentReportReason](#dto-contentreportreason) | Không | [JsonConverter(typeof(JsonStringEnumConverter))] |
+| `description` | `string?` | Có | Ghi chú tùy chọn, tối đa 2000 ký tự. |
+| `attachmentUrl` | `string?` | Có | Nguồn đính kèm tùy chọn (URL http hoặc https, tối đa 500 ký tự). |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "storyId": 123,
+  "readingRoadmapId": null,
+  "reason": "SafetyConcern",
+  "description": "Cần rà soát lại nội dung.",
+  "attachmentUrl": null
+}
+~~~
+
+
+<a id="dto-creatorpublicationresult"></a>
+### CreatorPublicationResult
+
+Nguồn: [CreatorPublicationDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/CreatorPublicationDtos.cs#L17).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `storyId` | `int` | Không | — |
+| `versionId` | `int` | Không | — |
+| `itemId` | `int?` | Có | — |
+| `status` | `string` | Không | — |
+| `revisionToken` | `string` | Không | — |
+
+<a id="dto-creatorpublicationstatus"></a>
+### CreatorPublicationStatus
+
+Nguồn: [CreatorPublicationDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/CreatorPublicationDtos.cs#L19).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `storyId` | `int` | Không | — |
+| `versionId` | `int` | Không | — |
+| `isPublished` | `bool` | Không | — |
+| `reviewStatus` | `string` | Không | — |
+| `openItemId` | `int?` | Có | — |
+| `openItemType` | `string?` | Có | — |
+| `openItemStatus` | `string?` | Có | — |
+
+<a id="dto-creatorremovalrequest"></a>
+### CreatorRemovalRequest
+
+Nguồn: [CreatorPublicationDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/CreatorPublicationDtos.cs#L3).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `reason` | `string` | Không | default `string.Empty`; [Required, StringLength(2000, MinimumLength = 1)] |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "reason": "Cần sửa nội dung bản phát hành."
+}
+~~~
+
+
+<a id="dto-creatorrevisionrequest"></a>
+### CreatorRevisionRequest
+
+Nguồn: [CreatorPublicationDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/CreatorPublicationDtos.cs#L7).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `sourceVersionId` | `int` | Không | [Range(1, int.MaxValue)] |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "sourceVersionId": 123
+}
+~~~
+
+
+<a id="dto-escalatereportrequestdto"></a>
+### EscalateReportRequestDto
+
+Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L140).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `reason` | `string` | Không | default `string.Empty`; Lý do chuyển Administrator (bắt buộc, tối đa 1000 ký tự). Chỉ Administrator đọc được. |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "reason": "Cần Administrator đánh giá trường hợp này."
+}
+~~~
+
+
+<a id="dto-grayzonecontentcheckdto"></a>
+### GrayZoneContentCheckDto
+
+Nguồn: [GrayZoneContentCheckService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Services/GrayZoneContentCheckService.cs#L10).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `storyVersionId` | `int` | Không | — |
+| `status` | `string` | Không | — |
+| `waitingForModeration` | `bool` | Không | — |
+
+<a id="dto-grayzonecriterionscore"></a>
+### GrayZoneCriterionScore
+
+Nguồn: [GrayZoneContracts.cs](../src/Shared/StoryPlatform.Contracts/AI/Moderation/GrayZoneContracts.cs#L4).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `code` | `string` | Không | — |
+| `level` | `int` | Không | — |
+
+<a id="dto-grayzonedecisionrequest"></a>
+### GrayZoneDecisionRequest
+
+Nguồn: [GrayZoneWorkflowService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Services/GrayZoneWorkflowService.cs#L13).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `decision` | `string` | Không | — |
+| `reason` | `string` | Không | — |
+| `rowVersion` | `int` | Không | — |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "decision": "Clear",
+  "reason": "Đã xem xét nội dung theo ngữ cảnh.",
+  "rowVersion": 1
+}
+~~~
+
+
+<a id="dto-grayzonefinding"></a>
+### GrayZoneFinding
+
+Nguồn: [GrayZoneContracts.cs](../src/Shared/StoryPlatform.Contracts/AI/Moderation/GrayZoneContracts.cs#L5).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `criterionCode` | `string` | Không | — |
+| `kind` | `string` | Không | — |
+| `name` | `string` | Không | — |
+| `evidenceQuote` | `string` | Không | — |
+| `reason` | `string` | Không | — |
+| `contextNote` | `string` | Không | — |
+
+<a id="dto-grayzonereviewdto"></a>
+### GrayZoneReviewDto
+
+Nguồn: [GrayZoneWorkflowService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Services/GrayZoneWorkflowService.cs#L14).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `itemId` | `int` | Không | — |
+| `storyVersionId` | `int` | Không | — |
+| `versionNo` | `int` | Không | — |
+| `title` | `string` | Không | — |
+| `content` | `string` | Không | — |
+| `ageBand` | `string` | Không | — |
+| `readingLevel` | `int?` | Có | — |
+| `flags` | `string?` | Có | — |
+| `rowVersion` | `int` | Không | — |
+
+<a id="dto-myroadmapdonedto"></a>
+### MyRoadmapDoneDto
+
+Nguồn: [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/MyRoadmapDtos.cs#L34).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `storyId` | `int` | Không | — |
+| `title` | `string?` | Có | — |
+| `coverImageUrl` | `string?` | Có | — |
+| `completedAt` | `DateTime?` | Có | — |
+
+<a id="dto-myroadmapdto"></a>
+### MyRoadmapDto
+
+Nguồn: [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/MyRoadmapDtos.cs#L42).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `open` | [MyRoadmapOpenStoryDto?](#dto-myroadmapopenstorydto) | Có | — |
+| `upcoming` | [List&lt;MyRoadmapUpcomingDto&gt;](#dto-myroadmapupcomingdto) | Không | default `new()` |
+| `done` | [List&lt;MyRoadmapDoneDto&gt;](#dto-myroadmapdonedto) | Không | default `new()` |
+| `completedCount` | `int` | Không | — |
+| `totalCount` | `int` | Không | — |
+| `isFinished` | `bool` | Không | — |
+
+<a id="dto-myroadmapopenstorydto"></a>
+### MyRoadmapOpenStoryDto
+
+Nguồn: [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/MyRoadmapDtos.cs#L10).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `storyId` | `int` | Không | — |
+| `title` | `string?` | Có | — |
+| `coverImageUrl` | `string?` | Có | — |
+| `note` | `string?` | Có | — |
+| `expectedBy` | `DateTime?` | Có | Chỉ có giá trị khi ngày mong đọc xong vẫn còn ở tương lai. |
+| `isLocked` | `bool` | Không | Khóa trung tính, không tiết lộ lý do. |
+
+<a id="dto-myroadmapupcomingdto"></a>
+### MyRoadmapUpcomingDto
+
+Nguồn: [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/MyRoadmapDtos.cs#L25).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `order` | `int` | Không | — |
+| `storyId` | `int` | Không | — |
+| `title` | `string?` | Có | — |
+| `coverImageUrl` | `string?` | Có | — |
+| `isLocked` | `bool` | Không | default `true` |
+
+<a id="dto-piifindingdto"></a>
+### PiiFindingDto
+
+Nguồn: [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L39).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `kind` | `string` | Không | default `string.Empty`; phone, email, url, social_handle, address, school, class hoặc child_nickname. |
+| `location` | `string` | Không | default `string.Empty`; title, description, content, lesson, scene N, vocabulary N, quiz N hoặc discussion N. |
+| `excerpt` | `string` | Không | default `string.Empty`; Đoạn ngắn quanh chỗ nghi để tự tìm và sửa (chỉ trả cho người nộp, không được lưu). |
+
+<a id="dto-publishedcontentitemdto"></a>
+### PublishedContentItemDto
+
+Nguồn: [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L25).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `source` | `string` | Không | default `string.Empty` |
+| `id` | `int` | Không | — |
+| `title` | `string` | Không | default `string.Empty` |
+| `ageBand` | `string` | Không | default `string.Empty` |
+| `labels` | [List&lt;ReportedLabelDto&gt;](#dto-reportedlabeldto) | Không | default `new()` |
+| `publishedAt` | `DateTime?` | Có | — |
+| `storyCount` | `int?` | Có | — |
+| `needsUpdate` | `bool` | Không | — |
+
+<a id="dto-publishedcontentquerydto"></a>
+### PublishedContentQueryDto
+
+Nguồn: [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L11).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `source` | [PublishedContentSource](#dto-publishedcontentsource) | Không | [JsonConverter(typeof(JsonStringEnumConverter))] |
+| `ageBand` | `string?` | Có | — |
+| `contentCategoryId` | `int?` | Có | — |
+| `publishedFrom` | `DateTime?` | Có | — |
+| `publishedTo` | `DateTime?` | Có | — |
+| `pageIndex` | `int` | Không | default `1` |
+| `pageSize` | `int` | Không | default `20` |
+
+<a id="dto-publishedcontentsource"></a>
+### PublishedContentSource
+
+Nguồn: [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L5).
+
+| Tên | Giá trị |
+|---|---|
+| `PublicLibrary` | 1 |
+| `RoadmapTemplate` | 2 |
+
+Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
+
+<a id="dto-publishedroadmapdto"></a>
+### PublishedRoadmapDto
+
+Nguồn: [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L48).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `roadmapId` | `int` | Không | — |
+| `name` | `string` | Không | default `string.Empty` |
+| `description` | `string?` | Có | — |
+| `ageBand` | `string` | Không | default `string.Empty` |
+| `mainCategory` | [ReportedLabelDto?](#dto-reportedlabeldto) | Có | — |
+| `readingLevelMin` | `int` | Không | — |
+| `readingLevelMax` | `int` | Không | — |
+| `defaultDaysPerStory` | `int` | Không | — |
+| `publishedAt` | `DateTime?` | Có | — |
+| `needsUpdate` | `bool` | Không | — |
+| `stories` | [List&lt;PublishedRoadmapStoryDto&gt;](#dto-publishedroadmapstorydto) | Không | default `new()` |
+
+<a id="dto-publishedroadmapstorydto"></a>
+### PublishedRoadmapStoryDto
+
+Nguồn: [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L63).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `storyId` | `int` | Không | — |
+| `position` | `int` | Không | — |
+| `days` | `int?` | Có | — |
+| `title` | `string?` | Có | — |
+| `ageBand` | `string` | Không | default `string.Empty` |
+| `isArchived` | `bool` | Không | — |
+
+<a id="dto-publishedstorycontentdto"></a>
+### PublishedStoryContentDto
+
+Nguồn: [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L38).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `story` | [ReportedStoryDto](#dto-reportedstorydto) | Không | default `new()` |
+| `version` | [ReportedVersionDto?](#dto-reportedversiondto) | Có | — |
+| `scenes` | [List&lt;ReportedSceneDto&gt;](#dto-reportedscenedto) | Không | default `new()` |
+| `vocabulary` | [List&lt;ReportedVocabularyDto&gt;](#dto-reportedvocabularydto) | Không | default `new()` |
+| `quizzes` | [List&lt;ReportedQuizDto&gt;](#dto-reportedquizdto) | Không | default `new()` |
+| `discussionQuestions` | [List&lt;ReportedDiscussionDto&gt;](#dto-reporteddiscussiondto) | Không | default `new()` |
+
+<a id="dto-rejectcommunityrequestdto"></a>
+### RejectCommunityRequestDto
+
+Nguồn: [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L80).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `reason` | `string` | Không | default `string.Empty`; Lý do từ chối (bắt buộc, 1–1000 ký tự). |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "reason": "Nội dung cần chỉnh sửa trước khi chia sẻ."
+}
+~~~
+
+
+<a id="dto-rejectroadmaprequestdto"></a>
+### RejectRoadmapRequestDto
+
+Nguồn: [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L65).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `reason` | `string` | Không | default `string.Empty` |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "reason": "Bộ truyện chưa đáp ứng tiêu chí."
+}
+~~~
+
+
+<a id="dto-removaldecisionrequest"></a>
+### RemovalDecisionRequest
+
+Nguồn: [CreatorPublicationDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/CreatorPublicationDtos.cs#L11).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `approve` | `bool` | Không | — |
+| `reason` | `string` | Không | default `string.Empty`; [Required, StringLength(2000, MinimumLength = 1)] |
+| `rowVersion` | `int` | Không | [Range(0, int.MaxValue)] |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "approve": true,
+  "reason": "Chấp thuận gỡ theo yêu cầu tác giả.",
+  "rowVersion": 1
+}
+~~~
+
+
+<a id="dto-reorderroadmaprequestdto"></a>
+### ReorderRoadmapRequestDto
+
+Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L66).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `itemIds` | `List&lt;int&gt;` | Không | default `new()` |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "itemIds": [
+    101,
+    102
+  ]
+}
+~~~
+
+
+<a id="dto-requestroadmapchangesdto"></a>
+### RequestRoadmapChangesDto
+
+Nguồn: [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L59).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `generalNote` | `string` | Không | default `string.Empty` |
+| `parts` | [List&lt;RoadmapChangePartDto&gt;](#dto-roadmapchangepartdto) | Không | default `new()` |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "generalNote": "Cần điều chỉnh bộ truyện.",
+  "parts": [
+    {
+      "partType": "story",
+      "storyId": 123,
+      "action": "replace",
+      "note": "Chọn truyện phù hợp độ tuổi hơn."
+    }
+  ]
+}
+~~~
+
+
+<a id="dto-roadmapcategorydto"></a>
+### RoadmapCategoryDto
+
+Nguồn: [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L16).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `id` | `int` | Không | — |
+| `code` | `string` | Không | default `string.Empty` |
+| `displayName` | `string` | Không | default `string.Empty` |
+
+<a id="dto-roadmapchangepartdto"></a>
+### RoadmapChangePartDto
+
+Nguồn: [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L51).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `partType` | `string` | Không | default `string.Empty` |
+| `storyId` | `int?` | Có | — |
+| `action` | `string?` | Có | — |
+| `note` | `string` | Không | default `string.Empty` |
+
+<a id="dto-roadmapcheckdto"></a>
+### RoadmapCheckDto
+
+Nguồn: [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L34).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `code` | `string` | Không | default `string.Empty` |
+| `passed` | `bool` | Không | — |
+| `message` | `string` | Không | default `string.Empty` |
+| `relatedRoadmapId` | `int?` | Có | — |
+
+<a id="dto-roadmapchecklistentrydto"></a>
+### RoadmapChecklistEntryDto
+
+Nguồn: [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L3).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `code` | `string` | Không | default `string.Empty` |
+| `label` | `string` | Không | default `string.Empty` |
+| `passed` | `bool` | Không | — |
+| `note` | `string?` | Có | — |
+
+<a id="dto-roadmapchildplandto"></a>
+### RoadmapChildPlanDto
+
+Nguồn: [RoadmapLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/RoadmapLibraryDtos.cs#L67).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `childProfileId` | `int` | Không | — |
+| `outcome` | `string` | Không | default `string.Empty` |
+| `skipCode` | `string?` | Có | — |
+| `message` | `string?` | Có | — |
+| `steps` | [List&lt;RoadmapStepPlanDto&gt;](#dto-roadmapstepplandto) | Không | default `new()` |
+| `warnings` | `List&lt;string&gt;` | Không | default `new()` |
+
+<a id="dto-roadmapcloneresultdto"></a>
+### RoadmapCloneResultDto
+
+Nguồn: [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L154).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `roadmapId` | `int` | Không | — |
+| `sourceRoadmapId` | `int` | Không | — |
+| `alreadyExisted` | `bool` | Không | — |
+
+<a id="dto-roadmapcopyplandto"></a>
+### RoadmapCopyPlanDto
+
+Nguồn: [RoadmapLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/RoadmapLibraryDtos.cs#L77).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `roadmapId` | `int` | Không | — |
+| `roadmapName` | `string` | Không | default `string.Empty` |
+| `children` | [List&lt;RoadmapChildPlanDto&gt;](#dto-roadmapchildplandto) | Không | default `new()` |
+
+<a id="dto-roadmapcopyrequestdto"></a>
+### RoadmapCopyRequestDto
+
+Nguồn: [RoadmapLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/RoadmapLibraryDtos.cs#L46).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `childProfileIds` | `List&lt;int&gt;` | Không | default `new()` |
+| `position` | [RoadmapInsertPosition](#dto-roadmapinsertposition) | Không | default `RoadmapInsertPosition.End`; [JsonConverter(typeof(JsonStringEnumConverter))] |
+| `daysPerStory` | `int?` | Có | — |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "childProfileIds": [
+    10
+  ],
+  "position": "NextUp",
+  "daysPerStory": 3
+}
+~~~
+
+
+<a id="dto-roadmapdetaildto"></a>
+### RoadmapDetailDto
+
+Nguồn: [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L42).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `id` | `int` | Không | — |
+| `name` | `string` | Không | default `string.Empty` |
+| `description` | `string?` | Có | — |
+| `ageBand` | `string` | Không | default `string.Empty` |
+| `mainCategory` | [RoadmapCategoryDto?](#dto-roadmapcategorydto) | Có | — |
+| `readingLevelMin` | `int` | Không | — |
+| `readingLevelMax` | `int` | Không | — |
+| `defaultDaysPerStory` | `int` | Không | — |
+| `status` | `string` | Không | default `string.Empty` |
+| `createdByUserId` | `int` | Không | — |
+| `createdByName` | `string?` | Có | — |
+| `isMine` | `bool` | Không | — |
+| `submittedAt` | `DateTime?` | Có | — |
+| `publishedAt` | `DateTime?` | Có | — |
+| `clonedFromId` | `int?` | Có | — |
+| `stories` | [List&lt;RoadmapStoryDto&gt;](#dto-roadmapstorydto) | Không | default `new()` |
+| `checks` | [List&lt;RoadmapCheckDto&gt;](#dto-roadmapcheckdto) | Không | default `new()` |
+| `canSubmit` | `bool` | Không | — |
+| `lastReview` | [RoadmapLastReviewDto?](#dto-roadmaplastreviewdto) | Có | — |
+| `needsUpdate` | `bool` | Không | — |
+| `retiredStoryIds` | `List&lt;int&gt;` | Không | default `new()` |
+
+<a id="dto-roadmapinsertposition"></a>
+### RoadmapInsertPosition
+
+Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L5).
+
+| Tên | Giá trị |
+|---|---|
+| `NextUp` | 1 |
+| `End` | 2 |
+
+Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
+
+<a id="dto-roadmapiteminputdto"></a>
+### RoadmapItemInputDto
+
+Nguồn: [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L87).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `storyId` | `int` | Không | — |
+| `days` | `int?` | Có | — |
+
+<a id="dto-roadmaplastreviewdto"></a>
+### RoadmapLastReviewDto
+
+Nguồn: [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L144).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `decision` | `string` | Không | default `string.Empty` |
+| `reviewerName` | `string?` | Có | — |
+| `generalNote` | `string?` | Có | — |
+| `reason` | `string?` | Có | — |
+| `parts` | [List&lt;RoadmapChangePartDto&gt;](#dto-roadmapchangepartdto) | Không | default `new()` |
+| `decidedAt` | `DateTime?` | Có | — |
+
+<a id="dto-roadmaplibrarydetaildto"></a>
+### RoadmapLibraryDetailDto
+
+Nguồn: [RoadmapLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/RoadmapLibraryDtos.cs#L41).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `id` | `int` | Không | — |
+| `name` | `string` | Không | default `string.Empty` |
+| `description` | `string?` | Có | — |
+| `ageBand` | `string` | Không | default `string.Empty` |
+| `mainCategory` | [RoadmapCategoryDto?](#dto-roadmapcategorydto) | Có | — |
+| `readingLevelMin` | `int` | Không | — |
+| `readingLevelMax` | `int` | Không | — |
+| `defaultDaysPerStory` | `int` | Không | — |
+| `storyCount` | `int` | Không | — |
+| `needsUpdate` | `bool` | Không | — |
+| `publishedAt` | `DateTime?` | Có | — |
+| `stories` | [List&lt;RoadmapLibraryStoryDto&gt;](#dto-roadmaplibrarystorydto) | Không | default `new()` |
+
+<a id="dto-roadmaplibraryitemdto"></a>
+### RoadmapLibraryItemDto
+
+Nguồn: [RoadmapLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/RoadmapLibraryDtos.cs#L15).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `id` | `int` | Không | — |
+| `name` | `string` | Không | default `string.Empty` |
+| `description` | `string?` | Có | — |
+| `ageBand` | `string` | Không | default `string.Empty` |
+| `mainCategory` | [RoadmapCategoryDto?](#dto-roadmapcategorydto) | Có | — |
+| `readingLevelMin` | `int` | Không | — |
+| `readingLevelMax` | `int` | Không | — |
+| `defaultDaysPerStory` | `int` | Không | — |
+| `storyCount` | `int` | Không | — |
+| `needsUpdate` | `bool` | Không | — |
+| `publishedAt` | `DateTime?` | Có | — |
+
+<a id="dto-roadmaplibraryquerydto"></a>
+### RoadmapLibraryQueryDto
+
+Nguồn: [RoadmapLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/RoadmapLibraryDtos.cs#L6).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `ageBand` | `string?` | Có | — |
+| `readingLevel` | `int?` | Có | — |
+| `contentCategoryId` | `int?` | Có | — |
+| `pageIndex` | `int` | Không | default `1` |
+| `pageSize` | `int` | Không | default `20` |
+
+<a id="dto-roadmaplibrarystorydto"></a>
+### RoadmapLibraryStoryDto
+
+Nguồn: [RoadmapLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/RoadmapLibraryDtos.cs#L30).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `storyId` | `int` | Không | — |
+| `position` | `int` | Không | — |
+| `days` | `int?` | Có | — |
+| `title` | `string?` | Có | — |
+| `ageBand` | `string` | Không | default `string.Empty` |
+| `readingLevel` | `int?` | Có | — |
+| `isAvailable` | `bool` | Không | — |
+
+<a id="dto-roadmaplistgroup"></a>
+### RoadmapListGroup
+
+Nguồn: [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L105).
+
+| Tên | Giá trị |
+|---|---|
+| `Drafts` | 1 |
+| `Pending` | 2 |
+| `Published` | 3 |
+| `Archived` | 4 |
+| `Orphaned` | 5 |
+
+Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
+
+<a id="dto-roadmaplistitemdto"></a>
+### RoadmapListItemDto
+
+Nguồn: [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L124).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `id` | `int` | Không | — |
+| `name` | `string` | Không | default `string.Empty` |
+| `ageBand` | `string` | Không | default `string.Empty` |
+| `mainCategory` | [RoadmapCategoryDto?](#dto-roadmapcategorydto) | Có | — |
+| `storyCount` | `int` | Không | — |
+| `status` | `string` | Không | default `string.Empty` |
+| `createdByUserId` | `int` | Không | — |
+| `createdByName` | `string?` | Có | — |
+| `isMine` | `bool` | Không | — |
+| `submittedAt` | `DateTime?` | Có | — |
+| `publishedAt` | `DateTime?` | Có | — |
+| `openCloneId` | `int?` | Có | Bản nhân bản đang mở của bộ này, nếu có. |
+| `needsUpdate` | `bool` | Không | — |
+| `retiredStoryCount` | `int` | Không | — |
+
+<a id="dto-roadmaplistquerydto"></a>
+### RoadmapListQueryDto
+
+Nguồn: [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L116).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `group` | [RoadmapListGroup](#dto-roadmaplistgroup) | Không | [JsonConverter(typeof(JsonStringEnumConverter))] |
+| `pageIndex` | `int` | Không | default `1` |
+| `pageSize` | `int` | Không | default `20` |
+
+<a id="dto-roadmapreviewblockerdto"></a>
+### RoadmapReviewBlockerDto
+
+Nguồn: [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L16).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `code` | `string` | Không | default `string.Empty` |
+| `message` | `string` | Không | default `string.Empty` |
+| `relatedRoadmapId` | `int?` | Có | — |
+
+<a id="dto-roadmapreviewdecisionresultdto"></a>
+### RoadmapReviewDecisionResultDto
+
+Nguồn: [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L70).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `itemId` | `int` | Không | — |
+| `decision` | `string` | Không | default `string.Empty` |
+| `roadmapId` | `int` | Không | — |
+| `roadmapStatus` | `string` | Không | default `string.Empty` |
+| `replacedRoadmapId` | `int?` | Có | — |
+| `decidedAt` | `DateTime` | Không | — |
+
+<a id="dto-roadmapreviewinfodto"></a>
+### RoadmapReviewInfoDto
+
+Nguồn: [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L23).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `id` | `int` | Không | — |
+| `name` | `string` | Không | default `string.Empty` |
+| `description` | `string?` | Có | — |
+| `ageBand` | `string` | Không | default `string.Empty` |
+| `mainCategory` | [RoadmapCategoryDto?](#dto-roadmapcategorydto) | Có | — |
+| `readingLevelMin` | `int` | Không | — |
+| `readingLevelMax` | `int` | Không | — |
+| `defaultDaysPerStory` | `int` | Không | — |
+| `createdByUserId` | `int` | Không | — |
+| `createdByName` | `string?` | Có | — |
+| `submittedAt` | `DateTime?` | Có | — |
+| `clonedFromId` | `int?` | Có | — |
+
+<a id="dto-roadmapreviewpackagedto"></a>
+### RoadmapReviewPackageDto
+
+Nguồn: [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L39).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `itemId` | `int` | Không | — |
+| `roadmap` | [RoadmapReviewInfoDto](#dto-roadmapreviewinfodto) | Không | default `new()` |
+| `stories` | [List&lt;RoadmapStoryDto&gt;](#dto-roadmapstorydto) | Không | default `new()` |
+| `checks` | [List&lt;RoadmapCheckDto&gt;](#dto-roadmapcheckdto) | Không | default `new()` |
+| `checklist` | [List&lt;RoadmapChecklistEntryDto&gt;](#dto-roadmapchecklistentrydto) | Không | default `new()` |
+| `blockers` | [List&lt;RoadmapReviewBlockerDto&gt;](#dto-roadmapreviewblockerdto) | Không | default `new()` |
+| `canApprove` | `bool` | Không | — |
+| `claimExpiresAt` | `DateTime` | Không | — |
+
+<a id="dto-roadmapstepplandto"></a>
+### RoadmapStepPlanDto
+
+Nguồn: [RoadmapLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/RoadmapLibraryDtos.cs#L56).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `storyId` | `int` | Không | — |
+| `title` | `string?` | Có | — |
+| `position` | `int` | Không | — |
+| `days` | `int` | Không | — |
+| `action` | `string` | Không | default `string.Empty` |
+| `skipCode` | `string?` | Có | — |
+| `message` | `string?` | Có | — |
+
+<a id="dto-roadmapstorydto"></a>
+### RoadmapStoryDto
+
+Nguồn: [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L23).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `storyId` | `int` | Không | — |
+| `position` | `int` | Không | — |
+| `days` | `int?` | Có | — |
+| `title` | `string?` | Có | — |
+| `ageBand` | `string` | Không | default `string.Empty` |
+| `readingLevel` | `int?` | Có | — |
+| `isEligible` | `bool` | Không | — |
+
+<a id="dto-roadmapsubmitresultdto"></a>
+### RoadmapSubmitResultDto
+
+Nguồn: [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L98).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `roadmapId` | `int` | Không | — |
+| `status` | `string` | Không | default `string.Empty` |
+| `itemId` | `int?` | Có | — |
+
+<a id="dto-rubricclonerequest"></a>
+### RubricCloneRequest
+
+Nguồn: [ModerationRubricService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Rubrics/ModerationRubricService.cs#L17).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `versionNo` | `string` | Không | — |
+| `name` | `string` | Không | — |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "versionNo": "gray-zone-v2",
+  "name": "Bộ tiêu chí bản 2"
+}
+~~~
+
+
+<a id="dto-rubriccriterion"></a>
+### RubricCriterion
+
+Nguồn: [RubricSnapshot.cs](../src/Shared/StoryPlatform.Contracts/AI/Moderation/RubricSnapshot.cs#L8).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `code` | `string` | Không | — |
+| `name` | `string` | Không | — |
+| `check` | `string` | Không | — |
+| `context` | `string` | Không | — |
+| `levels` | `Dictionary&lt;string, string&gt;` | Không | — |
+| `examples` | [IReadOnlyList&lt;RubricExample&gt;](#dto-rubricexample) | Không | — |
+
+<a id="dto-rubricdefinition"></a>
+### RubricDefinition
+
+Nguồn: [RubricSnapshot.cs](../src/Shared/StoryPlatform.Contracts/AI/Moderation/RubricSnapshot.cs#L10).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `purpose` | `string` | Không | — |
+| `criteria` | [IReadOnlyList&lt;RubricCriterion&gt;](#dto-rubriccriterion) | Không | — |
+
+<a id="dto-rubricdto"></a>
+### RubricDto
+
+Nguồn: [ModerationRubricService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Rubrics/ModerationRubricService.cs#L19).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `id` | `int` | Không | — |
+| `versionNo` | `string` | Không | — |
+| `name` | `string` | Không | — |
+| `status` | `string` | Không | — |
+| `revision` | `int` | Không | — |
+| `schemaVersion` | `string` | Không | — |
+| `contentHash` | `string` | Không | — |
+| `definition` | [RubricDefinition](#dto-rubricdefinition) | Không | — |
+| `createdByUserId` | `int` | Không | — |
+| `createdAt` | `DateTime` | Không | — |
+| `activatedByUserId` | `int?` | Có | — |
+| `activatedAt` | `DateTime?` | Có | — |
+| `retiredAt` | `DateTime?` | Có | — |
+
+<a id="dto-rubricevaluationrequest"></a>
+### RubricEvaluationRequest
+
+Nguồn: [ModerationRubricService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Rubrics/ModerationRubricService.cs#L18).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `revision` | `int` | Không | — |
+| `phase` | `string` | Không | — |
+| `ageBand` | `string` | Không | — |
+| `language` | `string` | Không | — |
+| `title` | `string` | Không | — |
+| `content` | `string` | Không | — |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "revision": 1,
+  "phase": "phase2",
+  "ageBand": "6-8",
+  "language": "vi",
+  "title": "Người bạn mới",
+  "content": "Một câu chuyện minh họa để đánh giá."
+}
+~~~
+
+
+<a id="dto-rubricexample"></a>
+### RubricExample
+
+Nguồn: [RubricSnapshot.cs](../src/Shared/StoryPlatform.Contracts/AI/Moderation/RubricSnapshot.cs#L7).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `text` | `string` | Không | — |
+| `level` | `int` | Không | — |
+| `reason` | `string` | Không | — |
+
+<a id="dto-rubricrevisionrequest"></a>
+### RubricRevisionRequest
+
+Nguồn: [ModerationRubricService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Rubrics/ModerationRubricService.cs#L16).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `revision` | `int` | Không | — |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "revision": 1
+}
+~~~
+
+
+<a id="dto-rubricsnapshot"></a>
+### RubricSnapshot
+
+Nguồn: [RubricSnapshot.cs](../src/Shared/StoryPlatform.Contracts/AI/Moderation/RubricSnapshot.cs#L11).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `id` | `int` | Không | — |
+| `version` | `string` | Không | — |
+| `schemaVersion` | `string` | Không | — |
+| `contentHash` | `string` | Không | — |
+| `definition` | [RubricDefinition](#dto-rubricdefinition) | Không | — |
+
+<a id="dto-rubricwriterequest"></a>
+### RubricWriteRequest
+
+Tạo mới có revision mặc định 0; khi PUT phải gửi revision hiện hành từ GET, không giữ 0 của ví dụ tạo mới.
+
+Nguồn: [ModerationRubricService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Rubrics/ModerationRubricService.cs#L15).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `versionNo` | `string` | Không | — |
+| `name` | `string` | Không | — |
+| `definition` | [RubricDefinition](#dto-rubricdefinition) | Không | — |
+| `revision` | `int` | Không | default `0` |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "versionNo": "gray-zone-v2",
+  "name": "Bộ tiêu chí vùng xám bản 2",
+  "definition": {
+    "purpose": "Đánh giá rủi ro theo ngữ cảnh cho trẻ.",
+    "criteria": [
+      {
+        "code": "GZ01",
+        "name": "Tiêu chí 1",
+        "check": "Mô tả nội dung cần kiểm tra.",
+        "context": "Đánh giá trong bối cảnh của truyện.",
+        "levels": {
+          "0": "Mô tả mức 0.",
+          "1": "Mô tả mức 1.",
+          "2": "Mô tả mức 2.",
+          "3": "Mô tả mức 3.",
+          "4": "Mô tả mức 4."
+        },
+        "examples": []
+      },
+      {
+        "code": "GZ02",
+        "name": "Tiêu chí 2",
+        "check": "Mô tả nội dung cần kiểm tra.",
+        "context": "Đánh giá trong bối cảnh của truyện.",
+        "levels": {
+          "0": "Mô tả mức 0.",
+          "1": "Mô tả mức 1.",
+          "2": "Mô tả mức 2.",
+          "3": "Mô tả mức 3.",
+          "4": "Mô tả mức 4."
+        },
+        "examples": []
+      },
+      {
+        "code": "GZ03",
+        "name": "Tiêu chí 3",
+        "check": "Mô tả nội dung cần kiểm tra.",
+        "context": "Đánh giá trong bối cảnh của truyện.",
+        "levels": {
+          "0": "Mô tả mức 0.",
+          "1": "Mô tả mức 1.",
+          "2": "Mô tả mức 2.",
+          "3": "Mô tả mức 3.",
+          "4": "Mô tả mức 4."
+        },
+        "examples": []
+      },
+      {
+        "code": "GZ04",
+        "name": "Tiêu chí 4",
+        "check": "Mô tả nội dung cần kiểm tra.",
+        "context": "Đánh giá trong bối cảnh của truyện.",
+        "levels": {
+          "0": "Mô tả mức 0.",
+          "1": "Mô tả mức 1.",
+          "2": "Mô tả mức 2.",
+          "3": "Mô tả mức 3.",
+          "4": "Mô tả mức 4."
+        },
+        "examples": []
+      },
+      {
+        "code": "GZ05",
+        "name": "Tiêu chí 5",
+        "check": "Mô tả nội dung cần kiểm tra.",
+        "context": "Đánh giá trong bối cảnh của truyện.",
+        "levels": {
+          "0": "Mô tả mức 0.",
+          "1": "Mô tả mức 1.",
+          "2": "Mô tả mức 2.",
+          "3": "Mô tả mức 3.",
+          "4": "Mô tả mức 4."
+        },
+        "examples": []
+      }
+    ]
+  },
+  "revision": 0
+}
+~~~
+
+
+<a id="dto-savecommunitychecklistrequestdto"></a>
+### SaveCommunityChecklistRequestDto
+
+Nguồn: [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L18).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `entries` | [List&lt;CommunityChecklistEntryDto&gt;](#dto-communitychecklistentrydto) | Không | default `new()` |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "entries": [
+    {
+      "code": "safety_baseline",
+      "passed": true,
+      "note": null
+    },
+    {
+      "code": "no_personal_info",
+      "passed": true,
+      "note": null
+    },
+    {
+      "code": "metadata_labels",
+      "passed": true,
+      "note": null
+    }
+  ]
+}
+~~~
+
+
+<a id="dto-saveroadmapchecklistrequestdto"></a>
+### SaveRoadmapChecklistRequestDto
+
+Nguồn: [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L11).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `entries` | [List&lt;RoadmapChecklistEntryDto&gt;](#dto-roadmapchecklistentrydto) | Không | default `new()` |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "entries": [
+    {
+      "code": "order",
+      "passed": true,
+      "note": null
+    },
+    {
+      "code": "theme",
+      "passed": true,
+      "note": null
+    },
+    {
+      "code": "name_description",
+      "passed": true,
+      "note": null
+    },
+    {
+      "code": "age_level",
+      "passed": true,
+      "note": null
+    }
+  ]
+}
+~~~
+
+
+<a id="dto-saveroadmaprequestdto"></a>
+### SaveRoadmapRequestDto
+
+Nguồn: [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L5).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `name` | `string` | Không | default `string.Empty` |
+| `description` | `string?` | Có | — |
+| `ageBand` | `string` | Không | default `string.Empty` |
+| `mainCategoryId` | `int` | Không | — |
+| `readingLevelMin` | `int` | Không | — |
+| `readingLevelMax` | `int` | Không | — |
+| `defaultDaysPerStory` | `int` | Không | default `1` |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "name": "Hành trình khám phá",
+  "description": "Bộ truyện về sự tò mò.",
+  "ageBand": "6-8",
+  "mainCategoryId": 1,
+  "readingLevelMin": 1,
+  "readingLevelMax": 3,
+  "defaultDaysPerStory": 3
+}
+~~~
+
+
+<a id="dto-setcommunitylabelsrequestdto"></a>
+### SetCommunityLabelsRequestDto
+
+Nguồn: [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L31).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `contentCategoryIds` | `List&lt;int&gt;` | Không | default `new()`; Tập nhãn mới của truyện (ít nhất một nhãn, nhãn còn hoạt động). |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "contentCategoryIds": [
+    1
+  ]
+}
+~~~
+
+
+<a id="dto-setroadmapitemsrequestdto"></a>
+### SetRoadmapItemsRequestDto
+
+Nguồn: [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L93).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `items` | [List&lt;RoadmapItemInputDto&gt;](#dto-roadmapiteminputdto) | Không | default `new()` |
+
+Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
+
+~~~json
+{
+  "items": [
+    {
+      "storyId": 123,
+      "days": 3
+    },
+    {
+      "storyId": 124,
+      "days": 2
+    }
+  ]
+}
+~~~
+
 
 <a id="kiem-chung"></a>
 ## 16. Checklist nghiệm thu và giới hạn
@@ -8133,11 +10699,161 @@ Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRev
 9. Claim cạnh tranh/hết hạn/cấm tự duyệt; views/flags/checklist trước approve; report dismiss/archive.
 10. DataRequest xlsx/ZIP/delete/reject; webhook xác thực server, không gọi từ browser.
 11. Notification REST + SignalR reconnect; mock/local không bị ghi nhận như dữ liệu đã lưu server.
+12. Roadmap multi-child partial results, reorder Waiting, gỡ Open, preview/copy khi eligibility đổi, clone thay thế bộ Published.
+13. Community PII/copyright/blockers, pinned version, withdraw bị claim, remove và child visibility/404; metadata chưa phải reader package.
+14. GrayZone Clear/Block, stale rowVersion/fingerprint, job chờ duyệt; rubric revision/clone/validate/evaluate/activate và response object riêng.
+15. Published review-item → report claim → escalate → Admin dismiss/archive; Creator removal/revision và publication lock.
 
 ### 16.3 Kiểm tra tài liệu và giới hạn
 
-Inventory lấy trực tiếp mọi HttpGet/Post/Put/Patch/Delete; đếm method+route, phân biệt action/alias/webhook. Kiểm link source/schema/anchor, tổng mapping, JSON mẫu, DTO kế thừa. Đọc lại form/file/body rỗng và role blocker trong source.
+Kết quả kiểm tra tĩnh của lần cập nhật 21/10/2026:
 
-Không chạy API host/startup migration/seed/provider AI hay thao tác ghi DB. Không tạo/apply migration. Source có thay đổi chưa commit; tính năng mới có dependency schema theo tài liệu chuyên đề. Chưa xác nhận server triển khai, chất lượng AI, concurrency DB thật hoặc UI hoạt động.
+- 305 endpoint card khớp 305 attribute HTTP, không thiếu/thừa/trùng method + route; 48 controller có action.
+- 352 mục schema; 121 block JSON mẫu parse hợp lệ. Enum moderation, DTO mới và field bổ sung đã đối chiếu source.
+- Anchor nội bộ, file source đích và giới hạn dòng nguồn đều hợp lệ; git diff --check không báo lỗi whitespace.
+- Mapping trong endpoint card cộng đúng 305: 245 mục giữ baseline, 60 mục CHƯA_RÀ_FRONTEND cần đối chiếu frontend riêng.
+
+
+Inventory lấy trực tiếp mọi HttpGet/Post/Put/Patch/Delete; đếm method+route, phân biệt action/alias/webhook. Kiểm link source/schema/anchor, tổng mapping, JSON mẫu, DTO kế thừa. Đọc lại form/file/body rỗng và quyền theo source; phân biệt thiết kế actor riêng với chênh lệch role gate của manual/assistance. Bản này có 305 endpoint card, 48 nhóm controller; đối chiếu độc lập với attribute route, kể cả route tuyệt đối trong CreatorPublicationController.
+
+Không chạy API host/startup migration/seed/provider AI hay thao tác ghi DB. Không tạo/apply migration. Snapshot backend HEAD e808851; các tính năng mới có dependency schema theo tài liệu chuyên đề, sự tồn tại của source không xác nhận DB triển khai đã có schema tương ứng. Chưa xác nhận server triển khai, chất lượng AI, concurrency DB thật hoặc UI hoạt động.
 
 Source controller/DTO/service hiện tại ưu tiên hơn tài liệu cũ. Khi branch/source đổi, đếm lại inventory và rà mapping; tổng số này chỉ đúng snapshot đã ghi.
+
+## Bổ sung triển khai — Creator Manual dùng Phase 5
+
+### Phân biệt nguồn tạo media
+
+Backend tự xác định nguồn từ `Story.Source`; frontend không truyền hoặc thay đổi nguồn khi gọi media API.
+Response confirm Manual, media progress và media package có thêm `generationOrigin`:
+
+- `ManualAuthoring`: tạo ảnh/audio cho bản nội dung Creator tự viết hoặc import đã xác nhận; không chạy outline/content generation, không liên kết generation request.
+- `AiGeneration`: tạo ảnh/audio sau bước xác nhận nội dung trong luồng AI Generation; context có thể kèm outline, accepted input và generation snapshot.
+
+Hai nguồn dùng chung worker Phase 5, kiểm tra chất lượng/an toàn, readiness và API retry. Field này biểu thị nguồn bản truyện, không khẳng định từng câu đều viết tay hoặc đều do AI sinh. Dùng AI hỗ trợ bản nháp không đổi nguồn khởi tạo.
+Context media mới ghi `generationOrigin` để truy vết; context đã tồn tại được giữ nguyên. Response API vẫn xác định nguồn từ story cho các job cũ.
+File media mới lưu dưới `{storyId}/versions/{storyVersionId}/v{contextRevision}/...`; ảnh và audio đều có mã duy nhất, tránh ghi đè file của phiên bản/lần tạo trước. Asset Ready cũ tiếp tục dùng đường dẫn đã lưu.
+
+Endpoint mới: `POST /api/v1/creator/stories/{storyId}/manual/confirm-content`, role ContentCreator, đúng tác giả Active/không khóa. Đây là bước chốt sáng tác để tạo media, không phải Moderator approve/public.
+
+```json
+{
+  "versionId": 36,
+  "revisionToken": "THAY_BANG_REVISION_TOKEN_HIEN_TAI"
+}
+```
+
+Trình tự Swagger/frontend:
+1. Tạo manual draft và lưu/import một phiên bản có tiêu đề, nội dung, khai báo nguồn và quyền sử dụng. Lấy `version.versionId` và `story.revisionToken` từ response lưu.
+2. Gọi endpoint confirm ở trên. Backend chạy/tái sử dụng moderation hợp lệ; HardBlock chặn, GrayZone Creator giữ cờ để Moderator xem. Provider lỗi/timeout hoặc chưa cấu hình trả lỗi, chưa tạo job; không coi là an toàn.
+3. Response `202` có `storyId`, `versionId`, `jobId`, `status`, `jobStatus`, `progressUrl`, `packageUrl`. Poll progressUrl; chỉ `isReady=true` mới coi hoàn tất. Gửi lặp cùng version/revision trả job đã có; job Failed dùng retryUrl bên dưới thay vì tạo job trùng.
+4. `GET /api/v1/stories/{storyId}/media/progress` theo dõi cùng worker Phase 5 của AI generation. `GET /api/v1/stories/{storyId}/media/package` trả scenes, illustrations và bổ sung `text`, `audio` theo segment (`segmentId`, `segmentOrder`, `text`, `assetId`, `status`, `url`, `wordTimings`).
+5. Nếu job Failed và version vẫn current: `POST /api/v1/stories/{storyId}/media/retry`, sau đó tiếp tục polling. Không đặt Ready ở frontend hoặc tự publish.
+6. Khi Ready, xem thử ảnh/audio rồi `POST /api/v1/PublicStorySubmission/submit` với storyId/storyVersionId. Điều kiện readiness/assessment và Moderator review giữ nguyên.
+
+Khóa và phiên bản: Pending/Processing chặn save/import-confirm/restore bằng `409 MEDIA_JOB_ACTIVE`. Sau khi job kết thúc và chưa gửi duyệt, sửa tạo V2 -> Draft, revision mới; media V1 không làm V2 Ready. Job Failed của bản cũ được đánh dấu Cancelled khi lưu bản mới, giữ lịch sử và ngăn worker chọn lại. Các bản đã nộp tiếp tục bất biến theo publication guard.
+
+Sai version/revision trả `409 STALE_STORY_VERSION`; thiếu nội dung/khai báo trả `400 MANUAL_CONTENT_INCOMPLETE`; không đúng tác giả/scope hoặc nguồn Ai không được dùng endpoint manual. Quyền media được tách khỏi quyền outline/content generation: Manual không được gọi generation để vượt luồng.
+
+Không tạo outline hoặc StoryGenerationRequest giả; Source vẫn Manual. Dùng StoryGenerationJob GenerateMediaPackage và MediaContext hiện có, không thêm migration. Gói lần này là ReadingMediaOnly, chưa thêm quiz/vocabulary/discussion/tương tác.
+
+Bổ sung này thay thế giới hạn trước đây “Creator Manual chưa có bước Draft → Ready”. Các số inventory ở snapshot e808851 phía trên là baseline trước tính năng; bản này bổ sung một endpoint manual/confirm-content. Không suy từ source rằng database/provider thật đã kiểm thử thành công.
+
+
+## C?p nh?t ? x?c nh?n g?i media tr??c khi Ready
+
+Ph?n n?y thay th? m? t? Phase 5 t? chuy?n Ready ? c?c m?c snapshot ph?a tr?n. ?p d?ng c?ng m?t pipeline cho Creator Manual, Creator AI, Parent AI; Parent th? c?ng c? th? ch? ??ng y?u c?u t?o ?nh/audio. Kh?ng th?m tr??ng ph?n lo?i ngu?n media.
+
+### Tr?ng th?i v? API ??c
+
+- `MediaProcessing`: job ?ang t?o ho?c c?n retry.
+- `MediaReview`: job ?? Completed v? ?? ?nh/audio ??t ki?m tra k? thu?t, ?ang ch? ng??i d?ng ch?t g?i.
+- `Ready`: g?i ?? ???c x?c nh?n; Creator v?n ph?i g?i Moderator ?? duy?t c?ng khai. Parent th? c?ng v?n ph?i th?c hi?n family-confirmation ?? giao cho tr?.
+- `GET /api/v1/stories/{storyId}/media/progress` v? `/package` c? `packageRevision`, `isGenerated`, `isAwaitingConfirmation`, `isConfirmed`, `confirmedByUserId`, `confirmedAt`, `isReady`.
+- `MediaAsset.status=Ready` ch? l? ho?n t?t k? thu?t. Frontend d?ng `isReady` c?a g?i ?? quy?t ??nh b??c ti?p theo.
+- Package cung c?p URL k? 10 ph?t cho media Ready. Ch? xin URL qua API sau khi ??ng nh?p; kh?ng gh?p ???ng d?n storage th?nh URL public. Khi URL h?t h?n, g?i l?i GET package/preview. Metadata l?u trong DB v?n l? storage path, kh?ng l?u URL k?.
+
+### X?c nh?n v? t?o l?i media
+
+`POST /api/v1/stories/{storyId}/media/confirm` (Parent ho?c ContentCreator):
+
+```json
+{ "storyVersionId": 38, "packageRevision": 1 }
+```
+
+Th?nh c?ng `200` tr? progress m?i. Request l?p ??ng g?i tr? k?t qu? ?? c?, kh?ng t?o version/job/file. Backend ki?m tra quy?n, current version, job Completed v? readiness. Kh?ng c? n?t bypass safety ho?c moderator.
+
+Regenerate d?ng m?t trong hai endpoint, tr? `202`:
+
+- `POST /api/v1/stories/{storyId}/media/illustration-beats/{beatId}/regenerate`
+- `POST /api/v1/stories/{storyId}/media/segments/{segmentId}/regenerate`
+
+```json
+{ "storyVersionId": 38, "packageRevision": 1, "expectedConfirmed": false }
+```
+
+C? ba field ??u b?t bu?c; l?y t? response g?i v?a xem. `expectedConfirmed` l? gi? tr? `isConfirmed` ?? quan s?t, gi?p ph?t hi?n confirm/regenerate ??ng th?i m? revision n?i dung ch?a ??i. Sau regenerate, revision t?ng v? x?c nh?n c? b? x?a; poll ??n MediaReview r?i ch?t l?i c? g?i. C?c asset kh?c gi? nguy?n. Kh?ng g?i regenerate b?ng body r?ng nh? contract c?.
+
+`POST /api/v1/stories/{storyId}/media/retry` ti?p t?c job Failed c?ng package revision; gi? asset ?? ??t v? kh?ng t? x?c nh?n. Kh?ng retry job ?ang Processing.
+
+M? l?i `409`: `STALE_MEDIA_PACKAGE`, `MEDIA_JOB_ACTIVE`, `MEDIA_PACKAGE_INCOMPLETE`, `MEDIA_PACKAGE_NOT_AWAITING_CONFIRMATION`, `PARENT_STORY_FINALIZED`. Sai quy?n tr? `403` ho?c `404` theo scope. B?n ?ang g?i duy?t/ph?t h?nh kh?ng cho thay ??i media.
+
+### Parent th? c?ng ch? ??ng t?o media
+
+Sau create/save ? content/checks ? content/confirm, g?i:
+
+`POST /api/v1/parent/stories/{storyId}/manual/media/generate`
+
+```json
+{
+  "operationId": "family-media-001",
+  "revisionToken": "TOKEN_TU_RESPONSE_SAVE",
+  "baseVersionId": 38,
+  "contentConfirmationId": 12
+}
+```
+
+Response `202` c? `storyId`, `storyVersionId`, `jobId`, `packageRevision`, `progressUrl`, `packageUrl`. C?ng operation/payload ???c replay; operation kh?c cho c?ng version ?? c? job tr? conflict, d?ng retry/regenerate ph? h?p.
+
+Parent ph?i c?n quy?n gi?m s?t v? consent h?p l?, n?i dung qua ki?m tra v? policy/context tr? ph?i kh?p snapshot. Pipeline kh?ng t?o outline hay StoryGenerationRequest gi?. Khi job ho?t ??ng, save/import-confirm/restore/setup b? kh?a.
+
+Poll v? xem package ? confirm media ? g?i preparations b?ng contentConfirmationId ? GET preparation ?? l?y media xem tr??c ? family-confirmations ?? giao. Preparation ghim version v? media revision; regenerate l?m preparation c? kh?ng c?n h?p l? ?? giao. Child ch? ??c qua grant ??ng child, ch?a thu h?i v? issuer c?n quy?n. Consent/context thay ??i l?m g?i media c? kh?ng c?n h?p l?.
+
+N?u kh?ng g?i media/generate, b?n Parent ch? v?n b?n v?n c? quy tr?nh prepare/family-confirm hi?n t?i. Listening/combined ch? ???c coi s?n s?ng khi ?? t?o v? x?c nh?n audio.
+
+### D? li?u c? v? tri?n khai schema
+
+G?i ho?n t?t tr??c tri?n khai c? MediaPackageRevision=0 ???c gi? nguy?n. Regenerate g?i c? chuy?n revision=1 v? ph?i ch?t l?i. Job ?ang dang d? chuy?n sang lu?ng x?c nh?n m?i.
+
+C?n migration t?ng d?n `AddMediaPackageConfirmation` cho b?n c?t c?a StoryVersion: MediaPackageRevision (m?c ??nh 0), ConfirmedMediaPackageRevision, MediaConfirmedByUserId, MediaConfirmedAt, c?ng FK ng??i x?c nh?n. Kh?ng s?a migration l?ch s? ho?c t?o th?m b?ng. Ch? ch?y API m?i sau khi schema ?? ???c c?p nh?t b?ng thao t?c migration ???c cho ph?p ri?ng. Bucket storage d?ng cho media ph?i private ?? URL k? b?o v? ???c media ch? x?c nh?n.
+
+
+## C?p nh?t l?u tr? ? t?ch tr?ng th?i kh?i StoryVersion
+
+Contract request/response frontend gi? nguy?n. ??y l? thay ??i c?u tr?c l?u tr? backend; kh?ng c? endpoint m?i ri?ng cho c?c b?ng ph?.
+
+- `story_versions`: n?i dung, outline, lesson, version number, editor, li?n k?t base/restore, audience revision v? ch? s? readability/safety. X?c nh?n outline ti?p t?c n?m c?ng snapshot n?i dung.
+- `story_version_authoring_metadata`: ngu?n s?ng t?c, quy?n s? d?ng, th?ng tin import v? provenance AI h? tr?. Kh?a ch?nh/FK `StoryVersionId`, unique `(StoryId, ImportPreviewHash)` khi c? preview hash.
+- `story_version_moderation_states`: v?ng x?m v? tr?ng th?i duy?t hi?n t?i. C?ng vi?c v? quy?t ??nh c?a Moderator v?n l?u t?i ModerationItem, kh?ng chuy?n l?ch s? sang b?ng m?i.
+- `story_version_media_states`: package revision, revision ?? x?c nh?n, ng??i v? th?i ?i?m x?c nh?n g?i. Thay th? v? tr? b?n thu?c t?nh media v?a th?m tr?n StoryVersion, kh?ng thay ? ngh?a nghi?p v?.
+- `story_authoring_operations`: receipt ch?ng x? l? command tr?ng, li?n k?t ??ng StoryId/StoryVersionId, actor, kind, OperationId, RequestHash v? response. M?t version c? nhi?u receipt; unique `(StoryId, OperationId)`. ParentStoryOperation v?n qu?n l? check/prepare/family grant ri?ng.
+
+Ba nh?m tr?ng th?i ??u ti?n l? owned entities c?a aggregate StoryVersion trong EF, ?nh x? th?nh ba b?ng v?t l? ri?ng, t? ???c ??c c?ng owner. Service truy c?p `version.AuthoringMetadata`, `version.Moderation`, `version.MediaState`; kh?ng t?o repository ri?ng cho owned entities. Receipt l? entity ??c l?p.
+
+Repository ?? x? l? c? b?n tracked l?n b?n no-tracking ?? c?p nh?t ???c c?c b?ng tr?ng th?i, g?m c? FK ng??i quy?t ??nh/x?c nh?n. Chuy?n tr?ng th?i v? l?u receipt v?n di?n ra trong transaction/lock hi?n t?i. Import preview v? replay kh?ng m?t ?i?u ki?n ch?ng tr?ng.
+
+### Migration c?n t?o ri?ng tr??c khi ch?y b?n code n?y
+
+Migration ?? xu?t `SplitStoryVersionState` ph?i ???c cho ph?p ri?ng; thay th? nhu c?u t?o ri?ng AddMediaPackageConfirmation n?u migration ?? ch?a ???c t?o/?p d?ng. Kh?ng s?a migration ho?c snapshot l?ch s? ?? n? ki?m tra schema.
+
+Th? t? b?t bu?c khi x?y d?ng migration:
+
+1. T?o b?n b?ng m?i v? c?c kh?a/index; gi? c?c c?t c? trong story_versions trong l?c chuy?n d? li?u.
+2. Copy metadata s?ng t?c v? moderation cho **m?i** version hi?n h?u, k? c? version ?? soft-delete. StoryId l?y t? owner. C?c owned row b?t bu?c ph?i t?n t?i ?? gi? d? li?u c? khi ??c b?ng model m?i.
+3. Media state: n?u database ch?a c? b?n c?t x?c nh?n m?i, kh?i t?o revision 0 v? th?ng tin x?c nh?n null cho d? li?u c?. N?u c?c c?t n?y ?? ???c ?p d?ng ? m?i tr??ng kh?c, ph?i chuy?n nguy?n gi? tr?, kh?ng reset m?t x?c nh?n.
+4. Chuy?n c?c version c? OperationId sang story_authoring_operations, gi? nguy?n RequestHash v? OperationResponseJson. Actor l?y EditorUserId ho?c AuthorUserId c?a story; x?c ??nh kind theo origin Write/Import/Restore t??ng ?ng save-manual/confirm-import/restore. Kh?ng t?o receipt gi? cho version kh?ng c? OperationId.
+5. ??i chi?u s? l??ng, FK, t?nh duy nh?t v? d? li?u tr??c khi b? c?t/index c?. Kh?ng reset database, kh?ng ch?y seed ?? thay th? d? li?u ng??i d?ng.
+
+Seed ?? chia d? li?u theo b?ng m?i trong c?c file 64?67. File receipt kh?ng t?o d? li?u command gi?. Seed runner b? qua reset sequence cho c?c b?ng shared-PK kh?ng c? c?t Id. Ch?a ch?y seed/database update trong ??t refactor n?y.
+
+Test MigrationChainSchemaTests ph?i ti?p t?c b?o thi?u b?ng cho ??n khi migration th?t ???c t?o; kh?ng b? ho?c h? assertion n?y. Ch? tri?n khai runtime sau khi migration chuy?n d? li?u ?? ???c review v? ?p d?ng tr?n database ??ch.

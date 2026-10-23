@@ -157,7 +157,7 @@ public sealed partial class MediaGenerationServiceTests
         Assert.StartsWith("1/versions/10/v1/scene-0-beat-1-asset-", storage.UploadedPaths[0]);
         Assert.Contains(storage.UploadedPaths, x => x.StartsWith("1/versions/10/v1/audio-s0-1-asset-"));
         Assert.Contains(storage.UploadedPaths, x => x.StartsWith("1/versions/10/v1/scene-1-beat-1-asset-"));
-        Assert.StartsWith("1/versions/10/v1/audio-s1-1-asset-", storage.UploadedPaths[3]);
+        Assert.Contains(storage.UploadedPaths, x => x.StartsWith("1/versions/10/v1/audio-s1-1-asset-"));
         Assert.All(uow.Items<MediaAsset>(), asset => Assert.DoesNotContain("://", asset.Url));
     }
 
@@ -850,7 +850,7 @@ public sealed partial class MediaGenerationServiceTests
         RecordingFinalizer? finalizer = null,
         IIllustrationBeatPlanner? planner = null,
         IMediaReadinessService? readiness = null, ISupervisionAccessGuard? supervision = null,
-        Microsoft.Extensions.Logging.ILogger<MediaGenerationService>? logger = null)
+        Microsoft.Extensions.Logging.ILogger<MediaGenerationService>? logger = null, MediaGenerationOptions? options = null)
     {
         var evaluatorImpl = evaluator ?? new PassingEvaluator();
         var clock = new MediaTestPump.Clock();
@@ -873,7 +873,7 @@ public sealed partial class MediaGenerationServiceTests
             new StorySegmentService(),
             recorder,
             readiness ?? new MediaReadinessService(uow),
-            new MediaGenerationOptions { AssetMaxAttempts = 3, JobLeaseMinutes = 5 },
+            options ?? new MediaGenerationOptions { AssetMaxAttempts = 3, JobLeaseMinutes = 5 },
             logger ?? NullLogger<MediaGenerationService>.Instance, supervision ?? new Mock<ISupervisionAccessGuard>().Object, clock);
         MediaTestPump.Register(service, uow, clock);
         return service;

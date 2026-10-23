@@ -16,7 +16,7 @@ using Xunit;
 namespace StoryPlatform.UnitTests;
 
 /// <summary>Real SQLite transactions/repositories and filtered indexes; providers and advisory locks are doubles.</summary>
-public sealed class SplitMediaPersistenceTests
+public sealed partial class SplitMediaPersistenceTests
 {
     private static async Task SeedAsync(ApplicationDbContext db)
     {
@@ -47,22 +47,35 @@ public sealed class SplitMediaPersistenceTests
             if (exception is not null) Errors.Add(exception);
         }
     }
-    private static IUnitOfWork Proxy(UnitOfWork real, Func<bool>? fail = null)
+    private static IUnitOfWork Proxy(UnitOfWork real, Func<bool>? fail = null, SemaphoreSlim? transactionGate = null)
     {
         var mock = new Mock<IUnitOfWork>();
+        var held = false;
+        void ReleaseGate() { if (held) { held = false; transactionGate!.Release(); } }
         void Register<T>() where T : class => mock.Setup(x => x.Repository<T>()).Returns(real.Repository<T>());
         Register<UserAccount>(); Register<Story>(); Register<StoryVersion>(); Register<StoryGenerationJob>();
         Register<MediaContext>(); Register<StoryScene>(); Register<IllustrationBeat>(); Register<StorySegment>();
         Register<MediaAsset>(); Register<ModerationItem>(); Register<StoryAuthoringOperation>();
-        mock.Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.BeginTransactionAsync(ct));
+        Register<MediaAssetGenerationTask>();
+        mock.Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>())).Returns(async (CancellationToken ct) =>
+        {
+            if (transactionGate is not null) { await transactionGate.WaitAsync(ct); held = true; }
+            try { await real.BeginTransactionAsync(ct); }
+            catch { ReleaseGate(); throw; }
+        });
         mock.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.SaveChangesAsync(ct));
         mock.Setup(x => x.CommitTransactionAsync(It.IsAny<CancellationToken>())).Returns(async (CancellationToken ct) =>
         {
             await real.SaveChangesAsync(ct);
             if (fail?.Invoke() == true) throw new InvalidOperationException("Injected commit failure");
             await real.CommitTransactionAsync(ct);
+            ReleaseGate();
         });
-        mock.Setup(x => x.RollbackTransactionAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.RollbackTransactionAsync(ct));
+        mock.Setup(x => x.RollbackTransactionAsync(It.IsAny<CancellationToken>())).Returns(async (CancellationToken ct) =>
+        {
+            try { await real.RollbackTransactionAsync(ct); }
+            finally { ReleaseGate(); }
+        });
         mock.Setup(x => x.DiscardTrackedChanges()).Callback(real.DiscardTrackedChanges);
         mock.Setup(x => x.AcquireTransactionLockAsync(It.IsAny<int>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         return mock.Object;
@@ -120,9 +133,9 @@ public sealed class SplitMediaPersistenceTests
             if (changed) return;
             changed = true;
             await using var other = new CreatorManualMediaPersistenceTests.Db(options);
-            var branch = await other.StoryGenerationJobs.SingleAsync(x => x.Operation == GenerationJobOperation.GenerateIllustration);
-            if (rotateToken) branch.ConcurrencyToken = "another-worker-claim";
-            else branch.LeaseExpiresAt = DateTime.UtcNow.AddMinutes(-1);
+            var task = await other.MediaAssetGenerationTasks.SingleAsync(x => x.Status == GenerationJobStatus.Processing);
+            if (rotateToken) task.ConcurrencyToken = "another-worker-claim";
+            else task.LeaseExpiresAt = DateTime.UtcNow.AddMinutes(-1);
             await other.SaveChangesAsync();
         });
         var service = MediaGenerationServiceTests.Create(Proxy(real), image: image);
@@ -131,13 +144,12 @@ public sealed class SplitMediaPersistenceTests
         db.ChangeTracker.Clear();
         Assert.False(await db.MediaAssets.AnyAsync(x => x.Status == MediaStatus.Ready));
         if (rotateToken)
-            Assert.Equal("another-worker-claim", (await db.StoryGenerationJobs.SingleAsync(x => x.Operation == GenerationJobOperation.GenerateIllustration)).ConcurrencyToken);
+            Assert.Contains(await db.MediaAssetGenerationTasks.ToListAsync(), x => x.ConcurrencyToken == "another-worker-claim");
         Assert.Equal(StoryStatus.MediaProcessing, (await db.Stories.SingleAsync()).Status);
         Assert.True((await service.ProcessBranchNextAsync(MediaType.TtsAudio)).Success);
         if (!rotateToken)
         {
-            Assert.True((await service.ProcessBranchNextAsync(MediaType.Illustration)).Success);
-            await service.ProcessNextAsync();
+            Assert.True((await service.RunPackageAsync()).Success);
             Assert.Equal(StoryStatus.MediaReview, (await db.Stories.AsNoTracking().SingleAsync()).Status);
         }
     }

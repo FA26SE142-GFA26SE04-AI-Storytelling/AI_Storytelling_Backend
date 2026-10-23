@@ -147,5 +147,10 @@ public sealed record KeepCurrentMediaRequest(
     [System.ComponentModel.DataAnnotations.Range(1, int.MaxValue)] int StoryVersionId,
     [System.ComponentModel.DataAnnotations.Range(1, int.MaxValue)] int PackageRevision);
 
-public sealed record MediaBranchProgress(string Status, int RequiredCount, int ReadyCount, string? ErrorCode, DateTime? NextRetryAt);
+public sealed record MediaBranchProgress(string Status, int RequiredCount, int ReadyCount, string? ErrorCode, DateTime? NextRetryAt)
+{
+    public int QueuedCount { get; init; }
+    public int RunningCount { get; init; }
+    public int FailedCount { get; init; }
+}
 public sealed record MediaReplacementItem(int CandidateAssetId, int PreviousAssetId, string Type, int TargetId, string Status);

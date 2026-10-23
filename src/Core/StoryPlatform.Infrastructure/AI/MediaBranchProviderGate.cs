@@ -2,11 +2,13 @@ using StoryPlatform.Application.Features.MediaGeneration;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.MediaStorage.Models;
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 
 namespace StoryPlatform.Infrastructure.AI;
 
 /// <summary>One singleton per modality. Also covers SDK providers outside the HTTP pipeline.</summary>
-internal sealed class MediaBranchProviderGate(MediaBranchOptions options)
+internal sealed class MediaBranchProviderGate(MediaBranchOptions options, ILogger? logger = null, string modality = "Media")
 {
     private readonly MediaRequestRateLimiter _limiter = new(new MediaGenerationOptions { RateLimit = options.RateLimit });
     private readonly object _sync = new();
@@ -18,7 +20,12 @@ internal sealed class MediaBranchProviderGate(MediaBranchOptions options)
         lock (_sync)
             if (_openUntil > DateTimeOffset.UtcNow)
                 throw new TransientMediaGenerationException("MEDIA_CIRCUIT_OPEN", retryAfter: _openUntil - DateTimeOffset.UtcNow);
+        var wait = Stopwatch.StartNew();
         await _limiter.WaitAsync(ct);
+        logger?.LogInformation("Media provider wait Modality={Modality} DurationMs={DurationMs}", modality, wait.Elapsed.TotalMilliseconds);
+        lock (_sync)
+            if (_openUntil > DateTimeOffset.UtcNow)
+                throw new TransientMediaGenerationException("MEDIA_CIRCUIT_OPEN", retryAfter: _openUntil - DateTimeOffset.UtcNow);
         try
         {
             var result = await call(ct);

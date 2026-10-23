@@ -58,6 +58,11 @@ public sealed partial class MediaGenerationService
                     child.CompletedAt = _clock.GetUtcNow().UtcDateTime;
                 }
                 if (!added) _unitOfWork.Repository<StoryGenerationJob>().Update(child);
+                if (operation == GenerationJobOperation.GenerateIllustration && child.Status != GenerationJobStatus.Completed)
+                {
+                    await _unitOfWork.SaveChangesAsync(ct);
+                    await QueueImageTasksAsync(child, ct);
+                }
             }
             parent.MediaContextId = context.Id;
             parent.MediaPackageRevision = revision;
@@ -73,6 +78,7 @@ public sealed partial class MediaGenerationService
     public async Task<MediaJobProcessResult> ProcessBranchNextAsync(MediaType type, CancellationToken ct = default)
     {
         if (type is not (MediaType.Illustration or MediaType.TtsAudio)) throw new ArgumentOutOfRangeException(nameof(type));
+        if (type == MediaType.Illustration) return await ProcessImageTaskNextAsync(ct);
         var now = _clock.GetUtcNow().UtcDateTime;
         var operation = BranchOperation(type);
         var child = await _unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(x =>
@@ -122,6 +128,11 @@ public sealed partial class MediaGenerationService
         catch { await RollbackMediaAsync(CancellationToken.None); throw; }
 
         var token = child.ConcurrencyToken;
+        using var scope = _logger.BeginScope(new Dictionary<string, object?>
+        {
+            ["StoryId"] = child.StoryId, ["StoryVersionId"] = child.StoryVersionId,
+            ["PackageRevision"] = child.MediaPackageRevision, ["MediaJobId"] = child.Id
+        });
         try
         {
             var versionId = child.StoryVersionId ?? throw new InvalidOperationException("INVALID_MEDIA_HANDOFF");
@@ -133,21 +144,9 @@ public sealed partial class MediaGenerationService
                 .OrderBy(x => x.SceneIndex).ToArray();
             foreach (var scene in scenes)
             {
-                if (type == MediaType.Illustration)
-                {
-                    var specification = _specificationBuilder.Build(versionId, scene.Id, scene.SceneIndex,
-                        scene.SceneText, scene.VisualDescription, context.ContextJson);
-                    var beats = await _unitOfWork.Repository<IllustrationBeat>().FindAsync(x => x.StorySceneId == scene.Id, cancellationToken: ct);
-                    foreach (var beat in beats.OrderBy(x => x.BeatOrder))
-                        await EnsureIllustrationAsync(child.Id, token, child.StoryId, versionId, context, scene, beat,
-                            specification.ForBeat(scene.SceneText[beat.StartOffset..beat.EndOffset], beat.VisualFocus), ct);
-                }
-                else
-                {
-                    var segments = await _unitOfWork.Repository<StorySegment>().FindAsync(x => x.StorySceneId == scene.Id, cancellationToken: ct);
-                    foreach (var segment in segments.OrderBy(x => x.SegmentOrder))
-                        await EnsureSegmentAudioAsync(child.Id, token, child.StoryId, versionId, context, scene, segment, ct);
-                }
+                var segments = await _unitOfWork.Repository<StorySegment>().FindAsync(x => x.StorySceneId == scene.Id, cancellationToken: ct);
+                foreach (var segment in segments.OrderBy(x => x.SegmentOrder))
+                    await EnsureSegmentAudioAsync(child.Id, token, child.StoryId, versionId, context, scene, segment, ct);
             }
             await CompleteBranchAsync(child, token, context.Id, ct);
             return MediaJobProcessResult.Completed;
@@ -282,6 +281,22 @@ public sealed partial class MediaGenerationService
     {
         var branch = await _unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(x => x.ParentJobId == parent.Id &&
             x.Operation == BranchOperation(type) && x.MediaPackageRevision == parent.MediaPackageRevision, cancellationToken: ct);
+        if (type == MediaType.Illustration && branch is not null)
+        {
+            var tasks = await _unitOfWork.Repository<MediaAssetGenerationTask>().FindAsync(x => x.BranchJobId == branch.Id &&
+                x.PackageRevision == parent.MediaPackageRevision, cancellationToken: ct);
+            var retryAt = tasks.Where(x => x.Status == GenerationJobStatus.Pending && x.NextAttemptAt.HasValue)
+                .Select(x => x.NextAttemptAt).OrderBy(x => x).FirstOrDefault();
+            var status = branch.Status == GenerationJobStatus.Processing && tasks.Count > 0 &&
+                tasks.All(x => x.Status != GenerationJobStatus.Processing) && tasks.Any(x => x.Status == GenerationJobStatus.Pending)
+                ? "Pending" : branch.Status.ToString();
+            return new(status, required, ready, tasks.FirstOrDefault(x => x.ErrorCode != null)?.ErrorCode ?? branch.ErrorCode, retryAt)
+            {
+                RunningCount = tasks.Count(x => x.Status == GenerationJobStatus.Processing),
+                QueuedCount = tasks.Count(x => x.Status == GenerationJobStatus.Pending),
+                FailedCount = tasks.Count(x => x.Status == GenerationJobStatus.Failed)
+            };
+        }
         return new(branch?.Status.ToString() ?? (parent.Status == GenerationJobStatus.Completed ? "Completed" : "Preparing"),
             required, ready, branch?.ErrorCode, branch?.NextAttemptAt);
     }

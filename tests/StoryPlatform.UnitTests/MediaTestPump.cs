@@ -26,7 +26,7 @@ internal static class MediaTestPump
         var initial = await service.ProcessNextAsync();
         if (!initial.Success) return initial;
         MediaJobProcessResult? failure = null;
-        for (var iteration = 0; iteration < 12; iteration++)
+        for (var iteration = 0; iteration < 64; iteration++)
         {
             foreach (var type in new[] { MediaType.Illustration, MediaType.TtsAudio })
             {
@@ -41,6 +41,9 @@ internal static class MediaTestPump
                 return failure ?? MediaJobProcessResult.Failed(true, parent.ErrorCode ?? "MEDIA_GENERATION_FAILED");
             var pending = await state.Uow.Repository<StoryGenerationJob>().FindAsync(x => x.ParentJobId == parent.Id && x.NextAttemptAt != null);
             if (pending.Count > 0) state.Clock.AdvanceTo(pending.Max(x => x.NextAttemptAt!.Value));
+            var imageRetries = await state.Uow.Repository<MediaAssetGenerationTask>().FindAsync(x => x.StoryVersionId == parent.StoryVersionId &&
+                x.Status == GenerationJobStatus.Pending && x.NextAttemptAt != null);
+            if (imageRetries.Count > 0) state.Clock.AdvanceTo(imageRetries.Max(x => x.NextAttemptAt!.Value));
             // An open circuit has no bounded attempt consumption; tests inspect one iteration.
             if (failure?.ErrorCode == "MEDIA_CIRCUIT_OPEN") return failure;
         }

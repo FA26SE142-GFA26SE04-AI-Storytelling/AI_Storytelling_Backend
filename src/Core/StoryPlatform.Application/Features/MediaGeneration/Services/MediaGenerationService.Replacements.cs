@@ -48,8 +48,17 @@ public sealed partial class MediaGenerationService
             await AssertFreshAsync(jobId, token, asset.StoryVersionId, contextId, ct);
             asset.Status = MediaStatus.Processing;
             asset.AttemptCount++;
-            job.LeaseExpiresAt = _clock.GetUtcNow().UtcDateTime.Add(_jobLease);
-            _unitOfWork.Repository<StoryGenerationJob>().Update(job);
+            if (_claimedImageTask is { } claim)
+            {
+                var task = await FreshAsync<MediaAssetGenerationTask>(claim.Id, ct) ?? throw new InvalidOperationException("STALE_JOB_RESULT");
+                task.LeaseExpiresAt = _clock.GetUtcNow().UtcDateTime.Add(_jobLease);
+                _unitOfWork.Repository<MediaAssetGenerationTask>().Update(task);
+            }
+            else
+            {
+                job.LeaseExpiresAt = _clock.GetUtcNow().UtcDateTime.Add(_jobLease);
+                _unitOfWork.Repository<StoryGenerationJob>().Update(job);
+            }
             _unitOfWork.Repository<MediaAsset>().Update(asset);
             await _unitOfWork.CommitTransactionAsync(ct);
         }

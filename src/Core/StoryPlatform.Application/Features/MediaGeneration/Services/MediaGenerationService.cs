@@ -391,6 +391,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
 
     public async Task<MediaJobProcessResult> ProcessNextAsync(CancellationToken cancellationToken = default)
     {
+        await ReconcileImageBranchesAsync(cancellationToken);
         if (await TryFinalizeNextAsync(cancellationToken)) return MediaJobProcessResult.Completed;
         var now = _clock.GetUtcNow().UtcDateTime;
         var job = await _unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(
@@ -648,10 +649,27 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             var specification = BuildSpecificationWithFeedback(baseSpecification, failureHistory);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(_options.Images.ProviderTimeoutSeconds, 1, 600)));
-            var illustration = await _imageProvider.GenerateAsync(specification, timeout.Token);
+            var illustration = await MeasureMediaStageAsync("ImageGeneration", jobId, asset,
+                () => _imageProvider.GenerateAsync(specification, timeout.Token));
             timeout.Token.ThrowIfCancellationRequested();
-            var alignment = await _alignmentEvaluator.EvaluateAsync(specification, illustration, timeout.Token);
-            var safety = await _safetyEvaluator.EvaluateAsync(specification, illustration, timeout.Token);
+            Task<MediaEvaluationResult> Alignment() => MeasureMediaStageAsync("ImageAlignment", jobId, asset,
+                () => _alignmentEvaluator.EvaluateAsync(specification, illustration, timeout.Token));
+            Task<MediaEvaluationResult> Safety() => MeasureMediaStageAsync("ImageSafety", jobId, asset,
+                () => _safetyEvaluator.EvaluateAsync(specification, illustration, timeout.Token));
+            MediaEvaluationResult alignment, safety;
+            if (_options.ParallelImageEvaluation)
+            {
+                var alignmentTask = Alignment();
+                var safetyTask = Safety();
+                await Task.WhenAll(alignmentTask, safetyTask);
+                alignment = await alignmentTask;
+                safety = await safetyTask;
+            }
+            else
+            {
+                alignment = await Alignment();
+                safety = await Safety();
+            }
 
             var evalResult = BuildValidationResultJson(alignment, safety);
             asset.ValidationResultJson = evalResult;
@@ -678,8 +696,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             await AssertFreshAsync(jobId, claimedToken, versionId, mediaContext.Id, cancellationToken);
             var storagePath = $"{storyId}/versions/{versionId}/v{mediaContext.Revision}/scene-{scene.SceneIndex}-beat-{beat.BeatOrder}-asset-{asset.Id}-{Guid.NewGuid():N}-a{attempt + 1}{illustration.SuggestedExtension}";
             await using var content = illustration.OpenReadStream();
-            asset.Url = await _mediaStorage.UploadAsync(
-                storagePath, content, illustration.MimeType, cancellationToken);
+            asset.Url = await MeasureMediaStageAsync("ImageUpload", jobId, asset,
+                () => _mediaStorage.UploadAsync(storagePath, content, illustration.MimeType, cancellationToken));
             asset.MimeType = illustration.MimeType;
             asset.Provider = illustration.GetMetadata("provider") ?? "Gemini";
             asset.Model = illustration.GetMetadata("model") ?? "unknown";
@@ -745,7 +763,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
 
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(_options.Audio.ProviderTimeoutSeconds, 1, 600)));
-            var audio = await _ttsProvider.GenerateAsync(segment.TextContent, timeout.Token);
+            var audio = await MeasureMediaStageAsync("TtsGeneration", jobId, asset,
+                () => _ttsProvider.GenerateAsync(segment.TextContent, timeout.Token));
             timeout.Token.ThrowIfCancellationRequested();
 
             // Structural quality gate — magic bytes + word timings check.
@@ -771,8 +790,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             await AssertFreshAsync(jobId, claimedToken, versionId, mediaContext.Id, cancellationToken);
             var storagePath = $"{storyId}/versions/{versionId}/v{mediaContext.Revision}/audio-s{scene.SceneIndex}-{segment.SegmentOrder}-asset-{asset.Id}-{Guid.NewGuid():N}-a{attempt + 1}{audio.SuggestedExtension}";
             await using var content = audio.OpenReadStream();
-            asset.Url = await _mediaStorage.UploadAsync(
-                storagePath, content, audio.MimeType, cancellationToken);
+            asset.Url = await MeasureMediaStageAsync("AudioUpload", jobId, asset,
+                () => _mediaStorage.UploadAsync(storagePath, content, audio.MimeType, cancellationToken));
             asset.MimeType = audio.MimeType;
             asset.WordTimings = audio.GetMetadata("wordTimingsJson");
             asset.Provider = audio.GetMetadata("provider") ?? "GoogleCloud";
@@ -913,6 +932,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         int jobId, string token, int versionId, int contextId, CancellationToken cancellationToken)
     {
         var job = await RequireClaimedJobAsync(jobId, token, cancellationToken);
+        await AssertImageTaskClaimAsync(jobId, cancellationToken);
         await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, job.StoryId, versionId, cancellationToken);
         var story = await FreshAsync<Story>(job.StoryId, cancellationToken);
         var version = await FreshAsync<StoryVersion>(versionId, cancellationToken);

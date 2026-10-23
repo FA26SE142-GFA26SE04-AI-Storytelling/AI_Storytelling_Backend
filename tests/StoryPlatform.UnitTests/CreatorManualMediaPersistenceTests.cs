@@ -25,7 +25,8 @@ public sealed class CreatorManualMediaPersistenceTests
         {
             Type[] types = [typeof(UserAccount), typeof(Story), typeof(StoryVersion), typeof(StoryGenerationJob),
                 typeof(MediaContext), typeof(ModerationItem), typeof(ContentCategory), typeof(StoryScene),
-                typeof(StorySegment), typeof(IllustrationBeat), typeof(MediaAsset), typeof(StoryAuthoringOperation)];
+                typeof(StorySegment), typeof(IllustrationBeat), typeof(MediaAsset), typeof(StoryAuthoringOperation), typeof(MediaAssetGenerationTask),
+                typeof(LearningArtifactGenerationBatch)];
             foreach (var type in types)
                 foreach (var p in type.GetProperties().Where(p => typeof(BaseEntity).IsAssignableFrom(p.PropertyType) ||
                     p.PropertyType.IsGenericType && p.PropertyType.GetGenericArguments().Any(t => typeof(BaseEntity).IsAssignableFrom(t))))
@@ -38,6 +39,8 @@ public sealed class CreatorManualMediaPersistenceTests
             new StoryPlatform.Infrastructure.Persistence.Configurations.StoryVersionConfiguration().Configure(b.Entity<StoryVersion>());
             new StoryPlatform.Infrastructure.Persistence.Configurations.StoryAuthoringOperationConfiguration().Configure(b.Entity<StoryAuthoringOperation>());
             new StoryPlatform.Infrastructure.Persistence.Configurations.MediaAssetConfiguration().Configure(b.Entity<MediaAsset>());
+            new StoryPlatform.Infrastructure.Persistence.Configurations.MediaAssetGenerationTaskConfiguration().Configure(b.Entity<MediaAssetGenerationTask>());
+            new StoryPlatform.Infrastructure.Persistence.Configurations.LearningArtifactGenerationBatchConfiguration().Configure(b.Entity<LearningArtifactGenerationBatch>());
         }
     }
 
@@ -158,6 +161,7 @@ public sealed class CreatorManualMediaPersistenceTests
         uow.Setup(x => x.Repository<StoryGenerationJob>()).Returns(real.Repository<StoryGenerationJob>());
         uow.Setup(x => x.Repository<ModerationItem>()).Returns(real.Repository<ModerationItem>());
         uow.Setup(x => x.Repository<MediaAsset>()).Returns(real.Repository<MediaAsset>());
+        uow.Setup(x => x.Repository<MediaAssetGenerationTask>()).Returns(real.Repository<MediaAssetGenerationTask>());
         uow.Setup(x => x.DiscardTrackedChanges()).Callback(real.DiscardTrackedChanges);
         uow.Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.BeginTransactionAsync(ct));
         uow.Setup(x => x.RollbackTransactionAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.RollbackTransactionAsync(ct));

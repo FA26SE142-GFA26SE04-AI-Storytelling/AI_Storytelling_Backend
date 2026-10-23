@@ -39,7 +39,7 @@ public sealed partial class MediaGenerationServiceTests
         var image = new SwitchableImage { Fail = true };
         var service = Create(store, image: image);
         Assert.True((await service.ProcessNextAsync()).Success);
-        Assert.Empty(store.Items<MediaAsset>());
+        Assert.All(store.Items<MediaAsset>(), x => Assert.Equal(MediaStatus.Queued, x.Status));
         Assert.Equal(3, store.Items<StoryGenerationJob>().Count);
         var before = DateTime.UtcNow;
         Assert.False((await service.ProcessBranchNextAsync(MediaType.Illustration)).Success);
@@ -51,6 +51,8 @@ public sealed partial class MediaGenerationServiceTests
         Assert.Equal("Completed", progress.Audio.Status);
         Assert.Equal(2, progress.ReadyAudio);
         Assert.False(progress.IsReady);
+        // The other illustration has its own attempt/backoff, independent of this failure.
+        Assert.False((await service.ProcessBranchNextAsync(MediaType.Illustration)).Success);
         Assert.False((await service.ProcessBranchNextAsync(MediaType.Illustration)).JobFound);
         image.Fail = false;
         Assert.True((await service.RunPackageAsync()).Success);

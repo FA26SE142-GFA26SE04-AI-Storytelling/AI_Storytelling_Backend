@@ -16,8 +16,10 @@ public sealed class MediaGenerationOptions
     public string AlignmentEvaluator { get; set; } = "VertexAI";
     public string SafetyEvaluator { get; set; } = "VertexAI";
     public string LogLevel { get; set; } = "Summary";
-    public MediaBranchOptions Images { get; set; } = new();
+    public MediaBranchOptions Images { get; set; } = new() { Concurrency = 2 };
     public MediaBranchOptions Audio { get; set; } = new();
+    public int MaxConcurrentImagesPerStory { get; set; } = 2;
+    public bool ParallelImageEvaluation { get; set; }
 
     public CircuitBreakerConfig CircuitBreaker { get; set; } = new();
     public RateLimitConfig RateLimit { get; set; } = new();

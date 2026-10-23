@@ -74,6 +74,8 @@ public sealed record MediaGenerationProgress(
     IReadOnlyList<int>? ManualReviewAssetIds = null,
     IReadOnlyList<int>? ScenesWithoutValidBeats = null)
 {
+    public MediaBranchProgress Images { get; init; } = new("Preparing", 0, 0, null, null);
+    public MediaBranchProgress Audio { get; init; } = new("Preparing", 0, 0, null, null);
     public int PackageRevision { get; init; }
     public bool IsGenerated { get; init; }
     public bool IsAwaitingConfirmation { get; init; }
@@ -108,6 +110,7 @@ public sealed record AudioMediaItem(int SegmentId, int SegmentOrder, string Text
 
 public sealed record StoryMediaPackage(int StoryId, int StoryVersionId, IReadOnlyList<SceneMediaItem> Scenes)
 {
+    public IReadOnlyList<MediaReplacementItem> Replacements { get; init; } = [];
     public bool IsReady { get; init; }
     public int PackageRevision { get; init; }
     public bool IsGenerated { get; init; }
@@ -136,4 +139,13 @@ public sealed record ConfirmMediaPackageRequest(
 public sealed record RegenerateMediaRequest(
     [System.ComponentModel.DataAnnotations.Range(1, int.MaxValue)] int StoryVersionId,
     [System.ComponentModel.DataAnnotations.Range(0, int.MaxValue)] int PackageRevision,
-    [System.ComponentModel.DataAnnotations.Required] bool? ExpectedConfirmed);
+    [System.ComponentModel.DataAnnotations.Required] bool? ExpectedConfirmed,
+    [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(100)] string OperationId = "");
+
+public sealed record KeepCurrentMediaRequest(
+    [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(100)] string OperationId,
+    [System.ComponentModel.DataAnnotations.Range(1, int.MaxValue)] int StoryVersionId,
+    [System.ComponentModel.DataAnnotations.Range(1, int.MaxValue)] int PackageRevision);
+
+public sealed record MediaBranchProgress(string Status, int RequiredCount, int ReadyCount, string? ErrorCode, DateTime? NextRetryAt);
+public sealed record MediaReplacementItem(int CandidateAssetId, int PreviousAssetId, string Type, int TargetId, string Status);

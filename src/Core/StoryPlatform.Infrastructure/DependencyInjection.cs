@@ -162,10 +162,10 @@ public static class DependencyInjection
         // OAuth2 Bearer token on every request; otherwise x-goog-api-key is used per-provider.
         ConfigureMediaHttpClient(
             services.AddHttpClient<GeminiImageGenerationProvider>(client => client.Timeout = TimeSpan.FromMinutes(2)),
-            mediaOptions, imageOptions.TransportRetryCount, imageOptions.TransportRetryBaseDelayMs);
+            new MediaGenerationOptions { CircuitBreaker = mediaOptions.Images.CircuitBreaker }, 0, imageOptions.TransportRetryBaseDelayMs);
         ConfigureMediaHttpClient(
             services.AddHttpClient<GeminiTtsProvider>(client => client.Timeout = TimeSpan.FromMinutes(2)),
-            mediaOptions, ttsOptions.TransportRetryCount, ttsOptions.TransportRetryBaseDelayMs);
+            new MediaGenerationOptions { CircuitBreaker = mediaOptions.Audio.CircuitBreaker }, 0, ttsOptions.TransportRetryBaseDelayMs);
         ConfigureMediaHttpClient(
             services.AddHttpClient<GeminiMediaAlignmentEvaluator>(client => client.Timeout = TimeSpan.FromMinutes(2)),
             mediaOptions, evaluationOptions.TransportRetryCount, evaluationOptions.TransportRetryBaseDelayMs);
@@ -183,15 +183,15 @@ public static class DependencyInjection
             mediaOptions, geminiOptions.TransportRetryCount, geminiOptions.TransportRetryBaseDelayMs);
 
         // Application-layer interfaces → Infrastructure implementations
-        services.AddSingleton<IImageGenerationProvider>(sp => sp.GetRequiredService<GeminiImageGenerationProvider>());
+        services.AddSingleton<IImageGenerationProvider>(sp => new GatedImageProvider(sp.GetRequiredService<GeminiImageGenerationProvider>(), new MediaBranchProviderGate(mediaOptions.Images)));
         services.AddSingleton<GoogleCloudTtsProvider>();
-        services.AddSingleton<ITtsProvider>(sp => ttsOptions.Provider.Trim().ToUpperInvariant() switch
+        services.AddSingleton<ITtsProvider>(sp => new GatedTtsProvider(ttsOptions.Provider.Trim().ToUpperInvariant() switch
         {
             "GEMINI" or "GEMINITTS" => sp.GetRequiredService<GeminiTtsProvider>(),
             "GOOGLECLOUD" or "GOOGLECLOUDTTS" => sp.GetRequiredService<GoogleCloudTtsProvider>(),
             _ => throw new InvalidOperationException(
                 $"Unsupported AI:TTS:Provider '{ttsOptions.Provider}'. Supported values: GeminiTTS, GoogleCloudTTS.")
-        });
+        }, new MediaBranchProviderGate(mediaOptions.Audio)));
         services.AddSingleton<IMediaAlignmentEvaluator>(sp => sp.GetRequiredService<GeminiMediaAlignmentEvaluator>());
         services.AddSingleton<IMediaSafetyEvaluator>(sp => sp.GetRequiredService<GeminiMediaSafetyEvaluator>());
         services.AddSingleton<ISemanticSceneSegmentationProvider>(sp => sp.GetRequiredService<GeminiSemanticSceneSegmentationProvider>());
@@ -202,6 +202,8 @@ public static class DependencyInjection
         services.AddSingleton<IAudioQualityGate, BinaryAudioQualityGate>();
         services.AddSingleton<IMediaGenerationJobFailureFinalizer, MediaGenerationJobFailureFinalizer>();
         services.AddHostedService<MediaGenerationWorker>();
+        services.AddHostedService<ImageGenerationWorker>();
+        services.AddHostedService<TtsGenerationWorker>();
 
         var storageOptions = new SupabaseStorageOptions();
         configuration.GetSection(SupabaseStorageOptions.SectionName).Bind(storageOptions);

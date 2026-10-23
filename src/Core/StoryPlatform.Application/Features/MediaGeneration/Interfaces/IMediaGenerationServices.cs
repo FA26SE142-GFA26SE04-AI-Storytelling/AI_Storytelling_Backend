@@ -68,6 +68,7 @@ public interface IMediaGenerationService
     Task RegenerateIllustrationBeatAsync(int userId, int storyId, int beatId, RegenerateMediaRequest request, CancellationToken cancellationToken = default);
     Task RegenerateSegmentAudioAsync(int userId, int storyId, int segmentId, RegenerateMediaRequest request, CancellationToken cancellationToken = default);
     Task<MediaGenerationProgress> ConfirmAsync(int userId, int storyId, ConfirmMediaPackageRequest request, CancellationToken cancellationToken = default);
+    Task<MediaGenerationProgress> KeepCurrentAsync(int userId, int storyId, int candidateAssetId, KeepCurrentMediaRequest request, CancellationToken cancellationToken = default);
 }
 
 public interface IMediaReadinessService
@@ -79,6 +80,7 @@ public interface IMediaReadinessService
 public interface IMediaGenerationJobProcessor
 {
     Task<MediaJobProcessResult> ProcessNextAsync(CancellationToken cancellationToken = default);
+    Task<MediaJobProcessResult> ProcessBranchNextAsync(StoryPlatform.Domain.Enums.MediaType type, CancellationToken cancellationToken = default);
 }
 
 public interface IMediaGenerationJobFailureFinalizer

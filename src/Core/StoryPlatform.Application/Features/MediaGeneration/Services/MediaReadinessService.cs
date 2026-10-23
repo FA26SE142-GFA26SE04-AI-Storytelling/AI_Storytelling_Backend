@@ -26,7 +26,7 @@ public sealed class MediaReadinessService : IMediaReadinessService
         var segments = await _unitOfWork.Repository<StorySegment>().FindAsync(
             x => sceneIds.Contains(x.StorySceneId), cancellationToken: cancellationToken);
         var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(
-            x => x.StoryVersionId == storyVersionId && x.StorySceneId != null,
+            x => x.IsCurrent && x.StoryVersionId == storyVersionId && x.StorySceneId != null,
             cancellationToken: cancellationToken);
 
         var scenesWithoutValidBeats = scenes.Where(scene =>

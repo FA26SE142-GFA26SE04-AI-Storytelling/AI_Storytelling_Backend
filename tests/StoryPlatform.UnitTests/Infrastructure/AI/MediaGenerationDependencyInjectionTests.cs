@@ -37,7 +37,7 @@ public sealed class MediaGenerationDependencyInjectionTests
     [Theory]
     [InlineData("GeminiTTS")]
     [InlineData("gemini")]
-    public void Registrations_resolve_configured_gemini_tts_provider(string configuredProvider)
+    public async Task Registrations_resolve_configured_gemini_tts_provider(string configuredProvider)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -54,7 +54,11 @@ public sealed class MediaGenerationDependencyInjectionTests
 
         using var provider = services.BuildServiceProvider();
 
-        Assert.IsType<GeminiTtsProvider>(provider.GetRequiredService<ITtsProvider>());
+        var tts = provider.GetRequiredService<ITtsProvider>();
+        Assert.Same(tts, provider.GetRequiredService<ITtsProvider>());
+        var error = await Assert.ThrowsAsync<StoryPlatform.Application.Features.MediaGeneration.PermanentMediaGenerationException>(
+            () => tts.GenerateAsync("Test without credentials"));
+        Assert.Equal("TTS_PROVIDER_NOT_CONFIGURED", error.ErrorCode);
     }
 
     [Fact]

@@ -113,7 +113,7 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
         var beats = await _unitOfWork.Repository<IllustrationBeat>().FindAsync(
             x => sceneIds.Contains(x.StorySceneId), cancellationToken: cancellationToken);
         var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(
-            x => x.StoryVersionId == versionId, cancellationToken: cancellationToken);
+            x => x.IsCurrent && x.StoryVersionId == versionId, cancellationToken: cancellationToken);
         var quizzes = await _unitOfWork.Repository<QuizItem>().FindAsync(
             x => x.StoryVersionId == versionId, cancellationToken: cancellationToken);
         var vocabulary = await _unitOfWork.Repository<StoryVocabulary>().FindAsync(

@@ -15,6 +15,7 @@ namespace StoryPlatform.Infrastructure.Persistence.Repositories;
 /// </summary>
 public class UnitOfWork : IUnitOfWork
 {
+    public void DiscardTrackedChanges() => _context.ChangeTracker.Clear();
     private readonly ApplicationDbContext _context;
     private readonly ConcurrentDictionary<Type, object> _repositories = new();
     private IDbContextTransaction? _currentTransaction;

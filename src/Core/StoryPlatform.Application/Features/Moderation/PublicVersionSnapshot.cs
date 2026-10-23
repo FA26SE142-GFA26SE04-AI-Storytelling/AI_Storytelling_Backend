@@ -35,7 +35,7 @@ public sealed record PublicVersionSnapshot(
         var beats = await unitOfWork.Repository<IllustrationBeat>().FindAsync(
             beat => sceneIds.Contains(beat.StorySceneId), cancellationToken: cancellationToken);
         var assets = await unitOfWork.Repository<MediaAsset>().FindAsync(
-            asset => asset.StoryVersionId == versionId, cancellationToken: cancellationToken);
+            asset => asset.IsCurrent && asset.StoryVersionId == versionId, cancellationToken: cancellationToken);
         var quizzes = (await unitOfWork.Repository<QuizItem>().FindAsync(
                 quiz => quiz.StoryVersionId == versionId, cancellationToken: cancellationToken))
             .OrderBy(quiz => quiz.Id).ToList();

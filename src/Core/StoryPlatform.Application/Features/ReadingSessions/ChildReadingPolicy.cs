@@ -7,6 +7,8 @@ public static class ChildReadingPolicy
     public const string StoryUnavailableMessage = "Truyện này chưa mở cho em, mình đọc truyện khác nhé!";
     public const string LibraryLockedMessage = "Thư viện đang nghỉ một chút. Em đọc lại truyện đang mở nhé!";
     public const string ProfileUnavailableMessage = "Hồ sơ này hiện chưa đọc truyện được.";
+    public const string FeelingAfterReadingMessage = "Em đọc xong truyện rồi mình chọn cảm nhận nhé!";
+    public const string FeelingChoiceMessage = "Em chọn một cảm nhận nhé.";
 
     public const int MaxAddedSecondsPerSave = 600;
     public const int MaxEventPayloadLength = 2000;

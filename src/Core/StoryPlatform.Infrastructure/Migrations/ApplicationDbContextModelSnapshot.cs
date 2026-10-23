@@ -43,6 +43,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<DateOnly?>("LastStreakDate")
+                        .HasColumnType("date");
+
                     b.Property<int>("StreakDays")
                         .HasColumnType("integer");
 
@@ -390,7 +393,8 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ChildProfileId");
+                    b.HasIndex("ChildProfileId", "BadgeCode")
+                        .IsUnique();
 
                     b.ToTable("badges", (string)null);
                 });
@@ -2295,6 +2299,10 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Feeling")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<DateTime?>("ForceExitRequestedAt")
                         .HasColumnType("timestamp with time zone");

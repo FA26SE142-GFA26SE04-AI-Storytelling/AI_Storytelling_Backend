@@ -25,6 +25,10 @@ public class ReadingSessionConfiguration : IEntityTypeConfiguration<ReadingSessi
             .HasMaxLength(30)
             .IsRequired();
 
+        builder.Property(x => x.Feeling)
+            .HasConversion<string>()
+            .HasMaxLength(20);
+
         builder.HasOne(x => x.ChildProfile)
             .WithMany()
             .HasForeignKey(x => x.ChildProfileId)

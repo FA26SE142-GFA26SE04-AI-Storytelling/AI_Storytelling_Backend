@@ -46,6 +46,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<QuizItem> QuizItems => Set<QuizItem>();
     public DbSet<DiscussionQuestion> DiscussionQuestions => Set<DiscussionQuestion>();
     public DbSet<MediaAsset> MediaAssets => Set<MediaAsset>();
+    public DbSet<MediaAssetGenerationTask> MediaAssetGenerationTasks => Set<MediaAssetGenerationTask>();
+    public DbSet<LearningArtifactGenerationBatch> LearningArtifactGenerationBatches => Set<LearningArtifactGenerationBatch>();
     public DbSet<StoryScene> StoryScenes => Set<StoryScene>();
     public DbSet<IllustrationBeat> IllustrationBeats => Set<IllustrationBeat>();
     public DbSet<StorySegment> StorySegments => Set<StorySegment>();

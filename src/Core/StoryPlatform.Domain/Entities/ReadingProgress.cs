@@ -9,6 +9,8 @@ public class ReadingProgress : BaseEntity
     public virtual Story? Story { get; set; }
 
     public int LastPageRead { get; set; } = 1;
+    /// <summary>Chế độ đọc lần gần nhất (tên enum ReadingMode); null = chưa lưu.</summary>
+    public string? LastReadingMode { get; set; }
     public bool IsFavorited { get; set; } = false;
     public bool IsBookmarked { get; set; } = false;
 }

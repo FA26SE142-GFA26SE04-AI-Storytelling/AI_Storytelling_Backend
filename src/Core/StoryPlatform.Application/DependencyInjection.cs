@@ -131,6 +131,9 @@ public static class DependencyInjection
         services.AddScoped<IChildRoadmapProgressRecorder, ChildRoadmapProgressRecorder>();
         services.AddScoped<IChildRoadmapService, ChildRoadmapService>();
         services.AddScoped<IMyRoadmapService, MyRoadmapService>();
+        services.AddScoped<IChildStoryBrowseService, ChildStoryBrowseService>();
+        services.AddScoped<IChildReadingService, ChildReadingService>();
+        services.AddScoped<IChildNotebookService, ChildNotebookService>();
         services.AddScoped<IRoadmapLibraryService, RoadmapLibraryService>();
         services.AddScoped<IPublishedContentReviewService, PublishedContentReviewService>();
         services.AddScoped<ICommunitySubmissionService, CommunitySubmissionService>();

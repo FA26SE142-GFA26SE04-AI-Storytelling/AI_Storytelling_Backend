@@ -43,6 +43,8 @@ internal static class RequestGuard
             throw new ArgumentOutOfRangeException(nameof(constraints.MaximumWords), "maximumWords must be between 100 and 10000.");
         }
 
+        if (constraints.MinimumWords < 0 || constraints.MinimumWords > constraints.MaximumWords)
+            throw new ArgumentException("Invalid minimumWords.", nameof(constraints));
         if (parameters is not null && parameters.RequestedLength > constraints.MaximumWords)
         {
             throw new ArgumentException("requestedLength cannot exceed maximumWords.", nameof(parameters));

@@ -85,11 +85,43 @@ public sealed class AIStoryInputServiceTests
         Assert.Null(Assert.Single(store.Items<StoryGenerationRequest>()).AcceptedInputJson);
     }
 
-    private static SubmitCreatorAIStoryInputRequestDto CreatorRequest(string ageBand = "6-8", int? existingStoryId = null) => new()
+    private static SubmitCreatorAIStoryInputRequestDto CreatorRequest(string ageBand = "6-8", int? existingStoryId = null, int targetLength = 500) => new()
     {
         AgeBand = ageBand, ReadingLevel = 2, ExistingStoryId = existingStoryId, IdempotencyKey = "creator-generation-001",
-        Topic = "Tình bạn", Lesson = "Biết giúp đỡ bạn bè", VocabularyLevel = "level_2", Language = "vi", TargetLength = 500
+        Topic = "Tình bạn", Lesson = "Biết giúp đỡ bạn bè", VocabularyLevel = "level_2", Language = "vi", TargetLength = targetLength
     };
+
+    [Theory]
+    [InlineData("6-8", 900, 12, 24)]
+    [InlineData("9-10", 1500, 18, 36)]
+    public async Task Creator_OmittedTargetUsesPinnedAgeProfileAndReplayRemainsIdempotent(string age, int words, int vocabulary, int quiz)
+    {
+        var store = new FakeUnitOfWork();
+        store.Seed(new UserAccount { Id = 13, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
+        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), new Moq.Mock<ITokenQuotaService>(Moq.MockBehavior.Strict).Object);
+        var request = CreatorRequest(ageBand: age, targetLength: 0);
+        var first = await service.SubmitCreatorAsync(13, request);
+        var replay = await service.SubmitCreatorAsync(13, request);
+        Assert.Equal("input_accepted", first.InputStatus);
+        Assert.Equal(first.RequestId, replay.RequestId);
+        var stored = Assert.Single(store.Items<StoryGenerationRequest>());
+        var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var input = JsonSerializer.Deserialize<AcceptedAIStoryInputSnapshot>(stored.AcceptedInputJson!, json)!;
+        var context = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(stored.ContextSnapshotJson, json)!;
+        Assert.Equal(words, input.TargetLength);
+        Assert.Equal(vocabulary, context.LearningProfile!.VocabularyTarget);
+        Assert.Equal(quiz, context.LearningProfile.QuizTarget);
+        Assert.Equal((int)Math.Ceiling(words * .9), context.LearningProfile.MinimumWords);
+    }
+
+    [Fact]
+    public async Task ParentAgeDefaultNeverRaisesExistingChildPolicyLimit()
+    {
+        var store = CreateEligibleUnitOfWork();
+        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), CreateTokenQuotaService(store));
+        await Assert.ThrowsAsync<BadRequestException>(() => service.SubmitAsync(1, ValidRequest(targetLength: 0)));
+        Assert.Empty(store.Items<StoryGenerationRequest>());
+    }
 
     [Fact]
     public async Task ReadingMediaOnly_IsPersistedOnStoryAndReturnedInProgress()

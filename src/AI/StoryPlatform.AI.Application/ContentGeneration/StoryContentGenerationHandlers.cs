@@ -28,6 +28,8 @@ public sealed class GenerateStoryContentHandler
         var maximumSections = request.Snapshot is null ? int.MaxValue : Math.Clamp(request.Snapshot.Config.MaxStorySections, 3, 20);
         if (minimumSections > maximumSections) throw new ArgumentException("Invalid pinned section limits.", nameof(request));
         var prompt = PromptComposer.Compose(template, request);
+        if (request.Constraints.MinimumWords > 0)
+            prompt += $"\nThe story body must contain {request.Constraints.MinimumWords}-{request.Constraints.MaximumWords} Unicode lexical units (whitespace-separated Vietnamese syllables count individually). Target {request.StoryParameters.RequestedLength}. Do not pad by repeating sentences.";
         if (request.Snapshot is not null)
             prompt += $"\nReturn {minimumSections} to {maximumSections} non-empty story sections.";
         var generated = await _executor.ExecuteAsync(
@@ -158,16 +160,25 @@ public sealed class GenerateVocabularyHandler
         ValidateArtifactRequest(request.RequestId, request.Story);
         var template = SnapshotPromptResolver.Resolve(request.Snapshot, PromptType.Vocabulary,
             request.Language, request.AgeBand, _prompts);
-        var maxItems = request.Snapshot is null ? int.MaxValue : Math.Clamp(request.Snapshot.Config.MaxVocabularyItems, 5, 20);
+        var maxItems = request.Batch?.TargetCount ?? (request.Snapshot is null ? int.MaxValue : Math.Clamp(request.Snapshot.Config.MaxVocabularyItems, 5, 20));
+        LearningBatchPrompt.Validate(request.Batch, "vocabulary");
+        if (request.Batch is not null && request.Snapshot is not null && maxItems > request.Snapshot.Config.MaxVocabularyItems)
+            throw new ArgumentException("Vocabulary batch exceeds pinned limit.");
         var prompt = PromptComposer.Compose(template, request);
+        if (request.Batch is not null) prompt += LearningBatchPrompt.Build(request.Batch);
         if (request.Snapshot is not null) prompt += $"\nReturn at most {maxItems} vocabulary items.";
         var generated = await _executor.ExecuteAsync(
-            prompt, "story_vocabulary", GenerationSchemas.Vocabulary,
-            json => DeserializeVocabulary(json, maxItems), cancellationToken);
-        return new GenerateVocabularyResponse { RequestId = request.RequestId, Items = generated.Value.Items, Metadata = generated.Generation.ToMetadata(template.Version) with { AttemptCount = generated.AttemptCount } };
+            prompt, request.Batch is null ? "story_vocabulary" : "learning_vocabulary", request.Batch is null ? GenerationSchemas.Vocabulary : GenerationSchemas.GroundedVocabulary,
+            json =>
+            {
+                var result = DeserializeVocabulary(json, maxItems);
+                if (request.Batch is not null) LearningArtifactGrounding.Vocabulary(request.Story, result.Items, request.Batch, result.ShortfallReason);
+                return result;
+            }, cancellationToken, request.Batch?.TechnicalAttempts);
+        return new GenerateVocabularyResponse { RequestId = request.RequestId, Items = generated.Value.Items, ShortfallReason = generated.Value.ShortfallReason, Metadata = generated.Generation.ToMetadata(template.Version) with { AttemptCount = generated.AttemptCount } };
     }
 
-    private sealed record VocabularyPayload(IReadOnlyList<GeneratedVocabularyItemDto> Items);
+    private sealed record VocabularyPayload(IReadOnlyList<GeneratedVocabularyItemDto> Items, string ShortfallReason = "");
     private static VocabularyPayload DeserializeVocabulary(string json, int maxItems)
     {
         var value = JsonSerializer.Deserialize<VocabularyPayload>(json, JsonDefaults.Options)
@@ -197,19 +208,29 @@ public sealed class GenerateQuizHandler
     public async Task<GenerateQuizResponse> HandleAsync(GenerateQuizRequest request, CancellationToken cancellationToken = default)
     {
         GenerateVocabularyHandler.ValidateArtifactRequest(request.RequestId, request.Story);
-        if (request.Vocabulary.Count == 0) throw new ArgumentException("Validated vocabulary is required.", nameof(request));
+        if (request.Vocabulary.Count == 0 && request.Batch?.Kind is not ("quiz_facts" or "quiz_reasoning"))
+            throw new ArgumentException("Validated vocabulary is required.", nameof(request));
+        LearningBatchPrompt.Validate(request.Batch, "quiz_facts", "quiz_reasoning", "quiz_vocabulary");
         var template = SnapshotPromptResolver.Resolve(request.Snapshot, PromptType.Quiz,
             request.Language, request.AgeBand, _prompts);
-        var maxItems = request.Snapshot is null ? int.MaxValue : Math.Clamp(request.Snapshot.Config.MaxQuizItems, 3, 15);
+        var maxItems = request.Batch?.TargetCount ?? (request.Snapshot is null ? int.MaxValue : Math.Clamp(request.Snapshot.Config.MaxQuizItems, 3, 40));
+        if (request.Batch is not null && request.Snapshot is not null && maxItems > request.Snapshot.Config.MaxQuizItems)
+            throw new ArgumentException("Quiz batch exceeds pinned limit.");
         var prompt = PromptComposer.Compose(template, request);
+        if (request.Batch is not null) prompt += LearningBatchPrompt.Build(request.Batch);
         if (request.Snapshot is not null) prompt += $"\nReturn at most {maxItems} quiz items.";
         var generated = await _executor.ExecuteAsync(
-            prompt, "story_quiz", GenerationSchemas.Quiz,
-            json => DeserializeQuiz(json, maxItems), cancellationToken);
-        return new GenerateQuizResponse { RequestId = request.RequestId, Items = generated.Value.Items, Metadata = generated.Generation.ToMetadata(template.Version) with { AttemptCount = generated.AttemptCount } };
+            prompt, request.Batch is null ? "story_quiz" : "learning_quiz", request.Batch is null ? GenerationSchemas.Quiz : GenerationSchemas.GroundedQuiz,
+            json =>
+            {
+                var result = DeserializeQuiz(json, maxItems);
+                if (request.Batch is not null) LearningArtifactGrounding.Quiz(request.Story, result.Items, request.Batch, result.ShortfallReason, request.Vocabulary);
+                return result;
+            }, cancellationToken, request.Batch?.TechnicalAttempts);
+        return new GenerateQuizResponse { RequestId = request.RequestId, Items = generated.Value.Items, ShortfallReason = generated.Value.ShortfallReason, Metadata = generated.Generation.ToMetadata(template.Version) with { AttemptCount = generated.AttemptCount } };
     }
 
-    private sealed record QuizPayload(IReadOnlyList<QuizItemDto> Items);
+    private sealed record QuizPayload(IReadOnlyList<QuizItemDto> Items, string ShortfallReason = "");
     private static QuizPayload DeserializeQuiz(string json, int maxItems)
     {
         var value = JsonSerializer.Deserialize<QuizPayload>(json, JsonDefaults.Options)

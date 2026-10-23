@@ -1,4 +1,6 @@
 using StoryPlatform.Application.Features.MediaGeneration;
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 
 namespace StoryPlatform.Infrastructure.AI;
 
@@ -41,12 +43,14 @@ internal sealed class MediaRequestRateLimiter
     }
 }
 
-internal sealed class MediaRateLimitDelegatingHandler(MediaRequestRateLimiter limiter) : DelegatingHandler
+internal sealed class MediaRateLimitDelegatingHandler(MediaRequestRateLimiter limiter, ILogger<MediaRateLimitDelegatingHandler>? logger = null) : DelegatingHandler
 {
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        var timer = Stopwatch.StartNew();
         await limiter.WaitAsync(cancellationToken).ConfigureAwait(false);
+        logger?.LogInformation("Media shared HTTP rate limit wait DurationMs={DurationMs}", timer.Elapsed.TotalMilliseconds);
         return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
     }
 }

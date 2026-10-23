@@ -56,6 +56,10 @@ public sealed class AIExceptionHandlingMiddleware
             _logger.LogWarning(exception, "Invalid AI generation request.");
             await WriteErrorAsync(context, HttpStatusCode.BadRequest, exception.Message);
         }
+        catch (System.Text.Json.JsonException)
+        {
+            await WriteErrorAsync(context, HttpStatusCode.BadGateway, "Generated learning output failed validation.", "AI_OUTPUT_INVALID");
+        }
         catch (InvalidOperationException exception)
         {
             _logger.LogError(exception, "AI generation service is not configured or returned invalid output.");
@@ -64,7 +68,10 @@ public sealed class AIExceptionHandlingMiddleware
         catch (HttpRequestException exception)
         {
             _logger.LogError(exception, "AI provider request failed.");
-            await WriteErrorAsync(context, HttpStatusCode.BadGateway, "The AI provider request failed.");
+            var permanent = exception.StatusCode is not null && (int)exception.StatusCode is >= 400 and < 500
+                && exception.StatusCode is not (HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests);
+            await WriteErrorAsync(context, permanent ? HttpStatusCode.BadRequest : exception.StatusCode == HttpStatusCode.TooManyRequests ? HttpStatusCode.TooManyRequests : HttpStatusCode.BadGateway,
+                "The AI provider request failed.", permanent ? "AI_PROVIDER_CONFIGURATION_REJECTED" : exception.StatusCode == HttpStatusCode.TooManyRequests ? "AI_PROVIDER_429" : "AI_PROVIDER_FAILED");
         }
         catch (Exception exception)
         {

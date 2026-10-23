@@ -7,4 +7,8 @@ public class StoryVocabulary : BaseEntity
 
     public string Term { get; set; } = string.Empty;
     public string Definition { get; set; } = string.Empty;
+    public string? SourceQuote { get; set; }
+    public int? SourceStart { get; set; }
+    public int? SourceEnd { get; set; }
+    public string? Example { get; set; }
 }

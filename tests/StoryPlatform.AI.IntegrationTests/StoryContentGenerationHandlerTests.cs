@@ -158,6 +158,55 @@ public sealed class StoryContentGenerationHandlerTests
         Assert.Equal(0, llm.CallCount);
     }
 
+    [Fact]
+    public async Task Grounded_fact_batch_does_not_require_vocabulary()
+    {
+        var llm = new StubLlmClient("""{"items":[{"type":"short_answer","question":"Who repaired the toy?","correctAnswer":"Na","explanation":"Na repaired the toy.","hint":"Look at the first sentence.","learningGoal":"recall","sourceQuote":"Na repaired the toy."}],"shortfallReason":""}""");
+        var handler = new GenerateQuizHandler(new StoryContentGenerationExecutor(llm,
+            Options.Create(new StoryContentGenerationOptions { BaseRetryDelaySeconds = 0 })), new StubPromptProvider());
+        var result = await handler.HandleAsync(new GenerateQuizRequest
+        {
+            RequestId = "grounded-facts", Story = GroundedStory(), AgeBand = "6-8", Language = "vi",
+            Batch = new LearningBatchSpec { Kind = "quiz_facts", TargetCount = 1 }
+        });
+        Assert.Single(result.Items);
+        Assert.Equal(1, llm.CallCount);
+    }
+
+    [Fact]
+    public async Task Grounded_batch_rejects_invented_evidence_without_internal_retry()
+    {
+        var llm = new StubLlmClient("""{"items":[{"term":"toy","definition":"An object for play.","sourceQuote":"Na bought a toy.","example":""}],"shortfallReason":""}""");
+        var handler = new GenerateVocabularyHandler(new StoryContentGenerationExecutor(llm,
+            Options.Create(new StoryContentGenerationOptions { BaseRetryDelaySeconds = 0 })), new StubPromptProvider());
+        await Assert.ThrowsAsync<JsonException>(() => handler.HandleAsync(new GenerateVocabularyRequest
+        {
+            RequestId = "grounded-vocab", Story = GroundedStory(), AgeBand = "6-8", Language = "vi",
+            Batch = new LearningBatchSpec { Kind = "vocabulary", TargetCount = 1 }
+        }));
+        Assert.Equal(1, llm.CallCount);
+    }
+
+    [Fact]
+    public async Task Grounded_batch_preserves_429_for_core_retry_owner()
+    {
+        var llm = new StubLlmClient(new HttpRequestException("Throttled", null, HttpStatusCode.TooManyRequests));
+        var handler = new GenerateVocabularyHandler(new StoryContentGenerationExecutor(llm,
+            Options.Create(new StoryContentGenerationOptions { BaseRetryDelaySeconds = 0 })), new StubPromptProvider());
+        var error = await Assert.ThrowsAsync<HttpRequestException>(() => handler.HandleAsync(new GenerateVocabularyRequest
+        {
+            RequestId = "grounded-vocab", Story = GroundedStory(), AgeBand = "6-8", Language = "vi",
+            Batch = new LearningBatchSpec { Kind = "vocabulary", TargetCount = 1 }
+        }));
+        Assert.Equal(HttpStatusCode.TooManyRequests, error.StatusCode);
+        Assert.Equal(1, llm.CallCount);
+    }
+
+    private static StoryContentDto GroundedStory() => new()
+    {
+        Title = "A repaired toy", StorySections = [new StorySectionDto(1, "", "Na repaired the toy.")]
+    };
+
     private static GenerateStoryContentRequest ValidRequest() => new()
     {
         RequestId = "content-1", AgeBand = "6-8", ReadingLevel = "2", VocabularyLevel = "level_2", Language = "vi",

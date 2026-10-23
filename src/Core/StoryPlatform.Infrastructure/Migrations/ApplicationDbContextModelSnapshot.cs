@@ -1107,6 +1107,112 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("intervention_cases", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.LearningArtifactGenerationBatch", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("BatchNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("ContextFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTime?>("LeaseExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RequestJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<int>("RequestedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ResultJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("RootClaimToken")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int>("RootJobId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ShortfallReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("SourceFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<int>("StoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("StoryVersionId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TargetCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RequestedByUserId");
+
+                    b.HasIndex("StoryVersionId");
+
+                    b.HasIndex("RootJobId", "Kind", "BatchNumber")
+                        .IsUnique();
+
+                    b.HasIndex("StoryId", "Status", "LeaseExpiresAt");
+
+                    b.ToTable("learning_artifact_generation_batches", (string)null);
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.LearningInsight", b =>
                 {
                     b.Property<int>("Id")
@@ -1249,6 +1355,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int?>("IllustrationBeatId")
                         .HasColumnType("integer");
 
+                    b.Property<bool>("IsCurrent")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
@@ -1277,6 +1388,15 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasColumnType("character varying(120)");
 
                     b.Property<int?>("ReferenceImageAssetId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("ReplacementResolvedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ReplacesMediaAssetId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("RequestedPackageRevision")
                         .HasColumnType("integer");
 
                     b.Property<int?>("SceneIndex")
@@ -1321,17 +1441,21 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("StorySceneId");
+                    b.HasIndex("ReplacesMediaAssetId")
+                        .IsUnique()
+                        .HasFilter("\"ReplacesMediaAssetId\" IS NOT NULL AND \"ReplacementResolvedAt\" IS NULL AND \"IsDeleted\" = false");
 
-                    b.HasIndex("StoryVersionId");
+                    b.HasIndex("StorySceneId");
 
                     b.HasIndex("IllustrationBeatId", "Type")
                         .IsUnique()
-                        .HasFilter("\"IllustrationBeatId\" IS NOT NULL AND \"IsDeleted\" = false");
+                        .HasFilter("\"IllustrationBeatId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true");
 
                     b.HasIndex("StorySegmentId", "Type")
                         .IsUnique()
-                        .HasFilter("\"StorySegmentId\" IS NOT NULL AND \"IsDeleted\" = false");
+                        .HasFilter("\"StorySegmentId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true");
+
+                    b.HasIndex("StoryVersionId", "RequestedPackageRevision");
 
                     b.ToTable("media_assets", null, t =>
                         {
@@ -1345,6 +1469,97 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                             t.HasCheckConstraint("CK_media_assets_segment_required_for_audio", "\"Type\" <> 'TtsAudio' OR \"StorySegmentId\" IS NOT NULL");
                         });
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.MediaAssetGenerationTask", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AttemptNo")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("BranchJobId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("IllustrationBeatId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LeaseExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("MediaAssetId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MediaContextId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("PackageRevision")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("QueuedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<int>("StoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("StoryVersionId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IllustrationBeatId");
+
+                    b.HasIndex("MediaAssetId")
+                        .IsUnique();
+
+                    b.HasIndex("MediaContextId");
+
+                    b.HasIndex("StoryVersionId");
+
+                    b.HasIndex("Status", "NextAttemptAt", "QueuedAt");
+
+                    b.HasIndex("StoryId", "Status", "LeaseExpiresAt");
+
+                    b.HasIndex("BranchJobId", "PackageRevision", "Status", "NextAttemptAt");
+
+                    b.ToTable("media_asset_generation_tasks", (string)null);
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.MediaContext", b =>
@@ -2058,12 +2273,33 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Explanation")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Hint")
+                        .HasColumnType("text");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("LearningGoal")
+                        .HasColumnType("text");
+
+                    b.Property<string>("OptionFeedbackJson")
+                        .HasColumnType("text");
 
                     b.Property<string>("Question")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<int?>("SourceEnd")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SourceQuote")
+                        .HasColumnType("text");
+
+                    b.Property<int?>("SourceStart")
+                        .HasColumnType("integer");
 
                     b.Property<int>("StoryVersionId")
                         .HasColumnType("integer");
@@ -3174,6 +3410,15 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("MaxAttempts")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("MediaContextId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("MediaPackageRevision")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Operation")
                         .IsRequired()
                         .HasMaxLength(30)
@@ -3182,6 +3427,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<string>("OperationKey")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<int?>("ParentJobId")
+                        .HasColumnType("integer");
 
                     b.Property<int?>("PromptCatalogVersionId")
                         .HasColumnType("integer");
@@ -3217,6 +3465,8 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasIndex("GenerationRequestId");
 
+                    b.HasIndex("MediaContextId");
+
                     b.HasIndex("PromptCatalogVersionId");
 
                     b.HasIndex("StoryId")
@@ -3228,6 +3478,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasIndex("Operation", "StoryVersionId")
                         .IsUnique()
                         .HasFilter("\"StoryVersionId\" IS NOT NULL AND \"IsDeleted\" = false");
+
+                    b.HasIndex("ParentJobId", "Status", "NextAttemptAt");
 
                     b.HasIndex("RequestedByUserId", "Operation", "OperationKey")
                         .IsUnique()
@@ -3558,8 +3810,20 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("Example")
+                        .HasColumnType("text");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
+
+                    b.Property<int?>("SourceEnd")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SourceQuote")
+                        .HasColumnType("text");
+
+                    b.Property<int?>("SourceStart")
+                        .HasColumnType("integer");
 
                     b.Property<int>("StoryVersionId")
                         .HasColumnType("integer");
@@ -4490,6 +4754,33 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("TriggeringStory");
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.LearningArtifactGenerationBatch", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", null)
+                        .WithMany()
+                        .HasForeignKey("RequestedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryGenerationJob", null)
+                        .WithMany()
+                        .HasForeignKey("RootJobId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.Story", null)
+                        .WithMany()
+                        .HasForeignKey("StoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryVersion", null)
+                        .WithMany()
+                        .HasForeignKey("StoryVersionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.LearningInsight", b =>
                 {
                     b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
@@ -4530,6 +4821,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasForeignKey("IllustrationBeatId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("StoryPlatform.Domain.Entities.MediaAsset", null)
+                        .WithMany()
+                        .HasForeignKey("ReplacesMediaAssetId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("StoryPlatform.Domain.Entities.StoryScene", "StoryScene")
                         .WithMany()
                         .HasForeignKey("StorySceneId")
@@ -4553,6 +4849,45 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("StorySegment");
 
                     b.Navigation("StoryVersion");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.MediaAssetGenerationTask", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryGenerationJob", null)
+                        .WithMany()
+                        .HasForeignKey("BranchJobId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.IllustrationBeat", null)
+                        .WithMany()
+                        .HasForeignKey("IllustrationBeatId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.MediaAsset", null)
+                        .WithMany()
+                        .HasForeignKey("MediaAssetId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.MediaContext", null)
+                        .WithMany()
+                        .HasForeignKey("MediaContextId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.Story", null)
+                        .WithMany()
+                        .HasForeignKey("StoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryVersion", null)
+                        .WithMany()
+                        .HasForeignKey("StoryVersionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.MediaContext", b =>
@@ -5153,6 +5488,16 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasOne("StoryPlatform.Domain.Entities.StoryGenerationRequest", "GenerationRequest")
                         .WithMany()
                         .HasForeignKey("GenerationRequestId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.MediaContext", null)
+                        .WithMany()
+                        .HasForeignKey("MediaContextId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryGenerationJob", null)
+                        .WithMany()
+                        .HasForeignKey("ParentJobId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("StoryPlatform.Domain.Entities.PromptCatalogVersion", "PromptCatalogVersion")

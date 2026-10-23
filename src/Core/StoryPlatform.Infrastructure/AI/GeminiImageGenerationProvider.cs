@@ -68,7 +68,8 @@ public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
                     Truncate(error, 200));
                 throw new TransientMediaGenerationException(
                     errorCode,
-                    new HttpRequestException(errorCode, null, response.StatusCode));
+                    new HttpRequestException(errorCode, null, response.StatusCode),
+                    response.Headers.RetryAfter?.Delta ?? (response.Headers.RetryAfter?.Date - DateTimeOffset.UtcNow));
             }
 
             _logger.LogError(

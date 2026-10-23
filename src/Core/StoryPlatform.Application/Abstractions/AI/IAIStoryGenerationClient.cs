@@ -25,13 +25,15 @@ public interface IAIStoryGenerationClient
 
 public sealed class AIServiceRequestException : Exception
 {
-    public AIServiceRequestException(int statusCode, string errorCode, string message)
+    public AIServiceRequestException(int statusCode, string errorCode, string message, TimeSpan? retryAfter = null)
         : base(message)
     {
         StatusCode = statusCode;
         ErrorCode = errorCode;
+        RetryAfter = retryAfter;
     }
 
     public int StatusCode { get; }
     public string ErrorCode { get; }
+    public TimeSpan? RetryAfter { get; }
 }

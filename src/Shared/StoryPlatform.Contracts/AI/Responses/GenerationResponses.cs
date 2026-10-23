@@ -55,6 +55,7 @@ public sealed record RefineStoryContentResponse
 
 public sealed record GenerateVocabularyResponse
 {
+    public string ShortfallReason { get; init; } = string.Empty;
     public string RequestId { get; init; } = string.Empty;
     public IReadOnlyList<GeneratedVocabularyItemDto> Items { get; init; } = [];
     public GenerationMetadataDto Metadata { get; init; } = new();
@@ -62,6 +63,7 @@ public sealed record GenerateVocabularyResponse
 
 public sealed record GenerateQuizResponse
 {
+    public string ShortfallReason { get; init; } = string.Empty;
     public string RequestId { get; init; } = string.Empty;
     public IReadOnlyList<QuizItemDto> Items { get; init; } = [];
     public GenerationMetadataDto Metadata { get; init; } = new();

@@ -18,7 +18,7 @@ public sealed partial class RuleBasedStoryEvaluationService : IStoryEvaluationSe
         var issueDetails = new List<EvaluationIssueDto>();
         var searchableText = BuildSearchableText(story);
         var storyText = string.Join(' ', story.StorySections.Select(section => section.Content));
-        var wordCount = WordRegex().Matches(storyText).Count;
+        var wordCount = StoryWordCounter.Count(storyText);
         var sentenceCount = Math.Max(1, SentenceRegex().Matches(storyText).Count);
         var averageWordsPerSentence = wordCount == 0 ? 0 : Math.Round((double)wordCount / sentenceCount, 2);
         var maximumAverageWords = GetMaximumAverageWords(story.AgeBand);
@@ -45,10 +45,10 @@ public sealed partial class RuleBasedStoryEvaluationService : IStoryEvaluationSe
             AddIssue(issueDetails, "blocked_topic", "safety", "blocked", "$", $"Story contains blocked topic: {blockedTopic}.", false);
         }
 
-        var lengthPassed = wordCount <= constraints.MaximumWords;
+        var lengthPassed = wordCount >= constraints.MinimumWords && wordCount <= constraints.MaximumWords;
         if (!lengthPassed)
         {
-            AddIssue(issueDetails, "maximum_words_exceeded", "readability", "review_required", "$.storySections", $"Story has {wordCount} words and exceeds maximumWords={constraints.MaximumWords}.", true);
+            AddIssue(issueDetails, wordCount < constraints.MinimumWords ? "minimum_words_not_met" : "maximum_words_exceeded", "readability", "review_required", "$.storySections", $"Story has {wordCount} lexical units; expected {constraints.MinimumWords}-{constraints.MaximumWords}.", true);
         }
 
         var sentenceComplexityPassed = averageWordsPerSentence <= maximumAverageWords;

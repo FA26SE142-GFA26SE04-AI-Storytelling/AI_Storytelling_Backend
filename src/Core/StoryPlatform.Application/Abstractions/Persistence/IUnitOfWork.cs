@@ -9,6 +9,8 @@ namespace StoryPlatform.Application.Abstractions.Persistence;
 /// </summary>
 public interface IUnitOfWork : IDisposable, IAsyncDisposable
 {
+    /// <summary>Discard the abandoned EF graph before recovering from a rolled-back transaction.</summary>
+    void DiscardTrackedChanges() { }
     /// <summary>
     /// Lấy Generic Repository cho bất kỳ Entity nào một cách tự động
     /// </summary>

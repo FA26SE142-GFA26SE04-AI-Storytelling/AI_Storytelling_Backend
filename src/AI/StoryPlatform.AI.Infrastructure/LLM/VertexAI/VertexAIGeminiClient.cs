@@ -202,7 +202,8 @@ public sealed class VertexAIGeminiClient : ILlmClient
     }
 
     private static bool IsSensitiveSchema(string schemaName) => schemaName.StartsWith("creator_assistance", StringComparison.Ordinal)
-        || schemaName.StartsWith("gray_zone", StringComparison.Ordinal);
+        || schemaName.StartsWith("gray_zone", StringComparison.Ordinal)
+        || schemaName.StartsWith("learning_", StringComparison.Ordinal);
 
     private static int? GetStatusCode(Exception exception) => exception switch
     {

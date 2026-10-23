@@ -35,7 +35,7 @@ public sealed record PublicVersionSnapshot(
         var beats = await unitOfWork.Repository<IllustrationBeat>().FindAsync(
             beat => sceneIds.Contains(beat.StorySceneId), cancellationToken: cancellationToken);
         var assets = await unitOfWork.Repository<MediaAsset>().FindAsync(
-            asset => asset.StoryVersionId == versionId, cancellationToken: cancellationToken);
+            asset => asset.IsCurrent && asset.StoryVersionId == versionId, cancellationToken: cancellationToken);
         var quizzes = (await unitOfWork.Repository<QuizItem>().FindAsync(
                 quiz => quiz.StoryVersionId == versionId, cancellationToken: cancellationToken))
             .OrderBy(quiz => quiz.Id).ToList();
@@ -119,11 +119,15 @@ public sealed record PublicVersionSnapshot(
                 quiz.CorrectAnswer ?? string.Empty,
                 quiz.Choices ?? string.Empty
             });
+            if (new[] { quiz.SourceQuote, quiz.Explanation, quiz.Hint, quiz.LearningGoal, quiz.OptionFeedbackJson }.Any(x => !string.IsNullOrEmpty(x)))
+                rows.Add(new[] { "quiz-learning", quiz.Question, quiz.SourceQuote ?? "", quiz.Explanation ?? "", quiz.Hint ?? "", quiz.LearningGoal ?? "", quiz.OptionFeedbackJson ?? "" });
         }
 
         foreach (var word in Vocabulary)
         {
             rows.Add(new[] { "vocabulary", word.Term, word.Definition });
+            if (!string.IsNullOrEmpty(word.SourceQuote) || !string.IsNullOrEmpty(word.Example))
+                rows.Add(new[] { "vocabulary-learning", word.Term, word.SourceQuote ?? "", word.Example ?? "" });
         }
 
         foreach (var question in Discussions)

@@ -85,6 +85,10 @@ public sealed record VocabularyReviewDto
 
 public sealed record VocabularyItemDto
 {
+    public string? SourceQuote { get; init; }
+    public string? Example { get; init; }
+    public int? SourceStart { get; init; }
+    public int? SourceEnd { get; init; }
     public int? Id { get; init; }
     public string Term { get; init; } = string.Empty;
     public string Definition { get; init; } = string.Empty;
@@ -109,6 +113,13 @@ public sealed record QuizReviewDto
 
 public sealed record QuizItemDto
 {
+    public string? SourceQuote { get; init; }
+    public string? Explanation { get; init; }
+    public string? Hint { get; init; }
+    public string? LearningGoal { get; init; }
+    public List<string>? OptionFeedback { get; init; }
+    public int? SourceStart { get; init; }
+    public int? SourceEnd { get; init; }
     public int? Id { get; init; }
     public string Type { get; init; } = string.Empty;
     public string Question { get; init; } = string.Empty;

@@ -87,4 +87,15 @@ public sealed class MediaGenerationController : ControllerBase
         var result = await _service.RetryAsync(userId, storyId, cancellationToken);
         return Ok(ApiResponse<MediaGenerationProgress>.Ok(result, "Đã đưa tác vụ media vào hàng đợi xử lý lại."));
     }
+
+    [HttpPost("replacements/{candidateAssetId:int}/keep-current")]
+    [ProducesResponseType(typeof(ApiResponse<MediaGenerationProgress>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<ApiResponse<MediaGenerationProgress>>> KeepCurrent(
+        int storyId, int candidateAssetId, KeepCurrentMediaRequest request, CancellationToken ct)
+    {
+        var value = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (!int.TryParse(value, out var userId)) throw new UnauthorizedAccessException();
+        return Ok(ApiResponse<MediaGenerationProgress>.Ok(await _service.KeepCurrentAsync(userId, storyId, candidateAssetId, request, ct)));
+    }
 }

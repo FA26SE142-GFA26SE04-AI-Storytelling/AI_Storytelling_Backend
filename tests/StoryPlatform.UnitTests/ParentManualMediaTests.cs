@@ -88,7 +88,7 @@ public sealed class ParentManualMediaTests
         Assert.Null(store.Items<StoryVersion>().Single().OutlineOpening);
         await Assert.ThrowsAsync<ConflictException>(() => parent.SetupAsync(1, content.StoryId,
             new() { OperationId = "setup-active", RevisionToken = content.Revision, BaseVersionId = content.VersionId }, default));
-        var processed = await media.ProcessNextAsync();
+        var processed = await media.RunPackageAsync();
         Assert.True(processed.Success, processed.ErrorCode);
         Assert.Equal(StoryStatus.MediaReview, store.Items<Story>().Single().Status);
         var unconfirmed = await parent.PrepareAsync(1, content.StoryId, new()
@@ -157,7 +157,7 @@ public sealed class ParentManualMediaTests
         Assert.Empty(store.Items<StoryGenerationJob>());
         store.Items<SafetyPolicy>().Single().ConsentRecorded = true;
         await parent.GenerateMediaAsync(1, content.StoryId, request, default);
-        var processed = await media.ProcessNextAsync();
+        var processed = await media.RunPackageAsync();
         Assert.True(processed.Success, processed.ErrorCode);
         store.Items<SafetyPolicy>().Single().MaxStoryLength = 4000;
         await Assert.ThrowsAnyAsync<Exception>(() => media.ConfirmAsync(1, content.StoryId, new(content.VersionId, 1)));

@@ -5,6 +5,10 @@ namespace StoryPlatform.Domain.Entities;
 
 public class StoryGenerationJob : BaseEntity
 {
+    public int? ParentJobId { get; set; }
+    public int? MediaContextId { get; set; }
+    public int? MediaPackageRevision { get; set; }
+    public DateTime? NextAttemptAt { get; set; }
     public int StoryId { get; set; }
     public virtual Story? Story { get; set; }
 

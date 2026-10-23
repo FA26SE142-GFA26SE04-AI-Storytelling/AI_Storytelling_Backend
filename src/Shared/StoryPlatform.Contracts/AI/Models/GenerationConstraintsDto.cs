@@ -2,6 +2,7 @@ namespace StoryPlatform.Contracts.AI.Models;
 
 public sealed record GenerationConstraintsDto
 {
+    public int MinimumWords { get; init; }
     public int MaximumWords { get; init; } = 1200;
     public IReadOnlyList<string> BlockedTopics { get; init; } = [];
     public IReadOnlyList<string> RestrictedTopics { get; init; } = [];

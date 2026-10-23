@@ -31,6 +31,7 @@ namespace StoryPlatform.UnitTests;
             Register<SafetyPolicy>(); Register<SafetyPolicyCategory>(); Register<ContentCategory>();
             Register<LearningProfile>(); Register<StoryVocabulary>(); Register<QuizItem>(); Register<DiscussionQuestion>(); Register<ModerationItem>(); Register<ParentStoryOperation>(); Register<StoryGenerationJob>(); Register<StoryGenerationRequest>(); Register<MediaContext>(); Register<MediaAsset>(); Register<StoryScene>(); Register<StorySegment>(); Register<IllustrationBeat>();
             Register<AuthoringGuideCatalog>(); Register<AuthoringGuideCatalogVersion>();
+            Register<MediaAssetGenerationTask>();
             Uow.Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>())).Returns<CancellationToken>(async ct => {
                 await _transaction.WaitAsync(ct);
                 _snapshot = _data.ToDictionary(x => x.Key, x => System.Text.Json.JsonSerializer.Deserialize(

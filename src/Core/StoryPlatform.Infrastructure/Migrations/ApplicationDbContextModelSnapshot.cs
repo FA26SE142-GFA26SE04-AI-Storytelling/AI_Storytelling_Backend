@@ -1249,6 +1249,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int?>("IllustrationBeatId")
                         .HasColumnType("integer");
 
+                    b.Property<bool>("IsCurrent")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
@@ -1277,6 +1282,15 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasColumnType("character varying(120)");
 
                     b.Property<int?>("ReferenceImageAssetId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("ReplacementResolvedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ReplacesMediaAssetId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("RequestedPackageRevision")
                         .HasColumnType("integer");
 
                     b.Property<int?>("SceneIndex")
@@ -1321,17 +1335,21 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("StorySceneId");
+                    b.HasIndex("ReplacesMediaAssetId")
+                        .IsUnique()
+                        .HasFilter("\"ReplacesMediaAssetId\" IS NOT NULL AND \"ReplacementResolvedAt\" IS NULL AND \"IsDeleted\" = false");
 
-                    b.HasIndex("StoryVersionId");
+                    b.HasIndex("StorySceneId");
 
                     b.HasIndex("IllustrationBeatId", "Type")
                         .IsUnique()
-                        .HasFilter("\"IllustrationBeatId\" IS NOT NULL AND \"IsDeleted\" = false");
+                        .HasFilter("\"IllustrationBeatId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true");
 
                     b.HasIndex("StorySegmentId", "Type")
                         .IsUnique()
-                        .HasFilter("\"StorySegmentId\" IS NOT NULL AND \"IsDeleted\" = false");
+                        .HasFilter("\"StorySegmentId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true");
+
+                    b.HasIndex("StoryVersionId", "RequestedPackageRevision");
 
                     b.ToTable("media_assets", null, t =>
                         {
@@ -3170,6 +3188,15 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("MaxAttempts")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("MediaContextId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("MediaPackageRevision")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Operation")
                         .IsRequired()
                         .HasMaxLength(30)
@@ -3178,6 +3205,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<string>("OperationKey")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<int?>("ParentJobId")
+                        .HasColumnType("integer");
 
                     b.Property<int?>("PromptCatalogVersionId")
                         .HasColumnType("integer");
@@ -3213,6 +3243,8 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasIndex("GenerationRequestId");
 
+                    b.HasIndex("MediaContextId");
+
                     b.HasIndex("PromptCatalogVersionId");
 
                     b.HasIndex("StoryId")
@@ -3224,6 +3256,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasIndex("Operation", "StoryVersionId")
                         .IsUnique()
                         .HasFilter("\"StoryVersionId\" IS NOT NULL AND \"IsDeleted\" = false");
+
+                    b.HasIndex("ParentJobId", "Status", "NextAttemptAt");
 
                     b.HasIndex("RequestedByUserId", "Operation", "OperationKey")
                         .IsUnique()
@@ -4526,6 +4560,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasForeignKey("IllustrationBeatId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("StoryPlatform.Domain.Entities.MediaAsset", null)
+                        .WithMany()
+                        .HasForeignKey("ReplacesMediaAssetId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("StoryPlatform.Domain.Entities.StoryScene", "StoryScene")
                         .WithMany()
                         .HasForeignKey("StorySceneId")
@@ -5149,6 +5188,16 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasOne("StoryPlatform.Domain.Entities.StoryGenerationRequest", "GenerationRequest")
                         .WithMany()
                         .HasForeignKey("GenerationRequestId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.MediaContext", null)
+                        .WithMany()
+                        .HasForeignKey("MediaContextId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryGenerationJob", null)
+                        .WithMany()
+                        .HasForeignKey("ParentJobId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("StoryPlatform.Domain.Entities.PromptCatalogVersion", "PromptCatalogVersion")

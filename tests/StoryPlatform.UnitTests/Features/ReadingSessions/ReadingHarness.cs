@@ -46,8 +46,34 @@ public sealed class ReadingHarness
     public readonly List<SupervisionPermission> SupervisionPermissions = new();
     public readonly List<UserAccount> Users = new();
 
+    public readonly List<StoryWishCardMatch> CardMatches = new();
+    public readonly List<StoryWishSuggestion> Suggestions = new();
+    public readonly List<LearningProfile> LearningProfiles = new();
+    public Story AddLibraryStory(int id, string title, DateTime? createdAt = null, int? readingLevel = null)
+    {
+        var story = new Story
+        {
+            Id = id, Title = title, Scope = StoryScope.Creator, AgeBand = "6-8", IsPublished = true,
+            Status = StoryStatus.Ready, AuthorUserId = 8, ReadingLevel = readingLevel,
+            CreatedAt = createdAt ?? DateTime.UtcNow.AddDays(-id), CoverImageUrl = $"https://cdn.test/cover-{id}.png"
+        };
+        Stories.Add(story);
+        return story;
+    }
+
+    public void Match(int storyId, params int[] cardIds)
+    {
+        foreach (var cardId in cardIds)
+        {
+            CardMatches.Add(new StoryWishCardMatch
+            {
+                Id = CardMatches.Count + 1, StoryId = storyId, WishCardId = cardId, Source = WishCardMatchSource.Moderator
+            });
+        }
+    }
     public ReadingHarness()
     {
+        Back(CardMatches); Back(Suggestions); Back(LearningProfiles);
         Back(Children); Back(ChildSessions); Back(Stories); Back(Versions); Back(Scenes); Back(Segments);
         Back(Assets); Back(Sessions); Back(Progress); Back(Vocabulary); Back(Notebook); Back(Telemetry);
         Back(Cases); Back(ModerationItems); Back(Quizzes); Back(Attempts); Back(Achievements); Back(Badges);

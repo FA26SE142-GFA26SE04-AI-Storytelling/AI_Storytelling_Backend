@@ -21,6 +21,9 @@ public class WishDraftDto
 
 public class ChildWishDto
 {
+    /// <summary>Truyện có sẵn để đọc trong lúc chờ (tối đa 3); rỗng khi không có, khi Hold Mode, hoặc khi đã xử lý xong.</summary>
+    public List<WishSuggestionDto> Suggestions { get; set; } = new();
+
     public int WishId { get; set; }
     public string Kind { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;

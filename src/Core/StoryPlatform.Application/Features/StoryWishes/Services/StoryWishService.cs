@@ -17,14 +17,16 @@ public class StoryWishService : IStoryWishService
     private readonly IChildWishCardService _cards;
     private readonly IStoryWishNotifier _notifier;
     private readonly TimeProvider _clock;
+    private readonly IStoryWishSuggestionService _suggestions;
 
     public StoryWishService(
-        IUnitOfWork unitOfWork, IChildWishCardService cards, IStoryWishNotifier notifier, TimeProvider clock)
+        IUnitOfWork unitOfWork, IChildWishCardService cards, IStoryWishNotifier notifier, TimeProvider clock, IStoryWishSuggestionService suggestions)
     {
         _unitOfWork = unitOfWork;
         _cards = cards;
         _notifier = notifier;
         _clock = clock;
+        _suggestions = suggestions;
     }
 
     public async Task<WishDraftDto> StartDraftAsync(int childProfileId, CancellationToken ct = default)
@@ -142,6 +144,7 @@ public class StoryWishService : IStoryWishService
             draft.PendingSince = now;
             draft.UpdatedAt = now;
             _unitOfWork.Repository<StoryWish>().Update(draft);
+            await _suggestions.ComputeAsync(draft, ct);
             await _unitOfWork.SaveChangesAsync(ct);
             await _notifier.NotifySubmittedAsync(draft, ct);
             await _unitOfWork.CommitTransactionAsync(ct);
@@ -314,6 +317,7 @@ public class StoryWishService : IStoryWishService
         Cards = await CardsOfAsync(wish, ct),
         LessonLeftToParent = wish.LessonLeftToParent,
         FulfilledStoryId = wish.Status == StoryWishStatus.Fulfilled ? wish.FulfilledStoryId : null,
-        SubmittedAt = wish.SubmittedAt
+        SubmittedAt = wish.SubmittedAt,
+        Suggestions = await _suggestions.ForChildAsync(wish, ct)
     };
 }

@@ -24,6 +24,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<LearningProfileTopic> LearningProfileTopics => Set<LearningProfileTopic>();
     public DbSet<ContentCategory> ContentCategories => Set<ContentCategory>();
     public DbSet<WishCard> WishCards => Set<WishCard>();
+    public DbSet<StoryWishCardMatch> StoryWishCardMatches => Set<StoryWishCardMatch>();
+    public DbSet<StoryWishSuggestion> StoryWishSuggestions => Set<StoryWishSuggestion>();
     public DbSet<StoryWish> StoryWishes => Set<StoryWish>();
     public DbSet<SafetyPolicy> SafetyPolicies => Set<SafetyPolicy>();
     public DbSet<SafetyPolicyCategory> SafetyPolicyCategories => Set<SafetyPolicyCategory>();

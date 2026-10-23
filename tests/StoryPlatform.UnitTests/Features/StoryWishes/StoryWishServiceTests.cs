@@ -20,6 +20,7 @@ public class StoryWishServiceTests
     private readonly ManualTimeProvider _clock = new(Morning);
     private readonly Mock<IStoryWishNotifier> _notifier = new();
     private readonly StoryWishService _sut;
+    private readonly Mock<IStoryWishSuggestionService> _suggestions = new();
     private readonly WishCard _cat;
     private readonly WishCard _forest;
     private readonly WishCard _lost;
@@ -31,10 +32,58 @@ public class StoryWishServiceTests
         _forest = _h.AddCard(WishCardGroup.Place, "Khu rừng");
         _lost = _h.AddCard(WishCardGroup.Challenge, "Bị lạc đường");
         _share = _h.AddCard(WishCardGroup.Lesson, "Chia sẻ");
+        _suggestions.Setup(s => s.ForChildAsync(It.IsAny<StoryWish>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<WishSuggestionDto>());
         _sut = new StoryWishService(
-            _h.UnitOfWork.Object, new ChildWishCardService(_h.UnitOfWork.Object), _notifier.Object, _clock);
+            _h.UnitOfWork.Object, new ChildWishCardService(_h.UnitOfWork.Object), _notifier.Object, _clock, _suggestions.Object);
     }
 
+    // ---- Gợi ý ----
+
+    [Fact]
+    public async Task Submit_ComputesSuggestionsOnce_InsideTheTransaction_BeforeSaving()
+    {
+        await ReadyDraftAsync();
+        var order = new List<string>();
+        _suggestions.Setup(s => s.ComputeAsync(It.IsAny<StoryWish>(), It.IsAny<CancellationToken>()))
+            .Callback(() => order.Add("compute")).ReturnsAsync(1);
+        _h.UnitOfWork.Setup(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()))
+            .Callback(() => order.Add("begin")).Returns(Task.CompletedTask);
+        _h.UnitOfWork.Setup(u => u.CommitTransactionAsync(It.IsAny<CancellationToken>()))
+            .Callback(() => order.Add("commit")).Returns(Task.CompletedTask);
+
+        await _sut.SubmitAsync(ReadingHarness.Child);
+
+        _suggestions.Verify(s => s.ComputeAsync(
+            It.Is<StoryWish>(w => w.Status == StoryWishStatus.Pending), It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Equal(new[] { "begin", "compute", "commit" }, order);
+    }
+
+    [Fact]
+    public async Task Submit_SuggestionFailure_RollsBack()
+    {
+        await ReadyDraftAsync();
+        _suggestions.Setup(s => s.ComputeAsync(It.IsAny<StoryWish>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("suggest"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.SubmitAsync(ReadingHarness.Child));
+
+        _h.UnitOfWork.Verify(u => u.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _notifier.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task ListMine_CarriesEachWishsSuggestions()
+    {
+        AddWish(StoryWishStatus.Pending, Now.AddDays(-1));
+        var expected = new List<WishSuggestionDto> { new() { Rank = 1, StoryId = 31, Title = "A" } };
+        _suggestions.Setup(s => s.ForChildAsync(It.IsAny<StoryWish>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+
+        var wish = (await _sut.ListMineAsync(ReadingHarness.Child)).Single();
+
+        Assert.Same(expected, wish.Suggestions);
+    }
     private DateTime Now => _clock.GetUtcNow().UtcDateTime;
 
     private StoryWish AddWish(StoryWishStatus status, DateTime? submittedAt = null, int childId = ReadingHarness.Child)

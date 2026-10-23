@@ -29,7 +29,8 @@ public static class NotificationGroups
             or NotificationType.AssignmentCancelled
             or NotificationType.RoadmapStoryAdded
             or NotificationType.RoadmapStoryRemoved
-            or NotificationType.RoadmapCompleted => Children,
+            or NotificationType.RoadmapCompleted
+            or NotificationType.StoryWishSubmitted => Children,
 
         NotificationType.ContentReported
             or NotificationType.ModerationSlaWarning

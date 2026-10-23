@@ -67,6 +67,8 @@ using StoryPlatform.Application.Features.CommunityLibrary.Interfaces;
 using StoryPlatform.Application.Features.CommunityLibrary.Services;
 using StoryPlatform.Application.Features.WishCards.Interfaces;
 using StoryPlatform.Application.Features.WishCards.Services;
+using StoryPlatform.Application.Features.StoryWishes.Interfaces;
+using StoryPlatform.Application.Features.StoryWishes.Services;
 
 namespace StoryPlatform.Application;
 
@@ -137,6 +139,8 @@ public static class DependencyInjection
         services.AddScoped<IChildReadingService, ChildReadingService>();
         services.AddScoped<IWishCardManagementService, WishCardManagementService>();
         services.AddScoped<IChildWishCardService, ChildWishCardService>();
+        services.AddScoped<IStoryWishNotifier, StoryWishNotifier>();
+        services.AddScoped<IStoryWishService, StoryWishService>();
         services.AddScoped<IChildRewardService, ChildRewardService>();
         services.AddScoped<IParentReadingFeedbackService, ParentReadingFeedbackService>();
         services.AddScoped<IChildQuizService, ChildQuizService>();

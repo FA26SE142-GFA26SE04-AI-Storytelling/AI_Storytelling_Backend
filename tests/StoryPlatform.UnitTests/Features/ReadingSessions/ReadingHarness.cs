@@ -41,6 +41,10 @@ public sealed class ReadingHarness
     public readonly List<StoryCategory> StoryCategories = new();
     public readonly List<WishCard> WishCards = new();
     public readonly List<ContentCategory> Categories = new();
+    public readonly List<StoryWish> StoryWishes = new();
+    public readonly List<SupervisionRelationship> Relationships = new();
+    public readonly List<SupervisionPermission> SupervisionPermissions = new();
+    public readonly List<UserAccount> Users = new();
 
     public ReadingHarness()
     {
@@ -48,6 +52,7 @@ public sealed class ReadingHarness
         Back(Assets); Back(Sessions); Back(Progress); Back(Vocabulary); Back(Notebook); Back(Telemetry);
         Back(Cases); Back(ModerationItems); Back(Quizzes); Back(Attempts); Back(Achievements); Back(Badges);
         Back(Policies); Back(PolicyCategories); Back(StoryCategories); Back(WishCards); Back(Categories);
+        Back(StoryWishes); Back(Relationships); Back(SupervisionPermissions); Back(Users);
 
         Children.Add(new ChildProfile
         {
@@ -165,6 +170,46 @@ public sealed class ReadingHarness
         var category = new ContentCategory { Id = id, Code = code, DisplayName = code, IsActive = isActive };
         Categories.Add(category);
         return category;
+    }
+
+    public UserAccount AddUser(int id, AccountStatus status = AccountStatus.Active)
+    {
+        var user = new UserAccount
+        {
+            Id = id,
+            Username = $"user_{id}",
+            Email = $"user_{id}@example.com",
+            FullName = $"User {id}",
+            Role = UserRole.Parent,
+            Status = status
+        };
+        Users.Add(user);
+        return user;
+    }
+
+    public SupervisionRelationship AddSupervisor(
+        int childId, int userId, SupervisorRole role, DateTime? revokedAt = null, params Permission[] permissions)
+    {
+        var relationship = new SupervisionRelationship
+        {
+            Id = Relationships.Count + 1,
+            ChildProfileId = childId,
+            SupervisorUserId = userId,
+            SupervisorRole = role,
+            RevokedAt = revokedAt
+        };
+        Relationships.Add(relationship);
+        foreach (var permission in permissions)
+        {
+            SupervisionPermissions.Add(new SupervisionPermission
+            {
+                Id = SupervisionPermissions.Count + 1,
+                SupervisionRelationshipId = relationship.Id,
+                Permission = permission
+            });
+        }
+
+        return relationship;
     }
 
     private void Back<T>(List<T> list) where T : BaseEntity

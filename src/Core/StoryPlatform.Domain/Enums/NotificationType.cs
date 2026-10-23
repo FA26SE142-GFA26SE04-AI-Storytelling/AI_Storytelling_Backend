@@ -34,6 +34,8 @@ public enum NotificationType
     RoadmapStoryAdded = 26,
     RoadmapStoryRemoved = 27,
     RoadmapCompleted = 28,
+    /// <summary>Trẻ gửi điều ước (WF-L2D story_wish_submitted).</summary>
+    StoryWishSubmitted = 29,
 
     StoryShared = 100,
     AssignmentCancelled = 101

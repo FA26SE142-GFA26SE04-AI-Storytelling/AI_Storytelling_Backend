@@ -62,8 +62,9 @@ public sealed class GeminiTtsProvider : ITtsProvider
         {
             var error = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             if (IsTransient(response.StatusCode))
-                throw new HttpRequestException($"GEMINI_TTS_TRANSIENT_HTTP_{(int)response.StatusCode}: {Truncate(error, 200)}");
-            throw new PermanentMediaGenerationException($"GEMINI_TTS_HTTP_{(int)response.StatusCode}: {Truncate(error, 200)}");
+                throw new TransientMediaGenerationException($"GEMINI_TTS_HTTP_{(int)response.StatusCode}",
+                    retryAfter: response.Headers.RetryAfter?.Delta ?? (response.Headers.RetryAfter?.Date - DateTimeOffset.UtcNow));
+            throw new PermanentMediaGenerationException($"GEMINI_TTS_HTTP_{(int)response.StatusCode}");
         }
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);

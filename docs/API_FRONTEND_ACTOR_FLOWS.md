@@ -1,5 +1,7 @@
 # API backend theo actor và luồng tích hợp frontend
 
+> Phase 5 Image/TTS: [MEDIA_PHASE5_IMAGE_TTS_API_GUIDE.md](MEDIA_PHASE5_IMAGE_TTS_API_GUIDE.md)
+
 > Rà soát source ngày **21/10/2026**. Đây là tài liệu contract và checklist tích hợp từ mã nguồn, **không phải biên bản kiểm thử API/DB hoặc xác nhận đã triển khai**.
 
 ## Mục lục

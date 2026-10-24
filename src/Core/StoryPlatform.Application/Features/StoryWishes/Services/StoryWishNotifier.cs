@@ -18,9 +18,30 @@ public class StoryWishNotifier : IStoryWishNotifier
         _notificationService = notificationService;
     }
 
-    public async Task NotifySubmittedAsync(StoryWish wish, CancellationToken ct = default)
+    public Task NotifySubmittedAsync(StoryWish wish, CancellationToken ct = default)
     {
-        var childId = wish.ChildProfileId;
+        return SendToApproversAsync(wish.ChildProfileId, NotificationType.StoryWishSubmitted, new
+        {
+            childProfileId = wish.ChildProfileId,
+            wishId = wish.Id,
+            kind = wish.Kind.ToString()
+        }, ct);
+    }
+
+    public Task NotifyExpiringAsync(StoryWish wish, CancellationToken ct = default)
+    {
+        return SendToApproversAsync(wish.ChildProfileId, NotificationType.StoryWishExpiring, new
+        {
+            childProfileId = wish.ChildProfileId,
+            wishId = wish.Id,
+            kind = wish.Kind.ToString(),
+            expiresAt = (wish.PendingSince ?? wish.CreatedAt) + StoryWishDecisionPolicy.PendingLifetime
+        }, ct);
+    }
+
+    /// <summary>Owner của bé và mọi người giám sát còn hiệu lực có quyền ApproveStory, tài khoản đang Active.</summary>
+    private async Task SendToApproversAsync(int childId, NotificationType type, object payloadObject, CancellationToken ct)
+    {
         var relationships = await _unitOfWork.Repository<SupervisionRelationship>().FindAsync(
             relationship => relationship.ChildProfileId == childId
                             && relationship.RevokedAt == null
@@ -39,12 +60,7 @@ public class StoryWishNotifier : IStoryWishNotifier
             .Distinct()
             .ToList();
 
-        var payload = JsonSerializer.Serialize(new
-        {
-            childProfileId = childId,
-            wishId = wish.Id,
-            kind = wish.Kind.ToString()
-        });
+        var payload = JsonSerializer.Serialize(payloadObject);
         foreach (var recipientId in recipients)
         {
             var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(recipientId, ct);
@@ -53,7 +69,7 @@ public class StoryWishNotifier : IStoryWishNotifier
                 continue;
             }
 
-            await _notificationService.CreateAsync(recipientId, NotificationType.StoryWishSubmitted, payload, ct);
+            await _notificationService.CreateAsync(recipientId, type, payload, ct);
         }
     }
 }

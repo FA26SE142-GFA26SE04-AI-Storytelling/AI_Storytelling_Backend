@@ -143,6 +143,8 @@ public static class DependencyInjection
         services.AddScoped<IWishCardMatchService, WishCardMatchService>();
         services.AddScoped<IStoryWishSuggestionService, StoryWishSuggestionService>();
         services.AddScoped<IStoryWishService, StoryWishService>();
+        services.AddScoped<IParentStoryWishService, ParentStoryWishService>();
+        services.AddScoped<IStoryWishSweepService, StoryWishSweepService>();
         services.AddScoped<IChildRewardService, ChildRewardService>();
         services.AddScoped<IParentReadingFeedbackService, ParentReadingFeedbackService>();
         services.AddScoped<IChildQuizService, ChildQuizService>();

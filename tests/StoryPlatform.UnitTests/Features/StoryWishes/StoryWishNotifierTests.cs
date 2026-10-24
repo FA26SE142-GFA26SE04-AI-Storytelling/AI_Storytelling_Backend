@@ -83,4 +83,23 @@ public class StoryWishNotifierTests
         await _sut.NotifySubmittedAsync(Wish());
         Assert.Single(_sent);
     }
+
+    [Fact]
+    public async Task NotifyExpiring_GoesToTheSameRecipients_WithTheExpiryDate()
+    {
+        _h.AddSupervisor(ReadingHarness.Child, Owner, SupervisorRole.Owner);
+        _h.AddSupervisor(ReadingHarness.Child, Approver, SupervisorRole.AdditionalSupervisor, null, Permission.ApproveStory);
+        _h.AddSupervisor(ReadingHarness.Child, Viewer, SupervisorRole.AdditionalSupervisor, null, Permission.ViewProgress);
+        var wish = Wish();
+        wish.PendingSince = new DateTime(2026, 10, 16, 3, 0, 0, DateTimeKind.Utc);
+
+        await _sut.NotifyExpiringAsync(wish);
+
+        Assert.Equal(new[] { Owner, Approver }, _sent.Select(s => s.Recipient).OrderBy(id => id));
+        Assert.All(_sent, s => Assert.Equal(NotificationType.StoryWishExpiring, s.Type));
+        using var payload = JsonDocument.Parse(_sent.First().Payload!);
+        Assert.Equal(42, payload.RootElement.GetProperty("wishId").GetInt32());
+        Assert.Equal(new DateTime(2026, 10, 23, 3, 0, 0, DateTimeKind.Utc),
+            payload.RootElement.GetProperty("expiresAt").GetDateTime().ToUniversalTime());
+    }
 }

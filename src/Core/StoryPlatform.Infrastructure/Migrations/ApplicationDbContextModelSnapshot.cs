@@ -3607,11 +3607,24 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("DeclineReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("ExpiryWarnedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int?>("FulfilledStoryId")
                         .HasColumnType("integer");
 
                     b.Property<bool>("FulfilledWithExistingStory")
                         .HasColumnType("boolean");
+
+                    b.Property<int?>("GeneratedStoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("GenerationRequestId")
+                        .HasColumnType("integer");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
@@ -3633,8 +3646,15 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int?>("PlaceCardId")
                         .HasColumnType("integer");
 
+                    b.Property<string>("ResolutionNote")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
                     b.Property<DateTime?>("ResolvedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ResolvedByUserId")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -3660,9 +3680,14 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasIndex("FulfilledStoryId");
 
+                    b.HasIndex("GeneratedStoryId");
+
                     b.HasIndex("LessonCardId");
 
                     b.HasIndex("PlaceCardId");
+
+                    b.HasIndex("Status", "PendingSince")
+                        .HasDatabaseName("IX_story_wishes_status_pending_since");
 
                     b.HasIndex("ChildProfileId", "Status", "SubmittedAt")
                         .HasDatabaseName("IX_story_wishes_child_status_submitted");
@@ -5715,6 +5740,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasForeignKey("FulfilledStoryId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("StoryPlatform.Domain.Entities.Story", "GeneratedStory")
+                        .WithMany()
+                        .HasForeignKey("GeneratedStoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("StoryPlatform.Domain.Entities.WishCard", "LessonCard")
                         .WithMany()
                         .HasForeignKey("LessonCardId")
@@ -5732,6 +5762,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("ChildProfile");
 
                     b.Navigation("FulfilledStory");
+
+                    b.Navigation("GeneratedStory");
 
                     b.Navigation("LessonCard");
 

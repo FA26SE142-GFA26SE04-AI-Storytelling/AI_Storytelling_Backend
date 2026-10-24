@@ -33,6 +33,18 @@ public class StoryWishConfiguration : IEntityTypeConfiguration<StoryWish>
             .HasDatabaseName("IX_story_wishes_one_draft_per_child");
         builder.HasIndex(x => new { x.ChildProfileId, x.Status, x.SubmittedAt })
             .HasDatabaseName("IX_story_wishes_child_status_submitted");
+
+        builder.HasOne(x => x.GeneratedStory)
+            .WithMany()
+            .HasForeignKey(x => x.GeneratedStoryId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Property(x => x.DeclineReason).HasMaxLength(500);
+        builder.Property(x => x.ResolutionNote).HasMaxLength(50);
+
+        builder.HasIndex(x => new { x.Status, x.PendingSince })
+            .HasDatabaseName("IX_story_wishes_status_pending_since");
+
         builder.HasQueryFilter(x => !x.IsDeleted);
     }
 }

@@ -27,4 +27,22 @@ public class StoryWish : BaseEntity
     public virtual Story? FulfilledStory { get; set; }
     public bool FulfilledWithExistingStory { get; set; }
     public DateTime? ResolvedAt { get; set; }
+
+    /// <summary>Truyện mới đang được sinh cho điều ước (phụ huynh "Tạo truyện mới").</summary>
+    public int? GeneratedStoryId { get; set; }
+    public virtual Story? GeneratedStory { get; set; }
+
+    /// <summary>Yêu cầu sinh truyện (StoryGenerationRequest) tương ứng, để truy vết.</summary>
+    public int? GenerationRequestId { get; set; }
+
+    public int? ResolvedByUserId { get; set; }
+
+    /// <summary>Lý do từ chối do phụ huynh ghi; chỉ phụ huynh thấy, không bao giờ trả cho trẻ.</summary>
+    public string? DeclineReason { get; set; }
+
+    /// <summary>Ghi chú khi hệ thống tự đóng: expired, story_archived, story_rejected, parent_cancelled, profile_inactive.</summary>
+    public string? ResolutionNote { get; set; }
+
+    /// <summary>Đã gửi story_wish_expiring (ngày 6) cho lần chờ hiện tại.</summary>
+    public DateTime? ExpiryWarnedAt { get; set; }
 }

@@ -227,6 +227,9 @@ public static class DependencyInjection
         services.Configure<ModerationSweepWorkerOptions>(
             configuration.GetSection(ModerationSweepWorkerOptions.SectionName));
         services.AddHostedService<ModerationSweepWorker>();
+        services.Configure<StoryWishSweepWorkerOptions>(
+            configuration.GetSection(StoryWishSweepWorkerOptions.SectionName));
+        services.AddHostedService<StoryWishSweepWorker>();
 
         return services;
     }

@@ -67,4 +67,53 @@ public class StoryWishModelTests
         var wish = new StoryWish { Status = status, FulfilledWithExistingStory = existing };
         Assert.Equal(expected, StoryWishPolicy.StatusMessage(wish));
     }
+
+    [Fact]
+    public void StoryWish_MapsDecisionColumns()
+    {
+        var model = new ModelBuilder();
+        new StoryWishConfiguration().Configure(model.Entity<StoryWish>());
+        var entity = model.Model.FindEntityType(typeof(StoryWish))!;
+
+        Assert.Equal(500, entity.FindProperty(nameof(StoryWish.DeclineReason))!.GetMaxLength());
+        Assert.Equal(50, entity.FindProperty(nameof(StoryWish.ResolutionNote))!.GetMaxLength());
+        Assert.True(entity.FindProperty(nameof(StoryWish.GeneratedStoryId))!.IsNullable);
+        Assert.Equal(typeof(DateTime?), typeof(StoryWish).GetProperty(nameof(StoryWish.ExpiryWarnedAt))!.PropertyType);
+        Assert.Contains(entity.GetForeignKeys(), fk => fk.Properties.Single().Name == nameof(StoryWish.GeneratedStoryId));
+        Assert.Contains(entity.GetIndexes(), index =>
+            index.Properties.Select(p => p.Name).SequenceEqual(new[] { nameof(StoryWish.Status), nameof(StoryWish.PendingSince) }));
+    }
+
+    [Fact]
+    public void DecisionPolicy_UsesTheDocumentedDeadlines()
+    {
+        Assert.Equal(TimeSpan.FromDays(7), StoryWishDecisionPolicy.PendingLifetime);
+        Assert.Equal(TimeSpan.FromDays(6), StoryWishDecisionPolicy.ExpiryWarningAfter);
+        Assert.Equal(TimeSpan.FromDays(7), StoryWishDecisionPolicy.RejectedStoryGrace);
+    }
+
+    [Theory]
+    [InlineData("Chú mèo", "Khu rừng", "Bị lạc đường", "Chú mèo ở Khu rừng: Bị lạc đường")]
+    [InlineData("Chú mèo", "Khu rừng", null, "Chú mèo ở Khu rừng")]
+    public void DecisionPolicy_BuildsTheTopicFromTheCards(string character, string place, string? challenge, string expected)
+    {
+        Assert.Equal(expected, StoryWishDecisionPolicy.Topic(character, place, challenge));
+    }
+
+    [Fact]
+    public void DecisionPolicy_TopicNeverExceeds200Characters()
+    {
+        var topic = StoryWishDecisionPolicy.Topic(new string('a', 150), new string('b', 150), null);
+
+        Assert.Equal(200, topic.Length);
+    }
+
+    [Fact]
+    public void DecisionPolicy_IdempotencyKeyIsStablePerWish_AndWithinTheGenerationLimits()
+    {
+        var key = StoryWishDecisionPolicy.GenerationKey(42);
+
+        Assert.Equal("story-wish-000042", key);
+        Assert.InRange(key.Length, 8, 100);
+    }
 }

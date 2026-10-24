@@ -101,6 +101,11 @@ public class ReadingProgressDto
 
 public class ReadingCompletedDto
 {
+    /// <summary>EXP vừa nhận khi hoàn thành (0 nếu đọc lại hoặc gọi lần hai).</summary>
+    public int ExpGained { get; set; }
+    /// <summary>Mã các huy hiệu vừa mở.</summary>
+    public List<string> NewBadges { get; set; } = new();
+
     public int SessionId { get; set; }
     public int StoryId { get; set; }
     public bool IsRetake { get; set; }
@@ -116,6 +121,20 @@ public class ReadingFlagsDto
 {
     public bool IsBookmarked { get; set; }
     public bool IsFavorited { get; set; }
+}
+
+public class SetFeelingRequestDto
+{
+    /// <summary>"VeryLike", "Like", "Neutral" hoặc "Dislike".</summary>
+    public string? Feeling { get; set; }
+}
+
+public class ReadingFeelingDto
+{
+    public int SessionId { get; set; }
+    public string Feeling { get; set; } = string.Empty;
+    /// <summary>Nhãn tiếng Việt để hiển thị ("Rất thích", …).</summary>
+    public string Label { get; set; } = string.Empty;
 }
 
 public class ReadingEventRequestDto

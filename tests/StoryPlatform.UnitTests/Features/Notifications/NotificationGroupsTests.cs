@@ -19,6 +19,8 @@ public class NotificationGroupsTests
     [InlineData(NotificationType.RoadmapStoryAdded, "children")]
     [InlineData(NotificationType.RoadmapStoryRemoved, "children")]
     [InlineData(NotificationType.RoadmapCompleted, "children")]
+    [InlineData(NotificationType.StoryWishSubmitted, "children")]
+    [InlineData(NotificationType.StoryWishExpiring, "children")]
     [InlineData(NotificationType.AccountSecurityChanged, "account")]
     [InlineData(NotificationType.PaymentConfirmed, "account")]
     [InlineData(NotificationType.DataRequestCompleted, "account")]

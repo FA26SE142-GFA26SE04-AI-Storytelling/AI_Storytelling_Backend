@@ -37,4 +37,11 @@ public sealed class ContentGenerationProgressDto
     public string? LastErrorCode { get; init; }
     public ContentQualityFailureDto? QualityFailure { get; init; }
     public int? StableStoryVersionId { get; init; }
+    public int VocabularyTarget { get; init; }
+    public int QuizTarget { get; init; }
+    public int VocabularyCount { get; init; }
+    public int QuizCount { get; init; }
+    public int TotalLearningBatches { get; init; }
+    public int CompletedLearningBatches { get; init; }
+    public IReadOnlyList<string> LearningWarnings { get; init; } = [];
 }

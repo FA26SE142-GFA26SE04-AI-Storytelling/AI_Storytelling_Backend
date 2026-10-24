@@ -14,6 +14,10 @@ namespace StoryPlatform.Domain.Entities;
 /// </summary>
 public class MediaAsset : BaseEntity
 {
+    public bool IsCurrent { get; set; } = true;
+    public int? ReplacesMediaAssetId { get; set; }
+    public int? RequestedPackageRevision { get; set; }
+    public DateTime? ReplacementResolvedAt { get; set; }
     public int StoryVersionId { get; set; }
     public virtual StoryVersion? StoryVersion { get; set; }
 

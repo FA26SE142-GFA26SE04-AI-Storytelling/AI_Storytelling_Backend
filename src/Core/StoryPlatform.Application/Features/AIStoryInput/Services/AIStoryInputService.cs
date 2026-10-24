@@ -29,14 +29,17 @@ public sealed class AIStoryInputService : IAIStoryInputService
     private readonly IInputGuardrail _inputGuardrail;
     private readonly ITokenQuotaService _tokenQuotaService;
     private readonly StoryPlatform.Application.Features.CreatorAuthoring.CreatorAuthoringOptions _creatorOptions;
+    private readonly StoryPlatform.Application.Features.ContentGeneration.LearningBatchOptions _learningOptions;
 
     public AIStoryInputService(IUnitOfWork unitOfWork, IInputGuardrail inputGuardrail, ITokenQuotaService tokenQuotaService,
-        StoryPlatform.Application.Features.CreatorAuthoring.CreatorAuthoringOptions? creatorOptions = null)
+        StoryPlatform.Application.Features.CreatorAuthoring.CreatorAuthoringOptions? creatorOptions = null,
+        StoryPlatform.Application.Features.ContentGeneration.LearningBatchOptions? learningOptions = null)
     {
         _unitOfWork = unitOfWork;
         _inputGuardrail = inputGuardrail;
         _tokenQuotaService = tokenQuotaService;
         _creatorOptions = creatorOptions ?? new();
+        _learningOptions = learningOptions ?? new();
     }
 
     public async Task<AIStoryInputContextDto> GetContextAsync(
@@ -52,9 +55,10 @@ public sealed class AIStoryInputService : IAIStoryInputService
         int readingLevel = 2, string language = "vi", CancellationToken cancellationToken = default)
     {
         var context = await ResolveCreatorContextAsync(userId, new(ageBand, readingLevel), null, language, cancellationToken);
-        return new(context.AgeBand, context.ReadingLevel, context.Language, ["vi", "en"], VocabularyLevels,
+        return new CreatorAIStoryInputContextDto(context.AgeBand, context.ReadingLevel, context.Language, ["vi", "en"], VocabularyLevels,
             context.MaximumLength, "always_manual", context.Snapshot.SafetyScoreThreshold!.Value,
-            context.Snapshot.BlockedCategoryCodes, ["reading_media_only", "learning"]);
+            context.Snapshot.BlockedCategoryCodes, ["reading_media_only", "learning"])
+        { RecommendedTargetLength = _learningOptions.Profile(context.AgeBand).TargetWords };
     }
 
     public Task<AIStoryInputProgressDto> SubmitCreatorAsync(int userId, SubmitCreatorAIStoryInputRequestDto request,
@@ -91,7 +95,10 @@ public sealed class AIStoryInputService : IAIStoryInputService
             normalized.VocabularyLevel,
             normalized.Language,
             cancellationToken);
-        normalized = normalized with { VocabularyLevel = context.VocabularyLevel, Language = context.Language };
+        var profile = _learningOptions.Profile(context.AgeBand, normalized.TargetLength);
+        normalized = normalized with { VocabularyLevel = context.VocabularyLevel, Language = context.Language, TargetLength = profile.TargetWords };
+        var pinnedContext = context.Snapshot with { LearningProfile = profile };
+        context = context with { Snapshot = pinnedContext, Fingerprint = Fingerprint(pinnedContext) };
         ValidateAgainstContext(normalized, context);
 
         var inputFingerprint = creator
@@ -257,6 +264,9 @@ public sealed class AIStoryInputService : IAIStoryInputService
         var normalized = Normalize(retry);
         ValidateCreativeInput(normalized);
         var context = await ResolveStoryContextAsync(userId, story, normalized.VocabularyLevel, normalized.Language, cancellationToken);
+        var pinnedProfile = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(request.ContextSnapshotJson, JsonOptions)?.LearningProfile;
+        context = WithLearningProfile(context, pinnedProfile);
+        if (normalized.TargetLength == 0 && pinnedProfile is not null) normalized = normalized with { TargetLength = pinnedProfile.TargetWords };
         normalized = normalized with { VocabularyLevel = context.VocabularyLevel, Language = context.Language };
         ValidateAgainstContext(normalized, context);
 
@@ -383,6 +393,7 @@ public sealed class AIStoryInputService : IAIStoryInputService
                         item.Status == StoryStatus.Draft,
                 cancellationToken);
 
+            currentContext = WithLearningProfile(currentContext, originalContext.Snapshot.LearningProfile);
             if (!validStory || !string.Equals(currentContext.Fingerprint, originalContext.Fingerprint, StringComparison.Ordinal))
             {
                 await FinalizeFailureAsync(generationRequest, attemptToken, "INPUT_CONTEXT_CHANGED", false, cancellationToken);
@@ -571,6 +582,12 @@ public sealed class AIStoryInputService : IAIStoryInputService
         string language, CancellationToken ct) => story.Scope == StoryScope.Creator
         ? ResolveCreatorContextAsync(userId, new(story.AgeBand, story.ReadingLevel ?? 2), vocabulary, language, ct)
         : ResolveContextAsync(userId, ParentStoryContext.RequireChildId(story), vocabulary, language, ct);
+
+    private static EffectiveContext WithLearningProfile(EffectiveContext context, StoryPlatform.Contracts.AI.Models.LearningGenerationProfile? profile)
+    {
+        var snapshot = context.Snapshot with { LearningProfile = profile };
+        return context with { Snapshot = snapshot, Fingerprint = Fingerprint(snapshot) };
+    }
 
     private async Task<EffectiveContext> ResolveCreatorContextAsync(int userId, CreatorGenerationAudience audience,
         string? vocabulary, string? language, CancellationToken ct)
@@ -796,6 +813,7 @@ public sealed class AIStoryInputService : IAIStoryInputService
 
     private static void ValidateCreativeInput(AcceptedAIStoryInputSnapshot input)
     {
+        if (input.TargetLength is < 0 or > 10000) throw new BadRequestException("Target Length phải từ 0 đến 10000; 0 dùng độ dài theo nhóm tuổi.");
         if (input.Topic.Length is < 2 or > 200 || input.Lesson.Length is < 2 or > 500)
         {
             throw new BadRequestException("Topic và Lesson là bắt buộc và phải nằm trong giới hạn cho phép.");
@@ -868,7 +886,7 @@ public sealed class AIStoryInputService : IAIStoryInputService
 
     private static string SanitizeFallback(string value) => value.Length <= 500 ? value : value[..500];
 
-    private static AIStoryInputContextDto ToContextDto(EffectiveContext context) => new()
+    private AIStoryInputContextDto ToContextDto(EffectiveContext context) => new()
     {
         ChildProfileId = context.Snapshot.ChildProfileId ?? throw new InvalidOperationException("CHILD_REQUIRED"),
         ChildNickname = context.ChildNickname,
@@ -879,6 +897,7 @@ public sealed class AIStoryInputService : IAIStoryInputService
         DefaultLanguage = context.Language,
         AvailableLanguages = [context.Language],
         MaximumLength = context.MaximumLength,
+        RecommendedTargetLength = _learningOptions.Profile(context.AgeBand).TargetWords,
         RequiredApprovalMode = ToApprovalModeValue(context.ApprovalMode),
         ParentalGateEnabled = context.Snapshot.ParentalGateEnabled,
         SafetyScoreThreshold = context.Snapshot.SafetyScoreThreshold,

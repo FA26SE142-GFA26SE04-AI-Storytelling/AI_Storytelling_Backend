@@ -39,7 +39,7 @@ public class SafetyPolicyCategoryDto
 
 public class SetSafetyPolicyRequestDto
 {
-    [Range(100, 20000, ErrorMessage = "Độ dài truyện tối đa phải từ 100 đến 20000 ký tự.")]
+    [Range(100, 20000, ErrorMessage = "Độ dài truyện tối đa phải từ 100 đến 20000 đơn vị từ.")]
     public int MaxStoryLength { get; set; } = 2000;
 
     [JsonConverter(typeof(JsonStringEnumConverter))]

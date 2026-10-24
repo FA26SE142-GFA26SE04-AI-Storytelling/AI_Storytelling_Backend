@@ -44,4 +44,8 @@ public sealed record AIStoryInputContextSnapshot(
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     string? AudienceScope = null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    int? CreatorUserId = null);
+    int? CreatorUserId = null)
+{
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public StoryPlatform.Contracts.AI.Models.LearningGenerationProfile? LearningProfile { get; init; }
+}

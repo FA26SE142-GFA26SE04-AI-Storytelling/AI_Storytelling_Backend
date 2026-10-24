@@ -14,6 +14,7 @@ public sealed class AIStoryInputContextDto
     public IReadOnlyList<string> AvailableLanguages { get; init; } = [];
     public IReadOnlyList<string> AvailableOutputModes { get; init; } = ["learning", "reading_media_only"];
     public int MaximumLength { get; init; }
+    public int RecommendedTargetLength { get; init; }
     public string RequiredApprovalMode { get; init; } = string.Empty;
     public bool ParentalGateEnabled { get; init; }
     public decimal? SafetyScoreThreshold { get; init; }
@@ -57,7 +58,7 @@ public class AIStoryCreativeInputDto
     [StringLength(10)]
     public string? Language { get; init; }
 
-    [Range(1, 10_000)]
+    [Range(0, 10_000)]
     public int TargetLength { get; init; }
 }
 
@@ -91,7 +92,10 @@ public sealed class SubmitCreatorAIStoryInputRequestDto : AIStoryCreativeInputDt
 public sealed record CreatorAIStoryInputContextDto(string AgeBand, int ReadingLevel, string DefaultLanguage,
     IReadOnlyList<string> AvailableLanguages, IReadOnlyList<string> AvailableVocabularyLevels, int MaximumLength,
     string RequiredApprovalMode, decimal SafetyScoreThreshold, IReadOnlyList<string> BlockedCategoryCodes,
-    IReadOnlyList<string> AvailableOutputModes);
+    IReadOnlyList<string> AvailableOutputModes)
+{
+    public int RecommendedTargetLength { get; init; }
+}
 
 public sealed class RetryAIStoryInputRequestDto : AIStoryCreativeInputDto
 {

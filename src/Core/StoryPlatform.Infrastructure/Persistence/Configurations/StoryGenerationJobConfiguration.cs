@@ -11,6 +11,9 @@ public class StoryGenerationJobConfiguration : IEntityTypeConfiguration<StoryGen
         builder.ToTable("story_generation_jobs");
 
         builder.HasKey(x => x.Id);
+        builder.HasOne<StoryGenerationJob>().WithMany().HasForeignKey(x => x.ParentJobId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<MediaContext>().WithMany().HasForeignKey(x => x.MediaContextId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(x => new { x.ParentJobId, x.Status, x.NextAttemptAt });
 
         builder.Property(x => x.Stage)
             .HasConversion<string>()

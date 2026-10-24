@@ -31,10 +31,10 @@ public sealed class StoryContentGenerationExecutor
         string schemaName,
         JsonElement schema,
         Func<string, T?> deserialize,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, int? technicalAttempts = null)
         where T : class
     {
-        var maxAttempts = Math.Clamp(_options.MaxTechnicalAttempts, 1, 3);
+        var maxAttempts = Math.Clamp(technicalAttempts ?? _options.MaxTechnicalAttempts, 1, 3);
         Exception? lastError = null;
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
@@ -53,6 +53,8 @@ public sealed class StoryContentGenerationExecutor
             }
             catch (Exception exception) when (IsRetryable(exception, cancellationToken))
             {
+                // A durable Core batch owns the retry budget and needs the original status.
+                if (technicalAttempts == 1) throw;
                 lastError = exception;
                 if (attempt == maxAttempts)
                 {

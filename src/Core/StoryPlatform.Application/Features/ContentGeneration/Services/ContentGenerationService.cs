@@ -21,7 +21,7 @@ using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.ContentGeneration.Services;
 
-public sealed class ContentGenerationService : IContentGenerationService, IContentGenerationJobProcessor
+public sealed partial class ContentGenerationService : IContentGenerationService, IContentGenerationJobProcessor
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly IUnitOfWork _unitOfWork;
@@ -35,6 +35,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
     private readonly int _maxRefinementAttempts;
     private readonly int _artifactMaxAttempts;
     private readonly TimeSpan _jobLease;
+    private readonly ILearningBatchService? _learningBatches;
 
     public ContentGenerationService(
         IUnitOfWork unitOfWork,
@@ -44,7 +45,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
         IStableVersionArtifactHandoffService artifactHandoff,
         ContentGenerationOptions options,
         IStoryReviewService? reviewService = null,
-        IGrayZoneEvaluator? moderation = null, GrayZoneWorkflowService? grayZone = null)
+        IGrayZoneEvaluator? moderation = null, GrayZoneWorkflowService? grayZone = null, ILearningBatchService? learningBatches = null)
     {
         _unitOfWork = unitOfWork;
         _aiClient = aiClient;
@@ -52,6 +53,7 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
         _failureFinalizer = failureFinalizer;
         _artifactHandoff = artifactHandoff;
         _reviewService = reviewService;
+        _learningBatches = learningBatches;
         _moderation = moderation; _grayZone = grayZone;
         _maxRefinementAttempts = Math.Clamp(options.MaxContentRefinementAttempts, 0, 2);
         _artifactMaxAttempts = Math.Clamp(options.ArtifactMaxAttempts, 1, 3);
@@ -90,8 +92,18 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
         var contentComplete = stable is not null && story.Status is
             (StoryStatus.ContentReview or StoryStatus.Approved or StoryStatus.MediaProcessing or StoryStatus.MediaReview or StoryStatus.Ready);
 
+        var batches = _learningBatches is not null && stable is not null
+            ? await _unitOfWork.Repository<LearningArtifactGenerationBatch>().FindAsync(x => x.StoryVersionId == stable.Id, cancellationToken: cancellationToken)
+            : Array.Empty<LearningArtifactGenerationBatch>();
         return new ContentGenerationProgressDto
         {
+            VocabularyTarget = batches.Where(x => x.Kind == "vocabulary").Sum(x => x.TargetCount),
+            QuizTarget = batches.Where(x => x.Kind.StartsWith("quiz_")).Sum(x => x.TargetCount),
+            VocabularyCount = stable is null ? 0 : await _unitOfWork.Repository<StoryVocabulary>().CountAsync(x => x.StoryVersionId == stable.Id, cancellationToken),
+            QuizCount = stable is null ? 0 : await _unitOfWork.Repository<QuizItem>().CountAsync(x => x.StoryVersionId == stable.Id, cancellationToken),
+            TotalLearningBatches = batches.Count,
+            CompletedLearningBatches = batches.Count(x => x.Status == GenerationJobStatus.Completed),
+            LearningWarnings = batches.Where(x => !string.IsNullOrWhiteSpace(x.ShortfallReason)).Select(x => x.ShortfallReason!).Distinct().ToArray(),
             StoryId = story.Id,
             OutputMode = StoryPlatform.Application.Common.StoryOutputModeContract.Format(story.OutputMode),
             StoryStatus = ToSnake(story.Status.ToString()),
@@ -118,6 +130,8 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
         CancellationToken cancellationToken = default)
     {
         ValidateObject(input);
+        if (_learningBatches is not null && await RetryLearningArtifactsAsync(userId, storyId, input.RetryKey.Trim(), cancellationToken))
+            return await GetProgressAsync(userId, storyId, cancellationToken);
         await InStoryTransactionAsync(storyId, async () =>
         {
             var story = await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
@@ -408,7 +422,13 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
         var state = await LoadArtifactStateAsync(jobId, GenerationJobOperation.GenerateVocabulary, cancellationToken);
         GenerateVocabularyResponse? response = null;
         GeneratedVocabularyItemDto[] items = [];
-        for (var attempt = 1; attempt <= _artifactMaxAttempts; attempt++)
+        if (_learningBatches is not null && state.Context.LearningProfile is not null)
+        {
+            response = (await _learningBatches.GenerateAsync(state.Job, claimedToken, state.Version, state.Context, cancellationToken)).Vocabulary;
+            items = response.Items.ToArray();
+            if (items.Length < 5) throw new InvalidOperationException("VOCABULARY_SOURCE_INSUFFICIENT");
+        }
+        else for (var attempt = 1; attempt <= _artifactMaxAttempts; attempt++)
         {
             response = await _aiClient.GenerateVocabularyAsync(new GenerateVocabularyRequest
             {
@@ -434,7 +454,11 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
                 {
                     StoryVersionId = state.Version.Id,
                     Term = item.Term.Trim(),
-                    Definition = item.Definition.Trim()
+                    Definition = item.Definition.Trim(),
+                    SourceQuote = string.IsNullOrEmpty(item.SourceQuote) ? null : item.SourceQuote,
+                    SourceStart = string.IsNullOrEmpty(item.SourceQuote) ? null : LearningArtifactGrounding.Anchor(state.Version.Content!, item.SourceQuote).Start,
+                    SourceEnd = string.IsNullOrEmpty(item.SourceQuote) ? null : LearningArtifactGrounding.Anchor(state.Version.Content!, item.SourceQuote).End,
+                    Example = string.IsNullOrEmpty(item.Example) ? null : item.Example
                 }), cancellationToken);
             }
         }, GenerationJobOperation.GenerateQuiz, cancellationToken);
@@ -448,7 +472,12 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
         if (vocabulary.Count == 0) throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
         GenerateQuizResponse? response = null;
         IReadOnlyList<QuizItemSeed>? mapped = null;
-        for (var attempt = 1; attempt <= _artifactMaxAttempts; attempt++)
+        if (_learningBatches is not null && state.Context.LearningProfile is not null)
+        {
+            response = await _learningBatches.ReadQuizAsync(state.Job.StoryId, state.Version.Id, cancellationToken);
+            mapped = ValidateAndMapQuiz(response.Items, state.Version.Content!, state.Context);
+        }
+        else for (var attempt = 1; attempt <= _artifactMaxAttempts; attempt++)
         {
             response = await _aiClient.GenerateQuizAsync(new GenerateQuizRequest
             {
@@ -524,9 +553,19 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
         await InStoryTransactionAsync(state.Job.StoryId, async () =>
         {
             var job = await RequireClaimedJobAsync(state.Job.Id, claimedToken, cancellationToken);
-            var version = await _unitOfWork.Repository<StoryVersion>().GetByIdAsync(state.Version.Id, cancellationToken);
+            var version = await _unitOfWork.Repository<StoryVersion>().FirstOrDefaultAsync(x => x.Id == state.Version.Id && !x.IsDeleted, cancellationToken: cancellationToken);
             if (version is null || !version.IsCurrent || string.IsNullOrWhiteSpace(version.Content))
                 throw new InvalidOperationException("STALE_BASE_VERSION");
+            if (_learningBatches is not null && state.Context.LearningProfile is not null)
+            {
+                var story = await _unitOfWork.Repository<Story>().FirstOrDefaultAsync(x => x.Id == job.StoryId, cancellationToken: cancellationToken)
+                    ?? throw new InvalidOperationException("STORY_NOT_FOUND");
+                var root = job.Operation == GenerationJobOperation.GenerateVocabulary ? job :
+                    await _unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(x => x.StoryVersionId == version.Id &&
+                        x.Operation == GenerationJobOperation.GenerateVocabulary, cancellationToken: cancellationToken)
+                        ?? throw new ConflictException("LEARNING_BATCH_INCOMPLETE");
+                await _learningBatches.ValidateSourceAsync(root.Id, story, version, job.RequestedByUserId ?? story.AuthorUserId, cancellationToken);
+            }
             await persist();
             job.Status = GenerationJobStatus.Completed;
             job.Stage = nextOperation.HasValue ? JobStage.ContentArtifactCompleted : JobStage.ContentPackageCompleted;
@@ -669,8 +708,21 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
     private async Task EnsureNextJobAsync(
         StoryGenerationJob source, int stableVersionId, GenerationJobOperation operation, CancellationToken cancellationToken)
     {
-        if (await _unitOfWork.Repository<StoryGenerationJob>().ExistsAsync(
-                item => item.Operation == operation && item.StoryVersionId == stableVersionId, cancellationToken)) return;
+        var existing = await _unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(
+            item => item.Operation == operation && item.StoryVersionId == stableVersionId, cancellationToken: cancellationToken);
+        if (existing is not null)
+        {
+            if (_learningBatches is not null && source.Operation == GenerationJobOperation.GenerateVocabulary &&
+                operation == GenerationJobOperation.GenerateQuiz && existing.Status == GenerationJobStatus.Failed &&
+                existing.ErrorCode == "QUIZ_VALIDATION_FAILED")
+            {
+                existing.Status = GenerationJobStatus.Pending; existing.AttemptNo = 0; existing.ErrorCode = null;
+                existing.LeaseExpiresAt = existing.CompletedAt = null;
+                RotateToken(existing);
+                _unitOfWork.Repository<StoryGenerationJob>().Update(existing);
+            }
+            return;
+        }
         await _unitOfWork.Repository<StoryGenerationJob>().AddAsync(new StoryGenerationJob
         {
             StoryId = source.StoryId,
@@ -735,8 +787,8 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
     private async Task<StoryGenerationJob> RequireClaimedJobAsync(
         int jobId, string claimedToken, CancellationToken cancellationToken)
     {
-        var job = await _unitOfWork.Repository<StoryGenerationJob>().GetByIdAsync(jobId, cancellationToken);
-        if (job is null || job.Status != GenerationJobStatus.Processing || job.ConcurrencyToken != claimedToken)
+        var job = await _unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(x => x.Id == jobId && !x.IsDeleted, cancellationToken: cancellationToken);
+        if (job is null || job.Status != GenerationJobStatus.Processing || job.ConcurrencyToken != claimedToken || job.LeaseExpiresAt <= DateTime.UtcNow)
             throw new InvalidOperationException("STALE_JOB_RESULT");
         return job;
     }
@@ -799,7 +851,8 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
 
     private static GenerationConstraintsDto Constraints(AIStoryInputContextSnapshot context) => new()
     {
-        MaximumWords = context.MaximumLength,
+        MinimumWords = context.LearningProfile?.MinimumWords ?? 0,
+        MaximumWords = Math.Min(context.MaximumLength, context.LearningProfile?.MaximumWords ?? context.MaximumLength),
         AllowedTopics = PolicyTerms(context.AllowedCategoryTerms, context.AllowedCategoryCodes),
         RestrictedTopics = PolicyTerms(context.RestrictedCategoryTerms, context.RestrictedCategoryCodes),
         BlockedTopics = PolicyTerms(context.BlockedCategoryTerms, context.BlockedCategoryCodes)
@@ -966,7 +1019,10 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             }
             else if (type == QuizType.ShortAnswer && string.IsNullOrWhiteSpace(answer))
                 throw new InvalidOperationException("QUIZ_VALIDATION_FAILED");
-            result.Add(new QuizItemSeed(type, item.Question.Trim(), answer.Trim(), JsonSerializer.Serialize(item.Options, JsonOptions)));
+            var anchor = string.IsNullOrEmpty(item.SourceQuote) ? ((int?)null, (int?)null) :
+                ((int?)LearningArtifactGrounding.Anchor(storyContent, item.SourceQuote).Start, (int?)LearningArtifactGrounding.Anchor(storyContent, item.SourceQuote).End);
+            result.Add(new QuizItemSeed(type, item.Question.Trim(), answer.Trim(), JsonSerializer.Serialize(item.Options, JsonOptions))
+                { Detail = item, SourceStart = anchor.Item1, SourceEnd = anchor.Item2 });
         }
         return result;
     }
@@ -993,6 +1049,9 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
     private sealed record ArtifactState(StoryGenerationJob Job, StoryVersion Version, AIStoryInputContextSnapshot Context);
     private sealed record QuizItemSeed(QuizType Type, string Question, string CorrectAnswer, string Choices)
     {
+        public StoryPlatform.Contracts.AI.Models.QuizItemDto? Detail { get; init; }
+        public int? SourceStart { get; init; }
+        public int? SourceEnd { get; init; }
         public int StoryVersionId { get; init; }
         public static implicit operator QuizItem(QuizItemSeed item) => new()
         {
@@ -1000,7 +1059,11 @@ public sealed class ContentGenerationService : IContentGenerationService, IConte
             Type = item.Type,
             Question = item.Question,
             CorrectAnswer = item.CorrectAnswer,
-            Choices = item.Choices
+            Choices = item.Choices,
+            Explanation = item.Detail?.Explanation, Hint = item.Detail?.Hint,
+            LearningGoal = item.Detail?.LearningGoal, SourceQuote = item.Detail?.SourceQuote,
+            SourceStart = item.SourceStart, SourceEnd = item.SourceEnd,
+            OptionFeedbackJson = item.Detail is null ? null : JsonSerializer.Serialize(item.Detail.OptionFeedback, JsonOptions)
         };
     }
 }

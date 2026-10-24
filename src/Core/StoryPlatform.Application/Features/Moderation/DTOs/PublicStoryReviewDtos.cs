@@ -87,6 +87,8 @@ public class PublicReviewSegmentDto
 
 public class PublicReviewVocabularyDto
 {
+    public string? SourceQuote { get; set; }
+    public string? Example { get; set; }
     public int Id { get; set; }
     public string Term { get; set; } = string.Empty;
     public string Definition { get; set; } = string.Empty;
@@ -94,6 +96,11 @@ public class PublicReviewVocabularyDto
 
 public class PublicReviewQuizDto
 {
+    public string? SourceQuote { get; set; }
+    public string? Explanation { get; set; }
+    public string? Hint { get; set; }
+    public string? LearningGoal { get; set; }
+    public string? OptionFeedbackJson { get; set; }
     public int Id { get; set; }
     public string Type { get; set; } = string.Empty;
     public string Question { get; set; } = string.Empty;

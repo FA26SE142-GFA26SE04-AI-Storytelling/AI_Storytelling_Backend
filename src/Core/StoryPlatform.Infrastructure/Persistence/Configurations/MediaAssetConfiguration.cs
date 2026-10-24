@@ -26,6 +26,9 @@ public class MediaAssetConfiguration : IEntityTypeConfiguration<MediaAsset>
         });
 
         builder.HasKey(x => x.Id);
+        builder.Property(x => x.IsCurrent).HasDefaultValue(true);
+        builder.HasOne<MediaAsset>().WithMany().HasForeignKey(x => x.ReplacesMediaAssetId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(x => new { x.StoryVersionId, x.RequestedPackageRevision });
 
         builder.Property(x => x.Type)
             .HasConversion<string>()
@@ -74,11 +77,13 @@ public class MediaAssetConfiguration : IEntityTypeConfiguration<MediaAsset>
 
         builder.HasIndex(x => new { x.IllustrationBeatId, x.Type })
             .IsUnique()
-            .HasFilter("\"IllustrationBeatId\" IS NOT NULL AND \"IsDeleted\" = false");
+            .HasFilter("\"IllustrationBeatId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true");
 
         builder.HasIndex(x => new { x.StorySegmentId, x.Type })
             .IsUnique()
-            .HasFilter("\"StorySegmentId\" IS NOT NULL AND \"IsDeleted\" = false");
+            .HasFilter("\"StorySegmentId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true");
+        builder.HasIndex(x => x.ReplacesMediaAssetId).IsUnique()
+            .HasFilter("\"ReplacesMediaAssetId\" IS NOT NULL AND \"ReplacementResolvedAt\" IS NULL AND \"IsDeleted\" = false");
 
         builder.HasQueryFilter(x => !x.IsDeleted);
     }

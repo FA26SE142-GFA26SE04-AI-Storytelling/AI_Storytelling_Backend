@@ -87,6 +87,7 @@ public sealed record RefineStoryContentRequest
 
 public sealed record GenerateVocabularyRequest
 {
+    public LearningBatchSpec? Batch { get; init; }
     public AiGenerationSnapshot? Snapshot { get; init; }
     public string RequestId { get; init; } = string.Empty;
     public StoryContentDto Story { get; init; } = new();
@@ -98,6 +99,7 @@ public sealed record GenerateVocabularyRequest
 
 public sealed record GenerateQuizRequest
 {
+    public LearningBatchSpec? Batch { get; init; }
     public AiGenerationSnapshot? Snapshot { get; init; }
     public string RequestId { get; init; } = string.Empty;
     public StoryContentDto Story { get; init; } = new();

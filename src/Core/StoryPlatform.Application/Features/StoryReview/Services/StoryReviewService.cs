@@ -325,7 +325,8 @@ public sealed class StoryReviewService : IStoryReviewService
             ?? throw new NotFoundException("StoryVersion");
 
         var allItems = await _vocabRepo.FindAsync(v => v.StoryVersionId == version.Id, cancellationToken: cancellationToken);
-        var items = allItems.Select(v => new DTOs.VocabularyItemDto { Id = v.Id, Term = v.Term, Definition = v.Definition }).ToList();
+        var items = allItems.Select(v => new DTOs.VocabularyItemDto { Id = v.Id, Term = v.Term, Definition = v.Definition,
+            SourceQuote = v.SourceQuote, SourceStart = v.SourceStart, SourceEnd = v.SourceEnd, Example = v.Example }).ToList();
 
         return new VocabularyReviewDto
         {
@@ -380,6 +381,7 @@ public sealed class StoryReviewService : IStoryReviewService
                 var existing = existingItems.FirstOrDefault(v => v.Id == item.Id);
                 if (existing != null)
                 {
+                    LearningArtifactDetails.Apply(existing, item, storyContent);
                     existing.Term = item.Term.Trim();
                     existing.Definition = item.Definition.Trim();
                     _vocabRepo.Update(existing);
@@ -387,12 +389,14 @@ public sealed class StoryReviewService : IStoryReviewService
             }
             else
             {
-                await _vocabRepo.AddAsync(new StoryVocabulary
+                var created = new StoryVocabulary
                 {
                     StoryVersionId = input.VersionId,
                     Term = item.Term.Trim(),
                     Definition = item.Definition.Trim()
-                }, cancellationToken);
+                };
+                LearningArtifactDetails.Apply(created, item, storyContent);
+                await _vocabRepo.AddAsync(created, cancellationToken);
             }
         }
 
@@ -468,6 +472,9 @@ public sealed class StoryReviewService : IStoryReviewService
             Type = q.Type.ToString(),
             Question = q.Question,
             CorrectAnswer = q.CorrectAnswer,
+            SourceQuote = q.SourceQuote, SourceStart = q.SourceStart, SourceEnd = q.SourceEnd,
+            Explanation = q.Explanation, Hint = q.Hint, LearningGoal = q.LearningGoal,
+            OptionFeedback = string.IsNullOrEmpty(q.OptionFeedbackJson) ? null : JsonSerializer.Deserialize<List<string>>(q.OptionFeedbackJson),
             Choices = string.IsNullOrEmpty(q.Choices) ? null : JsonSerializer.Deserialize<List<string>>(q.Choices)
         }).ToList();
 
@@ -536,6 +543,7 @@ public sealed class StoryReviewService : IStoryReviewService
                 var existing = existingItems.FirstOrDefault(q => q.Id == item.Id);
                 if (existing != null)
                 {
+                    LearningArtifactDetails.Apply(existing, item, version.Content ?? "");
                     existing.Type = Enum.Parse<QuizType>(item.Type, true);
                     existing.Question = item.Question.Trim();
                     existing.CorrectAnswer = item.CorrectAnswer?.Trim();
@@ -545,14 +553,16 @@ public sealed class StoryReviewService : IStoryReviewService
             }
             else
             {
-                await _quizRepo.AddAsync(new QuizItem
+                var created = new QuizItem
                 {
                     StoryVersionId = input.VersionId,
                     Type = Enum.Parse<QuizType>(item.Type, true),
                     Question = item.Question.Trim(),
                     CorrectAnswer = item.CorrectAnswer?.Trim(),
                     Choices = item.Choices != null ? JsonSerializer.Serialize(item.Choices) : null
-                }, cancellationToken);
+                };
+                LearningArtifactDetails.Apply(created, item, version.Content ?? "");
+                await _quizRepo.AddAsync(created, cancellationToken);
             }
         }
 

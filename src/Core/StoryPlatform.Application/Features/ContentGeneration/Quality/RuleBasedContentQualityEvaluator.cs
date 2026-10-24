@@ -22,10 +22,11 @@ public sealed partial class RuleBasedContentQualityEvaluator : IContentQualityEv
         var outline = Gate(matchedOutlineTerms && lessonMatched, true, "CONTENT_OUTLINE_INCONSISTENT",
             "Nội dung chưa bám sát outline hoặc lesson goal đã duyệt.");
 
-        var wordCount = WordPattern().Matches(content).Count;
-        var minimum = Math.Max(100, (int)Math.Floor(input.TargetLength * 0.7));
-        var length = Gate(wordCount >= minimum && wordCount <= context.MaximumLength, true, "CONTENT_LENGTH_INVALID",
-            $"Độ dài {wordCount} từ phải nằm trong khoảng {minimum}-{context.MaximumLength} từ.");
+        var wordCount = StoryWordCounter.Count(content);
+        var minimum = context.LearningProfile?.MinimumWords ?? Math.Max(100, (int)Math.Floor(input.TargetLength * 0.7));
+        var maximum = Math.Min(context.MaximumLength, context.LearningProfile?.MaximumWords ?? context.MaximumLength);
+        var length = Gate(wordCount >= minimum && wordCount <= maximum, true, "CONTENT_LENGTH_INVALID",
+            $"Độ dài {wordCount} đơn vị từ phải nằm trong khoảng {minimum}-{maximum}.");
 
         var blocked = PolicyTerms(context.BlockedCategoryTerms, context.BlockedCategoryCodes)
             .FirstOrDefault(term => ContainsTerm(searchable, term));

@@ -6,11 +6,13 @@ namespace StoryPlatform.Application.Features.MediaGeneration;
 public sealed class TransientMediaGenerationException : Exception
 {
     public string ErrorCode { get; }
+    public TimeSpan? RetryAfter { get; }
 
-    public TransientMediaGenerationException(string errorCode, Exception? innerException = null)
+    public TransientMediaGenerationException(string errorCode, Exception? innerException = null, TimeSpan? retryAfter = null)
         : base(errorCode, innerException)
     {
         ErrorCode = errorCode;
+        RetryAfter = retryAfter;
     }
 }
 

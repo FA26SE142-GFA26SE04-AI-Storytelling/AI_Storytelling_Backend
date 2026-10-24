@@ -1,4 +1,4 @@
--- 68. wish_cards (24): bo the uoc ban dau cho Be uoc (4 nhom) va Be sang tac (3 nhom).
+-- 70. wish_cards (24): bo the uoc ban dau cho Be uoc (4 nhom) va Be sang tac (3 nhom).
 -- AgeBand NULL = moi nhom tuoi. The "Gap quai vat" gan nhan SCARY_CONTENT (id 8) de thu loc danh sach chan.
 -- Hinh va audio la duong dan giu cho; Moderator thay bang duong dan that qua /api/v1/moderation/wish-cards.
 INSERT INTO wish_cards (

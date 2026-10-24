@@ -1,4 +1,4 @@
--- 69. story_wishes (3): dieu uoc mau cho Be uoc (WF-L2D).
+-- 71. story_wishes (3): dieu uoc mau cho Be uoc (WF-L2D).
 -- Child 1 (Be An): 1 dieu uoc dang cho va 1 dieu uoc da tu choi.
 -- Child 3: 1 dieu uoc da thanh truyen bang truyen co san (story 3).
 INSERT INTO story_wishes (

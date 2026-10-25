@@ -44,7 +44,41 @@ public class ChildReadingControllerTests
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Select(method => method.Name).OrderBy(name => name).ToArray();
 
-        Assert.Equal(new[] { "Complete", "GetContent", "GetDefinition", "GetSignal", "LogEvent", "SaveProgress", "SearchStories", "SetBookmark", "SetFavorite", "Start" }, methods);
+        Assert.Equal(new[] { "Complete", "GetContent", "GetDefinition", "GetSignal", "LogEvent", "SaveProgress", "SearchStories", "SetBookmark", "SetFavorite", "SetFeeling", "Start" }, methods);
+    }
+
+    [Fact]
+    public void SetFeeling_UsesDocumentedRoute()
+    {
+        Assert.Equal("sessions/{sessionId:int}/feeling",
+            typeof(ChildReadingController).GetMethod("SetFeeling")!.GetCustomAttribute<HttpPutAttribute>()!.Template);
+    }
+
+    [Fact]
+    public async Task SetFeeling_ForwardsTokenIdentitySessionAndRequest()
+    {
+        using var cts = new CancellationTokenSource();
+        var request = new SetFeelingRequestDto { Feeling = "Like" };
+        var expected = new ReadingFeelingDto { SessionId = 22, Feeling = "Like", Label = "Thích" };
+        _reading.Setup(r => r.SetFeelingAsync(100, 22, request, cts.Token)).ReturnsAsync(expected);
+        var controller = Controller(new Claim(ClaimTypes.NameIdentifier, "100"));
+
+        var result = await controller.SetFeeling(22, request, cts.Token);
+
+        var response = Assert.IsType<ApiResponse<ReadingFeelingDto>>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Same(expected, response.Data);
+        _reading.VerifyAll();
+    }
+
+    [Fact]
+    public async Task SetFeeling_MissingIdentity_DoesNotCallService()
+    {
+        var controller = Controller();
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            controller.SetFeeling(22, new SetFeelingRequestDto { Feeling = "Like" }, CancellationToken.None));
+
+        _reading.VerifyNoOtherCalls();
     }
 
     [Fact]

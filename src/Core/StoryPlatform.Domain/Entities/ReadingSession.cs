@@ -36,4 +36,7 @@ public class ReadingSession : BaseEntity
     /// <summary>Bước lộ trình mà phiên này ghi hoàn thành (WF-L4A UC-L4A-05); null khi đọc ngoài lộ trình.</summary>
     public int? ChildRoadmapItemId { get; set; }
     public virtual ChildRoadmapItem? ChildRoadmapItem { get; set; }
+
+    /// <summary>Cảm nhận trẻ chọn sau khi đọc xong; null = chưa chọn. Chỉ ghi lại, không có phản hồi.</summary>
+    public StoryFeeling? Feeling { get; set; }
 }

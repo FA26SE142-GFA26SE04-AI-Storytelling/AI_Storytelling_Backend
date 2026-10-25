@@ -13,15 +13,18 @@ public class ChildReadingService : IChildReadingService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IChildRoadmapEligibility _eligibility;
     private readonly IChildRoadmapProgressRecorder _recorder;
+    private readonly IChildRewardService _rewards;
 
     public ChildReadingService(
         IUnitOfWork unitOfWork,
         IChildRoadmapEligibility eligibility,
-        IChildRoadmapProgressRecorder recorder)
+        IChildRoadmapProgressRecorder recorder,
+        IChildRewardService rewards)
     {
         _unitOfWork = unitOfWork;
         _eligibility = eligibility;
         _recorder = recorder;
+        _rewards = rewards;
     }
 
     public async Task<ReadingSessionStartedDto> StartAsync(
@@ -400,6 +403,8 @@ public class ChildReadingService : IChildReadingService
             session.UpdatedAt = session.CompletedAt;
             _unitOfWork.Repository<ReadingSession>().Update(session);
             await AddTelemetryAsync(session.Id, TelemetryEventType.SessionCompleted, new { isRetake }, ct);
+            // Queue rewards in the same transaction before the roadmap recorder can commit it.
+            var reward = await _rewards.OnStoryCompletedAsync(session, isRetake, ct);
             await _unitOfWork.SaveChangesAsync(ct);
 
             // The recorder reuses this UOW transaction and may commit it. Queue all completion writes before it.
@@ -410,7 +415,9 @@ public class ChildReadingService : IChildReadingService
                 SessionId = session.Id,
                 StoryId = storyId,
                 IsRetake = isRetake,
-                RoadmapStepCompleted = step != null
+                RoadmapStepCompleted = step != null,
+                ExpGained = reward.ExpGained,
+                NewBadges = reward.NewBadgeCodes.ToList()
             };
         }
         catch
@@ -509,6 +516,38 @@ public class ChildReadingService : IChildReadingService
             await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
             throw;
         }
+    }
+
+    public async Task<ReadingFeelingDto> SetFeelingAsync(
+        int childProfileId, int sessionId, SetFeelingRequestDto request, CancellationToken ct = default)
+    {
+        if (!StoryFeelingLabels.TryParse(request.Feeling, out var feeling))
+        {
+            throw new BadRequestException(ChildReadingPolicy.FeelingChoiceMessage);
+        }
+
+        var session = await RequireSessionAsync(childProfileId, sessionId, ct);
+        if (session.ForceExitRequestedAt != null || session.Status == SessionStatus.ForceExited)
+        {
+            throw new ForbiddenException(ReadingSessionInterruptPolicy.ChildMessage);
+        }
+
+        if (session.Status != SessionStatus.Completed)
+        {
+            throw new ConflictException(ChildReadingPolicy.FeelingAfterReadingMessage);
+        }
+
+        session.Feeling = feeling;
+        session.UpdatedAt = DateTime.UtcNow;
+        _unitOfWork.Repository<ReadingSession>().Update(session);
+        await _unitOfWork.SaveChangesAsync(ct);
+
+        return new ReadingFeelingDto
+        {
+            SessionId = session.Id,
+            Feeling = feeling.ToString(),
+            Label = StoryFeelingLabels.Label(feeling)
+        };
     }
 
     public async Task<ForceExitSignalDto> GetSignalAsync(int childProfileId, int sessionId, CancellationToken ct = default)

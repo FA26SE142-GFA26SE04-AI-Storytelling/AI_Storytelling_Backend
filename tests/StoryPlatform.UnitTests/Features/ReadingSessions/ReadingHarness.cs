@@ -39,13 +39,46 @@ public sealed class ReadingHarness
     public readonly List<SafetyPolicy> Policies = new();
     public readonly List<SafetyPolicyCategory> PolicyCategories = new();
     public readonly List<StoryCategory> StoryCategories = new();
+    public readonly List<WishCard> WishCards = new();
+    public readonly List<ContentCategory> Categories = new();
+    public readonly List<StoryWish> StoryWishes = new();
+    public readonly List<SupervisionRelationship> Relationships = new();
+    public readonly List<SupervisionPermission> SupervisionPermissions = new();
+    public readonly List<UserAccount> Users = new();
 
+    public readonly List<StoryWishCardMatch> CardMatches = new();
+    public readonly List<StoryWishSuggestion> Suggestions = new();
+    public readonly List<LearningProfile> LearningProfiles = new();
+    public Story AddLibraryStory(int id, string title, DateTime? createdAt = null, int? readingLevel = null)
+    {
+        var story = new Story
+        {
+            Id = id, Title = title, Scope = StoryScope.Creator, AgeBand = "6-8", IsPublished = true,
+            Status = StoryStatus.Ready, AuthorUserId = 8, ReadingLevel = readingLevel,
+            CreatedAt = createdAt ?? DateTime.UtcNow.AddDays(-id), CoverImageUrl = $"https://cdn.test/cover-{id}.png"
+        };
+        Stories.Add(story);
+        return story;
+    }
+
+    public void Match(int storyId, params int[] cardIds)
+    {
+        foreach (var cardId in cardIds)
+        {
+            CardMatches.Add(new StoryWishCardMatch
+            {
+                Id = CardMatches.Count + 1, StoryId = storyId, WishCardId = cardId, Source = WishCardMatchSource.Moderator
+            });
+        }
+    }
     public ReadingHarness()
     {
+        Back(CardMatches); Back(Suggestions); Back(LearningProfiles);
         Back(Children); Back(ChildSessions); Back(Stories); Back(Versions); Back(Scenes); Back(Segments);
         Back(Assets); Back(Sessions); Back(Progress); Back(Vocabulary); Back(Notebook); Back(Telemetry);
         Back(Cases); Back(ModerationItems); Back(Quizzes); Back(Attempts); Back(Achievements); Back(Badges);
-        Back(Policies); Back(PolicyCategories); Back(StoryCategories);
+        Back(Policies); Back(PolicyCategories); Back(StoryCategories); Back(WishCards); Back(Categories);
+        Back(StoryWishes); Back(Relationships); Back(SupervisionPermissions); Back(Users);
 
         Children.Add(new ChildProfile
         {
@@ -143,6 +176,66 @@ public sealed class ReadingHarness
         };
         Cases.Add(holdCase);
         return holdCase;
+    }
+
+    public WishCard AddCard(
+        WishCardGroup group, string label, int sortOrder = 0, AgeBand? ageBand = null,
+        int? categoryId = null, bool isActive = true)
+    {
+        var card = new WishCard
+        {
+            Id = WishCards.Count + 1, Group = group, Label = label, ImageUrl = $"https://cdn.test/{WishCards.Count + 1}.png",
+            SortOrder = sortOrder, AgeBand = ageBand, ContentCategoryId = categoryId, IsActive = isActive
+        };
+        WishCards.Add(card);
+        return card;
+    }
+
+    public ContentCategory AddCategory(int id, string code, bool isActive = true)
+    {
+        var category = new ContentCategory { Id = id, Code = code, DisplayName = code, IsActive = isActive };
+        Categories.Add(category);
+        return category;
+    }
+
+    public UserAccount AddUser(int id, AccountStatus status = AccountStatus.Active)
+    {
+        var user = new UserAccount
+        {
+            Id = id,
+            Username = $"user_{id}",
+            Email = $"user_{id}@example.com",
+            FullName = $"User {id}",
+            Role = UserRole.Parent,
+            Status = status
+        };
+        Users.Add(user);
+        return user;
+    }
+
+    public SupervisionRelationship AddSupervisor(
+        int childId, int userId, SupervisorRole role, DateTime? revokedAt = null, params Permission[] permissions)
+    {
+        var relationship = new SupervisionRelationship
+        {
+            Id = Relationships.Count + 1,
+            ChildProfileId = childId,
+            SupervisorUserId = userId,
+            SupervisorRole = role,
+            RevokedAt = revokedAt
+        };
+        Relationships.Add(relationship);
+        foreach (var permission in permissions)
+        {
+            SupervisionPermissions.Add(new SupervisionPermission
+            {
+                Id = SupervisionPermissions.Count + 1,
+                SupervisionRelationshipId = relationship.Id,
+                Permission = permission
+            });
+        }
+
+        return relationship;
     }
 
     private void Back<T>(List<T> list) where T : BaseEntity

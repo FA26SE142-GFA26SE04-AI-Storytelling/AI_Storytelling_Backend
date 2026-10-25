@@ -43,6 +43,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<DateOnly?>("LastStreakDate")
+                        .HasColumnType("date");
+
                     b.Property<int>("StreakDays")
                         .HasColumnType("integer");
 
@@ -390,7 +393,8 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ChildProfileId");
+                    b.HasIndex("ChildProfileId", "BadgeCode")
+                        .IsUnique();
 
                     b.ToTable("badges", (string)null);
                 });
@@ -2532,6 +2536,10 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Feeling")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.Property<DateTime?>("ForceExitRequestedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -3843,6 +3851,205 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("story_vocabulary", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryWish", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("ChallengeCardId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("CharacterCardId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ChildProfileId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeclineReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("ExpiryWarnedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("FulfilledStoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("FulfilledWithExistingStory")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("GeneratedStoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("GenerationRequestId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int?>("LessonCardId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("LessonLeftToParent")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("PendingSince")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("PlaceCardId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ResolutionNote")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ResolvedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("SubmittedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChallengeCardId");
+
+                    b.HasIndex("CharacterCardId");
+
+                    b.HasIndex("ChildProfileId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_story_wishes_one_draft_per_child")
+                        .HasFilter("\"Status\" = 'Draft' AND \"IsDeleted\" = false");
+
+                    b.HasIndex("FulfilledStoryId");
+
+                    b.HasIndex("GeneratedStoryId");
+
+                    b.HasIndex("LessonCardId");
+
+                    b.HasIndex("PlaceCardId");
+
+                    b.HasIndex("Status", "PendingSince")
+                        .HasDatabaseName("IX_story_wishes_status_pending_since");
+
+                    b.HasIndex("ChildProfileId", "Status", "SubmittedAt")
+                        .HasDatabaseName("IX_story_wishes_child_status_submitted");
+
+                    b.ToTable("story_wishes", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryWishCardMatch", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("CreatedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("StoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("WishCardId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WishCardId");
+
+                    b.HasIndex("StoryId", "WishCardId")
+                        .IsUnique();
+
+                    b.ToTable("story_wish_card_matches", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryWishSuggestion", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("CommunitySubmissionId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("MatchedCardIds")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("Rank")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Score")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("StoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("StoryWishId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StoryId");
+
+                    b.HasIndex("StoryWishId", "Rank")
+                        .IsUnique();
+
+                    b.HasIndex("StoryWishId", "StoryId")
+                        .IsUnique();
+
+                    b.ToTable("story_wish_suggestions", (string)null);
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.SubscriptionPlan", b =>
                 {
                     b.Property<int>("Id")
@@ -4387,6 +4594,67 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("vocabulary_notebook_entries", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.WishCard", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AgeBand")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("AudioUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int?>("ContentCategoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("CreatedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Group")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("ImageUrl")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContentCategoryId");
+
+                    b.HasIndex("Group", "IsActive", "SortOrder");
+
+                    b.ToTable("wish_cards", (string)null);
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.Achievement", b =>
@@ -5794,6 +6062,97 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("StoryVersion");
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryWish", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.WishCard", "ChallengeCard")
+                        .WithMany()
+                        .HasForeignKey("ChallengeCardId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.WishCard", "CharacterCard")
+                        .WithMany()
+                        .HasForeignKey("CharacterCardId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
+                        .WithMany()
+                        .HasForeignKey("ChildProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.Story", "FulfilledStory")
+                        .WithMany()
+                        .HasForeignKey("FulfilledStoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.Story", "GeneratedStory")
+                        .WithMany()
+                        .HasForeignKey("GeneratedStoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.WishCard", "LessonCard")
+                        .WithMany()
+                        .HasForeignKey("LessonCardId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.WishCard", "PlaceCard")
+                        .WithMany()
+                        .HasForeignKey("PlaceCardId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ChallengeCard");
+
+                    b.Navigation("CharacterCard");
+
+                    b.Navigation("ChildProfile");
+
+                    b.Navigation("FulfilledStory");
+
+                    b.Navigation("GeneratedStory");
+
+                    b.Navigation("LessonCard");
+
+                    b.Navigation("PlaceCard");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryWishCardMatch", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.Story", "Story")
+                        .WithMany()
+                        .HasForeignKey("StoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.WishCard", "WishCard")
+                        .WithMany()
+                        .HasForeignKey("WishCardId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Story");
+
+                    b.Navigation("WishCard");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryWishSuggestion", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.Story", "Story")
+                        .WithMany()
+                        .HasForeignKey("StoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryWish", "StoryWish")
+                        .WithMany()
+                        .HasForeignKey("StoryWishId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Story");
+
+                    b.Navigation("StoryWish");
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.SupervisionInvitation", b =>
                 {
                     b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
@@ -5946,6 +6305,16 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("ChildProfile");
 
                     b.Navigation("StoryVocabulary");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.WishCard", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.ContentCategory", "ContentCategory")
+                        .WithMany()
+                        .HasForeignKey("ContentCategoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ContentCategory");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.AuthoringGuideCatalog", b =>

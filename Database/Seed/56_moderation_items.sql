@@ -1,4 +1,4 @@
--- 56. moderation_items (21): queue examples including the WF-L5A PublicStoryReview chain.
+-- 56. moderation_items (25): queue examples including the WF-L5A PublicStoryReview chain.
 INSERT INTO moderation_items (
     "Id", "ItemType", "Status", "Priority", "StoryId", "StoryVersionId",
     "CreatedByUserId", "SourceChildProfileId", "ClaimedByUserId", "ClaimedAt",
@@ -22,6 +22,7 @@ ON CONFLICT ("Id") DO NOTHING;
 -- WF-L5A Public Library review history.
 -- Story 13 stops at ChangesRequested so creator_demo can submit changed version 16.
 -- Story 14 already has a recent Pending resubmission (item 21), boosted for moderator_demo1 for 24 hours.
+-- Story 16 was approved (item 22) and has no open item, so creator_demo can request its removal.
 INSERT INTO moderation_items (
     "Id", "ItemType", "Status", "Priority", "StoryId", "StoryVersionId", "CreatedByUserId",
     "ClaimedByUserId", "ClaimedAt", "SlaDueAt", "Checklist", "ReviewProgress", "Feedback",
@@ -62,7 +63,44 @@ VALUES
     (21, 'PublicStoryReview', 'Pending', 'Medium', 14, 19, 13,
      NULL, NULL, NOW() + INTERVAL '71 hours', NULL, NULL, NULL, NULL,
      NULL, NULL, NULL, 20,
-     0, true, NOW() - INTERVAL '1 hour', false)
+     0, true, NOW() - INTERVAL '1 hour', false),
+    (22, 'PublicStoryReview', 'Approved', 'Medium', 16, 21, 13,
+     12, NOW() - INTERVAL '5 days' - INTERVAL '30 minutes', NOW() - INTERVAL '4 days',
+     '{"safety":true,"ageFit":true,"education":true,"language":true,"copyright":true,"image":true,"audio":true,"interaction":true}'::jsonb,
+     '{"viewed":{"scene":[21],"audio":[21]}}'::jsonb,
+     '{"general":"Đạt yêu cầu công khai"}'::jsonb, NULL,
+     12, NOW() - INTERVAL '5 days', NULL, NULL,
+     2, false, NOW() - INTERVAL '6 days', false),
+    (23, 'PublicStoryReview', 'Approved', 'Medium', 17, 22, 13,
+     12, NOW() - INTERVAL '9 days' - INTERVAL '30 minutes', NOW() - INTERVAL '8 days',
+     '{"safety":true,"ageFit":true,"education":true,"language":true,"copyright":true,"image":true,"audio":true,"interaction":true}'::jsonb,
+     '{"viewed":{"scene":[22],"audio":[22]}}'::jsonb,
+     '{"general":"Đạt yêu cầu công khai"}'::jsonb, NULL,
+     12, NOW() - INTERVAL '9 days', NULL, NULL,
+     2, false, NOW() - INTERVAL '10 days', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- Story 17: creator removal request approved by moderator_demo2, so the approved version may be revised.
+INSERT INTO moderation_items (
+    "Id", "ItemType", "Status", "Priority", "StoryId", "StoryVersionId", "CreatedByUserId",
+    "ClaimedByUserId", "ClaimedAt", "SlaDueAt", "Flags", "DecisionReason",
+    "DecidedByUserId", "DecidedAt", "RemovedAt", "RowVersion", "IsResubmission", "CreatedAt", "IsDeleted"
+)
+VALUES
+    (24, 'PublicStoryRemoval', 'Approved', 'Medium', 17, 22, 13,
+     12, NOW() - INTERVAL '2 days' - INTERVAL '30 minutes', NOW() - INTERVAL '1 day',
+     '{"requestReason":"Tôi muốn viết lại truyện này"}'::jsonb, 'Đồng ý theo yêu cầu của tác giả',
+     12, NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days', 2, false, NOW() - INTERVAL '3 days', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- Story 18: first submission still Pending and unclaimed, reserved for creator_demo's withdraw test.
+INSERT INTO moderation_items (
+    "Id", "ItemType", "Status", "Priority", "StoryId", "StoryVersionId", "CreatedByUserId",
+    "SlaDueAt", "RowVersion", "IsResubmission", "CreatedAt", "IsDeleted"
+)
+VALUES
+    (26, 'PublicStoryReview', 'Pending', 'Medium', 18, 23, 13,
+     NOW() + INTERVAL '71 hours', 0, false, NOW() - INTERVAL '30 minutes', false)
 ON CONFLICT ("Id") DO NOTHING;
 
 INSERT INTO moderation_items (

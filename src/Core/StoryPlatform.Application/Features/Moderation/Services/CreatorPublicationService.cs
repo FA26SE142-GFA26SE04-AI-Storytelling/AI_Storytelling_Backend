@@ -59,7 +59,7 @@ public sealed class CreatorPublicationService(IUnitOfWork uow, IModerationQueueS
                 item.ClaimedAt == null || item.ClaimedAt.Value.Add(ModerationQueuePolicy.ClaimTimeout) <= DateTime.UtcNow ||
                 item.RowVersion != input.RowVersion) throw new ConflictException("STALE_REMOVAL_DECISION");
             if (string.IsNullOrWhiteSpace(input.Reason) || input.Reason.Length > 2000) throw new BadRequestException("DECISION_REASON_REQUIRED");
-            var story = await uow.Repository<Story>().FirstOrDefaultAsync(x => x.Id == item.StoryId, cancellationToken: ct)
+            var story = await uow.Repository<Story>().GetByIdAsync(item.StoryId!.Value, ct)
                 ?? throw new NotFoundException("Story");
             var version = await Current(story.Id, ct);
             if (!story.IsPublished || version.Id != item.StoryVersionId) throw new ConflictException("STALE_PUBLISHED_VERSION");
@@ -159,8 +159,9 @@ public sealed class CreatorPublicationService(IUnitOfWork uow, IModerationQueueS
         var user = await uow.Repository<UserAccount>().FirstOrDefaultAsync(x => x.Id == userId, cancellationToken: ct);
         if (user == null || user.IsDeleted || user.Role != UserRole.ContentCreator || user.Status != AccountStatus.Active || user.LockedUntil > DateTime.UtcNow)
             throw new ForbiddenException();
-        var story = await uow.Repository<Story>().FirstOrDefaultAsync(x => x.Id == storyId && !x.IsDeleted, cancellationToken: ct);
-        if (story == null || story.Scope != StoryScope.Creator || story.AuthorUserId != userId) throw new NotFoundException("Story", storyId);
+        // Tracked load keeps the original AuthoringRevisionToken as the concurrency value when it is rotated below.
+        var story = await uow.Repository<Story>().GetByIdAsync(storyId, ct);
+        if (story == null || story.IsDeleted || story.Scope != StoryScope.Creator || story.AuthorUserId != userId) throw new NotFoundException("Story", storyId);
         return story;
     }
     private async Task EnsureNoOpenReview(int storyId, CancellationToken ct)

@@ -19,6 +19,51 @@ public sealed class ParentAssistanceTests
 {
     private const string Text = "Mi tìm thấy chiếc hộp. Mẹ cùng Mi sửa lại góc hộp.";
 
+    [Fact]
+    public async Task AI_content_review_uses_unsaved_snapshot_and_rejects_replaced_source_version()
+    {
+        var f = new Fixture(); var (draft, request) = await f.Draft();
+        var story = f.Store.Items<Story>().Single();
+        story.Source = StorySource.Ai; story.Status = StoryStatus.ContentReview;
+        f.Store.Items<StoryVersion>().Add(new() { Id = 12, StoryId = story.Id, IsCurrent = true, Title = "Bản lưu", Content = "Nội dung đã lưu" });
+        request = request with { BaseVersionId = 12 };
+        var task = await f.Service.CreateAsync(1, story.Id, request);
+        await f.Service.SuggestAsync(1, story.Id, task.TaskId, new() { OperationId = "ai-options", ExpectedTaskRevision = task.TaskRevision });
+        Assert.Equal(request.EditorSnapshot, f.Input!.Snapshot);
+        Assert.NotNull(f.Input.ChildPolicy);
+        Assert.Single(f.Store.Items<StoryVersion>());
+        f.Store.Items<StoryVersion>().Single().IsCurrent = false;
+        f.Store.Items<StoryVersion>().Add(new() { Id = 13, StoryId = story.Id, IsCurrent = true });
+        var stale = await f.Service.GetAsync(1, story.Id, task.TaskId);
+        Assert.True(stale.StoryContextStale);
+        var error = await Assert.ThrowsAsync<AssistanceException>(() => f.Service.DirectionAsync(1, story.Id, task.TaskId,
+            new() { OperationId = "stale-direction", ExpectedTaskRevision = stale.TaskRevision, OptionsStepId = stale.ActiveOptionsStepId!.Value, OptionId = "a" }));
+        Assert.Equal("EDITOR_CONTEXT_STALE", error.Code);
+    }
+
+    [Theory]
+    [InlineData(StoryStatus.MediaProcessing)]
+    [InlineData(StoryStatus.Ready)]
+    public async Task AI_assistance_does_not_reopen_finalized_pipeline(StoryStatus status)
+    {
+        var f = new Fixture(); var (draft, request) = await f.Draft();
+        var story = f.Store.Items<Story>().Single(); story.Source = StorySource.Ai; story.Status = status;
+        var error = await Assert.ThrowsAsync<AssistanceException>(() => f.Service.CreateAsync(1, draft.StoryId, request));
+        Assert.Equal("AI_STORY_NOT_EDITABLE", error.Code); Assert.Equal(0, f.Calls);
+    }
+
+    [Theory]
+    [InlineData(false, false, "CONSENT_REQUIRED")]
+    [InlineData(true, true, "GENERATION_JOB_ACTIVE")]
+    public async Task AI_assistance_preserves_consent_and_generation_guards(bool consent, bool running, string code)
+    {
+        var f = new Fixture(consent); var (draft, request) = await f.Draft();
+        var story = f.Store.Items<Story>().Single(); story.Source = StorySource.Ai; story.Status = StoryStatus.ContentReview;
+        if (running) f.Store.Items<StoryGenerationJob>().Add(new() { Id = 1, StoryId = story.Id, Status = GenerationJobStatus.Processing });
+        var error = await Assert.ThrowsAsync<AssistanceException>(() => f.Service.CreateAsync(1, draft.StoryId, request));
+        Assert.Equal(code, error.Code); Assert.Equal(0, f.Calls); Assert.Empty(f.Store.Items<StoryAssistanceTask>());
+    }
+
     private sealed class Fixture
     {
         public ParentAuthoringTestStore Store { get; } = new();

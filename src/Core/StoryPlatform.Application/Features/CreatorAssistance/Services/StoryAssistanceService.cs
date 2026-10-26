@@ -113,6 +113,7 @@ public partial class StoryAssistanceService(IUnitOfWork uow, ICreatorAssistanceA
         if (request.ParentTaskId is null || request.SourceReviewStepId is null || string.IsNullOrWhiteSpace(request.FindingId) || request.EntryPoint == "ReviewDraft")
             throw Fail("INVALID_REVIEW_REFERENCE", 400);
         var parent = await TaskRow(user, story.Id, request.ParentTaskId.Value, ct);
+        if (await SourceStale(parent, story, ct)) throw Fail("EDITOR_CONTEXT_STALE");
         await _access.ValidateContextAsync(story, AssistanceContextStorage.ServerContext(parent.ContextJson), ct);
         var step = await Step(parent.Id, request.SourceReviewStepId.Value, ct);
         var result = step.OutputJson is null ? null : Read<AssistanceAiResult>(step.OutputJson);
@@ -158,6 +159,15 @@ public partial class StoryAssistanceService(IUnitOfWork uow, ICreatorAssistanceA
         }, ct);
 
     private static void Key(string key) { if (string.IsNullOrWhiteSpace(key) || key.Length > 100) throw Fail("INVALID_OPERATION_ID", 400); }
+    private async Task<bool> SourceStale(StoryAssistanceTask task, Story story, CancellationToken ct)
+    {
+        if (task.SourceRevisionToken != story.AuthoringRevisionToken) return true;
+        // Workers may replace AI versions without passing through manual authoring.
+        if (story.Source != StorySource.Ai) return false;
+        var current = await uow.Repository<StoryVersion>().FirstOrDefaultAsync(
+            x => x.StoryId == story.Id && x.IsCurrent && !x.IsDeleted, cancellationToken: ct);
+        return current?.Id != task.SourceVersionId;
+    }
     private static void Page(int page, int size) { if (page < 1 || size is < 1 or > 100) throw Fail("INVALID_PAGE", 400); }
     private async Task<StoryAssistanceTask> TaskRow(int user, int story, int taskId, CancellationToken ct) =>
         await uow.Repository<StoryAssistanceTask>().FirstOrDefaultAsync(x => x.Id == taskId && x.StoryId == story && x.OwnerUserId == user && !x.IsDeleted,
@@ -201,7 +211,7 @@ public partial class StoryAssistanceService(IUnitOfWork uow, ICreatorAssistanceA
         try { await _access.ValidateContextAsync(story, AssistanceContextStorage.ServerContext(t.ContextJson), ct); }
         catch (AssistanceException) { audienceStale = true; }
         return new(t.Id, t.StoryId, t.EntryPoint, t.Status, t.TaskRevision, t.SourceVersionId, t.SourceRevisionToken, t.AudienceRevision,
-            t.SnapshotHash, context.EditorSnapshot, context.Target, t.SourceRevisionToken != story.AuthoringRevisionToken,
+            t.SnapshotHash, context.EditorSnapshot, context.Target, await SourceStale(t, story, ct),
             audienceStale, story.AuthoringRevisionToken, story.AudienceRevision,
             active is null ? null : new(active.OperationId, active.Id, active.Status, t.LeaseExpiresAt),
             t.ActiveClarificationStepId, t.AcceptedAnswerStepId, t.ActiveOptionsStepId, t.ActiveReviewStepId, t.ActiveDirectionStepId, t.ActiveTrialStepId,

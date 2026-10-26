@@ -16,10 +16,14 @@ public sealed class MediaGenerationOptions
     public string AlignmentEvaluator { get; set; } = "VertexAI";
     public string SafetyEvaluator { get; set; } = "VertexAI";
     public string LogLevel { get; set; } = "Summary";
-    public MediaBranchOptions Images { get; set; } = new() { Concurrency = 2 };
+    public MediaBranchOptions Images { get; set; } = new()
+    {
+        Concurrency = 2,
+        RateLimit = new() { RequestsPerMinute = 12, BurstSize = 1 }
+    };
     public MediaBranchOptions Audio { get; set; } = new();
     public int MaxConcurrentImagesPerStory { get; set; } = 2;
-    public bool ParallelImageEvaluation { get; set; }
+    public bool ParallelImageEvaluation { get; set; } = true;
 
     public CircuitBreakerConfig CircuitBreaker { get; set; } = new();
     public RateLimitConfig RateLimit { get; set; } = new();
@@ -29,6 +33,8 @@ public sealed class MediaBranchOptions
 {
     public int Concurrency { get; set; } = 1;
     public int ProviderTimeoutSeconds { get; set; } = 120;
+    public int QuotaRetryBaseDelaySeconds { get; set; } = 15;
+    public int QuotaRetryMaxDelaySeconds { get; set; } = 120;
     public CircuitBreakerConfig CircuitBreaker { get; set; } = new();
     public RateLimitConfig RateLimit { get; set; } = new();
 }

@@ -27,7 +27,6 @@ public sealed class ModerationRubricsController(ModerationRubricService service)
     public async Task<IActionResult> Validate(int id, RubricRevisionRequest request, CancellationToken ct) => HandleResult(await service.ValidateAsync(GetCurrentUserId(), id, request.Revision, ct)).Result!;
     [HttpPost("{id:int}/evaluations")]
     public async Task<IActionResult> Evaluate(int id, RubricEvaluationRequest request, CancellationToken ct) => HandleResult(await service.EvaluateAsync(GetCurrentUserId(), id, request, ct)).Result!;
-    [Authorize(Roles = "Administrator")]
     [HttpPost("{id:int}/activate")]
     public async Task<IActionResult> Activate(int id, RubricRevisionRequest request, CancellationToken ct) => HandleResult(await service.ActivateAsync(GetCurrentUserId(), id, request.Revision, ct)).Result!;
     [HttpGet("{id:int}/audit-logs")]

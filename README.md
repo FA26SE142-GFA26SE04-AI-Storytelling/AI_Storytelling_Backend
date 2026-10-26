@@ -1,4 +1,75 @@
 # AI Storytelling Platform for Children
+
+## Chạy local bằng Docker Compose và Google ADC
+
+Bộ local gồm PostgreSQL riêng, Core API (kèm worker), AI API và service `db-migrate` chạy khi được gọi rõ ràng. Không cần cài .NET SDK ở máy đồng đội; Dockerfile dùng .NET 10 và công cụ EF 8.0.13. Cần Docker Desktop/Engine đang chạy, Google Cloud CLI trên máy host và quyền gọi Vertex trong project của nhóm.
+
+### 1. Chuẩn bị thông tin riêng trên từng máy
+
+Chạy trên host, không chạy trong container:
+
+```text
+gcloud auth application-default login
+gcloud auth application-default set-quota-project YOUR_PROJECT_ID
+```
+
+Mỗi người dùng ADC của mình. Không chia sẻ file ADC, token hoặc private key qua Git/image. `gcloud auth login` riêng lẻ không thay thế việc tạo ADC. Quyền IAM/quota phải được cấp cho danh tính đang đăng nhập; cấu hình Compose không tự cấp quyền Google Cloud.
+
+PowerShell, tại thư mục repository:
+
+```powershell
+Copy-Item .env.docker.example .env.adc
+```
+
+Linux/macOS dùng `cp .env.docker.example .env.adc`. Sửa file `.env.adc` đã được Git bỏ qua:
+
+- Thay `POSTGRES_PASSWORD`, `JWT_SECRET_KEY` (ít nhất 32 ký tự) và `AI_INTERNAL_API_KEY` bằng giá trị local riêng.
+- Đặt `VERTEX_PROJECT_ID`, `VERTEX_LOCATION`, `VERTEX_TEXT_MODEL` theo project/model đã xác minh của nhóm.
+- Đặt `GOOGLE_ADC_FILE` là **đường dẫn tuyệt đối tới file trên host**. Windows ví dụ `C:/Users/YOUR_USER/AppData/Roaming/gcloud/application_default_credentials.json`; Linux/macOS thường là `$HOME/.config/gcloud/application_default_credentials.json` (thay `$HOME` bằng đường dẫn thực trong file env).
+- Linux: đặt `LOCAL_UID`, `LOCAL_GID` bằng kết quả `id -u`, `id -g`; giữ file ADC chỉ chủ sở hữu đọc được. Windows/macOS có thể giữ mặc định rồi kiểm tra quyền đọc của bind mount nếu gặp lỗi.
+- `GRAY_ZONE_WARNING_THRESHOLD=50`, `GRAY_ZONE_BLOCK_THRESHOLD=100` là ngưỡng **test local**, không phải chính sách production.
+- Đổi port nếu 5259/5260/5433 đang được dùng. Không dùng `localhost` làm địa chỉ Core gọi AI bên trong container: Compose đã đặt `http://ai-api:8080` và truyền cùng khóa nội bộ cho hai service.
+
+ADC được bind mount **read-only** vào `/run/google/adc.json` trên cả Core và AI. Không mount toàn bộ thư mục gcloud. `GOOGLE_APPLICATION_CREDENTIALS` trong container trỏ tới đường dẫn này; không trỏ tới đường dẫn Windows của host. Mount thiếu file sẽ báo lỗi, không tự tạo thư mục thay thế.
+
+### 2. Build và khởi tạo database khi chủ động yêu cầu
+
+Kiểm tra cấu hình mà không in secret:
+
+```text
+docker compose --env-file .env.adc -f compose.yaml -f compose.adc.yaml config --quiet
+docker compose --env-file .env.adc -f compose.yaml -f compose.adc.yaml build core-api ai-api db-migrate
+```
+
+Database Compose là database mới trong named volume, **không tự dùng database PostgreSQL đang chạy trên host**. Port mặc định trên host là 5433, còn nội bộ là `postgres:5432`. Lệnh sau có tác dụng ghi schema; chỉ chạy khi muốn khởi tạo/cập nhật database của bộ Compose:
+
+```text
+docker compose --env-file .env.adc -f compose.yaml -f compose.adc.yaml run --rm db-migrate
+docker compose --env-file .env.adc -f compose.yaml -f compose.adc.yaml up -d core-api ai-api
+```
+
+Core không tự chạy migration hoặc sửa migration history khi khởi động. Không chạy `down -v` để dừng thông thường vì tùy chọn đó xóa volume database.
+
+Nếu cần **dữ liệu demo trên database riêng vừa khởi tạo**, chủ động đặt `SEED_DATA_RUN_ON_STARTUP=true` trong `.env.adc`, khởi động Core một lần, đợi log hoàn tất seed, rồi đặt lại `false` và recreate Core. Đây là thao tác ghi dữ liệu; không dùng để ghi đè database có dữ liệu thật. Compose cũng tắt seeder hướng dẫn Parent mặc định qua `AuthoringGuides__SeedOnStartup=false`; ngoài Compose, hành vi mặc định của ứng dụng vẫn được giữ. Chỉ có schema chưa đủ để gọi toàn bộ luồng AI: cần tài khoản, prompt catalog, rubric đã kích hoạt, hồ sơ trẻ/consent và safety policy tương ứng.
+
+### 3. Kiểm tra và kết nối frontend
+
+```text
+docker compose --env-file .env.adc -f compose.yaml -f compose.adc.yaml ps
+docker compose --env-file .env.adc -f compose.yaml -f compose.adc.yaml logs --tail=100 core-api ai-api
+```
+
+- Core Swagger: `http://localhost:5259/index.html`; frontend gọi API tại `http://localhost:5259`.
+- AI Swagger: `http://localhost:5260/swagger`; frontend gọi nghiệp vụ qua Core.
+- `/health` chỉ chứng minh ứng dụng đang phản hồi; không chứng minh ADC có quyền gọi model hoặc sinh media thành công.
+- `MEDIA_WORKER_ENABLED=false` mặc định. Muốn kiểm thử Phase 5, cấu hình storage riêng và model ảnh/TTS phù hợp trước khi bật. Một số helper media còn ghim model trong source; `VERTEX_TEXT_MODEL` chưa thay thế tất cả model trong Phase 5. Vì vậy cần kiểm thử riêng ảnh/audio, không suy từ text AI thành công rằng media cũng đạt.
+- Container có thể tự làm mới access token từ ADC; nếu credential bị thu hồi hoặc cần đăng nhập lại, chạy lại lệnh ADC trên host và recreate Core/AI để nạp credential mới.
+- Chỉ chạy AI API khi debug: `docker compose --env-file .env.adc -f compose.yaml -f compose.adc.yaml up -d --build ai-api`.
+- Dừng: `docker compose --env-file .env.adc -f compose.yaml -f compose.adc.yaml down`.
+
+Lỗi thường gặp: `401` nội bộ → kiểm tra khóa Core/AI; credential not found → kiểm tra file mount/quyền đọc; `403` provider → kiểm tra danh tính/quyền/quota project; `404` provider → kiểm tra model/location; `429` → kiểm tra quota và giảm tải. Không gửi file ADC, JWT hoặc log chứa secret khi trao đổi lỗi.
+
+Tham khảo chính thức: [ADC cho local](https://docs.cloud.google.com/docs/authentication/set-up-adc-local-dev-environment), [chạy container local với ADC](https://docs.cloud.google.com/run/docs/testing/local).
 ### Nền tảng kể chuyện thông minh cho trẻ em
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?style=flat&logo=dotnet)](https://dotnet.microsoft.com/)

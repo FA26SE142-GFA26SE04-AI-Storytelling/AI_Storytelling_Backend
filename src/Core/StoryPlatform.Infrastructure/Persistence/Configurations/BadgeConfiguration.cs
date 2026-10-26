@@ -21,6 +21,9 @@ public class BadgeConfiguration : IEntityTypeConfiguration<Badge>
             .HasForeignKey(x => x.ChildProfileId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasIndex(x => new { x.ChildProfileId, x.BadgeCode })
+            .IsUnique();
+
         builder.HasQueryFilter(x => !x.IsDeleted);
     }
 }

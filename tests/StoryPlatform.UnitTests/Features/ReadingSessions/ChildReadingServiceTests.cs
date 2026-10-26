@@ -7,6 +7,7 @@ using StoryPlatform.Application.Features.ChildRoadmaps;
 using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
 using StoryPlatform.Application.Features.ChildRoadmaps.Services;
 using StoryPlatform.Application.Features.ReadingSessions.Services;
+using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Application.Features.ReadingSessions;
 using StoryPlatform.Domain.Enums;
@@ -67,13 +68,16 @@ public class ChildReadingServiceTests
     private readonly ReadingHarness _h = new();
     private readonly Mock<IChildRoadmapEligibility> _eligibility = new();
     private readonly Mock<IChildRoadmapProgressRecorder> _recorder = new();
+    private readonly Mock<IChildRewardService> _rewards = new();
     private readonly ChildReadingService _sut;
 
     public ChildReadingServiceTests()
     {
         _eligibility.Setup(e => e.EvaluateAsync(It.IsAny<ChildProfile>(), It.IsAny<Story?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((ChildRoadmapSkipReason?)null);
-        _sut = new ChildReadingService(_h.UnitOfWork.Object, _eligibility.Object, _recorder.Object);
+        _rewards.Setup(r => r.OnStoryCompletedAsync(It.IsAny<ReadingSession>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(RewardOutcome.None);
+        _sut = new ChildReadingService(_h.UnitOfWork.Object, _eligibility.Object, _recorder.Object, _rewards.Object);
     }
 
     private static StartReadingRequestDto Start(int storyId = ReadingHarness.Story) =>
@@ -280,7 +284,7 @@ public class ChildReadingServiceTests
             StoryId = ReadingHarness.Story, StoryVersionId = ReadingHarness.Version
         });
         var service = new ChildReadingService(_h.UnitOfWork.Object,
-            new ChildRoadmapEligibility(_h.UnitOfWork.Object), _recorder.Object);
+            new ChildRoadmapEligibility(_h.UnitOfWork.Object), _recorder.Object, _rewards.Object);
         var request = new StartReadingRequestDto { CommunitySubmissionId = 5 };
 
         if (denied)
@@ -336,7 +340,7 @@ public class ChildReadingServiceTests
         _h.RoadmapItems.Add(new ChildRoadmapItem { Id = 7, ChildProfileId = ReadingHarness.Child,
             StoryId = story.Id, Source = ChildRoadmapItemSource.Manual, Status = status });
         var service = new ChildReadingService(_h.UnitOfWork.Object,
-            new ChildRoadmapEligibility(_h.UnitOfWork.Object), _recorder.Object);
+            new ChildRoadmapEligibility(_h.UnitOfWork.Object), _recorder.Object, _rewards.Object);
         if (allowed)
             Assert.Equal(story.Id, (await service.StartAsync(ReadingHarness.Child, ReadingHarness.SessionKey, Start())).StoryId);
         else
@@ -538,6 +542,149 @@ public class ChildReadingServiceTests
 
         Assert.True(property.IsNullable);
         Assert.Equal(30, property.GetMaxLength());
+    }
+
+    [Fact]
+    public void ReadingSession_MapsNullableFeelingAsStringWithMaxLength20()
+    {
+        var model = new ModelBuilder();
+        new ReadingSessionConfiguration().Configure(model.Entity<ReadingSession>());
+
+        var property = model.Model.FindEntityType(typeof(ReadingSession))!.FindProperty(nameof(ReadingSession.Feeling))!;
+
+        Assert.True(property.IsNullable);
+        Assert.Equal(20, property.GetMaxLength());
+        Assert.Equal(typeof(string), property.GetProviderClrType());
+    }
+
+    [Theory]
+    [InlineData(StoryFeeling.VeryLike, "Rất thích")]
+    [InlineData(StoryFeeling.Like, "Thích")]
+    [InlineData(StoryFeeling.Neutral, "Bình thường")]
+    [InlineData(StoryFeeling.Dislike, "Chưa thích")]
+    public void StoryFeelingLabels_UseTheDocumentedVietnameseNames(StoryFeeling feeling, string expected)
+    {
+        Assert.Equal(expected, StoryFeelingLabels.Label(feeling));
+    }
+
+    [Theory]
+    [InlineData("VeryLike", StoryFeeling.VeryLike)]
+    [InlineData("verylike", StoryFeeling.VeryLike)]
+    [InlineData(" Like ", StoryFeeling.Like)]
+    [InlineData("NEUTRAL", StoryFeeling.Neutral)]
+    [InlineData("Dislike", StoryFeeling.Dislike)]
+    public void StoryFeelingLabels_TryParse_AcceptsNamesIgnoringCase(string text, StoryFeeling expected)
+    {
+        Assert.True(StoryFeelingLabels.TryParse(text, out var feeling));
+        Assert.Equal(expected, feeling);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("Love")]
+    [InlineData("1")]
+    [InlineData("0")]
+    [InlineData("99")]
+    public void StoryFeelingLabels_TryParse_RejectsUnknownTextAndNumbers(string? text)
+    {
+        Assert.False(StoryFeelingLabels.TryParse(text, out _));
+    }
+
+    // ---- SetFeelingAsync ----
+
+    [Fact]
+    public async Task SetFeelingAsync_FinishedSession_StoresAndEchoesTheFeeling()
+    {
+        var session = _h.AddSession(SessionStatus.Completed);
+
+        var result = await _sut.SetFeelingAsync(ReadingHarness.Child, session.Id,
+            new SetFeelingRequestDto { Feeling = "VeryLike" });
+
+        Assert.Equal(StoryFeeling.VeryLike, session.Feeling);
+        Assert.Equal(session.Id, result.SessionId);
+        Assert.Equal("VeryLike", result.Feeling);
+        Assert.Equal("Rất thích", result.Label);
+    }
+
+    [Fact]
+    public async Task SetFeelingAsync_ChoosingAgain_ReplacesTheEarlierChoice()
+    {
+        var session = _h.AddSession(SessionStatus.Completed);
+
+        await _sut.SetFeelingAsync(ReadingHarness.Child, session.Id, new SetFeelingRequestDto { Feeling = "Like" });
+        var second = await _sut.SetFeelingAsync(ReadingHarness.Child, session.Id, new SetFeelingRequestDto { Feeling = "dislike" });
+
+        Assert.Equal(StoryFeeling.Dislike, session.Feeling);
+        Assert.Equal("Chưa thích", second.Label);
+    }
+
+    [Fact]
+    public async Task SetFeelingAsync_GivesNoRewardAndTouchesNoRoadmap()
+    {
+        var session = _h.AddSession(SessionStatus.Completed);
+
+        await _sut.SetFeelingAsync(ReadingHarness.Child, session.Id, new SetFeelingRequestDto { Feeling = "Like" });
+
+        Assert.Empty(_h.Telemetry);
+        _recorder.Verify(r => r.RecordSessionCompletedAsync(
+            It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("Love")]
+    [InlineData("99")]
+    public async Task SetFeelingAsync_UnknownFeeling_IsBadRequestAndStoresNothing(string? feeling)
+    {
+        var session = _h.AddSession(SessionStatus.Completed);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.SetFeelingAsync(ReadingHarness.Child, session.Id, new SetFeelingRequestDto { Feeling = feeling }));
+
+        Assert.Null(session.Feeling);
+    }
+
+    [Theory]
+    [InlineData(SessionStatus.Started)]
+    [InlineData(SessionStatus.Reading)]
+    [InlineData(SessionStatus.Activity)]
+    [InlineData(SessionStatus.Abandoned)]
+    public async Task SetFeelingAsync_SessionNotFinished_IsConflict(SessionStatus status)
+    {
+        var session = _h.AddSession(status);
+
+        var error = await Assert.ThrowsAsync<ConflictException>(() =>
+            _sut.SetFeelingAsync(ReadingHarness.Child, session.Id, new SetFeelingRequestDto { Feeling = "Like" }));
+
+        Assert.Equal(ChildReadingPolicy.FeelingAfterReadingMessage, error.Message);
+        Assert.Null(session.Feeling);
+    }
+
+    [Fact]
+    public async Task SetFeelingAsync_AnotherChildsSession_IsNotFound()
+    {
+        var session = _h.AddSession(SessionStatus.Completed, childId: ReadingHarness.OtherChild);
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            _sut.SetFeelingAsync(ReadingHarness.Child, session.Id, new SetFeelingRequestDto { Feeling = "Like" }));
+
+        Assert.Null(session.Feeling);
+    }
+
+    [Fact]
+    public async Task SetFeelingAsync_InterruptedSession_IsForbiddenWithFriendlyMessage()
+    {
+        var session = _h.AddSession(SessionStatus.Completed);
+        session.ForceExitRequestedAt = DateTime.UtcNow;
+
+        var error = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.SetFeelingAsync(ReadingHarness.Child, session.Id, new SetFeelingRequestDto { Feeling = "Like" }));
+
+        Assert.Equal(ReadingSessionInterruptPolicy.ChildMessage, error.Message);
+        Assert.Null(session.Feeling);
     }
 
     [Theory]
@@ -898,7 +1045,7 @@ public class ChildReadingServiceTests
         var recorder = new ChildRoadmapProgressRecorder(_h.UnitOfWork.Object,
             new ChildRoadmapAdvancer(_h.UnitOfWork.Object, _eligibility.Object),
             Mock.Of<IChildRoadmapNotifier>(), Mock.Of<IAuditLogWriter>());
-        var service = new ChildReadingService(_h.UnitOfWork.Object, _eligibility.Object, recorder);
+        var service = new ChildReadingService(_h.UnitOfWork.Object, _eligibility.Object, recorder, _rewards.Object);
 
         var result = await service.CompleteAsync(ReadingHarness.Child, session.Id);
         var completedAt = session.CompletedAt;
@@ -1221,5 +1368,58 @@ public class ChildReadingServiceTests
                 EventType = "TtsStarted",
                 Payload = new string('x', ChildReadingPolicy.MaxEventPayloadLength + 1)
             }));
+    }
+    // ---- Thưởng khi hoàn thành ----
+
+    [Fact]
+    public async Task CompleteAsync_FirstRead_AsksForRewardAndReportsIt()
+    {
+        var session = _h.AddSession();
+        _rewards.Setup(r => r.OnStoryCompletedAsync(session, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RewardOutcome(10, new[] { "FIRST_STORY_COMPLETED" }));
+
+        var result = await _sut.CompleteAsync(ReadingHarness.Child, session.Id);
+
+        Assert.Equal(10, result.ExpGained);
+        Assert.Equal(new[] { "FIRST_STORY_COMPLETED" }, result.NewBadges);
+        _rewards.Verify(r => r.OnStoryCompletedAsync(session, false, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_Retake_AsksForRewardWithRetakeFlag()
+    {
+        _h.AddSession(SessionStatus.Completed);
+        var second = _h.AddSession(SessionStatus.Reading);
+
+        await _sut.CompleteAsync(ReadingHarness.Child, second.Id);
+
+        _rewards.Verify(r => r.OnStoryCompletedAsync(second, true, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_CalledAgain_DoesNotRewardAgain()
+    {
+        var session = _h.AddSession();
+
+        await _sut.CompleteAsync(ReadingHarness.Child, session.Id);
+        var again = await _sut.CompleteAsync(ReadingHarness.Child, session.Id);
+
+        Assert.Equal(0, again.ExpGained);
+        _rewards.Verify(r => r.OnStoryCompletedAsync(
+            It.IsAny<ReadingSession>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_RewardFailure_RollsBack()
+    {
+        var session = _h.AddSession();
+        _rewards.Setup(r => r.OnStoryCompletedAsync(It.IsAny<ReadingSession>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("reward"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.CompleteAsync(ReadingHarness.Child, session.Id));
+
+        _h.UnitOfWork.Verify(u => u.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _recorder.Verify(r => r.RecordSessionCompletedAsync(
+            It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

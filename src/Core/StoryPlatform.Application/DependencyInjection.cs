@@ -65,6 +65,10 @@ using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 using StoryPlatform.Application.Features.ReadingSessions.Services;
 using StoryPlatform.Application.Features.CommunityLibrary.Interfaces;
 using StoryPlatform.Application.Features.CommunityLibrary.Services;
+using StoryPlatform.Application.Features.WishCards.Interfaces;
+using StoryPlatform.Application.Features.WishCards.Services;
+using StoryPlatform.Application.Features.StoryWishes.Interfaces;
+using StoryPlatform.Application.Features.StoryWishes.Services;
 
 namespace StoryPlatform.Application;
 
@@ -133,6 +137,17 @@ public static class DependencyInjection
         services.AddScoped<IMyRoadmapService, MyRoadmapService>();
         services.AddScoped<IChildStoryBrowseService, ChildStoryBrowseService>();
         services.AddScoped<IChildReadingService, ChildReadingService>();
+        services.AddScoped<IWishCardManagementService, WishCardManagementService>();
+        services.AddScoped<IChildWishCardService, ChildWishCardService>();
+        services.AddScoped<IStoryWishNotifier, StoryWishNotifier>();
+        services.AddScoped<IWishCardMatchService, WishCardMatchService>();
+        services.AddScoped<IStoryWishSuggestionService, StoryWishSuggestionService>();
+        services.AddScoped<IStoryWishService, StoryWishService>();
+        services.AddScoped<IParentStoryWishService, ParentStoryWishService>();
+        services.AddScoped<IStoryWishSweepService, StoryWishSweepService>();
+        services.AddScoped<IChildRewardService, ChildRewardService>();
+        services.AddScoped<IParentReadingFeedbackService, ParentReadingFeedbackService>();
+        services.AddScoped<IChildQuizService, ChildQuizService>();
         services.AddScoped<IChildNotebookService, ChildNotebookService>();
         services.AddScoped<IRoadmapLibraryService, RoadmapLibraryService>();
         services.AddScoped<IPublishedContentReviewService, PublishedContentReviewService>();

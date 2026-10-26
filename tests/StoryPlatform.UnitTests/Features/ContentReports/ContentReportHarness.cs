@@ -2,7 +2,6 @@ using System.Linq.Expressions;
 using Moq;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
-using StoryPlatform.Application.Features.Moderation.Interfaces;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -24,7 +23,6 @@ public sealed class ContentReportHarness
     public readonly Mock<IUnitOfWork> UnitOfWork = new();
     public readonly Mock<IAuditLogWriter> Audit = new();
     public readonly Mock<INotificationService> Notifications = new();
-    public readonly Mock<IModerationReviewViewService> ReviewViews = new();
 
     public readonly List<UserAccount> Users = new();
     public readonly List<Story> Stories = new();

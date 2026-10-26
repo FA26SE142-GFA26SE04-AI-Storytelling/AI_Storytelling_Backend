@@ -62,6 +62,18 @@ public sealed class LearningBatchProcessor(IUnitOfWork uow, IAIStoryGenerationCl
             var token = batch.ConcurrencyToken;
             var timer = Stopwatch.StartNew();
             var request = JsonSerializer.Deserialize<LearningBatchRequest>(batch.RequestJson, LearningBatchService.Json)!;
+            // Keep the pinned request immutable. Add only allowlisted feedback to this attempt's copy.
+            var validationCode = LearningValidationFeedback.Normalize(batch.ErrorCode);
+            if (validationCode is not null)
+                request = request with
+                {
+                    Vocabulary = request.Vocabulary is null ? null : request.Vocabulary with
+                    { Batch = request.Vocabulary.Batch! with { ValidationErrorCode = validationCode } },
+                    Quiz = request.Quiz is null ? null : request.Quiz with
+                    { Batch = request.Quiz.Batch! with { ValidationErrorCode = validationCode,
+                        RequiredQuestionTypes = validationCode == "QUIZ_VALIDATION_FAILED" && request.Quiz.Batch!.RequiredQuestionTypes.Count == 0
+                            ? LearningBatchSpec.QuizTypesForBatch(request.Quiz.Batch.Kind, request.Quiz.Batch.TargetCount) : request.Quiz.Batch!.RequiredQuestionTypes } }
+                };
             string? code = null;
             try
             {
@@ -71,16 +83,19 @@ public sealed class LearningBatchProcessor(IUnitOfWork uow, IAIStoryGenerationCl
                 if (request.Vocabulary is { } vocabulary)
                 {
                     var response = await ai.GenerateVocabularyAsync(vocabulary, timeout.Token);
-                    LearningArtifactGrounding.Vocabulary(vocabulary.Story, response.Items, vocabulary.Batch!, response.ShortfallReason);
-                    ValidateSafety(string.Join(' ', response.Items.Select(x => $"{x.Term} {x.Definition} {x.SourceQuote} {x.Example}")), request);
+                    var fitted = LearningArtifactGrounding.Vocabulary(vocabulary.Story, response.Items, vocabulary.Batch!, response.ShortfallReason);
+                    // Persist the anchored form: grounding may have snapped a near-miss quote onto the verbatim passage.
+                    response = response with { Items = fitted };
+                    ValidateSafety(string.Join(' ', fitted.Select(x => $"{x.Term} {x.Definition} {x.SourceQuote} {x.Example}")), request);
                     result = JsonSerializer.Serialize(response, LearningBatchService.Json); reason = response.ShortfallReason;
                 }
                 else
                 {
                     var quiz = request.Quiz!;
                     var response = await ai.GenerateQuizAsync(quiz, timeout.Token);
-                    LearningArtifactGrounding.Quiz(quiz.Story, response.Items, quiz.Batch!, response.ShortfallReason, quiz.Vocabulary);
-                    ValidateSafety(string.Join(' ', response.Items.Select(x => $"{x.Question} {x.CorrectAnswer} {x.Explanation} {x.Hint} {string.Join(' ', x.Options)} {string.Join(' ', x.OptionFeedback)}")), request);
+                    var fitted = LearningArtifactGrounding.Quiz(quiz.Story, response.Items, quiz.Batch!, response.ShortfallReason, quiz.Vocabulary);
+                    response = response with { Items = fitted };
+                    ValidateSafety(string.Join(' ', fitted.Select(x => $"{x.Question} {x.CorrectAnswer} {x.Explanation} {x.Hint} {string.Join(' ', x.Options)} {string.Join(' ', x.OptionFeedback)}")), request);
                     result = JsonSerializer.Serialize(response, LearningBatchService.Json); reason = response.ShortfallReason;
                 }
                 timeout.Token.ThrowIfCancellationRequested();
@@ -100,10 +115,12 @@ public sealed class LearningBatchProcessor(IUnitOfWork uow, IAIStoryGenerationCl
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
-                code = ex is AIServiceRequestException remote ? remote.ErrorCode : ex is JsonException ? "LEARNING_OUTPUT_INVALID" :
+                code = ex is AIServiceRequestException remote ? remote.ValidationCode ?? remote.ErrorCode :
+                    ex is JsonException json ? LearningValidationFeedback.Normalize(json.Message) ?? "LEARNING_JSON_INVALID" :
                     ex is OperationCanceledException or TimeoutException ? "LEARNING_TIMEOUT" : "LEARNING_BATCH_FAILED";
-                var retryable = ex is JsonException or HttpRequestException or TimeoutException or OperationCanceledException ||
-                    ex is AIServiceRequestException remoteError && remoteError.StatusCode is 408 or 429 or >= 500;
+                var retryable = !IsDeterministicFailure(ex) &&
+                    (ex is JsonException or HttpRequestException or TimeoutException or OperationCanceledException ||
+                    ex is AIServiceRequestException remoteError && remoteError.StatusCode is 408 or 429 or >= 500);
                 await uow.BeginTransactionAsync(ct);
                 try
                 {
@@ -116,6 +133,11 @@ public sealed class LearningBatchProcessor(IUnitOfWork uow, IAIStoryGenerationCl
                     fresh.LeaseExpiresAt = null;
                     var delay = TimeSpan.FromSeconds(Math.Max(0, options.BaseRetryDelaySeconds) * Math.Pow(2, fresh.AttemptCount - 1));
                     if (ex is AIServiceRequestException { RetryAfter: { } after } && after > delay) delay = after;
+                    // A 429 without a provider hint means the quota window is still open; a delay measured in
+                    // seconds would retry straight back into it and burn every remaining attempt.
+                    if (code == "AI_PROVIDER_429" && options.QuotaRetryFloorSeconds > 0 &&
+                        delay < TimeSpan.FromSeconds(options.QuotaRetryFloorSeconds))
+                        delay = TimeSpan.FromSeconds(options.QuotaRetryFloorSeconds);
                     fresh.NextAttemptAt = fresh.Status == GenerationJobStatus.Pending ? DateTime.UtcNow.Add(delay) : null;
                     uow.Repository<LearningArtifactGenerationBatch>().Update(fresh);
                     await uow.CommitTransactionAsync(ct);
@@ -133,6 +155,16 @@ public sealed class LearningBatchProcessor(IUnitOfWork uow, IAIStoryGenerationCl
     }
 
     private Task<T?> Fresh<T>(int id, CancellationToken ct) where T : BaseEntity => uow.Repository<T>().FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted, cancellationToken: ct);
+
+    /// <summary>
+    /// Some failures are facts about the request, not transient provider conditions: retrying reproduces them
+    /// and each retry spends provider quota. These fail the batch immediately instead of consuming attempts.
+    /// </summary>
+    private static bool IsDeterministicFailure(Exception exception) => exception switch
+    {
+        AIServiceRequestException { ErrorCode: "AI_OUTPUT_TRUNCATED" or "AI_PROVIDER_CONFIGURATION_REJECTED" } => true,
+        _ => false
+    };
     private async Task Rollback(CancellationToken ct) { try { await uow.RollbackTransactionAsync(ct); } finally { uow.DiscardTrackedChanges(); } }
     private async Task<LearningArtifactGenerationBatch> RequireClaimAsync(int id, string token, CancellationToken ct)
     {

@@ -16,12 +16,24 @@ public sealed record LearningGenerationProfile(int TargetWords, int MinimumWords
 
 public sealed record LearningBatchSpec
 {
+    public static IReadOnlyList<string> QuizTypesForBatch(string kind, int count) => count >= 3
+        ? ["multiple_choice", "true_false", "short_answer"]
+        : kind switch
+        {
+            "quiz_facts" => ["multiple_choice"],
+            "quiz_reasoning" => ["short_answer"],
+            "quiz_vocabulary" => ["true_false"],
+            _ => []
+        };
     public string Kind { get; init; } = "vocabulary";
     public int TargetCount { get; init; }
     public int BatchNumber { get; init; }
     public IReadOnlyList<string> ExcludedQuestions { get; init; } = [];
+    public IReadOnlyList<string> RequiredQuestionTypes { get; init; } = [];
     public bool RequireEvidence { get; init; } = true;
     public int TechnicalAttempts { get; init; } = 1;
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? ValidationErrorCode { get; init; }
 }
 
 /// <summary>Same Unicode lexical-unit count on Core and AI; not linguistic Vietnamese segmentation.</summary>

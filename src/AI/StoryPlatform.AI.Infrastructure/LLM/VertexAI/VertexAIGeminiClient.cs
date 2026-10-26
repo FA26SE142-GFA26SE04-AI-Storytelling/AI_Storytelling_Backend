@@ -25,6 +25,14 @@ public sealed class VertexAIGeminiClient : ILlmClient
     public VertexAIGeminiClient(
         IOptions<VertexAIOptions> options,
         ILogger<VertexAIGeminiClient> logger)
+        : this(options, logger, null)
+    {
+    }
+
+    internal VertexAIGeminiClient(
+        IOptions<VertexAIOptions> options,
+        ILogger<VertexAIGeminiClient> logger,
+        Client? client)
     {
         _options = options.Value;
         _logger = logger;
@@ -50,7 +58,7 @@ public sealed class VertexAIGeminiClient : ILlmClient
             throw new InvalidOperationException("AI:Google:Model is not configured.");
         }
 
-        _client = new Client(
+        _client = client ?? new Client(
             project: _options.ProjectId,
             location: _options.Location,
             vertexAI: true);
@@ -114,12 +122,29 @@ public sealed class VertexAIGeminiClient : ILlmClient
             }
 
             var candidate = response.Candidates[0];
-            var content = ExtractOutputText(candidate)
-                          ?? throw new InvalidOperationException(
-                              "Vertex AI response did not contain structured output text.");
+            // A truncated candidate is a capacity symptom, not corrupt model output. Reading the usage numbers
+            // below is what settles whether the output budget is actually the constraint.
+            var finishReason = candidate.FinishReason?.Value;
+            var truncated = string.Equals(finishReason, "MAX_TOKENS", StringComparison.OrdinalIgnoreCase);
+            var content = ExtractOutputText(candidate) ?? (truncated ? string.Empty : throw new InvalidOperationException(
+                "Vertex AI response did not contain structured output text."));
             var modelVersion = response.ModelVersion ?? _options.Model;
             var inputTokens = response.UsageMetadata?.PromptTokenCount ?? 0;
             var outputTokens = response.UsageMetadata?.CandidatesTokenCount ?? 0;
+            // Thinking tokens bill as output but are absent from CandidatesTokenCount, so a quota complaint can
+            // never be settled from the two headline numbers alone.
+            var thoughtsTokens = response.UsageMetadata?.ThoughtsTokenCount ?? 0;
+            var totalTokens = response.UsageMetadata?.TotalTokenCount ?? inputTokens + outputTokens + thoughtsTokens;
+
+            if (truncated)
+            {
+                _logger.LogWarning(
+                    "Vertex response hit the output token limit. Model={Model}, SchemaName={SchemaName}, " +
+                    "FinishReason={FinishReason}, MaxOutputTokens={MaxOutputTokens}, InputTokens={InputTokens}, " +
+                    "OutputTokens={OutputTokens}, ThoughtsTokens={ThoughtsTokens}, ContentLength={ContentLength}",
+                    _options.Model, schemaName, finishReason, config.MaxOutputTokens,
+                    inputTokens, outputTokens, thoughtsTokens, content.Length);
+            }
 
             result = new LlmGenerationResult(
                 content,
@@ -134,12 +159,21 @@ public sealed class VertexAIGeminiClient : ILlmClient
             _logger.LogInformation(
                 "Vertex request completed. " +
                 "Model={Model}, SchemaName={SchemaName}, LatencyMs={LatencyMs}, " +
-                "InputTokens={InputTokens}, OutputTokens={OutputTokens}, Status=Success",
+                "InputTokens={InputTokens}, OutputTokens={OutputTokens}, ThoughtsTokens={ThoughtsTokens}, " +
+                "TotalTokens={TotalTokens}, FinishReason={FinishReason}, Status=Success",
                 _options.Model,
                 schemaName,
                 result.LatencyMs,
                 result.InputTokens,
-                result.OutputTokens);
+                result.OutputTokens,
+                thoughtsTokens,
+                totalTokens,
+                finishReason);
+
+            // Truncated JSON cannot be salvaged, and repeating the request under the same ceiling truncates
+            // again. Fail fast, after the numbers are logged, so the attempt budget is not spent re-earning it.
+            if (truncated) throw new LlmOutputTruncatedException(
+                $"Vertex AI stopped at the output token limit (MaxOutputTokens={config.MaxOutputTokens}) for schema '{schemaName}'.");
 
             // Log full response in Debug mode
             if (!IsSensitiveSchema(schemaName)) _logger.LogDebug(
@@ -148,6 +182,11 @@ public sealed class VertexAIGeminiClient : ILlmClient
                 content.Length,
                 content);
         }
+        catch (LlmOutputTruncatedException)
+        {
+            // Preserve the capacity signal for middleware and Core's non-retryable classification.
+            throw;
+        }
         catch (Exception ex)
         {
             stopwatch.Stop();
@@ -155,13 +194,19 @@ public sealed class VertexAIGeminiClient : ILlmClient
             var statusCode = GetStatusCode(ex);
             if (IsSensitiveSchema(schemaName))
             {
+                var retryAfter = GetRetryAfter(ex);
                 if (ex is OperationCanceledException && cancellationToken.IsCancellationRequested)
                     _logger.LogInformation("Sensitive AI provider call cancelled by caller. TraceId={TraceId}, SchemaName={SchemaName}, LatencyMs={LatencyMs}", Activity.Current?.TraceId.ToString(), schemaName, stopwatch.ElapsedMilliseconds);
                 else
-                    _logger.LogWarning("Sensitive AI provider failed. TraceId={TraceId}, SchemaName={SchemaName}, LatencyMs={LatencyMs}, StatusCode={StatusCode}, ErrorType={ErrorType}", Activity.Current?.TraceId.ToString(), schemaName, stopwatch.ElapsedMilliseconds, statusCode, ex.GetType().Name);
+                    _logger.LogWarning("Sensitive AI provider failed. TraceId={TraceId}, SchemaName={SchemaName}, LatencyMs={LatencyMs}, StatusCode={StatusCode}, ErrorType={ErrorType}, RetryAfterSeconds={RetryAfterSeconds}, QuotaMetric={QuotaMetric}, QuotaValue={QuotaValue}", Activity.Current?.TraceId.ToString(), schemaName, stopwatch.ElapsedMilliseconds, statusCode, ex.GetType().Name, retryAfter?.TotalSeconds, GetQuotaHint(ex, "quotaMetric") ?? GetQuotaHint(ex, "quotaId"), GetQuotaHint(ex, "quotaValue"));
                 if (ex is OperationCanceledException or TimeoutException) throw;
                 if (statusCode is 408 or 504) throw new TimeoutException("Sensitive AI provider timed out.");
-                throw new HttpRequestException("Sensitive AI provider failed.", null, statusCode.HasValue ? (HttpStatusCode)statusCode.Value : null);
+                var failure = new HttpRequestException("Sensitive AI provider failed.", null, statusCode.HasValue ? (HttpStatusCode)statusCode.Value : null);
+                // The retry owner (Core) must know how long the provider asked us to wait, otherwise it retries
+                // straight back into the same quota window and burns its attempt budget.
+                if (retryAfter is { } delay)
+                    failure.Data[RetryAfterSecondsKey] = delay.TotalSeconds;
+                throw failure;
             }
             if (statusCode is 408 or 429 || statusCode >= 500)
             {
@@ -169,20 +214,27 @@ public sealed class VertexAIGeminiClient : ILlmClient
                     ex,
                     "Vertex request encountered a transient provider error. " +
                     "Model={Model}, SchemaName={SchemaName}, LatencyMs={LatencyMs}, " +
-                    "Status=RetryableError, StatusCode={StatusCode}, ErrorType={ErrorType}",
+                    "Status=RetryableError, StatusCode={StatusCode}, ErrorType={ErrorType}, " +
+                    "QuotaMetric={QuotaMetric}, QuotaValue={QuotaValue}, RetryAfterSeconds={RetryAfterSeconds}",
                     _options.Model,
                     schemaName,
                     stopwatch.ElapsedMilliseconds,
                     statusCode,
-                    ex.GetType().Name);
+                    ex.GetType().Name,
+                    GetQuotaHint(ex, "quotaMetric") ?? GetQuotaHint(ex, "quotaId"),
+                    GetQuotaHint(ex, "quotaValue"),
+                    GetRetryAfter(ex)?.TotalSeconds);
 
                 // Google.GenAI.ClientError exposes its own integer StatusCode while its
                 // HttpRequestException.StatusCode can be null. Normalize the SDK error so
                 // provider-agnostic retry policies can reliably recognize 408/429/5xx.
-                throw new HttpRequestException(
+                var failure = new HttpRequestException(
                     ex.Message,
                     ex,
                     (HttpStatusCode)statusCode.Value);
+                if (GetRetryAfter(ex) is { } delay)
+                    failure.Data[RetryAfterSecondsKey] = delay.TotalSeconds;
+                throw failure;
             }
 
             // Structured error logging
@@ -212,6 +264,51 @@ public sealed class VertexAIGeminiClient : ILlmClient
         HttpRequestException { StatusCode: not null } httpError => (int)httpError.StatusCode.Value,
         _ => null
     };
+
+    /// <summary>
+    /// Name of the <see cref="Exception.Data"/> entry that carries the provider-requested backoff
+    /// (in seconds) across the AI service boundary.
+    /// </summary>
+    public const string RetryAfterSecondsKey = "RetryAfterSeconds";
+
+    private static TimeSpan? GetRetryAfter(Exception exception)
+    {
+        // The Google.GenAI SDK surfaces the provider payload in the exception message. Only the retry
+        // hint is read from it; nothing from the provider body is logged or returned to the caller.
+        return ParseSeconds(exception.Message, "retryDelay");
+    }
+
+    /// <summary>
+    /// Reads a named provider hint ("retryDelay", "quotaValue", ...) from the error payload the SDK embeds in the
+    /// exception message. These fields are what identify a quota breach as a quota breach, so they must be
+    /// observable without dumping the whole body.
+    /// </summary>
+    private static string? GetQuotaHint(Exception exception, string field)
+    {
+        // The value runs until a closing quote, comma or brace; it is only for logging, so a coarse match is fine.
+        var pattern = "\"" + System.Text.RegularExpressions.Regex.Escape(field) + "\"\\s*:\\s*\"?(?<value>[^,\"}]+)";
+        var match = System.Text.RegularExpressions.Regex.Match(exception.Message, pattern,
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        var value = match.Success ? match.Groups["value"].Value.Trim() : null;
+        return string.IsNullOrWhiteSpace(value) || value.Length > 200 ? null : value;
+    }
+
+    private static TimeSpan? ParseSeconds(string? message, string field)
+    {
+        if (string.IsNullOrWhiteSpace(message) || message.IndexOf(field, StringComparison.OrdinalIgnoreCase) < 0)
+        {
+            return null;
+        }
+
+        var match = System.Text.RegularExpressions.Regex.Match(
+            message,
+            "\"" + System.Text.RegularExpressions.Regex.Escape(field) + @"""\s*:\s*""(?<value>[0-9.]+)s""",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        return match.Success && double.TryParse(match.Groups["value"].Value, System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var seconds) && seconds > 0
+            ? TimeSpan.FromSeconds(seconds)
+            : null;
+    }
 
     private static Schema BuildSchema(JsonElement schema)
     {

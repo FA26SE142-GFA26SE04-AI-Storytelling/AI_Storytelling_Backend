@@ -10,6 +10,22 @@ namespace StoryPlatform.UnitTests;
 
 public sealed class AIStoryGenerationClientTests
 {
+    [Theory]
+    [InlineData("QUIZ_OPTIONS_INVALID", "QUIZ_OPTIONS_INVALID")]
+    [InlineData("private provider text", null)]
+    public async Task Output_error_preserves_only_known_validation_codes(string code, string? expected)
+    {
+        var handler = new StubHandler(new HttpResponseMessage(HttpStatusCode.BadGateway)
+        {
+            Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(new
+            { errorCode = "AI_OUTPUT_INVALID", error = "Generated learning output failed validation.", validationCode = code }), Encoding.UTF8, "application/json")
+        });
+        var client = new AIStoryGenerationClient(new HttpClient(handler), Options.Create(new AIServiceOptions()));
+        var exception = await Assert.ThrowsAsync<AIServiceRequestException>(() => client.GenerateQuizAsync(new()));
+        Assert.Equal("AI_OUTPUT_INVALID", exception.ErrorCode);
+        Assert.Equal(expected, exception.ValidationCode);
+    }
+
     [Fact]
     public async Task GenerateOutline_with_valid_response_returns_outline()
     {

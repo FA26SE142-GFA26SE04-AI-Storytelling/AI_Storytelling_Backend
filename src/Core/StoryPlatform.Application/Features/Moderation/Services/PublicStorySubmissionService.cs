@@ -168,7 +168,8 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
     {
         var actor = await RequireCreatorAsync(actorUserId, cancellationToken);
         var itemRepository = _unitOfWork.Repository<ModerationItem>();
-        var item = await itemRepository.FirstOrDefaultAsync(x => x.Id == itemId, cancellationToken: cancellationToken)
+        // Tracked load keeps the original RowVersion as the concurrency value when it is bumped below.
+        var item = await itemRepository.GetByIdAsync(itemId, cancellationToken)
                    ?? throw new NotFoundException("Mục kiểm duyệt", itemId);
 
         if (item.ItemType != ModerationItemType.PublicStoryReview)

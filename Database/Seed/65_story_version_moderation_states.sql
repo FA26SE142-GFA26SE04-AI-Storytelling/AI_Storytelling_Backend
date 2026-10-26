@@ -1,4 +1,5 @@
 -- 65. story_version_moderation_states: one row per seeded content version.
+-- Version 19 (item 21) carries two review flags (pii-1, safety-1) so flags/resolve can be tested.
 INSERT INTO story_version_moderation_states (
     "StoryVersionId", "ModerationZone", "GrayZoneFlags", "GrayZoneCleared", "GrayZoneClearedByUserId", "GrayZoneClearedAt", "ReviewStatus", "ReviewSubmittedAt", "ReviewedByUserId", "ReviewedAt", "ReviewFeedback"
 )
@@ -22,7 +23,10 @@ VALUES
     (17, NULL, NULL, false, NULL, NULL, 'Approved', NOW() - INTERVAL '8 days', 12, NOW() - INTERVAL '7 days', '{"general":"Đạt yêu cầu công khai"}'::jsonb),
     (18, NULL, NULL, false, NULL, NULL, 'ChangesRequested', NOW() - INTERVAL '1 day', 11, NOW() - INTERVAL '6 hours', '{"general":"Thay chi tiết lửa bằng nguồn sáng an toàn"}'::jsonb),
     (19, NULL, NULL, false, NULL, NULL, 'Pending', NOW() - INTERVAL '1 hour', NULL, NULL, NULL),
-    (20, NULL, NULL, false, NULL, NULL, 'None', NULL, NULL, NULL, NULL)
+    (20, NULL, NULL, false, NULL, NULL, 'None', NULL, NULL, NULL, NULL),
+    (21, NULL, NULL, false, NULL, NULL, 'Approved', NOW() - INTERVAL '6 days', 12, NOW() - INTERVAL '5 days', '{"general":"Đạt yêu cầu công khai"}'::jsonb),
+    (22, NULL, NULL, false, NULL, NULL, 'Approved', NOW() - INTERVAL '10 days', 12, NOW() - INTERVAL '9 days', '{"general":"Đạt yêu cầu công khai"}'::jsonb),
+    (23, NULL, NULL, false, NULL, NULL, 'Pending', NOW() - INTERVAL '30 minutes', NULL, NULL, NULL)
 ON CONFLICT ("StoryVersionId") DO NOTHING;
 
 UPDATE story_version_moderation_states
@@ -48,6 +52,11 @@ SET "ModerationZone" = 'GrayZone', "GrayZoneFlags" = '{"sections":["ending"],"re
     "ReviewedByUserId" = 12, "ReviewedAt" = NOW() - INTERVAL '20 days' + INTERVAL '90 minutes',
     "ReviewFeedback" = '{"ending":"Adjusted wording for age group"}'::jsonb
 WHERE "StoryVersionId" = 6 AND "ReviewStatus" = 'None';
+
+-- Applied as an UPDATE so re-running the seed also adds the flags to an existing database.
+UPDATE story_version_moderation_states
+SET "GrayZoneFlags" = '{"flags":[{"id":"pii-1","kind":"pii","name":"An","reason":"Tên riêng có thể là thông tin cá nhân của trẻ","startOffset":0,"endOffset":2,"evidenceQuote":"An","category":"safety"},{"id":"safety-1","kind":"safety","name":"Ngọn đèn","reason":"Kiểm tra lại chi tiết dùng đèn sau lần yêu cầu sửa","startOffset":7,"endOffset":23,"evidenceQuote":"ngọn đèn an toàn","category":"safety"}]}'::jsonb
+WHERE "StoryVersionId" = 19 AND "GrayZoneFlags" IS NULL;
 
 UPDATE story_version_moderation_states
 SET "ReviewStatus" = 'Rejected', "ReviewedByUserId" = 11,

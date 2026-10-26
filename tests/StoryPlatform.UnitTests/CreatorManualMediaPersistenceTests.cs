@@ -36,6 +36,8 @@ public sealed class CreatorManualMediaPersistenceTests
             foreach (var type in types) b.Entity(type).HasKey("Id");
             b.Entity<StoryGenerationJob>().HasIndex(x => x.OperationKey).IsUnique();
             b.Entity<StoryGenerationJob>().Property(x => x.ConcurrencyToken).IsConcurrencyToken();
+            b.Entity<Story>().Property(x => x.AuthoringRevisionToken).IsConcurrencyToken();
+            b.Entity<ModerationItem>().Property(x => x.RowVersion).IsConcurrencyToken();
             new StoryPlatform.Infrastructure.Persistence.Configurations.StoryVersionConfiguration().Configure(b.Entity<StoryVersion>());
             new StoryPlatform.Infrastructure.Persistence.Configurations.StoryAuthoringOperationConfiguration().Configure(b.Entity<StoryAuthoringOperation>());
             new StoryPlatform.Infrastructure.Persistence.Configurations.MediaAssetConfiguration().Configure(b.Entity<MediaAsset>());
@@ -254,6 +256,110 @@ public sealed class CreatorManualMediaPersistenceTests
         db.StoryAuthoringOperations.Add(new() { StoryId = wrongStory ? 2 : 1, StoryVersionId = 10, ActorUserId = 1,
             Kind = "save-manual", OperationId = wrongStory ? "save-3" : "save-1", RequestHash = "other", OperationResponseJson = "{}" });
         await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task RevisionAfterApprovedRemovalPersistsWithStoryRevisionToken()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new Db(new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        db.Users.Add(new() { Id = 1, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
+        db.Stories.Add(new()
+        {
+            Id = 1, AuthorUserId = 1, Scope = StoryScope.Creator, Source = StorySource.Manual, Status = StoryStatus.Ready,
+            OutputMode = StoryOutputMode.ReadingMediaOnly, AuthoringRevisionToken = "rev1"
+        });
+        db.StoryVersions.Add(new()
+        {
+            Id = 10, StoryId = 1, VersionNo = 1, IsCurrent = true, Title = "Rùa đúng hẹn", Content = "Rùa giữ lời hứa.",
+            AuthoringMetadata = new StoryVersionAuthoringMetadata { SourceDeclaration = "Tự viết", RightsDeclaration = "Tôi có quyền" },
+            Moderation = new() { ReviewStatus = VersionReviewStatus.Approved }
+        });
+        db.Set<ModerationItem>().Add(new()
+        {
+            Id = 1, ItemType = ModerationItemType.PublicStoryRemoval, Status = ModerationItemStatus.Approved,
+            StoryId = 1, StoryVersionId = 10, CreatedByUserId = 1, RemovedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync(); db.ChangeTracker.Clear();
+        await using var real = new UnitOfWork(db);
+        var uow = new Mock<IUnitOfWork>();
+        void Register<T>() where T : class => uow.Setup(x => x.Repository<T>()).Returns(real.Repository<T>());
+        void Empty<T>() where T : class
+        {
+            var repository = new Mock<IGenericRepository<T>>();
+            repository.Setup(x => x.FindAsync(It.IsAny<System.Linq.Expressions.Expression<Func<T, bool>>>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(Array.Empty<T>());
+            uow.Setup(x => x.Repository<T>()).Returns(repository.Object);
+        }
+        Register<UserAccount>(); Register<Story>(); Register<StoryVersion>(); Register<ModerationItem>();
+        Empty<StoryVocabulary>(); Empty<QuizItem>(); Empty<DiscussionQuestion>();
+        uow.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.SaveChangesAsync(ct));
+        uow.Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.BeginTransactionAsync(ct));
+        uow.Setup(x => x.CommitTransactionAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.CommitTransactionAsync(ct));
+        uow.Setup(x => x.RollbackTransactionAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.RollbackTransactionAsync(ct));
+        uow.Setup(x => x.AcquireTransactionLockAsync(It.IsAny<int>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var service = new CreatorPublicationService(uow.Object,
+            new Mock<StoryPlatform.Application.Features.Moderation.Interfaces.IModerationQueueService>().Object, new Mock<IAuditLogWriter>().Object);
+
+        var result = await service.CreateRevisionAsync(1, 1, new() { SourceVersionId = 10 });
+
+        db.ChangeTracker.Clear();
+        var story = await db.Stories.SingleAsync();
+        Assert.Equal(StoryStatus.Draft, story.Status);
+        Assert.Equal(result.RevisionToken, story.AuthoringRevisionToken);
+        Assert.NotEqual("rev1", story.AuthoringRevisionToken);
+        Assert.Equal(result.VersionId, (await db.StoryVersions.SingleAsync(x => x.IsCurrent)).Id);
+    }
+
+    [Fact]
+    public async Task PublicStoryWithdrawPersistsWithModerationRowVersion()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new Db(new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        db.Users.Add(new() { Id = 1, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
+        db.Stories.Add(new()
+        {
+            Id = 1, AuthorUserId = 1, Scope = StoryScope.Creator, Source = StorySource.Manual, Status = StoryStatus.Ready,
+            OutputMode = StoryOutputMode.ReadingMediaOnly, AuthoringRevisionToken = "rev1"
+        });
+        db.StoryVersions.Add(new()
+        {
+            Id = 10, StoryId = 1, VersionNo = 1, IsCurrent = true, Title = "Hạt giống", Content = "Lan gieo hạt.",
+            AuthoringMetadata = new StoryVersionAuthoringMetadata { SourceDeclaration = "Tự viết", RightsDeclaration = "Tôi có quyền" },
+            Moderation = new() { ReviewStatus = VersionReviewStatus.Pending, ReviewSubmittedAt = DateTime.UtcNow }
+        });
+        db.Set<ModerationItem>().Add(new()
+        {
+            Id = 1, ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.Pending,
+            StoryId = 1, StoryVersionId = 10, CreatedByUserId = 1, RowVersion = 0
+        });
+        await db.SaveChangesAsync(); db.ChangeTracker.Clear();
+        await using var real = new UnitOfWork(db);
+        var uow = new Mock<IUnitOfWork>();
+        void Register<T>() where T : class => uow.Setup(x => x.Repository<T>()).Returns(real.Repository<T>());
+        Register<UserAccount>(); Register<Story>(); Register<StoryVersion>(); Register<ModerationItem>();
+        uow.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.SaveChangesAsync(ct));
+        uow.Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.BeginTransactionAsync(ct));
+        uow.Setup(x => x.CommitTransactionAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.CommitTransactionAsync(ct));
+        uow.Setup(x => x.RollbackTransactionAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.RollbackTransactionAsync(ct));
+        uow.Setup(x => x.AcquireTransactionLockAsync(It.IsAny<int>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var service = new PublicStorySubmissionService(uow.Object,
+            new Mock<StoryPlatform.Application.Features.Moderation.Interfaces.IModerationQueueService>().Object,
+            new Mock<StoryPlatform.Application.Features.MediaGeneration.Interfaces.IMediaReadinessService>().Object,
+            new Mock<IAuditLogWriter>().Object);
+
+        await service.WithdrawAsync(1, 1);
+
+        db.ChangeTracker.Clear();
+        var item = await db.Set<ModerationItem>().SingleAsync();
+        Assert.Equal(ModerationItemStatus.Withdrawn, item.Status);
+        Assert.Equal(1, item.RowVersion);
+        Assert.NotNull(item.WithdrawnAt);
+        Assert.Equal(VersionReviewStatus.None, (await db.StoryVersions.SingleAsync()).Moderation.ReviewStatus);
     }
 
 }

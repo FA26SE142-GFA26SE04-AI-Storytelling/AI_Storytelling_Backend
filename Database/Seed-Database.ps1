@@ -173,9 +173,14 @@ function Assert-EfModelSeedCoverage {
         throw "Khong tim thay EF model snapshot de kiem tra coverage: $SnapshotPath"
     }
 
+    # Hai bang nay duoc AuthoringGuideCatalogSeeder nap luc ung dung khoi dong (JSON nhung),
+    # khong qua file seed SQL. Giu dong bo voi SeedDataAlignmentTests.seededByCode.
+    $seededByCode = @('authoring_guide_catalog_versions', 'authoring_guide_catalogs')
+
     $snapshot = [System.IO.File]::ReadAllText($SnapshotPath)
     $mappedTables = @([regex]::Matches($snapshot, '\.ToTable\("(?<table>[a-z][a-z0-9_]*)"') |
         ForEach-Object { $_.Groups['table'].Value } |
+        Where-Object { $_ -notin $seededByCode } |
         Sort-Object -Unique)
 
     if ($mappedTables.Count -eq 0) {

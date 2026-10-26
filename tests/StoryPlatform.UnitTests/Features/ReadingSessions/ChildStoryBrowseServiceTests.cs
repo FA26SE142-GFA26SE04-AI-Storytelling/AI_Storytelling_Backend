@@ -62,6 +62,21 @@ public class ChildStoryBrowseServiceTests
     }
 
     [Fact]
+    public async Task SearchAsync_IncludesParentSelectedSiblingStoryOfAnotherAge_OnlyWhileAssigned()
+    {
+        var story = _h.Stories.Single(); story.ChildProfileId = ReadingHarness.OtherChild; story.AgeBand = "9-10";
+        var selection = new ChildRoadmapItem { Id = 7, ChildProfileId = ReadingHarness.Child,
+            StoryId = story.Id, Source = ChildRoadmapItemSource.Manual, Status = ChildRoadmapItemStatus.Waiting };
+        _h.RoadmapItems.Add(selection);
+        var service = new ChildStoryBrowseService(_h.UnitOfWork.Object,
+            new StoryPlatform.Application.Features.ChildRoadmaps.Services.ChildRoadmapEligibility(_h.UnitOfWork.Object));
+        var page = await service.SearchAsync(ReadingHarness.Child, new ChildStoryQueryDto { Source = "mine" });
+        Assert.Contains(page.Items, item => item.StoryId == story.Id);
+        selection.Status = ChildRoadmapItemStatus.Removed;
+        Assert.Empty((await service.SearchAsync(ReadingHarness.Child, new ChildStoryQueryDto())).Items);
+    }
+
+    [Fact]
     public async Task SearchAsync_FiltersByTitleAndSource()
     {
         AddCreatorStory(20, "Chú thỏ con");

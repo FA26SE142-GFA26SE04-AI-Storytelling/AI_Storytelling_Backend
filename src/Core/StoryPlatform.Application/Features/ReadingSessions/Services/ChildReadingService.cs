@@ -2,6 +2,7 @@ using System.Text.Json;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
+using StoryPlatform.Application.Features.ChildRoadmaps.Services;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -157,7 +158,8 @@ public class ChildReadingService : IChildReadingService
         else
         {
             story = await _unitOfWork.Repository<Story>().GetByIdAsync(request.StoryId!.Value, ct);
-            if (story != null && story.Scope == StoryScope.Parent && story.ChildProfileId != childProfileId)
+            if (story != null && story.Scope == StoryScope.Parent && story.ChildProfileId != childProfileId
+                && !await ParentStorySelection.ExistsAsync(_unitOfWork, childProfileId, story.Id, ct))
             {
                 story = null;
             }

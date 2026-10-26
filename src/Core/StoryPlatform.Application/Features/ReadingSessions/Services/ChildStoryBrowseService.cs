@@ -1,6 +1,7 @@
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
+using StoryPlatform.Application.Features.ChildRoadmaps.Services;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 using StoryPlatform.Application.Features.RoadmapTemplates;
 using StoryPlatform.Domain.Entities;
@@ -52,6 +53,11 @@ public class ChildStoryBrowseService : IChildStoryBrowseService
         var search = query.Search?.Trim().ToLowerInvariant();
         var wantMine = source != LibrarySource;
         var wantLibrary = source != MineSource;
+        var selected = await _unitOfWork.Repository<ChildRoadmapItem>().FindAsync(item => !item.IsDeleted
+            && item.ChildProfileId == childProfileId && item.Source == ChildRoadmapItemSource.Manual
+            && (item.Status == ChildRoadmapItemStatus.Waiting || item.Status == ChildRoadmapItemStatus.Open
+                || item.Status == ChildRoadmapItemStatus.Completed), cancellationToken: cancellationToken);
+        var selectedIds = selected.Select(item => item.StoryId).Distinct().ToArray();
 
         var (rows, total) = await _unitOfWork.Repository<Story>().GetPagedAsync(
             pageIndex,
@@ -59,9 +65,9 @@ public class ChildStoryBrowseService : IChildStoryBrowseService
             story => !story.IsDeleted
                      && story.Status == StoryStatus.Ready
                      && story.ArchivedAt == null
-                     && story.AgeBand == age
-                     && ((wantMine && story.Scope == StoryScope.Parent && story.ChildProfileId == childProfileId)
-                         || (wantLibrary && story.Scope == StoryScope.Creator && story.IsPublished))
+                     && (story.AgeBand == age || selectedIds.Contains(story.Id))
+                     && ((wantMine && ((story.Scope == StoryScope.Parent && story.ChildProfileId == childProfileId) || selectedIds.Contains(story.Id)))
+                         || (wantLibrary && story.Scope == StoryScope.Creator && story.IsPublished && story.AgeBand == age))
                      && (search == null || search == string.Empty
                          || (story.Title != null && story.Title.ToLower().Contains(search))),
             orderBy: stories => stories.OrderByDescending(story => story.CreatedAt).ThenByDescending(story => story.Id),
@@ -81,7 +87,7 @@ public class ChildStoryBrowseService : IChildStoryBrowseService
                 Title = story.Title ?? string.Empty,
                 CoverImageUrl = story.CoverImageUrl,
                 Description = story.Description,
-                Source = story.Scope == StoryScope.Parent ? MineSource : LibrarySource
+                Source = story.Scope == StoryScope.Parent || selectedIds.Contains(story.Id) ? MineSource : LibrarySource
             });
         }
 

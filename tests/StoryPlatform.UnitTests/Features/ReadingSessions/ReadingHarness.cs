@@ -21,6 +21,7 @@ public sealed class ReadingHarness
     public readonly List<ChildProfile> Children = new();
     public readonly List<ChildSession> ChildSessions = new();
     public readonly List<Story> Stories = new();
+    public readonly List<ChildRoadmapItem> RoadmapItems = new();
     public readonly List<StoryVersion> Versions = new();
     public readonly List<StoryScene> Scenes = new();
     public readonly List<StorySegment> Segments = new();
@@ -45,7 +46,7 @@ public sealed class ReadingHarness
         Back(Children); Back(ChildSessions); Back(Stories); Back(Versions); Back(Scenes); Back(Segments);
         Back(Assets); Back(Sessions); Back(Progress); Back(Vocabulary); Back(Notebook); Back(Telemetry);
         Back(Cases); Back(ModerationItems); Back(Quizzes); Back(Attempts); Back(Achievements); Back(Badges);
-        Back(Policies); Back(PolicyCategories); Back(StoryCategories);
+        Back(Policies); Back(PolicyCategories); Back(StoryCategories); Back(RoadmapItems);
 
         Children.Add(new ChildProfile
         {

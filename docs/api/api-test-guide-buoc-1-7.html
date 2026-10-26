@@ -148,6 +148,12 @@
 <script>
 // ---------- DỮ LIỆU ----------
 // t: kind = ok | neg | edge ; e = kết quả mong đợi
+// Cảnh báo dùng chung cho các API chỉ chạy khi mục đang do chính người gọi claim (còn hạn 2 giờ).
+const CLAIM_WARN = (claimUrl, denied, expired) => `PHẢI CLAIM MỤC TRƯỚC: gọi ${claimUrl} bằng CHÍNH tài khoản sẽ gọi API này, rồi gọi API trong vòng 2 giờ kể từ lúc claim (token hết hạn thì đăng nhập lại: lỗi đó là 401). Chưa claim, claim bằng tài khoản khác hoặc mục đã được quyết định → ${denied}. Claim quá 2 giờ → ${expired}; khi đó claim lại (nếu claim trả 409 vì tác vụ quét chưa trả mục về Pending thì chờ lượt quét kế tiếp, hoặc đặt lại "Status" = 'Pending', "ClaimedByUserId" = NULL, "ClaimedAt" = NULL cho mục đó trong bảng moderation_items).`;
+const OWN_DENIED = '403 "Bạn chỉ được đọc mục đang do chính mình nhận."';
+const OWN_EXPIRED = '409 "Mục đã quá 2 giờ kể từ lúc nhận và sẽ được trả về hàng đợi. Vui lòng nhận lại."';
+const ACT_DENIED = '403 "Bạn chỉ được thao tác trên mục đang do chính mình nhận."';
+const ACT_EXPIRED = '403 "Lượt nhận mục đã quá 2 giờ; hãy nhận lại mục từ hàng đợi."';
 const STEPS = [
 {
   id: "b1", title: "Bước 1 — Hàng đợi kiểm duyệt (ModerationQueue)",
@@ -167,6 +173,7 @@ const STEPS = [
     ] },
   { m: "POST", p: "/api/v1/ModerationQueue/{itemId}/claim", role: "Moderator, Administrator",
     what: "Nhận một mục để xử lý. Mục chuyển Claimed và thuộc về người nhận trong 2 giờ. Người tạo mục không nhận được mục của mình.",
+    warn: "Claim chỉ nhận mục đang Pending. Seed có 2 mục Claimed mà lượt nhận đã quá 2 giờ ngay khi nạp: mục 1 (GrayZoneStory, nhận 4 giờ trước) và mục 5 (duyệt bộ mẫu 3, nhận 6 giờ trước). Muốn dùng hai mục này phải claim lại; nếu tác vụ quét (ModerationSweepWorker) chưa trả mục về Pending thì claim trả 409 \"Mục này đã có người nhận hoặc đã xử lý xong.\" — chờ lượt quét kế tiếp hoặc chạy UPDATE moderation_items SET \"Status\" = 'Pending', \"ClaimedByUserId\" = NULL, \"ClaimedAt\" = NULL WHERE \"Id\" = <id>; rồi claim lại.",
     body: null,
     tests: [
       ["ok","Moderator 1 nhận mục Pending","200, mục Claimed, claimedBy = Moderator 1"],
@@ -176,7 +183,8 @@ const STEPS = [
       ["edge","Mục Claimed quá 2 giờ rồi nhận lại","Thành công, mục được nhả rồi nhận lại"]
     ] },
   { m: "GET", p: "/api/v1/ModerationQueue/{itemId}", role: "Moderator, Administrator",
-    what: "Mở chi tiết mục. Chỉ xem được khi mục còn Pending hoặc đang do mình giữ.",
+    what: "Mở chi tiết mục. Chỉ xem được khi mục đang do chính mình giữ (đã claim, chưa quá 2 giờ).",
+    warn: CLAIM_WARN("POST /api/v1/ModerationQueue/{itemId}/claim", OWN_DENIED, OWN_EXPIRED),
     body: null,
     tests: [
       ["ok","Người đang giữ mục mở chi tiết","200"],
@@ -184,12 +192,12 @@ const STEPS = [
       ["neg","itemId không tồn tại","404"]
     ] },
   { m: "POST", p: "/api/v1/ModerationQueue/review-views", role: "Moderator, Administrator",
-    what: "\"Xem để rà soát\": cấp quyền đọc tạm 2 giờ (ghi audit) trước khi mở nội dung ở tab rà soát (bước 4). sourceTab = \"published_content\" (cần storyId, storyVersionId tùy chọn, không có readingRoadmapId) hoặc \"roadmap_templates\" (chỉ cần readingRoadmapId). Không thay cho claim và không cho quyền quyết định.",
+    what: "\"Xem để rà soát\": ghi nhận quyền đọc tạm 2 giờ (ghi audit). KHÔNG còn bắt buộc: GET /PublishedContentReview/stories/{id} và /roadmaps/{id} mở được mà không cần gọi API này. sourceTab = \"published_content\" (cần storyId, storyVersionId tùy chọn, không có readingRoadmapId) hoặc \"roadmap_templates\" (chỉ cần readingRoadmapId). Không thay cho claim và không cho quyền quyết định.",
     body: '{ "sourceTab": "published_content", "storyId": 13, "storyVersionId": null, "readingRoadmapId": null }',
     tests: [
       ["ok","Moderator xin quyền hợp lệ","200"],
       ["neg","Gọi bằng token Parent","403"],
-      ["ok","sourceTab = roadmap_templates với bộ Published","200, mở được GET /PublishedContentReview/roadmaps/{id}"],
+      ["ok","sourceTab = roadmap_templates với bộ Published","200, có expiresAt (không còn là điều kiện để mở GET /PublishedContentReview/roadmaps/{id})"],
       ["neg","sourceTab lạ","400"],
       ["neg","published_content nhưng thiếu storyId hoặc gửi kèm readingRoadmapId","400"],
       ["neg","Truyện không công khai (truyện riêng / Archived)","400"],
@@ -285,6 +293,7 @@ const STEPS = [
     ] },
   { m: "GET", p: "/api/v1/PublicStoryReview/{itemId}", role: "Moderator, Administrator",
     what: "Mở gói duyệt: nội dung phiên bản, media, cảnh báo tự động, tiến độ đã xem, các khóa Approve.",
+    warn: CLAIM_WARN("POST /api/v1/ModerationQueue/21/claim (moderator_demo1)", OWN_DENIED, OWN_EXPIRED),
     body: null,
     tests: [
       ["ok","Người đang giữ mục mở gói","200, có canApprove và approveBlockers"],
@@ -303,17 +312,21 @@ const STEPS = [
       ["neg","partType sai (vd xyz)","400 \"PartType phải là scene hoặc audio.\""]
     ] },
   { m: "POST", p: "/api/v1/PublicStoryReview/{itemId}/flags/resolve", role: "Moderator, Administrator",
-    what: "Xử lý một cảnh báo tự động (kèm lý do) để bỏ khóa Approve.",
-    warn: "flagId phải có trong mảng flags của GET /api/v1/PublicStoryReview/{itemId} (trường flags[].flagId). Phiên bản không có cờ thì flags = [] và API này luôn trả 400. Seed gắn 2 cờ cho mục 21 (phiên bản 19): pii-1 và safety-1. Phải claim mục trước.",
+    what: "Xử lý một cảnh báo tự động / cờ vùng xám (kèm lý do) để bỏ khóa Approve. Khi mọi cờ đã xử lý thì phiên bản được ghi GrayZoneCleared và mở khóa Approve. Gọi lại cờ đã xử lý là idempotent; mỗi lần hợp lệ tăng RowVersion và ghi audit.",
+    warn: "PHẢI CHẠY TRƯỚC APPROVE: API này chỉ chạy khi mục đang được chính bạn claim; sau khi Approve / Request-changes / Reject thì trả 403 \"Bạn chỉ được đọc mục đang do chính mình nhận.\" flagId phải có trong mảng flags của GET /api/v1/PublicStoryReview/{itemId} (trường flags[].flagId). Phiên bản không có cờ thì flags = [] và API này luôn trả 400. Seed gắn 2 cờ cho mục 21 (phiên bản 19): pii-1 và safety-1. Phải claim mục trước.",
     body: '{ "flagId": "pii-1", "reason": "Đã kiểm tra, không phải thông tin cá nhân" }',
     tests: [
-      ["ok","Giải quyết cảnh báo có lý do: mục 21, flagId = pii-1","200, pii-1 resolved = true, allFlagsResolved = false (còn safety-1)"],
-      ["ok","Xử lý nốt cờ safety-1 của mục 21","200, allFlagsResolved = true, hết blocker flags_unresolved"],
+      ["ok","Giải quyết cảnh báo có lý do: mục 21, flagId = pii-1","200, pii-1 resolved = true, allFlagsResolved = false (còn safety-1), Approve vẫn bị khóa (flags_unresolved)"],
+      ["edge","Xử lý lại cờ đã xử lý (pii-1 lần hai)","200, không đổi dữ liệu (idempotent)"],
+      ["ok","Xử lý nốt cờ safety-1 của mục 21 (cờ cuối cùng)","200, allFlagsResolved = true, GrayZoneCleared = true, hết blocker flags_unresolved"],
       ["neg","Thiếu lý do","400, thông báo: Phải ghi lý do khi đánh dấu \"Đã xem — an toàn\"."],
-      ["neg","flagId không tồn tại","400, thông báo: Không có cờ này trong phiên bản đang duyệt."]
+      ["neg","Lý do toàn khoảng trắng","400, thông báo: Phải ghi lý do khi đánh dấu \"Đã xem — an toàn\"."],
+      ["neg","flagId không tồn tại","400, thông báo: Không có cờ này trong phiên bản đang duyệt."],
+      ["neg","Người không giữ mục","403 \"Bạn chỉ được đọc mục đang do chính mình nhận.\""]
     ] },
   { m: "PUT", p: "/api/v1/PublicStoryReview/{itemId}/checklist", role: "Moderator, Administrator",
     what: "Lưu checklist an toàn (Safety, AgeFit, Education, Language, Copyright, Image, Audio, Interaction). Giá trị null nghĩa là chưa chấm.",
+    warn: CLAIM_WARN("POST /api/v1/ModerationQueue/21/claim (moderator_demo1)", OWN_DENIED, OWN_EXPIRED),
     body: '{ "safety": true, "ageFit": true, "education": true, "language": true, "copyright": true, "image": true, "audio": true, "interaction": true }',
     tests: [
       ["ok","Chấm đủ tất cả tiêu chí","200"],
@@ -322,6 +335,7 @@ const STEPS = [
     ] },
   { m: "PUT", p: "/api/v1/PublicStoryReview/{itemId}/labels", role: "Moderator, Administrator",
     what: "Gắn nhãn nội dung cho truyện (dùng để lọc theo chính sách an toàn của từng bé).",
+    warn: CLAIM_WARN("POST /api/v1/ModerationQueue/21/claim (moderator_demo1)", OWN_DENIED, OWN_EXPIRED),
     body: '{ "contentCategoryIds": [5, 6] }',
     tests: [
       ["ok","Gắn 2 nhãn hợp lệ","200, trả danh sách nhãn"],
@@ -402,19 +416,8 @@ const STEPS = [
 {
   id: "b3", title: "Bước 3 — WF-L5B, vùng xám",
   desc: "Truyện do AI sinh cho Parent nằm ở vùng xám (không an toàn hẳn, không chặn hẳn) cần người xem: Clear thì job sinh truyện đi tiếp đúng checkpoint đang chờ, Block thì nội dung bị chặn. Có hai nơi xử lý: cờ vùng xám bên trong gói duyệt WF-L5A (bản của Creator) và mục GrayZoneStory riêng (GrayZoneReviewController) cho truyện Parent.",
-  flow: ["Hệ thống chấm vùng xám bằng bộ tiêu chí (rubric) đang Active, gắn cờ lên phiên bản; job sinh truyện chuyển WaitingForModeration.", "Mục loại GrayZoneStory vào hàng đợi với ưu tiên Cao, SLA 24 giờ (ModerationQueuePolicy).", "Moderator nhận mục (bước 1) → GET /api/v1/moderation/gray-zone-stories/{itemId} xem nội dung và cờ đã che thông tin cá nhân, lấy rowVersion.", "POST /decision với Clear hoặc Block kèm lý do và rowVersion. Clear: job về Pending chạy tiếp. Block: job Failed (GRAY_ZONE_BLOCKED), Parent nhận thông báo kết quả.", "Với bản của Creator (WF-L5A): xử lý từng cờ bằng /PublicStoryReview/{itemId}/flags/resolve."],
+  flow: ["Hệ thống chấm vùng xám bằng bộ tiêu chí (rubric) đang Active, gắn cờ lên phiên bản; job sinh truyện chuyển WaitingForModeration.", "Mục loại GrayZoneStory vào hàng đợi với ưu tiên Cao, SLA 24 giờ (ModerationQueuePolicy).", "Moderator nhận mục (bước 1) → GET /api/v1/moderation/gray-zone-stories/{itemId} xem nội dung và cờ đã che thông tin cá nhân, lấy rowVersion.", "POST /decision với Clear hoặc Block kèm lý do và rowVersion. Clear: job về Pending chạy tiếp. Block: job Failed (GRAY_ZONE_BLOCKED), Parent nhận thông báo kết quả.", "Với bản của Creator (WF-L5A): xử lý từng cờ bằng /PublicStoryReview/{itemId}/flags/resolve. API này đã dời lên Bước 2 (ngay sau views, trước Approve) vì sau khi Approve mục 21 thì không resolve cờ được nữa."],
   apis: [
-  { m: "POST", p: "/api/v1/PublicStoryReview/{itemId}/flags/resolve", role: "Moderator, Administrator",
-    what: "Phần Clear đang có: đánh dấu một cờ vùng xám là đã xem và an toàn, lý do bắt buộc. Khi mọi cờ đã xử lý thì phiên bản được ghi GrayZoneCleared và mở khóa Approve. Gọi lại cờ đã xử lý là idempotent; mỗi lần hợp lệ tăng RowVersion và ghi audit.",
-    body: '{ "flagId": "pii-1", "reason": "Đã đọc kỹ, đây là tên nhân vật hư cấu" }',
-    tests: [
-      ["ok","Xử lý cờ cuối cùng","200, allFlagsResolved = true, GrayZoneCleared = true"],
-      ["ok","Xử lý một cờ khi còn cờ khác","200, allFlagsResolved = false, Approve vẫn bị khóa (flags_unresolved)"],
-      ["edge","Xử lý lại cờ đã xử lý","200, không đổi dữ liệu (idempotent)"],
-      ["neg","Thiếu lý do hoặc toàn khoảng trắng","400"],
-      ["neg","flagId không có trong GrayZoneFlags","404 hoặc 400"],
-      ["neg","Người không giữ mục","403"]
-    ] },
   { m: "GET", p: "/api/v1/ModerationQueue?itemType=GrayZoneStory", role: "Moderator, Administrator",
     what: "Xem hàng đợi riêng cho mục vùng xám để kiểm tra mức ưu tiên và hạn xử lý.",
     body: null,
@@ -425,6 +428,12 @@ const STEPS = [
     ] },
   { m: "GET", p: "/api/v1/moderation/gray-zone-stories/{itemId}", role: "Moderator, Administrator",
     what: "Mở gói duyệt vùng xám: storyVersionId, versionNo, tiêu đề, nội dung, độ tuổi, mức đọc, danh sách cờ (mã tiêu chí GZ01–GZ05, lý do, đoạn trích) đã che thông tin cá nhân, và rowVersion để gửi quyết định. Không trả điểm rủi ro, checkpoint nội bộ hay danh tính bé. Mỗi lần mở được ghi audit GrayZoneReviewOpened.",
+    warn: [
+      "PHẢI CLAIM MỤC TRƯỚC KHI GET: mục phải là GrayZoneStory, đang Claimed bởi CHÍNH tài khoản gọi API và claim chưa quá 2 giờ; thiếu một điều kiện là 403 VALID_MODERATION_CLAIM_REQUIRED. Seed ghi mục 1 đã được moderator_demo1 nhận từ 4 giờ trước nên claim đã hết hạn ngay sau khi nạp seed; tác vụ quét nền (ModerationSweepWorker) sẽ trả mục về Pending. Muốn chạy test \"Lượt nhận đã quá 2 giờ\" thì chạy nó TRƯỚC khi claim lại.",
+      "Đăng nhập moderator_demo1 (Demo@123) lấy token mới (token hết hạn → 401, không phải 403).",
+      "POST /api/v1/ModerationQueue/1/claim. Nếu trả 409 \"Mục này đã có người nhận hoặc đã xử lý xong\" thì tác vụ quét chưa chạy: chờ lượt quét kế tiếp, hoặc chạy SQL UPDATE moderation_items SET \"Status\" = 'Pending', \"ClaimedByUserId\" = NULL, \"ClaimedAt\" = NULL WHERE \"Id\" = 1; rồi claim lại.",
+      "GET /api/v1/moderation/gray-zone-stories/1 bằng CÙNG token đó trong vòng 2 giờ kể từ lúc claim → 200, lấy rowVersion cho bước decision."
+    ],
     body: null,
     tests: [
       ["ok","Người đang giữ mục (claim còn hạn) mở gói","200, có flags, rowVersion; không có riskScore"],
@@ -437,15 +446,22 @@ const STEPS = [
     ] },
   { m: "POST", p: "/api/v1/moderation/gray-zone-stories/{itemId}/decision", role: "Moderator, Administrator",
     what: "Quyết định vùng xám: decision = \"Clear\" hoặc \"Block\", reason bắt buộc (≤ 2000 ký tự), rowVersion lấy từ gói duyệt. Clear: mục Cleared, phiên bản GrayZoneCleared, job sinh truyện về Pending để chạy tiếp. Block: mục Blocked, job Failed với GRAY_ZONE_BLOCKED, truyện về ContentReview với bản cũ. Tác giả (Parent) nhận thông báo ContentModerationResult. Phản hồi chỉ có { success, message }, không có data.",
-    body: '{ "decision": "Clear", "reason": "Đã đọc kỹ, chi tiết phù hợp lứa tuổi", "rowVersion": 1 }',
+    warn: [
+      CLAIM_WARN("POST /api/v1/ModerationQueue/1/claim (moderator_demo1)", "403 VALID_MODERATION_CLAIM_REQUIRED", "403 VALID_MODERATION_CLAIM_REQUIRED"),
+      "Mục 1 trong seed đã hết hạn claim ngay khi nạp (nhận 4 giờ trước): claim lại mục 1 trước.",
+      "GET /api/v1/moderation/gray-zone-stories/1 bằng cùng token, chép data.rowVersion vào ô GRAY_ROW_VERSION (Giá trị động ở đầu trang) rồi mới gửi decision; body bên dưới lấy rowVersion từ ô này. rowVersion sai → 409 STALE_MODERATION_ITEM: giá trị tăng 1 mỗi lần claim và mỗi lần mục bị trả về hàng đợi, nên không dùng số 1 của seed.",
+      "Mục 1 (truyện 4, phiên bản 4) có checkpoint khớp với đánh giá vùng xám của phiên bản 4 và không gắn job sinh truyện: Clear → 200, mục Cleared, phiên bản 4 GrayZoneCleared = true; Block → 200, mục Blocked. Mỗi mục chỉ quyết định MỘT lần: chạy các test lỗi (400 / 409 / 403) trước, Clear hoặc Block để CUỐI CÙNG; muốn test cái còn lại thì chạy lại Database/Seed-Database.ps1 rồi claim lại mục 1."
+    ],
+    body: '{ "decision": "Clear", "reason": "Đã đọc kỹ, chi tiết phù hợp lứa tuổi", "rowVersion": "<GRAY_ROW_VERSION>" }',
     tests: [
+      ["ok","Clear mục 1 của seed (không gắn job)","200 success; mục 1 Cleared; phiên bản 4 GrayZoneCleared = true; Parent (tác giả truyện 4) nhận thông báo ContentModerationResult"],
       ["ok","Clear mục có job đang WaitingForModeration","200 success; mục Cleared; job Pending và tiếp tục"],
       ["ok","Block kèm lý do","200 success; mục Blocked; job Failed GRAY_ZONE_BLOCKED; Parent nhận thông báo kèm categories"],
       ["neg","decision khác Clear / Block (ví dụ \"Approve\")","400 GRAY_ZONE_DECISION_INVALID"],
       ["neg","Thiếu lý do hoặc lý do quá 2000 ký tự","400 GRAY_ZONE_DECISION_INVALID"],
       ["neg","rowVersion cũ","409 STALE_MODERATION_ITEM — tải lại gói rồi quyết định lại"],
       ["neg","Truyện đã bị sửa / Archive / job bị hủy sau khi vào hàng đợi","409 MODERATION_SOURCE_CHANGED"],
-      ["neg","Mục cũ không có checkpoint (dữ liệu seed mục 1)","409 MODERATION_CHECKPOINT_MISSING"],
+      ["neg","Mục không có checkpoint (xóa checkpoint của mục 1 trong DB)","409 MODERATION_CHECKPOINT_MISSING"],
       ["neg","Người tạo mục tự quyết định","403 VALID_MODERATION_CLAIM_REQUIRED"],
       ["neg","Claim đã hết hạn 2 giờ","403 VALID_MODERATION_CLAIM_REQUIRED"],
       ["edge","Gửi lại quyết định lần hai cho mục đã Cleared","403 (mục không còn Claimed)"]
@@ -454,14 +470,14 @@ const STEPS = [
 },
 {
   id: "b3r", title: "Bước 3 (tiếp) — Bộ tiêu chí vùng xám / rubric (MO8, AD1)",
-  desc: "Moderator soạn và thử bộ tiêu chí dùng để chấm vùng xám. Vòng đời Draft → Active → Retired; chỉ bản Draft sửa / xóa được, muốn chỉnh bản Active thì nhân bản. Chỉ Administrator kích hoạt (activate). Mọi thao tác ghi cần revision mới nhất (khóa lạc quan).",
-  flow: ["GET danh sách (lọc Draft / Active / Retired) hoặc GET /active xem bộ đang dùng.", "POST tạo Draft (hoặc POST /{id}/clone từ bộ có sẵn) → PUT sửa với revision → POST /validate kiểm cấu trúc và hash.", "POST /{id}/evaluations chạy thử với một đoạn truyện mẫu (gọi AI thật, ghi audit).", "Administrator POST /{id}/activate: bộ Active cũ chuyển Retired, bộ mới thành Active trong cùng transaction.", "GET /{id}/audit-logs xem lịch sử, kể cả bản Draft đã xóa."],
+  desc: "Moderator soạn và thử bộ tiêu chí dùng để chấm vùng xám. Vòng đời Draft → Active → Retired; chỉ bản Draft sửa / xóa được, muốn chỉnh bản Active thì nhân bản. Moderator hoặc Administrator kích hoạt (activate). Mọi thao tác ghi cần revision mới nhất (khóa lạc quan).",
+  flow: ["GET danh sách (lọc Draft / Active / Retired) hoặc GET /active xem bộ đang dùng.", "POST tạo Draft (hoặc POST /{id}/clone từ bộ có sẵn) → PUT sửa với revision → POST /validate kiểm cấu trúc và hash.", "POST /{id}/evaluations chạy thử với một đoạn truyện mẫu (gọi AI thật, ghi audit).", "Moderator hoặc Administrator POST /{id}/activate: bộ Active cũ chuyển Retired, bộ mới thành Active trong cùng transaction.", "GET /{id}/audit-logs xem lịch sử, kể cả bản Draft đã xóa."],
   apis: [
   { m: "GET", p: "/api/v1/moderation/rubrics?status=&pageIndex=1&pageSize=20", role: "Moderator, Administrator",
     what: "Danh sách phiên bản rubric, mới nhất trước. status = Draft, Active hoặc Retired (để trống = tất cả). Trả { items, totalCount, pageIndex, pageSize }.",
     body: null,
     tests: [
-      ["ok","Moderator lấy danh sách không lọc","200, có bản seed id 1 (Draft, gray-zone-moderation-v1)"],
+      ["ok","Moderator lấy danh sách không lọc","200, có bản seed id 1 (Draft, gray-zone-moderation-v1) và id 2 (Active, gray-zone-active-v1)"],
       ["ok","Lọc status=Draft","200, chỉ bản Draft"],
       ["neg","status=Published (giá trị lạ)","400 RUBRIC_QUERY_INVALID"],
       ["neg","pageSize=0 hoặc 101","400 RUBRIC_QUERY_INVALID"],
@@ -472,8 +488,8 @@ const STEPS = [
     what: "Bộ rubric đang Active (snapshot: id, version, schemaVersion, contentHash, definition).",
     body: null,
     tests: [
-      ["ok","Đã có đúng một bộ Active","200, snapshot của bộ đó"],
-      ["neg","Chưa có bộ nào Active (seed ban đầu)","409 RUBRIC_ACTIVE_REQUIRED"]
+      ["ok","Đã có đúng một bộ Active (DB mới seed: rubric 2)","200, snapshot của rubric 2 (version gray-zone-active-v1)"],
+      ["neg","Chưa có bộ nào Active (đổi rubric 2 sang Retired trong DB)","409 RUBRIC_ACTIVE_REQUIRED"]
     ] },
   { m: "GET", p: "/api/v1/moderation/rubrics/{id}", role: "Moderator, Administrator",
     what: "Chi tiết một phiên bản: status, revision, contentHash, definition, người tạo, thời điểm kích hoạt / retire.",
@@ -486,7 +502,7 @@ const STEPS = [
     what: "Tạo bản Draft. versionNo ≤ 50 ký tự, khớp ^[a-zA-Z0-9][a-zA-Z0-9._-]*$, duy nhất. name ≤ 200. definition: purpose ≤ 2000 và đúng 5 tiêu chí GZ01–GZ05; mỗi tiêu chí có name, check, context, levels đủ khóa \"0\"–\"4\", tối đa 10 examples (level 0–4). Cách nhanh nhất: GET /1, chép definition, đổi versionNo.",
     body: '{ "versionNo": "gray-zone-v2", "name": "Rubric vùng xám v2", "definition": { "purpose": "…", "criteria": [ { "code": "GZ01", "name": "…", "check": "…", "context": "…", "levels": { "0": "…", "1": "…", "2": "…", "3": "…", "4": "…" }, "examples": [] } ] } }',
     tests: [
-      ["ok","Tạo Draft với definition chép từ bản 1, versionNo mới","200, status Draft, revision 0"],
+      ["ok","Tạo Draft với definition chép từ bản 1, versionNo mới","200, status Draft, revision 1"],
       ["neg","versionNo trùng bản đã có","409 RUBRIC_VERSION_EXISTS"],
       ["neg","versionNo có dấu cách / ký tự lạ hoặc dài hơn 50","400 RUBRIC_METADATA_INVALID"],
       ["neg","name rỗng hoặc dài hơn 200","400 RUBRIC_METADATA_INVALID"],
@@ -497,6 +513,11 @@ const STEPS = [
     ] },
   { m: "PUT", p: "/api/v1/moderation/rubrics/{id}", role: "Moderator, Administrator",
     what: "Sửa bản Draft. Gửi kèm revision hiện tại; thành công thì revision tăng 1. Không được đổi versionNo.",
+    warn: [
+      "CHỈ SỬA ĐƯỢC BẢN DRAFT: bản Active hoặc Retired luôn trả 409 RUBRIC_IMMUTABLE dù revision đúng (server kiểm revision trước, rồi mới kiểm trạng thái). Seed: rubric 1 là Draft, rubric 2 là Active. Sau khi activate rubric 1, nó thành Active với revision 2 và không sửa được nữa.",
+      "GET /api/v1/moderation/rubrics/{id}: kiểm status = Draft, lấy revision hiện tại và chép NGUYÊN versionNo của bản đó vào body (rubric 1 = gray-zone-moderation-v1; Draft mới = versionNo đã đặt lúc tạo). versionNo khác → 400 RUBRIC_VERSION_NUMBER_IMMUTABLE, lỗi này được kiểm TRƯỚC cả trạng thái Draft.",
+      "Muốn chỉnh bản Active: POST /api/v1/moderation/rubrics/{id}/clone tạo Draft mới (revision 1, versionNo là giá trị bạn đặt khi clone), rồi PUT bản Draft đó. Ví dụ Draft id 3 clone với versionNo gray-zone-v3: PUT /api/v1/moderation/rubrics/3 với \"versionNo\": \"gray-zone-v3\", \"revision\": 1."
+    ],
     body: '{ "versionNo": "gray-zone-v2", "name": "Rubric vùng xám v2 (sửa)", "definition": { "purpose": "…", "criteria": [ "…" ] }, "revision": 0 }',
     tests: [
       ["ok","Sửa Draft với revision đúng","200, revision tăng 1"],
@@ -507,6 +528,7 @@ const STEPS = [
     ] },
   { m: "DELETE", p: "/api/v1/moderation/rubrics/{id}?revision=0", role: "Moderator, Administrator",
     what: "Xóa mềm bản Draft (audit vẫn giữ).",
+    warn: "CHỈ XÓA ĐƯỢC BẢN DRAFT: bản Active hoặc Retired trả 409 RUBRIC_IMMUTABLE dù revision đúng. Dùng Draft vừa tạo (id trong ô NEW_RUBRIC_ID), không xóa rubric 1 nếu còn cần kích hoạt; không xóa được rubric 2 (Active trong seed).",
     body: null,
     tests: [
       ["ok","Xóa Draft với revision đúng","200; GET /{id} sau đó trả 404; audit-logs vẫn có dòng Deleted"],
@@ -538,12 +560,14 @@ const STEPS = [
       ["neg","revision cũ","409 RUBRIC_REVISION_STALE"],
       ["edge","Môi trường chưa cấu hình provider Vertex","409 MODERATION_PROVIDER_NOT_REGISTERED"]
     ] },
-  { m: "POST", p: "/api/v1/moderation/rubrics/{id}/activate", role: "Administrator",
-    what: "AD1: kích hoạt bản Draft. Bộ Active cũ chuyển Retired, bộ mới Active trong cùng transaction. Sau đó tải lại GET /active.",
+  { m: "POST", p: "/api/v1/moderation/rubrics/{id}/activate", role: "Moderator, Administrator",
+    what: "AD1: kích hoạt bản Draft. Bộ Active cũ chuyển Retired, bộ mới Active trong cùng transaction. Sau đó tải lại GET /active. Seed có sẵn rubric 2 Active, nên activate rubric 1 sẽ chuyển rubric 2 sang Retired.",
+    warn: "CHỈ KÍCH HOẠT ĐƯỢC BẢN DRAFT: bản đã Active hoặc Retired trả 409 RUBRIC_IMMUTABLE ngay, trước cả khi kiểm revision. Activate thành công làm revision tăng 1 (rubric 1: 1 → 2) và bản đó không sửa / xóa / activate lại được nữa; muốn chỉnh thì clone thành Draft mới.",
     body: '{ "revision": 0 }',
     tests: [
       ["ok","Administrator kích hoạt Draft hợp lệ","200, status Active; bản Active cũ (nếu có) thành Retired; GET /active trả bản mới"],
-      ["neg","Moderator gọi activate","403"],
+      ["ok","Moderator kích hoạt Draft","200, status Active, activatedByUserId = Moderator đó"],
+      ["neg","Gọi bằng token Parent","403"],
       ["neg","Kích hoạt bản đã Active / Retired","409 RUBRIC_IMMUTABLE"],
       ["neg","revision cũ","409 RUBRIC_REVISION_STALE"]
     ] },
@@ -560,7 +584,7 @@ const STEPS = [
 {
   id: "b4", title: "Bước 4 — WF-L4E, report và rà soát",
   desc: "Phụ huynh báo cáo một truyện công khai. Moderator xem chi tiết và quyết định: bỏ qua (Dismiss), gỡ truyện (Archive) hoặc chuyển Administrator (Escalate). Moderator cũng có tab rà soát truyện đã công khai và tạo mục rà soát chủ động.",
-  flow: ["Parent gửi báo cáo → tạo mục ContentReport trong hàng đợi, Moderator nhận thông báo.", "Moderator nhận mục, mở chi tiết (nội dung đã che thông tin cá nhân).", "Dismiss (không vi phạm) → người báo nhận kết quả. Archive → truyện bị gỡ, kích hoạt hệ quả ở bước 4. Escalate → Administrator xử lý."],
+  flow: ["Parent gửi báo cáo → tạo mục ContentReport trong hàng đợi, Moderator nhận thông báo.", "Moderator nhận mục, mở chi tiết (nội dung đã che thông tin cá nhân).", "Chọn MỘT trong ba: Dismiss (không vi phạm) → người báo nhận kết quả. Archive → truyện bị gỡ, kích hoạt hệ quả ở bước 4. Escalate → Administrator xử lý.", "Muốn Administrator quyết định thì Escalate trước; đã Dismiss / Archive thì không chuyển cho Admin được nữa. Admin xử lý mục Escalated bằng dismiss / archive, không cần claim."],
   apis: [
   { m: "POST", p: "/api/v1/ContentReport", role: "Parent",
     what: "Báo cáo một truyện với lý do: SafetyConcern, Inappropriate, WrongAgeBand, Copyright, Cultural hoặc Other.",
@@ -575,6 +599,10 @@ const STEPS = [
     ] },
   { m: "GET", p: "/api/v1/ContentReportReview/{itemId}", role: "Moderator, Administrator",
     what: "Chi tiết báo cáo cho Moderator: nội dung truyện (đã che số điện thoại, email, biệt danh), lý do báo, lịch sử.",
+    warn: [
+      CLAIM_WARN("POST /api/v1/ModerationQueue/11/claim (moderator_demo1)", OWN_DENIED, OWN_EXPIRED),
+      "Ngoại lệ: mục đã Escalate (mục 4) không cần claim nhưng chỉ Administrator (admin_demo) mở / xử lý được; Moderator gọi → 403 \"Ca đã chuyển cho Administrator quyết định.\""
+    ],
     body: null,
     tests: [
       ["ok","Người đang giữ mục xem chi tiết","200, văn bản đã che"],
@@ -582,6 +610,11 @@ const STEPS = [
     ] },
   { m: "POST", p: "/api/v1/ContentReportReview/{itemId}/dismiss", role: "Moderator, Administrator",
     what: "Không vi phạm: đóng báo cáo, truyện giữ nguyên.",
+    warn: [
+      CLAIM_WARN("POST /api/v1/ModerationQueue/{itemId}/claim (moderator_demo1)", OWN_DENIED, OWN_EXPIRED),
+      "DISMISS LÀ QUYẾT ĐỊNH CUỐI: sau khi Dismiss, mục chuyển Dismissed (report ReviewedDismissed) nên GET chi tiết, archive và escalate trên CÙNG mục đó đều trả " + OWN_DENIED + ", và không claim lại được. Đừng Dismiss mục 11 nếu còn cần test Archive bên dưới (Archive dùng mục 11); mục 3 để dành cho Escalate. Nếu muốn Admin quyết định ca này thì Escalate TRƯỚC, không Dismiss.",
+      "Cách test Dismiss mà không mất mục 11: tạo report mới bằng POST /api/v1/ContentReport ở đầu bước này (phản hồi chỉ có reportId), rồi GET /api/v1/ModerationQueue?itemType=ContentReport&status=Pending để lấy id mục mới (ghi vào ô NEW_ITEM_ID), claim mục đó rồi Dismiss. Hoặc chạy Dismiss SAU khi đã test xong Archive / Escalate, hay chạy lại Seed-Database.ps1."
+    ],
     body: '{ "reason": "Đã kiểm tra, nội dung phù hợp" }',
     tests: [
       ["ok","Dismiss có lý do","200, report ReviewedDismissed"],
@@ -590,6 +623,10 @@ const STEPS = [
     ] },
   { m: "POST", p: "/api/v1/ContentReportReview/{itemId}/archive", role: "Moderator, Administrator",
     what: "Gỡ truyện (Archive) với lý do SafetyConcern, Copyright hoặc Inappropriate. Kích hoạt toàn bộ hệ quả ở bước 4 trong cùng một transaction.",
+    warn: [
+      CLAIM_WARN("POST /api/v1/ModerationQueue/11/claim (moderator_demo1)", OWN_DENIED, OWN_EXPIRED),
+      "Archive cũng là quyết định cuối: đã Archive thì không Escalate cho Admin được nữa; muốn Admin quyết định thì Escalate TRƯỚC. Mục 11 đã bị Dismiss (hoặc Archive / Escalate) trước đó thì không Archive được nữa: trả " + OWN_DENIED + ". Chạy lại Seed-Database.ps1 để mục 11 về Pending, hoặc dùng một report mới (POST /api/v1/ContentReport, lấy id mục mới trong GET /api/v1/ModerationQueue?itemType=ContentReport&status=Pending rồi claim)."
+    ],
     body: '{ "archiveReason": "SafetyConcern", "reason": "Có nội dung gây sợ hãi cho trẻ nhỏ" }',
     tests: [
       ["ok","Archive vì SafetyConcern","200, truyện Archived, người tạo nhận thông báo"],
@@ -597,12 +634,20 @@ const STEPS = [
       ["neg","Thiếu lý do chi tiết","400"],
       ["edge","Archive truyện đã Archive","Không chạy lại hệ quả lần hai"]
     ] },
-  { m: "POST", p: "/api/v1/ContentReportReview/{itemId}/escalate", role: "Moderator, Administrator",
+  { m: "POST", p: "/api/v1/ContentReportReview/{itemId}/escalate", role: "Moderator",
     what: "Chuyển lên Administrator khi cần quyết định cao hơn. Lý do chỉ Administrator đọc được.",
+    warn: [
+      CLAIM_WARN("POST /api/v1/ModerationQueue/3/claim (moderator_demo2)", OWN_DENIED, OWN_EXPIRED),
+      "MUỐN ADMIN QUYẾT ĐỊNH THÌ ESCALATE TRƯỚC: Dismiss, Archive và Escalate là ba lựa chọn thay thế nhau, Moderator chỉ chọn MỘT. Đã Dismiss hoặc Archive mục rồi thì KHÔNG chuyển cho Admin được nữa (escalate trả " + OWN_DENIED + "). Ca khó thì escalate ngay sau khi claim, không Dismiss / Archive trước.",
+      "Sau khi escalate: mục thành Escalated, mọi Administrator nhận thông báo ContentReportEscalated; Moderator gọi GET / dismiss / archive trên mục đó → 403 \"Ca đã chuyển cho Administrator quyết định.\"",
+      "Administrator (admin_demo) xử lý tiếp KHÔNG cần claim: GET /api/v1/ContentReportReview/{itemId}, rồi POST /dismiss hoặc /archive trên chính mục đó là quyết định cuối. Mục 4 trong seed đã Escalated sẵn để test phần này. Administrator không tự escalate được."
+    ],
     body: '{ "reason": "Liên quan bản quyền, cần Admin xác minh" }',
     tests: [
       ["ok","Escalate có lý do","200, mục chuyển cho Administrator"],
-      ["neg","Thiếu lý do","400"]
+      ["neg","Thiếu lý do","400"],
+      ["neg","Escalate mục đã Dismiss hoặc Archive","403 \"Bạn chỉ được đọc mục đang do chính mình nhận.\""],
+      ["neg","Administrator gọi escalate","403: khi còn Moderator hoạt động, Admin không claim được mục (\"Administrator chỉ xử lý hàng đợi khi không còn Moderator hợp lệ…\") nên escalate trả \"Bạn chỉ được đọc mục đang do chính mình nhận.\"; nếu Admin claim được thì trả \"Chỉ Moderator mới chuyển ca cho Administrator.\""]
     ] },
   { m: "GET", p: "/api/v1/PublishedContentReview?...", role: "Moderator, Administrator",
     what: "Tab \"Nội dung đã công khai\": liệt kê truyện và bộ mẫu đã công khai để rà soát chủ động.",
@@ -612,20 +657,20 @@ const STEPS = [
       ["neg","Gọi bằng token Parent","403"]
     ] },
   { m: "GET", p: "/api/v1/PublishedContentReview/stories/{storyId}", role: "Moderator, Administrator",
-    what: "Xem nội dung đầy đủ (đã che thông tin cá nhân) của một truyện đã công khai.",
+    what: "Xem nội dung đầy đủ (đã che thông tin cá nhân) của một truyện Public Library đang công khai. Không cần gọi POST /ModerationQueue/review-views trước; mỗi lần mở được ghi audit PublishedContentOpened.",
     body: null,
     tests: [
-      ["ok","Xem truyện công khai","200"],
-      ["neg","Truyện không công khai","404 hoặc 400"],
-      ["neg","Chưa gọi POST /ModerationQueue/review-views hoặc quyền xem đã quá 2 giờ","403 (yêu cầu bấm Xem để rà soát)"]
+      ["ok","Xem truyện công khai (không cần xin quyền xem trước)","200"],
+      ["neg","Truyện không công khai, truyện riêng của Parent hoặc đã Archive","400 \"Chỉ xem được truyện Public Library đang công khai.\""],
+      ["neg","storyId không tồn tại","404"]
     ] },
   { m: "GET", p: "/api/v1/PublishedContentReview/roadmaps/{roadmapId}", role: "Moderator, Administrator",
-    what: "Xem một bộ truyện mẫu đang công khai.",
+    what: "Xem một bộ truyện mẫu đang công khai. Không cần gọi POST /ModerationQueue/review-views trước; mỗi lần mở được ghi audit PublishedRoadmapOpened.",
     body: null,
     tests: [
-      ["ok","Xem bộ Published","200"],
-      ["neg","Bộ chưa công khai","404 hoặc 400"],
-      ["neg","Chưa xin quyền xem (review-views, sourceTab roadmap_templates)","403"]
+      ["ok","Xem bộ Published (không cần xin quyền xem trước)","200"],
+      ["neg","Bộ chưa công khai hoặc đã Archive","400 \"Chỉ xem được bộ truyện mẫu đang công khai.\""],
+      ["neg","roadmapId không tồn tại","404"]
     ] },
   { m: "POST", p: "/api/v1/PublishedContentReview/review-items", role: "Moderator",
     what: "Tạo mục rà soát chủ động cho một truyện (hoặc truyện trong một bộ mẫu) khi Moderator tự phát hiện vấn đề.",
@@ -637,13 +682,12 @@ const STEPS = [
       ["neg","Gọi bằng token Administrator","403 (chỉ Moderator tạo mục rà soát chủ động)"],
       ["neg","Thiếu reason hoặc description quá dài","400"]
     ] },
-  { m: "POST", p: "(chưa có) Administrator quyết định ca Escalate kèm khóa tài khoản", role: "Administrator",
-    what: "Tài liệu UC-L4E-02: sau Escalate, Administrator quyết định cuối Archive / Dismiss và có thể tạm khóa phụ huynh (WF-L5D) hoặc vô hiệu hóa Content Creator (WF-L5C). Quyết định Archive / Dismiss dùng lại hai API ở trên (Administrator được phép khi mục Escalated); phần tùy chọn khóa phụ huynh chưa có vì chưa có API quản lý tài khoản phụ huynh.",
+  { m: "POST", p: "(dùng lại) /api/v1/ContentReportReview/{itemId}/archive hoặc /dismiss — Administrator quyết định ca Escalate", role: "Administrator",
+    what: "Tài liệu UC-L4E-02: sau Escalate, Administrator quyết định cuối Archive / Dismiss kèm lý do. Dùng lại hai API archive / dismiss ở trên; Administrator vào thẳng mục Escalated, không cần claim. Phần tùy chọn tạm khóa phụ huynh (WF-L5D) và vô hiệu hóa Content Creator (WF-L5C) đã bỏ khỏi phạm vi, không làm.",
     body: null,
     tests: [
       ["ok","Administrator Dismiss / Archive mục đã Escalate","200"],
-      ["neg","Moderator quyết định mục đã Escalate","403"],
-      ["todo","Escalate rồi tạm khóa phụ huynh lạm dụng báo cáo","CHƯA CÓ — cần WF-L5D (tạm khóa / mở khóa phụ huynh)"]
+      ["neg","Moderator quyết định mục đã Escalate","403 \"Ca đã chuyển cho Administrator quyết định.\""]
     ] }
   ]
 },
@@ -654,6 +698,7 @@ const STEPS = [
   apis: [
   { m: "POST", p: "(kích hoạt qua) /api/v1/ContentReportReview/{itemId}/archive", role: "Moderator, Administrator",
     what: "Dùng chung API Archive ở bước 3. Các kiểm chứng dưới đây là test case hệ quả, gọi API đọc tương ứng sau khi Archive.",
+    warn: CLAIM_WARN("POST /api/v1/ModerationQueue/{itemId}/claim với itemId là mục report của truyện cần Archive", OWN_DENIED, OWN_EXPIRED),
     body: null,
     tests: [
       ["ok","Truyện có bản đang chờ duyệt (Pending) rồi Archive","Mục đó Withdrawn; gọi lại hàng đợi không còn thấy"],
@@ -731,6 +776,7 @@ const STEPS = [
     ] },
   { m: "GET", p: "/api/v1/CommunityReview/{itemId}", role: "Moderator, Administrator",
     what: "Mở gói duyệt Community: đúng bản đã ghim (không phải bản hiện hành), nội dung đã che, nhãn, bản quyền, kết quả dò PII lúc nộp và dò lại, checklist 3 tiêu chí, các khóa Approve, hạn giữ mục.",
+    warn: CLAIM_WARN("POST /api/v1/ModerationQueue/7/claim (moderator_demo1)", ACT_DENIED, ACT_EXPIRED),
     body: null,
     tests: [
       ["ok","Người đang giữ mục mở gói","200, canApprove phản ánh blockers"],
@@ -742,6 +788,7 @@ const STEPS = [
     ] },
   { m: "PUT", p: "/api/v1/CommunityReview/{itemId}/checklist", role: "Moderator, Administrator",
     what: "Lưu (một phần) checklist: safety_baseline, no_personal_info, metadata_labels. Ghi chú tối đa 500 ký tự.",
+    warn: CLAIM_WARN("POST /api/v1/ModerationQueue/7/claim (moderator_demo1)", ACT_DENIED, ACT_EXPIRED),
     body: '{ "entries": [ { "code": "safety_baseline", "passed": true }, { "code": "no_personal_info", "passed": true, "note": "Đã đọc kỹ" }, { "code": "metadata_labels", "passed": true } ] }',
     tests: [
       ["ok","Chấm đủ 3 tiêu chí","200, trả checklist đầy đủ"],
@@ -753,6 +800,7 @@ const STEPS = [
     ] },
   { m: "PUT", p: "/api/v1/CommunityReview/{itemId}/labels", role: "Moderator, Administrator",
     what: "Sửa nhãn nội dung của truyện (ít nhất một nhãn, nhãn còn hoạt động, gắn nguồn Moderator).",
+    warn: CLAIM_WARN("POST /api/v1/ModerationQueue/7/claim (moderator_demo1)", ACT_DENIED, ACT_EXPIRED),
     body: '{ "contentCategoryIds": [5, 6] }',
     tests: [
       ["ok","Đổi tập nhãn","200, nhãn không còn trong danh sách bị gỡ"],
@@ -761,6 +809,7 @@ const STEPS = [
     ] },
   { m: "POST", p: "/api/v1/CommunityReview/{itemId}/approve", role: "Moderator, Administrator",
     what: "Approve: truyện vào thư viện cộng đồng. Bị khóa (400) khi checklist chưa đạt đủ, dò lại vẫn thấy thông tin cá nhân, truyện gốc đã Archive, chưa có nhãn, hoặc người duyệt là người nộp. Người nộp nhận thông báo, không biết Moderator nào duyệt.",
+    warn: CLAIM_WARN("POST /api/v1/ModerationQueue/7/claim (moderator_demo1)", ACT_DENIED, ACT_EXPIRED),
     body: null,
     tests: [
       ["ok","Checklist đạt đủ, không còn khóa","200, decision Approved; người nộp nhận community_library_reviewed"],
@@ -774,6 +823,7 @@ const STEPS = [
     ] },
   { m: "POST", p: "/api/v1/CommunityReview/{itemId}/reject", role: "Moderator, Administrator",
     what: "Từ chối với lý do bắt buộc (1 đến 1000 ký tự); không cần checklist. Người nộp nhận lý do và có thể nộp lại.",
+    warn: CLAIM_WARN("POST /api/v1/ModerationQueue/14/claim (moderator_demo1)", ACT_DENIED, ACT_EXPIRED),
     body: '{ "reason": "Còn tên trường trong cảnh 3" }',
     tests: [
       ["ok","Reject có lý do","200, decision Rejected; /CommunitySubmission/mine báo Rejected kèm lý do"],
@@ -897,6 +947,11 @@ const STEPS = [
     ] },
   { m: "GET", p: "/api/v1/RoadmapReview/{itemId}", role: "Moderator, Administrator",
     what: "Gói duyệt bộ mẫu cho Moderator khác: nội dung bộ, từng truyện, checklist, khóa Approve (stories_ready, combo_unique, checklist_incomplete).",
+    warn: [
+      CLAIM_WARN("POST /api/v1/ModerationQueue/5/claim (moderator_demo1)", ACT_DENIED, ACT_EXPIRED),
+      "Mục 5 trong seed ghi moderator_demo1 đã nhận từ 6 giờ trước nên lượt nhận đã hết hạn ngay khi nạp: gọi API này trước khi claim lại sẽ ra " + ACT_EXPIRED + ".",
+      "Claim lại mục 5 bằng moderator_demo1, không dùng moderator_demo2 (người tạo bộ 3 không nhận được mục của mình)."
+    ],
     body: null,
     tests: [
       ["ok","Người đang giữ mục mở gói","200"],
@@ -905,6 +960,7 @@ const STEPS = [
     ] },
   { m: "PUT", p: "/api/v1/RoadmapReview/{itemId}/checklist", role: "Moderator, Administrator",
     what: "Lưu checklist: order, theme, name_description, age_level.",
+    warn: CLAIM_WARN("POST /api/v1/ModerationQueue/5/claim (moderator_demo1; mục 5 trong seed đã hết hạn claim, phải claim lại)", ACT_DENIED, ACT_EXPIRED),
     body: '{ "entries": [ { "code": "order", "label": "", "passed": true }, { "code": "theme", "label": "", "passed": true }, { "code": "name_description", "label": "", "passed": true }, { "code": "age_level", "label": "", "passed": true } ] }',
     tests: [
       ["ok","Chấm đủ 4 tiêu chí","200"],
@@ -913,6 +969,7 @@ const STEPS = [
     ] },
   { m: "POST", p: "/api/v1/RoadmapReview/{itemId}/approve", role: "Moderator, Administrator",
     what: "Approve: bộ thành Published. Bị khóa nếu checklist chưa đạt đủ 4, có truyện không còn sẵn sàng, hoặc đã có bộ Published cùng tổ hợp.",
+    warn: CLAIM_WARN("POST /api/v1/ModerationQueue/5/claim (moderator_demo1; mục 5 trong seed đã hết hạn claim, phải claim lại)", ACT_DENIED, ACT_EXPIRED),
     body: null,
     tests: [
       ["ok","Mọi điều kiện đạt","200, bộ Published; phụ huynh thấy trong /RoadmapLibrary"],
@@ -923,6 +980,7 @@ const STEPS = [
     ] },
   { m: "POST", p: "/api/v1/RoadmapReview/{itemId}/request-changes", role: "Moderator, Administrator",
     what: "Yêu cầu sửa: bộ về Nháp kèm nhận xét chung và các phần cần sửa (PartType order, theme, name_description, age_level hoặc story).",
+    warn: CLAIM_WARN("POST /api/v1/ModerationQueue/5/claim (moderator_demo1; mục 5 trong seed đã hết hạn claim, phải claim lại)", ACT_DENIED, ACT_EXPIRED),
     body: '{ "generalNote": "Cần đổi thứ tự", "parts": [ { "partType": "order", "storyId": null, "action": null, "note": "Truyện khó đặt trước" } ] }',
     tests: [
       ["ok","Yêu cầu sửa có nhận xét","200, người tạo nhận thông báo, bộ về Nháp"],
@@ -931,6 +989,7 @@ const STEPS = [
     ] },
   { m: "POST", p: "/api/v1/RoadmapReview/{itemId}/reject", role: "Moderator, Administrator",
     what: "Từ chối với lý do bắt buộc; bộ về Nháp (không xóa).",
+    warn: CLAIM_WARN("POST /api/v1/ModerationQueue/5/claim (moderator_demo1; mục 5 trong seed đã hết hạn claim, phải claim lại)", ACT_DENIED, ACT_EXPIRED),
     body: '{ "reason": "Chủ đề chính không khớp nội dung" }',
     tests: [
       ["ok","Từ chối có lý do","200, bộ về Nháp kèm phản hồi"],
@@ -1406,9 +1465,9 @@ const OVERRIDES = [
   ["ModeratorAccount/{userId}/deactivate", "Lý do dưới 3", J({ reason: "ab" })],
   ["=/api/v1/Auth/login", "Sai mật khẩu", J({ identifier: "moderator_demo1", password: "SaiMatKhau1" })],
   // Bước 3: vùng xám và rubric
-  ["gray-zone-stories/{itemId}/decision", "Block kèm lý do", J({ decision: "Block", reason: "Có cảnh bạo lực không phù hợp 6-8 tuổi", rowVersion: "<ROW_VERSION>" })],
-  ["gray-zone-stories/{itemId}/decision", "decision khác", J({ decision: "Approve", reason: "Thử giá trị sai", rowVersion: "<ROW_VERSION>" })],
-  ["gray-zone-stories/{itemId}/decision", "Thiếu lý do", J({ decision: "Clear", reason: "", rowVersion: "<ROW_VERSION>" })],
+  ["gray-zone-stories/{itemId}/decision", "Block kèm lý do", J({ decision: "Block", reason: "Có cảnh bạo lực không phù hợp 6-8 tuổi", rowVersion: "<GRAY_ROW_VERSION>" })],
+  ["gray-zone-stories/{itemId}/decision", "decision khác", J({ decision: "Approve", reason: "Thử giá trị sai", rowVersion: "<GRAY_ROW_VERSION>" })],
+  ["gray-zone-stories/{itemId}/decision", "Thiếu lý do", J({ decision: "Clear", reason: "", rowVersion: "<GRAY_ROW_VERSION>" })],
   ["gray-zone-stories/{itemId}/decision", "rowVersion cũ", J({ decision: "Clear", reason: "Đã xem", rowVersion: 0 })],
   ["=/api/v1/moderation/rubrics", "versionNo có dấu cách", J({ versionNo: "gray zone v2", name: "Rubric thử", definition: RUBRIC_DEF })],
   ["=/api/v1/moderation/rubrics", "name rỗng", J({ versionNo: "gray-zone-v2", name: "", definition: RUBRIC_DEF })],
@@ -1460,7 +1519,7 @@ const OVERRIDES = [
   ["=/api/v1/moderation/rubrics/{id}", "Sửa bản Active", J({ versionNo: "gray-zone-moderation-v1", name: "Sửa bản đã Active", definition: RUBRIC_DEF, revision: "<RUBRIC_REVISION>" })],
   ["rubrics/{id}/clone", "id nguồn không tồn tại", J({ versionNo: "gray-zone-v9", name: "Nguồn không có" })],
   ["rubrics/{id}/activate", "Kích hoạt bản đã Active", J({ revision: "<RUBRIC_REVISION>" })],
-  ["rubrics/{id}/activate", "Moderator gọi activate", J({ revision: "<RUBRIC_REVISION>" })],
+  ["rubrics/{id}/activate", "Moderator kích hoạt", J({ revision: "<RUBRIC_REVISION>" })],
   // Bước 3: cờ vùng xám WF-L5A
   [PSR + "/flags/resolve", "cờ cuối cùng", J({ flagId: "safety-1", reason: "Đã kiểm tra, đèn đặt ở vị trí an toàn" })],
   [PSR + "/flags/resolve", "cờ safety-1", J({ flagId: "safety-1", reason: "Đã kiểm tra, đèn đặt ở vị trí an toàn" })],
@@ -1468,9 +1527,9 @@ const OVERRIDES = [
   [PSR + "/flags/resolve", "Giải quyết cảnh báo", J({ flagId: "pii-1", reason: "Đã kiểm tra, không phải thông tin cá nhân" })],
   [PSR + "/flags/resolve", "Người không giữ mục", J({ flagId: "pii-1", reason: "Đã xem" })],
   [PSR + "/flags/resolve", "toàn khoảng trắng", J({ flagId: "pii-1", reason: "   " })],
-  ["gray-zone-stories/{itemId}/decision", "Clear mục", J({ decision: "Clear", reason: "Đã đọc kỹ, chi tiết phù hợp lứa tuổi", rowVersion: "<ROW_VERSION>" })],
-  ["gray-zone-stories/{itemId}/decision", "lý do quá 2000", J({ decision: "Block", reason: A(2001), rowVersion: "<ROW_VERSION>" })],
-  ["gray-zone-stories/{itemId}/decision", "Mục cũ không có checkpoint", J({ decision: "Clear", reason: "Đã xem", rowVersion: "<ROW_VERSION>" })],
+  ["gray-zone-stories/{itemId}/decision", "Clear mục", J({ decision: "Clear", reason: "Đã đọc kỹ, chi tiết phù hợp lứa tuổi", rowVersion: "<GRAY_ROW_VERSION>" })],
+  ["gray-zone-stories/{itemId}/decision", "lý do quá 2000", J({ decision: "Block", reason: A(2001), rowVersion: "<GRAY_ROW_VERSION>" })],
+  ["gray-zone-stories/{itemId}/decision", "Mục không có checkpoint", J({ decision: "Clear", reason: "Đã xem", rowVersion: "<GRAY_ROW_VERSION>" })],
   ["gray-zone-stories/{itemId}/decision", "Claim đã hết hạn", J({ decision: "Clear", reason: "Đã xem", rowVersion: 1 })],
   ["gray-zone-stories/{itemId}/decision", "lần hai", J({ decision: "Clear", reason: "Quyết định lại", rowVersion: 2 })],
   // Bước 7: đăng nhập, MFA
@@ -1566,7 +1625,7 @@ const SEEDAPI = [
   ["ModerationQueue/{itemId}/claim", { as: "moderator_demo1", url: "POST /api/v1/ModerationQueue/21/claim", note: "Mục 21 = PublicStoryReview Pending của truyện 14 (creator_demo gửi). Mục 7 và 14 là Community Pending; mục 3 và 11 là report Pending." }],
   ["GET /api/v1/ModerationQueue?", { as: "moderator_demo1", url: "GET /api/v1/ModerationQueue?itemType=CommunitySubmission&status=Pending&pageIndex=1&pageSize=20", note: "Seed có 25 mục: Community Pending (7, 14), report Pending (3, 11), duyệt truyện Pending (21, 26 — 26 để dành cho test rút, đừng claim), đã nhận (1, 4, 5)." }],
   ["=GET /api/v1/ModerationQueue/{itemId}", { as: "moderator_demo1", url: "GET /api/v1/ModerationQueue/21", note: "Mở sau khi đã nhận mục 21. Mục 1, 4, 5 đang do moderator_demo1 giữ." }],
-  ["ModerationQueue/review-views", { as: "moderator_demo1", url: "POST /api/v1/ModerationQueue/review-views", body: '{ "sourceTab": "published_content", "storyId": 13, "storyVersionId": null, "readingRoadmapId": null }', note: "Xin quyền đọc tạm 2 giờ trước khi mở nội dung ở tab rà soát (bước 4)." }],
+  ["ModerationQueue/review-views", { as: "moderator_demo1", url: "POST /api/v1/ModerationQueue/review-views", body: '{ "sourceTab": "published_content", "storyId": 13, "storyVersionId": null, "readingRoadmapId": null }', note: "Ghi nhận quyền đọc tạm 2 giờ; không còn bắt buộc trước khi mở nội dung ở tab rà soát (bước 4)." }],
   // Bước 2
   ["GET /api/v1/creator/stories?", { as: "creator_demo", url: "GET /api/v1/creator/stories?pageIndex=1&pageSize=20", note: "creator_demo (id 13) sở hữu truyện 11, 12, 13, 14, 16, 17, 18." }],
   ["/publication", { as: "creator_demo", url: "GET /api/v1/creator/stories/14/publication", note: "Truyện 14: đã công khai (v17), bản v19 đang chờ duyệt (mục 21). Truyện 13: v14 đã công khai, v16 là bản đang sửa." }],
@@ -1593,10 +1652,10 @@ const SEEDAPI = [
   ["ContentReportReview/{itemId}/escalate", { as: "moderator_demo2", url: "POST /api/v1/ContentReportReview/3/escalate", note: "Nhận mục 3 (report Pending truyện 2) bằng moderator_demo2 rồi Escalate. Mục 4 đã Escalate sẵn, do admin_demo quyết định." }],
   ["=GET /api/v1/ContentReportReview/{itemId}", { as: "moderator_demo1", url: "GET /api/v1/ContentReportReview/11", note: "Nhận mục 11 trước." }],
   ["PublishedContentReview?", { as: "moderator_demo1", url: "GET /api/v1/PublishedContentReview?pageIndex=1&pageSize=20", note: "Truyện công khai trong seed: 13, 14. Bộ Published: 1, 5." }],
-  ["PublishedContentReview/stories/{storyId}", { as: "moderator_demo1", url: "GET /api/v1/PublishedContentReview/stories/13", note: "Bấm POST /ModerationQueue/review-views trước để có quyền đọc." }],
+  ["PublishedContentReview/stories/{storyId}", { as: "moderator_demo1", url: "GET /api/v1/PublishedContentReview/stories/13", note: "Truyện 13, 14, 16 là truyện Public Library đang công khai. Không cần gọi review-views trước." }],
   ["PublishedContentReview/roadmaps/{roadmapId}", { as: "moderator_demo1", url: "GET /api/v1/PublishedContentReview/roadmaps/1", note: "Bộ 1 đang Published." }],
   ["PublishedContentReview/review-items", { as: "moderator_demo1", url: "POST /api/v1/PublishedContentReview/review-items", body: '{ "storyId": 13, "readingRoadmapId": null, "reason": "Inappropriate", "description": "Rà soát chủ động", "attachmentUrl": null }', note: "moderator_demo2 sẽ là người xử lý (người tạo không nhận mục của mình)." }],
-  ["(chưa có) Administrator quyết định", { as: "admin_demo", url: "POST /api/v1/ContentReportReview/4/archive", body: '{ "archiveReason": "Copyright", "reason": "Đã xác minh vi phạm bản quyền" }', note: "Mục 4 là report Copyright truyện 6 đã Escalate sẵn trong seed." }],
+  ["(dùng lại) /api/v1/ContentReportReview", { as: "admin_demo", url: "POST /api/v1/ContentReportReview/4/archive", body: '{ "archiveReason": "Copyright", "reason": "Đã xác minh vi phạm bản quyền" }', note: "Mục 4 là report Copyright truyện 6 đã Escalate sẵn trong seed." }],
   // Bước 4 tiếp: hệ quả Archive
   ["(kích hoạt qua)", { as: "moderator_demo1", url: "POST /api/v1/ContentReportReview/{itemId}/archive", body: '{ "archiveReason": "SafetyConcern", "reason": "Có nội dung gây sợ hãi cho trẻ nhỏ" }', note: "Truyện 3: có submission Community Pending (mục 7), đang Open ở lộ trình bé 1, nằm trong bộ 6. Truyện 6: Open ở lộ trình bé 3, Waiting ở bé 1, nằm trong bộ 3 và 5. Truyện 13/14: có bản đang chờ duyệt." }],
   // Bước 5
@@ -1639,17 +1698,17 @@ const SEEDAPI = [
   ["=POST /api/v1/Auth/login", { as: "moderator_demo1", url: "POST /api/v1/Auth/login", body: '{ "identifier": "moderator_demo1", "password": "Demo@123" }', note: "moderator_demo1 (id 11) và moderator_demo2 (id 12) đã kích hoạt, Active." }],
   // Bước 3 (vùng xám, rubric)
   ["=GET /api/v1/moderation/gray-zone-stories/{itemId}", { as: "moderator_demo1", url: "GET /api/v1/moderation/gray-zone-stories/1", note: "Mục 1 (GrayZoneStory, truyện 4) đã nhận hơn 2 giờ trước trong seed nên phải POST /api/v1/ModerationQueue/1/claim lại trước khi mở." }],
-  ["gray-zone-stories/{itemId}/decision", { as: "moderator_demo1", url: "POST /api/v1/moderation/gray-zone-stories/1/decision", body: '{ "decision": "Clear", "reason": "Đã đọc kỹ, chi tiết phù hợp lứa tuổi", "rowVersion": "<ROW_VERSION>" }', note: "Mục 1 trong seed là dữ liệu cũ không có checkpoint nên quyết định trả 409 MODERATION_CHECKPOINT_MISSING. Muốn thấy Clear / Block thành công: cho Parent sinh truyện AI đến khi job ở WaitingForModeration, rồi nhận mục GrayZoneStory mới; rowVersion lấy từ gói duyệt." }],
-  ["GET /api/v1/moderation/rubrics?", { as: "moderator_demo1", url: "GET /api/v1/moderation/rubrics?pageIndex=1&pageSize=20", note: "Seed có rubric id 1 (gray-zone-moderation-v1, Draft, revision 1). Chưa có bản Active." }],
-  ["=GET /api/v1/moderation/rubrics/active", { as: "moderator_demo1", url: "GET /api/v1/moderation/rubrics/active", note: "Seed chưa có bản Active nên trả 409 RUBRIC_ACTIVE_REQUIRED cho đến khi admin_demo kích hoạt." }],
+  ["gray-zone-stories/{itemId}/decision", { as: "moderator_demo1", url: "POST /api/v1/moderation/gray-zone-stories/1/decision", body: '{ "decision": "Clear", "reason": "Đã đọc kỹ, chi tiết phù hợp lứa tuổi", "rowVersion": "<GRAY_ROW_VERSION>" }', note: "Mục 1 (truyện 4, phiên bản 4) có checkpoint khớp đánh giá vùng xám của phiên bản 4, không gắn job: claim lại mục 1, lấy rowVersion từ GET gói duyệt rồi Clear hoặc Block → 200. Mỗi mục chỉ quyết định một lần; muốn thử job WaitingForModeration chạy tiếp thì cho Parent sinh truyện AI để có mục GrayZoneStory mới." }],
+  ["GET /api/v1/moderation/rubrics?", { as: "moderator_demo1", url: "GET /api/v1/moderation/rubrics?pageIndex=1&pageSize=20", note: "Seed có rubric id 1 (gray-zone-moderation-v1, Draft, revision 1) và id 2 (gray-zone-active-v1, Active, revision 1, cùng definition với bản 1)." }],
+  ["=GET /api/v1/moderation/rubrics/active", { as: "moderator_demo1", url: "GET /api/v1/moderation/rubrics/active", note: "DB mới seed trả rubric 2 (Active). Sau khi admin_demo activate rubric 1 thì trả rubric 1, rubric 2 thành Retired." }],
   ["=GET /api/v1/moderation/rubrics/{id}", { as: "moderator_demo1", url: "GET /api/v1/moderation/rubrics/1", note: "Chép definition của bản 1 để tạo bản mới." }],
   ["=POST /api/v1/moderation/rubrics", { as: "moderator_demo1", url: "POST /api/v1/moderation/rubrics", body: J({ versionNo: "gray-zone-v2", name: "Rubric vùng xám v2", definition: RUBRIC_DEF }), note: "definition là bản đầy đủ của rubric seed id 1 (đủ 5 tiêu chí GZ01–GZ05). Mỗi lần chạy lại cần đổi versionNo (gray-zone-v2, -v3…)." }],
   ["=PUT /api/v1/moderation/rubrics/{id}", { as: "moderator_demo1", url: "PUT /api/v1/moderation/rubrics/1", body: J({ versionNo: "gray-zone-moderation-v1", name: "Initial gray-zone rubric (đã sửa)", definition: RUBRIC_DEF, revision: "<RUBRIC_REVISION>" }), note: "Bản 1 là Draft, revision 1 trên DB mới seed; mỗi lần sửa thành công revision tăng 1, cập nhật ô RUBRIC_REVISION." }],
-  ["moderation/rubrics/{id}?revision", { as: "moderator_demo1", url: "DELETE /api/v1/moderation/rubrics/<NEW_RUBRIC_ID>?revision=0", note: "Dùng Draft vừa tạo, không xóa bản 1 nếu còn cần kích hoạt." }],
+  ["moderation/rubrics/{id}?revision", { as: "moderator_demo1", url: "DELETE /api/v1/moderation/rubrics/<NEW_RUBRIC_ID>?revision=1", note: "Dùng Draft vừa tạo (revision 1 nếu chưa sửa; mỗi lần PUT thành công tăng 1), không xóa bản 1 nếu còn cần kích hoạt." }],
   ["rubrics/{id}/clone", { as: "moderator_demo1", url: "POST /api/v1/moderation/rubrics/1/clone", body: '{ "versionNo": "gray-zone-v3", "name": "Bản sao để chỉnh" }', note: "versionNo phải chưa có." }],
   ["rubrics/{id}/validate", { as: "moderator_demo1", url: "POST /api/v1/moderation/rubrics/1/validate", body: '{ "revision": "<RUBRIC_REVISION>" }', note: "Bản 1 revision 1." }],
   ["rubrics/{id}/evaluations", { as: "moderator_demo1", url: "POST /api/v1/moderation/rubrics/1/evaluations", body: '{ "revision": "<RUBRIC_REVISION>", "phase": "phase2", "ageBand": "6-8", "language": "vi", "title": "Chú mèo lạc đường", "content": "Chú mèo nhỏ đi lạc trong khu rừng tối, chú rất sợ nhưng vẫn tìm đường về nhà." }', note: "Gọi AI thật; môi trường local chưa cấu hình Vertex sẽ trả 409 MODERATION_PROVIDER_NOT_REGISTERED." }],
-  ["rubrics/{id}/activate", { as: "admin_demo", url: "POST /api/v1/moderation/rubrics/1/activate", body: '{ "revision": "<RUBRIC_REVISION>" }', note: "Chỉ admin_demo. moderator_demo1 gọi sẽ bị 403." }],
+  ["rubrics/{id}/activate", { as: "admin_demo", url: "POST /api/v1/moderation/rubrics/1/activate", body: '{ "revision": "<RUBRIC_REVISION>" }', note: "admin_demo hoặc moderator_demo1 đều kích hoạt được; Parent gọi sẽ bị 403." }],
   ["rubrics/{id}/audit-logs", { as: "moderator_demo1", url: "GET /api/v1/moderation/rubrics/1/audit-logs?pageIndex=1&pageSize=20", note: "Seed có sẵn audit Created cho bản 1." }],
   // Bước 8
   ["=GET /api/v1/moderation/authoring-guides", { as: "moderator_demo1", url: "GET /api/v1/moderation/authoring-guides", note: "Lưu data.revisionToken để dùng cho các lệnh ghi. Mỗi lệnh ghi thành công trả token mới." }],
@@ -1706,12 +1765,15 @@ const TESTDATA = [
   ["PublicStoryReview/{itemId}/approve", "Người duyệt là người gửi", "Chỉ xảy ra với tài khoản vừa là Creator vừa là Moderator; dùng Administrator giữ mục do chính họ gửi."],
   ["PublicStoryReview/{itemId}/approve", "Còn cảnh báo", "Mục 21 khi còn cờ vùng xám chưa xử lý (xem GET /PublicStoryReview/21)."],
   ["flags/resolve", "flagId không", "Dùng flagId bịa: { \"flagId\": \"khong-co\", \"reason\": \"Đã xem\" }."],
+  ["flags/resolve", "Người không giữ mục", "Mục 21 đang do moderator_demo1 giữ: đăng nhập moderator_demo2, POST /api/v1/PublicStoryReview/21/flags/resolve."],
   ["ContentReport", "Truyện không công khai", "parent_demo1 báo truyện 9 (Archived) hoặc truyện 999999."],
   ["=/api/v1/ContentReport", "Báo cáo cùng truyện", "Báo cáo truyện 2 bằng parent_demo1 hai lần liên tiếp (truyện 2 đã có report Pending 2 từ teacher_demo2)."],
   ["=/api/v1/ContentReport", "ContentCreator", "Đăng nhập creator_demo (ContentCreator) rồi POST /api/v1/ContentReport."],
   ["ContentReportReview/{itemId}/archive", "Archive vì SafetyConcern", "Nhận mục 11 (report SafetyConcern truyện 8) bằng moderator_demo1: { \"archiveReason\": \"SafetyConcern\", \"reason\": \"Có nội dung gây sợ hãi cho trẻ nhỏ\" }."],
   ["ContentReportReview/{itemId}/archive", "Archive truyện đã Archive", "Archive lần hai trên report của truyện 9 (đã Archived, mục 9)."],
   ["ContentReportReview/{itemId}/escalate", "Escalate có lý do", "moderator_demo2 nhận mục 3 rồi POST /api/v1/ContentReportReview/3/escalate."],
+  ["ContentReportReview/{itemId}/escalate", "Escalate mục đã Dismiss", "Đăng nhập moderator_demo1, claim mục 11, POST /api/v1/ContentReportReview/11/dismiss, rồi POST /api/v1/ContentReportReview/11/escalate."],
+  ["ContentReportReview/{itemId}/escalate", "Administrator gọi escalate", "Đăng nhập admin_demo, POST /api/v1/ContentReportReview/3/escalate (Admin không claim được mục 3 vì vẫn còn Moderator hoạt động)."],
   ["PublishedContentReview/review-items", "Truyện không công khai", "{ \"storyId\": 9, \"readingRoadmapId\": null, \"reason\": \"Other\" } (truyện 9 đã Archived)."],
   // hệ quả Archive
   ["(kích hoạt qua)", "bản đang chờ duyệt (Pending)", "Truyện 14 có mục 21 Pending: tạo report cho truyện 14 rồi Archive; kiểm tra mục 21 thành Withdrawn."],
@@ -1755,11 +1817,11 @@ const TESTDATA = [
   ["gray-zone-stories/{itemId}", "Mục không phải GrayZoneStory", "Nhận mục 21 (PublicStoryReview) rồi GET /api/v1/moderation/gray-zone-stories/21."],
   ["gray-zone-stories/{itemId}", "Chưa nhận mục hoặc Moderator khác", "Đăng nhập moderator_demo2, GET /api/v1/moderation/gray-zone-stories/1 khi moderator_demo1 đang giữ mục 1."],
   ["gray-zone-stories/{itemId}", "itemId không tồn tại", "GET /api/v1/moderation/gray-zone-stories/999999."],
-  ["gray-zone-stories/{itemId}/decision", "Mục cũ không có checkpoint", "Nhận lại mục 1 rồi POST /api/v1/moderation/gray-zone-stories/1/decision { \"decision\": \"Clear\", \"reason\": \"Đã xem\", \"rowVersion\": 1 }."],
-  ["GET /api/v1/moderation/rubrics/active", "Chưa có bộ nào Active", "Đăng nhập moderator_demo1, GET /api/v1/moderation/rubrics/active trên DB mới seed."],
+  ["gray-zone-stories/{itemId}/decision", "Mục không có checkpoint", "Chạy SQL UPDATE moderation_items SET \"Flags\" = '{}'::jsonb WHERE \"Id\" = 1; rồi đăng nhập moderator_demo1 (đã claim mục 1), POST /api/v1/moderation/gray-zone-stories/1/decision { \"decision\": \"Clear\", \"reason\": \"Đã xem\", \"rowVersion\": <GRAY_ROW_VERSION> }. Chạy lại Seed-Database.ps1 để khôi phục checkpoint."],
+  ["GET /api/v1/moderation/rubrics/active", "Chưa có bộ nào Active", "Chạy SQL UPDATE moderation_rubric_versions SET \"Status\" = 'Retired', \"RetiredAt\" = NOW() WHERE \"Status\" = 'Active'; rồi đăng nhập moderator_demo1, GET /api/v1/moderation/rubrics/active. Chạy lại Seed-Database.ps1 để có lại rubric 2 Active."],
   ["GET /api/v1/moderation/rubrics?", "status=Published", "GET /api/v1/moderation/rubrics?status=Published."],
   ["GET /api/v1/moderation/rubrics?", "pageSize=0", "GET /api/v1/moderation/rubrics?pageIndex=1&pageSize=101."],
-  ["rubrics/{id}/activate", "Moderator gọi activate", "Đăng nhập moderator_demo1, POST /api/v1/moderation/rubrics/1/activate { \"revision\": 1 }."],
+  ["rubrics/{id}/activate", "Moderator kích hoạt", "Đăng nhập moderator_demo1, POST /api/v1/moderation/rubrics/1/activate { \"revision\": <RUBRIC_REVISION> } (rubric 1 còn Draft). Rubric 2 đang Active sẽ thành Retired."],
   ["GET /api/v1/moderation/authoring-guides/versions", "versions/999999", "GET /api/v1/moderation/authoring-guides/versions/999999."],
   ["GET /api/v1/moderation/authoring-guides/versions", "pageIndex=0", "GET /api/v1/moderation/authoring-guides/versions?pageIndex=0."],
   ["draft/publish", "Parent render mẫu", "Đăng nhập parent_demo1, POST /api/v1/authoring-guides/dialogue-1/render { \"values\": { \"person\": \"An\", \"words\": \"Chào\" }, \"catalogVersion\": \"parent-vi-1\" }."],
@@ -1767,7 +1829,7 @@ const TESTDATA = [
   ["moderation/stories/{storyId}/wish-cards", "storyId không tồn tại", "POST /api/v1/moderation/stories/999999/wish-cards { \"wishCardId\": 1 }."],
   ["moderation/stories/{storyId}/wish-cards/{wishCardId}", "Thẻ chưa gắn", "DELETE /api/v1/moderation/stories/1/wish-cards/24."],
   ["GET /api/v1/moderation/stories/{storyId}/wish-cards", "Truyện chưa gắn thẻ", "GET /api/v1/moderation/stories/13/wish-cards."],
-  ["(chưa có) Administrator quyết định", "Moderator quyết định mục đã Escalate", "Đăng nhập moderator_demo1, POST /api/v1/ContentReportReview/4/archive (mục 4 đã Escalate)."],
+  ["(dùng lại) /api/v1/ContentReportReview", "Moderator quyết định mục đã Escalate", "Đăng nhập moderator_demo1, POST /api/v1/ContentReportReview/4/archive (mục 4 đã Escalate)."],
   // Bước 1: thông báo
   ["/api/v1/Notification", "unread-count", "Đăng nhập moderator_demo1, GET /api/v1/Notification/unread-count."],
   ["/api/v1/Notification", "/read rồi gọi lại", "Đăng nhập moderator_demo1, PUT /api/v1/Notification/<NOTIFICATION_ID>/read. NOTIFICATION_ID lấy từ GET /api/v1/Notification?group=moderation (seed chưa có thông báo cho Moderator: cho parent_demo1 gửi POST /api/v1/ContentReport ở Bước 4 trước)."],
@@ -1790,11 +1852,11 @@ const TESTDATA = [
   // Bước 3: rubric
   ["GET /api/v1/moderation/rubrics?", "Lọc status=Draft", "Đăng nhập moderator_demo1, GET /api/v1/moderation/rubrics?status=Draft&pageIndex=1&pageSize=20."],
   ["GET /api/v1/moderation/rubrics/{id}", "id không tồn tại", "Đăng nhập moderator_demo1, GET /api/v1/moderation/rubrics/999999."],
-  ["GET /api/v1/moderation/rubrics/active", "Đã có đúng một bộ Active", "Sau khi admin_demo activate bản 1: đăng nhập moderator_demo1, GET /api/v1/moderation/rubrics/active."],
+  ["GET /api/v1/moderation/rubrics/active", "Đã có đúng một bộ Active", "Đăng nhập moderator_demo1, GET /api/v1/moderation/rubrics/active trên DB mới seed (rubric 2 Active). Sau khi admin_demo activate bản 1 thì kết quả là rubric 1."],
   ["=/api/v1/moderation/rubrics", "versionNo trùng", "Đăng nhập moderator_demo1, POST /api/v1/moderation/rubrics với versionNo của bản seed."],
   ["PUT /api/v1/moderation/rubrics/{id}", "Sửa bản Active", "Sau khi admin_demo activate bản 1: đăng nhập moderator_demo1, PUT /api/v1/moderation/rubrics/1."],
   ["PUT /api/v1/moderation/rubrics/{id}", "revision cũ", "Đăng nhập moderator_demo1, PUT /api/v1/moderation/rubrics/1 với revision 0 (bản seed đang ở revision 1)."],
-  ["moderation/rubrics/{id}?revision", "Xóa Draft với revision đúng", "Đăng nhập moderator_demo1, DELETE /api/v1/moderation/rubrics/<NEW_RUBRIC_ID>?revision=0 (Draft vừa tạo, revision 0)."],
+  ["moderation/rubrics/{id}?revision", "Xóa Draft với revision đúng", "Đăng nhập moderator_demo1, DELETE /api/v1/moderation/rubrics/<NEW_RUBRIC_ID>?revision=1 (Draft vừa tạo, revision 1)."],
   ["moderation/rubrics/{id}?revision", "revision cũ", "Đăng nhập moderator_demo1, DELETE /api/v1/moderation/rubrics/1?revision=0."],
   ["moderation/rubrics/{id}?revision", "Xóa bản Active", "Sau khi admin_demo activate bản 1: đăng nhập moderator_demo1, DELETE /api/v1/moderation/rubrics/1?revision=<RUBRIC_REVISION>."],
   ["rubrics/{id}/clone", "id nguồn không tồn tại", "Đăng nhập moderator_demo1, POST /api/v1/moderation/rubrics/999999/clone."],
@@ -1860,11 +1922,12 @@ function dataFor(api, t) {
 // [khóa, mặc định, mô tả]. Mặc định = id kế tiếp trên DB vừa nạp seed (Seed-Database.ps1 đặt lại sequence theo id lớn nhất).
 const VAR_DEFS = [
   ["REVISION_TOKEN", "", "Bước 8: data.revisionToken mới nhất"],
-  ["ROW_VERSION", "1", "rowVersion trong phản hồi claim (mục vùng xám 1 sau khi claim lại = 2)"],
+  ["ROW_VERSION", "1", "rowVersion mới nhất của mục: data.rowVersion trong phản hồi claim hoặc GET gói duyệt. Không đoán: mỗi lần claim và mỗi lần mục bị trả về hàng đợi đều tăng 1"],
+  ["GRAY_ROW_VERSION", "", "Bước 3: data.rowVersion trong phản hồi GET /api/v1/moderation/gray-zone-stories/{itemId} (API ngay trên decision). Để trống thì body giữ chữ <GRAY_ROW_VERSION> để nhắc phải gọi GET trước"],
   ["RUBRIC_REVISION", "1", "revision hiện tại của rubric 1"],
   ["NEW_ITEM_ID", "27", "Id mục hàng đợi vừa tạo (data.itemId trong phản hồi; mục mới đầu tiên trên DB mới seed là 27)"],
   ["NEW_ROADMAP_ID", "7", "Id bộ mẫu Nháp vừa tạo"],
-  ["NEW_RUBRIC_ID", "2", "Id rubric Draft vừa tạo"],
+  ["NEW_RUBRIC_ID", "3", "Id rubric Draft vừa tạo (bản mới đầu tiên trên DB mới seed là 3; seed đã có 1 và 2)"],
   ["NEW_USER_ID", "14", "Id tài khoản Moderator vừa mời"],
   ["INVITE_TOKEN", "", "Mã mời trong email"],
   ["GUIDE_VERSION_ID", "1", "versionId bộ hướng dẫn parent-vi-1"],

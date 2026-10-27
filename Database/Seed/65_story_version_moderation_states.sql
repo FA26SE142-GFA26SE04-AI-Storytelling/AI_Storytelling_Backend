@@ -39,8 +39,10 @@ SET "ReviewStatus" = 'Approved', "ReviewSubmittedAt" = NOW() - INTERVAL '30 days
     "ReviewedByUserId" = 11, "ReviewedAt" = NOW() - INTERVAL '30 days' + INTERVAL '90 minutes'
 WHERE "StoryVersionId" = 1 AND "ReviewStatus" = 'None';
 
+-- Version 4 (item 1): same shape GrayZoneWorkflowService.RecordAsync writes, so the
+-- fingerprint matches item 1's checkpoint and gray-zone Clear / Block can succeed.
 UPDATE story_version_moderation_states
-SET "ModerationZone" = 'GrayZone', "GrayZoneFlags" = '{"sections":["development"],"reason":"age_band_review"}'::jsonb,
+SET "ModerationZone" = 'GrayZone', "GrayZoneFlags" = '{"assessment":{"zone":2,"fingerprint":"5EED00000000000000000000000000000000000000000000000000000000A001","phase":"phase1","policyVersion":"seed","provider":"seed","model":"seed","riskScore":55,"findings":[{"kind":"paragraph","name":"paragraph:0","category":"GZ03","reason":"Bé tự du hành một mình lên vũ trụ, cần người lớn xem lại cho nhóm 9-10 tuổi","startOffset":0,"endOffset":53,"evidenceQuote":"ban nho quyet dinh du hanh len vu tru","contextNote":"Chưa có người lớn đi cùng"}],"ageBand":"9-10","language":"vi"},"flags":[{"id":"5EED000000000000:0","kind":"paragraph","name":"paragraph:0","reason":"Bé tự du hành một mình lên vũ trụ, cần người lớn xem lại cho nhóm 9-10 tuổi","category":"GZ03","evidenceQuote":"ban nho quyet dinh du hanh len vu tru","contextNote":"Chưa có người lớn đi cùng","startOffset":0,"endOffset":53}]}'::jsonb,
     "ReviewStatus" = 'Pending', "ReviewSubmittedAt" = NOW() - INTERVAL '1 day'
 WHERE "StoryVersionId" = 4 AND "ReviewStatus" = 'None';
 

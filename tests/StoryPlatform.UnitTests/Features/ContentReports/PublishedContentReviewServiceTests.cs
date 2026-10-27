@@ -22,7 +22,7 @@ public class PublishedContentReviewServiceTests
     public PublishedContentReviewServiceTests()
     {
         _sut = new PublishedContentReviewService(
-            _h.UnitOfWork.Object, _h.ReviewViews.Object, _h.Audit.Object);
+            _h.UnitOfWork.Object, _h.Audit.Object);
     }
 
     [Fact]
@@ -123,18 +123,16 @@ public class PublishedContentReviewServiceTests
     }
 
     [Fact]
-    public async Task GetStoryContentAsync_RequiresActiveReviewView()
+    public async Task GetStoryContentAsync_DoesNotRequireReviewView()
     {
-        await Assert.ThrowsAsync<ForbiddenException>(() =>
-            _sut.GetStoryContentAsync(Moderator, PublicStory));
+        var result = await _sut.GetStoryContentAsync(Moderator, PublicStory);
+
+        Assert.Equal(PublicStory, result.Story.StoryId);
     }
 
     [Fact]
     public async Task GetStoryContentAsync_ReturnsMaskedDisplayedVersionAndAuditsEveryOpen()
     {
-        _h.ReviewViews.Setup(view => view.HasActiveViewAsync(
-                Moderator, PublicStory, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
         var story = _h.Stories.Single(candidate => candidate.Id == PublicStory);
         story.Title = "Gọi 0912345678";
         _h.Versions.Single(version => version.Id == 50).Content = "mail me@example.com";
@@ -150,25 +148,19 @@ public class PublishedContentReviewServiceTests
     }
 
     [Fact]
-    public async Task GetStoryContentAsync_RejectsPrivateOrArchivedStoryEvenWithView()
+    public async Task GetStoryContentAsync_RejectsPrivateOrArchivedStory()
     {
         var privateStory = ContentReportHarness.PrivateStoryId;
-        _h.ReviewViews.Setup(view => view.HasActiveViewAsync(
-                Moderator, privateStory, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
         await Assert.ThrowsAsync<BadRequestException>(() =>
             _sut.GetStoryContentAsync(Moderator, privateStory));
 
-        _h.ReviewViews.Setup(view => view.HasActiveViewAsync(
-                Moderator, PublicStory, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
         _h.Stories.Single(story => story.Id == PublicStory).Status = StoryStatus.Archived;
         await Assert.ThrowsAsync<BadRequestException>(() =>
             _sut.GetStoryContentAsync(Moderator, PublicStory));
     }
 
     [Fact]
-    public async Task GetRoadmapAsync_RequiresViewAndReturnsStoriesInPositionOrder()
+    public async Task GetRoadmapAsync_ReturnsStoriesInPositionOrderWithoutReviewView()
     {
         _h.ContentCategories.Add(new ContentCategory
         {
@@ -178,11 +170,6 @@ public class PublishedContentReviewServiceTests
             1, AgeBand.Age_6_8, 5, DateTime.UtcNow,
             ContentReportHarness.PrivateStoryId, PublicStory);
         roadmap.Description = "Liên hệ test@example.com";
-
-        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.GetRoadmapAsync(Moderator, 1));
-        _h.ReviewViews.Setup(view => view.HasActiveViewAsync(
-                Moderator, null, 1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
 
         var result = await _sut.GetRoadmapAsync(Moderator, 1);
 
@@ -230,9 +217,6 @@ public class PublishedContentReviewServiceTests
     {
         _h.AddPublicStory(30, "6-8", DateTime.UtcNow.AddDays(-1));
         _h.AddRoadmap(1, AgeBand.Age_6_8, 5, DateTime.UtcNow, PublicStory, 30);
-        _h.ReviewViews.Setup(view => view.HasActiveViewAsync(
-                Moderator, null, 1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
         _h.Stories.Single(story => story.Id == 30).Status = StoryStatus.Archived;
 
         var result = await _sut.GetRoadmapAsync(Moderator, 1);
@@ -245,9 +229,6 @@ public class PublishedContentReviewServiceTests
     public async Task GetRoadmapAsync_HealthyRoadmapDoesNotNeedUpdate()
     {
         _h.AddRoadmap(1, AgeBand.Age_6_8, 5, DateTime.UtcNow, PublicStory);
-        _h.ReviewViews.Setup(view => view.HasActiveViewAsync(
-                Moderator, null, 1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
 
         Assert.False((await _sut.GetRoadmapAsync(Moderator, 1)).NeedsUpdate);
     }

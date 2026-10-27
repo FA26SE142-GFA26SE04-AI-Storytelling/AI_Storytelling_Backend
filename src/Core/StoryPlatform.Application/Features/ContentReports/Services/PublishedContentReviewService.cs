@@ -6,7 +6,6 @@ using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.ContentReports.DTOs;
 using StoryPlatform.Application.Features.ContentReports.Interfaces;
 using StoryPlatform.Application.Features.Moderation;
-using StoryPlatform.Application.Features.Moderation.Interfaces;
 using StoryPlatform.Application.Features.RoadmapTemplates;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -16,16 +15,13 @@ namespace StoryPlatform.Application.Features.ContentReports.Services;
 public class PublishedContentReviewService : IPublishedContentReviewService
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IModerationReviewViewService _reviewViewService;
     private readonly IAuditLogWriter _auditLogWriter;
 
     public PublishedContentReviewService(
         IUnitOfWork unitOfWork,
-        IModerationReviewViewService reviewViewService,
         IAuditLogWriter auditLogWriter)
     {
         _unitOfWork = unitOfWork;
-        _reviewViewService = reviewViewService;
         _auditLogWriter = auditLogWriter;
     }
 
@@ -62,12 +58,7 @@ public class PublishedContentReviewService : IPublishedContentReviewService
             throw new NotFoundException("Truyện", storyId);
         }
 
-        if (!await _reviewViewService.HasActiveViewAsync(actor.Id, storyId, null, cancellationToken))
-        {
-            throw new ForbiddenException(
-                "Hãy bấm \"Xem để rà soát\" để mở nội dung này (quyền đọc tạm 2 giờ).");
-        }
-
+        // Không cần bước "Xem để rà soát": mọi lần mở đều được ghi audit PublishedContentOpened bên dưới.
         if (story.Scope != StoryScope.Creator || !story.IsPublished
             || story.Status == StoryStatus.Archived || story.ArchivedAt != null)
         {
@@ -113,12 +104,7 @@ public class PublishedContentReviewService : IPublishedContentReviewService
             throw new NotFoundException("Bộ truyện mẫu", roadmapId);
         }
 
-        if (!await _reviewViewService.HasActiveViewAsync(actor.Id, null, roadmapId, cancellationToken))
-        {
-            throw new ForbiddenException(
-                "Hãy bấm \"Xem để rà soát\" để mở bộ truyện mẫu này (quyền đọc tạm 2 giờ).");
-        }
-
+        // Không cần bước "Xem để rà soát": mọi lần mở đều được ghi audit PublishedRoadmapOpened bên dưới.
         if (roadmap.Status != RoadmapTemplateStatus.Published || roadmap.ArchivedAt != null)
         {
             throw new BadRequestException("Chỉ xem được bộ truyện mẫu đang công khai.");

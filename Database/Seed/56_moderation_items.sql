@@ -8,7 +8,7 @@ INSERT INTO moderation_items (
 VALUES
     (1, 'GrayZoneStory', 'Claimed', 'High', 4, 4,
      8, 4, 11, NOW() - INTERVAL '4 hours',
-     NOW() + INTERVAL '8 hours', '{"sections":["development"]}'::jsonb,
+     NOW() + INTERVAL '8 hours', '{"jobId":null,"fingerprint":"5EED00000000000000000000000000000000000000000000000000000000A001","qualityPassed":true}'::jsonb,
      '{"safety":false,"ageBand":false}'::jsonb, '{"section":"development","completed":false}'::jsonb,
      NULL, NULL, NULL, 1, false, NOW() - INTERVAL '1 day', false),
     (2, 'GrayZoneStory', 'Cleared', 'Medium', 6, 6,

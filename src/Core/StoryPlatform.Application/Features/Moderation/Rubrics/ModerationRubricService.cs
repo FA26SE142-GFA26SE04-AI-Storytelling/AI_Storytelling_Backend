@@ -162,7 +162,7 @@ public sealed class ModerationRubricService(IUnitOfWork uow, IEnumerable<IModelM
         var snapshot = Snapshot(row);
         return new { valid = true, row.Id, row.Revision, snapshot.ContentHash, snapshot.SchemaVersion };
     }
-    public Task<RubricDto> ActivateAsync(int userId, int id, int revision, CancellationToken ct) => Mutation(userId, true, async () =>
+    public Task<RubricDto> ActivateAsync(int userId, int id, int revision, CancellationToken ct) => Mutation(userId, false, async () =>
     {
         var row = await Row(id, ct);
         Snapshot(row);

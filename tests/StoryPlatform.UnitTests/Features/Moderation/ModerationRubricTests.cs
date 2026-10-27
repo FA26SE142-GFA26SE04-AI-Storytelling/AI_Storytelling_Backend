@@ -105,7 +105,7 @@ public sealed class ModerationRubricTests
         s.Uow.Verify(x => x.AcquireTransactionLockAsync(It.Is<int>(id => id < 0), It.IsAny<CancellationToken>()), Times.AtLeastOnce());
     }
     [Theory]
-    [InlineData(3, false)] [InlineData(2, true)]
+    [InlineData(3, false)] [InlineData(3, true)]
     public async Task EnforcesRolesInService(int actor, bool activate)
     {
         await using var s = new Session();
@@ -116,6 +116,16 @@ public sealed class ModerationRubricTests
             else await s.Service.GetAsync(actor, row.Id, default);
         });
         Assert.Equal("Draft", (await s.Service.GetAsync(2, row.Id, default)).Status);
+    }
+    [Fact]
+    public async Task ModeratorCanActivateDraft()
+    {
+        await using var s = new Session();
+        var row = await s.Service.CreateAsync(2, Write(), default);
+        var active = await s.Service.ActivateAsync(2, row.Id, row.Revision, default);
+        Assert.Equal("Active", active.Status);
+        Assert.Equal(2, active.ActivatedByUserId);
+        Assert.Equal(row.Id, (await s.Service.GetActiveAsync(default)).Id);
     }
     [Theory]
     [InlineData(true)] [InlineData(false)]
@@ -208,7 +218,7 @@ public sealed class ModerationRubricTests
     public void ControllerProtectsManagementAndActivation()
     {
         Assert.Equal("Moderator,Administrator", typeof(ModerationRubricsController).GetCustomAttributes(typeof(AuthorizeAttribute), false).Cast<AuthorizeAttribute>().Single().Roles);
-        Assert.Equal("Administrator", typeof(ModerationRubricsController).GetMethod("Activate")!.GetCustomAttributes(typeof(AuthorizeAttribute), false).Cast<AuthorizeAttribute>().Single().Roles);
+        Assert.Empty(typeof(ModerationRubricsController).GetMethod("Activate")!.GetCustomAttributes(typeof(AuthorizeAttribute), false));
         Assert.Null(typeof(ModerationRubricsController).GetMethod("Bootstrap"));
     }
     [Fact]

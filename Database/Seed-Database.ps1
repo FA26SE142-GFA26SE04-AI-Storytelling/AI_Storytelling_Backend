@@ -7,6 +7,11 @@
     bang trong EF Core model snapshot deu co dung mot file seed, ghep tat ca
     lenh vao mot transaction va thuc thi bang psql.
 
+    Moi lan chay, script TRUNCATE toan bo cac bang co file seed (RESTART IDENTITY)
+    truoc khi INSERT, nen database duoc dua ve dung du lieu mau ban dau. Moi du lieu
+    tao them trong luc test se bi xoa. Bang __EFMigrationsHistory va cac bang do
+    AuthoringGuideCatalogSeeder nap khong bi dong toi.
+
     Moi file seed phai co ten "<thu-tu-2-chu-so>_<ten-bang>.sql" va cac so
     phai lien tuc tu 01 den dung tong so bang trong EF Core model snapshot.
     Sau khi nap, identity sequence duoc reset tu chinh danh sach bang da seed,
@@ -286,6 +291,8 @@ if (-not $psqlPath) {
 Write-Host "Dung psql tai: $psqlPath" -ForegroundColor Cyan
 
 $seedTableLiterals = ($manifest | ForEach-Object { "'$($_.TableName)'" }) -join ', '
+# Ten bang da duoc Get-SeedManifest kiem tra theo mau [a-z][a-z0-9_]*, nen bao bang "" la an toan.
+$seedTableIdentifiers = ($manifest | ForEach-Object { '"' + $_.TableName + '"' }) -join ', '
 
 $sqlHeaderTemplate = @'
 \set ON_ERROR_STOP on
@@ -310,8 +317,11 @@ BEGIN
 END
 $seed_preflight$;
 
+-- Xoa du lieu cu cua moi bang seed de nap lai tu dau (cung transaction, loi thi rollback).
+TRUNCATE TABLE __SEED_TABLE_IDENTIFIERS__ RESTART IDENTITY CASCADE;
+
 '@
-$sqlHeader = $sqlHeaderTemplate.Replace('__SEED_TABLES__', $seedTableLiterals)
+$sqlHeader = $sqlHeaderTemplate.Replace('__SEED_TABLES__', $seedTableLiterals).Replace('__SEED_TABLE_IDENTIFIERS__', $seedTableIdentifiers)
 
 $sqlFooterTemplate = @'
 
@@ -385,7 +395,7 @@ try {
         throw "psql tra ve loi (exit code $LASTEXITCODE). Transaction seed da duoc rollback."
     }
 
-    Write-Host "Nap du lieu mau thanh cong cho $($manifest.Count) bang." -ForegroundColor Green
+    Write-Host "Da xoa du lieu cu va nap lai du lieu mau thanh cong cho $($manifest.Count) bang." -ForegroundColor Green
 }
 finally {
     if ($hadPgPassword) {

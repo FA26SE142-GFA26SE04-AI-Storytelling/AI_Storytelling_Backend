@@ -24,6 +24,55 @@ namespace StoryPlatform.UnitTests;
 
 public sealed class LearningBatchGenerationTests
 {
+    [Fact]
+    public async Task Retry_latest_coordinator_failure_preserves_new_valid_quizzes_instead_of_replaying_old_quiz_failure()
+    {
+        var s=Seed();s.Root.Status=GenerationJobStatus.Pending;var client=Client();
+        using var provider=Provider(s.Store,client.Object);using var scope=provider.CreateScope();
+        var finalizer=new Mock<IContentGenerationJobFailureFinalizer>();
+        var service=new ContentGenerationService(s.Store,client.Object,new Mock<IContentQualityEvaluator>().Object,
+            finalizer.Object,new Mock<IStableVersionArtifactHandoffService>().Object,new ContentGenerationOptions(),
+            learningBatches:scope.ServiceProvider.GetRequiredService<ILearningBatchService>());
+        Assert.True(await service.ProcessNextAsync());
+        var quiz=s.Store.Items<StoryGenerationJob>().Single(x=>x.Operation==GenerationJobOperation.GenerateQuiz);
+        quiz.Status=GenerationJobStatus.Failed;quiz.ErrorCode="QUIZ_VALIDATION_FAILED";quiz.CompletedAt=DateTime.UtcNow.AddHours(-1);
+        s.Root.Status=GenerationJobStatus.Failed;s.Root.ErrorCode="VOCABULARY_GENERATION_FAILED";s.Root.CompletedAt=DateTime.UtcNow;
+        var saved=s.Store.Items<LearningArtifactGenerationBatch>().ToDictionary(x=>x.Id,x=>x.ResultJson);
+        var progress=await service.GetProgressAsync(1,1);
+        Assert.Equal("VOCABULARY_GENERATION_FAILED",progress.LastErrorCode);
+        await service.RetryAsync(1,1,new() {RetryKey="resume-cached-coordinator"});
+        Assert.Equal(GenerationJobStatus.Pending,s.Root.Status);
+        Assert.All(s.Store.Items<LearningArtifactGenerationBatch>(),x=>{Assert.Equal(GenerationJobStatus.Completed,x.Status);Assert.Equal(saved[x.Id],x.ResultJson);});
+        for(var i=0;i<3;i++)Assert.True(await service.ProcessNextAsync());
+        Assert.Equal(StoryStatus.ContentReview,s.Story.Status);Assert.Equal(24,s.Store.Items<QuizItem>().Count);
+        client.Verify(x=>x.GenerateVocabularyAsync(It.IsAny<GenerateVocabularyRequest>(),It.IsAny<CancellationToken>()),Times.Once);
+        client.Verify(x=>x.GenerateQuizAsync(It.IsAny<GenerateQuizRequest>(),It.IsAny<CancellationToken>()),Times.Exactly(3));
+    }
+    [Theory]
+    [InlineData(true,"QUIZ_TYPE_COVERAGE_INVALID")]
+    [InlineData(false,"QUIZ_QUESTION_RELEVANCE_INVALID")]
+    public async Task FinalQuizRulesAreRetriedInsideOnlyTheInvalidBatch(bool missingTypes,string expectedCode)
+    {
+        var s=Seed();var calls=0;
+        var client=Client(transform:(request,response)=>
+        {
+            if(request.Batch!.Kind!="quiz_facts")return response;
+            if(Interlocked.Increment(ref calls)>1){Assert.Equal(expectedCode,request.Batch.ValidationErrorCode);return response;}
+            return response with {Items=response.Items.Select(item=>missingTypes?item with
+            {
+                Type="multiple_choice",Options=["Na","Nam"],CorrectAnswer="Na",CorrectOptionIndex=0,
+                OptionFeedback=["Na là nhân vật được hỏi.","Hãy xem lại việc Na làm."]
+            }:item with {Question="Unrelated astronomy question?"}).ToArray()};
+        });
+        using var provider=Provider(s.Store,client.Object);using var scope=provider.CreateScope();
+        var result=await scope.ServiceProvider.GetRequiredService<ILearningBatchService>()
+            .GenerateAsync(s.Root,s.Root.ConcurrencyToken,s.Version,s.Context,default);
+        Assert.Equal(24,result.Quiz.Items.Count);
+        Assert.Equal(3,result.Quiz.Items.Select(x=>x.Type).Distinct().Count());
+        Assert.Equal(2,s.Store.Items<LearningArtifactGenerationBatch>().Single(x=>x.Kind=="quiz_facts").AttemptCount);
+        Assert.All(s.Store.Items<LearningArtifactGenerationBatch>().Where(x=>x.Kind!="quiz_facts"),x=>Assert.Equal(1,x.AttemptCount));
+        client.Verify(x=>x.GenerateQuizAsync(It.IsAny<GenerateQuizRequest>(),It.IsAny<CancellationToken>()),Times.Exactly(4));
+    }
     private const string Text = "Na kiên nhẫn sửa xe. Nam chờ bạn giúp đỡ tìm bánh. Lan mang hộp đồ nhỏ xanh đẹp.";
     private sealed class Permit : IDisposable { public void Dispose() { } }
     private sealed class Gate : ILearningRequestGate { public Task<IDisposable> EnterAsync(CancellationToken ct) => Task.FromResult<IDisposable>(new Permit()); }
@@ -81,7 +130,7 @@ public sealed class LearningBatchGenerationTests
         var services = new ServiceCollection();
         services.AddLogging(); services.AddSingleton(store); services.AddSingleton(ai);
         services.AddSingleton(new Mock<ISupervisionAccessGuard>().Object);
-        services.AddSingleton(new LearningBatchOptions { BaseRetryDelaySeconds = 0 });
+        services.AddSingleton(new LearningBatchOptions { BaseRetryDelaySeconds = 0, QuotaRetryFloorSeconds = 0 });
         services.AddSingleton<ILearningRequestGate, Gate>();
         services.AddSingleton<ILearningBatchRunner, LearningBatchRunner>();
         services.AddScoped<ILearningBatchProcessor, LearningBatchProcessor>();
@@ -126,6 +175,114 @@ public sealed class LearningBatchGenerationTests
         Assert.All(s.Store.Items<LearningArtifactGenerationBatch>().Where(x => x.Kind != "quiz_facts"), x => Assert.Equal(1, x.AttemptCount));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Output_validation_retry_receives_feedback_and_keeps_successful_batches(bool coreValidation)
+    {
+        var s = Seed(); var calls = 0;
+        var client = Client(request =>
+        {
+            if (request.Batch!.Kind != "quiz_facts") return;
+            if (Interlocked.Increment(ref calls) == 1)
+            {
+                Assert.Null(request.Batch.ValidationErrorCode);
+                if (coreValidation) throw new JsonException("QUIZ_OPTIONS_INVALID");
+                throw new AIServiceRequestException(502, "AI_OUTPUT_INVALID", "Output invalid", validationCode: "QUIZ_OPTIONS_INVALID");
+            }
+            Assert.Equal("QUIZ_OPTIONS_INVALID", request.Batch.ValidationErrorCode);
+        });
+        using var provider = Provider(s.Store, client.Object); using var scope = provider.CreateScope();
+        var result = await scope.ServiceProvider.GetRequiredService<ILearningBatchService>()
+            .GenerateAsync(s.Root, s.Root.ConcurrencyToken, s.Version, s.Context, default);
+        Assert.Equal(24, result.Quiz.Items.Count);
+        var facts = s.Store.Items<LearningArtifactGenerationBatch>().Single(x => x.Kind == "quiz_facts");
+        Assert.Equal(2, facts.AttemptCount);
+        Assert.DoesNotContain("validationErrorCode", facts.RequestJson);
+        Assert.All(s.Store.Items<LearningArtifactGenerationBatch>().Where(x => x.Id != facts.Id), x => Assert.Equal(1, x.AttemptCount));
+    }
+
+    [Fact]
+    public async Task Invalid_output_stops_after_three_attempts_and_retains_diagnostic_code()
+    {
+        var s = Seed();
+        var client = Client(request =>
+        {
+            if (request.Batch!.Kind == "quiz_facts")
+                throw new AIServiceRequestException(502, "AI_OUTPUT_INVALID", "Output invalid", validationCode: "LEARNING_EVIDENCE_NOT_IN_STORY");
+        });
+        using var provider = Provider(s.Store, client.Object); using var scope = provider.CreateScope();
+        await Assert.ThrowsAnyAsync<Exception>(() => scope.ServiceProvider.GetRequiredService<ILearningBatchService>()
+            .GenerateAsync(s.Root, s.Root.ConcurrencyToken, s.Version, s.Context, default));
+        var facts = s.Store.Items<LearningArtifactGenerationBatch>().Single(x => x.Kind == "quiz_facts");
+        Assert.Equal(3, facts.AttemptCount);
+        Assert.Equal(GenerationJobStatus.Failed, facts.Status);
+        Assert.Equal("LEARNING_EVIDENCE_NOT_IN_STORY", facts.ErrorCode);
+        Assert.Contains(s.Store.Items<LearningArtifactGenerationBatch>(), x => x.Kind == "vocabulary" && x.Status == GenerationJobStatus.Completed);
+    }
+
+    [Fact]
+    public async Task TruncatedOutputFailsImmediatelyInsteadOfBurningTheAttemptBudget()
+    {
+        var s = Seed(); var calls = 0;
+        var client = Client(request =>
+        {
+            if (request.Batch!.Kind != "quiz_facts") return;
+            Interlocked.Increment(ref calls);
+            throw new AIServiceRequestException(502, "AI_OUTPUT_TRUNCATED", "Output truncated");
+        });
+        using var provider = Provider(s.Store, client.Object); using var scope = provider.CreateScope();
+        await Assert.ThrowsAnyAsync<Exception>(() => scope.ServiceProvider.GetRequiredService<ILearningBatchService>()
+            .GenerateAsync(s.Root, s.Root.ConcurrencyToken, s.Version, s.Context, default));
+        var facts = s.Store.Items<LearningArtifactGenerationBatch>().Single(x => x.Kind == "quiz_facts");
+        // The same ceiling truncates again, so one call is the honest cost; retries would only re-burn quota.
+        Assert.Equal(1, calls);
+        Assert.Equal(1, facts.AttemptCount);
+        Assert.Equal(GenerationJobStatus.Failed, facts.Status);
+        Assert.Equal("AI_OUTPUT_TRUNCATED", facts.ErrorCode);
+    }
+
+    [Fact]
+    public void QuotaRetryFloorDefaultsToAWholeQuotaWindow()
+    {
+        // Retrying a rate limit after seconds lands in the same TPM window; the default must span it.
+        Assert.Equal(60, new LearningBatchOptions().QuotaRetryFloorSeconds);
+        // Zero disables the floor, which is what tests and single-shot callers want.
+        Assert.Equal(0, new LearningBatchOptions { QuotaRetryFloorSeconds = 0 }.QuotaRetryFloorSeconds);
+    }
+
+    [Fact]
+    public async Task Explicit_retry_retains_validation_feedback_after_automatic_attempts_are_exhausted()
+    {
+        var s = Seed(); s.Root.Status = GenerationJobStatus.Pending;
+        var invalid = true;
+        var client = Client(request =>
+        {
+            if (request.Batch!.Kind != "quiz_facts") return;
+            if (invalid) throw new AIServiceRequestException(502, "AI_OUTPUT_INVALID", "Output invalid", validationCode: "QUIZ_OPTIONS_INVALID");
+            Assert.Equal("QUIZ_OPTIONS_INVALID", request.Batch.ValidationErrorCode);
+        });
+        using var provider = Provider(s.Store, client.Object); using var scope = provider.CreateScope();
+        var finalizer = new Mock<IContentGenerationJobFailureFinalizer>();
+        finalizer.Setup(x => x.MarkFailedAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns((int id, string token, string code, CancellationToken ct) =>
+            { var job = s.Store.Items<StoryGenerationJob>().Single(x => x.Id == id); job.ErrorCode = code; job.Status = GenerationJobStatus.Failed; return Task.CompletedTask; });
+        var service = new ContentGenerationService(s.Store, client.Object, new Mock<IContentQualityEvaluator>().Object,
+            finalizer.Object, new Mock<IStableVersionArtifactHandoffService>().Object, new ContentGenerationOptions(),
+            learningBatches: scope.ServiceProvider.GetRequiredService<ILearningBatchService>());
+        Assert.True(await service.ProcessNextAsync());
+        Assert.Equal(GenerationJobStatus.Failed, s.Root.Status);
+        var facts = s.Store.Items<LearningArtifactGenerationBatch>().Single(x => x.Kind == "quiz_facts");
+        Assert.Equal(3, facts.AttemptCount);
+        invalid = false;
+        await service.RetryAsync(1, 1, new() { RetryKey = "repair-feedback-after-exhaustion" });
+        Assert.Equal("QUIZ_OPTIONS_INVALID", facts.ErrorCode);
+        for (var i = 0; i < 3; i++) Assert.True(await service.ProcessNextAsync());
+        Assert.Equal(StoryStatus.ContentReview, s.Story.Status);
+        Assert.Equal(24, s.Store.Items<QuizItem>().Count);
+        client.Verify(x => x.GenerateVocabularyAsync(It.IsAny<GenerateVocabularyRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     [Fact]
     public async Task WholeArtifactPipelinePersistsEvidenceHintsAndExplanationWithoutRegeneratingQuiz()
     {
@@ -158,15 +315,7 @@ public sealed class LearningBatchGenerationTests
     public async Task RetryRebuildsQuizRejectedByFinalValidationWhilePreservingVocabulary(bool missingQuestionTypes)
     {
         var s = Seed(); s.Root.Status = GenerationJobStatus.Pending;
-        var invalid = true;
-        var client = Client(transform: (request, response) => !invalid ? response : response with
-        {
-            Items = response.Items.Select((item, i) => missingQuestionTypes ? item with
-            {
-                Type = "multiple_choice", Options = ["Na", "Nam"], CorrectAnswer = "Na", CorrectOptionIndex = 0,
-                OptionFeedback = ["Na là nhân vật được hỏi.", "Hãy xem lại việc Na làm."]
-            } : item with { Question = $"Unrelated astronomy {request.Batch!.Kind} {i}?" }).ToArray()
-        });
+        var client = Client();
         using var provider = Provider(s.Store, client.Object); using var scope = provider.CreateScope();
         var finalizer = new Mock<IContentGenerationJobFailureFinalizer>();
         finalizer.Setup(x => x.MarkFailedAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -179,13 +328,23 @@ public sealed class LearningBatchGenerationTests
         var vocabulary = s.Store.Items<LearningArtifactGenerationBatch>().Single(x => x.Kind == "vocabulary");
         var vocabularyResult = vocabulary.ResultJson;
         Assert.All(s.Store.Items<LearningArtifactGenerationBatch>(), x => Assert.Equal(GenerationJobStatus.Completed, x.Status));
+        // Simulate completed results cached by a release that did not enforce the final quiz rules per batch.
+        foreach(var batch in s.Store.Items<LearningArtifactGenerationBatch>().Where(x=>x.Kind.StartsWith("quiz_")))
+        {
+            var response=JsonSerializer.Deserialize<GenerateQuizResponse>(batch.ResultJson!,new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+            response=response with {Items=response.Items.Select((item,i)=>missingQuestionTypes?item with
+            {
+                Type="multiple_choice",Options=["Na","Nam"],CorrectAnswer="Na",CorrectOptionIndex=0,
+                OptionFeedback=["Na là nhân vật được hỏi.","Hãy xem lại việc Na làm."]
+            }:item with {Question=$"Unrelated astronomy {batch.Kind} {i}?"}).ToArray()};
+            batch.ResultJson=JsonSerializer.Serialize(response,new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        }
         Assert.True(await service.ProcessNextAsync());
         var quiz = s.Store.Items<StoryGenerationJob>().Single(x => x.Operation == GenerationJobOperation.GenerateQuiz);
         Assert.Equal("QUIZ_VALIDATION_FAILED", quiz.ErrorCode);
         Assert.Equal(GenerationJobStatus.Failed, quiz.Status);
         Assert.Empty(s.Store.Items<QuizItem>());
 
-        invalid = false;
         var retry = new RetryContentGenerationRequestDto { RetryKey = "rebuild-invalid-quiz-001" };
         await service.RetryAsync(1, 1, retry);
         await service.RetryAsync(1, 1, retry); // replay must not duplicate or requeue more work

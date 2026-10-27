@@ -1,0 +1,43 @@
+# Use with compose.yaml. GOOGLE_ADC_FILE must be an existing absolute host file.
+# The host path is configuration only; the JSON content is never copied or interpolated.
+services:
+  core-api:
+    user: "${LOCAL_UID:-1654}:${LOCAL_GID:-1654}"
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /run/google/adc.json
+      GOOGLE_CLOUD_QUOTA_PROJECT: ${VERTEX_PROJECT_ID:?Set VERTEX_PROJECT_ID}
+      AI__Vertex__UseVertex: "true"
+      AI__Vertex__ProjectId: ${VERTEX_PROJECT_ID:?Set VERTEX_PROJECT_ID}
+      AI__Vertex__Location: ${VERTEX_LOCATION:-global}
+      AI__Vertex__CredentialsPath: ""
+      AI__TTS__CredentialsFilePath: ""
+      AI__Gemini__Model: ${VERTEX_TEXT_MODEL:?Set VERTEX_TEXT_MODEL to a model available to your project}
+      AI__MediaEvaluation__Model: ${VERTEX_TEXT_MODEL:?Set VERTEX_TEXT_MODEL}
+      GrayZoneModeration__Provider: Vertex
+      GrayZoneModeration__WarningThreshold: ${GRAY_ZONE_WARNING_THRESHOLD:?Set local test warning threshold}
+      GrayZoneModeration__BlockThreshold: ${GRAY_ZONE_BLOCK_THRESHOLD:?Set local test block threshold}
+      GrayZoneModeration__MaximumRiskScore: "100"
+    volumes:
+      - type: bind
+        source: ${GOOGLE_ADC_FILE:?Set GOOGLE_ADC_FILE to your local ADC JSON file}
+        target: /run/google/adc.json
+        read_only: true
+        bind:
+          create_host_path: false
+  ai-api:
+    user: "${LOCAL_UID:-1654}:${LOCAL_GID:-1654}"
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /run/google/adc.json
+      GOOGLE_CLOUD_QUOTA_PROJECT: ${VERTEX_PROJECT_ID:?Set VERTEX_PROJECT_ID}
+      AI__Provider: Vertex
+      AI__Google__AuthMode: Adc
+      AI__Google__ProjectId: ${VERTEX_PROJECT_ID:?Set VERTEX_PROJECT_ID}
+      AI__Google__Location: ${VERTEX_LOCATION:-global}
+      AI__Google__Model: ${VERTEX_TEXT_MODEL:?Set VERTEX_TEXT_MODEL}
+    volumes:
+      - type: bind
+        source: ${GOOGLE_ADC_FILE:?Set GOOGLE_ADC_FILE to your local ADC JSON file}
+        target: /run/google/adc.json
+        read_only: true
+        bind:
+          create_host_path: false

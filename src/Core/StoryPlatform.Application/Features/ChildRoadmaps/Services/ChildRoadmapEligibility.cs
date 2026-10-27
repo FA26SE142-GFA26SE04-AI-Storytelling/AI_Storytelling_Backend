@@ -4,6 +4,7 @@ using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
 using StoryPlatform.Application.Features.RoadmapTemplates;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Contracts.AI.Models;
 
 namespace StoryPlatform.Application.Features.ChildRoadmaps.Services;
 
@@ -16,8 +17,16 @@ public class ChildRoadmapEligibility : IChildRoadmapEligibility
         _unitOfWork = unitOfWork;
     }
 
-    public async Task<ChildRoadmapSkipReason?> EvaluateAsync(
-        ChildProfile child, Story? story, CancellationToken cancellationToken = default)
+    public Task<ChildRoadmapSkipReason?> EvaluateAsync(
+        ChildProfile child, Story? story, CancellationToken cancellationToken = default) =>
+        EvaluateCoreAsync(child, story, false, cancellationToken);
+
+    public Task<ChildRoadmapSkipReason?> EvaluateForParentSelectionAsync(
+        ChildProfile child, Story? story, CancellationToken cancellationToken = default) =>
+        EvaluateCoreAsync(child, story, true, cancellationToken);
+
+    private async Task<ChildRoadmapSkipReason?> EvaluateCoreAsync(
+        ChildProfile child, Story? story, bool parentSelected, CancellationToken cancellationToken)
     {
         if (story == null || story.IsDeleted)
         {
@@ -36,7 +45,8 @@ public class ChildRoadmapEligibility : IChildRoadmapEligibility
             return ChildRoadmapSkipReason.StoryUnavailable;
         }
 
-        if (story.AgeBand != RoadmapAge.ToText(child.AgeBand))
+        if (story.AgeBand != RoadmapAge.ToText(child.AgeBand) && !parentSelected
+            && !await ParentStorySelection.ExistsAsync(_unitOfWork, child.Id, story.Id, cancellationToken))
         {
             return ChildRoadmapSkipReason.WrongAge;
         }
@@ -61,7 +71,7 @@ public class ChildRoadmapEligibility : IChildRoadmapEligibility
             return ChildRoadmapSkipReason.BlockedTopic;
         }
 
-        if (policy.MaxStoryLength > 0 && (story.Content?.Length ?? 0) > policy.MaxStoryLength)
+        if (policy.MaxStoryLength > 0 && StoryWordCounter.Count(story.Content ?? string.Empty) > policy.MaxStoryLength)
         {
             return ChildRoadmapSkipReason.TooLong;
         }

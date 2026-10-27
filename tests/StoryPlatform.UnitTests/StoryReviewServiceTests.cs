@@ -25,6 +25,44 @@ namespace StoryPlatform.UnitTests;
 public sealed class StoryReviewServiceTests
 {
     [Theory]
+    [InlineData("valid")]
+    [InlineData("other-story")]
+    [InlineData("old-version")]
+    [InlineData("old-revision")]
+    public async Task AI_review_validates_assistance_provenance_before_creating_version(string scenario)
+    {
+        var store = SeedContentReview(); var story = store.Items<Story>().Single();
+        story.Scope = StoryScope.Parent; story.Language = "vi"; story.AgeBand = "6-8";
+        store.Seed(new ChildProfile { Id = 1, OwnerUserId = 1, Status = ChildProfileStatus.Active, Language = "vi", AgeBand = AgeBand.Age_6_8 });
+        store.Seed(new SafetyPolicy { Id = 1, ChildProfileId = 1, MaxStoryLength = 2000, ConsentRecorded = true,
+            ConsentRecordedAt = DateTime.UtcNow, ConsentPolicyVersion = StoryPlatform.Application.Features.ChildProfiles.Safety.ConsentPolicy.CurrentVersion });
+        var policy = new StoryPlatform.Application.Features.ParentAuthoring.ParentAssistanceAccessPolicy(store,
+            new StoryPlatform.Application.Features.ChildProfiles.Supervision.Services.SupervisionAccessGuard(store));
+        var snapshot = await policy.CaptureContextAsync(story, default);
+        var token = story.AuthoringRevisionToken;
+        store.Seed(new StoryAssistanceTask { Id = 5, OwnerUserId = 1, StoryId = scenario == "other-story" ? 99 : 1,
+            SourceVersionId = scenario == "old-version" ? 99 : 1, SourceRevisionToken = scenario == "old-revision" ? "old" : token,
+            AudienceRevision = story.AudienceRevision, SnapshotHash = "snapshot", ContextJson =
+            StoryPlatform.Application.Features.CreatorAssistance.Services.AssistanceContextStorage.Store(new(), snapshot) });
+        store.Seed(new StoryAssistanceStep { Id = 8, TaskId = 5, Kind = "Trial", Status = "Succeeded", OutputJson = "{}", Provider = "fixture" });
+        var service = Service(store);
+        Assert.Equal(token, (await service.GetReviewPackageAsync(1, 1)).AssistanceRevisionToken);
+        var request = new UpdateStoryRequestDto { VersionId = 1, Title = "Mi và mẹ", Content = "Mi rủ mẹ cùng sửa hộp.", Lesson = "Hợp tác",
+            AssistanceReferences = [new(5, 8, "TrialUsed")] };
+        if (scenario != "valid")
+        {
+            var error = await Assert.ThrowsAsync<StoryPlatform.Application.Features.CreatorAssistance.AssistanceException>(()=>service.UpdateStoryAsync(1, 1, request));
+            Assert.Equal(scenario == "other-story" ? "INVALID_ASSISTANCE_REFERENCES" : "EDITOR_CONTEXT_STALE", error.Code);
+            Assert.Single(store.Items<StoryVersion>()); Assert.Equal(token, story.AuthoringRevisionToken);
+            return;
+        }
+        await service.UpdateStoryAsync(1, 1, request);
+        Assert.Equal(2, store.Items<StoryVersion>().Count);
+        Assert.NotEqual(token, story.AuthoringRevisionToken);
+        Assert.Contains("TrialUsed", store.Items<StoryVersion>().Single(v=>v.IsCurrent).AuthoringMetadata.AssistanceProvenanceJson);
+        Assert.Null(store.Items<StoryVersion>().Single(v=>!v.IsCurrent).AuthoringMetadata.AssistanceProvenanceJson);
+    }
+    [Theory]
     [InlineData(99, true)]
     [InlineData(20, false)]
     public async Task Creator_EditsRecheckSafetyAndPreserveVersionHistory(int score, bool accepted)

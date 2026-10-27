@@ -15,12 +15,12 @@ internal static class LearningArtifactDetails
         var changed = !string.Equals(entity.Term, input.Term.Trim(), StringComparison.OrdinalIgnoreCase);
         if (input.SourceQuote is not null)
         {
-            var anchor = Anchor(content, input.SourceQuote);
-            if (!LearningArtifactGrounding.ContainsTerm(input.SourceQuote, input.Term)) throw new BadRequestException("VOCABULARY_EVIDENCE_MISMATCH");
-            entity.SourceQuote = input.SourceQuote; entity.SourceStart = anchor.Start; entity.SourceEnd = anchor.End;
+            var (quote, anchor) = Anchor(content, input.SourceQuote);
+            if (!LearningArtifactGrounding.ContainsTerm(quote, input.Term)) throw new BadRequestException("VOCABULARY_EVIDENCE_MISMATCH");
+            entity.SourceQuote = quote; entity.SourceStart = anchor.Start; entity.SourceEnd = anchor.End;
         }
         else if (changed) { entity.SourceQuote = null; entity.SourceStart = entity.SourceEnd = null; }
-        if (input.Example is not null) { Anchor(content, input.Example); entity.Example = input.Example; }
+        if (input.Example is not null) { entity.Example = Anchor(content, input.Example).Quote; }
         else if (changed) entity.Example = null;
     }
     public static void Apply(QuizItem entity, QuizItemDto input, string content)
@@ -30,8 +30,8 @@ internal static class LearningArtifactDetails
             entity.Choices != (input.Choices is null ? null : JsonSerializer.Serialize(input.Choices));
         if (input.SourceQuote is not null)
         {
-            var anchor = Anchor(content, input.SourceQuote);
-            entity.SourceQuote = input.SourceQuote; entity.SourceStart = anchor.Start; entity.SourceEnd = anchor.End;
+            var (quote, anchor) = Anchor(content, input.SourceQuote);
+            entity.SourceQuote = quote; entity.SourceStart = anchor.Start; entity.SourceEnd = anchor.End;
         }
         else if (changed) { entity.SourceQuote = null; entity.SourceStart = entity.SourceEnd = null; }
         entity.Explanation = input.Explanation ?? (changed ? null : entity.Explanation);
@@ -41,9 +41,13 @@ internal static class LearningArtifactDetails
         if (input.OptionFeedback is not null && (input.Choices?.Count ?? 0) != input.OptionFeedback.Count)
             throw new BadRequestException("QUIZ_OPTION_FEEDBACK_INVALID");
     }
-    private static (int Start, int End) Anchor(string content, string quote)
+    private static (string Quote, (int Start, int End) Anchor) Anchor(string content, string quote)
     {
-        try { return LearningArtifactGrounding.Anchor(content, quote); }
+        try
+        {
+            var range = LearningArtifactGrounding.Anchor(content, quote);
+            return (content[range.Start..range.End], range);
+        }
         catch (JsonException) { throw new BadRequestException("LEARNING_EVIDENCE_NOT_IN_STORY"); }
     }
 }

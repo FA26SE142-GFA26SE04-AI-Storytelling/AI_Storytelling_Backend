@@ -19,6 +19,36 @@ namespace StoryPlatform.UnitTests;
 
 public sealed class OutlineServiceTests
 {
+    [Theory]
+    [InlineData(GenerationJobStatus.Pending)]
+    [InlineData(GenerationJobStatus.Processing)]
+    [InlineData(GenerationJobStatus.Completed)]
+    public async Task Progress_does_not_expose_a_previous_failure_after_retry(GenerationJobStatus status)
+    {
+        var store=Seed();var first=store.Items<StoryGenerationJob>().Single();
+        first.Status=GenerationJobStatus.Failed;first.ErrorCode="OUTLINE_GENERATION_FAILED";first.CompletedAt=DateTime.UtcNow.AddMinutes(5);
+        store.Seed(new StoryGenerationJob {Id=first.Id+1,StoryId=1,Operation=GenerationJobOperation.GenerateOutline,Status=status});
+        var progress=await Service(store).GetCurrentAsync(1,1);
+        Assert.Null(progress.LastErrorCode);
+        Assert.Equal(status==GenerationJobStatus.Completed?null:status.ToString().ToLowerInvariant(),progress.ActiveJobStatus);
+    }
+
+    [Fact]
+    public async Task Outline_progress_excludes_content_jobs_and_old_outline_errors_after_handoff()
+    {
+        var store=Seed();var service=Service(store);await service.ProcessNextAsync();
+        await service.ApproveAsync(1,1,1,new ApproveOutlineRequestDto {ApprovalKey="status-handoff-1"});
+        store.Seed(new StoryGenerationJob {Id=100,StoryId=1,Operation=GenerationJobOperation.RegenerateOutline,Status=GenerationJobStatus.Failed,ErrorCode="OUTLINE_GENERATION_FAILED"});
+        var progress=await service.GetCurrentAsync(1,1);
+        Assert.Null(progress.ActiveOperation);Assert.Null(progress.ActiveJobStatus);Assert.Null(progress.LastErrorCode);
+    }
+
+    [Fact]
+    public async Task Outline_progress_reports_a_real_terminal_failure()
+    {
+        var store=Seed();var job=store.Items<StoryGenerationJob>().Single();job.Status=GenerationJobStatus.Failed;job.ErrorCode="OUTLINE_GENERATION_FAILED";
+        Assert.Equal(job.ErrorCode,(await Service(store).GetCurrentAsync(1,1)).LastErrorCode);
+    }
     [Fact]
     public async Task Creator_CanGenerateEditAndApproveOutlineWithoutAChild()
     {

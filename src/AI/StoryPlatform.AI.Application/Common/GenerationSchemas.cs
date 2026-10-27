@@ -21,6 +21,10 @@ internal static class GenerationSchemas
         }
         if (quiz)
         {
+            item["properties"]!["learningGoal"] = System.Text.Json.Nodes.JsonNode.Parse(
+                "{\"type\":\"string\",\"enum\":[\"recall\",\"sequence\",\"cause\",\"inference\",\"vocabulary\"]}");
+            foreach (var name in new[] { "question", "explanation", "hint", "sourceQuote" })
+                item["properties"]![name]!["minLength"] = 1;
             item["properties"]!["optionFeedback"] = System.Text.Json.Nodes.JsonNode.Parse("{\"type\":\"array\",\"items\":{\"type\":\"string\"}}");
             item["required"]!.AsArray().Add("optionFeedback");
         }

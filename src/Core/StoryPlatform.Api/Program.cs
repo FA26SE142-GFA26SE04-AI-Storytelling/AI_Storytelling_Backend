@@ -75,7 +75,8 @@ else
     app.Logger.LogInformation("Automatic database migrations are disabled for this startup.");
 }
 app.SeedDataIfRequested<StoryPlatform.Infrastructure.Persistence.ApplicationDbContext>(builder.Configuration);
-await app.SeedAuthoringGuidesAsync();
+if (builder.Configuration.GetValue("AuthoringGuides:SeedOnStartup", true))
+    await app.SeedAuthoringGuidesAsync();
 
 // Pipeline xử lý HTTP Request
 // Phải chạy sớm để mọi middleware phía sau thấy IP client thật (không phải IP của ALB).

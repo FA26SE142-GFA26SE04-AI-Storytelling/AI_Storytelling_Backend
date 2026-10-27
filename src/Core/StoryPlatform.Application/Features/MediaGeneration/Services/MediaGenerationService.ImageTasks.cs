@@ -11,6 +11,7 @@ public sealed partial class MediaGenerationService
 {
     // A processor is scoped to one worker invocation and never shared between concurrent tasks.
     private (int Id, int BranchId, string Token)? _claimedImageTask;
+    private bool _imageGenerationCompleted;
 
     private async Task AssertImageTaskClaimAsync(int branchId, CancellationToken ct)
     {
@@ -207,6 +208,7 @@ public sealed partial class MediaGenerationService
             catch { await RollbackMediaAsync(CancellationToken.None); throw; }
 
             _claimedImageTask = (task.Id, branch.Id, task.ConcurrencyToken);
+            _imageGenerationCompleted = false;
             var elapsed = Stopwatch.StartNew();
             var token = branch.ConcurrencyToken;
             using var logScope = _logger.BeginScope(new Dictionary<string, object>
@@ -232,8 +234,11 @@ public sealed partial class MediaGenerationService
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
-                _logger.LogWarning(ex, "Image task failed Task={TaskId} Story={StoryId} Version={VersionId} Revision={Revision} Asset={AssetId} Code={Code}",
-                    task.Id, task.StoryId, task.StoryVersionId, task.PackageRevision, task.MediaAssetId, PublicErrorCode(ex));
+                if (IsProviderDeferral(ex))
+                    _logger.LogInformation("Image task deferred Task={TaskId} Story={StoryId} Code={Code}", task.Id, task.StoryId, PublicErrorCode(ex));
+                else
+                    _logger.LogWarning(ex, "Image task failed Task={TaskId} Story={StoryId} Version={VersionId} Revision={Revision} Asset={AssetId} Code={Code}",
+                        task.Id, task.StoryId, task.StoryVersionId, task.PackageRevision, task.MediaAssetId, PublicErrorCode(ex));
                 await FinishImageTaskAsync(task, branch, token, ex, CancellationToken.None);
                 return MediaJobProcessResult.Failed(IsPermanentFailure(ex), PublicErrorCode(ex));
             }
@@ -269,18 +274,24 @@ public sealed partial class MediaGenerationService
             else
             {
                 var invalidated = IsStale(error) || error is ForbiddenException or ConflictException or NotFoundException;
-                var circuit = error is TransientMediaGenerationException { ErrorCode: "MEDIA_CIRCUIT_OPEN" };
-                if (circuit && asset.AttemptCount > 0)
+                var deferred = IsProviderDeferral(error);
+                if (deferred && asset.AttemptCount > 0)
                 { asset.AttemptCount--; _unitOfWork.Repository<MediaAsset>().Update(asset); }
-                var retry = !invalidated && !IsTerminalBranchFailure(error) && (circuit || asset.AttemptCount < _assetMaxAttempts);
+                if (deferred && task.AttemptNo > 0) task.AttemptNo--;
+                var retry = !invalidated && !IsTerminalBranchFailure(error) && (deferred || asset.AttemptCount < _assetMaxAttempts);
                 task.Status = retry ? GenerationJobStatus.Pending : GenerationJobStatus.Failed;
                 task.ErrorCode = PublicErrorCode(error);
-                var delay = circuit ? TimeSpan.FromSeconds(Math.Clamp(_options.Images.CircuitBreaker.DurationOfBreakSeconds, 10, 1800))
+                var delay = deferred ? (error as TransientMediaGenerationException)?.RetryAfter ?? TimeSpan.FromSeconds(Math.Clamp(_options.Images.CircuitBreaker.DurationOfBreakSeconds, 10, 1800))
                     : TimeSpan.FromSeconds(Math.Pow(2, Math.Clamp(asset.AttemptCount, 1, 6)) + Random.Shared.NextDouble());
                 if (error is TransientMediaGenerationException { RetryAfter: { } after } && after > delay) delay = after;
+                delay = delay < TimeSpan.FromSeconds(1) ? TimeSpan.FromSeconds(1) : delay;
+                // Spread tasks sharing a provider resume deadline instead of waking them in a burst.
+                if (deferred) delay += TimeSpan.FromMilliseconds(Random.Shared.Next(0, 1000));
                 task.NextAttemptAt = retry ? _clock.GetUtcNow().UtcDateTime.Add(delay) : null;
                 task.QueuedAt = _clock.GetUtcNow().UtcDateTime;
                 task.CompletedAt = retry ? null : _clock.GetUtcNow().UtcDateTime;
+                _logger.LogInformation("Image retry scheduled Task={TaskId} Story={StoryId} Asset={AssetId} Code={Code} Retry={Retry} Deferred={Deferred} Attempt={Attempt} RetryDelayMs={RetryDelayMs} NextAttemptAt={NextAttemptAt}",
+                    task.Id, task.StoryId, task.MediaAssetId, task.ErrorCode, retry, deferred, asset.AttemptCount, delay.TotalMilliseconds, task.NextAttemptAt);
             }
             task.LeaseExpiresAt = null;
             _unitOfWork.Repository<MediaAssetGenerationTask>().Update(task);
@@ -294,4 +305,9 @@ public sealed partial class MediaGenerationService
         }
         catch { await RollbackMediaAsync(CancellationToken.None); throw; }
     }
+
+    // An evaluator can also report an open circuit after an image was generated. That is
+    // a real consumed generation attempt, not a request rejected before generation.
+    private bool IsProviderDeferral(Exception error) => !_imageGenerationCompleted && error is TransientMediaGenerationException
+        { ErrorCode: "MEDIA_CIRCUIT_OPEN" or "MEDIA_PROVIDER_COOLDOWN" };
 }

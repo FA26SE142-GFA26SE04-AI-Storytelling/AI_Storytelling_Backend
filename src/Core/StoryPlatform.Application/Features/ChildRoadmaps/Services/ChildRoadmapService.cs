@@ -97,7 +97,7 @@ public partial class ChildRoadmapService : IChildRoadmapService
                 : ChildRoadmapSkipCodes.NoAccessToStory);
         }
 
-        var unsuitable = await _eligibility.EvaluateAsync(child, story, cancellationToken);
+        var unsuitable = await _eligibility.EvaluateForParentSelectionAsync(child, story, cancellationToken);
         if (unsuitable.HasValue)
         {
             return Skipped(childId, SkipCodeFor(unsuitable.Value));
@@ -199,6 +199,10 @@ public partial class ChildRoadmapService : IChildRoadmapService
         ChildProfile target, Story story, CancellationToken cancellationToken)
     {
         var warnings = new List<string>();
+        if (story.AgeBand != StoryPlatform.Application.Features.RoadmapTemplates.RoadmapAge.ToText(target.AgeBand))
+        {
+            warnings.Add($"Truyện dành cho nhóm {story.AgeBand} tuổi, khác nhóm tuổi của bé. Đã giao theo lựa chọn của phụ huynh.");
+        }
         if (story.Scope == StoryScope.Parent
             && story.ChildProfileId.HasValue
             && story.ChildProfileId.Value != target.Id

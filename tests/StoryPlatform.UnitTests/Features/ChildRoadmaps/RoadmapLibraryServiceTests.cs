@@ -155,7 +155,7 @@ public class RoadmapLibraryServiceTests
         if (problem == "too-long")
         {
             _h.AddPolicy(Child, 100);
-            story.Content = new string('a', 500);
+            story.Content = string.Join(' ', Enumerable.Repeat("bé", 500));
         }
         if (problem == "archived") story.Status = StoryStatus.Archived;
         if (problem == "deleted") story.IsDeleted = true;

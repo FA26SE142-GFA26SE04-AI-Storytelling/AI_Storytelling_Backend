@@ -26,7 +26,7 @@ public partial class StoryAssistanceService
             {
                 await _access.EnsureWritableAsync(story, ct);
                 await _access.ValidateContextAsync(story, AssistanceContextStorage.ServerContext(task.ContextJson), ct);
-                if (task.SourceRevisionToken != story.AuthoringRevisionToken || task.AudienceRevision != story.AudienceRevision)
+                if (await SourceStale(task, story, ct) || task.AudienceRevision != story.AudienceRevision)
                     throw Fail("EDITOR_CONTEXT_STALE");
             }
             if (request.ExpectedTaskRevision != task.TaskRevision) throw Fail("TASK_REVISION_CONFLICT");
@@ -145,7 +145,7 @@ public partial class StoryAssistanceService
         AssistanceAiRequest? input = null;
         var started = await Command(user, storyId, taskId, kind, command, async (story, task, step) =>
         {
-            if (task.SourceRevisionToken != story.AuthoringRevisionToken || task.AudienceRevision != story.AudienceRevision) throw Fail("EDITOR_CONTEXT_STALE");
+            if (await SourceStale(task, story, ct) || task.AudienceRevision != story.AudienceRevision) throw Fail("EDITOR_CONTEXT_STALE");
             var context = Read<CreateAssistanceTaskRequest>(task.ContextJson);
             string? answer = null;
             AssistanceDirection? direction = null;
@@ -224,7 +224,7 @@ public partial class StoryAssistanceService
             if (step.Status != "Running" || task.ActiveOperationId != command.OperationId || task.Status == "Closed")
                 return step.ResponseJson is null ? Result(task, step) : Read<AssistanceCommandResult>(step.ResponseJson);
             task.ActiveOperationId = null; task.LeaseExpiresAt = null; task.TaskRevision++;
-            if (story.AudienceRevision != task.AudienceRevision || story.AuthoringRevisionToken != task.SourceRevisionToken)
+            if (story.AudienceRevision != task.AudienceRevision || await SourceStale(task, story, completion.Token))
             { error = "EDITOR_CONTEXT_STALE"; errorStatus = 409; }
             try
             {

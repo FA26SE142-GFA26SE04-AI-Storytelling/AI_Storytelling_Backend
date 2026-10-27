@@ -172,8 +172,12 @@ public sealed class GenerateVocabularyHandler
             json =>
             {
                 var result = DeserializeVocabulary(json, maxItems);
-                if (request.Batch is not null) LearningArtifactGrounding.Vocabulary(request.Story, result.Items, request.Batch, result.ShortfallReason);
-                return result;
+                // Grounding repairs near-miss quotations to the verbatim story text; persist the repaired list so
+                // downstream anchoring is an exact ordinal match.
+                return request.Batch is null ? result : result with
+                {
+                    Items = LearningArtifactGrounding.Vocabulary(request.Story, result.Items, request.Batch, result.ShortfallReason)
+                };
             }, cancellationToken, request.Batch?.TechnicalAttempts);
         return new GenerateVocabularyResponse { RequestId = request.RequestId, Items = generated.Value.Items, ShortfallReason = generated.Value.ShortfallReason, Metadata = generated.Generation.ToMetadata(template.Version) with { AttemptCount = generated.AttemptCount } };
     }
@@ -184,7 +188,7 @@ public sealed class GenerateVocabularyHandler
         var value = JsonSerializer.Deserialize<VocabularyPayload>(json, JsonDefaults.Options)
             ?? throw new JsonException("The LLM returned an empty vocabulary payload.");
         if (value.Items is null || value.Items.Count > maxItems)
-            throw new JsonException("Generated vocabulary exceeds the pinned item limit.");
+            throw new JsonException("LEARNING_BATCH_COUNT_INVALID");
         return value;
     }
     internal static void ValidateArtifactRequest(string requestId, StoryContentDto story)
@@ -224,8 +228,10 @@ public sealed class GenerateQuizHandler
             json =>
             {
                 var result = DeserializeQuiz(json, maxItems);
-                if (request.Batch is not null) LearningArtifactGrounding.Quiz(request.Story, result.Items, request.Batch, result.ShortfallReason, request.Vocabulary);
-                return result;
+                return request.Batch is null ? result : result with
+                {
+                    Items = LearningArtifactGrounding.Quiz(request.Story, result.Items, request.Batch, result.ShortfallReason, request.Vocabulary)
+                };
             }, cancellationToken, request.Batch?.TechnicalAttempts);
         return new GenerateQuizResponse { RequestId = request.RequestId, Items = generated.Value.Items, ShortfallReason = generated.Value.ShortfallReason, Metadata = generated.Generation.ToMetadata(template.Version) with { AttemptCount = generated.AttemptCount } };
     }
@@ -236,7 +242,7 @@ public sealed class GenerateQuizHandler
         var value = JsonSerializer.Deserialize<QuizPayload>(json, JsonDefaults.Options)
             ?? throw new JsonException("The LLM returned an empty quiz payload.");
         if (value.Items is null || value.Items.Count > maxItems)
-            throw new JsonException("Generated quiz exceeds the pinned item limit.");
+            throw new JsonException("LEARNING_BATCH_COUNT_INVALID");
         return value;
     }
 }

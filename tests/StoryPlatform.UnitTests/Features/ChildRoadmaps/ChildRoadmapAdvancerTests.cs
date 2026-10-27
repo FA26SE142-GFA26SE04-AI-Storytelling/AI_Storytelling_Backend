@@ -148,11 +148,11 @@ public class ChildRoadmapAdvancerTests
                 break;
             case "too-long":
                 _h.AddPolicy(Child, 100);
-                _h.Stories.Single(story => story.Id == 10).Content = new string('a', 500);
+                _h.Stories.Single(story => story.Id == 10).Content = string.Join(' ', Enumerable.Repeat("bé", 500));
                 break;
         }
 
-        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Waiting);
+        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Waiting).Source = ChildRoadmapItemSource.TemplateCopy;
         _h.AddItem(2, Child, 11, ChildRoadmapItemStatus.Waiting);
 
         var opened = await _sut.AdvanceAsync(Child);

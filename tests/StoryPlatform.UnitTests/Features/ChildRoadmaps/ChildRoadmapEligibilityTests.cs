@@ -67,7 +67,7 @@ public class ChildRoadmapEligibilityTests
     public async Task StoryOverLengthLimit_IsRejected()
     {
         _h.AddPolicy(Child.Id, 100);
-        Story.Content = new string('a', 101);
+        Story.Content = string.Join(' ', Enumerable.Repeat("bé", 101));
         Assert.Equal(ChildRoadmapSkipReason.TooLong, await _sut.EvaluateAsync(Child, Story));
     }
 
@@ -77,5 +77,34 @@ public class ChildRoadmapEligibilityTests
         _h.Tag(Story.Id, 5);
         Story.Content = new string('a', 50000);
         Assert.Null(await _sut.EvaluateAsync(Child, Story));
+    }
+
+    [Fact]
+    public async Task ParentSelection_AllowsAnotherAgeButStillChecksSafety()
+    {
+        Story.AgeBand = "9-10";
+        Assert.Null(await _sut.EvaluateForParentSelectionAsync(Child, Story));
+        _h.Block(Child.Id, 5); _h.Tag(Story.Id, 5);
+        Assert.Equal(ChildRoadmapSkipReason.BlockedTopic, await _sut.EvaluateForParentSelectionAsync(Child, Story));
+    }
+
+    [Fact]
+    public async Task ManualAssignment_AllowsAnotherAgeUntilRemoved()
+    {
+        Story.AgeBand = "9-10";
+        var item = _h.AddItem(1, Child.Id, Story.Id, ChildRoadmapItemStatus.Waiting);
+        Assert.Null(await _sut.EvaluateAsync(Child, Story));
+        item.Status = ChildRoadmapItemStatus.Removed;
+        Assert.Equal(ChildRoadmapSkipReason.WrongAge, await _sut.EvaluateAsync(Child, Story));
+    }
+
+    [Fact]
+    public async Task LengthLimit_CountsLexicalUnitsInsteadOfCharacters()
+    {
+        _h.AddPolicy(Child.Id, 3);
+        Story.Content = "Sóc giúp Thỏ";
+        Assert.Null(await _sut.EvaluateForParentSelectionAsync(Child, Story));
+        Story.Content += " Trắng";
+        Assert.Equal(ChildRoadmapSkipReason.TooLong, await _sut.EvaluateForParentSelectionAsync(Child, Story));
     }
 }

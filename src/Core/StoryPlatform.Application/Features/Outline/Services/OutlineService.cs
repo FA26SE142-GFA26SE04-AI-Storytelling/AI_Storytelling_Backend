@@ -739,11 +739,16 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         StoryVersion? current,
         IReadOnlyList<StoryGenerationJob> jobs)
     {
-        var active = jobs.Where(item => item.Status is GenerationJobStatus.Pending or GenerationJobStatus.Processing)
-            .OrderByDescending(item => item.CreatedAt).FirstOrDefault();
-        var latestFinished = jobs.Where(item => item.Status is GenerationJobStatus.Completed or GenerationJobStatus.Failed)
-            .OrderByDescending(item => item.CompletedAt ?? item.CreatedAt).FirstOrDefault();
-        var lastErrorCode = latestFinished?.Status == GenerationJobStatus.Failed ? latestFinished.ErrorCode : null;
+        var outlineJobs = jobs.Where(item => !item.IsDeleted && item.Operation is
+            GenerationJobOperation.GenerateOutline or GenerationJobOperation.RegenerateOutline).ToArray();
+        var active = outlineJobs.Where(item => item.Status is GenerationJobStatus.Pending or GenerationJobStatus.Processing)
+            .OrderByDescending(item => item.Id).FirstOrDefault();
+        var latest = outlineJobs.OrderByDescending(item => item.Id).FirstOrDefault();
+        var handedOff = current?.OutlineApprovedAt.HasValue == true || current?.Content is not null ||
+            story.Status is not (StoryStatus.Draft or StoryStatus.OutlineReview);
+        // A failed earlier attempt is history once retry is queued or the outline was handed off.
+        var lastErrorCode = !handedOff && active is null && latest?.Status == GenerationJobStatus.Failed
+            ? latest.ErrorCode : null;
 
         return new OutlineProgressDto
         {

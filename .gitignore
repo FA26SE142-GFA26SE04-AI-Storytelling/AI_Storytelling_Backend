@@ -5,6 +5,10 @@
 
 # dotenv files
 .env
+.env.local
+.env.adc
+application_default_credentials.json
+/secrets/
 
 # Local database backups created before development migrations
 /Database/*.dump
@@ -85,6 +89,7 @@ BenchmarkDotNet.Artifacts/
 project.lock.json
 project.fragment.lock.json
 artifacts/
+.artifacts/
 
 # Tye
 .tye/

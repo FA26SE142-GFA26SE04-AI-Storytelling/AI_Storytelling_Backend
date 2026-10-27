@@ -3,6 +3,7 @@ using StoryPlatform.Application.Common;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Contracts.AI.Models;
 
 namespace StoryPlatform.Application.Features.ContentGeneration.Services;
 
@@ -33,7 +34,8 @@ public sealed partial class ContentGenerationService
                 throw new ConflictException("LEARNING_JOB_ACTIVE");
             var failed = (await _unitOfWork.Repository<StoryGenerationJob>().FindAsync(x => x.StoryVersionId == version.Id &&
                 (x.Operation == GenerationJobOperation.GenerateVocabulary || x.Operation == GenerationJobOperation.GenerateQuiz || x.Operation == GenerationJobOperation.GenerateDiscussion) &&
-                x.Status == GenerationJobStatus.Failed, cancellationToken: ct)).OrderByDescending(x => x.Id).FirstOrDefault();
+                x.Status == GenerationJobStatus.Failed, cancellationToken: ct))
+                .OrderByDescending(x => x.CompletedAt ?? x.StartedAt).ThenByDescending(x => x.Id).FirstOrDefault();
             if (failed is null) throw new ConflictException("LEARNING_JOB_NOT_FAILED");
             var batches = await _unitOfWork.Repository<LearningArtifactGenerationBatch>().FindAsync(x => x.RootJobId == root.Id, cancellationToken: ct);
             // Completed means that a batch passed its own checks, not necessarily the merged quiz checks.
@@ -44,7 +46,9 @@ public sealed partial class ContentGenerationService
                          rebuildQuiz && x.Kind.StartsWith("quiz_", StringComparison.Ordinal)))
             {
                 _unitOfWork.Repository<LearningArtifactGenerationBatch>().Update(batch);
-                batch.Status = GenerationJobStatus.Pending; batch.AttemptCount = 0; batch.ErrorCode = null;
+                batch.Status = GenerationJobStatus.Pending; batch.AttemptCount = 0;
+                batch.ErrorCode = rebuildQuiz && batch.Kind.StartsWith("quiz_", StringComparison.Ordinal)
+                    ? "QUIZ_VALIDATION_FAILED" : LearningValidationFeedback.Normalize(batch.ErrorCode);
                 batch.LeaseExpiresAt = batch.NextAttemptAt = batch.CompletedAt = null;
                 batch.ResultJson = null; batch.ShortfallReason = null;
                 batch.ConcurrencyToken = Guid.NewGuid().ToString("N");

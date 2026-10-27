@@ -121,6 +121,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             IsConfirmed = readiness.IsReady && confirmed,
             ConfirmedByUserId = version.MediaState.MediaConfirmedByUserId,
             ConfirmedAt = version.MediaState.MediaConfirmedAt,
+            Issues = readiness.IsReady ? [] : await GetMediaIssuesAsync(job, version.MediaState.MediaPackageRevision, cancellationToken),
             Images = await BranchProgressAsync(job, MediaType.Illustration, readiness.RequiredIllustrations, readiness.ReadyIllustrations, cancellationToken),
             Audio = await BranchProgressAsync(job, MediaType.TtsAudio, readiness.ReadyAudio + readiness.MissingAudioSegmentIds.Count, readiness.ReadyAudio, cancellationToken)
         };
@@ -651,11 +652,13 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(_options.Images.ProviderTimeoutSeconds, 1, 600)));
             var illustration = await MeasureMediaStageAsync("ImageGeneration", jobId, asset,
                 () => _imageProvider.GenerateAsync(specification, timeout.Token));
+            _imageGenerationCompleted = true;
             timeout.Token.ThrowIfCancellationRequested();
             Task<MediaEvaluationResult> Alignment() => MeasureMediaStageAsync("ImageAlignment", jobId, asset,
                 () => _alignmentEvaluator.EvaluateAsync(specification, illustration, timeout.Token));
             Task<MediaEvaluationResult> Safety() => MeasureMediaStageAsync("ImageSafety", jobId, asset,
                 () => _safetyEvaluator.EvaluateAsync(specification, illustration, timeout.Token));
+            var evaluationTimer = System.Diagnostics.Stopwatch.StartNew();
             MediaEvaluationResult alignment, safety;
             if (_options.ParallelImageEvaluation)
             {
@@ -670,6 +673,10 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
                 alignment = await Alignment();
                 safety = await Safety();
             }
+            timeout.Token.ThrowIfCancellationRequested();
+            _logger.LogInformation("Media evaluation completed Story={StoryId} Task={TaskId} Asset={AssetId} Parallel={Parallel} DurationMs={DurationMs} AlignmentPassed={AlignmentPassed} SafetyPassed={SafetyPassed}",
+                storyId, _claimedImageTask?.Id, asset.Id, _options.ParallelImageEvaluation,
+                evaluationTimer.Elapsed.TotalMilliseconds, alignment.Passed, safety.Passed);
 
             var evalResult = BuildValidationResultJson(alignment, safety);
             asset.ValidationResultJson = evalResult;

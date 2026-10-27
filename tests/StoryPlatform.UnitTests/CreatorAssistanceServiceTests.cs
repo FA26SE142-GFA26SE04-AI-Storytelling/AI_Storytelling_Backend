@@ -23,6 +23,19 @@ namespace StoryPlatform.UnitTests;
 
 public sealed class CreatorAssistanceServiceTests
 {
+    [Fact]
+    public async Task AI_creator_can_request_contextual_assistance_only_during_content_review()
+    {
+        var s = new AssistanceStore(); var story = s.Items<Story>().Single();
+        story.Source = StorySource.Ai; story.Status = StoryStatus.ContentReview;
+        var task = await s.Create();
+        var result = await s.Service.SuggestAsync(1, 1, task.TaskId, s.Suggest(task.TaskRevision));
+        Assert.Equal("OptionsReady", result.Status); Assert.Equal(1, s.Calls);
+        story.Status = StoryStatus.Ready;
+        var error = await Assert.ThrowsAsync<AssistanceException>(() => s.Service.TrialAsync(1, 1, task.TaskId,
+            new() { OperationId = "after-ready", ExpectedTaskRevision = result.TaskRevision, DirectionStepId = 999 }));
+        Assert.Equal("AI_STORY_NOT_EDITABLE", error.Code); Assert.Equal(1, s.Calls);
+    }
     [Theory]
     [InlineData(60, 74, false)]
     [InlineData(60, 75, true)]

@@ -132,6 +132,16 @@ public class ChildRoadmapServiceTests
     }
 
     [Fact]
+    public async Task AddStory_DifferentAgeIsParentsChoice_AndRemainsOpen()
+    {
+        _h.Stories.Single(x => x.Id == 10).AgeBand = "9-10";
+        var result = await _sut.AddStoryAsync(Owner, Add(10, Child));
+        Assert.Equal("Added", result.Results.Single().Outcome);
+        Assert.Contains(result.Results.Single().Warnings, warning => warning.Contains("khác nhóm tuổi"));
+        Assert.Equal(ChildRoadmapItemStatus.Open, _h.Items.Single().Status);
+    }
+
+    [Fact]
     public async Task AddStory_InvalidRequestIsRejected()
     {
         await Assert.ThrowsAsync<BadRequestException>(() => _sut.AddStoryAsync(Owner, Add(10)));
@@ -403,7 +413,7 @@ public class ChildRoadmapServiceTests
                 break;
             case "too-long":
                 _h.AddPolicy(Child, 100);
-                story.Content = new string('a', 500);
+                story.Content = string.Join(' ', Enumerable.Repeat("bé", 500));
                 break;
             case "archived":
                 story.Status = StoryStatus.Archived;

@@ -82,7 +82,12 @@ public sealed record MediaGenerationProgress(
     public bool IsConfirmed { get; init; }
     public int? ConfirmedByUserId { get; init; }
     public DateTime? ConfirmedAt { get; init; }
+    public IReadOnlyList<MediaGenerationIssue> Issues { get; init; } = [];
 }
+
+/// <summary>Current package diagnostics only; no provider response, prompt or storage URL.</summary>
+public sealed record MediaGenerationIssue(int SceneId, int SceneIndex, int AssetId, string Type,
+    int TargetId, int ItemNumber, string Status, string ErrorCode, int AttemptCount, DateTime? NextRetryAt);
 
 public sealed record MediaReadinessResult(
     bool IsReady,

@@ -20,8 +20,18 @@ public sealed class ParentAssistanceAccessPolicy(IUnitOfWork uow, ISupervisionAc
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     public StoryScope Scope => StoryScope.Parent;
     public string RouteSegment => "parent";
-    public Task AuthorizeAsync(int user, Story story, CancellationToken ct) => _manual.AuthorizeAsync(user, story, ct);
-    public Task EnsureWritableAsync(Story story, CancellationToken ct) => _manual.EnsureWritableAsync(story, ct);
+    public async Task AuthorizeAsync(int user, Story story, CancellationToken ct)
+    {
+        if (story.Source != StorySource.Ai) { await _manual.AuthorizeAsync(user, story, ct); return; }
+        if (story.Scope != StoryScope.Parent || story.AuthorUserId != user || story.IsDeleted || !story.ChildProfileId.HasValue)
+            throw new StoryPlatform.Application.Common.Exceptions.NotFoundException("Story", story.Id);
+        await guard.EnsurePermissionAsync(story.ChildProfileId.Value, user, Permission.ApproveStory, ct);
+    }
+    public async Task EnsureWritableAsync(Story story, CancellationToken ct)
+    {
+        if (story.Source != StorySource.Ai) { await _manual.EnsureWritableAsync(story, ct); return; }
+        await AssistanceGenerationAccess.EnsureWritableAsync(uow, story, ct);
+    }
 
     public async Task<string?> CaptureContextAsync(Story story, CancellationToken ct)
     {

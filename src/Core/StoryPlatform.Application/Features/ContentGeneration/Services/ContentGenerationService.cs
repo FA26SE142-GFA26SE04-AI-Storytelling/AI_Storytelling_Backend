@@ -3,6 +3,8 @@ using StoryPlatform.Application.Features.Moderation.Services;
 using StoryPlatform.Application.Common;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
@@ -36,6 +38,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
     private readonly int _artifactMaxAttempts;
     private readonly TimeSpan _jobLease;
     private readonly ILearningBatchService? _learningBatches;
+    private readonly ILogger<ContentGenerationService> _logger;
 
     public ContentGenerationService(
         IUnitOfWork unitOfWork,
@@ -45,7 +48,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         IStableVersionArtifactHandoffService artifactHandoff,
         ContentGenerationOptions options,
         IStoryReviewService? reviewService = null,
-        IGrayZoneEvaluator? moderation = null, GrayZoneWorkflowService? grayZone = null, ILearningBatchService? learningBatches = null)
+        IGrayZoneEvaluator? moderation = null, GrayZoneWorkflowService? grayZone = null, ILearningBatchService? learningBatches = null,
+        ILogger<ContentGenerationService>? logger = null)
     {
         _unitOfWork = unitOfWork;
         _aiClient = aiClient;
@@ -54,6 +58,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         _artifactHandoff = artifactHandoff;
         _reviewService = reviewService;
         _learningBatches = learningBatches;
+        _logger = logger ?? NullLogger<ContentGenerationService>.Instance;
         _moderation = moderation; _grayZone = grayZone;
         _maxRefinementAttempts = Math.Clamp(options.MaxContentRefinementAttempts, 0, 2);
         _artifactMaxAttempts = Math.Clamp(options.ArtifactMaxAttempts, 1, 3);
@@ -65,7 +70,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
     {
         var story = await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
         var jobs = await _unitOfWork.Repository<StoryGenerationJob>().FindAsync(
-            item => item.StoryId == storyId &&
+            item => item.StoryId == storyId && !item.IsDeleted &&
                     (item.Operation == GenerationJobOperation.GenerateContent ||
                      item.Operation == GenerationJobOperation.GenerateVocabulary ||
                      item.Operation == GenerationJobOperation.GenerateQuiz ||
@@ -84,17 +89,28 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             .ExistsAsync(item => item.StoryVersionId == stable.Id, cancellationToken);
         var active = jobs.Where(item => item.Status is GenerationJobStatus.Pending or GenerationJobStatus.Processing)
             .OrderByDescending(item => item.Id).FirstOrDefault();
-        var failed = jobs.Where(item => item.Status == GenerationJobStatus.Failed)
-            .OrderByDescending(item => item.Id).FirstOrDefault();
-        var waiting = jobs.Any(x => x.Status == GenerationJobStatus.WaitingForModeration);
-        var qualityFailure = active is null ? ToQualityFailure(failed) : null;
-        var readingMediaOnly = story.OutputMode == StoryOutputMode.ReadingMediaOnly;
-        var contentComplete = stable is not null && story.Status is
-            (StoryStatus.ContentReview or StoryStatus.Approved or StoryStatus.MediaProcessing or StoryStatus.MediaReview or StoryStatus.Ready);
-
         var batches = _learningBatches is not null && stable is not null
             ? await _unitOfWork.Repository<LearningArtifactGenerationBatch>().FindAsync(x => x.StoryVersionId == stable.Id, cancellationToken: cancellationToken)
             : Array.Empty<LearningArtifactGenerationBatch>();
+        var failed = jobs.Where(item => item.Operation == GenerationJobOperation.GenerateContent ||
+                stable is not null && item.StoryVersionId == stable.Id)
+            .GroupBy(item => item.Operation).Select(group => group.OrderByDescending(item => item.Id).First())
+            .Where(item => item.Status == GenerationJobStatus.Failed && (item.Operation switch
+            {
+                GenerationJobOperation.GenerateContent => stable is null,
+                GenerationJobOperation.GenerateVocabulary => (!vocabularyDone || batches.Any(x => x.RootJobId == item.Id)) && item.StoryVersionId == stable?.Id,
+                GenerationJobOperation.GenerateQuiz => !quizDone && item.StoryVersionId == stable?.Id,
+                GenerationJobOperation.GenerateDiscussion => !discussionDone && item.StoryVersionId == stable?.Id,
+                _ => false
+            }))
+            .OrderByDescending(item => item.CompletedAt ?? item.StartedAt).ThenByDescending(item => item.Id).FirstOrDefault();
+        var waiting = jobs.Any(x => x.Status == GenerationJobStatus.WaitingForModeration);
+        var qualityFailure = active is null && !waiting ? ToQualityFailure(failed) : null;
+        var readingMediaOnly = story.OutputMode == StoryOutputMode.ReadingMediaOnly;
+        var contentComplete = stable is not null && story.Status is
+            (StoryStatus.ContentReview or StoryStatus.Approved or StoryStatus.MediaProcessing or StoryStatus.MediaReview or StoryStatus.Ready);
+        var isComplete = active is null && !waiting && contentComplete && (readingMediaOnly || vocabularyDone && quizDone && discussionDone);
+
         return new ContentGenerationProgressDto
         {
             VocabularyTarget = batches.Where(x => x.Kind == "vocabulary").Sum(x => x.TargetCount),
@@ -108,17 +124,16 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             OutputMode = StoryPlatform.Application.Common.StoryOutputModeContract.Format(story.OutputMode),
             StoryStatus = ToSnake(story.Status.ToString()),
             WaitingForModeration = waiting,
-            CurrentStep = waiting ? "waiting_for_moderation" : contentComplete && (readingMediaOnly || vocabularyDone && quizDone && discussionDone) ? "complete" :
-                active is not null
+            CurrentStep = waiting ? "waiting_for_moderation" : active is not null
                     ? $"{(active.Status == GenerationJobStatus.Processing ? "generating" : "pending")}_{OperationName(active.Operation)}"
-                    : failed is not null ? $"failed_{OperationName(failed.Operation)}" : "not_started",
+                    : isComplete ? "complete" : failed is not null ? $"failed_{OperationName(failed.Operation)}" : "not_started",
             Content = stable is not null ? "stable" : JobState(jobs, GenerationJobOperation.GenerateContent),
             Vocabulary = readingMediaOnly ? "skipped" : vocabularyDone ? "completed" : JobState(jobs, GenerationJobOperation.GenerateVocabulary),
             Quiz = readingMediaOnly ? "skipped" : quizDone ? "completed" : JobState(jobs, GenerationJobOperation.GenerateQuiz),
             Discussion = readingMediaOnly ? "skipped" : discussionDone ? "completed" : JobState(jobs, GenerationJobOperation.GenerateDiscussion),
-            IsComplete = contentComplete && (readingMediaOnly || vocabularyDone && quizDone && discussionDone),
-            LastErrorCode = active is null ? failed?.ErrorCode : null,
-            QualityFailure = qualityFailure,
+            IsComplete = isComplete,
+            LastErrorCode = active is null && !waiting && !isComplete ? failed?.ErrorCode : null,
+            QualityFailure = isComplete ? null : qualityFailure,
             StableStoryVersionId = stable?.Id
         };
     }
@@ -255,6 +270,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         }
 
         var claimedToken = job.ConcurrencyToken;
+        _logger.LogInformation("Generation job started JobId={JobId} StoryId={StoryId} VersionId={VersionId} Operation={Operation} Attempt={Attempt}",
+            job.Id, job.StoryId, job.StoryVersionId ?? job.BaseStoryVersionId, job.Operation, job.AttemptNo);
         try
         {
             switch (job.Operation)
@@ -275,7 +292,14 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         }
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
-            await _failureFinalizer.MarkFailedAsync(job.Id, claimedToken, PublicErrorCode(exception, job.Operation), CancellationToken.None);
+            var errorCode = PublicErrorCode(exception, job.Operation);
+            // Provider exception messages may contain story text. Log only fixed codes and identifiers.
+            var validationCode = LearningValidationFeedback.Normalize(exception.Data["ValidationCode"] as string ?? exception.Message);
+            _logger.LogError("Generation job failed JobId={JobId} StoryId={StoryId} VersionId={VersionId} Operation={Operation} Attempt={Attempt} ErrorCode={ErrorCode} ValidationCode={ValidationCode} ItemIndex={ItemIndex} ExceptionType={ExceptionType}",
+                job.Id, job.StoryId, job.StoryVersionId ?? job.BaseStoryVersionId, job.Operation, job.AttemptNo,
+                IsCode(errorCode) ? errorCode : "UNCLASSIFIED_ERROR", validationCode,
+                exception.Data["LearningItemIndex"] is int index ? index : null, exception.GetType().Name);
+            await _failureFinalizer.MarkFailedAsync(job.Id, claimedToken, errorCode, CancellationToken.None);
         }
         return true;
     }
@@ -456,8 +480,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                     Term = item.Term.Trim(),
                     Definition = item.Definition.Trim(),
                     SourceQuote = string.IsNullOrEmpty(item.SourceQuote) ? null : item.SourceQuote,
-                    SourceStart = string.IsNullOrEmpty(item.SourceQuote) ? null : LearningArtifactGrounding.Anchor(state.Version.Content!, item.SourceQuote).Start,
-                    SourceEnd = string.IsNullOrEmpty(item.SourceQuote) ? null : LearningArtifactGrounding.Anchor(state.Version.Content!, item.SourceQuote).End,
+                    SourceStart = string.IsNullOrEmpty(item.SourceQuote) ? null : ToAnchor(state.Version.Content!, item.SourceQuote).Start,
+                    SourceEnd = string.IsNullOrEmpty(item.SourceQuote) ? null : ToAnchor(state.Version.Content!, item.SourceQuote).End,
                     Example = string.IsNullOrEmpty(item.Example) ? null : item.Example
                 }), cancellationToken);
             }
@@ -718,6 +742,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             {
                 existing.Status = GenerationJobStatus.Pending; existing.AttemptNo = 0; existing.ErrorCode = null;
                 existing.LeaseExpiresAt = existing.CompletedAt = null;
+                // Attach with the database token before rotating it; otherwise EF uses the new token in WHERE.
+                _unitOfWork.Repository<StoryGenerationJob>().Update(existing);
                 RotateToken(existing);
                 _unitOfWork.Repository<StoryGenerationJob>().Update(existing);
             }
@@ -968,28 +994,29 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         IReadOnlyList<QuizItemDto> items, string storyContent, AIStoryInputContextSnapshot context)
     {
         if (items.Count < 3 || items.Select(item => item.Type).Distinct(StringComparer.OrdinalIgnoreCase).Count() < 3)
-            throw new InvalidOperationException("QUIZ_VALIDATION_FAILED");
+            throw QuizFailure("QUIZ_TYPE_COVERAGE_INVALID");
         var result = new List<QuizItemSeed>();
-        foreach (var item in items)
+        for (var index = 0; index < items.Count; index++)
         {
+            var item = items[index];
             var quizText = string.Join(' ', new[] { item.Question, item.CorrectAnswer, item.Explanation }.Concat(item.Options));
-            if (string.IsNullOrWhiteSpace(item.Question) || !IsArtifactSafe(quizText, context) ||
-                !HasRelevantTerm(item.Question, storyContent))
-                throw new InvalidOperationException("QUIZ_VALIDATION_FAILED");
+            if (string.IsNullOrWhiteSpace(item.Question)) throw QuizFailure("QUIZ_QUESTION_REQUIRED", index);
+            if (!IsArtifactSafe(quizText, context)) throw QuizFailure("LEARNING_SAFETY_INVALID", index);
+            if (!HasRelevantTerm(item.Question, storyContent)) throw QuizFailure("QUIZ_QUESTION_RELEVANCE_INVALID", index);
             var type = item.Type.ToLowerInvariant() switch
             {
                 "multiple_choice" => QuizType.MultipleChoice,
                 "true_false" => QuizType.TrueFalse,
                 "short_answer" => QuizType.ShortAnswer,
-                _ => throw new InvalidOperationException("QUIZ_VALIDATION_FAILED")
+                _ => throw QuizFailure("QUIZ_ANSWER_INVALID", index)
             };
             var answer = item.CorrectAnswer;
             if (type == QuizType.MultipleChoice)
             {
                 if (item.Options.Count < 2 || item.CorrectOptionIndex < 0 || item.CorrectOptionIndex >= item.Options.Count)
-                    throw new InvalidOperationException("QUIZ_VALIDATION_FAILED");
+                    throw QuizFailure("QUIZ_OPTIONS_INVALID", index);
                 answer = string.IsNullOrWhiteSpace(answer) ? item.Options[item.CorrectOptionIndex] : answer;
-                if (!item.Options.Contains(answer, StringComparer.OrdinalIgnoreCase)) throw new InvalidOperationException("QUIZ_VALIDATION_FAILED");
+                if (!item.Options.Contains(answer, StringComparer.OrdinalIgnoreCase)) throw QuizFailure("QUIZ_OPTIONS_INVALID", index);
             }
             else if (type == QuizType.TrueFalse)
             {
@@ -1014,30 +1041,43 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                 }
                 else
                 {
-                    throw new InvalidOperationException("QUIZ_VALIDATION_FAILED");
+                    throw QuizFailure("QUIZ_TRUE_FALSE_INVALID", index);
                 }
             }
             else if (type == QuizType.ShortAnswer && string.IsNullOrWhiteSpace(answer))
-                throw new InvalidOperationException("QUIZ_VALIDATION_FAILED");
-            var anchor = string.IsNullOrEmpty(item.SourceQuote) ? ((int?)null, (int?)null) :
-                ((int?)LearningArtifactGrounding.Anchor(storyContent, item.SourceQuote).Start, (int?)LearningArtifactGrounding.Anchor(storyContent, item.SourceQuote).End);
+                throw QuizFailure("QUIZ_ANSWER_INVALID", index);
+            var anchor = string.IsNullOrEmpty(item.SourceQuote) ? ((int?)null, (int?)null) : ToAnchor(storyContent, item.SourceQuote);
             result.Add(new QuizItemSeed(type, item.Question.Trim(), answer.Trim(), JsonSerializer.Serialize(item.Options, JsonOptions))
                 { Detail = item, SourceStart = anchor.Item1, SourceEnd = anchor.Item2 });
         }
         return result;
     }
 
+    private static InvalidOperationException QuizFailure(string code, int? index = null)
+    {
+        var error = new InvalidOperationException("QUIZ_VALIDATION_FAILED");
+        error.Data["ValidationCode"] = code;
+        if (index.HasValue) error.Data["LearningItemIndex"] = index.Value;
+        return error;
+    }
+
+    private static (int Start, int End) ToAnchor(string content, string quote)
+    {
+        if (LearningArtifactGrounding.TryAnchor(content, quote, out var range)) return range;
+        // Learning batches are validated against the trimmed canonical story, so retry on that basis and add the
+        // leading offset back; otherwise a quoted first line would land at the wrong offset in the stored content.
+        var trimmed = content.TrimStart();
+        var offset = content.Length - trimmed.Length;
+        if (LearningArtifactGrounding.TryAnchor(trimmed, quote, out var shifted))
+            return (shifted.Start + offset, shifted.End + offset);
+        throw new JsonException("LEARNING_EVIDENCE_NOT_IN_STORY");
+    }
+
     private static bool IsArtifactSafe(string value, AIStoryInputContextSnapshot context) =>
         !PolicyTerms(context.BlockedCategoryTerms, context.BlockedCategoryCodes).Any(term => ContainsTerm(value, term)) &&
         !PolicyTerms(context.RestrictedCategoryTerms, context.RestrictedCategoryCodes).Any(term => ContainsTerm(value, term));
 
-    private static bool HasRelevantTerm(string value, string source)
-    {
-        var terms = value.Split([' ', '\t', '\r', '\n', '?', '!', '.', ',', ':', ';'], StringSplitOptions.RemoveEmptyEntries)
-            .Where(item => item.Length >= 4)
-            .ToArray();
-        return terms.Length == 0 || terms.Any(item => source.Contains(item, StringComparison.OrdinalIgnoreCase));
-    }
+    private static bool HasRelevantTerm(string value, string source) => LearningArtifactGrounding.HasRelevantTerm(value, source);
 
     private sealed record ContentHandoff(StoryGenerationJob Job, StoryGenerationRequest Request, StoryVersion BaseVersion,
         AcceptedAIStoryInputSnapshot Input, AIStoryInputContextSnapshot Context);

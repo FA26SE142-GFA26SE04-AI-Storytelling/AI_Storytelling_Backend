@@ -19,6 +19,12 @@ RUN dotnet restore src/AI/StoryPlatform.AI.Api/StoryPlatform.AI.Api.csproj
 
 COPY src/ src/
 
+FROM restore AS db-tools
+ENV DOTNET_ROLL_FORWARD=Major
+RUN dotnet tool install dotnet-ef --tool-path /tools --version 8.0.13
+WORKDIR /workspace/src/Core/StoryPlatform.Api
+ENTRYPOINT ["/tools/dotnet-ef"]
+
 FROM restore AS publish-core
 RUN dotnet publish src/Core/StoryPlatform.Api/StoryPlatform.Api.csproj \
     --configuration Release \

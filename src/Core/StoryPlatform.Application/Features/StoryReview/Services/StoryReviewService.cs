@@ -18,7 +18,7 @@ using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.StoryReview.Services;
 
-public sealed class StoryReviewService : IStoryReviewService
+public sealed partial class StoryReviewService : IStoryReviewService
 {
     private static readonly JsonSerializerOptions ProposalJsonOptions = new(JsonSerializerDefaults.Web);
     private readonly IUnitOfWork _unitOfWork;
@@ -73,6 +73,8 @@ public sealed class StoryReviewService : IStoryReviewService
 
         return new ReviewPackageDto
         {
+            AssistanceRevisionToken = story.Source == StorySource.Ai && story.Status == StoryStatus.ContentReview && story.AuthorUserId == userId
+                ? story.AuthoringRevisionToken : null,
             StoryId = storyId,
             OutputMode = StoryOutputModeContract.Format(story.OutputMode),
             StoryVersionId = version.Id,
@@ -178,6 +180,7 @@ public sealed class StoryReviewService : IStoryReviewService
                     cancellationToken: cancellationToken) ?? throw new NotFoundException("StoryVersion");
 
             // Tạo version mới với EditType = HumanEdited, version_no = current + 1.
+            var assistanceProvenance = await ValidateReviewAssistanceAsync(userId, story, currentVersion.Id, input.AssistanceReferences, cancellationToken);
             var versions = await _versionRepo.FindAsync(
                 v => v.StoryId == storyId, cancellationToken: cancellationToken);
             var nextVersionNo = versions.Select(v => v.VersionNo).DefaultIfEmpty().Max() + 1;
@@ -206,7 +209,9 @@ public sealed class StoryReviewService : IStoryReviewService
                 OutlineApprovedAt = currentVersion.OutlineApprovedAt,
                 OutlineApprovedByUserId = currentVersion.OutlineApprovedByUserId
             };
+            newVersion.AuthoringMetadata.AssistanceProvenanceJson = assistanceProvenance;
             await _versionRepo.AddAsync(newVersion, cancellationToken);
+            story.AuthoringRevisionToken = Guid.NewGuid().ToString("N");
 
             // Đồng bộ Story header cho khớp với current version.
             story.Title = newVersion.Title;

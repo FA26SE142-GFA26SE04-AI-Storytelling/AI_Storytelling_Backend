@@ -33,6 +33,12 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
+      Database__RunMigrationsOnStartup: "false"
+      SeedData__RunOnStartup: ${SEED_DATA_RUN_ON_STARTUP:-false}
+      AuthoringGuides__SeedOnStartup: "false"
+      FixMigrationHistory__RunOnStartup: "false"
+      AIService__BaseUrl: http://ai-api:8080
+      AIService__InternalApiKey: ${AI_INTERNAL_API_KEY:?Set AI_INTERNAL_API_KEY in your env file}
       ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-AIStorytellingDB};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD}
       JwtSettings__SecretKey: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env}
       JwtSettings__Issuer: ${JWT_ISSUER:-StoryPlatform}
@@ -67,6 +73,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      ai-api:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/health"]
       interval: 10s
@@ -75,10 +83,7 @@ services:
       start_period: 20s
     networks:
       - backend
-    # Mount Vertex AI service-account key as a secret (only if VERTEX_CREDENTIALS_PATH is set).
-    # Map host path from VERTEX_CREDENTIALS_HOST_PATH → VERTEX_CREDENTIALS_PATH inside container.
-    volumes:
-      - "${VERTEX_CREDENTIALS_HOST_PATH:-./secrets}:${VERTEX_CREDENTIALS_PATH:-/app/secrets}:ro"
+    # ADC mounts are opt-in through compose.adc.yaml; never bake credentials into images.
 
   ai-api:
     build:
@@ -106,6 +111,21 @@ services:
       timeout: 5s
       retries: 10
       start_period: 15s
+    networks:
+      - backend
+
+  db-migrate:
+    profiles: [tools]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: db-tools
+    environment:
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-AIStorytellingDB};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your env file}
+    command: [database, update, --project, ../StoryPlatform.Infrastructure/StoryPlatform.Infrastructure.csproj, --startup-project, StoryPlatform.Api.csproj, --context, ApplicationDbContext]
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - backend
 

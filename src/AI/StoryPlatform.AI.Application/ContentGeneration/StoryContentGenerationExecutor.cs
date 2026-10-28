@@ -40,7 +40,7 @@ public sealed class StoryContentGenerationExecutor
         {
             if (attempt > 1)
             {
-                await Task.Delay(GetRetryDelay(attempt), cancellationToken);
+                await Task.Delay(GetRetryDelay(attempt, lastError), cancellationToken);
             }
 
             try
@@ -54,7 +54,8 @@ public sealed class StoryContentGenerationExecutor
             catch (Exception exception) when (IsRetryable(exception, cancellationToken))
             {
                 // A durable Core batch owns the retry budget and needs the original status.
-                if (technicalAttempts == 1) throw;
+                // Leave a long backoff to the caller instead of retrying before the provider's deadline.
+                if (technicalAttempts == 1 || ProviderRetryDelay(exception) > MaxProviderRetryDelay) throw;
                 lastError = exception;
                 if (attempt == maxAttempts)
                 {
@@ -66,8 +67,18 @@ public sealed class StoryContentGenerationExecutor
         throw new InvalidOperationException("Story content AI generation failed after the configured attempts.", lastError);
     }
 
-    private TimeSpan GetRetryDelay(int attempt)
+    /// <summary>Maximum wait accepted from a provider hint; guards against a hostile or broken Retry-After.</summary>
+    private static readonly TimeSpan MaxProviderRetryDelay = TimeSpan.FromSeconds(60);
+
+    private TimeSpan GetRetryDelay(int attempt, Exception? lastError)
     {
+        // A provider-supplied backoff always wins: retrying earlier lands in the same quota window and
+        // simply burns another attempt.
+        if (ProviderRetryDelay(lastError) is { } providerDelay)
+        {
+            return providerDelay;
+        }
+
         var baseDelaySeconds = Math.Max(0, _options.BaseRetryDelaySeconds);
         if (baseDelaySeconds == 0)
         {
@@ -79,8 +90,25 @@ public sealed class StoryContentGenerationExecutor
         return TimeSpan.FromSeconds(exponentialDelay + jitter);
     }
 
+    private static TimeSpan? ProviderRetryDelay(Exception? exception)
+    {
+        if (exception is HttpRequestException { Data: { } data } &&
+            data[VertexRetryAfterKeyForExecutor] is double seconds &&
+            double.IsFinite(seconds) && seconds > 0 && seconds <= TimeSpan.MaxValue.TotalSeconds)
+        {
+            return TimeSpan.FromSeconds(seconds);
+        }
+
+        return null;
+    }
+
+    /// <summary>Mirrors <c>VertexAIGeminiClient.RetryAfterSecondsKey</c>; kept local to avoid a layering dependency.</summary>
+    private const string VertexRetryAfterKeyForExecutor = "RetryAfterSeconds";
+
     private static bool IsRetryable(Exception exception, CancellationToken callerToken) => exception switch
     {
+        // Truncation is deterministic under a fixed output ceiling; retrying only re-burns provider quota.
+        StoryPlatform.AI.Domain.Generation.LlmOutputTruncatedException => false,
         JsonException => true,
         OperationCanceledException when !callerToken.IsCancellationRequested => true,
         HttpRequestException http => !http.StatusCode.HasValue ||

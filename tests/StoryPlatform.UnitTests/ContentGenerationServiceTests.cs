@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Features.AIStoryInput.Models;
@@ -20,6 +21,74 @@ namespace StoryPlatform.UnitTests;
 
 public sealed class ContentGenerationServiceTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Worker_logs_handled_quiz_failure_without_story_or_provider_payload(bool providerFailure)
+    {
+        var store=Seed();var logger=new JobLogger();var client=new InvalidQuizAIClient(providerFailure);
+        var service=new ContentGenerationService(store,client,new PassingQualityEvaluator(),new FakeFailureFinalizer(store),
+            new RecordingHandoffService(store),new ContentGenerationOptions(),logger:logger);
+        for(var i=0;i<3;i++)Assert.True(await service.ProcessNextAsync());
+        var quiz=store.Items<StoryGenerationJob>().Single(x=>x.Operation==GenerationJobOperation.GenerateQuiz);
+        Assert.Equal(GenerationJobStatus.Failed,quiz.Status);
+        Assert.Equal(providerFailure?"QUIZ_GENERATION_FAILED":"QUIZ_VALIDATION_FAILED",quiz.ErrorCode);
+        var entry=Assert.Single(logger.Errors);
+        Assert.Contains($"JobId={quiz.Id}",entry);Assert.Contains("Operation=GenerateQuiz",entry);
+        if(!providerFailure){Assert.Contains("ValidationCode=QUIZ_OPTIONS_INVALID",entry);Assert.Contains("ItemIndex=0",entry);}
+        Assert.DoesNotContain("private-story-payload",entry);
+        Assert.DoesNotContain("Lan và Minh",entry);
+    }
+
+    private sealed class JobLogger:ILogger<ContentGenerationService>
+    {
+        public List<string> Errors {get;}=[];
+        public IDisposable? BeginScope<TState>(TState state) where TState:notnull=>null;
+        public bool IsEnabled(LogLevel level)=>true;
+        public void Log<TState>(LogLevel level,EventId id,TState state,Exception? exception,Func<TState,Exception?,string> format)
+        {if(level==LogLevel.Error)Errors.Add(format(state,exception));}
+    }
+
+    private sealed class InvalidQuizAIClient(bool providerFailure):FakeAIClient
+    {
+        public override async Task<GenerateQuizResponse> GenerateQuizAsync(GenerateQuizRequest request,CancellationToken cancellationToken=default)
+        {
+            if(providerFailure)throw new InvalidOperationException("private-story-payload");
+            var response=await base.GenerateQuizAsync(request,cancellationToken);
+            return response with {Items=response.Items.Select((item,i)=>i==0?item with {CorrectOptionIndex=99}:item).ToArray()};
+        }
+    }
+    [Fact]
+    public async Task Progress_only_uses_failed_artifacts_of_the_current_stable_version()
+    {
+        var store=Seed();var version=store.Items<StoryVersion>().Single();version.Content="Nội dung ổn định";
+        store.Items<StoryGenerationJob>().Single().Status=GenerationJobStatus.Completed;
+        store.Seed(new StoryGenerationJob {Id=90,StoryId=1,StoryVersionId=version.Id,Operation=GenerationJobOperation.GenerateVocabulary,Status=GenerationJobStatus.Failed,ErrorCode="CURRENT_FAILURE"});
+        store.Seed(new StoryGenerationJob {Id=100,StoryId=1,StoryVersionId=999,Operation=GenerationJobOperation.GenerateVocabulary,Status=GenerationJobStatus.Failed,ErrorCode="OLD_VERSION_FAILURE"});
+        var progress=await Service(store,new FakeAIClient()).GetProgressAsync(1,1);
+        Assert.Equal("failed_vocabulary",progress.CurrentStep);Assert.Equal("CURRENT_FAILURE",progress.LastErrorCode);
+    }
+    [Fact]
+    public async Task Progress_clears_historical_failure_after_successful_retry()
+    {
+        var store=Seed();var service=Service(store,new FakeAIClient());
+        store.Seed(new StoryGenerationJob {Id=0,StoryId=1,Operation=GenerationJobOperation.GenerateContent,Status=GenerationJobStatus.Failed,ErrorCode="OLD_FAILURE"});
+        for(var i=0;i<4;i++)await service.ProcessNextAsync();
+        var progress=await service.GetProgressAsync(1,1);
+        Assert.True(progress.IsComplete);Assert.Equal("complete",progress.CurrentStep);Assert.Null(progress.LastErrorCode);Assert.Null(progress.QualityFailure);
+    }
+
+    [Theory]
+    [InlineData(GenerationJobStatus.Pending)]
+    [InlineData(GenerationJobStatus.Processing)]
+    public async Task Progress_does_not_fail_while_retry_is_active(GenerationJobStatus status)
+    {
+        var store=Seed();var first=store.Items<StoryGenerationJob>().Single();first.Status=GenerationJobStatus.Failed;first.ErrorCode="OLD_FAILURE";
+        store.Seed(new StoryGenerationJob {Id=first.Id+1,StoryId=1,Operation=GenerationJobOperation.GenerateContent,Status=status});
+        var progress=await Service(store,new FakeAIClient()).GetProgressAsync(1,1);
+        Assert.StartsWith(status==GenerationJobStatus.Pending?"pending_":"generating_",progress.CurrentStep);
+        Assert.Null(progress.LastErrorCode);Assert.Null(progress.QualityFailure);Assert.False(progress.IsComplete);
+    }
     [Theory]
     [InlineData(StoryOutputMode.ReadingMediaOnly, 1)]
     [InlineData(StoryOutputMode.Learning, 4)]
@@ -51,6 +120,7 @@ public sealed class ContentGenerationServiceTests
         story.OutputMode = StoryOutputMode.ReadingMediaOnly;
         story.Status = StoryStatus.ContentReview;
         store.Items<StoryVersion>().Single().Content = "Lan và Minh cùng chia sẻ một quyển sách.";
+        store.Items<StoryGenerationJob>().Single().Status = GenerationJobStatus.Completed;
 
         var progress = await Service(store, new FakeAIClient()).GetProgressAsync(1, story.Id);
 
@@ -59,6 +129,16 @@ public sealed class ContentGenerationServiceTests
         Assert.Equal("skipped", progress.Vocabulary);
         Assert.Equal("skipped", progress.Quiz);
         Assert.Equal("skipped", progress.Discussion);
+    }
+
+    [Fact]
+    public async Task Stable_content_does_not_finish_progress_while_generation_is_still_processing()
+    {
+        var store=Seed();var story=store.Items<Story>().Single();story.OutputMode=StoryOutputMode.ReadingMediaOnly;
+        story.Status=StoryStatus.ContentReview;store.Items<StoryVersion>().Single().Content="Nội dung bản trước";
+        store.Items<StoryGenerationJob>().Single().Status=GenerationJobStatus.Processing;
+        var progress=await Service(store,new FakeAIClient()).GetProgressAsync(1,1);
+        Assert.False(progress.IsComplete);Assert.Equal("generating_content",progress.CurrentStep);Assert.Null(progress.LastErrorCode);
     }
 
     [Fact]

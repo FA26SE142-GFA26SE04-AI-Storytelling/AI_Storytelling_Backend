@@ -4,6 +4,7 @@
 
 public sealed record ReviewPackageDto
 {
+    public string? AssistanceRevisionToken { get; init; }
     public int StoryId { get; init; }
     public string OutputMode { get; init; } = "learning";
     public int StoryVersionId { get; init; }
@@ -52,6 +53,7 @@ public sealed record StoryReviewDto
 
 public sealed record UpdateStoryRequestDto
 {
+    public StoryPlatform.Application.Features.CreatorAssistance.DTOs.AssistanceReference[]? AssistanceReferences { get; init; }
     public int VersionId { get; init; }
     public string Title { get; init; } = string.Empty;
     public string Content { get; init; } = string.Empty;

@@ -275,8 +275,8 @@ public class ChildReadingServiceTests
     {
         var story = _h.Stories.Single();
         story.ChildProfileId = ReadingHarness.OtherChild;
-        story.Content = new string('a', currentLength);
-        _h.Versions.Single().Content = new string('b', pinnedLength);
+        story.Content = string.Join(' ', Enumerable.Repeat("a", currentLength));
+        _h.Versions.Single().Content = string.Join(' ', Enumerable.Repeat("b", pinnedLength));
         _h.Policies.Add(new SafetyPolicy { Id = 1, ChildProfileId = ReadingHarness.Child, MaxStoryLength = 10 });
         _h.ModerationItems.Add(new ModerationItem
         {
@@ -300,7 +300,7 @@ public class ChildReadingServiceTests
             Assert.Equal(ReadingHarness.Story, result.StoryId);
         }
 
-        Assert.Equal(currentLength, story.Content.Length);
+        Assert.Equal(currentLength, StoryPlatform.Contracts.AI.Models.StoryWordCounter.Count(story.Content));
     }
 
     [Fact]
@@ -326,6 +326,25 @@ public class ChildReadingServiceTests
             _sut.StartAsync(ReadingHarness.Child, ReadingHarness.SessionKey, Start()));
 
         Assert.Equal(ChildReadingPolicy.StoryUnavailableMessage, error.Message);
+    }
+
+    [Theory]
+    [InlineData(ChildRoadmapItemStatus.Waiting, true)]
+    [InlineData(ChildRoadmapItemStatus.Completed, true)]
+    [InlineData(ChildRoadmapItemStatus.Removed, false)]
+    public async Task StartAsync_ParentAssignedSiblingStoryOfAnotherAge_UsesTheAssignment(
+        ChildRoadmapItemStatus status, bool allowed)
+    {
+        var story = _h.Stories.Single();
+        story.ChildProfileId = ReadingHarness.OtherChild; story.AgeBand = "9-10";
+        _h.RoadmapItems.Add(new ChildRoadmapItem { Id = 7, ChildProfileId = ReadingHarness.Child,
+            StoryId = story.Id, Source = ChildRoadmapItemSource.Manual, Status = status });
+        var service = new ChildReadingService(_h.UnitOfWork.Object,
+            new ChildRoadmapEligibility(_h.UnitOfWork.Object), _recorder.Object, _rewards.Object);
+        if (allowed)
+            Assert.Equal(story.Id, (await service.StartAsync(ReadingHarness.Child, ReadingHarness.SessionKey, Start())).StoryId);
+        else
+            await Assert.ThrowsAsync<ForbiddenException>(() => service.StartAsync(ReadingHarness.Child, ReadingHarness.SessionKey, Start()));
     }
 
     [Fact]

@@ -2,6 +2,10 @@
 
 > Phase 5 Image/TTS: [MEDIA_PHASE5_IMAGE_TTS_API_GUIDE.md](MEDIA_PHASE5_IMAGE_TTS_API_GUIDE.md)
 
+> Bổ sung 26/10/2026: assistance theo bản nháp dùng cho **soạn thủ công và sửa nội dung truyện AI** của Parent/Creator tại M3. Phần mapping baseline bên dưới là lịch sử; đợt bổ sung đã nối giao diện, chưa xác nhận triển khai hay provider thật.
+
+> Đồng bộ progress 26/10/2026: endpoint outline chỉ trả active operation/lỗi của job outline; retry Pending/Processing và dàn ý đã bàn giao không mang lỗi outline cũ. Endpoint content bỏ lỗi của attempt đã được thay thế, artifact phiên bản cũ và nội dung đã stable; job đang hoạt động giữ currentStep pending/generating và isComplete=false. Frontend theo dõi đến trạng thái backend xác nhận, phân biệt lỗi đọc API với job Failed và không tự đánh dấu thất bại chỉ vì chờ lâu. Không đổi route hoặc schema database. Kiểm thử source/fixture không xác nhận backend đang triển khai đã nạp mã mới.
+
 > Rà soát source ngày **21/10/2026**. Đây là tài liệu contract và checklist tích hợp từ mã nguồn, **không phải biên bản kiểm thử API/DB hoặc xác nhận đã triển khai**.
 
 ## Mục lục
@@ -188,7 +192,7 @@ GET /Supervision/{childId}/relationships lấy relationshipId/role. DELETE relat
 ### P6. Lộ trình riêng của trẻ và sao chép bộ mẫu
 
 1. GET /api/v1/ChildRoadmap/{childProfileId}: cần giám sát hiện hành; trả open/waiting/history và số lượng. Dùng item.id cho thao tác lộ trình, storyId để nhận diện truyện.
-2. POST /api/v1/ChildRoadmap/stories: storyId, childProfileIds (1–20 trẻ phân biệt), position ("NextUp" hoặc "End"), expectedDays (1–90 nếu có), note (tối đa 500 ký tự). Backend xét AssignActivity và eligibility cho từng trẻ; hiển thị results[].outcome/skipCode/message/warnings, không coi 200 là tất cả thành công.
+2. POST /api/v1/ChildRoadmap/stories: storyId, childProfileIds (1–20 trẻ phân biệt), position ("NextUp" hoặc "End"), expectedDays (1–90 nếu có), note (tối đa 500 ký tự). Backend xét AssignActivity và eligibility cho từng trẻ; hiển thị results[].outcome/skipCode/message/warnings, không coi 200 là tất cả thành công. Cập nhật 26/10/2026: phụ huynh chủ động chọn giao một truyện khác nhóm tuổi vẫn được thêm; khác tuổi là cảnh báo đọc được trong warnings, không phải wrong_age. Thao tác Thêm vào lộ trình chính là lựa chọn giao của phụ huynh, không cần thêm checkbox hoặc tham số mới. Quyền, chủ đề chặn, trạng thái truyện và giới hạn độ dài vẫn được kiểm tra.
 3. PUT /{childProfileId}/order gửi đúng toàn bộ itemIds Waiting, mỗi ID một lần; không kéo thả Open. DELETE /items/{itemId} chỉ Open/Waiting; gỡ Open có thể tiến sang bước tiếp theo. DELETE /items gỡ Open/Waiting, giữ lịch sử.
 4. GET /api/v1/RoadmapLibrary theo ageBand/readingLevel/contentCategoryId và phân trang → GET /{roadmapId} xem bộ cùng isAvailable.
 5. POST /{roadmapId}/preview với childProfileIds/position/daysPerStory → hiển thị children[].steps[].action và cảnh báo → POST /copy cùng hình dạng request. Preview không giữ chỗ; copy kiểm lại quyền, tuổi, policy và khả dụng. Không dùng API template của Moderator để giao trực tiếp cho trẻ.
@@ -197,6 +201,8 @@ Nguồn: [ChildRoadmapService](../src/Core/StoryPlatform.Application/Features/Ch
 
 
 Gợi ý adapter roadmap: skipCode có thể là no_permission, profile_inactive, no_access_to_story, blocked_topic, wrong_age, too_long, story_unavailable, already_in_roadmap. Dùng mã thay vì parse message; giữ warnings và kết quả riêng từng trẻ. Template days (1–30) khác expectedDays của lộ trình riêng (1–90).
+
+Giao từng truyện khác tuổi dùng bản ghi lộ trình Source=Manual làm bằng chứng lựa chọn của người giám sát: Waiting/Open/Completed còn hiệu lực cho việc mở/đọc lại, Removed/Skipped hoặc bản ghi bị xóa không cấp quyền ngoại lệ. Advancer và phía trẻ tôn trọng lựa chọn này; thư viện vẫn lọc theo tuổi cho truyện chưa được phụ huynh chọn. Truyện riêng của anh/chị/em chỉ hiện và mở cho trẻ được giao đúng storyId qua quyền giao hiện có. Sao chép bộ mẫu/tự chọn truyện chưa có lựa chọn thủ công vẫn áp dụng kiểm tra tuổi hiện hành. Không cần migration. Kiểm tra MaxStoryLength nay dùng StoryWordCounter chung với generation, không dùng số ký tự. Kiểm thử 335 ca ChildRoadmaps/ReadingSessions đạt với harness; chưa thay đổi dữ liệu hoặc triển khai backend đang chạy.
 
 ### P7. Chia sẻ truyện gia đình lên thư viện cộng đồng
 
@@ -299,7 +305,13 @@ Suggestions trả Options/Clarification/ReviewFindings. Clarification-answer ch�
 
 GET task/steps phục hồi active operation/result/revision/stale flags. IsRunning → Location/pollUrl, không tạo inference mới. Cancel có operationId riêng + targetOperationId đang chạy; Close không lưu tác phẩm.
 
-Apply chỉ thay editor, so snapshot nguồn và stale flags, không tự rebase. Chỉ Save manual/versions tạo version, assistanceReferences dùng ID thật và Usage DirectionUsed/TrialUsed; provider/model do server ghi.
+Apply chỉ thay editor, so snapshot nguồn và stale flags, không tự rebase. Save `manual/versions` cho truyện soạn thủ công; `PUT /stories/{storyId}/review/story` cho sửa truyện AI. Cả hai nhận `assistanceReferences` với ID thật và usage `DirectionUsed`/`TrialUsed`; provider/model/hash do server ghi vào metadata phiên bản mới.
+
+**Bổ sung AI 26/10/2026:** `GET /stories/{storyId}/review` trả `assistanceRevisionToken` cho tác giả truyện AI ở `ContentReview`. Parent dùng quyền `ApproveStory` trên hồ sơ gắn với truyện, đồng thời vẫn kiểm child Active, consent hiện hành, tuổi/ngôn ngữ và chính sách. Creator giữ kiểm scope/tác giả/active và khóa phát hành. Cả hai chặn tác vụ generation Pending/Processing, truyện đã phát hành/lưu trữ hoặc ngoài ContentReview (`AI_STORY_NOT_EDITABLE`, `GENERATION_JOB_ACTIVE`). Truyện thủ công tiếp tục theo policy cũ.
+
+Frontend đặt “AI gợi ý theo bản nháp” ngay trong trình sửa: viết tiếp, hỗ trợ đoạn bôi đen, hoặc nhận xét toàn bản nháp. Tạo task xong gửi suggestions; HTTP 202 được theo dõi đến kết quả. Người dùng trả lời câu hỏi (hoặc để AI đề xuất), chọn hướng, tạo bản thử, áp dụng rồi tự lưu. Nhận xét có thể mở tác vụ con giữ `parentTaskId/sourceReviewStepId/findingId`. Các gợi ý sinh từ snapshot đang sửa, **không lấy mẫu Moderator trong catalog**. Catalog được ghi nhãn riêng.
+
+Save bản sửa AI kiểm owner/story/version/revision/audience của từng tham chiếu assistance và context trẻ trước khi tạo phiên bản; đổi `AuthoringRevisionToken` sau lưu. Tasks AI cũng so source version với current version khi đọc/ghi/hoàn tất inference, kể cả khi worker thay phiên bản mà token chưa đổi. Metadata sử dụng cột hiện có, không cần migration mới.
 
 Mất mạng → GET trước quyết retry. 409 giữ editor/đồng bộ; 429 chờ; 502/504 giữ draft/lấy revision trước inference mới. Source options mặc định timeout 120 giây/lease 150 giây, không phải SLA triển khai.
 
@@ -6604,6 +6616,8 @@ Ví dụ JSON minh họa shape request:
 
 Nguồn: [MediaGenerationModels.cs](../src/Core/StoryPlatform.Application/Features/MediaGeneration/Models/MediaGenerationModels.cs#L61).
 
+Bổ sung ngày 2026-10-26: response `GET /stories/{storyId}/media/progress` có `issues: MediaGenerationIssue[]` (mặc định `[]`). Mỗi mục gồm `sceneId`, `sceneIndex` (từ 0), `assetId`, `type` (`Illustration`/`TtsAudio`), `targetId` (beat/segment), `itemNumber` (thứ tự hiển thị từ 1 trong cảnh), `status`, `errorCode`, `attemptCount`, `nextRetryAt`. Chỉ trả lỗi/chờ thử lại của version và package revision hiện tại; bỏ asset Ready, ứng viên đã xử lý và task đã hủy. `Pending`/`Processing` không phải lỗi cuối cùng. Không trả raw provider output, URL lưu trữ hoặc nội dung exception. Nếu giai đoạn chuẩn bị lỗi trước khi có scene/asset thì `issues` có thể rỗng; frontend cần nói rõ chưa xác định được cảnh, không gán lỗi cho tất cả cảnh. Không cần migration. Backend cũ chưa có `issues`: frontend có thể xác định vị trí từ asset Failed/ManualReview trong gói đúng version/revision, nhưng không suy mã lỗi chung là nguyên nhân riêng của từng asset.
+
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
 | `storyId` | `int` | Không | — |
@@ -10853,3 +10867,72 @@ Các giá trị thuộc section `AI:LearningGeneration`, theo `LearningBatchOpti
 Hai nhóm schema đã được gom vào migration tăng dần [`20261023113952_AddMediaAssetTasksAndLearningArtifactBatches`](../src/Core/StoryPlatform.Infrastructure/Migrations/20261023113952_AddMediaAssetTasksAndLearningArtifactBatches.cs): tạo `learning_artifact_generation_batches` và `media_asset_generation_tasks`, thêm 11 cột nullable cho bằng chứng/chi tiết vocabulary và quiz, cùng index và khóa ngoại. Migration thay thế hai tên dự kiến `UpgradeLearningArtifactsAndGenerationBatches` và `AddMediaAssetGenerationTasks`; không cần tạo lại hai migration đó. Đã cập nhật snapshot và áp dụng thành công trên PostgreSQL local `localhost:5432/AIStorytellingDB` ngày 2026-10-23 sau khi sao lưu. Không backfill bằng chứng giả, không reset hoặc chạy seed. Các môi trường khác vẫn phải áp dụng migration trước khi chạy runtime mới.
 
 Benchmark provider thật cần ghi riêng thời gian queue, chờ gate, gọi AI, retry và tổng thời gian đến content review; so sánh p50/p95 cho cùng tuổi, model và quota. Test dùng client giả/SQLite xác minh nghiệp vụ, không chứng minh mức giảm độ trễ Vertex hoặc tính đúng của PostgreSQL advisory lock.
+
+## Chẩn đoán output học liệu không hợp lệ (2026-10-26)
+
+`Vertex ... Status=Success` chỉ xác nhận provider đã trả dữ liệu, chưa xác nhận quiz/vocabulary đạt validation. AI API giữ HTTP 502 / `AI_OUTPUT_INVALID` cho output không hợp lệ, bổ sung `validationCode` và `traceId`. Ví dụ:
+
+```json
+{
+  "errorCode": "AI_OUTPUT_INVALID",
+  "error": "Generated learning output failed validation.",
+  "validationCode": "QUIZ_OPTIONS_INVALID",
+  "traceId": "TRACE_CUA_REQUEST"
+}
+```
+
+`LEARNING_EVIDENCE_NOT_IN_STORY`: quote không khớp nguyên văn; `QUIZ_OPTIONS_INVALID`: đáp án/index/options/feedback không khớp; `QUIZ_GROUNDING_FIELDS_INVALID`: thiếu trường hoặc trùng câu hỏi; `LEARNING_BATCH_COUNT_INVALID`: sai số lượng hoặc thiếu lý do khi tạo ít hơn; `LEARNING_JSON_INVALID`: không parse được JSON hoặc lỗi chưa phân loại. Log AI ghi mã và trace, không ghi nguyên exception parse/output. Mã chẩn đoán chỉ được lấy từ danh sách cố định, không trả nội dung thô từ provider.
+
+Mã gộp `QUIZ_GROUNDING_FIELDS_INVALID` được giữ để tương thích lỗi cũ; bản hiện tại phân biệt `QUIZ_ITEM_REQUIRED`, `QUIZ_QUESTION_REQUIRED`, `QUIZ_QUESTION_DUPLICATE`, `QUIZ_EXPLANATION_REQUIRED`, `QUIZ_HINT_REQUIRED`, `QUIZ_LEARNING_GOAL_INVALID`. Response/log có thêm `itemIndex` (tính từ 0) cho các lỗi này, không kèm câu hỏi hoặc truyện. Ví dụ `QUIZ_HINT_REQUIRED`, `itemIndex: 3` nghĩa là câu thứ tư thiếu hint. Duplicate được kiểm tra cả trong batch và danh sách câu hỏi cần tránh. Schema output cũng giới hạn `learningGoal` bằng enum đúng như validator, đồng thời yêu cầu độ dài tối thiểu cho question/explanation/hint/sourceQuote. Chuỗi toàn khoảng trắng vẫn bị backend từ chối.
+
+Core đọc mã lỗi và lưu vào `LearningArtifactGenerationBatch.ErrorCode`. Ở lượt thử tiếp theo, Core gửi mã đã xác thực qua `batch.validationErrorCode`; AI thêm hướng sửa cố định tương ứng vào prompt. Request/context đã ghim trong database không bị thay đổi. Retry vẫn tối đa ba lượt, chỉ chạy lại batch lỗi, giữ batch đã đạt. Nếu hết lượt, job tiếp tục báo lỗi; thao tác retry thủ công giữ mã validation để lần tiếp theo có hướng sửa. Các kiểm tra evidence, đáp án và safety vẫn bắt buộc; không tự chấp nhận output sai để trả 200.
+
+Thay đổi không cần migration. Cần build/khởi động lại cả Core và AI để có đầy đủ luồng chẩn đoán và feedback; container/image đang chạy bản cũ không tự nhận source mới. Các test dùng provider giả xác minh cơ chế phục hồi, không khẳng định đã tái hiện đúng nguyên nhân của một request Vertex thật nếu chưa có response body/trace tương ứng.
+
+### Anchor khoan dung và sửa quote (2026-10-26)
+
+`LEARNING_EVIDENCE_NOT_IN_STORY` trước đây là so khớp `IndexOf` Ordinal tuyệt đối, nên chỉ cần model xuống dòng lại, đổi dấu nháy cong thành thẳng, gộp khoảng trắng, hay trả tiếng Việt ở dạng tổ hợp (NFD) là cả batch bị loại dù nội dung đúng. `LearningArtifactGrounding.Anchor` nay:
+
+1. Thử khớp Ordinal chính xác trước (đường nhanh, giữ nguyên hành vi cũ).
+2. Nếu trượt, chiếu cả story và quote qua một hàm fold (NFC từng grapheme, lowercase, gộp mọi run khoảng trắng thành một space, quy các biến thể nháy/gạch ngang, bỏ ký tự vô hình) và giữ bảng ánh xạ `foldIndex → originalIndex`, rồi tìm trong chuỗi đã fold và **map ngược về offset trên chuỗi gốc**.
+3. Bỏ lớp dấu nháy bao ngoài nếu model tự thêm, vì các ký tự đó không thuộc truyện.
+
+Nhờ bước 2–3, `Anchor` trả về đúng đoạn nguyên văn của story. `Vocabulary` và `Quiz` do đó **sửa** `SourceQuote` (và `Example` của vocabulary) thành đoạn gốc thay vì ném lỗi, đồng thời trả về danh sách đã sửa để Core/AI lưu xuống DB — nên highlight vẫn khớp `SourceStart`/`SourceEnd`. Quote thật sự bịa vẫn bị từ chối; lỗi nay mang `itemIndex` để log và feedback retry chỉ đúng câu.
+
+Lưu ý: `Canonical()` trim từng section còn `version.Content` là chuỗi thô, nên `SourceStart`/`SourceEnd` được tính qua `ToAnchor` (thử nguyên văn, rồi thử trên phần đã `TrimStart` và cộng lại offset). Nếu vẫn trượt, lỗi là `LEARNING_EVIDENCE_NOT_IN_STORY` chứ không lưu offset sai.
+
+### Giới hạn output token và quota (2026-10-26)
+
+`MaxOutputTokens=16384` là **trần**, không phải lượng token tiêu thụ, nên hạ nó không tự tiết kiệm quota. Ba thay đổi chỉ để **đo được** và tránh đốt quota vô ích:
+
+- Log `Vertex request completed` nay có thêm `ThoughtsTokens`, `TotalTokens`, `FinishReason`. Thinking token bị tính vào output nhưng **không** nằm trong `CandidatesTokenCount`, nên trước đây không thể kết luận gì về quota từ log.
+- `FinishReason=MAX_TOKENS` được nhận diện riêng: log cảnh báo kèm `MaxOutputTokens`, rồi ném `LlmOutputTruncatedException`. AI API trả `AI_OUTPUT_TRUNCATED` và Core **không retry** (cùng trần thì cắt lại y hệt), thay vì biến thành `JsonException` rồi thử lại 3 lần.
+- Log lỗi 429/5xx bổ sung `QuotaMetric`, `QuotaValue`, `RetryAfterSeconds` đọc từ payload provider, để phân biệt lỗi quota với lỗi tạm thời.
+
+Kèm theo: section `AI:LearningGeneration` đã có trong `src/Core/StoryPlatform.Api/appsettings.json` (`MaxConcurrentPerStory`, `MaxConcurrentRequests`, `RequestsPerMinute`, `BurstSize`, `MaxAttempts`, `TimeoutSeconds`, `BaseRetryDelaySeconds`, `QuotaRetryFloorSeconds`, `LeaseMinutes`). Trước đó section này không tồn tại nên mọi giá trị chỉ đổi được bằng cách build lại. `QuotaRetryFloorSeconds` (mặc định 60) là mức chờ tối thiểu khi gặp 429 **không** kèm `Retry-After`: backoff cũ chỉ 2s/4s nên lần thử lại rơi đúng vào cửa sổ TPM vừa từ chối.
+
+Số liệu cụ thể (thinking chiếm bao nhiêu, có cần hạ `MaxConcurrentPerStory` xuống 1 hay không) chỉ trả lời được sau khi chạy một lượt generate thật và đọc `ThoughtsTokens`/`TotalTokens` trong log mới.
+
+### Chặn quiz sai trước khi cache và ghi log lỗi Core (26/10/2026)
+
+Core gửi `batch.requiredQuestionTypes` tới AI: batch từ 3 câu yêu cầu cả `multiple_choice`, `true_false`, `short_answer`; với batch nhỏ hơn, ba nhóm facts/reasoning/vocabulary phân bổ loại câu hỏi để không yêu cầu số loại vượt số câu. Đây là contract nội bộ Core–AI, không phải cấu hình do Moderator nhập và không thêm cột database.
+
+AI và Core dùng chung kiểm tra loại câu hỏi và điều kiện bám truyện trước khi chấp nhận kết quả batch. `learningGoal` như recall/inference/vocabulary không thay thế cho `type`. Bộ thiếu loại bị trả `QUIZ_TYPE_COVERAGE_INVALID`; câu hỏi không bám nội dung bị trả `QUIZ_QUESTION_RELEVANCE_INVALID`, kèm `itemIndex` khi xác định được câu lỗi. Core gửi lại mã cố định qua validation feedback để lần thử tiếp theo sửa đúng quy tắc; chỉ batch sai dùng thêm lượt, batch đã đạt được giữ lại. Shortfall có lý do vẫn được xử lý theo contract cũ; kiểm tra tối thiểu của gói quiz tổng hợp không bị bỏ qua.
+
+Kết quả cache cũ vẫn qua final validation. Khi final validation từ chối, API giữ mã `QUIZ_VALIDATION_FAILED` để tương thích; thao tác retry hiện có tái tạo các batch quiz bị từ chối, giữ vocabulary đã đạt và bổ sung feedback/loại câu hỏi yêu cầu vào bản sao request của từng attempt, không sửa snapshot request đã ghim.
+
+Core ghi `Generation job started` và `Generation job failed`, gồm JobId, StoryId, VersionId, Operation, Attempt, ErrorCode, ValidationCode, ItemIndex và ExceptionType. Log lỗi được ghi ngay tại nhánh bắt exception của processor; không phụ thuộc exception thoát tới vòng lặp background worker. Log không chứa nội dung truyện, prompt hoặc exception message/provider payload. `ValidationCode` phân biệt thiếu loại, câu hỏi không liên quan, lỗi options/answer và safety; `ItemIndex` bắt đầu từ 0.
+
+Kiểm chứng: 91 test Core/client/learning/workflow, 87 test AI unit và 13 test handler integration dùng stub LLM đạt. Có regression cho batch sai rồi sửa đúng, cache quiz cũ bị từ chối rồi retry, giữ nguyên vocabulary, và kiểm tra nội dung nhạy cảm không đi vào log. Chưa gọi provider thật hoặc sửa dữ liệu truyện đang chạy. Cần nạp mã mới ở cả Core API và AI API, sau đó dùng nút thử lại cho job đã thất bại; bản sửa không tự restart tiến trình hay áp dụng migration.
+
+### Điều tra trực tiếp và khôi phục truyện 33 — 26/10/2026
+
+Được người dùng cho phép chạy kiểm tra, công cụ [StoryGenerationDiagnostics](../tools/StoryGenerationDiagnostics/README.md) đã đọc database thật: phiên bản nội dung hiện tại 49 tồn tại; 12 vocabulary đã lưu; ba batch quiz đã Completed và bộ 24 câu hiện tại vượt qua cả validation từng batch lẫn gói tổng hợp. Job điều phối 23 lại Failed sau khi batch xong, trong khi job quiz 24 còn mã QUIZ_VALIDATION_FAILED từ một lần xử lý cũ.
+
+Đã tái hiện lỗi của `EnsureNextJobAsync`: nhánh đưa job quiz đã Failed về Pending đổi ConcurrencyToken trước khi attach entity được đọc AsNoTracking. EF lấy token mới làm OriginalValue nên UPDATE không khớp token trong database. Kiểm thử SQLite dùng repository thật đã thất bại với DbUpdateConcurrencyException trước bản sửa và đạt sau khi attach trước, rotate sau. Probe read-only trên bản ghi 24 cũng xác nhận OriginalValue sai trước sửa và khớp database sau sửa, không lưu thay đổi của probe.
+
+Progress và retry cũng cần phân biệt thứ tự attempt: ID job giữ nguyên khi retry. Chọn lỗi theo CompletedAt/StartedAt rồi mới dùng ID làm tie-breaker, thay vì luôn ưu tiên ID cao hơn. Lỗi coordinator được xét dù vocabulary đã lưu, vì coordinator còn trách nhiệm hoàn tất/bàn giao các batch. Cách này tránh hiển thị lỗi quiz cũ và tránh xóa các batch quiz vừa sinh hợp lệ khi retry coordinator.
+
+Kết quả chạy thật sau sửa: khởi động lại riêng Core với migration/seed bị tắt, xác nhận healthz 200; gọi retry business service cho đúng truyện 33 và giữ kết quả cache. Job 23, 24, 25 đều Completed; truyện chuyển ContentReview, giữ nội dung phiên bản 49 và 12 vocabulary, lưu được 24 quiz và 4 discussion. Không sửa schema, không ép job thành công bằng SQL và không tạo lại nội dung/quiz. Log Core tại `.artifacts/story33-recovery/core.stdout.log`; 87 test nhóm content/learning/workflow, gồm regression persistence và retry, đạt.
+
+Đã tải lại đúng tab trình duyệt `/?storyId=33#studio` và xác nhận giao diện thực tế sang bước 6/8 “Chờ bạn duyệt truyện”, hiển thị nội dung phiên bản 49, các tab 12 từ vựng / 24 câu hỏi / 4 gợi ý thảo luận và nút “Duyệt và tạo minh hoạ”. Không bấm duyệt hoặc tự chuyển sang sinh media. Ảnh xác nhận tại `.artifacts/story33-recovery/studio-review.jpg`.

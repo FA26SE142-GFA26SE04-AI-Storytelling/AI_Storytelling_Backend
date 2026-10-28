@@ -25,15 +25,17 @@ public interface IAIStoryGenerationClient
 
 public sealed class AIServiceRequestException : Exception
 {
-    public AIServiceRequestException(int statusCode, string errorCode, string message, TimeSpan? retryAfter = null)
+    public AIServiceRequestException(int statusCode, string errorCode, string message, TimeSpan? retryAfter = null, string? validationCode = null)
         : base(message)
     {
         StatusCode = statusCode;
         ErrorCode = errorCode;
         RetryAfter = retryAfter;
+        ValidationCode = StoryPlatform.Contracts.AI.Models.LearningValidationFeedback.Normalize(validationCode);
     }
 
     public int StatusCode { get; }
     public string ErrorCode { get; }
     public TimeSpan? RetryAfter { get; }
+    public string? ValidationCode { get; }
 }

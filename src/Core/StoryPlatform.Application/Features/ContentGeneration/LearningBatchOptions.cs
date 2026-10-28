@@ -10,6 +10,11 @@ public sealed class LearningBatchOptions
     public int MaxAttempts { get; set; } = 3;
     public int TimeoutSeconds { get; set; } = 120;
     public int BaseRetryDelaySeconds { get; set; } = 2;
+    /// <summary>
+    /// Minimum wait before retrying a provider rate limit that arrived without a Retry-After hint. A short
+    /// exponential delay lands inside the same quota window and burns the remaining attempts for nothing.
+    /// </summary>
+    public int QuotaRetryFloorSeconds { get; set; } = 60;
     public int LeaseMinutes { get; set; } = 10;
     public int YoungerTargetWords { get; set; } = 900;
     public int OlderTargetWords { get; set; } = 1500;

@@ -81,11 +81,12 @@ public sealed class AIStoryGenerationClient : IAIStoryGenerationClient
                 (int)response.StatusCode,
                 string.IsNullOrWhiteSpace(error?.ErrorCode) ? "AI_SERVICE_REQUEST_FAILED" : error.ErrorCode,
                 string.IsNullOrWhiteSpace(error?.Error) ? "AI service request failed." : error.Error,
-                response.Headers.RetryAfter?.Delta ?? (response.Headers.RetryAfter?.Date - DateTimeOffset.UtcNow));
+                response.Headers.RetryAfter?.Delta ?? (response.Headers.RetryAfter?.Date - DateTimeOffset.UtcNow),
+                error?.ErrorCode == "AI_OUTPUT_INVALID" ? error.ValidationCode : null);
         }
         return await response.Content.ReadFromJsonAsync<TResponse>(cancellationToken: cancellationToken)
                ?? throw new InvalidOperationException($"AI service returned an empty response for '{path}'.");
     }
 
-    private sealed record AIErrorResponse(string? ErrorCode, string? Error);
+    private sealed record AIErrorResponse(string? ErrorCode, string? Error, string? ValidationCode = null);
 }

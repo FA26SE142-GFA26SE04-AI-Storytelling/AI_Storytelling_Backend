@@ -9,4 +9,8 @@ public interface IChildRoadmapEligibility
     /// <summary>Null khi hợp lệ; ngược lại là lý do không hợp lệ.</summary>
     Task<ChildRoadmapSkipReason?> EvaluateAsync(
         ChildProfile child, Story? story, CancellationToken cancellationToken = default);
+
+    /// <summary>Age is advisory when an authorized supervisor explicitly selects a story.</summary>
+    Task<ChildRoadmapSkipReason?> EvaluateForParentSelectionAsync(
+        ChildProfile child, Story? story, CancellationToken cancellationToken = default);
 }

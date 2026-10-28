@@ -46,7 +46,8 @@ public sealed class LearningBatchService(IUnitOfWork uow, ILearningBatchRunner r
         {
             Story = storyDto, AgeBand = context.AgeBand, Language = context.Language, Snapshot = snapshot,
             ComprehensionGoal = context.ComprehensionGoal, Vocabulary = terms ?? [],
-            Batch = new() { Kind = kind, TargetCount = count, ExcludedQuestions = excluded ?? [] }
+            Batch = new() { Kind = kind, TargetCount = count, ExcludedQuestions = excluded ?? [],
+                RequiredQuestionTypes = LearningBatchSpec.QuizTypesForBatch(kind, count) }
         };
         var initial = new[]
         {

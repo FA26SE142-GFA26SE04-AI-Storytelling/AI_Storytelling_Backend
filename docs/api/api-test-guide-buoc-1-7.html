@@ -1882,11 +1882,11 @@ const STEPS = [
   ]
 },
 {
-  id: "b7", title: "Bước 7 — Administrator mời tạo tài khoản Moderator",
-  desc: "Moderator không tự đăng ký. Administrator mời qua email, người được mời nhận mã mời, tự đặt mật khẩu và tick cam kết bảo mật dữ liệu trẻ em. Administrator cũng có thể gửi lại lời mời, vô hiệu hóa và kích hoạt lại. Vô hiệu hóa sẽ nhả các mục Moderator đang giữ và rút các yêu cầu duyệt bộ mẫu họ đã gửi.",
-  flow: ["Administrator đăng nhập bằng POST /Auth/login để có token.", "Administrator mời Moderator: nhập họ tên, email, chuyên môn, ghi chú → tài khoản chờ kích hoạt, email mời được gửi.", "Người được mời mở thư, gọi kích hoạt với email và mã mời, đặt mật khẩu, tick cam kết → tài khoản Active.", "Moderator đăng nhập và nhận việc ở hàng đợi (bước 1).", "Khi cần: gửi lại lời mời (hết hạn / mất thư), vô hiệu hóa kèm lý do, kích hoạt lại."],
+  id: "b7", title: "Bước 7 — Administrator mời tạo tài khoản Moderator và Administrator",
+  desc: "Moderator và Administrator không tự đăng ký. Administrator mời qua một controller chung /api/v1/StaffAccount, chọn vai trò bằng field role (\"Moderator\" hoặc \"Administrator\") khi mời. Người được mời nhận link/mã mời, tự đặt mật khẩu và tick cam kết bảo mật dữ liệu trẻ em. Administrator cũng có thể gửi lại lời mời, hủy lời mời chưa dùng, vô hiệu hóa và kích hoạt lại; các thao tác theo userId tự đọc vai trò của tài khoản. Phân biệt hai vai trò bằng field role trong dữ liệu trả về hoặc lọc GET ?role=.",
+  flow: ["Administrator đăng nhập bằng POST /Auth/login để có token.", "Mời: POST /StaffAccount/invite với role = Moderator (kèm chuyên môn) hoặc role = Administrator → tài khoản chờ kích hoạt, email mời được gửi.", "Người được mời mở thư, gọi POST /Auth/staff-activation với email và mã mời, đặt mật khẩu, tick cam kết → tài khoản Active.", "Moderator đăng nhập và nhận việc ở hàng đợi (bước 1); Administrator mới đăng nhập vào Admin Portal.", "Khi cần: gửi lại lời mời, hủy lời mời chưa dùng, vô hiệu hóa kèm lý do, kích hoạt lại — cùng API cho cả hai vai trò."],
   apis: [
-  { m: "POST", p: "/api/v1/Auth/login", role: "Moderator (sau khi kích hoạt)",
+  { m: "POST", p: "/api/v1/Auth/login", role: "Moderator hoặc Administrator (sau khi kích hoạt)",
     what: "Moderator đăng nhập để làm việc ở hàng đợi. Tài khoản chưa kích hoạt, đang bị vô hiệu hóa hoặc bị khóa do sai mật khẩu đều bị chặn.",
     detail: [
       ["Body", ["identifier: email hoặc tên đăng nhập (không phân biệt hoa thường); password. Thiếu → 400."]],
@@ -1904,6 +1904,7 @@ const STEPS = [
     body: '{ "identifier": "moderator_demo1", "password": "Demo@123" }',
     tests: [
       ["ok","moderator_demo1 đăng nhập đúng mật khẩu","200, accessToken có role Moderator"],
+      ["ok","Administrator vừa kích hoạt qua lời mời đăng nhập","200, accessToken có role Administrator"],
       ["neg","Sai mật khẩu","400, tăng số lần sai"],
       ["neg","Nhập sai 5 lần liên tiếp rồi đăng nhập đúng","403, tài khoản tạm khóa có thời hạn"],
       ["neg","Tài khoản vừa được mời, chưa kích hoạt","403, yêu cầu kích hoạt / đặt mật khẩu bằng mã trong email"],
@@ -1911,84 +1912,119 @@ const STEPS = [
       ["neg","Moderator chưa kích hoạt gọi /Auth/forgot-password","200 trả lời chung nhưng không gửi mã đặt lại"],
       ["neg","Moderator chưa kích hoạt gọi /Auth/reset-password bằng mã mời","400, yêu cầu kích hoạt qua /Auth/staff-activation"]
     ] },
-  { m: "GET", p: "/api/v1/ModeratorAccount", role: "Administrator",
-    what: "Danh sách tài khoản Moderator với trạng thái (chờ kích hoạt, Active, bị vô hiệu hóa) và chuyên môn.",
+  { m: "GET", p: "/api/v1/StaffAccount", role: "Administrator",
+    what: "Danh sách tài khoản vận hành: Moderator và Administrator, kèm trạng thái (chờ kích hoạt, Active, bị vô hiệu hóa). Lọc theo vai trò bằng ?role=.",
     detail: [
-      ["Điều kiện gọi", ["Token có vai trò Administrator (kiểm ở controller); vai trò khác → 403, không token → 401."]],
-      ["Xử lý", ["Lấy mọi tài khoản vai trò Moderator, mới tạo trước, không phân trang, không lọc."]],
+      ["Điều kiện gọi", ["Token có vai trò Administrator (kiểm ở controller); Moderator, Parent → 403, không token → 401."]],
+      ["Query", [
+        "role: tùy chọn, Moderator hoặc Administrator. Bỏ trống → trả cả hai vai trò.",
+        "role là vai trò khác (Parent, ContentCreator) → 400; giá trị không có trong enum → 400."]],
+      ["Xử lý", ["Lấy tài khoản theo vai trò, mới tạo trước, không phân trang."]],
       ["Kết quả", [
-        "Mỗi dòng: userId, email, fullName, expertise, status.",
+        "Mỗi dòng: userId, email, fullName, role (Moderator / Administrator), expertise (chỉ Moderator có), status.",
         "status: PasswordResetPending = đã mời, chưa kích hoạt; Active; Suspended = bị vô hiệu hóa.",
-        "isActivated, activatedAt (lúc tick cam kết), lastLoginAt, inviteExpiresAt (chỉ có khi còn chờ kích hoạt)."]]
+        "isActivated (true khi không còn chờ kích hoạt; Administrator tạo từ seed cũng là true), activatedAt (lúc tick cam kết), lastLoginAt, inviteExpiresAt (chỉ có khi còn chờ kích hoạt)."]],
+      ["Phân biệt hai vai trò", ["Đọc field role của từng dòng, hoặc gọi ?role=Moderator / ?role=Administrator."]]
     ],
     body: null,
     tests: [
-      ["ok","Administrator xem danh sách","200, có userId, email, fullName, expertise, status"],
+      ["ok","Xem cả hai vai trò (không truyền role)","200; có cả dòng role = Moderator (id 11, 12) và role = Administrator (id 1)"],
+      ["ok","Lọc ?role=Moderator","200; chỉ có Moderator, có expertise"],
+      ["ok","Lọc ?role=Administrator","200; chỉ có Administrator, expertise = null"],
+      ["neg","Lọc ?role=Parent","400"],
       ["neg","Gọi bằng token Moderator","403"],
       ["neg","Không gửi token","401"]
     ] },
-  { m: "POST", p: "/api/v1/ModeratorAccount/invite", role: "Administrator",
-    what: "Mời một Moderator mới. Tạo tài khoản chờ kích hoạt và gửi email chứa mã mời có hạn dùng.",
+  { m: "POST", p: "/api/v1/StaffAccount/invite", role: "Administrator",
+    what: "Mời Moderator hoặc Administrator mới qua email. Field role trong body quyết định vai trò. Tạo tài khoản riêng chờ kích hoạt (không đổi vai trò tài khoản có sẵn) và gửi email chứa link kích hoạt có hạn dùng.",
     detail: [
       ["Body và giới hạn", [
+        "role: bắt buộc, \"Moderator\" hoặc \"Administrator\" → thiếu, sai chính tả hoặc vai trò khác (Parent, ContentCreator): 400.",
         "fullName: bắt buộc, tối đa 100 ký tự.",
         "email: bắt buộc, đúng định dạng, tối đa 254 ký tự.",
-        "expertise: bắt buộc, tối đa 200 ký tự.",
-        "note: tùy chọn, tối đa 500 ký tự (chỉ ghi vào audit).",
-        "Sai → 400."]],
+        "expertise: tối đa 200 ký tự; BẮT BUỘC khi role = Moderator (thiếu → 400); role = Administrator thì bỏ qua, không lưu.",
+        "note: tùy chọn, tối đa 500 ký tự (chỉ ghi vào audit)."]],
       ["Hệ thống kiểm", [
         "Người gọi là Administrator Active → nếu không: 403.",
-        "Email (không phân biệt hoa thường) chưa thuộc tài khoản nào → nếu đã có: 400 (code trả 400, không phải 409)."]],
+        "Email (không phân biệt hoa thường) chưa thuộc tài khoản nào, kể cả tài khoản Parent → nếu đã có: 400 (không phải 409)."]],
       ["Xử lý", [
-        "Tạo tài khoản Moderator trạng thái PasswordResetPending, tên đăng nhập tự sinh dạng mod_xxxxxxxx, mật khẩu ngẫu nhiên không ai biết.",
+        "Tạo tài khoản đúng vai trò, trạng thái PasswordResetPending, mật khẩu ngẫu nhiên không ai biết. Tên đăng nhập tự sinh: mod_xxxx cho Moderator, admin_xxxx cho Administrator.",
         "Sinh mã mời ngẫu nhiên, chỉ lưu bản băm; hạn dùng 72 giờ.",
-        "Ghi audit ModeratorInvited; gửi email mời chứa mã mời (mã thô chỉ có trong email)."]],
-      ["Kết quả", ["Thông tin tài khoản như một dòng của danh sách, status = PasswordResetPending, inviteExpiresAt."]]
+        "Ghi audit ModeratorInvited hoặc AdministratorInvited; gửi email mời ghi rõ vai trò (Kiểm duyệt viên / Quản trị viên)."]],
+      ["Kết quả", ["Một dòng như danh sách: role, status = PasswordResetPending, inviteExpiresAt."]],
+      ["Phân biệt hai vai trò", ["Chỉ khác ở field role (và expertise với Moderator). Body mẫu bên dưới là Moderator; mời Administrator đổi thành { \"role\": \"Administrator\", \"fullName\": \"Quản trị viên mới\", \"email\": \"newadmin@example.com\", \"note\": \"Bổ sung nhân sự\" }."]]
     ],
-    body: '{ "fullName": "Nguyễn Văn An", "email": "an.moderator@example.com", "expertise": "Giáo dục mầm non", "note": "Phụ trách truyện 6-8" }',
+    body: '{ "role": "Moderator", "fullName": "Nguyễn Văn An", "email": "an.moderator@example.com", "expertise": "Giáo dục mầm non", "note": "Phụ trách truyện 6-8" }',
     tests: [
-      ["ok","Mời với email chưa dùng","200, status chờ kích hoạt, email mời được gửi"],
+      ["ok","Mời Moderator với email chưa dùng","200, role = Moderator, username mod_…, status chờ kích hoạt, email mời được gửi"],
+      ["ok","Mời Administrator với email chưa dùng","200, role = Administrator, username admin_…, expertise = null, email mời được gửi"],
+      ["neg","Mời Moderator thiếu chuyên môn","400 \"Chuyên môn không được để trống khi mời Moderator.\""],
+      ["neg","Thiếu role","400"],
+      ["neg","role = Parent","400 \"Vai trò phải là Moderator hoặc Administrator.\""],
       ["neg","Email đã thuộc tài khoản khác","400 \"Email '…' đã được sử dụng trong hệ thống.\""],
       ["neg","Email sai định dạng","400"],
-      ["neg","Thiếu họ tên hoặc chuyên môn","400"],
+      ["neg","Thiếu họ tên","400"],
       ["neg","Họ tên quá 100, chuyên môn quá 200, ghi chú quá 500 ký tự","400"],
       ["neg","Gọi bằng token Moderator hoặc Parent","403"]
     ] },
-  { m: "POST", p: "/api/v1/ModeratorAccount/{userId}/resend-invite", role: "Administrator",
-    what: "Gửi lại lời mời cho tài khoản còn chờ kích hoạt (thư mất hoặc mã hết hạn).",
+  { m: "POST", p: "/api/v1/StaffAccount/{userId}/resend-invite", role: "Administrator",
+    what: "Gửi lại lời mời cho tài khoản Moderator hoặc Administrator còn chờ kích hoạt (thư mất hoặc mã hết hạn). Không cần gửi role: hệ thống đọc vai trò từ tài khoản.",
     detail: [
       ["Hệ thống kiểm lần lượt", [
         "Administrator Active → nếu không: 403.",
-        "userId tồn tại và là Moderator → nếu không: 404.",
+        "userId tồn tại và là Moderator hoặc Administrator → nếu không (Parent, ContentCreator, không tồn tại): 404.",
         "Tài khoản chưa tick cam kết và đang PasswordResetPending → nếu không (đã kích hoạt, bị vô hiệu hóa…): 409."]],
       ["Xử lý", [
         "Sinh mã mời mới, thay bản băm cũ: mã cũ mất hiệu lực ngay.",
-        "Hạn dùng mới = bây giờ + 72 giờ; ghi audit ModeratorInviteResent; gửi lại email mời."]],
-      ["Kết quả", ["Thông tin tài khoản với inviteExpiresAt mới."]]
+        "Hạn dùng mới = bây giờ + 72 giờ; ghi audit ModeratorInviteResent hoặc AdministratorInviteResent; gửi lại email mời đúng vai trò."]],
+      ["Kết quả", ["Thông tin tài khoản (có role) với inviteExpiresAt mới."]]
     ],
     body: null,
     tests: [
-      ["ok","Gửi lại cho tài khoản chờ kích hoạt","200, hạn dùng mã mới"],
+      ["ok","Gửi lại cho Moderator chờ kích hoạt","200, role = Moderator, hạn dùng mã mới"],
+      ["ok","Gửi lại cho Administrator chờ kích hoạt","200, role = Administrator, hạn dùng mã mới"],
       ["neg","Tài khoản đã kích hoạt","409"],
-      ["neg","userId không phải Moderator","404"],
+      ["neg","userId không phải Moderator / Administrator","404"],
       ["edge","Dùng mã cũ sau khi gửi lại","400 \"Mã mời không hợp lệ hoặc đã hết hạn.\" (mã cũ mất hiệu lực ngay khi gửi lại)"]
     ] },
+  { m: "POST", p: "/api/v1/StaffAccount/{userId}/cancel-invite", role: "Administrator",
+    what: "Hủy lời mời chưa dùng (UC-L5C-02) cho Moderator hoặc Administrator: xóa tài khoản \"Đã mời\" (chưa có dữ liệu) để mã mời mất hiệu lực ngay và mời lại được cùng email.",
+    detail: [
+      ["Hệ thống kiểm lần lượt", [
+        "Administrator Active → nếu không: 403.",
+        "userId tồn tại và là Moderator hoặc Administrator → nếu không: 404.",
+        "Tài khoản chưa tick cam kết và đang PasswordResetPending → nếu không (đã kích hoạt, bị vô hiệu hóa…): 409, dùng vô hiệu hóa thay vì hủy lời mời."]],
+      ["Xử lý", [
+        "Xóa hẳn tài khoản (không xóa mềm) để email được mời lại.",
+        "Ghi audit ModeratorInviteCancelled hoặc AdministratorInviteCancelled (email, chuyên môn, hạn mã mời cũ). Không gửi email báo hủy."]],
+      ["Kết quả", ["Thông tin tài khoản vừa hủy (có role, trạng thái trước khi xóa)."]]
+    ],
+    body: null,
+    tests: [
+      ["ok","Hủy lời mời Moderator rồi mời lại cùng email","200; POST /invite với email đó thành công"],
+      ["ok","Hủy lời mời Administrator rồi mời lại cùng email","200; POST /invite (role Administrator) với email đó thành công"],
+      ["ok","Tài khoản vừa hủy không còn trong GET /StaffAccount","Không thấy userId đã hủy"],
+      ["neg","Tài khoản đã kích hoạt","409"],
+      ["neg","userId không phải Moderator / Administrator","404"],
+      ["edge","Dùng mã mời sau khi hủy để kích hoạt","400 \"Mã mời không hợp lệ hoặc đã hết hạn.\""]
+    ] },
   { m: "POST", p: "/api/v1/Auth/staff-activation", role: "Người được mời (chưa đăng nhập)",
-    what: "Kích hoạt tài khoản bằng mã mời: đặt mật khẩu (tối thiểu 8 ký tự, có chữ và số) và xác nhận cam kết bảo mật dữ liệu trẻ em và quy tắc kiểm duyệt.",
+    what: "Moderator hoặc Administrator được mời kích hoạt tài khoản bằng mã mời: đặt mật khẩu (tối thiểu 8 ký tự, có chữ và số) và xác nhận cam kết bảo mật dữ liệu trẻ em và quy tắc kiểm duyệt. Cả hai vai trò dùng chung API này và đều phải tick cam kết.",
     detail: [
       ["Hệ thống kiểm lần lượt", [
         "Kiểm dữ liệu đầu vào: email đúng định dạng, inviteToken không rỗng, newPassword đủ độ dài và có cả chữ lẫn số, confirmPassword khớp → nếu không: 400.",
         "commitmentAccepted = true → nếu không: 400.",
-        "Tìm tài khoản theo email; phải là Moderator đang PasswordResetPending, chưa tick cam kết, mã mời còn hạn và khớp → thiếu bất kỳ điều nào: 400 \"Mã mời không hợp lệ hoặc đã hết hạn.\" (email sai, mã sai, mã hết hạn, mã đã dùng đều ra cùng một thông báo)."]],
+        "Tìm tài khoản theo email; phải là Moderator hoặc Administrator đang PasswordResetPending, chưa tick cam kết, mã mời còn hạn và khớp → thiếu bất kỳ điều nào: 400 \"Mã mời không hợp lệ hoặc đã hết hạn.\" (email sai, mã sai, mã hết hạn, mã đã dùng đều ra cùng một thông báo)."]],
       ["Xử lý", [
         "Lưu mật khẩu mới (băm), ghi thời điểm đổi mật khẩu, thời điểm cam kết và xác thực email.",
         "Tài khoản → Active; xóa mã mời, đếm sai và khóa tạm; tăng TokenVersion.",
-        "Ghi audit ModeratorActivated."]],
-      ["Kết quả", ["Thành công không trả dữ liệu; Moderator đăng nhập bằng email hoặc tên đăng nhập tự sinh cùng mật khẩu vừa đặt."]]
+        "Ghi audit ModeratorActivated hoặc AdministratorActivated theo vai trò của tài khoản."]],
+      ["Kết quả", ["Thành công không trả dữ liệu; người được mời đăng nhập bằng email hoặc tên đăng nhập tự sinh cùng mật khẩu vừa đặt. accessToken có role đúng vai trò đã mời."]]
     ],
     body: '{ "email": "an.moderator@example.com", "inviteToken": "…", "newPassword": "Moderator123", "confirmPassword": "Moderator123", "commitmentAccepted": true }',
     tests: [
-      ["ok","Mã đúng, mật khẩu hợp lệ, đã tick cam kết","200, tài khoản Active, đăng nhập được"],
+      ["ok","Moderator: mã đúng, mật khẩu hợp lệ, đã tick cam kết","200, tài khoản Active, đăng nhập được với role Moderator"],
+      ["ok","Administrator: mã đúng, mật khẩu hợp lệ, đã tick cam kết","200, tài khoản Active, đăng nhập được với role Administrator"],
       ["neg","commitmentAccepted = false","400"],
       ["neg","Mật khẩu ngắn hơn 8 ký tự hoặc thiếu chữ / số","400"],
       ["neg","confirmPassword không khớp","400"],
@@ -1997,68 +2033,56 @@ const STEPS = [
       ["neg","Dùng lại mã đã kích hoạt","400 \"Mã mời không hợp lệ hoặc đã hết hạn.\""],
       ["neg","Email không khớp với lời mời","400"]
     ] },
-  { m: "POST", p: "/api/v1/ModeratorAccount/{userId}/deactivate", role: "Administrator",
-    what: "Vô hiệu hóa Moderator kèm lý do (tối thiểu 3 ký tự). Các mục họ đang giữ được trả về hàng đợi, các yêu cầu duyệt bộ mẫu họ đã gửi được tự rút, và họ không đăng nhập được nữa.",
+  { m: "POST", p: "/api/v1/StaffAccount/{userId}/deactivate", role: "Administrator",
+    what: "Vô hiệu hóa Moderator hoặc Administrator kèm lý do (tối thiểu 3 ký tự): đăng xuất mọi phiên ngay, các mục kiểm duyệt họ đang giữ về hàng đợi, các yêu cầu duyệt bộ mẫu họ đã gửi được tự rút. Riêng Administrator có thêm 2 rào chắn.",
     detail: [
       ["Hệ thống kiểm lần lượt", [
         "reason: 3 đến 500 ký tự → nếu không: 400.",
-        "Administrator Active (403); userId là Moderator (404).",
-        "Tài khoản đã kích hoạt → nếu chưa: 400 \"Hãy để lời mời hết hạn thay vì vô hiệu hóa.\"",
-        "Chưa bị vô hiệu hóa → nếu đã Suspended: 409."]],
+        "Administrator Active (403); userId là Moderator hoặc Administrator (404).",
+        "Không tự vô hiệu hóa chính mình → nếu userId là người gọi: 409.",
+        "Tài khoản đã kích hoạt → nếu còn chờ kích hoạt: 400 \"Hãy hủy lời mời thay vì vô hiệu hóa.\" (dùng /cancel-invite).",
+        "Chưa bị vô hiệu hóa → nếu đã Suspended: 409.",
+        "Chỉ với Administrator: phải còn ít nhất 2 Administrator Active (tính cả người bị vô hiệu hóa) → nếu đây là Administrator Active cuối cùng: 409. Qua API không tạo được tình huống này vì người gọi luôn là một Administrator Active khác; rào chắn để phòng dữ liệu lệch và có unit test."]],
       ["Xử lý", [
         "Tài khoản → Suspended, tăng TokenVersion (accessToken cũ mất hiệu lực), thu hồi mọi refreshToken.",
-        "Ghi audit ModeratorDeactivated (kèm lý do); gửi thông báo AdminRoleChanged (action = deactivated) cho Moderator đó.",
-        "Trả mọi mục họ đang Claimed về Pending để người khác nhận.",
+        "Ghi audit ModeratorDeactivated hoặc AdministratorDeactivated (kèm lý do); gửi thông báo AdminRoleChanged (action = deactivated).",
+        "Trả mọi mục họ đang Claimed về Pending để người khác nhận (Administrator cũng nhận được mục nên cũng áp dụng).",
         "Rút các yêu cầu duyệt bộ mẫu họ đã gửi (bộ về Nháp, thành nhóm Mồ côi)."]],
-      ["Kết quả", ["Thông tin tài khoản với status = Suspended."]]
+      ["Kết quả", ["Thông tin tài khoản với status = Suspended."]],
+      ["Chuẩn bị test Administrator", ["Seed chỉ có 1 Administrator (admin_demo, id 1). Muốn test vô hiệu hóa Administrator: mời + kích hoạt thêm một Administrator trước, rồi admin_demo vô hiệu hóa tài khoản mới."]]
     ],
     body: '{ "reason": "Nghỉ phụ trách kiểm duyệt" }',
     tests: [
       ["ok","Vô hiệu hóa Moderator đang giữ mục","200; mục Claimed về Pending; Moderator khác nhận được"],
       ["ok","Moderator có bộ mẫu đang chờ duyệt","Yêu cầu duyệt bộ bị rút, bộ về Nháp"],
-      ["ok","Moderator bị vô hiệu hóa đăng nhập","Bị từ chối"],
+      ["ok","Vô hiệu hóa Administrator khi còn Administrator Active khác","200; Administrator đó đăng nhập bị từ chối, token cũ mất hiệu lực"],
+      ["ok","Tài khoản bị vô hiệu hóa đăng nhập","Bị từ chối (cả Moderator và Administrator)"],
+      ["neg","Tự vô hiệu hóa chính mình","409"],
+      ["edge","Vô hiệu hóa Administrator Active cuối cùng","Không tạo được qua API (người gọi luôn là Admin Active khác); code chặn 409, kiểm bằng unit test"],
+      ["neg","Tài khoản còn chờ kích hoạt","400, dùng cancel-invite"],
       ["neg","Lý do dưới 3 ký tự hoặc rỗng","400"],
-      ["neg","userId không phải Moderator","404"],
+      ["neg","userId không phải Moderator / Administrator","404"],
       ["neg","Vô hiệu hóa tài khoản đã bị vô hiệu hóa","409"],
       ["neg","Gọi bằng token Moderator","403"]
     ] },
-  { m: "POST", p: "/api/v1/ModeratorAccount/{userId}/reactivate", role: "Administrator",
-    what: "Kích hoạt lại Moderator đã bị vô hiệu hóa.",
+  { m: "POST", p: "/api/v1/StaffAccount/{userId}/reactivate", role: "Administrator",
+    what: "Kích hoạt lại Moderator hoặc Administrator đã bị vô hiệu hóa; giữ nguyên vai trò và mật khẩu.",
     detail: [
       ["Hệ thống kiểm lần lượt", [
-        "Administrator Active (403); userId là Moderator (404).",
-        "Tài khoản đang Suspended và đã từng kích hoạt → nếu không (đang Active, hoặc chưa kích hoạt): 409."]],
+        "Administrator Active (403); userId là Moderator hoặc Administrator (404).",
+        "Tài khoản đang Suspended → nếu không (đang Active, hoặc còn chờ kích hoạt): 409."]],
       ["Xử lý", [
         "Tài khoản → Active, xóa đếm sai mật khẩu và khóa tạm. Mật khẩu cũ vẫn dùng được.",
-        "Ghi audit ModeratorReactivated; gửi thông báo AdminRoleChanged (action = reactivated)."]],
+        "Ghi audit ModeratorReactivated hoặc AdministratorReactivated; gửi thông báo AdminRoleChanged (action = reactivated)."]],
       ["Kết quả", ["Thông tin tài khoản với status = Active."]],
       ["Lưu ý", ["Không khôi phục các mục đã bị nhả khi vô hiệu hóa; bộ mẫu bị rút vẫn ở Nháp và lại hiện trong nhóm Nháp của tôi của họ."]]
     ],
     body: null,
     tests: [
-      ["ok","Kích hoạt lại tài khoản đã vô hiệu hóa","200, status Active, đăng nhập lại được"],
+      ["ok","Kích hoạt lại Moderator đã vô hiệu hóa","200, status Active, đăng nhập lại được"],
+      ["ok","Kích hoạt lại Administrator đã vô hiệu hóa","200, status Active, đăng nhập lại được với role Administrator"],
       ["ok","Moderator được kích hoạt lại","Lại thấy Nháp bộ mẫu của mình ở nhóm \"Nháp của tôi\""],
       ["neg","Kích hoạt lại tài khoản đang Active","409"]
-    ] },
-  { m: "POST", p: "(chưa có API) Hủy lời mời chưa dùng", role: "Administrator",
-    what: "Tài liệu UC-L5C-02: thu hồi lời mời chưa dùng và xóa tài khoản \"Đã mời\" để mời lại cùng email. Hiện Deactivate từ chối tài khoản chưa kích hoạt (\"hãy để lời mời hết hạn\"), nên không có cách hủy sớm.",
-    body: null,
-    tests: [
-      ["todo","Hủy lời mời chưa dùng","CHƯA CÓ API — tài khoản Đã mời bị xóa, mời lại cùng email được"],
-      ["ok","Vô hiệu hóa tài khoản chưa kích hoạt (hành vi hiện tại)","400, yêu cầu để lời mời hết hạn"]
-    ] },
-  { m: "POST", p: "(chưa có API) Mời Administrator bằng email", role: "Administrator",
-    what: "Tài liệu: Administrator mời Administrator mới qua email giống Moderator. Hiện chỉ có /AdminAccount/grant và /{id}/revoke (cấp / thu hồi quyền cho tài khoản có sẵn), không có luồng mời.",
-    body: null,
-    tests: [
-      ["todo","Mời Administrator mới bằng email","CHƯA CÓ API"],
-      ["ok","Thu hồi quyền Administrator cuối cùng đang active","409 (hiện đã chặn)"]
-    ] },
-  { m: "POST", p: "(chưa có API) Chuyển quyền sở hữu truyện Nháp của Creator bị vô hiệu hóa", role: "Administrator",
-    what: "Tài liệu UC-L5C-04: truyện Nháp của Content Creator bị vô hiệu hóa được Administrator chuyển cho Creator khác. Không thuộc việc mời Moderator nhưng cùng luồng vô hiệu hóa; hiện chưa có API.",
-    body: null,
-    tests: [
-      ["todo","Chuyển quyền sở hữu truyện","CHƯA CÓ API"]
     ] }
   ]
 },
@@ -2634,15 +2658,21 @@ const OVERRIDES = [
   ["RoadmapReview/{itemId}/checklist", "Mã tiêu chí lạ", J({ entries: [{ code: "media", label: "", passed: true }] })],
   ["RoadmapReview/{itemId}/request-changes", "Nhận xét rỗng", J({ generalNote: "", parts: [] })],
   ["RoadmapReview/{itemId}/reject", "Thiếu lý do", J({ reason: "" })],
-  // Bước 7: Administrator mời Moderator
-  ["ModeratorAccount/invite", "Email sai định dạng", J({ fullName: "Nguyễn Văn An", email: "khong-phai-email", expertise: "Giáo dục mầm non" })],
-  ["ModeratorAccount/invite", "Thiếu họ tên", J({ fullName: "", email: "an.moderator@example.com", expertise: "" })],
-  ["ModeratorAccount/invite", "quá 100", J({ fullName: A(101), email: "an.moderator@example.com", expertise: A(201), note: A(501) })],
+  // Bước 7: Administrator mời Moderator / Administrator
+  ["StaffAccount/invite", "Email sai định dạng", J({ role: "Moderator", fullName: "Nguyễn Văn An", email: "khong-phai-email", expertise: "Giáo dục mầm non" })],
+  ["StaffAccount/invite", "Thiếu họ tên", J({ role: "Moderator", fullName: "", email: "an.moderator@example.com", expertise: "" })],
+  ["StaffAccount/invite", "quá 100", J({ role: "Moderator", fullName: A(101), email: "an.moderator@example.com", expertise: A(201), note: A(501) })],
   ["Auth/staff-activation", "commitmentAccepted = false", J({ email: "an.moderator@example.com", inviteToken: "<INVITE_TOKEN>", newPassword: "Moderator123", confirmPassword: "Moderator123", commitmentAccepted: false })],
   ["Auth/staff-activation", "Mật khẩu ngắn", J({ email: "an.moderator@example.com", inviteToken: "<INVITE_TOKEN>", newPassword: "abc1", confirmPassword: "abc1", commitmentAccepted: true })],
   ["Auth/staff-activation", "confirmPassword không khớp", J({ email: "an.moderator@example.com", inviteToken: "<INVITE_TOKEN>", newPassword: "Moderator123", confirmPassword: "Moderator124", commitmentAccepted: true })],
   ["Auth/staff-activation", "Mã mời sai", J({ email: "an.moderator@example.com", inviteToken: "ma-moi-sai", newPassword: "Moderator123", confirmPassword: "Moderator123", commitmentAccepted: true })],
-  ["ModeratorAccount/{userId}/deactivate", "Lý do dưới 3", J({ reason: "ab" })],
+  ["StaffAccount/{userId}/deactivate", "Lý do dưới 3", J({ reason: "ab" })],
+  ["StaffAccount/invite", "Mời Administrator với email chưa dùng", J({ role: "Administrator", fullName: "Quản trị viên mới", email: "newadmin@example.com", note: "Bổ sung nhân sự" })],
+  ["StaffAccount/invite", "Mời Moderator thiếu chuyên môn", J({ role: "Moderator", fullName: "Nguyễn Văn An", email: "an.moderator@example.com" })],
+  ["StaffAccount/invite", "Thiếu role", J({ fullName: "Nguyễn Văn An", email: "an.moderator@example.com", expertise: "Giáo dục mầm non" })],
+  ["StaffAccount/invite", "role = Parent", J({ role: "Parent", fullName: "Nguyễn Văn An", email: "an.moderator@example.com" })],
+  ["Auth/staff-activation", "Administrator: mã đúng", J({ email: "newadmin@example.com", inviteToken: "<INVITE_TOKEN>", newPassword: "Admin12345", confirmPassword: "Admin12345", commitmentAccepted: true })],
+  ["StaffAccount/{userId}/deactivate", "Vô hiệu hóa Administrator", J({ reason: "Nghỉ phụ trách quản trị" })],
   ["=/api/v1/Auth/login", "Sai mật khẩu", J({ identifier: "moderator_demo1", password: "SaiMatKhau1" })],
   // Bước 3: vùng xám và rubric
   ["gray-zone-stories/{itemId}/decision", "Block kèm lý do", J({ decision: "Block", reason: "Có cảnh bạo lực không phù hợp 6-8 tuổi", rowVersion: "<GRAY_ROW_VERSION>" })],
@@ -2863,12 +2893,13 @@ const SEEDAPI = [
   ["RoadmapReview/{itemId}/request-changes", { as: "moderator_demo1", url: "POST /api/v1/RoadmapReview/5/request-changes", note: "Mục 5." }],
   ["RoadmapReview/{itemId}/reject", { as: "moderator_demo1", url: "POST /api/v1/RoadmapReview/5/reject", note: "Mục 5." }],
   // Bước 7
-  ["=GET /api/v1/ModeratorAccount", { as: "admin_demo", url: "GET /api/v1/ModeratorAccount", note: "Seed có moderator_demo1 (id 11) và moderator_demo2 (id 12), đều Active." }],
-  ["ModeratorAccount/invite", { as: "admin_demo", url: "POST /api/v1/ModeratorAccount/invite", note: "Email chưa dùng trong seed. Email đã tồn tại: parent1@example.com (Parent) và admin@example.com." }],
-  ["resend-invite", { as: "admin_demo", url: "POST /api/v1/ModeratorAccount/<NEW_USER_ID>/resend-invite", note: "userId của tài khoản vừa mời. Tài khoản 11, 12 đã kích hoạt nên gửi lại bị từ chối." }],
-  ["Auth/staff-activation", { as: "(chưa đăng nhập)", url: "POST /api/v1/Auth/staff-activation", body: '{ "email": "an.moderator@example.com", "inviteToken": "<INVITE_TOKEN>", "newPassword": "Moderator123", "confirmPassword": "Moderator123", "commitmentAccepted": true }', note: "Email và mã lấy từ thư mời của lần invite." }],
-  ["deactivate", { as: "admin_demo", url: "POST /api/v1/ModeratorAccount/11/deactivate", note: "moderator_demo1 (id 11) đang giữ các mục 1, 4, 5 → được trả về hàng đợi. moderator_demo2 (id 12) là người tạo bộ 3 và 6." }],
-  ["reactivate", { as: "admin_demo", url: "POST /api/v1/ModeratorAccount/11/reactivate", note: "Sau khi vô hiệu hóa tài khoản 11." }],
+  ["=GET /api/v1/StaffAccount", { as: "admin_demo", url: "GET /api/v1/StaffAccount", note: "Không truyền role: thấy moderator_demo1 (id 11), moderator_demo2 (id 12) và admin_demo (id 1). Thêm ?role=Moderator hoặc ?role=Administrator để lọc." }],
+  ["StaffAccount/invite", { as: "admin_demo", url: "POST /api/v1/StaffAccount/invite", note: "Email chưa dùng trong seed. Email đã tồn tại: parent1@example.com (Parent) và admin@example.com. Mời Administrator: đổi role thành \"Administrator\" và bỏ expertise." }],
+  ["resend-invite", { as: "admin_demo", url: "POST /api/v1/StaffAccount/<NEW_USER_ID>/resend-invite", note: "userId của tài khoản vừa mời (Moderator hoặc Administrator). Tài khoản 1, 11, 12 đã kích hoạt nên gửi lại bị từ chối." }],
+  ["cancel-invite", { as: "admin_demo", url: "POST /api/v1/StaffAccount/<NEW_USER_ID>/cancel-invite", note: "userId của tài khoản vừa mời, chưa kích hoạt (Moderator hoặc Administrator). Sau khi hủy, mời lại cùng email được. Tài khoản 1, 11, 12 đã kích hoạt nên hủy bị từ chối (409)." }],
+  ["Auth/staff-activation", { as: "(chưa đăng nhập)", url: "POST /api/v1/Auth/staff-activation", body: '{ "email": "an.moderator@example.com", "inviteToken": "<INVITE_TOKEN>", "newPassword": "Moderator123", "confirmPassword": "Moderator123", "commitmentAccepted": true }', note: "Email và mã lấy từ thư mời của lần invite; dùng chung cho Moderator và Administrator." }],
+  ["deactivate", { as: "admin_demo", url: "POST /api/v1/StaffAccount/11/deactivate", note: "Moderator: moderator_demo1 (id 11) đang giữ các mục 1, 4, 5 → được trả về hàng đợi; moderator_demo2 (id 12) là người tạo bộ 3 và 6. Administrator: seed chỉ có admin_demo (id 1), phải mời + kích hoạt thêm một Administrator rồi dùng userId đó; gọi với id 1 sẽ ra 409 (tự vô hiệu hóa)." }],
+  ["reactivate", { as: "admin_demo", url: "POST /api/v1/StaffAccount/11/reactivate", note: "Sau khi vô hiệu hóa tài khoản 11 (hoặc Administrator vừa bị vô hiệu hóa)." }],
   ["=POST /api/v1/Auth/login", { as: "moderator_demo1", url: "POST /api/v1/Auth/login", body: '{ "identifier": "moderator_demo1", "password": "Demo@123" }', note: "moderator_demo1 (id 11) và moderator_demo2 (id 12) đã kích hoạt, Active." }],
   // Bước 3 (vùng xám, rubric)
   ["=GET /api/v1/moderation/gray-zone-stories/{itemId}", { as: "moderator_demo1", url: "GET /api/v1/moderation/gray-zone-stories/1", note: "Mục 1 (GrayZoneStory, truyện 4) đã nhận hơn 2 giờ trước trong seed nên phải POST /api/v1/ModerationQueue/1/claim lại trước khi mở." }],
@@ -3042,9 +3073,9 @@ const TESTDATA = [
   ["=/api/v1/Auth/login", "forgot-password", "Không cần token. POST /api/v1/Auth/forgot-password (sau khi đã mời an.moderator@example.com)."],
   ["=/api/v1/Auth/login", "reset-password", "Không cần token. POST /api/v1/Auth/reset-password với mã mời trong email."],
   ["=/api/v1/Auth/login", "chưa kích hoạt", "Không cần token. Mời an.moderator@example.com ở API invite trước, chưa kích hoạt. POST /api/v1/Auth/login."],
-  ["=/api/v1/Auth/login", "bị vô hiệu hóa", "Không cần token. admin_demo vô hiệu hóa moderator_demo1 (POST /api/v1/ModeratorAccount/11/deactivate) trước, rồi POST /api/v1/Auth/login."],
+  ["=/api/v1/Auth/login", "bị vô hiệu hóa", "Không cần token. admin_demo vô hiệu hóa moderator_demo1 (POST /api/v1/StaffAccount/11/deactivate) trước, rồi POST /api/v1/Auth/login."],
   ["=/api/v1/Auth/login", "5 lần", "Không cần token. Gửi body này 5 lần liên tiếp tới POST /api/v1/Auth/login, rồi đăng nhập moderator_demo2 đúng Demo@123 → 403."],
-  ["ModeratorAccount/{userId}/resend-invite", "userId không phải Moderator", "Đăng nhập admin_demo, POST /api/v1/ModeratorAccount/2/resend-invite (id 2 là parent_demo1)."],
+  ["StaffAccount/{userId}/resend-invite", "userId không phải Moderator", "Đăng nhập admin_demo, POST /api/v1/StaffAccount/2/resend-invite (id 2 là parent_demo1)."],
   // Bước 8: hướng dẫn sáng tác
   ["GET /api/v1/moderation/authoring-guides/versions", "GET /versions/{versionId}", "Đăng nhập moderator_demo1, GET /api/v1/moderation/authoring-guides/versions/<GUIDE_VERSION_ID>."],
   ["=/api/v1/moderation/authoring-guides", "Administrator mở", "Đăng nhập admin_demo, GET /api/v1/moderation/authoring-guides."],
@@ -3061,11 +3092,13 @@ const TESTDATA = [
   ["wish-cards/{id}/active", "id không tồn tại", "Đăng nhập moderator_demo1, PUT /api/v1/moderation/wish-cards/999999/active."],
   ["PUT /api/v1/moderation/wish-cards/{id}", "id không tồn tại", "Đăng nhập moderator_demo1, PUT /api/v1/moderation/wish-cards/999999."],
   // Admin
-  ["ModeratorAccount/invite", "Email đã thuộc", "{ \"fullName\": \"Trần Thị Hoa\", \"email\": \"parent1@example.com\", \"expertise\": \"Giáo viên\" } (parent1@example.com là parent_demo1)."],
-  ["ModeratorAccount/{userId}/deactivate", "userId không phải Moderator", "POST /api/v1/ModeratorAccount/2/deactivate (id 2 là parent_demo1)."],
-  ["ModeratorAccount/{userId}/deactivate", "Moderator đang giữ mục", "Đăng nhập admin_demo, POST /api/v1/ModeratorAccount/11/deactivate; mục 1, 4, 5 về hàng đợi."],
-  ["ModeratorAccount/{userId}/deactivate", "bộ mẫu đang chờ duyệt", "Moderator 12 tạo bộ 3 (Chờ duyệt, mục 5): deactivate 12 → mục 5 Withdrawn, bộ 3 về Nháp."],
-  ["ModeratorAccount/{userId}/resend-invite", "Tài khoản đã kích hoạt", "POST /api/v1/ModeratorAccount/11/resend-invite."]
+  ["StaffAccount/invite", "Email đã thuộc", "{ \"role\": \"Moderator\", \"fullName\": \"Trần Thị Hoa\", \"email\": \"parent1@example.com\", \"expertise\": \"Giáo viên\" } (parent1@example.com là parent_demo1)."],
+  ["StaffAccount/{userId}/deactivate", "userId không phải Moderator", "POST /api/v1/StaffAccount/2/deactivate (id 2 là parent_demo1)."],
+  ["StaffAccount/{userId}/deactivate", "Moderator đang giữ mục", "Đăng nhập admin_demo, POST /api/v1/StaffAccount/11/deactivate; mục 1, 4, 5 về hàng đợi."],
+  ["StaffAccount/{userId}/deactivate", "bộ mẫu đang chờ duyệt", "Moderator 12 tạo bộ 3 (Chờ duyệt, mục 5): deactivate 12 → mục 5 Withdrawn, bộ 3 về Nháp."],
+  ["StaffAccount/{userId}/resend-invite", "Tài khoản đã kích hoạt", "POST /api/v1/StaffAccount/11/resend-invite (Moderator) hoặc /StaffAccount/1/resend-invite (Administrator)."],
+  ["StaffAccount/{userId}/deactivate", "Tự vô hiệu hóa", "Đăng nhập admin_demo, POST /api/v1/StaffAccount/1/deactivate (id 1 là chính admin_demo)."],
+  ["StaffAccount/{userId}/deactivate", "Vô hiệu hóa Administrator khi còn", "Mời Administrator mới (role Administrator), kích hoạt bằng /Auth/staff-activation, rồi admin_demo POST /api/v1/StaffAccount/<NEW_ADMIN_ID>/deactivate."]
 ];
 // Quy tắc chung theo tên test case (token sai vai trò, thiếu token...)
 const GENERIC = [
@@ -3118,7 +3151,7 @@ function subst(text) {
 // ---------- CONTROLLER CỦA TỪNG API ----------
 // Lấy từ [Route]/[Http...] trong src/Core/StoryPlatform.Api/Controllers. Tên nhóm trong Swagger = tên Controller bỏ hậu tố "Controller".
 // Controller dùng route mặc định api/v1/[controller]:
-const BASE_CONTROLLERS = ["Auth", "AdminAccount", "ModeratorAccount", "ModerationQueue", "PublicStoryReview", "PublicStorySubmission",
+const BASE_CONTROLLERS = ["Auth", "StaffAccount", "ModerationQueue", "PublicStoryReview", "PublicStorySubmission",
   "ContentReport", "ContentReportReview", "PublishedContentReview", "CommunitySubmission", "CommunityReview", "CommunityLibrary",
   "RoadmapTemplate", "RoadmapReview", "RoadmapLibrary", "ChildRoadmap", "MyRoadmap", "Notification", "ChildAccessCredential", "ChildProfile"];
 // Controller có [Route] riêng hoặc route tuyệt đối (khớp tiền tố dài nhất, {} = một đoạn bất kỳ):

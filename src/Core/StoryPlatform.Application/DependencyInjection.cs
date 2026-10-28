@@ -105,7 +105,6 @@ public static class DependencyInjection
         services.AddScoped<INotificationRetentionService, NotificationRetentionService>();
         services.AddScoped<IAuditLogQueryService, AuditLogQueryService>();
         services.AddScoped<IAuditLogWriter, AuditLogWriter>();
-        services.AddScoped<IAdminAccountService, AdminAccountService>();
         services.TryAddSingleton(new GrayZoneOptions());
         services.AddScoped<IGrayZoneEvaluator, GrayZoneEvaluator>();
         services.AddScoped<Features.Moderation.Rubrics.ModerationRubricService>();
@@ -157,7 +156,7 @@ public static class DependencyInjection
         services.AddScoped<IRoadmapSubmissionChecker, RoadmapSubmissionChecker>();
         services.AddScoped<IRoadmapTemplateService, RoadmapTemplateService>();
         services.AddScoped<IRoadmapReviewService, RoadmapReviewService>();
-        services.AddScoped<IModeratorAccountService, ModeratorAccountService>();
+        services.AddScoped<IStaffAccountService, StaffAccountService>();
         services.AddScoped<IDataRequestService, DataRequestService>();
         services.AddScoped<IBusinessReportService, BusinessReportService>();
         services.AddScoped<IPaymentService, PaymentService>();

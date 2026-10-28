@@ -40,7 +40,7 @@ public class UserAccount : BaseEntity
     /// <summary>Chuyên môn của Moderator / Content Creator (vd giáo viên tiểu học).</summary>
     public string? Expertise { get; set; }
 
-    /// <summary>Thời điểm Moderator tick cam kết bảo mật dữ liệu trẻ em và quy tắc kiểm duyệt.</summary>
+    /// <summary>Thời điểm nhân sự được mời tick cam kết bảo mật dữ liệu trẻ em và quy tắc kiểm duyệt.</summary>
     public DateTime? CommitmentAcceptedAt { get; set; }
 
     // Navigation properties

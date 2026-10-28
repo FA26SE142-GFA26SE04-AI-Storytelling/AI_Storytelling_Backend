@@ -130,7 +130,7 @@ PasswordPolicy: 8–100 ký tự, ít nhất một chữ cái và một chữ s�
 
 Quên: POST /Auth/forgot-password với email → POST /Auth/reset-password với email/resetToken/newPassword/confirmPassword. Không dùng response forgot để xác nhận email tồn tại.
 
-Moderator được mời: POST /Auth/staff-activation với email/inviteToken/newPassword/confirmPassword/commitmentAccepted → đăng nhập. Register không tự cấp role Moderator/Admin/Creator.
+Moderator hoặc Administrator được mời: POST /Auth/staff-activation với email/inviteToken/newPassword/confirmPassword/commitmentAccepted → đăng nhập. Register không tự cấp role Moderator/Admin/Creator.
 
 POST /Auth/refresh-token để đổi cặp token; thay refresh token cũ khi rotate và tránh refresh song song.
 
@@ -513,7 +513,7 @@ Tiền tố `/api/v1/moderation/authoring-guides`. Luồng: GET `/` (bộ đang 
 <a id="admin"></a>
 ## 11. Administrator — vận hành
 
-- **Tài khoản:** POST /AdminAccount/grant, POST /{userId}/revoke. Moderator GET list → POST invite → resend-invite/deactivate/reactivate kèm reason khi cần. Không tự suy có API list Admin/hủy lời mời.
+- **Tài khoản:** một controller /StaffAccount cho cả Moderator và Administrator: GET list (?role= để lọc) → POST invite (body có role; expertise bắt buộc với Moderator) → resend-invite/cancel-invite (chỉ khi chưa kích hoạt) → deactivate/reactivate (sau khi kích hoạt). Thao tác theo userId tự đọc vai trò; response có field role. Deactivate cần reason; không tự vô hiệu hóa, không vô hiệu hóa Admin Active cuối cùng.
 - **Danh mục:** GET list/detail → POST tạo → PUT sửa → DELETE theo guard; defaultBlockedAgeBands ảnh hưởng preset.
 - **Quota:** GET/POST /TokenQuota/config, scope System/Personal/Child; không gửi User tự chế. Quota trẻ GET /TokenQuota/child/{id} theo quyền.
 - **Dữ liệu:** GET /DataRequest/pending → resolve-export/resolve-delete/reject. Format=xlsx tải workbook; **format=csv trả ZIP application/zip**, không text CSV thuần. Đọc Content-Disposition, không parse JSON cho file.
@@ -604,7 +604,7 @@ HTTP là nhánh response controller; kết hợp lỗi chung mục 2 và guard n
 
 ### Tra nhanh controller
 
-[AIStoryInput](#controller-aistoryinput) · [AdminAccount](#controller-adminaccount) · [Auth](#controller-auth) · [AuthoringGuides](#controller-authoringguides) · [BusinessReport](#controller-businessreport) · [ChildAccessCredential](#controller-childaccesscredential) · [ChildManualStories](#controller-childmanualstories) · [ChildProfile](#controller-childprofile) · [ChildRoadmap](#controller-childroadmap) · [CommunityLibrary](#controller-communitylibrary) · [CommunityReview](#controller-communityreview) · [CommunitySubmission](#controller-communitysubmission) · [ContentCategory](#controller-contentcategory) · [ContentGeneration](#controller-contentgeneration) · [ContentReport](#controller-contentreport) · [ContentReportReview](#controller-contentreportreview) · [CreatorAIStoryInput](#controller-creatoraistoryinput) · [CreatorAssistance](#controller-creatorassistance) · [CreatorAuthoring](#controller-creatorauthoring) · [CreatorModerationCheck](#controller-creatormoderationcheck) · [CreatorPublication](#controller-creatorpublication) · [DataRequest](#controller-datarequest) · [ExistingStories](#controller-existingstories) · [GrayZoneReview](#controller-grayzonereview) · [LearningProfile](#controller-learningprofile) · [MediaGeneration](#controller-mediageneration) · [ModerationQueue](#controller-moderationqueue) · [ModerationRubrics](#controller-moderationrubrics) · [ModeratorAccount](#controller-moderatoraccount) · [MyRoadmap](#controller-myroadmap) · [Notification](#controller-notification) · [Outline](#controller-outline) · [ParentAssistance](#controller-parentassistance) · [ParentAuthoring](#controller-parentauthoring) · [ParentalGate](#controller-parentalgate) · [Payment](#controller-payment) · [Permission](#controller-permission) · [PublicStoryReview](#controller-publicstoryreview) · [PublicStorySubmission](#controller-publicstorysubmission) · [PublishedContentReview](#controller-publishedcontentreview) · [Review](#controller-review) · [RoadmapLibrary](#controller-roadmaplibrary) · [RoadmapReview](#controller-roadmapreview) · [RoadmapTemplate](#controller-roadmaptemplate) · [SafetyPolicy](#controller-safetypolicy) · [Story](#controller-story) · [Supervision](#controller-supervision) · [TokenQuota](#controller-tokenquota)
+[AIStoryInput](#controller-aistoryinput) · [Auth](#controller-auth) · [AuthoringGuides](#controller-authoringguides) · [BusinessReport](#controller-businessreport) · [ChildAccessCredential](#controller-childaccesscredential) · [ChildManualStories](#controller-childmanualstories) · [ChildProfile](#controller-childprofile) · [ChildRoadmap](#controller-childroadmap) · [CommunityLibrary](#controller-communitylibrary) · [CommunityReview](#controller-communityreview) · [CommunitySubmission](#controller-communitysubmission) · [ContentCategory](#controller-contentcategory) · [ContentGeneration](#controller-contentgeneration) · [ContentReport](#controller-contentreport) · [ContentReportReview](#controller-contentreportreview) · [CreatorAIStoryInput](#controller-creatoraistoryinput) · [CreatorAssistance](#controller-creatorassistance) · [CreatorAuthoring](#controller-creatorauthoring) · [CreatorModerationCheck](#controller-creatormoderationcheck) · [CreatorPublication](#controller-creatorpublication) · [DataRequest](#controller-datarequest) · [ExistingStories](#controller-existingstories) · [GrayZoneReview](#controller-grayzonereview) · [LearningProfile](#controller-learningprofile) · [MediaGeneration](#controller-mediageneration) · [ModerationQueue](#controller-moderationqueue) · [ModerationRubrics](#controller-moderationrubrics) · [StaffAccount](#controller-staffaccount) · [MyRoadmap](#controller-myroadmap) · [Notification](#controller-notification) · [Outline](#controller-outline) · [ParentAssistance](#controller-parentassistance) · [ParentAuthoring](#controller-parentauthoring) · [ParentalGate](#controller-parentalgate) · [Payment](#controller-payment) · [Permission](#controller-permission) · [PublicStoryReview](#controller-publicstoryreview) · [PublicStorySubmission](#controller-publicstorysubmission) · [PublishedContentReview](#controller-publishedcontentreview) · [Review](#controller-review) · [RoadmapLibrary](#controller-roadmaplibrary) · [RoadmapReview](#controller-roadmapreview) · [RoadmapTemplate](#controller-roadmaptemplate) · [SafetyPolicy](#controller-safetypolicy) · [Story](#controller-story) · [Supervision](#controller-supervision) · [TokenQuota](#controller-tokenquota)
 
 <a id="controller-auth"></a>
 ### Auth — 20 route
@@ -655,7 +655,7 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="ep-auth-activatestaffaccount-post"></a>
 #### POST /api/v1/Auth/staff-activation
 
-- Action/chức năng: **ActivateStaffAccount** — Kích hoạt tài khoản Moderator bằng mã mời: đặt mật khẩu và xác nhận cam kết.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L76).
+- Action/chức năng: **ActivateStaffAccount** — Kích hoạt tài khoản Moderator hoặc Administrator bằng mã mời: đặt mật khẩu và xác nhận cam kết. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L76).
 - Quyền: AllowAnonymous
 - Request: **body** request: [StaffActivationRequestDto](#dto-staffactivationrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
@@ -2934,91 +2934,73 @@ Service chỉ cho Moderator đang giữ claim chuyển cấp; Administrator khô
 - Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
 
 
-<a id="controller-adminaccount"></a>
-### AdminAccount — 2 route
+<a id="controller-staffaccount"></a>
+### StaffAccount — 6 route
 
-Admin. Grant/revoke theo guard tài khoản; controller không có list Admin.
-
-| Method + route | Mapping |
-|---|---|
-| [POST /api/v1/AdminAccount/grant](#ep-adminaccount-grantadministrator-post) | GỌI_API |
-| [POST /api/v1/AdminAccount/{targetUserId}/revoke](#ep-adminaccount-revokeadministrator-post) | GỌI_API |
-
-<a id="ep-adminaccount-grantadministrator-post"></a>
-#### POST /api/v1/AdminAccount/grant
-
-- Action/chức năng: **GrantAdministrator** — Cấp quyền Administrator cho một tài khoản đích theo email.. [AdminAccountController](../src/Core/StoryPlatform.Api/Controllers/AdminAccountController.cs#L26).
-- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
-- Request: **body** request: [GrantAdministratorRequestDto](#dto-grantadministratorrequestdto); field/validation/ví dụ tại schema.
-- Response: ApiResponse.data: [AdministratorAccountDto](#dto-administratoraccountdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [staffService.grantAdmin](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L78); nơi dùng: [AdminSystem.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminSystem.tsx#L185)
-
-<a id="ep-adminaccount-revokeadministrator-post"></a>
-#### POST /api/v1/AdminAccount/{targetUserId}/revoke
-
-- Action/chức năng: **RevokeAdministrator** — Thu hồi quyền Administrator của một tài khoản đích, khôi phục về vai trò trước đó.. [AdminAccountController](../src/Core/StoryPlatform.Api/Controllers/AdminAccountController.cs#L37).
-- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
-- Request: **path** targetUserId: `int`; bắt buộc.
-- Response: ApiResponse.data: [AdministratorAccountDto](#dto-administratoraccountdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [staffService.revokeAdmin](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L79); nơi dùng: [AdminSystem.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminSystem.tsx#L187)
-
-<a id="controller-moderatoraccount"></a>
-### ModeratorAccount — 5 route
-
-Admin. Invite/resend/activation khác register. Deactivate cần reason, reactivate có state guard. Kích hoạt qua Auth/staff-activation.
+Administrator quản lý tài khoản vận hành **Moderator và Administrator trong một controller**. Phân biệt vai trò: khi mời gửi `role` = `Moderator` hoặc `Administrator` trong body; khi xem danh sách lọc bằng `?role=`; các thao tác theo `{userId}` không cần gửi role vì hệ thống đọc vai trò từ tài khoản (userId không phải Moderator/Administrator → 404). Mọi response có field `role`. Người được mời kích hoạt bằng POST /Auth/staff-activation (cả hai vai trò, đều tick cam kết).
 
 | Method + route | Mapping |
 |---|---|
-| [GET /api/v1/ModeratorAccount](#ep-moderatoraccount-list-get) | GỌI_API |
-| [POST /api/v1/ModeratorAccount/invite](#ep-moderatoraccount-invite-post) | GỌI_API |
-| [POST /api/v1/ModeratorAccount/{userId}/resend-invite](#ep-moderatoraccount-resendinvite-post) | GỌI_API |
-| [POST /api/v1/ModeratorAccount/{userId}/deactivate](#ep-moderatoraccount-deactivate-post) | GỌI_API |
-| [POST /api/v1/ModeratorAccount/{userId}/reactivate](#ep-moderatoraccount-reactivate-post) | GỌI_API |
+| [GET /api/v1/StaffAccount](#ep-staffaccount-list-get) | CHƯA_MAP |
+| [POST /api/v1/StaffAccount/invite](#ep-staffaccount-invite-post) | CHƯA_MAP |
+| [POST /api/v1/StaffAccount/{userId}/resend-invite](#ep-staffaccount-resendinvite-post) | CHƯA_MAP |
+| [POST /api/v1/StaffAccount/{userId}/cancel-invite](#ep-staffaccount-cancelinvite-post) | CHƯA_MAP |
+| [POST /api/v1/StaffAccount/{userId}/deactivate](#ep-staffaccount-deactivate-post) | CHƯA_MAP |
+| [POST /api/v1/StaffAccount/{userId}/reactivate](#ep-staffaccount-reactivate-post) | CHƯA_MAP |
 
-<a id="ep-moderatoraccount-list-get"></a>
-#### GET /api/v1/ModeratorAccount
+<a id="ep-staffaccount-list-get"></a>
+#### GET /api/v1/StaffAccount
 
-- Action/chức năng: **List** — Danh sách Moderator và trạng thái từng người.. [ModeratorAccountController](../src/Core/StoryPlatform.Api/Controllers/ModeratorAccountController.cs#L22).
-- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
-- Request: Không có tham số action; dùng token/header theo quyền..
-- Response: ApiResponse.data: [List&lt;ModeratorAccountDto&gt;](#dto-moderatoraccountdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [staffService.staff](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L81); nơi dùng: [AdminPeople.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminPeople.tsx#L22)
+- Action/chức năng: **List** — Danh sách Moderator và Administrator, mới tạo trước. [StaffAccountController](../src/Core/StoryPlatform.Api/Controllers/StaffAccountController.cs#L26).
+- Quyền: (Administrator); Moderator, Parent → 403.
+- Request: **query** role: `UserRole?`; tùy chọn, `Moderator` hoặc `Administrator`; bỏ trống = cả hai; vai trò khác → 400.
+- Response: ApiResponse.data: List&lt;[StaffAccountDto](#dto-staffaccountdto)&gt;. HTTP 200.
+- Frontend: **CHƯA_MAP** — frontend còn gọi /AdminAccount và /ModeratorAccount cũ; cần đổi sang /StaffAccount ở repo frontend.
 
-<a id="ep-moderatoraccount-invite-post"></a>
-#### POST /api/v1/ModeratorAccount/invite
+<a id="ep-staffaccount-invite-post"></a>
+#### POST /api/v1/StaffAccount/invite
 
-- Action/chức năng: **Invite** — Mời Moderator mới qua email; mã mời có hiệu lực 72 giờ.. [ModeratorAccountController](../src/Core/StoryPlatform.Api/Controllers/ModeratorAccountController.cs#L31).
-- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
-- Request: **body** request: [InviteModeratorRequestDto](#dto-invitemoderatorrequestdto); field/validation/ví dụ tại schema.
-- Response: ApiResponse.data: [ModeratorAccountDto](#dto-moderatoraccountdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [staffService.inviteModerator](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L86); nơi dùng: [AdminPeople.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminPeople.tsx#L41)
+- Action/chức năng: **Invite** — Tạo tài khoản riêng đúng vai trò (PasswordResetPending), gửi mã mời hạn 72 giờ qua email. `expertise` bắt buộc khi `role` = Moderator, bỏ qua khi Administrator. Email trùng tài khoản khác → 400. [StaffAccountController](../src/Core/StoryPlatform.Api/Controllers/StaffAccountController.cs#L35).
+- Quyền: (Administrator); Moderator, Parent → 403.
+- Request: **body** request: [InviteStaffRequestDto](#dto-invitestaffrequestdto).
+- Response: ApiResponse.data: [StaffAccountDto](#dto-staffaccountdto). HTTP 200.
+- Frontend: **CHƯA_MAP** — frontend còn gọi /AdminAccount và /ModeratorAccount cũ; cần đổi sang /StaffAccount ở repo frontend.
 
-<a id="ep-moderatoraccount-resendinvite-post"></a>
-#### POST /api/v1/ModeratorAccount/{userId}/resend-invite
+<a id="ep-staffaccount-resendinvite-post"></a>
+#### POST /api/v1/StaffAccount/{userId}/resend-invite
 
-- Action/chức năng: **ResendInvite** — Cấp mã mời mới cho Moderator chưa kích hoạt.. [ModeratorAccountController](../src/Core/StoryPlatform.Api/Controllers/ModeratorAccountController.cs#L42).
-- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
+- Action/chức năng: **ResendInvite** — Cấp mã mời mới cho tài khoản còn chờ kích hoạt; mã cũ mất hiệu lực. [StaffAccountController](../src/Core/StoryPlatform.Api/Controllers/StaffAccountController.cs#L46).
+- Quyền: (Administrator); Moderator, Parent → 403.
 - Request: **path** userId: `int`; bắt buộc.
-- Response: ApiResponse.data: [ModeratorAccountDto](#dto-moderatoraccountdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [staffService.resendInvite](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L88); nơi dùng: [AdminPeople.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminPeople.tsx#L82)
+- Response: ApiResponse.data: [StaffAccountDto](#dto-staffaccountdto). HTTP 200; đã kích hoạt → 409; không phải Moderator/Administrator → 404.
+- Frontend: **CHƯA_MAP** — frontend còn gọi /AdminAccount và /ModeratorAccount cũ; cần đổi sang /StaffAccount ở repo frontend.
 
-<a id="ep-moderatoraccount-deactivate-post"></a>
-#### POST /api/v1/ModeratorAccount/{userId}/deactivate
+<a id="ep-staffaccount-cancelinvite-post"></a>
+#### POST /api/v1/StaffAccount/{userId}/cancel-invite
 
-- Action/chức năng: **Deactivate** — Vô hiệu hóa Moderator và đăng xuất mọi phiên ngay.. [ModeratorAccountController](../src/Core/StoryPlatform.Api/Controllers/ModeratorAccountController.cs#L52).
-- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
-- Request: **path** userId: `int`; bắt buộc<br>**body** request: [ReasonRequestDto](#dto-reasonrequestdto); field/validation/ví dụ tại schema.
-- Response: ApiResponse.data: [ModeratorAccountDto](#dto-moderatoraccountdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [staffService.deactivateModerator](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L91); nơi dùng: [AdminPeople.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminPeople.tsx#L85)
-
-<a id="ep-moderatoraccount-reactivate-post"></a>
-#### POST /api/v1/ModeratorAccount/{userId}/reactivate
-
-- Action/chức năng: **Reactivate** — Kích hoạt lại Moderator đã bị vô hiệu hóa.. [ModeratorAccountController](../src/Core/StoryPlatform.Api/Controllers/ModeratorAccountController.cs#L63).
-- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
+- Action/chức năng: **CancelInvite** — Hủy lời mời chưa dùng: xóa hẳn tài khoản chưa kích hoạt để mời lại được cùng email. [StaffAccountController](../src/Core/StoryPlatform.Api/Controllers/StaffAccountController.cs#L56).
+- Quyền: (Administrator); Moderator, Parent → 403.
 - Request: **path** userId: `int`; bắt buộc.
-- Response: ApiResponse.data: [ModeratorAccountDto](#dto-moderatoraccountdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [staffService.reactivateModerator](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L93); nơi dùng: [AdminPeople.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminPeople.tsx#L87)
+- Response: ApiResponse.data: [StaffAccountDto](#dto-staffaccountdto) (trạng thái trước khi xóa). HTTP 200; đã kích hoạt → 409.
+- Frontend: **CHƯA_MAP** — frontend còn gọi /AdminAccount và /ModeratorAccount cũ; cần đổi sang /StaffAccount ở repo frontend.
+
+<a id="ep-staffaccount-deactivate-post"></a>
+#### POST /api/v1/StaffAccount/{userId}/deactivate
+
+- Action/chức năng: **Deactivate** — Vô hiệu hóa, đăng xuất mọi phiên, nhả mục kiểm duyệt đang giữ, rút yêu cầu duyệt bộ mẫu đã gửi. Chặn tự vô hiệu hóa (409); với Administrator chặn Admin Active cuối cùng (409); tài khoản chưa kích hoạt → 400 (dùng cancel-invite). [StaffAccountController](../src/Core/StoryPlatform.Api/Controllers/StaffAccountController.cs#L66).
+- Quyền: (Administrator); Moderator, Parent → 403.
+- Request: **path** userId: `int`; bắt buộc<br>**body** request: [ReasonRequestDto](#dto-reasonrequestdto).
+- Response: ApiResponse.data: [StaffAccountDto](#dto-staffaccountdto). HTTP 200.
+- Frontend: **CHƯA_MAP** — frontend còn gọi /AdminAccount và /ModeratorAccount cũ; cần đổi sang /StaffAccount ở repo frontend.
+
+<a id="ep-staffaccount-reactivate-post"></a>
+#### POST /api/v1/StaffAccount/{userId}/reactivate
+
+- Action/chức năng: **Reactivate** — Kích hoạt lại tài khoản đang Suspended; giữ vai trò và mật khẩu. [StaffAccountController](../src/Core/StoryPlatform.Api/Controllers/StaffAccountController.cs#L77).
+- Quyền: (Administrator); Moderator, Parent → 403.
+- Request: **path** userId: `int`; bắt buộc.
+- Response: ApiResponse.data: [StaffAccountDto](#dto-staffaccountdto). HTTP 200; không Suspended → 409.
+- Frontend: **CHƯA_MAP** — frontend còn gọi /AdminAccount và /ModeratorAccount cũ; cần đổi sang /StaffAccount ở repo frontend.
 
 <a id="controller-contentcategory"></a>
 ### ContentCategory — 5 route
@@ -4153,7 +4135,6 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [AIStoryInputProgressDto](#dto-aistoryinputprogressdto) | [AIStoryInputDtos.cs](../src/Core/StoryPlatform.Application/Features/AIStoryInput/DTOs/AIStoryInputDtos.cs#L102) |
 | [AcceptInvitationRequestDto](#dto-acceptinvitationrequestdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L35) |
 | [AdaptExistingStoryRequestDto](#dto-adaptexistingstoryrequestdto) | [ExistingStoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ExistingStories/DTOs/ExistingStoryDtos.cs#L99) |
-| [AdministratorAccountDto](#dto-administratoraccountdto) | [AdministratorDtos.cs](../src/Core/StoryPlatform.Application/Features/Administration/DTOs/AdministratorDtos.cs#L10) |
 | [AgeBand](#dto-ageband) | [AgeBand.cs](../src/Core/StoryPlatform.Domain/Enums/AgeBand.cs#L3) |
 | [AgePresetDto](#dto-agepresetdto) | [SafetyPolicyDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Safety/DTOs/SafetyPolicyDtos.cs#L82) |
 | [AnswerAssistanceRequest](#dto-answerassistancerequest) | [CreatorAssistanceDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAssistance/DTOs/CreatorAssistanceDtos.cs#L26) |
@@ -4253,7 +4234,6 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [ForgotPasswordRequestDto](#dto-forgotpasswordrequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L93) |
 | [GenerateArtifactsRequestDto](#dto-generateartifactsrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L241) |
 | [GenerateBusinessReportRequestDto](#dto-generatebusinessreportrequestdto) | [BusinessReportDtos.cs](../src/Core/StoryPlatform.Application/Features/BusinessReports/DTOs/BusinessReportDtos.cs#L3) |
-| [GrantAdministratorRequestDto](#dto-grantadministratorrequestdto) | [AdministratorDtos.cs](../src/Core/StoryPlatform.Application/Features/Administration/DTOs/AdministratorDtos.cs#L5) |
 | [GrantReviewViewRequestDto](#dto-grantreviewviewrequestdto) | [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs#L68) |
 | [GuidePage](#dto-guidepage) | [AuthoringGuideService.cs](../src/Core/StoryPlatform.Application/Features/ParentAuthoring/AuthoringGuideService.cs#L10) |
 | [IllustrationBeatMediaItem](#dto-illustrationbeatmediaitem) | [MediaGenerationModels.cs](../src/Core/StoryPlatform.Application/Features/MediaGeneration/Models/MediaGenerationModels.cs#L88) |
@@ -4262,7 +4242,7 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [ImportStoryResponseDto](#dto-importstoryresponsedto) | [ExistingStoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ExistingStories/DTOs/ExistingStoryDtos.cs#L47) |
 | [InvitationDto](#dto-invitationdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L6) |
 | [InvitationPreviewDto](#dto-invitationpreviewdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L64) |
-| [InviteModeratorRequestDto](#dto-invitemoderatorrequestdto) | [AdministratorDtos.cs](../src/Core/StoryPlatform.Application/Features/Administration/DTOs/AdministratorDtos.cs#L19) |
+| [InviteStaffRequestDto](#dto-invitestaffrequestdto) | [StaffAccountDtos.cs](../src/Core/StoryPlatform.Application/Features/Administration/DTOs/StaffAccountDtos.cs#L8) |
 | [KeepOriginalRequestDto](#dto-keeporiginalrequestdto) | [ExistingStoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ExistingStories/DTOs/ExistingStoryDtos.cs#L116) |
 | [LearningProfileDto](#dto-learningprofiledto) | [LearningProfileDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Learning/DTOs/LearningProfileDtos.cs#L7) |
 | [LearningProfileTopicDto](#dto-learningprofiletopicdto) | [LearningProfileDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Learning/DTOs/LearningProfileDtos.cs#L17) |
@@ -4279,7 +4259,6 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [ModerationPriority](#dto-moderationpriority) | [ModerationPriority.cs](../src/Core/StoryPlatform.Domain/Enums/ModerationPriority.cs#L3) |
 | [ModerationQueueQueryDto](#dto-moderationqueuequerydto) | [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs#L24) |
 | [ModerationReviewViewDto](#dto-moderationreviewviewdto) | [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs#L77) |
-| [ModeratorAccountDto](#dto-moderatoraccountdto) | [AdministratorDtos.cs](../src/Core/StoryPlatform.Application/Features/Administration/DTOs/AdministratorDtos.cs#L45) |
 | [NotificationDto](#dto-notificationdto) | [NotificationDtos.cs](../src/Core/StoryPlatform.Application/Features/Notifications/DTOs/NotificationDtos.cs#L3) |
 | [OutlineProgressDto](#dto-outlineprogressdto) | [OutlineDtos.cs](../src/Core/StoryPlatform.Application/Features/Outline/DTOs/OutlineDtos.cs#L5) |
 | [OutlineVersionDto](#dto-outlineversiondto) | [OutlineDtos.cs](../src/Core/StoryPlatform.Application/Features/Outline/DTOs/OutlineDtos.cs#L15) |
@@ -4330,7 +4309,7 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [QuizItemDto](#dto-quizitemdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L110) |
 | [QuizReviewDto](#dto-quizreviewdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L103) |
 | [ReadingMode](#dto-readingmode) | [ReadingMode.cs](../src/Core/StoryPlatform.Domain/Enums/ReadingMode.cs#L4) |
-| [ReasonRequestDto](#dto-reasonrequestdto) | [AdministratorDtos.cs](../src/Core/StoryPlatform.Application/Features/Administration/DTOs/AdministratorDtos.cs#L38) |
+| [ReasonRequestDto](#dto-reasonrequestdto) | [StaffAccountDtos.cs](../src/Core/StoryPlatform.Application/Features/Administration/DTOs/StaffAccountDtos.cs#L32) |
 | [RefreshTokenRequestDto](#dto-refreshtokenrequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L87) |
 | [RegenerateOutlineRequestDto](#dto-regenerateoutlinerequestdto) | [OutlineDtos.cs](../src/Core/StoryPlatform.Application/Features/Outline/DTOs/OutlineDtos.cs#L46) |
 | [RegisterRequestDto](#dto-registerrequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L23) |
@@ -4371,6 +4350,7 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [SetSafetyPolicyCategoryRequestDto](#dto-setsafetypolicycategoryrequestdto) | [SafetyPolicyDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Safety/DTOs/SafetyPolicyDtos.cs#L88) |
 | [SetSafetyPolicyRequestDto](#dto-setsafetypolicyrequestdto) | [SafetyPolicyDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Safety/DTOs/SafetyPolicyDtos.cs#L40) |
 | [SetTokenQuotaConfigRequestDto](#dto-settokenquotaconfigrequestdto) | [TokenQuotaDtos.cs](../src/Core/StoryPlatform.Application/Features/TokenQuota/DTOs/TokenQuotaDtos.cs#L3) |
+| [StaffAccountDto](#dto-staffaccountdto) | [StaffAccountDtos.cs](../src/Core/StoryPlatform.Application/Features/Administration/DTOs/StaffAccountDtos.cs#L39) |
 | [StaffActivationRequestDto](#dto-staffactivationrequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L217) |
 | [StartSupervisedChildSessionRequestDto](#dto-startsupervisedchildsessionrequestdto) | [ChildAccessCredentialDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/AccessCredentials/DTOs/ChildAccessCredentialDtos.cs#L44) |
 | [Stories.UpdateStoryRequestDto](#dto-stories-updatestoryrequestdto) | [StoryDtos.cs](../src/Core/StoryPlatform.Application/Features/Stories/DTOs/StoryDtos.cs#L44) |
@@ -4627,19 +4607,6 @@ Ví dụ JSON minh họa shape request:
   "guideline": null
 }
 ~~~
-
-<a id="dto-administratoraccountdto"></a>
-### AdministratorAccountDto
-
-Nguồn: [AdministratorDtos.cs](../src/Core/StoryPlatform.Application/Features/Administration/DTOs/AdministratorDtos.cs#L10).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `userId` | `int` | Không | — |
-| `email` | `string` | Không | default `string.Empty` |
-| `fullName` | `string` | Không | default `string.Empty` |
-| `role` | `string` | Không | default `string.Empty` |
-| `roleBeforeAdmin` | `string?` | Có | — |
 
 <a id="dto-ageband"></a>
 ### AgeBand
@@ -6280,23 +6247,6 @@ Ví dụ JSON minh họa shape request:
 }
 ~~~
 
-<a id="dto-grantadministratorrequestdto"></a>
-### GrantAdministratorRequestDto
-
-Nguồn: [AdministratorDtos.cs](../src/Core/StoryPlatform.Application/Features/Administration/DTOs/AdministratorDtos.cs#L5).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `email` | `string` | Không | default `string.Empty` |
-
-Ví dụ JSON minh họa shape request:
-
-~~~json
-{
-  "email": "parent@example.com"
-}
-~~~
-
 <a id="dto-grantreviewviewrequestdto"></a>
 ### GrantReviewViewRequestDto
 
@@ -6446,26 +6396,39 @@ Nguồn: [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/Chi
 | `childNickname` | `string` | Không | default `string.Empty` |
 | `childAgeBand` | `string` | Không | default `string.Empty` |
 
-<a id="dto-invitemoderatorrequestdto"></a>
-### InviteModeratorRequestDto
+<a id="dto-invitestaffrequestdto"></a>
+### InviteStaffRequestDto
 
-Nguồn: [AdministratorDtos.cs](../src/Core/StoryPlatform.Application/Features/Administration/DTOs/AdministratorDtos.cs#L19).
+Nguồn: [StaffAccountDtos.cs](../src/Core/StoryPlatform.Application/Features/Administration/DTOs/StaffAccountDtos.cs#L8).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
-| `fullName` | `string` | Không | default `string.Empty`; `[Required(ErrorMessage = "Họ tên không được để trống.")]     [StringLength(100, ErrorMessage = "Họ tên tối đa 100 ký tự.")]` |
-| `email` | `string` | Không | default `string.Empty`; `[Required(ErrorMessage = "Email không được để trống.")]     [EmailAddress(ErrorMessage = "Email không đúng định dạng.")]     [StringLength(254, ErrorMessage = "Email tối đa 254 ký tự.")]` |
-| `expertise` | `string` | Không | default `string.Empty`; `[Required(ErrorMessage = "Chuyên môn không được để trống.")]     [StringLength(200, ErrorMessage = "Chuyên môn tối đa 200 ký tự.")]` |
-| `note` | `string?` | Có | `[StringLength(500, ErrorMessage = "Ghi chú tối đa 500 ký tự.")]` |
+| `role` | `UserRole?` (chuỗi) | Không | bắt buộc; `"Moderator"` hoặc `"Administrator"`, vai trò khác → 400 |
+| `fullName` | `string` | Không | bắt buộc, tối đa 100 ký tự |
+| `email` | `string` | Không | bắt buộc, email hợp lệ, tối đa 254 ký tự |
+| `expertise` | `string?` | Có | tối đa 200 ký tự; bắt buộc khi role = Moderator, bỏ qua khi Administrator |
+| `note` | `string?` | Có | tối đa 500 ký tự, chỉ ghi audit |
 
-Ví dụ JSON minh họa shape request:
+Ví dụ JSON — mời Moderator:
 
 ~~~json
 {
-  "fullName": "Người dùng minh họa",
-  "email": "parent@example.com",
-  "expertise": "<EXPERTISE>",
-  "note": null
+  "role": "Moderator",
+  "fullName": "Nguyễn Văn An",
+  "email": "an.moderator@example.com",
+  "expertise": "Giáo dục mầm non",
+  "note": "Phụ trách truyện 6-8"
+}
+~~~
+
+Ví dụ JSON — mời Administrator:
+
+~~~json
+{
+  "role": "Administrator",
+  "fullName": "Quản trị viên mới",
+  "email": "newadmin@example.com",
+  "note": "Bổ sung nhân sự"
 }
 ~~~
 
@@ -6768,23 +6731,6 @@ Nguồn: [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features
 | `readingRoadmapId` | `int?` | Có | — |
 | `grantedAt` | `DateTime` | Không | — |
 | `expiresAt` | `DateTime` | Không | — |
-
-<a id="dto-moderatoraccountdto"></a>
-### ModeratorAccountDto
-
-Nguồn: [AdministratorDtos.cs](../src/Core/StoryPlatform.Application/Features/Administration/DTOs/AdministratorDtos.cs#L45).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `userId` | `int` | Không | — |
-| `email` | `string` | Không | default `string.Empty` |
-| `fullName` | `string` | Không | default `string.Empty` |
-| `expertise` | `string?` | Có | — |
-| `status` | `string` | Không | default `string.Empty` |
-| `isActivated` | `bool` | Không | True khi người được mời đã kích hoạt xong. |
-| `activatedAt` | `DateTime?` | Có | — |
-| `lastLoginAt` | `DateTime?` | Có | — |
-| `inviteExpiresAt` | `DateTime?` | Có | Hạn lời mời đang chờ; null khi tài khoản không còn chờ kích hoạt. |
 
 <a id="dto-notificationdto"></a>
 ### NotificationDto
@@ -7617,7 +7563,7 @@ Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum t
 <a id="dto-reasonrequestdto"></a>
 ### ReasonRequestDto
 
-Nguồn: [AdministratorDtos.cs](../src/Core/StoryPlatform.Application/Features/Administration/DTOs/AdministratorDtos.cs#L38).
+Nguồn: [StaffAccountDtos.cs](../src/Core/StoryPlatform.Application/Features/Administration/DTOs/StaffAccountDtos.cs#L32).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -8376,6 +8322,24 @@ Ví dụ JSON minh họa shape request:
   "periodEnd": "<DateOnly>"
 }
 ~~~
+
+<a id="dto-staffaccountdto"></a>
+### StaffAccountDto
+
+Nguồn: [StaffAccountDtos.cs](../src/Core/StoryPlatform.Application/Features/Administration/DTOs/StaffAccountDtos.cs#L39).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `userId` | `int` | Không | — |
+| `email` | `string` | Không | default `string.Empty` |
+| `fullName` | `string` | Không | default `string.Empty` |
+| `role` | `string` | Không | `Moderator` hoặc `Administrator` — dùng để phân biệt hai vai trò |
+| `expertise` | `string?` | Có | chỉ Moderator có |
+| `status` | `string` | Không | `PasswordResetPending` (đã mời, chưa kích hoạt), `Active`, `Suspended` |
+| `isActivated` | `bool` | Không | true khi không còn chờ kích hoạt (Administrator tạo từ seed cũng là true) |
+| `activatedAt` | `DateTime?` | Có | lúc tick cam kết |
+| `lastLoginAt` | `DateTime?` | Có | — |
+| `inviteExpiresAt` | `DateTime?` | Có | hạn lời mời đang chờ; null khi không còn chờ kích hoạt |
 
 <a id="dto-staffactivationrequestdto"></a>
 ### StaffActivationRequestDto

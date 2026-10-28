@@ -71,7 +71,8 @@ public class StaffActivationService : IStaffActivationService
         userRepository.Update(user);
 
         await _auditLogWriter.LogAsync(
-            user.Id, "ModeratorActivated", nameof(UserAccount), user.Id,
+            user.Id, user.Role == UserRole.Administrator ? "AdministratorActivated" : "ModeratorActivated",
+            nameof(UserAccount), user.Id,
             beforeState: new { status = AccountStatus.PasswordResetPending.ToString() },
             afterState: new { status = AccountStatus.Active.ToString() },
             cancellationToken: cancellationToken);
@@ -80,7 +81,7 @@ public class StaffActivationService : IStaffActivationService
     private static bool HasValidInvite(UserAccount? user, string inviteToken)
     {
         if (user == null
-            || user.Role != UserRole.Moderator
+            || user.Role is not (UserRole.Moderator or UserRole.Administrator)
             || user.Status != AccountStatus.PasswordResetPending
             || user.CommitmentAcceptedAt != null
             || user.ResetTokenHash == null

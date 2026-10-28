@@ -7,17 +7,22 @@ using Xunit;
 
 namespace StoryPlatform.UnitTests.Features.Administration;
 
-public class AdminAccountControllerAuthorizationTests
+public class StaffAccountControllerAuthorizationTests
 {
     [Theory]
     [InlineData(UserRole.Administrator, true)]
+    [InlineData(UserRole.Moderator, false)]
     [InlineData(UserRole.Parent, false)]
     public async Task Actions_RequireAdministratorOnly(UserRole role, bool expected)
     {
         foreach (var actionName in new[]
                  {
-                     nameof(AdminAccountController.GrantAdministrator),
-                     nameof(AdminAccountController.RevokeAdministrator)
+                     nameof(StaffAccountController.List),
+                     nameof(StaffAccountController.Invite),
+                     nameof(StaffAccountController.ResendInvite),
+                     nameof(StaffAccountController.CancelInvite),
+                     nameof(StaffAccountController.Deactivate),
+                     nameof(StaffAccountController.Reactivate)
                  })
         {
             Assert.Equal(expected, await IsAuthorizedAsync(actionName, role));
@@ -34,8 +39,8 @@ public class AdminAccountControllerAuthorizationTests
         var authorization = provider.GetRequiredService<IAuthorizationService>();
         var user = new ClaimsPrincipal(new ClaimsIdentity(
             new[] { new Claim(ClaimTypes.Role, role.ToString()) }, "Bearer"));
-        var method = typeof(AdminAccountController).GetMethod(actionName)!;
-        var attributes = typeof(AdminAccountController)
+        var method = typeof(StaffAccountController).GetMethod(actionName)!;
+        var attributes = typeof(StaffAccountController)
             .GetCustomAttributes(typeof(AuthorizeAttribute), true)
             .Cast<IAuthorizeData>()
             .Concat(method.GetCustomAttributes(typeof(AuthorizeAttribute), true).Cast<IAuthorizeData>());

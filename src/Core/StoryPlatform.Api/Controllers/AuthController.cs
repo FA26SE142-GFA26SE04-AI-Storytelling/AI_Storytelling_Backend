@@ -56,7 +56,7 @@ public class AuthController : BaseApiController
     }
 
     /// <summary>
-    /// Kích hoạt tài khoản Moderator bằng mã mời: đặt mật khẩu và xác nhận cam kết.
+    /// Kích hoạt tài khoản Moderator hoặc Administrator bằng mã mời: đặt mật khẩu và xác nhận cam kết.
     /// </summary>
     [HttpPost("staff-activation")]
     [AllowAnonymous]

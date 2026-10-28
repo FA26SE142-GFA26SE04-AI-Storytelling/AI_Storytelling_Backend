@@ -153,13 +153,23 @@ public class ResendEmailSender : IEmailSender
         string toEmail, string toName, string inviterName, string roleLabel, string rawInviteToken,
         CancellationToken cancellationToken = default)
     {
+        if (!Uri.TryCreate(_options.StaffActivationUrl, UriKind.Absolute, out var activationUri)
+            || (activationUri.Scheme != Uri.UriSchemeHttps
+                && !(activationUri.Scheme == Uri.UriSchemeHttp && activationUri.IsLoopback))
+            || !string.IsNullOrEmpty(activationUri.Fragment))
+        {
+            throw new InvalidOperationException(
+                "ResendSettings:StaffActivationUrl phải là URL trang kích hoạt frontend dùng HTTPS (hoặc HTTP localhost khi phát triển).");
+        }
+
+        var activationLink = $"{activationUri.AbsoluteUri}#email={Uri.EscapeDataString(toEmail)}&inviteToken={Uri.EscapeDataString(rawInviteToken)}";
         const string subject = "Lời mời tham gia AI Storytelling Platform";
         var html = $"""
-            <p>Chào {toName},</p>
-            <p>{inviterName} mời bạn tham gia AI Storytelling Platform với vai trò <strong>{roleLabel}</strong>.</p>
-            <p>Dùng mã mời bên dưới tại trang kích hoạt tài khoản để đặt mật khẩu, xác nhận cam kết bảo mật dữ liệu trẻ em và quy tắc kiểm duyệt:</p>
-            <p style="font-size:18px;font-weight:bold;word-break:break-all;">{rawInviteToken}</p>
-            <p>Mã chỉ có hiệu lực trong 72 giờ và chỉ dùng được một lần. Nếu bạn không mong đợi email này, vui lòng bỏ qua.</p>
+            <p>Chào {System.Net.WebUtility.HtmlEncode(toName)},</p>
+            <p>{System.Net.WebUtility.HtmlEncode(inviterName)} mời bạn tham gia AI Storytelling Platform với vai trò <strong>{System.Net.WebUtility.HtmlEncode(roleLabel)}</strong>.</p>
+            <p>Nhấn nút bên dưới để đặt mật khẩu và xác nhận cam kết bảo mật dữ liệu trẻ em và quy tắc kiểm duyệt:</p>
+            <p><a href="{System.Net.WebUtility.HtmlEncode(activationLink)}" style="display:inline-block;padding:12px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">Kích hoạt tài khoản</a></p>
+            <p>Liên kết chỉ có hiệu lực trong 72 giờ và chỉ dùng được một lần. Nếu bạn không mong đợi email này, vui lòng bỏ qua.</p>
             """;
 
         return SendAsync(toEmail, subject, html, cancellationToken);

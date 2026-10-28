@@ -1,4 +1,4 @@
--- 13. story_versions (23: 11 Parent versions, 12 Creator versions)
+-- 13. story_versions (24: 12 Parent versions, 12 Creator versions)
 -- Creator Story 11: versions 11 -> 12 (current); Creator Story 12: version 13 (Import/current).
 -- Command receipts and protected preview tokens are created by the API, not fabricated in seed data.
 INSERT INTO story_versions (
@@ -39,6 +39,14 @@ VALUES
     (21, 16, 1, 'Chú mèo biết lắng nghe', 'Mèo Mun ngồi nghe bạn Gà kể chuyện. Mun không ngắt lời và chờ bạn nói xong. Gà rất vui vì có một người bạn biết lắng nghe.', 'Gà muốn kể chuyện', 'Mun chăm chú lắng nghe', 'Gà vui vì được lắng nghe', 'Biết lắng nghe bạn bè', 2.700, 83.000, 98.000, 'Initial', 13, NULL, NULL, true, NOW() - INTERVAL '6 days', false, 1, NULL),
     (22, 17, 1, 'Bạn Rùa đúng hẹn', 'Rùa hẹn Thỏ đến sân chơi lúc chiều. Trời mưa nhỏ nhưng Rùa vẫn mang ô đến đúng giờ. Thỏ cảm ơn Rùa vì đã giữ lời hứa.', 'Rùa hẹn gặp Thỏ', 'Rùa đến đúng giờ dù trời mưa', 'Thỏ cảm ơn Rùa', 'Biết giữ lời hứa', 2.600, 84.000, 98.000, 'Initial', 13, NULL, NULL, true, NOW() - INTERVAL '10 days', false, 1, NULL),
     (23, 18, 1, 'Chiếc lá nhỏ', 'Chiếc lá nhỏ rơi xuống hồ. Kiến bò lên lá để qua bờ bên kia. Kiến cảm ơn chiếc lá đã giúp mình.', 'Chiếc lá rơi xuống hồ', 'Kiến nhờ lá qua bờ', 'Kiến cảm ơn chiếc lá', 'Biết cảm ơn người giúp mình', 2.500, 85.000, 98.000, 'Initial', 13, NULL, NULL, true, NOW() - INTERVAL '1 day', false, 1, NULL)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- Story 19: v1 (Id 24) is the version pinned by Community item 27 (Approved).
+INSERT INTO story_versions (
+    "Id", "StoryId", "VersionNo", "Title", "Content", "OutlineOpening", "OutlineDevelopment", "OutlineEnding", "Lesson", "ReadabilityFkgl", "ReadabilityFre", "SafetyScore", "EditType", "EditorUserId", "OutlineApprovedByUserId", "OutlineApprovedAt", "IsCurrent", "CreatedAt", "IsDeleted", "AudienceRevision", "BaseVersionId"
+)
+VALUES
+    (24, 19, 1, 'Chú voi con tìm bạn', 'Voi con đi dạo ven suối và gặp chú khỉ đang buồn. Voi con dùng vòi múc nước tưới cho cây chuối của khỉ. Từ hôm đó, hai bạn cùng chăm cây và chơi với nhau mỗi ngày.', 'Voi con đi dạo ven suối', 'Voi con giúp khỉ tưới cây chuối', 'Hai bạn cùng chăm cây mỗi ngày', 'Biết giúp đỡ bạn bè', 2.400, 86.000, 98.000, 'Initial', NULL, 3, NOW() - INTERVAL '12 days' + INTERVAL '1 hour', true, NOW() - INTERVAL '12 days', false, 1, NULL)
 ON CONFLICT ("Id") DO NOTHING;
 
 -- Story 11 is intentionally reset to an initial-submission state when demo seed is reapplied.

@@ -1,4 +1,4 @@
--- 56. moderation_items (25): queue examples including the WF-L5A PublicStoryReview chain.
+-- 56. moderation_items (27): queue examples including the WF-L5A PublicStoryReview chain.
 INSERT INTO moderation_items (
     "Id", "ItemType", "Status", "Priority", "StoryId", "StoryVersionId",
     "CreatedByUserId", "SourceChildProfileId", "ClaimedByUserId", "ClaimedAt",
@@ -210,4 +210,26 @@ VALUES
      '{"safety":"Unsafe content for publication"}'::jsonb,
      'Khong cho phep dua noi dung len thu vien', 11, NOW() - INTERVAL '14 days', NULL, NULL,
      2, false, NOW() - INTERVAL '15 days', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- Truyen 6 (AI, be 6) da duoc duyet len thu vien cong dong, danh rieng cho test go cua parent_demo3 (id 4, Owner be 6).
+-- Muc 27: truyen 19 (AI, 6-8, nhan ANIMALS) cua be 11, do parent_demo2 (id 3, Owner be 11) nop, da duyet de be 6-8 tuoi
+-- thay san trong thu vien cong dong. Khong dung cho test go de thu vien luon con du lieu.
+INSERT INTO moderation_items (
+    "Id", "ItemType", "Status", "Priority", "StoryId", "StoryVersionId",
+    "CreatedByUserId", "SourceChildProfileId", "CopyrightDeclaration", "PiiCheckResult",
+    "ClaimedByUserId", "ClaimedAt", "SlaDueAt", "Feedback",
+    "DecidedByUserId", "DecidedAt", "RowVersion", "IsResubmission", "CreatedAt", "IsDeleted"
+)
+VALUES
+    (25, 'CommunitySubmission', 'Approved', 'Medium', 6, 6,
+     4, 6, 'AiGenerated', '{"passed":true}'::jsonb,
+     11, NOW() - INTERVAL '3 days' - INTERVAL '30 minutes', NOW() - INTERVAL '2 days',
+     '{"decision":"approved"}'::jsonb,
+     11, NOW() - INTERVAL '3 days', 2, false, NOW() - INTERVAL '4 days', false),
+    (27, 'CommunitySubmission', 'Approved', 'Medium', 19, 24,
+     3, 11, 'AiGenerated', '{"passed":true}'::jsonb,
+     12, NOW() - INTERVAL '2 days' - INTERVAL '30 minutes', NOW() - INTERVAL '1 day',
+     '{"decision":"approved"}'::jsonb,
+     12, NOW() - INTERVAL '2 days', 2, false, NOW() - INTERVAL '3 days', false)
 ON CONFLICT ("Id") DO NOTHING;

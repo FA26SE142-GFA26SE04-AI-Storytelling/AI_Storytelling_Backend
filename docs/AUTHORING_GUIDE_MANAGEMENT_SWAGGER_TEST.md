@@ -2,7 +2,7 @@
 
 Trạng thái: **chưa chạy trên API thật với PostgreSQL** (xem mục "Kết quả chạy thật" ở cuối). Điều kiện trước khi chạy: migration `AddManagedAuthoringGuides` đã được áp dụng (theo yêu cầu riêng của người dùng), API đã build lại và khởi động; log khởi động có dòng `Authoring guide catalog seeded (parent-vi-1)` hoặc `already present`. Swagger: `http://localhost:5259/` (Docker Compose) hoặc địa chỉ API đang chạy.
 
-Cần: một tài khoản Moderator (ví dụ `moderator1@example.com`), một tài khoản Administrator (`admin@example.com`) và một Parent (`parent1@example.com`). Mật khẩu seed lấy từ người quản trị dữ liệu, không ghi vào tài liệu. Nhân sự có thể phải qua MFA TOTP.
+Cần: một tài khoản Moderator (ví dụ `moderator1@example.com`), một tài khoản Administrator (`admin@example.com`) và một Parent (`parent1@example.com`). Mật khẩu seed lấy từ người quản trị dữ liệu, không ghi vào tài liệu.
 
 Ký hiệu: `R0`, `R1`... là `revisionToken` thực tế bạn nhận được; `V1`, `V2` là `versionId` thực tế. Luôn dùng **giá trị mới nhất vừa nhận**. Các số phiên bản và số mục bên dưới giả định database mới đã seed, chưa có thay đổi. Hủy nháp không đưa lịch sử đã phát hành về trạng thái ban đầu; nếu chạy lại trên database đã dùng thì phải điều chỉnh các giá trị mong đợi theo dữ liệu thực tế.
 
@@ -26,8 +26,8 @@ Thay `{versionId}`, `{guideId}` bằng giá trị thực tế; các bước bên
 
 ## A. Đăng nhập
 
-1. `POST /api/v1/Auth/login` với `{ "identifier": "moderator1@example.com", "password": "<mật khẩu seed>" }`. Nếu `data.mfaSetupRequired` hoặc `data.mfaRequired` là `true`: lấy `data.mfaChallengeToken` (và `data.mfaProvisioningUri` khi thiết lập lần đầu, quét vào ứng dụng TOTP), rồi `POST /api/v1/Auth/mfa/verify` với `{ "challengeToken": "...", "code": "<6 số hiện tại>" }`. Lưu `data.accessToken` thành MOD_TOKEN. Bấm **Authorize** trong Swagger với `Bearer MOD_TOKEN`.
-2. Làm tương tự cho `admin@example.com` → ADMIN_TOKEN, và `POST /api/v1/Auth/login` với `parent1@example.com` → PARENT_TOKEN (Parent không qua MFA).
+1. `POST /api/v1/Auth/login` với `{ "identifier": "moderator1@example.com", "password": "<mật khẩu seed>" }`. Lưu `data.accessToken` thành MOD_TOKEN. Bấm **Authorize** trong Swagger với `Bearer MOD_TOKEN`.
+2. Làm tương tự cho `admin@example.com` → ADMIN_TOKEN, và `POST /api/v1/Auth/login` với `parent1@example.com` → PARENT_TOKEN.
 
 ## B. Phân quyền
 

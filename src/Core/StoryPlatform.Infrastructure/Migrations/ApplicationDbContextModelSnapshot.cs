@@ -4478,12 +4478,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<DateTime?>("LockedUntil")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<bool>("MfaEnabled")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("MfaSecret")
-                        .HasColumnType("text");
-
                     b.Property<DateTime?>("PasswordChangedAt")
                         .HasColumnType("timestamp with time zone");
 

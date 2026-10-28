@@ -34,8 +34,6 @@ public class UserAccount : BaseEntity
 
     public int FailedLoginAttempts { get; set; } = 0;
     public DateTime? LockedUntil { get; set; }
-    public string? MfaSecret { get; set; }
-    public bool MfaEnabled { get; set; } = false;
     public int TokenVersion { get; set; } = 1;
     public UserRole? RoleBeforeAdmin { get; set; }
 

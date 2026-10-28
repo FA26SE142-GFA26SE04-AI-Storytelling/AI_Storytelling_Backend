@@ -1,4 +1,4 @@
--- 12. story_categories (14)
+-- 12. story_categories (15)
 INSERT INTO story_categories ("Id", "StoryId", "ContentCategoryId", "Source", "CreatedAt", "IsDeleted")
 VALUES
     (1, 1, 1, 'Ai', NOW() - INTERVAL '30 days', false),
@@ -14,5 +14,6 @@ VALUES
     (11, 6, 4, 'Moderator', NOW() - INTERVAL '12 days', false),
     (12, 11, 1, 'Moderator', NOW() - INTERVAL '1 day', false),
     (13, 13, 1, 'Moderator', NOW() - INTERVAL '6 days', false),
-    (14, 14, 1, 'Moderator', NOW() - INTERVAL '7 days', false)
+    (14, 14, 1, 'Moderator', NOW() - INTERVAL '7 days', false),
+    (15, 19, 1, 'Ai', NOW() - INTERVAL '12 days', false)
 ON CONFLICT ("Id") DO NOTHING;

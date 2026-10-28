@@ -25,5 +25,6 @@ VALUES
     (20, 15, 'Write', NULL, 'Nội dung mẫu tự sáng tác', 'Có quyền sử dụng nội dung mẫu', NULL, NULL, NULL),
     (21, 16, 'Write', NULL, 'Nội dung mẫu tự sáng tác để kiểm thử', 'Người kiểm thử có quyền sử dụng nội dung mẫu', NULL, NULL, NULL),
     (22, 17, 'Write', NULL, 'Nội dung mẫu tự sáng tác để kiểm thử', 'Người kiểm thử có quyền sử dụng nội dung mẫu', NULL, NULL, NULL),
-    (23, 18, 'Write', NULL, 'Nội dung mẫu tự sáng tác để kiểm thử', 'Người kiểm thử có quyền sử dụng nội dung mẫu', NULL, NULL, NULL)
+    (23, 18, 'Write', NULL, 'Nội dung mẫu tự sáng tác để kiểm thử', 'Người kiểm thử có quyền sử dụng nội dung mẫu', NULL, NULL, NULL),
+    (24, 19, NULL, NULL, '', '', NULL, NULL, NULL)
 ON CONFLICT ("StoryVersionId") DO NOTHING;

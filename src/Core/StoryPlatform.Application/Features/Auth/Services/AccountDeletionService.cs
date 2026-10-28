@@ -252,8 +252,6 @@ public class AccountDeletionService : IAccountDeletionService
         user.PendingEmailOtpHash = null;
         user.PendingEmailOtpExpiresAt = null;
         user.PendingEmailOtpFailedAttempts = 0;
-        user.MfaSecret = null;
-        user.MfaEnabled = false;
         user.TokenVersion += 1;
         user.IsDeleted = true;
         user.UpdatedAt = now;

@@ -29,7 +29,6 @@ public enum NotificationType
     StoryArchivedByModeration = 21,
     CreatorContentFlagged = 22,
     CommunityLibraryReviewed = 23,
-    TotpReset = 24,
     StaffInvite = 25,
     RoadmapStoryAdded = 26,
     RoadmapStoryRemoved = 27,

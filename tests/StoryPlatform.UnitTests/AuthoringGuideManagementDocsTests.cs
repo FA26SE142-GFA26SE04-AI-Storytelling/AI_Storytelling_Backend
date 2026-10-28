@@ -25,7 +25,7 @@ public sealed class AuthoringGuideManagementDocsTests
     private static readonly string[] Terms =
     [
         "revisionToken", "catalogVersion", "sourceVersionId", "discardedCatalogVersion", "itemCount", "parent-vi-1",
-        "Moderator", "Administrator", "mfaChallengeToken", "/api/v1/authoring-guides"
+        "Moderator", "Administrator", "/api/v1/authoring-guides"
     ];
 
     internal static string RepoFile(string relative)

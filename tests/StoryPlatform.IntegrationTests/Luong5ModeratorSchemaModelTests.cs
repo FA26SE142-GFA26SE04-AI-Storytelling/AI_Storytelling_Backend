@@ -48,7 +48,6 @@ public sealed class Luong5ModeratorSchemaModelTests
     [InlineData("StoryArchivedByModeration", 21)]
     [InlineData("CreatorContentFlagged", 22)]
     [InlineData("CommunityLibraryReviewed", 23)]
-    [InlineData("TotpReset", 24)]
     [InlineData("StaffInvite", 25)]
     public void NotificationType_defines_moderator_values(string name, int expected)
     {

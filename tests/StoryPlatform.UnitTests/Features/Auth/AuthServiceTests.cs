@@ -28,7 +28,6 @@ public class AuthServiceTests
     private readonly Mock<IPasswordHasher> _passwordHasherMock = new();
     private readonly Mock<IJwtTokenGenerator> _jwtGeneratorMock = new();
     private readonly Mock<IEmailSender> _emailSenderMock = new();
-    private readonly Mock<ITotpService> _totpServiceMock = new();
     private readonly Mock<IChildSessionRevoker> _childSessionRevokerMock = new();
     private readonly Mock<INotificationService> _notificationServiceMock = new();
     private readonly AuthService _sut;
@@ -55,7 +54,7 @@ public class AuthServiceTests
 
         _sut = new AuthService(
             _unitOfWorkMock.Object, _passwordHasherMock.Object, _jwtGeneratorMock.Object,
-            _emailSenderMock.Object, _totpServiceMock.Object, _childSessionRevokerMock.Object,
+            _emailSenderMock.Object, _childSessionRevokerMock.Object,
             _notificationServiceMock.Object);
     }
 
@@ -106,8 +105,6 @@ public class AuthServiceTests
             Password = "Demo@123"
         });
 
-        Assert.False(result.MfaRequired);
-        Assert.False(result.MfaSetupRequired);
         Assert.Equal("fake-access-token", result.AccessToken);
         Assert.NotNull(issued);
         Assert.Equal(SessionScope.Moderator, issued!.SessionScope);
@@ -1376,27 +1373,21 @@ public class AuthServiceTests
         _unitOfWorkMock.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    // ---------- Administrator MFA (Muc 9) ----------
+    // ---------- Administrator login ----------
 
-    private static UserAccount CreateAdminUser(bool mfaEnabled, string? mfaSecret = null) => new()
+    [Fact]
+    public async Task LoginAsync_Administrator_ReturnsTokensDirectly()
     {
-        Id = 7,
-        Username = "admin_demo",
-        Email = "admin@example.com",
-        PasswordHash = "hashed-password",
-        FullName = "Admin Demo",
-        Role = UserRole.Administrator,
-        Status = AccountStatus.Active,
-        MfaEnabled = mfaEnabled,
-        MfaSecret = mfaSecret
-    };
-
-    [Theory]
-    [InlineData(true, "JBSWY3DPEHPK3PXP")]
-    [InlineData(false, null)]
-    public async Task LoginAsync_Administrator_ReturnsTokensWithoutMfaChallenge(bool mfaEnabled, string? mfaSecret)
-    {
-        var admin = CreateAdminUser(mfaEnabled, mfaSecret);
+        var admin = new UserAccount
+        {
+            Id = 7,
+            Username = "admin_demo",
+            Email = "admin@example.com",
+            PasswordHash = "hashed-password",
+            FullName = "Admin Demo",
+            Role = UserRole.Administrator,
+            Status = AccountStatus.Active
+        };
         _userRepoMock
             .Setup(r => r.FirstOrDefaultAsync(It.IsAny<Expression<Func<UserAccount, bool>>>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(admin);
@@ -1404,62 +1395,7 @@ public class AuthServiceTests
 
         var result = await _sut.LoginAsync(new LoginRequestDto { Identifier = admin.Email, Password = "Demo@123" });
 
-        Assert.False(result.MfaRequired);
-        Assert.False(result.MfaSetupRequired);
-        Assert.Null(result.MfaChallengeToken);
         Assert.Equal("fake-access-token", result.AccessToken);
-        _jwtGeneratorMock.Verify(j => j.GenerateMfaChallengeToken(It.IsAny<int>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task VerifyMfaAsync_InvalidChallengeToken_ThrowsUnauthorized()
-    {
-        _jwtGeneratorMock.Setup(j => j.TryValidateMfaChallengeToken("bad", out It.Ref<int>.IsAny)).Returns(false);
-
-        await Assert.ThrowsAsync<UnauthorizedException>(() => _sut.VerifyMfaAsync(
-            new VerifyMfaRequestDto { ChallengeToken = "bad", Code = "123456" }));
-    }
-
-    private delegate bool TryValidateCallback(string token, out int userId);
-
-    [Fact]
-    public async Task VerifyMfaAsync_WrongCode_ThrowsBadRequest()
-    {
-        var admin = CreateAdminUser(mfaEnabled: true, mfaSecret: "JBSWY3DPEHPK3PXP");
-        _jwtGeneratorMock
-            .Setup(j => j.TryValidateMfaChallengeToken("token", out It.Ref<int>.IsAny))
-            .Returns(new TryValidateCallback((string _, out int userId) =>
-            {
-                userId = admin.Id;
-                return true;
-            }));
-        _userRepoMock.Setup(r => r.GetByIdAsync(admin.Id, It.IsAny<CancellationToken>())).ReturnsAsync(admin);
-        _totpServiceMock.Setup(t => t.VerifyCode(admin.MfaSecret!, "000000")).Returns(false);
-
-        await Assert.ThrowsAsync<BadRequestException>(() => _sut.VerifyMfaAsync(
-            new VerifyMfaRequestDto { ChallengeToken = "token", Code = "000000" }));
-    }
-
-    [Fact]
-    public async Task VerifyMfaAsync_ValidCodeFirstTimeSetup_EnablesMfaAndReturnsTokens()
-    {
-        var admin = CreateAdminUser(mfaEnabled: false, mfaSecret: "NEWSECRET234567");
-        _jwtGeneratorMock
-            .Setup(j => j.TryValidateMfaChallengeToken("token", out It.Ref<int>.IsAny))
-            .Returns(new TryValidateCallback((string _, out int userId) =>
-            {
-                userId = admin.Id;
-                return true;
-            }));
-        _userRepoMock.Setup(r => r.GetByIdAsync(admin.Id, It.IsAny<CancellationToken>())).ReturnsAsync(admin);
-        _totpServiceMock.Setup(t => t.VerifyCode(admin.MfaSecret!, "654321")).Returns(true);
-
-        var result = await _sut.VerifyMfaAsync(new VerifyMfaRequestDto { ChallengeToken = "token", Code = "654321" });
-
-        Assert.True(admin.MfaEnabled);
-        Assert.Equal("fake-access-token", result.AccessToken);
-        Assert.False(result.MfaRequired);
-        Assert.False(result.MfaSetupRequired);
     }
 
     [Fact]

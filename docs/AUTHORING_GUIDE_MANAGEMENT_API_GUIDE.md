@@ -10,7 +10,7 @@ Quyền: vai trò `Moderator` hoặc `Administrator`, tài khoản đang hoạt 
 
 ## 2. Đăng nhập
 
-`POST /api/v1/Auth/login` với `identifier` và `password`. Tài khoản nhân sự có thể nhận `mfaRequired` hoặc `mfaSetupRequired` kèm `mfaChallengeToken` (lần đầu còn có `mfaProvisioningUri` để quét vào ứng dụng TOTP), sau đó `POST /api/v1/Auth/mfa/verify` với `challengeToken` và `code` mới trả `accessToken`. Gửi `Authorization: Bearer <accessToken>` cho mọi API bên dưới.
+`POST /api/v1/Auth/login` với `identifier` và `password`, nhận `accessToken`. Gửi `Authorization: Bearer <accessToken>` cho mọi API bên dưới.
 
 ## 3. Khái niệm
 

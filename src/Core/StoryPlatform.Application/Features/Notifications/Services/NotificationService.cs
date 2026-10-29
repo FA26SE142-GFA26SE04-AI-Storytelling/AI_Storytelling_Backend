@@ -22,6 +22,14 @@ public class NotificationService : INotificationService
     public async Task<NotificationDto> CreateAsync(
         int recipientUserId, NotificationType type, string? payload, CancellationToken cancellationToken = default)
     {
+        var dto = await CreateStoredAsync(recipientUserId, type, payload, cancellationToken);
+        await _publisher.PublishAsync(recipientUserId, dto, cancellationToken);
+        return dto;
+    }
+
+    public async Task<NotificationDto> CreateStoredAsync(
+        int recipientUserId, NotificationType type, string? payload, CancellationToken cancellationToken = default)
+    {
         var notification = new Notification
         {
             RecipientUserId = recipientUserId,
@@ -34,9 +42,7 @@ public class NotificationService : INotificationService
         await _unitOfWork.Repository<Notification>().AddAsync(notification, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        var dto = MapNotification(notification);
-        await _publisher.PublishAsync(recipientUserId, dto, cancellationToken);
-        return dto;
+        return MapNotification(notification);
     }
 
     public Task<List<NotificationDto>> ListAsync(

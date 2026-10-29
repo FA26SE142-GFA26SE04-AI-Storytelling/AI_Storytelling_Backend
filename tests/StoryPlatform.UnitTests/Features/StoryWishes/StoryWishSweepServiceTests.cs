@@ -11,6 +11,38 @@ namespace StoryPlatform.UnitTests.Features.StoryWishes;
 
 public class StoryWishSweepServiceTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Prepared_notifications_are_published_only_after_successful_commit(bool failCommit)
+    {
+        var wish = Wish(StoryWishStatus.Pending, pendingDaysAgo: 6.2);
+        var prepared = new PreparedStoryWishNotification(7, new() { Id = 55 });
+        _notifier.Setup(x => x.PrepareExpiringAsync(wish, It.IsAny<CancellationToken>())).ReturnsAsync(new[] { prepared });
+        var committed = false;
+        _h.UnitOfWork.Setup(x => x.CommitTransactionAsync(It.IsAny<CancellationToken>()))
+            .Returns((CancellationToken _) =>
+            {
+                if (failCommit) throw new InvalidOperationException("simulated commit failure");
+                committed = true;
+                return Task.CompletedTask;
+            });
+        _notifier.Setup(x => x.PublishPreparedAsync(It.IsAny<IReadOnlyList<PreparedStoryWishNotification>>(), It.IsAny<CancellationToken>()))
+            .Callback((IReadOnlyList<PreparedStoryWishNotification> rows, CancellationToken _) =>
+            { Assert.True(committed); Assert.Equal(prepared, Assert.Single(rows)); });
+        if (failCommit)
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.SweepAsync());
+            _notifier.Verify(x => x.PublishPreparedAsync(It.IsAny<IReadOnlyList<PreparedStoryWishNotification>>(), It.IsAny<CancellationToken>()), Times.Never);
+            _h.UnitOfWork.Verify(x => x.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+        }
+        else
+        {
+            Assert.Equal(1, (await _sut.SweepAsync()).Warned);
+            Assert.Equal(0, (await _sut.SweepAsync()).Warned);
+            _notifier.Verify(x => x.PublishPreparedAsync(It.IsAny<IReadOnlyList<PreparedStoryWishNotification>>(), It.IsAny<CancellationToken>()), Times.Once);
+        }
+    }
     private static readonly DateTimeOffset Now = new(2026, 10, 23, 3, 0, 0, TimeSpan.Zero);
 
     private readonly ReadingHarness _h = new();
@@ -20,10 +52,26 @@ public class StoryWishSweepServiceTests
 
     public StoryWishSweepServiceTests()
     {
+        _notifier.Setup(x => x.PrepareExpiringAsync(It.IsAny<StoryWish>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<PreparedStoryWishNotification>());
         _sut = new StoryWishSweepService(_h.UnitOfWork.Object, _notifier.Object, _clock);
     }
 
     private DateTime UtcNow => _clock.GetUtcNow().UtcDateTime;
+
+    [Fact]
+    public async Task Sweep_RereadsWishAfterLock_DoesNotExpireAcceptedGeneration()
+    {
+        var wish = Wish(StoryWishStatus.Pending, pendingDaysAgo: 8);
+        var story = NewStory(500, StoryStatus.Draft);
+        _h.UnitOfWork.Setup(x => x.AcquireTransactionLockAsync(-ReadingHarness.Child, It.IsAny<CancellationToken>()))
+            .Callback(() => { wish.Status = StoryWishStatus.Accepted; wish.GeneratedStoryId = story.Id; })
+            .Returns(Task.CompletedTask);
+        var result = await _sut.SweepAsync();
+        Assert.Equal(0, result.Expired);
+        Assert.Equal(StoryWishStatus.Accepted, wish.Status);
+        Assert.Equal(500, wish.GeneratedStoryId);
+    }
 
     private StoryWish Wish(StoryWishStatus status, double pendingDaysAgo = 1, int childId = ReadingHarness.Child)
     {
@@ -72,7 +120,7 @@ public class StoryWishSweepServiceTests
 
         Assert.Equal(1, first.Warned);
         Assert.Equal(0, second.Warned);
-        _notifier.Verify(n => n.NotifyExpiringAsync(wish, It.IsAny<CancellationToken>()), Times.Once);
+        _notifier.Verify(n => n.PrepareExpiringAsync(wish, It.IsAny<CancellationToken>()), Times.Once);
         Assert.Equal(StoryWishStatus.Pending, wish.Status);
         Assert.Equal(UtcNow, wish.ExpiryWarnedAt);
     }

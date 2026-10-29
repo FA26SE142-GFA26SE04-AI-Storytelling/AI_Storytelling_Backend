@@ -21,12 +21,47 @@ public class StoryWishSweepService : IStoryWishSweepService
 
     public async Task<StoryWishSweepResult> SweepAsync(CancellationToken ct = default)
     {
+        var candidates = await _unitOfWork.Repository<StoryWish>().FindAsync(
+            x => !x.IsDeleted && (x.Status == StoryWishStatus.Draft || x.Status == StoryWishStatus.Pending || x.Status == StoryWishStatus.Accepted),
+            cancellationToken: ct);
+        var totals = new int[6];
+        foreach (var childId in candidates.Select(x => x.ChildProfileId).Distinct().OrderBy(x => x))
+        {
+            var prepared = new List<PreparedStoryWishNotification>();
+            await _unitOfWork.BeginTransactionAsync(ct);
+            try
+            {
+                // Match submission, generation and Parent decision locks; discard the pre-lock status snapshot.
+                await _unitOfWork.AcquireTransactionLockAsync(-childId, ct);
+                var result = await SweepChildAsync(childId, prepared, ct);
+                await _unitOfWork.CommitTransactionAsync(ct);
+                totals[0] += result.DraftsDeleted;
+                totals[1] += result.Cancelled;
+                totals[2] += result.Warned;
+                totals[3] += result.Expired;
+                totals[4] += result.Fulfilled;
+                totals[5] += result.Declined;
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                _unitOfWork.DiscardTrackedChanges();
+                throw;
+            }
+            // The transaction and its rollback handler have ended before any external delivery.
+            if (prepared.Count > 0) await _notifier.PublishPreparedAsync(prepared, ct);
+        }
+        return new StoryWishSweepResult(totals[0], totals[1], totals[2], totals[3], totals[4], totals[5]);
+    }
+
+    private async Task<StoryWishSweepResult> SweepChildAsync(int childId, List<PreparedStoryWishNotification> prepared, CancellationToken ct)
+    {
         var now = _clock.GetUtcNow().UtcDateTime;
         var repository = _unitOfWork.Repository<StoryWish>();
         int draftsDeleted = 0, cancelled = 0, warned = 0, expired = 0, fulfilled = 0, declined = 0;
 
         var live = (await repository.FindAsync(
-                wish => !wish.IsDeleted
+                wish => wish.ChildProfileId == childId && !wish.IsDeleted
                         && (wish.Status == StoryWishStatus.Draft
                             || wish.Status == StoryWishStatus.Pending
                             || wish.Status == StoryWishStatus.Accepted),
@@ -76,7 +111,7 @@ public class StoryWishSweepService : IStoryWishSweepService
             }
             else if (now - since >= StoryWishDecisionPolicy.ExpiryWarningAfter && wish.ExpiryWarnedAt == null)
             {
-                await _notifier.NotifyExpiringAsync(wish, ct);
+                prepared.AddRange(await _notifier.PrepareExpiringAsync(wish, ct));
                 wish.ExpiryWarnedAt = now;
                 wish.UpdatedAt = now;
                 repository.Update(wish);

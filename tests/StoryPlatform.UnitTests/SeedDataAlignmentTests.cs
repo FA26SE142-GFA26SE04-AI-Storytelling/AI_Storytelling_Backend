@@ -15,6 +15,26 @@ namespace StoryPlatform.UnitTests;
 public sealed class SeedDataAlignmentTests
 {
     [Fact]
+    public void SeedWishGeneration_HasFreshParentEntryPoints_WithoutFabricatedAiRequests()
+    {
+        var inserts = ReadInserts();
+        var cards = Rows(inserts, "wish_cards").ToDictionary(x => x["Id"]);
+        var wishes = Rows(inserts, "story_wishes");
+        foreach (var id in new[] { "4", "5" })
+        {
+            var wish = Assert.Single(wishes, x => x["Id"] == id);
+            Assert.Equal("Pending", StringLiteral(wish["Status"]));
+            Assert.Equal("Wish", StringLiteral(wish["Kind"]));
+            Assert.Equal("NULL", wish["FulfilledStoryId"]);
+            Assert.Equal("Character", StringLiteral(cards[wish["CharacterCardId"]]["Group"]));
+            Assert.Equal("Place", StringLiteral(cards[wish["PlaceCardId"]]["Group"]));
+            Assert.Equal("Challenge", StringLiteral(cards[wish["ChallengeCardId"]]["Group"]));
+        }
+        Assert.Equal("Biết lắng nghe", StringLiteral(cards["25"]["Label"]));
+        Assert.Equal("Mèo Mun", StringLiteral(cards["26"]["Label"]));
+    }
+
+    [Fact]
     public void SeedExplicitIds_AreUniqueAcrossAllInsertsForEachTable()
     {
         // ON CONFLICT DO NOTHING must not silently discard another feature's fixture.

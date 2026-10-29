@@ -5,7 +5,7 @@ using StoryPlatform.Application.Features.CreatorAssistance;
 using StoryPlatform.Application.Features.CreatorAssistance.DTOs;
 using StoryPlatform.Application.Features.CreatorAssistance.Services;
 using StoryPlatform.Application.Features.ParentAuthoring;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Services;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -20,7 +20,7 @@ public sealed partial class StoryReviewService
         if (references.Length > 20 || references.Any(r => r is null) || references.Distinct().Count() != references.Length)
             throw new AssistanceException("INVALID_ASSISTANCE_REFERENCES", 400);
         IAssistanceAccessPolicy policy = story.Scope == StoryScope.Parent
-            ? new ParentAssistanceAccessPolicy(_unitOfWork, new SupervisionAccessGuard(_unitOfWork))
+            ? new ParentAssistanceAccessPolicy(_unitOfWork, new ChildProfileAccessGuard(_unitOfWork))
             : new CreatorAssistanceAccessPolicy(_unitOfWork);
         await policy.AuthorizeAsync(user, story, ct);
         await policy.EnsureWritableAsync(story, ct);

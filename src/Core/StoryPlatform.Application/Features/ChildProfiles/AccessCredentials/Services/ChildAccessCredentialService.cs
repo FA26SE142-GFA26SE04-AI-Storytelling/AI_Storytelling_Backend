@@ -7,7 +7,7 @@ using StoryPlatform.Application.Common.Security;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Interfaces;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -28,14 +28,14 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
         "Bạn chưa vào đọc truyện được lúc này. Hãy nhờ bố mẹ hoặc thầy cô giúp nhé!";
 
     private readonly IUnitOfWork _unitOfWork;
-    private readonly ISupervisionAccessGuard _accessGuard;
+    private readonly IChildProfileAccessGuard _accessGuard;
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
     private readonly IClientAttemptLimiter _attemptLimiter;
     private readonly IAuditLogWriter _auditLogWriter;
 
     public ChildAccessCredentialService(
         IUnitOfWork unitOfWork,
-        ISupervisionAccessGuard accessGuard,
+        IChildProfileAccessGuard accessGuard,
         IJwtTokenGenerator jwtTokenGenerator,
         IClientAttemptLimiter attemptLimiter,
         IAuditLogWriter auditLogWriter)
@@ -50,7 +50,7 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
     public async Task<ChildAccessCredentialDto> GetCredentialAsync(
         int childProfileId, int currentUserId, CancellationToken cancellationToken = default)
     {
-        await _accessGuard.EnsureActiveSupervisionAsync(childProfileId, currentUserId, cancellationToken);
+        await _accessGuard.EnsureOwnerAsync(childProfileId, currentUserId, cancellationToken);
 
         var credential = await FindActiveCredentialAsync(childProfileId, cancellationToken);
 
@@ -67,8 +67,8 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
         int childProfileId, int currentUserId, CancellationToken cancellationToken = default)
     {
         // BR-1.11: Owner hoặc Additional Supervisor có manage_safety_settings (Owner luôn qua).
-        await _accessGuard.EnsurePermissionAsync(
-            childProfileId, currentUserId, Permission.ManageSafetySettings, cancellationToken);
+        await _accessGuard.EnsureOwnerAsync(
+            childProfileId, currentUserId, cancellationToken);
 
         var credentialRepo = _unitOfWork.Repository<ChildAccessCredential>();
         var secret = GenerateSecret();
@@ -130,8 +130,8 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
     public async Task RevokeCredentialAsync(
         int childProfileId, int currentUserId, CancellationToken cancellationToken = default)
     {
-        await _accessGuard.EnsurePermissionAsync(
-            childProfileId, currentUserId, Permission.ManageSafetySettings, cancellationToken);
+        await _accessGuard.EnsureOwnerAsync(
+            childProfileId, currentUserId, cancellationToken);
 
         var credentialRepo = _unitOfWork.Repository<ChildAccessCredential>();
         var credential = await FindActiveCredentialAsync(childProfileId, cancellationToken);
@@ -193,7 +193,7 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
         int childProfileId, int currentUserId, string supervisorRefreshToken,
         CancellationToken cancellationToken = default)
     {
-        await _accessGuard.EnsureActiveSupervisionAsync(childProfileId, currentUserId, cancellationToken);
+        await _accessGuard.EnsureOwnerAsync(childProfileId, currentUserId, cancellationToken);
         var supervisorSession = await ResolveSupervisorSessionAsync(
             currentUserId, supervisorRefreshToken, cancellationToken);
         await EnsureChildCanEnterAsync(childProfileId, cancellationToken);

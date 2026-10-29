@@ -251,7 +251,7 @@ public partial class RoadmapLibraryService
     {
         try
         {
-            await _guard.EnsurePermissionAsync(childId, actorUserId, Permission.AssignActivity, cancellationToken);
+            await _guard.EnsureOwnerAsync(childId, actorUserId, cancellationToken);
             return true;
         }
         catch (ForbiddenException)

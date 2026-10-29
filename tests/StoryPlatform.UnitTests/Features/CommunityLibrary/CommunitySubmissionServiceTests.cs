@@ -1,6 +1,6 @@
 using Moq;
 using StoryPlatform.Application.Common.Exceptions;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Services;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Services;
 using StoryPlatform.Application.Features.CommunityLibrary;
 using StoryPlatform.Application.Features.CommunityLibrary.Services;
 using StoryPlatform.Application.Features.Moderation.Services;
@@ -26,7 +26,7 @@ public class CommunitySubmissionServiceTests
     {
         _sut = new CommunitySubmissionService(
             _h.UnitOfWork.Object,
-            new SupervisionAccessGuard(_h.UnitOfWork.Object),
+            new ChildProfileAccessGuard(_h.UnitOfWork.Object),
             new ModerationQueueService(_h.UnitOfWork.Object, _h.Audit.Object),
             _h.Audit.Object);
     }
@@ -67,17 +67,8 @@ public class CommunitySubmissionServiceTests
     // ---- Task 2: quyền ----
 
     [Fact]
-    public async Task CheckAsync_SupervisorWithApproveStory_IsAllowed()
+    public async Task CheckAsync_NonOwner_IsForbidden()
     {
-        _h.AddSupervisor(Child, Second, SupervisorRole.AdditionalSupervisor, Permission.ApproveStory);
-
-        Assert.True((await _sut.CheckAsync(Second, Request())).CanSubmit);
-    }
-
-    [Fact]
-    public async Task CheckAsync_SupervisorWithoutApproveStory_IsForbidden()
-    {
-        _h.AddSupervisor(Child, Second, SupervisorRole.AdditionalSupervisor, Permission.ViewProgress);
 
         await Assert.ThrowsAsync<ForbiddenException>(() => _sut.CheckAsync(Second, Request()));
     }
@@ -85,7 +76,7 @@ public class CommunitySubmissionServiceTests
     [Fact]
     public async Task CheckAsync_NotASupervisorOfTheSourceChild_IsForbidden()
     {
-        _h.AddUser(30, "parent_stranger", UserRole.Parent);
+        _h.AddUser(30, "parent_stranger", UserRole.User);
 
         await Assert.ThrowsAsync<ForbiddenException>(() => _sut.CheckAsync(30, Request()));
     }
@@ -473,9 +464,8 @@ public class CommunitySubmissionServiceTests
     }
 
     [Fact]
-    public async Task SubmitAsync_WithoutApproveStory_IsForbidden()
+    public async Task SubmitAsync_NonOwner_IsForbidden()
     {
-        _h.AddSupervisor(Child, Second, SupervisorRole.AdditionalSupervisor, Permission.ViewProgress);
 
         await Assert.ThrowsAsync<ForbiddenException>(() => _sut.SubmitAsync(Second, Request()));
     }

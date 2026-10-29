@@ -113,7 +113,7 @@ public sealed class CreatorAuthoringServiceTests
         Assert.Equal(StoryScope.Creator, story.Scope);
         Assert.Equal(StorySource.Manual, story.Source);
         Assert.Empty(store.Items<StoryGenerationJob>());
-        Assert.Equal(UserRole.Parent, store.Items<UserAccount>().Single(x => x.Id == 1).Role);
+        Assert.Equal(UserRole.User, store.Items<UserAccount>().Single(x => x.Id == 1).Role);
     }
 
     [Fact]

@@ -1,6 +1,6 @@
 using Moq;
 using StoryPlatform.Application.Common.Exceptions;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ReadingSessions;
 using StoryPlatform.Application.Features.ReadingSessions.Services;
 using StoryPlatform.Domain.Entities;
@@ -14,7 +14,7 @@ public class ParentReadingFeedbackServiceTests
     private const int Parent = 7;
 
     private readonly ReadingHarness _h = new();
-    private readonly Mock<ISupervisionAccessGuard> _guard = new();
+    private readonly Mock<IChildProfileAccessGuard> _guard = new();
     private readonly ParentReadingFeedbackService _sut;
 
     public ParentReadingFeedbackServiceTests()
@@ -56,16 +56,16 @@ public class ParentReadingFeedbackServiceTests
     {
         await List();
 
-        _guard.Verify(g => g.EnsurePermissionAsync(
-            ReadingHarness.Child, Parent, Permission.ViewProgress, It.IsAny<CancellationToken>()), Times.Once);
+        _guard.Verify(g => g.EnsureOwnerAsync(
+            ReadingHarness.Child, Parent, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
     public async Task ListAsync_WithoutPermission_IsForbiddenAndReadsNothing()
     {
         Done(DateTime.UtcNow, StoryFeeling.Like);
-        _guard.Setup(g => g.EnsurePermissionAsync(
-                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Permission>(), It.IsAny<CancellationToken>()))
+        _guard.Setup(g => g.EnsureOwnerAsync(
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ForbiddenException("không đủ quyền"));
 
         await Assert.ThrowsAsync<ForbiddenException>(() => List());

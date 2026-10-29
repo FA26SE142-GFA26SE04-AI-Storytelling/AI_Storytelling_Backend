@@ -55,7 +55,7 @@ public sealed class ModerationRubricTests
             Db.Database.EnsureCreated();
             Db.Users.AddRange(new UserAccount { Id = 1, Role = UserRole.Administrator, Status = AccountStatus.Active },
                 new UserAccount { Id = 2, Role = UserRole.Moderator, Status = AccountStatus.Active },
-                new UserAccount { Id = 3, Role = UserRole.Parent, Status = AccountStatus.Active });
+                new UserAccount { Id = 3, Role = UserRole.User, Status = AccountStatus.Active });
             Db.SaveChanges(); Db.ChangeTracker.Clear();
             _repositories = new(Db);
             Uow.Setup(x => x.Repository<UserAccount>()).Returns(_repositories.Repository<UserAccount>());
@@ -236,7 +236,7 @@ public sealed class ModerationRubricTests
         var root = new DirectoryInfo(AppContext.BaseDirectory);
         while (root is not null && !File.Exists(Path.Combine(root.FullName, "StoryPlatform.sln"))) root = root.Parent;
         Assert.NotNull(root);
-        var sql = File.ReadAllText(Path.Combine(root.FullName, "Database/Seed/62_moderation_rubric_versions.sql"));
+        var sql = File.ReadAllText(Path.Combine(root.FullName, "Database/Seed/54_moderation_rubric_versions.sql"));
         var match = Regex.Match(sql, "'(?<definition>\\{.*\\})', '(?<hash>[A-F0-9]{64})', 'Draft'");
         Assert.True(match.Success);
         var definition = JsonSerializer.Deserialize<RubricDefinition>(match.Groups["definition"].Value.Replace("''", "'"), RubricRules.Json)!;

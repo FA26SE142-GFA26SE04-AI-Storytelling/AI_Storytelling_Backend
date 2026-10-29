@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using StoryPlatform.Application.Features.CreatorAssistance;
 using StoryPlatform.Application.Features.CreatorAssistance.Services;
 using StoryPlatform.Application.Features.CreatorAssistance.Interfaces;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Services;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Services;
 using StoryPlatform.Contracts.AI.CreatorAssistance;
 using System.Net;
 using System.Net.Http.Headers;
@@ -214,7 +214,7 @@ public sealed class ParentManualApiFlowTests
             checklist = new { intendedMeaning = true, suitableForChild = true, privacyChecked = true, endingChecked = true }
         }, host.Parent, HttpStatusCode.Conflict);
         var otherDraft = await host.CreateAsync("create-other-child", 4);
-        host.Store.Items<SupervisionRelationship>().Single(x => x.ChildProfileId == 3).RevokedAt = DateTime.UtcNow;
+        host.Store.Items<ChildProfile>().Single(x => x.Id == 3).OwnerUserId = 99;
         var list = await host.SendAsync(HttpMethod.Get, "/api/v1/parent/stories?pageIndex=1&pageSize=1", null, host.Parent, HttpStatusCode.OK);
         Assert.Equal(1, list.GetProperty("totalCount").GetInt32());
         Assert.Equal(otherDraft.GetProperty("story").GetProperty("storyId").GetInt32(), list.GetProperty("items")[0].GetProperty("storyId").GetInt32());
@@ -351,7 +351,6 @@ public sealed class ParentManualApiFlowTests
             store.Items<UserAccount>().Add(new() { Id = 13, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
             store.Items<UserAccount>().Add(new() { Id = 14, Role = UserRole.Moderator, Status = AccountStatus.Active });
             store.Items<ChildProfile>().Add(new() { Id = 4, OwnerUserId = 1, Language = "vi", AgeBand = AgeBand.Age_6_8, Status = ChildProfileStatus.Active });
-            store.Items<SupervisionRelationship>().Add(new() { Id = 2, ChildProfileId = 4, SupervisorUserId = 1, SupervisorRole = SupervisorRole.Owner });
             store.Items<SafetyPolicy>().Add(new() { Id = 2, ChildProfileId = 4, MaxStoryLength = 5000 });
             store.Items<ChildSession>().AddRange([
                 new() { Id = 1, ChildProfileId = 3, SessionKey = "http-child-3", LastActivityAt = DateTime.UtcNow },
@@ -396,7 +395,7 @@ public sealed class ParentManualApiFlowTests
                     r.EntryPoint == "ReviewDraft" ? new AssistanceAiResult { ResultType = "ReviewFindings", ChecksPerformed = ["Continuity"] } :
                     new AssistanceAiResult { ResultType = "Options", Options = [new("a", "Hợp tác", "Mi cùng mẹ sửa hộp."), new("b", "Kiên trì", "Mi thử cách mới.")] }));
             builder.Services.AddSingleton(new ParentAssistanceService(store.Uow.Object, ai.Object, new(), TimeProvider.System,
-                new SupervisionAccessGuard(store.Uow.Object), new(), NullLogger<ParentAssistanceService>.Instance));
+                new ChildProfileAccessGuard(store.Uow.Object), new(), NullLogger<ParentAssistanceService>.Instance));
             builder.Services.AddSingleton<ICreatorAssistanceService>(new CreatorAssistanceService(store.Uow.Object, ai.Object, new(), TimeProvider.System));
             builder.Services.AddSingleton(new AuthoringGuideService(store.Uow.Object));
             builder.Services.AddSingleton<StoryPlatform.Application.Features.AuthoringGuideManagement.Interfaces.IAuthoringGuideManagementService>(

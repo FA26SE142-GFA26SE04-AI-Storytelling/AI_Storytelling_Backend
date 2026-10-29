@@ -30,7 +30,7 @@ public class AuthAuthorizationTests
     {
         var generator = new JwtTokenGenerator(BuildValidJwtConfiguration());
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(generator.GenerateAccessToken(
-            new UserAccount { Id = 1, TokenVersion = 7, Role = UserRole.Parent }));
+            new UserAccount { Id = 1, TokenVersion = 7, Role = UserRole.User }));
 
         Assert.Equal("7", jwt.Claims.Single(c => c.Type == "token_version").Value);
     }
@@ -63,20 +63,20 @@ public class AuthAuthorizationTests
         string userId, string? version, AccountStatus status, bool deleted, bool accepted)
     {
         var user = new UserAccount { Id = 1, TokenVersion = 2, Status = status, IsDeleted = deleted };
-        await AssertValidationAsync(user, userId, version, UserRole.Parent, accepted);
+        await AssertValidationAsync(user, userId, version, UserRole.User, accepted);
     }
 
     [Fact]
     public async Task TokenValidation_MissingUser_RejectsToken()
     {
-        await AssertValidationAsync(null, "1", "2", UserRole.Parent, false);
+        await AssertValidationAsync(null, "1", "2", UserRole.User, false);
     }
 
     [Fact]
     public async Task TokenValidation_RoleChanged_RejectsOldRoleClaim()
     {
         var user = new UserAccount { Id = 1, TokenVersion = 2, Status = AccountStatus.Active, Role = UserRole.Administrator };
-        await AssertValidationAsync(user, "1", "2", UserRole.Parent, false);
+        await AssertValidationAsync(user, "1", "2", UserRole.User, false);
     }
 
     [Theory]
@@ -295,7 +295,7 @@ public class AuthAuthorizationTests
     }
 
     [Theory]
-    [InlineData(UserRole.Parent, true)]
+    [InlineData(UserRole.User, true)]
     [InlineData(UserRole.Administrator, false)]
     public async Task GuardianRoutes_AllowOnlyParentRole(UserRole role, bool expected)
     {

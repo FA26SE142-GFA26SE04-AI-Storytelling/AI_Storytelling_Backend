@@ -1,14 +1,14 @@
 using System.Linq.Expressions;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ManualAuthoring.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.ParentAuthoring;
 
-public sealed class ParentManualAuthoringPolicy(IUnitOfWork uow, ISupervisionAccessGuard guard) : IManualAuthoringPolicy
+public sealed class ParentManualAuthoringPolicy(IUnitOfWork uow, IChildProfileAccessGuard guard) : IManualAuthoringPolicy
 {
     public StoryScope Scope => StoryScope.Parent;
     public static readonly string[] Purposes = ["free", "family_memory", "understanding", "message"];
@@ -16,25 +16,19 @@ public sealed class ParentManualAuthoringPolicy(IUnitOfWork uow, ISupervisionAcc
     public Expression<Func<Story, bool>> VisibleStories(int userId)
     {
         var children = uow.Repository<ChildProfile>().Query();
-        var relationships = uow.Repository<SupervisionRelationship>().Query();
         var requests = uow.Repository<StoryGenerationRequest>().Query();
-        var permissions = uow.Repository<SupervisionPermission>().Query();
         // Keep authorization inside the database predicate, before COUNT and pagination.
         return story => story.Scope == StoryScope.Parent && story.Source == StorySource.Manual &&
             story.CreateOperationId != null && story.CreateOperationId != "" &&
             !requests.Any(request => request.StoryId == story.Id) && story.AuthorUserId == userId && !story.IsDeleted &&
-            children.Any(child => child.Id == story.ChildProfileId && !child.IsDeleted && child.Status == ChildProfileStatus.Active) &&
-            relationships.Any(relationship => relationship.ChildProfileId == story.ChildProfileId &&
-                relationship.SupervisorUserId == userId && !relationship.IsDeleted && relationship.RevokedAt == null &&
-                (relationship.SupervisorRole == SupervisorRole.Owner ||
-                 permissions.Any(permission => permission.SupervisionRelationshipId == relationship.Id &&
-                     !permission.IsDeleted && permission.Permission == Permission.GenerateStory)));
+            children.Any(child => child.Id == story.ChildProfileId && !child.IsDeleted &&
+                child.Status == ChildProfileStatus.Active && child.OwnerUserId == userId);
     }
 
     public async Task<ChildProfile> RequireChildAsync(int user, int childId, CancellationToken ct)
     {
         if (childId <= 0) throw new BadRequestException("CHILD_REQUIRED");
-        await guard.EnsurePermissionAsync(childId, user, Permission.GenerateStory, ct);
+        await guard.EnsureOwnerAsync(childId, user, ct);
         var child = await uow.Repository<ChildProfile>().FirstOrDefaultAsync(x => x.Id == childId, cancellationToken: ct)
             ?? throw new NotFoundException("ChildProfile", childId);
         if (child.IsDeleted || child.Status != ChildProfileStatus.Active) throw new ConflictException("CHILD_NOT_ACTIVE");

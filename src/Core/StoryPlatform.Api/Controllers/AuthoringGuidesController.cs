@@ -6,7 +6,7 @@ using StoryPlatform.Application.Features.ParentAuthoring;
 namespace StoryPlatform.Api.Controllers;
 
 [ApiController]
-[Authorize(Roles = "Parent")]
+[Authorize(Roles = "User")]
 [Route("api/v1/authoring-guides")]
 public sealed class AuthoringGuidesController(AuthoringGuideService service) : ControllerBase
 {

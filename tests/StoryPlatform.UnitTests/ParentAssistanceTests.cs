@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using StoryPlatform.Application.Common.Exceptions;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Services;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Services;
 using StoryPlatform.Application.Features.CreatorAssistance;
 using StoryPlatform.Application.Features.CreatorAssistance.DTOs;
 using StoryPlatform.Application.Features.CreatorAssistance.Interfaces;
@@ -89,7 +89,7 @@ public sealed class ParentAssistanceTests
             ai.Setup(x => x.GenerateAsync(It.IsAny<AssistanceAiRequest>(), It.IsAny<CancellationToken>()))
                 .Returns<AssistanceAiRequest, CancellationToken>((r, ct) => { Calls++; Input = r; return Generate(r, ct); });
             Service = new(Store.Uow.Object, ai.Object, new() { TimeoutSeconds = timeout }, TimeProvider.System,
-                new SupervisionAccessGuard(Store.Uow.Object), new(), NullLogger<ParentAssistanceService>.Instance);
+                new ChildProfileAccessGuard(Store.Uow.Object), new(), NullLogger<ParentAssistanceService>.Instance);
         }
         public static AssistanceAiResult Options() => new() { ResultType = "Options", Options = [new("a", "Hợp tác", "Mi và mẹ cùng sửa hộp."), new("b", "Kiên trì", "Mi thử thêm cách mới.")] };
         public async Task<(CreatorDraftDto Draft, CreateAssistanceTaskRequest Request)> Draft(string entry = "ContinueWriting")
@@ -242,9 +242,9 @@ public sealed class ParentAssistanceTests
         // FindAsync/GetById can return EF's cached tracked values for the life of the request.
         // Policy revalidation must query fresh rows after the provider wait instead.
         Mock.Get(f.Store.Uow.Object.Repository<ChildProfile>()).Setup(x => x.GetByIdAsync(3, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ChildProfile { Id = 3, Status = ChildProfileStatus.Active, Language = "vi", AgeBand = AgeBand.Age_6_8 });
+            .ReturnsAsync(new ChildProfile { Id = 3, OwnerUserId = 1, Status = ChildProfileStatus.Active, Language = "vi", AgeBand = AgeBand.Age_6_8 });
         Mock.Get(f.Store.Uow.Object.Repository<UserAccount>()).Setup(x => x.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new UserAccount { Id = 1, Status = AccountStatus.Active });
+            .ReturnsAsync(new UserAccount { Id = 1, Role = UserRole.User, Status = AccountStatus.Active });
         var task = await f.Service.CreateAsync(1, draft.StoryId, request);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var result = new TaskCompletionSource<AssistanceAiResult>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -255,7 +255,12 @@ public sealed class ParentAssistanceTests
         {
             case "policy": f.Store.Items<SafetyPolicy>()[0].MaxStoryLength++; break;
             case "consent": f.Store.Items<SafetyPolicy>()[0].ConsentRecorded = false; break;
-            case "permission": f.Store.Items<SupervisionRelationship>()[0].RevokedAt = DateTime.UtcNow; break;
+            case "permission":
+                f.Store.Items<ChildProfile>()[0].OwnerUserId = 99;
+                Mock.Get(f.Store.Uow.Object.Repository<ChildProfile>())
+                    .Setup(x => x.GetByIdAsync(3, It.IsAny<CancellationToken>()))
+                    .ReturnsAsync(new ChildProfile { Id = 3, OwnerUserId = 99, Status = ChildProfileStatus.Active });
+                break;
             case "child-language": f.Store.Items<ChildProfile>()[0].Language = "en"; break;
             case "account": f.Store.Items<UserAccount>()[0].Status = AccountStatus.Suspended; break;
         }

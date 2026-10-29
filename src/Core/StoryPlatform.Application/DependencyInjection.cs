@@ -41,8 +41,6 @@ using StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.Services;
 using StoryPlatform.Application.Features.ChildProfiles.Sessions.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Sessions.Services;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Services;
 using StoryPlatform.Application.Features.ContentCategories.Interfaces;
 using StoryPlatform.Application.Features.ContentCategories.Services;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
@@ -93,10 +91,10 @@ public static class DependencyInjection
         services.AddScoped<IStoryService, StoryService>();
         services.AddScoped<IAIStoryInputService, AIStoryInputService>();
         services.AddScoped<IChildProfileService, ChildProfileService>();
-        services.AddScoped<ISupervisionAccessGuard, SupervisionAccessGuard>();
+        services.AddScoped<IChildProfileAccessGuard, ChildProfileAccessGuard>();
+        services.AddScoped<IChildProfileEraser, ChildProfileEraser>();
         services.AddScoped<ILearningProfileService, LearningProfileService>();
         services.AddScoped<ISafetyPolicyService, SafetyPolicyService>();
-        services.AddScoped<ISupervisionService, SupervisionService>();
         services.AddScoped<IChildAccessCredentialService, ChildAccessCredentialService>();
         services.AddScoped<IChildSessionRevoker, ChildSessionRevoker>();
         services.AddScoped<IParentalGateService, ParentalGateService>();
@@ -105,7 +103,6 @@ public static class DependencyInjection
         services.AddScoped<INotificationRetentionService, NotificationRetentionService>();
         services.AddScoped<IAuditLogQueryService, AuditLogQueryService>();
         services.AddScoped<IAuditLogWriter, AuditLogWriter>();
-        services.AddScoped<IAdminAccountService, AdminAccountService>();
         services.TryAddSingleton(new GrayZoneOptions());
         services.AddScoped<IGrayZoneEvaluator, GrayZoneEvaluator>();
         services.AddScoped<Features.Moderation.Rubrics.ModerationRubricService>();
@@ -157,7 +154,7 @@ public static class DependencyInjection
         services.AddScoped<IRoadmapSubmissionChecker, RoadmapSubmissionChecker>();
         services.AddScoped<IRoadmapTemplateService, RoadmapTemplateService>();
         services.AddScoped<IRoadmapReviewService, RoadmapReviewService>();
-        services.AddScoped<IModeratorAccountService, ModeratorAccountService>();
+        services.AddScoped<IStaffAccountService, StaffAccountService>();
         services.AddScoped<IDataRequestService, DataRequestService>();
         services.AddScoped<IBusinessReportService, BusinessReportService>();
         services.AddScoped<IPaymentService, PaymentService>();

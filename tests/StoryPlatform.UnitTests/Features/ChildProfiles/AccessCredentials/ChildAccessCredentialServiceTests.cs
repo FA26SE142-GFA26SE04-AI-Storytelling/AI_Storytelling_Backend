@@ -8,7 +8,7 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Common.Security;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Services;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using Xunit;
@@ -24,7 +24,7 @@ public class ChildAccessCredentialServiceTests
     private readonly Mock<IGenericRepository<ChildProfile>> _profileRepo = new();
     private readonly Mock<IGenericRepository<RefreshToken>> _refreshTokenRepo = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
-    private readonly Mock<ISupervisionAccessGuard> _guard = new();
+    private readonly Mock<IChildProfileAccessGuard> _guard = new();
     private readonly Mock<IJwtTokenGenerator> _jwtTokenGenerator = new();
     private readonly Mock<IClientAttemptLimiter> _limiter = new();
     private readonly Mock<IAuditLogWriter> _auditLogWriter = new();
@@ -59,8 +59,8 @@ public class ChildAccessCredentialServiceTests
     [Fact]
     public async Task CreateOrRegenerateEasyLoginAsync_WithoutManageSafetyPermission_StopsBeforeWrite()
     {
-        _guard.Setup(g => g.EnsurePermissionAsync(
-                1, 3, Permission.ManageSafetySettings, It.IsAny<CancellationToken>()))
+        _guard.Setup(g => g.EnsureOwnerAsync(
+                1, 3, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ForbiddenException("Không có quyền."));
 
         await Assert.ThrowsAsync<ForbiddenException>(() => _sut.CreateOrRegenerateEasyLoginAsync(1, 3));
@@ -168,8 +168,8 @@ public class ChildAccessCredentialServiceTests
     [Fact]
     public async Task RevokeCredentialAsync_WithoutManageSafetyPermission_StopsBeforeWrite()
     {
-        _guard.Setup(g => g.EnsurePermissionAsync(
-                1, 3, Permission.ManageSafetySettings, It.IsAny<CancellationToken>()))
+        _guard.Setup(g => g.EnsureOwnerAsync(
+                1, 3, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ForbiddenException("Không có quyền."));
 
         await Assert.ThrowsAsync<ForbiddenException>(() => _sut.RevokeCredentialAsync(1, 3));
@@ -471,7 +471,7 @@ public class ChildAccessCredentialServiceTests
     [Fact]
     public async Task StartSupervisedSessionAsync_NotSupervising_ThrowsBeforeCheckingToken()
     {
-        _guard.Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
+        _guard.Setup(g => g.EnsureOwnerAsync(1, 2, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ForbiddenException("Không có quyền."));
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
@@ -532,13 +532,13 @@ public class ChildAccessCredentialServiceTests
     // ---------- helpers ----------
 
     private void AllowSupervision() => _guard
-        .Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
-        .ReturnsAsync(new SupervisionRelationship());
+        .Setup(g => g.EnsureOwnerAsync(1, 2, It.IsAny<CancellationToken>()))
+        .ReturnsAsync(new ChildProfile { Id = 1, OwnerUserId = 2 });
 
     private void AllowManageSafety() => _guard
-        .Setup(g => g.EnsurePermissionAsync(
-            1, 2, Permission.ManageSafetySettings, It.IsAny<CancellationToken>()))
-        .Returns(Task.CompletedTask);
+        .Setup(g => g.EnsureOwnerAsync(
+            1, 2, It.IsAny<CancellationToken>()))
+        .ReturnsAsync(new ChildProfile { Id = 1, OwnerUserId = 2 });
 
     private void SetupCredentials(params ChildAccessCredential[] credentials) => _credentialRepo
         .Setup(r => r.FirstOrDefaultAsync(

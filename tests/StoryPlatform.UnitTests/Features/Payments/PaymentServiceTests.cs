@@ -114,7 +114,7 @@ public class PaymentServiceTests
         _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakePlan(1, 49000));
         _userRepository.Setup(repo => repo.GetByIdAsync(10, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakeUser(10, UserRole.Parent));
+            .ReturnsAsync(MakeUser(10, UserRole.User));
         _transactionRepository.Setup(repo => repo.ExistsAsync(
                 It.IsAny<Expression<Func<PaymentTransaction, bool>>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
@@ -129,7 +129,7 @@ public class PaymentServiceTests
         _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(MakePlan(1, 49000));
         _userRepository.Setup(repo => repo.GetByIdAsync(10, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakeUser(10, UserRole.Parent));
+            .ReturnsAsync(MakeUser(10, UserRole.User));
         _transactionRepository.Setup(repo => repo.ExistsAsync(
                 It.IsAny<Expression<Func<PaymentTransaction, bool>>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);

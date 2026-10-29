@@ -47,7 +47,8 @@ public class ResendEmailSenderTests
         {
             ApiKey = apiKey,
             FromEmail = "onboarding@resend.dev",
-            FromName = "Test Sender"
+            FromName = "Test Sender",
+            StaffActivationUrl = "https://app.example.com/staff-activation"
         });
 
         return new ResendEmailSender(httpClient, options, NullLogger<ResendEmailSender>.Instance);
@@ -71,20 +72,6 @@ public class ResendEmailSenderTests
     }
 
     [Fact]
-    public async Task SendSupervisionInvitationOtpEmailAsync_ValidRequest_PostsOtpToInvitee()
-    {
-        var handler = new FakeHttpMessageHandler();
-        var sender = CreateSender(handler);
-
-        await sender.SendSupervisionInvitationOtpEmailAsync("invitee@example.com", "123456");
-
-        Assert.NotNull(handler.LastRequest);
-        Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
-        Assert.Contains("invitee@example.com", handler.LastRequestBody);
-        Assert.Contains("123456", handler.LastRequestBody);
-    }
-
-    [Fact]
     public async Task SendAccountProvisionedEmailAsync_ValidRequest_PostsCorrectRequestToResendApi()
     {
         var handler = new FakeHttpMessageHandler();
@@ -102,7 +89,7 @@ public class ResendEmailSenderTests
     }
 
     [Fact]
-    public async Task SendStaffInviteEmailAsync_ValidRequest_PostsInviteTokenAnd72HourNotice()
+    public async Task SendStaffInviteEmailAsync_ValidRequest_PostsActivationLinkAnd72HourNotice()
     {
         var handler = new FakeHttpMessageHandler();
         var sender = CreateSender(handler);
@@ -116,7 +103,10 @@ public class ResendEmailSenderTests
         Assert.Contains("raw-invite-token-xyz", handler.LastRequestBody);
         Assert.Contains("mod@example.com", handler.LastRequestBody);
         using var payload = JsonDocument.Parse(handler.LastRequestBody!);
-        Assert.Contains("72 giờ", payload.RootElement.GetProperty("html").GetString());
+        var html = payload.RootElement.GetProperty("html").GetString();
+        Assert.Contains("72 giờ", html);
+        Assert.Contains("href=\"https://app.example.com/staff-activation#email=mod%40example.com&amp;inviteToken=raw-invite-token-xyz\"", html);
+        Assert.DoesNotContain(">raw-invite-token-xyz<", html);
     }
 
     [Fact]

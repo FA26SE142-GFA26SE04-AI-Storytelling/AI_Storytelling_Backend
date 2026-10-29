@@ -65,7 +65,7 @@ public sealed class ParentAuthoringTests
         evaluator.SetupGet(x => x.IsConfigured).Returns(true);
         var workflow = new StoryPlatform.Application.Features.Moderation.Services.GrayZoneWorkflowService(s.Uow.Object,
             new Moq.Mock<StoryPlatform.Application.Features.AuditLogs.Interfaces.IAuditLogWriter>().Object);
-        var guard = new StoryPlatform.Application.Features.ChildProfiles.Supervision.Services.SupervisionAccessGuard(s.Uow.Object);
+        var guard = new StoryPlatform.Application.Features.ChildProfiles.Profiles.Services.ChildProfileAccessGuard(s.Uow.Object);
         var checker = new StoryPlatform.Application.Features.Moderation.Services.GrayZoneContentCheckService(s.Uow.Object, evaluator.Object, workflow, guard);
         var service = new ParentAuthoringService(s.Uow.Object, new(), s.Protector, guard,
             new StoryPlatform.Application.Features.MediaGeneration.Services.StorySegmentService(), checker);
@@ -108,7 +108,7 @@ public sealed class ParentAuthoringTests
         var s = new ParentAuthoringTestStore(); var d = await s.Service.CreateParentDraftAsync(1, Create(), Ct);
         await Assert.ThrowsAsync<NotFoundException>(() => s.Service.GetDraftAsync(2, d.Story.StoryId, Ct));
         await Assert.ThrowsAsync<NotFoundException>(() => s.Creator.GetDraftAsync(1, d.Story.StoryId, Ct));
-        s.Items<SupervisionRelationship>()[0].RevokedAt = DateTime.UtcNow;
+        s.Items<ChildProfile>()[0].OwnerUserId = 99;
         await Assert.ThrowsAsync<ForbiddenException>(() => s.Service.GetDraftAsync(1, d.Story.StoryId, Ct));
         await Assert.ThrowsAsync<ForbiddenException>(() => s.Service.CreateParentDraftAsync(1, Create(), Ct));
     }
@@ -207,19 +207,14 @@ public sealed class ParentAuthoringTests
     }
 
     [Theory]
-    [InlineData("revoked")]
+    [InlineData("not-owner")]
     [InlineData("inactive")]
     [InlineData("deleted-child")]
-    [InlineData("deleted-relationship")]
-    [InlineData("missing-permission")]
-    [InlineData("deleted-permission")]
     public async Task List_filters_inaccessible_children_before_count_and_pagination(string reason)
     {
         var s = new ParentAuthoringTestStore();
         await s.Service.CreateParentDraftAsync(1, Create("inaccessible"), Ct);
         s.Items<ChildProfile>().Add(new() { Id = 4, OwnerUserId = 1, Status = ChildProfileStatus.Active, Language = "vi", AgeBand = AgeBand.Age_6_8 });
-        s.Items<SupervisionRelationship>().Add(new() { Id = 2, ChildProfileId = 4, SupervisorUserId = 1, SupervisorRole = SupervisorRole.AdditionalSupervisor });
-        s.Items<SupervisionPermission>().Add(new() { Id = 1, SupervisionRelationshipId = 2, Permission = Permission.GenerateStory });
         var a = await s.Service.CreateParentDraftAsync(1, Create("allowed-1") with { ChildProfileId = 4 }, Ct);
         var b = await s.Service.CreateParentDraftAsync(1, Create("allowed-2") with { ChildProfileId = 4 }, Ct);
         // Put the forbidden story first, so filtering after pagination would leave a hole.
@@ -227,15 +222,9 @@ public sealed class ParentAuthoringTests
         foreach (var story in s.Items<Story>()) story.UpdatedAt = origin.AddMinutes(10 - story.Id);
         switch (reason)
         {
-            case "revoked": s.Items<SupervisionRelationship>()[0].RevokedAt = DateTime.UtcNow; break;
+            case "not-owner": s.Items<ChildProfile>()[0].OwnerUserId = 99; break;
             case "inactive": s.Items<ChildProfile>()[0].Status = ChildProfileStatus.Draft; break;
             case "deleted-child": s.Items<ChildProfile>()[0].IsDeleted = true; break;
-            case "deleted-relationship": s.Items<SupervisionRelationship>()[0].IsDeleted = true; break;
-            case "missing-permission": s.Items<SupervisionRelationship>()[0].SupervisorRole = SupervisorRole.AdditionalSupervisor; break;
-            case "deleted-permission":
-                s.Items<SupervisionRelationship>()[0].SupervisorRole = SupervisorRole.AdditionalSupervisor;
-                s.Items<SupervisionPermission>().Add(new() { Id = 2, SupervisionRelationshipId = 1, Permission = Permission.GenerateStory, IsDeleted = true });
-                break;
         }
         var first = await s.Service.GetMineAsync(1, 1, 1, Ct);
         var second = await s.Service.GetMineAsync(1, 2, 1, Ct);
@@ -404,7 +393,7 @@ public sealed class ParentAuthoringTests
             PreparationId = pkg.PreparationId
         };
         var grant = await s.Service.ConfirmFamilyAsync(1, saved.Story.StoryId, request, Ct);
-        s.Items<SupervisionRelationship>()[0].RevokedAt = DateTime.UtcNow;
+        s.Items<ChildProfile>()[0].OwnerUserId = 99;
         await Assert.ThrowsAsync<ForbiddenException>(() => s.Service.ReadChildPackageAsync(3, grant.ConfirmationId, Ct));
         await Assert.ThrowsAsync<ForbiddenException>(() => s.Service.ConfirmFamilyAsync(1, saved.Story.StoryId, request, Ct));
         Assert.Empty(await s.Service.ChildLibraryAsync(3, Ct));

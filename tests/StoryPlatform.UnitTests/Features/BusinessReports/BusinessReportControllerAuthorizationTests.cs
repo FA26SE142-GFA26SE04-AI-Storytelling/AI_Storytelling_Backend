@@ -11,7 +11,7 @@ public class BusinessReportControllerAuthorizationTests
 {
     [Theory]
     [InlineData(UserRole.Administrator, true)]
-    [InlineData(UserRole.Parent, false)]
+    [InlineData(UserRole.User, false)]
     public async Task AdminActions_OnlyAdministrator(UserRole role, bool expected)
     {
         foreach (var actionName in new[]
@@ -25,7 +25,7 @@ public class BusinessReportControllerAuthorizationTests
     }
 
     [Theory]
-    [InlineData(UserRole.Parent, true)]
+    [InlineData(UserRole.User, true)]
     [InlineData(UserRole.Administrator, true)]
     public async Task GetLatestPublished_AnyAuthenticatedRole(UserRole role, bool expected)
     {

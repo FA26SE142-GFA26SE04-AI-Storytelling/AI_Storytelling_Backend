@@ -15,7 +15,7 @@ public class UserAccount : BaseEntity
     public string FullName { get; set; } = string.Empty;
     public string? PhoneNumber { get; set; }
     public string? AvatarUrl { get; set; }
-    public UserRole Role { get; set; } = UserRole.Parent;
+    public UserRole Role { get; set; } = UserRole.User;
     public AccountStatus Status { get; set; } = AccountStatus.Registered;
     public string? ResetTokenHash { get; set; }
     public DateTime? ResetTokenExpiresAt { get; set; }
@@ -40,7 +40,7 @@ public class UserAccount : BaseEntity
     /// <summary>Chuyên môn của Moderator / Content Creator (vd giáo viên tiểu học).</summary>
     public string? Expertise { get; set; }
 
-    /// <summary>Thời điểm Moderator tick cam kết bảo mật dữ liệu trẻ em và quy tắc kiểm duyệt.</summary>
+    /// <summary>Thời điểm nhân sự được mời tick cam kết bảo mật dữ liệu trẻ em và quy tắc kiểm duyệt.</summary>
     public DateTime? CommitmentAcceptedAt { get; set; }
 
     // Navigation properties

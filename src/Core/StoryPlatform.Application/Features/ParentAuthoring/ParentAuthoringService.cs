@@ -6,7 +6,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration.Quality;
 using StoryPlatform.Application.Features.CreatorAuthoring;
 using StoryPlatform.Application.Features.CreatorAuthoring.DTOs;
@@ -25,7 +25,7 @@ public sealed class ParentAuthoringService : ManualAuthoringService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly IUnitOfWork _uow;
-    private readonly ISupervisionAccessGuard _guard;
+    private readonly IChildProfileAccessGuard _guard;
     private readonly ParentManualAuthoringPolicy _policy;
     private readonly IStorySegmentService _segments;
     private readonly GrayZoneContentCheckService? _moderation;
@@ -34,7 +34,7 @@ public sealed class ParentAuthoringService : ManualAuthoringService
     private readonly IGrayZoneEvaluator? _evaluator;
 
     public ParentAuthoringService(IUnitOfWork uow, CreatorAuthoringOptions options, IImportPreviewProtector previews,
-        ISupervisionAccessGuard guard, IStorySegmentService segments, GrayZoneContentCheckService? moderation = null,
+        IChildProfileAccessGuard guard, IStorySegmentService segments, GrayZoneContentCheckService? moderation = null,
         IMediaContextBuilder? mediaContexts = null, IMediaGenerationService? media = null, IGrayZoneEvaluator? evaluator = null)
         : base(uow, options, previews, new ParentManualAuthoringPolicy(uow, guard))
     {
@@ -255,8 +255,8 @@ public sealed class ParentAuthoringService : ManualAuthoringService
     public Task<ParentFamilyConfirmationDto> ConfirmFamilyAsync(int user, int id, ParentFamilyConfirmRequest request, CancellationToken ct) =>
         ExecuteAsync(user, id, "FamilyConfirmation", request, async (story, operation) =>
         {
-            await _guard.EnsurePermissionAsync(story.ChildProfileId!.Value, user, Permission.ApproveStory, ct);
-            await _guard.EnsurePermissionAsync(story.ChildProfileId.Value, user, Permission.AssignActivity, ct);
+            await _guard.EnsureOwnerAsync(story.ChildProfileId!.Value, user, ct);
+            await _guard.EnsureOwnerAsync(story.ChildProfileId.Value, user, ct);
             var version = await SourceAsync(story, request, ct) ?? throw new ConflictException("SAVED_VERSION_REQUIRED");
             var package = await LinkedAsync<ParentPreparationDto>(story, request.PreparationId, "Preparation", version.Id, ct);
             if (!package.IsReady) throw new ConflictException("PREPARATION_NOT_READY");
@@ -275,8 +275,8 @@ public sealed class ParentAuthoringService : ManualAuthoringService
         if (decision.ChildProfileId != childId) throw new NotFoundException("Family confirmation", confirmationId);
         var story = await _uow.Repository<Story>().GetByIdAsync(grant.StoryId, ct) ?? throw new NotFoundException("Story", grant.StoryId);
         await _policy.AuthorizeAsync(grant.ActorUserId, story, ct); // Revoked supervision revokes the issuing authority.
-        await _guard.EnsurePermissionAsync(childId, grant.ActorUserId, Permission.ApproveStory, ct);
-        await _guard.EnsurePermissionAsync(childId, grant.ActorUserId, Permission.AssignActivity, ct);
+        await _guard.EnsureOwnerAsync(childId, grant.ActorUserId, ct);
+        await _guard.EnsureOwnerAsync(childId, grant.ActorUserId, ct);
         var issuer = await _uow.Repository<UserAccount>().GetByIdAsync(grant.ActorUserId, ct);
         if (issuer is null || issuer.IsDeleted || issuer.Status != AccountStatus.Active || issuer.LockedUntil > DateTime.UtcNow)
             throw new ForbiddenException("GRANT_ISSUER_INACTIVE");
@@ -363,8 +363,8 @@ public sealed class ParentAuthoringService : ManualAuthoringService
             var story = await StoryAsync(user, id, ct);
             if (kind is "FamilyConfirmation" or "FamilyRevocation")
             {
-                await _guard.EnsurePermissionAsync(story.ChildProfileId!.Value, user, Permission.ApproveStory, ct);
-                await _guard.EnsurePermissionAsync(story.ChildProfileId.Value, user, Permission.AssignActivity, ct);
+                await _guard.EnsureOwnerAsync(story.ChildProfileId!.Value, user, ct);
+                await _guard.EnsureOwnerAsync(story.ChildProfileId.Value, user, ct);
             }
             if (await _uow.Repository<StoryAuthoringOperation>().ExistsAsync(x => x.StoryId == id && x.OperationId == request.OperationId, ct))
                 throw new ConflictException("OPERATION_ID_REUSED");

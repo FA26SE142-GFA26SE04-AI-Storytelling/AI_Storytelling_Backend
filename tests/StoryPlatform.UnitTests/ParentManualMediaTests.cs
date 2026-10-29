@@ -2,7 +2,7 @@ using Moq;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Safety;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Services;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Services;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Application.Features.Moderation;
 using StoryPlatform.Application.Features.Moderation.Services;
@@ -20,7 +20,7 @@ public sealed class ParentManualMediaTests
         Mock<IModelModerationProvider> Provider) Setup(bool consent = true)
     {
         var store = new ParentAuthoringTestStore();
-        store.Items<UserAccount>().Single(x => x.Id == 1).Role = UserRole.Parent;
+        store.Items<UserAccount>().Single(x => x.Id == 1).Role = UserRole.User;
         var policy = store.Items<SafetyPolicy>().Single();
         policy.ConsentRecorded = consent;
         policy.ConsentRecordedAt = consent ? DateTime.UtcNow : null;
@@ -32,7 +32,7 @@ public sealed class ParentManualMediaTests
             .ReturnsAsync((GrayZoneScan scan, CancellationToken _) => new ModelModerationResult(0, "test", []) { RubricVersion = scan.RubricVersion });
         var evaluator = new GrayZoneEvaluator(new() { Provider = "test-only", WarningThreshold = 50, BlockThreshold = 100, MaximumRiskScore = 100 },
             [provider.Object], RubricTestData.Source());
-        var guard = new SupervisionAccessGuard(store.Uow.Object);
+        var guard = new ChildProfileAccessGuard(store.Uow.Object);
         var checks = new GrayZoneContentCheckService(store.Uow.Object, evaluator,
             new GrayZoneWorkflowService(store.Uow.Object, new Mock<IAuditLogWriter>().Object), guard);
         var media = MediaGenerationServiceTests.Create(store.Uow.Object, supervision: guard);

@@ -136,7 +136,7 @@ public class ParentalGateServiceTests
         Username = "parent",
         FullName = "Chị An",
         PasswordHash = "hashed-real-password",
-        Role = UserRole.Parent,
+        Role = UserRole.User,
         Status = AccountStatus.Active
     };
 }

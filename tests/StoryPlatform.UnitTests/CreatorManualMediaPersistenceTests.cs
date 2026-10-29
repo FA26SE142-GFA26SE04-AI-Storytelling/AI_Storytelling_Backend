@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Moq;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.CreatorAuthoring.Services;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Application.Features.Moderation;
@@ -100,7 +100,7 @@ public sealed class CreatorManualMediaPersistenceTests
         if (failAudit) audit.Setup(x => x.LogAsync(1, "CreatorManualContentConfirmed", nameof(Story), 1,
             It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>())).ThrowsAsync(new InvalidOperationException("Audit unavailable"));
         var checks = new GrayZoneContentCheckService(uow.Object, evaluator.Object,
-            new GrayZoneWorkflowService(uow.Object, audit.Object), new Mock<ISupervisionAccessGuard>().Object);
+            new GrayZoneWorkflowService(uow.Object, audit.Object), new Mock<IChildProfileAccessGuard>().Object);
         var service = new CreatorManualMediaService(uow.Object, checks, evaluator.Object, new MediaContextBuilder(), audit.Object, new());
         if (failAudit)
             await Assert.ThrowsAsync<InvalidOperationException>(() => service.ConfirmAsync(1, 1, new(10, "rev1")));

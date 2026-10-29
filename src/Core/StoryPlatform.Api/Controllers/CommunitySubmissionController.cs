@@ -7,7 +7,7 @@ using StoryPlatform.Application.Features.CommunityLibrary.Interfaces;
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Nộp, rút và gỡ truyện Community, phía phụ huynh (Luồng 4 — WF-L4F).</summary>
-[Authorize(Roles = "Parent")]
+[Authorize(Roles = "User")]
 public class CommunitySubmissionController : BaseApiController
 {
     private readonly ICommunitySubmissionService _submissionService;

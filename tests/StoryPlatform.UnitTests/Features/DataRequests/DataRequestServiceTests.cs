@@ -7,6 +7,7 @@ using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Sessions.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.DataRequests.DTOs;
 using StoryPlatform.Application.Features.DataRequests.Services;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
@@ -30,9 +31,6 @@ public class DataRequestServiceTests
     private readonly Mock<IGenericRepository<Recommendation>> _recommendationRepository = new();
     private readonly Mock<IGenericRepository<TelemetryLog>> _telemetryLogRepository = new();
     private readonly Mock<IGenericRepository<QuizAttempt>> _quizAttemptRepository = new();
-    private readonly Mock<IGenericRepository<AssignmentRecipient>> _assignmentRecipientRepository = new();
-    private readonly Mock<IGenericRepository<SupervisionRelationship>> _supervisionRelationshipRepository = new();
-    private readonly Mock<IGenericRepository<Assignment>> _assignmentRepository = new();
     private readonly Mock<IGenericRepository<Story>> _storyRepository = new();
     private readonly Mock<IGenericRepository<UserAccount>> _userRepository = new();
     private readonly Mock<IGenericRepository<ChildAccessCredential>> _credentialRepository = new();
@@ -42,6 +40,7 @@ public class DataRequestServiceTests
     private readonly Mock<IArchiveExportBuilder> _archiveExportBuilder = new();
     private readonly Mock<IPasswordHasher> _passwordHasher = new();
     private readonly Mock<IChildSessionRevoker> _childSessionRevoker = new();
+    private readonly Mock<IChildProfileEraser> _eraser = new();
     private readonly Mock<INotificationService> _notificationService = new();
     private readonly Mock<IEmailSender> _emailSender = new();
     private readonly DataRequestService _sut;
@@ -60,9 +59,6 @@ public class DataRequestServiceTests
         _unitOfWork.Setup(work => work.Repository<Recommendation>()).Returns(_recommendationRepository.Object);
         _unitOfWork.Setup(work => work.Repository<TelemetryLog>()).Returns(_telemetryLogRepository.Object);
         _unitOfWork.Setup(work => work.Repository<QuizAttempt>()).Returns(_quizAttemptRepository.Object);
-        _unitOfWork.Setup(work => work.Repository<AssignmentRecipient>()).Returns(_assignmentRecipientRepository.Object);
-        _unitOfWork.Setup(work => work.Repository<SupervisionRelationship>()).Returns(_supervisionRelationshipRepository.Object);
-        _unitOfWork.Setup(work => work.Repository<Assignment>()).Returns(_assignmentRepository.Object);
         _unitOfWork.Setup(work => work.Repository<Story>()).Returns(_storyRepository.Object);
         _unitOfWork.Setup(work => work.Repository<UserAccount>()).Returns(_userRepository.Object);
         _unitOfWork.Setup(work => work.Repository<ChildAccessCredential>()).Returns(_credentialRepository.Object);
@@ -97,15 +93,6 @@ public class DataRequestServiceTests
         _quizAttemptRepository.Setup(repo => repo.FindAsync(
                 It.IsAny<Expression<Func<QuizAttempt, bool>>>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<QuizAttempt>());
-        _assignmentRecipientRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<AssignmentRecipient, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Array.Empty<AssignmentRecipient>());
-        _supervisionRelationshipRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Array.Empty<SupervisionRelationship>());
-        _assignmentRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<Assignment, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Array.Empty<Assignment>());
         _storyRepository.Setup(repo => repo.FindAsync(
                 It.IsAny<Expression<Func<Story, bool>>>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<Story>());
@@ -117,7 +104,7 @@ public class DataRequestServiceTests
         _sut = new DataRequestService(
             _unitOfWork.Object, _auditLogWriter.Object, _exportBuilder.Object,
             _archiveExportBuilder.Object, _passwordHasher.Object,
-            _childSessionRevoker.Object, _notificationService.Object, _emailSender.Object);
+            _eraser.Object, _notificationService.Object, _emailSender.Object);
     }
 
     private static ChildProfile MakeChild(int id, int ownerUserId) => new()
@@ -529,94 +516,40 @@ public class DataRequestServiceTests
     }
 
     [Fact]
-    public async Task ResolveDeleteAsync_Valid_CascadesAnonymizesAndAudits()
+    public async Task ResolveDeleteAsync_Valid_UsesEraserAndAudits()
     {
         var request = MakeRequest(1, 5, DataRequestType.Delete);
-        _dataRequestRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(request);
-        var child = MakeChild(5, ownerUserId: 1);
-        _childProfileRepository.Setup(repo => repo.GetByIdAsync(5, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(child);
-
-        var relationship = new SupervisionRelationship { Id = 1, ChildProfileId = 5, SupervisorUserId = 1 };
-        _supervisionRelationshipRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { relationship });
-
-        var recipient = new AssignmentRecipient { Id = 2, ChildProfileId = 5, Status = AssignmentStatus.Assigned };
-        _assignmentRecipientRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<AssignmentRecipient, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { recipient });
-
-        var directAssignment = new Assignment { Id = 3, ChildProfileId = 5, Status = AssignmentStatus.Assigned };
-        _assignmentRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<Assignment, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { directAssignment });
-
-        var story = new Story { Id = 4, ChildProfileId = 5 };
-        _storyRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<Story, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { story });
+        var child = MakeChild(5, 1);
+        _dataRequestRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(request);
+        _childProfileRepository.Setup(repo => repo.GetByIdAsync(5, It.IsAny<CancellationToken>())).ReturnsAsync(child);
 
         var result = await _sut.ResolveDeleteAsync(10, 1);
 
-        Assert.NotNull(relationship.RevokedAt);
-        Assert.Equal(10, relationship.RevokedByUserId);
-
-        Assert.Equal(AssignmentStatus.Cancelled, recipient.Status);
-        Assert.Equal(10, recipient.CancelledByUserId);
-        Assert.NotNull(recipient.CancelledAt);
-
-        Assert.Equal(AssignmentStatus.Cancelled, directAssignment.Status);
-
-        Assert.Equal("[Đã ẩn danh]", child.Nickname);
-        Assert.Equal(ChildProfileStatus.Deleted, child.Status);
-        Assert.Equal(1, child.OwnerUserId);
-
+        _eraser.Verify(e => e.EraseAsync(child, 10, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Once);
         Assert.Equal(DataRequestStatus.Resolved, request.Status);
         Assert.Equal(10, request.ResolvedByUserId);
         Assert.Equal("Resolved", result.Status);
-
-        _auditLogWriter.Verify(writer => writer.LogAsync(
-            10, "DataRequestDeleted", nameof(DataRequest), 1,
+        _auditLogWriter.Verify(writer => writer.LogAsync(10, "DataRequestDeleted", nameof(DataRequest), 1,
             It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task ResolveDeleteAsync_RevokesChildAccessAndNotifiesRequester()
+    public async Task ResolveDeleteAsync_NotifiesRequester()
     {
-        var request = new DataRequest
-        {
-            Id = 5, RequestedByUserId = 2, ChildProfileId = 1,
-            RequestType = DataRequestType.Delete, Status = DataRequestStatus.Pending
-        };
-        _dataRequestRepository.Setup(r => r.GetByIdAsync(5, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(request);
+        var request = new DataRequest { Id = 5, RequestedByUserId = 2, ChildProfileId = 1,
+            RequestType = DataRequestType.Delete, Status = DataRequestStatus.Pending };
+        _dataRequestRepository.Setup(r => r.GetByIdAsync(5, It.IsAny<CancellationToken>())).ReturnsAsync(request);
         var child = MakeChild(1, 2);
-        _childProfileRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(child);
-        var credential = new ChildAccessCredential
-            { Id = 8, ChildProfileId = 1, EasyLoginSecretHash = "hash" };
-        _credentialRepository.Setup(r => r.FirstOrDefaultAsync(
-                It.IsAny<Expression<Func<ChildAccessCredential, bool>>>(), null,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(credential);
-        _userRepository.Setup(r => r.GetByIdAsync(2, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new UserAccount
-                { Id = 2, Email = "owner@example.com", FullName = "An" });
+        _childProfileRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(child);
+        _userRepository.Setup(r => r.GetByIdAsync(2, It.IsAny<CancellationToken>())).ReturnsAsync(
+            new UserAccount { Id = 2, Email = "owner@example.com", FullName = "An" });
 
         await _sut.ResolveDeleteAsync(9, 5);
 
-        Assert.Equal(ChildProfileStatus.Deleted, child.Status);
-        Assert.NotNull(credential.RevokedAt);
-        Assert.Null(credential.EasyLoginSecretHash);
-        _childSessionRevoker.Verify(r => r.RevokeByChildProfileAsync(
-            1, It.IsAny<CancellationToken>()), Times.Once);
-        _notificationService.Verify(n => n.CreateAsync(
-            2, NotificationType.DataRequestCompleted, It.IsAny<string?>(),
-            It.IsAny<CancellationToken>()), Times.Once);
-        _emailSender.Verify(e => e.SendDataRequestCompletedEmailAsync(
-            "owner@example.com", "An", "delete", "resolved", null,
+        _eraser.Verify(e => e.EraseAsync(child, 9, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Once);
+        _notificationService.Verify(n => n.CreateAsync(2, NotificationType.DataRequestCompleted,
+            It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
+        _emailSender.Verify(e => e.SendDataRequestCompletedEmailAsync("owner@example.com", "An", "delete", "resolved", null,
             It.IsAny<CancellationToken>()), Times.Once);
     }
 

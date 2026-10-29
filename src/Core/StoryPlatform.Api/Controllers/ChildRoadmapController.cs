@@ -7,7 +7,7 @@ using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Lộ trình của con, phía phụ huynh (Luồng 4 — WF-L4A).</summary>
-[Authorize(Roles = "Parent")]
+[Authorize(Roles = "User")]
 public class ChildRoadmapController : BaseApiController
 {
     private readonly IChildRoadmapService _roadmapService;

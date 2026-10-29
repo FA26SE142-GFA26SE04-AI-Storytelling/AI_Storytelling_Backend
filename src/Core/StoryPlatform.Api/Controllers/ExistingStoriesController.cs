@@ -22,7 +22,7 @@ namespace StoryPlatform.Api.Controllers;
 /// vào chuỗi Phase 3 (Vocabulary → Quiz → Discussion).
 /// </summary>
 [ApiController]
-[Authorize(Roles = "Parent")]
+[Authorize(Roles = "User")]
 [Route("api/v1/stories")]
 public sealed class ExistingStoriesController : BaseApiController
 {

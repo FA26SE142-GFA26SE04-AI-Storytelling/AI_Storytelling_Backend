@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using StoryPlatform.Application.Abstractions.Communication;
 using StoryPlatform.Application.Abstractions.Persistence;
@@ -8,23 +7,21 @@ using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.Auth.DTOs;
 using StoryPlatform.Application.Features.Auth.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Sessions.Interfaces;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
-using StoryPlatform.Application.Features.Notifications.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.Auth.Services;
 
-/// <summary>Xóa và ẩn danh hóa tài khoản Parent.</summary>
+/// <summary>Xóa và ẩn danh hóa tài khoản User.</summary>
 public class AccountDeletionService : IAccountDeletionService
 {
     private const string AnonymizedName = "Tài khoản đã xóa";
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IPasswordHasher _passwordHasher;
-    private readonly ISupervisionService _supervisionService;
+    private readonly IChildProfileEraser _childProfileEraser;
     private readonly IChildSessionRevoker _childSessionRevoker;
-    private readonly INotificationService _notificationService;
     private readonly IEmailSender _emailSender;
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly ILogger<AccountDeletionService> _logger;
@@ -32,18 +29,16 @@ public class AccountDeletionService : IAccountDeletionService
     public AccountDeletionService(
         IUnitOfWork unitOfWork,
         IPasswordHasher passwordHasher,
-        ISupervisionService supervisionService,
+        IChildProfileEraser childProfileEraser,
         IChildSessionRevoker childSessionRevoker,
-        INotificationService notificationService,
         IEmailSender emailSender,
         IAuditLogWriter auditLogWriter,
         ILogger<AccountDeletionService> logger)
     {
         _unitOfWork = unitOfWork;
         _passwordHasher = passwordHasher;
-        _supervisionService = supervisionService;
+        _childProfileEraser = childProfileEraser;
         _childSessionRevoker = childSessionRevoker;
-        _notificationService = notificationService;
         _emailSender = emailSender;
         _auditLogWriter = auditLogWriter;
         _logger = logger;
@@ -52,7 +47,7 @@ public class AccountDeletionService : IAccountDeletionService
     public async Task<DeleteAccountPreviewDto> GetPreviewAsync(
         int userId, CancellationToken cancellationToken = default)
     {
-        await LoadParentAsync(userId, cancellationToken);
+        await LoadUserAsync(userId, cancellationToken);
         return BuildPreview(await LoadOwnedProfilesAsync(userId, cancellationToken));
     }
 
@@ -60,67 +55,30 @@ public class AccountDeletionService : IAccountDeletionService
         int userId, DeleteAccountRequestDto request,
         CancellationToken cancellationToken = default)
     {
-        var user = await LoadParentAsync(userId, cancellationToken);
+        var user = await LoadUserAsync(userId, cancellationToken);
         if (!_passwordHasher.VerifyPassword(request.CurrentPassword, user.PasswordHash))
         {
             throw new BadRequestException("Mật khẩu hiện tại không chính xác.");
         }
 
         var ownedProfiles = await LoadOwnedProfilesAsync(userId, cancellationToken);
-        var preview = BuildPreview(ownedProfiles);
-        if (!preview.CanDelete)
-        {
-            var names = string.Join(", ", preview.BlockingProfiles.Select(p => p.Nickname));
-            throw new BadRequestException(
-                $"Bạn vẫn là Owner của hồ sơ: {names}. Hãy chuyển quyền Owner hoặc gửi yêu cầu xóa dữ liệu của hồ sơ trước khi xóa tài khoản.");
-        }
-
-        if (preview.DraftProfiles.Count > 0 && !request.DeleteDraftProfiles)
+        if (ownedProfiles.Count > 0 && !request.DeleteChildProfiles)
         {
             throw new BadRequestException(
-                $"Bạn còn {preview.DraftProfiles.Count} hồ sơ nháp sẽ bị xóa cùng tài khoản. Hãy xác nhận xóa các hồ sơ này để tiếp tục.");
+                $"Bạn còn {ownedProfiles.Count} hồ sơ trẻ sẽ bị xóa cùng tài khoản. Hãy xác nhận xóa các hồ sơ này để tiếp tục.");
         }
 
         var originalEmail = user.Email;
         var originalName = user.FullName;
         var now = DateTime.UtcNow;
-        var draftProfiles = ownedProfiles
-            .Where(profile => profile.Status == ChildProfileStatus.Draft)
-            .ToList();
-        var draftIds = draftProfiles.Select(profile => profile.Id).ToList();
-        var leftProfileIds = new List<int>();
+        var erased = ownedProfiles.Select(profile => new { profile.Id, Status = profile.Status.ToString() }).ToList();
 
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
-            var profileRepo = _unitOfWork.Repository<ChildProfile>();
-            foreach (var draft in draftProfiles)
+            foreach (var profile in ownedProfiles)
             {
-                draft.Status = ChildProfileStatus.Deleted;
-                draft.UpdatedAt = now;
-                profileRepo.Update(draft);
-            }
-
-            var relationshipRepo = _unitOfWork.Repository<SupervisionRelationship>();
-            var relationships = await relationshipRepo.FindAsync(
-                value => value.RevokedAt == null
-                         && (value.SupervisorUserId == userId
-                             || draftIds.Contains(value.ChildProfileId)),
-                cancellationToken: cancellationToken);
-            foreach (var relationship in relationships)
-            {
-                if (draftIds.Contains(relationship.ChildProfileId))
-                {
-                    relationship.RevokedAt = now;
-                    relationship.RevokedByUserId = userId;
-                    relationshipRepo.Update(relationship);
-                }
-                else if (relationship.SupervisorRole == SupervisorRole.AdditionalSupervisor)
-                {
-                    await _supervisionService.ApplyRevocationAsync(
-                        relationship, userId, now, cancellationToken);
-                    leftProfileIds.Add(relationship.ChildProfileId);
-                }
+                await _childProfileEraser.EraseAsync(profile, userId, now, cancellationToken);
             }
 
             var paymentRepo = _unitOfWork.Repository<PaymentTransaction>();
@@ -160,38 +118,31 @@ public class AccountDeletionService : IAccountDeletionService
             throw;
         }
 
-        foreach (var draft in draftProfiles)
+        foreach (var profile in erased)
         {
             await _auditLogWriter.LogAsync(
-                userId, "DELETE_DRAFT_CHILD_PROFILE", nameof(ChildProfile), draft.Id,
-                new { status = ChildProfileStatus.Draft.ToString() },
+                userId, "DELETE_CHILD_PROFILE_WITH_ACCOUNT", nameof(ChildProfile), profile.Id,
+                new { status = profile.Status },
                 new { status = ChildProfileStatus.Deleted.ToString() }, cancellationToken);
         }
 
         await _auditLogWriter.LogAsync(
             userId, "DELETE_ACCOUNT", nameof(UserAccount), userId,
-            null,
-            new
-            {
-                draftProfilesDeleted = draftIds.Count,
-                supervisionsLeft = leftProfileIds.Count
-            },
-            cancellationToken);
+            null, new { childProfilesDeleted = erased.Count }, cancellationToken);
 
-        await NotifyOwnersAsync(userId, leftProfileIds, cancellationToken);
         await SendConfirmationEmailAsync(originalEmail, originalName, cancellationToken);
     }
 
-    private async Task<UserAccount> LoadParentAsync(
+    private async Task<UserAccount> LoadUserAsync(
         int userId, CancellationToken cancellationToken)
     {
         var user = await _unitOfWork.Repository<UserAccount>()
             .GetByIdAsync(userId, cancellationToken)
                    ?? throw new NotFoundException("Tài khoản", userId);
-        if (user.Role != UserRole.Parent)
+        if (user.Role != UserRole.User)
         {
             throw new ForbiddenException(
-                "Chỉ tài khoản Parent mới tự xóa tài khoản được.");
+                "Chỉ tài khoản User mới tự xóa tài khoản được.");
         }
 
         return user;
@@ -202,7 +153,7 @@ public class AccountDeletionService : IAccountDeletionService
     {
         var profiles = await _unitOfWork.Repository<ChildProfile>().FindAsync(
             value => value.OwnerUserId == userId
-                     && value.Status != ChildProfileStatus.Deleted,
+                     && value.Status != ChildProfileStatus.Deleted && !value.IsDeleted,
             cancellationToken: cancellationToken);
         return profiles.ToList();
     }
@@ -210,27 +161,15 @@ public class AccountDeletionService : IAccountDeletionService
     private static DeleteAccountPreviewDto BuildPreview(
         IEnumerable<ChildProfile> ownedProfiles)
     {
-        var preview = new DeleteAccountPreviewDto();
-        foreach (var profile in ownedProfiles)
+        return new DeleteAccountPreviewDto
         {
-            var summary = new OwnedChildProfileSummaryDto
+            ChildProfiles = ownedProfiles.Select(profile => new OwnedChildProfileSummaryDto
             {
                 Id = profile.Id,
                 Nickname = profile.Nickname,
                 Status = profile.Status.ToString()
-            };
-
-            if (profile.Status == ChildProfileStatus.Draft)
-            {
-                preview.DraftProfiles.Add(summary);
-            }
-            else
-            {
-                preview.BlockingProfiles.Add(summary);
-            }
-        }
-
-        return preview;
+            }).ToList()
+        };
     }
 
     private void Anonymize(UserAccount user, DateTime now)
@@ -255,31 +194,6 @@ public class AccountDeletionService : IAccountDeletionService
         user.TokenVersion += 1;
         user.IsDeleted = true;
         user.UpdatedAt = now;
-    }
-
-    private async Task NotifyOwnersAsync(
-        int userId, IEnumerable<int> leftProfileIds,
-        CancellationToken cancellationToken)
-    {
-        foreach (var childProfileId in leftProfileIds.Distinct())
-        {
-            var profile = await _unitOfWork.Repository<ChildProfile>()
-                .GetByIdAsync(childProfileId, cancellationToken);
-            if (profile == null)
-            {
-                continue;
-            }
-
-            await _notificationService.CreateAsync(
-                profile.OwnerUserId, NotificationType.SupervisionRevoked,
-                JsonSerializer.Serialize(new
-                {
-                    childProfileId,
-                    revokedByUserId = userId,
-                    reason = "account_deleted"
-                }),
-                cancellationToken);
-        }
     }
 
     private async Task SendConfirmationEmailAsync(

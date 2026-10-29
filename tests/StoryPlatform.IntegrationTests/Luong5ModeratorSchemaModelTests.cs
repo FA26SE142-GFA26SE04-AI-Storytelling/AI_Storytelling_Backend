@@ -16,7 +16,7 @@ public sealed class Luong5ModeratorSchemaModelTests
     {
         Assert.True(Enum.IsDefined(UserRole.Moderator));
         Assert.True(Enum.IsDefined(UserRole.ContentCreator));
-        Assert.Equal(1, (int)UserRole.Parent);
+        Assert.Equal(1, (int)UserRole.User);
         Assert.Equal(3, (int)UserRole.Administrator);
     }
 

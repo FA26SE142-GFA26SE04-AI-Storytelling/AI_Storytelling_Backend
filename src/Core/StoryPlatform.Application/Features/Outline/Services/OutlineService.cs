@@ -73,7 +73,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         ValidateObject(input);
         var created = await InStoryTransactionAsync(storyId, async () =>
         {
-            var story = await LoadAuthorizedStoryAsync(userId, storyId, Permission.GenerateStory, cancellationToken);
+            var story = await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
             EnsureReviewState(story);
             var current = await LoadCurrentVersionAsync(storyId, versionNo, cancellationToken);
             EnsureOutlineNotApproved(current);
@@ -106,7 +106,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         ValidateObject(input);
         await InStoryTransactionAsync(storyId, async () =>
         {
-            var story = await LoadAuthorizedStoryAsync(userId, storyId, Permission.GenerateStory, cancellationToken);
+            var story = await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
             EnsureReviewState(story);
             var current = await LoadCurrentVersionAsync(storyId, versionNo, cancellationToken);
             EnsureOutlineNotApproved(current);
@@ -156,7 +156,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         ValidateObject(input);
         await InStoryTransactionAsync(storyId, async () =>
         {
-            var story = await LoadAuthorizedStoryAsync(userId, storyId, Permission.GenerateStory, cancellationToken);
+            var story = await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
             if (story.Source != StorySource.Ai || story.Status != StoryStatus.Draft ||
                 await _unitOfWork.Repository<StoryVersion>().ExistsAsync(item => item.StoryId == storyId, cancellationToken))
             {
@@ -297,7 +297,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         ValidateObject(input);
         return await InStoryTransactionAsync(storyId, async () =>
         {
-            var story = await LoadAuthorizedStoryAsync(userId, storyId, Permission.ApproveStory, cancellationToken);
+            var story = await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
             EnsureReviewState(story);
             var version = await LoadCurrentVersionAsync(storyId, versionNo, cancellationToken);
             await EnsureNoActiveOutlineJobAsync(storyId, cancellationToken);
@@ -554,14 +554,11 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         if (await GenerationStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, cancellationToken)) return story;
         var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken)
                    ?? throw new ForbiddenException();
-        if (user.Status == AccountStatus.Suspended || user.Role != UserRole.Parent)
+        if (user.Status == AccountStatus.Suspended || user.Role != UserRole.User)
         {
             throw new ForbiddenException();
         }
-        var relationship = await _unitOfWork.Repository<SupervisionRelationship>().FirstOrDefaultAsync(
-            item => item.ChildProfileId == story.ChildProfileId && item.SupervisorUserId == userId && item.RevokedAt == null,
-            cancellationToken: cancellationToken);
-        if (relationship is null)
+        if (!await StoryPlatform.Application.Common.ChildOwnership.IsOwnerAsync(_unitOfWork, story.ChildProfileId, userId, cancellationToken))
         {
             throw new ForbiddenException();
         }
@@ -571,7 +568,6 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
     private async Task<Story> LoadAuthorizedStoryAsync(
         int userId,
         int storyId,
-        Permission permission,
         CancellationToken cancellationToken)
     {
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
@@ -581,16 +577,11 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         if (await GenerationStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, cancellationToken)) return story;
         var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken)
                    ?? throw new ForbiddenException();
-        if (user.Status == AccountStatus.Suspended || user.Role != UserRole.Parent)
+        if (user.Status == AccountStatus.Suspended || user.Role != UserRole.User)
         {
             throw new ForbiddenException();
         }
-        var relationship = await _unitOfWork.Repository<SupervisionRelationship>().FirstOrDefaultAsync(
-            item => item.ChildProfileId == story.ChildProfileId && item.SupervisorUserId == userId && item.RevokedAt == null,
-            cancellationToken: cancellationToken);
-        if (relationship is null || !await _unitOfWork.Repository<SupervisionPermission>().ExistsAsync(
-                item => item.SupervisionRelationshipId == relationship.Id && item.Permission == permission,
-                cancellationToken))
+        if (!await StoryPlatform.Application.Common.ChildOwnership.IsOwnerAsync(_unitOfWork, story.ChildProfileId, userId, cancellationToken))
         {
             throw new ForbiddenException();
         }
@@ -609,24 +600,11 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         if (await GenerationStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, cancellationToken)) return story;
         var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken)
                    ?? throw new ForbiddenException();
-        if (user.Status == AccountStatus.Suspended || user.Role != UserRole.Parent)
+        if (user.Status == AccountStatus.Suspended || user.Role != UserRole.User)
         {
             throw new ForbiddenException();
         }
-        var relationship = await _unitOfWork.Repository<SupervisionRelationship>().FirstOrDefaultAsync(
-            item => item.ChildProfileId == story.ChildProfileId && item.SupervisorUserId == userId && item.RevokedAt == null,
-            cancellationToken: cancellationToken);
-        if (relationship is null)
-        {
-            throw new ForbiddenException();
-        }
-        var canGenerate = await _unitOfWork.Repository<SupervisionPermission>().ExistsAsync(
-            item => item.SupervisionRelationshipId == relationship.Id && item.Permission == Permission.GenerateStory,
-            cancellationToken);
-        var canApprove = await _unitOfWork.Repository<SupervisionPermission>().ExistsAsync(
-            item => item.SupervisionRelationshipId == relationship.Id && item.Permission == Permission.ApproveStory,
-            cancellationToken);
-        if (!canGenerate && !canApprove)
+        if (!await StoryPlatform.Application.Common.ChildOwnership.IsOwnerAsync(_unitOfWork, story.ChildProfileId, userId, cancellationToken))
         {
             throw new ForbiddenException();
         }

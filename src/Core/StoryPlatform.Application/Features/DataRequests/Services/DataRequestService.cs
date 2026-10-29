@@ -5,7 +5,7 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
-using StoryPlatform.Application.Features.ChildProfiles.Sessions.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.DataRequests.DTOs;
 using StoryPlatform.Application.Features.DataRequests.Interfaces;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
@@ -16,14 +16,12 @@ namespace StoryPlatform.Application.Features.DataRequests.Services;
 
 public class DataRequestService : IDataRequestService
 {
-    private const string AnonymizedNicknamePlaceholder = "[Đã ẩn danh]";
-
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly IWorkbookExportBuilder _exportBuilder;
     private readonly IArchiveExportBuilder _archiveExportBuilder;
     private readonly IPasswordHasher _passwordHasher;
-    private readonly IChildSessionRevoker _childSessionRevoker;
+    private readonly IChildProfileEraser _childProfileEraser;
     private readonly INotificationService _notificationService;
     private readonly IEmailSender _emailSender;
 
@@ -33,7 +31,7 @@ public class DataRequestService : IDataRequestService
         IWorkbookExportBuilder exportBuilder,
         IArchiveExportBuilder archiveExportBuilder,
         IPasswordHasher passwordHasher,
-        IChildSessionRevoker childSessionRevoker,
+        IChildProfileEraser childProfileEraser,
         INotificationService notificationService,
         IEmailSender emailSender)
     {
@@ -42,7 +40,7 @@ public class DataRequestService : IDataRequestService
         _exportBuilder = exportBuilder;
         _archiveExportBuilder = archiveExportBuilder;
         _passwordHasher = passwordHasher;
-        _childSessionRevoker = childSessionRevoker;
+        _childProfileEraser = childProfileEraser;
         _notificationService = notificationService;
         _emailSender = emailSender;
     }
@@ -231,13 +229,7 @@ public class DataRequestService : IDataRequestService
         var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(childProfileId, cancellationToken)
                     ?? throw new NotFoundException("Hồ sơ trẻ", childProfileId);
 
-        await RevokeSupervisionRelationshipsAsync(childProfileId, adminUserId, cancellationToken);
-        await CancelAssignmentsAsync(childProfileId, adminUserId, cancellationToken);
-
-        child.Nickname = AnonymizedNicknamePlaceholder;
-        child.Status = ChildProfileStatus.Deleted;
-        _unitOfWork.Repository<ChildProfile>().Update(child);
-        await RevokeChildAccessAsync(childProfileId, DateTime.UtcNow, cancellationToken);
+        await _childProfileEraser.EraseAsync(child, adminUserId, DateTime.UtcNow, cancellationToken);
 
         var beforeState = new { status = request.Status.ToString() };
         request.Status = DataRequestStatus.Resolved;
@@ -314,26 +306,6 @@ public class DataRequestService : IDataRequestService
         }
     }
 
-    private async Task RevokeChildAccessAsync(
-        int childProfileId, DateTime now, CancellationToken cancellationToken)
-    {
-        await _childSessionRevoker.RevokeByChildProfileAsync(
-            childProfileId, cancellationToken);
-
-        var credentialRepo = _unitOfWork.Repository<ChildAccessCredential>();
-        var credential = await credentialRepo.FirstOrDefaultAsync(
-            value => value.ChildProfileId == childProfileId
-                     && value.RevokedAt == null,
-            cancellationToken: cancellationToken);
-        if (credential != null)
-        {
-            credential.RevokedAt = now;
-            credential.EasyLoginSecretHash = null;
-            credential.UpdatedAt = now;
-            credentialRepo.Update(credential);
-        }
-    }
-
     private async Task NotifyCompletedAsync(
         DataRequest request, string result, string? reason,
         CancellationToken cancellationToken)
@@ -359,40 +331,6 @@ public class DataRequestService : IDataRequestService
         await _emailSender.SendDataRequestCompletedEmailAsync(
             requester.Email, requester.FullName, requestType, result, reason,
             cancellationToken);
-    }
-
-    private async Task RevokeSupervisionRelationshipsAsync(
-        int childProfileId, int adminUserId, CancellationToken cancellationToken)
-    {
-        var relationships = await _unitOfWork.Repository<SupervisionRelationship>().FindAsync(
-            item => item.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
-        foreach (var relationship in relationships.Where(item => item.RevokedAt == null))
-        {
-            relationship.RevokedAt = DateTime.UtcNow;
-            relationship.RevokedByUserId = adminUserId;
-            _unitOfWork.Repository<SupervisionRelationship>().Update(relationship);
-        }
-    }
-
-    private async Task CancelAssignmentsAsync(int childProfileId, int adminUserId, CancellationToken cancellationToken)
-    {
-        var recipients = await _unitOfWork.Repository<AssignmentRecipient>().FindAsync(
-            item => item.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
-        foreach (var recipient in recipients.Where(item => item.Status != AssignmentStatus.Cancelled))
-        {
-            recipient.Status = AssignmentStatus.Cancelled;
-            recipient.CancelledAt = DateTime.UtcNow;
-            recipient.CancelledByUserId = adminUserId;
-            _unitOfWork.Repository<AssignmentRecipient>().Update(recipient);
-        }
-
-        var directAssignments = await _unitOfWork.Repository<Assignment>().FindAsync(
-            item => item.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
-        foreach (var assignment in directAssignments.Where(item => item.Status != AssignmentStatus.Cancelled))
-        {
-            assignment.Status = AssignmentStatus.Cancelled;
-            _unitOfWork.Repository<Assignment>().Update(assignment);
-        }
     }
 
     private async Task<IReadOnlyList<ExportSheet>> GatherExportSheetsAsync(

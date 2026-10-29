@@ -11,9 +11,6 @@ public class ReadingSession : BaseEntity
     public int StoryId { get; set; }
     public virtual Story? Story { get; set; }
 
-    public int? AssignmentRecipientId { get; set; }
-    public virtual AssignmentRecipient? AssignmentRecipient { get; set; }
-
     public SessionStatus Status { get; set; } = SessionStatus.Started;
     public DateTime StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }

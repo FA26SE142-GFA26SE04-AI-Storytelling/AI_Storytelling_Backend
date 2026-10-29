@@ -32,7 +32,7 @@ public class ParentWishesControllerTests
         var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Select(m => m.Name).OrderBy(n => n).ToArray();
 
-        Assert.Equal("Parent", type.GetCustomAttribute<AuthorizeAttribute>()!.Roles);
+        Assert.Equal("User", type.GetCustomAttribute<AuthorizeAttribute>()!.Roles);
         Assert.Equal("api/v1/parent/wishes", type.GetCustomAttribute<RouteAttribute>(inherit: false)!.Template);
         Assert.Equal(new[] { "CreateStory", "Decline", "Get", "GetGenerationForm", "List", "UseExisting" }, methods);
         Assert.Null(type.GetMethod("List")!.GetCustomAttribute<HttpGetAttribute>()!.Template);

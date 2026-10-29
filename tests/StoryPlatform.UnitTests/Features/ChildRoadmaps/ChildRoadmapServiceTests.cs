@@ -1,6 +1,6 @@
 using Moq;
 using StoryPlatform.Application.Common.Exceptions;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Services;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Services;
 using StoryPlatform.Application.Features.ChildRoadmaps;
 using StoryPlatform.Application.Features.ChildRoadmaps.Services;
 using StoryPlatform.Domain.Entities;
@@ -25,7 +25,7 @@ public class ChildRoadmapServiceTests
         var eligibility = new ChildRoadmapEligibility(_h.UnitOfWork.Object);
         _sut = new ChildRoadmapService(
             _h.UnitOfWork.Object,
-            new SupervisionAccessGuard(_h.UnitOfWork.Object),
+            new ChildProfileAccessGuard(_h.UnitOfWork.Object),
             eligibility,
             new ChildRoadmapInserter(_h.UnitOfWork.Object),
             new ChildRoadmapAdvancer(_h.UnitOfWork.Object, eligibility),
@@ -103,19 +103,17 @@ public class ChildRoadmapServiceTests
     }
 
     [Fact]
-    public async Task AddStory_PrivateSiblingStoryNeedsApproveStoryForBothChildren()
+    public async Task AddStory_PrivateStoryOfAnotherChild_NeedsOwnershipOfBothChildren()
     {
-        var story = _h.Stories.Single(x => x.Id == 10);
-        story.ChildProfileId = OtherChild;
-        _h.AddSupervisor(Child, Second, SupervisorRole.AdditionalSupervisor,
-            Permission.AssignActivity, Permission.ApproveStory);
-
-        var denied = await _sut.AddStoryAsync(Second, Add(10, Child));
-        Assert.Equal(ChildRoadmapSkipCodes.NoAccessToStory, denied.Results.Single().SkipCode);
-
-        _h.AddSupervisor(OtherChild, Second, SupervisorRole.AdditionalSupervisor, Permission.ApproveStory);
-        var allowed = await _sut.AddStoryAsync(Second, Add(10, Child));
+        var sibling = _h.Stories.Single(x => x.Id == 10);
+        sibling.ChildProfileId = OtherChild;
+        var allowed = await _sut.AddStoryAsync(Owner, Add(10, Child));
         Assert.Equal("Added", allowed.Results.Single().Outcome);
+
+        const int secondChild = 102;
+        _h.AddChild(secondChild, ChildProfileStatus.Active).OwnerUserId = Second;
+        var denied = await _sut.AddStoryAsync(Second, Add(11, secondChild));
+        Assert.Equal(ChildRoadmapSkipCodes.NoAccessToStory, denied.Results.Single().SkipCode);
     }
 
     [Fact]
@@ -151,14 +149,13 @@ public class ChildRoadmapServiceTests
     }
 
     [Fact]
-    public async Task AddStory_NotifiesOtherSupervisorsAndCommits()
+    public async Task AddStory_ActorReceivesNoNotificationAndCommits()
     {
-        _h.AddSupervisor(Child, Second, SupervisorRole.AdditionalSupervisor, Permission.ViewProgress);
 
         await _sut.AddStoryAsync(Owner, Add(10, Child));
 
         _h.Notifications.Verify(n => n.CreateAsync(
-            Second, NotificationType.RoadmapStoryAdded, It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
+            Owner, NotificationType.RoadmapStoryAdded, It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
         _h.UnitOfWork.Verify(u => u.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -231,10 +228,9 @@ public class ChildRoadmapServiceTests
     }
 
     [Fact]
-    public async Task Get_AllowsActiveSupervisorsButRejectsStrangers()
+    public async Task Get_AllowsOwnerButRejectsStrangers()
     {
-        _h.AddSupervisor(Child, Second, SupervisorRole.AdditionalSupervisor, Permission.ViewProgress);
-        Assert.Equal(Child, (await _sut.GetAsync(Second, Child)).ChildProfileId);
+        Assert.Equal(Child, (await _sut.GetAsync(Owner, Child)).ChildProfileId);
         await Assert.ThrowsAsync<ForbiddenException>(() => _sut.GetAsync(Stranger, Child));
     }
 
@@ -283,28 +279,6 @@ public class ChildRoadmapServiceTests
 
         Assert.Equal(new[] { 10, 12, 13 }, WaitingStories());
         Assert.Equal(ChildRoadmapItemStatus.Open, Item(1).Status);
-    }
-
-    [Fact]
-    public async Task AddForWishAsync_SupervisorWithOnlyApproveStory_CanDoIt()
-    {
-        Publish(10);
-        _h.AddSupervisor(Child, Second, SupervisorRole.AdditionalSupervisor, Permission.ApproveStory);
-
-        var result = await _sut.AddForWishAsync(Second, Child, 10);
-
-        Assert.Equal("Added", result.Outcome);
-        Assert.Equal(Second, _h.Items.Single().AddedByUserId);
-    }
-
-    [Fact]
-    public async Task AddForWishAsync_SupervisorWithOnlyAssignActivity_IsForbidden()
-    {
-        Publish(10);
-        _h.AddSupervisor(Child, Second, SupervisorRole.AdditionalSupervisor, Permission.AssignActivity);
-
-        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.AddForWishAsync(Second, Child, 10));
-        Assert.Empty(_h.Items);
     }
 
     [Fact]
@@ -470,14 +444,12 @@ public class ChildRoadmapServiceTests
     }
 
     [Fact]
-    public async Task AddForWishAsync_NotifiesTheOtherSupervisorsButNotTheActor()
+    public async Task AddForWishAsync_DoesNotNotifyTheActor()
     {
         Publish(10);
-        _h.AddSupervisor(Child, Second, SupervisorRole.AdditionalSupervisor, Permission.ViewProgress);
 
         await _sut.AddForWishAsync(Owner, Child, 10);
 
-        VerifyNotified(Second, NotificationType.RoadmapStoryAdded, Times.Once());
         VerifyNotified(Owner, NotificationType.RoadmapStoryAdded, Times.Never());
     }
 

@@ -503,6 +503,7 @@ public sealed class ContentGenerationServiceTests
     {
         var store = new FakeUnitOfWork();
         store.Seed(new Story { Id = 1, AuthorUserId = 1, ChildProfileId = 1, Source = StorySource.Ai, Status = StoryStatus.OutlineReview });
+        store.Seed(new ChildProfile { Id = 1, OwnerUserId = 1, Status = ChildProfileStatus.Active });
         var outline = new StoryVersion
         {
             Id = 1,

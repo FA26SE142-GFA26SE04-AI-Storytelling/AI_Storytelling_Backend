@@ -22,7 +22,7 @@ public class DataRequestController : BaseApiController
     /// Tạo yêu cầu Export hoặc Delete dữ liệu cho Child Profile do chính mình sở hữu.
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "User")]
     public async Task<ActionResult<ApiResponse<DataRequestDto>>> CreateDataRequest(
         [FromBody] CreateDataRequestDto request, CancellationToken cancellationToken)
     {
@@ -45,7 +45,7 @@ public class DataRequestController : BaseApiController
 
     /// <summary>Danh sách Data Request do chính Owner gửi.</summary>
     [HttpGet("mine")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "User")]
     public async Task<ActionResult<ApiResponse<List<DataRequestDto>>>> ListMyDataRequests(
         [FromQuery] int? childProfileId, CancellationToken cancellationToken)
     {
@@ -56,7 +56,7 @@ public class DataRequestController : BaseApiController
 
     /// <summary>Owner hủy Data Request của mình khi còn pending.</summary>
     [HttpPost("{dataRequestId:int}/cancel")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "User")]
     public async Task<ActionResult<ApiResponse<DataRequestDto>>> CancelDataRequest(
         int dataRequestId, CancellationToken cancellationToken)
     {

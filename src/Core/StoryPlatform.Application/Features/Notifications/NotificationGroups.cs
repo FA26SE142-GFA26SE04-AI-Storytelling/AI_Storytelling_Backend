@@ -26,7 +26,6 @@ public static class NotificationGroups
 
         NotificationType.HoldModeAlert
             or NotificationType.RecommendationAwaitingReview
-            or NotificationType.AssignmentCancelled
             or NotificationType.RoadmapStoryAdded
             or NotificationType.RoadmapStoryRemoved
             or NotificationType.RoadmapCompleted
@@ -38,8 +37,7 @@ public static class NotificationGroups
             or NotificationType.DataRequestSlaWarning
             or NotificationType.ContentModerationResult => Moderation,
 
-        NotificationType.ContentReportResolved
-            or NotificationType.StoryShared => Stories,
+        NotificationType.ContentReportResolved => Stories,
 
         _ => Account
     };

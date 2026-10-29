@@ -178,8 +178,7 @@ Project ai_storytelling_platform {
         quyền nhạy cảm — revoke supervision Bước 1.6b, Grant/Revoke
         Admin Bước 5.1b, Remove/Demote Bước 7.2b/7.2d — mọi access
         token JWT cũ mang version cũ bị middleware từ chối NGAY dù
-        chưa hết hạn), mfa_secret/mfa_enabled (Luồng 5, Mục 9 — bắt
-        buộc TOTP cho role=administrator), email_verification_token_hash/
+        chưa hết hạn), mfa_secret/mfa_enabled (đã gỡ 2026-10-28 — bỏ MFA), email_verification_token_hash/
         email_verification_token_expires_at (Bước 1.1 — bắt buộc xác thực
         email khi đăng ký cold-start, không qua invitation_code),
         failed_login_attempts/locked_until (chống brute-force đăng
@@ -799,8 +798,6 @@ Table user_accounts {
   pending_email_otp_failed_attempts integer [not null, default: 0]
   failed_login_attempts integer [not null, default: 0, note: 'MỚI v9.5 — chống brute-force đăng nhập Supervisor, đối xứng child_access_credentials.failed_attempts']
   locked_until timestamp [note: 'MỚI v9.5 — khoá tạm thời sau quá nhiều lần đăng nhập sai liên tiếp']
-  mfa_secret varchar [note: 'MỚI v9.5 — Luồng 5, Mục 9: TOTP secret, BẮT BUỘC khi role=administrator, tuỳ chọn cho Parent/Teacher']
-  mfa_enabled boolean [not null, default: false, note: 'MỚI v9.5']
   token_version integer [not null, default: 1, note: 'MỚI v9.5 — Luồng 1, Mục 7c: tăng lên 1 khi có thay đổi quyền nhạy cảm (revoke supervision Bước 1.6b, Grant/Revoke Admin Bước 5.1b, Remove/Demote Bước 7.2b/7.2d) — mọi access token JWT cũ mang version không khớp bị middleware từ chối NGAY dù chưa hết hạn.']
   last_login_at timestamp
   role_before_admin user_role [note: 'MỚI v9.4 — Luồng 5, Bước 5.1b: lưu role hiện tại TRƯỚC khi được Grant làm administrator, phục vụ khôi phục đúng role khi Revoke. NULL nếu tài khoản được tạo làm administrator ngay từ đầu (khôi phục mặc định về teacher).']

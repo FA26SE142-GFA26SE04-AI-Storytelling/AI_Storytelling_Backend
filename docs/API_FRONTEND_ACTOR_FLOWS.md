@@ -121,9 +121,8 @@ Nguồn: [UserRole](../src/Core/StoryPlatform.Domain/Enums/UserRole.cs), [Permis
 
 1. POST /Auth/register: username/email/fullName/password/confirmPassword; không có field tự cấp role nâng quyền.
 2. POST /Auth/verify-email: **email + otp**, không phải token link cũ. POST /Auth/resend-verification-email gửi lại.
-3. POST /Auth/login: **identifier + password**; xem mfaRequired/mfaSetupRequired trước khi lưu phiên.
-4. Có MFA: dùng mfaChallengeToken + code ở POST /Auth/mfa/verify. Provisioning URI chỉ cho thiết lập MFA; challenge không phải access token.
-5. Khi có phiên hoàn chỉnh, đồng bộ accessToken/refreshToken/user; GET /Auth/me nạp lại tài khoản.
+3. POST /Auth/login: **identifier + password**; lưu phiên từ accessToken và refreshToken.
+4. Khi có phiên hoàn chỉnh, đồng bộ accessToken/refreshToken/user; GET /Auth/me nạp lại tài khoản.
 
 PasswordPolicy: 8–100 ký tự, ít nhất một chữ cái và một chữ số. Backend quyết định xác thực/lockout.
 
@@ -608,15 +607,14 @@ HTTP là nhánh response controller; kết hợp lỗi chung mục 2 và guard n
 [AIStoryInput](#controller-aistoryinput) · [AdminAccount](#controller-adminaccount) · [Auth](#controller-auth) · [AuthoringGuides](#controller-authoringguides) · [BusinessReport](#controller-businessreport) · [ChildAccessCredential](#controller-childaccesscredential) · [ChildManualStories](#controller-childmanualstories) · [ChildProfile](#controller-childprofile) · [ChildRoadmap](#controller-childroadmap) · [CommunityLibrary](#controller-communitylibrary) · [CommunityReview](#controller-communityreview) · [CommunitySubmission](#controller-communitysubmission) · [ContentCategory](#controller-contentcategory) · [ContentGeneration](#controller-contentgeneration) · [ContentReport](#controller-contentreport) · [ContentReportReview](#controller-contentreportreview) · [CreatorAIStoryInput](#controller-creatoraistoryinput) · [CreatorAssistance](#controller-creatorassistance) · [CreatorAuthoring](#controller-creatorauthoring) · [CreatorModerationCheck](#controller-creatormoderationcheck) · [CreatorPublication](#controller-creatorpublication) · [DataRequest](#controller-datarequest) · [ExistingStories](#controller-existingstories) · [GrayZoneReview](#controller-grayzonereview) · [LearningProfile](#controller-learningprofile) · [MediaGeneration](#controller-mediageneration) · [ModerationQueue](#controller-moderationqueue) · [ModerationRubrics](#controller-moderationrubrics) · [ModeratorAccount](#controller-moderatoraccount) · [MyRoadmap](#controller-myroadmap) · [Notification](#controller-notification) · [Outline](#controller-outline) · [ParentAssistance](#controller-parentassistance) · [ParentAuthoring](#controller-parentauthoring) · [ParentalGate](#controller-parentalgate) · [Payment](#controller-payment) · [Permission](#controller-permission) · [PublicStoryReview](#controller-publicstoryreview) · [PublicStorySubmission](#controller-publicstorysubmission) · [PublishedContentReview](#controller-publishedcontentreview) · [Review](#controller-review) · [RoadmapLibrary](#controller-roadmaplibrary) · [RoadmapReview](#controller-roadmapreview) · [RoadmapTemplate](#controller-roadmaptemplate) · [SafetyPolicy](#controller-safetypolicy) · [Story](#controller-story) · [Supervision](#controller-supervision) · [TokenQuota](#controller-tokenquota)
 
 <a id="controller-auth"></a>
-### Auth — 21 route
+### Auth — 20 route
 
-A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên người lớn. Change-email/delete-account giới hạn Parent. MFA phải hoàn tất trước khi coi đăng nhập thành công.
+A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên người lớn. Change-email/delete-account giới hạn Parent.
 
 | Method + route | Mapping |
 |---|---|
 | [POST /api/v1/Auth/register](#ep-auth-register-post) | GỌI_API |
 | [POST /api/v1/Auth/login](#ep-auth-login-post) | GỌI_API |
-| [POST /api/v1/Auth/mfa/verify](#ep-auth-verifymfa-post) | GỌI_API |
 | [POST /api/v1/Auth/staff-activation](#ep-auth-activatestaffaccount-post) | GỌI_API |
 | [POST /api/v1/Auth/verify-email](#ep-auth-verifyemail-post) | GỌI_API |
 | [POST /api/v1/Auth/resend-verification-email](#ep-auth-resendverificationemail-post) | GỌI_API |
@@ -653,15 +651,6 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 - Request: **body** request: [LoginRequestDto](#dto-loginrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AuthResponseDto](#dto-authresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [authService.login](../../AI_Storytelling_Frontend/src/app/services/authService.ts#L64); nơi dùng: [AuthContext.tsx](../../AI_Storytelling_Frontend/src/app/context/AuthContext.tsx#L120)
-
-<a id="ep-auth-verifymfa-post"></a>
-#### POST /api/v1/Auth/mfa/verify
-
-- Action/chức năng: **VerifyMfa** — Bước 2 của đăng nhập Administrator: xác thực mã TOTP (Mục 9 — MFA bắt buộc cho Administrator).. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L63).
-- Quyền: AllowAnonymous
-- Request: **body** request: [VerifyMfaRequestDto](#dto-verifymfarequestdto); field/validation/ví dụ tại schema.
-- Response: ApiResponse.data: [AuthResponseDto](#dto-authresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [authService.verifyMfa](../../AI_Storytelling_Frontend/src/app/services/authService.ts#L112); nơi dùng: [AuthContext.tsx](../../AI_Storytelling_Frontend/src/app/context/AuthContext.tsx#L180)
 
 <a id="ep-auth-activatestaffaccount-post"></a>
 #### POST /api/v1/Auth/staff-activation
@@ -4415,7 +4404,6 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [ValidationResultDto](#dto-validationresultdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L153) |
 | [VerifyEmailRequestDto](#dto-verifyemailrequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L143) |
 | [VerifyInvitationOtpRequestDto](#dto-verifyinvitationotprequestdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L53) |
-| [VerifyMfaRequestDto](#dto-verifymfarequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L14) |
 | [VerifyParentalGateRequestDto](#dto-verifyparentalgaterequestdto) | [ParentalGateDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/ParentalGate/DTOs/ParentalGateDtos.cs#L5) |
 | [VersionMutationResponseDto](#dto-versionmutationresponsedto) | [ExistingStoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ExistingStories/DTOs/ExistingStoryDtos.cs#L130) |
 | [VocabularyItemDto](#dto-vocabularyitemdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L86) |
@@ -5216,10 +5204,6 @@ Nguồn: [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/
 | `tokenType` | `string` | Không | default `"Bearer"` |
 | `expiresInSeconds` | `long` | Không | — |
 | `user` | [UserProfileDto](#dto-userprofiledto) | Không | default `null!` |
-| `mfaRequired` | `bool` | Không | True nếu tài khoản (Administrator) đã bật MFA và cần nhập mã TOTP trước khi hoàn tất đăng nhập. Khi true, AccessToken/RefreshToken/User ở trên chưa có giá trị thật. |
-| `mfaSetupRequired` | `bool` | Không | True nếu đây là lần đăng nhập Administrator đầu tiên và cần thiết lập MFA trước khi tiếp tục. |
-| `mfaChallengeToken` | `string?` | Có | Token ngắn hạn (5 phút) dùng cho bước xác thực MFA tiếp theo. |
-| `mfaProvisioningUri` | `string?` | Có | Chuỗi otpauth:// để FE dựng QR khi MfaSetupRequired = true. |
 
 <a id="dto-authoringguide"></a>
 ### AuthoringGuide
@@ -9050,25 +9034,6 @@ Ví dụ JSON minh họa shape request:
 }
 ~~~
 
-<a id="dto-verifymfarequestdto"></a>
-### VerifyMfaRequestDto
-
-Nguồn: [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L14).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `challengeToken` | `string` | Không | default `string.Empty`; `[Required(ErrorMessage = "ChallengeToken không được để trống.")]` |
-| `code` | `string` | Không | default `string.Empty`; `[Required(ErrorMessage = "Mã xác thực không được để trống.")]` |
-
-Ví dụ JSON minh họa shape request:
-
-~~~json
-{
-  "challengeToken": "<MFA_CHALLENGE_TOKEN>",
-  "code": "123456"
-}
-~~~
-
 <a id="dto-verifyparentalgaterequestdto"></a>
 ### VerifyParentalGateRequestDto
 
@@ -10704,7 +10669,7 @@ Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response 
 
 ### 16.2 Kịch bản kiểm thử tích hợp
 
-1. Đăng ký/OTP/login, MFA chưa phải session, refresh rotate, revoke/logout.
+1. Đăng ký/OTP/login, refresh rotate, revoke/logout.
 2. Draft child → learning/policy/consent → activate; supervisor thiếu quyền, suspend/reconsent/restore.
 3. Invitation claim/OTP/accept; chuyển Owner và xin quyền đúng người quyết định.
 4. Input accepted/422/context conflict/technical error có progress; replay không tạo job trùng.

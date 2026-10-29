@@ -1,4 +1,4 @@
--- 11. stories (18: 11 Parent, 7 Creator)
+-- 11. stories (19: 12 Parent, 7 Creator)
 -- Creator: Id 11 = manual V2, Id 12 = imported text V1; author is creator_demo (Id 13).
 -- WF-L5A fixtures: Id 11 = first submit/withdraw; Id 13 = creator resubmit;
 -- Id 14 = recent pending resubmission for moderator queue/history/compare;
@@ -29,6 +29,15 @@ VALUES
     (18, 'Chiếc lá nhỏ', 'Mẫu đang chờ duyệt, dành riêng để test rút yêu cầu', 'Chiếc lá nhỏ rơi xuống hồ. Kiến bò lên lá để qua bờ bên kia. Kiến cảm ơn chiếc lá đã giúp mình.', NULL, 'Tình bạn', 'Biết cảm ơn người giúp mình', 'vi', '6-8', 2, 'level_2', 'Ready', 'Manual', false, NULL, NULL, 13, NULL, NOW() - INTERVAL '1 day', false, 'Creator', 'ReadingMediaOnly', 1, 1, md5('seed-creator-story-18'), 'reading')
 ON CONFLICT ("Id") DO NOTHING;
 
+-- Truyện riêng 6-8 tuổi của bé 11 (parent_demo2), nhãn ANIMALS, đã được duyệt lên thư viện cộng đồng (mục 27)
+-- để bé 6-8 tuổi (ví dụ bé 1, chỉ cho phép nhãn ANIMALS) thấy sẵn một truyện ở GET /api/v1/CommunityLibrary.
+INSERT INTO stories (
+    "Id", "Title", "Description", "Content", "CoverImageUrl", "Genre", "MoralLesson", "Language", "AgeBand", "ReadingLevel", "VocabularyLevel", "Status", "Source", "IsPublished", "ChildVisibleAt", "ArchivedReason", "AuthorUserId", "ChildProfileId", "CreatedAt", "IsDeleted", "Scope", "OutputMode", "AudienceRevision", "AuthoringLastVersionNo", "AuthoringRevisionToken", "ExperienceMode"
+)
+VALUES
+    (19, 'Chú voi con tìm bạn', 'Voi con giúp chú khỉ và có thêm một người bạn mới', 'Voi con đi dạo ven suối và gặp chú khỉ đang buồn. Voi con dùng vòi múc nước tưới cho cây chuối của khỉ. Từ hôm đó, hai bạn cùng chăm cây và chơi với nhau mỗi ngày.', NULL, 'Động vật', 'Biết giúp đỡ bạn bè', 'vi', '6-8', 2, 'level_2', 'Ready', 'Ai', true, NOW() - INTERVAL '10 days', NULL, 3, 11, NOW() - INTERVAL '12 days', false, 'Parent', 'Learning', 1, 1, md5('seed-parent-story-19'), 'reading')
+ON CONFLICT ("Id") DO NOTHING;
+
 -- Giữ fixture gửi lần đầu ở trạng thái có thể submit kể cả khi seed được chạy lại.
 UPDATE stories
 SET "Status" = 'Ready', "Description" = 'Mẫu gửi duyệt và rút yêu cầu WF-L5A'
@@ -41,7 +50,7 @@ WHERE "Id" IN (13, 14, 16) AND "IsPublished" = true AND "PublishedAt" IS NULL;
 -- Public timestamps are historical demo values; Story.Visibility is not in this schema yet.
 UPDATE stories
 SET "PublishedAt" = "ChildVisibleAt"
-WHERE "Id" IN (1, 3, 6, 10) AND "IsPublished" = true AND "PublishedAt" IS NULL;
+WHERE "Id" IN (1, 3, 6, 10, 19) AND "IsPublished" = true AND "PublishedAt" IS NULL;
 
 UPDATE stories
 SET "EverGrayZone" = true

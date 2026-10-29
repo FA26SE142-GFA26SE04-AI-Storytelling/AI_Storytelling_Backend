@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.CommunityLibrary;
@@ -27,6 +28,7 @@ public class CommunitySubmitRequestDto
     /// Truyện tự viết / nhập phải khai OwnWork ("Đây là tác phẩm do tôi sáng tác"); truyện AI của nền tảng sinh không
     /// cần khai. FamilyUse (chỉ dùng trong gia đình) không nộp được.
     /// </summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
     public CopyrightDeclaration? CopyrightDeclaration { get; set; }
 }
 

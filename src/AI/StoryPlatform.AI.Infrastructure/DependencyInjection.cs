@@ -34,6 +34,8 @@ public static class DependencyInjection
                 options.AuthMode = configuration["AI__Google__AuthMode"] ?? options.AuthMode;
             });
         services.Configure<GrayZoneAiOptions>(configuration.GetSection(GrayZoneAiOptions.SectionName));
+        services.Configure<StoryPlatform.AI.Application.WishCards.WishCardMatchingOptions>(
+            configuration.GetSection(StoryPlatform.AI.Application.WishCards.WishCardMatchingOptions.SectionName));
         services.AddSingleton<VertexAIGeminiClient>();
         services.AddSingleton<IGrayZoneLlmClient, VertexGrayZoneLlmClient>();
         services.Configure<GenerateStoryOptions>(configuration.GetSection(GenerateStoryOptions.SectionName));

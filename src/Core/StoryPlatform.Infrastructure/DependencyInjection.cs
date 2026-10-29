@@ -104,6 +104,8 @@ public static class DependencyInjection
         });
         services.AddHttpClient<GeminiDirectClient>();
         services.AddHttpClient<IAIStoryGenerationClient, AIStoryGenerationClient>();
+        services.AddHttpClient<StoryPlatform.Application.Features.WishCards.Interfaces.IWishCardMatchingAiClient, WishCardMatchingAiClient>();
+        services.AddScoped<StoryPlatform.Application.Features.WishCards.Interfaces.IWishCardMappingChangeReader, WishCardMappingChangeReader>();
         services.AddHttpClient<IModelModerationProvider, VertexGrayZoneModerationProvider>();
         services.AddHttpClient<StoryPlatform.Application.Features.CreatorAssistance.Interfaces.ICreatorAssistanceAiClient, CreatorAssistanceAiClient>();
         services.Configure<OutlineWorkerOptions>(configuration.GetSection(OutlineWorkerOptions.SectionName));

@@ -76,6 +76,7 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
+        services.AddScoped<WishCardAiMatchService>();
         services.AddScoped<ICreatorAuthoringService, CreatorAuthoringService>();
         services.AddScoped<StoryPlatform.Application.Features.ParentAuthoring.ParentAuthoringService>();
         services.AddScoped<Features.CreatorAuthoring.Services.CreatorManualMediaService>();

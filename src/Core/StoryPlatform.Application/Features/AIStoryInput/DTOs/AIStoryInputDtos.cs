@@ -73,6 +73,10 @@ public sealed class SubmitAIStoryInputRequestDto : AIStoryCreativeInputDto
 
     public int? ExistingStoryId { get; init; }
 
+    /// <summary>Server-only provenance from the Parent wish workflow; never accepted from JSON.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int? SourceWishId { get; init; }
+
     [Required, StringLength(100, MinimumLength = 8)]
     public string IdempotencyKey { get; init; } = string.Empty;
 }

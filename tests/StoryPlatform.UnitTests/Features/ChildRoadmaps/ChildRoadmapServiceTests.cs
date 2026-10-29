@@ -38,6 +38,36 @@ public class ChildRoadmapServiceTests
 
     private ChildRoadmapItem Item(int id) => _h.Items.Single(item => item.Id == id);
 
+    [Fact]
+    public async Task AddForWish_LinksFulfillmentToRoadmapInOneTransaction()
+    {
+        var wish = new StoryWish { Id = 55, ChildProfileId = Child, Status = StoryWishStatus.Pending, Kind = StoryWishKind.Wish };
+        _h.Wishes.Add(wish);
+        _h.WishSuggestions.Add(new() { Id = 1, StoryWishId = 55, StoryId = 10 });
+        var result = await _sut.AddForWishAsync(Owner, Child, 10, 55);
+        Assert.Equal(StoryWishStatus.Fulfilled, wish.Status);
+        Assert.Equal(10, wish.FulfilledStoryId);
+        Assert.True(wish.FulfilledWithExistingStory);
+        Assert.Equal(10, Item(result.ItemId).StoryId);
+        _h.UnitOfWork.Verify(x => x.AcquireTransactionLockAsync(-Child, It.IsAny<CancellationToken>()), Times.Once);
+        _h.UnitOfWork.Verify(x => x.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AddForWish_AlreadyAcceptedOrUnsuggestedStory_DoesNotInsert(bool accepted)
+    {
+        _h.Wishes.Add(new() { Id = 55, ChildProfileId = Child, Status = accepted ? StoryWishStatus.Accepted : StoryWishStatus.Pending,
+            Kind = StoryWishKind.Wish });
+        if (accepted)
+            await Assert.ThrowsAsync<ConflictException>(() => _sut.AddForWishAsync(Owner, Child, 10, 55));
+        else
+            await Assert.ThrowsAsync<BadRequestException>(() => _sut.AddForWishAsync(Owner, Child, 10, 55));
+        Assert.Empty(_h.Items);
+        _h.UnitOfWork.Verify(x => x.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     private void SeedRoadmap()
     {
         _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Open);

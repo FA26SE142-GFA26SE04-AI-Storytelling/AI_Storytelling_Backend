@@ -37,6 +37,8 @@ public sealed class ChildRoadmapHarness
     public readonly List<ReadingRoadmap> Roadmaps = new();
     public readonly List<ReadingRoadmapItem> RoadmapItems = new();
     public readonly List<ContentCategory> Categories = new();
+    public readonly List<StoryWish> Wishes = new();
+    public readonly List<StoryWishSuggestion> WishSuggestions = new();
 
     public ChildRoadmapHarness()
     {
@@ -55,6 +57,8 @@ public sealed class ChildRoadmapHarness
         Back(Roadmaps);
         Back(RoadmapItems);
         Back(Categories);
+        Back(Wishes);
+        Back(WishSuggestions);
 
         AddChild(Child, ChildProfileStatus.Active);
         AddChild(OtherChild, ChildProfileStatus.Active);

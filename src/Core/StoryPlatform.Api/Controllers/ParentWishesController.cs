@@ -44,6 +44,10 @@ public sealed class ParentWishesController(IParentStoryWishService service) : Ba
         return Ok(ApiResponse<ParentWishCreateStoryResultDto>.Ok(result, "Đã gửi yêu cầu sinh truyện cho điều ước."));
     }
 
+    [HttpGet("{wishId:int}/generation")]
+    public async Task<ActionResult<ApiResponse<AIStoryInputProgressDto>>> GetGenerationProgress(int wishId, CancellationToken ct) =>
+        Ok(ApiResponse<AIStoryInputProgressDto>.Ok(await service.GetGenerationProgressAsync(GetCurrentUserId(), wishId, ct)));
+
     /// <summary>Dùng truyện có sẵn trong danh sách gợi ý; không trừ lượt.</summary>
     [HttpPost("{wishId:int}/use-existing")]
     public async Task<ActionResult<ApiResponse<ParentWishDto>>> UseExisting(

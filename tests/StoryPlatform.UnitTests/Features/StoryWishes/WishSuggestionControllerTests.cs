@@ -22,7 +22,7 @@ public class WishSuggestionControllerTests
     };
 
     [Fact]
-    public void MatchController_IsForModerators_WithThreeRoutes()
+    public void MatchController_IsForModerators_WithManualAndAiRoutes()
     {
         var type = typeof(WishCardMatchManagementController);
         var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
@@ -30,7 +30,8 @@ public class WishSuggestionControllerTests
 
         Assert.Equal("Moderator,Administrator", type.GetCustomAttribute<AuthorizeAttribute>()!.Roles);
         Assert.Equal("api/v1/moderation/stories/{storyId:int}/wish-cards", type.GetCustomAttribute<RouteAttribute>(inherit: false)!.Template);
-        Assert.Equal(new[] { "Add", "List", "Remove" }, methods);
+        Assert.Equal(new[] { "Add", "List", "MatchWithAi", "Remove" }, methods);
+        Assert.Equal("ai-match", type.GetMethod("MatchWithAi")!.GetCustomAttribute<HttpPostAttribute>()!.Template);
         Assert.Equal("{wishCardId:int}", type.GetMethod("Remove")!.GetCustomAttribute<HttpDeleteAttribute>()!.Template);
     }
 

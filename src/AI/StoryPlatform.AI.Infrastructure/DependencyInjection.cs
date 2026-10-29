@@ -8,7 +8,6 @@ using StoryPlatform.AI.Application.StoryGeneration;
 using StoryPlatform.AI.Application.OutlineGeneration;
 using StoryPlatform.AI.Application.ContentGeneration;
 using StoryPlatform.AI.Infrastructure.Evaluation;
-using StoryPlatform.AI.Infrastructure.LLM.OpenAI;
 using StoryPlatform.AI.Infrastructure.LLM.Gemini;
 using StoryPlatform.AI.Infrastructure.LLM.VertexAI;
 using StoryPlatform.AI.Infrastructure.PromptCatalog;
@@ -19,7 +18,6 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddAIInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
-        services.Configure<OpenAIOptions>(configuration.GetSection(OpenAIOptions.SectionName));
         services.AddOptions<GeminiOptions>()
             .Bind(configuration.GetSection(GeminiOptions.SectionName))
             .PostConfigure(options =>
@@ -41,10 +39,11 @@ public static class DependencyInjection
         services.Configure<GenerateStoryOptions>(configuration.GetSection(GenerateStoryOptions.SectionName));
         services.Configure<OutlineGenerationOptions>(configuration.GetSection(OutlineGenerationOptions.SectionName));
         services.Configure<StoryContentGenerationOptions>(configuration.GetSection(StoryContentGenerationOptions.SectionName));
-        var provider = configuration["AI:Provider"] ?? configuration["AI_PROVIDER"];
+        var provider = new[] { configuration["AI:Provider"], configuration["AI_PROVIDER"] }
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
         var googleAuthMode = configuration["AI:Google:AuthMode"] ?? configuration["AI__Google__AuthMode"];
         if (string.Equals(provider, "Vertex", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(googleAuthMode, "Adc", StringComparison.OrdinalIgnoreCase))
+            (string.IsNullOrWhiteSpace(provider) && string.Equals(googleAuthMode, "Adc", StringComparison.OrdinalIgnoreCase)))
         {
             services.AddSingleton<ILlmClient>(sp => sp.GetRequiredService<VertexAIGeminiClient>());
         }
@@ -55,7 +54,11 @@ public static class DependencyInjection
         }
         else
         {
-            services.AddHttpClient<ILlmClient, OpenAILlmClient>();
+            // Only Vertex AI and Gemini are supported providers. Falling back to a third-party
+            // provider here would silently route story content to an unvetted service, so an
+            // unsupported or missing configuration must stop the host instead.
+            throw new InvalidOperationException(
+                $"AI:Provider '{provider ?? "(unset)"}' is not supported. Use 'Vertex' or 'Gemini'.");
         }
         services.AddSingleton<IPromptTemplateProvider, PromptTemplateProvider>();
         services.AddSingleton<IStoryEvaluationService, RuleBasedStoryEvaluationService>();

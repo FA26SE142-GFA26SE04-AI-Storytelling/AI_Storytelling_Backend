@@ -89,6 +89,19 @@ public static class DependencyInjection
                               ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY")
                               ?? string.Empty;
             }
+            if (string.IsNullOrWhiteSpace(options.InternalApiKey))
+            {
+                // Empty configuration placeholders must not suppress the shared credential fallback.
+                options.InternalApiKey = new[]
+                {
+                    configuration["AIService:InternalApiKey"],
+                    configuration["AIService__InternalApiKey"],
+                    configuration["AI:InternalApiKey"],
+                    configuration["AI__InternalApiKey"],
+                    Environment.GetEnvironmentVariable("AI_INTERNAL_API_KEY")
+                }.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
+            }
+            options.InternalApiKey = options.InternalApiKey.Trim();
         });
         services.AddHttpClient<GeminiDirectClient>();
         services.AddHttpClient<IAIStoryGenerationClient, AIStoryGenerationClient>();

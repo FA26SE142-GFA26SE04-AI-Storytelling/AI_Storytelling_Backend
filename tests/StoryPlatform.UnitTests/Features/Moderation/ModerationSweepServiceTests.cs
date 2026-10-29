@@ -103,7 +103,7 @@ public class ModerationSweepServiceTests
         var suspended = Moderator(12);
         suspended.Status = AccountStatus.Suspended;
         var parent = Moderator(13);
-        parent.Role = UserRole.Parent;
+        parent.Role = UserRole.User;
         ReturnModerators(Moderator(11), suspended, parent);
 
         Assert.Equal(1, await _sut.WarnOverdueSlaAsync());

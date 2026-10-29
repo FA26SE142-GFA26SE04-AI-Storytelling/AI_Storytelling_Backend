@@ -33,7 +33,7 @@ public class ParentReadingFeedbackControllerTests
             .Select(method => method.Name).ToArray();
 
         Assert.NotNull(authorize);
-        Assert.Equal("Parent", authorize!.Roles);
+        Assert.Equal("User", authorize!.Roles);
         Assert.Equal(new[] { "List" }, methods);
         Assert.Equal("{childProfileId:int}", type.GetMethod("List")!.GetCustomAttribute<HttpGetAttribute>()!.Template);
     }

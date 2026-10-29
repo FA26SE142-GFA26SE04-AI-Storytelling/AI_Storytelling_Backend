@@ -2,7 +2,7 @@ using Moq;
 using StoryPlatform.Application.Common;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.CreatorAuthoring;
 using StoryPlatform.Application.Features.CreatorAuthoring.Services;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
@@ -43,7 +43,7 @@ public sealed class CreatorManualMediaTests
             [provider.Object], RubricTestData.Source());
         var audit = new Mock<IAuditLogWriter>();
         var checks = new GrayZoneContentCheckService(store.Uow.Object, evaluator,
-            new GrayZoneWorkflowService(store.Uow.Object, audit.Object), new Mock<ISupervisionAccessGuard>().Object);
+            new GrayZoneWorkflowService(store.Uow.Object, audit.Object), new Mock<IChildProfileAccessGuard>().Object);
         return (store, new CreatorManualMediaService(store.Uow.Object, checks, evaluator, new MediaContextBuilder(), audit.Object, new()));
     }
 
@@ -132,7 +132,7 @@ public sealed class CreatorManualMediaTests
         var evaluator = new GrayZoneEvaluator(new() { Provider = "test-only", WarningThreshold = 50, BlockThreshold = 100, MaximumRiskScore = 100 },
             [provider.Object], RubricTestData.Source());
         var audit = new Mock<IAuditLogWriter>();
-        var checks = new GrayZoneContentCheckService(store, evaluator, new GrayZoneWorkflowService(store, audit.Object), new Mock<ISupervisionAccessGuard>().Object);
+        var checks = new GrayZoneContentCheckService(store, evaluator, new GrayZoneWorkflowService(store, audit.Object), new Mock<IChildProfileAccessGuard>().Object);
         return (store, new CreatorManualMediaService(store, checks, evaluator, new MediaContextBuilder(), audit.Object, new()), provider);
     }
 

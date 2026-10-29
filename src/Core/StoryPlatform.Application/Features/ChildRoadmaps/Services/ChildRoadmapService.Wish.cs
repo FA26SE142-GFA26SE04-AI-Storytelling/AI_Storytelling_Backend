@@ -14,8 +14,8 @@ public partial class ChildRoadmapService
         int storyId,
         CancellationToken cancellationToken = default)
     {
-        await _guard.EnsurePermissionAsync(
-            childProfileId, actorUserId, Permission.ApproveStory, cancellationToken);
+        await _guard.EnsureOwnerAsync(
+            childProfileId, actorUserId, cancellationToken);
 
         var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(
             childProfileId, cancellationToken);

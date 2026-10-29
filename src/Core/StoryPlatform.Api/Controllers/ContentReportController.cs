@@ -7,7 +7,7 @@ using StoryPlatform.Application.Features.ContentReports.Interfaces;
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Người giám sát báo cáo truyện đã công khai (WF-L4E, UC-L4E-01).</summary>
-[Authorize(Roles = "Parent")]
+[Authorize(Roles = "User")]
 public class ContentReportController : BaseApiController
 {
     private readonly IContentReportService _reportService;

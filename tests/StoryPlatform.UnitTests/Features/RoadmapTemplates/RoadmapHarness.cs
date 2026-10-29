@@ -38,7 +38,7 @@ public sealed class RoadmapHarness
         Back(Items);
 
         AddUser(AdminId, "admin_demo", UserRole.Administrator);
-        AddUser(ParentId, "parent_demo1", UserRole.Parent);
+        AddUser(ParentId, "parent_demo1", UserRole.User);
         AddUser(ModeratorId, "moderator_demo1", UserRole.Moderator, "Nguyen Thi Lan");
         AddUser(OtherModeratorId, "moderator_demo2", UserRole.Moderator, "Tran Van Minh");
         AddUser(CreatorId, "creator_demo", UserRole.ContentCreator);

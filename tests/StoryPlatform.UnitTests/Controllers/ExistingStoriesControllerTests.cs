@@ -487,7 +487,7 @@ public sealed class ExistingStoriesControllerTests
         HttpContext = new DefaultHttpContext
         {
             User = new ClaimsPrincipal(new ClaimsIdentity(
-                new[] { new Claim(ClaimTypes.NameIdentifier, userId.ToString()), new Claim(ClaimTypes.Role, "Parent") }, "TestAuth"))
+                new[] { new Claim(ClaimTypes.NameIdentifier, userId.ToString()), new Claim(ClaimTypes.Role, "User") }, "TestAuth"))
         }
     };
 }

@@ -33,17 +33,8 @@ public class ReportableStoryResolver : IReportableStoryResolver
             throw new ForbiddenException(NotAccessibleMessage);
         }
 
-        var relationships = await _unitOfWork.Repository<SupervisionRelationship>().FindAsync(
-            relationship => relationship.SupervisorUserId == reporterUserId && relationship.RevokedAt == null,
-            cancellationToken: cancellationToken);
-        var childIds = relationships.Select(relationship => relationship.ChildProfileId).Distinct().ToList();
-        if (childIds.Count == 0)
-        {
-            throw new ForbiddenException(NotAccessibleMessage);
-        }
-
         var children = await _unitOfWork.Repository<ChildProfile>().FindAsync(
-            child => childIds.Contains(child.Id) && child.Status == ChildProfileStatus.Active,
+            child => child.OwnerUserId == reporterUserId && !child.IsDeleted && child.Status == ChildProfileStatus.Active,
             cancellationToken: cancellationToken);
         if (!children.Any(child => CanAccess(story, child)))
         {

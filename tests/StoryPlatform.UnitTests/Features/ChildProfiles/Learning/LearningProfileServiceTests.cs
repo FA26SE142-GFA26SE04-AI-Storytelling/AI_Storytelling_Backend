@@ -5,7 +5,7 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ChildProfiles.Learning.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Learning.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Learning.Services;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using Xunit;
@@ -19,7 +19,7 @@ public class LearningProfileServiceTests
     private readonly Mock<IGenericRepository<ChildProfile>> _childRepo = new();
     private readonly Mock<IGenericRepository<ChildProfileVersionHistory>> _historyRepo = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
-    private readonly Mock<ISupervisionAccessGuard> _guard = new();
+    private readonly Mock<IChildProfileAccessGuard> _guard = new();
     private readonly LearningProfileService _sut;
 
     public LearningProfileServiceTests()
@@ -35,8 +35,8 @@ public class LearningProfileServiceTests
     [Fact]
     public async Task SetLearningProfileAsync_WithoutApproveReadingLevelPermission_StopsBeforeWrite()
     {
-        _guard.Setup(g => g.EnsurePermissionAsync(
-                1, 2, Permission.ApproveReadingLevel, It.IsAny<CancellationToken>()))
+        _guard.Setup(g => g.EnsureOwnerAsync(
+                1, 2, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ForbiddenException("Không có quyền."));
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
@@ -288,11 +288,11 @@ public class LearningProfileServiceTests
 
     private void AllowSupervision()
     {
-        _guard.Setup(g => g.EnsurePermissionAsync(
-                1, 2, Permission.ApproveReadingLevel, It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-        _guard.Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new SupervisionRelationship());
+        _guard.Setup(g => g.EnsureOwnerAsync(
+                1, 2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChildProfile { Id = 1, OwnerUserId = 2 });
+        _guard.Setup(g => g.EnsureOwnerAsync(1, 2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChildProfile { Id = 1, OwnerUserId = 2 });
     }
 
     private void SetupChild(AgeBand ageBand, ChildProfileStatus status) => _childRepo

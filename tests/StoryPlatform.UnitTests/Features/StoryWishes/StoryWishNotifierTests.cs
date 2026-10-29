@@ -13,9 +13,6 @@ namespace StoryPlatform.UnitTests.Features.StoryWishes;
 public class StoryWishNotifierTests
 {
     private const int Owner = 7;
-    private const int Approver = 8;
-    private const int Viewer = 9;
-    private const int Revoked = 10;
     private readonly ReadingHarness _h = new();
     private readonly Mock<INotificationService> _notifications = new();
     private readonly List<(int Recipient, NotificationType Type, string? Payload)> _sent = new();
@@ -23,82 +20,57 @@ public class StoryWishNotifierTests
 
     public StoryWishNotifierTests()
     {
-        _notifications.Setup(n => n.CreateAsync(
-                It.IsAny<int>(), It.IsAny<NotificationType>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+        _notifications.Setup(n => n.CreateAsync(It.IsAny<int>(), It.IsAny<NotificationType>(),
+                It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .Callback((int recipient, NotificationType type, string? payload, CancellationToken _) =>
                 _sent.Add((recipient, type, payload)))
             .ReturnsAsync(new NotificationDto());
         _sut = new StoryWishNotifier(_h.UnitOfWork.Object, _notifications.Object);
-        foreach (var id in new[] { Owner, Approver, Viewer, Revoked }) _h.AddUser(id);
+        _h.AddUser(Owner);
     }
 
     private static StoryWish Wish() => new()
     {
-        Id = 42,
-        ChildProfileId = ReadingHarness.Child,
-        Kind = StoryWishKind.Wish,
+        Id = 42, ChildProfileId = ReadingHarness.Child, Kind = StoryWishKind.Wish,
         Status = StoryWishStatus.Pending
     };
 
     [Fact]
-    public async Task NotifySubmitted_GoesToOwnerAndApproveStoryHolders_Only()
+    public async Task NotifySubmitted_GoesOnlyToOwner()
     {
-        _h.AddSupervisor(ReadingHarness.Child, Owner, SupervisorRole.Owner);
-        _h.AddSupervisor(ReadingHarness.Child, Approver, SupervisorRole.AdditionalSupervisor, null, Permission.ApproveStory);
-        _h.AddSupervisor(ReadingHarness.Child, Viewer, SupervisorRole.AdditionalSupervisor, null, Permission.ViewProgress);
-        _h.AddSupervisor(ReadingHarness.Child, Revoked, SupervisorRole.AdditionalSupervisor,
-            DateTime.UtcNow.AddDays(-1), Permission.ApproveStory);
-
+        _h.AddUser(8);
         await _sut.NotifySubmittedAsync(Wish());
-
-        Assert.Equal(new[] { Owner, Approver }, _sent.Select(s => s.Recipient).OrderBy(id => id));
-        Assert.All(_sent, s => Assert.Equal(NotificationType.StoryWishSubmitted, s.Type));
+        Assert.Equal(Owner, Assert.Single(_sent).Recipient);
+        Assert.Equal(NotificationType.StoryWishSubmitted, _sent[0].Type);
     }
 
     [Fact]
     public async Task NotifySubmitted_PayloadCarriesChildWishAndKind()
     {
-        _h.AddSupervisor(ReadingHarness.Child, Owner, SupervisorRole.Owner);
         await _sut.NotifySubmittedAsync(Wish());
-        using var payload = JsonDocument.Parse(_sent.Single().Payload!);
+        using var payload = JsonDocument.Parse(Assert.Single(_sent).Payload!);
         Assert.Equal(ReadingHarness.Child, payload.RootElement.GetProperty("childProfileId").GetInt32());
         Assert.Equal(42, payload.RootElement.GetProperty("wishId").GetInt32());
         Assert.Equal("Wish", payload.RootElement.GetProperty("kind").GetString());
     }
 
     [Fact]
-    public async Task NotifySubmitted_SkipsInactiveAccounts_AndOtherChildrensSupervisors()
+    public async Task NotifySubmitted_SkipsInactiveOwner()
     {
         _h.Users.Single(u => u.Id == Owner).Status = AccountStatus.Suspended;
-        _h.AddSupervisor(ReadingHarness.Child, Owner, SupervisorRole.Owner);
-        _h.AddSupervisor(ReadingHarness.OtherChild, Approver, SupervisorRole.Owner);
         await _sut.NotifySubmittedAsync(Wish());
         Assert.Empty(_sent);
     }
 
     [Fact]
-    public async Task NotifySubmitted_SamePersonIsNotifiedOnce()
+    public async Task NotifyExpiring_GoesToOwnerWithExpiryDate()
     {
-        _h.AddSupervisor(ReadingHarness.Child, Owner, SupervisorRole.Owner, null, Permission.ApproveStory);
-        await _sut.NotifySubmittedAsync(Wish());
-        Assert.Single(_sent);
-    }
-
-    [Fact]
-    public async Task NotifyExpiring_GoesToTheSameRecipients_WithTheExpiryDate()
-    {
-        _h.AddSupervisor(ReadingHarness.Child, Owner, SupervisorRole.Owner);
-        _h.AddSupervisor(ReadingHarness.Child, Approver, SupervisorRole.AdditionalSupervisor, null, Permission.ApproveStory);
-        _h.AddSupervisor(ReadingHarness.Child, Viewer, SupervisorRole.AdditionalSupervisor, null, Permission.ViewProgress);
         var wish = Wish();
         wish.PendingSince = new DateTime(2026, 10, 16, 3, 0, 0, DateTimeKind.Utc);
-
         await _sut.NotifyExpiringAsync(wish);
-
-        Assert.Equal(new[] { Owner, Approver }, _sent.Select(s => s.Recipient).OrderBy(id => id));
-        Assert.All(_sent, s => Assert.Equal(NotificationType.StoryWishExpiring, s.Type));
-        using var payload = JsonDocument.Parse(_sent.First().Payload!);
-        Assert.Equal(42, payload.RootElement.GetProperty("wishId").GetInt32());
+        Assert.Equal(Owner, Assert.Single(_sent).Recipient);
+        Assert.Equal(NotificationType.StoryWishExpiring, _sent[0].Type);
+        using var payload = JsonDocument.Parse(_sent[0].Payload!);
         Assert.Equal(new DateTime(2026, 10, 23, 3, 0, 0, DateTimeKind.Utc),
             payload.RootElement.GetProperty("expiresAt").GetDateTime().ToUniversalTime());
     }

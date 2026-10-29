@@ -2,7 +2,7 @@ using System.Linq.Expressions;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.StoryReview.DTOs;
 using StoryPlatform.Application.Features.StoryReview.Services;
 using StoryPlatform.Contracts.AI.Models;
@@ -120,12 +120,11 @@ public sealed class LearningArtifactServiceTests
         return uow;
     }
 
-    private sealed class MockAccessGuard : ISupervisionAccessGuard
+    private sealed class MockAccessGuard : IChildProfileAccessGuard
     {
-        public Task<SupervisionRelationship> EnsureActiveSupervisionAsync(int childProfileId, int userId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new SupervisionRelationship { ChildProfileId = childProfileId, SupervisorUserId = userId });
-        public Task EnsureOwnerAsync(int childProfileId, int userId, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task EnsurePermissionAsync(int childProfileId, int userId, Permission permission, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<ChildProfile> EnsureOwnerAsync(int childProfileId, int userId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ChildProfile { Id = childProfileId, OwnerUserId = userId });
+        public Task<bool> IsOwnerAsync(int childProfileId, int userId, CancellationToken cancellationToken = default) => Task.FromResult(true);
     }
 
     private sealed class MockAIClient : IAIStoryGenerationClient

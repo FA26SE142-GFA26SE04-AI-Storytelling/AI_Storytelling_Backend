@@ -10,7 +10,7 @@ namespace StoryPlatform.UnitTests.Features.ContentCategories;
 public class ContentCategoryControllerAuthorizationTests
 {
     [Theory]
-    [InlineData(UserRole.Parent, true)]
+    [InlineData(UserRole.User, true)]
     [InlineData(UserRole.Administrator, true)]
     public async Task GetActions_AllowAnyAuthenticatedRole(UserRole role, bool expected)
     {
@@ -26,7 +26,7 @@ public class ContentCategoryControllerAuthorizationTests
 
     [Theory]
     [InlineData(UserRole.Administrator, true)]
-    [InlineData(UserRole.Parent, false)]
+    [InlineData(UserRole.User, false)]
     public async Task WriteActions_RequireAdministratorOnly(UserRole role, bool expected)
     {
         foreach (var actionName in new[]

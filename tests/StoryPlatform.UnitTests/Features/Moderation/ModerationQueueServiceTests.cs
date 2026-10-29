@@ -46,7 +46,7 @@ public class ModerationQueueServiceTests
     private readonly UserAccount _parent = new()
     {
         Id = 2, Username = "parent_demo1", Email = "parent1@example.com", FullName = "Tran Thi Hoa",
-        Role = UserRole.Parent, Status = AccountStatus.Active
+        Role = UserRole.User, Status = AccountStatus.Active
     };
 
     public ModerationQueueServiceTests()

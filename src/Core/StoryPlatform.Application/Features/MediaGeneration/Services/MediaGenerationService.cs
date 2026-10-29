@@ -14,7 +14,7 @@ using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ParentAuthoring;
 using StoryPlatform.Application.Features.Moderation;
 using StoryPlatform.Application.Features.ChildProfiles.Safety;
@@ -40,7 +40,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
     private readonly IMediaGenerationJobFailureFinalizer _failureFinalizer;
     private readonly IMediaReadinessService _readinessService;
     private readonly ILogger<MediaGenerationService> _logger;
-    private readonly ISupervisionAccessGuard? _supervision;
+    private readonly IChildProfileAccessGuard? _supervision;
     private readonly TimeSpan _jobLease;
     private readonly int _assetMaxAttempts;
     private readonly MediaGenerationOptions _options;
@@ -64,7 +64,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         IMediaGenerationJobFailureFinalizer failureFinalizer,
         IMediaReadinessService readinessService,
         MediaGenerationOptions options,
-        ILogger<MediaGenerationService> logger, ISupervisionAccessGuard? supervision = null, TimeProvider? clock = null)
+        ILogger<MediaGenerationService> logger, IChildProfileAccessGuard? supervision = null, TimeProvider? clock = null)
     {
         _unitOfWork = unitOfWork;
         _options = options;
@@ -360,9 +360,9 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         if (await MediaStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, ct)) return;
         if (_supervision is null || !story.ChildProfileId.HasValue) throw new ForbiddenException();
         var user = await _unitOfWork.Repository<UserAccount>().FirstOrDefaultAsync(x => x.Id == userId, cancellationToken: ct);
-        if (user is null || user.IsDeleted || user.Role != UserRole.Parent || user.Status != AccountStatus.Active || user.LockedUntil > _clock.GetUtcNow().UtcDateTime)
+        if (user is null || user.IsDeleted || user.Role != UserRole.User || user.Status != AccountStatus.Active || user.LockedUntil > _clock.GetUtcNow().UtcDateTime)
             throw new ForbiddenException();
-        await _supervision.EnsurePermissionAsync(story.ChildProfileId.Value, userId, Permission.ApproveStory, ct);
+        await _supervision.EnsureOwnerAsync(story.ChildProfileId.Value, userId, ct);
         var child = await _unitOfWork.Repository<ChildProfile>().FirstOrDefaultAsync(x =>
             x.Id == story.ChildProfileId && !x.IsDeleted, cancellationToken: ct);
         if (child is null || child.Status != ChildProfileStatus.Active) throw new ConflictException("CHILD_NOT_ACTIVE");
@@ -1036,11 +1036,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             await new ParentManualAuthoringPolicy(_unitOfWork, _supervision).AuthorizeAsync(userId, story, cancellationToken);
             return story;
         }
-        if (story.AuthorUserId == userId) return story;
-        var relationship = await _unitOfWork.Repository<SupervisionRelationship>().FirstOrDefaultAsync(
-            x => x.ChildProfileId == story.ChildProfileId && x.SupervisorUserId == userId && x.RevokedAt == null,
-            cancellationToken: cancellationToken);
-        if (relationship is null) throw new ForbiddenException();
+        if (!await ChildOwnership.IsOwnerAsync(_unitOfWork, story.ChildProfileId, userId, cancellationToken))
+            throw new ForbiddenException();
         return story;
     }
 

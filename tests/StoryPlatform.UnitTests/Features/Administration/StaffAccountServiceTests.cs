@@ -155,7 +155,7 @@ public class StaffAccountServiceTests
     }
 
     [Theory]
-    [InlineData(UserRole.Parent)]
+    [InlineData(UserRole.User)]
     [InlineData(UserRole.ContentCreator)]
     [InlineData(null)]
     public async Task InviteAsync_RoleIsNotStaff_ThrowsBadRequestAndCreatesNothing(UserRole? role)
@@ -276,7 +276,7 @@ public class StaffAccountServiceTests
     }
 
     [Theory]
-    [InlineData(UserRole.Parent)]
+    [InlineData(UserRole.User)]
     [InlineData(UserRole.ContentCreator)]
     public async Task ActionsOnUser_TargetIsNotStaff_ThrowNotFound(UserRole role)
     {
@@ -314,7 +314,7 @@ public class StaffAccountServiceTests
         var compiled = filter!.Compile();
         Assert.True(compiled(ActiveStaff(UserRole.Moderator)));
         Assert.True(compiled(ActiveStaff(UserRole.Administrator)));
-        Assert.False(compiled(ActiveStaff(UserRole.Parent)));
+        Assert.False(compiled(ActiveStaff(UserRole.User)));
         Assert.False(compiled(ActiveStaff(UserRole.ContentCreator)));
     }
 
@@ -340,7 +340,7 @@ public class StaffAccountServiceTests
     [Fact]
     public async Task ListAsync_RoleIsNotStaff_ThrowsBadRequest()
     {
-        await Assert.ThrowsAsync<BadRequestException>(() => _sut.ListAsync(UserRole.Parent));
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.ListAsync(UserRole.User));
     }
 
     [Fact]

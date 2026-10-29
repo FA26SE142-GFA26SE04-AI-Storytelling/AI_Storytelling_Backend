@@ -400,7 +400,7 @@ public sealed class Phase1To4SequentialWorkflowTests
     private static WorkflowUnitOfWork CreateEligibleStore(bool includeApprovePermission = true, string? blockedTerm = null)
     {
         var store = new WorkflowUnitOfWork();
-        store.Seed(new UserAccount { Id = 1, Role = UserRole.Parent, Status = AccountStatus.Active });
+        store.Seed(new UserAccount { Id = 1, Role = UserRole.User, Status = AccountStatus.Active });
         store.Seed(new ChildProfile
         {
             Id = 1,
@@ -421,28 +421,6 @@ public sealed class Phase1To4SequentialWorkflowTests
             ConsentRecordedAt = DateTime.UtcNow,
             ConsentPolicyVersion = 1
         });
-        store.Seed(new SupervisionRelationship
-        {
-            Id = 1,
-            ChildProfileId = 1,
-            SupervisorUserId = 1,
-            SupervisorRole = SupervisorRole.Owner
-        });
-        store.Seed(new SupervisionPermission
-        {
-            Id = 1,
-            SupervisionRelationshipId = 1,
-            Permission = Permission.GenerateStory
-        });
-        if (includeApprovePermission)
-        {
-            store.Seed(new SupervisionPermission
-            {
-                Id = 2,
-                SupervisionRelationshipId = 1,
-                Permission = Permission.ApproveStory
-            });
-        }
 
         if (blockedTerm is not null)
         {

@@ -10,7 +10,6 @@ using StoryPlatform.Application.Features.ChildProfiles.Profiles.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Safety;
 using StoryPlatform.Application.Features.ChildProfiles.Sessions.Interfaces;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -19,12 +18,12 @@ namespace StoryPlatform.Application.Features.ChildProfiles.Profiles.Services;
 public class ChildProfileService : IChildProfileService
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly ISupervisionAccessGuard _accessGuard;
+    private readonly IChildProfileAccessGuard _accessGuard;
     private readonly IChildSessionRevoker _childSessionRevoker;
 
     public ChildProfileService(
         IUnitOfWork unitOfWork,
-        ISupervisionAccessGuard accessGuard,
+        IChildProfileAccessGuard accessGuard,
         IChildSessionRevoker childSessionRevoker)
     {
         _unitOfWork = unitOfWork;
@@ -57,18 +56,7 @@ public class ChildProfileService : IChildProfileService
 
         await _unitOfWork.Repository<ChildProfile>().AddAsync(childProfile, cancellationToken);
 
-        // Bước 1.2b: quan hệ Owner phải được thêm trước cùng lần SaveChangesAsync.
-        await _unitOfWork.Repository<SupervisionRelationship>().AddAsync(
-            new SupervisionRelationship
-            {
-                ChildProfile = childProfile,
-                SupervisorUserId = ownerUserId,
-                SupervisorRole = SupervisorRole.Owner,
-                RevokedAt = null
-            },
-            cancellationToken);
-
-        // Lưu profile và quyền Owner cùng nhau trước để EF cấp ChildProfile.Id.
+        // Lưu profile trước để EF cấp ChildProfile.Id.
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         // AuditLog dùng EntityId thường, không có navigation tới ChildProfile, nên cần lưu riêng sau khi có Id.
@@ -90,7 +78,7 @@ public class ChildProfileService : IChildProfileService
             throw new NotFoundException("Hồ sơ trẻ", childProfileId);
         }
 
-        await _accessGuard.EnsureActiveSupervisionAsync(
+        await _accessGuard.EnsureOwnerAsync(
             childProfileId, currentUserId, cancellationToken);
 
         if (profile.Status is ChildProfileStatus.Suspended or ChildProfileStatus.Archived)
@@ -142,17 +130,15 @@ public class ChildProfileService : IChildProfileService
     public async Task<List<ChildProfileDto>> ListMyChildProfilesAsync(
         int currentUserId, CancellationToken cancellationToken = default)
     {
-        var relationships = await _unitOfWork.Repository<SupervisionRelationship>().FindAsync(
-            value => value.SupervisorUserId == currentUserId
-                     && value.RevokedAt == null
-                     && value.ChildProfile != null
-                     && value.ChildProfile.Status != ChildProfileStatus.Archived
-                     && value.ChildProfile.Status != ChildProfileStatus.Deleted,
-            includeProperties: nameof(SupervisionRelationship.ChildProfile),
+        var profiles = await _unitOfWork.Repository<ChildProfile>().FindAsync(
+            value => value.OwnerUserId == currentUserId
+                     && !value.IsDeleted
+                     && value.Status != ChildProfileStatus.Archived
+                     && value.Status != ChildProfileStatus.Deleted,
             cancellationToken: cancellationToken);
 
-        return relationships
-            .Select(value => MapToChildProfileDto(value.ChildProfile!))
+        return profiles
+            .Select(MapToChildProfileDto)
             .ToList();
     }
 
@@ -165,7 +151,7 @@ public class ChildProfileService : IChildProfileService
             throw new NotFoundException("Hồ sơ trẻ", childProfileId);
         }
 
-        await _accessGuard.EnsureActiveSupervisionAsync(childProfileId, currentUserId, cancellationToken);
+        await _accessGuard.EnsureOwnerAsync(childProfileId, currentUserId, cancellationToken);
 
         return MapToChildProfileDto(profile);
     }

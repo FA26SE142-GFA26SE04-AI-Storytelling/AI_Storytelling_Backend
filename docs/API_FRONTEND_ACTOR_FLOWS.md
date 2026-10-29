@@ -6,7 +6,7 @@
 
 > Đồng bộ progress 26/10/2026: endpoint outline chỉ trả active operation/lỗi của job outline; retry Pending/Processing và dàn ý đã bàn giao không mang lỗi outline cũ. Endpoint content bỏ lỗi của attempt đã được thay thế, artifact phiên bản cũ và nội dung đã stable; job đang hoạt động giữ currentStep pending/generating và isComplete=false. Frontend theo dõi đến trạng thái backend xác nhận, phân biệt lỗi đọc API với job Failed và không tự đánh dấu thất bại chỉ vì chờ lâu. Không đổi route hoặc schema database. Kiểm thử source/fixture không xác nhận backend đang triển khai đã nạp mã mới.
 
-> Rà soát source ngày **21/10/2026**. Đây là tài liệu contract và checklist tích hợp từ mã nguồn, **không phải biên bản kiểm thử API/DB hoặc xác nhận đã triển khai**.
+> Cập nhật role User và bỏ API supervision/permission ngày **29/10/2026**. Rà soát source gốc ngày **21/10/2026**. Đây là tài liệu contract và checklist tích hợp từ mã nguồn, **không phải biên bản kiểm thử API/DB hoặc xác nhận đã triển khai**.
 
 ## Mục lục
 
@@ -14,7 +14,7 @@
 2. [Quy ước gọi API, lỗi và phiên](#quy-uoc)
 3. [Actor và quyền](#actor)
 4. [Khách chưa đăng nhập và tài khoản](#khach)
-5. [Parent — hồ sơ trẻ và giám sát](#parent)
+5. [User — hồ sơ trẻ](#parent)
 6. [Pipeline truyện AI/nhập truyện dùng chung](#pipeline)
 7. [Parent — soạn thủ công và giao cho con](#parent-manual)
 8. [Trẻ — đăng nhập và đọc](#child)
@@ -32,7 +32,7 @@
 
 - Backend: branch **feat/cont_creator**, HEAD **e808851**; khảo sát controller, authorization, DTO và service hiện tại. Bao gồm lộ trình, cộng đồng, rubric, vùng xám và quản lý phát hành Creator.
 - Frontend baseline từ lần đối chiếu trước: branch **main**, HEAD **93d00ef**. Lần này cập nhật backend contract; mapping service/màn hình được giữ theo baseline đó, không xác nhận frontend ở commit khác hoặc môi trường đang chạy.
-- Inventory: **305 cặp method + route**, **48 controller có action**; gồm 1 alias, 1 webhook; không gồm health/SignalR/Swagger.
+- Inventory lịch sử trước khi bỏ 27 route Supervision/Permission: **305 cặp method + route**, **48 controller có action**; gồm 1 alias, 1 webhook; không gồm health/SignalR/Swagger. Danh mục bên dưới đã bỏ các route này.
 - Một số controller chuyên biệt cho Creator: [CreatorAIStoryInputController.cs](../src/Core/StoryPlatform.Api/Controllers/CreatorAIStoryInputController.cs), [CreatorPublicationController.cs](../src/Core/StoryPlatform.Api/Controllers/CreatorPublicationController.cs).
 
 
@@ -102,17 +102,16 @@ Mất response: replay đúng command/payload khi contract cho phép; không t�
 | Actor/ngữ cảnh | Token và quyền thực | Ghi chú |
 |---|---|---|
 | Khách | AllowAnonymous | Không gắn token từ phiên khác khi không cần. |
-| Parent — Owner | JWT Parent + quan hệ Owner hiện hành | Vượt kiểm tra từng Permission trong guard, vẫn chịu state/policy. |
-| Parent — AdditionalSupervisor | JWT Parent + giám sát còn hiệu lực + Permission cụ thể | Không phải role JWT riêng. |
+| User — chủ hồ sơ trẻ | JWT User + OwnerUserId trên hồ sơ còn hiệu lực | Các thao tác với trẻ yêu cầu đúng chủ hồ sơ và state/policy hợp lệ. |
 | Trẻ | JWT ChildSession | Default Authorize dành cho người lớn loại token trẻ. |
 | ContentCreator | AI input/submission kiểm role ContentCreator; manual/assistance đang chỉ kiểm adult + active/scope/tác giả | Có chênh lệch role gate ở backend, xem CR1. |
 | Moderator | JWT Moderator + claim mục còn hiệu lực | Không tự duyệt nội dung mình tạo/nộp. |
 | Administrator | JWT Administrator + guard nghiệp vụ | Không tự bỏ qua ownership/eligibility. |
 | SePay / vận hành | Header webhook / health | Không phải actor màn hình frontend. |
 
-Source có **4 role JWT**: Parent, Moderator, Administrator, ContentCreator; không có role Teacher trong enum hiện tại. Có **8 Permission**: ViewProgress, ViewResults, AssignActivity, ReceiveReport, ApproveReadingLevel, ApproveStory, ManageSafetySettings, GenerateStory. Không dùng danh sách 7 quyền frontend để suy backend thiếu GenerateStory.
+Source có **4 role JWT**: User, Moderator, Administrator, ContentCreator; không có role Teacher trong enum hiện tại. Truy cập hồ sơ trẻ được kiểm tra bằng OwnerUserId và trạng thái hồ sơ.
 
-Nguồn: [UserRole](../src/Core/StoryPlatform.Domain/Enums/UserRole.cs), [Permission](../src/Core/StoryPlatform.Domain/Enums/Permission.cs), [SupervisionAccessGuard](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/Services/SupervisionAccessGuard.cs).
+Nguồn: [UserRole](../src/Core/StoryPlatform.Domain/Enums/UserRole.cs), [ChildProfileAccessGuard](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Profiles/Services/ChildProfileAccessGuard.cs).
 
 <a id="khach"></a>
 ## 4. Khách chưa đăng nhập và tài khoản
@@ -136,21 +135,21 @@ POST /Auth/refresh-token để đổi cặp token; thay refresh token cũ khi ro
 
 ### A3. Quản lý tài khoản sau đăng nhập
 
-- GET/PUT /Auth/me; Parent đổi email qua POST /Auth/change-email → /change-email/confirm với OTP.
+- GET/PUT /Auth/me; User đổi email qua POST /Auth/change-email → /change-email/confirm với OTP.
 - POST /Auth/change-password: currentRefreshToken giúp giữ phiên đang dùng theo service; bỏ trống có thể thu hồi mọi phiên.
 - GET /Auth/sessions → DELETE /Auth/sessions/{id}; POST /Auth/logout cần refreshToken; logout-all-devices thu hồi tất cả.
-- Parent xóa tài khoản: GET /Auth/me/delete-preview → xử lý blockingProfiles → DELETE /Auth/me với currentPassword/deleteDraftProfiles.
+- User xóa tài khoản: GET /Auth/me/delete-preview để xem childProfiles → DELETE /Auth/me với currentPassword/deleteChildProfiles=true để xác nhận xóa mọi hồ sơ trẻ.
 - GET /Auth/me/audit-log là phân trang, lịch sử của người dùng hiện tại.
 
 Contract: [Auth](#controller-auth).
 
 <a id="parent"></a>
-## 5. Parent — hồ sơ trẻ và giám sát
+## 5. User — hồ sơ trẻ
 
 ### P1. Tạo hồ sơ đủ điều kiện sử dụng
 
 1. GET /ChildProfile/mine hoặc POST /ChildProfile tạo Draft; giữ data.id.
-2. GET /ContentCategory lấy ID/preset; GET /Permission lấy quyền hệ thống.
+2. GET /ContentCategory lấy ID/preset.
 3. PUT /LearningProfile/{childId}: readingLevel 1–5, readingMode, comprehensionGoal, topics.
 4. PUT /SafetyPolicy/{childId}: policy/danh mục; Owner ghi nhận consent theo điều khoản.
 5. PATCH /ChildProfile/{childId}/activate. Thiếu learning/policy/consent thì bổ sung, không giả lập Active.
@@ -162,37 +161,22 @@ Hồ sơ dùng enum Age_6_8/Age_9_10; API sáng tác có chuỗi 6-8/9-10. Khôn
 
 - Owner PUT /ChildProfile/{id}; thay tuổi xử lý shouldReapplyBlockedPreset/suggestedReadingMode.
 - GET /SafetyPolicy/{id}/age-preset → xác nhận → POST .../age-preset/apply.
-- Learning cần ApproveReadingLevel; safety cần ManageSafetySettings. Consent/reconsent có guard Owner; không tự bật consent khi thiếu quyền.
+- Learning, safety và consent/reconsent yêu cầu chủ hồ sơ trẻ; không tự bật consent khi thiếu quyền.
 - POST /SafetyPolicy/{id}/reconsent khi consentOutdated. PUT phải giữ field chưa sửa vì server có thể ghi đè.
 - PATCH /ChildProfile/{id}/suspend → /resume; DELETE là lưu trữ theo lifecycle; PATCH /restore để khôi phục. Resume/restore có acceptCurrentConsent.
 - GET mine không trả hồ sơ archived; có restore API không đồng nghĩa UI đã có nơi tìm hồ sơ archived.
 - DELETE LearningProfile/SafetyPolicy có điều kiện, không dùng làm reset trên Active. GET /ChildProfile/{id}/audit-log theo dõi thay đổi.
 
-### P3. Mời người giám sát
-
-Owner POST /Supervision/{childId}/invitations → giữ invitationId/code/status/expiresAt → xem danh sách. DELETE để hủy hoặc POST regenerate; mã cũ hết hiệu lực.
-
-Người được mời đăng nhập Parent → POST /Supervision/invitations/claim với invitationCode → nhận OTP → POST /verify-otp → xem preview → accept hoặc reject. Nhập đúng code/OTP chưa tạo quan hệ.
-
-GET /Supervision/{childId}/relationships lấy relationshipId/role. DELETE relationship để Owner gỡ hoặc người giám sát tự rời theo guard; không tự xóa Owner cuối.
-
-### P4. Quyền và chuyển Owner
-
-- GET/POST/DELETE /Supervision/relationships/{relationshipId}/permissions[/{permission}]. Một số /Permission/relationships/... tương đương, không cần gọi cả hai.
-- AdditionalSupervisor POST /Permission/relationships/{id}/requests với permissions[] → GET → Owner accept/reject, người xin cancel.
-- Owner POST /Supervision/{childId}/transfer-ownership với targetSupervisorUserId hợp lệ → GET ownership-transfers → người nhận accept/reject; Owner cancel khi còn chờ.
-- Sau quyết định tải lại quan hệ/quyền, không chỉ đổi state UI.
-
 ### P5. Dữ liệu, báo cáo nội dung, thanh toán
 
 - Owner POST /DataRequest loại export/delete → GET /DataRequest/mine?childProfileId=... → cancel khi pending. Delete cần currentPassword/confirmNickname theo service.
-- GET /Payment/plans → POST /Payment/transactions → hiển thị QR/transaction. Parent không gọi webhook/mark-paid.
+- GET /Payment/plans → POST /Payment/transactions → hiển thị QR/transaction. User không gọi webhook/mark-paid.
 - POST /ContentReport với storyId/reason/description/attachmentUrl để báo truyện được phép truy cập. Gửi report chưa tự ẩn/xóa truyện.
 
 ### P6. Lộ trình riêng của trẻ và sao chép bộ mẫu
 
-1. GET /api/v1/ChildRoadmap/{childProfileId}: cần giám sát hiện hành; trả open/waiting/history và số lượng. Dùng item.id cho thao tác lộ trình, storyId để nhận diện truyện.
-2. POST /api/v1/ChildRoadmap/stories: storyId, childProfileIds (1–20 trẻ phân biệt), position ("NextUp" hoặc "End"), expectedDays (1–90 nếu có), note (tối đa 500 ký tự). Backend xét AssignActivity và eligibility cho từng trẻ; hiển thị results[].outcome/skipCode/message/warnings, không coi 200 là tất cả thành công. Cập nhật 26/10/2026: phụ huynh chủ động chọn giao một truyện khác nhóm tuổi vẫn được thêm; khác tuổi là cảnh báo đọc được trong warnings, không phải wrong_age. Thao tác Thêm vào lộ trình chính là lựa chọn giao của phụ huynh, không cần thêm checkbox hoặc tham số mới. Quyền, chủ đề chặn, trạng thái truyện và giới hạn độ dài vẫn được kiểm tra.
+1. GET /api/v1/ChildRoadmap/{childProfileId}: cần quyền chủ hồ sơ hiện hành; trả open/waiting/history và số lượng. Dùng item.id cho thao tác lộ trình, storyId để nhận diện truyện.
+2. POST /api/v1/ChildRoadmap/stories: storyId, childProfileIds (1–20 trẻ phân biệt), position ("NextUp" hoặc "End"), expectedDays (1–90 nếu có), note (tối đa 500 ký tự). Backend xét quyền chủ hồ sơ và eligibility cho từng trẻ; hiển thị results[].outcome/skipCode/message/warnings, không coi 200 là tất cả thành công. Cập nhật 26/10/2026: phụ huynh chủ động chọn giao một truyện khác nhóm tuổi vẫn được thêm; khác tuổi là cảnh báo đọc được trong warnings, không phải wrong_age. Thao tác Thêm vào lộ trình chính là lựa chọn giao của phụ huynh, không cần thêm checkbox hoặc tham số mới. Quyền, chủ đề chặn, trạng thái truyện và giới hạn độ dài vẫn được kiểm tra.
 3. PUT /{childProfileId}/order gửi đúng toàn bộ itemIds Waiting, mỗi ID một lần; không kéo thả Open. DELETE /items/{itemId} chỉ Open/Waiting; gỡ Open có thể tiến sang bước tiếp theo. DELETE /items gỡ Open/Waiting, giữ lịch sử.
 4. GET /api/v1/RoadmapLibrary theo ageBand/readingLevel/contentCategoryId và phân trang → GET /{roadmapId} xem bộ cùng isAvailable.
 5. POST /{roadmapId}/preview với childProfileIds/position/daysPerStory → hiển thị children[].steps[].action và cảnh báo → POST /copy cùng hình dạng request. Preview không giữ chỗ; copy kiểm lại quyền, tuổi, policy và khả dụng. Không dùng API template của Moderator để giao trực tiếp cho trẻ.
@@ -202,12 +186,12 @@ Nguồn: [ChildRoadmapService](../src/Core/StoryPlatform.Application/Features/Ch
 
 Gợi ý adapter roadmap: skipCode có thể là no_permission, profile_inactive, no_access_to_story, blocked_topic, wrong_age, too_long, story_unavailable, already_in_roadmap. Dùng mã thay vì parse message; giữ warnings và kết quả riêng từng trẻ. Template days (1–30) khác expectedDays của lộ trình riêng (1–90).
 
-Giao từng truyện khác tuổi dùng bản ghi lộ trình Source=Manual làm bằng chứng lựa chọn của người giám sát: Waiting/Open/Completed còn hiệu lực cho việc mở/đọc lại, Removed/Skipped hoặc bản ghi bị xóa không cấp quyền ngoại lệ. Advancer và phía trẻ tôn trọng lựa chọn này; thư viện vẫn lọc theo tuổi cho truyện chưa được phụ huynh chọn. Truyện riêng của anh/chị/em chỉ hiện và mở cho trẻ được giao đúng storyId qua quyền giao hiện có. Sao chép bộ mẫu/tự chọn truyện chưa có lựa chọn thủ công vẫn áp dụng kiểm tra tuổi hiện hành. Không cần migration. Kiểm tra MaxStoryLength nay dùng StoryWordCounter chung với generation, không dùng số ký tự. Kiểm thử 335 ca ChildRoadmaps/ReadingSessions đạt với harness; chưa thay đổi dữ liệu hoặc triển khai backend đang chạy.
+Giao từng truyện khác tuổi dùng bản ghi lộ trình Source=Manual làm bằng chứng lựa chọn của chủ hồ sơ: Waiting/Open/Completed còn hiệu lực cho việc mở/đọc lại, Removed/Skipped hoặc bản ghi bị xóa không cấp quyền ngoại lệ. Advancer và phía trẻ tôn trọng lựa chọn này; thư viện vẫn lọc theo tuổi cho truyện chưa được phụ huynh chọn. Truyện riêng của anh/chị/em chỉ hiện và mở cho trẻ được giao đúng storyId qua quyền giao hiện có. Sao chép bộ mẫu/tự chọn truyện chưa có lựa chọn thủ công vẫn áp dụng kiểm tra tuổi hiện hành. Không cần migration. Kiểm tra MaxStoryLength nay dùng StoryWordCounter chung với generation, không dùng số ký tự. Kiểm thử 335 ca ChildRoadmaps/ReadingSessions đạt với harness; chưa thay đổi dữ liệu hoặc triển khai backend đang chạy.
 
 ### P7. Chia sẻ truyện gia đình lên thư viện cộng đồng
 
 1. POST /api/v1/CommunitySubmission/check với storyId, confirmNoPersonalInfo, copyrightDeclaration → canSubmit, storyVersionId, requiredDeclaration, blockers và piiFindings. Check không tự nộp hoặc sửa truyện. Excerpt chỉ để người nộp sửa, không lưu lại vào log/client analytics.
-2. Parent cần ApproveStory trên hồ sơ nguồn. Truyện phải đủ điều kiện private/Ready, có phiên bản hiện hành, không bị archive/report mở/nộp trùng. Truyện tự viết/nhập phải khai OwnWork; FamilyUse không được nộp. Field copyrightDeclaration không có JsonStringEnumConverter: dùng số enum trong JSON, xem schema.
+2. User cần là chủ hồ sơ nguồn. Truyện phải đủ điều kiện private/Ready, có phiên bản hiện hành, không bị archive/report mở/nộp trùng. Truyện tự viết/nhập phải khai OwnWork; FamilyUse không được nộp. Field copyrightDeclaration không có JsonStringEnumConverter: dùng số enum trong JSON, xem schema.
 3. POST /api/v1/CommunitySubmission với confirmNoPersonalInfo=true; nhận itemId/storyVersionId/status=Pending. Backend ghim phiên bản cho kiểm duyệt; không lấy version hiện hành khác để thay nội dung đã nộp.
 4. GET /mine dùng canWithdraw/canRemove để bật nút. POST /{itemId}/withdraw khi Pending chưa có người nhận; POST /{itemId}/remove với bản đã Approved. Sau khi có Moderator claim, không tự rút bằng cách đổi trạng thái ở frontend.
 5. Sau kiểm duyệt, trẻ xem metadata qua CommunityLibrary theo submissionId; nguồn trẻ/người nộp/người duyệt không được công khai.
@@ -222,7 +206,7 @@ Nguồn: [CommunitySubmissionService](../src/Core/StoryPlatform.Application/Feat
 Parent: GET /ai-story-input/children/{childId}/context → POST /ai-story-input/requests.
 Creator: GET /creator/ai-story-input/context → POST /creator/ai-story-input/requests.
 
-Parent cần child Active, quyền GenerateStory, learning/policy/consent hợp lệ và quota. Creator dùng audience của tác giả, không gửi childProfileId/consent giả. Core dựng snapshot; frontend không tự gửi entity/policy để quyết quyền.
+User cần child Active, quyền chủ hồ sơ, learning/policy/consent hợp lệ và quota. Creator dùng audience của tác giả, không gửi childProfileId/consent giả. Core dựng snapshot; frontend không tự gửi entity/policy để quyết quyền.
 
 Giữ storyId/requestId/inputStatus/handoffStatus/canRetry. 202 chưa có truyện; poll đúng prefix actor. 422 hiển thị reasonCode/fallbackMessage. Retry khi canRetry theo input/audience gốc; thay ý tưởng tạo request/key mới. ExistingStoryId chỉ dùng draft đúng luồng.
 
@@ -581,7 +565,7 @@ Trạng thái ở mức **method + route**, không bảo đảm mọi actor/nhá
 4. Creator assistance/AI input và confirm-content chưa map ở frontend. Cần nối nút xác nhận nội dung với API Creator riêng; route dùng chung Parent đã gọi không tính Creator hoàn tất.
 5. Nối Parent bằng CommunitySubmission/check → submit → mine/withdraw/remove; PublicStorySubmission vẫn dành riêng cho ContentCreator. Child dùng CommunityLibrary, không dùng itemId của moderation.
 6. History outline/regenerate illustration cần UI nếu sản phẩm sử dụng; service tồn tại chưa là đã tích hợp.
-7. Permission frontend chỉ có 7 quyền trong khi backend có GenerateStory; cần rà UX supervisor.
+7. Bỏ giao diện mời người giám sát, xin/cấp quyền và chuyển Owner; các API Supervision/Permission không còn tồn tại.
 8. readingService/guardianService/adaptiveService dùng backendReady toàn module; lỗi đầu có thể chuyển cả module sang local. LocalStorage không chứng minh backend ghi tiến độ.
 9. USE_MOCK mặc định true nếu NEXT_PUBLIC_USE_MOCK không bằng "false"; không kết luận giá trị môi trường đang chạy.
 10. API client cần xử lý null/bool/binary/202 body rỗng và progress trong lỗi; giữ draft khi conflict, tách child/adult token.
@@ -590,7 +574,7 @@ Trạng thái ở mức **method + route**, không bảo đảm mọi actor/nhá
 
 ### 13.2 Có thể giữ endpoint chưa nối khi chủ động chọn phương án khác
 
-Permission/Supervision trùng chức năng, POST learning/safety thay bằng PUT, alias artifacts và Story CRUD cũ không nhất thiết cần UI mới. Ghi lựa chọn vào checklist sản phẩm.
+API Permission/Supervision đã bị bỏ; POST learning/safety thay bằng PUT, alias artifacts và Story CRUD cũ không nhất thiết cần UI mới. Ghi lựa chọn vào checklist sản phẩm.
 
 Roadmap đã có API thật: ChildRoadmap, MyRoadmap, RoadmapTemplate, RoadmapReview và RoadmapLibrary. Frontend cần adapter đúng route/DTO; đường dẫn roadmap tự giả định không được xem là đã map. Những HTTP API reading-session/adaptive còn thiếu không được tính thêm vào inventory. Lần này chỉ cập nhật tài liệu.
 
@@ -604,7 +588,7 @@ HTTP là nhánh response controller; kết hợp lỗi chung mục 2 và guard n
 
 ### Tra nhanh controller
 
-[AIStoryInput](#controller-aistoryinput) · [Auth](#controller-auth) · [AuthoringGuides](#controller-authoringguides) · [BusinessReport](#controller-businessreport) · [ChildAccessCredential](#controller-childaccesscredential) · [ChildManualStories](#controller-childmanualstories) · [ChildProfile](#controller-childprofile) · [ChildRoadmap](#controller-childroadmap) · [CommunityLibrary](#controller-communitylibrary) · [CommunityReview](#controller-communityreview) · [CommunitySubmission](#controller-communitysubmission) · [ContentCategory](#controller-contentcategory) · [ContentGeneration](#controller-contentgeneration) · [ContentReport](#controller-contentreport) · [ContentReportReview](#controller-contentreportreview) · [CreatorAIStoryInput](#controller-creatoraistoryinput) · [CreatorAssistance](#controller-creatorassistance) · [CreatorAuthoring](#controller-creatorauthoring) · [CreatorModerationCheck](#controller-creatormoderationcheck) · [CreatorPublication](#controller-creatorpublication) · [DataRequest](#controller-datarequest) · [ExistingStories](#controller-existingstories) · [GrayZoneReview](#controller-grayzonereview) · [LearningProfile](#controller-learningprofile) · [MediaGeneration](#controller-mediageneration) · [ModerationQueue](#controller-moderationqueue) · [ModerationRubrics](#controller-moderationrubrics) · [StaffAccount](#controller-staffaccount) · [MyRoadmap](#controller-myroadmap) · [Notification](#controller-notification) · [Outline](#controller-outline) · [ParentAssistance](#controller-parentassistance) · [ParentAuthoring](#controller-parentauthoring) · [ParentalGate](#controller-parentalgate) · [Payment](#controller-payment) · [Permission](#controller-permission) · [PublicStoryReview](#controller-publicstoryreview) · [PublicStorySubmission](#controller-publicstorysubmission) · [PublishedContentReview](#controller-publishedcontentreview) · [Review](#controller-review) · [RoadmapLibrary](#controller-roadmaplibrary) · [RoadmapReview](#controller-roadmapreview) · [RoadmapTemplate](#controller-roadmaptemplate) · [SafetyPolicy](#controller-safetypolicy) · [Story](#controller-story) · [Supervision](#controller-supervision) · [TokenQuota](#controller-tokenquota)
+[AIStoryInput](#controller-aistoryinput) · [Auth](#controller-auth) · [AuthoringGuides](#controller-authoringguides) · [BusinessReport](#controller-businessreport) · [ChildAccessCredential](#controller-childaccesscredential) · [ChildManualStories](#controller-childmanualstories) · [ChildProfile](#controller-childprofile) · [ChildRoadmap](#controller-childroadmap) · [CommunityLibrary](#controller-communitylibrary) · [CommunityReview](#controller-communityreview) · [CommunitySubmission](#controller-communitysubmission) · [ContentCategory](#controller-contentcategory) · [ContentGeneration](#controller-contentgeneration) · [ContentReport](#controller-contentreport) · [ContentReportReview](#controller-contentreportreview) · [CreatorAIStoryInput](#controller-creatoraistoryinput) · [CreatorAssistance](#controller-creatorassistance) · [CreatorAuthoring](#controller-creatorauthoring) · [CreatorModerationCheck](#controller-creatormoderationcheck) · [CreatorPublication](#controller-creatorpublication) · [DataRequest](#controller-datarequest) · [ExistingStories](#controller-existingstories) · [GrayZoneReview](#controller-grayzonereview) · [LearningProfile](#controller-learningprofile) · [MediaGeneration](#controller-mediageneration) · [ModerationQueue](#controller-moderationqueue) · [ModerationRubrics](#controller-moderationrubrics) · [StaffAccount](#controller-staffaccount) · [MyRoadmap](#controller-myroadmap) · [Notification](#controller-notification) · [Outline](#controller-outline) · [ParentAssistance](#controller-parentassistance) · [ParentAuthoring](#controller-parentauthoring) · [ParentalGate](#controller-parentalgate) · [Payment](#controller-payment) · [PublicStoryReview](#controller-publicstoryreview) · [PublicStorySubmission](#controller-publicstorysubmission) · [PublishedContentReview](#controller-publishedcontentreview) · [Review](#controller-review) · [RoadmapLibrary](#controller-roadmaplibrary) · [RoadmapReview](#controller-roadmapreview) · [RoadmapTemplate](#controller-roadmaptemplate) · [SafetyPolicy](#controller-safetypolicy) · [Story](#controller-story) · [TokenQuota](#controller-tokenquota)
 
 <a id="controller-auth"></a>
 ### Auth — 20 route
@@ -737,7 +721,7 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 #### POST /api/v1/Auth/change-email
 
 - Action/chức năng: **RequestEmailChange** — Yêu cầu đổi email Parent; OTP được gửi tới email mới.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L193).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [RequestEmailChangeRequestDto](#dto-requestemailchangerequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [accountService.requestEmailChange](../../AI_Storytelling_Frontend/src/app/services/accountService.ts#L32); nơi dùng: [ProfileSection.tsx](../../AI_Storytelling_Frontend/src/app/features/account/ProfileSection.tsx#L38)
@@ -746,7 +730,7 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 #### POST /api/v1/Auth/change-email/confirm
 
 - Action/chức năng: **ConfirmEmailChange** — Xác nhận đổi email bằng OTP gửi tới email mới.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L205).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [ConfirmEmailChangeRequestDto](#dto-confirmemailchangerequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [accountService.confirmEmailChange](../../AI_Storytelling_Frontend/src/app/services/accountService.ts#L36); nơi dùng: [ProfileSection.tsx](../../AI_Storytelling_Frontend/src/app/features/account/ProfileSection.tsx#L48)
@@ -755,7 +739,7 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 #### GET /api/v1/Auth/me/delete-preview
 
 - Action/chức năng: **GetDeleteAccountPreview** — Xem các hồ sơ đang chặn hoặc sẽ bị xóa cùng tài khoản Parent.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L217).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: Không có tham số action; dùng token/header theo quyền..
 - Response: ApiResponse.data: [DeleteAccountPreviewDto](#dto-deleteaccountpreviewdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [accountService.getDeleteAccountPreview](../../AI_Storytelling_Frontend/src/app/services/accountService.ts#L40); nơi dùng: [DeleteAccountSection.tsx](../../AI_Storytelling_Frontend/src/app/features/account/DeleteAccountSection.tsx#L21)
@@ -764,7 +748,7 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 #### DELETE /api/v1/Auth/me
 
 - Action/chức năng: **DeleteAccount** — Xóa và ẩn danh hóa tài khoản Parent.. [AuthController](../src/Core/StoryPlatform.Api/Controllers/AuthController.cs#L228).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [DeleteAccountRequestDto](#dto-deleteaccountrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [accountService.deleteAccount](../../AI_Storytelling_Frontend/src/app/services/accountService.ts#L44); nơi dùng: [DeleteAccountSection.tsx](../../AI_Storytelling_Frontend/src/app/features/account/DeleteAccountSection.tsx#L32)
@@ -817,7 +801,7 @@ A1–A3. AllowAnonymous ở các action công khai; tài khoản cần phiên ng
 <a id="controller-childprofile"></a>
 ### ChildProfile — 10 route
 
-P1–P2. Role Parent chưa đủ: kiểm giám sát/Owner theo action. GET mine không có archived; activate cần learning/policy/consent; suspend/resume/archive/restore có state guard và ảnh hưởng phiên trẻ.
+P1–P2. Role User và quyền chủ hồ sơ được kiểm tra theo action. GET mine không có archived; activate cần learning/policy/consent; suspend/resume/archive/restore có state guard và ảnh hưởng phiên trẻ.
 
 Guard/nghiệp vụ: [ChildProfileService.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Profiles/Services/ChildProfileService.cs).
 
@@ -837,8 +821,8 @@ Guard/nghiệp vụ: [ChildProfileService.cs](../src/Core/StoryPlatform.Applicat
 <a id="ep-childprofile-createchildprofile-post"></a>
 #### POST /api/v1/ChildProfile
 
-- Action/chức năng: **CreateChildProfile** — Tạo hồ sơ trẻ và quan hệ giám sát Owner trong cùng giao dịch.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L32).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Action/chức năng: **CreateChildProfile** — Tạo hồ sơ trẻ với OwnerUserId là người gọi.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L32).
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [CreateChildProfileRequestDto](#dto-createchildprofilerequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ChildProfileDto](#dto-childprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **GỌI_API** — [childProfileService.createChildProfile](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L27); nơi dùng: [CreateChildWizard.tsx](../../AI_Storytelling_Frontend/src/app/features/children/CreateChildWizard.tsx#L53)
@@ -847,7 +831,7 @@ Guard/nghiệp vụ: [ChildProfileService.cs](../src/Core/StoryPlatform.Applicat
 #### GET /api/v1/ChildProfile/mine
 
 - Action/chức năng: **ListMyChildProfiles** — Danh sách hồ sơ trẻ mà tài khoản đang đăng nhập đang giám sát (Bước 1.9a — ProfileSwitcher).. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L48).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: Không có tham số action; dùng token/header theo quyền..
 - Response: ApiResponse.data: [List&lt;ChildProfileDto&gt;](#dto-childprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.getMyChildProfiles](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L18); nơi dùng: [WorkspaceDataContext.tsx](../../AI_Storytelling_Frontend/src/app/context/WorkspaceDataContext.tsx#L42)
@@ -856,7 +840,7 @@ Guard/nghiệp vụ: [ChildProfileService.cs](../src/Core/StoryPlatform.Applicat
 #### GET /api/v1/ChildProfile/{id}
 
 - Action/chức năng: **GetChildProfileById** — Lấy chi tiết 1 hồ sơ trẻ.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L60).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc.
 - Response: ApiResponse.data: [ChildProfileDto](#dto-childprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.getChildProfileById](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L22); nơi dùng: [readingService.ts](../../AI_Storytelling_Frontend/src/app/services/readingService.ts#L53)
@@ -865,7 +849,7 @@ Guard/nghiệp vụ: [ChildProfileService.cs](../src/Core/StoryPlatform.Applicat
 #### GET /api/v1/ChildProfile/{id}/audit-log
 
 - Action/chức năng: **GetChildProfileAuditLog** — Lịch sử thay đổi hồ sơ trẻ; chỉ supervisor còn hiệu lực được xem.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L72).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc<br>**query** pageRequest: [PageRequest](#dto-pagerequest).
 - Response: ApiResponse.data: [PagedResult&lt;AuditLogDto&gt;](#dto-pagedresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -874,7 +858,7 @@ Guard/nghiệp vụ: [ChildProfileService.cs](../src/Core/StoryPlatform.Applicat
 #### PUT /api/v1/ChildProfile/{id}
 
 - Action/chức năng: **UpdateChildProfile** — Cập nhật Nickname/AgeBand/Language của hồ sơ trẻ — chỉ Owner (KHÔNG đổi scope/organization).. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L86).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc<br>**body** request: [UpdateChildProfileRequestDto](#dto-updatechildprofilerequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ChildProfileDto](#dto-childprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.updateChildProfile](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L35); nơi dùng: [ProfileTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/ProfileTab.tsx#L54)
@@ -883,7 +867,7 @@ Guard/nghiệp vụ: [ChildProfileService.cs](../src/Core/StoryPlatform.Applicat
 #### PATCH /api/v1/ChildProfile/{id}/activate
 
 - Action/chức năng: **ActivateChildProfile** — Kích hoạt hồ sơ trẻ (Bước 1.8) — chỉ Active khi consent đúng phiên bản hiện hành.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L98).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc.
 - Response: ApiResponse.data: [ChildProfileDto](#dto-childprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.activateChildProfile](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L43); nơi dùng: [CreateChildWizard.tsx](../../AI_Storytelling_Frontend/src/app/features/children/CreateChildWizard.tsx#L68); [ProfileTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/ProfileTab.tsx#L68)
@@ -892,7 +876,7 @@ Guard/nghiệp vụ: [ChildProfileService.cs](../src/Core/StoryPlatform.Applicat
 #### PATCH /api/v1/ChildProfile/{id}/suspend
 
 - Action/chức năng: **SuspendChildProfile** — Tạm dừng hồ sơ trẻ (Bước 1.8b) — chỉ Owner; thu hồi Child Session và Easy Login.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L110).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc.
 - Response: ApiResponse.data: [ChildProfileDto](#dto-childprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.suspendChildProfile](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L48); nơi dùng: [ProfileTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/ProfileTab.tsx#L73)
@@ -901,7 +885,7 @@ Guard/nghiệp vụ: [ChildProfileService.cs](../src/Core/StoryPlatform.Applicat
 #### PATCH /api/v1/ChildProfile/{id}/resume
 
 - Action/chức năng: **ResumeChildProfile** — Kích hoạt lại hồ sơ đang tạm dừng (Bước 1.8b) — chỉ Owner; có thể kèm đồng ý lại consent.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L122).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc<br>**body** request: [ResumeChildProfileRequestDto?](#dto-resumechildprofilerequestdto); nullable; field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ChildProfileDto](#dto-childprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.resumeChildProfile](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L53); nơi dùng: [ProfileTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/ProfileTab.tsx#L79)
@@ -910,7 +894,7 @@ Guard/nghiệp vụ: [ChildProfileService.cs](../src/Core/StoryPlatform.Applicat
 #### PATCH /api/v1/ChildProfile/{id}/restore
 
 - Action/chức năng: **RestoreChildProfile** — Khôi phục hồ sơ đã lưu trữ về Active (Bước 1.8b) — chỉ Owner; Easy Login phải tạo mới.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L135).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc<br>**body** request: [ResumeChildProfileRequestDto?](#dto-resumechildprofilerequestdto); nullable; field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ChildProfileDto](#dto-childprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -919,7 +903,7 @@ Guard/nghiệp vụ: [ChildProfileService.cs](../src/Core/StoryPlatform.Applicat
 #### DELETE /api/v1/ChildProfile/{id}
 
 - Action/chức năng: **ArchiveChildProfile** — Lưu trữ hồ sơ trẻ — chỉ Owner; thu hồi Child Session và Easy Login, giữ nguyên lịch sử.. [ChildProfileController](../src/Core/StoryPlatform.Api/Controllers/ChildProfileController.cs#L148).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.archiveChildProfile](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L58); nơi dùng: [ProfileTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/ProfileTab.tsx#L84)
@@ -942,7 +926,7 @@ Guard/nghiệp vụ: [LearningProfileService.cs](../src/Core/StoryPlatform.Appli
 #### PUT /api/v1/LearningProfile/{childProfileId}
 
 - Action/chức năng: **SetLearningProfile** — Tạo/cập nhật Learning Profile của một hồ sơ trẻ (Bước 1.3).. [LearningProfileController](../src/Core/StoryPlatform.Api/Controllers/LearningProfileController.cs#L25).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc<br>**body** request: [SetLearningProfileRequestDto](#dto-setlearningprofilerequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [LearningProfileDto](#dto-learningprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.setLearningProfile](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L67); nơi dùng: [CreateChildWizard.tsx](../../AI_Storytelling_Frontend/src/app/features/children/CreateChildWizard.tsx#L58); [LearningTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/LearningTab.tsx#L41)
@@ -951,7 +935,7 @@ Guard/nghiệp vụ: [LearningProfileService.cs](../src/Core/StoryPlatform.Appli
 #### POST /api/v1/LearningProfile/{childProfileId}
 
 - Action/chức năng: **CreateLearningProfile** — Tạo mới Learning Profile của một hồ sơ trẻ (dùng cùng logic upsert với PUT).. [LearningProfileController](../src/Core/StoryPlatform.Api/Controllers/LearningProfileController.cs#L41).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc<br>**body** request: [SetLearningProfileRequestDto](#dto-setlearningprofilerequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [LearningProfileDto](#dto-learningprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -960,7 +944,7 @@ Guard/nghiệp vụ: [LearningProfileService.cs](../src/Core/StoryPlatform.Appli
 #### GET /api/v1/LearningProfile/{childProfileId}
 
 - Action/chức năng: **GetLearningProfile** — Lấy Learning Profile hiện tại của hồ sơ trẻ.. [LearningProfileController](../src/Core/StoryPlatform.Api/Controllers/LearningProfileController.cs#L57).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: [LearningProfileDto](#dto-learningprofiledto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.getLearningProfile](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L62); nơi dùng: [LearningTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/LearningTab.tsx#L27); [ProfileTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/ProfileTab.tsx#L35)
@@ -969,7 +953,7 @@ Guard/nghiệp vụ: [LearningProfileService.cs](../src/Core/StoryPlatform.Appli
 #### DELETE /api/v1/LearningProfile/{childProfileId}
 
 - Action/chức năng: **DeleteLearningProfile** — Xoá hẳn Learning Profile của hồ sơ trẻ (xoá cứng — chỉ là cấu hình, không phải lịch sử học tập).. [LearningProfileController](../src/Core/StoryPlatform.Api/Controllers/LearningProfileController.cs#L69).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -995,7 +979,7 @@ Guard/nghiệp vụ: [SafetyPolicyService.cs](../src/Core/StoryPlatform.Applicat
 #### PUT /api/v1/SafetyPolicy/{childProfileId}
 
 - Action/chức năng: **SetSafetyPolicy** — Tạo/cập nhật Safety Policy của một hồ sơ trẻ (Bước 1.4) — yêu cầu quyền ManageSafetySettings.. [SafetyPolicyController](../src/Core/StoryPlatform.Api/Controllers/SafetyPolicyController.cs#L25).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc<br>**body** request: [SetSafetyPolicyRequestDto](#dto-setsafetypolicyrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [SafetyPolicyDto](#dto-safetypolicydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.setSafetyPolicy](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L87); nơi dùng: [CreateChildWizard.tsx](../../AI_Storytelling_Frontend/src/app/features/children/CreateChildWizard.tsx#L62); [SafetyWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/safety/SafetyWorkspace.tsx#L110)
@@ -1004,7 +988,7 @@ Guard/nghiệp vụ: [SafetyPolicyService.cs](../src/Core/StoryPlatform.Applicat
 #### POST /api/v1/SafetyPolicy/{childProfileId}
 
 - Action/chức năng: **CreateSafetyPolicy** — Tạo mới Safety Policy của một hồ sơ trẻ (dùng cùng logic upsert với PUT) — yêu cầu quyền ManageSafetySettings.. [SafetyPolicyController](../src/Core/StoryPlatform.Api/Controllers/SafetyPolicyController.cs#L41).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc<br>**body** request: [SetSafetyPolicyRequestDto](#dto-setsafetypolicyrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [SafetyPolicyDto](#dto-safetypolicydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -1013,7 +997,7 @@ Guard/nghiệp vụ: [SafetyPolicyService.cs](../src/Core/StoryPlatform.Applicat
 #### GET /api/v1/SafetyPolicy/{childProfileId}
 
 - Action/chức năng: **GetSafetyPolicy** — Lấy Safety Policy hiện tại của hồ sơ trẻ.. [SafetyPolicyController](../src/Core/StoryPlatform.Api/Controllers/SafetyPolicyController.cs#L57).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: [SafetyPolicyDto](#dto-safetypolicydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.getSafetyPolicy](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L79); nơi dùng: [ProfileTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/ProfileTab.tsx#L35); [KidMode.tsx](../../AI_Storytelling_Frontend/src/app/features/kid/KidMode.tsx#L29)
@@ -1022,7 +1006,7 @@ Guard/nghiệp vụ: [SafetyPolicyService.cs](../src/Core/StoryPlatform.Applicat
 #### POST /api/v1/SafetyPolicy/{childProfileId}/reconsent
 
 - Action/chức năng: **Reconsent** — Owner đồng ý lại điều khoản khi consent_policy_version đã đổi.. [SafetyPolicyController](../src/Core/StoryPlatform.Api/Controllers/SafetyPolicyController.cs#L67).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: [SafetyPolicyDto](#dto-safetypolicydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.reconsent](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L92); nơi dùng: [SafetyWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/safety/SafetyWorkspace.tsx#L107)
@@ -1031,7 +1015,7 @@ Guard/nghiệp vụ: [SafetyPolicyService.cs](../src/Core/StoryPlatform.Applicat
 #### GET /api/v1/SafetyPolicy/{childProfileId}/age-preset
 
 - Action/chức năng: **GetAgePreset** — Danh sách danh mục Blocked mặc định theo age_band của trẻ.. [SafetyPolicyController](../src/Core/StoryPlatform.Api/Controllers/SafetyPolicyController.cs#L78).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: [AgePresetDto](#dto-agepresetdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -1040,7 +1024,7 @@ Guard/nghiệp vụ: [SafetyPolicyService.cs](../src/Core/StoryPlatform.Applicat
 #### POST /api/v1/SafetyPolicy/{childProfileId}/age-preset/apply
 
 - Action/chức năng: **ApplyAgePreset** — Thay danh sách Blocked bằng preset theo age_band hiện tại.. [SafetyPolicyController](../src/Core/StoryPlatform.Api/Controllers/SafetyPolicyController.cs#L89).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: [SafetyPolicyDto](#dto-safetypolicydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.applyAgePreset](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L97); nơi dùng: [SafetyWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/safety/SafetyWorkspace.tsx#L135)
@@ -1049,300 +1033,10 @@ Guard/nghiệp vụ: [SafetyPolicyService.cs](../src/Core/StoryPlatform.Applicat
 #### DELETE /api/v1/SafetyPolicy/{childProfileId}
 
 - Action/chức năng: **DeleteSafetyPolicy** — Xoá hẳn Safety Policy của hồ sơ trẻ (xoá cứng — chỉ là cấu hình).. [SafetyPolicyController](../src/Core/StoryPlatform.Api/Controllers/SafetyPolicyController.cs#L102).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
-
-<a id="controller-supervision"></a>
-### Supervision — 18 route
-
-P3–P4. Owner quản lý/cấp quyền/đề nghị chuyển quyền; người nhận claim OTP/accept/reject. Các lệnh kiểm người hành động và state pending.
-
-Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/Services/SupervisionService.cs).
-
-| Method + route | Mapping |
-|---|---|
-| [POST /api/v1/Supervision/{childProfileId}/invitations](#ep-supervision-createinvitation-post) | GỌI_API |
-| [GET /api/v1/Supervision/{childProfileId}/invitations](#ep-supervision-listinvitations-get) | GỌI_API |
-| [POST /api/v1/Supervision/invitations/claim](#ep-supervision-claiminvitation-post) | GỌI_API |
-| [POST /api/v1/Supervision/invitations/verify-otp](#ep-supervision-verifyinvitationotp-post) | GỌI_API |
-| [POST /api/v1/Supervision/invitations/reject](#ep-supervision-rejectinvitation-post) | GỌI_API |
-| [POST /api/v1/Supervision/invitations/accept](#ep-supervision-acceptinvitation-post) | GỌI_API |
-| [DELETE /api/v1/Supervision/invitations/{invitationId}](#ep-supervision-cancelinvitation-delete) | GỌI_API |
-| [POST /api/v1/Supervision/invitations/{invitationId}/regenerate](#ep-supervision-regenerateinvitationcode-post) | GỌI_API |
-| [GET /api/v1/Supervision/{childProfileId}/relationships](#ep-supervision-listsupervisors-get) | GỌI_API |
-| [DELETE /api/v1/Supervision/relationships/{relationshipId}](#ep-supervision-revokesupervision-delete) | GỌI_API |
-| [POST /api/v1/Supervision/{childProfileId}/transfer-ownership](#ep-supervision-requestownershiptransfer-post) | GỌI_API |
-| [GET /api/v1/Supervision/{childProfileId}/ownership-transfers](#ep-supervision-listownershiptransfers-get) | GỌI_API |
-| [POST /api/v1/Supervision/ownership-transfers/{ownershipTransferRequestId}/accept](#ep-supervision-acceptownershiptransfer-post) | GỌI_API |
-| [POST /api/v1/Supervision/ownership-transfers/{ownershipTransferRequestId}/reject](#ep-supervision-rejectownershiptransfer-post) | GỌI_API |
-| [POST /api/v1/Supervision/ownership-transfers/{ownershipTransferRequestId}/cancel](#ep-supervision-cancelownershiptransfer-post) | GỌI_API |
-| [GET /api/v1/Supervision/relationships/{relationshipId}/permissions](#ep-supervision-listpermissions-get) | GỌI_API |
-| [POST /api/v1/Supervision/relationships/{relationshipId}/permissions/{permission}](#ep-supervision-grantpermission-post) | GỌI_API |
-| [DELETE /api/v1/Supervision/relationships/{relationshipId}/permissions/{permission}](#ep-supervision-revokepermission-delete) | GỌI_API |
-
-<a id="ep-supervision-createinvitation-post"></a>
-#### POST /api/v1/Supervision/{childProfileId}/invitations
-
-- Action/chức năng: **CreateInvitation** — Tạo lời mời giám sát cho một hồ sơ trẻ (Bước 1.5).. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L27).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** childProfileId: `int`; bắt buộc<br>**body** request: [CreateInvitationRequestDto](#dto-createinvitationrequestdto); field/validation/ví dụ tại schema.
-- Response: ApiResponse.data: [InvitationDto](#dto-invitationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
-- Frontend: **GỌI_API** — [supervisionService.createInvitation](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L22); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L84)
-
-<a id="ep-supervision-listinvitations-get"></a>
-#### GET /api/v1/Supervision/{childProfileId}/invitations
-
-- Action/chức năng: **ListInvitations** — Danh sách toàn bộ lời mời giám sát (mọi trạng thái) của 1 hồ sơ trẻ.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L44).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** childProfileId: `int`; bắt buộc.
-- Response: ApiResponse.data: [List&lt;InvitationDto&gt;](#dto-invitationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [supervisionService.listInvitations](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L18); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L43)
-
-<a id="ep-supervision-claiminvitation-post"></a>
-#### POST /api/v1/Supervision/invitations/claim
-
-- Action/chức năng: **ClaimInvitation** — Nhập mã mời để nhận OTP gửi tới email được mời (Bước 1.6, BR-1.4).. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L56).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **body** request: [ClaimInvitationRequestDto](#dto-claiminvitationrequestdto); field/validation/ví dụ tại schema.
-- Response: ApiResponse.data: [ClaimInvitationResultDto](#dto-claiminvitationresultdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [supervisionService.claimInvitation](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L36); nơi dùng: [JoinInvitation.tsx](../../AI_Storytelling_Frontend/src/app/features/children/JoinInvitation.tsx#L34)
-
-<a id="ep-supervision-verifyinvitationotp-post"></a>
-#### POST /api/v1/Supervision/invitations/verify-otp
-
-- Action/chức năng: **VerifyInvitationOtp** — Xác thực OTP và xem thông tin hồ sơ ở phạm vi cho phép trước khi Accept/Reject.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L71).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **body** request: [VerifyInvitationOtpRequestDto](#dto-verifyinvitationotprequestdto); field/validation/ví dụ tại schema.
-- Response: ApiResponse.data: [InvitationPreviewDto](#dto-invitationpreviewdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [supervisionService.verifyInvitationOtp](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L41); nơi dùng: [JoinInvitation.tsx](../../AI_Storytelling_Frontend/src/app/features/children/JoinInvitation.tsx#L39)
-
-<a id="ep-supervision-rejectinvitation-post"></a>
-#### POST /api/v1/Supervision/invitations/reject
-
-- Action/chức năng: **RejectInvitation** — Từ chối lời mời giám sát (sau khi đã xác thực OTP).. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L86).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **body** request: [RejectInvitationRequestDto](#dto-rejectinvitationrequestdto); field/validation/ví dụ tại schema.
-- Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [supervisionService.rejectInvitation](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L51); nơi dùng: [JoinInvitation.tsx](../../AI_Storytelling_Frontend/src/app/features/children/JoinInvitation.tsx#L52)
-
-<a id="ep-supervision-acceptinvitation-post"></a>
-#### POST /api/v1/Supervision/invitations/accept
-
-- Action/chức năng: **AcceptInvitation** — Chấp nhận lời mời giám sát — yêu cầu đã xác thực OTP (Bước 1.6); cấp preset quyền mặc định.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L101).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **body** request: [AcceptInvitationRequestDto](#dto-acceptinvitationrequestdto); field/validation/ví dụ tại schema.
-- Response: ApiResponse.data: [SupervisionRelationshipDto](#dto-supervisionrelationshipdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [supervisionService.acceptInvitation](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L46); nơi dùng: [JoinInvitation.tsx](../../AI_Storytelling_Frontend/src/app/features/children/JoinInvitation.tsx#L44)
-
-<a id="ep-supervision-cancelinvitation-delete"></a>
-#### DELETE /api/v1/Supervision/invitations/{invitationId}
-
-- Action/chức năng: **CancelInvitation** — Huỷ 1 lời mời giám sát còn đang Pending.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L116).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** invitationId: `int`; bắt buộc.
-- Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [supervisionService.cancelInvitation](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L26); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L210)
-
-<a id="ep-supervision-regenerateinvitationcode-post"></a>
-#### POST /api/v1/Supervision/invitations/{invitationId}/regenerate
-
-- Action/chức năng: **RegenerateInvitationCode** — Owner cấp lại mã cho lời mời đang chờ hoặc đã hết hạn (UC-L1C-01); gia hạn 7 ngày và gửi lại email.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L128).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** invitationId: `int`; bắt buộc.
-- Response: ApiResponse.data: [InvitationDto](#dto-invitationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [supervisionService.regenerateInvitation](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L31); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L214)
-
-<a id="ep-supervision-listsupervisors-get"></a>
-#### GET /api/v1/Supervision/{childProfileId}/relationships
-
-- Action/chức năng: **ListSupervisors** — Danh sách người đang giám sát hiệu lực (chưa bị thu hồi) của 1 hồ sơ trẻ.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L141).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** childProfileId: `int`; bắt buộc.
-- Response: ApiResponse.data: [List&lt;SupervisionRelationshipDto&gt;](#dto-supervisionrelationshipdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [supervisionService.listSupervisors](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L9); nơi dùng: [ChildrenWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/children/ChildrenWorkspace.tsx#L45); [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L36)
-
-<a id="ep-supervision-revokesupervision-delete"></a>
-#### DELETE /api/v1/Supervision/relationships/{relationshipId}
-
-- Action/chức năng: **RevokeSupervision** — Thu hồi một quan hệ giám sát (Bước 1.6b) — Owner gỡ người giám sát, hoặc Additional Supervisor tự rời hồ sơ. Không áp dụng cho Owner.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L154).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** relationshipId: `int`; bắt buộc.
-- Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [supervisionService.revokeSupervisor](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L14); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L138)
-
-<a id="ep-supervision-requestownershiptransfer-post"></a>
-#### POST /api/v1/Supervision/{childProfileId}/transfer-ownership
-
-- Action/chức năng: **RequestOwnershipTransfer** — Owner gửi yêu cầu chuyển quyền Owner cho một Additional Supervisor (Bước 1.7b); yêu cầu chờ đến khi người nhận phản hồi hoặc Owner hủy.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L170).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** childProfileId: `int`; bắt buộc<br>**body** request: [TransferOwnershipRequestDto](#dto-transferownershiprequestdto); field/validation/ví dụ tại schema.
-- Response: ApiResponse.data: [OwnershipTransferRequestDto](#dto-ownershiptransferrequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
-- Frontend: **GỌI_API** — [supervisionService.requestOwnershipTransfer](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L81); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L136)
-
-<a id="ep-supervision-listownershiptransfers-get"></a>
-#### GET /api/v1/Supervision/{childProfileId}/ownership-transfers
-
-- Action/chức năng: **ListOwnershipTransfers** — Danh sách yêu cầu chuyển nhượng quyền Owner của một hồ sơ trẻ.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L188).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** childProfileId: `int`; bắt buộc.
-- Response: ApiResponse.data: [List&lt;OwnershipTransferRequestDto&gt;](#dto-ownershiptransferrequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [supervisionService.listOwnershipTransfers](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L85); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L44); [SupervisionTodos.tsx](../../AI_Storytelling_Frontend/src/app/features/home/SupervisionTodos.tsx#L24)
-
-<a id="ep-supervision-acceptownershiptransfer-post"></a>
-#### POST /api/v1/Supervision/ownership-transfers/{ownershipTransferRequestId}/accept
-
-- Action/chức năng: **AcceptOwnershipTransfer** — Người được đề nghị chấp nhận yêu cầu chuyển nhượng quyền Owner — thực hiện đổi role ngay.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L202).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** ownershipTransferRequestId: `int`; bắt buộc.
-- Response: ApiResponse.data: [SupervisionRelationshipDto](#dto-supervisionrelationshipdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [supervisionService.answerOwnershipTransfer](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L89); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L97); [SupervisionTodos.tsx](../../AI_Storytelling_Frontend/src/app/features/home/SupervisionTodos.tsx#L45)
-
-<a id="ep-supervision-rejectownershiptransfer-post"></a>
-#### POST /api/v1/Supervision/ownership-transfers/{ownershipTransferRequestId}/reject
-
-- Action/chức năng: **RejectOwnershipTransfer** — Người được đề nghị từ chối yêu cầu chuyển nhượng quyền Owner.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L216).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** ownershipTransferRequestId: `int`; bắt buộc.
-- Response: ApiResponse.data: [OwnershipTransferRequestDto](#dto-ownershiptransferrequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [supervisionService.answerOwnershipTransfer](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L89); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L97); [SupervisionTodos.tsx](../../AI_Storytelling_Frontend/src/app/features/home/SupervisionTodos.tsx#L45)
-
-<a id="ep-supervision-cancelownershiptransfer-post"></a>
-#### POST /api/v1/Supervision/ownership-transfers/{ownershipTransferRequestId}/cancel
-
-- Action/chức năng: **CancelOwnershipTransfer** — Owner thu hồi yêu cầu chuyển quyền Owner đang chờ phản hồi.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L230).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** ownershipTransferRequestId: `int`; bắt buộc.
-- Response: ApiResponse.data: [OwnershipTransferRequestDto](#dto-ownershiptransferrequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [supervisionService.cancelOwnershipTransfer](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L94); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L134)
-
-<a id="ep-supervision-listpermissions-get"></a>
-#### GET /api/v1/Supervision/relationships/{relationshipId}/permissions
-
-- Action/chức năng: **ListPermissions** — Danh sách permission đã cấp cho 1 Additional Supervisor. Chỉ Owner xem được.. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L244).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** relationshipId: `int`; bắt buộc.
-- Response: ApiResponse.data: `List<string>`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [supervisionService.listPermissions](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L55); nơi dùng: [ChildrenWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/children/ChildrenWorkspace.tsx#L48); [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L41)
-
-<a id="ep-supervision-grantpermission-post"></a>
-#### POST /api/v1/Supervision/relationships/{relationshipId}/permissions/{permission}
-
-- Action/chức năng: **GrantPermission** — Cấp 1 permission cho Additional Supervisor (Bước 1.7, Mục 3 Bước D).. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L256).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** relationshipId: `int`; bắt buộc<br>**path** permission: [Permission](#dto-permission); bắt buộc.
-- Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [supervisionService.grantPermission](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L59); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L79)
-
-<a id="ep-supervision-revokepermission-delete"></a>
-#### DELETE /api/v1/Supervision/relationships/{relationshipId}/permissions/{permission}
-
-- Action/chức năng: **RevokePermission** — Thu hồi 1 permission cụ thể của Additional Supervisor (Bước 1.7, Mục 3 Bước F).. [SupervisionController](../src/Core/StoryPlatform.Api/Controllers/SupervisionController.cs#L272).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** relationshipId: `int`; bắt buộc<br>**path** permission: [Permission](#dto-permission); bắt buộc.
-- Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [supervisionService.revokePermission](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L63); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L79)
-
-<a id="controller-permission"></a>
-### Permission — 9 route
-
-P4. Danh mục enum có 8 quyền. Quản lý trực tiếp có route trùng Supervision; xin quyền dùng permissions[] và accept/reject/cancel.
-
-Guard/nghiệp vụ: [SupervisionService.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/Services/SupervisionService.cs).
-
-| Method + route | Mapping |
-|---|---|
-| [GET /api/v1/Permission](#ep-permission-listsystempermissions-get) | CHƯA_MAP |
-| [GET /api/v1/Permission/relationships/{relationshipId}](#ep-permission-listrelationshippermissions-get) | CHƯA_MAP |
-| [POST /api/v1/Permission/relationships/{relationshipId}/{permission}](#ep-permission-grantpermission-post) | CHƯA_MAP |
-| [DELETE /api/v1/Permission/relationships/{relationshipId}/{permission}](#ep-permission-revokepermission-delete) | CHƯA_MAP |
-| [POST /api/v1/Permission/relationships/{relationshipId}/requests](#ep-permission-createpermissionrequest-post) | GỌI_API |
-| [GET /api/v1/Permission/relationships/{relationshipId}/requests](#ep-permission-listpermissionrequests-get) | GỌI_API |
-| [POST /api/v1/Permission/requests/{permissionRequestId}/accept](#ep-permission-acceptpermissionrequest-post) | GỌI_API |
-| [POST /api/v1/Permission/requests/{permissionRequestId}/reject](#ep-permission-rejectpermissionrequest-post) | GỌI_API |
-| [POST /api/v1/Permission/requests/{permissionRequestId}/cancel](#ep-permission-cancelpermissionrequest-post) | GỌI_API |
-
-<a id="ep-permission-listsystempermissions-get"></a>
-#### GET /api/v1/Permission
-
-- Action/chức năng: **ListSystemPermissions** — Lấy danh sách toàn bộ quyền có trong hệ thống.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L27).
-- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
-- Request: Không có tham số action; dùng token/header theo quyền..
-- Response: ApiResponse.data: `List<string>`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
-
-<a id="ep-permission-listrelationshippermissions-get"></a>
-#### GET /api/v1/Permission/relationships/{relationshipId}
-
-- Action/chức năng: **ListRelationshipPermissions** — Lấy danh sách quyền của một quan hệ giám sát.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L38).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** relationshipId: `int`; bắt buộc.
-- Response: ApiResponse.data: `List<string>`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
-
-<a id="ep-permission-grantpermission-post"></a>
-#### POST /api/v1/Permission/relationships/{relationshipId}/{permission}
-
-- Action/chức năng: **GrantPermission** — Cấp một quyền cho quan hệ giám sát.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L51).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** relationshipId: `int`; bắt buộc<br>**path** permission: [Permission](#dto-permission); bắt buộc.
-- Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
-
-<a id="ep-permission-revokepermission-delete"></a>
-#### DELETE /api/v1/Permission/relationships/{relationshipId}/{permission}
-
-- Action/chức năng: **RevokePermission** — Thu hồi một quyền khỏi quan hệ giám sát.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L64).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** relationshipId: `int`; bắt buộc<br>**path** permission: [Permission](#dto-permission); bắt buộc.
-- Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
-
-<a id="ep-permission-createpermissionrequest-post"></a>
-#### POST /api/v1/Permission/relationships/{relationshipId}/requests
-
-- Action/chức năng: **CreatePermissionRequest** — Tạo yêu cầu xin cấp quyền cho quan hệ giám sát của chính Additional Supervisor.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L77).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** relationshipId: `int`; bắt buộc<br>**body** request: [CreatePermissionRequestRequestDto](#dto-createpermissionrequestrequestdto); field/validation/ví dụ tại schema.
-- Response: ApiResponse.data: [PermissionRequestDto](#dto-permissionrequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
-- Frontend: **GỌI_API** — [supervisionService.requestPermission](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L68); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L178)
-
-<a id="ep-permission-listpermissionrequests-get"></a>
-#### GET /api/v1/Permission/relationships/{relationshipId}/requests
-
-- Action/chức năng: **ListPermissionRequests** — Danh sách yêu cầu xin quyền của một quan hệ giám sát.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L94).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** relationshipId: `int`; bắt buộc.
-- Response: ApiResponse.data: [List&lt;PermissionRequestDto&gt;](#dto-permissionrequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [supervisionService.listPermissionRequests](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L72); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L42); [HomeWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/home/HomeWorkspace.tsx#L82)
-
-<a id="ep-permission-acceptpermissionrequest-post"></a>
-#### POST /api/v1/Permission/requests/{permissionRequestId}/accept
-
-- Action/chức năng: **AcceptPermissionRequest** — Owner chấp nhận yêu cầu xin quyền — cấp toàn bộ permission trong yêu cầu.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L107).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** permissionRequestId: `int`; bắt buộc.
-- Response: ApiResponse.data: [PermissionRequestDto](#dto-permissionrequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [supervisionService.answerPermissionRequest](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L76); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L155)
-
-<a id="ep-permission-rejectpermissionrequest-post"></a>
-#### POST /api/v1/Permission/requests/{permissionRequestId}/reject
-
-- Action/chức năng: **RejectPermissionRequest** — Owner từ chối yêu cầu xin quyền.. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L121).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** permissionRequestId: `int`; bắt buộc.
-- Response: ApiResponse.data: [PermissionRequestDto](#dto-permissionrequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [supervisionService.answerPermissionRequest](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L76); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L155)
-
-<a id="ep-permission-cancelpermissionrequest-post"></a>
-#### POST /api/v1/Permission/requests/{permissionRequestId}/cancel
-
-- Action/chức năng: **CancelPermissionRequest** — Additional Supervisor tự huỷ yêu cầu xin quyền do chính mình tạo, khi Owner chưa xử lý (BR-1.14).. [PermissionController](../src/Core/StoryPlatform.Api/Controllers/PermissionController.cs#L135).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
-- Request: **path** permissionRequestId: `int`; bắt buộc.
-- Response: ApiResponse.data: [PermissionRequestDto](#dto-permissionrequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [supervisionService.answerPermissionRequest](../../AI_Storytelling_Frontend/src/app/services/supervisionService.ts#L76); nơi dùng: [SupervisorsTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/SupervisorsTab.tsx#L155)
 
 <a id="controller-childaccesscredential"></a>
 ### ChildAccessCredential — 6 route
@@ -1364,7 +1058,7 @@ Guard/nghiệp vụ: [ChildAccessCredentialService.cs](../src/Core/StoryPlatform
 #### GET /api/v1/ChildAccessCredential/{childProfileId}
 
 - Action/chức năng: **GetCredential** — Trạng thái Easy Login của hồ sơ (đã có chưa, tạo lúc nào) — KHÔNG bao giờ trả secret hay hash.. [ChildAccessCredentialController](../src/Core/StoryPlatform.Api/Controllers/ChildAccessCredentialController.cs#L25).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ChildAccessCredentialDto](#dto-childaccesscredentialdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childAccessService.getCredential](../../AI_Storytelling_Frontend/src/app/services/childAccessService.ts#L13); nơi dùng: [AccessTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/AccessTab.tsx#L27)
@@ -1373,7 +1067,7 @@ Guard/nghiệp vụ: [ChildAccessCredentialService.cs](../src/Core/StoryPlatform
 #### DELETE /api/v1/ChildAccessCredential/{childProfileId}
 
 - Action/chức năng: **RevokeCredential** — Thu hồi Easy Login (soft delete): trẻ bị đăng xuất ngay và mất lối vào độc lập cho tới khi tạo Easy Login mới. Cần quyền manage_safety_settings (Owner luôn có).. [ChildAccessCredentialController](../src/Core/StoryPlatform.Api/Controllers/ChildAccessCredentialController.cs#L38).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: `object?`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childAccessService.revokeCredential](../../AI_Storytelling_Frontend/src/app/services/childAccessService.ts#L18); nơi dùng: [AccessTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/AccessTab.tsx#L48)
@@ -1382,7 +1076,7 @@ Guard/nghiệp vụ: [ChildAccessCredentialService.cs](../src/Core/StoryPlatform
 #### POST /api/v1/ChildAccessCredential/{childProfileId}/easylogin
 
 - Action/chức năng: **CreateOrRegenerateEasyLogin** — Tạo Easy Login lâu dài (lần đầu) hoặc TẠO LẠI secret mới (secret cũ vô hiệu ngay, mọi phiên của trẻ từ secret cũ bị kết thúc). Secret chỉ trả đúng một lần — client dựng QR từ giá trị này. Cần quyền manage_safety_settings. [ChildAccessCredentialController](../src/Core/StoryPlatform.Api/Controllers/ChildAccessCredentialController.cs#L51).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: [EasyLoginSecretDto](#dto-easyloginsecretdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childAccessService.generateEasyLogin](../../AI_Storytelling_Frontend/src/app/services/childAccessService.ts#L23); nơi dùng: [AccessTab.tsx](../../AI_Storytelling_Frontend/src/app/features/children/AccessTab.tsx#L38)
@@ -1391,7 +1085,7 @@ Guard/nghiệp vụ: [ChildAccessCredentialService.cs](../src/Core/StoryPlatform
 #### POST /api/v1/ChildAccessCredential/{childProfileId}/handover
 
 - Action/chức năng: **StartSupervisedSession** — Supervisor bàn giao thiết bị cho trẻ sau khi chọn hồ sơ qua ProfileSwitcher (Luồng 3, Bước 3.0) — phát sinh Child Session riêng, tách khỏi phiên Supervisor.. [ChildAccessCredentialController](../src/Core/StoryPlatform.Api/Controllers/ChildAccessCredentialController.cs#L65).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc<br>**body** request: [StartSupervisedChildSessionRequestDto](#dto-startsupervisedchildsessionrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ChildSessionDto](#dto-childsessiondto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childAccessService.startSupervisedSession](../../AI_Storytelling_Frontend/src/app/services/childAccessService.ts#L28); nơi dùng: [KidMode.tsx](../../AI_Storytelling_Frontend/src/app/features/kid/KidMode.tsx#L29)
@@ -1452,7 +1146,7 @@ Guard/nghiệp vụ: [AIStoryInputService.cs](../src/Core/StoryPlatform.Applicat
 #### GET /api/v1/ai-story-input/children/{childProfileId}/context
 
 - Action/chức năng: **GetContext**. [AIStoryInputController](../src/Core/StoryPlatform.Api/Controllers/AIStoryInputController.cs#L23).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** childProfileId: `int`; bắt buộc.
 - Response: ApiResponse.data: [AIStoryInputContextDto](#dto-aistoryinputcontextdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.getCreationContext](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L95); nơi dùng: [useAIStoryInputFlow.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useAIStoryInputFlow.ts#L120)
@@ -1461,7 +1155,7 @@ Guard/nghiệp vụ: [AIStoryInputService.cs](../src/Core/StoryPlatform.Applicat
 #### POST /api/v1/ai-story-input/requests
 
 - Action/chức năng: **Submit**. [AIStoryInputController](../src/Core/StoryPlatform.Api/Controllers/AIStoryInputController.cs#L32).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [SubmitAIStoryInputRequestDto](#dto-submitaistoryinputrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AIStoryInputProgressDto](#dto-aistoryinputprogressdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202, 409, 422, 503.
 - Giữ progress cả khi success=false (422/409/503); accepted/checking trả 202. Poll bằng storyId/requestId đúng prefix.
@@ -1471,7 +1165,7 @@ Guard/nghiệp vụ: [AIStoryInputService.cs](../src/Core/StoryPlatform.Applicat
 #### GET /api/v1/ai-story-input/stories/{storyId}/requests/{requestId}
 
 - Action/chức năng: **GetProgress**. [AIStoryInputController](../src/Core/StoryPlatform.Api/Controllers/AIStoryInputController.cs#L41).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** requestId: `int`; bắt buộc.
 - Response: ApiResponse.data: [AIStoryInputProgressDto](#dto-aistoryinputprogressdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.getInputProgress](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L97); nơi dùng: [useAIStoryInputFlow.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useAIStoryInputFlow.ts#L127)
@@ -1480,7 +1174,7 @@ Guard/nghiệp vụ: [AIStoryInputService.cs](../src/Core/StoryPlatform.Applicat
 #### POST /api/v1/ai-story-input/stories/{storyId}/requests/{requestId}/retry
 
 - Action/chức năng: **Retry**. [AIStoryInputController](../src/Core/StoryPlatform.Api/Controllers/AIStoryInputController.cs#L51).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** requestId: `int`; bắt buộc<br>**body** request: [RetryAIStoryInputRequestDto](#dto-retryaistoryinputrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AIStoryInputProgressDto](#dto-aistoryinputprogressdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202, 409, 422, 503.
 - Giữ progress cả khi success=false (422/409/503); accepted/checking trả 202. Poll bằng storyId/requestId đúng prefix.
@@ -1968,7 +1662,7 @@ G5. Parent pipeline nhập cũ. Body StoryId phải khớp path ở adapt/update
 #### POST /api/v1/stories/import
 
 - Action/chức năng: **Import**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L46).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [ImportStoryRequestDto](#dto-importstoryrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ImportStoryResponseDto](#dto-importstoryresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [existingStoryService.importStory](../../AI_Storytelling_Frontend/src/app/services/existingStoryService.ts#L10); nơi dùng: [ImportStoryPanel.tsx](../../AI_Storytelling_Frontend/src/app/features/studio/ImportStoryPanel.tsx#L67)
@@ -1977,7 +1671,7 @@ G5. Parent pipeline nhập cũ. Body StoryId phải khớp path ở adapt/update
 #### POST /api/v1/stories/import-file
 
 - Action/chức năng: **ImportFile**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L57).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **form** form: [ImportExistingStoryFileForm](#dto-importexistingstoryfileform); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ImportStoryResponseDto](#dto-importstoryresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [existingStoryService.importFile](../../AI_Storytelling_Frontend/src/app/services/existingStoryService.ts#L15); nơi dùng: [ImportStoryPanel.tsx](../../AI_Storytelling_Frontend/src/app/features/studio/ImportStoryPanel.tsx#L65)
@@ -1986,7 +1680,7 @@ G5. Parent pipeline nhập cũ. Body StoryId phải khớp path ở adapt/update
 #### POST /api/v1/stories/{storyId}/existing/evaluate
 
 - Action/chức năng: **Evaluate**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L86).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [EvaluateExistingStoryRequestDto](#dto-evaluateexistingstoryrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ExistingStoryEvaluationDto](#dto-existingstoryevaluationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [existingStoryService.evaluate](../../AI_Storytelling_Frontend/src/app/services/existingStoryService.ts#L35); nơi dùng: [ImportStoryPanel.tsx](../../AI_Storytelling_Frontend/src/app/features/studio/ImportStoryPanel.tsx#L53)
@@ -1995,7 +1689,7 @@ G5. Parent pipeline nhập cũ. Body StoryId phải khớp path ở adapt/update
 #### GET /api/v1/stories/{storyId}/existing/evaluation
 
 - Action/chức năng: **GetLatestEvaluation**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L97).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**query** storyVersionId: `int`.
 - Response: ApiResponse.data: [ExistingStoryEvaluationDto](#dto-existingstoryevaluationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2004,7 +1698,7 @@ G5. Parent pipeline nhập cũ. Body StoryId phải khớp path ở adapt/update
 #### POST /api/v1/stories/{storyId}/existing/adapt
 
 - Action/chức năng: **Adapt**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L112).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [AdaptExistingStoryRequestDto](#dto-adaptexistingstoryrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [VersionMutationResponseDto](#dto-versionmutationresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [existingStoryService.adapt](../../AI_Storytelling_Frontend/src/app/services/existingStoryService.ts#L40); nơi dùng: [ImportStoryPanel.tsx](../../AI_Storytelling_Frontend/src/app/features/studio/ImportStoryPanel.tsx#L135)
@@ -2013,7 +1707,7 @@ G5. Parent pipeline nhập cũ. Body StoryId phải khớp path ở adapt/update
 #### PUT /api/v1/stories/{storyId}/existing/content
 
 - Action/chức năng: **UpdateContent**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L135).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [ManualEditRequestDto](#dto-manualeditrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [VersionMutationResponseDto](#dto-versionmutationresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [existingStoryService.manualEdit](../../AI_Storytelling_Frontend/src/app/services/existingStoryService.ts#L44); nơi dùng: [ImportStoryPanel.tsx](../../AI_Storytelling_Frontend/src/app/features/studio/ImportStoryPanel.tsx#L120)
@@ -2022,7 +1716,7 @@ G5. Parent pipeline nhập cũ. Body StoryId phải khớp path ở adapt/update
 #### POST /api/v1/stories/{storyId}/existing/keep-original
 
 - Action/chức năng: **KeepOriginal**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L157).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [KeepOriginalRequestDto](#dto-keeporiginalrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [VersionMutationResponseDto](#dto-versionmutationresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [existingStoryService.keepOriginal](../../AI_Storytelling_Frontend/src/app/services/existingStoryService.ts#L49); nơi dùng: [ImportStoryPanel.tsx](../../AI_Storytelling_Frontend/src/app/features/studio/ImportStoryPanel.tsx#L76)
@@ -2031,7 +1725,7 @@ G5. Parent pipeline nhập cũ. Body StoryId phải khớp path ở adapt/update
 #### POST /api/v1/stories/{storyId}/existing/archive
 
 - Action/chức năng: **Archive**. [ExistingStoriesController](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L173).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [ArchiveExistingStoryRequestDto](#dto-archiveexistingstoryrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: `bool`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [existingStoryService.archive](../../AI_Storytelling_Frontend/src/app/services/existingStoryService.ts#L53); nơi dùng: [ImportStoryPanel.tsx](../../AI_Storytelling_Frontend/src/app/features/studio/ImportStoryPanel.tsx#L160)
@@ -2068,7 +1762,7 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 #### POST /api/v1/parent/stories/manual
 
 - Action/chức năng: **Create**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L14).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [CreateParentDraftRequest](#dto-createparentdraftrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ParentDraftDto](#dto-parentdraftdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2077,7 +1771,7 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 #### GET /api/v1/parent/stories
 
 - Action/chức năng: **Mine**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L18).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **query** pageIndex: `int`; default 1<br>**query** pageSize: `int`; default 20.
 - Response: ApiResponse.data: [PagedResult&lt;CreatorDraftDto&gt;](#dto-pagedresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2086,7 +1780,7 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 #### GET /api/v1/parent/stories/{storyId}
 
 - Action/chức năng: **Get**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L22).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ParentDraftDto](#dto-parentdraftdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2095,7 +1789,7 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 #### GET /api/v1/parent/stories/{storyId}/workflow
 
 - Action/chức năng: **Workflow**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L26).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [IReadOnlyList&lt;ParentOperationDto&gt;](#dto-parentoperationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2104,7 +1798,7 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 #### PATCH /api/v1/parent/stories/{storyId}/setup
 
 - Action/chức năng: **Setup**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L30).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [ParentSetupRequest](#dto-parentsetuprequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ParentDraftDto](#dto-parentdraftdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2113,7 +1807,7 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 #### POST /api/v1/parent/stories/{storyId}/manual/versions
 
 - Action/chức năng: **Save**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L34).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [SaveCreatorContentRequest](#dto-savecreatorcontentrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [CreatorContentSavedDto](#dto-creatorcontentsaveddto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2122,7 +1816,7 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 #### GET /api/v1/parent/stories/{storyId}/content/versions
 
 - Action/chức năng: **Versions**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L38).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [IReadOnlyList&lt;CreatorVersionDto&gt;](#dto-creatorversiondto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2131,7 +1825,7 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 #### GET /api/v1/parent/stories/{storyId}/content/versions/{versionId}
 
 - Action/chức năng: **Version**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L42).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** versionId: `int`; bắt buộc.
 - Response: ApiResponse.data: [CreatorVersionDto](#dto-creatorversiondto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2140,7 +1834,7 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 #### POST /api/v1/parent/stories/{storyId}/content/restore
 
 - Action/chức năng: **Restore**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L46).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [RestoreCreatorVersionRequest](#dto-restorecreatorversionrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [CreatorContentSavedDto](#dto-creatorcontentsaveddto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2149,7 +1843,7 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 #### POST /api/v1/parent/stories/{storyId}/imports/preview
 
 - Action/chức năng: **PreviewImport**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L50).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [PreviewCreatorImportRequest](#dto-previewcreatorimportrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [CreatorImportPreviewDto](#dto-creatorimportpreviewdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2158,7 +1852,7 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 #### POST /api/v1/parent/stories/{storyId}/imports/preview-file
 
 - Action/chức năng: **PreviewFile**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L56).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**form** form: [CreatorImportFileForm](#dto-creatorimportfileform); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [CreatorImportPreviewDto](#dto-creatorimportpreviewdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2167,7 +1861,7 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 #### POST /api/v1/parent/stories/{storyId}/imports/confirm
 
 - Action/chức năng: **ConfirmImport**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L65).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [ConfirmCreatorImportRequest](#dto-confirmcreatorimportrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [CreatorContentSavedDto](#dto-creatorcontentsaveddto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2176,7 +1870,7 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 #### POST /api/v1/parent/stories/{storyId}/content/checks
 
 - Action/chức năng: **Check**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L69).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [ParentCheckRequest](#dto-parentcheckrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ParentCheckDto](#dto-parentcheckdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2185,7 +1879,7 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 #### POST /api/v1/parent/stories/{storyId}/content/confirm
 
 - Action/chức năng: **ConfirmContent**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L73).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [ParentContentConfirmRequest](#dto-parentcontentconfirmrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ParentContentConfirmationDto](#dto-parentcontentconfirmationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2194,7 +1888,7 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 #### POST /api/v1/parent/stories/{storyId}/preparations
 
 - Action/chức năng: **Prepare**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L77).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [ParentPrepareRequest](#dto-parentpreparerequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ParentPreparationDto](#dto-parentpreparationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2203,7 +1897,7 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 #### GET /api/v1/parent/stories/{storyId}/preparations/{preparationId}
 
 - Action/chức năng: **Preview**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L81).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** preparationId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ParentPreparationDto](#dto-parentpreparationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2212,7 +1906,7 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 #### POST /api/v1/parent/stories/{storyId}/family-confirmations
 
 - Action/chức năng: **ConfirmFamily**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L85).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [ParentFamilyConfirmRequest](#dto-parentfamilyconfirmrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ParentFamilyConfirmationDto](#dto-parentfamilyconfirmationdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2221,7 +1915,7 @@ Guard/nghiệp vụ: [ParentAuthoringService.cs](../src/Core/StoryPlatform.Appli
 #### POST /api/v1/parent/stories/{storyId}/family-confirmations/revoke
 
 - Action/chức năng: **RevokeFamily**. [ParentAuthoringController](../src/Core/StoryPlatform.Api/Controllers/ParentAuthoringController.cs#L89).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [ParentFamilyRevokeRequest](#dto-parentfamilyrevokerequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: `bool`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2250,7 +1944,7 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 #### POST /api/v1/parent/stories/{storyId}/assistance-tasks
 
 - Action/chức năng: **Create**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L24).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**body** request: [CreateAssistanceTaskRequest](#dto-createassistancetaskrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AssistanceTaskDto](#dto-assistancetaskdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2259,7 +1953,7 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 #### GET /api/v1/parent/stories/{storyId}/assistance-tasks
 
 - Action/chức năng: **List**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L27).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**query** pageIndex: `int`; default 1<br>**query** pageSize: `int`; default 20.
 - Response: ApiResponse.data: [PagedResult&lt;AssistanceTaskSummary&gt;](#dto-pagedresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2268,7 +1962,7 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 #### GET /api/v1/parent/stories/{storyId}/assistance-tasks/{taskId}
 
 - Action/chức năng: **Get**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L30).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc.
 - Response: ApiResponse.data: [AssistanceTaskDto](#dto-assistancetaskdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2277,7 +1971,7 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 #### GET /api/v1/parent/stories/{storyId}/assistance-tasks/{taskId}/steps
 
 - Action/chức năng: **Steps**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L33).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc<br>**query** pageIndex: `int`; default 1<br>**query** pageSize: `int`; default 20.
 - Response: ApiResponse.data: [PagedResult&lt;AssistanceStepDto&gt;](#dto-pagedresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2286,7 +1980,7 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 #### POST /api/v1/parent/stories/{storyId}/assistance-tasks/{taskId}/suggestions
 
 - Action/chức năng: **Suggestions**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L38).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc<br>**body** request: [SuggestAssistanceRequest](#dto-suggestassistancerequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AssistanceCommandResult](#dto-assistancecommandresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202.
 - IsRunning=true: đọc Location/pollUrl, GET task; giữ operationId/payload và revision theo M3.
@@ -2296,7 +1990,7 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 #### POST /api/v1/parent/stories/{storyId}/assistance-tasks/{taskId}/clarification-answer
 
 - Action/chức năng: **Answer**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L41).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc<br>**body** request: [AnswerAssistanceRequest](#dto-answerassistancerequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AssistanceCommandResult](#dto-assistancecommandresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202.
 - IsRunning=true: đọc Location/pollUrl, GET task; giữ operationId/payload và revision theo M3.
@@ -2306,7 +2000,7 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 #### POST /api/v1/parent/stories/{storyId}/assistance-tasks/{taskId}/direction
 
 - Action/chức năng: **Direction**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L44).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc<br>**body** request: [ConfirmAssistanceDirectionRequest](#dto-confirmassistancedirectionrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AssistanceCommandResult](#dto-assistancecommandresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202.
 - IsRunning=true: đọc Location/pollUrl, GET task; giữ operationId/payload và revision theo M3.
@@ -2316,7 +2010,7 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 #### POST /api/v1/parent/stories/{storyId}/assistance-tasks/{taskId}/trials
 
 - Action/chức năng: **Trial**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L49).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc<br>**body** request: [CreateAssistanceTrialRequest](#dto-createassistancetrialrequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AssistanceCommandResult](#dto-assistancecommandresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202.
 - IsRunning=true: đọc Location/pollUrl, GET task; giữ operationId/payload và revision theo M3.
@@ -2326,7 +2020,7 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 #### POST /api/v1/parent/stories/{storyId}/assistance-tasks/{taskId}/cancel
 
 - Action/chức năng: **Cancel**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L52).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc<br>**body** request: [CancelAssistanceRequest](#dto-cancelassistancerequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AssistanceCommandResult](#dto-assistancecommandresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202.
 - IsRunning=true: đọc Location/pollUrl, GET task; giữ operationId/payload và revision theo M3.
@@ -2336,7 +2030,7 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 #### POST /api/v1/parent/stories/{storyId}/assistance-tasks/{taskId}/close
 
 - Action/chức năng: **Close**. [ParentAssistanceController](../src/Core/StoryPlatform.Api/Controllers/ParentAssistanceController.cs#L55).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc<br>**path** taskId: `int`; bắt buộc<br>**body** request: [AssistanceCommand](#dto-assistancecommand); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [AssistanceCommandResult](#dto-assistancecommandresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200, 202.
 - IsRunning=true: đọc Location/pollUrl, GET task; giữ operationId/payload và revision theo M3.
@@ -2358,7 +2052,7 @@ Guard/nghiệp vụ: [AuthoringGuideService.cs](../src/Core/StoryPlatform.Applic
 #### GET /api/v1/authoring-guides
 
 - Action/chức năng: **Get**. [AuthoringGuidesController](../src/Core/StoryPlatform.Api/Controllers/AuthoringGuidesController.cs#L14).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **query** locale: `string`; default "vi"<br>**query** purpose: `string?`; default null<br>**query** group: `string?`; default null<br>**query** pageIndex: `int`; default 1<br>**query** pageSize: `int`; default 10.
 - Response: ApiResponse.data: [GuidePage](#dto-guidepage). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2367,7 +2061,7 @@ Guard/nghiệp vụ: [AuthoringGuideService.cs](../src/Core/StoryPlatform.Applic
 #### POST /api/v1/authoring-guides/{guideId}/render
 
 - Action/chức năng: **Render**. [AuthoringGuidesController](../src/Core/StoryPlatform.Api/Controllers/AuthoringGuidesController.cs#L18).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** guideId: `string`; bắt buộc<br>**body** request: [RenderGuideRequest](#dto-renderguiderequest); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [RenderGuideResult](#dto-renderguideresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2873,7 +2567,7 @@ Guard/nghiệp vụ: [ContentReportService.cs](../src/Core/StoryPlatform.Applica
 #### POST /api/v1/ContentReport
 
 - Action/chức năng: **Create** — Báo cáo một truyện mà con của người gọi truy cập được.. [ContentReportController](../src/Core/StoryPlatform.Api/Controllers/ContentReportController.cs#L27).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [CreateContentReportRequestDto](#dto-createcontentreportrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ContentReportResultDto](#dto-contentreportresultdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **LỆCH_CONTRACT** — [guardianService.reportStory](../../AI_Storytelling_Frontend/src/app/services/guardianService.ts#L98) gọi /content-reports, enum/model local. [UI](../../AI_Storytelling_Frontend/src/app/features/library/ModerationDialogs.tsx#L40)
@@ -3117,7 +2811,7 @@ Parent tạo/mine/cancel của mình; Admin resolve/reject. Export binary, csv �
 #### POST /api/v1/DataRequest
 
 - Action/chức năng: **CreateDataRequest** — Tạo yêu cầu Export hoặc Delete dữ liệu cho Child Profile do chính mình sở hữu.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L26).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [CreateDataRequestDto](#dto-createdatarequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [DataRequestDto](#dto-datarequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **GỌI_API** — [staffService.createDataRequest](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L50); nơi dùng: [DataRequestSection.tsx](../../AI_Storytelling_Frontend/src/app/features/children/DataRequestSection.tsx#L49)
@@ -3135,7 +2829,7 @@ Parent tạo/mine/cancel của mình; Admin resolve/reject. Export binary, csv �
 #### GET /api/v1/DataRequest/mine
 
 - Action/chức năng: **ListMyDataRequests** — Danh sách Data Request do chính Owner gửi.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L49).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **query** childProfileId: `int?`; nullable.
 - Response: ApiResponse.data: [List&lt;DataRequestDto&gt;](#dto-datarequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.myDataRequests](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L52); nơi dùng: [DataRequestSection.tsx](../../AI_Storytelling_Frontend/src/app/features/children/DataRequestSection.tsx#L27)
@@ -3144,7 +2838,7 @@ Parent tạo/mine/cancel của mình; Admin resolve/reject. Export binary, csv �
 #### POST /api/v1/DataRequest/{dataRequestId}/cancel
 
 - Action/chức năng: **CancelDataRequest** — Owner hủy Data Request của mình khi còn pending.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L60).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** dataRequestId: `int`; bắt buộc.
 - Response: ApiResponse.data: [DataRequestDto](#dto-datarequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.cancelDataRequest](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L53); nơi dùng: [DataRequestSection.tsx](../../AI_Storytelling_Frontend/src/app/features/children/DataRequestSection.tsx#L80)
@@ -3366,7 +3060,7 @@ GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PU
 #### POST /api/v1/Story
 
 - Action/chức năng: **CreateStory** — Tạo câu chuyện mới (yêu cầu đăng nhập). [StoryController](../src/Core/StoryPlatform.Api/Controllers/StoryController.cs#L51).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **body** request: [CreateStoryRequestDto](#dto-createstoryrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [StoryDto](#dto-storydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -3375,7 +3069,7 @@ GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PU
 #### PUT /api/v1/Story/{id}
 
 - Action/chức năng: **UpdateStory** — Chỉnh sửa câu chuyện (yêu cầu là tác giả). [StoryController](../src/Core/StoryPlatform.Api/Controllers/StoryController.cs#L65).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc<br>**body** request: [Stories.UpdateStoryRequestDto](#dto-stories-updatestoryrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [StoryDto](#dto-storydto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -3384,7 +3078,7 @@ GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PU
 #### DELETE /api/v1/Story/{id}
 
 - Action/chức năng: **DeleteStory** — Xóa câu chuyện (Soft Delete - yêu cầu là tác giả). [StoryController](../src/Core/StoryPlatform.Api/Controllers/StoryController.cs#L80).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc.
 - Response: ApiResponse.data: `bool`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -3393,7 +3087,7 @@ GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PU
 #### PATCH /api/v1/Story/{id}/publish
 
 - Action/chức năng: **PublishStory** — Phát hành câu chuyện công khai (Publish). [StoryController](../src/Core/StoryPlatform.Api/Controllers/StoryController.cs#L94).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** id: `int`; bắt buộc.
 - Response: ApiResponse.data: `bool`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -3417,7 +3111,7 @@ P6. Parent đọc theo giám sát hiện hành; thay đổi cần AssignActivity
 #### POST /api/v1/ChildRoadmap/stories
 
 - Action: **AddStory**. [ChildRoadmapController](../src/Core/StoryPlatform.Api/Controllers/ChildRoadmapController.cs#L21).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **body** `request`: [AddRoadmapStoryRequestDto](#dto-addroadmapstoryrequestdto).
 - Response: ApiResponse.data: [AddRoadmapStoryResultDto](#dto-addroadmapstoryresultdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
 - Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
@@ -3426,7 +3120,7 @@ P6. Parent đọc theo giám sát hiện hành; thay đổi cần AssignActivity
 #### GET /api/v1/ChildRoadmap/{childProfileId}
 
 - Action: **Get**. [ChildRoadmapController](../src/Core/StoryPlatform.Api/Controllers/ChildRoadmapController.cs#L29).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** `childProfileId`: `int`.
 - Response: ApiResponse.data: [ChildRoadmapDto](#dto-childroadmapdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
 - Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
@@ -3435,7 +3129,7 @@ P6. Parent đọc theo giám sát hiện hành; thay đổi cần AssignActivity
 #### DELETE /api/v1/ChildRoadmap/{childProfileId}/items/{itemId}
 
 - Action: **Remove**. [ChildRoadmapController](../src/Core/StoryPlatform.Api/Controllers/ChildRoadmapController.cs#L37).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** `childProfileId`: `int`; **path** `itemId`: `int`.
 - Response: ApiResponse.data: [ChildRoadmapDto](#dto-childroadmapdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
 - Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
@@ -3444,7 +3138,7 @@ P6. Parent đọc theo giám sát hiện hành; thay đổi cần AssignActivity
 #### PUT /api/v1/ChildRoadmap/{childProfileId}/order
 
 - Action: **Reorder**. [ChildRoadmapController](../src/Core/StoryPlatform.Api/Controllers/ChildRoadmapController.cs#L45).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** `childProfileId`: `int`; **body** `request`: [ReorderRoadmapRequestDto](#dto-reorderroadmaprequestdto).
 - Response: ApiResponse.data: [ChildRoadmapDto](#dto-childroadmapdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
 - Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
@@ -3453,7 +3147,7 @@ P6. Parent đọc theo giám sát hiện hành; thay đổi cần AssignActivity
 #### DELETE /api/v1/ChildRoadmap/{childProfileId}/items
 
 - Action: **Clear**. [ChildRoadmapController](../src/Core/StoryPlatform.Api/Controllers/ChildRoadmapController.cs#L53).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** `childProfileId`: `int`.
 - Response: ApiResponse.data: [ChildRoadmapDto](#dto-childroadmapdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
 - Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
@@ -3567,7 +3261,7 @@ P7. Parent + ApproveStory trên hồ sơ nguồn, kiểm eligibility/PII. Check 
 #### POST /api/v1/CommunitySubmission/check
 
 - Action: **Check**. [CommunitySubmissionController](../src/Core/StoryPlatform.Api/Controllers/CommunitySubmissionController.cs#L26).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **body** `request`: [CommunitySubmitRequestDto](#dto-communitysubmitrequestdto).
 - Response: ApiResponse.data: [CommunityEligibilityDto](#dto-communityeligibilitydto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
 - Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
@@ -3576,7 +3270,7 @@ P7. Parent + ApproveStory trên hồ sơ nguồn, kiểm eligibility/PII. Check 
 #### POST /api/v1/CommunitySubmission
 
 - Action: **Submit**. [CommunitySubmissionController](../src/Core/StoryPlatform.Api/Controllers/CommunitySubmissionController.cs#L39).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **body** `request`: [CommunitySubmitRequestDto](#dto-communitysubmitrequestdto).
 - Response: ApiResponse.data: [CommunitySubmitResultDto](#dto-communitysubmitresultdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
 - Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
@@ -3585,7 +3279,7 @@ P7. Parent + ApproveStory trên hồ sơ nguồn, kiểm eligibility/PII. Check 
 #### POST /api/v1/CommunitySubmission/{itemId}/withdraw
 
 - Action: **Withdraw**. [CommunitySubmissionController](../src/Core/StoryPlatform.Api/Controllers/CommunitySubmissionController.cs#L48).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** `itemId`: `int`.
 - Response: ApiResponse.data: [CommunitySubmissionDto](#dto-communitysubmissiondto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
 - Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
@@ -3594,7 +3288,7 @@ P7. Parent + ApproveStory trên hồ sơ nguồn, kiểm eligibility/PII. Check 
 #### POST /api/v1/CommunitySubmission/{itemId}/remove
 
 - Action: **Remove**. [CommunitySubmissionController](../src/Core/StoryPlatform.Api/Controllers/CommunitySubmissionController.cs#L57).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** `itemId`: `int`.
 - Response: ApiResponse.data: [CommunitySubmissionDto](#dto-communitysubmissiondto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
 - Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
@@ -3603,7 +3297,7 @@ P7. Parent + ApproveStory trên hồ sơ nguồn, kiểm eligibility/PII. Check 
 #### GET /api/v1/CommunitySubmission/mine
 
 - Action: **ListMine**. [CommunitySubmissionController](../src/Core/StoryPlatform.Api/Controllers/CommunitySubmissionController.cs#L66).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: không có body/query/path ngoài ngữ cảnh xác thực..
 - Response: ApiResponse.data: [List&lt;CommunitySubmissionDto&gt;](#dto-communitysubmissiondto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
 - Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
@@ -3916,7 +3610,7 @@ P6. Parent duyệt thư viện bộ đã công khai, preview kế hoạch rồi 
 #### GET /api/v1/RoadmapLibrary
 
 - Action: **List**. [RoadmapLibraryController](../src/Core/StoryPlatform.Api/Controllers/RoadmapLibraryController.cs#L21).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **query** `query`: [RoadmapLibraryQueryDto](#dto-roadmaplibraryquerydto).
 - Response: ApiResponse.data: [PagedResult&lt;RoadmapLibraryItemDto&gt;](#dto-roadmaplibraryitemdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
 - Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
@@ -3925,7 +3619,7 @@ P6. Parent duyệt thư viện bộ đã công khai, preview kế hoạch rồi 
 #### GET /api/v1/RoadmapLibrary/{roadmapId}
 
 - Action: **Get**. [RoadmapLibraryController](../src/Core/StoryPlatform.Api/Controllers/RoadmapLibraryController.cs#L29).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** `roadmapId`: `int`.
 - Response: ApiResponse.data: [RoadmapLibraryDetailDto](#dto-roadmaplibrarydetaildto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
 - Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
@@ -3934,7 +3628,7 @@ P6. Parent duyệt thư viện bộ đã công khai, preview kế hoạch rồi 
 #### POST /api/v1/RoadmapLibrary/{roadmapId}/preview
 
 - Action: **Preview**. [RoadmapLibraryController](../src/Core/StoryPlatform.Api/Controllers/RoadmapLibraryController.cs#L37).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** `roadmapId`: `int`; **body** `request`: [RoadmapCopyRequestDto](#dto-roadmapcopyrequestdto).
 - Response: ApiResponse.data: [RoadmapCopyPlanDto](#dto-roadmapcopyplandto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
 - Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
@@ -3943,7 +3637,7 @@ P6. Parent duyệt thư viện bộ đã công khai, preview kế hoạch rồi 
 #### POST /api/v1/RoadmapLibrary/{roadmapId}/copy
 
 - Action: **Copy**. [RoadmapLibraryController](../src/Core/StoryPlatform.Api/Controllers/RoadmapLibraryController.cs#L45).
-- Quyền: (Parent); kèm guard nghiệp vụ của nhóm.
+- Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** `roadmapId`: `int`; **body** `request`: [RoadmapCopyRequestDto](#dto-roadmapcopyrequestdto).
 - Response: ApiResponse.data: [RoadmapCopyPlanDto](#dto-roadmapcopyplandto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
 - Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
@@ -4133,7 +3827,6 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [AIStoryCreativeInputDto](#dto-aistorycreativeinputdto) | [AIStoryInputDtos.cs](../src/Core/StoryPlatform.Application/Features/AIStoryInput/DTOs/AIStoryInputDtos.cs#L32) |
 | [AIStoryInputContextDto](#dto-aistoryinputcontextdto) | [AIStoryInputDtos.cs](../src/Core/StoryPlatform.Application/Features/AIStoryInput/DTOs/AIStoryInputDtos.cs#L5) |
 | [AIStoryInputProgressDto](#dto-aistoryinputprogressdto) | [AIStoryInputDtos.cs](../src/Core/StoryPlatform.Application/Features/AIStoryInput/DTOs/AIStoryInputDtos.cs#L102) |
-| [AcceptInvitationRequestDto](#dto-acceptinvitationrequestdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L35) |
 | [AdaptExistingStoryRequestDto](#dto-adaptexistingstoryrequestdto) | [ExistingStoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ExistingStories/DTOs/ExistingStoryDtos.cs#L99) |
 | [AgeBand](#dto-ageband) | [AgeBand.cs](../src/Core/StoryPlatform.Domain/Enums/AgeBand.cs#L3) |
 | [AgePresetDto](#dto-agepresetdto) | [SafetyPolicyDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Safety/DTOs/SafetyPolicyDtos.cs#L82) |
@@ -4182,8 +3875,6 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [ChildProfileDto](#dto-childprofiledto) | [ChildProfileDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Profiles/DTOs/ChildProfileDtos.cs#L8) |
 | [ChildSessionDto](#dto-childsessiondto) | [ChildAccessCredentialDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/AccessCredentials/DTOs/ChildAccessCredentialDtos.cs#L5) |
 | [ChildSessionProfileDto](#dto-childsessionprofiledto) | [ChildAccessCredentialDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/AccessCredentials/DTOs/ChildAccessCredentialDtos.cs#L23) |
-| [ClaimInvitationRequestDto](#dto-claiminvitationrequestdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L41) |
-| [ClaimInvitationResultDto](#dto-claiminvitationresultdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L47) |
 | [ConfirmAssistanceDirectionRequest](#dto-confirmassistancedirectionrequest) | [CreatorAssistanceDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAssistance/DTOs/CreatorAssistanceDtos.cs#L34) |
 | [ConfirmCreatorContentRequestDto](#dto-confirmcreatorcontentrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L172) |
 | [ConfirmCreatorContentResponseDto](#dto-confirmcreatorcontentresponsedto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L178) |
@@ -4204,10 +3895,8 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [CreateContentReportRequestDto](#dto-createcontentreportrequestdto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L6) |
 | [CreateCreatorDraftRequest](#dto-createcreatordraftrequest) | [CreatorAuthoringDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAuthoring/DTOs/CreatorAuthoringDtos.cs#L11) |
 | [CreateDataRequestDto](#dto-createdatarequestdto) | [DataRequestDtos.cs](../src/Core/StoryPlatform.Application/Features/DataRequests/DTOs/DataRequestDtos.cs#L5) |
-| [CreateInvitationRequestDto](#dto-createinvitationrequestdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L15) |
 | [CreateParentDraftRequest](#dto-createparentdraftrequest) | [ParentAuthoringDtos.cs](../src/Core/StoryPlatform.Application/Features/ParentAuthoring/ParentAuthoringDtos.cs#L6) |
 | [CreatePaymentTransactionRequestDto](#dto-createpaymenttransactionrequestdto) | [PaymentDtos.cs](../src/Core/StoryPlatform.Application/Features/Payments/DTOs/PaymentDtos.cs#L13) |
-| [CreatePermissionRequestRequestDto](#dto-createpermissionrequestrequestdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L85) |
 | [CreateProposalResponseDto](#dto-createproposalresponsedto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L225) |
 | [CreateStoryRequestDto](#dto-createstoryrequestdto) | [StoryDtos.cs](../src/Core/StoryPlatform.Application/Features/Stories/DTOs/StoryDtos.cs#L28) |
 | [CreatorAIStoryInputContextDto](#dto-creatoraistoryinputcontextdto) | [AIStoryInputDtos.cs](../src/Core/StoryPlatform.Application/Features/AIStoryInput/DTOs/AIStoryInputDtos.cs#L91) |
@@ -4240,8 +3929,6 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [ImportExistingStoryFileForm](#dto-importexistingstoryfileform) | [ExistingStoriesController.cs](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L192) |
 | [ImportStoryRequestDto](#dto-importstoryrequestdto) | [ExistingStoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ExistingStories/DTOs/ExistingStoryDtos.cs#L12) |
 | [ImportStoryResponseDto](#dto-importstoryresponsedto) | [ExistingStoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ExistingStories/DTOs/ExistingStoryDtos.cs#L47) |
-| [InvitationDto](#dto-invitationdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L6) |
-| [InvitationPreviewDto](#dto-invitationpreviewdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L64) |
 | [InviteStaffRequestDto](#dto-invitestaffrequestdto) | [StaffAccountDtos.cs](../src/Core/StoryPlatform.Application/Features/Administration/DTOs/StaffAccountDtos.cs#L8) |
 | [KeepOriginalRequestDto](#dto-keeporiginalrequestdto) | [ExistingStoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ExistingStories/DTOs/ExistingStoryDtos.cs#L116) |
 | [LearningProfileDto](#dto-learningprofiledto) | [LearningProfileDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Learning/DTOs/LearningProfileDtos.cs#L7) |
@@ -4263,7 +3950,6 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [OutlineProgressDto](#dto-outlineprogressdto) | [OutlineDtos.cs](../src/Core/StoryPlatform.Application/Features/Outline/DTOs/OutlineDtos.cs#L5) |
 | [OutlineVersionDto](#dto-outlineversiondto) | [OutlineDtos.cs](../src/Core/StoryPlatform.Application/Features/Outline/DTOs/OutlineDtos.cs#L15) |
 | [OwnedChildProfileSummaryDto](#dto-ownedchildprofilesummarydto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L181) |
-| [OwnershipTransferRequestDto](#dto-ownershiptransferrequestdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L104) |
 | [PageRequest](#dto-pagerequest) | [PagedResult.cs](../src/Core/StoryPlatform.Application/Common/Models/PagedResult.cs#L27) |
 | [PagedResult](#dto-pagedresult) | [PagedResult.cs](../src/Core/StoryPlatform.Application/Common/Models/PagedResult.cs#L6) |
 | [ParentCheckDto](#dto-parentcheckdto) | [ParentAuthoringDtos.cs](../src/Core/StoryPlatform.Application/Features/ParentAuthoring/ParentAuthoringDtos.cs#L44) |
@@ -4283,8 +3969,6 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [PartialEditRequestDto](#dto-partialeditrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L61) |
 | [PasswordPolicy](#dto-passwordpolicy) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L240) |
 | [PaymentTransactionDto](#dto-paymenttransactiondto) | [PaymentDtos.cs](../src/Core/StoryPlatform.Application/Features/Payments/DTOs/PaymentDtos.cs#L18) |
-| [Permission](#dto-permission) | [Permission.cs](../src/Core/StoryPlatform.Domain/Enums/Permission.cs#L3) |
-| [PermissionRequestDto](#dto-permissionrequestdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L93) |
 | [PolicyRule](#dto-policyrule) | [PolicyRule.cs](../src/Core/StoryPlatform.Domain/Enums/PolicyRule.cs#L3) |
 | [PreviewCreatorImportRequest](#dto-previewcreatorimportrequest) | [CreatorAuthoringDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAuthoring/DTOs/CreatorAuthoringDtos.cs#L37) |
 | [PublicReviewChecklistDto](#dto-publicreviewchecklistdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L136) |
@@ -4314,7 +3998,6 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [RegenerateOutlineRequestDto](#dto-regenerateoutlinerequestdto) | [OutlineDtos.cs](../src/Core/StoryPlatform.Application/Features/Outline/DTOs/OutlineDtos.cs#L46) |
 | [RegisterRequestDto](#dto-registerrequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L23) |
 | [RejectDataRequestDto](#dto-rejectdatarequestdto) | [DataRequestDtos.cs](../src/Core/StoryPlatform.Application/Features/DataRequests/DTOs/DataRequestDtos.cs#L25) |
-| [RejectInvitationRequestDto](#dto-rejectinvitationrequestdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L72) |
 | [RejectOutlineRequestDto](#dto-rejectoutlinerequestdto) | [OutlineDtos.cs](../src/Core/StoryPlatform.Application/Features/Outline/DTOs/OutlineDtos.cs#L64) |
 | [RejectRequestDto](#dto-rejectrequestdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L205) |
 | [RenderGuideRequest](#dto-renderguiderequest) | [AuthoringGuideService.cs](../src/Core/StoryPlatform.Application/Features/ParentAuthoring/AuthoringGuideService.cs#L11) |
@@ -4365,13 +4048,11 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [SubmitPublicStoryRequestDto](#dto-submitpublicstoryrequestdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L210) |
 | [SubscriptionPlanDto](#dto-subscriptionplandto) | [PaymentDtos.cs](../src/Core/StoryPlatform.Application/Features/Payments/DTOs/PaymentDtos.cs#L5) |
 | [SuggestAssistanceRequest](#dto-suggestassistancerequest) | [CreatorAssistanceDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAssistance/DTOs/CreatorAssistanceDtos.cs#L25) |
-| [SupervisionRelationshipDto](#dto-supervisionrelationshipdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L27) |
 | [TextDiffEntryDto](#dto-textdiffentrydto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L255) |
 | [TextSelectionDto](#dto-textselectiondto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L68) |
 | [TokenQuotaConfigDto](#dto-tokenquotaconfigdto) | [TokenQuotaDtos.cs](../src/Core/StoryPlatform.Application/Features/TokenQuota/DTOs/TokenQuotaDtos.cs#L13) |
 | [TokenQuotaStatusDto](#dto-tokenquotastatusdto) | [TokenQuotaDtos.cs](../src/Core/StoryPlatform.Application/Features/TokenQuota/DTOs/TokenQuotaDtos.cs#L25) |
 | [TopicRelation](#dto-topicrelation) | [TopicRelation.cs](../src/Core/StoryPlatform.Domain/Enums/TopicRelation.cs#L3) |
-| [TransferOwnershipRequestDto](#dto-transferownershiprequestdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L78) |
 | [UpdateChildProfileRequestDto](#dto-updatechildprofilerequestdto) | [ChildProfileDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Profiles/DTOs/ChildProfileDtos.cs#L37) |
 | [UpdateContentCategoryRequestDto](#dto-updatecontentcategoryrequestdto) | [ContentCategoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentCategories/DTOs/ContentCategoryDtos.cs#L28) |
 | [UpdateDiscussionRequestDto](#dto-updatediscussionrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L143) |
@@ -4383,7 +4064,6 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [ValidationCheckDto](#dto-validationcheckdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L161) |
 | [ValidationResultDto](#dto-validationresultdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L153) |
 | [VerifyEmailRequestDto](#dto-verifyemailrequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L143) |
-| [VerifyInvitationOtpRequestDto](#dto-verifyinvitationotprequestdto) | [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L53) |
 | [VerifyParentalGateRequestDto](#dto-verifyparentalgaterequestdto) | [ParentalGateDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/ParentalGate/DTOs/ParentalGateDtos.cs#L5) |
 | [VersionMutationResponseDto](#dto-versionmutationresponsedto) | [ExistingStoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ExistingStories/DTOs/ExistingStoryDtos.cs#L130) |
 | [VocabularyItemDto](#dto-vocabularyitemdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L86) |
@@ -4569,23 +4249,6 @@ Nguồn: [AIStoryInputDtos.cs](../src/Core/StoryPlatform.Application/Features/AI
 | `updatedAt` | `DateTime?` | Có | — |
 | `guardrailCheckedAt` | `DateTime?` | Có | — |
 | `handoffCreatedAt` | `DateTime?` | Có | — |
-
-<a id="dto-acceptinvitationrequestdto"></a>
-### AcceptInvitationRequestDto
-
-Nguồn: [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L35).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `invitationCode` | `string` | Không | default `string.Empty`; `[Required(ErrorMessage = "Mã mời không được để trống.")]` |
-
-Ví dụ JSON minh họa shape request:
-
-~~~json
-{
-  "invitationCode": "<INVITATION_CODE>"
-}
-~~~
 
 <a id="dto-adaptexistingstoryrequestdto"></a>
 ### AdaptExistingStoryRequestDto
@@ -5328,33 +4991,6 @@ Nguồn: [ChildAccessCredentialDtos.cs](../src/Core/StoryPlatform.Application/Fe
 | `nickname` | `string` | Không | default `string.Empty` |
 | `ageBand` | `string` | Không | default `string.Empty` |
 
-<a id="dto-claiminvitationrequestdto"></a>
-### ClaimInvitationRequestDto
-
-Nguồn: [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L41).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `invitationCode` | `string` | Không | default `string.Empty`; `[Required(ErrorMessage = "Mã mời không được để trống.")]` |
-
-Ví dụ JSON minh họa shape request:
-
-~~~json
-{
-  "invitationCode": "<INVITATION_CODE>"
-}
-~~~
-
-<a id="dto-claiminvitationresultdto"></a>
-### ClaimInvitationResultDto
-
-Nguồn: [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L47).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `maskedEmail` | `string` | Không | default `string.Empty` |
-| `otpExpiresAt` | `DateTime` | Không | — |
-
 <a id="dto-confirmassistancedirectionrequest"></a>
 ### ConfirmAssistanceDirectionRequest
 
@@ -5746,25 +5382,6 @@ Ví dụ JSON minh họa shape request:
 }
 ~~~
 
-<a id="dto-createinvitationrequestdto"></a>
-### CreateInvitationRequestDto
-
-Nguồn: [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L15).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `inviteeEmail` | `string?` | Có | `[Required(ErrorMessage = "Email người được mời là bắt buộc.")]     [EmailAddress(ErrorMessage = "Email người được mời không đúng định dạng.")]     [StringLength(150, ErrorMessage = "Email người được mời tối đa 150 ký tự.")]`; Email người được mời — bắt buộc; OTP xác thực sẽ gửi tới địa chỉ này (BR-1.4). |
-| `expiresInDays` | `int` | Không | default `7`; `[Range(1, 30, ErrorMessage = "Số ngày hết hạn phải từ 1 đến 30.")]` |
-
-Ví dụ JSON minh họa shape request:
-
-~~~json
-{
-  "inviteeEmail": null,
-  "expiresInDays": 7
-}
-~~~
-
 <a id="dto-createparentdraftrequest"></a>
 ### CreateParentDraftRequest
 
@@ -5806,25 +5423,6 @@ Ví dụ JSON minh họa shape request:
 ~~~json
 {
   "planId": 1
-}
-~~~
-
-<a id="dto-createpermissionrequestrequestdto"></a>
-### CreatePermissionRequestRequestDto
-
-Nguồn: [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L85).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `permissions` | [List&lt;Permission&gt;](#dto-permission) | Không | default `new()`; `[Required(ErrorMessage = "Vui lòng chọn quyền cần xin.")]     [MinLength(1, ErrorMessage = "Mỗi yêu cầu xin quyền cần đúng 1 quyền.")]     [MaxLength(1, ErrorMessage = "Mỗi yêu cầu xin quyền chỉ được xin đúng 1 quyền.")]` |
-
-Ví dụ JSON minh họa shape request:
-
-~~~json
-{
-  "permissions": [
-    "ViewProgress"
-  ]
 }
 ~~~
 
@@ -6022,9 +5620,7 @@ Nguồn: [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
-| `blockingProfiles` | [List&lt;OwnedChildProfileSummaryDto&gt;](#dto-ownedchildprofilesummarydto) | Không | default `new()` |
-| `draftProfiles` | [List&lt;OwnedChildProfileSummaryDto&gt;](#dto-ownedchildprofilesummarydto) | Không | default `new()` |
-| `canDelete` | `bool` | Không | server computed; Giá trị tính bởi server: BlockingProfiles.Count == 0 |
+| `childProfiles` | [List&lt;OwnedChildProfileSummaryDto&gt;](#dto-ownedchildprofilesummarydto) | Không | default `new()` |
 
 <a id="dto-deleteaccountrequestdto"></a>
 ### DeleteAccountRequestDto
@@ -6034,14 +5630,14 @@ Nguồn: [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
 | `currentPassword` | `string` | Không | default `string.Empty`; `[Required(ErrorMessage = "Mật khẩu hiện tại không được để trống.")]` |
-| `deleteDraftProfiles` | `bool` | Không | — |
+| `deleteChildProfiles` | `bool` | Không | — |
 
 Ví dụ JSON minh họa shape request:
 
 ~~~json
 {
   "currentPassword": "<MAT_KHAU_HIEN_TAI>",
-  "deleteDraftProfiles": false
+  "deleteChildProfiles": true
 }
 ~~~
 
@@ -6370,31 +5966,6 @@ Nguồn: [ExistingStoryDtos.cs](../src/Core/StoryPlatform.Application/Features/E
 | `fallbackMessage` | `string?` | Có | — |
 | `canProceed` | `bool` | Không | — |
 | `warnings` | `IReadOnlyList<string>` | Không | default `new List<string>()` |
-
-<a id="dto-invitationdto"></a>
-### InvitationDto
-
-Nguồn: [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L6).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `id` | `int` | Không | — |
-| `childProfileId` | `int` | Không | — |
-| `invitationCode` | `string` | Không | default `string.Empty` |
-| `status` | `string` | Không | default `string.Empty` |
-| `expiresAt` | `DateTime?` | Có | — |
-
-<a id="dto-invitationpreviewdto"></a>
-### InvitationPreviewDto
-
-Nguồn: [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L64).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `invitationId` | `int` | Không | — |
-| `inviterName` | `string` | Không | default `string.Empty` |
-| `childNickname` | `string` | Không | default `string.Empty` |
-| `childAgeBand` | `string` | Không | default `string.Empty` |
 
 <a id="dto-invitestaffrequestdto"></a>
 ### InviteStaffRequestDto
@@ -6793,23 +6364,6 @@ Nguồn: [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/
 | `nickname` | `string` | Không | default `string.Empty` |
 | `status` | `string` | Không | default `string.Empty` |
 
-<a id="dto-ownershiptransferrequestdto"></a>
-### OwnershipTransferRequestDto
-
-Nguồn: [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L104).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `id` | `int` | Không | — |
-| `childProfileId` | `int` | Không | — |
-| `currentOwnerUserId` | `int` | Không | — |
-| `targetSupervisorUserId` | `int` | Không | — |
-| `requesterUserId` | `int` | Không | — |
-| `responderUserId` | `int` | Không | — |
-| `status` | `string` | Không | default `string.Empty` |
-| `createdAt` | `DateTime` | Không | — |
-| `respondedAt` | `DateTime?` | Có | — |
-
 <a id="dto-pagerequest"></a>
 ### PageRequest
 
@@ -7150,40 +6704,6 @@ Nguồn: [PaymentDtos.cs](../src/Core/StoryPlatform.Application/Features/Payment
 | `expiresAt` | `DateTime` | Không | — |
 | `paidAt` | `DateTime?` | Có | — |
 | `sepayTransactionId` | `string?` | Có | — |
-
-<a id="dto-permission"></a>
-### Permission
-
-Nguồn: [Permission.cs](../src/Core/StoryPlatform.Domain/Enums/Permission.cs#L3).
-
-| Tên | Giá trị |
-|---|---|
-| `ViewProgress` | 1 |
-| `ViewResults` | 2 |
-| `AssignActivity` | 3 |
-| `ReceiveReport` | 4 |
-| `ApproveReadingLevel` | 5 |
-| `ApproveStory` | 6 |
-| `ManageSafetySettings` | 7 |
-| `GenerateStory` | 8 |
-
-Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
-
-
-<a id="dto-permissionrequestdto"></a>
-### PermissionRequestDto
-
-Nguồn: [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L93).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `id` | `int` | Không | — |
-| `supervisionRelationshipId` | `int` | Không | — |
-| `requesterUserId` | `int` | Không | — |
-| `status` | `string` | Không | default `string.Empty` |
-| `permissions` | `List<string>` | Không | default `new()` |
-| `createdAt` | `DateTime` | Không | — |
-| `respondedAt` | `DateTime?` | Có | — |
 
 <a id="dto-policyrule"></a>
 ### PolicyRule
@@ -7652,23 +7172,6 @@ Ví dụ JSON minh họa shape request:
 ~~~json
 {
   "reason": "Lý do của người dùng"
-}
-~~~
-
-<a id="dto-rejectinvitationrequestdto"></a>
-### RejectInvitationRequestDto
-
-Nguồn: [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L72).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `invitationCode` | `string` | Không | default `string.Empty`; `[Required(ErrorMessage = "Mã mời không được để trống.")]` |
-
-Ví dụ JSON minh họa shape request:
-
-~~~json
-{
-  "invitationCode": "<INVITATION_CODE>"
 }
 ~~~
 
@@ -8671,18 +8174,6 @@ Ví dụ JSON minh họa shape request:
 }
 ~~~
 
-<a id="dto-supervisionrelationshipdto"></a>
-### SupervisionRelationshipDto
-
-Nguồn: [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L27).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `id` | `int` | Không | — |
-| `childProfileId` | `int` | Không | — |
-| `supervisorUserId` | `int` | Không | — |
-| `supervisorRole` | `string` | Không | default `string.Empty` |
-
 <a id="dto-textdiffentrydto"></a>
 ### TextDiffEntryDto
 
@@ -8748,23 +8239,6 @@ Nguồn: [TopicRelation.cs](../src/Core/StoryPlatform.Domain/Enums/TopicRelation
 
 Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
 
-
-<a id="dto-transferownershiprequestdto"></a>
-### TransferOwnershipRequestDto
-
-Nguồn: [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L78).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `targetSupervisorUserId` | `int` | Không | `[Required(ErrorMessage = "Vui lòng chọn người nhận yêu cầu đổi quyền Owner.")]`; Additional Supervisor đang hoạt động sẽ nhận quyền Owner. Chỉ Owner hiện tại được gửi yêu cầu. |
-
-Ví dụ JSON minh họa shape request:
-
-~~~json
-{
-  "targetSupervisorUserId": 1
-}
-~~~
 
 <a id="dto-updatechildprofilerequestdto"></a>
 ### UpdateChildProfileRequestDto
@@ -8929,7 +8403,7 @@ Nguồn: [UserRole.cs](../src/Core/StoryPlatform.Domain/Enums/UserRole.cs#L3).
 
 | Tên | Giá trị |
 |---|---|
-| `Parent` | 1 |
+| `User` | 1 |
 | `Moderator` | 2 |
 | `Administrator` | 3 |
 | `ContentCreator` | 4 |
@@ -8975,25 +8449,6 @@ Ví dụ JSON minh họa shape request:
 ~~~json
 {
   "email": "parent@example.com",
-  "otp": "123456"
-}
-~~~
-
-<a id="dto-verifyinvitationotprequestdto"></a>
-### VerifyInvitationOtpRequestDto
-
-Nguồn: [SupervisionDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Supervision/DTOs/SupervisionDtos.cs#L53).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `invitationCode` | `string` | Không | default `string.Empty`; `[Required(ErrorMessage = "Mã mời không được để trống.")]` |
-| `otp` | `string` | Không | default `string.Empty`; `[Required(ErrorMessage = "Mã OTP không được để trống.")]     [RegularExpression("^[0-9]{6}$", ErrorMessage = "Mã OTP gồm đúng 6 chữ số.")]` |
-
-Ví dụ JSON minh họa shape request:
-
-~~~json
-{
-  "invitationCode": "<INVITATION_CODE>",
   "otp": "123456"
 }
 ~~~

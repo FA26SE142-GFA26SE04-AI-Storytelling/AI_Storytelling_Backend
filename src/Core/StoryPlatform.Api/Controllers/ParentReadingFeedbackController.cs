@@ -7,7 +7,7 @@ using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Con đã đọc gì và cảm nhận ra sao, phía phụ huynh (Luồng 3 — mục 8).</summary>
-[Authorize(Roles = "Parent")]
+[Authorize(Roles = "User")]
 public class ParentReadingFeedbackController : BaseApiController
 {
     private readonly IParentReadingFeedbackService _feedback;

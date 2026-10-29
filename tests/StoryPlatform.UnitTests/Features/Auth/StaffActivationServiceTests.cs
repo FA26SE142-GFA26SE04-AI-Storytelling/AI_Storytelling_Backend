@@ -151,7 +151,7 @@ public class StaffActivationServiceTests
     [Fact]
     public async Task ActivateAsync_ParentAccount_ThrowsBadRequest()
     {
-        _invitee.Role = UserRole.Parent;
+        _invitee.Role = UserRole.User;
 
         await Assert.ThrowsAsync<BadRequestException>(() => _sut.ActivateAsync(Request()));
     }

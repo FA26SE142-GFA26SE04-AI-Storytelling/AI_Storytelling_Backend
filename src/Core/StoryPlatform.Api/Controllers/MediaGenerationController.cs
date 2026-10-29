@@ -8,7 +8,7 @@ using StoryPlatform.Application.Features.MediaGeneration.Models;
 namespace StoryPlatform.Api.Controllers;
 
 [ApiController]
-[Authorize(Roles = "Parent,ContentCreator")]
+[Authorize(Roles = "User,ContentCreator")]
 [Route("api/v1/stories/{storyId:int}/media")]
 public sealed class MediaGenerationController : ControllerBase
 {
@@ -50,7 +50,7 @@ public sealed class MediaGenerationController : ControllerBase
     }
 
     [HttpPost("confirm")]
-    [Authorize(Roles = "Parent,ContentCreator")]
+    [Authorize(Roles = "User,ContentCreator")]
     [ProducesResponseType(typeof(ApiResponse<MediaGenerationProgress>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<ApiResponse<MediaGenerationProgress>>> Confirm(

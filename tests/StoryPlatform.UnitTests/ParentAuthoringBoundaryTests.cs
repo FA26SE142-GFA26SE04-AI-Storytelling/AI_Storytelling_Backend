@@ -5,7 +5,7 @@ using StoryPlatform.Api.Controllers;
 using StoryPlatform.Api.Extensions;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Persistence;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.CreatorAuthoring.DTOs;
 using StoryPlatform.Application.Features.ParentAuthoring;
@@ -104,29 +104,23 @@ public sealed class ParentAuthoringBoundaryTests
             .UseNpgsql("Host=localhost;Database=model_only;Username=unused;Password=unused").Options);
         var uow = new Mock<IUnitOfWork>();
         var children = new Mock<IGenericRepository<ChildProfile>>();
-        var relationships = new Mock<IGenericRepository<SupervisionRelationship>>();
-        var permissions = new Mock<IGenericRepository<SupervisionPermission>>();
         children.Setup(x => x.Query()).Returns(context.ChildProfiles);
-        relationships.Setup(x => x.Query()).Returns(context.SupervisionRelationships);
-        permissions.Setup(x => x.Query()).Returns(context.SupervisionPermissions);
         uow.Setup(x => x.Repository<ChildProfile>()).Returns(children.Object);
-        uow.Setup(x => x.Repository<SupervisionRelationship>()).Returns(relationships.Object);
-        uow.Setup(x => x.Repository<SupervisionPermission>()).Returns(permissions.Object);
         var requests = new Mock<IGenericRepository<StoryGenerationRequest>>();
         requests.Setup(x => x.Query()).Returns(context.Set<StoryGenerationRequest>());
         uow.Setup(x => x.Repository<StoryGenerationRequest>()).Returns(requests.Object);
-        var policy = new ParentManualAuthoringPolicy(uow.Object, Mock.Of<ISupervisionAccessGuard>());
+        var policy = new ParentManualAuthoringPolicy(uow.Object, Mock.Of<IChildProfileAccessGuard>());
         var sql = context.Stories.Where(policy.VisibleStories(1)).OrderByDescending(x => x.CreatedAt)
             .Skip(1).Take(1).ToQueryString();
-        Assert.Contains("EXISTS", sql); Assert.Contains("RevokedAt", sql);
-        Assert.Contains("supervision_permissions", sql); Assert.Contains("child_profiles", sql);
+        Assert.Contains("EXISTS", sql); Assert.Contains("OwnerUserId", sql);
+        Assert.Contains("child_profiles", sql);
         Assert.Contains("LIMIT", sql); Assert.Contains("OFFSET", sql);
     }
 
     [Fact]
     public void Routes_distinguish_parent_and_child_authentication()
     {
-        Assert.Equal("Parent", typeof(ParentAuthoringController).GetCustomAttributes(typeof(AuthorizeAttribute), true).Cast<AuthorizeAttribute>().Single().Roles);
+        Assert.Equal("User", typeof(ParentAuthoringController).GetCustomAttributes(typeof(AuthorizeAttribute), true).Cast<AuthorizeAttribute>().Single().Roles);
         Assert.Equal(ServiceExtensions.ChildSessionPolicy, typeof(ChildManualStoriesController)
             .GetCustomAttributes(typeof(AuthorizeAttribute), true).Cast<AuthorizeAttribute>().Single().Policy);
     }

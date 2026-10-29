@@ -16,7 +16,6 @@ public class TokenQuotaServiceTests
     private readonly Mock<IGenericRepository<ChildProfile>> _childRepository = new();
     private readonly Mock<IGenericRepository<StoryPlatform.Domain.Entities.TokenQuotaConfig>> _configRepository = new();
     private readonly Mock<IGenericRepository<UserAccount>> _userRepository = new();
-    private readonly Mock<IGenericRepository<SupervisionRelationship>> _supervisionRepository = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IAuditLogWriter> _auditLogWriter = new();
     private readonly TokenQuotaService _sut;
@@ -26,7 +25,6 @@ public class TokenQuotaServiceTests
         _unitOfWork.Setup(u => u.Repository<ChildProfile>()).Returns(_childRepository.Object);
         _unitOfWork.Setup(u => u.Repository<StoryPlatform.Domain.Entities.TokenQuotaConfig>()).Returns(_configRepository.Object);
         _unitOfWork.Setup(u => u.Repository<UserAccount>()).Returns(_userRepository.Object);
-        _unitOfWork.Setup(u => u.Repository<SupervisionRelationship>()).Returns(_supervisionRepository.Object);
 
         _sut = new TokenQuotaService(_unitOfWork.Object, _auditLogWriter.Object);
     }
@@ -356,20 +354,17 @@ public class TokenQuotaServiceTests
     // ---------- GetStatusForChildAsync ----------
 
     [Fact]
-    public async Task GetStatusForChildAsync_NonOwnerNonSupervisorNonAdmin_ThrowsForbidden()
+    public async Task GetStatusForChildAsync_NonOwnerNonAdmin_ThrowsForbidden()
     {
         SetupChild(MakePersonalChild(ownerUserId: 1));
         _userRepository.Setup(r => r.GetByIdAsync(2, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new UserAccount { Id = 2, Role = UserRole.Parent });
-        _supervisionRepository
-            .Setup(r => r.ExistsAsync(It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
+            .ReturnsAsync(new UserAccount { Id = 2, Role = UserRole.User });
 
         await Assert.ThrowsAsync<ForbiddenException>(() => _sut.GetStatusForChildAsync(2, 1));
     }
 
     [Fact]
-    public async Task GetStatusForChildAsync_Administrator_AllowedRegardlessOfSupervision()
+    public async Task GetStatusForChildAsync_Administrator_Allowed()
     {
         SetupChild(MakePersonalChild(ownerUserId: 1));
         _userRepository.Setup(r => r.GetByIdAsync(99, It.IsAny<CancellationToken>()))
@@ -382,14 +377,11 @@ public class TokenQuotaServiceTests
     }
 
     [Fact]
-    public async Task GetStatusForChildAsync_ActiveSupervisor_ReturnsStatus()
+    public async Task GetStatusForChildAsync_Owner_ReturnsStatus()
     {
         SetupChild(MakePersonalChild(ownerUserId: 1));
         _userRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new UserAccount { Id = 1, Role = UserRole.Parent });
-        _supervisionRepository
-            .Setup(r => r.ExistsAsync(It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+            .ReturnsAsync(new UserAccount { Id = 1, Role = UserRole.User });
         SetupConfigLookup(MakeConfig(TokenQuotaScope.Child, quotaLimit: 10, quotaUsed: 4, childProfileId: 1));
 
         var result = await _sut.GetStatusForChildAsync(1, 1);

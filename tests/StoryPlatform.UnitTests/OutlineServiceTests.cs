@@ -285,26 +285,12 @@ public sealed class OutlineServiceTests
     internal static FakeUnitOfWork Seed(bool includeApprovePermission = true)
     {
         var unitOfWork = new FakeUnitOfWork();
-        unitOfWork.Seed(new UserAccount { Id = 1, Role = UserRole.Parent, Status = AccountStatus.Active });
+        unitOfWork.Seed(new UserAccount { Id = 1, Role = UserRole.User, Status = AccountStatus.Active });
+        unitOfWork.Seed(new ChildProfile { Id = 1, OwnerUserId = 1, Status = ChildProfileStatus.Active });
         unitOfWork.Seed(new Story
         {
             Id = 1, ChildProfileId = 1, AuthorUserId = 1, Source = StorySource.Ai, Status = StoryStatus.Draft
         });
-        unitOfWork.Seed(new SupervisionRelationship
-        {
-            Id = 1, ChildProfileId = 1, SupervisorUserId = 1, SupervisorRole = SupervisorRole.Owner
-        });
-        unitOfWork.Seed(new SupervisionPermission
-        {
-            Id = 1, SupervisionRelationshipId = 1, Permission = Permission.GenerateStory
-        });
-        if (includeApprovePermission)
-        {
-            unitOfWork.Seed(new SupervisionPermission
-            {
-                Id = 2, SupervisionRelationshipId = 1, Permission = Permission.ApproveStory
-            });
-        }
 
         var input = new AcceptedAIStoryInputSnapshot(
             "Tình bạn", null, "ai_suggested", [], "ai_suggested", null,

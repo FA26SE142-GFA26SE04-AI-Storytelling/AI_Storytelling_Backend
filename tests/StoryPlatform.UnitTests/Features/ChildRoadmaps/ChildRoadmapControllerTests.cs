@@ -16,7 +16,7 @@ public class ChildRoadmapControllerTests
             .Select(method => method.Name).OrderBy(name => name).ToArray();
 
         Assert.NotNull(authorize);
-        Assert.Equal("Parent", authorize!.Roles);
+        Assert.Equal("User", authorize!.Roles);
         Assert.Equal(new[] { "AddStory", "Clear", "Get", "Remove", "Reorder" }, methods);
     }
 }

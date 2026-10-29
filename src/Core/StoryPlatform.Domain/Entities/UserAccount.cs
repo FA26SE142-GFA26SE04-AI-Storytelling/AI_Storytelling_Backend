@@ -15,7 +15,7 @@ public class UserAccount : BaseEntity
     public string FullName { get; set; } = string.Empty;
     public string? PhoneNumber { get; set; }
     public string? AvatarUrl { get; set; }
-    public UserRole Role { get; set; } = UserRole.Parent;
+    public UserRole Role { get; set; } = UserRole.User;
     public AccountStatus Status { get; set; } = AccountStatus.Registered;
     public string? ResetTokenHash { get; set; }
     public DateTime? ResetTokenExpiresAt { get; set; }

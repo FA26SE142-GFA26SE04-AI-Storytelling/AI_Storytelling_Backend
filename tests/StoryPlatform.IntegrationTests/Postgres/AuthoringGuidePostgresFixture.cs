@@ -41,7 +41,7 @@ public sealed class AuthoringGuidePostgresFixture : IAsyncLifetime
             await context.Database.MigrateAsync();
             var moderator = NewUser("it_moderator", UserRole.Moderator);
             var administrator = NewUser("it_administrator", UserRole.Administrator);
-            var parent = NewUser("it_parent", UserRole.Parent);
+            var parent = NewUser("it_parent", UserRole.User);
             context.Users.AddRange(moderator, administrator, parent);
             await context.SaveChangesAsync();
             (_moderatorId, _administratorId, _parentId) = (moderator.Id, administrator.Id, parent.Id);

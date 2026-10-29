@@ -666,7 +666,7 @@ public class CommunityReviewServiceTests
         await _sut.RejectAsync(Reviewer, 80, new RejectCommunityRequestDto { Reason = "Có tên trường" });
         var submissions = new CommunitySubmissionService(
             _h.UnitOfWork.Object,
-            new StoryPlatform.Application.Features.ChildProfiles.Supervision.Services.SupervisionAccessGuard(_h.UnitOfWork.Object),
+            new StoryPlatform.Application.Features.ChildProfiles.Profiles.Services.ChildProfileAccessGuard(_h.UnitOfWork.Object),
             new StoryPlatform.Application.Features.Moderation.Services.ModerationQueueService(_h.UnitOfWork.Object, _h.Audit.Object),
             _h.Audit.Object);
 

@@ -29,12 +29,6 @@ public class ApplicationDbContext : DbContext
     public DbSet<StoryWish> StoryWishes => Set<StoryWish>();
     public DbSet<SafetyPolicy> SafetyPolicies => Set<SafetyPolicy>();
     public DbSet<SafetyPolicyCategory> SafetyPolicyCategories => Set<SafetyPolicyCategory>();
-    public DbSet<SupervisionInvitation> SupervisionInvitations => Set<SupervisionInvitation>();
-    public DbSet<SupervisionRelationship> SupervisionRelationships => Set<SupervisionRelationship>();
-    public DbSet<SupervisionPermission> SupervisionPermissions => Set<SupervisionPermission>();
-    public DbSet<SupervisionPermissionRequest> SupervisionPermissionRequests => Set<SupervisionPermissionRequest>();
-    public DbSet<SupervisionPermissionRequestItem> SupervisionPermissionRequestItems => Set<SupervisionPermissionRequestItem>();
-    public DbSet<OwnershipTransferRequest> OwnershipTransferRequests => Set<OwnershipTransferRequest>();
     public DbSet<ChildAccessCredential> ChildAccessCredentials => Set<ChildAccessCredential>();
     public DbSet<ChildSession> ChildSessions => Set<ChildSession>();
 

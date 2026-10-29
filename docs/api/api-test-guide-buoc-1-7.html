@@ -191,7 +191,7 @@ const STEPS = [
       ["ok","Lọc itemType=CommunitySubmission","200, chỉ còn mục Community"],
       ["ok","Lọc onlyOverdue=true","200, chỉ mục đã quá SLA"],
       ["edge","pageSize=1000","200, pageSize bị ép về tối đa 100"],
-      ["neg","Gọi bằng token Parent","403"],
+      ["neg","Gọi bằng token User","403"],
       ["neg","Không gửi token","401"]
     ] },
   { m: "POST", p: "/api/v1/ModerationQueue/{itemId}/claim", role: "Moderator, Administrator",
@@ -260,7 +260,7 @@ const STEPS = [
     body: '{ "sourceTab": "published_content", "storyId": 13, "storyVersionId": null, "readingRoadmapId": null }',
     tests: [
       ["ok","Moderator xin quyền hợp lệ","200"],
-      ["neg","Gọi bằng token Parent","403"],
+      ["neg","Gọi bằng token User","403"],
       ["ok","sourceTab = roadmap_templates với bộ Published","200, có expiresAt (không còn là điều kiện để mở GET /PublishedContentReview/roadmaps/{id})"],
       ["neg","sourceTab lạ","400"],
       ["neg","published_content nhưng thiếu storyId hoặc gửi kèm readingRoadmapId","400"],
@@ -274,7 +274,7 @@ const STEPS = [
       ["Bộ lọc group", [
         "Không gửi: mọi thông báo của người gọi.",
         "moderation: ContentReported (báo cáo mới), ModerationSlaWarning (mục sắp / đã quá SLA), DataRequestSlaWarning, ContentModerationResult (kết quả kiểm duyệt).",
-        "Các nhóm khác: stories, children, supervisors, account. Giá trị lạ → 400."]],
+        "Các nhóm khác: stories, children, supervisors (legacy), account. Giá trị lạ → 400."]],
       ["Kết quả", ["Chỉ thông báo gửi cho chính người gọi, mới nhất trước, không phân trang; mỗi dòng có group, type, payload, trạng thái đã đọc."]],
       ["API đi kèm", [
         "GET /unread-count: đếm mọi thông báo chưa đọc (không lọc theo nhóm).",
@@ -312,7 +312,7 @@ const STEPS = [
     tests: [
       ["ok","Creator xem danh sách của mình","200, chỉ truyện do mình tạo"],
       ["neg","Xem truyện của Creator khác (GET {storyId})","404 (không lộ truyện có tồn tại)"],
-      ["neg","Gọi bằng token Parent","403"]
+      ["neg","Gọi bằng token User","403"]
     ] },
   { m: "GET", p: "/api/v1/creator/stories/{storyId}/publication", role: "ContentCreator (chủ truyện)",
     what: "Trạng thái công khai của truyện: đã công khai chưa, trạng thái duyệt của phiên bản, mục đang mở (loại, trạng thái).",
@@ -431,7 +431,7 @@ const STEPS = [
       ["neg","Gửi lại khi đã có mục đang chờ","409"],
       ["neg","Gửi truyện của người khác","403"],
       ["neg","storyVersionId không thuộc storyId","400 \"Phiên bản không thuộc truyện này.\" (storyVersionId không tồn tại thì 404)"],
-      ["neg","Gọi bằng token Parent","403"]
+      ["neg","Gọi bằng token User","403"]
     ] },
   { m: "POST", p: "/api/v1/PublicStorySubmission/{itemId}/withdraw", role: "ContentCreator",
     what: "Rút yêu cầu khi chưa có Moderator nhận.",
@@ -737,7 +737,7 @@ const STEPS = [
       ["neg","Lượt nhận đã quá 2 giờ","403 VALID_MODERATION_CLAIM_REQUIRED (phải nhận lại)"],
       ["neg","Mục không phải GrayZoneStory (ví dụ mục 21)","403 VALID_MODERATION_CLAIM_REQUIRED"],
       ["neg","itemId không tồn tại","404"],
-      ["neg","Gọi bằng token Parent","403"]
+      ["neg","Gọi bằng token User","403"]
     ] },
   { m: "POST", p: "/api/v1/moderation/gray-zone-stories/{itemId}/decision", role: "Moderator, Administrator",
     what: "Quyết định vùng xám: decision = \"Clear\" hoặc \"Block\", reason bắt buộc (≤ 2000 ký tự), rowVersion lấy từ gói duyệt. Clear: mục Cleared, phiên bản GrayZoneCleared, job sinh truyện về Pending để chạy tiếp. Block: mục Blocked, job Failed với GRAY_ZONE_BLOCKED; nếu có job và phiên bản bị chặn chưa là bản hiện hành thì nó được đặt làm bản hiện hành và truyện chuyển ContentReview để Parent xem lại. Tác giả (Parent) nhận thông báo ContentModerationResult. Phản hồi chỉ có { success, message }, không có data.",
@@ -801,7 +801,7 @@ const STEPS = [
       ["ok","Lọc status=Draft","200, chỉ bản Draft"],
       ["neg","status=Published (giá trị lạ)","400 RUBRIC_QUERY_INVALID"],
       ["neg","pageSize=0 hoặc 101","400 RUBRIC_QUERY_INVALID"],
-      ["neg","Gọi bằng token Parent","403"],
+      ["neg","Gọi bằng token User","403"],
       ["neg","Không gửi token","401"]
     ] },
   { m: "GET", p: "/api/v1/moderation/rubrics/active", role: "Moderator, Administrator",
@@ -852,7 +852,7 @@ const STEPS = [
       ["neg","Chỉ có 4 tiêu chí hoặc thiếu mã GZ05","400 RUBRIC_DEFINITION_INVALID"],
       ["neg","levels thiếu khóa \"4\"","400 RUBRIC_DEFINITION_INVALID"],
       ["neg","Một tiêu chí có 11 examples hoặc example level = 5","400 RUBRIC_DEFINITION_INVALID"],
-      ["neg","Gọi bằng token Parent","403"]
+      ["neg","Gọi bằng token User","403"]
     ] },
   { m: "PUT", p: "/api/v1/moderation/rubrics/{id}", role: "Moderator, Administrator",
     what: "Sửa bản Draft. Gửi kèm revision hiện tại; thành công thì revision tăng 1. Không được đổi versionNo.",
@@ -969,7 +969,7 @@ const STEPS = [
     tests: [
       ["ok","Administrator kích hoạt Draft hợp lệ","200, status Active; bản Active cũ (nếu có) thành Retired; GET /active trả bản mới"],
       ["ok","Moderator kích hoạt Draft","200, status Active, activatedByUserId = Moderator đó"],
-      ["neg","Gọi bằng token Parent","403"],
+      ["neg","Gọi bằng token User","403"],
       ["neg","Kích hoạt bản đã Active / Retired","409 RUBRIC_IMMUTABLE"],
       ["neg","revision cũ","409 RUBRIC_REVISION_STALE"]
     ] },
@@ -994,7 +994,7 @@ const STEPS = [
   desc: "Phụ huynh báo cáo một truyện công khai. Moderator xem chi tiết và quyết định: bỏ qua (Dismiss), gỡ truyện (Archive) hoặc chuyển Administrator (Escalate). Moderator cũng có tab rà soát truyện đã công khai và tạo mục rà soát chủ động.",
   flow: ["Parent gửi báo cáo → tạo mục ContentReport trong hàng đợi, Moderator nhận thông báo.", "Moderator nhận mục, mở chi tiết (nội dung đã che thông tin cá nhân).", "Chọn MỘT trong ba: Dismiss (không vi phạm) → người báo nhận kết quả. Archive → truyện bị gỡ, kích hoạt hệ quả ở bước 4. Escalate → Administrator xử lý.", "Muốn Administrator quyết định thì Escalate trước; đã Dismiss / Archive thì không chuyển cho Admin được nữa. Admin xử lý mục Escalated bằng dismiss / archive, không cần claim."],
   apis: [
-  { m: "POST", p: "/api/v1/ContentReport", role: "Parent",
+  { m: "POST", p: "/api/v1/ContentReport", role: "User",
     what: "Báo cáo một truyện với lý do: SafetyConcern, Inappropriate, WrongAgeBand, Copyright, Cultural hoặc Other.",
     detail: [
       ["Body", [
@@ -1002,10 +1002,10 @@ const STEPS = [
         "description: tùy chọn, tối đa 2000 ký tự sau khi trim.",
         "attachmentUrl: tùy chọn, tối đa 500 ký tự, phải là URL tuyệt đối http / https."]],
       ["Hệ thống kiểm lần lượt", [
-        "Người gọi là Parent Active → nếu không: 403.",
+        "Người gọi là User Active → nếu không: 403.",
         "Truyện tồn tại → nếu không: 404.",
         "Truyện đang công khai, chưa Archive → nếu không: 403.",
-        "Người gọi đang giám sát ít nhất một bé Active được phép thấy truyện: truyện riêng thì phải là bé của truyện; truyện Public Library thì nhóm tuổi truyện không cao hơn tuổi bé → nếu không: 403.",
+        "Người gọi sở hữu ít nhất một hồ sơ bé Active được phép thấy truyện: truyện riêng thì phải là bé của truyện; truyện Public Library thì nhóm tuổi truyện không cao hơn tuổi bé → nếu không: 403.",
         "Người gọi chưa có báo cáo Pending cho cùng truyện → nếu có: 409."]],
       ["Xử lý (một transaction)", [
         "Tạo report Pending, ghi đúng phiên bản bé đang thấy.",
@@ -1138,7 +1138,7 @@ const STEPS = [
     body: null,
     tests: [
       ["ok","Lấy danh sách","200, có phân trang"],
-      ["neg","Gọi bằng token Parent","403"]
+      ["neg","Gọi bằng token User","403"]
     ] },
   { m: "GET", p: "/api/v1/PublishedContentReview/stories/{storyId}", role: "Moderator, Administrator",
     what: "Xem nội dung đầy đủ (đã che thông tin cá nhân) của một truyện Public Library đang công khai. Không cần gọi POST /ModerationQueue/review-views trước; mỗi lần mở được ghi audit PublishedContentOpened.",
@@ -1255,12 +1255,12 @@ const STEPS = [
   desc: "Phụ huynh nộp truyện riêng của bé lên thư viện cộng đồng. Hệ thống kiểm điều kiện và dò thông tin cá nhân bằng quy tắc, ghim đúng phiên bản. Moderator khác người nộp duyệt (Approve / Reject). Truyện được duyệt hiện cho các bé phù hợp, tác giả là \"Cộng đồng\".",
   flow: ["Parent gọi check để biết có nộp được không, rồi submit (kèm xác nhận không có thông tin định danh).", "Mục community_submission vào hàng đợi (ưu tiên Thấp, SLA 72 giờ).", "Moderator nhận mục, mở gói duyệt, chấm checklist 3 tiêu chí, sửa nhãn, Approve hoặc Reject.", "Bé xem thư viện cộng đồng, đã lọc theo độ tuổi và chính sách an toàn của chính bé.", "Người nộp có thể rút (khi còn chờ) hoặc gỡ (khi đã duyệt)."],
   apis: [
-  { m: "POST", p: "/api/v1/CommunitySubmission/check", role: "Parent",
+  { m: "POST", p: "/api/v1/CommunitySubmission/check", role: "User",
     what: "Kiểm tra truyện có nộp Community được không và vì sao, không thay đổi dữ liệu. Trả blockers (story_not_private, story_archived, story_not_ready, no_current_version, open_report, already_submitted, copyright_required, family_use, pii_found) và vị trí nghi chứa thông tin cá nhân.",
     detail: [
       ["Dùng khi", ["Trước khi hiện nút \"Nộp lên cộng đồng\": biết truyện có nộp được không và còn vướng gì. API chỉ đọc, không ghi gì vào DB."]],
       ["Điều kiện gọi", [
-        "Token Parent đang Active; tài khoản khác (bé, Moderator, ContentCreator) → 403.",
+        "Token User đang Active; tài khoản khác (bé, Moderator, ContentCreator) → 403.",
         "storyId không tồn tại hoặc đã xóa → 404.",
         "Với truyện riêng của bé: người gọi phải có quyền ApproveStory với bé nguồn (Owner luôn có; người giám sát phụ tùy quyền được cấp), thiếu → 403."]],
       ["Hệ thống kiểm lần lượt", [
@@ -1287,15 +1287,15 @@ const STEPS = [
       ["neg","Truyện Public Library","story_not_private"],
       ["neg","Truyện có báo cáo Pending hoặc Escalated","open_report"],
       ["neg","Truyện đã nộp (Pending, Claimed, Approved)","already_submitted"],
-      ["neg","Người giám sát phụ không có quyền ApproveStory","403"],
+      ["neg","Người không phải chủ hồ sơ ApproveStory","403"],
       ["neg","Gọi bằng token bé hoặc ContentCreator","403"],
       ["neg","storyId không tồn tại","404"]
     ] },
-  { m: "POST", p: "/api/v1/CommunitySubmission", role: "Parent",
+  { m: "POST", p: "/api/v1/CommunitySubmission", role: "User",
     what: "Nộp truyện: ghim phiên bản hiện hành, tạo mục community_submission, lưu bản quyền và kết quả dò thông tin cá nhân (chỉ loại và vị trí). Nộp lại sau khi bị Reject được đánh dấu isResubmission.",
     detail: [
       ["Điều kiện gọi", [
-        "Như check (Parent Active, truyện tồn tại, quyền ApproveStory với bé nguồn).",
+        "Như check (User Active, truyện tồn tại, quyền ApproveStory với bé nguồn).",
         "confirmNoPersonalInfo phải là true; false → 400 ngay, chưa kiểm gì khác."]],
       ["Xử lý", [
         "Chạy lại toàn bộ kiểm tra của check. Còn already_submitted → 409; còn blocker khác → 400 kèm toàn bộ lý do.",
@@ -1319,12 +1319,12 @@ const STEPS = [
       ["neg","Nộp lần hai khi lần đầu còn hiệu lực","409"],
       ["neg","Thiếu quyền ApproveStory với bé nguồn","403"]
     ] },
-  { m: "POST", p: "/api/v1/CommunitySubmission/{itemId}/withdraw", role: "Parent",
+  { m: "POST", p: "/api/v1/CommunitySubmission/{itemId}/withdraw", role: "User",
     what: "Rút lần nộp khi chưa ai nhận (Pending).",
     detail: [
       ["Dùng khi", ["Phụ huynh đổi ý hoặc muốn sửa truyện trước khi Moderator nhận mục. Không cần Moderator duyệt."]],
       ["Hệ thống kiểm lần lượt", [
-        "Token Parent Active → nếu không: 403.",
+        "Token User Active → nếu không: 403.",
         "Mục tồn tại → nếu không: 404; mục là community_submission → nếu không: 400.",
         "Mục do chính người gọi nộp → nếu không: 403 \"Bạn chỉ thao tác được trên lần nộp do chính mình gửi.\"",
         "Trạng thái đúng Pending → nếu không (Claimed, Approved, Rejected…): 409."]],
@@ -1342,12 +1342,12 @@ const STEPS = [
       ["neg","Rút mục của người khác","403"],
       ["neg","itemId thuộc loại khác","400"]
     ] },
-  { m: "POST", p: "/api/v1/CommunitySubmission/{itemId}/remove", role: "Parent",
+  { m: "POST", p: "/api/v1/CommunitySubmission/{itemId}/remove", role: "User",
     what: "Gỡ truyện đã được duyệt khỏi thư viện cộng đồng (Approved → Removed).",
     detail: [
       ["Dùng khi", ["Truyện đã lên thư viện cộng đồng và phụ huynh muốn đưa xuống."]],
       ["Hệ thống kiểm lần lượt", [
-        "Giống withdraw: Parent Active (403) → mục tồn tại (404) → đúng loại community_submission (400) → do chính mình nộp (403).",
+        "Giống withdraw: User Active (403) → mục tồn tại (404) → đúng loại community_submission (400) → do chính mình nộp (403).",
         "Trạng thái phải là Approved → nếu không: 409. Mục còn Pending thì dùng withdraw."]],
       ["Xử lý", [
         "Approved → Removed ngay, ghi RemovedAt, ClosedReason = submitter_removed, audit CommunitySubmissionRemoved.",
@@ -1361,7 +1361,7 @@ const STEPS = [
       ["neg","Gỡ mục chưa Approved","409"],
       ["neg","Gỡ mục của người khác","403"]
     ] },
-  { m: "GET", p: "/api/v1/CommunitySubmission/mine", role: "Parent",
+  { m: "GET", p: "/api/v1/CommunitySubmission/mine", role: "User",
     what: "Danh sách các lần nộp của tôi (tối đa 50, mới nhất trước). Trạng thái dễ hiểu: Pending, Approved, Rejected (kèm lý do), Withdrawn, Removed. Không lộ người duyệt.",
     detail: [
       ["Dùng khi", ["Màn hình \"Truyện tôi đã nộp\" của phụ huynh."]],
@@ -1526,7 +1526,7 @@ const STEPS = [
     what: "Thư viện cộng đồng của bé: truyện đã duyệt, lọc theo độ tuổi, nhãn bị chặn trong Safety Policy và độ dài tối đa của riêng bé. Tác giả luôn là \"Cộng đồng\", không có người nộp, bé nguồn, người duyệt. submissionId là mã mở truyện.",
     detail: [
       ["Điều kiện gọi", [
-        "Token phiên bé (ChildSession, đăng nhập bằng PIN / QR). Token Parent hoặc Moderator → 403.",
+        "Token phiên bé (ChildSession, đăng nhập bằng PIN / QR). Token User hoặc Moderator → 403.",
         "Hồ sơ bé phải Active; bị khóa hoặc đã lưu trữ → 403."]],
       ["Xử lý", [
         "Lấy mọi lần nộp Community đã Approved, sắp theo mới duyệt trước.",
@@ -1549,7 +1549,7 @@ const STEPS = [
       ["ok","Người nộp gỡ truyện (Removed)","Truyện biến khỏi danh sách"],
       ["ok","Truyện gốc bị Archive","Truyện biến khỏi danh sách"],
       ["neg","Hồ sơ bé bị khóa hoặc đã lưu trữ","403"],
-      ["neg","Gọi bằng token Parent","403"],
+      ["neg","Gọi bằng token User","403"],
       ["edge","Phản hồi JSON","Không có trường storyId, người nộp, bé nguồn hay người duyệt"]
     ] },
   { m: "GET", p: "/api/v1/CommunityLibrary/{submissionId}", role: "Bé (ChildSession)",
@@ -1592,7 +1592,7 @@ const STEPS = [
     tests: [
       ["ok","Lấy nhóm Nháp của tôi","200, chỉ bộ do mình tạo"],
       ["ok","Lấy nhóm Chờ duyệt","200, có cờ isMine"],
-      ["neg","Gọi bằng token Parent","403"]
+      ["neg","Gọi bằng token User","403"]
     ] },
   { m: "GET", p: "/api/v1/RoadmapTemplate/{id}", role: "Moderator, Administrator",
     what: "Chi tiết một bộ: thông tin, danh sách truyện, trạng thái, phản hồi duyệt gần nhất.",
@@ -1647,7 +1647,7 @@ const STEPS = [
       ["neg","Tên rỗng hoặc quá dài","400"],
       ["neg","readingLevelMin lớn hơn readingLevelMax","400"],
       ["neg","Chủ đề không tồn tại","400"],
-      ["neg","Gọi bằng token Parent","403"],
+      ["neg","Gọi bằng token User","403"],
       ["neg","Gọi bằng token Administrator","403 (tạo / sửa / gửi / nhân bản / archive bộ chỉ dành cho Moderator)"]
     ] },
   { m: "PUT", p: "/api/v1/RoadmapTemplate/{id}", role: "Moderator",
@@ -1915,7 +1915,7 @@ const STEPS = [
   { m: "GET", p: "/api/v1/StaffAccount", role: "Administrator",
     what: "Danh sách tài khoản vận hành: Moderator và Administrator, kèm trạng thái (chờ kích hoạt, Active, bị vô hiệu hóa). Lọc theo vai trò bằng ?role=.",
     detail: [
-      ["Điều kiện gọi", ["Token có vai trò Administrator (kiểm ở controller); Moderator, Parent → 403, không token → 401."]],
+      ["Điều kiện gọi", ["Token có vai trò Administrator (kiểm ở controller); Moderator, User → 403, không token → 401."]],
       ["Query", [
         "role: tùy chọn, Moderator hoặc Administrator. Bỏ trống → trả cả hai vai trò.",
         "role là vai trò khác (Parent, ContentCreator) → 400; giá trị không có trong enum → 400."]],
@@ -1965,7 +1965,7 @@ const STEPS = [
       ["neg","Email sai định dạng","400"],
       ["neg","Thiếu họ tên","400"],
       ["neg","Họ tên quá 100, chuyên môn quá 200, ghi chú quá 500 ký tự","400"],
-      ["neg","Gọi bằng token Moderator hoặc Parent","403"]
+      ["neg","Gọi bằng token Moderator hoặc User","403"]
     ] },
   { m: "POST", p: "/api/v1/StaffAccount/{userId}/resend-invite", role: "Administrator",
     what: "Gửi lại lời mời cho tài khoản Moderator hoặc Administrator còn chờ kích hoạt (thư mất hoặc mã hết hạn). Không cần gửi role: hệ thống đọc vai trò từ tài khoản.",
@@ -2107,7 +2107,7 @@ const STEPS = [
     tests: [
       ["ok","Moderator mở tổng quan trên DB mới seed","200, published.catalogVersion = parent-vi-1, itemCount = 30, draft = null"],
       ["ok","Administrator mở tổng quan","200"],
-      ["neg","Gọi bằng token Parent","403"],
+      ["neg","Gọi bằng token User","403"],
       ["neg","Không gửi token","401"]
     ] },
   { m: "GET", p: "/api/v1/moderation/authoring-guides/versions?pageIndex=1&pageSize=10", role: "Moderator, Administrator",
@@ -2264,7 +2264,7 @@ const STEPS = [
       ["ok","Lọc group=Character","200, chỉ thẻ nhân vật (seed: 1–4)"],
       ["ok","Lọc isActive=false","200, chỉ thẻ đã ẩn"],
       ["neg","group lạ (ví dụ Monster)","400 Nhóm thẻ không hợp lệ"],
-      ["neg","Gọi bằng token Parent","403"],
+      ["neg","Gọi bằng token User","403"],
       ["neg","Gọi bằng token bé","403"]
     ] },
   { m: "GET", p: "/api/v1/moderation/wish-cards/{id}", role: "Moderator, Administrator",
@@ -2388,7 +2388,7 @@ const STEPS = [
   desc: "Phụ huynh (hoặc người giám sát có quyền giao truyện) sắp xếp danh sách truyện bé sẽ đọc lần lượt. Mỗi lúc chỉ một bước mở (Open), các bước sau chờ (Waiting). Có thể chép cả bộ truyện mẫu về. Bé xem lộ trình của mình ở màn hình \"Bố mẹ chọn cho em\".",
   flow: ["Phụ huynh thêm truyện (một hoặc nhiều bé), hoặc xem trước rồi chép bộ truyện mẫu.", "Hệ thống bỏ qua truyện không hợp lệ với từng bé (chủ đề bị chặn, sai độ tuổi, quá dài) và báo lý do.", "Bé xem lộ trình, đọc bước đang mở.", "Đọc xong → bước Completed, bước kế mở, phụ huynh nhận thông báo khi hết lộ trình (cần luồng đọc gọi bộ ghi nhận hoàn thành, chưa nối)."],
   apis: [
-  { m: "POST", p: "/api/v1/ChildRoadmap/stories", role: "Parent",
+  { m: "POST", p: "/api/v1/ChildRoadmap/stories", role: "User",
     what: "Thêm một truyện vào lộ trình của một hoặc nhiều bé. Vị trí: NextUp (đọc kế tiếp) hoặc End (thêm vào cuối). Cần quyền giao truyện (Owner mặc định); bé nào thiếu quyền thì bị bỏ qua, không làm hỏng cả request.",
     detail: [
       ["Body", [
@@ -2418,7 +2418,7 @@ const STEPS = [
       ["neg","Bé không Active","200, bé đó Skipped profile_inactive"],
       ["neg","Gọi bằng token bé","403"]
     ] },
-  { m: "GET", p: "/api/v1/ChildRoadmap/{childProfileId}", role: "Parent",
+  { m: "GET", p: "/api/v1/ChildRoadmap/{childProfileId}", role: "User",
     what: "Xem lộ trình của bé: bước đang mở, các bước chờ, lịch sử, các bước \"Cần cập nhật\".",
     detail: [
       ["Điều kiện gọi", ["Người gọi đang giám sát bé (Owner hoặc người giám sát phụ, quyền nào cũng được) → nếu không: 403."]],
@@ -2436,7 +2436,7 @@ const STEPS = [
       ["ok","Sau khi Archive truyện trong lộ trình","Bước đó Skipped (StoryUnavailable), lịch sử có ghi nhận"],
       ["neg","Người không giám sát bé","403"]
     ] },
-  { m: "DELETE", p: "/api/v1/ChildRoadmap/{childProfileId}/items/{itemId}", role: "Parent",
+  { m: "DELETE", p: "/api/v1/ChildRoadmap/{childProfileId}/items/{itemId}", role: "User",
     what: "Gỡ một bước khỏi lộ trình. Nếu là bước đang mở thì bước kế được mở.",
     detail: [
       ["Hệ thống kiểm lần lượt", [
@@ -2456,7 +2456,7 @@ const STEPS = [
       ["neg","Bước đã Completed","409"],
       ["neg","itemId của bé khác","404 (khi có quyền với bé trên URL); không có quyền với bé trên URL thì 403"]
     ] },
-  { m: "PUT", p: "/api/v1/ChildRoadmap/{childProfileId}/order", role: "Parent",
+  { m: "PUT", p: "/api/v1/ChildRoadmap/{childProfileId}/order", role: "User",
     what: "Sắp xếp lại thứ tự các bước đang chờ (gửi danh sách itemId theo thứ tự mới).",
     detail: [
       ["Hệ thống kiểm", [
@@ -2471,7 +2471,7 @@ const STEPS = [
       ["neg","Thiếu hoặc thừa itemId so với các bước chờ","400"],
       ["neg","Có itemId của bước Open","400"]
     ] },
-  { m: "DELETE", p: "/api/v1/ChildRoadmap/{childProfileId}/items", role: "Parent",
+  { m: "DELETE", p: "/api/v1/ChildRoadmap/{childProfileId}/items", role: "User",
     what: "Xóa toàn bộ các bước chưa hoàn thành khỏi lộ trình của bé.",
     detail: [
       ["Hệ thống kiểm", ["Quyền AssignActivity với bé → nếu không: 403."]],
@@ -2486,7 +2486,7 @@ const STEPS = [
       ["ok","Xóa hết","200, lộ trình rỗng, lịch sử giữ nguyên"],
       ["neg","Thiếu quyền AssignActivity","403"]
     ] },
-  { m: "GET", p: "/api/v1/RoadmapLibrary?...", role: "Parent",
+  { m: "GET", p: "/api/v1/RoadmapLibrary?...", role: "User",
     what: "Thư viện bộ truyện mẫu đang Published cho phụ huynh, lọc theo độ tuổi, chủ đề, mức đọc.",
     detail: [
       ["Điều kiện gọi (chung cho 4 API RoadmapLibrary)", ["Parent đang Active → nếu không: 403."]],
@@ -2502,7 +2502,7 @@ const STEPS = [
       ["ok","Lấy danh sách","200, chỉ bộ Published"],
       ["edge","Bộ Archived hoặc Nháp","Không xuất hiện"]
     ] },
-  { m: "GET", p: "/api/v1/RoadmapLibrary/{roadmapId}", role: "Parent",
+  { m: "GET", p: "/api/v1/RoadmapLibrary/{roadmapId}", role: "User",
     what: "Chi tiết một bộ mẫu: các truyện và số ngày gợi ý.",
     detail: [
       ["Xử lý", ["Bộ không tồn tại, chưa Published hoặc đã Archive → đều 404."]],
@@ -2515,7 +2515,7 @@ const STEPS = [
       ["ok","Bộ Published","200"],
       ["neg","Bộ chưa Published","404"]
     ] },
-  { m: "POST", p: "/api/v1/RoadmapLibrary/{roadmapId}/preview", role: "Parent",
+  { m: "POST", p: "/api/v1/RoadmapLibrary/{roadmapId}/preview", role: "User",
     what: "Xem trước việc chép bộ về cho các bé: truyện nào chép được, truyện nào bị bỏ qua và vì sao, không ghi dữ liệu.",
     detail: [
       ["Body", [
@@ -2533,13 +2533,13 @@ const STEPS = [
     tests: [
       ["ok","Xem trước cho 1 bé","200, kế hoạch chép theo từng bé"],
       ["neg","Có truyện bị chặn chủ đề","Truyện đó có action = Skip, skipCode = blocked_topic"],
-      ["neg","Bé ngoài quyền giám sát","200, bé đó outcome = Skipped, skipCode = no_permission (không trả 403)"]
+      ["neg","Bé không thuộc người gọi","200, bé đó outcome = Skipped, skipCode = no_permission (không trả 403)"]
     ] },
-  { m: "POST", p: "/api/v1/RoadmapLibrary/{roadmapId}/copy", role: "Parent",
+  { m: "POST", p: "/api/v1/RoadmapLibrary/{roadmapId}/copy", role: "User",
     what: "Chép bộ về lộ trình của các bé: thêm các truyện hợp lệ (nguồn TemplateCopy), mỗi bé nhận một thông báo cho cả bộ.",
     detail: [
       ["Hệ thống kiểm", [
-        "Parent Active (403); bộ tồn tại (404).",
+        "User Active (403); bộ tồn tại (404).",
         "Bộ đang Published, chưa Archive → nếu không: 409 (không phải 404).",
         "Body kiểm như preview (400)."]],
       ["Xử lý từng bé (mỗi bé một transaction)", [
@@ -2559,7 +2559,7 @@ const STEPS = [
   { m: "GET", p: "/api/v1/MyRoadmap", role: "Bé (ChildSession)",
     what: "Màn hình \"Bố mẹ chọn cho em\": truyện đang mở và các truyện sắp tới của chính bé đăng nhập. Id hồ sơ lấy từ token.",
     detail: [
-      ["Điều kiện gọi", ["Token phiên bé (ChildSession); token Parent → 403. Hồ sơ bé phải Active → nếu không: 403."]],
+      ["Điều kiện gọi", ["Token phiên bé (ChildSession); token User → 403. Hồ sơ bé phải Active → nếu không: 403."]],
       ["Xử lý", [
         "Lấy các bước Open, Waiting, Completed của bé; ẩn bước có truyện đã bị gỡ / Archive.",
         "Kiểm bé có đang Hold Mode (ca can thiệp chưa được mở khóa) không. Chỉ đọc, không tự mở bước mới."]],
@@ -2575,7 +2575,7 @@ const STEPS = [
       ["ok","Bé có lộ trình","200, bước đang mở và các bước chờ"],
       ["ok","Bé chưa có lộ trình","200, danh sách rỗng"],
       ["edge","Bé đang trong Hold Mode","Không mở bước mới"],
-      ["neg","Gọi bằng token Parent","403"],
+      ["neg","Gọi bằng token User","403"],
       ["neg","Hồ sơ bé không Active","403"]
     ] }
   ]
@@ -2670,7 +2670,7 @@ const OVERRIDES = [
   ["StaffAccount/invite", "Mời Administrator với email chưa dùng", J({ role: "Administrator", fullName: "Quản trị viên mới", email: "newadmin@example.com", note: "Bổ sung nhân sự" })],
   ["StaffAccount/invite", "Mời Moderator thiếu chuyên môn", J({ role: "Moderator", fullName: "Nguyễn Văn An", email: "an.moderator@example.com" })],
   ["StaffAccount/invite", "Thiếu role", J({ fullName: "Nguyễn Văn An", email: "an.moderator@example.com", expertise: "Giáo dục mầm non" })],
-  ["StaffAccount/invite", "role = Parent", J({ role: "Parent", fullName: "Nguyễn Văn An", email: "an.moderator@example.com" })],
+  ["StaffAccount/invite", "role = Parent", J({ role: "User", fullName: "Nguyễn Văn An", email: "an.moderator@example.com" })],
   ["Auth/staff-activation", "Administrator: mã đúng", J({ email: "newadmin@example.com", inviteToken: "<INVITE_TOKEN>", newPassword: "Admin12345", confirmPassword: "Admin12345", commitmentAccepted: true })],
   ["StaffAccount/{userId}/deactivate", "Vô hiệu hóa Administrator", J({ reason: "Nghỉ phụ trách quản trị" })],
   ["=/api/v1/Auth/login", "Sai mật khẩu", J({ identifier: "moderator_demo1", password: "SaiMatKhau1" })],
@@ -2913,7 +2913,7 @@ const SEEDAPI = [
   ["rubrics/{id}/clone", { as: "moderator_demo1", url: "POST /api/v1/moderation/rubrics/1/clone", body: '{ "versionNo": "gray-zone-v3", "name": "Bản sao để chỉnh" }', note: "versionNo phải chưa có." }],
   ["rubrics/{id}/validate", { as: "moderator_demo1", url: "POST /api/v1/moderation/rubrics/1/validate", body: '{ "revision": "<RUBRIC_REVISION>" }', note: "Bản 1 revision 1." }],
   ["rubrics/{id}/evaluations", { as: "moderator_demo1", url: "POST /api/v1/moderation/rubrics/1/evaluations", body: '{ "revision": "<RUBRIC_REVISION>", "phase": "phase2", "ageBand": "6-8", "language": "vi", "title": "Chú mèo lạc đường", "content": "Chú mèo nhỏ đi lạc trong khu rừng tối, chú rất sợ nhưng vẫn tìm đường về nhà." }', note: "Gọi AI thật; môi trường local chưa cấu hình Vertex sẽ trả 409 MODERATION_PROVIDER_NOT_REGISTERED." }],
-  ["rubrics/{id}/activate", { as: "admin_demo", url: "POST /api/v1/moderation/rubrics/1/activate", body: '{ "revision": "<RUBRIC_REVISION>" }', note: "admin_demo hoặc moderator_demo1 đều kích hoạt được; Parent gọi sẽ bị 403." }],
+  ["rubrics/{id}/activate", { as: "admin_demo", url: "POST /api/v1/moderation/rubrics/1/activate", body: '{ "revision": "<RUBRIC_REVISION>" }', note: "admin_demo hoặc moderator_demo1 đều kích hoạt được; User gọi sẽ bị 403." }],
   ["rubrics/{id}/audit-logs", { as: "moderator_demo1", url: "GET /api/v1/moderation/rubrics/1/audit-logs?pageIndex=1&pageSize=20", note: "Seed có sẵn audit Created cho bản 1." }],
   // Bước 8
   ["=GET /api/v1/moderation/authoring-guides", { as: "moderator_demo1", url: "GET /api/v1/moderation/authoring-guides", note: "Lưu data.revisionToken để dùng cho các lệnh ghi. Mỗi lệnh ghi thành công trả token mới." }],
@@ -2994,7 +2994,7 @@ const TESTDATA = [
   ["CommunitySubmission/check", "Truyện AI sẵn sàng", "parent_demo1: { \"storyId\": 1, \"confirmNoPersonalInfo\": false, \"copyrightDeclaration\": \"OwnWork\" } (truyện 1 là Manual nên cần OwnWork; truyện Source=Ai tự đạt: dùng truyện 2 nếu đã Ready)."],
   ["CommunitySubmission/check", "báo cáo Pending", "parent_demo1: { \"storyId\": 2, \"confirmNoPersonalInfo\": false, \"copyrightDeclaration\": null } (report 2 Pending trên truyện 2)."],
   ["CommunitySubmission/check", "Truyện đã nộp", "parent_demo2: { \"storyId\": 3, \"confirmNoPersonalInfo\": false, \"copyrightDeclaration\": \"OwnWork\" } (mục 7 Pending)."],
-  ["CommunitySubmission/check", "Người giám sát phụ không có quyền", "parent_demo3 (id 4) với truyện 5 của bé 5: quan hệ AdditionalSupervisor chỉ có ApproveReadingLevel."],
+  ["CommunitySubmission/check", "Người không phải chủ hồ sơ", "parent_demo3 (id 4) với truyện 5 của bé 5: không phải chủ hồ sơ trẻ."],
   ["CommunitySubmission/check", "token bé", "Đăng nhập bé 1 (secret demo-qr-child-01) rồi gọi check."],
   ["=/api/v1/CommunitySubmission", "Nộp lần hai", "Nộp truyện 1 hai lần liên tiếp bằng parent_demo1; lần hai trả 409."],
   ["=/api/v1/CommunitySubmission", "Nộp lại sau một lần bị Reject", "parent_demo3 nộp lại truyện 5: mục 13 đã Rejected → mục 14 IsResubmission."],
@@ -3102,11 +3102,11 @@ const TESTDATA = [
 ];
 // Quy tắc chung theo tên test case (token sai vai trò, thiếu token...)
 const GENERIC = [
-  ["Gọi bằng token Parent", "Đăng nhập parent_demo1 (Demo@123), gọi cùng URL."],
+  ["Gọi bằng token User", "Đăng nhập parent_demo1 (Demo@123), gọi cùng URL."],
   ["Gọi bằng token Moderator", "Đăng nhập moderator_demo1 (Demo@123), gọi cùng URL."],
   ["Gọi bằng token ContentCreator", "Đăng nhập creator_demo (Demo@123), gọi cùng URL."],
   ["Gọi bằng token Administrator", "Đăng nhập admin_demo (Demo@123), gọi cùng URL."],
-  ["token Moderator hoặc Parent", "Đăng nhập moderator_demo1 hoặc parent_demo1, gọi cùng URL."],
+  ["token Moderator hoặc User", "Đăng nhập moderator_demo1 hoặc parent_demo1, gọi cùng URL."],
   ["Gọi bằng token bé", "Token bé 1: lấy bằng ChildAccessCredential/easylogin/login với { \"secret\": \"demo-qr-child-01\" }, rồi gọi cùng URL."],
   ["Không gửi token", "Bỏ header Authorization khi gọi."]
 ];

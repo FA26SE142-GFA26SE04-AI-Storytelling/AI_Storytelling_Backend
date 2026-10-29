@@ -3,7 +3,7 @@ Project ai_storytelling_platform {
   Note: '''
     Database Schema hoàn thiện cho AI Storytelling Platform for Children.
     Bám sát Workflow_AI_Storytelling_v8 (6 luồng nghiệp vụ khép kín) + Luồng 7 (MỚI v9.3):
-    - Luồng 1: Profile & Supervision Setup
+    - Luồng 1: Profile Setup
     - Luồng 2: Guided AI Story Generation Pipeline
     - Luồng 3: Child Reading Experience & Telemetry
     - Luồng 4: Content Distribution, O2O Assessment & Intervention
@@ -18,8 +18,7 @@ Project ai_storytelling_platform {
     story_segments, các trường mở rộng của media_assets và các cột kế
     thừa BaseEntity. Script DBML này mô tả mô hình; tên cột/giá trị enum
     vật lý trong PostgreSQL do EF Core mapping và migration quyết định.
-    CẬP NHẬT 17/09/2026: đồng bộ đủ 61 bảng; bổ sung permission request,
-    ownership transfer hai chiều, story generation input request/job,
+    CẬP NHẬT 17/09/2026: bổ sung story generation input request/job,
     story_scenes, media_contexts, personal token quota và notification types.
     Đã vá lỗi định danh O2O, xung đột trạng thái bài tập lớp học,
     bổ sung tiến độ đọc nhanh (Bookmarks/Favorites) và Cây tri thức lớp.
@@ -42,18 +41,12 @@ Project ai_storytelling_platform {
         tránh tạo trùng bản ghi share.
     (F) class_groups thêm status (active/archived) — cho phép ngừng dùng
         1 lớp mà không hard-delete, giữ nguyên lịch sử liên quan.
-    (G) supervision_relationships thêm revoked_at — cho phép thu hồi
-        quyền giám sát mà không hard-delete, giữ audit trail phân quyền.
-        recipient_status_enum (shared_story_recipients) thêm giá trị
+    (G) recipient_status_enum (shared_story_recipients) thêm giá trị
         'revoked' — cho phép phụ huynh thu hồi đồng ý đã chấp nhận trước đó.
     CẢI THIỆN v9.2:
-    (H) supervision_relationships thêm revoked_by_user_id — trước đây có
-        revoked_at nhưng không biết AI đã thu hồi, vi phạm chính nguyên
-        tắc Auditability của toàn hệ thống.
     (P) recommendation_reviews thêm is_final + had_final_authority —
         giải quyết câu hỏi "kiểm tra quyền TẠI THỜI ĐIỂM nào" khi Owner
-        đổi supervision_permissions của Teacher giữa lúc Teacher review
-        (chưa có quyền) và lúc Owner tự áp dụng thay đổi (có quyền).
+        thay đổi quyền trong lúc Teacher review và lúc Owner áp dụng.
         had_final_authority là snapshot bất biến tại thời điểm review,
         KHÔNG tính lại mỗi lần đọc.
     CẢI THIỆN v9.3 (MỚI — Luồng 7, Organization & School Admin Management):
@@ -78,7 +71,7 @@ Project ai_storytelling_platform {
         xem mục (R) bên dưới, phân cấp chi tiết đã chuyển sang bảng
         organization_permissions riêng thay vì cần nhiều dòng org_role.]
     (N) org_consent_records thêm revoked_at — theo ĐÚNG pattern audit
-        trail đã có ở supervision_relationships: đổi ý (Accepted <->
+        trail: đổi ý (Accepted <->
         Rejected) hoặc un-enroll (Luồng 7, Bước 7.3c) đều đóng dòng cũ
         bằng revoked_at=now() thay vì ghi đè status hoặc chỉ "giữ nguyên
         không xóa". Cần thêm CHECK/partial unique index ở tầng migration
@@ -86,12 +79,6 @@ Project ai_storytelling_platform {
           UNIQUE (child_profile_id, organization_id) WHERE revoked_at IS NULL
         — đảm bảo luôn chỉ có ĐÚNG 1 dòng hiệu lực mỗi lần, kể cả khi
         trẻ rời rồi quay lại đúng Organization đó nhiều lần.
-    (O) supervision_invitations thêm invitation_code (unique),
-        expires_at, used_at — thay cơ chế mời thuần qua email (không
-        khớp thói quen phụ huynh VN) bằng invitation_code ngẫu nhiên,
-        dùng 1 lần, gắn cứng 1 child_profile_id, phân phát qua kênh tự
-        chọn (Zalo/SMS/in giấy...). invitee_email đổi thành NULLABLE vì
-        không còn bắt buộc phải có trước khi tạo lời mời.
     (Q) org_verification_enum thêm giá trị pending_reverification (Bước
         7.1c, MỚI — School Admin tự quản lý thông tin Organization). Trước
         đây KHÔNG có bước nào cho School Admin tự sửa name/address/
@@ -104,7 +91,7 @@ Project ai_storytelling_platform {
         có 3 giá trị thô (teacher/school_admin/lead_teacher), không có
         cách nào School Admin tùy chỉnh TỪNG Teacher cụ thể được làm gì.
         Thêm bảng permission riêng, mô phỏng đúng cơ chế
-        supervision_permissions ở Luồng 1 — nhưng CHỈ áp dụng cho
+        quyền theo từng thành viên — nhưng CHỈ áp dụng cho
         org_role='teacher'. School Admin KHÔNG lưu dòng permission nào —
         quyền luôn ngầm định qua code (org_role='school_admin' -> full
         access), tránh 1 School Admin vô tình tự khóa quyền School Admin
@@ -112,7 +99,7 @@ Project ai_storytelling_platform {
         Cấp 1 (nâng cao, School Admin cấp thủ công — thay thế hoàn toàn
         nhu cầu lead_teacher), Cấp 2 (School Admin, ngầm định). Kèm rào
         chắn bắt buộc: luôn phải còn ít nhất 1 School Admin active mỗi
-        Organization (đối xứng BR-1.9). HỆ QUẢ: org_role_enum RÚT GỌN
+        Organization. HỆ QUẢ: org_role_enum RÚT GỌN
         còn 2 giá trị (teacher/school_admin). Đồng thời Bước 7.4
         (Dashboard) bổ sung View 1 — Org Management (danh sách
         Teacher/Class + thống kê tổng), tách biệt với View 2 — Student
@@ -175,7 +162,7 @@ Project ai_storytelling_platform {
     CẢI THIỆN v9.5 (MỚI — kết quả rà soát bảo mật xác thực + tính năng
     Payment SePay, phiên rà soát tiếp theo sau v9.4):
     (AB) user_accounts thêm token_version (tăng lên khi có thay đổi
-        quyền nhạy cảm — revoke supervision Bước 1.6b, Grant/Revoke
+        quyền nhạy cảm — Grant/Revoke
         Admin Bước 5.1b, Remove/Demote Bước 7.2b/7.2d — mọi access
         token JWT cũ mang version cũ bị middleware từ chối NGAY dù
         chưa hết hạn), mfa_secret/mfa_enabled (đã gỡ 2026-10-28 — bỏ MFA), email_verification_token_hash/
@@ -254,12 +241,13 @@ Project ai_storytelling_platform {
 }
 
 // =====================================================================
-// ENUMS: Luồng 1 — Profile & Supervision
+// ENUMS: Luồng 1 — Profile
 // =====================================================================
 Enum user_role {
-  parent
-  teacher
+  user
+  moderator
   administrator
+  content_creator
 }
 
 Enum account_status {
@@ -306,44 +294,6 @@ Enum policy_rule_enum {
   allowed
   restricted
   blocked
-}
-
-Enum invitation_status_enum {
-  pending
-  accepted
-  rejected
-  expired
-  revoked
-}
-
-Enum supervisor_role_enum {
-  owner
-  additional_supervisor
-}
-
-Enum permission_enum {
-  view_progress
-  view_results
-  assign_activity
-  receive_report
-  approve_reading_level
-  approve_story
-  manage_safety_settings
-  generate_story
-}
-
-Enum permission_request_status_enum {
-  pending
-  accepted
-  rejected
-  cancelled   // BR-1.14 — Additional Supervisor tự huỷ khi còn pending
-}
-
-Enum ownership_transfer_request_status_enum {
-  pending
-  accepted
-  rejected
-  cancelled
 }
 
 Enum topic_relation_enum {
@@ -730,9 +680,9 @@ Enum consent_status_enum {
 // suốt 7 luồng PHẢI dùng đúng 1 trong các giá trị này, không tự ý thêm
 // loại mới ngoài danh sách đã ánh xạ trong tài liệu workflow.
 Enum notification_type_enum {
-  supervision_invite              // Luồng 1, Bước 1.5
-  supervision_invite_result
-  supervision_revoked             // Luồng 1, Bước 1.6b
+  supervision_invite              // Legacy: chỉ giữ để đọc dữ liệu cũ
+  supervision_invite_result       // Legacy
+  supervision_revoked             // Legacy
   story_shared                    // Luồng 4, Bước 4.3
   hold_mode_alert                 // Luồng 4, Bước 4.5.2
   hold_mode_auto_unlocked         // MỚI v10 — Luồng 4, Bước 4.5.3a
@@ -749,10 +699,10 @@ Enum notification_type_enum {
   moderation_sla_warning          // Luồng 4, Bước 4.6 — báo cáo sắp quá hạn xử lý
   content_report_resolved         // Luồng 4, Bước 4.6 — báo cáo đã được xử lý xong
   payment_confirmed               // MỚI v9.5 — Luồng 5, Bước 5.6.2
-  permission_request
-  permission_request_result
-  ownership_transfer_request
-  ownership_transfer_result
+  permission_request // Legacy
+  permission_request_result // Legacy
+  ownership_transfer_request // Legacy
+  ownership_transfer_result // Legacy
   account_security_changed
 }
 
@@ -768,7 +718,7 @@ Enum data_request_deletion_method_enum {
 }
 
 // #####################################################################
-// LUỒNG 1 — CHILD LEARNING PROFILE & SUPERVISION SETUP
+// LUỒNG 1 — CHILD LEARNING PROFILE SETUP
 // #####################################################################
 
 Table user_accounts {
@@ -787,7 +737,7 @@ Table user_accounts {
   reset_token_expires_at timestamp [note: 'Thời hạn token đặt lại mật khẩu']
   refresh_token_hash varchar(64)
   refresh_token_expires_at timestamp
-  email_verification_token_hash varchar [note: 'MỚI v9.5 — Bước 1.1: bắt buộc xác thực email khi đăng ký cold-start (không qua invitation_code), áp dụng thống nhất với luồng claim invitation vốn đã có OTP.']
+  email_verification_token_hash varchar [note: 'MỚI v9.5 — Bước 1.1: xác thực email khi đăng ký bằng OTP.']
   email_verification_token_expires_at timestamp [note: 'MỚI v9.5']
   email_verified_at timestamp [note: 'NULL = chưa xác thực email (OTP) — Bước 1.1']
   email_verification_failed_attempts integer [not null, default: 0]
@@ -796,14 +746,14 @@ Table user_accounts {
   pending_email_otp_hash varchar
   pending_email_otp_expires_at timestamp
   pending_email_otp_failed_attempts integer [not null, default: 0]
-  failed_login_attempts integer [not null, default: 0, note: 'MỚI v9.5 — chống brute-force đăng nhập Supervisor, đối xứng child_access_credentials.failed_attempts']
+  failed_login_attempts integer [not null, default: 0, note: 'MỚI v9.5 — chống brute-force đăng nhập User, đối xứng child_access_credentials.failed_attempts']
   locked_until timestamp [note: 'MỚI v9.5 — khoá tạm thời sau quá nhiều lần đăng nhập sai liên tiếp']
-  token_version integer [not null, default: 1, note: 'MỚI v9.5 — Luồng 1, Mục 7c: tăng lên 1 khi có thay đổi quyền nhạy cảm (revoke supervision Bước 1.6b, Grant/Revoke Admin Bước 5.1b, Remove/Demote Bước 7.2b/7.2d) — mọi access token JWT cũ mang version không khớp bị middleware từ chối NGAY dù chưa hết hạn.']
+  token_version integer [not null, default: 1, note: 'MỚI v9.5 — Luồng 1, Mục 7c: tăng lên 1 khi có thay đổi quyền nhạy cảm (Grant/Revoke Admin Bước 5.1b, Remove/Demote Bước 7.2b/7.2d) — mọi access token JWT cũ mang version không khớp bị middleware từ chối NGAY dù chưa hết hạn.']
   last_login_at timestamp
-  role_before_admin user_role [note: 'MỚI v9.4 — Luồng 5, Bước 5.1b: lưu role hiện tại TRƯỚC khi được Grant làm administrator, phục vụ khôi phục đúng role khi Revoke. NULL nếu tài khoản được tạo làm administrator ngay từ đầu (khôi phục mặc định về teacher).']
+  role_before_admin user_role [note: 'MỚI v9.4 — Luồng 5, Bước 5.1b: lưu role hiện tại TRƯỚC khi được Grant làm administrator, phục vụ khôi phục đúng role khi Revoke. NULL nếu tài khoản được tạo làm administrator ngay từ đầu (khôi phục mặc định về User).']
   created_at timestamp [not null, default: `now()`]
 
-  Note: 'Tài khoản đăng nhập: Parent/Teacher (Supervisor) hoặc Administrator. Bước 1.1 / 5.1. School Admin KHÔNG phải giá trị role riêng — là organization_memberships.org_role=school_admin gắn trên user role=teacher (Luồng 7).'
+  Note: 'Role tài khoản hiện hành: User, Moderator, Administrator, ContentCreator. Truy cập hồ sơ trẻ dựa trên owner_user_id.'
 }
 
 Table refresh_tokens {
@@ -826,7 +776,7 @@ Table refresh_tokens {
     set revoked_at=now() cho MỌI dòng của user_account_id này.
     Access token (JWT) chỉ chứa session_scope, KHÔNG chứa permission
     chi tiết — mọi thao tác nhạy cảm vẫn phải re-query
-    supervision_relationships/supervision_permissions sống (Luồng 1).
+    owner_user_id trên child_profiles và trạng thái hồ sơ hiện hành.
     Còn treo: TTL cụ thể theo session_scope (child nên ngắn hơn nhiều
     so với supervisor, do dùng trên thiết bị lớp học dùng chung).
   '''
@@ -847,11 +797,9 @@ Table child_profiles {
   created_at timestamp [not null, default: `now()`]
 
   Note: '''
-    ChildProfile — Bước 1.2. owner_user_id = Profile Owner.
-    CẢI THIỆN v9.3: BR-1.9 (Luồng 1) — status chỉ chuyển 'active' nếu
-    tồn tại ít nhất 1 dòng supervision_relationships (owner hoặc
-    additional_supervisor, revoked_at IS NULL) mà supervisor_user_id
-    thuộc user_accounts.role='parent'. Áp dụng THỐNG NHẤT bất kể scope.
+    ChildProfile — Bước 1.2. owner_user_id = User tạo hồ sơ, là người
+    DUY NHẤT xem / sửa / giám sát / đặt PIN cho trẻ (Luồng 1).
+    Status active khi có Learning Profile + Safety Policy có consent.
     BR-7.8: 1 ChildProfile chỉ thuộc TỐI ĐA 1 organization_id tại một
     thời điểm (giới hạn kiến trúc v9.3, không phải bảng nhiều-nhiều).
   '''
@@ -950,108 +898,6 @@ Table safety_policy_categories {
   indexes {
     (safety_policy_id, content_category_id) [unique]
   }
-}
-
-Table supervision_invitations {
-  id integer [pk, increment]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  child_profile_id integer [not null, ref: > child_profiles.id]
-  inviter_user_id integer [not null, ref: > user_accounts.id]
-  invitation_code varchar [unique, note: 'MỚI v9.3 — mã ngẫu nhiên, dùng 1 lần, gắn cứng 1 child_profile_id']
-  invitee_email varchar [note: 'CẬP NHẬT v9.3: đổi thành NULLABLE — không còn bắt buộc, chỉ tham khảo hiển thị']
-  invitee_user_id integer [ref: > user_accounts.id]
-  status invitation_status_enum [not null, default: 'pending']
-  expires_at timestamp [note: 'MỚI v9.3']
-  used_at timestamp [note: 'MỚI v9.3 — đánh dấu khi invitation_code đã được claim']
-  created_at timestamp [not null, default: `now()`]
-  responded_at timestamp
-
-  Note: '''
-    SupervisionInvitation — Bước 1.5.
-    CẢI THIỆN v9.3: thay cơ chế mời thuần qua email bằng invitation_code
-    — áp dụng chung cho mời đơn lẻ (Personal) và Bulk Enrollment
-    (Organization, Luồng 7 Bước 7.3 Nhánh A — sinh 1 mã riêng/học sinh,
-    KHÔNG dùng chung 1 mã cho cả lớp). Claim bắt buộc xác thực qua kênh
-    cá nhân của người nhận (OTP) nếu là lần tạo tài khoản đầu tiên —
-    chống rủi ro "Provisioned Account" (nhà trường claim hộ).
-  '''
-}
-
-Table supervision_relationships {
-  id integer [pk, increment]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  child_profile_id integer [not null, ref: > child_profiles.id]
-  supervisor_user_id integer [not null, ref: > user_accounts.id]
-  supervision_invitation_id integer [ref: - supervision_invitations.id]
-  supervisor_role supervisor_role_enum [not null]
-  revoked_at timestamp [note: 'NULL = quan hệ đang hiệu lực; có giá trị = đã bị thu hồi quyền giám sát']
-  revoked_by_user_id integer [ref: > user_accounts.id, note: 'MỚI v9.2 — ai thực hiện hành động revoke']
-  created_at timestamp [not null, default: `now()`]
-
-  Note: '''
-    SupervisionRelationship — Bước 1.6. Nguồn quyền cho mọi permission check.
-    CẢI THIỆN v9.1 (G): thêm revoked_at — trước đây không có cách nào gỡ
-    một supervisor khỏi hồ sơ trẻ mà không hard-delete, làm mất lịch sử
-    "ai từng có quyền giám sát trẻ khi nào" (vi phạm nguyên tắc Auditability).
-    Mọi permission check phải lọc revoked_at IS NULL.
-    CẢI THIỆN v9.2 (H): thêm revoked_by_user_id — có revoked_at nhưng
-    không biết AI thu hồi thì audit trail vẫn không trọn vẹn.
-    Luồng 1 v41 Bước 1.6b: gỡ hoặc tự rời quan hệ giám sát không đổi
-    trạng thái hồ sơ trẻ; thao tác phải hủy các yêu cầu pending liên quan
-    và thu hồi Child Session do người giám sát đó mở.
-  '''
-}
-
-Table supervision_permissions {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  supervision_relationship_id integer [not null, ref: > supervision_relationships.id]
-  permission permission_enum [not null]
-
-  Note: 'Supervisor Permission Set — Bước 1.7 (Least privilege).'
-}
-
-Table supervision_permission_requests {
-  id integer [pk, increment]
-  supervision_relationship_id integer [not null, ref: > supervision_relationships.id]
-  requester_user_id integer [not null, ref: > user_accounts.id]
-  status permission_request_status_enum [not null, default: 'pending']
-  responded_at timestamp
-  responded_by_user_id integer [ref: > user_accounts.id]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-
-  Note: 'Yêu cầu thay đổi bộ quyền của Additional Supervisor. Owner hoặc Additional Supervisor đều có thể tạo request; bên còn lại accept/reject.'
-}
-
-Table supervision_permission_request_items {
-  id integer [pk, increment]
-  supervision_permission_request_id integer [not null, ref: > supervision_permission_requests.id]
-  permission permission_enum [not null]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-
-  Note: 'Danh sách quyền được đề xuất trong một permission request.'
-}
-
-Table ownership_transfer_requests {
-  id integer [pk, increment]
-  child_profile_id integer [not null, ref: > child_profiles.id]
-  current_owner_user_id integer [not null, ref: > user_accounts.id]
-  target_supervisor_user_id integer [not null, ref: > user_accounts.id]
-  status ownership_transfer_request_status_enum [not null, default: 'pending']
-  responded_at timestamp
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-
-  Note: 'Yêu cầu chuyển Owner hai chiều: Owner có thể đề xuất chuyển quyền, hoặc Additional Supervisor có thể yêu cầu nhận Owner.'
 }
 
 Table class_groups {
@@ -1892,9 +1738,7 @@ Table data_requests {
     (legal_basis_note bắt buộc trong trường hợp này). notification_type=
     data_request_sla_warning nên kích hoạt ở mốc 48 giờ kể từ created_at
     (còn 24 giờ trước hạn) nếu status vẫn 'pending'. HỆ QUẢ cho Luồng 1:
-    vì Anonymize là mặc định, Ownership Transfer (Owner=Parent muốn rời
-    hồ sơ) trở thành một luồng cần thiết kế thêm, không còn vô nghĩa
-    như giả định ban đầu — xem Luồng 1, Mục 9.
+    xóa tài khoản User phải xóa và ẩn danh mọi hồ sơ trẻ do User sở hữu.
   '''
 }
 
@@ -2211,11 +2055,10 @@ Table organization_permissions {
   created_at timestamp [not null, default: `now()`]
 
   Note: '''
-    MỚI v9.3 (Bước 7.2c) — mô phỏng đúng cơ chế supervision_permissions
-    ở Luồng 1. CHỈ áp dụng cho organization_memberships.org_role='teacher'
+    MỚI v9.3 (Bước 7.2c) — quyền theo từng thành viên. CHỈ áp dụng cho organization_memberships.org_role='teacher'
     — School Admin KHÔNG BAO GIỜ có dòng nào ở đây; quyền của School
     Admin luôn kiểm tra NGẦM ĐỊNH qua code (org_role='school_admin' ->
-    full access), tương tự Owner ở Luồng 1 (Bước 1.2b). Tránh rủi ro 1
+    full access). Tránh rủi ro 1
     School Admin vô tình xóa/sửa nhầm dòng permission của School Admin
     khác, tự khóa quyền lẫn nhau.
 
@@ -2236,7 +2079,7 @@ Table organization_permissions {
     UI nên hiển thị preset (Cấp 0/Cấp 1) thay vì 7 checkbox rời rạc,
     kèm tùy chọn "Tùy chỉnh chi tiết" cho ai cần linh hoạt hơn preset.
 
-    RÀO CHẮN BẮT BUỘC (đối xứng BR-1.9 ở Luồng 1): không cho phép hạ
+    RÀO CHẮN BẮT BUỘC: không cho phép hạ
     cấp org_role hoặc set organization_memberships.status='removed'
     cho School Admin CUỐI CÙNG đang active của 1 Organization — phải
     luôn còn ít nhất 1 School Admin active. Vi phạm thì từ chối thao
@@ -2262,12 +2105,12 @@ Table org_consent_records {
 
   Note: '''
     OrgConsentRecord — Bước 7.3. Đồng thuận RIÊNG, tách biệt hoàn toàn
-    với SupervisionRelationship (Luồng 1) — cho phép School Admin xem dữ
+    với quyền chủ hồ sơ trẻ — cho phép School Admin xem dữ
     liệu học tập chi tiết. Mặc định pending/rejected cho đến khi Parent
     chủ động Accept (opt-in, KHÔNG opt-out).
     Đổi ý hoặc un-enroll: đóng dòng bằng revoked_at=now() + tạo dòng
     mới nếu cần — KHÔNG ghi đè status trực tiếp, theo đúng pattern
-    supervision_relationships.
+    bản ghi consent cũ.
     Re-enroll (rời rồi quay lại đúng Organization): PHẢI tạo dòng MỚI ở
     pending, KHÔNG tự động kế thừa quyết định cũ (giữ nguyên tinh thần
     opt-in nghiêm ngặt — hoàn cảnh gia đình có thể đã thay đổi). Bản ghi

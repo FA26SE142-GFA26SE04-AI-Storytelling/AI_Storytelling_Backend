@@ -4,7 +4,7 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.AuditLogs.Services;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Domain.Entities;
 using Xunit;
 
@@ -14,7 +14,7 @@ public class AuditLogQueryServiceTests
 {
     private readonly Mock<IGenericRepository<AuditLog>> _auditLogRepo = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
-    private readonly Mock<ISupervisionAccessGuard> _accessGuard = new();
+    private readonly Mock<IChildProfileAccessGuard> _accessGuard = new();
     private readonly AuditLogQueryService _sut;
 
     public AuditLogQueryServiceTests()
@@ -50,7 +50,7 @@ public class AuditLogQueryServiceTests
     [Fact]
     public async Task GetChildProfileAuditLogAsync_CallerNotSupervisor_PropagatesGuardException()
     {
-        _accessGuard.Setup(guard => guard.EnsureActiveSupervisionAsync(
+        _accessGuard.Setup(guard => guard.EnsureOwnerAsync(
                 42, 999, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ForbiddenException("Bạn không có quyền giám sát hồ sơ trẻ này."));
 
@@ -66,9 +66,9 @@ public class AuditLogQueryServiceTests
     public async Task GetChildProfileAuditLogAsync_ActiveSupervisor_ReturnsOnlyRequestedProfileLogs()
     {
         Expression<Func<AuditLog, bool>>? capturedFilter = null;
-        _accessGuard.Setup(guard => guard.EnsureActiveSupervisionAsync(
+        _accessGuard.Setup(guard => guard.EnsureOwnerAsync(
                 42, 7, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new SupervisionRelationship());
+            .ReturnsAsync(new ChildProfile { Id = 42, OwnerUserId = 7 });
         _auditLogRepo.Setup(repo => repo.GetPagedAsync(
                 2, 5, It.IsAny<Expression<Func<AuditLog, bool>>>(),
                 It.IsAny<Func<IQueryable<AuditLog>, IOrderedQueryable<AuditLog>>>(), null,

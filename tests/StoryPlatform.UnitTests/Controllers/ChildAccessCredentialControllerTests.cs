@@ -144,6 +144,6 @@ public class ChildAccessCredentialControllerTests
             typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), false)
             .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>());
 
-        Assert.Equal("Parent", authorize.Roles);
+        Assert.Equal("User", authorize.Roles);
     }
 }

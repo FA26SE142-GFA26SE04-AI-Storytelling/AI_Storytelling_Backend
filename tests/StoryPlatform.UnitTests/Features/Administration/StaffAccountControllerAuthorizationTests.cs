@@ -12,7 +12,7 @@ public class StaffAccountControllerAuthorizationTests
     [Theory]
     [InlineData(UserRole.Administrator, true)]
     [InlineData(UserRole.Moderator, false)]
-    [InlineData(UserRole.Parent, false)]
+    [InlineData(UserRole.User, false)]
     public async Task Actions_RequireAdministratorOnly(UserRole role, bool expected)
     {
         foreach (var actionName in new[]

@@ -31,8 +31,6 @@ public class DataRequestServiceTests
     private readonly Mock<IGenericRepository<Recommendation>> _recommendationRepository = new();
     private readonly Mock<IGenericRepository<TelemetryLog>> _telemetryLogRepository = new();
     private readonly Mock<IGenericRepository<QuizAttempt>> _quizAttemptRepository = new();
-    private readonly Mock<IGenericRepository<AssignmentRecipient>> _assignmentRecipientRepository = new();
-    private readonly Mock<IGenericRepository<Assignment>> _assignmentRepository = new();
     private readonly Mock<IGenericRepository<Story>> _storyRepository = new();
     private readonly Mock<IGenericRepository<UserAccount>> _userRepository = new();
     private readonly Mock<IGenericRepository<ChildAccessCredential>> _credentialRepository = new();
@@ -61,8 +59,6 @@ public class DataRequestServiceTests
         _unitOfWork.Setup(work => work.Repository<Recommendation>()).Returns(_recommendationRepository.Object);
         _unitOfWork.Setup(work => work.Repository<TelemetryLog>()).Returns(_telemetryLogRepository.Object);
         _unitOfWork.Setup(work => work.Repository<QuizAttempt>()).Returns(_quizAttemptRepository.Object);
-        _unitOfWork.Setup(work => work.Repository<AssignmentRecipient>()).Returns(_assignmentRecipientRepository.Object);
-        _unitOfWork.Setup(work => work.Repository<Assignment>()).Returns(_assignmentRepository.Object);
         _unitOfWork.Setup(work => work.Repository<Story>()).Returns(_storyRepository.Object);
         _unitOfWork.Setup(work => work.Repository<UserAccount>()).Returns(_userRepository.Object);
         _unitOfWork.Setup(work => work.Repository<ChildAccessCredential>()).Returns(_credentialRepository.Object);
@@ -97,12 +93,6 @@ public class DataRequestServiceTests
         _quizAttemptRepository.Setup(repo => repo.FindAsync(
                 It.IsAny<Expression<Func<QuizAttempt, bool>>>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<QuizAttempt>());
-        _assignmentRecipientRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<AssignmentRecipient, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Array.Empty<AssignmentRecipient>());
-        _assignmentRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<Assignment, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Array.Empty<Assignment>());
         _storyRepository.Setup(repo => repo.FindAsync(
                 It.IsAny<Expression<Func<Story, bool>>>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<Story>());

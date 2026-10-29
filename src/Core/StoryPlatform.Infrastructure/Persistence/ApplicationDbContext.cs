@@ -71,10 +71,6 @@ public class ApplicationDbContext : DbContext
     public DbSet<Badge> Badges => Set<Badge>();
     public DbSet<VocabularyNotebookEntry> VocabularyNotebookEntries => Set<VocabularyNotebookEntry>();
 
-    // Assignments
-    public DbSet<Assignment> Assignments => Set<Assignment>();
-    public DbSet<AssignmentRecipient> AssignmentRecipients => Set<AssignmentRecipient>();
-
     // Learning intelligence & governance
     public DbSet<InterventionCase> InterventionCases => Set<InterventionCase>();
     public DbSet<AiGovernanceMetric> AiGovernanceMetrics => Set<AiGovernanceMetric>();

@@ -55,10 +55,28 @@ public sealed class Luong1SchemaAlignmentModelTests
     [InlineData("SupervisionPermissionRequest")]
     [InlineData("SupervisionPermissionRequestItem")]
     [InlineData("OwnershipTransferRequest")]
+    [InlineData("Assignment")]
+    [InlineData("AssignmentRecipient")]
     public void Model_does_not_contain_removed_supervision_entities(string entityName)
     {
         using var context = CreateModelOnlyContext();
         Assert.Null(context.Model.FindEntityType($"StoryPlatform.Domain.Entities.{entityName}"));
+    }
+
+    [Fact]
+    public void ReadingSession_has_no_assignment_recipient_column()
+    {
+        using var context = CreateModelOnlyContext();
+        var readingSession = context.Model.FindEntityType(typeof(ReadingSession))!;
+        Assert.Null(readingSession.FindProperty("AssignmentRecipientId"));
+    }
+
+    [Theory]
+    [InlineData("AssignmentCancelled")]
+    [InlineData("StoryShared")]
+    public void NotificationType_does_not_define_removed_teacher_values(string name)
+    {
+        Assert.False(Enum.TryParse<NotificationType>(name, out _));
     }
 
     [Fact]

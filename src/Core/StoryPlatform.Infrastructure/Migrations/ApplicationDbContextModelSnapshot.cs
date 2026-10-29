@@ -100,103 +100,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("ai_governance_metrics", (string)null);
                 });
 
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.Assignment", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("AssignedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("AssignedByUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("ChildProfileId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("DueAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<int>("StoryId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AssignedByUserId");
-
-                    b.HasIndex("ChildProfileId");
-
-                    b.HasIndex("StoryId");
-
-                    b.ToTable("assignments", (string)null);
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.AssignmentRecipient", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("AssignmentId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("CancelledAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("CancelledByUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("ChildProfileId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CancelledByUserId");
-
-                    b.HasIndex("ChildProfileId");
-
-                    b.HasIndex("AssignmentId", "ChildProfileId")
-                        .IsUnique();
-
-                    b.ToTable("assignment_recipients", (string)null);
-                });
-
             modelBuilder.Entity("StoryPlatform.Domain.Entities.AuditLog", b =>
                 {
                     b.Property<int>("Id")
@@ -2473,9 +2376,6 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<int?>("AssignmentRecipientId")
-                        .HasColumnType("integer");
-
                     b.Property<int?>("ChildAccessCredentialId")
                         .HasColumnType("integer");
 
@@ -2528,8 +2428,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("AssignmentRecipientId");
 
                     b.HasIndex("ChildAccessCredentialId");
 
@@ -4381,58 +4279,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("ChildProfile");
                 });
 
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.Assignment", b =>
-                {
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "AssignedByUser")
-                        .WithMany()
-                        .HasForeignKey("AssignedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
-                        .WithMany()
-                        .HasForeignKey("ChildProfileId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("StoryPlatform.Domain.Entities.Story", "Story")
-                        .WithMany()
-                        .HasForeignKey("StoryId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("AssignedByUser");
-
-                    b.Navigation("ChildProfile");
-
-                    b.Navigation("Story");
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.AssignmentRecipient", b =>
-                {
-                    b.HasOne("StoryPlatform.Domain.Entities.Assignment", "Assignment")
-                        .WithMany()
-                        .HasForeignKey("AssignmentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "CancelledByUser")
-                        .WithMany()
-                        .HasForeignKey("CancelledByUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
-                        .WithMany()
-                        .HasForeignKey("ChildProfileId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Assignment");
-
-                    b.Navigation("CancelledByUser");
-
-                    b.Navigation("ChildProfile");
-                });
-
             modelBuilder.Entity("StoryPlatform.Domain.Entities.AuditLog", b =>
                 {
                     b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "ActorUser")
@@ -5195,11 +5041,6 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadingSession", b =>
                 {
-                    b.HasOne("StoryPlatform.Domain.Entities.AssignmentRecipient", "AssignmentRecipient")
-                        .WithMany()
-                        .HasForeignKey("AssignmentRecipientId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("StoryPlatform.Domain.Entities.ChildAccessCredential", "ChildAccessCredential")
                         .WithMany()
                         .HasForeignKey("ChildAccessCredentialId")
@@ -5231,8 +5072,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("SupervisorSessionId")
                         .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("AssignmentRecipient");
 
                     b.Navigation("ChildAccessCredential");
 

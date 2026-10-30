@@ -8,7 +8,7 @@ INSERT INTO child_roadmap_items (
     "RemovedAt", "RemovedByUserId", "CreatedAt", "IsDeleted"
 )
 VALUES
-    (1, 1, 1, 1, 'Completed', NULL, 'Manual', NULL, 2, 'Con doc truoc truyen nay nhe', 2, NULL,
+    (1, 1, 1, 1, 'Completed', NULL, 'Manual', NULL, 2, 'Con đọc trước truyện này nhé', 2, NULL,
         NOW() - INTERVAL '6 days', NOW() - INTERVAL '5 days', NULL, NULL, NULL, NOW() - INTERVAL '7 days', false),
     (2, 1, 3, 2, 'Open', NULL, 'Manual', NULL, 2, NULL, 3, NOW() + INTERVAL '2 days',
         NOW() - INTERVAL '1 day', NULL, NULL, NULL, NULL, NOW() - INTERVAL '7 days', false),

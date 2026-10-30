@@ -7,7 +7,7 @@ VALUES
     (4, 4, 'PageViewed', '{"page":5}', NOW() - INTERVAL '7 days', NOW() - INTERVAL '7 days', false),
     (5, 5, 'QuizCompleted', '{"score":100}', NOW() - INTERVAL '6 days', NOW() - INTERVAL '6 days', false),
     (6, 6, 'TtsStarted', '{}', NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days', false),
-    (7, 7, 'VocabularyOpened', '{"term":"sang tao"}', NOW() - INTERVAL '4 days', NOW() - INTERVAL '4 days', false),
+    (7, 7, 'VocabularyOpened', '{"term":"sáng tạo"}', NOW() - INTERVAL '4 days', NOW() - INTERVAL '4 days', false),
     (8, 8, 'StoryFavorited', '{"storyId":8}', NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days', false),
     (9, 9, 'QuizAnswered', '{"correct":true}', NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days', false),
     (10, 10, 'BadgeUnlocked', '{"badge":"FAST_READER"}', NOW() - INTERVAL '1 days', NOW() - INTERVAL '1 days', false)

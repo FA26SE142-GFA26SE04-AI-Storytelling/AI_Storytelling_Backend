@@ -148,6 +148,10 @@ public sealed partial class MediaGenerationService
                 foreach (var segment in segments.OrderBy(x => x.SegmentOrder))
                     await EnsureSegmentAudioAsync(child.Id, token, child.StoryId, versionId, context, scene, segment, ct);
             }
+            var vocabulary = await _unitOfWork.Repository<StoryVocabulary>().FindAsync(
+                x => x.StoryVersionId == versionId && !x.IsDeleted, cancellationToken: ct);
+            foreach (var word in vocabulary.OrderBy(x => x.Id))
+                await EnsureVocabularyAudioAsync(child.Id, token, child.StoryId, versionId, context, word, ct);
             await CompleteBranchAsync(child, token, context.Id, ct);
             return MediaJobProcessResult.Completed;
         }

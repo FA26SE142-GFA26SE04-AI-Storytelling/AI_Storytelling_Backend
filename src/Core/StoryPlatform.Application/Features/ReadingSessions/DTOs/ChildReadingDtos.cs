@@ -80,6 +80,7 @@ public class ReadingVocabularyDto
 {
     public int Id { get; set; }
     public string Term { get; set; } = string.Empty;
+    public string? AudioUrl { get; set; }
 }
 
 public class SaveProgressRequestDto
@@ -149,6 +150,7 @@ public class VocabularyDefinitionDto
     public string Term { get; set; } = string.Empty;
     public string Definition { get; set; } = string.Empty;
     public bool IsCollected { get; set; }
+    public string? AudioUrl { get; set; }
 }
 
 public class CollectVocabularyRequestDto
@@ -162,6 +164,7 @@ public class NotebookEntryDto
     public int VocabularyId { get; set; }
     public string Term { get; set; } = string.Empty;
     public string Definition { get; set; } = string.Empty;
+    public string? AudioUrl { get; set; }
     public int StoryId { get; set; }
     public string StoryTitle { get; set; } = string.Empty;
     /// <summary>Cảnh đầu tiên có từ này, để nút "Đọc lại đoạn này" nhảy tới; null nếu không tìm thấy.</summary>

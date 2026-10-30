@@ -239,6 +239,8 @@ public class ChildReadingService : IChildReadingService
             .OrderByDescending(asset => asset.CompletedAt ?? asset.CreatedAt).ThenByDescending(asset => asset.Id).ToList();
         var vocabulary = await _unitOfWork.Repository<StoryVocabulary>().FindAsync(
             word => word.StoryVersionId == versionId && !word.IsDeleted, cancellationToken: ct);
+        var vocabularyAudio = await VocabularyAudioLookup.FindUrlsAsync(
+            _unitOfWork, vocabulary.Select(word => word.Id).ToList(), ct);
 
         return new ReadingContentDto
         {
@@ -268,7 +270,10 @@ public class ChildReadingService : IChildReadingService
                     }).ToList()
             }).ToList(),
             Vocabulary = vocabulary.OrderBy(word => word.Id)
-                .Select(word => new ReadingVocabularyDto { Id = word.Id, Term = word.Term }).ToList()
+                .Select(word => new ReadingVocabularyDto
+                {
+                    Id = word.Id, Term = word.Term, AudioUrl = vocabularyAudio.GetValueOrDefault(word.Id)
+                }).ToList()
         };
     }
 

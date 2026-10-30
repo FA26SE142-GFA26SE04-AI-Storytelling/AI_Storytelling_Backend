@@ -113,9 +113,12 @@ public sealed record SceneMediaItem(int SceneId, int SceneIndex, IReadOnlyList<I
 public sealed record AudioMediaItem(int SegmentId, int SegmentOrder, string Text, int? AssetId,
     string Status, string? Url, string? WordTimings);
 
+public sealed record VocabularyAudioMediaItem(int VocabularyId, string Term, int? AssetId, string Status, string? Url);
+
 public sealed record StoryMediaPackage(int StoryId, int StoryVersionId, IReadOnlyList<SceneMediaItem> Scenes)
 {
     public IReadOnlyList<MediaReplacementItem> Replacements { get; init; } = [];
+    public IReadOnlyList<VocabularyAudioMediaItem> Vocabulary { get; init; } = [];
     public bool IsReady { get; init; }
     public int PackageRevision { get; init; }
     public bool IsGenerated { get; init; }

@@ -11,7 +11,7 @@ public sealed class AuthApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
     [Fact]
     public async Task Login_ValidCredentials_Returns200WithTokens()
     {
-        var user = await factory.AddUserAsync(UserRole.Parent);
+        var user = await factory.AddUserAsync(UserRole.User);
 
         var response = await factory.CreateClient().PostAsJsonAsync("/api/v1/Auth/login",
             new { identifier = user.Username, password = ApiFactory.Password });
@@ -20,13 +20,13 @@ public sealed class AuthApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var data = (await ReadJsonAsync(response)).GetProperty("data");
         Assert.False(string.IsNullOrEmpty(data.GetProperty("accessToken").GetString()));
         Assert.False(string.IsNullOrEmpty(data.GetProperty("refreshToken").GetString()));
-        Assert.Equal("Parent", data.GetProperty("user").GetProperty("role").GetString());
+        Assert.Equal("User", data.GetProperty("user").GetProperty("role").GetString());
     }
 
     [Fact]
     public async Task Login_WrongPassword_Returns400()
     {
-        var user = await factory.AddUserAsync(UserRole.Parent);
+        var user = await factory.AddUserAsync(UserRole.User);
 
         var response = await factory.CreateClient().PostAsJsonAsync("/api/v1/Auth/login",
             new { identifier = user.Username, password = "Wrong@12345" });
@@ -47,7 +47,7 @@ public sealed class AuthApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
     [Fact]
     public async Task Login_UnverifiedAccount_Returns403()
     {
-        var user = await factory.AddUserAsync(UserRole.Parent, status: AccountStatus.Registered);
+        var user = await factory.AddUserAsync(UserRole.User, status: AccountStatus.Registered);
 
         var response = await factory.CreateClient().PostAsJsonAsync("/api/v1/Auth/login",
             new { identifier = user.Username, password = ApiFactory.Password });
@@ -58,7 +58,7 @@ public sealed class AuthApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
     [Fact]
     public async Task RefreshToken_ValidToken_Returns200WithRotatedToken()
     {
-        var user = await factory.AddUserAsync(UserRole.Parent);
+        var user = await factory.AddUserAsync(UserRole.User);
         var client = factory.CreateClient();
         var login = (await ReadJsonAsync(await client.PostAsJsonAsync("/api/v1/Auth/login",
             new { identifier = user.Username, password = ApiFactory.Password }))).GetProperty("data");
@@ -117,7 +117,7 @@ public sealed class AuthApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
     [Fact]
     public async Task Register_DuplicateEmail_Returns400()
     {
-        var existing = await factory.AddUserAsync(UserRole.Parent);
+        var existing = await factory.AddUserAsync(UserRole.User);
 
         var response = await factory.CreateClient().PostAsJsonAsync("/api/v1/Auth/register", new
         {
@@ -139,7 +139,7 @@ public sealed class AuthApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
     [Fact]
     public async Task Me_TokenOfSuspendedAccount_Returns401()
     {
-        var user = await factory.AddUserAsync(UserRole.Parent);
+        var user = await factory.AddUserAsync(UserRole.User);
         var client = factory.ClientFor(user);
         await factory.WithDbAsync(async db => (await db.Users.FindAsync(user.Id))!.Status = AccountStatus.Suspended);
 

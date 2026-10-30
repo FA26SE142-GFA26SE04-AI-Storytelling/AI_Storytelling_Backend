@@ -114,14 +114,14 @@ public sealed partial class AIStoryInputServiceTests
     }
 
     [Fact]
-    public async Task GetContextAsync_ParentWithoutRelationship_ThrowsForbidden()
+    public async Task GetContextAsync_UserNotChildOwner_ThrowsForbidden()
     {
         var store = CreateEligibleUnitOfWork();
-        store.Items<SupervisionRelationship>().Single().RevokedAt = DateTime.UtcNow;
+        store.Items<ChildProfile>().Single().OwnerUserId = 99;
 
         var error = await Assert.ThrowsAsync<ForbiddenException>(() => ParentService(store).GetContextAsync(1, 1));
 
-        Assert.Equal("Bạn không có quan hệ giám sát đang hiệu lực với Child Profile này.", error.Message);
+        Assert.Equal("Bạn không phải người quản lý Child Profile này.", error.Message);
     }
 
     [Fact]
@@ -373,7 +373,7 @@ public sealed partial class AIStoryInputServiceTests
     // ---- Progress ----
 
     [Fact]
-    public async Task GetProgressAsync_ParentWithPermission_ReturnsAcceptedProgress()
+    public async Task GetProgressAsync_ChildOwner_ReturnsAcceptedProgress()
     {
         var store = CreateEligibleUnitOfWork();
         var service = ParentService(store);

@@ -7,7 +7,7 @@ namespace StoryPlatform.IntegrationTests.Api;
 internal static class ApiSeed
 {
     public static Task<ChildProfile> ChildAsync(ApiFactory factory, int ownerUserId,
-        ChildProfileStatus status = ChildProfileStatus.Active, bool withPolicies = true, params Permission[] permissions) =>
+        ChildProfileStatus status = ChildProfileStatus.Active, bool withPolicies = true) =>
         factory.WithDbAsync(async db =>
         {
             var child = new ChildProfile
@@ -15,13 +15,6 @@ internal static class ApiSeed
                 OwnerUserId = ownerUserId, Nickname = "Bé Mây", AgeBand = AgeBand.Age_6_8, Language = "vi", Status = status
             };
             db.ChildProfiles.Add(child);
-            var relationship = new SupervisionRelationship
-            {
-                ChildProfile = child, SupervisorUserId = ownerUserId, SupervisorRole = SupervisorRole.Owner
-            };
-            db.SupervisionRelationships.Add(relationship);
-            foreach (var permission in permissions)
-                db.SupervisionPermissions.Add(new SupervisionPermission { SupervisionRelationship = relationship, Permission = permission });
             if (withPolicies)
             {
                 db.LearningProfiles.Add(new LearningProfile { ChildProfile = child, ReadingLevel = 2 });

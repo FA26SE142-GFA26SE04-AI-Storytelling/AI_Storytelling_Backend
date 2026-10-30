@@ -1,6 +1,6 @@
 using Moq;
 using StoryPlatform.Application.Common.Exceptions;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Services;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Services;
 using StoryPlatform.Application.Features.ChildRoadmaps;
 using StoryPlatform.Application.Features.ChildRoadmaps.Services;
 using StoryPlatform.Domain.Entities;
@@ -22,7 +22,7 @@ public class ChildRoadmapServiceBranchTests
         var eligibility = new ChildRoadmapEligibility(_h.UnitOfWork.Object);
         _sut = new ChildRoadmapService(
             _h.UnitOfWork.Object,
-            new SupervisionAccessGuard(_h.UnitOfWork.Object),
+            new ChildProfileAccessGuard(_h.UnitOfWork.Object),
             eligibility,
             new ChildRoadmapInserter(_h.UnitOfWork.Object),
             new ChildRoadmapAdvancer(_h.UnitOfWork.Object, eligibility),
@@ -160,7 +160,7 @@ public class ChildRoadmapServiceBranchTests
     }
 
     [Fact]
-    public async Task AddStoryAsync_CreatorLibraryStory_IsAddedWithoutStoryPermissionCheck()
+    public async Task AddStoryAsync_CreatorLibraryStory_IsAddedWithoutStoryOwnershipCheck()
     {
         var story = _h.Stories.Single(item => item.Id == 10);
         story.Scope = StoryScope.Creator;

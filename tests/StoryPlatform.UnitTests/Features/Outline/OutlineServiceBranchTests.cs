@@ -25,7 +25,7 @@ public sealed class OutlineServiceBranchTests
     // ---- Read endpoints & review authorization ----
 
     [Fact]
-    public async Task GetVersionsAsync_SupervisorWithGeneratePermission_ReturnsAllVersionsInOrder()
+    public async Task GetVersionsAsync_ChildOwner_ReturnsAllVersionsInOrder()
     {
         var (store, service, _, _) = await ReadyAsync();
         await service.EditAsync(1, 1, 1, Edit("Tiêu đề hai"));
@@ -112,10 +112,10 @@ public sealed class OutlineServiceBranchTests
     }
 
     [Fact]
-    public async Task GetCurrentAsync_ParentWithoutSupervisionRelationship_ThrowsForbidden()
+    public async Task GetCurrentAsync_UserNotChildOwner_ThrowsForbidden()
     {
         var store = OutlineServiceTests.Seed();
-        store.Seed(new UserAccount { Id = 2, Role = UserRole.Parent, Status = AccountStatus.Active });
+        store.Seed(new UserAccount { Id = 2, Role = UserRole.User, Status = AccountStatus.Active });
 
         var error = await Assert.ThrowsAsync<ForbiddenException>(() => Service(store).GetCurrentAsync(2, 1));
 
@@ -123,10 +123,10 @@ public sealed class OutlineServiceBranchTests
     }
 
     [Fact]
-    public async Task GetCurrentAsync_RelationshipWithoutGenerateOrApprovePermission_ThrowsForbidden()
+    public async Task GetCurrentAsync_ChildProfileDeleted_ThrowsForbidden()
     {
-        var store = OutlineServiceTests.Seed(includeApprovePermission: false);
-        store.Repository<SupervisionPermission>().Delete(store.Items<SupervisionPermission>().Single());
+        var store = OutlineServiceTests.Seed();
+        store.Items<ChildProfile>().Single().Status = ChildProfileStatus.Deleted;
 
         var error = await Assert.ThrowsAsync<ForbiddenException>(() => Service(store).GetCurrentAsync(1, 1));
 
@@ -134,17 +134,14 @@ public sealed class OutlineServiceBranchTests
     }
 
     [Fact]
-    public async Task GetCurrentAsync_RelationshipWithOnlyApprovePermission_ReturnsProgress()
+    public async Task GetCurrentAsync_ParentStoryWithoutChildProfile_ThrowsForbidden()
     {
         var store = OutlineServiceTests.Seed();
-        store.Repository<SupervisionPermission>().Delete(
-            store.Items<SupervisionPermission>().Single(item => item.Permission == Permission.GenerateStory));
+        store.Items<Story>().Single().ChildProfileId = null;
 
-        var progress = await Service(store).GetCurrentAsync(1, 1);
+        var error = await Assert.ThrowsAsync<ForbiddenException>(() => Service(store).GetCurrentAsync(1, 1));
 
-        Assert.Equal("draft", progress.StoryStatus);
-        Assert.Equal("generate_outline", progress.ActiveOperation);
-        Assert.Equal("pending", progress.ActiveJobStatus);
+        Assert.Equal(ForbiddenMessage, error.Message);
     }
 
     // ---- Edit ----
@@ -183,13 +180,12 @@ public sealed class OutlineServiceBranchTests
     }
 
     [Fact]
-    public async Task EditAsync_WithoutGeneratePermission_ThrowsForbidden()
+    public async Task EditAsync_UserNotChildOwner_ThrowsForbidden()
     {
         var (store, service, _, _) = await ReadyAsync();
-        store.Repository<SupervisionPermission>().Delete(
-            store.Items<SupervisionPermission>().Single(item => item.Permission == Permission.GenerateStory));
+        store.Seed(new UserAccount { Id = 2, Role = UserRole.User, Status = AccountStatus.Active });
 
-        var error = await Assert.ThrowsAsync<ForbiddenException>(() => service.EditAsync(1, 1, 1, Edit("Mới")));
+        var error = await Assert.ThrowsAsync<ForbiddenException>(() => service.EditAsync(2, 1, 1, Edit("Mới")));
 
         Assert.Equal(ForbiddenMessage, error.Message);
     }
@@ -470,14 +466,13 @@ public sealed class OutlineServiceBranchTests
     }
 
     [Fact]
-    public async Task RejectAsync_WithoutApprovePermission_ThrowsForbidden()
+    public async Task RejectAsync_UserNotChildOwner_ThrowsForbidden()
     {
-        var store = OutlineServiceTests.Seed(includeApprovePermission: false);
-        var service = Service(store);
-        await service.ProcessNextAsync();
+        var (store, service, _, _) = await ReadyAsync();
+        store.Seed(new UserAccount { Id = 2, Role = UserRole.User, Status = AccountStatus.Active });
 
         var error = await Assert.ThrowsAsync<ForbiddenException>(() =>
-            service.RejectAsync(1, 1, 1, new RejectOutlineRequestDto { Reason = "Không phù hợp" }));
+            service.RejectAsync(2, 1, 1, new RejectOutlineRequestDto { Reason = "Không phù hợp" }));
 
         Assert.Equal(ForbiddenMessage, error.Message);
     }

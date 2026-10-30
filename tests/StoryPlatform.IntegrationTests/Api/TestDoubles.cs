@@ -35,12 +35,6 @@ public sealed class RecordingEmailSender : IEmailSender
     public Task SendDataRequestCompletedEmailAsync(string toEmail, string toName, string requestType, string result, string? reason, CancellationToken cancellationToken = default) =>
         Task.CompletedTask;
 
-    public Task SendSupervisionInvitationEmailAsync(string toEmail, string inviterName, string invitationCode, CancellationToken cancellationToken = default) =>
-        Task.CompletedTask;
-
-    public Task SendSupervisionInvitationOtpEmailAsync(string toEmail, string otp, CancellationToken cancellationToken = default) =>
-        Task.CompletedTask;
-
     public Task SendAccountProvisionedEmailAsync(string toEmail, string toName, string creatorName, string roleLabel, string rawSetPasswordToken, CancellationToken cancellationToken = default) =>
         Task.CompletedTask;
 

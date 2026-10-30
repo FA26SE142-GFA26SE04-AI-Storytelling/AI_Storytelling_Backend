@@ -151,8 +151,8 @@ public sealed class RateLimitingApiTests
     public async Task AiEndpoint_OverLimit_Returns429ForThatAccountOnly()
     {
         await using var factory = new RateLimitedApiFactory();
-        var first = await factory.ClientForNewUserAsync(UserRole.Parent);
-        var second = await factory.ClientForNewUserAsync(UserRole.Parent);
+        var first = await factory.ClientForNewUserAsync(UserRole.User);
+        var second = await factory.ClientForNewUserAsync(UserRole.User);
         const string url = "/api/v1/ai-story-input/requests";
 
         for (var i = 0; i < RateLimitedApiFactory.AiLimit; i++)

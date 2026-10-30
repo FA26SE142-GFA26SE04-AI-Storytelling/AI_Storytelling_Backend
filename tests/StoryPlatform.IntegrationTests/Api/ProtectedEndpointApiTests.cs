@@ -14,9 +14,9 @@ public sealed class ChildProfileApiTests(ApiFactory factory) : IClassFixture<Api
     private static object NewChild(string nickname = "Bé Na") => new { nickname, ageBand = "Age_6_8", language = "vi" };
 
     [Fact]
-    public async Task Create_Parent_Returns201AsDraftOwnedByCaller()
+    public async Task Create_User_Returns201AsDraftOwnedByCaller()
     {
-        var parent = await factory.AddUserAsync(UserRole.Parent);
+        var parent = await factory.AddUserAsync(UserRole.User);
 
         var response = await factory.ClientFor(parent).PostAsJsonAsync("/api/v1/ChildProfile", NewChild());
 
@@ -24,8 +24,7 @@ public sealed class ChildProfileApiTests(ApiFactory factory) : IClassFixture<Api
         var data = (await ReadJsonAsync(response)).GetProperty("data");
         Assert.Equal("Draft", data.GetProperty("status").GetString());
         var id = data.GetProperty("id").GetInt32();
-        Assert.True(await factory.WithDbAsync(db => db.SupervisionRelationships.AnyAsync(
-            item => item.ChildProfileId == id && item.SupervisorUserId == parent.Id && item.SupervisorRole == SupervisorRole.Owner)));
+        Assert.Equal(parent.Id, await factory.WithDbAsync(async db => (await db.ChildProfiles.FindAsync(id))!.OwnerUserId));
     }
 
     [Fact]
@@ -40,7 +39,7 @@ public sealed class ChildProfileApiTests(ApiFactory factory) : IClassFixture<Api
     [InlineData(UserRole.Moderator)]
     [InlineData(UserRole.ContentCreator)]
     [InlineData(UserRole.Administrator)]
-    public async Task Create_NonParentRole_Returns403(UserRole role)
+    public async Task Create_NonUserRole_Returns403(UserRole role)
     {
         var response = await (await factory.ClientForNewUserAsync(role)).PostAsJsonAsync("/api/v1/ChildProfile", NewChild());
 
@@ -50,7 +49,7 @@ public sealed class ChildProfileApiTests(ApiFactory factory) : IClassFixture<Api
     [Fact]
     public async Task Create_EmptyNickname_Returns400()
     {
-        var response = await (await factory.ClientForNewUserAsync(UserRole.Parent)).PostAsJsonAsync("/api/v1/ChildProfile", NewChild(""));
+        var response = await (await factory.ClientForNewUserAsync(UserRole.User)).PostAsJsonAsync("/api/v1/ChildProfile", NewChild(""));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("Biệt danh của trẻ không được để trống.", await response.Content.ReadAsStringAsync());
@@ -59,7 +58,7 @@ public sealed class ChildProfileApiTests(ApiFactory factory) : IClassFixture<Api
     [Fact]
     public async Task Activate_OwnerWithPoliciesAndConsent_Returns200Active()
     {
-        var parent = await factory.AddUserAsync(UserRole.Parent);
+        var parent = await factory.AddUserAsync(UserRole.User);
         var child = await ApiSeed.ChildAsync(factory, parent.Id, ChildProfileStatus.Draft);
 
         var response = await factory.ClientFor(parent).PatchAsync($"/api/v1/ChildProfile/{child.Id}/activate", null);
@@ -77,12 +76,12 @@ public sealed class ChildProfileApiTests(ApiFactory factory) : IClassFixture<Api
     }
 
     [Fact]
-    public async Task Activate_ParentWithoutSupervision_Returns403()
+    public async Task Activate_UserNotChildOwner_Returns403()
     {
-        var owner = await factory.AddUserAsync(UserRole.Parent);
+        var owner = await factory.AddUserAsync(UserRole.User);
         var child = await ApiSeed.ChildAsync(factory, owner.Id, ChildProfileStatus.Draft);
 
-        var response = await (await factory.ClientForNewUserAsync(UserRole.Parent))
+        var response = await (await factory.ClientForNewUserAsync(UserRole.User))
             .PatchAsync($"/api/v1/ChildProfile/{child.Id}/activate", null);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -92,7 +91,7 @@ public sealed class ChildProfileApiTests(ApiFactory factory) : IClassFixture<Api
     [Fact]
     public async Task Activate_ModeratorRole_Returns403()
     {
-        var owner = await factory.AddUserAsync(UserRole.Parent);
+        var owner = await factory.AddUserAsync(UserRole.User);
         var child = await ApiSeed.ChildAsync(factory, owner.Id, ChildProfileStatus.Draft);
 
         var response = await (await factory.ClientForNewUserAsync(UserRole.Moderator))
@@ -104,7 +103,7 @@ public sealed class ChildProfileApiTests(ApiFactory factory) : IClassFixture<Api
     [Fact]
     public async Task Activate_WithoutSafetyPolicy_Returns400()
     {
-        var parent = await factory.AddUserAsync(UserRole.Parent);
+        var parent = await factory.AddUserAsync(UserRole.User);
         var child = await ApiSeed.ChildAsync(factory, parent.Id, ChildProfileStatus.Draft, withPolicies: false);
 
         var response = await factory.ClientFor(parent).PatchAsync($"/api/v1/ChildProfile/{child.Id}/activate", null);
@@ -117,7 +116,7 @@ public sealed class ChildProfileApiTests(ApiFactory factory) : IClassFixture<Api
     [Fact]
     public async Task Activate_UnknownChild_Returns404()
     {
-        var response = await (await factory.ClientForNewUserAsync(UserRole.Parent)).PatchAsync("/api/v1/ChildProfile/987654/activate", null);
+        var response = await (await factory.ClientForNewUserAsync(UserRole.User)).PatchAsync("/api/v1/ChildProfile/987654/activate", null);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -132,10 +131,10 @@ public sealed class AIStoryInputApiTests(ApiFactory factory) : IClassFixture<Api
     };
 
     [Fact]
-    public async Task Submit_ParentWithGeneratePermission_Returns200AcceptedAndQueuesOutline()
+    public async Task Submit_ChildOwner_Returns200AcceptedAndQueuesOutline()
     {
-        var parent = await factory.AddUserAsync(UserRole.Parent);
-        var child = await ApiSeed.ChildAsync(factory, parent.Id, permissions: Permission.GenerateStory);
+        var parent = await factory.AddUserAsync(UserRole.User);
+        var child = await ApiSeed.ChildAsync(factory, parent.Id);
 
         var response = await factory.ClientFor(parent).PostAsJsonAsync("/api/v1/ai-story-input/requests", Submit(child.Id));
 
@@ -165,12 +164,12 @@ public sealed class AIStoryInputApiTests(ApiFactory factory) : IClassFixture<Api
     }
 
     [Fact]
-    public async Task Submit_ParentWithoutSupervision_Returns403AndCreatesNoStory()
+    public async Task Submit_UserNotChildOwner_Returns403AndCreatesNoStory()
     {
-        var owner = await factory.AddUserAsync(UserRole.Parent);
-        var child = await ApiSeed.ChildAsync(factory, owner.Id, permissions: Permission.GenerateStory);
+        var owner = await factory.AddUserAsync(UserRole.User);
+        var child = await ApiSeed.ChildAsync(factory, owner.Id);
 
-        var response = await (await factory.ClientForNewUserAsync(UserRole.Parent))
+        var response = await (await factory.ClientForNewUserAsync(UserRole.User))
             .PostAsJsonAsync("/api/v1/ai-story-input/requests", Submit(child.Id, "api-submit-0002"));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -178,23 +177,23 @@ public sealed class AIStoryInputApiTests(ApiFactory factory) : IClassFixture<Api
     }
 
     [Fact]
-    public async Task Submit_OwnerWithoutGeneratePermission_Returns403()
+    public async Task Submit_ChildProfileNotActive_Returns409()
     {
-        var parent = await factory.AddUserAsync(UserRole.Parent);
-        var child = await ApiSeed.ChildAsync(factory, parent.Id);
+        var parent = await factory.AddUserAsync(UserRole.User);
+        var child = await ApiSeed.ChildAsync(factory, parent.Id, ChildProfileStatus.Suspended);
 
         var response = await factory.ClientFor(parent).PostAsJsonAsync("/api/v1/ai-story-input/requests", Submit(child.Id, "api-submit-0003"));
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.Equal("Bạn chưa được cấp quyền Generate Story cho Child Profile này.",
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("Child Profile phải đang Active để tạo truyện.",
             (await ReadJsonAsync(response)).GetProperty("message").GetString());
     }
 
     [Fact]
     public async Task Submit_TopicTooShort_Returns400()
     {
-        var parent = await factory.AddUserAsync(UserRole.Parent);
-        var child = await ApiSeed.ChildAsync(factory, parent.Id, permissions: Permission.GenerateStory);
+        var parent = await factory.AddUserAsync(UserRole.User);
+        var child = await ApiSeed.ChildAsync(factory, parent.Id);
 
         var response = await factory.ClientFor(parent).PostAsJsonAsync("/api/v1/ai-story-input/requests",
             Submit(child.Id, "api-submit-0004", topic: "x"));
@@ -208,7 +207,7 @@ public sealed class StoryReviewApproveApiTests(ApiFactory factory) : IClassFixtu
     [Fact]
     public async Task Approve_OwnerOfReadyContent_Returns200AndQueuesMedia()
     {
-        var parent = await factory.AddUserAsync(UserRole.Parent);
+        var parent = await factory.AddUserAsync(UserRole.User);
         var child = await ApiSeed.ChildAsync(factory, parent.Id);
         var story = await ApiSeed.ParentStoryAsync(factory, parent.Id, child.Id, StoryStatus.ContentReview);
         var client = factory.ClientFor(parent);
@@ -232,7 +231,7 @@ public sealed class StoryReviewApproveApiTests(ApiFactory factory) : IClassFixtu
     [Theory]
     [InlineData(UserRole.Moderator)]
     [InlineData(UserRole.ContentCreator)]
-    public async Task Approve_RoleOutsideParentOrAdministrator_Returns403(UserRole role)
+    public async Task Approve_RoleOutsideUserOrAdministrator_Returns403(UserRole role)
     {
         var response = await (await factory.ClientForNewUserAsync(role)).PostAsync("/api/v1/stories/1/review/approve", null);
 
@@ -240,13 +239,13 @@ public sealed class StoryReviewApproveApiTests(ApiFactory factory) : IClassFixtu
     }
 
     [Fact]
-    public async Task Approve_ParentWithoutSupervision_Returns403()
+    public async Task Approve_UserNotChildOwner_Returns403()
     {
-        var owner = await factory.AddUserAsync(UserRole.Parent);
+        var owner = await factory.AddUserAsync(UserRole.User);
         var child = await ApiSeed.ChildAsync(factory, owner.Id);
         var story = await ApiSeed.ParentStoryAsync(factory, owner.Id, child.Id, StoryStatus.ContentReview);
 
-        var response = await (await factory.ClientForNewUserAsync(UserRole.Parent))
+        var response = await (await factory.ClientForNewUserAsync(UserRole.User))
             .PostAsync($"/api/v1/stories/{story.Id}/review/approve", null);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -255,7 +254,7 @@ public sealed class StoryReviewApproveApiTests(ApiFactory factory) : IClassFixtu
     [Fact]
     public async Task Approve_StoryNotInContentReview_Returns409()
     {
-        var parent = await factory.AddUserAsync(UserRole.Parent);
+        var parent = await factory.AddUserAsync(UserRole.User);
         var child = await ApiSeed.ChildAsync(factory, parent.Id);
         var story = await ApiSeed.ParentStoryAsync(factory, parent.Id, child.Id, StoryStatus.OutlineReview);
 
@@ -268,7 +267,7 @@ public sealed class StoryReviewApproveApiTests(ApiFactory factory) : IClassFixtu
     [Fact]
     public async Task Approve_ContentFailsValidation_Returns400()
     {
-        var parent = await factory.AddUserAsync(UserRole.Parent);
+        var parent = await factory.AddUserAsync(UserRole.User);
         var child = await ApiSeed.ChildAsync(factory, parent.Id);
         var story = await ApiSeed.ParentStoryAsync(factory, parent.Id, child.Id, StoryStatus.ContentReview, content: " ");
 
@@ -303,7 +302,7 @@ public sealed class ModerationQueueClaimApiTests(ApiFactory factory) : IClassFix
     }
 
     [Theory]
-    [InlineData(UserRole.Parent)]
+    [InlineData(UserRole.User)]
     [InlineData(UserRole.ContentCreator)]
     public async Task Claim_NonStaffRole_Returns403(UserRole role)
     {
@@ -438,7 +437,7 @@ public sealed class PaymentWebhookApiTests(ApiFactory factory) : IClassFixture<A
 
     private async Task<PaymentTransaction> SeedPendingTransactionAsync(string code)
     {
-        var payer = await factory.AddUserAsync(UserRole.Parent);
+        var payer = await factory.AddUserAsync(UserRole.User);
         return await factory.WithDbAsync(async db =>
         {
             var plan = new SubscriptionPlan { Name = "Gói 50k", PriceVnd = 50000, QuotaAmount = 10 };

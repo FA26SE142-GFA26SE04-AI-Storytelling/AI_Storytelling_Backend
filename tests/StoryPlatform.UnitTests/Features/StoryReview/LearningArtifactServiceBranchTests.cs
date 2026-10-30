@@ -1,7 +1,7 @@
 using Moq;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Common.Exceptions;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.StoryReview.DTOs;
 using StoryPlatform.Application.Features.StoryReview.Services;
 using StoryPlatform.Contracts.AI.Models;
@@ -19,7 +19,7 @@ namespace StoryPlatform.UnitTests.Features.StoryReview;
 public sealed class LearningArtifactServiceBranchTests
 {
     private readonly Mock<IAIStoryGenerationClient> _ai = new();
-    private readonly Mock<ISupervisionAccessGuard> _guard = new();
+    private readonly Mock<IChildProfileAccessGuard> _guard = new();
 
     public LearningArtifactServiceBranchTests()
     {
@@ -102,9 +102,9 @@ public sealed class LearningArtifactServiceBranchTests
     }
 
     [Fact]
-    public async Task GenerateArtifactsAsync_SupervisorLacksGeneratePermission_PropagatesForbidden()
+    public async Task GenerateArtifactsAsync_UserNotChildOwner_PropagatesForbidden()
     {
-        _guard.Setup(item => item.EnsurePermissionAsync(1, 1, Permission.GenerateStory, It.IsAny<CancellationToken>()))
+        _guard.Setup(item => item.EnsureOwnerAsync(1, 1, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ForbiddenException());
 
         var error = await Assert.ThrowsAsync<ForbiddenException>(() => Service(Seed()).GenerateArtifactsAsync(1, 1));
@@ -186,7 +186,7 @@ public sealed class LearningArtifactServiceBranchTests
     }
 
     [Fact]
-    public async Task GenerateVocabularyAsync_CreatorStory_UsesStoryAgeBandAndSkipsSupervisionGuard()
+    public async Task GenerateVocabularyAsync_CreatorStory_UsesStoryAgeBandAndSkipsOwnerGuard()
     {
         var store = SeedCreator();
         GenerateVocabularyRequest? sent = null;

@@ -223,6 +223,30 @@ $env:AI__OpenAI__ApiKey = "your-api-key"
 $env:AI__OpenAI__Model = "gpt-5-mini"
 ```
 
+#### Giới hạn tần suất (rate limiting)
+
+API giới hạn số request theo cửa sổ cố định. Vượt hạn mức thì trả `429` kèm header `Retry-After`.
+
+| Nhóm | Áp dụng cho | Đếm theo | Mặc định |
+|---|---|---|---|
+| `RateLimiting:Auth` | `Auth/login`, `Auth/forgot-password`, `Auth/resend-verification-email` | IP + endpoint | 10 request / 60 giây |
+| `RateLimiting:Ai` | Các endpoint kích hoạt sinh AI (ai-story-input, outline, review/ai, media regenerate, assistance) | Tài khoản (chưa đăng nhập thì theo IP) | 20 request / 60 giây |
+
+Mặc định trên dành cho production, **không đổi trong code**. Khi cả nhóm system test dùng chung một mạng (cùng IP công khai), hạn mức `Auth` sẽ nhanh chóng bị dùng hết. Khi đó, chỉ nâng hạn mức **trên môi trường test** bằng biến môi trường:
+
+```bash
+RateLimiting__Auth__PermitLimit=1000
+RateLimiting__Auth__WindowSeconds=60
+RateLimiting__Ai__PermitLimit=200
+RateLimiting__Ai__WindowSeconds=60
+```
+
+- Docker Compose: đặt `RATE_LIMIT_AUTH_PERMIT_LIMIT` và `RATE_LIMIT_AI_PERMIT_LIMIT` trong file env (xem `.env.docker.example`). `compose.yaml` sẽ chuyển chúng thành các biến ở trên.
+- Chạy `dotnet run` trên máy: đặt các biến ở trên trong shell, hoặc thêm khối `"RateLimiting": { "Auth": { "PermitLimit": 1000 } }` vào `appsettings.Development.json`.
+- AWS (ECS): thêm `RateLimiting__Auth__PermitLimit` vào biến môi trường của task **chỉ cho stack test**; không thêm cho production.
+
+Giá trị phải là số nguyên dương, nếu không API sẽ không khởi động.
+
 ### 6.3. Cập nhật Cơ sở dữ liệu (EF Core Migration)
 Chạy lệnh migration để tự động sinh cấu trúc bảng trên PostgreSQL:
 ```powershell

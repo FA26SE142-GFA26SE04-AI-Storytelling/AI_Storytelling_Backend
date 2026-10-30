@@ -47,6 +47,8 @@ services:
       JwtSettings__RefreshTokenExpiryDays: ${JWT_REFRESH_TOKEN_EXPIRY_DAYS:-7}
       JwtSettings__ChildTokenExpiryMinutes: ${JWT_CHILD_TOKEN_EXPIRY_MINUTES:-240}
       Cors__AllowedOrigins__0: ${CORS_ALLOWED_ORIGIN:-http://localhost:3000}
+      RateLimiting__Auth__PermitLimit: ${RATE_LIMIT_AUTH_PERMIT_LIMIT:-10}
+      RateLimiting__Ai__PermitLimit: ${RATE_LIMIT_AI_PERMIT_LIMIT:-20}
       Swagger__Enabled: ${SWAGGER_ENABLED:-true}
       AIService__ApiKey: ${GEMINI_API_KEY:-}
       AIService__Model: ${GEMINI_MODEL:-gemini-2.5-flash}

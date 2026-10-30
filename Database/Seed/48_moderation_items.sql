@@ -15,7 +15,7 @@ VALUES
      9, 6, 12, NOW() - INTERVAL '20 days' + INTERVAL '1 hour',
      NOW() - INTERVAL '19 days', '{"sections":["ending"]}'::jsonb,
      '{"safety":true,"ageBand":true}'::jsonb, '{"section":"ending","completed":true}'::jsonb,
-     'Da sua cach dien dat phu hop do tuoi', 12, NOW() - INTERVAL '20 days' + INTERVAL '90 minutes',
+     'Đã sửa cách diễn đạt phù hợp độ tuổi', 12, NOW() - INTERVAL '20 days' + INTERVAL '90 minutes',
      2, false, NOW() - INTERVAL '20 days', false)
 ON CONFLICT ("Id") DO NOTHING;
 
@@ -119,25 +119,25 @@ VALUES
     (4, 'ContentReport', 'Escalated', 'High', 6, 6,
      6, 8, 11, NOW() - INTERVAL '5 hours',
      NOW() + INTERVAL '18 hours', NULL, '{"copyright":true}'::jsonb, NULL,
-     'Can doi chieu nguon ban quyen', 11, NOW() - INTERVAL '4 hours',
+     'Cần đối chiếu nguồn bản quyền', 11, NOW() - INTERVAL '4 hours',
      NOW() - INTERVAL '4 hours', NULL,
      2, false, NOW() - INTERVAL '6 hours', false),
     (8, 'ContentReport', 'Closed', 'Low', 10, 10,
      7, 12, 11, NOW() - INTERVAL '4 hours',
      NOW() + INTERVAL '19 hours', NULL, '{"cultural":true}'::jsonb,
-     'Nhan va noi dung phu hop', NULL, 11, NOW() - INTERVAL '3 hours',
+     'Nhãn và nội dung phù hợp', NULL, 11, NOW() - INTERVAL '3 hours',
      NULL, 'Resolved',
      2, false, NOW() - INTERVAL '5 hours', false),
     (9, 'ContentReport', 'Archived', 'High', 9, 9,
      1, 7, 11, NOW() - INTERVAL '15 days' + INTERVAL '1 hour',
      NOW() - INTERVAL '14 days', NULL, '{"safety":true}'::jsonb,
-     'Noi dung khong phu hop nen da luu tru truyen', NULL, 11, NOW() - INTERVAL '14 days',
+     'Nội dung không phù hợp nên đã lưu trữ truyện', NULL, 11, NOW() - INTERVAL '14 days',
      NULL, NULL,
      2, false, NOW() - INTERVAL '15 days', false),
     (10, 'ContentReport', 'Dismissed', 'Low', 4, 4,
      4, 10, 12, NOW() - INTERVAL '22 days' + INTERVAL '1 hour',
      NOW() - INTERVAL '21 days', NULL, '{"factCheck":true}'::jsonb,
-     'Thong tin khoa hoc da duoc doi chieu', NULL, 12, NOW() - INTERVAL '20 days',
+     'Thông tin khoa học đã được đối chiếu', NULL, 12, NOW() - INTERVAL '20 days',
      NULL, NULL,
      2, false, NOW() - INTERVAL '22 days', false),
     (11, 'ContentReport', 'Pending', 'High', 8, 8,
@@ -160,11 +160,11 @@ VALUES
      NULL, NULL, 1, false, NOW() - INTERVAL '1 day', false),
     (6, 'RoadmapTemplateReview', 'Approved', 'Medium', 1, 11,
      12, NOW() - INTERVAL '12 days' + INTERVAL '1 hour', NOW() - INTERVAL '10 days',
-     '{"storyChecksCompleted":1,"storyCount":1}'::jsonb, 'Du dieu kien xuat ban',
+     '{"storyChecksCompleted":1,"storyCount":1}'::jsonb, 'Đủ điều kiện xuất bản',
      12, NOW() - INTERVAL '11 days', 2, false, NOW() - INTERVAL '12 days', false),
     (12, 'RoadmapTemplateReview', 'ChangesRequested', 'Medium', 2, 11,
      12, NOW() - INTERVAL '1 day', NOW() + INTERVAL '1 day',
-     '{"storyChecksCompleted":1,"storyCount":1}'::jsonb, 'Can dieu chinh so ngay doc cho tung truyen',
+     '{"storyChecksCompleted":1,"storyCount":1}'::jsonb, 'Cần điều chỉnh số ngày đọc cho từng truyện',
      12, NOW() - INTERVAL '6 hours', 2, false, NOW() - INTERVAL '2 days', false)
 ON CONFLICT ("Id") DO NOTHING;
 
@@ -192,7 +192,7 @@ VALUES
      4, 5, 'FamilyUse', '{"passed":true}'::jsonb,
      12, NOW() - INTERVAL '20 hours', NOW() - INTERVAL '12 hours',
      '{"copyright":"Family-use declaration is insufficient for community sharing"}'::jsonb,
-     'Can xac nhan quyen chia se cong dong', 12, NOW() - INTERVAL '16 hours', NULL, NULL,
+     'Cần xác nhận quyền chia sẻ cộng đồng', 12, NOW() - INTERVAL '16 hours', NULL, NULL,
      2, false, NOW() - INTERVAL '1 day', false),
     (14, 'CommunitySubmission', 'Pending', 'Medium', 5, 5,
      4, 5, 'OwnWork', '{"passed":true}'::jsonb,
@@ -208,7 +208,7 @@ VALUES
      6, 9, 'OwnWork', '{"passed":false,"reason":"safety_concern"}'::jsonb,
      11, NOW() - INTERVAL '14 days' + INTERVAL '1 hour', NOW() - INTERVAL '13 days',
      '{"safety":"Unsafe content for publication"}'::jsonb,
-     'Khong cho phep dua noi dung len thu vien', 11, NOW() - INTERVAL '14 days', NULL, NULL,
+     'Không cho phép đưa nội dung lên thư viện', 11, NOW() - INTERVAL '14 days', NULL, NULL,
      2, false, NOW() - INTERVAL '15 days', false)
 ON CONFLICT ("Id") DO NOTHING;
 

@@ -174,7 +174,7 @@ public class AuthService : IAuthService
             PasswordHash = _passwordHasher.HashPassword(request.Password),
             // Public self-registration only creates Parent accounts. Operational accounts
             // must be provisioned by an Administrator.
-            Role = UserRole.Parent,
+            Role = UserRole.User,
             Status = AccountStatus.Registered,
             EmailVerificationTokenHash = OtpHelper.Hash(OtpHelper.EmailVerifyPurpose, normalizedEmail, otp),
             EmailVerificationTokenExpiresAt = DateTime.UtcNow.Add(OtpHelper.Ttl),
@@ -544,7 +544,7 @@ public class AuthService : IAuthService
         var user = await userRepo.GetByIdAsync(userId, cancellationToken)
                    ?? throw new NotFoundException("Tài khoản", userId);
 
-        if (user.Role != UserRole.Parent)
+        if (user.Role != UserRole.User)
         {
             throw new ForbiddenException(
                 "Tài khoản vận hành không tự đổi email — vui lòng liên hệ Administrator.");
@@ -617,7 +617,7 @@ public class AuthService : IAuthService
         var user = await userRepo.GetByIdAsync(userId, cancellationToken)
                    ?? throw new NotFoundException("Tài khoản", userId);
 
-        if (user.Role != UserRole.Parent)
+        if (user.Role != UserRole.User)
         {
             throw new ForbiddenException(
                 "Tài khoản vận hành không tự đổi email — vui lòng liên hệ Administrator.");

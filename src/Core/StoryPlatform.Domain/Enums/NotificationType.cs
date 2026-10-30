@@ -36,8 +36,5 @@ public enum NotificationType
     /// <summary>Trẻ gửi điều ước (WF-L2D story_wish_submitted).</summary>
     StoryWishSubmitted = 29,
     /// <summary>Điều ước chờ 6 ngày chưa ai xử lý (WF-L2D story_wish_expiring).</summary>
-    StoryWishExpiring = 30,
-
-    StoryShared = 100,
-    AssignmentCancelled = 101
+    StoryWishExpiring = 30
 }

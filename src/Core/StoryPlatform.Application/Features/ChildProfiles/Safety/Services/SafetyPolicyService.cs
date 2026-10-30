@@ -4,7 +4,7 @@ using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Safety;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -13,12 +13,12 @@ namespace StoryPlatform.Application.Features.ChildProfiles.Safety.Services;
 public class SafetyPolicyService : ISafetyPolicyService
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly ISupervisionAccessGuard _accessGuard;
+    private readonly IChildProfileAccessGuard _accessGuard;
     private readonly IAuditLogWriter _auditLogWriter;
 
     public SafetyPolicyService(
         IUnitOfWork unitOfWork,
-        ISupervisionAccessGuard accessGuard,
+        IChildProfileAccessGuard accessGuard,
         IAuditLogWriter auditLogWriter)
     {
         _unitOfWork = unitOfWork;
@@ -30,11 +30,9 @@ public class SafetyPolicyService : ISafetyPolicyService
         int childProfileId, int currentUserId, SetSafetyPolicyRequestDto request,
         CancellationToken cancellationToken = default)
     {
-        await _accessGuard.EnsurePermissionAsync(
-            childProfileId, currentUserId, Permission.ManageSafetySettings, cancellationToken);
-        var relationship = await _accessGuard.EnsureActiveSupervisionAsync(
+        await _accessGuard.EnsureOwnerAsync(
             childProfileId, currentUserId, cancellationToken);
-        var isOwner = relationship.SupervisorRole == SupervisorRole.Owner;
+        var isOwner = true;
         ValidateRequest(request);
 
         var policyRepo = _unitOfWork.Repository<SafetyPolicy>();
@@ -45,12 +43,6 @@ public class SafetyPolicyService : ISafetyPolicyService
         var needsConsent = policy == null || !policy.ConsentRecorded;
         if (needsConsent)
         {
-            if (!isOwner)
-            {
-                throw new ForbiddenException(
-                    "Chỉ Owner mới được ghi nhận đồng thuận (consent) cho hồ sơ trẻ.");
-            }
-
             if (!request.ConsentRecorded)
             {
                 throw new BadRequestException(
@@ -144,7 +136,7 @@ public class SafetyPolicyService : ISafetyPolicyService
     public async Task<SafetyPolicyDto> GetSafetyPolicyAsync(
         int childProfileId, int currentUserId, CancellationToken cancellationToken = default)
     {
-        await _accessGuard.EnsureActiveSupervisionAsync(childProfileId, currentUserId, cancellationToken);
+        await _accessGuard.EnsureOwnerAsync(childProfileId, currentUserId, cancellationToken);
 
         var policy = await _unitOfWork.Repository<SafetyPolicy>().FirstOrDefaultAsync(
             value => value.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
@@ -200,7 +192,7 @@ public class SafetyPolicyService : ISafetyPolicyService
     public async Task<AgePresetDto> GetAgePresetAsync(
         int childProfileId, int currentUserId, CancellationToken cancellationToken = default)
     {
-        await _accessGuard.EnsureActiveSupervisionAsync(childProfileId, currentUserId, cancellationToken);
+        await _accessGuard.EnsureOwnerAsync(childProfileId, currentUserId, cancellationToken);
         var child = await _unitOfWork.Repository<ChildProfile>()
             .GetByIdAsync(childProfileId, cancellationToken)
             ?? throw new NotFoundException("Hồ sơ trẻ", childProfileId);
@@ -215,8 +207,8 @@ public class SafetyPolicyService : ISafetyPolicyService
     public async Task<SafetyPolicyDto> ApplyAgePresetAsync(
         int childProfileId, int currentUserId, CancellationToken cancellationToken = default)
     {
-        await _accessGuard.EnsurePermissionAsync(
-            childProfileId, currentUserId, Permission.ManageSafetySettings, cancellationToken);
+        await _accessGuard.EnsureOwnerAsync(
+            childProfileId, currentUserId, cancellationToken);
         var child = await _unitOfWork.Repository<ChildProfile>()
             .GetByIdAsync(childProfileId, cancellationToken)
             ?? throw new NotFoundException("Hồ sơ trẻ", childProfileId);
@@ -271,7 +263,7 @@ public class SafetyPolicyService : ISafetyPolicyService
     public async Task DeleteSafetyPolicyAsync(
         int childProfileId, int currentUserId, CancellationToken cancellationToken = default)
     {
-        await _accessGuard.EnsurePermissionAsync(childProfileId, currentUserId, Permission.ManageSafetySettings, cancellationToken);
+        await _accessGuard.EnsureOwnerAsync(childProfileId, currentUserId, cancellationToken);
 
         var profile = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(childProfileId, cancellationToken)
                       ?? throw new NotFoundException("Hồ sơ trẻ", childProfileId);

@@ -438,7 +438,7 @@ public class ContentReportServiceTests
             .Select(method => method.Name).OrderBy(name => name).ToArray();
 
         Assert.NotNull(authorize);
-        Assert.Equal("Parent", authorize!.Roles);
+        Assert.Equal("User", authorize!.Roles);
         Assert.Equal(new[] { "Create" }, methods);
     }
 

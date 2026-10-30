@@ -162,9 +162,7 @@ public class OwnedChildProfileSummaryDto
 
 public class DeleteAccountPreviewDto
 {
-    public List<OwnedChildProfileSummaryDto> BlockingProfiles { get; set; } = new();
-    public List<OwnedChildProfileSummaryDto> DraftProfiles { get; set; } = new();
-    public bool CanDelete => BlockingProfiles.Count == 0;
+    public List<OwnedChildProfileSummaryDto> ChildProfiles { get; set; } = new();
 }
 
 public class DeleteAccountRequestDto
@@ -172,7 +170,7 @@ public class DeleteAccountRequestDto
     [Required(ErrorMessage = "Mật khẩu hiện tại không được để trống.")]
     public string CurrentPassword { get; set; } = string.Empty;
 
-    public bool DeleteDraftProfiles { get; set; }
+    public bool DeleteChildProfiles { get; set; }
 }
 
 public class ResendVerificationEmailRequestDto

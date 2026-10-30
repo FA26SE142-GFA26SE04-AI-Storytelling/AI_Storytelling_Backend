@@ -37,7 +37,7 @@ public sealed class StoryReviewServiceTests
         store.Seed(new SafetyPolicy { Id = 1, ChildProfileId = 1, MaxStoryLength = 2000, ConsentRecorded = true,
             ConsentRecordedAt = DateTime.UtcNow, ConsentPolicyVersion = StoryPlatform.Application.Features.ChildProfiles.Safety.ConsentPolicy.CurrentVersion });
         var policy = new StoryPlatform.Application.Features.ParentAuthoring.ParentAssistanceAccessPolicy(store,
-            new StoryPlatform.Application.Features.ChildProfiles.Supervision.Services.SupervisionAccessGuard(store));
+            new StoryPlatform.Application.Features.ChildProfiles.Profiles.Services.ChildProfileAccessGuard(store));
         var snapshot = await policy.CaptureContextAsync(story, default);
         var token = story.AuthoringRevisionToken;
         store.Seed(new StoryAssistanceTask { Id = 5, OwnerUserId = 1, StoryId = scenario == "other-story" ? 99 : 1,
@@ -660,23 +660,11 @@ public sealed class StoryReviewServiceTests
     }
 
     [Fact]
-    public async Task Approve_SupervisorWithApproveStoryPermission_Succeeds()
+    public async Task Approve_ChildOwner_Succeeds()
     {
         var unitOfWork = SeedContentReviewWithAllArtifacts();
         unitOfWork.Items<Story>().Single().AuthorUserId = 99;
-        unitOfWork.Seed(new SupervisionRelationship
-        {
-            Id = 2,
-            ChildProfileId = 1,
-            SupervisorUserId = 2,
-            SupervisorRole = SupervisorRole.AdditionalSupervisor
-        });
-        unitOfWork.Seed(new SupervisionPermission
-        {
-            Id = 2,
-            SupervisionRelationshipId = 2,
-            Permission = Permission.ApproveStory
-        });
+        unitOfWork.Items<ChildProfile>().Single().OwnerUserId = 2;
 
         var result = await Service(unitOfWork).ApproveAsync(2, 1);
 
@@ -879,7 +867,8 @@ public sealed class StoryReviewServiceTests
         var unitOfWork = new FakeUnitOfWork();
 
         // Seed User
-        unitOfWork.Seed(new UserAccount { Id = 1, Role = UserRole.Parent, Status = AccountStatus.Active });
+        unitOfWork.Seed(new UserAccount { Id = 1, Role = UserRole.User, Status = AccountStatus.Active });
+        unitOfWork.Seed(new ChildProfile { Id = 1, OwnerUserId = 1, Status = ChildProfileStatus.Active });
 
         // Seed Story in ContentReview status
         unitOfWork.Seed(new Story
@@ -892,13 +881,6 @@ public sealed class StoryReviewServiceTests
         });
 
         // Seed Supervision
-        unitOfWork.Seed(new SupervisionRelationship
-        {
-            Id = 1,
-            ChildProfileId = 1,
-            SupervisorUserId = 1,
-            SupervisorRole = SupervisorRole.Owner
-        });
 
         // Seed StoryVersion
         unitOfWork.Seed(new StoryVersion

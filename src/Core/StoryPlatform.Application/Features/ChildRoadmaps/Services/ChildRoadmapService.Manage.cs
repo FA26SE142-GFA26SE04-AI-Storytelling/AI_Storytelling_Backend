@@ -9,7 +9,7 @@ public partial class ChildRoadmapService
     public async Task<ChildRoadmapDto> RemoveAsync(
         int actorUserId, int childProfileId, int itemId, CancellationToken cancellationToken = default)
     {
-        await _guard.EnsurePermissionAsync(childProfileId, actorUserId, Permission.AssignActivity, cancellationToken);
+        await _guard.EnsureOwnerAsync(childProfileId, actorUserId, cancellationToken);
         var repository = _unitOfWork.Repository<ChildRoadmapItem>();
         var item = await repository.GetByIdAsync(itemId, cancellationToken);
         if (item == null || item.IsDeleted || item.ChildProfileId != childProfileId)
@@ -60,7 +60,7 @@ public partial class ChildRoadmapService
         int actorUserId, int childProfileId, ReorderRoadmapRequestDto request,
         CancellationToken cancellationToken = default)
     {
-        await _guard.EnsurePermissionAsync(childProfileId, actorUserId, Permission.AssignActivity, cancellationToken);
+        await _guard.EnsureOwnerAsync(childProfileId, actorUserId, cancellationToken);
         var repository = _unitOfWork.Repository<ChildRoadmapItem>();
         var waiting = await repository.FindAsync(
             item => item.ChildProfileId == childProfileId && item.Status == ChildRoadmapItemStatus.Waiting,
@@ -102,7 +102,7 @@ public partial class ChildRoadmapService
     public async Task<ChildRoadmapDto> ClearAsync(
         int actorUserId, int childProfileId, CancellationToken cancellationToken = default)
     {
-        await _guard.EnsurePermissionAsync(childProfileId, actorUserId, Permission.AssignActivity, cancellationToken);
+        await _guard.EnsureOwnerAsync(childProfileId, actorUserId, cancellationToken);
         var repository = _unitOfWork.Repository<ChildRoadmapItem>();
         var active = await repository.FindAsync(
             item => item.ChildProfileId == childProfileId

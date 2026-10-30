@@ -93,15 +93,6 @@ public class ReportableStoryResolverTests
     }
 
     [Fact]
-    public async Task ResolveAsync_AdditionalSupervisor_IsAllowed()
-    {
-        _h.Relationships[0].SupervisorRole = SupervisorRole.AdditionalSupervisor;
-
-        Assert.Equal(ContentReportHarness.PublicStoryId,
-            (await Resolve(ContentReportHarness.PublicStoryId)).Story.Id);
-    }
-
-    [Fact]
     public async Task ResolveAsync_ParentWithoutChildAccess_IsForbidden()
     {
         await Assert.ThrowsAsync<ForbiddenException>(() =>
@@ -109,9 +100,9 @@ public class ReportableStoryResolverTests
     }
 
     [Fact]
-    public async Task ResolveAsync_RevokedSupervision_IsForbidden()
+    public async Task ResolveAsync_ChangedOwner_IsForbidden()
     {
-        _h.Relationships.Single().RevokedAt = DateTime.UtcNow.AddDays(-1);
+        _h.Children.Single().OwnerUserId = ContentReportHarness.OtherParentId;
 
         await Assert.ThrowsAsync<ForbiddenException>(() => Resolve(ContentReportHarness.PublicStoryId));
     }

@@ -239,7 +239,7 @@ public sealed class StableVersionArtifactHandoffServiceTests
     private static StableHandoffFakeUnitOfWork Seed()
     {
         var store = new StableHandoffFakeUnitOfWork();
-        store.Seed(new UserAccount { Id = 1, Role = UserRole.Parent });
+        store.Seed(new UserAccount { Id = 1, Role = UserRole.User });
         store.Seed(new ChildProfile
         {
             Id = 1,

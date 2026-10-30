@@ -1,6 +1,6 @@
 # Kiểm thử Parent authoring và AI hỗ trợ bằng Swagger
 
-Chưa chạy bộ bước này trên DB thật. Trước khi thử cần migration `AddParentManualAuthoring` đã được tạo/review/apply theo yêu cầu riêng, API rebuild, tài khoản Parent có hồ sơ con Active và quyền GenerateStory. Xác nhận cho con còn cần ApproveStory + AssignActivity; Owner được guard hiện hành cho phép.
+Chưa chạy bộ bước này trên DB thật. Trước khi thử cần migration `AddParentManualAuthoring` đã được tạo/review/apply theo yêu cầu riêng, API rebuild, tài khoản role User là chủ hồ sơ con Active. Xác nhận cho con dùng quyền chủ hồ sơ qua guard hiện hành.
 
 Bước 1–10 kiểm tra viết tay; kịch bản AI tùy chọn ở cuối tài liệu chạy trên một Story khác, trước khi giao cho con. Nếu chính sách hiện tại yêu cầu safety score ngữ nghĩa thì dừng ở bước check với `SEMANTIC_SAFETY_REVIEW_REQUIRED`; không hạ chính sách chỉ để làm test pass. Happy path đọc văn bản chỉ áp dụng khi các kiểm tra/policy hiện hành cho phép bằng đường không AI.
 
@@ -114,12 +114,12 @@ Lưu confirmationId thành GRANT_ID. Retry nguyên request nhận cùng grant. S
 
 ## 8. Đọc bằng phiên trẻ
 
-Dùng child-session token của đúng child, không dùng token Parent:
+Dùng child-session token của đúng child, không dùng token User:
 
 - `GET /api/v1/child/manual-stories`
 - `GET /api/v1/child/manual-stories/{GRANT_ID}/package`
 
-Mong đợi package V1 được ghim. Đổi sang token child khác phải không truy cập được package đó. Token Parent không được vào hai route này.
+Mong đợi package V1 được ghim. Đổi sang token child khác phải không truy cập được package đó. Token User không được vào hai route này.
 
 ## 9. Kiểm tra khóa sau khi giao
 

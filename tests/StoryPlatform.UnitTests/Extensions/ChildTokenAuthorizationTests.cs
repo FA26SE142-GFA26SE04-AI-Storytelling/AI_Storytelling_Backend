@@ -26,7 +26,7 @@ public class ChildTokenAuthorizationTests
         new[]
         {
             new Claim(ClaimTypes.NameIdentifier, "1"),
-            new Claim(ClaimTypes.Role, "Parent"),
+            new Claim(ClaimTypes.Role, "User"),
             new Claim("token_version", "1")
         }, "TestAuth"));
 

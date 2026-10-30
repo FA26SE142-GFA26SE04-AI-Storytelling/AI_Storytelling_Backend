@@ -16,7 +16,7 @@ public class CommunitySubmissionControllerTests
             .Select(method => method.Name).OrderBy(name => name).ToArray();
 
         Assert.NotNull(authorize);
-        Assert.Equal("Parent", authorize!.Roles);
+        Assert.Equal("User", authorize!.Roles);
         Assert.Equal(new[] { "Check", "ListMine", "Remove", "Submit", "Withdraw" }, methods);
     }
 }

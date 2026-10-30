@@ -1,6 +1,6 @@
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
 using StoryPlatform.Application.Features.ReadingSessions;
 using StoryPlatform.Application.Features.StoryWishes.Interfaces;
@@ -14,10 +14,10 @@ public class StoryWishSuggestionService : IStoryWishSuggestionService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IChildRoadmapEligibility _eligibility;
-    private readonly ISupervisionAccessGuard _guard;
+    private readonly IChildProfileAccessGuard _guard;
 
     public StoryWishSuggestionService(
-        IUnitOfWork unitOfWork, IChildRoadmapEligibility eligibility, ISupervisionAccessGuard guard)
+        IUnitOfWork unitOfWork, IChildRoadmapEligibility eligibility, IChildProfileAccessGuard guard)
     {
         _unitOfWork = unitOfWork;
         _eligibility = eligibility;
@@ -161,7 +161,7 @@ public class StoryWishSuggestionService : IStoryWishSuggestionService
             return new List<WishSuggestionDto>();
         }
 
-        var rows = await LoadAsync(wish.Id, ct);
+        var rows = await LoadAsync(wish, ct);
         return rows.Select(row => Fill(new WishSuggestionDto(), row)).ToList();
     }
 
@@ -174,9 +174,9 @@ public class StoryWishSuggestionService : IStoryWishSuggestionService
             throw new NotFoundException("Điều ước", wishId);
         }
 
-        await _guard.EnsurePermissionAsync(wish.ChildProfileId, parentUserId, Permission.ApproveStory, ct);
+        await _guard.EnsureOwnerAsync(wish.ChildProfileId, parentUserId, ct);
 
-        var rows = await LoadAsync(wish.Id, ct);
+        var rows = await LoadAsync(wish, ct);
         var storyIds = rows.Select(row => row.Suggestion.StoryId).ToList();
         var childId = wish.ChildProfileId;
         var since = wish.SubmittedAt ?? wish.CreatedAt;
@@ -219,9 +219,19 @@ public class StoryWishSuggestionService : IStoryWishSuggestionService
 
     private sealed record Row(StoryWishSuggestion Suggestion, Story Story, List<WishCard> Cards);
 
-    /// <summary>Danh sách đã lưu theo thứ tự; bỏ truyện đã bị xóa / lưu trữ / không còn Ready kể từ lúc gợi ý.</summary>
-    private async Task<List<Row>> LoadAsync(int wishId, CancellationToken ct)
+    /// <summary>
+    /// Danh sách đã lưu theo thứ tự; bỏ truyện đã bị xóa / lưu trữ / không còn Ready,
+    /// hoặc không còn hợp với bé (vd. phụ huynh chặn thêm chủ đề) kể từ lúc gợi ý.
+    /// </summary>
+    private async Task<List<Row>> LoadAsync(StoryWish wish, CancellationToken ct)
     {
+        var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(wish.ChildProfileId, ct);
+        if (child == null || child.IsDeleted)
+        {
+            return new List<Row>();
+        }
+
+        var wishId = wish.Id;
         var suggestions = (await _unitOfWork.Repository<StoryWishSuggestion>().FindAsync(
                 row => row.StoryWishId == wishId && !row.IsDeleted, cancellationToken: ct))
             .OrderBy(row => row.Rank).ToList();
@@ -237,16 +247,25 @@ public class StoryWishSuggestionService : IStoryWishSuggestionService
         var cards = (await _unitOfWork.Repository<WishCard>().FindAsync(
             card => cardIds.Contains(card.Id), cancellationToken: ct)).ToDictionary(card => card.Id);
 
-        return suggestions
-            .Where(row => stories.TryGetValue(row.StoryId, out var story)
-                          && !story.IsDeleted
-                          && story.ArchivedAt == null
-                          && story.Status == StoryStatus.Ready)
-            .Select(row => new Row(
+        var result = new List<Row>();
+        foreach (var row in suggestions)
+        {
+            if (!stories.TryGetValue(row.StoryId, out var story)
+                || story.IsDeleted
+                || story.ArchivedAt != null
+                || story.Status != StoryStatus.Ready
+                || await _eligibility.EvaluateAsync(child, story, ct) != null)
+            {
+                continue;
+            }
+
+            result.Add(new Row(
                 row,
-                stories[row.StoryId],
-                ParseIds(row.MatchedCardIds).Where(cards.ContainsKey).Select(id => cards[id]).ToList()))
-            .ToList();
+                story,
+                ParseIds(row.MatchedCardIds).Where(cards.ContainsKey).Select(id => cards[id]).ToList()));
+        }
+
+        return result;
     }
 
     private static T Fill<T>(T dto, Row row) where T : WishSuggestionDto

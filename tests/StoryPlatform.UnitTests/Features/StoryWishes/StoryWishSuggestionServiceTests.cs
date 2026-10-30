@@ -1,6 +1,6 @@
 using Moq;
 using StoryPlatform.Application.Common.Exceptions;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ChildRoadmaps;
 using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
 using StoryPlatform.Application.Features.StoryWishes;
@@ -16,7 +16,7 @@ public class StoryWishSuggestionServiceTests
 {
     private readonly ReadingHarness _h = new();
     private readonly Mock<IChildRoadmapEligibility> _eligibility = new();
-    private readonly Mock<ISupervisionAccessGuard> _guard = new();
+    private readonly Mock<IChildProfileAccessGuard> _guard = new();
     private readonly StoryWishSuggestionService _sut;
 
     private readonly WishCard _cat;
@@ -257,6 +257,17 @@ public class StoryWishSuggestionServiceTests
     }
 
     [Fact]
+    public async Task ForChild_ASuggestedStoryNoLongerAllowedForTheChild_IsLeftOut()
+    {
+        var wish = await WithTwoSuggestionsAsync();
+        // Phụ huynh chặn thêm chủ đề sau khi bé đã gửi điều ước.
+        _eligibility.Setup(e => e.EvaluateAsync(It.IsAny<ChildProfile>(), It.Is<Story?>(s => s!.Id == 31), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ChildRoadmapSkipReason.BlockedTopic);
+
+        Assert.Equal(new int?[] { 32 }, (await _sut.ForChildAsync(wish)).Select(s => s.StoryId));
+    }
+
+    [Fact]
     public async Task ForChild_CommunityStory_OpensBySubmissionCode_WithoutTheOriginalId()
     {
         _h.Suggestions.Add(new StoryWishSuggestion
@@ -283,16 +294,16 @@ public class StoryWishSuggestionServiceTests
 
         await _sut.ForParentAsync(Parent, wish.Id);
 
-        _guard.Verify(g => g.EnsurePermissionAsync(
-            ReadingHarness.Child, Parent, Permission.ApproveStory, It.IsAny<CancellationToken>()), Times.Once);
+        _guard.Verify(g => g.EnsureOwnerAsync(
+            ReadingHarness.Child, Parent, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
     public async Task ForParent_WithoutPermission_IsForbidden()
     {
         var wish = await WithTwoSuggestionsAsync();
-        _guard.Setup(g => g.EnsurePermissionAsync(
-                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Permission>(), It.IsAny<CancellationToken>()))
+        _guard.Setup(g => g.EnsureOwnerAsync(
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ForbiddenException("không đủ quyền"));
 
         await Assert.ThrowsAsync<ForbiddenException>(() => _sut.ForParentAsync(Parent, wish.Id));
@@ -334,6 +345,18 @@ public class StoryWishSuggestionServiceTests
 
         Assert.False(item.Opened);
         Assert.Null(item.Hint);
+    }
+
+    [Fact]
+    public async Task ForParent_ASuggestedStoryNoLongerAllowedForTheChild_IsLeftOut()
+    {
+        var wish = await WithTwoSuggestionsAsync();
+        _eligibility.Setup(e => e.EvaluateAsync(It.IsAny<ChildProfile>(), It.Is<Story?>(s => s!.Id == 32), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ChildRoadmapSkipReason.BlockedTopic);
+
+        var view = await _sut.ForParentAsync(Parent, wish.Id);
+
+        Assert.Equal(new int?[] { 31 }, view.Items.Select(i => i.StoryId));
     }
 
     [Fact]

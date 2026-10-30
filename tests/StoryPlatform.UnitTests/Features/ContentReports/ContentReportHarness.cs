@@ -28,7 +28,6 @@ public sealed class ContentReportHarness
     public readonly List<Story> Stories = new();
     public readonly List<StoryVersion> Versions = new();
     public readonly List<ChildProfile> Children = new();
-    public readonly List<SupervisionRelationship> Relationships = new();
     public readonly List<ContentReport> Reports = new();
     public readonly List<ModerationItem> Items = new();
     public readonly List<StoryScene> Scenes = new();
@@ -42,7 +41,6 @@ public sealed class ContentReportHarness
     public readonly List<ContentCategory> ContentCategories = new();
     public readonly List<ReadingRoadmap> Roadmaps = new();
     public readonly List<ReadingRoadmapItem> RoadmapItems = new();
-    public readonly List<SupervisionPermission> Permissions = new();
     public readonly List<SafetyPolicy> Policies = new();
     public readonly List<SafetyPolicyCategory> PolicyCategories = new();
 
@@ -67,14 +65,12 @@ public sealed class ContentReportHarness
 
     public ContentReportHarness()
     {
-        Back(Permissions);
         Back(Policies);
         Back(PolicyCategories);
         Back(Users);
         Back(Stories);
         Back(Versions);
         Back(Children);
-        Back(Relationships);
         Back(Reports);
         Back(Items);
         Back(Scenes);
@@ -90,8 +86,8 @@ public sealed class ContentReportHarness
         Back(RoadmapItems);
 
         AddUser(AdminId, "admin_demo", UserRole.Administrator);
-        AddUser(ReporterId, "parent_demo1", UserRole.Parent);
-        AddUser(OtherParentId, "parent_demo2", UserRole.Parent);
+        AddUser(ReporterId, "parent_demo1", UserRole.User);
+        AddUser(OtherParentId, "parent_demo2", UserRole.User);
         AddUser(ModeratorId, "moderator_demo1", UserRole.Moderator);
         AddUser(OtherModeratorId, "moderator_demo2", UserRole.Moderator);
         AddUser(CreatorId, "creator_demo", UserRole.ContentCreator);
@@ -163,36 +159,11 @@ public sealed class ContentReportHarness
         return user;
     }
 
-    public SupervisionRelationship AddSupervisor(
-        int childId, int userId, SupervisorRole role, params Permission[] permissions)
-    {
-        var relationship = new SupervisionRelationship
-        {
-            Id = Relationships.Count + 1,
-            ChildProfileId = childId,
-            SupervisorUserId = userId,
-            SupervisorRole = role
-        };
-        Relationships.Add(relationship);
-        foreach (var permission in permissions)
-        {
-            Permissions.Add(new SupervisionPermission
-            {
-                Id = Permissions.Count + 1,
-                SupervisionRelationshipId = relationship.Id,
-                Permission = permission
-            });
-        }
-
-        return relationship;
-    }
-
     public ChildProfile AddChild(
         int childId,
         int supervisorId,
         AgeBand ageBand,
-        ChildProfileStatus status = ChildProfileStatus.Active,
-        SupervisorRole role = SupervisorRole.Owner)
+        ChildProfileStatus status = ChildProfileStatus.Active)
     {
         var child = new ChildProfile
         {
@@ -203,13 +174,6 @@ public sealed class ContentReportHarness
             Status = status
         };
         Children.Add(child);
-        Relationships.Add(new SupervisionRelationship
-        {
-            Id = Relationships.Count + 1,
-            ChildProfileId = childId,
-            SupervisorUserId = supervisorId,
-            SupervisorRole = role
-        });
         return child;
     }
 

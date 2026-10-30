@@ -21,7 +21,7 @@ public class ChildAccessCredentialController : BaseApiController
     /// Trạng thái Easy Login của hồ sơ (đã có chưa, tạo lúc nào) — KHÔNG bao giờ trả secret hay hash.
     /// </summary>
     [HttpGet("{childProfileId:int}")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "User")]
     public async Task<ActionResult<ApiResponse<ChildAccessCredentialDto>>> GetCredential(
         int childProfileId, CancellationToken cancellationToken)
     {
@@ -34,7 +34,7 @@ public class ChildAccessCredentialController : BaseApiController
     /// Cần quyền manage_safety_settings (Owner luôn có).
     /// </summary>
     [HttpDelete("{childProfileId:int}")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "User")]
     public async Task<ActionResult<ApiResponse<object?>>> RevokeCredential(
         int childProfileId, CancellationToken cancellationToken)
     {
@@ -47,7 +47,7 @@ public class ChildAccessCredentialController : BaseApiController
     /// Secret chỉ trả đúng một lần — client dựng QR từ giá trị này. Cần quyền manage_safety_settings (Owner luôn có).
     /// </summary>
     [HttpPost("{childProfileId:int}/easylogin")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "User")]
     public async Task<ActionResult<ApiResponse<EasyLoginSecretDto>>> CreateOrRegenerateEasyLogin(
         int childProfileId, CancellationToken cancellationToken)
     {
@@ -61,7 +61,7 @@ public class ChildAccessCredentialController : BaseApiController
     /// phát sinh Child Session riêng, tách khỏi phiên Supervisor.
     /// </summary>
     [HttpPost("{childProfileId:int}/handover")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "User")]
     public async Task<ActionResult<ApiResponse<ChildSessionDto>>> StartSupervisedSession(
         int childProfileId,
         [FromBody] StartSupervisedChildSessionRequestDto request,

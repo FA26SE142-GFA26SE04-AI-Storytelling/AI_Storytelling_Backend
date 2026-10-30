@@ -1,6 +1,6 @@
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Safety;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -10,7 +10,7 @@ namespace StoryPlatform.Application.Features.Moderation.Services;
 public sealed record GrayZoneContentCheckDto(int StoryVersionId, string Status, bool WaitingForModeration);
 
 public sealed class GrayZoneContentCheckService(IUnitOfWork uow, IGrayZoneEvaluator evaluator,
-    GrayZoneWorkflowService workflow, ISupervisionAccessGuard supervision)
+    GrayZoneWorkflowService workflow, IChildProfileAccessGuard supervision)
 {
     public bool IsConfigured => evaluator.IsConfigured;
 
@@ -26,7 +26,7 @@ public sealed class GrayZoneContentCheckService(IUnitOfWork uow, IGrayZoneEvalua
         if (story.Scope == StoryScope.Parent)
         {
             if (!story.ChildProfileId.HasValue) throw new ConflictException("CHILD_CONTEXT_REQUIRED");
-            await supervision.EnsurePermissionAsync(story.ChildProfileId.Value, userId, Permission.GenerateStory, ct);
+            await supervision.EnsureOwnerAsync(story.ChildProfileId.Value, userId, ct);
             if (await uow.Repository<ParentStoryOperation>().ExistsAsync(x => x.StoryId == storyId
                 && x.Kind == "FamilyConfirmation" && !x.IsDeleted && x.RevokedAt == null, ct))
                 throw new ConflictException("PARENT_STORY_FINALIZED");

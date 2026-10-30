@@ -2,7 +2,7 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Common;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.CommunityLibrary.Interfaces;
 using StoryPlatform.Application.Features.Moderation;
 using StoryPlatform.Application.Features.Moderation.Interfaces;
@@ -14,13 +14,13 @@ namespace StoryPlatform.Application.Features.CommunityLibrary.Services;
 public partial class CommunitySubmissionService : ICommunitySubmissionService
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly ISupervisionAccessGuard _guard;
+    private readonly IChildProfileAccessGuard _guard;
     private readonly IModerationQueueService _queueService;
     private readonly IAuditLogWriter _auditLogWriter;
 
     public CommunitySubmissionService(
         IUnitOfWork unitOfWork,
-        ISupervisionAccessGuard guard,
+        IChildProfileAccessGuard guard,
         IModerationQueueService queueService,
         IAuditLogWriter auditLogWriter)
     {
@@ -55,7 +55,7 @@ public partial class CommunitySubmissionService : ICommunitySubmissionService
     private async Task<UserAccount> RequireParentAsync(int userId, CancellationToken cancellationToken)
     {
         var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken);
-        if (user == null || user.IsDeleted || user.Status != AccountStatus.Active || user.Role != UserRole.Parent)
+        if (user == null || user.IsDeleted || user.Status != AccountStatus.Active || user.Role != UserRole.User)
         {
             throw new ForbiddenException("Chỉ phụ huynh đang hoạt động mới nộp được truyện lên Community.");
         }
@@ -77,7 +77,7 @@ public partial class CommunitySubmissionService : ICommunitySubmissionService
         }
 
         var childId = story.ChildProfileId.Value;
-        await _guard.EnsurePermissionAsync(childId, actor.Id, Permission.ApproveStory, cancellationToken);
+        await _guard.EnsureOwnerAsync(childId, actor.Id, cancellationToken);
         var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(childId, cancellationToken);
 
         if (story.Status == StoryStatus.Archived || story.ArchivedAt != null)

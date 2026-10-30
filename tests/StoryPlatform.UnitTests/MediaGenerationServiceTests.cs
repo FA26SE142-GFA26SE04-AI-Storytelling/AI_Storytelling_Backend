@@ -7,7 +7,7 @@ using StoryPlatform.Application.Features.MediaStorage.Models;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.Infrastructure.AI;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -623,8 +623,8 @@ public sealed partial class MediaGenerationServiceTests
     public async Task Readiness_TwoBeats_RequiresBothImagesAndAudio()
     {
         var uow = new StoryReviewServiceTests.FakeUnitOfWork();
-        uow.Seed(new UserAccount { Id = 1, Role = UserRole.Parent, Status = AccountStatus.Active });
-        uow.Seed(new ChildProfile { Id = 1, Status = ChildProfileStatus.Active });
+        uow.Seed(new UserAccount { Id = 1, Role = UserRole.User, Status = AccountStatus.Active });
+        uow.Seed(new ChildProfile { Id = 1, OwnerUserId = 1, Status = ChildProfileStatus.Active });
         uow.Seed(new SafetyPolicy { Id = 1, ChildProfileId = 1, ConsentRecorded = true, ConsentRecordedAt = DateTime.UtcNow, ConsentPolicyVersion = 1 });
         uow.Seed(new StoryScene { Id = 30, StoryVersionId = 10, SceneIndex = 0, SceneText = "A B", TextRangeEnd = 3 });
         uow.Seed(new IllustrationBeat { Id = 31, StorySceneId = 30, BeatOrder = 1, StartOffset = 0, EndOffset = 1, VisualFocus = "A" });
@@ -737,14 +737,14 @@ public sealed partial class MediaGenerationServiceTests
     public async Task ConfirmRejectsIncompleteMediaAndRevokedParentPermission()
     {
         var store = Seed();
-        var guard = new Mock<ISupervisionAccessGuard>();
+        var guard = new Mock<IChildProfileAccessGuard>();
         var service = Create(store, supervision: guard.Object);
         Assert.True((await service.RunPackageAsync()).Success);
         var asset = store.Items<MediaAsset>().First();
         asset.Status = MediaStatus.Failed;
         await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.ConflictException>(() => service.ConfirmAsync(1, 1, new(10, 1)));
         asset.Status = MediaStatus.Ready;
-        guard.Setup(x => x.EnsurePermissionAsync(1, 1, Permission.ApproveStory, It.IsAny<CancellationToken>()))
+        guard.Setup(x => x.EnsureOwnerAsync(1, 1, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new StoryPlatform.Application.Common.Exceptions.ForbiddenException());
         await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.ForbiddenException>(() => service.ConfirmAsync(1, 1, new(10, 1)));
     }
@@ -849,7 +849,7 @@ public sealed partial class MediaGenerationServiceTests
         IAudioQualityGate? audioGate = null,
         RecordingFinalizer? finalizer = null,
         IIllustrationBeatPlanner? planner = null,
-        IMediaReadinessService? readiness = null, ISupervisionAccessGuard? supervision = null,
+        IMediaReadinessService? readiness = null, IChildProfileAccessGuard? supervision = null,
         Microsoft.Extensions.Logging.ILogger<MediaGenerationService>? logger = null, MediaGenerationOptions? options = null)
     {
         var evaluatorImpl = evaluator ?? new PassingEvaluator();
@@ -874,7 +874,7 @@ public sealed partial class MediaGenerationServiceTests
             recorder,
             readiness ?? new MediaReadinessService(uow),
             options ?? new MediaGenerationOptions { AssetMaxAttempts = 3, JobLeaseMinutes = 5 },
-            logger ?? NullLogger<MediaGenerationService>.Instance, supervision ?? new Mock<ISupervisionAccessGuard>().Object, clock);
+            logger ?? NullLogger<MediaGenerationService>.Instance, supervision ?? new Mock<IChildProfileAccessGuard>().Object, clock);
         MediaTestPump.Register(service, uow, clock);
         return service;
     }
@@ -916,8 +916,8 @@ public sealed partial class MediaGenerationServiceTests
     private static StoryReviewServiceTests.FakeUnitOfWork Seed()
     {
         var uow = new StoryReviewServiceTests.FakeUnitOfWork();
-        uow.Seed(new UserAccount { Id = 1, Role = UserRole.Parent, Status = AccountStatus.Active });
-        uow.Seed(new ChildProfile { Id = 1, Status = ChildProfileStatus.Active });
+        uow.Seed(new UserAccount { Id = 1, Role = UserRole.User, Status = AccountStatus.Active });
+        uow.Seed(new ChildProfile { Id = 1, OwnerUserId = 1, Status = ChildProfileStatus.Active });
         uow.Seed(new SafetyPolicy { Id = 1, ChildProfileId = 1, ConsentRecorded = true, ConsentRecordedAt = DateTime.UtcNow, ConsentPolicyVersion = 1 });
         uow.Seed(new Story { Id = 1, AuthorUserId = 1, ChildProfileId = 1, Status = StoryStatus.Approved });
         uow.Seed(new StoryVersion

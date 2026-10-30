@@ -253,7 +253,7 @@ public class ContentReportService : IContentReportService
     private async Task<UserAccount> RequireParentAsync(int userId, CancellationToken cancellationToken)
     {
         var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken);
-        if (user == null || user.IsDeleted || user.Status != AccountStatus.Active || user.Role != UserRole.Parent)
+        if (user == null || user.IsDeleted || user.Status != AccountStatus.Active || user.Role != UserRole.User)
         {
             throw new ForbiddenException(
                 "Chỉ người giám sát (phụ huynh) đang hoạt động mới báo cáo được truyện.");

@@ -825,11 +825,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                     ?? throw new NotFoundException("Story", storyId);
         GenerationStoryAccess.EnsureSupported(story);
         if (await GenerationStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, cancellationToken)) return story;
-        if (story.AuthorUserId == userId) return story;
-        var relationship = await _unitOfWork.Repository<SupervisionRelationship>().FirstOrDefaultAsync(
-            item => item.ChildProfileId == story.ChildProfileId && item.SupervisorUserId == userId && item.RevokedAt == null,
-            cancellationToken: cancellationToken);
-        if (relationship is null) throw new ForbiddenException();
+        if (!await ChildOwnership.IsOwnerAsync(_unitOfWork, story.ChildProfileId, userId, cancellationToken))
+            throw new ForbiddenException();
         return story;
     }
 

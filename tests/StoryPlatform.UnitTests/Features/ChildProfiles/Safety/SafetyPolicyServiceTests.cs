@@ -8,7 +8,7 @@ using StoryPlatform.Application.Features.ChildProfiles.Safety;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.Services;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using Xunit;
@@ -22,7 +22,7 @@ public class SafetyPolicyServiceTests
     private readonly Mock<IGenericRepository<ChildProfile>> _profileRepo = new();
     private readonly Mock<IGenericRepository<ContentCategory>> _contentCategoryRepo = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
-    private readonly Mock<ISupervisionAccessGuard> _guard = new();
+    private readonly Mock<IChildProfileAccessGuard> _guard = new();
     private readonly Mock<IAuditLogWriter> _auditLogWriter = new();
     private readonly List<(int? Actor, string Action, string EntityType, int EntityId, string? Before, string? After)> _audits = new();
     private readonly SafetyPolicyService _sut;
@@ -48,8 +48,8 @@ public class SafetyPolicyServiceTests
     [Fact]
     public async Task SetSafetyPolicyAsync_WithoutPermission_StopsBeforeWrite()
     {
-        _guard.Setup(g => g.EnsurePermissionAsync(
-                1, 3, Permission.ManageSafetySettings, It.IsAny<CancellationToken>()))
+        _guard.Setup(g => g.EnsureOwnerAsync(
+                1, 3, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ForbiddenException("Không có quyền."));
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
@@ -152,59 +152,10 @@ public class SafetyPolicyServiceTests
     }
 
     [Fact]
-    public async Task SetSafetyPolicyAsync_NewPolicyByAdditionalSupervisor_ThrowsForbidden()
-    {
-        AllowPermission(SupervisorRole.AdditionalSupervisor, userId: 3);
-        _policyRepo.Setup(r => r.FirstOrDefaultAsync(
-                It.IsAny<Expression<Func<SafetyPolicy, bool>>>(), null,
-                It.IsAny<CancellationToken>())).ReturnsAsync((SafetyPolicy?)null);
-
-        await Assert.ThrowsAsync<ForbiddenException>(() =>
-            _sut.SetSafetyPolicyAsync(1, 3, ValidRequest()));
-
-        _policyRepo.Verify(r => r.AddAsync(
-            It.IsAny<SafetyPolicy>(), It.IsAny<CancellationToken>()), Times.Never);
-        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
-        Assert.Empty(_audits);
-    }
-
-    [Fact]
-    public async Task SetSafetyPolicyAsync_ExistingConsentEditedByAdditionalSupervisor_KeepsConsentFields()
-    {
-        AllowPermission(SupervisorRole.AdditionalSupervisor, userId: 3);
-        var consentedAt = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc);
-        var policy = new SafetyPolicy
-        {
-            Id = 5, ChildProfileId = 1,
-            ConsentRecorded = true, ConsentRecordedAt = consentedAt,
-            ConsentPolicyVersion = 1, ConsentedByUserId = 2
-        };
-        _policyRepo.Setup(r => r.FirstOrDefaultAsync(
-                It.IsAny<Expression<Func<SafetyPolicy, bool>>>(), null,
-                It.IsAny<CancellationToken>())).ReturnsAsync(policy);
-        _categoryRepo.Setup(r => r.FindAsync(
-                It.IsAny<Expression<Func<SafetyPolicyCategory, bool>>>(), null,
-                It.IsAny<CancellationToken>())).ReturnsAsync(new List<SafetyPolicyCategory>());
-        var request = ValidRequest();
-        request.ConsentRecorded = false;
-        request.MaxStoryLength = 900;
-
-        var result = await _sut.SetSafetyPolicyAsync(1, 3, request);
-
-        Assert.Equal(900, policy.MaxStoryLength);
-        Assert.True(policy.ConsentRecorded);
-        Assert.Equal(consentedAt, policy.ConsentRecordedAt);
-        Assert.Equal(2, policy.ConsentedByUserId);
-        Assert.Equal(2, result.ConsentedByUserId);
-        Assert.Single(_audits, audit => audit.Action == "SET_SAFETY_POLICY");
-        Assert.DoesNotContain(_audits, audit => audit.Action == "RECORD_SAFETY_CONSENT");
-    }
-
-    [Fact]
     public async Task GetSafetyPolicyAsync_NotYetSet_ThrowsNotFound()
     {
-        _guard.Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new SupervisionRelationship());
+        _guard.Setup(g => g.EnsureOwnerAsync(1, 2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChildProfile { Id = 1, OwnerUserId = 2 });
         _policyRepo.Setup(r => r.FirstOrDefaultAsync(
                 It.IsAny<Expression<Func<SafetyPolicy, bool>>>(), null,
                 It.IsAny<CancellationToken>())).ReturnsAsync((SafetyPolicy?)null);
@@ -215,8 +166,8 @@ public class SafetyPolicyServiceTests
     [Fact]
     public async Task GetSafetyPolicyAsync_Exists_ReturnsDtoWithCategories()
     {
-        _guard.Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new SupervisionRelationship());
+        _guard.Setup(g => g.EnsureOwnerAsync(1, 2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChildProfile { Id = 1, OwnerUserId = 2 });
         var policy = new SafetyPolicy
         {
             Id = 5, ChildProfileId = 1, MaxStoryLength = 1500, ConsentRecorded = true,
@@ -240,7 +191,7 @@ public class SafetyPolicyServiceTests
     [Fact]
     public async Task DeleteSafetyPolicyAsync_WithoutPermission_ThrowsForbidden()
     {
-        _guard.Setup(g => g.EnsurePermissionAsync(1, 3, Permission.ManageSafetySettings, It.IsAny<CancellationToken>()))
+        _guard.Setup(g => g.EnsureOwnerAsync(1, 3, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ForbiddenException("Không có quyền."));
 
         await Assert.ThrowsAsync<ForbiddenException>(() => _sut.DeleteSafetyPolicyAsync(1, 3));
@@ -344,53 +295,9 @@ public class SafetyPolicyServiceTests
     }
 
     [Fact]
-    public async Task SetSafetyPolicyAsync_AdditionalSupervisorEnablesVoiceWithoutOwnerConsent_DoesNotSaveFlagButRaisesRequest()
-    {
-        AllowPermission(SupervisorRole.AdditionalSupervisor, userId: 3);
-        var policy = new SafetyPolicy
-        {
-            Id = 5, ChildProfileId = 1, ConsentRecorded = true,
-            ConsentPolicyVersion = 1, ConsentedByUserId = 2
-        };
-        SetupExistingPolicy(policy);
-        var request = ValidRequest();
-        request.VoiceAnswersEnabled = true;
-
-        var result = await _sut.SetSafetyPolicyAsync(1, 3, request);
-
-        Assert.False(policy.VoiceAnswersEnabled);
-        Assert.Null(policy.VoiceConsentAt);
-        Assert.NotNull(policy.VoiceEnableRequestedAt);
-        Assert.True(result.VoiceConsentRequired);
-        Assert.False(result.VoiceAnswersEnabled);
-    }
-
-    [Fact]
-    public async Task SetSafetyPolicyAsync_AdditionalSupervisorEnablesVoiceAfterOwnerConsent_EnablesFlag()
-    {
-        AllowPermission(SupervisorRole.AdditionalSupervisor, userId: 3);
-        var consentAt = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc);
-        var policy = new SafetyPolicy
-        {
-            Id = 5, ChildProfileId = 1, ConsentRecorded = true,
-            ConsentPolicyVersion = 1, ConsentedByUserId = 2,
-            VoiceConsentAt = consentAt, VoiceEnableRequestedAt = consentAt
-        };
-        SetupExistingPolicy(policy);
-        var request = ValidRequest();
-        request.VoiceAnswersEnabled = true;
-
-        await _sut.SetSafetyPolicyAsync(1, 3, request);
-
-        Assert.True(policy.VoiceAnswersEnabled);
-        Assert.Equal(consentAt, policy.VoiceConsentAt);
-        Assert.Null(policy.VoiceEnableRequestedAt);
-    }
-
-    [Fact]
     public async Task SetSafetyPolicyAsync_DisablingVoice_ClearsFlagAndPendingRequest()
     {
-        AllowPermission(SupervisorRole.AdditionalSupervisor, userId: 3);
+        AllowPermission(userId: 3);
         var policy = new SafetyPolicy
         {
             Id = 5, ChildProfileId = 1, ConsentRecorded = true,
@@ -544,9 +451,9 @@ public class SafetyPolicyServiceTests
     [Fact]
     public async Task GetAgePresetAsync_ReturnsBlockedCategoryIdsOfChildAgeBand()
     {
-        _guard.Setup(guard => guard.EnsureActiveSupervisionAsync(
+        _guard.Setup(guard => guard.EnsureOwnerAsync(
                 1, 2, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new SupervisionRelationship());
+            .ReturnsAsync(new ChildProfile { Id = 1, OwnerUserId = 2 });
         SetupChildAndCategories(AgeBand.Age_9_10);
 
         var result = await _sut.GetAgePresetAsync(1, 2);
@@ -642,16 +549,13 @@ public class SafetyPolicyServiceTests
             .ReturnsAsync(new List<ContentCategory> { category7, category8, category9 });
     }
 
-    private void AllowPermission(SupervisorRole role = SupervisorRole.Owner, int userId = 2)
+    private void AllowPermission(int userId = 2)
     {
-        _guard.Setup(g => g.EnsurePermissionAsync(
-                1, userId, Permission.ManageSafetySettings, It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-        _guard.Setup(g => g.EnsureActiveSupervisionAsync(1, userId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new SupervisionRelationship
-            {
-                Id = 10, ChildProfileId = 1, SupervisorUserId = userId, SupervisorRole = role
-            });
+        _guard.Setup(g => g.EnsureOwnerAsync(
+                1, userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChildProfile { Id = 1, OwnerUserId = userId });
+        _guard.Setup(g => g.EnsureOwnerAsync(1, userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChildProfile { Id = 1, OwnerUserId = userId });
     }
 
     private static SetSafetyPolicyRequestDto ValidRequest() => new()

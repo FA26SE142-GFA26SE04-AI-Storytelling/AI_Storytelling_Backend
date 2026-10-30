@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Json;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Features.ChildProfiles.Safety;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.CreatorAssistance;
 using StoryPlatform.Application.Features.CreatorAssistance.Services;
 using StoryPlatform.Contracts.AI.CreatorAssistance;
@@ -14,7 +14,7 @@ namespace StoryPlatform.Application.Features.ParentAuthoring;
 
 public sealed record ParentAssistanceContext(string Fingerprint, AssistanceChildPolicy Policy);
 
-public sealed class ParentAssistanceAccessPolicy(IUnitOfWork uow, ISupervisionAccessGuard guard) : IAssistanceAccessPolicy
+public sealed class ParentAssistanceAccessPolicy(IUnitOfWork uow, IChildProfileAccessGuard guard) : IAssistanceAccessPolicy
 {
     private readonly ParentManualAuthoringPolicy _manual = new(uow, guard);
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -25,7 +25,7 @@ public sealed class ParentAssistanceAccessPolicy(IUnitOfWork uow, ISupervisionAc
         if (story.Source != StorySource.Ai) { await _manual.AuthorizeAsync(user, story, ct); return; }
         if (story.Scope != StoryScope.Parent || story.AuthorUserId != user || story.IsDeleted || !story.ChildProfileId.HasValue)
             throw new StoryPlatform.Application.Common.Exceptions.NotFoundException("Story", story.Id);
-        await guard.EnsurePermissionAsync(story.ChildProfileId.Value, user, Permission.ApproveStory, ct);
+        await guard.EnsureOwnerAsync(story.ChildProfileId.Value, user, ct);
     }
     public async Task EnsureWritableAsync(Story story, CancellationToken ct)
     {

@@ -7,7 +7,7 @@ using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Kho bộ truyện mẫu của phụ huynh và việc chép bộ vào lộ trình.</summary>
-[Authorize(Roles = "Parent")]
+[Authorize(Roles = "User")]
 public class RoadmapLibraryController : BaseApiController
 {
     private readonly IRoadmapLibraryService _libraryService;

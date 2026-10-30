@@ -3,7 +3,7 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
 using StoryPlatform.Application.Features.RoadmapTemplates;
 using StoryPlatform.Application.Features.RoadmapTemplates.DTOs;
@@ -15,7 +15,7 @@ namespace StoryPlatform.Application.Features.ChildRoadmaps.Services;
 public partial class RoadmapLibraryService : IRoadmapLibraryService
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly ISupervisionAccessGuard _guard;
+    private readonly IChildProfileAccessGuard _guard;
     private readonly IChildRoadmapEligibility _eligibility;
     private readonly IChildRoadmapInserter _inserter;
     private readonly IChildRoadmapAdvancer _advancer;
@@ -24,7 +24,7 @@ public partial class RoadmapLibraryService : IRoadmapLibraryService
 
     public RoadmapLibraryService(
         IUnitOfWork unitOfWork,
-        ISupervisionAccessGuard guard,
+        IChildProfileAccessGuard guard,
         IChildRoadmapEligibility eligibility,
         IChildRoadmapInserter inserter,
         IChildRoadmapAdvancer advancer,
@@ -136,7 +136,7 @@ public partial class RoadmapLibraryService : IRoadmapLibraryService
     private async Task<UserAccount> RequireParentAsync(int userId, CancellationToken cancellationToken)
     {
         var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken);
-        if (user == null || user.IsDeleted || user.Status != AccountStatus.Active || user.Role != UserRole.Parent)
+        if (user == null || user.IsDeleted || user.Status != AccountStatus.Active || user.Role != UserRole.User)
         {
             throw new ForbiddenException("Chỉ phụ huynh đang hoạt động mới dùng được Kho bộ truyện mẫu.");
         }

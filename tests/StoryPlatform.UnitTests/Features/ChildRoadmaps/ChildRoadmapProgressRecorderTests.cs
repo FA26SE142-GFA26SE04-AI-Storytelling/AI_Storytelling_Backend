@@ -69,20 +69,15 @@ public class ChildRoadmapProgressRecorderTests
     }
 
     [Fact]
-    public async Task LastStep_NotifiesOwnerAndViewProgressSupervisors()
+    public async Task LastStep_NotifiesOwnerOnly()
     {
         _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Open);
-        _h.AddSupervisor(Child, ChildRoadmapHarness.SecondSupervisorId,
-            SupervisorRole.AdditionalSupervisor, Permission.ViewProgress);
         Session(10);
 
         await _sut.RecordSessionCompletedAsync(1, false);
 
         _h.Notifications.Verify(n => n.CreateAsync(
             ChildRoadmapHarness.ParentId, NotificationType.RoadmapCompleted,
-            It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
-        _h.Notifications.Verify(n => n.CreateAsync(
-            ChildRoadmapHarness.SecondSupervisorId, NotificationType.RoadmapCompleted,
             It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 

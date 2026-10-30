@@ -6,7 +6,7 @@ Cập nhật 19/10/2026: Parent tự viết và dùng AI hỗ trợ trên cùng 
 
 - API Parent riêng: `/api/v1/parent/stories`; API Creator giữ nguyên.
 - Hai vai trò dùng chung `ManualAuthoringService`: draft, save, import TXT/DOCX, history, restore, transaction, concurrency, replay. Creator facade giữ hợp đồng hiện hành.
-- Parent dùng `Scope=Parent`, `Source=Manual`, `CreateOperationId` của editor và không có `StoryGenerationRequest`, child bắt buộc. Không còn thuộc tính `AuthoringWorkflow`. Chỉ tác giả có quyền hiện hành `GenerateStory` trên child được biên tập.
+- Parent dùng `Scope=Parent`, `Source=Manual`, `CreateOperationId` của editor và không có `StoryGenerationRequest`, child bắt buộc. Không còn thuộc tính `AuthoringWorkflow`. Chỉ tác giả là chủ hồ sơ child được biên tập.
 - Lưu thủ công và kho hướng dẫn không gọi AI. AI hỗ trợ là lựa chọn riêng, không tạo outline hoặc generation job. Các API generation/review/public cũ tiếp tục từ chối bản nháp của editor mới; truyện nhập qua pipeline cũ giữ nguyên luồng cũ.
 - MVP backend có package đọc toàn văn theo segments, đủ dữ liệu cho Reader mới tích hợp. Không công bố trải nghiệm frontend hoàn chỉnh trước khi nối Reader và kiểm tra hiển thị toàn văn.
 - Listening/combined chưa có hợp đồng upload, kiểm chứng audio thủ công: preparation trả `isReady=false`, `MANUAL_AUDIO_PREPARATION_NOT_AVAILABLE`. Không tự tạo TTS hay bỏ điều kiện audio. Ảnh/media nâng cao chưa triển khai trong MVP này.
@@ -27,7 +27,7 @@ Theo AGENTS.md, chỉ cập nhật source model/configuration; không tạo, s�
 
 `GET /api/v1/authoring-guides?locale=vi&purpose=family_memory&group=starting_point&pageIndex=1&pageSize=10`
 
-Yêu cầu token Parent. Không nhận child/profile/content và không gọi AI. Nội dung nay lưu trong database và do Moderator/Administrator quản lý (xem `AUTHORING_GUIDE_MANAGEMENT_API_GUIDE.md`); API này chỉ đọc **phiên bản đang phát hành**, không bao giờ trả bản nháp. Phiên bản khởi tạo `parent-vi-1` gồm 12 câu hỏi và 18 mẫu diễn đạt; mỗi lần phát hành sinh `catalogVersion` mới (`parent-vi-2`, ...). Cùng phiên bản/filter/page trả cùng danh sách. Chỉ hỗ trợ catalog tiếng Việt; locale khác trả danh sách rỗng, không thay bằng ngôn ngữ sai. Chưa có bộ đang phát hành → 409 `GUIDE_CATALOG_UNAVAILABLE`. Hỏng kho hướng dẫn không phải dependency của API lưu/import.
+Yêu cầu token role User. Không nhận child/profile/content và không gọi AI. Nội dung nay lưu trong database và do Moderator/Administrator quản lý (xem `AUTHORING_GUIDE_MANAGEMENT_API_GUIDE.md`); API này chỉ đọc **phiên bản đang phát hành**, không bao giờ trả bản nháp. Phiên bản khởi tạo `parent-vi-1` gồm 12 câu hỏi và 18 mẫu diễn đạt; mỗi lần phát hành sinh `catalogVersion` mới (`parent-vi-2`, ...). Cùng phiên bản/filter/page trả cùng danh sách. Chỉ hỗ trợ catalog tiếng Việt; locale khác trả danh sách rỗng, không thay bằng ngôn ngữ sai. Chưa có bộ đang phát hành → 409 `GUIDE_CATALOG_UNAVAILABLE`. Hỏng kho hướng dẫn không phải dependency của API lưu/import.
 
 Purpose: `free`, `family_memory`, `understanding`, `message`. Group: `starting_point`, `opening`, `events`, `emotion`, `dialogue`, `transition`, `ending`.
 
@@ -43,11 +43,11 @@ Trả plain text; không ghi Story hoặc version. FE phải render dạng text,
 
 ## Authoring
 
-Tất cả endpoint Parent yêu cầu token role Parent, tài khoản active/unlocked, child Active và quyền giám sát chưa bị thu hồi. API không yêu cầu gói hoặc feature flag. Child ID/scope được backend kiểm tra, không tin scope do client tự gửi.
+Tất cả endpoint `/api/v1/parent/stories` yêu cầu token role User, tài khoản active/unlocked, child Active và quyền chủ hồ sơ trẻ còn hiệu lực. API không yêu cầu gói hoặc feature flag. Child ID/scope được backend kiểm tra, không tin scope do client tự gửi.
 
 1. `POST /manual`: body `operationId`, `childProfileId`, title tùy chọn, language mặc định theo child, purpose tùy chọn, experienceMode mặc định `reading`. Tạo Story Draft, chưa version.
 2. `GET /{storyId}`: response `data.story` có `revisionToken`, `selectedVersionId`; `data.childProfileId`, `data.purpose` là ngữ cảnh Parent. Detail còn trả `isReadOnly`, `readOnlyReason`, `canUseAiAssistance`, `aiUnavailableReason`. Thiếu consent chỉ chặn AI, không chặn viết tay. Danh sách `GET /` hiện dùng DTO draft chung, detail bổ sung child/purpose.
-   Danh sách lọc child Active và quyền GenerateStory hiện hành trước khi phân trang/tính TotalCount; truyện không còn quyền không làm lỗi trang của những con khác.
+   Danh sách lọc child Active và quyền chủ hồ sơ hiện hành trước khi phân trang/tính TotalCount; truyện không còn quyền không làm lỗi trang của những con khác.
    `GET /{storyId}/workflow` trả các receipt/kết quả và SourceIsCurrent để phục hồi bước sau reload; không tự lấy receipt lịch sử làm trạng thái hiện hành.
 3. `POST /{storyId}/manual/versions`: body giống Creator; `operationId`, `revisionToken`, `baseVersionId`, title/content, sourceDeclaration/rightsDeclaration. Lưu dở được. Có thể gửi assistanceReferences để ghi nhận DirectionUsed/TrialUsed từ tác vụ AI Parent hợp lệ; bỏ trường này hoặc gửi [] khi không khai tham chiếu mới.
 4. `GET /{storyId}/content/versions`, `GET /{storyId}/content/versions/{versionId}`.
@@ -96,7 +96,7 @@ Backend kiểm tra child khớp, grant chưa thu hồi, Story còn tồn tại, 
 
 ## AI hỗ trợ bản nháp Parent
 
-Tiền tố `A = /api/v1/parent/stories/{storyId}/assistance-tasks`. Role Parent; tác giả còn quyền GenerateStory, tài khoản/trẻ active và truyện chưa giao. Consent AI phải hợp lệ theo SafetyPolicy hiện hành. Chủ tài khoản phải xử lý consent qua API policy đã có; không tự bật consent trong request hỗ trợ.
+Tiền tố `A = /api/v1/parent/stories/{storyId}/assistance-tasks`. Role User; tác giả còn quyền chủ hồ sơ trẻ, tài khoản/trẻ active và truyện chưa giao. Consent AI phải hợp lệ theo SafetyPolicy hiện hành. Chủ tài khoản phải xử lý consent qua API policy đã có; không tự bật consent trong request hỗ trợ.
 
 - POST A: CreateAssistanceTaskRequest gồm operationId, revisionToken, baseVersionId, editorSnapshot {title,content}, entryPoint, target {kind,start,length}, goal, constraints {keep,avoid}. Snapshot có thể gồm phần chưa lưu.
 - GET A, GET A/{taskId}, GET A/{taskId}/steps: danh sách, trạng thái và lịch sử. Snapshot, activeResult, active step IDs, taskRevision và stale flags giúp phục hồi sau reload.

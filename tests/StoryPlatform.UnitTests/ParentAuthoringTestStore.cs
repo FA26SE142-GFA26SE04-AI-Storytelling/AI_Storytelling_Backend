@@ -7,7 +7,7 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Features.CreatorAuthoring;
 using StoryPlatform.Application.Features.CreatorAuthoring.Services;
 using StoryPlatform.Application.Features.ParentAuthoring;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Services;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Services;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -26,7 +26,7 @@ namespace StoryPlatform.UnitTests;
         public ParentAuthoringTestStore(CreatorAuthoringOptions? options = null)
         {
             Register<UserAccount>(); Register<Story>(); Register<StoryVersion>(); Register<StoryAuthoringOperation>(); Register<AuditLog>();
-            Register<ChildProfile>(); Register<SupervisionRelationship>(); Register<SupervisionPermission>();
+            Register<ChildProfile>();
             Register<ChildSession>(); Register<StoryAssistanceTask>(); Register<StoryAssistanceStep>();
             Register<SafetyPolicy>(); Register<SafetyPolicyCategory>(); Register<ContentCategory>();
             Register<LearningProfile>(); Register<StoryVocabulary>(); Register<QuizItem>(); Register<DiscussionQuestion>(); Register<ModerationItem>(); Register<ParentStoryOperation>(); Register<StoryGenerationJob>(); Register<StoryGenerationRequest>(); Register<MediaContext>(); Register<MediaAsset>(); Register<StoryScene>(); Register<StorySegment>(); Register<IllustrationBeat>();
@@ -52,10 +52,9 @@ namespace StoryPlatform.UnitTests;
             new AuthoringGuideCatalogSeeder(Uow.Object).SeedAsync(CancellationToken.None).GetAwaiter().GetResult();
             Creator = new CreatorAuthoringService(Uow.Object, options ?? new CreatorAuthoringOptions(), Protector);
             Items<ChildProfile>().Add(new ChildProfile { Id = 3, OwnerUserId = 1, Status = ChildProfileStatus.Active, Language = "vi", AgeBand = AgeBand.Age_6_8 });
-            Items<SupervisionRelationship>().Add(new SupervisionRelationship { Id = 1, ChildProfileId = 3, SupervisorUserId = 1, SupervisorRole = SupervisorRole.Owner });
             Items<SafetyPolicy>().Add(new SafetyPolicy { Id = 1, ChildProfileId = 3, MaxStoryLength = 5000 });
             Service = new ParentAuthoringService(Uow.Object, options ?? new CreatorAuthoringOptions(), Protector,
-                new SupervisionAccessGuard(Uow.Object), new StorySegmentService());
+                new ChildProfileAccessGuard(Uow.Object), new StorySegmentService());
         }
 
         public List<T> Items<T>() where T : class

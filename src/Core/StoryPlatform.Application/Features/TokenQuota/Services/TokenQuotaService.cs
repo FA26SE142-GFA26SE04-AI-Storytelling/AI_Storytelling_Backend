@@ -152,15 +152,9 @@ public class TokenQuotaService : ITokenQuotaService
 
         var requester = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(requestingUserId, cancellationToken);
         var isAdministrator = requester?.Role == UserRole.Administrator;
-        if (!isAdministrator)
+        if (!isAdministrator && (child.IsDeleted || child.Status == ChildProfileStatus.Deleted || child.OwnerUserId != requestingUserId))
         {
-            var hasActiveSupervision = await _unitOfWork.Repository<SupervisionRelationship>().ExistsAsync(
-                r => r.ChildProfileId == childProfileId && r.SupervisorUserId == requestingUserId && r.RevokedAt == null,
-                cancellationToken);
-            if (!hasActiveSupervision)
-            {
-                throw new ForbiddenException("Bạn không có quyền xem quota của hồ sơ trẻ này.");
-            }
+            throw new ForbiddenException("Bạn không có quyền xem quota của hồ sơ trẻ này.");
         }
 
         // GET-style read: no persisted rollover side effect. Show what the status would be

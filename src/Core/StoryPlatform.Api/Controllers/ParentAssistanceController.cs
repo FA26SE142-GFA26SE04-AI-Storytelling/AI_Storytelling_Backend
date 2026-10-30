@@ -8,7 +8,7 @@ using StoryPlatform.Application.Features.ParentAuthoring;
 
 namespace StoryPlatform.Api.Controllers;
 
-[Authorize(Roles = "Parent")]
+[Authorize(Roles = "User")]
 [Route("api/v1/parent/stories/{storyId:int}/assistance-tasks")]
 [RequestSizeLimit(1_000_000)]
 [ProducesResponseType(typeof(ApiResponse<object>), 400)]

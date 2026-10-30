@@ -7,7 +7,7 @@ using StoryPlatform.Application.Features.ChildProfiles.Learning.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Learning.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ExistingStories.DTOs;
 using StoryPlatform.Application.Features.ExistingStories.Interfaces;
 using StoryPlatform.Application.Features.ExistingStories.Services;
@@ -287,15 +287,10 @@ public sealed class ExistingStoryServiceTests
     }
 
     [Fact]
-    public async Task Import_RequiresGenerateStoryPermission()
+    public async Task Import_RequiresChildOwnership()
     {
         var store = SeedActiveChild();
-        // Không có supervision -> guard sẽ throw ForbiddenException.
-        var allRelationships = store.Items<SupervisionRelationship>().ToList();
-        foreach (var r in allRelationships)
-        {
-            ((ExistingStoryFakeRepository<SupervisionRelationship>)store.Repository<SupervisionRelationship>()).RemoveDirect(r);
-        }
+        store.Items<ChildProfile>().Single().OwnerUserId = 2;
         var service = BuildService(store);
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
@@ -518,7 +513,7 @@ public sealed class ExistingStoryServiceTests
     private static ExistingStoryFakeUnitOfWork SeedActiveChild()
     {
         var store = new ExistingStoryFakeUnitOfWork();
-        store.Seed(new UserAccount { Id = 1, Role = UserRole.Parent, Status = AccountStatus.Active });
+        store.Seed(new UserAccount { Id = 1, Role = UserRole.User, Status = AccountStatus.Active });
         store.Seed(new ChildProfile
         {
             Id = 1,
@@ -547,20 +542,6 @@ public sealed class ExistingStoryServiceTests
             ConsentPolicyVersion = 1,
             ComprehensionThresholdPercent = 70m,
             ComprehensionWindowSize = 3
-        });
-        store.Seed(new SupervisionRelationship
-        {
-            Id = 1,
-            ChildProfileId = 1,
-            SupervisorUserId = 1,
-            SupervisorRole = SupervisorRole.Owner,
-            CreatedAt = DateTime.UtcNow
-        });
-        store.Seed(new SupervisionPermission
-        {
-            Id = 1,
-            SupervisionRelationshipId = 1,
-            Permission = Permission.GenerateStory
         });
         return store;
     }
@@ -594,30 +575,18 @@ public sealed class ExistingStoryServiceTests
         return store;
     }
 
-    private sealed class PassThroughAccessGuard(ExistingStoryFakeUnitOfWork store) : ISupervisionAccessGuard
+    private sealed class PassThroughAccessGuard(ExistingStoryFakeUnitOfWork store) : IChildProfileAccessGuard
     {
-        public Task<SupervisionRelationship> EnsureActiveSupervisionAsync(int childProfileId, int userId, CancellationToken cancellationToken = default)
+        public Task<ChildProfile> EnsureOwnerAsync(int childProfileId, int userId, CancellationToken cancellationToken = default)
         {
-            var rel = store.Items<SupervisionRelationship>().FirstOrDefault(r =>
-                r.ChildProfileId == childProfileId && r.SupervisorUserId == userId && r.RevokedAt == null)
+            var child = store.Items<ChildProfile>().FirstOrDefault(c =>
+                c.Id == childProfileId && c.OwnerUserId == userId && !c.IsDeleted)
                 ?? throw new ForbiddenException();
-            return Task.FromResult(rel);
+            return Task.FromResult(child);
         }
 
-        public Task EnsureOwnerAsync(int childProfileId, int userId, CancellationToken cancellationToken = default) =>
-            throw new NotImplementedException();
-
-        public Task EnsurePermissionAsync(int childProfileId, int userId, Permission permission, CancellationToken cancellationToken = default)
-        {
-            var rel = store.Items<SupervisionRelationship>().FirstOrDefault(r =>
-                r.ChildProfileId == childProfileId && r.SupervisorUserId == userId && r.RevokedAt == null)
-                ?? throw new ForbiddenException();
-            if (rel.SupervisorRole == SupervisorRole.Owner) return Task.CompletedTask;
-            var ok = store.Items<SupervisionPermission>().Any(p =>
-                p.SupervisionRelationshipId == rel.Id && p.Permission == permission);
-            if (!ok) throw new ForbiddenException();
-            return Task.CompletedTask;
-        }
+        public Task<bool> IsOwnerAsync(int childProfileId, int userId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(store.Items<ChildProfile>().Any(c => c.Id == childProfileId && c.OwnerUserId == userId && !c.IsDeleted));
     }
 
     private sealed class NoopHandoffService : IStableVersionArtifactHandoffService

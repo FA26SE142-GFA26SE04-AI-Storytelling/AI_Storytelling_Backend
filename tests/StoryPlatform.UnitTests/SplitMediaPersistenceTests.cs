@@ -56,7 +56,7 @@ public sealed partial class SplitMediaPersistenceTests
         Register<UserAccount>(); Register<Story>(); Register<StoryVersion>(); Register<StoryGenerationJob>();
         Register<MediaContext>(); Register<StoryScene>(); Register<IllustrationBeat>(); Register<StorySegment>();
         Register<MediaAsset>(); Register<ModerationItem>(); Register<StoryAuthoringOperation>();
-        Register<MediaAssetGenerationTask>();
+        Register<MediaAssetGenerationTask>(); Register<StoryVocabulary>();
         mock.Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>())).Returns(async (CancellationToken ct) =>
         {
             if (transactionGate is not null) { await transactionGate.WaitAsync(ct); held = true; }

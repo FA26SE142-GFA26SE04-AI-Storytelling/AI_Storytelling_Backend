@@ -26,7 +26,7 @@ public sealed class CreatorManualMediaPersistenceTests
             Type[] types = [typeof(UserAccount), typeof(Story), typeof(StoryVersion), typeof(StoryGenerationJob),
                 typeof(MediaContext), typeof(ModerationItem), typeof(ContentCategory), typeof(StoryScene),
                 typeof(StorySegment), typeof(IllustrationBeat), typeof(MediaAsset), typeof(StoryAuthoringOperation), typeof(MediaAssetGenerationTask),
-                typeof(LearningArtifactGenerationBatch)];
+                typeof(LearningArtifactGenerationBatch), typeof(StoryVocabulary)];
             foreach (var type in types)
                 foreach (var p in type.GetProperties().Where(p => typeof(BaseEntity).IsAssignableFrom(p.PropertyType) ||
                     p.PropertyType.IsGenericType && p.PropertyType.GetGenericArguments().Any(t => typeof(BaseEntity).IsAssignableFrom(t))))

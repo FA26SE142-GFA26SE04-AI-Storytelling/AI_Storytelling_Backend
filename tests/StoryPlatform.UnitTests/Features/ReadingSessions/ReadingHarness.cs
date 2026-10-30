@@ -166,6 +166,17 @@ public sealed class ReadingHarness
         return vocab;
     }
 
+    public MediaAsset AddVocabularyAudio(StoryVocabulary word, string url, MediaStatus status = MediaStatus.Ready)
+    {
+        var asset = new MediaAsset
+        {
+            Id = Assets.Count + 1, StoryVersionId = word.StoryVersionId, StoryVocabularyId = word.Id,
+            Type = MediaType.VocabularyAudio, Status = status, Url = url
+        };
+        Assets.Add(asset);
+        return asset;
+    }
+
     public InterventionCase AddHoldMode(
         int childId, InterventionStatus status = InterventionStatus.OpenHoldMode, int? triggeringStoryId = null)
     {

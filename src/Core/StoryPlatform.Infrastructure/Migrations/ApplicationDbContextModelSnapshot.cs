@@ -1323,6 +1323,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("StoryVersionId")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("StoryVocabularyId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasMaxLength(30)
@@ -1364,6 +1367,10 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasIndex("StoryVersionId", "RequestedPackageRevision");
 
+                    b.HasIndex("StoryVocabularyId", "Type")
+                        .IsUnique()
+                        .HasFilter("\"StoryVocabularyId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true");
+
                     b.ToTable("media_assets", null, t =>
                         {
                             t.HasCheckConstraint("CK_media_assets_attempt_count", "\"AttemptCount\" >= 0");
@@ -1375,6 +1382,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                             t.HasCheckConstraint("CK_media_assets_segment_must_be_null_for_illustration", "\"Type\" <> 'Illustration' OR \"StorySegmentId\" IS NULL");
 
                             t.HasCheckConstraint("CK_media_assets_segment_required_for_audio", "\"Type\" <> 'TtsAudio' OR \"StorySegmentId\" IS NOT NULL");
+
+                            t.HasCheckConstraint("CK_media_assets_vocabulary_required_for_vocabulary_audio", "\"Type\" <> 'VocabularyAudio' OR \"StoryVocabularyId\" IS NOT NULL");
                         });
                 });
 
@@ -4669,6 +4678,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryVocabulary", "StoryVocabulary")
+                        .WithMany()
+                        .HasForeignKey("StoryVocabularyId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("IllustrationBeat");
 
                     b.Navigation("StoryScene");
@@ -4676,6 +4690,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("StorySegment");
 
                     b.Navigation("StoryVersion");
+
+                    b.Navigation("StoryVocabulary");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.MediaAssetGenerationTask", b =>

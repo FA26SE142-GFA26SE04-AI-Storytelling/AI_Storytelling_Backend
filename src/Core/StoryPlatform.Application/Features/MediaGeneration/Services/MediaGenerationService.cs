@@ -179,6 +179,13 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
                 x.Id, x.ReplacesMediaAssetId!.Value, x.Type.ToString(), x.IllustrationBeatId ?? x.StorySegmentId!.Value,
                 x.IsCurrent ? "Applied" : x.ReplacementResolvedAt.HasValue ? "Kept" :
                 x.Status is MediaStatus.Failed or MediaStatus.ManualReview ? "Failed" : "Generating")).ToArray() };
+        var vocabulary = await _unitOfWork.Repository<StoryVocabulary>().FindAsync(
+            x => x.StoryVersionId == version.Id && !x.IsDeleted, cancellationToken: cancellationToken);
+        package = package with { Vocabulary = vocabulary.OrderBy(x => x.Id).Select(word =>
+        {
+            var audio = assets.FirstOrDefault(x => x.IsCurrent && x.StoryVocabularyId == word.Id && x.Type == MediaType.VocabularyAudio);
+            return new VocabularyAudioMediaItem(word.Id, word.Term, audio?.Id, audio?.Status.ToString() ?? "Queued", audio?.Url);
+        }).ToArray() };
         return await SignPackageAsync(package, cancellationToken,
             assets.Where(x => x.RequestedPackageRevision == null && x.Status == MediaStatus.Ready && x.Url != null)
                 .Select(x => x.Url!).ToHashSet(StringComparer.Ordinal));
@@ -205,7 +212,14 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
                 });
             scenes.Add(scene with { Illustrations = images, Audio = audio });
         }
-        return package with { Scenes = scenes };
+        var vocabulary = new List<VocabularyAudioMediaItem>();
+        foreach (var item in package.Vocabulary)
+            vocabulary.Add(item with
+            {
+                Url = item.Status == "Ready" && !string.IsNullOrWhiteSpace(item.Url)
+                    ? await PreviewUrlAsync(package, item.Url, ct, legacyPaths.Contains(item.Url)) : null
+            });
+        return package with { Scenes = scenes, Vocabulary = vocabulary };
     }
 
     private Task<string> PreviewUrlAsync(StoryMediaPackage package, string path, CancellationToken ct, bool legacy)

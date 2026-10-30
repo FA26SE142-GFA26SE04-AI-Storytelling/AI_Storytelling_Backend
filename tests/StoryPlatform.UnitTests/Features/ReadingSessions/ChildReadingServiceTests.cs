@@ -447,6 +447,22 @@ public class ChildReadingServiceTests
     }
 
     [Fact]
+    public async Task GetContentAsync_VocabularyCarriesReadyPronunciationAudio()
+    {
+        var session = _h.AddSession();
+        _h.AddScene(0, "Thỏ thấy cà rốt. Thỏ rất dũng cảm.");
+        var carrot = _h.AddVocabulary(1, "cà rốt");
+        var brave = _h.AddVocabulary(2, "dũng cảm");
+        _h.AddVocabularyAudio(carrot, "10/versions/50/v1/vocab-1.mp3");
+        _h.AddVocabularyAudio(brave, "10/versions/50/v1/vocab-2.mp3", MediaStatus.Failed);
+
+        var content = await _sut.GetContentAsync(ReadingHarness.Child, session.Id);
+
+        Assert.Equal("10/versions/50/v1/vocab-1.mp3", content.Vocabulary.Single(v => v.Id == 1).AudioUrl);
+        Assert.Null(content.Vocabulary.Single(v => v.Id == 2).AudioUrl);
+    }
+
+    [Fact]
     public async Task GetContentAsync_AnotherChildsSession_IsNotFound()
     {
         var session = _h.AddSession(childId: ReadingHarness.OtherChild);

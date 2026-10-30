@@ -23,6 +23,9 @@ public class MediaAssetConfiguration : IEntityTypeConfiguration<MediaAsset>
             table.HasCheckConstraint(
                 "CK_media_assets_beat_must_be_null_for_audio",
                 "\"Type\" <> 'TtsAudio' OR \"IllustrationBeatId\" IS NULL");
+            table.HasCheckConstraint(
+                "CK_media_assets_vocabulary_required_for_vocabulary_audio",
+                "\"Type\" <> 'VocabularyAudio' OR \"StoryVocabularyId\" IS NOT NULL");
         });
 
         builder.HasKey(x => x.Id);
@@ -75,6 +78,11 @@ public class MediaAssetConfiguration : IEntityTypeConfiguration<MediaAsset>
             .HasForeignKey(x => x.IllustrationBeatId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(x => x.StoryVocabulary)
+            .WithMany()
+            .HasForeignKey(x => x.StoryVocabularyId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.HasIndex(x => new { x.IllustrationBeatId, x.Type })
             .IsUnique()
             .HasFilter("\"IllustrationBeatId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true");
@@ -82,6 +90,9 @@ public class MediaAssetConfiguration : IEntityTypeConfiguration<MediaAsset>
         builder.HasIndex(x => new { x.StorySegmentId, x.Type })
             .IsUnique()
             .HasFilter("\"StorySegmentId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true");
+        builder.HasIndex(x => new { x.StoryVocabularyId, x.Type })
+            .IsUnique()
+            .HasFilter("\"StoryVocabularyId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true");
         builder.HasIndex(x => x.ReplacesMediaAssetId).IsUnique()
             .HasFilter("\"ReplacesMediaAssetId\" IS NOT NULL AND \"ReplacementResolvedAt\" IS NULL AND \"IsDeleted\" = false");
 

@@ -42,8 +42,9 @@ builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options 
 // 2. Cấu hình Swagger với JWT Bearer
 builder.Services.AddSwaggerWithJwt();
 
-// 3. Cấu hình CORS
-builder.Services.AddCorsPolicy();
+// 3. Cấu hình CORS (origin đọc từ Cors:AllowedOrigins) và rate limiter (DF06)
+builder.Services.AddCorsPolicy(builder.Configuration, builder.Environment.IsDevelopment());
+builder.Services.AddApiRateLimiting(builder.Configuration);
 
 // 4. Cấu hình Authentication & JWT Token
 builder.Services.AddJwtAuthentication(builder.Configuration);
@@ -82,6 +83,9 @@ if (builder.Configuration.GetValue("AuthoringGuides:SeedOnStartup", true))
 // Phải chạy sớm để mọi middleware phía sau thấy IP client thật (không phải IP của ALB).
 app.UseForwardedHeaders();
 
+// Security headers cho mọi response, kể cả response lỗi (DF06).
+app.UseMiddleware<SecurityHeadersMiddleware>();
+
 // Bắt ngoại lệ tập trung toàn ứng dụng
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
@@ -96,10 +100,12 @@ if (app.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("Swa
     });
 }
 
-app.UseCors("AllowAll");
+app.UseCors(ServiceExtensions.CorsPolicyName);
 
 app.UseAuthentication();
 app.UseAuthorization();
+// Sau authentication để giới hạn endpoint AI theo tài khoản.
+app.UseRateLimiter();
 
 app.MapControllers();
 app.MapHealthChecks("/health");

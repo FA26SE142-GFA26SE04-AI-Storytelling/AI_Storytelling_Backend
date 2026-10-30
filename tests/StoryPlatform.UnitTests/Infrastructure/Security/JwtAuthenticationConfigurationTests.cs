@@ -63,25 +63,21 @@ public class JwtAuthenticationConfigurationTests
         Assert.NotNull(options.TokenValidationParameters.IssuerSigningKey);
     }
 
-    [Theory]
-    [InlineData("appsettings.json")]
-    [InlineData("appsettings.Development.json")]
-    public void ApiAppSettings_UseAgreedTokenLifetimes(string fileName)
+    // appsettings*.json stay gitignored (they hold secrets), so their values differ per machine.
+    // The agreed lifetimes are asserted on the tracked templates developers copy from instead.
+    [Fact]
+    public void TrackedConfigurationTemplates_UseAgreedTokenLifetimes()
     {
-        var settingsPath = FindApiSettingsFile(fileName);
-        if (!File.Exists(settingsPath))
-        {
-            // Local appsettings files intentionally stay gitignored because they may contain secrets.
-            return;
-        }
+        var root = FindRepositoryRoot();
+        var envExampleLines = File.ReadLines(Path.Combine(root, ".env.docker.example")).ToList();
+        var readme = File.ReadAllText(Path.Combine(root, "README.md"));
 
-        var configuration = new ConfigurationBuilder()
-            .AddJsonFile(settingsPath, optional: false)
-            .Build();
-
-        Assert.Equal("15", configuration["JwtSettings:ExpiryMinutes"]);
-        Assert.Equal("7", configuration["JwtSettings:RefreshTokenExpiryDays"]);
-        Assert.Equal("240", configuration["JwtSettings:ChildTokenExpiryMinutes"]);
+        Assert.Contains("JWT_EXPIRY_MINUTES=15", envExampleLines);
+        Assert.Contains("JWT_REFRESH_TOKEN_EXPIRY_DAYS=7", envExampleLines);
+        Assert.Contains("JWT_CHILD_TOKEN_EXPIRY_MINUTES=240", envExampleLines);
+        Assert.Contains("\"ExpiryMinutes\": 15,", readme, StringComparison.Ordinal);
+        Assert.Contains("\"RefreshTokenExpiryDays\": 7,", readme, StringComparison.Ordinal);
+        Assert.Contains("\"ChildTokenExpiryMinutes\": 240", readme, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -102,9 +98,6 @@ public class JwtAuthenticationConfigurationTests
         Assert.Contains(cdkLines, line => line.Contains(
             "[\"JwtSettings__ChildTokenExpiryMinutes\"] = \"240\"", StringComparison.Ordinal));
     }
-
-    private static string FindApiSettingsFile(string fileName)
-        => Path.Combine(FindRepositoryRoot(), "src", "Core", "StoryPlatform.Api", fileName);
 
     private static string FindRepositoryRoot()
     {

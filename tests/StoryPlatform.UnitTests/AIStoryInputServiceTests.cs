@@ -15,7 +15,7 @@ using Xunit;
 
 namespace StoryPlatform.UnitTests;
 
-public sealed class AIStoryInputServiceTests
+public sealed partial class AIStoryInputServiceTests
 {
     [Fact]
     public async Task Creator_SubmitUsesAudienceWithoutChildConsentOrChildQuota()

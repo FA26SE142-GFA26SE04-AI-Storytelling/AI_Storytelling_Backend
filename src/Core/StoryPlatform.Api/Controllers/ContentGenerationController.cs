@@ -1,3 +1,5 @@
+using StoryPlatform.Api.Extensions;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -27,6 +29,7 @@ public sealed class ContentGenerationController : ControllerBase
     }
 
     [HttpPost("retry")]
+    [EnableRateLimiting(RateLimitPolicies.Ai)]
     [ProducesResponseType(typeof(ApiResponse<ContentGenerationProgressDto>), StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

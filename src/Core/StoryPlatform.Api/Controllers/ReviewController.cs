@@ -1,4 +1,6 @@
-﻿using System.Security.Claims;
+﻿using StoryPlatform.Api.Extensions;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
@@ -47,6 +49,7 @@ public sealed class ReviewController : ControllerBase
     #region Learning Artifacts Generation (Phase 4)
 
     [HttpPost("artifacts/generate")]
+    [EnableRateLimiting(RateLimitPolicies.Ai)]
     [HttpPost("~/api/v1/stories/{storyId:int}/artifacts/generate")]
     public async Task<ActionResult<ApiResponse<ArtifactGenerationResultDto>>> GenerateArtifacts(
         int storyId, [FromBody] GenerateArtifactsRequestDto? input, CancellationToken cancellationToken)
@@ -77,6 +80,7 @@ public sealed class ReviewController : ControllerBase
     }
 
     [HttpPost("story/ai/partial-edit")]
+    [EnableRateLimiting(RateLimitPolicies.Ai)]
     public async Task<ActionResult<ApiResponse<CreateProposalResponseDto>>> PartialEdit(
         int storyId, [FromBody] PartialEditRequestDto input, CancellationToken cancellationToken)
     {
@@ -113,6 +117,7 @@ public sealed class ReviewController : ControllerBase
     }
 
     [HttpPost("vocabulary/ai/regenerate")]
+    [EnableRateLimiting(RateLimitPolicies.Ai)]
     public async Task<ActionResult<ApiResponse<CreateProposalResponseDto>>> RegenerateVocabulary(
         int storyId, CancellationToken cancellationToken)
     {
@@ -149,6 +154,7 @@ public sealed class ReviewController : ControllerBase
     }
 
     [HttpPost("quiz/ai/regenerate")]
+    [EnableRateLimiting(RateLimitPolicies.Ai)]
     public async Task<ActionResult<ApiResponse<CreateProposalResponseDto>>> RegenerateQuiz(
         int storyId, CancellationToken cancellationToken)
     {
@@ -185,6 +191,7 @@ public sealed class ReviewController : ControllerBase
     }
 
     [HttpPost("discussion/ai/regenerate")]
+    [EnableRateLimiting(RateLimitPolicies.Ai)]
     public async Task<ActionResult<ApiResponse<CreateProposalResponseDto>>> RegenerateDiscussion(
         int storyId, CancellationToken cancellationToken)
     {

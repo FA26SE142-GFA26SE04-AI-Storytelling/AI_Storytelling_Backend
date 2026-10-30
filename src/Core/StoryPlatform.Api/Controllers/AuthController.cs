@@ -1,3 +1,5 @@
+using StoryPlatform.Api.Extensions;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -46,6 +48,7 @@ public class AuthController : BaseApiController
     /// Đăng nhập hệ thống (hỗ trợ cả Email hoặc Username)
     /// </summary>
     [HttpPost("login")]
+    [EnableRateLimiting(RateLimitPolicies.Auth)]
     [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<AuthResponseDto>>> Login(
         [FromBody] LoginRequestDto request, 
@@ -87,6 +90,7 @@ public class AuthController : BaseApiController
     /// Gửi lại mã xác thực email mới và vô hiệu hóa mã cũ.
     /// </summary>
     [HttpPost("resend-verification-email")]
+    [EnableRateLimiting(RateLimitPolicies.Auth)]
     [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<object?>>> ResendVerificationEmail(
         [FromBody] ResendVerificationEmailRequestDto request,
@@ -102,6 +106,7 @@ public class AuthController : BaseApiController
     /// Luôn trả về cùng 1 thông điệp bất kể email có tồn tại hay không (tránh dò quét email).
     /// </summary>
     [HttpPost("forgot-password")]
+    [EnableRateLimiting(RateLimitPolicies.Auth)]
     [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<object?>>> ForgotPassword(
         [FromBody] ForgotPasswordRequestDto request,

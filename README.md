@@ -205,6 +205,9 @@ Tạo file cấu hình local `src/Core/StoryPlatform.Api/appsettings.json` (file
     "RefreshTokenExpiryDays": 7,
     "ChildTokenExpiryMinutes": 240
   },
+  "Cors": {
+    "AllowedOrigins": ["http://localhost:3000"]
+  },
   "AIService": {
     "BaseUrl": "http://localhost:5260",
     "InternalApiKey": "local-internal-key"

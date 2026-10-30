@@ -1,3 +1,5 @@
+using StoryPlatform.Api.Extensions;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -36,6 +38,7 @@ public sealed class MediaGenerationController : ControllerBase
     }
 
     [HttpPost("illustration-beats/{beatId:int}/regenerate")]
+    [EnableRateLimiting(RateLimitPolicies.Ai)]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -62,6 +65,7 @@ public sealed class MediaGenerationController : ControllerBase
     }
 
     [HttpPost("segments/{segmentId:int}/regenerate")]
+    [EnableRateLimiting(RateLimitPolicies.Ai)]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> RegenerateSegmentAudio(
@@ -74,6 +78,7 @@ public sealed class MediaGenerationController : ControllerBase
     }
 
     [HttpPost("retry")]
+    [EnableRateLimiting(RateLimitPolicies.Ai)]
     [ProducesResponseType(typeof(ApiResponse<MediaGenerationProgress>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]

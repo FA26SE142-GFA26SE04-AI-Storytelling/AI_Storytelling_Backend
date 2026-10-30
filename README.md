@@ -202,7 +202,8 @@ Tạo file cấu hình local `src/Core/StoryPlatform.Api/appsettings.json` (file
     "Issuer": "StoryPlatform",
     "Audience": "StoryPlatformClient",
     "ExpiryMinutes": 15,
-    "RefreshTokenExpiryDays": 7
+    "RefreshTokenExpiryDays": 7,
+    "ChildTokenExpiryMinutes": 240
   },
   "AIService": {
     "BaseUrl": "http://localhost:5260",

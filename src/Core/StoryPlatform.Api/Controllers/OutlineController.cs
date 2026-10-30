@@ -1,3 +1,5 @@
+using StoryPlatform.Api.Extensions;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -52,6 +54,7 @@ public sealed class OutlineController : ControllerBase
     }
 
     [HttpPost("versions/{versionNo:int}/regenerate")]
+    [EnableRateLimiting(RateLimitPolicies.Ai)]
     public async Task<ActionResult<ApiResponse<OutlineProgressDto>>> Regenerate(
         int storyId, int versionNo, [FromBody] RegenerateOutlineRequestDto input, CancellationToken cancellationToken)
     {
@@ -60,6 +63,7 @@ public sealed class OutlineController : ControllerBase
     }
 
     [HttpPost("retry")]
+    [EnableRateLimiting(RateLimitPolicies.Ai)]
     public async Task<ActionResult<ApiResponse<OutlineProgressDto>>> RetryInitial(
         int storyId, [FromBody] RetryOutlineRequestDto input, CancellationToken cancellationToken)
     {

@@ -1,0 +1,18 @@
+# Explicit allowlist: never upload Core, AWS, local ADC, .env, or build outputs.
+*
+!src/
+!src/AI/
+!src/AI/**
+!src/Shared/
+!src/Shared/StoryPlatform.Contracts/
+!src/Shared/StoryPlatform.Contracts/**
+!infra/
+!infra/google-cloud/
+!infra/google-cloud/cloudbuild.ai.yaml
+**/bin/**
+**/obj/**
+**/appsettings*.json
+**/.env*
+**/*credentials*.json
+**/adc.json
+**/secrets/**

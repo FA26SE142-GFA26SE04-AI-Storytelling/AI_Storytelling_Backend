@@ -57,9 +57,20 @@ file itself runs `.github/workflows/deploy-core-api.yml`:
    (`--target core-api`) **for `linux/arm64`** via `docker buildx` (cross-compiled on the
    GitHub-hosted x86 runner, via `docker/setup-qemu-action`), pushes `:sha` and `:latest` to ECR,
    then explicitly calls `aws ecs update-service --force-new-deployment` (re-pulls `:latest` even
-   though the task definition's image reference string doesn't change) and
-   `aws ecs wait services-stable` to block until the new task is healthy or the job fails — a bad
-   deploy is never silent.
+   though the task definition's image reference string doesn't change) and records the ID of the
+   deployment it started. It then waits for `aws ecs wait services-stable` and **verifies that this
+   deployment ID is `PRIMARY` + `COMPLETED` with at least one running task**, and finally that
+   `https://api.taletale.site/health` returns 200 through the Cloudflare Tunnel. On failure it prints
+   the latest ECS service events.
+
+   `services-stable` on its own is not proof of a good deploy: it also returns after ECS has rolled a
+   failed deployment back, or when the service has settled on zero running tasks. Until 2026-10-31 the
+   workflow stopped there, so every deploy between 2026-10-16 and 2026-10-31 reported success while
+   production was down. The service's deployment circuit breaker (enabled, with rollback) stops a
+   crash-looping deployment after a few failed tasks and returns to the previous task set; the
+   verification step turns that rollback into a failed workflow run.
+
+   Runs are serialized (`concurrency`), so two merges in quick succession deploy one after another.
 
 ECS has no equivalent of App Runner's `AutoDeploymentsEnabled` — pushing a new `:latest` tag to
 ECR does nothing by itself; the `update-service --force-new-deployment` call above is the only way
@@ -129,6 +140,22 @@ cdk deploy --profile storyplatform --context includeEcsService=false --require-a
 # push an image (see above)
 cdk deploy --profile storyplatform --require-approval broadcast   # picks up the persisted true
 ```
+
+## Alarm: no running API task
+
+CloudWatch alarm `storyplatform-core-api-no-running-task` goes to ALARM when the service has had no
+running task for 5 minutes (crash loop, failed deployment, or desired count 0 — so it also fires when
+the stack is paused on purpose) and back to OK once a task runs again. It notifies the SNS topic
+`storyplatform-core-api-alarms` (`ApiAlarmTopicArnOutput`) on both transitions.
+
+E-mail subscriptions are managed outside CDK, so no address is committed and a `cdk deploy` never
+drops them. To subscribe (AWS then sends a confirmation e-mail — click the link in it):
+
+```bash
+aws sns subscribe --topic-arn "$(aws cloudformation describe-stacks --stack-name StoryPlatformCoreStack   --query "Stacks[0].Outputs[?OutputKey=='ApiAlarmTopicArnOutput'].OutputValue" --output text   --region ap-southeast-1 --profile storyplatform)"   --protocol email --notification-endpoint <your-email> --region ap-southeast-1 --profile storyplatform
+```
+
+List or remove subscriptions with `aws sns list-subscriptions-by-topic` / `aws sns unsubscribe`.
 
 ## Cloudflare Tunnel (public entry point)
 

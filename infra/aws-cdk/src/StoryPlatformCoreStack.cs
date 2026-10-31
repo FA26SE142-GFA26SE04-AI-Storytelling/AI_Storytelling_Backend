@@ -1,4 +1,6 @@
 using Amazon.CDK;
+using Amazon.CDK.AWS.CloudWatch;
+using Amazon.CDK.AWS.CloudWatch.Actions;
 using Amazon.CDK.AWS.EC2;
 using Amazon.CDK.AWS.ECR;
 using Amazon.CDK.AWS.ECS;
@@ -6,6 +8,7 @@ using Amazon.CDK.AWS.IAM;
 using Amazon.CDK.AWS.Logs;
 using Amazon.CDK.AWS.RDS;
 using Amazon.CDK.AWS.SecretsManager;
+using Amazon.CDK.AWS.SNS;
 using Constructs;
 
 namespace StoryPlatform.Infra;
@@ -344,7 +347,44 @@ public sealed class StoryPlatformCoreStack : Stack
                 // old (healthy) task before the new one passes its health check. 100/200 keeps the
                 // previous task running until the new one is healthy (see design spec §9).
                 MinHealthyPercent = 100,
-                MaxHealthyPercent = 200
+                MaxHealthyPercent = 200,
+                // A deployment whose tasks keep failing (e.g. a crash at startup) is stopped and rolled back to
+                // the last working task set instead of restarting forever. The deploy workflow then fails,
+                // because it checks that its own deployment - not the rollback - completed.
+                CircuitBreaker = new DeploymentCircuitBreaker { Enable = true, Rollback = true }
+            });
+
+            // Alarm when the API has no running task for 5 minutes. ECS publishes CPUUtilization once a
+            // minute per running service, so a SampleCount below 1 - or no data at all, which is what zero
+            // tasks produce - means nothing is serving. Uses the free AWS/ECS metric, no Container Insights.
+            // The e-mail subscription is added outside CDK (see RUNBOOK) so no address lives in the repo.
+            var alarmTopic = new Topic(this, "ApiAlarmTopic", new TopicProps
+            {
+                TopicName = "storyplatform-core-api-alarms",
+                DisplayName = "StoryPlatform Core API alarms"
+            });
+            var noRunningTaskAlarm = new Alarm(this, "ApiNoRunningTaskAlarm", new AlarmProps
+            {
+                AlarmName = "storyplatform-core-api-no-running-task",
+                AlarmDescription = "Core API has had no running ECS task for 5 minutes (crash loop, failed deploy, or desired count 0).",
+                Metric = ApiService.MetricCpuUtilization(new MetricOptions
+                {
+                    Period = Duration.Minutes(1),
+                    Statistic = "SampleCount"
+                }),
+                Threshold = 1,
+                ComparisonOperator = ComparisonOperator.LESS_THAN_THRESHOLD,
+                EvaluationPeriods = 5,
+                DatapointsToAlarm = 5,
+                TreatMissingData = TreatMissingData.BREACHING
+            });
+            noRunningTaskAlarm.AddAlarmAction(new SnsAction(alarmTopic));
+            noRunningTaskAlarm.AddOkAction(new SnsAction(alarmTopic));
+
+            new CfnOutput(this, "ApiAlarmTopicArnOutput", new CfnOutputProps
+            {
+                Value = alarmTopic.TopicArn,
+                Description = "Subscribe an e-mail to this topic (aws sns subscribe) to receive API alarms"
             });
 
             new CfnOutput(this, "EcsClusterNameOutput", new CfnOutputProps

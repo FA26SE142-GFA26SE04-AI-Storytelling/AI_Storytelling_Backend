@@ -8,7 +8,7 @@ namespace StoryPlatform.Api.Extensions;
 
 public static class RateLimitPolicies
 {
-    /// <summary>Đăng nhập, quên mật khẩu, gửi lại OTP: giới hạn theo IP và theo endpoint.</summary>
+    /// <summary>Đăng nhập, quên/đặt lại mật khẩu, xác thực và gửi lại OTP/lời mời: giới hạn theo IP và theo endpoint.</summary>
     public const string Auth = "auth";
 
     /// <summary>Endpoint kích hoạt gọi AI: giới hạn theo tài khoản (chưa xác thực thì theo IP).</summary>

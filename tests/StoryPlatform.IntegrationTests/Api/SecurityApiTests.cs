@@ -213,6 +213,8 @@ public sealed class RateLimitingApiTests
     [InlineData("/api/v1/Auth/login", "{\"identifier\":\"nobody\",\"password\":\"Wrong@123\"}")]
     [InlineData("/api/v1/Auth/forgot-password", "{\"email\":\"nobody@example.test\"}")]
     [InlineData("/api/v1/Auth/resend-verification-email", "{\"email\":\"nobody@example.test\"}")]
+    [InlineData("/api/v1/Auth/verify-email", "{\"email\":\"nobody@example.test\",\"otp\":\"000000\"}")]
+    [InlineData("/api/v1/Auth/reset-password", ResetPasswordBody)]
     public async Task AuthEndpoint_OverLimit_Returns429WithRetryAfterAndApiMessage(string url, string body)
     {
         await using var factory = new RateLimitedApiFactory();
@@ -226,6 +228,21 @@ public sealed class RateLimitingApiTests
         Assert.NotNull(rejected.Headers.RetryAfter);
         Assert.Equal(RateLimitingExtensions.RejectedMessage, (await ReadJsonAsync(rejected)).GetProperty("message").GetString());
         Assert.Equal("nosniff", CorsApiTests.Header(rejected, "X-Content-Type-Options"));
+    }
+
+    [Fact]
+    public async Task StaffResendInvite_OverLimit_Returns429()
+    {
+        await using var factory = new RateLimitedApiFactory();
+        var admin = await factory.ClientForNewUserAsync(UserRole.Administrator);
+        const string url = "/api/v1/StaffAccount/999999/resend-invite";
+
+        for (var i = 0; i < RateLimitedApiFactory.AuthLimit; i++)
+            Assert.NotEqual(HttpStatusCode.TooManyRequests, (await Post(admin, url, "{}")).StatusCode);
+        var rejected = await Post(admin, url, "{}");
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, rejected.StatusCode);
+        Assert.Equal(RateLimitingExtensions.RejectedMessage, (await ReadJsonAsync(rejected)).GetProperty("message").GetString());
     }
 
     [Fact]
@@ -276,6 +293,10 @@ public sealed class RateLimitingApiTests
         for (var i = 0; i < RateLimitedApiFactory.AiLimit + 2; i++)
             Assert.Equal(HttpStatusCode.Unauthorized, (await Post(client, "/api/v1/ai-story-input/requests", "{}")).StatusCode);
     }
+
+    private const string ResetPasswordBody =
+        "{\"email\":\"nobody@example.test\",\"resetToken\":\"000000\",\"newPassword\":\"" + ApiFactory.Password +
+        "\",\"confirmPassword\":\"" + ApiFactory.Password + "\"}";
 
     private static Task<HttpResponseMessage> Post(HttpClient client, string url, string json) =>
         client.PostAsync(url, new StringContent(json, System.Text.Encoding.UTF8, "application/json"));

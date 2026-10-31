@@ -25,8 +25,9 @@ public static class AuthoringGuideCatalogQuery
     public static string RenderText(AuthoringGuide guide, IReadOnlyDictionary<string, string>? values)
     {
         if (guide.TemplateText is null) throw new BadRequestException("GUIDE_HAS_NO_TEMPLATE");
+        var keys = guide.PlaceholderDefinitions.Select(p => p.Key).ToArray();
         var map = values ?? new Dictionary<string, string>();
-        if (map.Keys.Except(guide.PlaceholderDefinitions).Any() || guide.PlaceholderDefinitions.Any(x =>
+        if (map.Keys.Except(keys).Any() || keys.Any(x =>
                 !map.TryGetValue(x, out var value) || string.IsNullOrWhiteSpace(value) || value.Length > 500))
             throw new BadRequestException("PLACEHOLDER_VALUES_INVALID");
         // One pass: inserted values are text, never recursively interpreted as template syntax/HTML.

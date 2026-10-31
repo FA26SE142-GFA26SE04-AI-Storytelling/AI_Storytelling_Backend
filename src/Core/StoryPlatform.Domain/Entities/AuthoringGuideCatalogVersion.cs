@@ -16,8 +16,8 @@ public class AuthoringGuideCatalogVersion : BaseEntity
 
     public AuthoringGuideVersionStatus Status { get; set; } = AuthoringGuideVersionStatus.Draft;
 
-    /// <summary>JSON <c>{ "schemaVersion": 1, "items": [...] }</c>.</summary>
-    public string ContentJson { get; set; } = "{}";
+    /// <summary>JSON cũ trước khi tách bảng; giữ lại để rollback.</summary>
+    public string? ContentJson { get; set; }
 
     public int? CreatedByUserId { get; set; }
     public int? UpdatedByUserId { get; set; }

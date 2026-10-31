@@ -14,7 +14,7 @@ public sealed record CreateGuideDraftRequest(int? SourceVersionId);
 
 /// <summary>Nội dung một mục; <c>id</c> lấy từ URL và <c>audienceRole</c> luôn là Parent do server đặt.</summary>
 public sealed record UpsertGuideItemRequest(string? RevisionToken, string[]? Purposes, string? SupportGroup, string? ItemType,
-    string? Title, string? Instruction, string? Example, string? TemplateText, string[]? PlaceholderDefinitions, int Order);
+    string? Title, string? Instruction, string? Example, string? TemplateText, GuidePlaceholder[]? PlaceholderDefinitions, int Order);
 
 /// <summary>Có <c>GuideId</c> → điền thử mẫu bằng <c>Values</c>; không có → liệt kê theo bộ lọc như Parent sẽ thấy.</summary>
 public sealed record PreviewGuideDraftRequest(string? RevisionToken, string? Purpose, string? Group, int PageIndex = 1,

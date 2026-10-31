@@ -2,6 +2,7 @@ using Microsoft.OpenApi.Models;
 using StoryPlatform.AI.Api.Middleware;
 using StoryPlatform.AI.Application;
 using StoryPlatform.AI.Infrastructure;
+using StoryPlatform.AI.Api.Configuration;
 // Load .env file if present in working directory or parents
 var currentDir = new DirectoryInfo(Directory.GetCurrentDirectory());
 while (currentDir != null)
@@ -30,6 +31,7 @@ while (currentDir != null)
 }
 
 var builder = WebApplication.CreateBuilder(args);
+CloudRunConfiguration.Validate(builder.Configuration);
 
 if (builder.Environment.IsDevelopment() && OperatingSystem.IsWindows())
 {

@@ -1,0 +1,22 @@
+{
+  "requestId": "cloud-run-deployment-smoke",
+  "ageBand": "6-8",
+  "readingLevel": "beginner",
+  "vocabularyLevel": "basic",
+  "language": "vi",
+  "source": "ai",
+  "interests": ["nature", "friendship"],
+  "comprehensionGoal": "Understand sharing and cooperation",
+  "storyParameters": {
+    "topic": "Hai ban tho cung trong cay",
+    "setting": "Khu vuon nho",
+    "characters": ["Tho Nau", "Tho Trang"],
+    "lesson": "Biet chia se va giup do ban be",
+    "requestedLength": 200
+  },
+  "constraints": {
+    "minimumWords": 100,
+    "maximumWords": 500,
+    "blockedTopics": []
+  }
+}

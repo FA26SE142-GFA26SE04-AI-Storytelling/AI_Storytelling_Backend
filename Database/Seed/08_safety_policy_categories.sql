@@ -1,4 +1,5 @@
--- 8. safety_policy_categories (10)
+-- 8. safety_policy_categories (11)
+-- Be 6 cho phep FAMILY va SCIENCE de doc duoc truyen 6 (gan ca hai nhan).
 INSERT INTO safety_policy_categories ("Id", "SafetyPolicyId", "ContentCategoryId", "Rule", "CreatedAt", "IsDeleted")
 VALUES
     (1, 1, 1, 'Allowed', NOW() - INTERVAL '40 days', false),
@@ -10,5 +11,6 @@ VALUES
     (7, 7, 1, 'Blocked', NOW() - INTERVAL '34 days', false),
     (8, 8, 2, 'Allowed', NOW() - INTERVAL '33 days', false),
     (9, 9, 3, 'Restricted', NOW() - INTERVAL '32 days', false),
-    (10, 10, 4, 'Allowed', NOW() - INTERVAL '18 days', false)
+    (10, 10, 4, 'Allowed', NOW() - INTERVAL '18 days', false),
+    (11, 6, 4, 'Allowed', NOW() - INTERVAL '35 days', false)
 ON CONFLICT ("Id") DO NOTHING;

@@ -438,18 +438,6 @@ Enum report_status_enum {
   published
 }
 
-Enum data_request_type_enum {
-  export
-  delete
-}
-
-Enum data_request_status_enum {
-  pending
-  resolved
-  cancelled
-  rejected
-}
-
 // MỚI v9.5 (Luồng 5, Bước 5.1c — Token Quota)
 Enum token_quota_scope_enum {
   system
@@ -515,7 +503,7 @@ Enum consent_status_enum {
 }
 
 // =====================================================================
-// ENUMS: Notification & Data Request — dùng chung toàn hệ thống (MỚI v9.4)
+// ENUMS: Notification — dùng chung toàn hệ thống (MỚI v9.4)
 // =====================================================================
 
 // MỚI v9.4 (Luồng 1, Mục 7b) — mọi điểm "hệ thống gửi thông báo" xuyên
@@ -528,8 +516,6 @@ Enum notification_type_enum {
   hold_mode_alert                 // Luồng 4, Bước 4.5.2
   hold_mode_auto_unlocked         // MỚI v10 — Luồng 4, Bước 4.5.3a
   recommendation_awaiting_review  // Luồng 6, Bước 6.5 (kể cả lần nhắc ngày thứ 7)
-  data_request_sla_warning        // Luồng 5, Bước 5.4 (đề xuất kích hoạt ở mốc 48 giờ)
-  data_request_completed
   admin_role_changed              // Luồng 5, Bước 5.1b (MỚI)
   content_reported                // MỚI v9.5 — Luồng 4, Bước 4.6
   moderation_sla_warning          // Luồng 4, Bước 4.6 — báo cáo sắp quá hạn xử lý
@@ -545,12 +531,6 @@ Enum notification_type_enum {
 Enum notification_read_status_enum {
   unread
   read
-}
-
-// MỚI v9.4 (Luồng 5, Bước 5.4) — quyết định Anonymize/Hard Delete
-Enum data_request_deletion_method_enum {
-  anonymize    // MẶC ĐỊNH — xóa/che trường định danh, GIỮ id + số liệu ẩn danh, không phá vỡ audit/báo cáo lịch sử
-  hard_delete  // Chỉ khi có căn cứ pháp lý minh thị (right to erasure), đã được Administrator/Legal xác nhận bằng văn bản (xem legal_basis_note)
 }
 
 // #####################################################################
@@ -1372,35 +1352,6 @@ Table business_reports {
   published_at timestamp
 
   Note: 'Báo cáo tổng hợp vận hành cấp hệ thống — Bước 5.5.'
-}
-
-Table data_requests {
-  id integer [pk, increment]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  requested_by_user_id integer [not null, ref: > user_accounts.id]
-  child_profile_id integer [ref: > child_profiles.id]
-  request_type data_request_type_enum [not null]
-  status data_request_status_enum [not null, default: 'pending']
-  deletion_method data_request_deletion_method_enum [default: 'anonymize', note: 'MỚI v9.4 — chỉ áp dụng khi request_type=delete']
-  legal_basis_note text [note: 'MỚI v9.4 — bắt buộc khi deletion_method=hard_delete, ghi rõ căn cứ pháp lý đã được Administrator/Legal xác nhận']
-  resolved_by_user_id integer [ref: > user_accounts.id, note: 'MỚI v9.4 — Administrator nào đã xử lý']
-  rejection_reason varchar(500)
-  created_at timestamp [not null, default: `now()`, note: 'MỚI v9.4 — mốc bắt đầu tính SLA 72 giờ, trước đây thiếu hoàn toàn nên không đo được SLA']
-  resolved_at timestamp
-
-  Note: '''
-    Xử lý yêu cầu xuất / xóa dữ liệu theo chuẩn COPPA/GDPR — Bước 5.4.
-    ĐÃ CHỐT v9.4 (trước đây để ngỏ): nhánh delete mặc định Anonymize
-    (xóa/che trường định danh, GIỮ id + số liệu ẩn danh để không phá vỡ
-    audit/báo cáo lịch sử — giữ triết lý Auditability xuyên suốt
-    schema); Hard Delete chỉ khi có yêu cầu pháp lý minh thị (right to
-    erasure) đã được Administrator/Legal xác nhận bằng văn bản
-    (legal_basis_note bắt buộc trong trường hợp này). notification_type=
-    data_request_sla_warning nên kích hoạt ở mốc 48 giờ kể từ created_at
-    (còn 24 giờ trước hạn) nếu status vẫn 'pending'. HỆ QUẢ cho Luồng 1:
-    xóa tài khoản User phải xóa và ẩn danh mọi hồ sơ trẻ do User sở hữu.
-  '''
 }
 
 Table audit_logs {

@@ -19,7 +19,7 @@ VALUES
      'Đã giải quyết, trẻ tiến bộ tốt', 3, NOW() - INTERVAL '11 days', NOW() - INTERVAL '12 days', false),
     (7, 4, NULL, 'AutoBelowThreshold', 'OpenHoldMode', 4, NULL, NOW() - INTERVAL '2 days', NULL, NULL,
      'Theo dõi khả năng suy luận', 3, NOW() - INTERVAL '2 days' + INTERVAL '1 hour', NOW() - INTERVAL '2 days', false),
-    (8, 6, NULL, 'RecommendedByAi', 'UnderReview', NULL, NULL, NOW() - INTERVAL '1 day', NULL, NULL,
+    (8, 6, NULL, 'RecommendedByAi', 'ResolvedUnlocked', NULL, 'ManualParent', NOW() - INTERVAL '1 day', NOW() - INTERVAL '2 hours', 4,
      'Đánh giá thêm về tốc độ tiến bộ', 4, NOW() - INTERVAL '23 hours', NOW() - INTERVAL '1 day', false),
     (9, 8, NULL, 'AutoBelowThreshold', 'ResolvedUnlocked', 8, 'AutoRetakePass', NOW() - INTERVAL '8 days', NOW() - INTERVAL '3 days', NULL,
      'Trẻ đã vượt qua khó khăn ban đầu sau lần đọc lại', 5, NOW() - INTERVAL '7 days', NOW() - INTERVAL '8 days', false),

@@ -34,7 +34,6 @@ public static class NotificationGroups
 
         NotificationType.ContentReported
             or NotificationType.ModerationSlaWarning
-            or NotificationType.DataRequestSlaWarning
             or NotificationType.ContentModerationResult => Moderation,
 
         NotificationType.ContentReportResolved => Stories,

@@ -1373,6 +1373,17 @@ public class ChildReadingServiceTests
             _sut.LogEventAsync(ReadingHarness.Child, session.Id, new ReadingEventRequestDto { EventType = eventType }));
     }
 
+    [Theory]
+    [InlineData("AsrWordResult")]
+    [InlineData("PronunciationError")]
+    public async Task LogEventAsync_AsrResultsComeOnlyFromTheServer(string eventType)
+    {
+        var session = _h.AddSession();
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.LogEventAsync(ReadingHarness.Child, session.Id, new ReadingEventRequestDto { EventType = eventType }));
+    }
+
     [Fact]
     public async Task LogEventAsync_PayloadTooLong_IsBadRequest()
     {

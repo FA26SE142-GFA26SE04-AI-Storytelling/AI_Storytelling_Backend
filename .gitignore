@@ -30,6 +30,11 @@ application_default_credentials.json
 !/docs/WISH_CARD_AI_MATCHING_API_GUIDE.md
 !/docs/BE_UOC_SWAGGER_MANUAL_TEST.md
 !/docs/WISH_AI_REVIEW_STATUS.md
+# docs/api: only shared test guides; other local files there stay ignored
+!/docs/api/
+/docs/api/*
+!/docs/api/api-test-guide-buoc-1-7.html
+!/docs/api/HUONG_DAN_TEST_AUDIO_PHAT_AM_TU_VUNG.html
 
 # AppSettings
 appsettings*.json

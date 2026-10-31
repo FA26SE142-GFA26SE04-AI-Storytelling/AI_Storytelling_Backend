@@ -23,11 +23,9 @@ public class NotificationGroupsTests
     [InlineData(NotificationType.StoryWishExpiring, "children")]
     [InlineData(NotificationType.AccountSecurityChanged, "account")]
     [InlineData(NotificationType.PaymentConfirmed, "account")]
-    [InlineData(NotificationType.DataRequestCompleted, "account")]
     [InlineData(NotificationType.AdminRoleChanged, "account")]
     [InlineData(NotificationType.ContentReported, "moderation")]
     [InlineData(NotificationType.ModerationSlaWarning, "moderation")]
-    [InlineData(NotificationType.DataRequestSlaWarning, "moderation")]
     [InlineData(NotificationType.ContentModerationResult, "moderation")]
     [InlineData(NotificationType.ContentReportResolved, "stories")]
     public void For_ReturnsSpecGroup(NotificationType type, string expected) =>

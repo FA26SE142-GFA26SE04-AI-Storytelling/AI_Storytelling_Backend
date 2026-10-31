@@ -106,22 +106,25 @@ public sealed class RateLimitedApiFactory : ApiFactory
 }
 
 /// <summary>
-/// Production topology for the rate limiter: client → Cloudflare → ALB (in the VPC) → API. TestServer has no
-/// socket, so the connecting hop's IP is taken from <see cref="ConnectingIpHeader"/> ahead of the real pipeline.
+/// Production topology for the rate limiter: client → Cloudflare → cloudflared (sidecar in the same task, over
+/// loopback) → API, with the visitor IP in CF-Connecting-IP. TestServer has no socket, so the connecting hop's IP
+/// is taken from <see cref="ConnectingIpHeader"/> ahead of the real pipeline.
 /// </summary>
 public sealed class ProxiedRateLimitedApiFactory : ApiFactory
 {
     public const string ConnectingIpHeader = "X-Test-Connecting-Ip";
-    public const string AlbIp = "10.0.1.25";
-    public const string CloudflareIp = "173.245.48.7";
+    public const string ClientIpHeader = "CF-Connecting-IP";
+    public const string TunnelIp = "127.0.0.1";
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         base.ConfigureWebHost(builder);
         builder.UseSetting("RateLimiting:Auth:PermitLimit", RateLimitedApiFactory.AuthLimit.ToString());
         builder.UseSetting("RateLimiting:Auth:WindowSeconds", "300");
-        builder.UseSetting("ForwardedHeaders:KnownNetworks:0", "10.0.0.0/16");
-        builder.UseSetting("ForwardedHeaders:KnownNetworks:1", "173.245.48.0/20");
+        builder.UseSetting("ForwardedHeaders:KnownNetworks:0", "127.0.0.1/32");
+        builder.UseSetting("ForwardedHeaders:KnownNetworks:1", "::1/128");
+        builder.UseSetting("ForwardedHeaders:ForwardLimit", "1");
+        builder.UseSetting("ForwardedHeaders:ForwardedForHeaderName", ClientIpHeader);
         builder.ConfigureTestServices(services => services.AddSingleton<IStartupFilter, ConnectingIpStartupFilter>());
     }
 
@@ -140,7 +143,7 @@ public sealed class ProxiedRateLimitedApiFactory : ApiFactory
     }
 }
 
-/// <summary>DF06 6.2 – the auth limiter counts the real client IP behind Cloudflare and the ALB, never a spoofed header.</summary>
+/// <summary>DF06 6.2 – the auth limiter counts the real client IP behind the Cloudflare Tunnel, never a spoofed header.</summary>
 public sealed class ForwardedClientIpRateLimitingApiTests
 {
     private const string LoginUrl = "/api/v1/Auth/login";
@@ -148,60 +151,63 @@ public sealed class ForwardedClientIpRateLimitingApiTests
     private const string LoginBody = "{\"identifier\":\"nobody\"}";
 
     [Fact]
-    public async Task SpoofedForwardedFor_FromUntrustedSource_IsIgnored()
+    public async Task SpoofedClientIpHeader_FromNonTunnelSource_IsIgnored()
     {
         await using var factory = new ProxiedRateLimitedApiFactory();
         var client = factory.CreateClient();
 
         for (var i = 0; i < RateLimitedApiFactory.AuthLimit; i++)
             Assert.NotEqual(HttpStatusCode.TooManyRequests,
-                (await Login(client, connectingIp: "203.0.113.50", forwardedFor: $"198.51.100.{i + 1}")).StatusCode);
+                (await Login(client, "203.0.113.50", (ProxiedRateLimitedApiFactory.ClientIpHeader, $"198.51.100.{i + 1}"))).StatusCode);
 
-        var rejected = await Login(client, connectingIp: "203.0.113.50", forwardedFor: "198.51.100.99");
+        var rejected = await Login(client, "203.0.113.50", (ProxiedRateLimitedApiFactory.ClientIpHeader, "198.51.100.99"));
 
         Assert.Equal(HttpStatusCode.TooManyRequests, rejected.StatusCode);
     }
 
     [Fact]
-    public async Task ThroughTrustedProxies_LimitAppliesToClientIp_AndOtherClientsKeepTheirQuota()
+    public async Task ThroughTunnel_LimitAppliesToClientIp_AndOtherClientsKeepTheirQuota()
     {
         await using var factory = new ProxiedRateLimitedApiFactory();
         var client = factory.CreateClient();
 
         for (var i = 0; i < RateLimitedApiFactory.AuthLimit; i++)
-            Assert.NotEqual(HttpStatusCode.TooManyRequests, (await ViaCloudflare(client, "198.51.100.9")).StatusCode);
+            Assert.NotEqual(HttpStatusCode.TooManyRequests, (await ViaTunnel(client, "198.51.100.9")).StatusCode);
 
-        Assert.Equal(HttpStatusCode.TooManyRequests, (await ViaCloudflare(client, "198.51.100.9")).StatusCode);
-        Assert.NotEqual(HttpStatusCode.TooManyRequests, (await ViaCloudflare(client, "198.51.100.10")).StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await ViaTunnel(client, "198.51.100.9")).StatusCode);
+        Assert.NotEqual(HttpStatusCode.TooManyRequests, (await ViaTunnel(client, "198.51.100.10")).StatusCode);
     }
 
     [Fact]
-    public async Task ThroughTrustedProxies_SpoofedLeftmostEntry_DoesNotGrantNewQuota()
+    public async Task ThroughTunnel_SpoofedXForwardedFor_DoesNotGrantNewQuota()
     {
         await using var factory = new ProxiedRateLimitedApiFactory();
         var client = factory.CreateClient();
 
         for (var i = 0; i <= RateLimitedApiFactory.AuthLimit; i++)
-            await ViaCloudflare(client, "198.51.100.9", spoofedPrefix: $"203.0.113.{i + 1}");
+            await ViaTunnel(client, "198.51.100.9", spoofedForwardedFor: $"203.0.113.{i + 1}");
 
-        var rejected = await ViaCloudflare(client, "198.51.100.9", spoofedPrefix: "203.0.113.200");
+        var rejected = await ViaTunnel(client, "198.51.100.9", spoofedForwardedFor: "203.0.113.200");
 
         Assert.Equal(HttpStatusCode.TooManyRequests, rejected.StatusCode);
     }
 
-    // Cloudflare appends the visitor IP to X-Forwarded-For, then the ALB appends the Cloudflare edge IP.
-    private static Task<HttpResponseMessage> ViaCloudflare(HttpClient client, string clientIp, string? spoofedPrefix = null) =>
-        Login(client, ProxiedRateLimitedApiFactory.AlbIp,
-            string.Join(", ", new[] { spoofedPrefix, clientIp, ProxiedRateLimitedApiFactory.CloudflareIp }.Where(ip => ip is not null)));
+    // Cloudflare's edge sets CF-Connecting-IP to the visitor IP; cloudflared passes it on over loopback.
+    private static Task<HttpResponseMessage> ViaTunnel(HttpClient client, string clientIp, string? spoofedForwardedFor = null) =>
+        spoofedForwardedFor is null
+            ? Login(client, ProxiedRateLimitedApiFactory.TunnelIp, (ProxiedRateLimitedApiFactory.ClientIpHeader, clientIp))
+            : Login(client, ProxiedRateLimitedApiFactory.TunnelIp, (ProxiedRateLimitedApiFactory.ClientIpHeader, clientIp),
+                ("X-Forwarded-For", spoofedForwardedFor));
 
-    private static Task<HttpResponseMessage> Login(HttpClient client, string connectingIp, string forwardedFor)
+    private static Task<HttpResponseMessage> Login(HttpClient client, string connectingIp, params (string Name, string Value)[] headers)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, LoginUrl)
         {
             Content = new StringContent(LoginBody, System.Text.Encoding.UTF8, "application/json")
         };
         request.Headers.Add(ProxiedRateLimitedApiFactory.ConnectingIpHeader, connectingIp);
-        request.Headers.Add("X-Forwarded-For", forwardedFor);
+        foreach (var (name, value) in headers)
+            request.Headers.Add(name, value);
         return client.SendAsync(request);
     }
 }

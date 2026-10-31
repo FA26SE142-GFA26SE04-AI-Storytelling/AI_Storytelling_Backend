@@ -18,6 +18,7 @@ public class ForwardedHeadersConfigurationTests
     private const string AlbIp = "10.0.1.25";
     private const string CloudflareIp = "173.245.48.7";
     private const string ClientIp = "198.51.100.9";
+    private const string CfConnectingIp = "CF-Connecting-IP";
 
     [Fact]
     public async Task ProxyChain_AlbThenCloudflare_ResolvesRealClientIp()
@@ -62,6 +63,40 @@ public class ForwardedHeadersConfigurationTests
     }
 
     [Fact]
+    public async Task Tunnel_CfConnectingIpFromLoopback_ResolvesRealClientIp()
+    {
+        var context = await InvokeAsync(Tunnel(), "127.0.0.1", ClientIp, CfConnectingIp);
+
+        Assert.Equal(ClientIp, context.Connection.RemoteIpAddress!.ToString());
+    }
+
+    [Fact]
+    public async Task Tunnel_SpoofedXForwardedFor_IsIgnoredInFavourOfCfConnectingIp()
+    {
+        var context = await InvokeAsync(Tunnel(), "::1", ClientIp, CfConnectingIp,
+            ("X-Forwarded-For", "203.0.113.66"));
+
+        Assert.Equal(ClientIp, context.Connection.RemoteIpAddress!.ToString());
+    }
+
+    [Fact]
+    public async Task Tunnel_CfConnectingIpFromNonLoopbackSource_IsIgnored()
+    {
+        var context = await InvokeAsync(Tunnel(), "10.0.1.25", ClientIp, CfConnectingIp);
+
+        Assert.Equal("10.0.1.25", context.Connection.RemoteIpAddress!.ToString());
+    }
+
+    [Fact]
+    public void Tunnel_ReadsClientIpFromConfiguredHeaderWithLimitOfOne()
+    {
+        var options = Options(Tunnel());
+
+        Assert.Equal(CfConnectingIp, options.ForwardedForHeaderName);
+        Assert.Equal(1, options.ForwardLimit);
+    }
+
+    [Fact]
     public void KnownNetworksConfigured_ReadsForwardedForAndProtoWithDefaultLimitOfTwo()
     {
         var options = Options(Trusted());
@@ -69,6 +104,7 @@ public class ForwardedHeadersConfigurationTests
         Assert.True(options.ForwardedHeaders.HasFlag(ForwardedHeaders.XForwardedFor));
         Assert.True(options.ForwardedHeaders.HasFlag(ForwardedHeaders.XForwardedProto));
         Assert.Equal(2, options.ForwardLimit);
+        Assert.Equal(ForwardedHeadersDefaults.XForwardedForHeaderName, options.ForwardedForHeaderName);
         Assert.Equal(
             [System.Net.IPNetwork.Parse(VpcCidr), System.Net.IPNetwork.Parse(CloudflareCidr)],
             options.KnownIPNetworks);
@@ -119,6 +155,13 @@ public class ForwardedHeadersConfigurationTests
             new ServiceCollection().AddLoadBalancerForwardedHeaders(configuration));
     }
 
+    // Production: cloudflared runs in the same Fargate task and calls the API over loopback.
+    private static IConfiguration Tunnel() => Config(
+        ("ForwardedHeaders:KnownNetworks:0", "127.0.0.1/32"),
+        ("ForwardedHeaders:KnownNetworks:1", "::1/128"),
+        ("ForwardedHeaders:ForwardLimit", "1"),
+        ("ForwardedHeaders:ForwardedForHeaderName", CfConnectingIp));
+
     private static IConfiguration Trusted() => Config(
         ("ForwardedHeaders:KnownNetworks:0", VpcCidr),
         ("ForwardedHeaders:KnownNetworks:1", CloudflareCidr));
@@ -136,13 +179,18 @@ public class ForwardedHeadersConfigurationTests
         return provider.GetRequiredService<IOptions<ForwardedHeadersOptions>>().Value;
     }
 
-    private static async Task<HttpContext> InvokeAsync(IConfiguration configuration, string remoteIp, string forwardedFor)
+    private static async Task<HttpContext> InvokeAsync(IConfiguration configuration, string remoteIp, string forwardedFor,
+        string headerName = "X-Forwarded-For", params (string Name, string Value)[] extraHeaders)
     {
         var options = Microsoft.Extensions.Options.Options.Create(Options(configuration));
         var middleware = new ForwardedHeadersMiddleware(_ => Task.CompletedTask, NullLoggerFactory.Instance, options);
         var context = new DefaultHttpContext();
         context.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp);
-        context.Request.Headers["X-Forwarded-For"] = forwardedFor;
+        context.Request.Headers[headerName] = forwardedFor;
+        foreach (var (name, value) in extraHeaders)
+        {
+            context.Request.Headers[name] = value;
+        }
 
         await middleware.Invoke(context);
         return context;

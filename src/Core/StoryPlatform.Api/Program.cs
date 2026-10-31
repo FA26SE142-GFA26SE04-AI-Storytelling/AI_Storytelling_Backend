@@ -48,7 +48,7 @@ builder.Services.AddApiRateLimiting(builder.Configuration);
 
 // 4. Cấu hình Authentication & JWT Token
 builder.Services.AddJwtAuthentication(builder.Configuration);
-builder.Services.AddLoadBalancerForwardedHeaders();
+builder.Services.AddLoadBalancerForwardedHeaders(builder.Configuration);
 builder.Services.AddAppAuthorization();
 
 // 5. Đăng ký Application use cases và Infrastructure adapters

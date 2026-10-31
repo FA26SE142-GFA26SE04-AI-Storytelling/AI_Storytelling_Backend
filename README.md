@@ -255,6 +255,12 @@ RateLimiting__Ai__WindowSeconds=60
 
 Giá trị phải là số nguyên dương, nếu không API sẽ không khởi động.
 
+**IP dùng để đếm khi chạy sau proxy.** Trên production request đi qua client → Cloudflare → ALB → API, nên IP kết nối tới API là IP của ALB. API chỉ đọc `X-Forwarded-For` từ các hop nằm trong `ForwardedHeaders:KnownNetworks` (dải CIDR) và lùi tối đa `ForwardedHeaders:ForwardLimit` hop (mặc định `2`: ALB rồi Cloudflare), nên mỗi người dùng có hạn mức riêng theo IP thật của họ, còn giá trị `X-Forwarded-For` tự đặt từ nguồn không tin cậy bị bỏ qua.
+
+- AWS (ECS): CDK tự đặt `ForwardedHeaders__KnownNetworks__0` = dải VPC và các chỉ số tiếp theo = dải IPv4 Cloudflare (danh sách `CloudflareIpv4Ranges` trong `infra/aws-cdk/src/StoryPlatformCoreStack.cs`, lấy từ <https://www.cloudflare.com/ips/>). Security group của ALB cũng chỉ nhận cổng 80 từ đúng các dải này, nên không thể gọi thẳng DNS của ALB để vòng qua Cloudflare. Khi Cloudflare đổi dải IP, chỉ cần sửa danh sách đó rồi `cdk deploy`.
+- Local / Docker Compose: không có proxy phía trước nên không cấu hình `ForwardedHeaders:KnownNetworks`; khi đó API bỏ qua mọi header `X-Forwarded-*` và đếm theo IP kết nối thực.
+- Dải không đúng định dạng CIDR (ví dụ `10.0.0.1` thiếu `/16`) hoặc `ForwardLimit` không dương thì API sẽ không khởi động.
+
 ### 6.3. Cập nhật Cơ sở dữ liệu (EF Core Migration)
 Chạy lệnh migration để tự động sinh cấu trúc bảng trên PostgreSQL:
 ```powershell

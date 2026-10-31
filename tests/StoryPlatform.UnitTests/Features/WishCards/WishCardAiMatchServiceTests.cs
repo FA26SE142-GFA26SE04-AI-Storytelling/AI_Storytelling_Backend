@@ -1,7 +1,7 @@
 using Moq;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ChildRoadmaps.Services;
 using StoryPlatform.Application.Features.StoryWishes.Services;
 using StoryPlatform.Application.Features.WishCards.Interfaces;
@@ -129,7 +129,7 @@ public sealed class WishCardAiMatchServiceTests
     [InlineData("status")]
     public async Task Access_and_source_checks_run_before_AI(string invalid)
     {
-        if (invalid == "actor") _h.Users.Single().Role = UserRole.Parent;
+        if (invalid == "actor") _h.Users.Single().Role = UserRole.User;
         if (invalid == "private") _story.Scope = StoryScope.Parent;
         if (invalid == "status") _story.Status = StoryStatus.Draft;
         await Assert.ThrowsAnyAsync<AppException>(() => _service.MatchAsync(11, 20, invalid == "version" ? 999 : 60, default));
@@ -155,7 +155,7 @@ public sealed class WishCardAiMatchServiceTests
         var wish = new StoryWish { Id = 25, ChildProfileId = ReadingHarness.Child,
             CharacterCardId = _cat.Id, PlaceCardId = forest.Id, Status = StoryWishStatus.Pending };
         var suggestions = new StoryWishSuggestionService(_h.UnitOfWork.Object, new ChildRoadmapEligibility(_h.UnitOfWork.Object),
-            new Mock<ISupervisionAccessGuard>().Object);
+            new Mock<IChildProfileAccessGuard>().Object);
         Assert.Equal(1, await suggestions.ComputeAsync(wish));
         Assert.Equal(20, Assert.Single(_h.Suggestions).StoryId);
     }

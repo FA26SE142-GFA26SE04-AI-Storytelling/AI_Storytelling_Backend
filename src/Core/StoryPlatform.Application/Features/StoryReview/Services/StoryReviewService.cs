@@ -1311,18 +1311,8 @@ public sealed partial class StoryReviewService : IStoryReviewService
         if (StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story)) throw new ConflictException("PARENT_MANUAL_USE_AUTHORING_API");
         GenerationStoryAccess.EnsureSupported(story);
         if (await GenerationStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, cancellationToken)) return;
-        if (story.AuthorUserId == userId) return;
-        var relationship = await _unitOfWork.Repository<SupervisionRelationship>().FirstOrDefaultAsync(
-            value => value.ChildProfileId == story.ChildProfileId &&
-                     value.SupervisorUserId == userId && value.RevokedAt == null,
-            cancellationToken: cancellationToken);
-        if (relationship is null) throw new ForbiddenException();
-        if (relationship.SupervisorRole == SupervisorRole.Owner) return;
-        var allowed = await _unitOfWork.Repository<SupervisionPermission>().ExistsAsync(
-            value => value.SupervisionRelationshipId == relationship.Id &&
-                     value.Permission == Permission.ApproveStory,
-            cancellationToken);
-        if (!allowed) throw new ForbiddenException("Bạn không có quyền duyệt hoặc lưu trữ Story này.");
+        if (!await ChildOwnership.IsOwnerAsync(_unitOfWork, story.ChildProfileId, userId, cancellationToken))
+            throw new ForbiddenException("Bạn không có quyền duyệt hoặc lưu trữ Story này.");
     }
 
     private static bool IsValidQuizItem(QuizItem item)

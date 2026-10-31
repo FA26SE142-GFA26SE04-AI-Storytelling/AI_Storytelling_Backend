@@ -21,7 +21,7 @@ public class SafetyPolicyController : BaseApiController
     /// Tạo/cập nhật Safety Policy của một hồ sơ trẻ (Bước 1.4) — yêu cầu quyền ManageSafetySettings.
     /// </summary>
     [HttpPut("{childProfileId:int}")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "User")]
     public async Task<ActionResult<ApiResponse<SafetyPolicyDto>>> SetSafetyPolicy(
         int childProfileId,
         [FromBody] SetSafetyPolicyRequestDto request,
@@ -37,7 +37,7 @@ public class SafetyPolicyController : BaseApiController
     /// Tạo mới Safety Policy của một hồ sơ trẻ (dùng cùng logic upsert với PUT) — yêu cầu quyền ManageSafetySettings.
     /// </summary>
     [HttpPost("{childProfileId:int}")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "User")]
     public async Task<ActionResult<ApiResponse<SafetyPolicyDto>>> CreateSafetyPolicy(
         int childProfileId,
         [FromBody] SetSafetyPolicyRequestDto request,
@@ -53,7 +53,7 @@ public class SafetyPolicyController : BaseApiController
     /// Lấy Safety Policy hiện tại của hồ sơ trẻ.
     /// </summary>
     [HttpGet("{childProfileId:int}")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "User")]
     public async Task<ActionResult<ApiResponse<SafetyPolicyDto>>> GetSafetyPolicy(
         int childProfileId, CancellationToken cancellationToken)
     {
@@ -63,7 +63,7 @@ public class SafetyPolicyController : BaseApiController
 
     /// <summary>Owner đồng ý lại điều khoản khi consent_policy_version đã đổi.</summary>
     [HttpPost("{childProfileId:int}/reconsent")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "User")]
     public async Task<ActionResult<ApiResponse<SafetyPolicyDto>>> Reconsent(
         int childProfileId, CancellationToken cancellationToken)
     {
@@ -74,7 +74,7 @@ public class SafetyPolicyController : BaseApiController
 
     /// <summary>Danh sách danh mục Blocked mặc định theo age_band của trẻ.</summary>
     [HttpGet("{childProfileId:int}/age-preset")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "User")]
     public async Task<ActionResult<ApiResponse<AgePresetDto>>> GetAgePreset(
         int childProfileId, CancellationToken cancellationToken)
     {
@@ -85,7 +85,7 @@ public class SafetyPolicyController : BaseApiController
 
     /// <summary>Thay danh sách Blocked bằng preset theo age_band hiện tại.</summary>
     [HttpPost("{childProfileId:int}/age-preset/apply")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "User")]
     public async Task<ActionResult<ApiResponse<SafetyPolicyDto>>> ApplyAgePreset(
         int childProfileId, CancellationToken cancellationToken)
     {
@@ -98,7 +98,7 @@ public class SafetyPolicyController : BaseApiController
     /// Xoá hẳn Safety Policy của hồ sơ trẻ (xoá cứng — chỉ là cấu hình).
     /// </summary>
     [HttpDelete("{childProfileId:int}")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "User")]
     public async Task<ActionResult<ApiResponse<object?>>> DeleteSafetyPolicy(
         int childProfileId, CancellationToken cancellationToken)
     {

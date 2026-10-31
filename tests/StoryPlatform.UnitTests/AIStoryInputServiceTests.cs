@@ -60,7 +60,7 @@ public sealed partial class AIStoryInputServiceTests
     }
 
     [Theory]
-    [InlineData(UserRole.Parent, AccountStatus.Active)]
+    [InlineData(UserRole.User, AccountStatus.Active)]
     [InlineData(UserRole.Administrator, AccountStatus.Active)]
     [InlineData(UserRole.ContentCreator, AccountStatus.Suspended)]
     public async Task Creator_InputRejectsWrongRoleOrInactiveAccount(UserRole role, AccountStatus status)
@@ -234,9 +234,10 @@ public sealed partial class AIStoryInputServiceTests
     }
 
     [Fact]
-    public async Task Missing_generate_permission_creates_nothing()
+    public async Task Nonowner_creates_nothing()
     {
-        var unitOfWork = CreateEligibleUnitOfWork(includePermission: false);
+        var unitOfWork = CreateEligibleUnitOfWork();
+        unitOfWork.Items<ChildProfile>().Single().OwnerUserId = 2;
         var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
 
         await Assert.ThrowsAsync<ForbiddenException>(() => service.SubmitAsync(1, ValidRequest()));
@@ -447,7 +448,7 @@ public sealed partial class AIStoryInputServiceTests
     private static FakeUnitOfWork CreateEligibleUnitOfWork(bool includePermission = true, string? blockedTerm = null)
     {
         var unitOfWork = new FakeUnitOfWork();
-        unitOfWork.Seed(new UserAccount { Id = 1, Role = UserRole.Parent, Status = AccountStatus.Active });
+        unitOfWork.Seed(new UserAccount { Id = 1, Role = UserRole.User, Status = AccountStatus.Active });
         unitOfWork.Seed(new ChildProfile
         {
             Id = 1,
@@ -468,22 +469,6 @@ public sealed partial class AIStoryInputServiceTests
             ConsentRecordedAt = DateTime.UtcNow,
             ConsentPolicyVersion = 1
         });
-        unitOfWork.Seed(new SupervisionRelationship
-        {
-            Id = 1,
-            ChildProfileId = 1,
-            SupervisorUserId = 1,
-            SupervisorRole = SupervisorRole.Owner
-        });
-        if (includePermission)
-        {
-            unitOfWork.Seed(new SupervisionPermission
-            {
-                Id = 1,
-                SupervisionRelationshipId = 1,
-                Permission = Permission.GenerateStory
-            });
-        }
 
         if (blockedTerm is not null)
         {

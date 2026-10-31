@@ -1,7 +1,7 @@
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -11,7 +11,7 @@ namespace StoryPlatform.Application.Features.ChildRoadmaps.Services;
 public partial class ChildRoadmapService : IChildRoadmapService
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly ISupervisionAccessGuard _guard;
+    private readonly IChildProfileAccessGuard _guard;
     private readonly IChildRoadmapEligibility _eligibility;
     private readonly IChildRoadmapInserter _inserter;
     private readonly IChildRoadmapAdvancer _advancer;
@@ -20,7 +20,7 @@ public partial class ChildRoadmapService : IChildRoadmapService
 
     public ChildRoadmapService(
         IUnitOfWork unitOfWork,
-        ISupervisionAccessGuard guard,
+        IChildProfileAccessGuard guard,
         IChildRoadmapEligibility eligibility,
         IChildRoadmapInserter inserter,
         IChildRoadmapAdvancer advancer,
@@ -71,7 +71,7 @@ public partial class ChildRoadmapService : IChildRoadmapService
     public async Task<ChildRoadmapDto> GetAsync(
         int actorUserId, int childProfileId, CancellationToken cancellationToken = default)
     {
-        await _guard.EnsureActiveSupervisionAsync(childProfileId, actorUserId, cancellationToken);
+        await _guard.EnsureOwnerAsync(childProfileId, actorUserId, cancellationToken);
         return await BuildRoadmapAsync(childProfileId, cancellationToken);
     }
 
@@ -146,32 +146,8 @@ public partial class ChildRoadmapService : IChildRoadmapService
         }
     }
 
-    private async Task<bool> CanAssignAsync(int childId, int actorUserId, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await _guard.EnsurePermissionAsync(childId, actorUserId, Permission.AssignActivity, cancellationToken);
-            return true;
-        }
-        catch (ForbiddenException)
-        {
-            return false;
-        }
-    }
-
-    private async Task<bool> HasPermissionAsync(
-        int childId, int actorUserId, Permission permission, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await _guard.EnsurePermissionAsync(childId, actorUserId, permission, cancellationToken);
-            return true;
-        }
-        catch (ForbiddenException)
-        {
-            return false;
-        }
-    }
+    private Task<bool> CanAssignAsync(int childId, int actorUserId, CancellationToken cancellationToken) =>
+        _guard.IsOwnerAsync(childId, actorUserId, cancellationToken);
 
     private async Task<bool> CanUseStoryAsync(
         int actorUserId, ChildProfile target, Story story, CancellationToken cancellationToken)
@@ -191,8 +167,8 @@ public partial class ChildRoadmapService : IChildRoadmapService
             return true;
         }
 
-        return await HasPermissionAsync(story.ChildProfileId.Value, actorUserId, Permission.ApproveStory, cancellationToken)
-               && await HasPermissionAsync(target.Id, actorUserId, Permission.ApproveStory, cancellationToken);
+        return await _guard.IsOwnerAsync(story.ChildProfileId.Value, actorUserId, cancellationToken)
+               && await _guard.IsOwnerAsync(target.Id, actorUserId, cancellationToken);
     }
 
     private async Task<List<string>> BuildWarningsAsync(

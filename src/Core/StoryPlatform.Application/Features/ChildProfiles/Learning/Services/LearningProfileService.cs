@@ -3,7 +3,7 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ChildProfiles.Learning.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Learning.Interfaces;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -12,9 +12,9 @@ namespace StoryPlatform.Application.Features.ChildProfiles.Learning.Services;
 public class LearningProfileService : ILearningProfileService
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly ISupervisionAccessGuard _accessGuard;
+    private readonly IChildProfileAccessGuard _accessGuard;
 
-    public LearningProfileService(IUnitOfWork unitOfWork, ISupervisionAccessGuard accessGuard)
+    public LearningProfileService(IUnitOfWork unitOfWork, IChildProfileAccessGuard accessGuard)
     {
         _unitOfWork = unitOfWork;
         _accessGuard = accessGuard;
@@ -24,8 +24,8 @@ public class LearningProfileService : ILearningProfileService
         int childProfileId, int currentUserId, SetLearningProfileRequestDto request,
         CancellationToken cancellationToken = default)
     {
-        await _accessGuard.EnsurePermissionAsync(
-            childProfileId, currentUserId, Permission.ApproveReadingLevel, cancellationToken);
+        await _accessGuard.EnsureOwnerAsync(
+            childProfileId, currentUserId, cancellationToken);
         ValidateRequest(request);
 
         var child = await _unitOfWork.Repository<ChildProfile>()
@@ -127,7 +127,7 @@ public class LearningProfileService : ILearningProfileService
     public async Task<LearningProfileDto> GetLearningProfileAsync(
         int childProfileId, int currentUserId, CancellationToken cancellationToken = default)
     {
-        await _accessGuard.EnsureActiveSupervisionAsync(childProfileId, currentUserId, cancellationToken);
+        await _accessGuard.EnsureOwnerAsync(childProfileId, currentUserId, cancellationToken);
 
         var profile = await _unitOfWork.Repository<LearningProfile>().FirstOrDefaultAsync(
             value => value.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
@@ -153,7 +153,7 @@ public class LearningProfileService : ILearningProfileService
     public async Task DeleteLearningProfileAsync(
         int childProfileId, int currentUserId, CancellationToken cancellationToken = default)
     {
-        await _accessGuard.EnsureActiveSupervisionAsync(childProfileId, currentUserId, cancellationToken);
+        await _accessGuard.EnsureOwnerAsync(childProfileId, currentUserId, cancellationToken);
 
         var profileRepo = _unitOfWork.Repository<LearningProfile>();
         var profile = await profileRepo.FirstOrDefaultAsync(

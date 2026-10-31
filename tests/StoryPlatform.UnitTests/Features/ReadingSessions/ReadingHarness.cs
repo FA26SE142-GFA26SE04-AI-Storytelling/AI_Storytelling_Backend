@@ -43,8 +43,6 @@ public sealed class ReadingHarness
     public readonly List<WishCard> WishCards = new();
     public readonly List<ContentCategory> Categories = new();
     public readonly List<StoryWish> StoryWishes = new();
-    public readonly List<SupervisionRelationship> Relationships = new();
-    public readonly List<SupervisionPermission> SupervisionPermissions = new();
     public readonly List<UserAccount> Users = new();
 
     public readonly List<StoryWishCardMatch> CardMatches = new();
@@ -80,7 +78,7 @@ public sealed class ReadingHarness
         Back(Cases); Back(ModerationItems); Back(Quizzes); Back(Attempts); Back(Achievements); Back(Badges);
         Back(Policies); Back(PolicyCategories); Back(StoryCategories); Back(RoadmapItems);
         Back(WishCards); Back(Categories);
-        Back(StoryWishes); Back(Relationships); Back(SupervisionPermissions); Back(Users);
+        Back(StoryWishes); Back(Users);
 
         Children.Add(new ChildProfile
         {
@@ -168,6 +166,17 @@ public sealed class ReadingHarness
         return vocab;
     }
 
+    public MediaAsset AddVocabularyAudio(StoryVocabulary word, string url, MediaStatus status = MediaStatus.Ready)
+    {
+        var asset = new MediaAsset
+        {
+            Id = Assets.Count + 1, StoryVersionId = word.StoryVersionId, StoryVocabularyId = word.Id,
+            Type = MediaType.VocabularyAudio, Status = status, Url = url
+        };
+        Assets.Add(asset);
+        return asset;
+    }
+
     public InterventionCase AddHoldMode(
         int childId, InterventionStatus status = InterventionStatus.OpenHoldMode, int? triggeringStoryId = null)
     {
@@ -208,36 +217,11 @@ public sealed class ReadingHarness
             Username = $"user_{id}",
             Email = $"user_{id}@example.com",
             FullName = $"User {id}",
-            Role = UserRole.Parent,
+            Role = UserRole.User,
             Status = status
         };
         Users.Add(user);
         return user;
-    }
-
-    public SupervisionRelationship AddSupervisor(
-        int childId, int userId, SupervisorRole role, DateTime? revokedAt = null, params Permission[] permissions)
-    {
-        var relationship = new SupervisionRelationship
-        {
-            Id = Relationships.Count + 1,
-            ChildProfileId = childId,
-            SupervisorUserId = userId,
-            SupervisorRole = role,
-            RevokedAt = revokedAt
-        };
-        Relationships.Add(relationship);
-        foreach (var permission in permissions)
-        {
-            SupervisionPermissions.Add(new SupervisionPermission
-            {
-                Id = SupervisionPermissions.Count + 1,
-                SupervisionRelationshipId = relationship.Id,
-                Permission = permission
-            });
-        }
-
-        return relationship;
     }
 
     private void Back<T>(List<T> list) where T : BaseEntity

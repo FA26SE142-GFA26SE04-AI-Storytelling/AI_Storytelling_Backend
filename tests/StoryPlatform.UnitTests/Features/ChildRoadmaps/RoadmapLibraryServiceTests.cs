@@ -1,6 +1,6 @@
 using Moq;
 using StoryPlatform.Application.Common.Exceptions;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Services;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Services;
 using StoryPlatform.Application.Features.ChildRoadmaps;
 using StoryPlatform.Application.Features.ChildRoadmaps.Services;
 using StoryPlatform.Domain.Entities;
@@ -24,7 +24,7 @@ public class RoadmapLibraryServiceTests
         var eligibility = new ChildRoadmapEligibility(_h.UnitOfWork.Object);
         _sut = new RoadmapLibraryService(
             _h.UnitOfWork.Object,
-            new SupervisionAccessGuard(_h.UnitOfWork.Object),
+            new ChildProfileAccessGuard(_h.UnitOfWork.Object),
             eligibility,
             new ChildRoadmapInserter(_h.UnitOfWork.Object),
             new ChildRoadmapAdvancer(_h.UnitOfWork.Object, eligibility),
@@ -264,15 +264,14 @@ public class RoadmapLibraryServiceTests
     public async Task Copy_NotifiesOnceAuditsAndCommitsPerChild()
     {
         Published();
-        _h.AddSupervisor(Child, Second, SupervisorRole.AdditionalSupervisor, Permission.ViewProgress);
 
         await _sut.CopyAsync(Owner, 1, Copy(new[] { Child }));
 
         _h.Notifications.Verify(n => n.CreateAsync(
-            Second,
+            Owner,
             NotificationType.RoadmapStoryAdded,
             It.Is<string?>(payload => payload!.Contains("\"roadmapId\":1") && payload.Contains("\"count\":3")),
-            It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<CancellationToken>()), Times.Never);
         _h.Audit.Verify(a => a.LogAsync(
             Owner, "ChildRoadmapTemplateCopied", nameof(ChildProfile), Child,
             It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);

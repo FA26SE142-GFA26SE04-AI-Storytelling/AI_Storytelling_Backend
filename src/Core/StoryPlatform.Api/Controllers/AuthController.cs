@@ -1,3 +1,5 @@
+using StoryPlatform.Api.Extensions;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -46,6 +48,7 @@ public class AuthController : BaseApiController
     /// Đăng nhập hệ thống (hỗ trợ cả Email hoặc Username)
     /// </summary>
     [HttpPost("login")]
+    [EnableRateLimiting(RateLimitPolicies.Auth)]
     [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<AuthResponseDto>>> Login(
         [FromBody] LoginRequestDto request, 
@@ -56,7 +59,7 @@ public class AuthController : BaseApiController
     }
 
     /// <summary>
-    /// Kích hoạt tài khoản Moderator bằng mã mời: đặt mật khẩu và xác nhận cam kết.
+    /// Kích hoạt tài khoản Moderator hoặc Administrator bằng mã mời: đặt mật khẩu và xác nhận cam kết.
     /// </summary>
     [HttpPost("staff-activation")]
     [AllowAnonymous]
@@ -87,6 +90,7 @@ public class AuthController : BaseApiController
     /// Gửi lại mã xác thực email mới và vô hiệu hóa mã cũ.
     /// </summary>
     [HttpPost("resend-verification-email")]
+    [EnableRateLimiting(RateLimitPolicies.Auth)]
     [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<object?>>> ResendVerificationEmail(
         [FromBody] ResendVerificationEmailRequestDto request,
@@ -102,6 +106,7 @@ public class AuthController : BaseApiController
     /// Luôn trả về cùng 1 thông điệp bất kể email có tồn tại hay không (tránh dò quét email).
     /// </summary>
     [HttpPost("forgot-password")]
+    [EnableRateLimiting(RateLimitPolicies.Auth)]
     [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<object?>>> ForgotPassword(
         [FromBody] ForgotPasswordRequestDto request,
@@ -176,7 +181,7 @@ public class AuthController : BaseApiController
 
     /// <summary>Yêu cầu đổi email Parent; OTP được gửi tới email mới.</summary>
     [HttpPost("change-email")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "User")]
     public async Task<ActionResult<ApiResponse<object?>>> RequestEmailChange(
         [FromBody] RequestEmailChangeRequestDto request,
         CancellationToken cancellationToken)
@@ -188,7 +193,7 @@ public class AuthController : BaseApiController
 
     /// <summary>Xác nhận đổi email bằng OTP gửi tới email mới.</summary>
     [HttpPost("change-email/confirm")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "User")]
     public async Task<ActionResult<ApiResponse<object?>>> ConfirmEmailChange(
         [FromBody] ConfirmEmailChangeRequestDto request,
         CancellationToken cancellationToken)
@@ -198,9 +203,9 @@ public class AuthController : BaseApiController
         return HandleResult<object?>(null, "Đổi email thành công.");
     }
 
-    /// <summary>Xem các hồ sơ đang chặn hoặc sẽ bị xóa cùng tài khoản Parent.</summary>
+    /// <summary>Xem mọi hồ sơ trẻ sẽ bị xóa cùng tài khoản User.</summary>
     [HttpGet("me/delete-preview")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "User")]
     public async Task<ActionResult<ApiResponse<DeleteAccountPreviewDto>>> GetDeleteAccountPreview(
         CancellationToken cancellationToken)
     {
@@ -209,9 +214,9 @@ public class AuthController : BaseApiController
         return HandleResult(result, "Lấy thông tin trước khi xóa tài khoản thành công.");
     }
 
-    /// <summary>Xóa và ẩn danh hóa tài khoản Parent.</summary>
+    /// <summary>Xóa và ẩn danh hóa tài khoản User.</summary>
     [HttpDelete("me")]
-    [Authorize(Roles = "Parent")]
+    [Authorize(Roles = "User")]
     public async Task<ActionResult<ApiResponse<object?>>> DeleteAccount(
         [FromBody] DeleteAccountRequestDto request, CancellationToken cancellationToken)
     {

@@ -7,6 +7,7 @@ namespace StoryPlatform.Domain.Entities;
 ///
 /// Phase 5 extensions:
 ///   - StorySegmentId is set for TTS audio (1 asset per StorySegment).
+///   - StoryVocabularyId is set for VocabularyAudio (1 pronunciation clip per StoryVocabulary).
 ///   - ValidationStatus separates "binary produced" (MediaStatus.Generated) from
 ///     "passed alignment + safety checks" (ValidationStatus.Passed → MediaStatus.Ready).
 ///   - Provider/Model/ProviderRequestId/ProviderAssetId trace provenance for audit + retry.
@@ -29,6 +30,9 @@ public class MediaAsset : BaseEntity
 
     public int? StorySegmentId { get; set; }
     public virtual StorySegment? StorySegment { get; set; }
+
+    public int? StoryVocabularyId { get; set; }
+    public virtual StoryVocabulary? StoryVocabulary { get; set; }
 
     public MediaType Type { get; set; }
     public MediaStatus Status { get; set; } = MediaStatus.Queued;

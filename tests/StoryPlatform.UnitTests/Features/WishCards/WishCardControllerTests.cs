@@ -75,45 +75,4 @@ public class WishCardControllerTests
         Assert.Same(hidden, response.Data);
         service.VerifyAll();
     }
-
-    // ---- Trẻ ----
-
-    [Fact]
-    public void ChildController_IsOnlyForChildSessions_WithOneAction()
-    {
-        var type = typeof(ChildWishCardsController);
-        var authorize = type.GetCustomAttribute<AuthorizeAttribute>();
-        var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-            .Select(method => method.Name).ToArray();
-
-        Assert.Equal("ChildSession", authorize!.Policy);
-        Assert.Null(authorize.Roles);
-        Assert.Equal("api/v1/child/wish-cards", type.GetCustomAttribute<RouteAttribute>()!.Template);
-        Assert.Equal(new[] { "List" }, methods);
-    }
-
-    [Fact]
-    public async Task ChildList_UsesTheChildFromTheTokenAndTheGroupQuery()
-    {
-        var service = new Mock<IChildWishCardService>(MockBehavior.Strict);
-        IReadOnlyList<ChildWishCardDto> expected = new List<ChildWishCardDto> { new() { Id = 1, Label = "Chú mèo" } };
-        service.Setup(s => s.ListAsync(100, "Character", It.IsAny<CancellationToken>())).ReturnsAsync(expected);
-        var controller = new ChildWishCardsController(service.Object) { ControllerContext = Context(new Claim(ClaimTypes.NameIdentifier, "100")) };
-
-        var result = await controller.List("Character", CancellationToken.None);
-
-        var response = Assert.IsType<ApiResponse<IReadOnlyList<ChildWishCardDto>>>(Assert.IsType<OkObjectResult>(result.Result).Value);
-        Assert.Same(expected, response.Data);
-    }
-
-    [Fact]
-    public async Task ChildList_MissingIdentity_DoesNotCallService()
-    {
-        var service = new Mock<IChildWishCardService>(MockBehavior.Strict);
-        var controller = new ChildWishCardsController(service.Object) { ControllerContext = Context() };
-
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => controller.List("Character", CancellationToken.None));
-
-        service.VerifyNoOtherCalls();
-    }
 }

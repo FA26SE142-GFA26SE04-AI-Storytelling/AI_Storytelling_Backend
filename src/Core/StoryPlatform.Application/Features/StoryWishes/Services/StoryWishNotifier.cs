@@ -71,43 +71,21 @@ public class StoryWishNotifier : IStoryWishNotifier
         }
     }
 
-    /// <summary>Owner của bé và mọi người giám sát còn hiệu lực có quyền ApproveStory, tài khoản đang Active.</summary>
+    /// <summary>Chủ hồ sơ của bé, tài khoản đang Active. Lưu reminder trong transaction, phát sau commit.</summary>
     private async Task<IReadOnlyList<PreparedStoryWishNotification>> SendToApproversAsync(
         int childId, NotificationType type, object payloadObject, bool storeOnly, CancellationToken ct)
     {
-        var relationships = await _unitOfWork.Repository<SupervisionRelationship>().FindAsync(
-            relationship => relationship.ChildProfileId == childId
-                            && relationship.RevokedAt == null
-                            && !relationship.IsDeleted,
-            cancellationToken: ct);
-        var relationshipIds = relationships.Select(relationship => relationship.Id).ToList();
-        var approvers = (await _unitOfWork.Repository<SupervisionPermission>().FindAsync(
-                permission => relationshipIds.Contains(permission.SupervisionRelationshipId)
-                              && permission.Permission == Permission.ApproveStory
-                              && !permission.IsDeleted,
-                cancellationToken: ct))
-            .Select(permission => permission.SupervisionRelationshipId).ToHashSet();
-        var recipients = relationships
-            .Where(relationship => relationship.SupervisorRole == SupervisorRole.Owner || approvers.Contains(relationship.Id))
-            .Select(relationship => relationship.SupervisorUserId)
-            .Distinct()
-            .ToList();
-
+        var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(childId, ct);
+        if (child == null || child.IsDeleted || child.Status == ChildProfileStatus.Deleted)
+            return Array.Empty<PreparedStoryWishNotification>();
+        var owner = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(child.OwnerUserId, ct);
+        if (owner == null || owner.IsDeleted || owner.Status != AccountStatus.Active)
+            return Array.Empty<PreparedStoryWishNotification>();
         var payload = JsonSerializer.Serialize(payloadObject);
-        var prepared = new List<PreparedStoryWishNotification>();
-        foreach (var recipientId in recipients)
-        {
-            var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(recipientId, ct);
-            if (user == null || user.IsDeleted || user.Status != AccountStatus.Active)
-            {
-                continue;
-            }
-
-            if (storeOnly)
-                prepared.Add(new(recipientId, await _notificationService.CreateStoredAsync(recipientId, type, payload, ct)));
-            else
-                await _notificationService.CreateAsync(recipientId, type, payload, ct);
-        }
-        return prepared;
+        if (storeOnly)
+            return new[] { new PreparedStoryWishNotification(child.OwnerUserId,
+                await _notificationService.CreateStoredAsync(child.OwnerUserId, type, payload, ct)) };
+        await _notificationService.CreateAsync(child.OwnerUserId, type, payload, ct);
+        return Array.Empty<PreparedStoryWishNotification>();
     }
 }

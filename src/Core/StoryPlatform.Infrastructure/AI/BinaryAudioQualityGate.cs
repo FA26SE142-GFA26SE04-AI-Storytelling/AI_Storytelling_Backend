@@ -29,8 +29,10 @@ public sealed class BinaryAudioQualityGate : IAudioQualityGate
             return AudioQualityGateResult.Fail($"AUDIO_MAGIC_BYTES_INVALID: {magic.Reason}");
 
         // 3. If word timings are expected and supported, verify count matches (±0).
+        // Only word tokens get a <mark/>; whitespace and punctuation tokens never have a timepoint.
+        var expectedWords = expectedMarks.Count(mark => mark.IsWord);
         var hasWordTimings = audio.GetMetadata("hasWordTimings");
-        if (!string.Equals(hasWordTimings, "false", StringComparison.OrdinalIgnoreCase) && expectedMarks.Count > 0)
+        if (!string.Equals(hasWordTimings, "false", StringComparison.OrdinalIgnoreCase) && expectedWords > 0)
         {
             var timingsJson = audio.GetMetadata("wordTimingsJson");
             if (string.IsNullOrEmpty(timingsJson))
@@ -38,9 +40,9 @@ public sealed class BinaryAudioQualityGate : IAudioQualityGate
 
             // Parse the timings to count timepoints.
             var count = CountTimepoints(timingsJson);
-            if (count != expectedMarks.Count)
+            if (count != expectedWords)
                 return AudioQualityGateResult.Fail(
-                    $"AUDIO_WORD_TIMINGS_COUNT_MISMATCH: expected {expectedMarks.Count}, got {count}");
+                    $"AUDIO_WORD_TIMINGS_COUNT_MISMATCH: expected {expectedWords}, got {count}");
         }
 
         return AudioQualityGateResult.Pass();

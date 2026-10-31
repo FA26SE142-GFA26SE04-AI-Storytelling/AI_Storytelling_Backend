@@ -135,12 +135,25 @@ public class StaffActivationServiceTests
     }
 
     [Fact]
-    public async Task ActivateAsync_AccountIsNotModerator_ThrowsBadRequest()
+    public async Task ActivateAsync_PendingAdministrator_ActivatesWithAdministratorAudit()
     {
         _invitee.Role = UserRole.Administrator;
 
-        await Assert.ThrowsAsync<BadRequestException>(() =>
-            _sut.ActivateAsync(Request()));
+        await _sut.ActivateAsync(Request());
+
+        Assert.Equal(AccountStatus.Active, _invitee.Status);
+        _auditLogWriterMock.Verify(a => a.LogAsync(
+            _invitee.Id, "AdministratorActivated", nameof(UserAccount), _invitee.Id,
+            It.IsAny<object?>(), It.IsAny<object?>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ActivateAsync_ParentAccount_ThrowsBadRequest()
+    {
+        _invitee.Role = UserRole.User;
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.ActivateAsync(Request()));
     }
 
     [Fact]

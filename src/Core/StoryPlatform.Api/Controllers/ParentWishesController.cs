@@ -8,7 +8,7 @@ using StoryPlatform.Application.Features.StoryWishes.Interfaces;
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Phụ huynh xử lý điều ước của con (WF-L2D UC-L2D-04). Quyền ApproveStory được kiểm trong service.</summary>
-[Authorize(Roles = "Parent")]
+[Authorize(Roles = "User")]
 [Route("api/v1/parent/wishes")]
 public sealed class ParentWishesController(IParentStoryWishService service) : BaseApiController
 {

@@ -39,11 +39,6 @@ public class ReadingSessionConfiguration : IEntityTypeConfiguration<ReadingSessi
             .HasForeignKey(x => x.StoryId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        builder.HasOne(x => x.AssignmentRecipient)
-            .WithMany()
-            .HasForeignKey(x => x.AssignmentRecipientId)
-            .OnDelete(DeleteBehavior.Restrict);
-
         builder.HasOne(x => x.StoryVersion)
             .WithMany()
             .HasForeignKey(x => x.StoryVersionId)

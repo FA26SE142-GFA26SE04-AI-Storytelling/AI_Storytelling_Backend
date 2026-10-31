@@ -30,8 +30,6 @@ public sealed class ChildRoadmapHarness
     public readonly List<SafetyPolicyCategory> PolicyCategories = new();
     public readonly List<StoryCategory> StoryCategories = new();
     public readonly List<UserAccount> Users = new();
-    public readonly List<SupervisionRelationship> Relationships = new();
-    public readonly List<SupervisionPermission> Permissions = new();
     public readonly List<LearningProfile> Learning = new();
     public readonly List<ReadingSession> Sessions = new();
     public readonly List<ReadingRoadmap> Roadmaps = new();
@@ -50,8 +48,6 @@ public sealed class ChildRoadmapHarness
         Back(PolicyCategories);
         Back(StoryCategories);
         Back(Users);
-        Back(Relationships);
-        Back(Permissions);
         Back(Learning);
         Back(Sessions);
         Back(Roadmaps);
@@ -62,11 +58,9 @@ public sealed class ChildRoadmapHarness
 
         AddChild(Child, ChildProfileStatus.Active);
         AddChild(OtherChild, ChildProfileStatus.Active);
-        AddUser(ParentId, UserRole.Parent);
-        AddUser(SecondSupervisorId, UserRole.Parent);
-        AddUser(StrangerId, UserRole.Parent);
-        AddSupervisor(Child, ParentId, SupervisorRole.Owner);
-        AddSupervisor(OtherChild, ParentId, SupervisorRole.Owner);
+        AddUser(ParentId, UserRole.User);
+        AddUser(SecondSupervisorId, UserRole.User);
+        AddUser(StrangerId, UserRole.User);
         Categories.Add(new ContentCategory
             { Id = 5, Code = "friendship", DisplayName = "Tình bạn", IsActive = true });
         Categories.Add(new ContentCategory
@@ -171,30 +165,6 @@ public sealed class ChildRoadmapHarness
         };
         Users.Add(user);
         return user;
-    }
-
-    public SupervisionRelationship AddSupervisor(
-        int childId, int userId, SupervisorRole role, params Permission[] permissions)
-    {
-        var relationship = new SupervisionRelationship
-        {
-            Id = Relationships.Count + 1,
-            ChildProfileId = childId,
-            SupervisorUserId = userId,
-            SupervisorRole = role
-        };
-        Relationships.Add(relationship);
-        foreach (var permission in permissions)
-        {
-            Permissions.Add(new SupervisionPermission
-            {
-                Id = Permissions.Count + 1,
-                SupervisionRelationshipId = relationship.Id,
-                Permission = permission
-            });
-        }
-
-        return relationship;
     }
 
     public LearningProfile AddLearning(int childId, int readingLevel)

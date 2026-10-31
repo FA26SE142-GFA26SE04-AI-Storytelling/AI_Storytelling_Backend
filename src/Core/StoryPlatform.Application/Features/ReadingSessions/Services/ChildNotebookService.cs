@@ -22,6 +22,7 @@ public class ChildNotebookService : IChildNotebookService
         var (session, word) = await RequireWordAsync(childProfileId, sessionId, vocabularyId, ct);
         var collected = await _unitOfWork.Repository<VocabularyNotebookEntry>().ExistsAsync(
             entry => entry.ChildProfileId == childProfileId && entry.StoryVocabularyId == vocabularyId, ct);
+        var audio = await VocabularyAudioLookup.FindUrlsAsync(_unitOfWork, new[] { word.Id }, ct);
 
         await _unitOfWork.Repository<TelemetryLog>().AddAsync(NewLog(session.Id, TelemetryEventType.VocabularyOpened, word.Id), ct);
         await _unitOfWork.SaveChangesAsync(ct);
@@ -30,7 +31,8 @@ public class ChildNotebookService : IChildNotebookService
             VocabularyId = word.Id,
             Term = word.Term,
             Definition = word.Definition,
-            IsCollected = collected
+            IsCollected = collected,
+            AudioUrl = audio.GetValueOrDefault(word.Id)
         };
     }
 
@@ -108,6 +110,7 @@ public class ChildNotebookService : IChildNotebookService
         var wordIds = entries.Select(entry => entry.StoryVocabularyId).Distinct().ToList();
         var words = (await _unitOfWork.Repository<StoryVocabulary>().FindAsync(
             word => wordIds.Contains(word.Id), cancellationToken: ct)).ToDictionary(word => word.Id);
+        var audio = await VocabularyAudioLookup.FindUrlsAsync(_unitOfWork, wordIds, ct);
         var versionIds = words.Values.Select(word => word.StoryVersionId).Distinct().ToList();
         var versions = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
             version => versionIds.Contains(version.Id), cancellationToken: ct)).ToDictionary(version => version.Id);
@@ -134,6 +137,7 @@ public class ChildNotebookService : IChildNotebookService
                 VocabularyId = word.Id,
                 Term = word.Term,
                 Definition = word.Definition,
+                AudioUrl = audio.GetValueOrDefault(word.Id),
                 StoryId = version.StoryId,
                 StoryTitle = version.Title,
                 SceneIndex = firstScene?.SceneIndex,

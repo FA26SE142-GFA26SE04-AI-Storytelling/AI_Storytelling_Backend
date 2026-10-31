@@ -2,7 +2,7 @@ using System.Text.Json;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AIStoryInput.Models;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration.Interfaces;
 using StoryPlatform.Contracts.AI.Models;
 using StoryPlatform.Contracts.AI.Requests;
@@ -12,7 +12,7 @@ using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.ContentGeneration.Services;
 
-public sealed class LearningBatchService(IUnitOfWork uow, ILearningBatchRunner runner, ISupervisionAccessGuard guard,
+public sealed class LearningBatchService(IUnitOfWork uow, ILearningBatchRunner runner, IChildProfileAccessGuard guard,
     LearningBatchOptions options) : ILearningBatchService
 {
     internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);

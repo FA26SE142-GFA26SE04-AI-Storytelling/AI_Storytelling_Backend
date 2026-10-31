@@ -9,7 +9,7 @@ using StoryPlatform.Application.Features.ChildProfiles.Learning.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Learning.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration.Quality;
 using StoryPlatform.Application.Features.ExistingStories.DTOs;
 using StoryPlatform.Application.Features.ExistingStories.Interfaces;
@@ -28,14 +28,14 @@ namespace StoryPlatform.Application.Features.ExistingStories.Services;
 public sealed class ExistingStoryEvaluationService : IExistingStoryEvaluationService
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly ISupervisionAccessGuard _accessGuard;
+    private readonly IChildProfileAccessGuard _accessGuard;
     private readonly ISafetyPolicyService _safetyPolicyService;
     private readonly ILearningProfileService _learningProfileService;
     private readonly IExistingStoryEvaluationCache _cache;
 
     public ExistingStoryEvaluationService(
         IUnitOfWork unitOfWork,
-        ISupervisionAccessGuard accessGuard,
+        IChildProfileAccessGuard accessGuard,
         ISafetyPolicyService safetyPolicyService,
         ILearningProfileService learningProfileService,
         IExistingStoryEvaluationCache cache)
@@ -52,7 +52,7 @@ public sealed class ExistingStoryEvaluationService : IExistingStoryEvaluationSer
     {
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
-        await _accessGuard.EnsurePermissionAsync(StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story), userId, Permission.GenerateStory, cancellationToken);
+        await _accessGuard.EnsureOwnerAsync(StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story), userId, cancellationToken);
 
         var version = await _unitOfWork.Repository<StoryVersion>().GetByIdAsync(storyVersionId, cancellationToken)
                       ?? throw new NotFoundException("StoryVersion", storyVersionId);
@@ -131,7 +131,7 @@ public sealed class ExistingStoryEvaluationService : IExistingStoryEvaluationSer
     {
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
-        await _accessGuard.EnsurePermissionAsync(StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story), userId, Permission.GenerateStory, cancellationToken);
+        await _accessGuard.EnsureOwnerAsync(StoryPlatform.Application.Common.ParentStoryContext.RequireChildId(story), userId, cancellationToken);
 
         var version = await _unitOfWork.Repository<StoryVersion>().GetByIdAsync(storyVersionId, cancellationToken)
                       ?? throw new NotFoundException("StoryVersion", storyVersionId);

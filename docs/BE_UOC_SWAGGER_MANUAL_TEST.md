@@ -59,7 +59,7 @@ POST /api/v1/Auth/login
 }
 ```
 
-Mong đợi: HTTP `200`, `success=true`, `data.user.role=Parent`. Giữ `PARENT_TOKEN` và `PARENT_REFRESH`; Authorize bằng `PARENT_TOKEN`.
+Mong đợi: HTTP `200`, `success=true`, `data.user.role=User` (actor nghiệp vụ Parent). Giữ `PARENT_TOKEN` và `PARENT_REFRESH`; Authorize bằng `PARENT_TOKEN`.
 
 ### TC02 — Tạo Child Session cho child 2
 

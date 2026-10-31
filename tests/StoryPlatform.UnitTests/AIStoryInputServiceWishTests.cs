@@ -74,16 +74,14 @@ public sealed partial class AIStoryInputServiceTests
     }
 
     [Fact]
-    public async Task WishSubmit_AnotherSupervisorCannotGenerateAgain()
+    public async Task WishSubmit_NonOwnerCannotGenerateAgain()
     {
         var store = CreateEligibleUnitOfWork();
         store.Seed(PendingWish());
-        store.Seed(new UserAccount { Id = 2, Role = UserRole.Parent, Status = AccountStatus.Active });
-        store.Seed(new SupervisionRelationship { Id = 2, ChildProfileId = 1, SupervisorUserId = 2, SupervisorRole = SupervisorRole.Owner });
-        store.Seed(new SupervisionPermission { Id = 2, SupervisionRelationshipId = 2, Permission = Permission.GenerateStory });
+        store.Seed(new UserAccount { Id = 2, Role = UserRole.User, Status = AccountStatus.Active });
         var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), CreateTokenQuotaService(store));
         await service.SubmitAsync(1, WishInput());
-        await Assert.ThrowsAsync<ConflictException>(() => service.SubmitAsync(2, WishInput()));
+        await Assert.ThrowsAsync<ForbiddenException>(() => service.SubmitAsync(2, WishInput()));
         Assert.Single(store.Items<Story>());
         Assert.Equal(1, Assert.Single(store.Items<StoryGenerationRequest>()).SubmittedByUserId);
     }

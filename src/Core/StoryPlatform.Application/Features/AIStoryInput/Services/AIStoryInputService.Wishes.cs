@@ -1,6 +1,6 @@
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AIStoryInput.DTOs;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Services;
+using StoryPlatform.Application.Common;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -13,7 +13,8 @@ public sealed partial class AIStoryInputService
         var wish = await _unitOfWork.Repository<StoryWish>().FirstOrDefaultAsync(x => x.Id == input.SourceWishId && !x.IsDeleted,
             cancellationToken: ct) ?? throw new NotFoundException("StoryWish", input.SourceWishId!);
         if (wish.ChildProfileId != input.ChildProfileId) throw new BadRequestException("WISH_CHILD_MISMATCH");
-        await new SupervisionAccessGuard(_unitOfWork).EnsurePermissionAsync(wish.ChildProfileId, userId, Permission.ApproveStory, ct);
+        if (!await ChildOwnership.IsOwnerAsync(_unitOfWork, wish.ChildProfileId, userId, ct))
+            throw new ForbiddenException("Bạn không phải người quản lý Child Profile này.");
         return wish;
     }
 

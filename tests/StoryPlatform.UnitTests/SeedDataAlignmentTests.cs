@@ -256,13 +256,6 @@ public sealed class SeedDataAlignmentTests
             using var snapshot = JsonDocument.Parse(StringLiteral(row["ContextSnapshotJson"])!);
             Assert.Contains(snapshot.RootElement.GetProperty("ageBand").GetString(), new[] { "6-8", "9-10" });
         }
-        var assignments = Rows(inserts, "assignments");
-        foreach (var recipient in Rows(inserts, "assignment_recipients"))
-        {
-            var assignment = assignments.Single(a => a["Id"] == recipient["AssignmentId"]);
-            Assert.Equal(assignment["Status"], recipient["Status"]);
-            Assert.Equal(assignment["ChildProfileId"], recipient["ChildProfileId"]);
-        }
     }
 
     [Fact]

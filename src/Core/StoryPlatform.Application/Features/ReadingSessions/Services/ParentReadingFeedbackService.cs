@@ -1,6 +1,6 @@
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Models;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -12,9 +12,9 @@ public class ParentReadingFeedbackService : IParentReadingFeedbackService
     private const int MaxPageSize = 50;
 
     private readonly IUnitOfWork _unitOfWork;
-    private readonly ISupervisionAccessGuard _guard;
+    private readonly IChildProfileAccessGuard _guard;
 
-    public ParentReadingFeedbackService(IUnitOfWork unitOfWork, ISupervisionAccessGuard guard)
+    public ParentReadingFeedbackService(IUnitOfWork unitOfWork, IChildProfileAccessGuard guard)
     {
         _unitOfWork = unitOfWork;
         _guard = guard;
@@ -23,7 +23,7 @@ public class ParentReadingFeedbackService : IParentReadingFeedbackService
     public async Task<PagedResult<ParentReadingFeedbackItemDto>> ListAsync(
         int parentUserId, int childProfileId, ParentReadingFeedbackQueryDto query, CancellationToken ct = default)
     {
-        await _guard.EnsurePermissionAsync(childProfileId, parentUserId, Permission.ViewProgress, ct);
+        await _guard.EnsureOwnerAsync(childProfileId, parentUserId, ct);
 
         var pageIndex = Math.Max(query.PageIndex, 1);
         var pageSize = Math.Clamp(query.PageSize, 1, MaxPageSize);

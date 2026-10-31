@@ -266,7 +266,7 @@ public class ModerationReviewViewServiceTests
     public async Task GrantAsync_ActorIsNotStaff_ThrowsForbidden()
     {
         _userRepoMock.Setup(r => r.GetByIdAsync(2, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new UserAccount { Id = 2, Role = UserRole.Parent, Status = AccountStatus.Active });
+            .ReturnsAsync(new UserAccount { Id = 2, Role = UserRole.User, Status = AccountStatus.Active });
 
         await Assert.ThrowsAsync<ForbiddenException>(() => _sut.GrantAsync(2,
             new GrantReviewViewRequestDto { SourceTab = "published_content", StoryId = 10 }));

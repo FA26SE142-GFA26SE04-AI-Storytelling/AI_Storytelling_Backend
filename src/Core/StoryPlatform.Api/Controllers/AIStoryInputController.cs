@@ -1,3 +1,5 @@
+using StoryPlatform.Api.Extensions;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -8,7 +10,7 @@ using StoryPlatform.Application.Features.AIStoryInput.Interfaces;
 namespace StoryPlatform.Api.Controllers;
 
 [ApiController]
-[Authorize(Roles = "Parent")]
+[Authorize(Roles = "User")]
 [Route("api/v1/ai-story-input")]
 public sealed class AIStoryInputController : ControllerBase
 {
@@ -29,6 +31,7 @@ public sealed class AIStoryInputController : ControllerBase
     }
 
     [HttpPost("requests")]
+    [EnableRateLimiting(RateLimitPolicies.Ai)]
     public async Task<ActionResult<ApiResponse<AIStoryInputProgressDto>>> Submit(
         [FromBody] SubmitAIStoryInputRequestDto request,
         CancellationToken cancellationToken)
@@ -48,6 +51,7 @@ public sealed class AIStoryInputController : ControllerBase
     }
 
     [HttpPost("stories/{storyId:int}/requests/{requestId:int}/retry")]
+    [EnableRateLimiting(RateLimitPolicies.Ai)]
     public async Task<ActionResult<ApiResponse<AIStoryInputProgressDto>>> Retry(
         int storyId,
         int requestId,

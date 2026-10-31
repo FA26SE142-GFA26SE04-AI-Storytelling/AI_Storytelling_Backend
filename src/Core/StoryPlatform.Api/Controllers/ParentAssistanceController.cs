@@ -1,3 +1,5 @@
+using StoryPlatform.Api.Extensions;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
@@ -6,7 +8,7 @@ using StoryPlatform.Application.Features.ParentAuthoring;
 
 namespace StoryPlatform.Api.Controllers;
 
-[Authorize(Roles = "Parent")]
+[Authorize(Roles = "User")]
 [Route("api/v1/parent/stories/{storyId:int}/assistance-tasks")]
 [RequestSizeLimit(1_000_000)]
 [ProducesResponseType(typeof(ApiResponse<object>), 400)]
@@ -20,6 +22,7 @@ namespace StoryPlatform.Api.Controllers;
 public sealed class ParentAssistanceController(ParentAssistanceService service) : BaseApiController
 {
     [HttpPost]
+    [EnableRateLimiting(RateLimitPolicies.Ai)]
     [ProducesResponseType(typeof(ApiResponse<AssistanceTaskDto>), 201)]
     public async Task<ActionResult<ApiResponse<AssistanceTaskDto>>> Create(int storyId, CreateAssistanceTaskRequest request, CancellationToken ct) =>
         StatusCode(201, ApiResponse<AssistanceTaskDto>.Ok(await service.CreateAsync(GetCurrentUserId(), storyId, request, ct)));

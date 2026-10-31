@@ -270,7 +270,8 @@ public sealed class StoryReviewPhase4FinalValidationTests
     private static FakeUnitOfWork SeedContentReviewWithAllArtifacts()
     {
         var uow = new FakeUnitOfWork();
-        uow.Seed(new UserAccount { Id = 1, Role = UserRole.Parent, Status = AccountStatus.Active });
+        uow.Seed(new UserAccount { Id = 1, Role = UserRole.User, Status = AccountStatus.Active });
+        uow.Seed(new ChildProfile { Id = 1, OwnerUserId = 1, Status = ChildProfileStatus.Active });
         uow.Seed(new Story
         {
             Id = 1,
@@ -280,13 +281,6 @@ public sealed class StoryReviewPhase4FinalValidationTests
             Status = StoryStatus.ContentReview,
             Language = "vi",
             ReadingLevel = 2
-        });
-        uow.Seed(new SupervisionRelationship
-        {
-            Id = 1,
-            ChildProfileId = 1,
-            SupervisorUserId = 1,
-            SupervisorRole = SupervisorRole.Owner
         });
         uow.Seed(new StoryVersion
         {

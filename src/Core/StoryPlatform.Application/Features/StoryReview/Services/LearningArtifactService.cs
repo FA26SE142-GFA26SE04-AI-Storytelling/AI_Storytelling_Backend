@@ -10,7 +10,7 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ChildProfiles.Learning.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.StoryReview.DTOs;
 using StoryPlatform.Application.Features.StoryReview.Interfaces;
 using StoryPlatform.Contracts.AI.Models;
@@ -31,7 +31,7 @@ public sealed class LearningArtifactService : ILearningArtifactService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAIStoryGenerationClient _aiClient;
-    private readonly ISupervisionAccessGuard _accessGuard;
+    private readonly IChildProfileAccessGuard _accessGuard;
     private readonly ISafetyPolicyService? _safetyPolicyService;
     private readonly ILearningProfileService? _learningProfileService;
     private readonly IReviewCompletionStore? _reviewCompletionStore;
@@ -39,7 +39,7 @@ public sealed class LearningArtifactService : ILearningArtifactService
     public LearningArtifactService(
         IUnitOfWork unitOfWork,
         IAIStoryGenerationClient aiClient,
-        ISupervisionAccessGuard accessGuard,
+        IChildProfileAccessGuard accessGuard,
         ISafetyPolicyService? safetyPolicyService = null,
         ILearningProfileService? learningProfileService = null,
         IReviewCompletionStore? reviewCompletionStore = null)
@@ -123,7 +123,7 @@ public sealed class LearningArtifactService : ILearningArtifactService
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
         if (!await GenerationStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, cancellationToken))
-            await _accessGuard.EnsurePermissionAsync(ParentStoryContext.RequireChildId(story), userId, Permission.GenerateStory, cancellationToken);
+            await _accessGuard.EnsureOwnerAsync(ParentStoryContext.RequireChildId(story), userId, cancellationToken);
 
         var versionRepo = _unitOfWork.Repository<StoryVersion>();
         StoryVersion? version;

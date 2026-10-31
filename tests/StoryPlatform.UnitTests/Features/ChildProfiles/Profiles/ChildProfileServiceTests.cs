@@ -8,7 +8,6 @@ using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Services;
 using StoryPlatform.Application.Features.ChildProfiles.Safety;
 using StoryPlatform.Application.Features.ChildProfiles.Sessions.Interfaces;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using Xunit;
@@ -19,7 +18,6 @@ public class ChildProfileServiceTests
 {
     private readonly Mock<IGenericRepository<UserAccount>> _userRepo = new();
     private readonly Mock<IGenericRepository<ChildProfile>> _profileRepo = new();
-    private readonly Mock<IGenericRepository<SupervisionRelationship>> _supervisionRepo = new();
     private readonly Mock<IGenericRepository<LearningProfile>> _learningProfileRepo = new();
     private readonly Mock<IGenericRepository<SafetyPolicy>> _safetyPolicyRepo = new();
     private readonly Mock<IGenericRepository<ChildAccessCredential>> _credentialRepo = new();
@@ -27,7 +25,7 @@ public class ChildProfileServiceTests
     private readonly Mock<IGenericRepository<ChildProfileVersionHistory>> _historyRepo = new();
     private readonly Mock<IGenericRepository<Recommendation>> _recommendationRepo = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
-    private readonly Mock<ISupervisionAccessGuard> _accessGuard = new();
+    private readonly Mock<IChildProfileAccessGuard> _accessGuard = new();
     private readonly Mock<IChildSessionRevoker> _childSessionRevoker = new();
     private readonly ChildProfileService _sut;
 
@@ -35,7 +33,6 @@ public class ChildProfileServiceTests
     {
         _unitOfWork.Setup(u => u.Repository<UserAccount>()).Returns(_userRepo.Object);
         _unitOfWork.Setup(u => u.Repository<ChildProfile>()).Returns(_profileRepo.Object);
-        _unitOfWork.Setup(u => u.Repository<SupervisionRelationship>()).Returns(_supervisionRepo.Object);
         _unitOfWork.Setup(u => u.Repository<LearningProfile>()).Returns(_learningProfileRepo.Object);
         _unitOfWork.Setup(u => u.Repository<SafetyPolicy>()).Returns(_safetyPolicyRepo.Object);
         _unitOfWork.Setup(u => u.Repository<ChildAccessCredential>()).Returns(_credentialRepo.Object);
@@ -50,42 +47,27 @@ public class ChildProfileServiceTests
     }
 
     [Fact]
-    public async Task CreateChildProfileAsync_CreatesDraftProfileOwnerSupervisionAndAudit()
+    public async Task CreateChildProfileAsync_CreatesDraftProfileAndAudit()
     {
         SetupOwner();
         ChildProfile? profile = null;
-        SupervisionRelationship? supervision = null;
         _profileRepo.Setup(r => r.AddAsync(It.IsAny<ChildProfile>(), It.IsAny<CancellationToken>()))
             .Callback<ChildProfile, CancellationToken>((value, _) => profile = value)
             .ReturnsAsync((ChildProfile value, CancellationToken _) => value);
-        _supervisionRepo.Setup(r => r.AddAsync(It.IsAny<SupervisionRelationship>(), It.IsAny<CancellationToken>()))
-            .Callback<SupervisionRelationship, CancellationToken>((value, _) => supervision = value)
-            .ReturnsAsync((SupervisionRelationship value, CancellationToken _) => value);
 
         var result = await _sut.CreateChildProfileAsync(2, new CreateChildProfileRequestDto
         {
-            Nickname = "  Bé An  ",
-            AgeBand = AgeBand.Age_6_8
+            Nickname = "  Bé An  ", AgeBand = AgeBand.Age_6_8
         });
 
         Assert.NotNull(profile);
         Assert.Equal(2, profile!.OwnerUserId);
         Assert.Equal("Bé An", profile.Nickname);
-        Assert.Equal(AgeBand.Age_6_8, profile.AgeBand);
-        Assert.Equal("vi", profile.Language);
         Assert.Equal(ChildProfileStatus.Draft, profile.Status);
-        Assert.NotNull(supervision);
-        Assert.Same(profile, supervision!.ChildProfile);
-        Assert.Equal(2, supervision.SupervisorUserId);
-        Assert.Equal(SupervisorRole.Owner, supervision.SupervisorRole);
-        Assert.Null(supervision.RevokedAt);
         Assert.Equal("Draft", result.Status);
         _auditLogRepo.Verify(repository => repository.AddAsync(
-            It.Is<AuditLog>(log => log.ActorUserId == 2
-                                   && log.Action == "CREATE_CHILD_PROFILE"
-                                   && log.EntityType == nameof(ChildProfile)),
-            It.IsAny<CancellationToken>()), Times.Once);
-        _unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
+            It.Is<AuditLog>(log => log.ActorUserId == 2 && log.Action == "CREATE_CHILD_PROFILE"
+                && log.EntityType == nameof(ChildProfile)), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -170,7 +152,7 @@ public class ChildProfileServiceTests
     {
         _profileRepo.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ChildProfile { Id = 1, OwnerUserId = 2 });
-        _accessGuard.Setup(g => g.EnsureActiveSupervisionAsync(
+        _accessGuard.Setup(g => g.EnsureOwnerAsync(
                 1, 99, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ForbiddenException("Không có quyền."));
 
@@ -249,84 +231,37 @@ public class ChildProfileServiceTests
     }
 
     [Fact]
-    public async Task ListMyChildProfilesAsync_ReturnsProfilesForAllActiveSupervisorRoles()
+    public async Task ListMyChildProfilesAsync_ReturnsOnlyOwnedProfiles()
     {
-        var relationships = new List<SupervisionRelationship>
-        {
-            new()
-            {
-                ChildProfileId = 1,
-                SupervisorUserId = 2,
-                SupervisorRole = SupervisorRole.Owner,
-                ChildProfile = new ChildProfile { Id = 1, OwnerUserId = 2, Nickname = "Bé An" }
-            },
-            new()
-            {
-                ChildProfileId = 2,
-                SupervisorUserId = 2,
-                SupervisorRole = SupervisorRole.AdditionalSupervisor,
-                ChildProfile = new ChildProfile { Id = 2, OwnerUserId = 3, Nickname = "Bé Bình" }
-            }
-        };
-        _supervisionRepo.Setup(r => r.FindAsync(
-                It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(),
-                nameof(SupervisionRelationship.ChildProfile),
-                It.IsAny<CancellationToken>())).ReturnsAsync(relationships);
+        var owned = new ChildProfile { Id = 1, OwnerUserId = 2, Nickname = "Bé An" };
+        var other = new ChildProfile { Id = 2, OwnerUserId = 3, Nickname = "Bé Bình" };
+        _profileRepo.Setup(r => r.FindAsync(It.IsAny<Expression<Func<ChildProfile, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Expression<Func<ChildProfile, bool>> predicate, string? _, CancellationToken _) =>
+                new[] { owned, other }.Where(predicate.Compile()).ToList());
 
         var result = await _sut.ListMyChildProfilesAsync(2);
 
-        Assert.Equal(2, result.Count);
-        Assert.Contains(result, value => value.Id == 1 && value.OwnerUserId == 2);
-        Assert.Contains(result, value => value.Id == 2 && value.OwnerUserId == 3);
+        Assert.Single(result);
+        Assert.Equal(1, result[0].Id);
     }
 
     [Fact]
-    public async Task ListMyChildProfilesAsync_OnlyIncludesActiveRelationshipsAndNonArchivedProfiles()
+    public async Task ListMyChildProfilesAsync_ExcludesDeletedAndArchivedProfiles()
     {
-        Expression<Func<SupervisionRelationship, bool>>? capturedPredicate = null;
-        _supervisionRepo.Setup(repository => repository.FindAsync(
-                It.IsAny<Expression<Func<SupervisionRelationship, bool>>>(),
-                nameof(SupervisionRelationship.ChildProfile),
+        Expression<Func<ChildProfile, bool>>? captured = null;
+        _profileRepo.Setup(r => r.FindAsync(It.IsAny<Expression<Func<ChildProfile, bool>>>(), null,
                 It.IsAny<CancellationToken>()))
-            .Callback<Expression<Func<SupervisionRelationship, bool>>, string?, CancellationToken>(
-                (predicate, _, _) => capturedPredicate = predicate)
-            .ReturnsAsync(new List<SupervisionRelationship>());
+            .Callback<Expression<Func<ChildProfile, bool>>, string?, CancellationToken>((predicate, _, _) => captured = predicate)
+            .ReturnsAsync(new List<ChildProfile>());
 
         await _sut.ListMyChildProfilesAsync(2);
 
-        Assert.NotNull(capturedPredicate);
-        var compiled = capturedPredicate!.Compile();
-        Assert.True(compiled(new SupervisionRelationship
-        {
-            SupervisorUserId = 2,
-            SupervisorRole = SupervisorRole.Owner,
-            ChildProfile = new ChildProfile { Status = ChildProfileStatus.Active }
-        }));
-        Assert.True(compiled(new SupervisionRelationship
-        {
-            SupervisorUserId = 2,
-            SupervisorRole = SupervisorRole.AdditionalSupervisor,
-            ChildProfile = new ChildProfile { Status = ChildProfileStatus.Active }
-        }));
-        Assert.False(compiled(new SupervisionRelationship
-        {
-            SupervisorUserId = 2,
-            SupervisorRole = SupervisorRole.AdditionalSupervisor,
-            RevokedAt = DateTime.UtcNow,
-            ChildProfile = new ChildProfile { Status = ChildProfileStatus.Active }
-        }));
-        Assert.False(compiled(new SupervisionRelationship
-        {
-            SupervisorUserId = 2,
-            SupervisorRole = SupervisorRole.AdditionalSupervisor,
-            ChildProfile = new ChildProfile { Status = ChildProfileStatus.Archived }
-        }));
-        Assert.False(compiled(new SupervisionRelationship
-        {
-            SupervisorUserId = 3,
-            SupervisorRole = SupervisorRole.AdditionalSupervisor,
-            ChildProfile = new ChildProfile { Status = ChildProfileStatus.Active }
-        }));
+        var allows = captured!.Compile();
+        Assert.True(allows(new ChildProfile { OwnerUserId = 2, Status = ChildProfileStatus.Active }));
+        Assert.False(allows(new ChildProfile { OwnerUserId = 3, Status = ChildProfileStatus.Active }));
+        Assert.False(allows(new ChildProfile { OwnerUserId = 2, Status = ChildProfileStatus.Archived }));
+        Assert.False(allows(new ChildProfile { OwnerUserId = 2, Status = ChildProfileStatus.Active, IsDeleted = true }));
     }
 
     [Fact]
@@ -334,7 +269,7 @@ public class ChildProfileServiceTests
     {
         _profileRepo.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ChildProfile { Id = 1, OwnerUserId = 2, Nickname = "Bé An" });
-        _accessGuard.Setup(g => g.EnsureActiveSupervisionAsync(1, 9, It.IsAny<CancellationToken>()))
+        _accessGuard.Setup(g => g.EnsureOwnerAsync(1, 9, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ForbiddenException("Không có quyền."));
 
         await Assert.ThrowsAsync<ForbiddenException>(() => _sut.GetChildProfileByIdAsync(1, 9));
@@ -531,7 +466,7 @@ public class ChildProfileServiceTests
                 It.IsAny<Expression<Func<ChildAccessCredential, bool>>>(), null,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(credential);
-        _accessGuard.Setup(g => g.EnsureOwnerAsync(1, 2, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _accessGuard.Setup(g => g.EnsureOwnerAsync(1, 2, It.IsAny<CancellationToken>())).ReturnsAsync(new ChildProfile { Id = 1, OwnerUserId = 2 });
 
         await _sut.ArchiveChildProfileAsync(1, 2);
 
@@ -565,7 +500,7 @@ public class ChildProfileServiceTests
     {
         var profile = new ChildProfile { Id = 1, OwnerUserId = 2, Status = ChildProfileStatus.Archived };
         _profileRepo.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(profile);
-        _accessGuard.Setup(g => g.EnsureOwnerAsync(1, 2, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        _accessGuard.Setup(g => g.EnsureOwnerAsync(1, 2, It.IsAny<CancellationToken>())).ReturnsAsync(new ChildProfile { Id = 1, OwnerUserId = 2 });
 
         await _sut.ArchiveChildProfileAsync(1, 2);
 
@@ -730,8 +665,8 @@ public class ChildProfileServiceTests
     }
 
     private void AllowProfileAccess() => _accessGuard
-        .Setup(g => g.EnsureActiveSupervisionAsync(1, 2, It.IsAny<CancellationToken>()))
-        .ReturnsAsync(new SupervisionRelationship());
+        .Setup(g => g.EnsureOwnerAsync(1, 2, It.IsAny<CancellationToken>()))
+        .ReturnsAsync(new ChildProfile { Id = 1, OwnerUserId = 2 });
 
     private SafetyPolicy SetupConsent(ChildProfile profile, int consentVersion)
     {
@@ -753,7 +688,7 @@ public class ChildProfileServiceTests
 
     private void SetupOwner() => _userRepo
         .Setup(r => r.GetByIdAsync(2, It.IsAny<CancellationToken>()))
-        .ReturnsAsync(new UserAccount { Id = 2, Role = UserRole.Parent, Status = AccountStatus.Active });
+        .ReturnsAsync(new UserAccount { Id = 2, Role = UserRole.User, Status = AccountStatus.Active });
 
     private void VerifyNothingWasSaved()
     {

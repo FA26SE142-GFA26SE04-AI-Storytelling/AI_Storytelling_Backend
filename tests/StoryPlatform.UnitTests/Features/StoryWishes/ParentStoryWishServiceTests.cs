@@ -3,7 +3,7 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AIStoryInput.DTOs;
 using StoryPlatform.Application.Features.AIStoryInput.Interfaces;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
 using StoryPlatform.Application.Features.ChildRoadmaps;
 using StoryPlatform.Application.Features.StoryWishes;
@@ -23,7 +23,7 @@ public class ParentStoryWishServiceTests
 
     private readonly ReadingHarness _h = new();
     private readonly ManualTimeProvider _clock = new(Now);
-    private readonly Mock<ISupervisionAccessGuard> _guard = new();
+    private readonly Mock<IChildProfileAccessGuard> _guard = new();
     private readonly Mock<IChildRoadmapService> _roadmap = new();
     private readonly Mock<IAIStoryInputService> _aiInput = new();
     private readonly Mock<IStoryWishSuggestionService> _suggestions = new();
@@ -78,8 +78,8 @@ public class ParentStoryWishServiceTests
     {
         await _sut.ListAsync(Parent, ReadingHarness.Child);
 
-        _guard.Verify(g => g.EnsurePermissionAsync(
-            ReadingHarness.Child, Parent, Permission.ApproveStory, It.IsAny<CancellationToken>()), Times.Once);
+        _guard.Verify(g => g.EnsureOwnerAsync(
+            ReadingHarness.Child, Parent, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -115,7 +115,7 @@ public class ParentStoryWishServiceTests
     [Fact]
     public async Task List_WithoutPermission_IsForbidden()
     {
-        _guard.Setup(g => g.EnsurePermissionAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Permission>(), It.IsAny<CancellationToken>()))
+        _guard.Setup(g => g.EnsureOwnerAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ForbiddenException("không đủ quyền"));
 
         await Assert.ThrowsAsync<ForbiddenException>(() => _sut.ListAsync(Parent, ReadingHarness.Child));
@@ -379,7 +379,7 @@ public class ParentStoryWishServiceTests
         var expected = new AIStoryInputProgressDto { StoryId = 500, RequestId = 77, InputStatus = "input_accepted" };
         _aiInput.Setup(x => x.GetProgressAsync(Parent, 500, 77, It.IsAny<CancellationToken>())).ReturnsAsync(expected);
         Assert.Same(expected, await _sut.GetGenerationProgressAsync(Parent, wish.Id));
-        _guard.Verify(x => x.EnsurePermissionAsync(ReadingHarness.Child, Parent, Permission.ApproveStory, It.IsAny<CancellationToken>()), Times.Once);
+        _guard.Verify(x => x.EnsureOwnerAsync(ReadingHarness.Child, Parent, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -465,7 +465,7 @@ public class ParentStoryWishServiceTests
     {
         var wish = Wish();
         Suggest(wish, 1, 31);
-        _guard.Setup(g => g.EnsurePermissionAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Permission>(), It.IsAny<CancellationToken>()))
+        _guard.Setup(g => g.EnsureOwnerAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ForbiddenException("không đủ quyền"));
 
         await Assert.ThrowsAsync<ForbiddenException>(() => _sut.DeclineAsync(Parent, wish.Id, new DeclineWishRequestDto()));

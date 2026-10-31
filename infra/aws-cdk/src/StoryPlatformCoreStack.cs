@@ -192,6 +192,9 @@ public sealed class StoryPlatformCoreStack : Stack
                 ["JwtSettings__ExpiryMinutes"] = "15",
                 ["JwtSettings__RefreshTokenExpiryDays"] = "7",
                 ["JwtSettings__ChildTokenExpiryMinutes"] = "240",
+                // DF06: only the production web may call the API from a browser.
+                ["Cors__AllowedOrigins__0"] = "https://www.taletale.site",
+                ["Cors__AllowedOrigins__1"] = "https://taletale.site",
                 ["Logging__LogLevel__Default"] = "Warning",
                 ["SeedData__RunOnStartup"] = seedDatabaseOnStart ? "true" : "false",
                 ["FixMigrationHistory__RunOnStartup"] = fixMigrationHistoryOnStart ? "true" : "false"

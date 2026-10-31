@@ -65,7 +65,7 @@ public class AuthServiceTests
         Email = "parent1@example.com",
         PasswordHash = password,
         FullName = "Tran Thi Hoa",
-        Role = UserRole.Parent,
+        Role = UserRole.User,
         Status = AccountStatus.Active
     };
 
@@ -307,7 +307,7 @@ public class AuthServiceTests
             ConfirmPassword = "Demo@123"
         });
 
-        Assert.Equal(UserRole.Parent, addedUser!.Role);
+        Assert.Equal(UserRole.User, addedUser!.Role);
     }
 
     [Fact]
@@ -1149,7 +1149,7 @@ public class AuthServiceTests
             // Role không set — phải mặc định Parent (đúng hành vi hiện tại đã có test RegisterAsync_NewEmail_CreatesUserAndSendsVerificationEmail bên trên).
         });
 
-        Assert.Equal(UserRole.Parent, addedUser!.Role);
+        Assert.Equal(UserRole.User, addedUser!.Role);
     }
 
     [Theory]

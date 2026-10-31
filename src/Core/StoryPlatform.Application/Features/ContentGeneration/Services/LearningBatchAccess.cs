@@ -4,7 +4,7 @@ using System.Text.Json;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common;
 using StoryPlatform.Application.Common.Exceptions;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Safety;
 using StoryPlatform.Application.Features.ParentAuthoring;
 using StoryPlatform.Application.Features.Moderation;
@@ -19,7 +19,7 @@ public static class LearningBatchAccess
     public static string Source(Story story, StoryVersion version) => Hash(new { StoryId = story.Id, VersionId = version.Id, version.Title, version.Content,
         version.Lesson, story.AgeBand, story.ReadingLevel, story.VocabularyLevel, story.Language, story.OutputMode });
 
-    public static async Task<string> AuthorizeAsync(IUnitOfWork uow, ISupervisionAccessGuard guard, Story story, StoryVersion version, int actor, CancellationToken ct)
+    public static async Task<string> AuthorizeAsync(IUnitOfWork uow, IChildProfileAccessGuard guard, Story story, StoryVersion version, int actor, CancellationToken ct)
     {
         if (story.IsDeleted || version.IsDeleted || !version.IsCurrent || version.StoryId != story.Id || string.IsNullOrWhiteSpace(version.Content) ||
             story.OutputMode != StoryOutputMode.Learning || story.Status is not (StoryStatus.Draft or StoryStatus.OutlineReview or StoryStatus.ContentReview))
@@ -32,9 +32,9 @@ public static class LearningBatchAccess
             return Hash(new { story.AuthorUserId, story.AgeBand });
         }
         var user = await uow.Repository<UserAccount>().FirstOrDefaultAsync(x => x.Id == actor && !x.IsDeleted, cancellationToken: ct);
-        if (user?.Role != UserRole.Parent || user.Status != AccountStatus.Active || user.LockedUntil > DateTime.UtcNow || story.ChildProfileId is not int childId)
+        if (user?.Role != UserRole.User || user.Status != AccountStatus.Active || user.LockedUntil > DateTime.UtcNow || story.ChildProfileId is not int childId)
             throw new ForbiddenException();
-        await guard.EnsurePermissionAsync(childId, actor, Permission.GenerateStory, ct);
+        await guard.EnsureOwnerAsync(childId, actor, ct);
         var child = await uow.Repository<ChildProfile>().FirstOrDefaultAsync(x => x.Id == childId && !x.IsDeleted, cancellationToken: ct);
         var policy = await uow.Repository<SafetyPolicy>().FirstOrDefaultAsync(x => x.ChildProfileId == childId && !x.IsDeleted, cancellationToken: ct);
         if (child?.Status != ChildProfileStatus.Active || policy?.ConsentRecorded != true || !policy.ConsentRecordedAt.HasValue || ConsentPolicy.IsOutdated(policy.ConsentPolicyVersion))

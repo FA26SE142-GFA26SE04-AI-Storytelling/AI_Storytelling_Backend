@@ -30,6 +30,18 @@ public class ChildNotebookServiceTests
     }
 
     [Fact]
+    public async Task GetDefinitionAsync_ReturnsPronunciationAudio_WhenReady()
+    {
+        var session = _h.AddSession();
+        var word = _h.AddVocabulary(1, "cà rốt", "củ màu cam");
+        _h.AddVocabularyAudio(word, "10/versions/50/v1/vocab-1.mp3");
+
+        var result = await _sut.GetDefinitionAsync(ReadingHarness.Child, session.Id, 1);
+
+        Assert.Equal("10/versions/50/v1/vocab-1.mp3", result.AudioUrl);
+    }
+
+    [Fact]
     public async Task GetDefinitionAsync_WordFromAnotherStoryVersion_IsNotFound()
     {
         var session = _h.AddSession();
@@ -72,6 +84,23 @@ public class ChildNotebookServiceTests
         Assert.Equal(1, list.Single(e => e.Term == "cà rốt").SceneIndex);
         Assert.Equal(0, list.Single(e => e.Term == "vườn").SceneIndex);
         Assert.All(list, e => Assert.Equal("Truyện 10", e.StoryTitle));
+    }
+
+    [Fact]
+    public async Task ListAsync_CarriesPronunciationAudio_AndNullWhenMissing()
+    {
+        var session = _h.AddSession();
+        _h.AddScene(0, "Thỏ thấy cà rốt trong vườn.");
+        var carrot = _h.AddVocabulary(1, "cà rốt");
+        _h.AddVocabulary(2, "vườn");
+        _h.AddVocabularyAudio(carrot, "10/versions/50/v1/vocab-1.mp3");
+        await _sut.CollectAsync(ReadingHarness.Child, session.Id, 1);
+        await _sut.CollectAsync(ReadingHarness.Child, session.Id, 2);
+
+        var list = await _sut.ListAsync(ReadingHarness.Child);
+
+        Assert.Equal("10/versions/50/v1/vocab-1.mp3", list.Single(e => e.Term == "cà rốt").AudioUrl);
+        Assert.Null(list.Single(e => e.Term == "vườn").AudioUrl);
     }
 
     [Fact]

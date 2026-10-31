@@ -30,7 +30,7 @@ public sealed partial class AIStoryInputServiceTests
         var seed = CreateEligibleUnitOfWork();
         void Seed<T>() where T : class => db.Set<T>().AddRange(seed.Items<T>());
         Seed<UserAccount>(); Seed<ChildProfile>(); Seed<LearningProfile>(); Seed<SafetyPolicy>();
-        Seed<SupervisionRelationship>(); Seed<SupervisionPermission>();
+
         db.Set<StoryWish>().Add(PendingWish());
         db.Set<TokenQuotaConfig>().Add(new()
         {
@@ -100,7 +100,7 @@ public sealed partial class AIStoryInputServiceTests
         protected override void OnModelCreating(ModelBuilder b)
         {
             Type[] types = [typeof(UserAccount), typeof(ChildProfile), typeof(LearningProfile), typeof(SafetyPolicy),
-                typeof(SafetyPolicyCategory), typeof(ContentCategory), typeof(LearningProfileTopic), typeof(SupervisionRelationship), typeof(SupervisionPermission),
+                typeof(SafetyPolicyCategory), typeof(ContentCategory), typeof(LearningProfileTopic),
                 typeof(StoryWish), typeof(Story), typeof(StoryGenerationRequest), typeof(StoryGenerationJob), typeof(TokenQuotaConfig)];
             foreach (var type in types)
                 foreach (var property in type.GetProperties().Where(p => typeof(BaseEntity).IsAssignableFrom(p.PropertyType) ||

@@ -131,7 +131,7 @@ public sealed class CreatorReviewConcurrencyTests
         {
             await writer.BeginTransactionAsync(); await writer.AcquireTransactionLockAsync(1);
             var user = (await writer.Repository<UserAccount>().GetByIdAsync(1))!;
-            user.Role = UserRole.Parent; writer.Repository<UserAccount>().Update(user); await writer.CommitTransactionAsync();
+            user.Role = UserRole.User; writer.Repository<UserAccount>().Update(user); await writer.CommitTransactionAsync();
         }
         gate.Complete();
         await Assert.ThrowsAsync<ForbiddenException>(() => pending.WaitAsync(TimeSpan.FromSeconds(10)));
@@ -163,7 +163,8 @@ public sealed class CreatorReviewConcurrencyTests
         var db = Seed();
         var story = db.Data[typeof(Story)].Cast<Story>().Single();
         story.Scope = StoryScope.Parent; story.ChildProfileId = 3; story.OutputMode = StoryOutputMode.ReadingMediaOnly;
-        db.Data[typeof(UserAccount)].Cast<UserAccount>().Single().Role = UserRole.Parent;
+        db.Data[typeof(UserAccount)].Cast<UserAccount>().Single().Role = UserRole.User;
+        db.Seed(new ChildProfile { Id = 3, OwnerUserId = 1, Status = ChildProfileStatus.Active });
         db.Seed(new SafetyPolicy
         {
             Id = 1,
@@ -194,8 +195,11 @@ public sealed class CreatorReviewConcurrencyTests
                     StoryPlatform.Application.Features.Moderation.GrayZoneEvaluator.Fingerprint(scan), scan.Phase, "policy", "test", "test", 0, []));
         var workflow = new StoryPlatform.Application.Features.Moderation.Services.GrayZoneWorkflowService(session,
             new Mock<StoryPlatform.Application.Features.AuditLogs.Interfaces.IAuditLogWriter>().Object);
+        var accessGuard = new Mock<StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces.IChildProfileAccessGuard>();
+        accessGuard.Setup(x => x.EnsureOwnerAsync(1, 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChildProfile { Id = 1, OwnerUserId = 1 });
         var checker = new StoryPlatform.Application.Features.Moderation.Services.GrayZoneContentCheckService(session, evaluator.Object, workflow,
-            new Mock<StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces.ISupervisionAccessGuard>().Object);
+            accessGuard.Object);
         var service = new StoryReviewService(session, new SafetyGate().Client.Object, new InMemoryProposalCache(), moderation: checker);
         var conflict = await Assert.ThrowsAsync<ConflictException>(() => service.ApproveAsync(1, 1));
         Assert.Equal("STALE_STORY_VERSION", conflict.Message);

@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration.Interfaces;
 using StoryPlatform.Contracts.AI.Models;
 using StoryPlatform.Contracts.AI.Responses;
@@ -14,7 +14,7 @@ using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.ContentGeneration.Services;
 
-public sealed class LearningBatchProcessor(IUnitOfWork uow, IAIStoryGenerationClient ai, ISupervisionAccessGuard guard,
+public sealed class LearningBatchProcessor(IUnitOfWork uow, IAIStoryGenerationClient ai, IChildProfileAccessGuard guard,
     ILearningRequestGate gate, LearningBatchOptions options, ILogger<LearningBatchProcessor> logger) : ILearningBatchProcessor
 {
     private TimeSpan Lease => TimeSpan.FromMinutes(Math.Clamp(options.LeaseMinutes, 8, 30));

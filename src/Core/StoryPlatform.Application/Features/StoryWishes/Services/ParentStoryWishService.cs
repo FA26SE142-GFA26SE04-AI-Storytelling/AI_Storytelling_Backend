@@ -3,7 +3,7 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AIStoryInput.DTOs;
 using StoryPlatform.Application.Features.AIStoryInput.Interfaces;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
 using StoryPlatform.Application.Features.StoryWishes.Interfaces;
 using StoryPlatform.Application.Features.WishCards;
@@ -15,7 +15,7 @@ namespace StoryPlatform.Application.Features.StoryWishes.Services;
 public class ParentStoryWishService : IParentStoryWishService
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly ISupervisionAccessGuard _guard;
+    private readonly IChildProfileAccessGuard _guard;
     private readonly IChildRoadmapService _roadmap;
     private readonly IAIStoryInputService _aiInput;
     private readonly IStoryWishSuggestionService _suggestions;
@@ -24,7 +24,7 @@ public class ParentStoryWishService : IParentStoryWishService
 
     public ParentStoryWishService(
         IUnitOfWork unitOfWork,
-        ISupervisionAccessGuard guard,
+        IChildProfileAccessGuard guard,
         IChildRoadmapService roadmap,
         IAIStoryInputService aiInput,
         IStoryWishSuggestionService suggestions,
@@ -43,7 +43,7 @@ public class ParentStoryWishService : IParentStoryWishService
     public async Task<IReadOnlyList<ParentWishDto>> ListAsync(
         int parentUserId, int childProfileId, CancellationToken ct = default)
     {
-        await _guard.EnsurePermissionAsync(childProfileId, parentUserId, Permission.ApproveStory, ct);
+        await _guard.EnsureOwnerAsync(childProfileId, parentUserId, ct);
         var wishes = (await _unitOfWork.Repository<StoryWish>().FindAsync(
                 wish => wish.ChildProfileId == childProfileId
                         && !wish.IsDeleted
@@ -234,7 +234,7 @@ public class ParentStoryWishService : IParentStoryWishService
             throw new NotFoundException("Điều ước", wishId);
         }
 
-        await _guard.EnsurePermissionAsync(wish.ChildProfileId, parentUserId, Permission.ApproveStory, ct);
+        await _guard.EnsureOwnerAsync(wish.ChildProfileId, parentUserId, ct);
         return wish;
     }
 

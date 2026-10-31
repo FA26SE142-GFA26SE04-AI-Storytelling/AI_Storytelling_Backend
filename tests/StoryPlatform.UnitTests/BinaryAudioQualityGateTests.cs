@@ -72,6 +72,46 @@ public sealed class BinaryAudioQualityGateTests
     }
 
     [Fact]
+    public void Validate_TokenizedSentence_CountsOnlyWordMarks()
+    {
+        var wav = new byte[]
+        {
+            0x52, 0x49, 0x46, 0x46, 0x00, 0x10, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45
+        };
+        // 4 words + 3 spaces + "..." = 8 tokens, but Cloud TTS only returns a timepoint per word.
+        var marks = SsmlTokenizer.Tokenize("Sau lớp sóng biển...");
+        var metadata = new Dictionary<string, string>
+        {
+            ["wordTimingsJson"] = """[{"word":"Sau","start":0},{"word":"lớp","start":0.3},{"word":"sóng","start":0.6},{"word":"biển","start":0.9}]"""
+        };
+        var audio = new GeneratedMedia(wav, "audio/wav", metadata);
+
+        var result = Gate.Validate(audio, marks);
+
+        Assert.True(result.IsPass, result.Reason);
+    }
+
+    [Fact]
+    public void Validate_TokenizedSentence_MissingWordTiming_Fails()
+    {
+        var wav = new byte[]
+        {
+            0x52, 0x49, 0x46, 0x46, 0x00, 0x10, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45
+        };
+        var marks = SsmlTokenizer.Tokenize("Sau lớp sóng biển...");
+        var metadata = new Dictionary<string, string>
+        {
+            ["wordTimingsJson"] = """[{"word":"Sau","start":0},{"word":"lớp","start":0.3},{"word":"sóng","start":0.6}]"""
+        };
+        var audio = new GeneratedMedia(wav, "audio/wav", metadata);
+
+        var result = Gate.Validate(audio, marks);
+
+        Assert.False(result.IsPass);
+        Assert.Equal("AUDIO_WORD_TIMINGS_COUNT_MISMATCH: expected 4, got 3", result.Reason);
+    }
+
+    [Fact]
     public void Validate_MissingWordTimingsJsonWhenExpected_Fails()
     {
         var wav = new byte[]

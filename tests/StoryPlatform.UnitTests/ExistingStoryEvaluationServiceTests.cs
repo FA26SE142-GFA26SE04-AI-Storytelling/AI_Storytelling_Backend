@@ -5,7 +5,7 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ChildProfiles.Learning.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ExistingStories.DTOs;
 using StoryPlatform.Application.Features.ExistingStories.Services;
 using StoryPlatform.Domain.Entities;
@@ -103,10 +103,10 @@ public sealed class ExistingStoryEvaluationServiceTests
         unitOfWork.Setup(store => store.Repository<ContentCategory>()).Returns(categoryRepository.Object);
         unitOfWork.Setup(store => store.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
 
-        var accessGuard = new Mock<ISupervisionAccessGuard>();
-        accessGuard.Setup(guard => guard.EnsurePermissionAsync(
-                1, 1, Permission.GenerateStory, It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
+        var accessGuard = new Mock<IChildProfileAccessGuard>();
+        accessGuard.Setup(guard => guard.EnsureOwnerAsync(
+                1, 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChildProfile { Id = 1, OwnerUserId = 1 });
 
         var safety = new Mock<ISafetyPolicyService>();
         safety.Setup(service => service.GetSafetyPolicyAsync(1, 1, It.IsAny<CancellationToken>()))

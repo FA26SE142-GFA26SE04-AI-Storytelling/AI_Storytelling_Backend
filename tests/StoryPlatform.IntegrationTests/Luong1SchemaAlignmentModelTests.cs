@@ -48,15 +48,35 @@ public sealed class Luong1SchemaAlignmentModelTests
         Assert.All(Enum.GetNames<NotificationType>(), name => Assert.True(name.Length <= maxLength, name));
     }
 
-    [Fact]
-    public void Permission_request_status_column_fits_every_enum_name()
+    [Theory]
+    [InlineData("SupervisionInvitation")]
+    [InlineData("SupervisionRelationship")]
+    [InlineData("SupervisionPermission")]
+    [InlineData("SupervisionPermissionRequest")]
+    [InlineData("SupervisionPermissionRequestItem")]
+    [InlineData("OwnershipTransferRequest")]
+    [InlineData("Assignment")]
+    [InlineData("AssignmentRecipient")]
+    public void Model_does_not_contain_removed_supervision_entities(string entityName)
     {
         using var context = CreateModelOnlyContext();
-        var maxLength = context.Model.FindEntityType(typeof(SupervisionPermissionRequest))!
-            .FindProperty(nameof(SupervisionPermissionRequest.Status))!.GetMaxLength();
+        Assert.Null(context.Model.FindEntityType($"StoryPlatform.Domain.Entities.{entityName}"));
+    }
 
-        Assert.NotNull(maxLength);
-        Assert.All(Enum.GetNames<PermissionRequestStatus>(), name => Assert.True(name.Length <= maxLength, name));
+    [Fact]
+    public void ReadingSession_has_no_assignment_recipient_column()
+    {
+        using var context = CreateModelOnlyContext();
+        var readingSession = context.Model.FindEntityType(typeof(ReadingSession))!;
+        Assert.Null(readingSession.FindProperty("AssignmentRecipientId"));
+    }
+
+    [Theory]
+    [InlineData("AssignmentCancelled")]
+    [InlineData("StoryShared")]
+    public void NotificationType_does_not_define_removed_teacher_values(string name)
+    {
+        Assert.False(Enum.TryParse<NotificationType>(name, out _));
     }
 
     [Fact]
@@ -138,7 +158,7 @@ public sealed class Luong1SchemaAlignmentModelTests
     }
 
     [Fact]
-    public void Account_ownership_v41_columns_and_statuses_are_mapped()
+    public void Account_v41_columns_and_statuses_are_mapped()
     {
         using var context = CreateModelOnlyContext();
 
@@ -151,11 +171,6 @@ public sealed class Luong1SchemaAlignmentModelTests
         Assert.NotNull(userAccount.FindProperty(nameof(UserAccount.PendingEmailOtpExpiresAt)));
         Assert.NotNull(userAccount.FindProperty(nameof(UserAccount.PendingEmailOtpFailedAttempts)));
 
-        var ownershipTransfer = context.Model.FindEntityType(typeof(OwnershipTransferRequest))!;
-        Assert.Null(ownershipTransfer.FindProperty("ExpiresAt"));
-        Assert.Equal(
-            new[] { "Pending", "Accepted", "Rejected", "Cancelled" },
-            Enum.GetNames<OwnershipTransferRequestStatus>());
         Assert.Contains(nameof(DataRequestStatus.Cancelled), Enum.GetNames<DataRequestStatus>());
         Assert.Equal(8, (int)NotificationType.AccountSecurityChanged);
     }

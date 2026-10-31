@@ -7,3 +7,13 @@ secret:
   ignored-matches:
     - name: "Demo@123 - shared demo password for all seeded accounts (Database/Seed/01_user_accounts.sql) and its mocks in tests/StoryPlatform.UnitTests/Features/Auth/AuthServiceTests.cs, tests/StoryPlatform.IntegrationTests/Security/PasswordHasherTests.cs"
       match: ff96673205dc722320598ebf8f88325b2ac56922d5a2164b5765868274bc0d73
+    - name: "Parent@12345 - dummy register password in tests/StoryPlatform.IntegrationTests/Api/AuthApiTests.cs"
+      match: be17a22aa3030549c7b110274cdb138fe6e8d6cecec3b89c1a9973eec8027979
+    - name: "Parent@99999 - dummy mismatched confirmation password in tests/StoryPlatform.IntegrationTests/Api/AuthApiTests.cs"
+      match: 4b5a865fe860da2fbfbe4308e49211ab6bb8b2598137f6860b38f3f12226cb81
+    - name: "Wrong@12345 - dummy wrong login password in tests/StoryPlatform.IntegrationTests/Api/AuthApiTests.cs"
+      match: 8a1d0cb7586efdf1d9148b4530b01c9be7cb99c9b3b51446ea69fb12bc9b9cf1
+    - name: "Wrong@123 - dummy login password for rate-limit tests in tests/StoryPlatform.IntegrationTests/Api/SecurityApiTests.cs"
+      match: e910c03316c7d90b9f79a262c8505d3d6dee9132aaf741e92bfc5e42a6d5dc4a
+    - name: "Test@12345 - password of accounts created by tests/StoryPlatform.IntegrationTests/Api/ApiFactory.cs"
+      match: 6d987a391d90fc2451751b2bb85890fc6e452bc057f39a85d8d1fd552f965fb2

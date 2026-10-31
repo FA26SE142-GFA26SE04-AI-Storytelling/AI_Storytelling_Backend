@@ -5,7 +5,7 @@ using Moq;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Features.AIStoryInput.Models;
-using StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration;
 using StoryPlatform.Application.Features.ContentGeneration.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration.DTOs;
@@ -129,7 +129,7 @@ public sealed class LearningBatchGenerationTests
     {
         var services = new ServiceCollection();
         services.AddLogging(); services.AddSingleton(store); services.AddSingleton(ai);
-        services.AddSingleton(new Mock<ISupervisionAccessGuard>().Object);
+        services.AddSingleton(new Mock<IChildProfileAccessGuard>().Object);
         services.AddSingleton(new LearningBatchOptions { BaseRetryDelaySeconds = 0, QuotaRetryFloorSeconds = 0 });
         services.AddSingleton<ILearningRequestGate, Gate>();
         services.AddSingleton<ILearningBatchRunner, LearningBatchRunner>();

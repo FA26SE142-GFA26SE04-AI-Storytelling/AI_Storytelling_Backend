@@ -184,7 +184,7 @@ public sealed class GrayZoneTests
         var assessment = await evaluator.EvaluateAsync(scan, default);
         await workflow.RecordAsync(story.Id, version.Id, null, assessment, true, default);
         var checks = new GrayZoneContentCheckService(h.UnitOfWork.Object, evaluator, workflow,
-            new Mock<StoryPlatform.Application.Features.ChildProfiles.Supervision.Interfaces.ISupervisionAccessGuard>().Object);
+            new Mock<StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces.IChildProfileAccessGuard>().Object);
         var result = await checks.CheckAsync(PublicStoryReviewHarness.CreatorId, story.Id, version.Id, default);
         Assert.Equal("GrayZone", result.Status);
         provider.Verify(x => x.EvaluateAsync(It.IsAny<GrayZoneScan>(), It.IsAny<CancellationToken>()), Times.Once);

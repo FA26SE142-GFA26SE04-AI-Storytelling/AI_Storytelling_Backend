@@ -126,9 +126,8 @@ public sealed class WishWorkflowPersistenceTests
     private static async Task SeedAsync(WishDb db)
     {
         await db.Database.EnsureCreatedAsync();
-        db.Set<UserAccount>().Add(new() { Id = 7, Role = UserRole.Parent, Status = AccountStatus.Active });
+        db.Set<UserAccount>().Add(new() { Id = 7, Role = UserRole.User, Status = AccountStatus.Active });
         db.Set<ChildProfile>().Add(new() { Id = 1, OwnerUserId = 7, Status = ChildProfileStatus.Active });
-        db.Set<SupervisionRelationship>().Add(new() { Id = 1, ChildProfileId = 1, SupervisorUserId = 7, SupervisorRole = SupervisorRole.Owner });
         db.Set<StoryWish>().Add(new() { Id = 1, ChildProfileId = 1, Status = StoryWishStatus.Pending,
             PendingSince = DateTime.UtcNow.AddDays(-6.2), SubmittedAt = DateTime.UtcNow.AddDays(-6.2) });
         db.Set<Story>().Add(new() { Id = 20, AuthorUserId = 7, Scope = StoryScope.Creator, Status = StoryStatus.Ready });
@@ -167,8 +166,8 @@ public sealed class WishWorkflowPersistenceTests
         protected override void OnModelCreating(ModelBuilder b)
         {
             Type[] types = [typeof(UserAccount), typeof(ChildProfile), typeof(StoryWish), typeof(Story), typeof(WishCard),
-                typeof(StoryWishCardMatch), typeof(AuditLog), typeof(Notification), typeof(SupervisionRelationship),
-                typeof(SupervisionPermission), typeof(InterventionCase)];
+                typeof(StoryWishCardMatch), typeof(AuditLog), typeof(Notification),
+                typeof(InterventionCase)];
             foreach (var type in types)
                 foreach (var p in type.GetProperties().Where(p => typeof(BaseEntity).IsAssignableFrom(p.PropertyType) ||
                     p.PropertyType.IsGenericType && p.PropertyType.GetGenericArguments().Any(t => typeof(BaseEntity).IsAssignableFrom(t))))

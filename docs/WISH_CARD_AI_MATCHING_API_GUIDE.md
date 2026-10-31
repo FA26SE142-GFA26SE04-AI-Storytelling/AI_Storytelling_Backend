@@ -186,7 +186,7 @@ Không thêm cột/bảng, không cần migration hoặc backfill audit. Các Co
 
 ## Dữ liệu seed để bắt đầu kiểm thử
 
-Các file `70_wish_cards.sql` đến `73_story_wish_suggestions.sql` chứa 26 thẻ, 5 điều ước,
+Các file `62_wish_cards.sql` đến `65_story_wish_suggestions.sql` chứa 26 thẻ, 5 điều ước,
 5 mapping Moderator và 1 gợi ý mẫu. Wish **4** thuộc child **1**: Mèo Mun, ngôi nhà,
 giúp bạn và biết lắng nghe. Wish **5** thuộc child **3**, để Parent tự điền bài học.
 Hai wish này bắt đầu `Pending`, chưa có request/job AI; gọi generation-form rồi create-story

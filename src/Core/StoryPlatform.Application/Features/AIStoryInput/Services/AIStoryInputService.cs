@@ -770,27 +770,15 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
     {
         var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken)
                    ?? throw new ForbiddenException();
-        if (user.Status == AccountStatus.Suspended || user.Role != UserRole.Parent)
+        if (user.Status == AccountStatus.Suspended || user.Role != UserRole.User)
         {
             throw new ForbiddenException("Tài khoản không đủ điều kiện tạo truyện cho Child Profile.");
         }
 
-        var relationship = await _unitOfWork.Repository<SupervisionRelationship>().FirstOrDefaultAsync(
-            item => item.ChildProfileId == childProfileId &&
-                    item.SupervisorUserId == userId &&
-                    item.RevokedAt == null,
-            cancellationToken: cancellationToken);
-        if (relationship is null)
+        if (!await StoryPlatform.Application.Common.ChildOwnership.IsOwnerAsync(
+                _unitOfWork, childProfileId, userId, cancellationToken))
         {
-            throw new ForbiddenException("Bạn không có quan hệ giám sát đang hiệu lực với Child Profile này.");
-        }
-
-        var hasPermission = await _unitOfWork.Repository<SupervisionPermission>().ExistsAsync(
-            item => item.SupervisionRelationshipId == relationship.Id && item.Permission == Permission.GenerateStory,
-            cancellationToken);
-        if (!hasPermission)
-        {
-            throw new ForbiddenException("Bạn chưa được cấp quyền Generate Story cho Child Profile này.");
+            throw new ForbiddenException("Bạn không phải người quản lý Child Profile này.");
         }
     }
 

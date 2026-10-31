@@ -22,8 +22,8 @@ public partial class ChildRoadmapService
     private async Task<WishRoadmapResultDto> AddWishStoryAsync(int actorUserId, int childProfileId, int storyId,
         int? wishId, CancellationToken cancellationToken)
     {
-        await _guard.EnsurePermissionAsync(
-            childProfileId, actorUserId, Permission.ApproveStory, cancellationToken);
+        await _guard.EnsureOwnerAsync(
+            childProfileId, actorUserId, cancellationToken);
 
         var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(
             childProfileId, cancellationToken);
@@ -65,7 +65,7 @@ public partial class ChildRoadmapService
                 wish = await _unitOfWork.Repository<StoryWish>().FirstOrDefaultAsync(
                     x => x.Id == wishId && !x.IsDeleted, cancellationToken: cancellationToken)
                     ?? throw new NotFoundException("StoryWish", wishId.Value);
-                await _guard.EnsurePermissionAsync(childProfileId, actorUserId, Permission.ApproveStory, cancellationToken);
+                await _guard.EnsureOwnerAsync(childProfileId, actorUserId, cancellationToken);
                 if (wish.ChildProfileId != childProfileId || wish.Kind != StoryWishKind.Wish ||
                     wish.Status != StoryWishStatus.Pending || wish.GeneratedStoryId.HasValue || wish.GenerationRequestId.HasValue)
                     throw new ConflictException("WISH_ALREADY_HANDLED");

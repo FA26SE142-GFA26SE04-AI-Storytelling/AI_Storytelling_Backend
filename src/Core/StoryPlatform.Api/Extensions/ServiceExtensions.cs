@@ -286,18 +286,50 @@ public static class ServiceExtensions
         }
     }
 
-    public static IServiceCollection AddCorsPolicy(this IServiceCollection services)
+    public const string CorsPolicyName = "WebFrontend";
+    public const string CorsAllowedOriginsKey = "Cors:AllowedOrigins";
+    private static readonly string[] DevelopmentCorsOrigins = ["http://localhost:3000", "http://127.0.0.1:3000"];
+
+    /// <summary>
+    /// Chỉ các origin trong "Cors:AllowedOrigins" được gọi API từ trình duyệt (DF06). Môi trường Development
+    /// không cấu hình thì dùng web local; môi trường khác không cấu hình thì không cho origin nào (fail closed).
+    /// Web gửi JWT qua header Authorization, không dùng cookie, nên không bật AllowCredentials.
+    /// </summary>
+    public static IServiceCollection AddCorsPolicy(this IServiceCollection services, IConfiguration configuration, bool isDevelopment)
     {
+        var origins = ResolveCorsOrigins(configuration, isDevelopment);
         services.AddCors(options =>
         {
-            options.AddPolicy("AllowAll", builder =>
+            options.AddPolicy(CorsPolicyName, builder =>
             {
-                builder.AllowAnyOrigin()
-                       .AllowAnyMethod()
-                       .AllowAnyHeader();
+                if (origins.Length > 0)
+                {
+                    builder.WithOrigins(origins)
+                           .AllowAnyMethod()
+                           .AllowAnyHeader();
+                }
             });
         });
 
         return services;
+    }
+
+    public static string[] ResolveCorsOrigins(IConfiguration configuration, bool isDevelopment)
+    {
+        var configured = (configuration.GetSection(CorsAllowedOriginsKey).Get<string[]>() ?? [])
+            .Select(origin => origin.Trim().TrimEnd('/'))
+            .Where(origin => origin.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        foreach (var origin in configured)
+        {
+            if (origin == "*" || !Uri.TryCreate(origin, UriKind.Absolute, out var uri) || uri.AbsolutePath != "/")
+            {
+                throw new InvalidOperationException(
+                    $"'{CorsAllowedOriginsKey}' chỉ nhận origin dạng scheme://host[:port], không nhận '{origin}'.");
+            }
+        }
+
+        return configured.Length == 0 && isDevelopment ? DevelopmentCorsOrigins : configured;
     }
 }

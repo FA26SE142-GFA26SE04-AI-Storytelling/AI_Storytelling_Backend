@@ -10,7 +10,7 @@ namespace StoryPlatform.UnitTests.Features.Payments;
 public class PaymentControllerAuthorizationTests
 {
     [Theory]
-    [InlineData(UserRole.Parent, true)]
+    [InlineData(UserRole.User, true)]
     [InlineData(UserRole.Administrator, true)]
     public async Task AuthenticatedActions_AnyRole(UserRole role, bool expected)
     {
@@ -33,13 +33,13 @@ public class PaymentControllerAuthorizationTests
                      nameof(PaymentController.CreateTransaction)
                  })
         {
-            Assert.False(await IsAuthorizedAsync(actionName, UserRole.Parent, authenticated: false));
+            Assert.False(await IsAuthorizedAsync(actionName, UserRole.User, authenticated: false));
         }
     }
 
     [Theory]
     [InlineData(UserRole.Administrator, true)]
-    [InlineData(UserRole.Parent, false)]
+    [InlineData(UserRole.User, false)]
     public async Task AdminActions_OnlyAdministrator(UserRole role, bool expected)
     {
         foreach (var actionName in new[]

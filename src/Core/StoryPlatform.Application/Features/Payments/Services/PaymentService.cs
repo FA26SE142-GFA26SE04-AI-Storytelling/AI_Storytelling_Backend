@@ -58,9 +58,9 @@ public class PaymentService : IPaymentService
 
         var payer = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(payerUserId, cancellationToken)
                     ?? throw new ForbiddenException();
-        if (payer.Role != UserRole.Parent)
+        if (payer.Role != UserRole.User)
         {
-            throw new ForbiddenException("Chỉ Parent mới được mua gói Personal.");
+            throw new ForbiddenException("Chỉ tài khoản User mới được mua gói Personal.");
         }
 
         var duplicatePending = await _unitOfWork.Repository<PaymentTransaction>().ExistsAsync(

@@ -237,7 +237,7 @@ API giới hạn số request theo cửa sổ cố định. Vượt hạn mức 
 
 | Nhóm | Áp dụng cho | Đếm theo | Mặc định |
 |---|---|---|---|
-| `RateLimiting:Auth` | `Auth/login`, `Auth/forgot-password`, `Auth/resend-verification-email` | IP + endpoint | 10 request / 60 giây |
+| `RateLimiting:Auth` | `Auth/login`, `Auth/forgot-password`, `Auth/reset-password`, `Auth/verify-email`, `Auth/resend-verification-email`, `StaffAccount/{userId}/resend-invite` | IP + endpoint | 10 request / 60 giây |
 | `RateLimiting:Ai` | Các endpoint kích hoạt sinh AI (ai-story-input, outline, review/ai, media regenerate, assistance) | Tài khoản (chưa đăng nhập thì theo IP) | 20 request / 60 giây |
 
 Mặc định trên dành cho production, **không đổi trong code**. Khi cả nhóm system test dùng chung một mạng (cùng IP công khai), hạn mức `Auth` sẽ nhanh chóng bị dùng hết. Khi đó, chỉ nâng hạn mức **trên môi trường test** bằng biến môi trường:

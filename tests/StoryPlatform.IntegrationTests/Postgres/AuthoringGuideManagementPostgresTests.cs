@@ -1,9 +1,12 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuthoringGuideManagement.DTOs;
+using StoryPlatform.Application.Features.ParentAuthoring;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Infrastructure.Migrations;
 using Xunit;
 
 namespace StoryPlatform.IntegrationTests.Postgres;
@@ -12,7 +15,7 @@ public sealed class AuthoringGuideManagementPostgresTests(AuthoringGuidePostgres
 {
     private static UpsertGuideItemRequest Item(string? token, string title = "Mẫu mới") =>
         new(token, ["free"], "opening", "template", title, "Điền rồi chèn.", null, "Sáng nay, {{person}} thử {{activity}}.",
-            ["person", "activity"], 31);
+            [new GuidePlaceholder("person", "Ai?", null), new GuidePlaceholder("activity", "Làm gì?", null)], 31);
 
     private static async Task<(T? Result, Exception? Error)> TryAsync<T>(Func<Task<T>> action)
     {
@@ -53,7 +56,7 @@ public sealed class AuthoringGuideManagementPostgresTests(AuthoringGuidePostgres
 
         await using (var s = db.NewScope())
         {
-            originalContent = (await s.Context.AuthoringGuideCatalogVersions.SingleAsync()).ContentJson;
+            originalContent = JsonSerializer.Serialize((await s.Management.GetOverviewAsync(db.ModeratorId)).Published!.Items);
             draft = await s.Management.CreateDraftAsync(db.ModeratorId, new(null));
             Assert.Equal(("parent-vi-2", 30), (draft.Draft.CatalogVersion, draft.Draft.ItemCount));
             token = (await s.Management.UpsertItemAsync(db.ModeratorId, "opening-9", Item(draft.RevisionToken))).RevisionToken;
@@ -111,7 +114,7 @@ public sealed class AuthoringGuideManagementPostgresTests(AuthoringGuidePostgres
         await using (var s = db.NewScope()) // mỗi thao tác ghi có đúng một dòng audit
         {
             var original = await s.Context.AuthoringGuideCatalogVersions.SingleAsync(x => x.VersionNo == 1);
-            Assert.Equal(originalContent, original.ContentJson);
+            Assert.Equal(originalContent, JsonSerializer.Serialize((await s.Management.GetVersionAsync(db.ModeratorId, original.Id)).Items));
             Assert.Equal(AuthoringGuideVersionStatus.Published, original.Status);
             var counts = await s.Context.AuditLogs.Where(x => x.EntityType == nameof(AuthoringGuideCatalogVersion))
                 .GroupBy(x => x.Action).Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count);
@@ -207,14 +210,14 @@ public sealed class AuthoringGuideManagementPostgresTests(AuthoringGuidePostgres
         await using (var s = db.NewScope()) // hai bản Draft chưa xóa trong cùng một bộ
         {
             s.Context.AuthoringGuideCatalogVersions.Add(new() { CatalogId = catalogId, VersionNo = 99, CatalogVersion = "x-99",
-                Status = AuthoringGuideVersionStatus.Draft, ContentJson = "{}" });
+                Status = AuthoringGuideVersionStatus.Draft });
             var ex = await Assert.ThrowsAsync<DbUpdateException>(() => s.Context.SaveChangesAsync());
             Assert.Equal(PostgresErrorCodes.UniqueViolation, Assert.IsType<PostgresException>(ex.InnerException).SqlState);
         }
         await using (var s = db.NewScope()) // trùng (CatalogId, VersionNo) khi cả hai còn sống
         {
             s.Context.AuthoringGuideCatalogVersions.Add(new() { CatalogId = catalogId, VersionNo = 1, CatalogVersion = "x-1",
-                Status = AuthoringGuideVersionStatus.Published, ContentJson = "{}" });
+                Status = AuthoringGuideVersionStatus.Published });
             var ex = await Assert.ThrowsAsync<DbUpdateException>(() => s.Context.SaveChangesAsync());
             Assert.Equal(PostgresErrorCodes.UniqueViolation, Assert.IsType<PostgresException>(ex.InnerException).SqlState);
         }
@@ -242,16 +245,13 @@ public sealed class AuthoringGuideManagementPostgresTests(AuthoringGuidePostgres
         await using var db = await fixture.CreateDatabaseAsync();
         string token;
         int draftId;
-        string validContent;
         await using (var s = db.NewScope())
         {
             var d = await s.Management.CreateDraftAsync(db.ModeratorId, new(null));
             draftId = d.Draft.VersionId;
             token = d.RevisionToken;
-            var version = await s.Context.AuthoringGuideCatalogVersions.SingleAsync(x => x.Id == draftId);
-            validContent = version.ContentJson;
-            version.ContentJson = "{\"schemaVersion\":1,\"items\":[]}"; // bộ rỗng → không được phát hành
-            await s.Context.SaveChangesAsync();
+            await s.Context.AuthoringGuideItems.Where(x => x.CatalogVersionId == draftId)
+                .ExecuteUpdateAsync(x => x.SetProperty(i => i.IsDeleted, true)); // bộ rỗng → không được phát hành
         }
 
         await using (var s = db.NewScope())
@@ -272,9 +272,8 @@ public sealed class AuthoringGuideManagementPostgresTests(AuthoringGuidePostgres
         // trạng thái publish đã SaveChanges để kiểm tra rollback transaction thật.
         await using (var s = db.NewScope())
         {
-            var version = await s.Context.AuthoringGuideCatalogVersions.SingleAsync(x => x.Id == draftId);
-            version.ContentJson = validContent;
-            await s.Context.SaveChangesAsync();
+            await s.Context.AuthoringGuideItems.IgnoreQueryFilters().Where(x => x.CatalogVersionId == draftId)
+                .ExecuteUpdateAsync(x => x.SetProperty(i => i.IsDeleted, false));
             await s.Context.Database.ExecuteSqlRawAsync("""
                 ALTER TABLE audit_logs ADD CONSTRAINT it_reject_guide_publish_audit
                 CHECK ("Action" <> 'AuthoringGuideCatalogPublished')
@@ -298,5 +297,66 @@ public sealed class AuthoringGuideManagementPostgresTests(AuthoringGuidePostgres
             Assert.Equal("parent-vi-1", (await s.Parent.GetAsync("vi", "free", null, 1, 100)).CatalogVersion);
             Assert.Equal(0, await s.Context.AuditLogs.CountAsync(x => x.Action == "AuthoringGuideCatalogPublished"));
         }
+    }
+
+    private const string LegacyContent = """
+        {"schemaVersion":1,"items":[
+          {"id":"legacy-q","audienceRole":"Parent","purposes":["free"],"supportGroup":"starting_point","itemType":"question",
+           "title":"Hỏi cũ","instruction":"Đọc","example":null,"templateText":null,"placeholderDefinitions":[],"order":2},
+          {"id":"legacy-t","audienceRole":"Parent","purposes":["free","message"],"supportGroup":"opening","itemType":"template",
+           "title":"Mẫu cũ","instruction":"Điền","example":"Ví dụ","templateText":"{{person}} ở {{place}}",
+           "placeholderDefinitions":["person","place"],"order":1}]}
+        """;
+
+    [PostgresFact]
+    public async Task Backfill_turns_legacy_json_into_rows_once_and_keeps_blank_order()
+    {
+        await using var db = await fixture.CreateDatabaseAsync();
+        int versionId;
+        await using (var s = db.NewScope())
+        {
+            var catalogId = (await s.Context.AuthoringGuideCatalogs.SingleAsync()).Id;
+            var legacy = new AuthoringGuideCatalogVersion { CatalogId = catalogId, VersionNo = 50, CatalogVersion = "legacy-50",
+                Status = AuthoringGuideVersionStatus.Published, ContentJson = LegacyContent };
+            s.Context.AuthoringGuideCatalogVersions.Add(legacy);
+            await s.Context.SaveChangesAsync();
+            versionId = legacy.Id;
+
+            await s.Context.Database.ExecuteSqlRawAsync(NormalizeAuthoringGuideItems.BackfillSql);
+            await s.Context.Database.ExecuteSqlRawAsync(NormalizeAuthoringGuideItems.BackfillSql); // chạy lại không nhân đôi
+        }
+        await using (var s = db.NewScope())
+        {
+            var items = (await s.Management.GetVersionAsync(db.ModeratorId, versionId)).Items;
+            Assert.Equal(["legacy-t", "legacy-q"], items.Select(x => x.Id));
+            var template = items[0];
+            Assert.Equal((new[] { "free", "message" }, "Ví dụ", "{{person}} ở {{place}}"),
+                (template.Purposes, template.Example, template.TemplateText));
+            Assert.Equal([new GuidePlaceholder("person", null, null), new GuidePlaceholder("place", null, null)], template.PlaceholderDefinitions);
+            Assert.Empty(items[1].PlaceholderDefinitions);
+            Assert.Equal(2, await s.Context.AuthoringGuideItems.CountAsync(x => x.CatalogVersionId == versionId));
+        }
+    }
+
+    [PostgresFact]
+    public async Task Rollback_refuses_while_labels_exist_and_otherwise_rebuilds_legacy_json()
+    {
+        await using var db = await fixture.CreateDatabaseAsync();
+        await using var s = db.NewScope();
+
+        var refused = await Assert.ThrowsAsync<PostgresException>(() =>
+            s.Context.Database.ExecuteSqlRawAsync(NormalizeAuthoringGuideItems.RollbackGuardSql)); // seed đã có nhãn
+        Assert.Contains("rollback would lose placeholder labels", refused.MessageText);
+
+        await s.Context.Database.ExecuteSqlRawAsync(NormalizeAuthoringGuideItems.RollbackSql);
+        var json = (await s.Context.AuthoringGuideCatalogVersions.AsNoTracking().SingleAsync()).ContentJson!;
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal(1, doc.RootElement.GetProperty("schemaVersion").GetInt32());
+        var items = doc.RootElement.GetProperty("items");
+        Assert.Equal(30, items.GetArrayLength());
+        var opening = items.EnumerateArray().Single(x => x.GetProperty("id").GetString() == "opening-1");
+        Assert.Equal(["person", "companion", "activity"],
+            opening.GetProperty("placeholderDefinitions").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal("Parent", opening.GetProperty("audienceRole").GetString());
     }
 }

@@ -1,4 +1,3 @@
-using System.Text.Json;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Domain.Entities;
@@ -6,8 +5,9 @@ using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.ParentAuthoring;
 
+public sealed record GuidePlaceholder(string Key, string? Label, string? Hint);
 public sealed record AuthoringGuide(string Id, string AudienceRole, string[] Purposes, string SupportGroup,
-    string ItemType, string Title, string Instruction, string? Example, string? TemplateText, string[] PlaceholderDefinitions, int Order);
+    string ItemType, string Title, string Instruction, string? Example, string? TemplateText, GuidePlaceholder[] PlaceholderDefinitions, int Order);
 public sealed record GuideCatalog(int SchemaVersion, string CatalogVersion, string Locale, AuthoringGuide[] Items);
 public sealed record GuidePage(string CatalogVersion, string Locale, int PageIndex, int PageSize, int TotalCount, AuthoringGuide[] Items);
 public sealed record RenderGuideRequest(Dictionary<string, string>? Values, string? CatalogVersion = null);
@@ -43,8 +43,7 @@ public sealed class AuthoringGuideService(IUnitOfWork uow)
         var version = await uow.Repository<AuthoringGuideCatalogVersion>().FirstOrDefaultAsync(
             x => x.Id == versionId && x.Status == AuthoringGuideVersionStatus.Published, cancellationToken: ct)
             ?? throw new ConflictException("GUIDE_CATALOG_UNAVAILABLE");
-        var content = JsonSerializer.Deserialize<AuthoringGuideCatalogContent>(version.ContentJson, AuthoringGuideCatalogSeeder.Json)
-            ?? throw new ConflictException("GUIDE_CATALOG_UNAVAILABLE");
-        return (version.CatalogVersion, catalog!.Locale, content.Items);
+        var items = await new AuthoringGuideItemStore(uow).LoadAsync(version.Id, catalog!.AudienceRole, ct);
+        return (version.CatalogVersion, catalog.Locale, items);
     }
 }

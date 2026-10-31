@@ -323,7 +323,10 @@ public static class ServiceExtensions
             .ToArray();
         foreach (var origin in configured)
         {
-            if (origin == "*" || !Uri.TryCreate(origin, UriKind.Absolute, out var uri) || uri.AbsolutePath != "/")
+            // Origin chỉ gồm scheme://host[:port]: không path, query, fragment hay user-info.
+            if (origin == "*" || origin.IndexOfAny(['?', '#', '@']) >= 0 ||
+                !Uri.TryCreate(origin, UriKind.Absolute, out var uri) || uri.AbsolutePath != "/" ||
+                uri.Query.Length > 0 || uri.Fragment.Length > 0 || uri.UserInfo.Length > 0)
             {
                 throw new InvalidOperationException(
                     $"'{CorsAllowedOriginsKey}' chỉ nhận origin dạng scheme://host[:port], không nhận '{origin}'.");

@@ -57,30 +57,32 @@ file itself runs `.github/workflows/deploy-core-api.yml`:
    (`--target core-api`) **for `linux/arm64`** via `docker buildx` (cross-compiled on the
    GitHub-hosted x86 runner, via `docker/setup-qemu-action`), pushes `:sha` and `:latest` to ECR,
    then explicitly calls `aws ecs update-service --force-new-deployment` (re-pulls `:latest` even
-   though the task definition's image reference string doesn't change) and
-   `aws ecs wait services-stable` to block until the new task is healthy or the job fails — a bad
-   deploy is never silent.
+   though the task definition's image reference string doesn't change) and records the ID of the
+   deployment it started. It then **follows that deployment ID until ECS settles it** (every 15 s, up to
+   15 minutes): it must stay `PRIMARY` and reach `COMPLETED` with at least one running task; `FAILED`, a
+   rollback or a replacement fails the job. Finally it checks that
+   `https://api.taletale.site/health` returns 200 through the Cloudflare Tunnel. On failure it prints
+   the latest ECS service events.
+
+   `services-stable` on its own is not proof of a good deploy: it also returns after ECS has rolled a
+   failed deployment back, or when the service has settled on zero running tasks, and it can return a few
+   seconds before `rolloutState` becomes `COMPLETED` (the first run of the stricter check on 2026-10-31
+   failed on exactly that, although the deploy was fine). Until 2026-10-31 the
+   workflow stopped there, so every deploy between 2026-10-16 and 2026-10-31 reported success while
+   production was down. The service's deployment circuit breaker (enabled, with rollback) stops a
+   crash-looping deployment after a few failed tasks and returns to the previous task set; the
+   verification step turns that rollback into a failed workflow run.
+
+   Runs are serialized (`concurrency`), so two merges in quick succession deploy one after another.
 
 ECS has no equivalent of App Runner's `AutoDeploymentsEnabled` — pushing a new `:latest` tag to
 ECR does nothing by itself; the `update-service --force-new-deployment` call above is the only way
 a deploy happens.
 
-**Finding the running task's public IP** (for manual smoke-testing, since there's no ALB):
-
-```bash
-TASK_ARN=$(aws ecs list-tasks --cluster storyplatform-core-api-cluster \
-  --service-name storyplatform-core-api-svc --region ap-southeast-1 --profile storyplatform \
-  --query 'taskArns[0]' --output text)
-ENI_ID=$(aws ecs describe-tasks --cluster storyplatform-core-api-cluster --tasks "$TASK_ARN" \
-  --region ap-southeast-1 --profile storyplatform \
-  --query 'tasks[0].attachments[0].details[?name==`networkInterfaceId`].value' --output text)
-aws ec2 describe-network-interfaces --network-interface-ids "$ENI_ID" \
-  --region ap-southeast-1 --profile storyplatform \
-  --query 'NetworkInterfaces[0].Association.PublicIp' --output text
-```
-
-The public IP changes on every deployment (no static IP without an ALB or Elastic IP) — see the
-spec's §14 follow-up on the SePay webhook implication of this.
+**Public entry point is a Cloudflare Tunnel, not a load balancer.** The task's security group has
+no ingress rule, so the task's (changing) public IP cannot be reached directly; smoke-test through
+the public hostname instead (`curl https://api.taletale.site/health`). See "Cloudflare Tunnel"
+below for setup and troubleshooting.
 
 **Database migrations are applied automatically** by the container itself at startup
 (`Program.cs` calls `ApplicationDbContext.Database.Migrate()`), not by CI — GitHub-hosted runners
@@ -141,6 +143,57 @@ cdk deploy --profile storyplatform --context includeEcsService=false --require-a
 # push an image (see above)
 cdk deploy --profile storyplatform --require-approval broadcast   # picks up the persisted true
 ```
+
+## Alarm: no running API task
+
+CloudWatch alarm `storyplatform-core-api-no-running-task` goes to ALARM when the service has had no
+running task for 5 minutes (crash loop, failed deployment, or desired count 0 — so it also fires when
+the stack is paused on purpose) and back to OK once a task runs again. It notifies the SNS topic
+`storyplatform-core-api-alarms` (`ApiAlarmTopicArnOutput`) on both transitions.
+
+E-mail subscriptions are managed outside CDK, so no address is committed and a `cdk deploy` never
+drops them. To subscribe (AWS then sends a confirmation e-mail — click the link in it):
+
+```bash
+aws sns subscribe --topic-arn "$(aws cloudformation describe-stacks --stack-name StoryPlatformCoreStack   --query "Stacks[0].Outputs[?OutputKey=='ApiAlarmTopicArnOutput'].OutputValue" --output text   --region ap-southeast-1 --profile storyplatform)"   --protocol email --notification-endpoint <your-email> --region ap-southeast-1 --profile storyplatform
+```
+
+List or remove subscriptions with `aws sns list-subscriptions-by-topic` / `aws sns unsubscribe`.
+
+## Cloudflare Tunnel (public entry point)
+
+`api.taletale.site` reaches the API through a remotely-managed Cloudflare Tunnel: the
+`CloudflaredContainer` sidecar (image pinned in `StoryPlatformCoreStack.CloudflaredImage`, pulled
+from Docker Hub) dials out to Cloudflare and forwards requests to `http://localhost:8080` in the same
+task. There is no ALB, listener or target group, and no inbound rule on the task. The sidecar only
+starts once `ApiContainer` is healthy, and during a rolling deploy the old and new tasks both hold a
+connector on the same tunnel, so a deploy causes no downtime.
+
+The API reads the visitor IP from `CF-Connecting-IP` and only trusts it from loopback
+(`ForwardedHeaders__*` env vars in the task definition), so the rate limiter counts real client IPs.
+
+**One-time setup (before the first deploy that contains the sidecar):**
+
+1. Cloudflare dashboard → Zero Trust → Networks → Tunnels → *Create a tunnel* → *Cloudflared*,
+   name it e.g. `storyplatform-core-api`. Copy the tunnel token shown in the install command
+   (the long value after `--token`); treat it as a secret.
+2. In the tunnel, add a *Public hostname*: `api.taletale.site` → type `HTTP`, URL `localhost:8080`.
+   If DNS still has the old `api` CNAME (pointing at the deleted ALB), delete it first so Cloudflare
+   can create the tunnel's CNAME (`<tunnel-id>.cfargotunnel.com`, proxied).
+3. Add the token as a new `CloudflareTunnelToken` key in `storyplatform/core/app-secrets`, using the
+   same read-edit-write steps as in the next section. **Do this before `cdk deploy`**: if the key is
+   missing, ECS cannot inject `TUNNEL_TOKEN` and the task fails to start (`ResourceInitializationError`).
+   The key is deliberately not in the CDK-generated secret template — changing that template would
+   make CloudFormation regenerate the whole secret (new `JwtSecretKey`, API keys reset to placeholders).
+4. `cdk diff --profile storyplatform`, review, then `cdk deploy --profile storyplatform`.
+5. Verify: the tunnel shows *Healthy* in the dashboard, `curl https://api.taletale.site/health`
+   returns 200, and the `cloudflared/...` log streams in `/ecs/storyplatform-core-api` show
+   "Registered tunnel connection".
+
+**Troubleshooting:** Cloudflare error 1033 = no connector is online (task not running, or the
+sidecar cannot authenticate — check the token and the `cloudflared` log stream). Error 502 = the
+connector is up but `localhost:8080` did not answer (API container unhealthy or crashed).
+To rotate the token, refresh it in the dashboard, update the secret key, then force a new deployment.
 
 ## Setting the real Resend / SePay / Redis secret values post-deploy
 

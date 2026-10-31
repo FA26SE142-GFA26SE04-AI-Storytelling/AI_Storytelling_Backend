@@ -57,6 +57,7 @@ public sealed class Luong1SchemaAlignmentModelTests
     [InlineData("OwnershipTransferRequest")]
     [InlineData("Assignment")]
     [InlineData("AssignmentRecipient")]
+    [InlineData("DataRequest")]
     public void Model_does_not_contain_removed_supervision_entities(string entityName)
     {
         using var context = CreateModelOnlyContext();
@@ -75,6 +76,14 @@ public sealed class Luong1SchemaAlignmentModelTests
     [InlineData("AssignmentCancelled")]
     [InlineData("StoryShared")]
     public void NotificationType_does_not_define_removed_teacher_values(string name)
+    {
+        Assert.False(Enum.TryParse<NotificationType>(name, out _));
+    }
+
+    [Theory]
+    [InlineData("DataRequestSlaWarning")]
+    [InlineData("DataRequestCompleted")]
+    public void NotificationType_does_not_define_removed_data_request_values(string name)
     {
         Assert.False(Enum.TryParse<NotificationType>(name, out _));
     }
@@ -171,12 +180,11 @@ public sealed class Luong1SchemaAlignmentModelTests
         Assert.NotNull(userAccount.FindProperty(nameof(UserAccount.PendingEmailOtpExpiresAt)));
         Assert.NotNull(userAccount.FindProperty(nameof(UserAccount.PendingEmailOtpFailedAttempts)));
 
-        Assert.Contains(nameof(DataRequestStatus.Cancelled), Enum.GetNames<DataRequestStatus>());
         Assert.Equal(8, (int)NotificationType.AccountSecurityChanged);
     }
 
     [Fact]
-    public void Notifications_sessions_and_data_requests_v41_columns_are_mapped()
+    public void Notifications_and_sessions_v41_columns_are_mapped()
     {
         using var context = CreateModelOnlyContext();
 
@@ -191,12 +199,6 @@ public sealed class Luong1SchemaAlignmentModelTests
 
         var credential = context.Model.FindEntityType(typeof(ChildAccessCredential))!;
         Assert.NotNull(credential.FindProperty(nameof(ChildAccessCredential.RevokedAt)));
-
-        var dataRequest = context.Model.FindEntityType(typeof(DataRequest))!;
-        Assert.Equal(500, dataRequest.FindProperty(nameof(DataRequest.RejectionReason))!.GetMaxLength());
-        Assert.Equal(
-            new[] { "Pending", "Resolved", "Cancelled", "Rejected" },
-            Enum.GetNames<DataRequestStatus>());
     }
 
     private static ApplicationDbContext CreateModelOnlyContext() =>

@@ -89,24 +89,6 @@ public class ResendEmailSender : IEmailSender
         return SendAsync(toEmail, subject, html, cancellationToken);
     }
 
-    public Task SendDataRequestCompletedEmailAsync(
-        string toEmail, string toName, string requestType, string result,
-        string? reason, CancellationToken cancellationToken = default)
-    {
-        const string subject = "Kết quả yêu cầu dữ liệu của bạn";
-        var typeLabel = requestType == "delete" ? "xóa dữ liệu" : "xuất dữ liệu";
-        var body = result == "rejected"
-            ? $"<p>Yêu cầu {typeLabel} của bạn đã bị từ chối.</p><p>Lý do: {reason}</p>"
-            : $"<p>Yêu cầu {typeLabel} của bạn đã được xử lý xong.</p>";
-        var html = $"""
-            <p>Chào {toName},</p>
-            {body}
-            <p>Đây là thông báo từ AI Storytelling Platform.</p>
-            """;
-
-        return SendAsync(toEmail, subject, html, cancellationToken);
-    }
-
     public Task SendAccountProvisionedEmailAsync(
         string toEmail, string toName, string creatorName, string roleLabel, string rawSetPasswordToken,
         CancellationToken cancellationToken = default)

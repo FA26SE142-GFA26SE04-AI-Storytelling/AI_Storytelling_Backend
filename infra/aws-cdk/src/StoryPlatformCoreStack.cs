@@ -1,18 +1,23 @@
 using Amazon.CDK;
+using Amazon.CDK.AWS.CloudWatch;
+using Amazon.CDK.AWS.CloudWatch.Actions;
 using Amazon.CDK.AWS.EC2;
 using Amazon.CDK.AWS.ECR;
 using Amazon.CDK.AWS.ECS;
-using Amazon.CDK.AWS.ElasticLoadBalancingV2;
 using Amazon.CDK.AWS.IAM;
 using Amazon.CDK.AWS.Logs;
 using Amazon.CDK.AWS.RDS;
 using Amazon.CDK.AWS.SecretsManager;
+using Amazon.CDK.AWS.SNS;
 using Constructs;
 
 namespace StoryPlatform.Infra;
 
 public sealed class StoryPlatformCoreStack : Stack
 {
+    // Cloudflare Tunnel connector, pinned to a release that is at least a few weeks old (multi-arch, includes arm64).
+    public const string CloudflaredImage = "cloudflare/cloudflared:2026.9.3";
+
     public IVpc Vpc { get; }
     public DatabaseInstance Database { get; }
     public Repository EcrRepository { get; }
@@ -179,26 +184,34 @@ public sealed class StoryPlatformCoreStack : Stack
             ExecutionRole = TaskExecutionRole
         });
 
+        var apiEnvironment = new System.Collections.Generic.Dictionary<string, string>
+        {
+            ["ASPNETCORE_ENVIRONMENT"] = "Production",
+            ["Swagger__Enabled"] = "true",
+            ["JwtSettings__Issuer"] = "StoryPlatform",
+            ["JwtSettings__Audience"] = "StoryPlatformClient",
+            ["JwtSettings__ExpiryMinutes"] = "15",
+            ["JwtSettings__RefreshTokenExpiryDays"] = "7",
+            ["JwtSettings__ChildTokenExpiryMinutes"] = "240",
+            // DF06: only the production web may call the API from a browser.
+            ["Cors__AllowedOrigins__0"] = "https://www.taletale.site",
+            ["Cors__AllowedOrigins__1"] = "https://taletale.site",
+            ["Logging__LogLevel__Default"] = "Warning",
+            ["SeedData__RunOnStartup"] = seedDatabaseOnStart ? "true" : "false",
+            ["FixMigrationHistory__RunOnStartup"] = fixMigrationHistoryOnStart ? "true" : "false",
+            // The only hop in front of the API is the cloudflared sidecar below, which calls it over loopback and
+            // forwards Cloudflare's CF-Connecting-IP (the visitor IP). See AddLoadBalancerForwardedHeaders.
+            ["ForwardedHeaders__KnownNetworks__0"] = "127.0.0.1/32",
+            ["ForwardedHeaders__KnownNetworks__1"] = "::1/128",
+            ["ForwardedHeaders__ForwardLimit"] = "1",
+            ["ForwardedHeaders__ForwardedForHeaderName"] = "CF-Connecting-IP"
+        };
+
         var apiContainer = ApiTaskDefinition.AddContainer("ApiContainer", new ContainerDefinitionOptions
         {
             Image = ContainerImage.FromEcrRepository(EcrRepository, "latest"),
             Logging = LogDriver.AwsLogs(new AwsLogDriverProps { StreamPrefix = "api", LogGroup = ApiLogGroup }),
-            Environment = new System.Collections.Generic.Dictionary<string, string>
-            {
-                ["ASPNETCORE_ENVIRONMENT"] = "Production",
-                ["Swagger__Enabled"] = "true",
-                ["JwtSettings__Issuer"] = "StoryPlatform",
-                ["JwtSettings__Audience"] = "StoryPlatformClient",
-                ["JwtSettings__ExpiryMinutes"] = "15",
-                ["JwtSettings__RefreshTokenExpiryDays"] = "7",
-                ["JwtSettings__ChildTokenExpiryMinutes"] = "240",
-                // DF06: only the production web may call the API from a browser.
-                ["Cors__AllowedOrigins__0"] = "https://www.taletale.site",
-                ["Cors__AllowedOrigins__1"] = "https://taletale.site",
-                ["Logging__LogLevel__Default"] = "Warning",
-                ["SeedData__RunOnStartup"] = seedDatabaseOnStart ? "true" : "false",
-                ["FixMigrationHistory__RunOnStartup"] = fixMigrationHistoryOnStart ? "true" : "false"
-            },
+            Environment = apiEnvironment,
             Secrets = new System.Collections.Generic.Dictionary<string, Amazon.CDK.AWS.ECS.Secret>
             {
                 ["ConnectionStrings__DefaultConnection"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "DbConnectionString"),
@@ -220,15 +233,41 @@ public sealed class StoryPlatformCoreStack : Stack
         });
         apiContainer.AddPortMappings(new PortMapping { ContainerPort = 8080, Protocol = Amazon.CDK.AWS.ECS.Protocol.TCP });
 
+        // Public entry point: a remotely-managed Cloudflare Tunnel whose public hostname (api.taletale.site) routes
+        // to http://localhost:8080. cloudflared dials out to Cloudflare, so the task needs no inbound rule and no
+        // load balancer, and its changing public IP no longer matters. During a rolling deploy both tasks keep a
+        // connector on the same tunnel, so traffic moves over without downtime. The token is the
+        // "CloudflareTunnelToken" key of AppSecrets, added by hand like the other REPLACE_ME keys (it is deliberately
+        // not in the generated template: changing that template would regenerate the whole secret).
+        var tunnelContainer = ApiTaskDefinition.AddContainer("CloudflaredContainer", new ContainerDefinitionOptions
+        {
+            Image = ContainerImage.FromRegistry(CloudflaredImage),
+            // The image's entrypoint is "cloudflared --no-autoupdate"; "tunnel run" reads TUNNEL_TOKEN.
+            Command = new[] { "tunnel", "run" },
+            Logging = LogDriver.AwsLogs(new AwsLogDriverProps { StreamPrefix = "cloudflared", LogGroup = ApiLogGroup }),
+            Secrets = new System.Collections.Generic.Dictionary<string, Amazon.CDK.AWS.ECS.Secret>
+            {
+                ["TUNNEL_TOKEN"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "CloudflareTunnelToken")
+            },
+            Essential = true
+        });
+        // Register the connector only once the API is healthy; ECS also stops containers in reverse dependency
+        // order, so on shutdown cloudflared drains first and the API keeps serving in-flight requests.
+        tunnelContainer.AddContainerDependencies(new ContainerDependency
+        {
+            Container = apiContainer,
+            Condition = ContainerDependencyCondition.HEALTHY
+        });
+
         ApiTaskSecurityGroup = new SecurityGroup(this, "ApiTaskSecurityGroup", new SecurityGroupProps
         {
             Vpc = Vpc,
             Description = "Security group for the Core API ECS Fargate task",
             AllowAllOutbound = true
         });
-        // No direct-from-internet ingress rule here: once includeEcsService is on, only the ALB
-        // (below) may reach the task on 8080 - tightened from the previous "Peer.AnyIpv4()" rule
-        // now that the ALB, not the task's own ephemeral public IP, is the public entry point.
+        // No ingress rule at all: traffic arrives through the outbound Cloudflare Tunnel connection, so nothing on
+        // the internet (or in the VPC) can reach the task's port 8080 directly. The public IP is only for outbound
+        // calls (Cloudflare, ECR/Docker Hub, AI providers), since the VPC has no NAT gateway.
 
         Database.Connections.AllowFrom(ApiTaskSecurityGroup, Port.Tcp(5432), "Allow ECS API task to reach RDS");
 
@@ -308,7 +347,44 @@ public sealed class StoryPlatformCoreStack : Stack
                 // old (healthy) task before the new one passes its health check. 100/200 keeps the
                 // previous task running until the new one is healthy (see design spec §9).
                 MinHealthyPercent = 100,
-                MaxHealthyPercent = 200
+                MaxHealthyPercent = 200,
+                // A deployment whose tasks keep failing (e.g. a crash at startup) is stopped and rolled back to
+                // the last working task set instead of restarting forever. The deploy workflow then fails,
+                // because it checks that its own deployment - not the rollback - completed.
+                CircuitBreaker = new DeploymentCircuitBreaker { Enable = true, Rollback = true }
+            });
+
+            // Alarm when the API has no running task for 5 minutes. ECS publishes CPUUtilization once a
+            // minute per running service, so a SampleCount below 1 - or no data at all, which is what zero
+            // tasks produce - means nothing is serving. Uses the free AWS/ECS metric, no Container Insights.
+            // The e-mail subscription is added outside CDK (see RUNBOOK) so no address lives in the repo.
+            var alarmTopic = new Topic(this, "ApiAlarmTopic", new TopicProps
+            {
+                TopicName = "storyplatform-core-api-alarms",
+                DisplayName = "StoryPlatform Core API alarms"
+            });
+            var noRunningTaskAlarm = new Alarm(this, "ApiNoRunningTaskAlarm", new AlarmProps
+            {
+                AlarmName = "storyplatform-core-api-no-running-task",
+                AlarmDescription = "Core API has had no running ECS task for 5 minutes (crash loop, failed deploy, or desired count 0).",
+                Metric = ApiService.MetricCpuUtilization(new MetricOptions
+                {
+                    Period = Duration.Minutes(1),
+                    Statistic = "SampleCount"
+                }),
+                Threshold = 1,
+                ComparisonOperator = ComparisonOperator.LESS_THAN_THRESHOLD,
+                EvaluationPeriods = 5,
+                DatapointsToAlarm = 5,
+                TreatMissingData = TreatMissingData.BREACHING
+            });
+            noRunningTaskAlarm.AddAlarmAction(new SnsAction(alarmTopic));
+            noRunningTaskAlarm.AddOkAction(new SnsAction(alarmTopic));
+
+            new CfnOutput(this, "ApiAlarmTopicArnOutput", new CfnOutputProps
+            {
+                Value = alarmTopic.TopicArn,
+                Description = "Subscribe an e-mail to this topic (aws sns subscribe) to receive API alarms"
             });
 
             new CfnOutput(this, "EcsClusterNameOutput", new CfnOutputProps
@@ -329,56 +405,6 @@ public sealed class StoryPlatformCoreStack : Stack
                 Actions = new[] { "ecs:UpdateService", "ecs:DescribeServices" },
                 Resources = new[] { ApiService.ServiceArn }
             }));
-
-            // Stable public entry point for a custom domain. A Fargate awsvpc task gets a brand
-            // new ENI (and public IP) on every deploy/restart, so a domain can't point at the
-            // task directly; the ALB's DNS name never changes. (An EIP re-associated onto the
-            // task's ENI by a Lambda was tried first and would have been cheaper, but this
-            // account's org-level SCP blocks ec2:AssociateAddress outright - confirmed via
-            // AuthFailure on that call even with an admin-privileged IAM principal - so the ALB
-            // is the only viable option here despite its ~$16-20/month fixed cost.)
-            var apiAlb = new ApplicationLoadBalancer(this, "ApiAlb", new ApplicationLoadBalancerProps
-            {
-                Vpc = Vpc,
-                InternetFacing = true,
-                VpcSubnets = new SubnetSelection { SubnetType = SubnetType.PUBLIC }
-            });
-
-            ApiTaskSecurityGroup.Connections.AllowFrom(apiAlb, Port.Tcp(8080), "Allow ALB to reach Core API");
-
-            var apiListener = apiAlb.AddListener("HttpListener", new BaseApplicationListenerProps
-            {
-                Port = 80,
-                Open = true
-            });
-
-            apiListener.AddTargets("ApiTargets", new AddApplicationTargetsProps
-            {
-                Port = 8080,
-                Protocol = ApplicationProtocol.HTTP,
-                Targets = new IApplicationLoadBalancerTarget[]
-                {
-                    ApiService.LoadBalancerTarget(new LoadBalancerTargetOptions
-                    {
-                        ContainerName = "ApiContainer",
-                        ContainerPort = 8080
-                    })
-                },
-                HealthCheck = new Amazon.CDK.AWS.ElasticLoadBalancingV2.HealthCheck
-                {
-                    Path = "/health",
-                    Interval = Duration.Seconds(30),
-                    Timeout = Duration.Seconds(5),
-                    HealthyThresholdCount = 2,
-                    UnhealthyThresholdCount = 5
-                }
-            });
-
-            new CfnOutput(this, "ApiAlbDnsNameOutput", new CfnOutputProps
-            {
-                Value = apiAlb.LoadBalancerDnsName,
-                Description = "Point your domain's DNS record (CNAME/ALIAS) here"
-            });
         }
     }
 }

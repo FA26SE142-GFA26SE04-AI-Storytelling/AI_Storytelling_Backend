@@ -40,6 +40,13 @@ public class SecurityConfigurationTests
     [InlineData("*")]
     [InlineData("www.taletale.site")]
     [InlineData("https://www.taletale.site/app")]
+    [InlineData("https://www.taletale.site?x=1")]
+    [InlineData("https://www.taletale.site/?x=1")]
+    [InlineData("https://www.taletale.site?")]
+    [InlineData("https://www.taletale.site#top")]
+    [InlineData("https://www.taletale.site#")]
+    [InlineData("https://admin@www.taletale.site")]
+    [InlineData("https://@www.taletale.site")]
     public void ResolveCorsOrigins_WildcardOrNonOriginValue_ThrowsInvalidOperation(string origin)
     {
         var error = Assert.Throws<InvalidOperationException>(() =>

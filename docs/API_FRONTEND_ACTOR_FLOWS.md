@@ -8,6 +8,14 @@
 
 > Cập nhật role User và bỏ API supervision/permission ngày **29/10/2026**. Rà soát source gốc ngày **21/10/2026**. Đây là tài liệu contract và checklist tích hợp từ mã nguồn, **không phải biên bản kiểm thử API/DB hoặc xác nhận đã triển khai**.
 
+> Bỏ Data Request ngày **31/10/2026** (migration `RemoveDataRequests`):
+> - **API:** bỏ 7 route `/api/v1/DataRequest` (tạo, `mine`, `cancel`, `pending`, `resolve-export`, `resolve-delete`, `reject`) cùng `CreateDataRequestDto`, `DataRequestDto`, `RejectDataRequestDto`. Frontend cần gỡ `DataRequestSection.tsx`, phần Data Request trong `AdminSystem.tsx` và các hàm `*DataRequest*` trong `staffService.ts`.
+> - **Notification:** bỏ `DataRequestSlaWarning`, `DataRequestCompleted`; bỏ email "Kết quả yêu cầu dữ liệu của bạn".
+> - **Dữ liệu bị xóa vĩnh viễn khi chạy migration:** toàn bộ bảng `data_requests` (ai gửi, hồ sơ trẻ nào, loại export/delete, trạng thái, lý do từ chối, Admin xử lý, thời điểm) và mọi dòng `notifications` có `Type` thuộc hai loại trên. `Down` chỉ tạo lại bảng rỗng, không khôi phục được dữ liệu; cần backup DB trước khi áp dụng nếu muốn giữ lịch sử yêu cầu.
+> - **Dữ liệu không bị ảnh hưởng:** hồ sơ trẻ và dữ liệu học tập; hồ sơ đã được ẩn danh qua Delete trước đây vẫn giữ trạng thái ẩn danh. `audit_logs` vẫn giữ các dòng `DataRequestCancelled/Exported/Deleted/Rejected` làm lịch sử, nhưng `EntityId` của chúng không còn trỏ tới bản ghi nào.
+> - **Seed/DBML:** bỏ `Database/Seed/37_data_requests.sql`, dòng notification `DataRequestSlaWarning` và dòng audit log `REQUEST_DATA_EXPORT`; đánh số lại file seed `38…65` thành `37…64` (runner yêu cầu số liền nhau). DBML bỏ bảng `data_requests` và 3 enum liên quan.
+> - **Thay thế:** phụ huynh dùng `DELETE /api/v1/ChildProfile/{id}` (lưu trữ, khôi phục được) hoặc `DELETE /api/v1/Auth/me` (xóa tài khoản, ẩn danh mọi hồ sơ trẻ sở hữu). Không còn chức năng xuất dữ liệu trẻ ra file.
+
 ## Mục lục
 
 1. [Phạm vi, phiên bản và cách dùng](#phien-ban)
@@ -85,7 +93,7 @@ T có thể là object, array, bool hoặc null. Thành công với data=null h�
 - **400:** input/điều kiện nghiệp vụ sai; **401:** phiên không hợp lệ; **403:** thiếu quyền; **404:** không tìm thấy hoặc bị che theo scope; **409:** xung đột state/version/revision/operation.
 - Input guardrail có thể trả 422/503 với **data progress dù success=false**. Giữ reasonCode/canRetry và các ID, không làm mất tiến trình chỉ vì HTTP lỗi.
 - Assistance có 429/502/504; mã ổn định nằm trong errors[0] khi là AssistanceException. Không parse message để điều khiển UX.
-- Ngoại lệ envelope: download file DataRequest, webhook thành công body rỗng, health check, handshake/event SignalR. GrayZoneReview decision trả {success,message} không có data/errors. Rubric list/audit là object phân trang riêng, không phải PagedResult. Authentication challenge có thể không có JSON.
+- Ngoại lệ envelope: webhook thành công body rỗng, health check, handshake/event SignalR. GrayZoneReview decision trả {success,message} không có data/errors. Rubric list/audit là object phân trang riêng, không phải PagedResult. Authentication challenge có thể không có JSON.
 - [ExceptionHandlingMiddleware](../src/Core/StoryPlatform.Api/Middleware/ExceptionHandlingMiddleware.cs) ánh xạ AppException sang status thực; lỗi chưa phân loại trả 500. HTTP trong contract là nhánh nhìn thấy ở controller, không phải toàn bộ lỗi của mọi tầng.
 
 ### 2.3 Retry, hủy và đồng bộ
@@ -169,7 +177,6 @@ Hồ sơ dùng enum Age_6_8/Age_9_10; API sáng tác có chuỗi 6-8/9-10. Khôn
 
 ### P5. Dữ liệu, báo cáo nội dung, thanh toán
 
-- Owner POST /DataRequest loại export/delete → GET /DataRequest/mine?childProfileId=... → cancel khi pending. Delete cần currentPassword/confirmNickname theo service.
 - GET /Payment/plans → POST /Payment/transactions → hiển thị QR/transaction. User không gọi webhook/mark-paid.
 - POST /ContentReport với storyId/reason/description/attachmentUrl để báo truyện được phép truy cập. Gửi report chưa tự ẩn/xóa truyện.
 
@@ -500,7 +507,6 @@ Tiền tố `/api/v1/moderation/authoring-guides`. Luồng: GET `/` (bộ đang 
 - **Tài khoản:** một controller /StaffAccount cho cả Moderator và Administrator: GET list (?role= để lọc) → POST invite (body có role; expertise bắt buộc với Moderator) → resend-invite/cancel-invite (chỉ khi chưa kích hoạt) → deactivate/reactivate (sau khi kích hoạt). Thao tác theo userId tự đọc vai trò; response có field role. Deactivate cần reason; không tự vô hiệu hóa, không vô hiệu hóa Admin Active cuối cùng.
 - **Danh mục:** GET list/detail → POST tạo → PUT sửa → DELETE theo guard; defaultBlockedAgeBands ảnh hưởng preset.
 - **Quota:** GET/POST /TokenQuota/config, scope System/Personal/Child; không gửi User tự chế. Quota trẻ GET /TokenQuota/child/{id} theo quyền.
-- **Dữ liệu:** GET /DataRequest/pending → resolve-export/resolve-delete/reject. Format=xlsx tải workbook; **format=csv trả ZIP application/zip**, không text CSV thuần. Đọc Content-Disposition, không parse JSON cho file.
 - **Báo cáo:** POST /BusinessReport/generate → /{reportId}/publish → GET latest-published. Generate/publish chỉ Admin; latest cho người lớn xác thực.
 - **Đối soát:** GET /Payment/mismatched → xác minh → POST /transactions/{id}/mark-paid. Local badge không chứng minh đã đối soát.
 - **Kiểm duyệt:** MO1–MO10 theo guard từng luồng; không bỏ cấm tự duyệt/eligibility. Admin không được suy có quyền tạo/sửa RoadmapTemplate hoặc tạo PublishedContentReview review-item khi action chỉ cho Moderator.
@@ -588,7 +594,7 @@ HTTP là nhánh response controller; kết hợp lỗi chung mục 2 và guard n
 
 ### Tra nhanh controller
 
-[AIStoryInput](#controller-aistoryinput) · [Auth](#controller-auth) · [AuthoringGuides](#controller-authoringguides) · [BusinessReport](#controller-businessreport) · [ChildAccessCredential](#controller-childaccesscredential) · [ChildManualStories](#controller-childmanualstories) · [ChildProfile](#controller-childprofile) · [ChildRoadmap](#controller-childroadmap) · [CommunityLibrary](#controller-communitylibrary) · [CommunityReview](#controller-communityreview) · [CommunitySubmission](#controller-communitysubmission) · [ContentCategory](#controller-contentcategory) · [ContentGeneration](#controller-contentgeneration) · [ContentReport](#controller-contentreport) · [ContentReportReview](#controller-contentreportreview) · [CreatorAIStoryInput](#controller-creatoraistoryinput) · [CreatorAssistance](#controller-creatorassistance) · [CreatorAuthoring](#controller-creatorauthoring) · [CreatorModerationCheck](#controller-creatormoderationcheck) · [CreatorPublication](#controller-creatorpublication) · [DataRequest](#controller-datarequest) · [ExistingStories](#controller-existingstories) · [GrayZoneReview](#controller-grayzonereview) · [LearningProfile](#controller-learningprofile) · [MediaGeneration](#controller-mediageneration) · [ModerationQueue](#controller-moderationqueue) · [ModerationRubrics](#controller-moderationrubrics) · [StaffAccount](#controller-staffaccount) · [MyRoadmap](#controller-myroadmap) · [Notification](#controller-notification) · [Outline](#controller-outline) · [ParentAssistance](#controller-parentassistance) · [ParentAuthoring](#controller-parentauthoring) · [ParentalGate](#controller-parentalgate) · [Payment](#controller-payment) · [PublicStoryReview](#controller-publicstoryreview) · [PublicStorySubmission](#controller-publicstorysubmission) · [PublishedContentReview](#controller-publishedcontentreview) · [Review](#controller-review) · [RoadmapLibrary](#controller-roadmaplibrary) · [RoadmapReview](#controller-roadmapreview) · [RoadmapTemplate](#controller-roadmaptemplate) · [SafetyPolicy](#controller-safetypolicy) · [Story](#controller-story) · [TokenQuota](#controller-tokenquota)
+[AIStoryInput](#controller-aistoryinput) · [Auth](#controller-auth) · [AuthoringGuides](#controller-authoringguides) · [BusinessReport](#controller-businessreport) · [ChildAccessCredential](#controller-childaccesscredential) · [ChildManualStories](#controller-childmanualstories) · [ChildProfile](#controller-childprofile) · [ChildRoadmap](#controller-childroadmap) · [CommunityLibrary](#controller-communitylibrary) · [CommunityReview](#controller-communityreview) · [CommunitySubmission](#controller-communitysubmission) · [ContentCategory](#controller-contentcategory) · [ContentGeneration](#controller-contentgeneration) · [ContentReport](#controller-contentreport) · [ContentReportReview](#controller-contentreportreview) · [CreatorAIStoryInput](#controller-creatoraistoryinput) · [CreatorAssistance](#controller-creatorassistance) · [CreatorAuthoring](#controller-creatorauthoring) · [CreatorModerationCheck](#controller-creatormoderationcheck) · [CreatorPublication](#controller-creatorpublication) · [ExistingStories](#controller-existingstories) · [GrayZoneReview](#controller-grayzonereview) · [LearningProfile](#controller-learningprofile) · [MediaGeneration](#controller-mediageneration) · [ModerationQueue](#controller-moderationqueue) · [ModerationRubrics](#controller-moderationrubrics) · [StaffAccount](#controller-staffaccount) · [MyRoadmap](#controller-myroadmap) · [Notification](#controller-notification) · [Outline](#controller-outline) · [ParentAssistance](#controller-parentassistance) · [ParentAuthoring](#controller-parentauthoring) · [ParentalGate](#controller-parentalgate) · [Payment](#controller-payment) · [PublicStoryReview](#controller-publicstoryreview) · [PublicStorySubmission](#controller-publicstorysubmission) · [PublishedContentReview](#controller-publishedcontentreview) · [Review](#controller-review) · [RoadmapLibrary](#controller-roadmaplibrary) · [RoadmapReview](#controller-roadmapreview) · [RoadmapTemplate](#controller-roadmaptemplate) · [SafetyPolicy](#controller-safetypolicy) · [Story](#controller-story) · [TokenQuota](#controller-tokenquota)
 
 <a id="controller-auth"></a>
 ### Auth — 20 route
@@ -2792,84 +2798,6 @@ Config chỉ Admin; child status guard giám sát. Scope System/Personal/Child, 
 - Response: ApiResponse.data: [TokenQuotaStatusDto](#dto-tokenquotastatusdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [childProfileService.getTokenQuotaForChild](../../AI_Storytelling_Frontend/src/app/services/childProfileService.ts#L105); nơi dùng: [HomeWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/home/HomeWorkspace.tsx#L71); [BriefForm.tsx](../../AI_Storytelling_Frontend/src/app/features/studio/BriefForm.tsx#L37)
 
-<a id="controller-datarequest"></a>
-### DataRequest — 7 route
-
-Parent tạo/mine/cancel của mình; Admin resolve/reject. Export binary, csv đóng ZIP, không thử resolve-delete trên DB như kiểm tra tài liệu.
-
-| Method + route | Mapping |
-|---|---|
-| [POST /api/v1/DataRequest](#ep-datarequest-createdatarequest-post) | GỌI_API |
-| [GET /api/v1/DataRequest/pending](#ep-datarequest-listpendingdatarequests-get) | GỌI_API |
-| [GET /api/v1/DataRequest/mine](#ep-datarequest-listmydatarequests-get) | GỌI_API |
-| [POST /api/v1/DataRequest/{dataRequestId}/cancel](#ep-datarequest-canceldatarequest-post) | GỌI_API |
-| [POST /api/v1/DataRequest/{dataRequestId}/resolve-export](#ep-datarequest-resolveexport-post) | GỌI_API |
-| [POST /api/v1/DataRequest/{dataRequestId}/resolve-delete](#ep-datarequest-resolvedelete-post) | GỌI_API |
-| [POST /api/v1/DataRequest/{dataRequestId}/reject](#ep-datarequest-rejectdatarequest-post) | GỌI_API |
-
-<a id="ep-datarequest-createdatarequest-post"></a>
-#### POST /api/v1/DataRequest
-
-- Action/chức năng: **CreateDataRequest** — Tạo yêu cầu Export hoặc Delete dữ liệu cho Child Profile do chính mình sở hữu.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L26).
-- Quyền: (User); kèm guard nghiệp vụ của nhóm.
-- Request: **body** request: [CreateDataRequestDto](#dto-createdatarequestdto); field/validation/ví dụ tại schema.
-- Response: ApiResponse.data: [DataRequestDto](#dto-datarequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 201.
-- Frontend: **GỌI_API** — [staffService.createDataRequest](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L50); nơi dùng: [DataRequestSection.tsx](../../AI_Storytelling_Frontend/src/app/features/children/DataRequestSection.tsx#L49)
-
-<a id="ep-datarequest-listpendingdatarequests-get"></a>
-#### GET /api/v1/DataRequest/pending
-
-- Action/chức năng: **ListPendingDataRequests** — Lấy danh sách Data Request đang chờ Administrator xử lý.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L39).
-- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
-- Request: Không có tham số action; dùng token/header theo quyền..
-- Response: ApiResponse.data: [List&lt;DataRequestDto&gt;](#dto-datarequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [staffService.pendingDataRequests](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L54); nơi dùng: [AdminSystem.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminSystem.tsx#L59)
-
-<a id="ep-datarequest-listmydatarequests-get"></a>
-#### GET /api/v1/DataRequest/mine
-
-- Action/chức năng: **ListMyDataRequests** — Danh sách Data Request do chính Owner gửi.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L49).
-- Quyền: (User); kèm guard nghiệp vụ của nhóm.
-- Request: **query** childProfileId: `int?`; nullable.
-- Response: ApiResponse.data: [List&lt;DataRequestDto&gt;](#dto-datarequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [staffService.myDataRequests](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L52); nơi dùng: [DataRequestSection.tsx](../../AI_Storytelling_Frontend/src/app/features/children/DataRequestSection.tsx#L27)
-
-<a id="ep-datarequest-canceldatarequest-post"></a>
-#### POST /api/v1/DataRequest/{dataRequestId}/cancel
-
-- Action/chức năng: **CancelDataRequest** — Owner hủy Data Request của mình khi còn pending.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L60).
-- Quyền: (User); kèm guard nghiệp vụ của nhóm.
-- Request: **path** dataRequestId: `int`; bắt buộc.
-- Response: ApiResponse.data: [DataRequestDto](#dto-datarequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [staffService.cancelDataRequest](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L53); nơi dùng: [DataRequestSection.tsx](../../AI_Storytelling_Frontend/src/app/features/children/DataRequestSection.tsx#L80)
-
-<a id="ep-datarequest-resolveexport-post"></a>
-#### POST /api/v1/DataRequest/{dataRequestId}/resolve-export
-
-- Action/chức năng: **ResolveExport** — Xử lý một Data Request loại Export: trả về file .xlsx tổng hợp dữ liệu của trẻ.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L73).
-- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
-- Request: **path** dataRequestId: `int`; bắt buộc<br>**query** format: `string`.
-- Response: Binary: xlsx hoặc ZIP chứa CSV; Content-Disposition tên file, không envelope JSON. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [staffService.resolveExport](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L56); nơi dùng: [AdminSystem.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminSystem.tsx#L64)
-
-<a id="ep-datarequest-resolvedelete-post"></a>
-#### POST /api/v1/DataRequest/{dataRequestId}/resolve-delete
-
-- Action/chức năng: **ResolveDelete** — Xử lý một Data Request loại Delete: anonymize dữ liệu định danh của trẻ.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L90).
-- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
-- Request: **path** dataRequestId: `int`; bắt buộc.
-- Response: ApiResponse.data: [DataRequestDto](#dto-datarequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [staffService.resolveDelete](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L64); nơi dùng: [AdminSystem.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminSystem.tsx#L86)
-
-<a id="ep-datarequest-rejectdatarequest-post"></a>
-#### POST /api/v1/DataRequest/{dataRequestId}/reject
-
-- Action/chức năng: **RejectDataRequest** — Administrator từ chối Data Request kèm lý do.. [DataRequestController](../src/Core/StoryPlatform.Api/Controllers/DataRequestController.cs#L100).
-- Quyền: (Administrator); kèm guard nghiệp vụ của nhóm.
-- Request: **path** dataRequestId: `int`; bắt buộc<br>**body** request: [RejectDataRequestDto](#dto-rejectdatarequestdto); field/validation/ví dụ tại schema.
-- Response: ApiResponse.data: [DataRequestDto](#dto-datarequestdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [staffService.rejectDataRequest](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L65); nơi dùng: [AdminSystem.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/AdminSystem.tsx#L90)
-
 <a id="controller-businessreport"></a>
 ### BusinessReport — 3 route
 
@@ -3894,7 +3822,6 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [CreateContentCategoryRequestDto](#dto-createcontentcategoryrequestdto) | [ContentCategoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentCategories/DTOs/ContentCategoryDtos.cs#L14) |
 | [CreateContentReportRequestDto](#dto-createcontentreportrequestdto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L6) |
 | [CreateCreatorDraftRequest](#dto-createcreatordraftrequest) | [CreatorAuthoringDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAuthoring/DTOs/CreatorAuthoringDtos.cs#L11) |
-| [CreateDataRequestDto](#dto-createdatarequestdto) | [DataRequestDtos.cs](../src/Core/StoryPlatform.Application/Features/DataRequests/DTOs/DataRequestDtos.cs#L5) |
 | [CreateParentDraftRequest](#dto-createparentdraftrequest) | [ParentAuthoringDtos.cs](../src/Core/StoryPlatform.Application/Features/ParentAuthoring/ParentAuthoringDtos.cs#L6) |
 | [CreatePaymentTransactionRequestDto](#dto-createpaymenttransactionrequestdto) | [PaymentDtos.cs](../src/Core/StoryPlatform.Application/Features/Payments/DTOs/PaymentDtos.cs#L13) |
 | [CreateProposalResponseDto](#dto-createproposalresponsedto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L225) |
@@ -3907,7 +3834,6 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [CreatorImportPreviewDto](#dto-creatorimportpreviewdto) | [CreatorAuthoringDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAuthoring/DTOs/CreatorAuthoringDtos.cs#L69) |
 | [CreatorVersionCommand](#dto-creatorversioncommand) | [CreatorAuthoringDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAuthoring/DTOs/CreatorAuthoringDtos.cs#L21) |
 | [CreatorVersionDto](#dto-creatorversiondto) | [CreatorAuthoringDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAuthoring/DTOs/CreatorAuthoringDtos.cs#L62) |
-| [DataRequestDto](#dto-datarequestdto) | [DataRequestDtos.cs](../src/Core/StoryPlatform.Application/Features/DataRequests/DTOs/DataRequestDtos.cs#L13) |
 | [DeleteAccountPreviewDto](#dto-deleteaccountpreviewdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L188) |
 | [DeleteAccountRequestDto](#dto-deleteaccountrequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L195) |
 | [DiscussionItemDto](#dto-discussionitemdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L136) |
@@ -3997,7 +3923,6 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [RefreshTokenRequestDto](#dto-refreshtokenrequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L87) |
 | [RegenerateOutlineRequestDto](#dto-regenerateoutlinerequestdto) | [OutlineDtos.cs](../src/Core/StoryPlatform.Application/Features/Outline/DTOs/OutlineDtos.cs#L46) |
 | [RegisterRequestDto](#dto-registerrequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L23) |
-| [RejectDataRequestDto](#dto-rejectdatarequestdto) | [DataRequestDtos.cs](../src/Core/StoryPlatform.Application/Features/DataRequests/DTOs/DataRequestDtos.cs#L25) |
 | [RejectOutlineRequestDto](#dto-rejectoutlinerequestdto) | [OutlineDtos.cs](../src/Core/StoryPlatform.Application/Features/Outline/DTOs/OutlineDtos.cs#L64) |
 | [RejectRequestDto](#dto-rejectrequestdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L205) |
 | [RenderGuideRequest](#dto-renderguiderequest) | [AuthoringGuideService.cs](../src/Core/StoryPlatform.Application/Features/ParentAuthoring/AuthoringGuideService.cs#L11) |
@@ -5359,29 +5284,6 @@ Ví dụ JSON minh họa shape request:
 }
 ~~~
 
-<a id="dto-createdatarequestdto"></a>
-### CreateDataRequestDto
-
-Nguồn: [DataRequestDtos.cs](../src/Core/StoryPlatform.Application/Features/DataRequests/DTOs/DataRequestDtos.cs#L5).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `childProfileId` | `int` | Không | — |
-| `requestType` | `string` | Không | default `string.Empty` |
-| `currentPassword` | `string?` | Có | — |
-| `confirmNickname` | `string?` | Có | — |
-
-Ví dụ JSON minh họa shape request:
-
-~~~json
-{
-  "childProfileId": 1,
-  "requestType": "export",
-  "currentPassword": "<MAT_KHAU_HIEN_TAI>",
-  "confirmNickname": null
-}
-~~~
-
 <a id="dto-createparentdraftrequest"></a>
 ### CreateParentDraftRequest
 
@@ -5596,22 +5498,6 @@ Nguồn: [CreatorAuthoringDtos.cs](../src/Core/StoryPlatform.Application/Feature
 | `audienceRevision` | `int` | Không | — |
 | `createdAt` | `DateTime` | Không | — |
 | `assistance` | [StoryPlatform.Application.Features.CreatorAssistance.DTOs.AssistanceProvenance?](#dto-assistanceprovenance) | Có | default `null` |
-
-<a id="dto-datarequestdto"></a>
-### DataRequestDto
-
-Nguồn: [DataRequestDtos.cs](../src/Core/StoryPlatform.Application/Features/DataRequests/DTOs/DataRequestDtos.cs#L13).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `id` | `int` | Không | — |
-| `childProfileId` | `int` | Không | — |
-| `requestType` | `string` | Không | default `string.Empty` |
-| `status` | `string` | Không | default `string.Empty` |
-| `rejectionReason` | `string?` | Có | — |
-| `createdAt` | `DateTime` | Không | — |
-| `resolvedAt` | `DateTime?` | Có | — |
-| `resolvedByUserId` | `int?` | Có | — |
 
 <a id="dto-deleteaccountpreviewdto"></a>
 ### DeleteAccountPreviewDto
@@ -7155,23 +7041,6 @@ Ví dụ JSON minh họa shape request:
   "password": "<MAT_KHAU_HOP_LE>",
   "confirmPassword": "<GIONG_MAT_KHAU_MOI>",
   "phoneNumber": null
-}
-~~~
-
-<a id="dto-rejectdatarequestdto"></a>
-### RejectDataRequestDto
-
-Nguồn: [DataRequestDtos.cs](../src/Core/StoryPlatform.Application/Features/DataRequests/DTOs/DataRequestDtos.cs#L25).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `reason` | `string` | Không | default `string.Empty`; `[Required(ErrorMessage = "Lý do từ chối không được để trống.")]     [StringLength(500, ErrorMessage = "Lý do từ chối tối đa 500 ký tự.")]` |
-
-Ví dụ JSON minh họa shape request:
-
-~~~json
-{
-  "reason": "Lý do của người dùng"
 }
 ~~~
 
@@ -10097,7 +9966,7 @@ Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response 
 7. Assistance clarification/direction/trials/stale/running replay/cancel/close/timeout/Save provenance.
 8. Creator generation: kiểm thử confirm-content → media Ready → gửi PublicStorySubmission → Moderator duyệt; Creator gọi review/approve phải nhận 403.
 9. Claim cạnh tranh/hết hạn/cấm tự duyệt; views/flags/checklist trước approve; report dismiss/archive.
-10. DataRequest xlsx/ZIP/delete/reject; webhook xác thực server, không gọi từ browser.
+10. Webhook xác thực server, không gọi từ browser.
 11. Notification REST + SignalR reconnect; mock/local không bị ghi nhận như dữ liệu đã lưu server.
 12. Roadmap multi-child partial results, reorder Waiting, gỡ Open, preview/copy khi eligibility đổi, clone thay thế bộ Published.
 13. Community PII/copyright/blockers, pinned version, withdraw bị claim, remove và child visibility/404; metadata chưa phải reader package.

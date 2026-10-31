@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using StoryPlatform.Api.Controllers;
+using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ReadingSessions;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
@@ -18,8 +19,10 @@ public class ChildReadingControllerTests
     private readonly Mock<IChildStoryBrowseService> _browse = new(MockBehavior.Strict);
     private readonly Mock<IChildReadingService> _reading = new(MockBehavior.Strict);
     private readonly Mock<IChildNotebookService> _notebook = new(MockBehavior.Strict);
+    private readonly Mock<IChildReadAloudService> _readAloud = new(MockBehavior.Strict);
 
-    private ChildReadingController Controller(params Claim[] claims) => new(_browse.Object, _reading.Object, _notebook.Object)
+    private ChildReadingController Controller(params Claim[] claims) =>
+        new(_browse.Object, _reading.Object, _notebook.Object, _readAloud.Object)
     {
         ControllerContext = new ControllerContext
         {
@@ -44,7 +47,7 @@ public class ChildReadingControllerTests
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Select(method => method.Name).OrderBy(name => name).ToArray();
 
-        Assert.Equal(new[] { "Complete", "GetContent", "GetDefinition", "GetSignal", "LogEvent", "SaveProgress", "SearchStories", "SetBookmark", "SetFavorite", "SetFeeling", "Start" }, methods);
+        Assert.Equal(new[] { "Complete", "GetContent", "GetDefinition", "GetSignal", "LogEvent", "ReadAloud", "SaveProgress", "SearchStories", "SetBookmark", "SetFavorite", "SetFeeling", "Start" }, methods);
     }
 
     [Fact]
@@ -278,5 +281,64 @@ public class ChildReadingControllerTests
         Assert.NotNull(authorize);
         Assert.Equal("ChildSession", authorize!.Policy);
         Assert.Equal(new[] { "Collect", "List", "Remove" }, methods);
+    }
+
+    private static IFormFile AudioFile(byte[] bytes, string contentType) =>
+        new FormFile(new MemoryStream(bytes), 0, bytes.Length, "audio", "reading.webm")
+        {
+            Headers = new HeaderDictionary(), ContentType = contentType
+        };
+
+    [Fact]
+    public void ReadAloud_UsesDocumentedRoute_AndKeepsAcceptedAudioInMemory()
+    {
+        var method = typeof(ChildReadingController).GetMethod(nameof(ChildReadingController.ReadAloud))!;
+        var limits = method.GetCustomAttribute<RequestFormLimitsAttribute>();
+
+        Assert.Equal("sessions/{sessionId:int}/segments/{segmentId:int}/read-aloud",
+            method.GetCustomAttribute<HttpPostAttribute>()!.Template);
+        Assert.NotNull(limits);
+        Assert.True(limits.MemoryBufferThreshold >= ReadAloudPolicy.MaxAudioBytes + 100_000);
+        Assert.True(limits.MultipartBodyLengthLimit >= ReadAloudPolicy.MaxAudioBytes);
+    }
+
+    [Fact]
+    public async Task ReadAloud_PassesAudioBytesAndContentTypeToTheService()
+    {
+        ReadAloudRequest? captured = null;
+        _readAloud.Setup(s => s.CheckAsync(100, 5, 6, It.IsAny<ReadAloudRequest>(), It.IsAny<CancellationToken>()))
+            .Callback((int _, int _, int _, ReadAloudRequest request, CancellationToken _) => captured = request)
+            .ReturnsAsync(new ReadAloudResultDto { SessionId = 5, SegmentId = 6, Message = "Em đọc hay quá!" });
+
+        var result = await Controller(new Claim(ClaimTypes.NameIdentifier, "100"))
+            .ReadAloud(5, 6, new ReadAloudForm { Audio = AudioFile([1, 2, 3], "audio/webm") }, default);
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal(6, Assert.IsType<ApiResponse<ReadAloudResultDto>>(ok.Value).Data!.SegmentId);
+        Assert.Equal(new byte[] { 1, 2, 3 }, captured!.Audio);
+        Assert.Equal("audio/webm", captured.ContentType);
+    }
+
+    [Fact]
+    public async Task ReadAloud_TooLargeFile_IsRejectedBeforeReading()
+    {
+        var huge = AudioFile(new byte[ReadAloudPolicy.MaxAudioBytes + 1], "audio/webm");
+
+        var error = await Assert.ThrowsAsync<BadRequestException>(() =>
+            Controller(new Claim(ClaimTypes.NameIdentifier, "100")).ReadAloud(5, 6, new ReadAloudForm { Audio = huge }, default));
+
+        Assert.Equal(ReadAloudPolicy.AudioTooLargeMessage, error.Message);
+        _readAloud.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task ReadAloud_MissingFile_SendsEmptyAudio()
+    {
+        _readAloud.Setup(s => s.CheckAsync(100, 5, 6, It.Is<ReadAloudRequest>(r => r.Audio.Length == 0),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new BadRequestException(ReadAloudPolicy.EmptyAudioMessage));
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            Controller(new Claim(ClaimTypes.NameIdentifier, "100")).ReadAloud(5, 6, new ReadAloudForm(), default));
     }
 }

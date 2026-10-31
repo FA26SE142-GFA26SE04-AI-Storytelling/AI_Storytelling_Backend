@@ -15,11 +15,18 @@ permissions:
   id-token: write
   contents: read
 
+# Merges that land close together must deploy one after another: each run pushes ":latest" and checks
+# its own ECS deployment, so overlapping runs could verify each other's image.
+concurrency:
+  group: deploy-core-api-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   AWS_REGION: ap-southeast-1
   ECR_REPOSITORY: storyplatform-core-api
   ECS_CLUSTER: storyplatform-core-api-cluster
   ECS_SERVICE: storyplatform-core-api-svc
+  API_HEALTH_URL: https://api.taletale.site/health
 
 jobs:
   test:
@@ -83,16 +90,53 @@ jobs:
             .
 
       - name: Force new ECS deployment
+        id: deploy
         run: |
-          aws ecs update-service \
-            --cluster "$ECS_CLUSTER" \
-            --service "$ECS_SERVICE" \
-            --force-new-deployment \
-            --region "$AWS_REGION" > /dev/null
+          deployment_id=$(aws ecs update-service             --cluster "$ECS_CLUSTER"             --service "$ECS_SERVICE"             --force-new-deployment             --region "$AWS_REGION"             --query 'service.deployments[?status==`PRIMARY`].id | [0]'             --output text)
+          echo "ECS deployment: $deployment_id"
+          echo "deployment_id=$deployment_id" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for ECS service to stabilize
+      # Follow the deployment this run started until ECS settles it. "aws ecs wait services-stable" is not
+      # enough: it also returns after ECS rolled a failed deployment back (or settled on zero tasks), which is
+      # how earlier deploys "succeeded" while production was down, and it can return a few seconds before
+      # ECS flips rolloutState from IN_PROGRESS to COMPLETED.
+      - name: Wait for this deployment to complete
+        env:
+          DEPLOYMENT_ID: ${{ steps.deploy.outputs.deployment_id }}
         run: |
-          aws ecs wait services-stable \
-            --cluster "$ECS_CLUSTER" \
-            --services "$ECS_SERVICE" \
-            --region "$AWS_REGION"
+          for attempt in $(seq 1 60); do
+            read -r status rollout running desired <<< "$(aws ecs describe-services               --cluster "$ECS_CLUSTER"               --services "$ECS_SERVICE"               --region "$AWS_REGION"               --query "services[0].deployments[?id=='$DEPLOYMENT_ID'] | [0].[status, rolloutState, runningCount, desiredCount]"               --output text)"
+            echo "Attempt $attempt: $DEPLOYMENT_ID status=$status rollout=$rollout running=$running desired=$desired"
+            if [ "$status" != "PRIMARY" ] || [ "$rollout" = "FAILED" ]; then
+              echo "::error::ECS rolled back or replaced deployment $DEPLOYMENT_ID (status=$status, rollout=$rollout)."
+              exit 1
+            fi
+            if [ "$rollout" = "COMPLETED" ]; then
+              if [ "$running" -lt 1 ] || [ "$running" -lt "$desired" ]; then
+                echo "::error::Deployment $DEPLOYMENT_ID completed with $running running task(s) of $desired desired."
+                exit 1
+              fi
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::Deployment $DEPLOYMENT_ID did not complete within 15 minutes."
+          exit 1
+
+      - name: Check the public health endpoint
+        run: |
+          for attempt in $(seq 1 10); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API_HEALTH_URL" || true)
+            echo "Attempt $attempt: $API_HEALTH_URL -> $code"
+            if [ "$code" = "200" ]; then
+              exit 0
+            fi
+            sleep 6
+          done
+          echo "::error::$API_HEALTH_URL did not return 200 after the deployment."
+          exit 1
+
+      - name: Show recent ECS service events
+        if: failure()
+        run: |
+          aws ecs describe-services             --cluster "$ECS_CLUSTER"             --services "$ECS_SERVICE"             --region "$AWS_REGION"             --query 'services[0].events[0:15].[createdAt, message]'             --output text

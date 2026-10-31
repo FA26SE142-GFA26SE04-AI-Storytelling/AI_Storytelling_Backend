@@ -305,77 +305,43 @@ public class StoryPlatformCoreStackTests
     }
 
     [Fact]
-    public void Stack_OmitsAlbByDefault()
-    {
-        var template = SynthTemplate();
-        template.ResourceCountIs("AWS::ElasticLoadBalancingV2::LoadBalancer", 0);
-    }
-
-    [Fact]
-    public void Stack_CreatesInternetFacingAlbForwardingToTaskPort8080_WhenContextFlagEnabled()
+    public void Stack_NeverCreatesLoadBalancer_EvenWithEcsService()
     {
         var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
         {
             ["includeEcsService"] = true
         });
 
-        template.ResourceCountIs("AWS::ElasticLoadBalancingV2::LoadBalancer", 1);
-        template.HasResourceProperties("AWS::ElasticLoadBalancingV2::LoadBalancer", new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["Scheme"] = "internet-facing",
-            ["Type"] = "application"
-        });
-
-        template.ResourceCountIs("AWS::ElasticLoadBalancingV2::Listener", 1);
-        template.HasResourceProperties("AWS::ElasticLoadBalancingV2::Listener", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["Port"] = 80,
-            ["Protocol"] = "HTTP"
-        }));
-
-        template.ResourceCountIs("AWS::ElasticLoadBalancingV2::TargetGroup", 1);
-        template.HasResourceProperties("AWS::ElasticLoadBalancingV2::TargetGroup", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["Port"] = 8080,
-            ["Protocol"] = "HTTP",
-            ["TargetType"] = "ip",
-            ["HealthCheckPath"] = "/health"
-        }));
-
-        // The task's own security group must not accept traffic straight from the internet
-        // anymore - only from the ALB - now that the ALB is the public entry point.
-        Assert.ThrowsAny<System.Exception>(() => template.HasResourceProperties("AWS::EC2::SecurityGroupIngress", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["CidrIp"] = "0.0.0.0/0",
-            ["FromPort"] = 8080
-        })));
+        template.ResourceCountIs("AWS::ElasticLoadBalancingV2::LoadBalancer", 0);
+        template.ResourceCountIs("AWS::ElasticLoadBalancingV2::Listener", 0);
+        template.ResourceCountIs("AWS::ElasticLoadBalancingV2::TargetGroup", 0);
     }
 
     [Fact]
-    public void Stack_ApiContainerTrustsForwardedHeadersOnlyFromVpcAndCloudflare()
+    public void Stack_TaskSecurityGroupHasNoIngress_WhenContextFlagEnabled()
+    {
+        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["includeEcsService"] = true
+        });
+
+        // Traffic only arrives through the outbound tunnel; the only ingress rule in the stack is RDS from the task.
+        template.ResourceCountIs("AWS::EC2::SecurityGroupIngress", 1);
+        template.HasResourceProperties("AWS::EC2::SecurityGroupIngress", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["FromPort"] = 5432
+        }));
+        template.HasResourceProperties("AWS::EC2::SecurityGroup", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["GroupDescription"] = "Security group for the Core API ECS Fargate task",
+            ["SecurityGroupIngress"] = Match.Absent()
+        }));
+    }
+
+    [Fact]
+    public void Stack_RunsPinnedCloudflaredSidecarWithTokenFromAppSecrets_AfterApiIsHealthy()
     {
         var template = SynthTemplate();
-        var expected = new System.Collections.Generic.List<object>
-        {
-            Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-            {
-                ["Name"] = "ForwardedHeaders__ForwardLimit",
-                ["Value"] = "2"
-            }),
-            Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-            {
-                ["Name"] = "ForwardedHeaders__KnownNetworks__0",
-                ["Value"] = Match.AnyValue()
-            })
-        };
-        for (var i = 0; i < StoryPlatformCoreStack.CloudflareIpv4Ranges.Length; i++)
-        {
-            expected.Add(Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-            {
-                ["Name"] = $"ForwardedHeaders__KnownNetworks__{i + 1}",
-                ["Value"] = StoryPlatformCoreStack.CloudflareIpv4Ranges[i]
-            }));
-        }
 
         template.HasResourceProperties("AWS::ECS::TaskDefinition", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
         {
@@ -383,44 +349,72 @@ public class StoryPlatformCoreStackTests
             {
                 Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
                 {
-                    ["Environment"] = Match.ArrayWith(expected.ToArray())
+                    ["Name"] = "CloudflaredContainer",
+                    ["Image"] = StoryPlatformCoreStack.CloudflaredImage,
+                    ["Command"] = new[] { "tunnel", "run" },
+                    ["Essential"] = true,
+                    ["DependsOn"] = new object[]
+                    {
+                        new System.Collections.Generic.Dictionary<string, object>
+                        {
+                            ["ContainerName"] = "ApiContainer",
+                            ["Condition"] = "HEALTHY"
+                        }
+                    },
+                    ["Secrets"] = new object[]
+                    {
+                        Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                        {
+                            ["Name"] = "TUNNEL_TOKEN",
+                            ["ValueFrom"] = Match.AnyValue()
+                        })
+                    }
+                })
+            })
+        }));
+        Assert.Matches(@"^cloudflare/cloudflared:\d{4}\.\d+\.\d+$", StoryPlatformCoreStack.CloudflaredImage);
+    }
+
+    [Fact]
+    public void Stack_ApiContainerTrustsClientIpOnlyFromLoopbackTunnel()
+    {
+        var template = SynthTemplate();
+        var expected = new (string Name, string Value)[]
+        {
+            ("ForwardedHeaders__KnownNetworks__0", "127.0.0.1/32"),
+            ("ForwardedHeaders__KnownNetworks__1", "::1/128"),
+            ("ForwardedHeaders__ForwardLimit", "1"),
+            ("ForwardedHeaders__ForwardedForHeaderName", "CF-Connecting-IP")
+        };
+
+        template.HasResourceProperties("AWS::ECS::TaskDefinition", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["ContainerDefinitions"] = Match.ArrayWith(new object[]
+            {
+                Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                {
+                    ["Name"] = "ApiContainer",
+                    ["Environment"] = Match.ArrayWith(System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Select(
+                        expected, e => (object)Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                        {
+                            ["Name"] = e.Name,
+                            ["Value"] = e.Value
+                        }))))
                 })
             })
         }));
     }
 
     [Fact]
-    public void Stack_AlbAcceptsPort80OnlyFromCloudflareRanges_WhenContextFlagEnabled()
+    public void Stack_DoesNotPutTunnelTokenIntoGeneratedSecretTemplate()
     {
-        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["includeEcsService"] = true
-        });
+        // Changing AppSecrets' generated template would make CloudFormation regenerate the whole secret
+        // (losing JwtSecretKey and the hand-set API keys), so the tunnel token key is added by hand instead.
+        var template = SynthTemplate();
+        var json = System.Text.Json.JsonSerializer.Serialize(template.FindResources("AWS::SecretsManager::Secret"));
 
-        var cloudflareIngress = System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Select(
-            StoryPlatformCoreStack.CloudflareIpv4Ranges,
-            range => (object)Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-            {
-                ["CidrIp"] = range,
-                ["FromPort"] = 80,
-                ["ToPort"] = 80,
-                ["IpProtocol"] = "tcp"
-            })));
-        template.HasResourceProperties("AWS::EC2::SecurityGroup", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["SecurityGroupIngress"] = Match.ArrayWith(cloudflareIngress)
-        }));
-
-        // Calling the ALB's DNS name directly must not work: port 80 is never opened to the whole internet.
-        var openToAnyone = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["CidrIp"] = "0.0.0.0/0",
-            ["FromPort"] = 80
-        });
-        Assert.ThrowsAny<System.Exception>(() => template.HasResourceProperties("AWS::EC2::SecurityGroup", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
-        {
-            ["SecurityGroupIngress"] = Match.ArrayWith(new object[] { openToAnyone })
-        })));
-        Assert.ThrowsAny<System.Exception>(() => template.HasResourceProperties("AWS::EC2::SecurityGroupIngress", openToAnyone));
+        Assert.Contains("REPLACE_ME_POST_DEPLOY", json);
+        Assert.DoesNotContain("CloudflareTunnelToken", json);
     }
+
 }

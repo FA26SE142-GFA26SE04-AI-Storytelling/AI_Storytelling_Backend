@@ -65,22 +65,10 @@ ECS has no equivalent of App Runner's `AutoDeploymentsEnabled` — pushing a new
 ECR does nothing by itself; the `update-service --force-new-deployment` call above is the only way
 a deploy happens.
 
-**Finding the running task's public IP** (for manual smoke-testing, since there's no ALB):
-
-```bash
-TASK_ARN=$(aws ecs list-tasks --cluster storyplatform-core-api-cluster \
-  --service-name storyplatform-core-api-svc --region ap-southeast-1 --profile storyplatform \
-  --query 'taskArns[0]' --output text)
-ENI_ID=$(aws ecs describe-tasks --cluster storyplatform-core-api-cluster --tasks "$TASK_ARN" \
-  --region ap-southeast-1 --profile storyplatform \
-  --query 'tasks[0].attachments[0].details[?name==`networkInterfaceId`].value' --output text)
-aws ec2 describe-network-interfaces --network-interface-ids "$ENI_ID" \
-  --region ap-southeast-1 --profile storyplatform \
-  --query 'NetworkInterfaces[0].Association.PublicIp' --output text
-```
-
-The public IP changes on every deployment (no static IP without an ALB or Elastic IP) — see the
-spec's §14 follow-up on the SePay webhook implication of this.
+**Public entry point is a Cloudflare Tunnel, not a load balancer.** The task's security group has
+no ingress rule, so the task's (changing) public IP cannot be reached directly; smoke-test through
+the public hostname instead (`curl https://api.taletale.site/health`). See "Cloudflare Tunnel"
+below for setup and troubleshooting.
 
 **Database migrations are applied automatically** by the container itself at startup
 (`Program.cs` calls `ApplicationDbContext.Database.Migrate()`), not by CI — GitHub-hosted runners
@@ -141,6 +129,41 @@ cdk deploy --profile storyplatform --context includeEcsService=false --require-a
 # push an image (see above)
 cdk deploy --profile storyplatform --require-approval broadcast   # picks up the persisted true
 ```
+
+## Cloudflare Tunnel (public entry point)
+
+`api.taletale.site` reaches the API through a remotely-managed Cloudflare Tunnel: the
+`CloudflaredContainer` sidecar (image pinned in `StoryPlatformCoreStack.CloudflaredImage`, pulled
+from Docker Hub) dials out to Cloudflare and forwards requests to `http://localhost:8080` in the same
+task. There is no ALB, listener or target group, and no inbound rule on the task. The sidecar only
+starts once `ApiContainer` is healthy, and during a rolling deploy the old and new tasks both hold a
+connector on the same tunnel, so a deploy causes no downtime.
+
+The API reads the visitor IP from `CF-Connecting-IP` and only trusts it from loopback
+(`ForwardedHeaders__*` env vars in the task definition), so the rate limiter counts real client IPs.
+
+**One-time setup (before the first deploy that contains the sidecar):**
+
+1. Cloudflare dashboard → Zero Trust → Networks → Tunnels → *Create a tunnel* → *Cloudflared*,
+   name it e.g. `storyplatform-core-api`. Copy the tunnel token shown in the install command
+   (the long value after `--token`); treat it as a secret.
+2. In the tunnel, add a *Public hostname*: `api.taletale.site` → type `HTTP`, URL `localhost:8080`.
+   If DNS still has the old `api` CNAME (pointing at the deleted ALB), delete it first so Cloudflare
+   can create the tunnel's CNAME (`<tunnel-id>.cfargotunnel.com`, proxied).
+3. Add the token as a new `CloudflareTunnelToken` key in `storyplatform/core/app-secrets`, using the
+   same read-edit-write steps as in the next section. **Do this before `cdk deploy`**: if the key is
+   missing, ECS cannot inject `TUNNEL_TOKEN` and the task fails to start (`ResourceInitializationError`).
+   The key is deliberately not in the CDK-generated secret template — changing that template would
+   make CloudFormation regenerate the whole secret (new `JwtSecretKey`, API keys reset to placeholders).
+4. `cdk diff --profile storyplatform`, review, then `cdk deploy --profile storyplatform`.
+5. Verify: the tunnel shows *Healthy* in the dashboard, `curl https://api.taletale.site/health`
+   returns 200, and the `cloudflared/...` log streams in `/ecs/storyplatform-core-api` show
+   "Registered tunnel connection".
+
+**Troubleshooting:** Cloudflare error 1033 = no connector is online (task not running, or the
+sidecar cannot authenticate — check the token and the `cloudflared` log stream). Error 502 = the
+connector is up but `localhost:8080` did not answer (API container unhealthy or crashed).
+To rotate the token, refresh it in the dashboard, update the secret key, then force a new deployment.
 
 ## Setting the real Resend / SePay / Redis secret values post-deploy
 

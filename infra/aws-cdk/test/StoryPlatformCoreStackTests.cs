@@ -417,4 +417,69 @@ public class StoryPlatformCoreStackTests
         Assert.DoesNotContain("CloudflareTunnelToken", json);
     }
 
+    [Fact]
+    public void Stack_EcsServiceRollsBackFailingDeployments_WhenContextFlagEnabled()
+    {
+        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["includeEcsService"] = true
+        });
+
+        template.HasResourceProperties("AWS::ECS::Service", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["DeploymentConfiguration"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["DeploymentCircuitBreaker"] = new System.Collections.Generic.Dictionary<string, object>
+                {
+                    ["Enable"] = true,
+                    ["Rollback"] = true
+                },
+                ["MinimumHealthyPercent"] = 100,
+                ["MaximumPercent"] = 200
+            })
+        }));
+    }
+
+    [Fact]
+    public void Stack_AlarmsToSnsWhenNoApiTaskIsRunning_WhenContextFlagEnabled()
+    {
+        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["includeEcsService"] = true
+        });
+
+        template.ResourceCountIs("AWS::SNS::Topic", 1);
+        template.HasResourceProperties("AWS::SNS::Topic", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["TopicName"] = "storyplatform-core-api-alarms"
+        }));
+        // The e-mail subscription is managed outside CDK, so no address is ever committed.
+        template.ResourceCountIs("AWS::SNS::Subscription", 0);
+
+        template.HasResourceProperties("AWS::CloudWatch::Alarm", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["AlarmName"] = "storyplatform-core-api-no-running-task",
+            ["Namespace"] = "AWS/ECS",
+            ["MetricName"] = "CPUUtilization",
+            ["Statistic"] = "SampleCount",
+            ["Period"] = 60,
+            ["Threshold"] = 1,
+            ["ComparisonOperator"] = "LessThanThreshold",
+            ["EvaluationPeriods"] = 5,
+            ["DatapointsToAlarm"] = 5,
+            ["TreatMissingData"] = "breaching",
+            ["AlarmActions"] = Match.AnyValue(),
+            ["OKActions"] = Match.AnyValue()
+        }));
+    }
+
+    [Fact]
+    public void Stack_HasNoAlarmOrTopicWithoutEcsService()
+    {
+        var template = SynthTemplate();
+
+        template.ResourceCountIs("AWS::CloudWatch::Alarm", 0);
+        template.ResourceCountIs("AWS::SNS::Topic", 0);
+    }
+
 }

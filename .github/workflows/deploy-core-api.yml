@@ -15,11 +15,18 @@ permissions:
   id-token: write
   contents: read
 
+# Merges that land close together must deploy one after another: each run pushes ":latest" and checks
+# its own ECS deployment, so overlapping runs could verify each other's image.
+concurrency:
+  group: deploy-core-api-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   AWS_REGION: ap-southeast-1
   ECR_REPOSITORY: storyplatform-core-api
   ECS_CLUSTER: storyplatform-core-api-cluster
   ECS_SERVICE: storyplatform-core-api-svc
+  API_HEALTH_URL: https://api.taletale.site/health
 
 jobs:
   test:
@@ -83,16 +90,47 @@ jobs:
             .
 
       - name: Force new ECS deployment
+        id: deploy
         run: |
-          aws ecs update-service \
-            --cluster "$ECS_CLUSTER" \
-            --service "$ECS_SERVICE" \
-            --force-new-deployment \
-            --region "$AWS_REGION" > /dev/null
+          deployment_id=$(aws ecs update-service             --cluster "$ECS_CLUSTER"             --service "$ECS_SERVICE"             --force-new-deployment             --region "$AWS_REGION"             --query 'service.deployments[?status==`PRIMARY`].id | [0]'             --output text)
+          echo "ECS deployment: $deployment_id"
+          echo "deployment_id=$deployment_id" >> "$GITHUB_OUTPUT"
 
+      # services-stable alone is not enough: it also returns once ECS has rolled a failed deployment back
+      # (or settled on zero running tasks), which is how earlier deploys "succeeded" while production was down.
       - name: Wait for ECS service to stabilize
         run: |
-          aws ecs wait services-stable \
-            --cluster "$ECS_CLUSTER" \
-            --services "$ECS_SERVICE" \
-            --region "$AWS_REGION"
+          aws ecs wait services-stable             --cluster "$ECS_CLUSTER"             --services "$ECS_SERVICE"             --region "$AWS_REGION"
+
+      - name: Verify this deployment completed with a running task
+        env:
+          DEPLOYMENT_ID: ${{ steps.deploy.outputs.deployment_id }}
+        run: |
+          read -r status rollout running desired <<< "$(aws ecs describe-services             --cluster "$ECS_CLUSTER"             --services "$ECS_SERVICE"             --region "$AWS_REGION"             --query "services[0].deployments[?id=='$DEPLOYMENT_ID'] | [0].[status, rolloutState, runningCount, desiredCount]"             --output text)"
+          echo "Deployment $DEPLOYMENT_ID: status=$status rollout=$rollout running=$running desired=$desired"
+          if [ "$status" != "PRIMARY" ] || [ "$rollout" != "COMPLETED" ]; then
+            echo "::error::ECS did not complete deployment $DEPLOYMENT_ID (status=$status, rollout=$rollout); it was rolled back or replaced."
+            exit 1
+          fi
+          if [ "$running" -lt 1 ] || [ "$running" -lt "$desired" ]; then
+            echo "::error::Deployment $DEPLOYMENT_ID has $running running task(s) of $desired desired."
+            exit 1
+          fi
+
+      - name: Check the public health endpoint
+        run: |
+          for attempt in $(seq 1 10); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API_HEALTH_URL" || true)
+            echo "Attempt $attempt: $API_HEALTH_URL -> $code"
+            if [ "$code" = "200" ]; then
+              exit 0
+            fi
+            sleep 6
+          done
+          echo "::error::$API_HEALTH_URL did not return 200 after the deployment."
+          exit 1
+
+      - name: Show recent ECS service events
+        if: failure()
+        run: |
+          aws ecs describe-services             --cluster "$ECS_CLUSTER"             --services "$ECS_SERVICE"             --region "$AWS_REGION"             --query 'services[0].events[0:15].[createdAt, message]'             --output text

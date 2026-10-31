@@ -13,6 +13,29 @@ namespace StoryPlatform.Infra;
 
 public sealed class StoryPlatformCoreStack : Stack
 {
+    // Published Cloudflare edge ranges (https://www.cloudflare.com/ips/, IPv4 list as of 2026-10-31). The domain
+    // is proxied through Cloudflare, so these are the only sources the ALB accepts, and - together with the VPC
+    // range of the ALB itself - the only hops whose X-Forwarded-For the API trusts. The ALB is IPv4-only, so
+    // Cloudflare always reaches it over IPv4. Re-check this list when Cloudflare announces a change.
+    public static readonly string[] CloudflareIpv4Ranges =
+    {
+        "173.245.48.0/20",
+        "103.21.244.0/22",
+        "103.22.200.0/22",
+        "103.31.4.0/22",
+        "141.101.64.0/18",
+        "108.162.192.0/18",
+        "190.93.240.0/20",
+        "188.114.96.0/20",
+        "197.234.240.0/22",
+        "198.41.128.0/17",
+        "162.158.0.0/15",
+        "104.16.0.0/13",
+        "104.24.0.0/14",
+        "172.64.0.0/13",
+        "131.0.72.0/22"
+    };
+
     public IVpc Vpc { get; }
     public DatabaseInstance Database { get; }
     public Repository EcrRepository { get; }
@@ -179,26 +202,36 @@ public sealed class StoryPlatformCoreStack : Stack
             ExecutionRole = TaskExecutionRole
         });
 
+        var apiEnvironment = new System.Collections.Generic.Dictionary<string, string>
+        {
+            ["ASPNETCORE_ENVIRONMENT"] = "Production",
+            ["Swagger__Enabled"] = "true",
+            ["JwtSettings__Issuer"] = "StoryPlatform",
+            ["JwtSettings__Audience"] = "StoryPlatformClient",
+            ["JwtSettings__ExpiryMinutes"] = "15",
+            ["JwtSettings__RefreshTokenExpiryDays"] = "7",
+            ["JwtSettings__ChildTokenExpiryMinutes"] = "240",
+            // DF06: only the production web may call the API from a browser.
+            ["Cors__AllowedOrigins__0"] = "https://www.taletale.site",
+            ["Cors__AllowedOrigins__1"] = "https://taletale.site",
+            ["Logging__LogLevel__Default"] = "Warning",
+            ["SeedData__RunOnStartup"] = seedDatabaseOnStart ? "true" : "false",
+            ["FixMigrationHistory__RunOnStartup"] = fixMigrationHistoryOnStart ? "true" : "false",
+            // Trusted proxy hops for X-Forwarded-For (ALB inside the VPC, then Cloudflare): see
+            // AddLoadBalancerForwardedHeaders in StoryPlatform.Api. Cloudflare ranges follow below.
+            ["ForwardedHeaders__ForwardLimit"] = "2",
+            ["ForwardedHeaders__KnownNetworks__0"] = Vpc.VpcCidrBlock
+        };
+        for (var i = 0; i < CloudflareIpv4Ranges.Length; i++)
+        {
+            apiEnvironment[$"ForwardedHeaders__KnownNetworks__{i + 1}"] = CloudflareIpv4Ranges[i];
+        }
+
         var apiContainer = ApiTaskDefinition.AddContainer("ApiContainer", new ContainerDefinitionOptions
         {
             Image = ContainerImage.FromEcrRepository(EcrRepository, "latest"),
             Logging = LogDriver.AwsLogs(new AwsLogDriverProps { StreamPrefix = "api", LogGroup = ApiLogGroup }),
-            Environment = new System.Collections.Generic.Dictionary<string, string>
-            {
-                ["ASPNETCORE_ENVIRONMENT"] = "Production",
-                ["Swagger__Enabled"] = "true",
-                ["JwtSettings__Issuer"] = "StoryPlatform",
-                ["JwtSettings__Audience"] = "StoryPlatformClient",
-                ["JwtSettings__ExpiryMinutes"] = "15",
-                ["JwtSettings__RefreshTokenExpiryDays"] = "7",
-                ["JwtSettings__ChildTokenExpiryMinutes"] = "240",
-                // DF06: only the production web may call the API from a browser.
-                ["Cors__AllowedOrigins__0"] = "https://www.taletale.site",
-                ["Cors__AllowedOrigins__1"] = "https://taletale.site",
-                ["Logging__LogLevel__Default"] = "Warning",
-                ["SeedData__RunOnStartup"] = seedDatabaseOnStart ? "true" : "false",
-                ["FixMigrationHistory__RunOnStartup"] = fixMigrationHistoryOnStart ? "true" : "false"
-            },
+            Environment = apiEnvironment,
             Secrets = new System.Collections.Generic.Dictionary<string, Amazon.CDK.AWS.ECS.Secret>
             {
                 ["ConnectionStrings__DefaultConnection"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "DbConnectionString"),
@@ -346,11 +379,17 @@ public sealed class StoryPlatformCoreStack : Stack
 
             ApiTaskSecurityGroup.Connections.AllowFrom(apiAlb, Port.Tcp(8080), "Allow ALB to reach Core API");
 
+            // Not Open: only Cloudflare may reach the ALB, so nobody can bypass Cloudflare (and its client-IP
+            // header) by calling the ALB's DNS name directly.
             var apiListener = apiAlb.AddListener("HttpListener", new BaseApplicationListenerProps
             {
                 Port = 80,
-                Open = true
+                Open = false
             });
+            foreach (var cloudflareRange in CloudflareIpv4Ranges)
+            {
+                apiAlb.Connections.AllowFrom(Peer.Ipv4(cloudflareRange), Port.Tcp(80), "Allow Cloudflare edge to reach the ALB");
+            }
 
             apiListener.AddTargets("ApiTargets", new AddApplicationTargetsProps
             {

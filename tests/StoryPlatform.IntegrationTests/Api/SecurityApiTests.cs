@@ -1,6 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 using StoryPlatform.Api.Extensions;
 using StoryPlatform.Domain.Enums;
 using Xunit;
@@ -98,6 +102,107 @@ public sealed class RateLimitedApiFactory : ApiFactory
         builder.UseSetting("RateLimiting:Auth:WindowSeconds", "300");
         builder.UseSetting("RateLimiting:Ai:PermitLimit", AiLimit.ToString());
         builder.UseSetting("RateLimiting:Ai:WindowSeconds", "300");
+    }
+}
+
+/// <summary>
+/// Production topology for the rate limiter: client → Cloudflare → ALB (in the VPC) → API. TestServer has no
+/// socket, so the connecting hop's IP is taken from <see cref="ConnectingIpHeader"/> ahead of the real pipeline.
+/// </summary>
+public sealed class ProxiedRateLimitedApiFactory : ApiFactory
+{
+    public const string ConnectingIpHeader = "X-Test-Connecting-Ip";
+    public const string AlbIp = "10.0.1.25";
+    public const string CloudflareIp = "173.245.48.7";
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+        builder.UseSetting("RateLimiting:Auth:PermitLimit", RateLimitedApiFactory.AuthLimit.ToString());
+        builder.UseSetting("RateLimiting:Auth:WindowSeconds", "300");
+        builder.UseSetting("ForwardedHeaders:KnownNetworks:0", "10.0.0.0/16");
+        builder.UseSetting("ForwardedHeaders:KnownNetworks:1", "173.245.48.0/20");
+        builder.ConfigureTestServices(services => services.AddSingleton<IStartupFilter, ConnectingIpStartupFilter>());
+    }
+
+    private sealed class ConnectingIpStartupFilter : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.Use((context, nextMiddleware) =>
+            {
+                if (System.Net.IPAddress.TryParse(context.Request.Headers[ConnectingIpHeader], out var ip))
+                    context.Connection.RemoteIpAddress = ip;
+                return nextMiddleware(context);
+            });
+            next(app);
+        };
+    }
+}
+
+/// <summary>DF06 6.2 – the auth limiter counts the real client IP behind Cloudflare and the ALB, never a spoofed header.</summary>
+public sealed class ForwardedClientIpRateLimitingApiTests
+{
+    private const string LoginUrl = "/api/v1/Auth/login";
+    // The limiter runs before model validation, so a body without credentials still counts.
+    private const string LoginBody = "{\"identifier\":\"nobody\"}";
+
+    [Fact]
+    public async Task SpoofedForwardedFor_FromUntrustedSource_IsIgnored()
+    {
+        await using var factory = new ProxiedRateLimitedApiFactory();
+        var client = factory.CreateClient();
+
+        for (var i = 0; i < RateLimitedApiFactory.AuthLimit; i++)
+            Assert.NotEqual(HttpStatusCode.TooManyRequests,
+                (await Login(client, connectingIp: "203.0.113.50", forwardedFor: $"198.51.100.{i + 1}")).StatusCode);
+
+        var rejected = await Login(client, connectingIp: "203.0.113.50", forwardedFor: "198.51.100.99");
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, rejected.StatusCode);
+    }
+
+    [Fact]
+    public async Task ThroughTrustedProxies_LimitAppliesToClientIp_AndOtherClientsKeepTheirQuota()
+    {
+        await using var factory = new ProxiedRateLimitedApiFactory();
+        var client = factory.CreateClient();
+
+        for (var i = 0; i < RateLimitedApiFactory.AuthLimit; i++)
+            Assert.NotEqual(HttpStatusCode.TooManyRequests, (await ViaCloudflare(client, "198.51.100.9")).StatusCode);
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await ViaCloudflare(client, "198.51.100.9")).StatusCode);
+        Assert.NotEqual(HttpStatusCode.TooManyRequests, (await ViaCloudflare(client, "198.51.100.10")).StatusCode);
+    }
+
+    [Fact]
+    public async Task ThroughTrustedProxies_SpoofedLeftmostEntry_DoesNotGrantNewQuota()
+    {
+        await using var factory = new ProxiedRateLimitedApiFactory();
+        var client = factory.CreateClient();
+
+        for (var i = 0; i <= RateLimitedApiFactory.AuthLimit; i++)
+            await ViaCloudflare(client, "198.51.100.9", spoofedPrefix: $"203.0.113.{i + 1}");
+
+        var rejected = await ViaCloudflare(client, "198.51.100.9", spoofedPrefix: "203.0.113.200");
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, rejected.StatusCode);
+    }
+
+    // Cloudflare appends the visitor IP to X-Forwarded-For, then the ALB appends the Cloudflare edge IP.
+    private static Task<HttpResponseMessage> ViaCloudflare(HttpClient client, string clientIp, string? spoofedPrefix = null) =>
+        Login(client, ProxiedRateLimitedApiFactory.AlbIp,
+            string.Join(", ", new[] { spoofedPrefix, clientIp, ProxiedRateLimitedApiFactory.CloudflareIp }.Where(ip => ip is not null)));
+
+    private static Task<HttpResponseMessage> Login(HttpClient client, string connectingIp, string forwardedFor)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, LoginUrl)
+        {
+            Content = new StringContent(LoginBody, System.Text.Encoding.UTF8, "application/json")
+        };
+        request.Headers.Add(ProxiedRateLimitedApiFactory.ConnectingIpHeader, connectingIp);
+        request.Headers.Add("X-Forwarded-For", forwardedFor);
+        return client.SendAsync(request);
     }
 }
 

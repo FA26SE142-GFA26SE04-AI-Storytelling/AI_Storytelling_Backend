@@ -13,7 +13,7 @@ public class AuthoringGuideCatalogVersionConfiguration : IEntityTypeConfiguratio
 
         builder.Property(x => x.CatalogVersion).IsRequired().HasMaxLength(50);
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(30).IsRequired();
-        builder.Property(x => x.ContentJson).HasColumnType("jsonb").IsRequired();
+        builder.Property(x => x.ContentJson).HasColumnType("jsonb");
 
         // Bản nháp đã hủy (xóa mềm) không giữ chỗ số phiên bản / mã của nó; phiên bản đã phát hành không bao giờ bị xóa nên mã của chúng không bị tái sử dụng.
         builder.HasIndex(x => new { x.CatalogId, x.VersionNo }).IsUnique().HasFilter("NOT \"IsDeleted\"");

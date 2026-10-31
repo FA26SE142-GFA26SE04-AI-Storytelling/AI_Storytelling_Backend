@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "catalogVersion": "parent-vi-1",
   "locale": "vi",
   "items": [
@@ -199,9 +199,9 @@
       "example": null,
       "templateText": "Hôm ấy, {{person}} cùng {{companion}} thử {{activity}}.",
       "placeholderDefinitions": [
-        "person",
-        "companion",
-        "activity"
+        { "key": "person", "label": "Ai?", "hint": "ví dụ: bố, bé Na" },
+        { "key": "companion", "label": "Cùng với ai?", "hint": "ví dụ: mẹ, ông nội" },
+        { "key": "activity", "label": "Làm việc gì?", "hint": "ví dụ: làm bánh, đạp xe" }
       ],
       "order": 13
     },
@@ -221,9 +221,9 @@
       "example": null,
       "templateText": "Ở {{place}}, {{person}} đang {{activity}}.",
       "placeholderDefinitions": [
-        "place",
-        "person",
-        "activity"
+        { "key": "place", "label": "Ở đâu?", "hint": "ví dụ: công viên gần nhà" },
+        { "key": "person", "label": "Ai?", "hint": "ví dụ: bố, bé Na" },
+        { "key": "activity", "label": "Làm việc gì?", "hint": "ví dụ: làm bánh, đạp xe" }
       ],
       "order": 14
     },
@@ -243,7 +243,7 @@
       "example": null,
       "templateText": "Câu chuyện bắt đầu khi {{event}}.",
       "placeholderDefinitions": [
-        "event"
+        { "key": "event", "label": "Chuyện gì xảy ra?", "hint": "ví dụ: trời bỗng đổ mưa" }
       ],
       "order": 15
     },
@@ -263,8 +263,8 @@
       "example": null,
       "templateText": "Sau đó, {{person}} quyết định {{action}}.",
       "placeholderDefinitions": [
-        "person",
-        "action"
+        { "key": "person", "label": "Ai?", "hint": "ví dụ: bố, bé Na" },
+        { "key": "action", "label": "Nhân vật làm gì?", "hint": "ví dụ: chạy đi tìm ô" }
       ],
       "order": 16
     },
@@ -284,9 +284,9 @@
       "example": null,
       "templateText": "Khi {{event}}, {{person}} đã {{action}}.",
       "placeholderDefinitions": [
-        "event",
-        "person",
-        "action"
+        { "key": "event", "label": "Chuyện gì xảy ra?", "hint": "ví dụ: trời bỗng đổ mưa" },
+        { "key": "person", "label": "Ai?", "hint": "ví dụ: bố, bé Na" },
+        { "key": "action", "label": "Nhân vật làm gì?", "hint": "ví dụ: chạy đi tìm ô" }
       ],
       "order": 17
     },
@@ -306,7 +306,7 @@
       "example": null,
       "templateText": "Điều xảy ra tiếp theo là {{event}}.",
       "placeholderDefinitions": [
-        "event"
+        { "key": "event", "label": "Chuyện gì xảy ra?", "hint": "ví dụ: trời bỗng đổ mưa" }
       ],
       "order": 18
     },
@@ -326,9 +326,9 @@
       "example": null,
       "templateText": "{{person}} cảm thấy {{feeling}} khi {{event}}.",
       "placeholderDefinitions": [
-        "person",
-        "feeling",
-        "event"
+        { "key": "person", "label": "Ai?", "hint": "ví dụ: bố, bé Na" },
+        { "key": "feeling", "label": "Cảm thấy thế nào?", "hint": "ví dụ: vui sướng, hơi lo" },
+        { "key": "event", "label": "Chuyện gì xảy ra?", "hint": "ví dụ: trời bỗng đổ mưa" }
       ],
       "order": 19
     },
@@ -348,9 +348,9 @@
       "example": null,
       "templateText": "Nhìn thấy {{detail}}, {{person}} bỗng {{feeling}}.",
       "placeholderDefinitions": [
-        "detail",
-        "person",
-        "feeling"
+        { "key": "detail", "label": "Chi tiết nào?", "hint": "ví dụ: chiếc lá vàng trên tóc" },
+        { "key": "person", "label": "Ai?", "hint": "ví dụ: bố, bé Na" },
+        { "key": "feeling", "label": "Cảm thấy thế nào?", "hint": "ví dụ: vui sướng, hơi lo" }
       ],
       "order": 20
     },
@@ -370,8 +370,8 @@
       "example": null,
       "templateText": "{{person}} muốn nói rằng {{thought}}.",
       "placeholderDefinitions": [
-        "person",
-        "thought"
+        { "key": "person", "label": "Ai?", "hint": "ví dụ: bố, bé Na" },
+        { "key": "thought", "label": "Điều muốn nói là gì?", "hint": "ví dụ: con thật dũng cảm" }
       ],
       "order": 21
     },
@@ -391,8 +391,8 @@
       "example": null,
       "templateText": "{{person}} nói: “{{words}}”.",
       "placeholderDefinitions": [
-        "person",
-        "words"
+        { "key": "person", "label": "Ai?", "hint": "ví dụ: bố, bé Na" },
+        { "key": "words", "label": "Câu nói là gì?", "hint": "ví dụ: Mình cùng thử nhé!" }
       ],
       "order": 22
     },
@@ -412,8 +412,8 @@
       "example": null,
       "templateText": "“{{question}}”, {{person}} hỏi.",
       "placeholderDefinitions": [
-        "question",
-        "person"
+        { "key": "question", "label": "Câu hỏi là gì?", "hint": "ví dụ: Mình đi đâu thế ạ?" },
+        { "key": "person", "label": "Ai?", "hint": "ví dụ: bố, bé Na" }
       ],
       "order": 23
     },
@@ -433,8 +433,8 @@
       "example": null,
       "templateText": "{{person}} đáp: “{{words}}”.",
       "placeholderDefinitions": [
-        "person",
-        "words"
+        { "key": "person", "label": "Ai?", "hint": "ví dụ: bố, bé Na" },
+        { "key": "words", "label": "Câu nói là gì?", "hint": "ví dụ: Mình cùng thử nhé!" }
       ],
       "order": 24
     },
@@ -454,7 +454,7 @@
       "example": null,
       "templateText": "Một lúc sau, {{event}}.",
       "placeholderDefinitions": [
-        "event"
+        { "key": "event", "label": "Chuyện gì xảy ra?", "hint": "ví dụ: trời bỗng đổ mưa" }
       ],
       "order": 25
     },
@@ -474,8 +474,8 @@
       "example": null,
       "templateText": "Trong khi đó, {{person}} đang {{activity}}.",
       "placeholderDefinitions": [
-        "person",
-        "activity"
+        { "key": "person", "label": "Ai?", "hint": "ví dụ: bố, bé Na" },
+        { "key": "activity", "label": "Làm việc gì?", "hint": "ví dụ: làm bánh, đạp xe" }
       ],
       "order": 26
     },
@@ -495,7 +495,7 @@
       "example": null,
       "templateText": "Sáng hôm sau, {{event}}.",
       "placeholderDefinitions": [
-        "event"
+        { "key": "event", "label": "Chuyện gì xảy ra?", "hint": "ví dụ: trời bỗng đổ mưa" }
       ],
       "order": 27
     },
@@ -515,8 +515,8 @@
       "example": null,
       "templateText": "Cuối ngày, {{person}} nhớ nhất {{detail}}.",
       "placeholderDefinitions": [
-        "person",
-        "detail"
+        { "key": "person", "label": "Ai?", "hint": "ví dụ: bố, bé Na" },
+        { "key": "detail", "label": "Chi tiết nào?", "hint": "ví dụ: chiếc lá vàng trên tóc" }
       ],
       "order": 28
     },
@@ -536,7 +536,7 @@
       "example": null,
       "templateText": "Câu chuyện khép lại khi {{event}}.",
       "placeholderDefinitions": [
-        "event"
+        { "key": "event", "label": "Chuyện gì xảy ra?", "hint": "ví dụ: trời bỗng đổ mưa" }
       ],
       "order": 29
     },
@@ -556,8 +556,8 @@
       "example": null,
       "templateText": "{{person}} giữ lại {{detail}} như một kỷ niệm.",
       "placeholderDefinitions": [
-        "person",
-        "detail"
+        { "key": "person", "label": "Ai?", "hint": "ví dụ: bố, bé Na" },
+        { "key": "detail", "label": "Chi tiết nào?", "hint": "ví dụ: chiếc lá vàng trên tóc" }
       ],
       "order": 30
     }

@@ -51,31 +51,32 @@ Thay `{versionId}`, `{guideId}` bằng giá trị thực tế; các bước bên
   "instruction": "Điền chi tiết, xem trước rồi chủ động chèn vào bản thảo.",
   "example": null,
   "templateText": "Sáng nay, {{person}} thử {{activity}}.",
-  "placeholderDefinitions": ["person", "activity"],
+  "placeholderDefinitions": [{ "key": "person", "label": "Ai?", "hint": "ví dụ: An" }, { "key": "activity", "label": "Làm gì?", "hint": null }],
   "order": 31
 }
 ```
 → **200**, `itemCount` = 31, `revisionToken` mới = R2 (khác R1).
 9. Gửi lại đúng request ở bước 8 nhưng vẫn dùng R1 → **409** `GUIDE_REVISION_CONFLICT`. Gửi thiếu `revisionToken` → **400** `GUIDE_REVISION_TOKEN_REQUIRED`.
-10. Dữ liệu sai: `PUT .../draft/items/bad-1` với R2, `templateText` = `"Xin chào {{person}}"` nhưng `placeholderDefinitions` = `["place"]` → **400** `GUIDE_PLACEHOLDERS_MISMATCH`; sau đó `GET /api/v1/moderation/authoring-guides` cho thấy `revisionToken` vẫn là R2 (lỗi không làm đổi token).
-11. `DELETE /api/v1/moderation/authoring-guides/draft/items/khong-ton-tai?revisionToken=R2` → **404** `GUIDE_ITEM_NOT_FOUND`.
+10. Dữ liệu sai: `PUT .../draft/items/bad-1` với R2, `templateText` = `"Xin chào {{person}}"` nhưng `placeholderDefinitions` = `[{ "key": "place", "label": "Ở đâu?" }]` → **400** `GUIDE_PLACEHOLDERS_MISMATCH`; sau đó `GET /api/v1/moderation/authoring-guides` cho thấy `revisionToken` vẫn là R2 (lỗi không làm đổi token).
+11. Thiếu nhãn: `PUT .../draft/items/bad-2` với R2, body như bước 8 nhưng phần tử thứ hai là `{ "key": "activity", "label": null }` → **400** `GUIDE_PLACEHOLDER_LABEL_INVALID`; `revisionToken` vẫn là R2.
+12. `DELETE /api/v1/moderation/authoring-guides/draft/items/khong-ton-tai?revisionToken=R2` → **404** `GUIDE_ITEM_NOT_FOUND`.
 
 ## D. Xem trước
 
-12. `POST /api/v1/moderation/authoring-guides/draft/preview` với `{ "revisionToken": "R2", "purpose": "free", "pageIndex": 1, "pageSize": 100 }` → 200, `data.page.totalCount` = 22, `data.page.catalogVersion` = `parent-vi-2`, `data.revisionToken` vẫn là R2.
-13. Cùng API với `{ "revisionToken": "R2", "guideId": "opening-9", "values": { "person": "An", "activity": "đạp xe" } }` → `data.render.text` = `Sáng nay, An thử đạp xe.`. Thử `values` = `{ "person": "<b>An</b>", "activity": "{{person}}" }` → text giữ nguyên `<b>An</b>` và `{{person}}` (văn bản thuần, không diễn giải lại). Thiếu `activity` → **400** `PLACEHOLDER_VALUES_INVALID`.
+13. `POST /api/v1/moderation/authoring-guides/draft/preview` với `{ "revisionToken": "R2", "purpose": "free", "pageIndex": 1, "pageSize": 100 }` → 200, `data.page.totalCount` = 22, `data.page.catalogVersion` = `parent-vi-2`, `data.revisionToken` vẫn là R2.
+14. Cùng API với `{ "revisionToken": "R2", "guideId": "opening-9", "values": { "person": "An", "activity": "đạp xe" } }` → `data.render.text` = `Sáng nay, An thử đạp xe.`. Thử `values` = `{ "person": "<b>An</b>", "activity": "{{person}}" }` → text giữ nguyên `<b>An</b>` và `{{person}}` (văn bản thuần, không diễn giải lại). Thiếu `activity` → **400** `PLACEHOLDER_VALUES_INVALID`.
 
 ## E. Phát hành và phía Parent
 
-14. `POST /api/v1/moderation/authoring-guides/draft/publish` với `{ "revisionToken": "R2" }` (ADMIN_TOKEN cũng được) → **200**, `data.published.catalogVersion` = `parent-vi-2`, `status` = `Published`, `itemCount` = 31. Lưu `data.revisionToken` thành R3. Gọi lại với R2 → **409** `GUIDE_REVISION_CONFLICT`.
-15. Bên Parent: `GET /api/v1/authoring-guides?locale=vi&purpose=free&pageIndex=1&pageSize=100` → `catalogVersion` = `parent-vi-2`, `totalCount` = 22. `POST /api/v1/authoring-guides/opening-9/render` với `{ "values": { "person": "An", "activity": "đạp xe" } }` (không có `catalogVersion`) → 200, text như bước 13. Cùng API cho `dialogue-1` với `{ "values": { "person": "An", "words": "Chào" }, "catalogVersion": "parent-vi-1" }` → **409** `GUIDE_CATALOG_CHANGED`. Câu hỏi `free-start-1` → `POST .../free-start-1/render` → **400** `GUIDE_HAS_NO_TEMPLATE`.
-16. `GET /api/v1/moderation/authoring-guides/versions` → `totalCount` = 2 (`parent-vi-2` rồi `parent-vi-1`); phiên bản `parent-vi-1` vẫn là `Published` và `itemCount` = 30 (lịch sử không đổi).
+15. `POST /api/v1/moderation/authoring-guides/draft/publish` với `{ "revisionToken": "R2" }` (ADMIN_TOKEN cũng được) → **200**, `data.published.catalogVersion` = `parent-vi-2`, `status` = `Published`, `itemCount` = 31. Lưu `data.revisionToken` thành R3. Gọi lại với R2 → **409** `GUIDE_REVISION_CONFLICT`.
+16. Bên Parent: `GET /api/v1/authoring-guides?locale=vi&purpose=free&pageIndex=1&pageSize=100` → `catalogVersion` = `parent-vi-2`, `totalCount` = 22. `POST /api/v1/authoring-guides/opening-9/render` với `{ "values": { "person": "An", "activity": "đạp xe" } }` (không có `catalogVersion`) → 200, text như bước 14. Cùng API cho `dialogue-1` với `{ "values": { "person": "An", "words": "Chào" }, "catalogVersion": "parent-vi-1" }` → **409** `GUIDE_CATALOG_CHANGED`. Câu hỏi `free-start-1` → `POST .../free-start-1/render` → **400** `GUIDE_HAS_NO_TEMPLATE`.
+17. `GET /api/v1/moderation/authoring-guides/versions` → `totalCount` = 2 (`parent-vi-2` rồi `parent-vi-1`); phiên bản `parent-vi-1` vẫn là `Published` và `itemCount` = 30 (lịch sử không đổi).
 
 ## F. Hủy bản nháp và khôi phục
 
-17. `POST .../draft` → 201 (`parent-vi-3`, R4). `DELETE /api/v1/moderation/authoring-guides/draft?revisionToken=R4` → **200** (`discardedCatalogVersion` = `parent-vi-3`, token mới R5). `GET /api/v1/moderation/authoring-guides` → `draft` = `null`; `GET .../versions` → `totalCount` vẫn 2. `DELETE .../draft?revisionToken=R5` → **404** `GUIDE_DRAFT_NOT_FOUND`.
-18. Khôi phục phiên bản cũ: `POST .../draft` với `{ "sourceVersionId": V1 }` → 201, **`catalogVersion` = `parent-vi-3`** (số của bản đã hủy được dùng lại), `itemCount` = 30. `POST .../draft/publish` với token mới nhất → 200. Bên Parent: `catalogVersion` = `parent-vi-3`, `totalCount` = 21 (không còn `opening-9`).
-19. Bộ rỗng: tạo bản nháp, loại hết 30 mục (hoặc dùng bản sao nhỏ) rồi publish → **400** `GUIDE_CATALOG_EMPTY`; hủy bản nháp để dọn.
+18. `POST .../draft` → 201 (`parent-vi-3`, R4). `DELETE /api/v1/moderation/authoring-guides/draft?revisionToken=R4` → **200** (`discardedCatalogVersion` = `parent-vi-3`, token mới R5). `GET /api/v1/moderation/authoring-guides` → `draft` = `null`; `GET .../versions` → `totalCount` vẫn 2. `DELETE .../draft?revisionToken=R5` → **404** `GUIDE_DRAFT_NOT_FOUND`.
+19. Khôi phục phiên bản cũ: `POST .../draft` với `{ "sourceVersionId": V1 }` → 201, **`catalogVersion` = `parent-vi-3`** (số của bản đã hủy được dùng lại), `itemCount` = 30. `POST .../draft/publish` với token mới nhất → 200. Bên Parent: `catalogVersion` = `parent-vi-3`, `totalCount` = 21 (không còn `opening-9`).
+20. Bộ rỗng: tạo bản nháp, loại hết 30 mục (hoặc dùng bản sao nhỏ) rồi publish → **400** `GUIDE_CATALOG_EMPTY`; hủy bản nháp để dọn.
 
 ## Kiểm tra bổ sung
 

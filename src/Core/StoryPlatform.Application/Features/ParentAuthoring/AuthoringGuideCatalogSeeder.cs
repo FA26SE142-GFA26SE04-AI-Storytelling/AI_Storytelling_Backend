@@ -5,14 +5,12 @@ using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.ParentAuthoring;
 
-/// <summary>Định dạng của <see cref="AuthoringGuideCatalogVersion.ContentJson"/>.</summary>
-public sealed record AuthoringGuideCatalogContent(int SchemaVersion, AuthoringGuide[] Items);
-
 /// <summary>Nạp bộ hướng dẫn nhúng trong ứng dụng vào database đúng một lần; không bao giờ ghi đè dữ liệu đã có.</summary>
 public sealed class AuthoringGuideCatalogSeeder(IUnitOfWork uow)
 {
     public const string DefaultLocale = "vi";
     public const string DefaultAudience = "Parent";
+    public const int SchemaVersion = 2;
     private const int SeedLockResourceId = 0x41475344; // "AGSD"
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -22,9 +20,9 @@ public sealed class AuthoringGuideCatalogSeeder(IUnitOfWork uow)
             ?? throw new InvalidOperationException("Guide catalog missing");
         var catalog = JsonSerializer.Deserialize<GuideCatalog>(source, Json)
             ?? throw new InvalidOperationException("Guide catalog invalid");
-        if (catalog.SchemaVersion != 1 || catalog.Locale != DefaultLocale || string.IsNullOrWhiteSpace(catalog.CatalogVersion))
+        if (catalog.SchemaVersion != SchemaVersion || catalog.Locale != DefaultLocale || string.IsNullOrWhiteSpace(catalog.CatalogVersion))
             throw new InvalidOperationException("Guide catalog schema validation failed");
-        AuthoringGuideCatalogValidator.Validate(catalog.Items);
+        AuthoringGuideCatalogValidator.Validate(catalog.Items, requireLabels: true);
         return catalog;
     }
 
@@ -51,10 +49,10 @@ public sealed class AuthoringGuideCatalogSeeder(IUnitOfWork uow)
                 VersionNo = 1,
                 CatalogVersion = source.CatalogVersion,
                 Status = AuthoringGuideVersionStatus.Published,
-                ContentJson = JsonSerializer.Serialize(new AuthoringGuideCatalogContent(source.SchemaVersion, source.Items), Json),
                 PublishedAt = DateTime.UtcNow
             }, ct);
             await uow.SaveChangesAsync(ct);
+            await new AuthoringGuideItemStore(uow).AddAsync(version.Id, source.Items, () => uow.SaveChangesAsync(ct), ct);
 
             catalog.PublishedVersionId = version.Id;
             catalog.RevisionToken = Guid.NewGuid().ToString("N");

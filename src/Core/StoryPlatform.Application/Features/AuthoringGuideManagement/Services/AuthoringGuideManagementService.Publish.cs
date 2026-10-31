@@ -14,7 +14,7 @@ public sealed partial class AuthoringGuideManagementService
         var catalog = await LoadCatalogTrackedAsync(ct);
         RequireToken(catalog, request.RevisionToken);
         var draft = await LoadDraftTrackedAsync(catalog, ct);
-        var items = ReadContent(draft).Items;
+        var items = await _items.LoadAsync(draft.Id, catalog.AudienceRole, ct);
         AuthoringGuideCatalogValidator.Validate(items);
 
         if (!string.IsNullOrWhiteSpace(request.GuideId))
@@ -39,7 +39,7 @@ public sealed partial class AuthoringGuideManagementService
             RequireToken(catalog, request.RevisionToken);
             var draft = await LoadDraftTrackedAsync(catalog, ct);
 
-            var items = ReadContent(draft).Items;
+            var items = await _items.LoadAsync(draft.Id, catalog.AudienceRole, ct);
             if (items.Length == 0) throw new BadRequestException("GUIDE_CATALOG_EMPTY");
             AuthoringGuideCatalogValidator.Validate(items);
 

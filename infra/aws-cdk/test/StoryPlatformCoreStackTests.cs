@@ -350,4 +350,77 @@ public class StoryPlatformCoreStackTests
             ["FromPort"] = 8080
         })));
     }
+
+    [Fact]
+    public void Stack_ApiContainerTrustsForwardedHeadersOnlyFromVpcAndCloudflare()
+    {
+        var template = SynthTemplate();
+        var expected = new System.Collections.Generic.List<object>
+        {
+            Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["Name"] = "ForwardedHeaders__ForwardLimit",
+                ["Value"] = "2"
+            }),
+            Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["Name"] = "ForwardedHeaders__KnownNetworks__0",
+                ["Value"] = Match.AnyValue()
+            })
+        };
+        for (var i = 0; i < StoryPlatformCoreStack.CloudflareIpv4Ranges.Length; i++)
+        {
+            expected.Add(Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["Name"] = $"ForwardedHeaders__KnownNetworks__{i + 1}",
+                ["Value"] = StoryPlatformCoreStack.CloudflareIpv4Ranges[i]
+            }));
+        }
+
+        template.HasResourceProperties("AWS::ECS::TaskDefinition", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["ContainerDefinitions"] = Match.ArrayWith(new object[]
+            {
+                Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+                {
+                    ["Environment"] = Match.ArrayWith(expected.ToArray())
+                })
+            })
+        }));
+    }
+
+    [Fact]
+    public void Stack_AlbAcceptsPort80OnlyFromCloudflareRanges_WhenContextFlagEnabled()
+    {
+        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["includeEcsService"] = true
+        });
+
+        var cloudflareIngress = System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Select(
+            StoryPlatformCoreStack.CloudflareIpv4Ranges,
+            range => (object)Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["CidrIp"] = range,
+                ["FromPort"] = 80,
+                ["ToPort"] = 80,
+                ["IpProtocol"] = "tcp"
+            })));
+        template.HasResourceProperties("AWS::EC2::SecurityGroup", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["SecurityGroupIngress"] = Match.ArrayWith(cloudflareIngress)
+        }));
+
+        // Calling the ALB's DNS name directly must not work: port 80 is never opened to the whole internet.
+        var openToAnyone = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["CidrIp"] = "0.0.0.0/0",
+            ["FromPort"] = 80
+        });
+        Assert.ThrowsAny<System.Exception>(() => template.HasResourceProperties("AWS::EC2::SecurityGroup", Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["SecurityGroupIngress"] = Match.ArrayWith(new object[] { openToAnyone })
+        })));
+        Assert.ThrowsAny<System.Exception>(() => template.HasResourceProperties("AWS::EC2::SecurityGroupIngress", openToAnyone));
+    }
 }

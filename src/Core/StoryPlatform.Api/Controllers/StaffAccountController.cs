@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using StoryPlatform.Api.Extensions;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.Administration.DTOs;
 using StoryPlatform.Application.Features.Administration.Interfaces;
@@ -43,6 +45,7 @@ public class StaffAccountController : BaseApiController
 
     /// <summary>Cấp mã mời mới cho tài khoản chưa kích hoạt.</summary>
     [HttpPost("{userId:int}/resend-invite")]
+    [EnableRateLimiting(RateLimitPolicies.Auth)]
     public async Task<ActionResult<ApiResponse<StaffAccountDto>>> ResendInvite(
         int userId, CancellationToken cancellationToken)
     {

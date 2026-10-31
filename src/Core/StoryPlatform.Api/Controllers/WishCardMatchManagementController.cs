@@ -3,14 +3,21 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.WishCards;
 using StoryPlatform.Application.Features.WishCards.Interfaces;
+using StoryPlatform.Application.Features.WishCards.Services;
 
 namespace StoryPlatform.Api.Controllers;
 
-/// <summary>Moderator gắn thẻ ước cho truyện (thay AI cho tới khi có AI gắn thẻ tự động).</summary>
+/// <summary>Moderator quản lý thẻ ước và yêu cầu AI đối chiếu truyện với danh mục thẻ.</summary>
 [Authorize(Roles = "Moderator,Administrator")]
 [Route("api/v1/moderation/stories/{storyId:int}/wish-cards")]
 public sealed class WishCardMatchManagementController(IWishCardMatchService service) : BaseApiController
 {
+    [HttpPost("ai-match")]
+    public async Task<ActionResult<ApiResponse<StoryWishCardAiMatchResult>>> MatchWithAi(
+        int storyId, MatchStoryWishCardsRequestDto request, [FromServices] WishCardAiMatchService matcher, CancellationToken ct) =>
+        Ok(ApiResponse<StoryWishCardAiMatchResult>.Ok(
+            await matcher.MatchAsync(GetCurrentUserId(), storyId, request.StoryVersionId, ct)));
+
     [HttpGet]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<WishCardMatchDto>>>> List(int storyId, CancellationToken ct) =>
         Ok(ApiResponse<IReadOnlyList<WishCardMatchDto>>.Ok(await service.ListAsync(storyId, ct)));

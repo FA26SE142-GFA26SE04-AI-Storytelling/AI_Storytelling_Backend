@@ -9,6 +9,7 @@ public interface IParentStoryWishService
     Task<ParentWishDetailDto> GetAsync(int parentUserId, int wishId, CancellationToken ct = default);
     Task<ParentWishGenerationFormDto> GetGenerationFormAsync(int parentUserId, int wishId, CancellationToken ct = default);
     Task<ParentWishCreateStoryResultDto> CreateStoryAsync(int parentUserId, int wishId, SubmitAIStoryInputRequestDto request, CancellationToken ct = default);
+    Task<AIStoryInputProgressDto> GetGenerationProgressAsync(int parentUserId, int wishId, CancellationToken ct = default);
     Task<ParentWishDto> UseExistingAsync(int parentUserId, int wishId, UseExistingStoryRequestDto request, CancellationToken ct = default);
     Task<ParentWishDto> DeclineAsync(int parentUserId, int wishId, DeclineWishRequestDto request, CancellationToken ct = default);
 }

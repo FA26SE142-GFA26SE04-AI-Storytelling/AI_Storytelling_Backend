@@ -120,7 +120,7 @@ public sealed class GrayZoneHandlerTests
     [Fact]
     public async Task RejectsDifferentProvider()
     {
-        var client = new Client(Output()) { Provider = "OpenAI" };
+        var client = new Client(Output()) { Provider = "Gemini" };
         await Assert.ThrowsAsync<GrayZoneAiException>(() => Handler(client).HandleAsync(Request));
     }
 

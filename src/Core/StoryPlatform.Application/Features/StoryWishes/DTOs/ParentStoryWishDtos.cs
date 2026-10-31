@@ -18,6 +18,7 @@ public class ParentWishDto
     public string? DeclineReason { get; set; }
     public string? ResolutionNote { get; set; }
     public int? GeneratedStoryId { get; set; }
+    public int? GenerationRequestId { get; set; }
     public int? FulfilledStoryId { get; set; }
     public bool FulfilledWithExistingStory { get; set; }
     public DateTime? ResolvedAt { get; set; }

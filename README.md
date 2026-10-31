@@ -134,7 +134,7 @@ Xây dựng nền tảng kể chuyện thông minh trên nền tảng Web kết 
 - **Mã hóa mật khẩu:** BCrypt.Net-Next.
 - **Tài liệu hóa API:** Swagger / OpenAPI UI tích hợp Authorize Bearer Token.
 - **Logging & Bắt lỗi:** Global Exception Handling Middleware chuẩn hóa định dạng JSON phản hồi (`ApiResponse<T>`).
-- **Tích hợp AI (Roadmap):** LLM API (OpenAI/Anthropic/Gemini) với Prompt Engineering, Safety Guardrails, Text-to-Speech (TTS) & Image Generation.
+- **Tích hợp AI (Roadmap):** LLM API (Vertex AI / Gemini) với Prompt Engineering, Safety Guardrails, Text-to-Speech (TTS) & Image Generation.
 
 ---
 
@@ -151,7 +151,7 @@ Xây dựng nền tảng kể chuyện thông minh trên nền tảng Web kết 
 
 ## 5. Kiến trúc mã nguồn Backend (Backend Architecture)
 
-Backend được tổ chức theo hai boundary triển khai độc lập. Core không gọi OpenAI trực tiếp và AI không tham chiếu Domain/Infrastructure của Core:
+Backend được tổ chức theo hai boundary triển khai độc lập. Core gọi AI API cho LLM sinh và đánh giá nội dung; các provider ảnh/TTS của Phase 5 vẫn được gọi từ Core. AI không tham chiếu Domain/Infrastructure của Core:
 
 ```text
 AI_Storytelling_Backend/
@@ -167,7 +167,7 @@ AI_Storytelling_Backend/
 │   │   ├── StoryPlatform.AI.Api/                # Internal AI HTTP API
 │   │   ├── StoryPlatform.AI.Application/        # Generation/evaluation/refinement orchestration
 │   │   ├── StoryPlatform.AI.Domain/             # AI-specific domain model
-│   │   └── StoryPlatform.AI.Infrastructure/     # OpenAI adapter, prompt catalog, evaluators
+│   │   └── StoryPlatform.AI.Infrastructure/     # Vertex AI / Gemini adapter, prompt catalog, evaluators
 │   └── Shared/
 │       └── StoryPlatform.Contracts/              # Core ↔ AI request/response contracts
 └── tests/                                        # Core/AI unit và integration tests
@@ -215,12 +215,20 @@ Tạo file cấu hình local `src/Core/StoryPlatform.Api/appsettings.json` (file
 }
 ```
 
+> **Bắt buộc:** `AI:InternalApiKey` (AI service) và `AIService:InternalApiKey` (Core) phải có **cùng giá trị**.
+> AI service **từ chối khởi động** nếu thiếu credential ở mọi môi trường trừ Development; ở Development
+> thiếu credential thì các endpoint generation trả `503` thay vì phục vụ công khai.
+
 AI Service đọc cấu hình nhạy cảm từ environment variables:
 
 ```powershell
 $env:AI__InternalApiKey = "local-internal-key"
-$env:AI__OpenAI__ApiKey = "your-api-key"
-$env:AI__OpenAI__Model = "gpt-5-mini"
+$env:AIService__InternalApiKey = "local-internal-key"
+$env:AI__Provider = "Vertex"
+$env:AI__Google__AuthMode = "Adc"
+$env:AI__Google__ProjectId = "your-gcp-project-id"
+$env:AI__Google__Location = "global"
+$env:AI__Google__Model = "gemini-3.8-flash"
 ```
 
 #### Giới hạn tần suất (rate limiting)

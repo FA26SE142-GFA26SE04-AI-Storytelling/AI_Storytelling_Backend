@@ -26,7 +26,7 @@ public class ParentWishesControllerTests
     };
 
     [Fact]
-    public void Controller_IsForParents_WithTheSixDocumentedRoutes()
+    public void Controller_IsForParents_WithTheSevenDocumentedRoutes()
     {
         var type = typeof(ParentWishesController);
         var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
@@ -34,10 +34,11 @@ public class ParentWishesControllerTests
 
         Assert.Equal("User", type.GetCustomAttribute<AuthorizeAttribute>()!.Roles);
         Assert.Equal("api/v1/parent/wishes", type.GetCustomAttribute<RouteAttribute>(inherit: false)!.Template);
-        Assert.Equal(new[] { "CreateStory", "Decline", "Get", "GetGenerationForm", "List", "UseExisting" }, methods);
+        Assert.Equal(new[] { "CreateStory", "Decline", "Get", "GetGenerationForm", "GetGenerationProgress", "List", "UseExisting" }, methods);
         Assert.Null(type.GetMethod("List")!.GetCustomAttribute<HttpGetAttribute>()!.Template);
         Assert.Equal("{wishId:int}", type.GetMethod("Get")!.GetCustomAttribute<HttpGetAttribute>()!.Template);
         Assert.Equal("{wishId:int}/generation-form", type.GetMethod("GetGenerationForm")!.GetCustomAttribute<HttpGetAttribute>()!.Template);
+        Assert.Equal("{wishId:int}/generation", type.GetMethod("GetGenerationProgress")!.GetCustomAttribute<HttpGetAttribute>()!.Template);
         Assert.Equal("{wishId:int}/create-story", type.GetMethod("CreateStory")!.GetCustomAttribute<HttpPostAttribute>()!.Template);
         Assert.Equal("{wishId:int}/use-existing", type.GetMethod("UseExisting")!.GetCustomAttribute<HttpPostAttribute>()!.Template);
         Assert.Equal("{wishId:int}/decline", type.GetMethod("Decline")!.GetCustomAttribute<HttpPostAttribute>()!.Template);

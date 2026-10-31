@@ -8,6 +8,9 @@ public interface IChildRoadmapService
     Task<WishRoadmapResultDto> AddForWishAsync(
         int actorUserId, int childProfileId, int storyId, CancellationToken cancellationToken = default);
 
+    Task<WishRoadmapResultDto> AddForWishAsync(
+        int actorUserId, int childProfileId, int storyId, int wishId, CancellationToken cancellationToken = default);
+
     Task<ChildRoadmapDto> RemoveAsync(
         int actorUserId, int childProfileId, int itemId, CancellationToken cancellationToken = default);
 

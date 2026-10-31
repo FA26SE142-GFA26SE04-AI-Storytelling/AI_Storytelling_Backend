@@ -1,4 +1,5 @@
--- 64. story_wish_card_matches (5): Moderator gan the uoc cho truyen (tam thay AI, WF-L2D UC-L2D-03).
+-- 64. story_wish_card_matches (5): Moderator gan the uoc cho truyen (WF-L2D UC-L2D-03).
+-- Source=Ai mappings are created by the real ai-match API, not fabricated by this fixture.
 -- Truyen 1: Chu meo, Khu rung, Bi lac duong. Truyen 3: Co be phi hanh gia, Truong hoc.
 INSERT INTO story_wish_card_matches ("Id", "StoryId", "WishCardId", "Source", "CreatedByUserId", "CreatedAt", "IsDeleted")
 VALUES

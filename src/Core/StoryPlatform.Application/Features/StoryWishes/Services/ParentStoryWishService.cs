@@ -96,7 +96,8 @@ public class ParentStoryWishService : IParentStoryWishService
                 Lesson = lesson,
                 VocabularyLevel = context.DefaultVocabularyLevel,
                 Language = context.DefaultLanguage,
-                TargetLength = context.MaximumLength,
+                TargetLength = context.RecommendedTargetLength > 0
+                    ? Math.Min(context.RecommendedTargetLength, context.MaximumLength) : context.MaximumLength,
                 OutputMode = "learning",
                 ChildProfileId = wish.ChildProfileId,
                 IdempotencyKey = StoryWishDecisionPolicy.GenerationKey(wish.Id)
@@ -108,31 +109,44 @@ public class ParentStoryWishService : IParentStoryWishService
         int parentUserId, int wishId, SubmitAIStoryInputRequestDto request, CancellationToken ct = default)
     {
         var wish = await RequireAsync(parentUserId, wishId, ct);
-        EnsurePending(wish);
+        if (wish.Status != StoryWishStatus.Pending &&
+            !((wish.Status is StoryWishStatus.Accepted or StoryWishStatus.Fulfilled) &&
+                wish.ResolvedByUserId == parentUserId && wish.GenerationRequestId.HasValue && wish.GeneratedStoryId.HasValue))
+            throw new ConflictException(StoryWishDecisionPolicy.AlreadyHandledMessage);
         if (request.ChildProfileId != wish.ChildProfileId)
         {
             throw new BadRequestException(StoryWishDecisionPolicy.ChildMismatchMessage);
         }
 
-        // Luồng sinh truyện (WF-L2A) tự kiểm tra lượt, guardrail và chống gửi trùng theo IdempotencyKey.
-        var progress = await _aiInput.SubmitAsync(parentUserId, request, ct);
-
-        var before = new { status = wish.Status.ToString() };
-        wish.Status = StoryWishStatus.Accepted;
-        wish.GeneratedStoryId = progress.StoryId;
-        wish.GenerationRequestId = progress.RequestId;
-        wish.ResolvedByUserId = parentUserId;
-        wish.UpdatedAt = Now();
-        _unitOfWork.Repository<StoryWish>().Update(wish);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogWriter.LogAsync(parentUserId, "StoryWishAccepted", nameof(StoryWish), wish.Id, before,
-            new { status = wish.Status.ToString(), generatedStoryId = progress.StoryId, requestId = progress.RequestId }, ct);
+        if (request.ExistingStoryId.HasValue || request.CreatorAudience is not null)
+            throw new BadRequestException("WISH_REQUIRES_NEW_PARENT_STORY");
+        // The input service owns atomic wish/request creation and the server-chosen idempotency key.
+        var progress = await _aiInput.SubmitAsync(parentUserId, new SubmitAIStoryInputRequestDto
+        {
+            ChildProfileId = wish.ChildProfileId, SourceWishId = wish.Id,
+            IdempotencyKey = StoryWishDecisionPolicy.GenerationKey(wish.Id),
+            Topic = request.Topic, Genre = request.Genre, CharacterMode = request.CharacterMode, Characters = request.Characters,
+            SettingMode = request.SettingMode, Setting = request.Setting, Lesson = request.Lesson,
+            VocabularyLevel = request.VocabularyLevel, Language = request.Language, TargetLength = request.TargetLength,
+            OutputMode = request.OutputMode
+        }, ct);
+        wish = await RequireAsync(parentUserId, wishId, ct);
+        if (wish.GeneratedStoryId != progress.StoryId || wish.GenerationRequestId != progress.RequestId)
+            throw new ConflictException("WISH_GENERATION_LINK_CONFLICT");
 
         return new ParentWishCreateStoryResultDto
         {
             Wish = (await ToDtosAsync(new[] { wish }, ct)).Single(),
             Generation = progress
         };
+    }
+
+    public async Task<AIStoryInputProgressDto> GetGenerationProgressAsync(int parentUserId, int wishId, CancellationToken ct = default)
+    {
+        var wish = await RequireAsync(parentUserId, wishId, ct);
+        if (wish.GeneratedStoryId is not int storyId || wish.GenerationRequestId is not int requestId)
+            throw new ConflictException("WISH_GENERATION_NOT_STARTED");
+        return await _aiInput.GetProgressAsync(parentUserId, storyId, requestId, ct);
     }
 
     public async Task<ParentWishDto> UseExistingAsync(
@@ -155,20 +169,8 @@ public class ParentStoryWishService : IParentStoryWishService
         }
 
         // Lộ trình tự kiểm ApproveStory, kiểm truyện hợp với bé, chèn "Đọc tiếp theo" (WF-L4A UC-04).
-        await _roadmap.AddForWishAsync(parentUserId, wish.ChildProfileId, suggestion.StoryId, ct);
-
-        var now = Now();
-        wish.Status = StoryWishStatus.Fulfilled;
-        wish.FulfilledStoryId = suggestion.StoryId;
-        wish.FulfilledWithExistingStory = true;
-        wish.ResolvedByUserId = parentUserId;
-        wish.ResolvedAt = now;
-        wish.UpdatedAt = now;
-        _unitOfWork.Repository<StoryWish>().Update(wish);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogWriter.LogAsync(parentUserId, "StoryWishFulfilledWithExistingStory", nameof(StoryWish), wish.Id,
-            new { status = StoryWishStatus.Pending.ToString() },
-            new { status = wish.Status.ToString(), storyId = suggestion.StoryId, rank }, ct);
+        await _roadmap.AddForWishAsync(parentUserId, wish.ChildProfileId, suggestion.StoryId, wish.Id, ct);
+        wish = await RequireAsync(parentUserId, wishId, ct);
         return (await ToDtosAsync(new[] { wish }, ct)).Single();
     }
 
@@ -176,32 +178,45 @@ public class ParentStoryWishService : IParentStoryWishService
         int parentUserId, int wishId, DeclineWishRequestDto request, CancellationToken ct = default)
     {
         var wish = await RequireAsync(parentUserId, wishId, ct);
-        if (!IsWaiting(wish))
+        await _unitOfWork.BeginTransactionAsync(ct);
+        try
         {
-            throw new ConflictException(StoryWishDecisionPolicy.AlreadyHandledMessage);
-        }
+            await _unitOfWork.AcquireTransactionLockAsync(-wish.ChildProfileId, ct);
+            wish = await RequireAsync(parentUserId, wishId, ct);
+            if (!IsWaiting(wish))
+            {
+                throw new ConflictException(StoryWishDecisionPolicy.AlreadyHandledMessage);
+            }
 
-        var reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim();
-        if (reason is { Length: > StoryWishDecisionPolicy.MaxDeclineReasonLength })
+            var reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim();
+            if (reason is { Length: > StoryWishDecisionPolicy.MaxDeclineReasonLength })
+            {
+                throw new BadRequestException(StoryWishDecisionPolicy.ReasonTooLongMessage);
+            }
+
+            var wasAccepted = wish.Status == StoryWishStatus.Accepted;
+            var before = new { status = wish.Status.ToString() };
+            var now = Now();
+            wish.Status = StoryWishStatus.Declined;
+            wish.DeclineReason = reason;
+            wish.ResolutionNote = wasAccepted ? StoryWishDecisionPolicy.NoteParentCancelled : null;
+            wish.ResolvedByUserId = parentUserId;
+            wish.ResolvedAt = now;
+            wish.UpdatedAt = now;
+            _unitOfWork.Repository<StoryWish>().Update(wish);
+            await _unitOfWork.SaveChangesAsync(ct);
+            // Chỉ ghi "có lý do hay không": nội dung lý do có thể chứa thông tin riêng về bé.
+            await _auditLogWriter.LogAsync(parentUserId, "StoryWishDeclined", nameof(StoryWish), wish.Id, before,
+                new { status = wish.Status.ToString(), note = wish.ResolutionNote, hasReason = reason != null }, ct);
+            await _unitOfWork.CommitTransactionAsync(ct);
+            return (await ToDtosAsync(new[] { wish }, ct)).Single();
+        }
+        catch
         {
-            throw new BadRequestException(StoryWishDecisionPolicy.ReasonTooLongMessage);
+            await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+            _unitOfWork.DiscardTrackedChanges();
+            throw;
         }
-
-        var wasAccepted = wish.Status == StoryWishStatus.Accepted;
-        var before = new { status = wish.Status.ToString() };
-        var now = Now();
-        wish.Status = StoryWishStatus.Declined;
-        wish.DeclineReason = reason;
-        wish.ResolutionNote = wasAccepted ? StoryWishDecisionPolicy.NoteParentCancelled : null;
-        wish.ResolvedByUserId = parentUserId;
-        wish.ResolvedAt = now;
-        wish.UpdatedAt = now;
-        _unitOfWork.Repository<StoryWish>().Update(wish);
-        await _unitOfWork.SaveChangesAsync(ct);
-        // Chỉ ghi "có lý do hay không": nội dung lý do có thể chứa thông tin riêng về bé.
-        await _auditLogWriter.LogAsync(parentUserId, "StoryWishDeclined", nameof(StoryWish), wish.Id, before,
-            new { status = wish.Status.ToString(), note = wish.ResolutionNote, hasReason = reason != null }, ct);
-        return (await ToDtosAsync(new[] { wish }, ct)).Single();
     }
 
     private DateTime Now() => _clock.GetUtcNow().UtcDateTime;
@@ -212,7 +227,8 @@ public class ParentStoryWishService : IParentStoryWishService
     /// <summary>Điều ước đã gửi (không phải bản nháp) và người gọi có ApproveStory trên đúng bé.</summary>
     private async Task<StoryWish> RequireAsync(int parentUserId, int wishId, CancellationToken ct)
     {
-        var wish = await _unitOfWork.Repository<StoryWish>().GetByIdAsync(wishId, ct);
+        var wish = await _unitOfWork.Repository<StoryWish>().FirstOrDefaultAsync(
+            x => x.Id == wishId && !x.IsDeleted, cancellationToken: ct);
         if (wish == null || wish.IsDeleted || wish.Status == StoryWishStatus.Draft)
         {
             throw new NotFoundException("Điều ước", wishId);
@@ -269,6 +285,7 @@ public class ParentStoryWishService : IParentStoryWishService
             DeclineReason = wish.DeclineReason,
             ResolutionNote = wish.ResolutionNote,
             GeneratedStoryId = wish.GeneratedStoryId,
+            GenerationRequestId = wish.GenerationRequestId,
             FulfilledStoryId = wish.FulfilledStoryId,
             FulfilledWithExistingStory = wish.FulfilledWithExistingStory,
             ResolvedAt = wish.ResolvedAt

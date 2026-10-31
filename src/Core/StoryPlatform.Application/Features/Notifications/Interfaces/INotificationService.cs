@@ -8,6 +8,10 @@ public interface INotificationService
     Task<NotificationDto> CreateAsync(
         int recipientUserId, NotificationType type, string? payload, CancellationToken cancellationToken = default);
 
+    /// <summary>Persist only; an enclosing workflow publishes realtime after its transaction commits.</summary>
+    Task<NotificationDto> CreateStoredAsync(
+        int recipientUserId, NotificationType type, string? payload, CancellationToken cancellationToken = default);
+
     Task<List<NotificationDto>> ListAsync(int currentUserId, CancellationToken cancellationToken = default);
     Task<List<NotificationDto>> ListAsync(
         int currentUserId, string? group, CancellationToken cancellationToken);

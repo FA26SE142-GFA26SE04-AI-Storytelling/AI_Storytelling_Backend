@@ -23,13 +23,16 @@ public static class ServiceExtensions
 
     public const string ForwardedHeadersKnownNetworksKey = "ForwardedHeaders:KnownNetworks";
     public const string ForwardedHeadersForwardLimitKey = "ForwardedHeaders:ForwardLimit";
+    public const string ForwardedHeadersForwardedForHeaderNameKey = "ForwardedHeaders:ForwardedForHeaderName";
     private const int DefaultForwardLimit = 2;
 
     /// <summary>
-    /// Production: client → Cloudflare → ALB (trong VPC) → API (xem infra/aws-cdk). Chỉ tin X-Forwarded-For/Proto
-    /// khi hop gửi tới nằm trong "ForwardedHeaders:KnownNetworks" (dải VPC của ALB + dải IP Cloudflare), tối đa
-    /// "ForwardedHeaders:ForwardLimit" hop (mặc định 2: ALB rồi Cloudflare) để RemoteIpAddress là IP client thật,
-    /// dùng cho rate limiter và khóa quét sai Easy Login. Không cấu hình dải nào (local/compose) thì bỏ qua header.
+    /// Chỉ tin header IP client/Proto khi hop gửi tới nằm trong "ForwardedHeaders:KnownNetworks" (CIDR), lùi tối đa
+    /// "ForwardedHeaders:ForwardLimit" hop, để RemoteIpAddress là IP client thật cho rate limiter và khóa quét sai
+    /// Easy Login. "ForwardedHeaders:ForwardedForHeaderName" đổi header chứa IP client (mặc định X-Forwarded-For).
+    /// Production: client → Cloudflare → cloudflared (sidecar cùng task, gọi qua loopback) → API, nên CDK đặt
+    /// KnownNetworks = loopback, ForwardLimit = 1 và đọc CF-Connecting-IP (xem infra/aws-cdk).
+    /// Không cấu hình dải nào (local/compose) thì bỏ qua header.
     /// </summary>
     public static IServiceCollection AddLoadBalancerForwardedHeaders(this IServiceCollection services, IConfiguration configuration)
     {
@@ -39,6 +42,8 @@ public static class ServiceExtensions
         {
             throw new InvalidOperationException($"'{ForwardedHeadersForwardLimitKey}' phải là số nguyên dương.");
         }
+
+        var forwardedForHeaderName = configuration[ForwardedHeadersForwardedForHeaderNameKey]?.Trim();
 
         services.Configure<ForwardedHeadersOptions>(options =>
         {
@@ -52,6 +57,10 @@ public static class ServiceExtensions
 
             options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
             options.ForwardLimit = forwardLimit;
+            if (!string.IsNullOrEmpty(forwardedForHeaderName))
+            {
+                options.ForwardedForHeaderName = forwardedForHeaderName;
+            }
             foreach (var network in knownNetworks)
             {
                 options.KnownIPNetworks.Add(network);

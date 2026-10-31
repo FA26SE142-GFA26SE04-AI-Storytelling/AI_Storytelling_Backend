@@ -2,7 +2,6 @@ using Amazon.CDK;
 using Amazon.CDK.AWS.EC2;
 using Amazon.CDK.AWS.ECR;
 using Amazon.CDK.AWS.ECS;
-using Amazon.CDK.AWS.ElasticLoadBalancingV2;
 using Amazon.CDK.AWS.IAM;
 using Amazon.CDK.AWS.Logs;
 using Amazon.CDK.AWS.RDS;
@@ -13,28 +12,8 @@ namespace StoryPlatform.Infra;
 
 public sealed class StoryPlatformCoreStack : Stack
 {
-    // Published Cloudflare edge ranges (https://www.cloudflare.com/ips/, IPv4 list as of 2026-10-31). The domain
-    // is proxied through Cloudflare, so these are the only sources the ALB accepts, and - together with the VPC
-    // range of the ALB itself - the only hops whose X-Forwarded-For the API trusts. The ALB is IPv4-only, so
-    // Cloudflare always reaches it over IPv4. Re-check this list when Cloudflare announces a change.
-    public static readonly string[] CloudflareIpv4Ranges =
-    {
-        "173.245.48.0/20",
-        "103.21.244.0/22",
-        "103.22.200.0/22",
-        "103.31.4.0/22",
-        "141.101.64.0/18",
-        "108.162.192.0/18",
-        "190.93.240.0/20",
-        "188.114.96.0/20",
-        "197.234.240.0/22",
-        "198.41.128.0/17",
-        "162.158.0.0/15",
-        "104.16.0.0/13",
-        "104.24.0.0/14",
-        "172.64.0.0/13",
-        "131.0.72.0/22"
-    };
+    // Cloudflare Tunnel connector, pinned to a release that is at least a few weeks old (multi-arch, includes arm64).
+    public const string CloudflaredImage = "cloudflare/cloudflared:2026.9.3";
 
     public IVpc Vpc { get; }
     public DatabaseInstance Database { get; }
@@ -217,15 +196,13 @@ public sealed class StoryPlatformCoreStack : Stack
             ["Logging__LogLevel__Default"] = "Warning",
             ["SeedData__RunOnStartup"] = seedDatabaseOnStart ? "true" : "false",
             ["FixMigrationHistory__RunOnStartup"] = fixMigrationHistoryOnStart ? "true" : "false",
-            // Trusted proxy hops for X-Forwarded-For (ALB inside the VPC, then Cloudflare): see
-            // AddLoadBalancerForwardedHeaders in StoryPlatform.Api. Cloudflare ranges follow below.
-            ["ForwardedHeaders__ForwardLimit"] = "2",
-            ["ForwardedHeaders__KnownNetworks__0"] = Vpc.VpcCidrBlock
+            // The only hop in front of the API is the cloudflared sidecar below, which calls it over loopback and
+            // forwards Cloudflare's CF-Connecting-IP (the visitor IP). See AddLoadBalancerForwardedHeaders.
+            ["ForwardedHeaders__KnownNetworks__0"] = "127.0.0.1/32",
+            ["ForwardedHeaders__KnownNetworks__1"] = "::1/128",
+            ["ForwardedHeaders__ForwardLimit"] = "1",
+            ["ForwardedHeaders__ForwardedForHeaderName"] = "CF-Connecting-IP"
         };
-        for (var i = 0; i < CloudflareIpv4Ranges.Length; i++)
-        {
-            apiEnvironment[$"ForwardedHeaders__KnownNetworks__{i + 1}"] = CloudflareIpv4Ranges[i];
-        }
 
         var apiContainer = ApiTaskDefinition.AddContainer("ApiContainer", new ContainerDefinitionOptions
         {
@@ -253,15 +230,41 @@ public sealed class StoryPlatformCoreStack : Stack
         });
         apiContainer.AddPortMappings(new PortMapping { ContainerPort = 8080, Protocol = Amazon.CDK.AWS.ECS.Protocol.TCP });
 
+        // Public entry point: a remotely-managed Cloudflare Tunnel whose public hostname (api.taletale.site) routes
+        // to http://localhost:8080. cloudflared dials out to Cloudflare, so the task needs no inbound rule and no
+        // load balancer, and its changing public IP no longer matters. During a rolling deploy both tasks keep a
+        // connector on the same tunnel, so traffic moves over without downtime. The token is the
+        // "CloudflareTunnelToken" key of AppSecrets, added by hand like the other REPLACE_ME keys (it is deliberately
+        // not in the generated template: changing that template would regenerate the whole secret).
+        var tunnelContainer = ApiTaskDefinition.AddContainer("CloudflaredContainer", new ContainerDefinitionOptions
+        {
+            Image = ContainerImage.FromRegistry(CloudflaredImage),
+            // The image's entrypoint is "cloudflared --no-autoupdate"; "tunnel run" reads TUNNEL_TOKEN.
+            Command = new[] { "tunnel", "run" },
+            Logging = LogDriver.AwsLogs(new AwsLogDriverProps { StreamPrefix = "cloudflared", LogGroup = ApiLogGroup }),
+            Secrets = new System.Collections.Generic.Dictionary<string, Amazon.CDK.AWS.ECS.Secret>
+            {
+                ["TUNNEL_TOKEN"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "CloudflareTunnelToken")
+            },
+            Essential = true
+        });
+        // Register the connector only once the API is healthy; ECS also stops containers in reverse dependency
+        // order, so on shutdown cloudflared drains first and the API keeps serving in-flight requests.
+        tunnelContainer.AddContainerDependencies(new ContainerDependency
+        {
+            Container = apiContainer,
+            Condition = ContainerDependencyCondition.HEALTHY
+        });
+
         ApiTaskSecurityGroup = new SecurityGroup(this, "ApiTaskSecurityGroup", new SecurityGroupProps
         {
             Vpc = Vpc,
             Description = "Security group for the Core API ECS Fargate task",
             AllowAllOutbound = true
         });
-        // No direct-from-internet ingress rule here: once includeEcsService is on, only the ALB
-        // (below) may reach the task on 8080 - tightened from the previous "Peer.AnyIpv4()" rule
-        // now that the ALB, not the task's own ephemeral public IP, is the public entry point.
+        // No ingress rule at all: traffic arrives through the outbound Cloudflare Tunnel connection, so nothing on
+        // the internet (or in the VPC) can reach the task's port 8080 directly. The public IP is only for outbound
+        // calls (Cloudflare, ECR/Docker Hub, AI providers), since the VPC has no NAT gateway.
 
         Database.Connections.AllowFrom(ApiTaskSecurityGroup, Port.Tcp(5432), "Allow ECS API task to reach RDS");
 
@@ -362,62 +365,6 @@ public sealed class StoryPlatformCoreStack : Stack
                 Actions = new[] { "ecs:UpdateService", "ecs:DescribeServices" },
                 Resources = new[] { ApiService.ServiceArn }
             }));
-
-            // Stable public entry point for a custom domain. A Fargate awsvpc task gets a brand
-            // new ENI (and public IP) on every deploy/restart, so a domain can't point at the
-            // task directly; the ALB's DNS name never changes. (An EIP re-associated onto the
-            // task's ENI by a Lambda was tried first and would have been cheaper, but this
-            // account's org-level SCP blocks ec2:AssociateAddress outright - confirmed via
-            // AuthFailure on that call even with an admin-privileged IAM principal - so the ALB
-            // is the only viable option here despite its ~$16-20/month fixed cost.)
-            var apiAlb = new ApplicationLoadBalancer(this, "ApiAlb", new ApplicationLoadBalancerProps
-            {
-                Vpc = Vpc,
-                InternetFacing = true,
-                VpcSubnets = new SubnetSelection { SubnetType = SubnetType.PUBLIC }
-            });
-
-            ApiTaskSecurityGroup.Connections.AllowFrom(apiAlb, Port.Tcp(8080), "Allow ALB to reach Core API");
-
-            // Not Open: only Cloudflare may reach the ALB, so nobody can bypass Cloudflare (and its client-IP
-            // header) by calling the ALB's DNS name directly.
-            var apiListener = apiAlb.AddListener("HttpListener", new BaseApplicationListenerProps
-            {
-                Port = 80,
-                Open = false
-            });
-            foreach (var cloudflareRange in CloudflareIpv4Ranges)
-            {
-                apiAlb.Connections.AllowFrom(Peer.Ipv4(cloudflareRange), Port.Tcp(80), "Allow Cloudflare edge to reach the ALB");
-            }
-
-            apiListener.AddTargets("ApiTargets", new AddApplicationTargetsProps
-            {
-                Port = 8080,
-                Protocol = ApplicationProtocol.HTTP,
-                Targets = new IApplicationLoadBalancerTarget[]
-                {
-                    ApiService.LoadBalancerTarget(new LoadBalancerTargetOptions
-                    {
-                        ContainerName = "ApiContainer",
-                        ContainerPort = 8080
-                    })
-                },
-                HealthCheck = new Amazon.CDK.AWS.ElasticLoadBalancingV2.HealthCheck
-                {
-                    Path = "/health",
-                    Interval = Duration.Seconds(30),
-                    Timeout = Duration.Seconds(5),
-                    HealthyThresholdCount = 2,
-                    UnhealthyThresholdCount = 5
-                }
-            });
-
-            new CfnOutput(this, "ApiAlbDnsNameOutput", new CfnOutputProps
-            {
-                Value = apiAlb.LoadBalancerDnsName,
-                Description = "Point your domain's DNS record (CNAME/ALIAS) here"
-            });
         }
     }
 }

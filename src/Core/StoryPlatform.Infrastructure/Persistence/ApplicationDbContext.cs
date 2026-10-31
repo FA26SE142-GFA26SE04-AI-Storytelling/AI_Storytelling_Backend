@@ -75,7 +75,6 @@ public class ApplicationDbContext : DbContext
     public DbSet<InterventionCase> InterventionCases => Set<InterventionCase>();
     public DbSet<AiGovernanceMetric> AiGovernanceMetrics => Set<AiGovernanceMetric>();
     public DbSet<BusinessReport> BusinessReports => Set<BusinessReport>();
-    public DbSet<DataRequest> DataRequests => Set<DataRequest>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<LearningInsight> LearningInsights => Set<LearningInsight>();
     public DbSet<Recommendation> Recommendations => Set<Recommendation>();

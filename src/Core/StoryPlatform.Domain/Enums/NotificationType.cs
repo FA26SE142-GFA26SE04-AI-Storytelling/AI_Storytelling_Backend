@@ -16,8 +16,6 @@ public enum NotificationType
     AccountSecurityChanged = 8,
     HoldModeAlert = 9,
     RecommendationAwaitingReview = 10,
-    DataRequestSlaWarning = 11,
-    DataRequestCompleted = 12,
     AdminRoleChanged = 13,
     ContentReported = 14,
     ModerationSlaWarning = 15,

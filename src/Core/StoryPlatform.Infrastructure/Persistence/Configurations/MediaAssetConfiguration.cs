@@ -26,6 +26,12 @@ public class MediaAssetConfiguration : IEntityTypeConfiguration<MediaAsset>
             table.HasCheckConstraint(
                 "CK_media_assets_vocabulary_required_for_vocabulary_audio",
                 "\"Type\" <> 'VocabularyAudio' OR \"StoryVocabularyId\" IS NOT NULL");
+            table.HasCheckConstraint(
+                "CK_media_assets_interaction_required_for_listening_audio",
+                "\"Type\" <> 'ListeningAudio' OR \"ListeningInteractionId\" IS NOT NULL");
+            table.HasCheckConstraint(
+                "CK_media_assets_option_required_for_listening_image",
+                "\"Type\" <> 'ListeningImage' OR \"ListeningInteractionOptionId\" IS NOT NULL");
         });
 
         builder.HasKey(x => x.Id);
@@ -82,6 +88,20 @@ public class MediaAssetConfiguration : IEntityTypeConfiguration<MediaAsset>
             .WithMany()
             .HasForeignKey(x => x.StoryVocabularyId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(x => x.ListeningInteraction)
+            .WithMany()
+            .HasForeignKey(x => x.ListeningInteractionId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(x => x.ListeningInteractionOption)
+            .WithMany()
+            .HasForeignKey(x => x.ListeningInteractionOptionId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Property(x => x.AudioPartKey).HasMaxLength(30);
+        builder.HasIndex(x => x.ListeningInteractionId)
+            .HasFilter("\"ListeningInteractionId\" IS NOT NULL");
 
         builder.HasIndex(x => new { x.IllustrationBeatId, x.Type })
             .IsUnique()

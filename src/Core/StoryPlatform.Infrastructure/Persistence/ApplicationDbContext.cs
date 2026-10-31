@@ -43,6 +43,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<StoryVocabulary> StoryVocabularies => Set<StoryVocabulary>();
     public DbSet<QuizItem> QuizItems => Set<QuizItem>();
     public DbSet<DiscussionQuestion> DiscussionQuestions => Set<DiscussionQuestion>();
+    public DbSet<ListeningInteraction> ListeningInteractions => Set<ListeningInteraction>();
+    public DbSet<ListeningInteractionOption> ListeningInteractionOptions => Set<ListeningInteractionOption>();
+    public DbSet<ListeningInteractionAttempt> ListeningInteractionAttempts => Set<ListeningInteractionAttempt>();
     public DbSet<MediaAsset> MediaAssets => Set<MediaAsset>();
     public DbSet<MediaAssetGenerationTask> MediaAssetGenerationTasks => Set<MediaAssetGenerationTask>();
     public DbSet<LearningArtifactGenerationBatch> LearningArtifactGenerationBatches => Set<LearningArtifactGenerationBatch>();

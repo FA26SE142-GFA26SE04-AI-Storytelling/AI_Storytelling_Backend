@@ -34,6 +34,15 @@ public class MediaAsset : BaseEntity
     public int? StoryVocabularyId { get; set; }
     public virtual StoryVocabulary? StoryVocabulary { get; set; }
 
+    public int? ListeningInteractionId { get; set; }
+    public virtual ListeningInteraction? ListeningInteraction { get; set; }
+
+    public int? ListeningInteractionOptionId { get; set; }
+    public virtual ListeningInteractionOption? ListeningInteractionOption { get; set; }
+
+    /// <summary>ListeningAudio: prompt, wait, match, noMatch, hint (mức tương tác) hoặc text, feedback (mức option).</summary>
+    public string? AudioPartKey { get; set; }
+
     public MediaType Type { get; set; }
     public MediaStatus Status { get; set; } = MediaStatus.Queued;
     public ValidationStatus ValidationStatus { get; set; } = ValidationStatus.Pending;

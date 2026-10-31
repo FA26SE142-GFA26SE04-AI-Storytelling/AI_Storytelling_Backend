@@ -27,6 +27,11 @@ application_default_credentials.json
 !/docs/CREATOR_AI_GENERATION_API_GUIDE.md
 !/docs/API_FRONTEND_ACTOR_FLOWS.md
 !/docs/MEDIA_PHASE5_IMAGE_TTS_API_GUIDE.md
+# docs/api: only shared test guides; other local files there stay ignored
+!/docs/api/
+/docs/api/*
+!/docs/api/api-test-guide-buoc-1-7.html
+!/docs/api/HUONG_DAN_TEST_AUDIO_PHAT_AM_TU_VUNG.html
 
 # AppSettings
 appsettings*.json

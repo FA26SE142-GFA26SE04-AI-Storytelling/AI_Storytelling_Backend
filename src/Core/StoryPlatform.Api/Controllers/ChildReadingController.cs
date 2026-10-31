@@ -1,7 +1,9 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Api.Extensions;
+using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ReadingSessions;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
@@ -9,7 +11,7 @@ using StoryPlatform.Domain.Entities;
 
 namespace StoryPlatform.Api.Controllers;
 
-/// <summary>Đọc và nghe truyện, phía trẻ (Luồng 3 — WF-L3A, WF-L3B).</summary>
+/// <summary>Đọc và nghe truyện, phía trẻ (Luồng 3 — WF-L3A, WF-L3B), gồm cả luyện đọc thành tiếng (mục 4).</summary>
 [ApiController]
 [Authorize(Policy = ServiceExtensions.ChildSessionPolicy)]
 [Route("api/v1/child/reading")]
@@ -18,13 +20,16 @@ public sealed class ChildReadingController : ControllerBase
     private readonly IChildStoryBrowseService _browse;
     private readonly IChildReadingService _reading;
     private readonly IChildNotebookService _notebook;
+    private readonly IChildReadAloudService _readAloud;
 
     public ChildReadingController(
-        IChildStoryBrowseService browse, IChildReadingService reading, IChildNotebookService notebook)
+        IChildStoryBrowseService browse, IChildReadingService reading, IChildNotebookService notebook,
+        IChildReadAloudService readAloud)
     {
         _browse = browse;
         _reading = reading;
         _notebook = notebook;
+        _readAloud = readAloud;
     }
 
     private int ChildId
@@ -141,4 +146,37 @@ public sealed class ChildReadingController : ControllerBase
         var result = await _notebook.GetDefinitionAsync(ChildId, sessionId, vocabularyId, ct);
         return Ok(ApiResponse<VocabularyDefinitionDto>.Ok(result));
     }
+
+    /// <summary>Trẻ đọc to một đoạn; trả từng chữ good / retry / skipped kèm lời khen. Không lưu âm thanh.</summary>
+    [HttpPost("sessions/{sessionId:int}/segments/{segmentId:int}/read-aloud")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(ReadAloudPolicy.MaxAudioBytes + 100_000)]
+    [RequestFormLimits(MemoryBufferThreshold = ReadAloudPolicy.MaxAudioBytes + 100_000,
+        MultipartBodyLengthLimit = ReadAloudPolicy.MaxAudioBytes + 100_000)]
+    public async Task<ActionResult<ApiResponse<ReadAloudResultDto>>> ReadAloud(
+        int sessionId, int segmentId, [FromForm] ReadAloudForm form, CancellationToken ct)
+    {
+        if (form.Audio is { Length: > ReadAloudPolicy.MaxAudioBytes })
+        {
+            throw new BadRequestException(ReadAloudPolicy.AudioTooLargeMessage);
+        }
+
+        byte[] audio = [];
+        if (form.Audio is { Length: > 0 })
+        {
+            using var buffer = new MemoryStream();
+            await form.Audio.CopyToAsync(buffer, ct);
+            audio = buffer.ToArray();
+        }
+
+        var result = await _readAloud.CheckAsync(ChildId, sessionId, segmentId,
+            new ReadAloudRequest { Audio = audio, ContentType = form.Audio?.ContentType }, ct);
+        return Ok(ApiResponse<ReadAloudResultDto>.Ok(result));
+    }
+}
+
+public sealed class ReadAloudForm
+{
+    /// <summary>Đoạn ghi âm (webm/ogg/wav/mp3/m4a/flac), tối đa 1 MB.</summary>
+    public IFormFile? Audio { get; set; }
 }

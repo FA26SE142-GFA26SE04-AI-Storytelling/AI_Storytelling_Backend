@@ -28,6 +28,7 @@ using StoryPlatform.Infrastructure.Security;
 using StoryPlatform.Infrastructure.Storage;
 using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 using StoryPlatform.Application.Features.CreatorAuthoring;
+using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 
 namespace StoryPlatform.Infrastructure;
 
@@ -200,6 +201,16 @@ public static class DependencyInjection
             _ => throw new InvalidOperationException(
                 $"Unsupported AI:TTS:Provider '{ttsOptions.Provider}'. Supported values: GeminiTTS, GoogleCloudTTS.")
         }, new MediaBranchProviderGate(mediaOptions.Audio, sp.GetRequiredService<ILoggerFactory>().CreateLogger("MediaProviderTiming"), "Audio")));
+        services.AddOptions<SpeechToTextOptions>()
+            .Bind(configuration.GetSection(SpeechToTextOptions.SectionName))
+            .PostConfigure<Microsoft.Extensions.Options.IOptions<VertexOptions>>((stt, vertex) =>
+            {
+                if (string.IsNullOrWhiteSpace(stt.ProjectId)) stt.ProjectId = vertex.Value.ProjectId;
+            });
+        services.AddTransient<SpeechToTextAuthHandler>();
+        services.AddHttpClient<GoogleSpeechToTextRecognizer>(client => client.Timeout = TimeSpan.FromSeconds(60))
+            .AddHttpMessageHandler<SpeechToTextAuthHandler>();
+        services.AddScoped<ISpeechRecognizer>(sp => sp.GetRequiredService<GoogleSpeechToTextRecognizer>());
         services.AddSingleton<IMediaAlignmentEvaluator>(sp => sp.GetRequiredService<GeminiMediaAlignmentEvaluator>());
         services.AddSingleton<IMediaSafetyEvaluator>(sp => sp.GetRequiredService<GeminiMediaSafetyEvaluator>());
         services.AddSingleton<ISemanticSceneSegmentationProvider>(sp => sp.GetRequiredService<GeminiSemanticSceneSegmentationProvider>());

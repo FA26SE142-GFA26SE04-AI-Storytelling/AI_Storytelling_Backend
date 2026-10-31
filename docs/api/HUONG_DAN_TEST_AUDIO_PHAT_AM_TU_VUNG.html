@@ -1,0 +1,971 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test audio phát âm</title>
+<style>
+  :root {
+    --bg: #f7f7f4; --surface: #ffffff; --surface-2: #f0efe9; --text: #1f1e1b; --muted: #5f5d57;
+    --border: #e1dfd7; --accent: #2f5bd3; --accent-soft: #e8eefc;
+    --get: #1f7a4d; --post: #2f5bd3; --sql: #6b4fbb;
+    --ok-bg: #e7f4ec; --ok-text: #1f6b43; --warn-bg: #fdf3e2; --warn-text: #8a5400;
+    --bad-bg: #fbe9e7; --bad-text: #9b2c1f; --code-bg: #f3f2ec; --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161614; --surface: #1f1f1c; --surface-2: #272723; --text: #ecebe6; --muted: #a9a79f;
+      --border: #34332e; --accent: #7d9cf0; --accent-soft: #232b40;
+      --get: #3fa874; --post: #5b7fe0; --sql: #8d74d6;
+      --ok-bg: #1d3328; --ok-text: #8fd8b0; --warn-bg: #3a2e18; --warn-text: #f0c47a;
+      --bad-bg: #3d211d; --bad-text: #f2a196; --code-bg: #262622;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161614; --surface: #1f1f1c; --surface-2: #272723; --text: #ecebe6; --muted: #a9a79f;
+    --border: #34332e; --accent: #7d9cf0; --accent-soft: #232b40;
+    --get: #3fa874; --post: #5b7fe0; --sql: #8d74d6;
+    --ok-bg: #1d3328; --ok-text: #8fd8b0; --warn-bg: #3a2e18; --warn-text: #f0c47a;
+    --bad-bg: #3d211d; --bad-text: #f2a196; --code-bg: #262622;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.6 "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif; }
+  .layout { max-width: 1180px; margin: 0 auto; padding: 32px 16px 80px;
+    display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 36px; }
+  nav.toc { position: sticky; top: 24px; align-self: start; font-size: 14px; max-height: calc(100vh - 48px); overflow-y: auto; }
+  nav.toc .label { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 14px 0 6px; }
+  nav.toc .label:first-child { margin-top: 0; }
+  nav.toc a { display: block; padding: 3px 10px; border-left: 2px solid var(--border); color: var(--muted); text-decoration: none; }
+  nav.toc a:hover { color: var(--text); border-left-color: var(--accent); }
+  nav.toc a.done { color: var(--ok-text); }
+  main { min-width: 0; }
+  header.hero h1 { font-size: 28px; line-height: 1.25; margin: 0 0 10px; letter-spacing: -.01em; }
+  header.hero p { margin: 0 0 8px; color: var(--muted); max-width: 78ch; }
+  .progress { margin-top: 14px; display: flex; align-items: center; gap: 12px; font-size: 14px; color: var(--muted); flex-wrap: wrap; }
+  .bar { flex: 1; min-width: 160px; max-width: 320px; height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; border: 1px solid var(--border); }
+  .bar > div { height: 100%; width: 0; background: var(--ok-text); transition: width .2s; }
+  .reset { font: inherit; font-size: 13px; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer; }
+
+  section { margin: 40px 0 0; scroll-margin-top: 20px; }
+  section > h2 { font-size: 20px; margin: 0 0 6px; }
+  section > p.lead { margin: 0 0 16px; color: var(--muted); max-width: 80ch; }
+  h3 { font-size: 16px; margin: 0; }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); background: var(--surface-2); font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+
+  .tc { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; margin: 0 0 14px; scroll-margin-top: 16px; }
+  .tc.passed { border-color: var(--ok-text); }
+  .tc-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .tc-id { font: 600 12.5px "Cascadia Code", Consolas, monospace; padding: 2px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); }
+  .kind { font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .04em; }
+  .kind.pos { background: var(--ok-bg); color: var(--ok-text); }
+  .kind.neg { background: var(--bad-bg); color: var(--bad-text); }
+  .kind.chk { background: var(--surface-2); color: var(--muted); }
+  .tc-head label { margin-left: auto; font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+  .tc-head input { width: 16px; height: 16px; accent-color: var(--ok-text); }
+  .what { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+
+  .field-label { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 14px 0 4px; display: flex; align-items: center; gap: 8px; }
+  .m { font: 700 11.5px "Segoe UI", system-ui, sans-serif; padding: 2px 8px; border-radius: 6px; color: #fff; letter-spacing: .03em; text-transform: none; }
+  .m.get { background: var(--get); } .m.post { background: var(--post); } .m.sql { background: var(--sql); }
+  .token { font-size: 12px; color: var(--muted); text-transform: none; letter-spacing: 0; }
+
+  pre { position: relative; margin: 0; background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 72px 10px 14px; overflow-x: auto; font: 13px/1.55 "Cascadia Code", Consolas, "SFMono-Regular", Menlo, monospace; }
+  pre.url { white-space: pre-wrap; word-break: break-all; }
+  code { font-family: "Cascadia Code", Consolas, "SFMono-Regular", Menlo, monospace; font-size: .92em; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  .copy { position: absolute; top: 7px; right: 8px; font: 12px "Segoe UI", system-ui, sans-serif; padding: 3px 9px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer; }
+  .copy:hover { color: var(--text); }
+  table.params td:first-child { width: 34%; }
+  table.params td.none { color: var(--muted); font-style: italic; }
+  .table-wrap + .field-label, .table-wrap + .expect, pre + .table-wrap { margin-top: 12px; }
+  .expect { margin: 12px 0 0; padding: 10px 14px; border-radius: 8px; background: var(--ok-bg); color: var(--ok-text); font-size: 14px; }
+  .expect.neg { background: var(--bad-bg); color: var(--bad-text); }
+  .expect ul { margin: 4px 0 0; padding-left: 20px; }
+  .note { margin: 12px 0 0; padding: 10px 14px; border-radius: 8px; background: var(--warn-bg); color: var(--warn-text); font-size: 14px; }
+  footer { margin-top: 56px; color: var(--muted); font-size: 13px; }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; gap: 0; padding-top: 20px; }
+    nav.toc { position: static; max-height: none; margin-bottom: 20px; }
+    header.hero h1 { font-size: 23px; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="toc" aria-label="Mục lục">
+    <div class="label">Chuẩn bị</div>
+    <a href="#chuan-bi">Trước khi chạy</a>
+    <div class="label">Nhóm 1 · Phase 5</div>
+    <a href="#TC01">TC01 Đăng nhập phụ huynh</a>
+    <a href="#TC02">TC02 Xem tiến trình</a>
+    <a href="#TC03">TC03 Gói cũ (sai)</a>
+    <a href="#TC04">TC04 Không phải chủ (sai)</a>
+    <a href="#TC05">TC05 Tạo lại audio đoạn</a>
+    <a href="#TC06">TC06 Xác nhận sớm (sai)</a>
+    <a href="#TC07">TC07 Chờ Phase 5</a>
+    <a href="#TC08">TC08 Kiểm tra DB</a>
+    <a href="#TC09">TC09 Kiểm tra Supabase</a>
+    <a href="#TC10">TC10 Xác nhận gói</a>
+    <div class="label">Nhóm 2 · Phía trẻ</div>
+    <a href="#TC11">TC11 Lấy token trẻ</a>
+    <a href="#TC12">TC12 Thư viện</a>
+    <a href="#TC13">TC13 Mở phiên đọc</a>
+    <a href="#TC14">TC14 Nội dung truyện</a>
+    <a href="#TC15">TC15 Tra từ</a>
+    <a href="#TC16">TC16 Từ truyện khác (sai)</a>
+    <a href="#TC17">TC17 Lưu Sổ tay</a>
+    <a href="#TC18">TC18 Xem Sổ tay</a>
+    <a href="#TC19">TC19 Token sai (sai)</a>
+    <div class="label">Nhóm 3 · Truyện mới</div>
+    <a href="#TC20">TC20 Ngữ cảnh bé</a>
+    <a href="#TC21">TC21 Tạo truyện</a>
+    <a href="#TC22">TC22 Duyệt dàn ý</a>
+    <a href="#TC23">TC23 Xem từ vựng</a>
+    <a href="#TC24">TC24 Duyệt nội dung</a>
+    <a href="#TC25">TC25 Chờ Phase 5</a>
+    <a href="#TC26">TC26 Nghe trong gói</a>
+    <a href="#TC27">TC27 Xác nhận gói</a>
+    <div class="label">Nhóm 4 · Luyện đọc ASR</div>
+    <a href="#TC28">TC28 Bật Speech-to-Text</a>
+    <a href="#TC29">TC29 Xem chính sách bé</a>
+    <a href="#TC30">TC30 Bật giọng nói</a>
+    <a href="#TC31">TC31 Token trẻ, mở phiên</a>
+    <a href="#TC32">TC32 Đọc đúng</a>
+    <a href="#TC33">TC33 Sai thanh</a>
+    <a href="#TC34">TC34 Đọc thiếu</a>
+    <a href="#TC35">TC35 Không gửi file (sai)</a>
+    <a href="#TC36">TC36 Sai định dạng (sai)</a>
+    <a href="#TC37">TC37 File quá lớn (sai)</a>
+    <a href="#TC38">TC38 Đoạn truyện khác (sai)</a>
+    <a href="#TC39">TC39 Token phụ huynh (sai)</a>
+    <a href="#TC40">TC40 Tắt giọng nói (sai)</a>
+    <a href="#TC41">TC41 Không lưu âm thanh</a>
+  </nav>
+
+  <main>
+    <header class="hero">
+      <h1>Test case: audio phát âm từ vựng và luyện đọc ASR</h1>
+      <p>Mỗi test case có <b>URL dạng template</b> (giống trong Swagger), bên dưới là bảng <b>Input parameter</b> ghi giá trị điền vào từng <code>{tham số}</code>, rồi tới <b>Body</b>. Giá trị lấy từ DB local (seed), kiểm tra ngày 30/10/2026.</p>
+      <p>Base URL: <code>https://localhost:7095</code> (profile https) hoặc <code>http://localhost:5259</code> (profile http).</p>
+      <div class="progress">
+        <div class="bar"><div id="bar"></div></div>
+        <span id="count">0/41 đạt</span>
+        <button class="reset" type="button" id="reset">Xóa đánh dấu</button>
+      </div>
+    </header>
+
+    <section id="chuan-bi">
+      <h2>Trước khi chạy</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Điều kiện</th><th>Trạng thái</th></tr></thead>
+          <tbody>
+            <tr><td>Migration <code>AddVocabularyAudio</code></td><td>✅ Đã áp vào DB local</td></tr>
+            <tr><td>Worker media (<code>AI:MediaGeneration:WorkerEnabled</code>)</td><td>✅ true (<code>appsettings.Development.json</code>)</td></tr>
+            <tr><td>TTS</td><td>✅ Google Cloud TTS <code>vi-VN-Neural2-A</code>, cần ADC đã đăng nhập</td></tr>
+            <tr><td>Core API</td><td>Tự bật trong Visual Studio</td></tr>
+            <tr><td>AI service</td><td>Chỉ cần cho nhóm 3</td></tr>
+            <tr><td>Cloud Speech-to-Text API</td><td>Chỉ cần cho nhóm 4. Phải bật trên Google Cloud (TC28); cấu hình <code>AI:STT</code> dùng mặc định <code>global</code> / <code>long</code> / <code>vi-VN</code></td></tr>
+            <tr><td>File ghi âm</td><td>Nhóm 4 cần 3 file <code>.wav</code>, <code>.mp3</code> hoặc <code>.webm</code> dưới 1 MB (xem TC32–TC34)</td></tr>
+            <tr><td>Mật khẩu tài khoản demo</td><td><code>Demo@123</code> (ghi ở đầu file <code>Database/Seed/01_user_accounts.sql</code>)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note">Cách gắn token trong Swagger: bấm <b>Authorize</b>, dán <code>Bearer &lt;accessToken&gt;</code>. Nhóm 1 dùng token phụ huynh, nhóm 2 dùng token trẻ (lấy ở TC11).</div>
+    </section>
+
+    <section id="nhom1">
+      <h2>Nhóm 1 · Phụ huynh: sinh audio từ vựng ở Phase 5</h2>
+      <p class="lead">Truyện 6 sinh media từ trước khi có tính năng này, nên từ "yêu thương" (vocabulary 6) chưa có audio. Tạo lại audio của đoạn 6 sẽ đưa nhánh TTS chạy lại, và nhánh TTS sẽ sinh thêm audio cho từ vựng.</p>
+
+      <div class="tc" id="TC01">
+        <div class="tc-head"><span class="tc-id">TC01</span><h3>Đăng nhập phụ huynh</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC01">Đạt</label></div>
+        <p class="what">Kiểm tra email, mật khẩu; trả <code>accessToken</code> để gọi API và <code>refreshToken</code> (dùng ở TC11).</p>
+        <div class="field-label"><span class="m post">POST</span> URL <span class="token">· không cần token</span></div>
+        <pre class="url"><code>/api/v1/Auth/login</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params"><tbody><tr><td colspan="3" class="none">Không có tham số trên URL</td></tr></tbody></table></div>
+        <div class="field-label">Body</div>
+<pre><code>{
+  "identifier": "parent3@example.com",
+  "password": "Demo@123"
+}</code></pre>
+        <div class="expect">HTTP 200. Copy <b>data.accessToken</b> để Authorize, và giữ lại <b>data.refreshToken</b> cho TC11.</div>
+      </div>
+
+      <div class="tc" id="TC02">
+        <div class="tc-head"><span class="tc-id">TC02</span><h3>Xem tiến trình media truyện 6</h3><span class="kind chk">Kiểm tra</span><label><input type="checkbox" data-tc="TC02">Đạt</label></div>
+        <p class="what">Chỉ đọc: trạng thái Phase 5, revision của gói, gói đã xác nhận chưa. Kết quả dùng để điền body của TC03 và TC05.</p>
+        <div class="field-label"><span class="m get">GET</span> URL <span class="token">· token phụ huynh</span></div>
+        <pre class="url"><code>/api/v1/stories/{storyId}/media/progress</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody><tr><td><code>storyId</code></td><td><b>6</b></td><td>Truyện "Bí Mật Đại Dương"</td></tr></tbody>
+        </table></div>
+        <div class="expect">HTTP 200:
+          <ul>
+            <li><code>storyStatus</code> = "Ready", <code>approvedStoryVersionId</code> = <b>6</b></li>
+            <li><code>packageRevision</code> = <b>0</b>, <code>isConfirmed</code> = <b>true</b></li>
+          </ul>
+        </div>
+        <div class="note">Gói có <code>packageRevision = 0</code> là gói tạo trước khi có bước xác nhận. Code coi loại gói này là <b>đã xác nhận</b> (<code>MediaPackageConfirmation.IsConfirmed</code>), nên <code>isConfirmed</code> = true.</div>
+      </div>
+
+      <div class="tc" id="TC03">
+        <div class="tc-head"><span class="tc-id">TC03</span><h3>Tạo lại audio với trạng thái gói sai</h3><span class="kind neg">Sai</span><label><input type="checkbox" data-tc="TC03">Đạt</label></div>
+        <p class="what">Server phải từ chối khi client gửi trạng thái gói không khớp với thực tế (chống hai người sửa cùng lúc). Ở đây cố tình gửi <code>expectedConfirmed: false</code>.</p>
+        <div class="field-label"><span class="m post">POST</span> URL <span class="token">· token phụ huynh</span></div>
+        <pre class="url"><code>/api/v1/stories/{storyId}/media/segments/{segmentId}/regenerate</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody>
+            <tr><td><code>storyId</code></td><td><b>6</b></td><td>Truyện "Bí Mật Đại Dương"</td></tr>
+            <tr><td><code>segmentId</code></td><td><b>6</b></td><td>Đoạn duy nhất của truyện 6, audio đang Ready</td></tr>
+          </tbody>
+        </table></div>
+        <div class="field-label">Body</div>
+<pre><code>{
+  "storyVersionId": 6,
+  "packageRevision": 0,
+  "expectedConfirmed": false,
+  "operationId": "tc03-stale-package"
+}</code></pre>
+        <div class="expect neg">HTTP <b>409</b>, <code>message</code> = <b>"STALE_MEDIA_PACKAGE"</b>. Truyện không thay đổi gì.</div>
+      </div>
+
+      <div class="tc" id="TC04">
+        <div class="tc-head"><span class="tc-id">TC04</span><h3>Phụ huynh không phải chủ của bé</h3><span class="kind neg">Sai</span><label><input type="checkbox" data-tc="TC04">Đạt</label></div>
+        <p class="what">Chỉ chủ hồ sơ bé 6 (parent3) được sửa media. Đăng nhập lại bằng TC01 với <code>parent1@example.com</code> / <code>Demo@123</code>, Authorize bằng token đó, rồi gọi:</p>
+        <div class="field-label"><span class="m post">POST</span> URL <span class="token">· token của parent1</span></div>
+        <pre class="url"><code>/api/v1/stories/{storyId}/media/segments/{segmentId}/regenerate</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody>
+            <tr><td><code>storyId</code></td><td><b>6</b></td><td>Truyện của bé 6, không thuộc parent1</td></tr>
+            <tr><td><code>segmentId</code></td><td><b>6</b></td><td></td></tr>
+          </tbody>
+        </table></div>
+        <div class="field-label">Body</div>
+<pre><code>{
+  "storyVersionId": 6,
+  "packageRevision": 0,
+  "expectedConfirmed": true,
+  "operationId": "tc04-not-owner"
+}</code></pre>
+        <div class="expect neg">HTTP <b>403</b> (hoặc 404). Xong thì Authorize lại bằng token của <b>parent3</b>.</div>
+      </div>
+
+      <div class="tc" id="TC05">
+        <div class="tc-head"><span class="tc-id">TC05</span><h3>Tạo lại audio đoạn 6 để sinh audio từ vựng</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC05">Đạt</label></div>
+        <p class="what">Tạo một audio mới cho đoạn 6, tăng <code>packageRevision</code>, bỏ trạng thái đã xác nhận, đưa truyện về <code>MediaProcessing</code>. Worker TTS đọc lại đoạn 6 rồi <b>đọc tiếp các từ vựng chưa có audio</b> (phần code mới).</p>
+        <div class="field-label"><span class="m post">POST</span> URL <span class="token">· token phụ huynh (parent3)</span></div>
+        <pre class="url"><code>/api/v1/stories/{storyId}/media/segments/{segmentId}/regenerate</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody>
+            <tr><td><code>storyId</code></td><td><b>6</b></td><td>Truyện "Bí Mật Đại Dương"</td></tr>
+            <tr><td><code>segmentId</code></td><td><b>6</b></td><td>Đoạn cần đọc lại</td></tr>
+          </tbody>
+        </table></div>
+        <div class="field-label">Body</div>
+<pre><code>{
+  "storyVersionId": 6,
+  "packageRevision": 0,
+  "expectedConfirmed": true,
+  "operationId": "tc05-regen-segment-6"
+}</code></pre>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Trường body</th><th>Giá trị</th><th>Lấy từ</th></tr></thead>
+          <tbody>
+            <tr><td><code>storyVersionId</code></td><td>6</td><td>TC02 <code>approvedStoryVersionId</code></td></tr>
+            <tr><td><code>packageRevision</code></td><td>0</td><td>TC02 <code>packageRevision</code></td></tr>
+            <tr><td><code>expectedConfirmed</code></td><td>true</td><td>TC02 <code>isConfirmed</code></td></tr>
+            <tr><td><code>operationId</code></td><td>chuỗi bất kỳ, tối đa 100 ký tự</td><td>Gửi lại cùng chuỗi thì không tạo việc mới</td></tr>
+          </tbody>
+        </table></div>
+        <div class="expect">HTTP <b>202 Accepted</b>, body rỗng: yêu cầu đã được nhận và job chạy nền. Gọi lại TC02: <code>storyStatus</code> = "MediaProcessing", <code>packageRevision</code> = <b>1</b>, <code>isConfirmed</code> = false.</div>
+      </div>
+
+      <div class="tc" id="TC06">
+        <div class="tc-head"><span class="tc-id">TC06</span><h3>Xác nhận gói khi Phase 5 chưa xong</h3><span class="kind neg">Sai</span><label><input type="checkbox" data-tc="TC06">Đạt</label></div>
+        <p class="what">Không được xác nhận khi media còn đang sinh. Gọi <b>ngay sau TC05</b>.</p>
+        <div class="field-label"><span class="m post">POST</span> URL <span class="token">· token phụ huynh</span></div>
+        <pre class="url"><code>/api/v1/stories/{storyId}/media/confirm</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody><tr><td><code>storyId</code></td><td><b>6</b></td><td></td></tr></tbody>
+        </table></div>
+        <div class="field-label">Body</div>
+<pre><code>{
+  "storyVersionId": 6,
+  "packageRevision": 1
+}</code></pre>
+        <div class="expect neg">HTTP <b>409</b>, <code>message</code> = <b>"MEDIA_JOB_ACTIVE"</b>. Nếu worker chạy xong trước khi bạn kịp gọi và nhận về 200, bỏ qua test này.</div>
+      </div>
+
+      <div class="tc" id="TC07">
+        <div class="tc-head"><span class="tc-id">TC07</span><h3>Chờ Phase 5 chạy xong</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC07">Đạt</label></div>
+        <p class="what">Giống TC02. Gọi lại sau mỗi 10–20 giây.</p>
+        <div class="field-label"><span class="m get">GET</span> URL <span class="token">· token phụ huynh</span></div>
+        <pre class="url"><code>/api/v1/stories/{storyId}/media/progress</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody><tr><td><code>storyId</code></td><td><b>6</b></td><td></td></tr></tbody>
+        </table></div>
+        <div class="expect">Xong khi: <code>storyStatus</code> = "MediaReview", <code>isGenerated</code> = true, <code>isAwaitingConfirmation</code> = true, <code>packageRevision</code> = <b>1</b>.</div>
+        <div class="note">Audio từ vựng không được tính vào <code>readyAudio</code> hay <code>issues</code>, vì nó là phần không bắt buộc. Xem audio từ vựng ở TC08.</div>
+        <div class="note"><b>Nếu job báo Failed</b> (<code>jobStatus</code> = "Failed", truyện vẫn ở MediaProcessing): sửa nguyên nhân (xem <code>issues</code> hoặc cột <code>LastValidationReason</code> trong <code>media_assets</code>), khởi động lại Core, rồi gọi <b>POST <code>/api/v1/stories/{storyId}/media/retry</code></b> với <code>storyId</code> = 6, không có body. API đặt lại các asset chưa Ready và cho job chạy lại.</div>
+      </div>
+
+      <div class="tc" id="TC08">
+        <div class="tc-head"><span class="tc-id">TC08</span><h3>Kiểm tra bản ghi audio từ vựng trong DB</h3><span class="kind chk">Kiểm tra</span><label><input type="checkbox" data-tc="TC08">Đạt</label></div>
+        <p class="what">Chạy trong pgAdmin hoặc psql, database <code>AIStorytellingDB</code>.</p>
+        <div class="field-label"><span class="m sql">SQL</span> Câu lệnh</div>
+<pre><code>SELECT "Id", "StoryVocabularyId", "Status", "ValidationStatus", "AttemptCount",
+       "Provider", "StorySceneId", "StorySegmentId", "Url", "LastValidationReason"
+FROM media_assets
+WHERE "Type" = 'VocabularyAudio' AND "StoryVocabularyId" = 6;</code></pre>
+        <div class="expect">Đúng 1 dòng: <code>Status</code> = Ready, <code>ValidationStatus</code> = Passed, <code>Provider</code> = GoogleCloud, <code>StorySceneId</code> và <code>StorySegmentId</code> đều NULL, <code>Url</code> dạng <code>6/versions/6/v{n}/vocab-6-asset-{id}-….mp3</code>.</div>
+        <div class="note">Nếu Status = Failed: xem cột <code>LastValidationReason</code> (thường do ADC hết hạn hoặc sai tên giọng).</div>
+      </div>
+
+      <div class="tc" id="TC09">
+        <div class="tc-head"><span class="tc-id">TC09</span><h3>Kiểm tra file trên Supabase</h3><span class="kind chk">Kiểm tra</span><label><input type="checkbox" data-tc="TC09">Đạt</label></div>
+        <p class="what">Supabase Dashboard → Storage → bucket <code>story-media</code> → thư mục theo <code>Url</code> ở TC08.</p>
+        <div class="expect">Có file <code>vocab-6-asset-…mp3</code>. Tải về nghe: đọc rõ <b>"yêu thương"</b>.</div>
+        <div class="note">Với truyện 6, không dùng <code>GET /api/v1/stories/{storyId}/media/package</code>: API này ký URL cho mọi file trong gói, mà file seed cũ (<code>6/scene-0.png</code>…) không có trên Supabase nên có thể lỗi 500. Truyện mới ở nhóm 3 thì dùng được (TC26).</div>
+      </div>
+
+      <div class="tc" id="TC10">
+        <div class="tc-head"><span class="tc-id">TC10</span><h3>Xác nhận gói media</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC10">Đạt</label></div>
+        <p class="what">Người lớn xác nhận đã duyệt gói (ảnh, audio đoạn, audio từ vựng). Truyện chuyển từ MediaReview sang Ready; từ lúc này trẻ mới nhận được media mới.</p>
+        <div class="field-label"><span class="m post">POST</span> URL <span class="token">· token phụ huynh</span></div>
+        <pre class="url"><code>/api/v1/stories/{storyId}/media/confirm</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody><tr><td><code>storyId</code></td><td><b>6</b></td><td></td></tr></tbody>
+        </table></div>
+        <div class="field-label">Body (<code>packageRevision</code> lấy từ TC07)</div>
+<pre><code>{
+  "storyVersionId": 6,
+  "packageRevision": 1
+}</code></pre>
+        <div class="expect">HTTP 200. Gọi lại TC02: <code>storyStatus</code> = "Ready", <code>isConfirmed</code> = true.</div>
+      </div>
+    </section>
+
+    <section id="nhom2">
+      <h2>Nhóm 2 · Phía trẻ</h2>
+      <p class="lead">Chạy sau TC10. Từ TC12 trở đi dùng <b>token trẻ</b> lấy ở TC11.</p>
+
+      <div class="tc" id="TC11">
+        <div class="tc-head"><span class="tc-id">TC11</span><h3>Phụ huynh bàn giao thiết bị cho bé 6</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC11">Đạt</label></div>
+        <p class="what">Tạo phiên riêng cho bé (Child Session), tách khỏi phiên phụ huynh, và trả token của trẻ.</p>
+        <div class="field-label"><span class="m post">POST</span> URL <span class="token">· token phụ huynh (parent3)</span></div>
+        <pre class="url"><code>/api/v1/ChildAccessCredential/{childProfileId}/handover</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody><tr><td><code>childProfileId</code></td><td><b>6</b></td><td>Bé "Bé Phúc", con của parent3</td></tr></tbody>
+        </table></div>
+        <div class="field-label">Body (dán refreshToken lấy ở TC01)</div>
+<pre><code>{
+  "supervisorRefreshToken": ""
+}</code></pre>
+        <div class="expect">HTTP 200. Copy <b>data.accessToken</b>, Authorize lại bằng token này (token trẻ).</div>
+      </div>
+
+      <div class="tc" id="TC12">
+        <div class="tc-head"><span class="tc-id">TC12</span><h3>Thư viện "Truyện của em"</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC12">Đạt</label></div>
+        <p class="what">Liệt kê truyện bé được đọc: Ready, đúng tuổi, không thuộc chủ đề bị chặn.</p>
+        <div class="field-label"><span class="m get">GET</span> URL <span class="token">· token trẻ</span></div>
+        <pre class="url"><code>/api/v1/child/reading/stories</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody><tr><td><code>source</code> (query)</td><td><b>mine</b></td><td>Truyện riêng của bé và truyện bố mẹ chọn</td></tr></tbody>
+        </table></div>
+        <div class="expect">HTTP 200. <code>data.items</code> có <code>storyId</code> = <b>6</b> ("Bí Mật Đại Dương").</div>
+      </div>
+
+      <div class="tc" id="TC13">
+        <div class="tc-head"><span class="tc-id">TC13</span><h3>Mở phiên đọc truyện 6</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC13">Đạt</label></div>
+        <p class="what">Bắt đầu hoặc mở lại phiên đọc. Đang đọc dở thì trả lại phiên cũ (<code>resumed</code> = true).</p>
+        <div class="field-label"><span class="m post">POST</span> URL <span class="token">· token trẻ</span></div>
+        <pre class="url"><code>/api/v1/child/reading/sessions</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params"><tbody><tr><td colspan="3" class="none">Không có tham số trên URL</td></tr></tbody></table></div>
+        <div class="field-label">Body</div>
+<pre><code>{
+  "storyId": 6
+}</code></pre>
+        <div class="expect">HTTP 200. Ghi lại <b>data.sessionId</b>: TC14 đến TC17 và TC19 cần số này.</div>
+      </div>
+
+      <div class="tc" id="TC14">
+        <div class="tc-head"><span class="tc-id">TC14</span><h3>Nội dung truyện có audio từ vựng</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC14">Đạt</label></div>
+        <p class="what">Trả các trang, ảnh, audio từng đoạn (kèm thời điểm từng từ) và danh sách từ vựng. <code>vocabulary[].audioUrl</code> là trường mới.</p>
+        <div class="field-label"><span class="m get">GET</span> URL <span class="token">· token trẻ</span></div>
+        <pre class="url"><code>/api/v1/child/reading/sessions/{sessionId}/content</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody><tr><td><code>sessionId</code></td><td>lấy từ TC13</td><td><code>data.sessionId</code></td></tr></tbody>
+        </table></div>
+        <div class="expect"><code>data.vocabulary</code> có mục <code>id</code> = 6, <code>term</code> = "yêu thương", <b><code>audioUrl</code> khác null</b> (trùng <code>Url</code> ở TC08).</div>
+        <div class="note"><code>audioUrl</code> phía trẻ là storage path (giống audio của các đoạn truyện), chưa phải link nghe được ngay. Đây là cách làm có từ trước.</div>
+      </div>
+
+      <div class="tc" id="TC15">
+        <div class="tc-head"><span class="tc-id">TC15</span><h3>Tra từ "yêu thương"</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC15">Đạt</label></div>
+        <p class="what">Trả nghĩa của từ, cho biết từ đã có trong Sổ tay chưa, và (mới) link audio phát âm. Đồng thời ghi sự kiện <code>VocabularyOpened</code>.</p>
+        <div class="field-label"><span class="m get">GET</span> URL <span class="token">· token trẻ</span></div>
+        <pre class="url"><code>/api/v1/child/reading/sessions/{sessionId}/vocabulary/{vocabularyId}</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody>
+            <tr><td><code>sessionId</code></td><td>lấy từ TC13</td><td><code>data.sessionId</code></td></tr>
+            <tr><td><code>vocabularyId</code></td><td><b>6</b></td><td>Từ "yêu thương" của truyện 6</td></tr>
+          </tbody>
+        </table></div>
+        <div class="expect">HTTP 200: <code>term</code> = "yêu thương", <code>definition</code> = "Tình cảm quan tâm, che chở người khác", <b><code>audioUrl</code> khác null</b>.</div>
+      </div>
+
+      <div class="tc" id="TC16">
+        <div class="tc-head"><span class="tc-id">TC16</span><h3>Tra từ không thuộc truyện đang đọc</h3><span class="kind neg">Sai</span><label><input type="checkbox" data-tc="TC16">Đạt</label></div>
+        <p class="what">Bé chỉ tra được từ của đúng truyện đang đọc.</p>
+        <div class="field-label"><span class="m get">GET</span> URL <span class="token">· token trẻ</span></div>
+        <pre class="url"><code>/api/v1/child/reading/sessions/{sessionId}/vocabulary/{vocabularyId}</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody>
+            <tr><td><code>sessionId</code></td><td>lấy từ TC13</td><td><code>data.sessionId</code></td></tr>
+            <tr><td><code>vocabularyId</code></td><td><b>1</b></td><td>Từ "thông minh" của truyện 1, không phải truyện 6</td></tr>
+          </tbody>
+        </table></div>
+        <div class="expect neg">HTTP <b>404</b>.</div>
+      </div>
+
+      <div class="tc" id="TC17">
+        <div class="tc-head"><span class="tc-id">TC17</span><h3>Lưu từ vào Sổ tay (gọi 2 lần)</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC17">Đạt</label></div>
+        <p class="what">Lưu từ vào "Sổ tay của em". Gọi lại lần nữa không tạo bản trùng.</p>
+        <div class="field-label"><span class="m post">POST</span> URL <span class="token">· token trẻ</span></div>
+        <pre class="url"><code>/api/v1/child/notebook/sessions/{sessionId}/words</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody><tr><td><code>sessionId</code></td><td>lấy từ TC13</td><td><code>data.sessionId</code></td></tr></tbody>
+        </table></div>
+        <div class="field-label">Body</div>
+<pre><code>{
+  "vocabularyId": 6
+}</code></pre>
+        <div class="expect">Cả 2 lần đều HTTP 200, cùng <code>entryId</code>, có <b><code>audioUrl</code></b>.</div>
+      </div>
+
+      <div class="tc" id="TC18">
+        <div class="tc-head"><span class="tc-id">TC18</span><h3>Xem Sổ tay</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC18">Đạt</label></div>
+        <p class="what">Liệt kê các từ bé đã lưu, kèm truyện chứa từ, trang có từ (nút "Đọc lại đoạn này"), và (mới) audio phát âm.</p>
+        <div class="field-label"><span class="m get">GET</span> URL <span class="token">· token trẻ</span></div>
+        <pre class="url"><code>/api/v1/child/notebook</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params"><tbody><tr><td colspan="3" class="none">Không có tham số</td></tr></tbody></table></div>
+        <div class="expect">Mục <code>vocabularyId</code> = 6 có <b><code>audioUrl</code></b> khác null. Từ chưa có audio thì <code>audioUrl</code> = null (app đọc bằng giọng của máy).</div>
+      </div>
+
+      <div class="tc" id="TC19">
+        <div class="tc-head"><span class="tc-id">TC19</span><h3>Dùng token phụ huynh gọi API của trẻ</h3><span class="kind neg">Sai</span><label><input type="checkbox" data-tc="TC19">Đạt</label></div>
+        <p class="what">Authorize lại bằng token <b>phụ huynh</b> (TC01), rồi gọi:</p>
+        <div class="field-label"><span class="m get">GET</span> URL <span class="token">· token phụ huynh</span></div>
+        <pre class="url"><code>/api/v1/child/reading/sessions/{sessionId}/content</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody><tr><td><code>sessionId</code></td><td>lấy từ TC13</td><td><code>data.sessionId</code></td></tr></tbody>
+        </table></div>
+        <div class="expect neg">HTTP <b>403</b> (hoặc 401).</div>
+      </div>
+    </section>
+
+    <section id="nhom3">
+      <h2>Nhóm 3 · Luồng đầy đủ với truyện mới</h2>
+      <p class="lead">Cần AI service. Đăng nhập bằng TC01 với <code>parent1@example.com</code> / <code>Demo@123</code> (chủ của bé 1) trước khi bắt đầu.</p>
+
+      <div class="tc" id="TC20">
+        <div class="tc-head"><span class="tc-id">TC20</span><h3>Lấy ngữ cảnh của bé 1</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC20">Đạt</label></div>
+        <p class="what">Trả tuổi, trình độ đọc, độ dài tối đa, chủ đề bị chặn, để điền form tạo truyện cho hợp lệ.</p>
+        <div class="field-label"><span class="m get">GET</span> URL <span class="token">· token parent1</span></div>
+        <pre class="url"><code>/api/v1/ai-story-input/children/{childProfileId}/context</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody><tr><td><code>childProfileId</code></td><td><b>1</b></td><td>Bé "Bé An", con của parent1</td></tr></tbody>
+        </table></div>
+        <div class="expect">HTTP 200. Xem <code>defaultVocabularyLevel</code>, <code>maximumLength</code> (bé 1 tối đa 1500).</div>
+      </div>
+
+      <div class="tc" id="TC21">
+        <div class="tc-head"><span class="tc-id">TC21</span><h3>Gửi yêu cầu tạo truyện</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC21">Đạt</label></div>
+        <p class="what">Tạo truyện Draft cho bé, trừ một lượt tạo truyện, rồi để AI sinh dàn ý chạy nền. <code>outputMode</code> phải là "learning" thì mới sinh từ vựng.</p>
+        <div class="field-label"><span class="m post">POST</span> URL <span class="token">· token parent1</span></div>
+        <pre class="url"><code>/api/v1/ai-story-input/requests</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params"><tbody><tr><td colspan="3" class="none">Không có tham số trên URL</td></tr></tbody></table></div>
+        <div class="field-label">Body</div>
+<pre><code>{
+  "childProfileId": 1,
+  "idempotencyKey": "tc21-vocab-audio-story-001",
+  "topic": "Thỏ con và củ cà rốt khổng lồ",
+  "genre": "Phiêu lưu",
+  "characterMode": "specified",
+  "characters": ["Thỏ con", "Sóc nâu"],
+  "settingMode": "specified",
+  "setting": "Khu vườn sau nhà",
+  "lesson": "Biết chia sẻ với bạn bè",
+  "vocabularyLevel": "level_2",
+  "language": "vi",
+  "targetLength": 400,
+  "outputMode": "learning"
+}</code></pre>
+        <div class="expect">HTTP 202. Ghi lại <b>data.storyId</b>: TC22 đến TC27 cần số này.</div>
+      </div>
+
+      <div class="tc" id="TC22">
+        <div class="tc-head"><span class="tc-id">TC22</span><h3>Xem và duyệt dàn ý</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC22">Đạt</label></div>
+        <p class="what">GET trả dàn ý (gọi lại tới khi truyện ở OutlineReview). POST approve chốt dàn ý; AI tiếp tục sinh nội dung, từ vựng, quiz.</p>
+        <div class="field-label"><span class="m get">GET</span> URL xem dàn ý <span class="token">· token parent1</span></div>
+        <pre class="url"><code>/api/v1/stories/{storyId}/outline</code></pre>
+        <div class="field-label"><span class="m post">POST</span> URL duyệt dàn ý <span class="token">· token parent1</span></div>
+        <pre class="url"><code>/api/v1/stories/{storyId}/outline/versions/{versionNo}/approve</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody>
+            <tr><td><code>storyId</code></td><td>lấy từ TC21</td><td><code>data.storyId</code></td></tr>
+            <tr><td><code>versionNo</code></td><td>lấy từ kết quả GET dàn ý</td><td>Thường là 1</td></tr>
+          </tbody>
+        </table></div>
+        <div class="field-label">Body của POST</div>
+<pre><code>{
+  "approvalKey": "tc22-approve-outline-v1"
+}</code></pre>
+        <div class="expect">POST trả HTTP 202.</div>
+      </div>
+
+      <div class="tc" id="TC23">
+        <div class="tc-head"><span class="tc-id">TC23</span><h3>Chờ sinh nội dung, rồi xem từ vựng</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC23">Đạt</label></div>
+        <p class="what"><code>generation/progress</code> cho biết Phase 3–4 đã xong chưa. <code>review/vocabulary</code> là danh sách từ sẽ được đọc thành audio ở Phase 5.</p>
+        <div class="field-label"><span class="m get">GET</span> URL tiến trình <span class="token">· token parent1</span></div>
+        <pre class="url"><code>/api/v1/stories/{storyId}/generation/progress</code></pre>
+        <div class="field-label"><span class="m get">GET</span> URL từ vựng <span class="token">· token parent1</span></div>
+        <pre class="url"><code>/api/v1/stories/{storyId}/review/vocabulary</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody><tr><td><code>storyId</code></td><td>lấy từ TC21</td><td><code>data.storyId</code></td></tr></tbody>
+        </table></div>
+        <div class="expect">Truyện ở ContentReview. Ghi lại số từ vựng và vài <code>term</code> để so ở TC26.</div>
+      </div>
+
+      <div class="tc" id="TC24">
+        <div class="tc-head"><span class="tc-id">TC24</span><h3>Kiểm tra điều kiện và duyệt nội dung</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC24">Đạt</label></div>
+        <p class="what"><code>validation</code> liệt kê những gì còn thiếu. <code>approve</code> là bước người lớn duyệt nội dung chữ, sau đó hệ thống tạo job Phase 5.</p>
+        <div class="field-label"><span class="m get">GET</span> URL kiểm tra <span class="token">· token parent1</span></div>
+        <pre class="url"><code>/api/v1/stories/{storyId}/review/validation</code></pre>
+        <div class="field-label"><span class="m post">POST</span> URL duyệt (không có body) <span class="token">· token parent1</span></div>
+        <pre class="url"><code>/api/v1/stories/{storyId}/review/approve</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody><tr><td><code>storyId</code></td><td>lấy từ TC21</td><td><code>data.storyId</code></td></tr></tbody>
+        </table></div>
+        <div class="expect"><code>data.canApprove</code> = true rồi mới gọi approve. Approve trả HTTP 200.</div>
+      </div>
+
+      <div class="tc" id="TC25">
+        <div class="tc-head"><span class="tc-id">TC25</span><h3>Chờ Phase 5</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC25">Đạt</label></div>
+        <div class="field-label"><span class="m get">GET</span> URL <span class="token">· token parent1</span></div>
+        <pre class="url"><code>/api/v1/stories/{storyId}/media/progress</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody><tr><td><code>storyId</code></td><td>lấy từ TC21</td><td><code>data.storyId</code></td></tr></tbody>
+        </table></div>
+        <div class="expect"><code>isGenerated</code> = true, <code>isAwaitingConfirmation</code> = true. Ghi lại <code>approvedStoryVersionId</code> và <code>packageRevision</code> cho TC27.</div>
+      </div>
+
+      <div class="tc" id="TC26">
+        <div class="tc-head"><span class="tc-id">TC26</span><h3>Nghe audio từ vựng trong gói media</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC26">Đạt</label></div>
+        <p class="what">Trả gói media để người lớn nghe và xem trước khi xác nhận. Có thêm danh sách <code>vocabulary</code>, mỗi từ kèm signed URL có hạn 10 phút.</p>
+        <div class="field-label"><span class="m get">GET</span> URL <span class="token">· token parent1</span></div>
+        <pre class="url"><code>/api/v1/stories/{storyId}/media/package</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody><tr><td><code>storyId</code></td><td>lấy từ TC21</td><td><code>data.storyId</code></td></tr></tbody>
+        </table></div>
+        <div class="expect"><code>data.vocabulary</code> có số mục bằng số từ ở TC23, mỗi mục <code>status</code> = "Ready". Mở <code>url</code> trên trình duyệt nghe được đúng từ.</div>
+      </div>
+
+      <div class="tc" id="TC27">
+        <div class="tc-head"><span class="tc-id">TC27</span><h3>Xác nhận gói, rồi kiểm tra phía bé 1</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC27">Đạt</label></div>
+        <div class="field-label"><span class="m post">POST</span> URL <span class="token">· token parent1</span></div>
+        <pre class="url"><code>/api/v1/stories/{storyId}/media/confirm</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody><tr><td><code>storyId</code></td><td>lấy từ TC21</td><td><code>data.storyId</code></td></tr></tbody>
+        </table></div>
+        <div class="field-label">Body (điền 2 số lấy ở TC25)</div>
+<pre><code>{
+  "storyVersionId": ,
+  "packageRevision":
+}</code></pre>
+        <div class="expect">HTTP 200, truyện chuyển sang Ready. Sau đó lặp lại TC11–TC18 với <code>childProfileId</code> = <b>1</b>, <code>storyId</code> lấy từ TC21 và các <code>vocabularyId</code> mới.</div>
+      </div>
+    </section>
+
+    <section id="nhom4">
+      <h2>Nhóm 4 · Luyện đọc ASR (Luồng 3 mục 4)</h2>
+      <p class="lead">Trẻ đọc to một đoạn truyện; backend gửi âm thanh sang Google Speech-to-Text, so khớp từng chữ với đoạn truyện và trả về <code>good</code> / <code>retry</code> / <code>skipped</code>. Không lưu âm thanh, không chấm điểm, không giới hạn lượt. Dùng phụ huynh <code>parent3@example.com</code>, bé 6, truyện 6, đoạn 6: <b>"Sau lớp sóng biển xanh là cả một thế giới kỳ diệu..."</b> (12 chữ).</p>
+      <div class="note"><b>File ghi âm cần chuẩn bị</b> (định dạng <code>.wav</code>, <code>.mp3</code> hoặc <code>.webm</code>, dưới 1 MB): (1) đọc đúng cả câu; (2) đọc cả câu nhưng đọc "sóng" thành "song"; (3) chỉ đọc "Sau lớp sóng biển xanh". Có thể ghi bằng điện thoại hoặc Audacity rồi xuất WAV/MP3. File <code>.m4a</code> (mặc định của Windows Sound Recorder) có thể Google không đọc được, nên đổi sang WAV/MP3 trước.</div>
+
+      <div class="tc" id="TC28">
+        <div class="tc-head"><span class="tc-id">TC28</span><h3>Bật Cloud Speech-to-Text API</h3><span class="kind chk">Kiểm tra</span><label><input type="checkbox" data-tc="TC28">Đạt</label></div>
+        <p class="what">Việc làm một lần trên Google Cloud, cho cả nhóm. Không bật thì mọi lần luyện đọc đều trả 503.</p>
+        <div class="field-label">Cách bật</div>
+        <p class="what">Google Cloud Console → project "Ai Storytelling" → APIs &amp; Services → Library → "Cloud Speech-to-Text API" → <b>Enable</b>. Hoặc chạy:</p>
+<pre><code>gcloud services enable speech.googleapis.com --project=gen-lang-client-0675088605</code></pre>
+        <div class="expect">Trang API hiện trạng thái <b>Enabled</b>. Sau đó khởi động lại Core.</div>
+        <div class="note">Nếu chưa bật mà vẫn gọi TC32, API trả HTTP <b>503</b> với <code>message</code> = "Micro đang bận một chút, em đọc tiếp truyện nhé." Đây là hành vi đúng khi Google không dùng được.</div>
+      </div>
+
+      <div class="tc" id="TC29">
+        <div class="tc-head"><span class="tc-id">TC29</span><h3>Xem chính sách an toàn của bé 6</h3><span class="kind chk">Kiểm tra</span><label><input type="checkbox" data-tc="TC29">Đạt</label></div>
+        <p class="what">Chỉ đọc: các thiết lập phụ huynh đặt cho bé, trong đó có công tắc giọng nói. Đăng nhập <code>parent3@example.com</code> / <code>Demo@123</code> bằng TC01 trước.</p>
+        <div class="field-label"><span class="m get">GET</span> URL <span class="token">· token phụ huynh (parent3)</span></div>
+        <pre class="url"><code>/api/v1/SafetyPolicy/{childProfileId}</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody><tr><td><code>childProfileId</code></td><td><b>6</b></td><td>Bé "Bé Phúc"</td></tr></tbody>
+        </table></div>
+        <div class="expect">HTTP 200: <code>voiceAnswersEnabled</code> = <b>false</b>, <code>voiceConsentAt</code> = null (dữ liệu seed chưa bật giọng nói).</div>
+      </div>
+
+      <div class="tc" id="TC30">
+        <div class="tc-head"><span class="tc-id">TC30</span><h3>Phụ huynh bật giọng nói cho bé 6</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC30">Đạt</label></div>
+        <p class="what">Ghi lại toàn bộ chính sách của bé. Bật giọng nói lần đầu thì Owner phải đồng ý mục (e) của consent (<code>voiceConsentAccepted: true</code>), nếu không API báo lỗi.</p>
+        <div class="field-label"><span class="m post">PUT</span> URL <span class="token">· token phụ huynh (parent3)</span></div>
+        <pre class="url"><code>/api/v1/SafetyPolicy/{childProfileId}</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody><tr><td><code>childProfileId</code></td><td><b>6</b></td><td></td></tr></tbody>
+        </table></div>
+        <div class="field-label">Body (giữ nguyên giá trị seed của bé 6, chỉ đổi 2 dòng giọng nói)</div>
+<pre><code>{
+  "maxStoryLength": 1800,
+  "requiredApprovalMode": 1,
+  "parentalGateEnabled": true,
+  "consentRecorded": true,
+  "safetyScoreThreshold": null,
+  "readabilityScoreThreshold": null,
+  "comprehensionThresholdPercent": 70,
+  "comprehensionWindowSize": 3,
+  "storyWishesEnabled": true,
+  "allowInteractiveStories": true,
+  "childCreationEnabled": true,
+  "childCreationMode": 1,
+  "voiceAnswersEnabled": true,
+  "voiceConsentAccepted": true,
+  "categories": [
+    { "contentCategoryId": 4, "rule": 1 },
+    { "contentCategoryId": 6, "rule": 1 }
+  ]
+}</code></pre>
+        <div class="expect">HTTP 200: <code>voiceAnswersEnabled</code> = <b>true</b>, <code>voiceConsentAt</code> có giá trị.</div>
+        <div class="note">Các trường enum phải gửi <b>dạng số</b> (<code>requiredApprovalMode</code>: 1 = AlwaysManual; <code>childCreationMode</code>: 1 = ReviewFirst; <code>rule</code>: 1 = Allowed). API không nhận dạng chữ, nên copy nguyên response của TC29 sang sẽ bị lỗi 400.</div>
+        <div class="note"><code>categories</code> phải có <b>cả 4 (SCIENCE) và 6 (FAMILY)</b>. Khi bé có danh sách chủ đề được phép, chủ đề nào ngoài danh sách đều bị chặn; truyện 6 gắn cả SCIENCE lẫn FAMILY, thiếu một trong hai thì mở phiên đọc báo "Truyện này chưa mở cho em, mình đọc truyện khác nhé!".</div>
+      </div>
+
+      <div class="tc" id="TC31">
+        <div class="tc-head"><span class="tc-id">TC31</span><h3>Lấy token của trẻ và mở phiên đọc truyện 6</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC31">Đạt</label></div>
+        <p class="what">Giống TC11 và TC13. Bàn giao thiết bị cho bé 6 để lấy token trẻ, Authorize lại bằng token đó, rồi mở phiên đọc.</p>
+        <div class="field-label"><span class="m post">POST</span> URL bàn giao <span class="token">· token phụ huynh (parent3)</span></div>
+        <pre class="url"><code>/api/v1/ChildAccessCredential/{childProfileId}/handover</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody><tr><td><code>childProfileId</code></td><td><b>6</b></td><td></td></tr></tbody>
+        </table></div>
+        <div class="field-label">Body (dán refreshToken lấy ở TC01)</div>
+<pre><code>{
+  "supervisorRefreshToken": ""
+}</code></pre>
+        <div class="field-label"><span class="m post">POST</span> URL mở phiên đọc <span class="token">· token trẻ</span></div>
+        <pre class="url"><code>/api/v1/child/reading/sessions</code></pre>
+        <div class="field-label">Body</div>
+<pre><code>{
+  "storyId": 6
+}</code></pre>
+        <div class="expect">Cả hai HTTP 200. Ghi lại <b>data.sessionId</b>: TC32–TC40 cần số này. Từ đây dùng token trẻ (trừ TC39, TC40).</div>
+      </div>
+
+      <div class="tc" id="TC32">
+        <div class="tc-head"><span class="tc-id">TC32</span><h3>Đọc đúng cả câu</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC32">Đạt</label></div>
+        <p class="what">Gửi đoạn ghi âm lên; backend nhận dạng giọng nói, so khớp từng chữ với đoạn 6 và trả kết quả kèm lời khen. Trong Swagger, trường <code>audio</code> có nút <b>Choose File</b>.</p>
+        <div class="field-label"><span class="m post">POST</span> URL <span class="token">· token trẻ · multipart/form-data</span></div>
+        <pre class="url"><code>/api/v1/child/reading/sessions/{sessionId}/segments/{segmentId}/read-aloud</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody>
+            <tr><td><code>sessionId</code></td><td>lấy từ TC31</td><td><code>data.sessionId</code></td></tr>
+            <tr><td><code>segmentId</code></td><td><b>6</b></td><td>Đoạn "Sau lớp sóng biển xanh…"</td></tr>
+            <tr><td><code>audio</code> (form-data)</td><td>file (1)</td><td>Đọc đúng cả câu</td></tr>
+          </tbody>
+        </table></div>
+        <div class="field-label">Response mẫu</div>
+<pre><code>{
+  "success": true,
+  "data": {
+    "sessionId": 15,
+    "segmentId": 6,
+    "words": [
+      { "index": 0, "text": "Sau", "status": "good", "hint": null },
+      { "index": 1, "text": "lớp", "status": "good", "hint": null },
+      { "index": 2, "text": "sóng", "status": "good", "hint": null }
+    ],
+    "goodCount": 12,
+    "retryCount": 0,
+    "skippedCount": 0,
+    "totalCount": 12,
+    "message": "Em đọc hay quá!"
+  }
+}</code></pre>
+        <div class="expect">HTTP 200, <code>totalCount</code> = 12, phần lớn chữ <code>good</code>. Nếu máy nghe sót vài chữ thì các chữ đó là <code>retry</code> hoặc <code>skipped</code>, và <code>message</code> thành "Em đọc hay quá! Thử đọc lại các chữ màu vàng nhé."</div>
+      </div>
+
+      <div class="tc" id="TC33">
+        <div class="tc-head"><span class="tc-id">TC33</span><h3>Đọc sai thanh một chữ</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC33">Đạt</label></div>
+        <p class="what">Chữ đọc sai thanh hoặc sai dấu được xếp vào <code>retry</code> kèm gợi ý <code>tone</code>, không có chữ "sai".</p>
+        <div class="field-label"><span class="m post">POST</span> URL <span class="token">· token trẻ · multipart/form-data</span></div>
+        <pre class="url"><code>/api/v1/child/reading/sessions/{sessionId}/segments/{segmentId}/read-aloud</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody>
+            <tr><td><code>sessionId</code></td><td>lấy từ TC31</td><td></td></tr>
+            <tr><td><code>segmentId</code></td><td><b>6</b></td><td></td></tr>
+            <tr><td><code>audio</code> (form-data)</td><td>file (2)</td><td>Đọc "sóng" thành "song"</td></tr>
+          </tbody>
+        </table></div>
+        <div class="expect">HTTP 200. Chữ <code>index</code> 2 ("sóng") có <code>status</code> = <b>"retry"</b>, <code>hint</code> = <b>"tone"</b>. <code>retryCount</code> ≥ 1.</div>
+        <div class="note">Speech-to-Text đôi khi tự "sửa" thành chữ đúng nếu đọc gần giống. Nếu "sóng" vẫn ra <code>good</code>, đọc lệch rõ hơn ("sông", "song"). Đọc thành chữ hoàn toàn khác (ví dụ "biển" thành "bàn") thì <code>hint</code> = <code>"different"</code>.</div>
+      </div>
+
+      <div class="tc" id="TC34">
+        <div class="tc-head"><span class="tc-id">TC34</span><h3>Đọc thiếu nửa câu</h3><span class="kind pos">Đúng</span><label><input type="checkbox" data-tc="TC34">Đạt</label></div>
+        <p class="what">Chữ trẻ không đọc tới được xếp vào <code>skipped</code>.</p>
+        <div class="field-label"><span class="m post">POST</span> URL <span class="token">· token trẻ · multipart/form-data</span></div>
+        <pre class="url"><code>/api/v1/child/reading/sessions/{sessionId}/segments/{segmentId}/read-aloud</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody>
+            <tr><td><code>sessionId</code></td><td>lấy từ TC31</td><td></td></tr>
+            <tr><td><code>segmentId</code></td><td><b>6</b></td><td></td></tr>
+            <tr><td><code>audio</code> (form-data)</td><td>file (3)</td><td>Chỉ đọc "Sau lớp sóng biển xanh"</td></tr>
+          </tbody>
+        </table></div>
+        <div class="expect">HTTP 200. 5 chữ đầu <code>good</code>; 7 chữ sau ("là cả một thế giới kỳ diệu") có <code>status</code> = <b>"skipped"</b>, <code>hint</code> = null. <code>skippedCount</code> = 7.</div>
+      </div>
+
+      <div class="tc" id="TC35">
+        <div class="tc-head"><span class="tc-id">TC35</span><h3>Không gửi file ghi âm</h3><span class="kind neg">Sai</span><label><input type="checkbox" data-tc="TC35">Đạt</label></div>
+        <div class="field-label"><span class="m post">POST</span> URL <span class="token">· token trẻ · multipart/form-data</span></div>
+        <pre class="url"><code>/api/v1/child/reading/sessions/{sessionId}/segments/{segmentId}/read-aloud</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody>
+            <tr><td><code>sessionId</code></td><td>lấy từ TC31</td><td></td></tr>
+            <tr><td><code>segmentId</code></td><td><b>6</b></td><td></td></tr>
+            <tr><td><code>audio</code> (form-data)</td><td>để trống</td><td>Không chọn file</td></tr>
+          </tbody>
+        </table></div>
+        <div class="expect neg">HTTP <b>400</b>, <code>message</code> = "Em bấm micro rồi đọc lại nhé." Không gọi Google.</div>
+      </div>
+
+      <div class="tc" id="TC36">
+        <div class="tc-head"><span class="tc-id">TC36</span><h3>Gửi file không phải âm thanh</h3><span class="kind neg">Sai</span><label><input type="checkbox" data-tc="TC36">Đạt</label></div>
+        <div class="field-label"><span class="m post">POST</span> URL <span class="token">· token trẻ · multipart/form-data</span></div>
+        <pre class="url"><code>/api/v1/child/reading/sessions/{sessionId}/segments/{segmentId}/read-aloud</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody>
+            <tr><td><code>sessionId</code></td><td>lấy từ TC31</td><td></td></tr>
+            <tr><td><code>segmentId</code></td><td><b>6</b></td><td></td></tr>
+            <tr><td><code>audio</code> (form-data)</td><td>file <code>.png</code> hoặc <code>.txt</code></td><td></td></tr>
+          </tbody>
+        </table></div>
+        <div class="expect neg">HTTP <b>400</b>, <code>message</code> = "Định dạng ghi âm chưa được hỗ trợ."</div>
+      </div>
+
+      <div class="tc" id="TC37">
+        <div class="tc-head"><span class="tc-id">TC37</span><h3>File ghi âm quá 1 MB</h3><span class="kind neg">Sai</span><label><input type="checkbox" data-tc="TC37">Đạt</label></div>
+        <div class="field-label"><span class="m post">POST</span> URL <span class="token">· token trẻ · multipart/form-data</span></div>
+        <pre class="url"><code>/api/v1/child/reading/sessions/{sessionId}/segments/{segmentId}/read-aloud</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody>
+            <tr><td><code>sessionId</code></td><td>lấy từ TC31</td><td></td></tr>
+            <tr><td><code>segmentId</code></td><td><b>6</b></td><td></td></tr>
+            <tr><td><code>audio</code> (form-data)</td><td>file âm thanh &gt; 1 MB</td><td>Ví dụ WAV dài hơn 30 giây</td></tr>
+          </tbody>
+        </table></div>
+        <div class="expect neg">HTTP <b>400</b>, <code>message</code> = "Đoạn ghi âm dài quá, em đọc ngắn hơn nhé." File lớn hơn khoảng 1,1 MB có thể bị chặn ngay ở tầng web server với mã <b>413</b>; cả hai đều đúng.</div>
+      </div>
+
+      <div class="tc" id="TC38">
+        <div class="tc-head"><span class="tc-id">TC38</span><h3>Đoạn thuộc truyện khác</h3><span class="kind neg">Sai</span><label><input type="checkbox" data-tc="TC38">Đạt</label></div>
+        <p class="what">Trẻ chỉ luyện đọc được đoạn của truyện đang đọc. Đoạn 1 thuộc truyện 1.</p>
+        <div class="field-label"><span class="m post">POST</span> URL <span class="token">· token trẻ · multipart/form-data</span></div>
+        <pre class="url"><code>/api/v1/child/reading/sessions/{sessionId}/segments/{segmentId}/read-aloud</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody>
+            <tr><td><code>sessionId</code></td><td>lấy từ TC31</td><td>Phiên đọc truyện 6</td></tr>
+            <tr><td><code>segmentId</code></td><td><b>1</b></td><td>Đoạn của truyện 1</td></tr>
+            <tr><td><code>audio</code> (form-data)</td><td>file (1)</td><td></td></tr>
+          </tbody>
+        </table></div>
+        <div class="expect neg">HTTP <b>404</b>. Không gọi Google.</div>
+      </div>
+
+      <div class="tc" id="TC39">
+        <div class="tc-head"><span class="tc-id">TC39</span><h3>Dùng token phụ huynh</h3><span class="kind neg">Sai</span><label><input type="checkbox" data-tc="TC39">Đạt</label></div>
+        <p class="what">API luyện đọc chỉ nhận Child Session. Authorize bằng token phụ huynh (TC01) rồi gọi:</p>
+        <div class="field-label"><span class="m post">POST</span> URL <span class="token">· token phụ huynh · multipart/form-data</span></div>
+        <pre class="url"><code>/api/v1/child/reading/sessions/{sessionId}/segments/{segmentId}/read-aloud</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody>
+            <tr><td><code>sessionId</code></td><td>lấy từ TC31</td><td></td></tr>
+            <tr><td><code>segmentId</code></td><td><b>6</b></td><td></td></tr>
+            <tr><td><code>audio</code> (form-data)</td><td>file (1)</td><td></td></tr>
+          </tbody>
+        </table></div>
+        <div class="expect neg">HTTP <b>403</b> (hoặc 401).</div>
+      </div>
+
+      <div class="tc" id="TC40">
+        <div class="tc-head"><span class="tc-id">TC40</span><h3>Phụ huynh tắt giọng nói</h3><span class="kind neg">Sai</span><label><input type="checkbox" data-tc="TC40">Đạt</label></div>
+        <p class="what">Khi phụ huynh tắt giọng nói, backend chặn trước khi gửi âm thanh đi đâu. Bước 1: dùng token phụ huynh gọi lại TC30 với <code>"voiceAnswersEnabled": false</code>. Bước 2: dùng token trẻ gọi:</p>
+        <div class="field-label"><span class="m post">POST</span> URL <span class="token">· token trẻ · multipart/form-data</span></div>
+        <pre class="url"><code>/api/v1/child/reading/sessions/{sessionId}/segments/{segmentId}/read-aloud</code></pre>
+        <div class="field-label">Input parameter</div>
+        <div class="table-wrap"><table class="params">
+          <thead><tr><th>Tham số</th><th>Giá trị</th><th>Ghi chú</th></tr></thead>
+          <tbody>
+            <tr><td><code>sessionId</code></td><td>lấy từ TC31</td><td></td></tr>
+            <tr><td><code>segmentId</code></td><td><b>6</b></td><td></td></tr>
+            <tr><td><code>audio</code> (form-data)</td><td>file (1)</td><td></td></tr>
+          </tbody>
+        </table></div>
+        <div class="expect neg">HTTP <b>403</b>, <code>message</code> = "Bố mẹ chưa bật đọc bằng giọng nói cho em." Không gọi Google, không ghi telemetry.</div>
+        <div class="note">Test xong, gọi lại TC30 với <code>"voiceAnswersEnabled": true</code> để bật lại. Lần này không cần đồng ý lại consent vì <code>voiceConsentAt</code> đã có.</div>
+      </div>
+
+      <div class="tc" id="TC41">
+        <div class="tc-head"><span class="tc-id">TC41</span><h3>Kiểm tra không lưu âm thanh, chỉ lưu số đếm</h3><span class="kind chk">Kiểm tra</span><label><input type="checkbox" data-tc="TC41">Đạt</label></div>
+        <p class="what">Chạy trong pgAdmin hoặc psql, database <code>AIStorytellingDB</code>.</p>
+        <div class="field-label"><span class="m sql">SQL</span> Câu lệnh</div>
+<pre><code>SELECT "ReadingSessionId", "EventType", "EventPayload", "OccurredAt"
+FROM telemetry_logs
+WHERE "EventType" = 'AsrWordResult'
+ORDER BY "Id" DESC
+LIMIT 10;</code></pre>
+        <div class="expect">
+          <ul>
+            <li>Mỗi lần gọi thành công (TC32–TC34) có <b>đúng một dòng</b>; các lần lỗi (TC35–TC40) không tạo dòng nào.</li>
+            <li><code>EventPayload</code> chỉ có số đếm, ví dụ <code>{"segmentId":6,"total":12,"good":11,"retry":1,"skipped":0}</code>; không có lời trẻ nói, không có âm thanh.</li>
+            <li>Supabase Storage, bucket <code>story-media</code>: không có file mới sau các lần luyện đọc.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <footer>Tính năng audio phát âm từ vựng (migration <code>AddVocabularyAudio</code>) và luyện đọc ASR (<code>POST …/read-aloud</code>). Dấu "Đạt" chỉ lưu trên trình duyệt của bạn.</footer>
+  </main>
+</div>
+<script>
+  (function () {
+    var KEY = 'vocab-audio-tc';
+    var state = {};
+    try { state = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { state = {}; }
+    var boxes = Array.prototype.slice.call(document.querySelectorAll('input[data-tc]'));
+    function render() {
+      var done = 0;
+      boxes.forEach(function (b) {
+        var id = b.getAttribute('data-tc');
+        b.checked = !!state[id];
+        var card = document.getElementById(id);
+        if (card) card.classList.toggle('passed', b.checked);
+        var link = document.querySelector('nav.toc a[href="#' + id + '"]');
+        if (link) link.classList.toggle('done', b.checked);
+        if (b.checked) done++;
+      });
+      document.getElementById('count').textContent = done + '/' + boxes.length + ' đạt';
+      document.getElementById('bar').style.width = (boxes.length ? done / boxes.length * 100 : 0) + '%';
+    }
+    function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+    boxes.forEach(function (b) {
+      b.addEventListener('change', function () { state[b.getAttribute('data-tc')] = b.checked; save(); render(); });
+    });
+    document.getElementById('reset').addEventListener('click', function () { state = {}; save(); render(); });
+    render();
+
+    document.querySelectorAll('pre').forEach(function (pre) {
+      var btn = document.createElement('button');
+      btn.className = 'copy'; btn.type = 'button'; btn.textContent = 'Copy';
+      btn.addEventListener('click', function () {
+        var code = pre.querySelector('code');
+        var text = code ? code.innerText : pre.innerText;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(function () {
+            btn.textContent = 'Đã copy';
+            setTimeout(function () { btn.textContent = 'Copy'; }, 1400);
+          }, function () {});
+        }
+      });
+      pre.appendChild(btn);
+    });
+  })();
+</script>
+</body>
+</html>

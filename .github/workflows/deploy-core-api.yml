@@ -96,26 +96,32 @@ jobs:
           echo "ECS deployment: $deployment_id"
           echo "deployment_id=$deployment_id" >> "$GITHUB_OUTPUT"
 
-      # services-stable alone is not enough: it also returns once ECS has rolled a failed deployment back
-      # (or settled on zero running tasks), which is how earlier deploys "succeeded" while production was down.
-      - name: Wait for ECS service to stabilize
-        run: |
-          aws ecs wait services-stable             --cluster "$ECS_CLUSTER"             --services "$ECS_SERVICE"             --region "$AWS_REGION"
-
-      - name: Verify this deployment completed with a running task
+      # Follow the deployment this run started until ECS settles it. "aws ecs wait services-stable" is not
+      # enough: it also returns after ECS rolled a failed deployment back (or settled on zero tasks), which is
+      # how earlier deploys "succeeded" while production was down, and it can return a few seconds before
+      # ECS flips rolloutState from IN_PROGRESS to COMPLETED.
+      - name: Wait for this deployment to complete
         env:
           DEPLOYMENT_ID: ${{ steps.deploy.outputs.deployment_id }}
         run: |
-          read -r status rollout running desired <<< "$(aws ecs describe-services             --cluster "$ECS_CLUSTER"             --services "$ECS_SERVICE"             --region "$AWS_REGION"             --query "services[0].deployments[?id=='$DEPLOYMENT_ID'] | [0].[status, rolloutState, runningCount, desiredCount]"             --output text)"
-          echo "Deployment $DEPLOYMENT_ID: status=$status rollout=$rollout running=$running desired=$desired"
-          if [ "$status" != "PRIMARY" ] || [ "$rollout" != "COMPLETED" ]; then
-            echo "::error::ECS did not complete deployment $DEPLOYMENT_ID (status=$status, rollout=$rollout); it was rolled back or replaced."
-            exit 1
-          fi
-          if [ "$running" -lt 1 ] || [ "$running" -lt "$desired" ]; then
-            echo "::error::Deployment $DEPLOYMENT_ID has $running running task(s) of $desired desired."
-            exit 1
-          fi
+          for attempt in $(seq 1 60); do
+            read -r status rollout running desired <<< "$(aws ecs describe-services               --cluster "$ECS_CLUSTER"               --services "$ECS_SERVICE"               --region "$AWS_REGION"               --query "services[0].deployments[?id=='$DEPLOYMENT_ID'] | [0].[status, rolloutState, runningCount, desiredCount]"               --output text)"
+            echo "Attempt $attempt: $DEPLOYMENT_ID status=$status rollout=$rollout running=$running desired=$desired"
+            if [ "$status" != "PRIMARY" ] || [ "$rollout" = "FAILED" ]; then
+              echo "::error::ECS rolled back or replaced deployment $DEPLOYMENT_ID (status=$status, rollout=$rollout)."
+              exit 1
+            fi
+            if [ "$rollout" = "COMPLETED" ]; then
+              if [ "$running" -lt 1 ] || [ "$running" -lt "$desired" ]; then
+                echo "::error::Deployment $DEPLOYMENT_ID completed with $running running task(s) of $desired desired."
+                exit 1
+              fi
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::Deployment $DEPLOYMENT_ID did not complete within 15 minutes."
+          exit 1
 
       - name: Check the public health endpoint
         run: |

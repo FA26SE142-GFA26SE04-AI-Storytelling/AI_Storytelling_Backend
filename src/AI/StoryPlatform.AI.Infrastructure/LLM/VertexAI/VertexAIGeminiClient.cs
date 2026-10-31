@@ -57,6 +57,8 @@ public sealed class VertexAIGeminiClient : ILlmClient
         {
             throw new InvalidOperationException("AI:Google:Model is not configured.");
         }
+        if (_options.TimeoutSeconds is < 1 or > 300)
+            throw new InvalidOperationException("AI:Google:TimeoutSeconds must be between 1 and 300.");
 
         _client = client ?? new Client(
             project: _options.ProjectId,
@@ -85,26 +87,23 @@ public sealed class VertexAIGeminiClient : ILlmClient
             schemaName,
             prompt.Length);
 
-        // Log full prompt in Debug mode (development only - contains user data)
-        if (!IsSensitiveSchema(schemaName)) _logger.LogDebug(
-            "Vertex request prompt. SchemaName={SchemaName}, Prompt={Prompt}",
-            schemaName,
-            prompt);
-
         var config = new GenerateContentConfig
         {
             ResponseMimeType = "application/json",
-            ResponseSchema = BuildSchema(schema)
+            ResponseSchema = BuildSchema(schema),
+            HttpOptions = new HttpOptions { Timeout = checked(_options.TimeoutSeconds * 1000) }
         };
         if (IsSensitiveSchema(schemaName))
         {
             // SDK defaults to five attempts. Core owns the overall deadline; a retry is an explicit new operation.
-            config.HttpOptions = new HttpOptions { RetryOptions = new HttpRetryOptions { Attempts = 1 } };
+            config.HttpOptions.RetryOptions = new HttpRetryOptions { Attempts = 1 };
             // Bound output including reasoning while allowing local prose and up to twenty review findings.
             config.MaxOutputTokens = schemaName == "creator_assistance_safety" ? 4096 : schemaName.StartsWith("gray_zone", StringComparison.Ordinal) ? 8192 : 16384;
         }
 
         var stopwatch = Stopwatch.StartNew();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(_options.TimeoutSeconds));
 
         LlmGenerationResult result;
         try
@@ -113,7 +112,7 @@ public sealed class VertexAIGeminiClient : ILlmClient
                 model: _options.Model,
                 contents: prompt,
                 config: config,
-                cancellationToken: cancellationToken);
+                cancellationToken: deadline.Token);
             stopwatch.Stop();
 
             if (response?.Candidates is null || response.Candidates.Count == 0)
@@ -175,12 +174,10 @@ public sealed class VertexAIGeminiClient : ILlmClient
             if (truncated) throw new LlmOutputTruncatedException(
                 $"Vertex AI stopped at the output token limit (MaxOutputTokens={config.MaxOutputTokens}) for schema '{schemaName}'.");
 
-            // Log full response in Debug mode
-            if (!IsSensitiveSchema(schemaName)) _logger.LogDebug(
-                "Vertex response content. SchemaName={SchemaName}, ContentLength={ContentLength}, Content={Content}",
-                schemaName,
-                content.Length,
-                content);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && deadline.IsCancellationRequested)
+        {
+            throw new TimeoutException("Vertex AI exceeded the configured request deadline.");
         }
         catch (LlmOutputTruncatedException)
         {
@@ -211,7 +208,6 @@ public sealed class VertexAIGeminiClient : ILlmClient
             if (statusCode is 408 or 429 || statusCode >= 500)
             {
                 _logger.LogWarning(
-                    ex,
                     "Vertex request encountered a transient provider error. " +
                     "Model={Model}, SchemaName={SchemaName}, LatencyMs={LatencyMs}, " +
                     "Status=RetryableError, StatusCode={StatusCode}, ErrorType={ErrorType}, " +
@@ -229,8 +225,8 @@ public sealed class VertexAIGeminiClient : ILlmClient
                 // HttpRequestException.StatusCode can be null. Normalize the SDK error so
                 // provider-agnostic retry policies can reliably recognize 408/429/5xx.
                 var failure = new HttpRequestException(
-                    ex.Message,
-                    ex,
+                    "Vertex AI provider request failed.",
+                    null,
                     (HttpStatusCode)statusCode.Value);
                 if (GetRetryAfter(ex) is { } delay)
                     failure.Data[RetryAfterSecondsKey] = delay.TotalSeconds;
@@ -239,7 +235,6 @@ public sealed class VertexAIGeminiClient : ILlmClient
 
             // Structured error logging
             _logger.LogError(
-                ex,
                 "Vertex request failed. " +
                 "Model={Model}, SchemaName={SchemaName}, LatencyMs={LatencyMs}, Status=Error, ErrorType={ErrorType}",
                 _options.Model,

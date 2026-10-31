@@ -15,14 +15,17 @@ public static class AuthoringGuideCatalogValidator
 
     private static readonly Regex IdPattern = new(@"^[A-Za-z0-9_-]{1,100}$", RegexOptions.Compiled);
 
-    public static void Validate(IReadOnlyCollection<AuthoringGuide> items)
+    public const int LabelMaxLength = 100;
+    public const int HintMaxLength = 200;
+
+    public static void Validate(IReadOnlyCollection<AuthoringGuide> items, bool requireLabels = false)
     {
         if (items.Select(x => x.Id).Distinct(StringComparer.Ordinal).Count() != items.Count)
             throw new BadRequestException("GUIDE_ID_DUPLICATED");
-        foreach (var item in items) ValidateItem(item);
+        foreach (var item in items) ValidateItem(item, requireLabels);
     }
 
-    public static void ValidateItem(AuthoringGuide item)
+    public static void ValidateItem(AuthoringGuide item, bool requireLabels = false)
     {
         if (string.IsNullOrWhiteSpace(item.Id) || string.IsNullOrWhiteSpace(item.Title) ||
             string.IsNullOrWhiteSpace(item.Instruction))
@@ -45,9 +48,15 @@ public static class AuthoringGuideCatalogValidator
         }
 
         if (string.IsNullOrWhiteSpace(item.TemplateText)) throw new BadRequestException("GUIDE_TEMPLATE_REQUIRED");
+        var keys = declared.Select(p => p?.Key ?? "").ToArray();
+        if (keys.Any(k => k.Length == 0) || keys.Distinct(StringComparer.Ordinal).Count() != keys.Length)
+            throw new BadRequestException("GUIDE_PLACEHOLDERS_MISMATCH");
         var used = PlaceholderPattern.Matches(item.TemplateText).Select(m => m.Groups[1].Value)
             .Distinct().Order(StringComparer.Ordinal);
-        if (!used.SequenceEqual(declared.Distinct().Order(StringComparer.Ordinal)))
+        if (!used.SequenceEqual(keys.Order(StringComparer.Ordinal)))
             throw new BadRequestException("GUIDE_PLACEHOLDERS_MISMATCH");
+        if (declared.Any(p => (p.Label?.Length ?? 0) > LabelMaxLength || (p.Hint?.Length ?? 0) > HintMaxLength
+                              || (requireLabels && string.IsNullOrWhiteSpace(p.Label))))
+            throw new BadRequestException("GUIDE_PLACEHOLDER_LABEL_INVALID");
     }
 }

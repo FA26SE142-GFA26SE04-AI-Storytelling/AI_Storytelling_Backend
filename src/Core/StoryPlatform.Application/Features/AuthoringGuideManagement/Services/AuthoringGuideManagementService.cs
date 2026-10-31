@@ -1,4 +1,3 @@
-using System.Text.Json;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Common.Models;
@@ -13,14 +12,15 @@ namespace StoryPlatform.Application.Features.AuthoringGuideManagement.Services;
 
 public sealed partial class AuthoringGuideManagementService(IUnitOfWork uow, IAuditLogWriter audit) : IAuthoringGuideManagementService
 {
-    private static readonly JsonSerializerOptions Json = AuthoringGuideCatalogSeeder.Json;
+    private readonly AuthoringGuideItemStore _items = new(uow);
 
     public async Task<GuideManagementOverviewDto> GetOverviewAsync(int actorUserId, CancellationToken ct = default)
     {
         await RequireActorAsync(actorUserId, ct);
         var catalog = await LoadCatalogAsync(ct);
         return new(catalog.Locale, catalog.AudienceRole, catalog.RevisionToken,
-            await LoadDetailAsync(catalog.PublishedVersionId, ct), await LoadDetailAsync(catalog.DraftVersionId, ct));
+            await LoadDetailAsync(catalog.PublishedVersionId, catalog.AudienceRole, ct),
+            await LoadDetailAsync(catalog.DraftVersionId, catalog.AudienceRole, ct));
     }
 
     public async Task<PagedResult<GuideVersionSummaryDto>> ListVersionsAsync(int actorUserId, int pageIndex, int pageSize,
@@ -31,7 +31,9 @@ public sealed partial class AuthoringGuideManagementService(IUnitOfWork uow, IAu
         var catalog = await LoadCatalogAsync(ct);
         var (rows, total) = await uow.Repository<AuthoringGuideCatalogVersion>().GetPagedAsync(pageIndex, pageSize,
             x => x.CatalogId == catalog.Id && !x.IsDeleted, q => q.OrderByDescending(x => x.VersionNo), cancellationToken: ct);
-        return new(rows.Select(x => ToSummary(x, ReadContent(x).Items.Length)).ToList(), total, pageIndex, pageSize);
+        var summaries = new List<GuideVersionSummaryDto>();
+        foreach (var row in rows) summaries.Add(ToSummary(row, await _items.CountAsync(row.Id, ct)));
+        return new(summaries, total, pageIndex, pageSize);
     }
 
     public async Task<GuideVersionDetailDto> GetVersionAsync(int actorUserId, int versionId, CancellationToken ct = default)
@@ -41,7 +43,7 @@ public sealed partial class AuthoringGuideManagementService(IUnitOfWork uow, IAu
         var version = await uow.Repository<AuthoringGuideCatalogVersion>().FirstOrDefaultAsync(
             x => x.Id == versionId && x.CatalogId == catalog.Id && !x.IsDeleted, cancellationToken: ct)
             ?? throw new NotFoundException("Phiên bản hướng dẫn", versionId);
-        return ToDetail(version);
+        return await ToDetailAsync(version, catalog.AudienceRole, ct);
     }
 
     // ---- dùng chung cho các phần partial ----
@@ -110,26 +112,21 @@ public sealed partial class AuthoringGuideManagementService(IUnitOfWork uow, IAu
         }
     }
 
-    private async Task<GuideVersionDetailDto?> LoadDetailAsync(int? versionId, CancellationToken ct)
+    private async Task<GuideVersionDetailDto?> LoadDetailAsync(int? versionId, string audienceRole, CancellationToken ct)
     {
         if (versionId is null) return null;
         var id = versionId.Value;
         var version = await uow.Repository<AuthoringGuideCatalogVersion>().FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted, cancellationToken: ct);
-        return version is null ? null : ToDetail(version);
+        return version is null ? null : await ToDetailAsync(version, audienceRole, ct);
     }
-
-    private static AuthoringGuideCatalogContent ReadContent(AuthoringGuideCatalogVersion version) =>
-        JsonSerializer.Deserialize<AuthoringGuideCatalogContent>(version.ContentJson, Json) ?? new(1, []);
-
-    private static string WriteContent(AuthoringGuideCatalogContent content) => JsonSerializer.Serialize(content, Json);
 
     private static GuideVersionSummaryDto ToSummary(AuthoringGuideCatalogVersion v, int itemCount) =>
         new(v.Id, v.VersionNo, v.CatalogVersion, v.Status.ToString(), itemCount, v.CreatedByUserId, v.CreatedAt,
             v.UpdatedByUserId, v.UpdatedAt, v.PublishedByUserId, v.PublishedAt);
 
-    private static GuideVersionDetailDto ToDetail(AuthoringGuideCatalogVersion v)
+    private async Task<GuideVersionDetailDto> ToDetailAsync(AuthoringGuideCatalogVersion v, string audienceRole, CancellationToken ct)
     {
-        var content = ReadContent(v);
-        return new(ToSummary(v, content.Items.Length), content.SchemaVersion, content.Items);
+        var items = await _items.LoadAsync(v.Id, audienceRole, ct);
+        return new(ToSummary(v, items.Length), AuthoringGuideCatalogSeeder.SchemaVersion, items);
     }
 }

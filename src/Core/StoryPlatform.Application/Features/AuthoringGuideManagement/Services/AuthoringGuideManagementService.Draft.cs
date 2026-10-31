@@ -30,10 +30,12 @@ public sealed partial class AuthoringGuideManagementService
                 VersionNo = versionNo,
                 CatalogVersion = $"{catalog.AudienceRole.ToLowerInvariant()}-{catalog.Locale}-{versionNo}",
                 Status = AuthoringGuideVersionStatus.Draft,
-                ContentJson = source.ContentJson,
                 CreatedByUserId = actor.Id
             }, ct);
             await SaveAsync(ct);
+
+            var sourceItems = await _items.LoadAsync(source.Id, catalog.AudienceRole, ct);
+            await _items.AddAsync(draft.Id, sourceItems, () => SaveAsync(ct), ct);
 
             catalog.DraftVersionId = draft.Id;
             uow.Repository<AuthoringGuideCatalog>().Update(catalog);
@@ -41,7 +43,7 @@ public sealed partial class AuthoringGuideManagementService
 
             await audit.LogAsync(actor.Id, "AuthoringGuideDraftCreated", nameof(AuthoringGuideCatalogVersion), draft.Id, null,
                 new { draft.VersionNo, draft.CatalogVersion, sourceVersionId = source.Id, sourceCatalogVersion = source.CatalogVersion }, ct);
-            return new GuideDraftChangeDto(catalog.RevisionToken, ToSummary(draft, ReadContent(draft).Items.Length));
+            return new GuideDraftChangeDto(catalog.RevisionToken, ToSummary(draft, sourceItems.Length));
         }, ct);
     }
 
@@ -54,7 +56,7 @@ public sealed partial class AuthoringGuideManagementService
             var catalog = await LoadCatalogTrackedAsync(ct);
             RequireToken(catalog, revisionToken);
             var draft = await LoadDraftTrackedAsync(catalog, ct);
-            var itemCount = ReadContent(draft).Items.Length;
+            var itemCount = await _items.CountAsync(draft.Id, ct);
 
             draft.IsDeleted = true;
             draft.UpdatedByUserId = actor.Id;
@@ -70,30 +72,32 @@ public sealed partial class AuthoringGuideManagementService
         }, ct);
     }
 
-    public Task<GuideDraftChangeDto> UpsertItemAsync(int actorUserId, string guideId, UpsertGuideItemRequest request, CancellationToken ct = default) =>
-        MutateDraftAsync(actorUserId, request.RevisionToken, "AuthoringGuideItemUpserted", content =>
-        {
-            var item = new AuthoringGuide(guideId, "Parent", request.Purposes ?? [], request.SupportGroup ?? "", request.ItemType ?? "",
-                request.Title ?? "", request.Instruction ?? "", request.Example, request.TemplateText,
-                request.PlaceholderDefinitions ?? [], request.Order);
-            AuthoringGuideCatalogValidator.ValidateItem(item);
-            var existing = content.Items.FirstOrDefault(x => x.Id == guideId);
-            var items = existing is null
-                ? content.Items.Append(item).ToArray()
-                : content.Items.Select(x => x.Id == guideId ? item : x).ToArray();
-            return (content with { Items = items }, existing, item);
-        }, ct);
+    public Task<GuideDraftChangeDto> UpsertItemAsync(int actorUserId, string guideId, UpsertGuideItemRequest request, CancellationToken ct = default)
+    {
+        var item = new AuthoringGuide(guideId, "Parent", request.Purposes ?? [], request.SupportGroup ?? "", request.ItemType ?? "",
+            request.Title ?? "", request.Instruction ?? "", request.Example, request.TemplateText,
+            request.PlaceholderDefinitions ?? [], request.Order);
+        return MutateDraftAsync(actorUserId, request.RevisionToken, "AuthoringGuideItemUpserted",
+            () => AuthoringGuideCatalogValidator.ValidateItem(item, requireLabels: true),
+            async (catalog, draft) =>
+            {
+                var before = await _items.UpsertAsync(draft.Id, catalog.AudienceRole, item, () => SaveAsync(ct), ct);
+                return ((object?)before, (object?)item);
+            }, ct);
+    }
 
     public Task<GuideDraftChangeDto> RemoveItemAsync(int actorUserId, string guideId, string? revisionToken, CancellationToken ct = default) =>
-        MutateDraftAsync(actorUserId, revisionToken, "AuthoringGuideItemRemoved", content =>
-        {
-            var existing = content.Items.FirstOrDefault(x => x.Id == guideId) ?? throw new NotFoundException("GUIDE_ITEM_NOT_FOUND");
-            return (content with { Items = content.Items.Where(x => x.Id != guideId).ToArray() }, existing, null);
-        }, ct);
+        MutateDraftAsync(actorUserId, revisionToken, "AuthoringGuideItemRemoved", () => { },
+            async (catalog, draft) =>
+            {
+                var removed = await _items.RemoveAsync(draft.Id, catalog.AudienceRole, guideId, ct)
+                              ?? throw new NotFoundException("GUIDE_ITEM_NOT_FOUND");
+                return ((object?)removed, null);
+            }, ct);
 
-    /// <summary>Sửa nội dung bản nháp trong một transaction: kiểm token → đổi nội dung → đổi token → audit.</summary>
-    private async Task<GuideDraftChangeDto> MutateDraftAsync(int actorUserId, string? revisionToken, string action,
-        Func<AuthoringGuideCatalogContent, (AuthoringGuideCatalogContent Content, object? Before, object? After)> change, CancellationToken ct)
+    /// <summary>Sửa bản nháp trong một transaction: kiểm token → kiểm nội dung → đổi token → ghi mục → audit.</summary>
+    private async Task<GuideDraftChangeDto> MutateDraftAsync(int actorUserId, string? revisionToken, string action, Action validate,
+        Func<AuthoringGuideCatalog, AuthoringGuideCatalogVersion, Task<(object? Before, object? After)>> change, CancellationToken ct)
     {
         var actor = await RequireActorAsync(actorUserId, ct);
         return await InTransactionAsync(async () =>
@@ -101,17 +105,19 @@ public sealed partial class AuthoringGuideManagementService
             var catalog = await LoadCatalogTrackedAsync(ct);
             RequireToken(catalog, revisionToken);
             var draft = await LoadDraftTrackedAsync(catalog, ct);
+            validate();
 
-            var (content, before, after) = change(ReadContent(draft));
-            draft.ContentJson = WriteContent(content);
-            draft.UpdatedByUserId = actor.Id;
+            // Đổi token trước khi ghi mục: lần lưu đầu chạy UPDATE ... WHERE RevisionToken = <cũ>, người thua nhận 409 thay vì lỗi unique index.
             catalog.RevisionToken = NewToken();
-            uow.Repository<AuthoringGuideCatalogVersion>().Update(draft);
+            draft.UpdatedByUserId = actor.Id;
             uow.Repository<AuthoringGuideCatalog>().Update(catalog);
+            uow.Repository<AuthoringGuideCatalogVersion>().Update(draft);
+
+            var (before, after) = await change(catalog, draft);
             await SaveAsync(ct);
 
             await audit.LogAsync(actor.Id, action, nameof(AuthoringGuideCatalogVersion), draft.Id, before, after, ct);
-            return new GuideDraftChangeDto(catalog.RevisionToken, ToSummary(draft, content.Items.Length));
+            return new GuideDraftChangeDto(catalog.RevisionToken, ToSummary(draft, await _items.CountAsync(draft.Id, ct)));
         }, ct);
     }
 

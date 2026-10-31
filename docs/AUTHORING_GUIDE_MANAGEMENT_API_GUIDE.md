@@ -54,7 +54,7 @@ Tiền tố: `/api/v1/moderation/authoring-guides`. Phản hồi bọc trong `Ap
         "createdByUserId": null, "createdAt": "2026-10-21T09:00:00Z", "updatedByUserId": null, "updatedAt": null,
         "publishedByUserId": null, "publishedAt": "2026-10-21T09:00:00Z"
       },
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "items": [
         {
           "id": "opening-1", "audienceRole": "Parent",
@@ -62,7 +62,7 @@ Tiền tố: `/api/v1/moderation/authoring-guides`. Phản hồi bọc trong `Ap
           "itemType": "template", "title": "Mẫu diễn đạt 1",
           "instruction": "Điền chi tiết, xem trước rồi chủ động chèn vào bản thảo. Có thể sửa mọi câu chữ.",
           "example": null, "templateText": "Hôm ấy, {{person}} cùng {{companion}} thử {{activity}}.",
-          "placeholderDefinitions": ["person", "companion", "activity"], "order": 13
+          "placeholderDefinitions": [{ "key": "person", "label": "Ai?", "hint": "ví dụ: bố, bé Na" }, { "key": "companion", "label": "Cùng với ai?", "hint": "ví dụ: mẹ, ông nội" }, { "key": "activity", "label": "Làm việc gì?", "hint": "ví dụ: làm bánh, đạp xe" }], "order": 13
         }
       ]
     },
@@ -84,10 +84,12 @@ Tiền tố: `/api/v1/moderation/authoring-guides`. Phản hồi bọc trong `Ap
   "instruction": "Điền chi tiết, xem trước rồi chủ động chèn vào bản thảo.",
   "example": null,
   "templateText": "Sáng nay, {{person}} thử {{activity}}.",
-  "placeholderDefinitions": ["person", "activity"],
+  "placeholderDefinitions": [{ "key": "person", "label": "Ai?", "hint": "ví dụ: An" }, { "key": "activity", "label": "Làm gì?", "hint": null }],
   "order": 31
 }
 ```
+
+Mỗi phần tử `placeholderDefinitions` là một chỗ trống: `key` trùng với `{{key}}` trong `templateText` (chỉ chữ thường và `_`, không trùng nhau), `label` là nhãn ô nhập (bắt buộc khi lưu, tối đa 100 ký tự), `hint` là gợi ý mờ trong ô (không bắt buộc, tối đa 200 ký tự). Dữ liệu cũ chuyển từ phiên bản trước có thể có `label` = `null`; frontend nên hiển thị `key` khi không có `label`.
 
 Mọi thao tác ghi (tạo nháp, sửa, loại mục) trả cùng dạng `data` với `revisionToken` mới và tóm tắt bản nháp:
 
@@ -139,7 +141,8 @@ Mọi thao tác ghi (tạo nháp, sửa, loại mục) trả cùng dạng `data`
 | 400 | `WRITING_PURPOSE_INVALID` | `purpose` không thuộc `free`, `family_memory`, `understanding`, `message`. |
 | 400 | `GUIDE_ID_DUPLICATED`, `GUIDE_ID_INVALID`, `GUIDE_FIELD_REQUIRED` | `id` trùng / sai định dạng (chỉ chữ, số, `_`, `-`, tối đa 100 ký tự) / thiếu `title` hoặc `instruction`. |
 | 400 | `GUIDE_AUDIENCE_INVALID`, `GUIDE_PURPOSE_INVALID`, `GUIDE_GROUP_INVALID`, `GUIDE_ITEM_TYPE_INVALID` | Sai đối tượng, mục đích (4 giá trị), nhóm (`starting_point`, `opening`, `events`, `emotion`, `dialogue`, `transition`, `ending`) hoặc `itemType` (`question` hoặc `template`). |
-| 400 | `GUIDE_QUESTION_HAS_TEMPLATE`, `GUIDE_TEMPLATE_REQUIRED`, `GUIDE_PLACEHOLDERS_MISMATCH` | Câu hỏi không được có mẫu/biến; mẫu phải có `templateText`; `placeholderDefinitions` phải khớp chính xác các biến `{{x}}` trong mẫu. |
+| 400 | `GUIDE_QUESTION_HAS_TEMPLATE`, `GUIDE_TEMPLATE_REQUIRED`, `GUIDE_PLACEHOLDERS_MISMATCH` | Câu hỏi không được có mẫu/biến; mẫu phải có `templateText`; `placeholderDefinitions[].key` phải khớp chính xác và không trùng các biến `{{x}}` trong mẫu. |
+| 400 | `GUIDE_PLACEHOLDER_LABEL_INVALID` | Khi lưu mục mẫu: một chỗ trống thiếu `label`, `label` dài hơn 100 ký tự hoặc `hint` dài hơn 200 ký tự. |
 | 400 | `PLACEHOLDER_VALUES_INVALID`, `GUIDE_HAS_NO_TEMPLATE` | Khi điền mẫu: thiếu/thừa biến, giá trị rỗng hoặc dài hơn 500 ký tự; hoặc mục là câu hỏi nên không điền được. |
 | 401 / 403 | — | Chưa đăng nhập / không phải Moderator hoặc Administrator đang hoạt động. |
 

@@ -46,7 +46,7 @@ public sealed class AuthoringGuideManagementApiTests
     {
         revisionToken = token, purposes = new[] { "free" }, supportGroup = "opening", itemType = "template",
         title = "Mẫu mới", instruction = "Điền rồi chèn.", templateText = "Sáng nay, {{person}} thử {{activity}}.",
-        placeholderDefinitions = new[] { "person", "activity" }, order = 31
+        placeholderDefinitions = new[] { new { key = "person", label = "Ai?", hint = (string?)"ví dụ: An" }, new { key = "activity", label = "Làm gì?", hint = (string?)null } }, order = 31
     };
 
     [Fact]
@@ -67,7 +67,7 @@ public sealed class AuthoringGuideManagementApiTests
         await host.SendAsync(HttpMethod.Put, Base + "/draft/items/opening-8", NewItem(token), host.Administrator, HttpStatusCode.Conflict);
         await host.SendAsync(HttpMethod.Put, Base + "/draft/items/opening-8",
             new { revisionToken = token2, purposes = new[] { "free" }, supportGroup = "opening", itemType = "template", title = "x",
-                  instruction = "y", templateText = "Xin chào {{person}}", placeholderDefinitions = new[] { "place" }, order = 32 },
+                  instruction = "y", templateText = "Xin chào {{person}}", placeholderDefinitions = new[] { new { key = "place", label = "Ở đâu?" } }, order = 32 },
             host.Moderator, HttpStatusCode.BadRequest);
         await host.SendAsync(HttpMethod.Delete, Base + "/draft/items/does-not-exist?revisionToken=" + token2, null, host.Moderator, HttpStatusCode.NotFound);
         await host.SendAsync(HttpMethod.Delete, Base + "/draft/items/opening-9", null, host.Moderator, HttpStatusCode.BadRequest);

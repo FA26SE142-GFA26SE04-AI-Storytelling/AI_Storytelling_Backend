@@ -14,13 +14,18 @@ public sealed class AuthoringGuideCatalogTests
     private static AuthoringGuide Question(string id = "q-1") =>
         new(id, "Parent", ["free"], "starting_point", "question", "Bạn muốn bắt đầu ở đâu?", "Đọc rồi bỏ qua.", null, null, [], 1);
 
+    private static GuidePlaceholder[] P(params string[] keys) => keys.Select(k => new GuidePlaceholder(k, "Nhãn " + k, null)).ToArray();
+
     private static AuthoringGuide Template(string id = "t-1", string text = "Hôm ấy, {{person}} thử {{activity}}.",
         string[]? placeholders = null) =>
         new(id, "Parent", ["free"], "opening", "template", "Mẫu", "Điền rồi chèn.", null, text,
-            placeholders ?? ["person", "activity"], 2);
+            P(placeholders ?? ["person", "activity"]), 2);
 
     private static void AssertInvalid(string code, params AuthoringGuide[] items) =>
         Assert.Equal(code, Assert.Throws<BadRequestException>(() => AuthoringGuideCatalogValidator.Validate(items)).Message);
+
+    private static Task AddRowsAsync(ParentAuthoringTestStore store, int versionId, params AuthoringGuide[] guides) =>
+        new AuthoringGuideItemStore(store.Uow.Object).AddAsync(versionId, guides, () => Task.CompletedTask, Ct);
 
     [Fact]
     public void Validator_accepts_valid_question_and_template() =>
@@ -47,7 +52,7 @@ public sealed class AuthoringGuideCatalogTests
     public void Validator_rejects_question_with_template_or_placeholders()
     {
         AssertInvalid("GUIDE_QUESTION_HAS_TEMPLATE", Question() with { TemplateText = "Xin chào" });
-        AssertInvalid("GUIDE_QUESTION_HAS_TEMPLATE", Question() with { PlaceholderDefinitions = ["person"] });
+        AssertInvalid("GUIDE_QUESTION_HAS_TEMPLATE", Question() with { PlaceholderDefinitions = P("person") });
     }
 
     [Fact]
@@ -70,28 +75,29 @@ public sealed class AuthoringGuideCatalogTests
         Assert.Null(catalog.DraftVersionId);
         Assert.Equal(("parent-vi-1", 1, AuthoringGuideVersionStatus.Published), (version.CatalogVersion, version.VersionNo, version.Status));
 
+        Assert.Null(version.ContentJson);
         var source = AuthoringGuideCatalogSeeder.LoadEmbedded();
-        var stored = JsonSerializer.Deserialize<AuthoringGuideCatalogContent>(version.ContentJson, AuthoringGuideCatalogSeeder.Json)!;
-        Assert.Equal(30, stored.Items.Length);
-        Assert.Equal(1, stored.SchemaVersion);
+        var stored = await new AuthoringGuideItemStore(store.Uow.Object).LoadAsync(version.Id, "Parent", Ct);
+        Assert.Equal(30, stored.Length);
         Assert.Equal(JsonSerializer.Serialize(source.Items, AuthoringGuideCatalogSeeder.Json),
-            JsonSerializer.Serialize(stored.Items, AuthoringGuideCatalogSeeder.Json));
-        await Task.CompletedTask;
+            JsonSerializer.Serialize(stored, AuthoringGuideCatalogSeeder.Json));
+        Assert.Equal(36, store.Items<AuthoringGuidePlaceholder>().Count);
     }
 
     [Fact]
     public async Task Seeder_runs_once_and_never_overwrites_edited_content()
     {
         var store = new ParentAuthoringTestStore();
-        var version = store.Items<AuthoringGuideCatalogVersion>().Single();
-        version.ContentJson = "{\"schemaVersion\":1,\"items\":[]}";
+        var row = store.Items<AuthoringGuideItem>().Single(x => x.GuideKey == "opening-1");
+        row.Title = "Đã sửa tay";
 
         var seededAgain = await new AuthoringGuideCatalogSeeder(store.Uow.Object).SeedAsync(Ct);
 
         Assert.False(seededAgain);
         Assert.Single(store.Items<AuthoringGuideCatalog>());
         Assert.Single(store.Items<AuthoringGuideCatalogVersion>());
-        Assert.Equal("{\"schemaVersion\":1,\"items\":[]}", version.ContentJson);
+        Assert.Equal(30, store.Items<AuthoringGuideItem>().Count);
+        Assert.Equal("Đã sửa tay", row.Title);
     }
 
     private static RenderGuideRequest Values(string? catalogVersion = null) =>
@@ -115,8 +121,8 @@ public sealed class AuthoringGuideCatalogTests
         store.Items<AuthoringGuideCatalogVersion>().Add(new()
         {
             Id = 99, CatalogId = catalog.Id, VersionNo = 2, CatalogVersion = "parent-vi-2", Status = AuthoringGuideVersionStatus.Draft,
-            ContentJson = JsonSerializer.Serialize(new AuthoringGuideCatalogContent(1, [Question("draft-only")]), AuthoringGuideCatalogSeeder.Json)
         });
+        await AddRowsAsync(store, 99, Question("draft-only"));
         catalog.DraftVersionId = 99;
 
         var page = await store.Guides.GetAsync("vi", "free", null, 1, 100, Ct);
@@ -141,10 +147,7 @@ public sealed class AuthoringGuideCatalogTests
     public async Task Render_returns_not_found_when_guide_was_removed_from_published_set()
     {
         var store = new ParentAuthoringTestStore();
-        var version = store.Items<AuthoringGuideCatalogVersion>().Single();
-        var content = JsonSerializer.Deserialize<AuthoringGuideCatalogContent>(version.ContentJson, AuthoringGuideCatalogSeeder.Json)!;
-        version.ContentJson = JsonSerializer.Serialize(
-            content with { Items = content.Items.Where(x => x.Id != "opening-1").ToArray() }, AuthoringGuideCatalogSeeder.Json);
+        store.Items<AuthoringGuideItem>().Single(x => x.GuideKey == "opening-1").IsDeleted = true;
 
         await Assert.ThrowsAsync<NotFoundException>(() => store.Guides.RenderAsync("opening-1", Values(), Ct));
     }
@@ -200,7 +203,7 @@ public sealed class AuthoringGuideCatalogTests
     public void Query_renders_plain_text_in_one_pass_and_rejects_bad_values()
     {
         var guide = Template();
-        Assert.Equal("Hôm ấy, $1 thử {{x}}.", AuthoringGuideCatalogQuery.RenderText(guide with { TemplateText = "Hôm ấy, {{person}} thử {{activity}}.", PlaceholderDefinitions = ["person", "activity"] },
+        Assert.Equal("Hôm ấy, $1 thử {{x}}.", AuthoringGuideCatalogQuery.RenderText(guide with { TemplateText = "Hôm ấy, {{person}} thử {{activity}}.", PlaceholderDefinitions = P("person", "activity") },
             new Dictionary<string, string> { ["person"] = "$1", ["activity"] = "{{x}}" }));
 
         AssertRenderInvalid("GUIDE_HAS_NO_TEMPLATE", Question(), new Dictionary<string, string>());
@@ -221,11 +224,53 @@ public sealed class AuthoringGuideCatalogTests
         store.Items<AuthoringGuideCatalogVersion>().Add(new()
         {
             Id = 88, CatalogId = catalog.Id, VersionNo = 2, CatalogVersion = "parent-vi-2", Status = AuthoringGuideVersionStatus.Draft,
-            ContentJson = JsonSerializer.Serialize(new AuthoringGuideCatalogContent(1, [Question("draft-only")]), AuthoringGuideCatalogSeeder.Json)
         });
+        await AddRowsAsync(store, 88, Question("draft-only"));
         catalog.PublishedVersionId = 88; // corrupted pointer: published pointer aimed at a Draft-status row
 
         var ex = await Assert.ThrowsAsync<ConflictException>(() => store.Guides.GetAsync("vi", "free", null, 1, 100, Ct));
         Assert.Equal("GUIDE_CATALOG_UNAVAILABLE", ex.Message);
+    }
+
+    [Fact]
+    public void Validator_rejects_duplicate_or_empty_placeholder_keys()
+    {
+        AssertInvalid("GUIDE_PLACEHOLDERS_MISMATCH", Template(placeholders: ["person", "person", "activity"]));
+        AssertInvalid("GUIDE_PLACEHOLDERS_MISMATCH", Template() with
+        {
+            PlaceholderDefinitions = [new("person", "Ai?", null), new("", "Làm gì?", null)]
+        });
+    }
+
+    [Fact]
+    public void Labels_are_optional_by_default_but_required_when_asked_and_always_bounded()
+    {
+        var unlabeled = Template() with { PlaceholderDefinitions = [new("person", null, null), new("activity", " ", null)] };
+        AuthoringGuideCatalogValidator.ValidateItem(unlabeled); // dữ liệu cũ chưa có nhãn vẫn phát hành được
+        Assert.Equal("GUIDE_PLACEHOLDER_LABEL_INVALID",
+            Assert.Throws<BadRequestException>(() => AuthoringGuideCatalogValidator.ValidateItem(unlabeled, requireLabels: true)).Message);
+
+        AssertInvalid("GUIDE_PLACEHOLDER_LABEL_INVALID", Template() with
+        {
+            PlaceholderDefinitions = [new("person", new string('a', 101), null), new("activity", "Làm gì?", null)]
+        });
+        AssertInvalid("GUIDE_PLACEHOLDER_LABEL_INVALID", Template() with
+        {
+            PlaceholderDefinitions = [new("person", "Ai?", new string('a', 201)), new("activity", "Làm gì?", null)]
+        });
+        AuthoringGuideCatalogValidator.ValidateItem(Template(), requireLabels: true);
+    }
+
+    [Fact]
+    public void Seed_gives_every_blank_a_vietnamese_label_and_hint()
+    {
+        var seed = AuthoringGuideCatalogSeeder.LoadEmbedded();
+        Assert.Equal(2, seed.SchemaVersion);
+        var blanks = seed.Items.SelectMany(x => x.PlaceholderDefinitions).ToArray();
+        Assert.Equal(36, blanks.Length);
+        Assert.All(blanks, b => Assert.False(string.IsNullOrWhiteSpace(b.Label)));
+        Assert.All(blanks, b => Assert.StartsWith("ví dụ: ", b.Hint));
+        Assert.Equal(new GuidePlaceholder("person", "Ai?", "ví dụ: bố, bé Na"),
+            seed.Items.Single(x => x.Id == "opening-1").PlaceholderDefinitions[0]);
     }
 }

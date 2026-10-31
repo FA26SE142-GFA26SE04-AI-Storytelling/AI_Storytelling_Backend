@@ -4776,7 +4776,7 @@ Nguồn: [AuthoringGuideService.cs](../src/Core/StoryPlatform.Application/Featur
 | `instruction` | `string` | Không | — |
 | `example` | `string?` | Có | — |
 | `templateText` | `string?` | Có | — |
-| `placeholderDefinitions` | `string[]` | Không | — |
+| `placeholderDefinitions` | `GuidePlaceholder[]` (`key: string`, `label: string?`, `hint: string?`) | Không | Thứ tự = thứ tự ô nhập; `label` bắt buộc khi Moderator lưu |
 | `order` | `int` | Không | — |
 
 <a id="dto-businessreportdto"></a>

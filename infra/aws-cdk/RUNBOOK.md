@@ -58,13 +58,16 @@ file itself runs `.github/workflows/deploy-core-api.yml`:
    GitHub-hosted x86 runner, via `docker/setup-qemu-action`), pushes `:sha` and `:latest` to ECR,
    then explicitly calls `aws ecs update-service --force-new-deployment` (re-pulls `:latest` even
    though the task definition's image reference string doesn't change) and records the ID of the
-   deployment it started. It then waits for `aws ecs wait services-stable` and **verifies that this
-   deployment ID is `PRIMARY` + `COMPLETED` with at least one running task**, and finally that
+   deployment it started. It then **follows that deployment ID until ECS settles it** (every 15 s, up to
+   15 minutes): it must stay `PRIMARY` and reach `COMPLETED` with at least one running task; `FAILED`, a
+   rollback or a replacement fails the job. Finally it checks that
    `https://api.taletale.site/health` returns 200 through the Cloudflare Tunnel. On failure it prints
    the latest ECS service events.
 
    `services-stable` on its own is not proof of a good deploy: it also returns after ECS has rolled a
-   failed deployment back, or when the service has settled on zero running tasks. Until 2026-10-31 the
+   failed deployment back, or when the service has settled on zero running tasks, and it can return a few
+   seconds before `rolloutState` becomes `COMPLETED` (the first run of the stricter check on 2026-10-31
+   failed on exactly that, although the deploy was fine). Until 2026-10-31 the
    workflow stopped there, so every deploy between 2026-10-16 and 2026-10-31 reported success while
    production was down. The service's deployment circuit breaker (enabled, with rollback) stops a
    crash-looping deployment after a few failed tasks and returns to the previous task set; the

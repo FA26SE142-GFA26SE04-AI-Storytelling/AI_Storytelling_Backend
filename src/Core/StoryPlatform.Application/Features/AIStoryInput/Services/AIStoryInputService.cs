@@ -16,7 +16,7 @@ using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.AIStoryInput.Services;
 
-public sealed class AIStoryInputService : IAIStoryInputService
+public sealed partial class AIStoryInputService : IAIStoryInputService
 {
     private const int MaxAttempts = 3;
     private static readonly TimeSpan GuardrailTimeout = TimeSpan.FromSeconds(15);
@@ -30,16 +30,19 @@ public sealed class AIStoryInputService : IAIStoryInputService
     private readonly ITokenQuotaService _tokenQuotaService;
     private readonly StoryPlatform.Application.Features.CreatorAuthoring.CreatorAuthoringOptions _creatorOptions;
     private readonly StoryPlatform.Application.Features.ContentGeneration.LearningBatchOptions _learningOptions;
+    private readonly StoryPlatform.Application.Features.AuditLogs.Interfaces.IAuditLogWriter? _wishAudit;
 
     public AIStoryInputService(IUnitOfWork unitOfWork, IInputGuardrail inputGuardrail, ITokenQuotaService tokenQuotaService,
         StoryPlatform.Application.Features.CreatorAuthoring.CreatorAuthoringOptions? creatorOptions = null,
-        StoryPlatform.Application.Features.ContentGeneration.LearningBatchOptions? learningOptions = null)
+        StoryPlatform.Application.Features.ContentGeneration.LearningBatchOptions? learningOptions = null,
+        StoryPlatform.Application.Features.AuditLogs.Interfaces.IAuditLogWriter? wishAudit = null)
     {
         _unitOfWork = unitOfWork;
         _inputGuardrail = inputGuardrail;
         _tokenQuotaService = tokenQuotaService;
         _creatorOptions = creatorOptions ?? new();
         _learningOptions = learningOptions ?? new();
+        _wishAudit = wishAudit;
     }
 
     public async Task<AIStoryInputContextDto> GetContextAsync(
@@ -86,6 +89,9 @@ public sealed class AIStoryInputService : IAIStoryInputService
         var normalized = Normalize(request);
         ValidateCreativeInput(normalized);
         var creator = request.CreatorAudience is not null;
+        if (request.SourceWishId.HasValue && (creator || request.ExistingStoryId.HasValue ||
+            request.SourceWishId <= 0 || request.IdempotencyKey != StoryPlatform.Application.Features.StoryWishes.StoryWishDecisionPolicy.GenerationKey(request.SourceWishId.Value)))
+            throw new BadRequestException("WISH_GENERATION_REQUEST_INVALID");
         if (!creator && request.ChildProfileId <= 0) throw new BadRequestException("CHILD_REQUIRED");
         var context = creator
             ? await ResolveCreatorContextAsync(userId, request.CreatorAudience!, normalized.VocabularyLevel, normalized.Language, cancellationToken)
@@ -112,6 +118,7 @@ public sealed class AIStoryInputService : IAIStoryInputService
 
         if (existing is not null)
         {
+            if (request.SourceWishId.HasValue) await ValidateWishReplayAsync(userId, request, existing, cancellationToken);
             if (existing.Story is null || existing.Story.Scope != (creator ? StoryScope.Creator : StoryScope.Parent))
                 throw new ConflictException("Idempotency key thuộc luồng tạo truyện khác.");
             if (!CryptographicOperations.FixedTimeEquals(
@@ -190,6 +197,14 @@ public sealed class AIStoryInputService : IAIStoryInputService
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
+            StoryWish? sourceWish = null;
+            if (request.SourceWishId.HasValue)
+            {
+                await _unitOfWork.AcquireTransactionLockAsync(-request.ChildProfileId, cancellationToken);
+                sourceWish = await RequireSourceWishAsync(userId, request, cancellationToken);
+                if (sourceWish.Status != StoryWishStatus.Pending || sourceWish.GeneratedStoryId.HasValue || sourceWish.GenerationRequestId.HasValue)
+                    throw new ConflictException("WISH_ALREADY_HANDLED");
+            }
             if (!request.ExistingStoryId.HasValue)
             {
                 await _unitOfWork.Repository<Story>().AddAsync(story, cancellationToken);
@@ -202,17 +217,22 @@ public sealed class AIStoryInputService : IAIStoryInputService
             generationRequest.StoryId = story.Id;
             await requestRepository.AddAsync(generationRequest, cancellationToken);
             if (!creator) await _tokenQuotaService.IncrementUsageAsync(request.ChildProfileId, cancellationToken);
+            if (sourceWish is not null)
+                await AcceptWishAsync(userId, sourceWish, story, generationRequest, cancellationToken);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
         }
         catch
         {
-            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+            _unitOfWork.DiscardTrackedChanges();
+            cancellationToken.ThrowIfCancellationRequested();
             var winner = await requestRepository.FirstOrDefaultAsync(
                 item => item.SubmittedByUserId == userId && item.IdempotencyKey == request.IdempotencyKey.Trim(),
                 includeProperties: "Story",
                 cancellationToken: cancellationToken);
             if (winner is not null)
             {
+                if (request.SourceWishId.HasValue) await ValidateWishReplayAsync(userId, request, winner, cancellationToken);
                 if (!string.Equals(winner.InputFingerprint, inputFingerprint, StringComparison.Ordinal))
                 {
                     throw new ConflictException("Idempotency key đã được sử dụng cho một nội dung khác.");

@@ -20,7 +20,7 @@ Stand up a minimal, cost-conscious, reproducible AWS deployment for the Core API
 - Custom domain / Route 53 / ACM certificate — App Runner's default HTTPS domain is sufficient for now.
 - Multi-environment isolation (dev vs prod stacks) — user explicitly chose a **single shared environment**; both `dev` and `main` branches deploy to the same App Runner service/RDS instance.
 - S3 / CloudFront for media — not needed until AI-generated media work begins.
-- Bedrock or any AWS AI service — Core/AI already call OpenAI/Anthropic directly via `StoryPlatform.AI.Infrastructure/LLM`; no architecture change requested.
+- Bedrock or any AWS AI service — text LLM calls use Vertex AI / Gemini via `StoryPlatform.AI.Infrastructure/LLM`; Phase 5 image/TTS providers remain in Core Infrastructure. No architecture change requested.
 
 ## 3. Context (confirmed from repo inspection)
 

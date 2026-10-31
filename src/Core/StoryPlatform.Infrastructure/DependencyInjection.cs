@@ -85,9 +85,24 @@ public static class DependencyInjection
                               ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY")
                               ?? string.Empty;
             }
+            if (string.IsNullOrWhiteSpace(options.InternalApiKey))
+            {
+                // Empty configuration placeholders must not suppress the shared credential fallback.
+                options.InternalApiKey = new[]
+                {
+                    configuration["AIService:InternalApiKey"],
+                    configuration["AIService__InternalApiKey"],
+                    configuration["AI:InternalApiKey"],
+                    configuration["AI__InternalApiKey"],
+                    Environment.GetEnvironmentVariable("AI_INTERNAL_API_KEY")
+                }.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
+            }
+            options.InternalApiKey = options.InternalApiKey.Trim();
         });
         services.AddHttpClient<GeminiDirectClient>();
         services.AddHttpClient<IAIStoryGenerationClient, AIStoryGenerationClient>();
+        services.AddHttpClient<StoryPlatform.Application.Features.WishCards.Interfaces.IWishCardMatchingAiClient, WishCardMatchingAiClient>();
+        services.AddScoped<StoryPlatform.Application.Features.WishCards.Interfaces.IWishCardMappingChangeReader, WishCardMappingChangeReader>();
         services.AddHttpClient<IModelModerationProvider, VertexGrayZoneModerationProvider>();
         services.AddHttpClient<StoryPlatform.Application.Features.CreatorAssistance.Interfaces.ICreatorAssistanceAiClient, CreatorAssistanceAiClient>();
         services.Configure<OutlineWorkerOptions>(configuration.GetSection(OutlineWorkerOptions.SectionName));

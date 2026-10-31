@@ -77,6 +77,7 @@ public class AuthController : BaseApiController
     /// Xác thực email bằng mã đã gửi lúc đăng ký — bắt buộc trước khi đăng nhập lần đầu.
     /// </summary>
     [HttpPost("verify-email")]
+    [EnableRateLimiting(RateLimitPolicies.Auth)]
     [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<object?>>> VerifyEmail(
         [FromBody] VerifyEmailRequestDto request,
@@ -120,6 +121,7 @@ public class AuthController : BaseApiController
     /// Đặt lại mật khẩu bằng token nhận được từ bước Quên mật khẩu
     /// </summary>
     [HttpPost("reset-password")]
+    [EnableRateLimiting(RateLimitPolicies.Auth)]
     [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<object?>>> ResetPassword(
         [FromBody] ResetPasswordRequestDto request,

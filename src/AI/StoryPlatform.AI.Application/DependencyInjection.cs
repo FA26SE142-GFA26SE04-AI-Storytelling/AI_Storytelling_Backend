@@ -11,6 +11,7 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddAIApplication(this IServiceCollection services)
     {
+        services.AddScoped<WishCards.MatchWishCardsHandler>();
         services.AddScoped<CreatorAssistance.CreatorAssistanceHandler>();
         services.AddScoped<Moderation.EvaluateGrayZoneHandler>();
         services.AddScoped<GenerateOutlineHandler>();

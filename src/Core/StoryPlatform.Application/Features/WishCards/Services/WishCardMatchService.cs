@@ -35,7 +35,10 @@ public class WishCardMatchService : IWishCardMatchService
             .ToList();
     }
 
-    public async Task<WishCardMatchDto> AddAsync(int actorUserId, int storyId, int wishCardId, CancellationToken ct = default)
+    public Task<WishCardMatchDto> AddAsync(int actorUserId, int storyId, int wishCardId, CancellationToken ct = default) =>
+        WithStoryLockAsync(storyId, () => AddLockedAsync(actorUserId, storyId, wishCardId, ct), ct);
+
+    private async Task<WishCardMatchDto> AddLockedAsync(int actorUserId, int storyId, int wishCardId, CancellationToken ct)
     {
         await RequireStoryAsync(storyId, ct);
         var card = await _unitOfWork.Repository<WishCard>().GetByIdAsync(wishCardId, ct);
@@ -68,10 +71,15 @@ public class WishCardMatchService : IWishCardMatchService
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogWriter.LogAsync(actorUserId, "WishCardMatchAdded", nameof(StoryWishCardMatch), created.Id,
             null, new { storyId, wishCardId, source = created.Source.ToString() }, ct);
+        await _auditLogWriter.LogAsync(actorUserId, WishCardMappingAudit.Action, WishCardMappingAudit.EntityType, storyId,
+            null, new { operation = "Add", wishCardIds = new[] { wishCardId } }, ct);
         return ToDto(created, card);
     }
 
-    public async Task RemoveAsync(int actorUserId, int storyId, int wishCardId, CancellationToken ct = default)
+    public Task RemoveAsync(int actorUserId, int storyId, int wishCardId, CancellationToken ct = default) =>
+        WithStoryLockAsync(storyId, async () => { await RemoveLockedAsync(actorUserId, storyId, wishCardId, ct); return true; }, ct);
+
+    private async Task RemoveLockedAsync(int actorUserId, int storyId, int wishCardId, CancellationToken ct)
     {
         var repository = _unitOfWork.Repository<StoryWishCardMatch>();
         var match = await repository.FirstOrDefaultAsync(
@@ -83,6 +91,8 @@ public class WishCardMatchService : IWishCardMatchService
         await _unitOfWork.SaveChangesAsync(ct);
         await _auditLogWriter.LogAsync(actorUserId, "WishCardMatchRemoved", nameof(StoryWishCardMatch), match.Id,
             new { storyId, wishCardId, source = match.Source.ToString() }, null, ct);
+        await _auditLogWriter.LogAsync(actorUserId, WishCardMappingAudit.Action, WishCardMappingAudit.EntityType, storyId,
+            null, new { operation = "Remove", wishCardIds = new[] { wishCardId } }, ct);
     }
 
     private async Task RequireStoryAsync(int storyId, CancellationToken ct)
@@ -91,6 +101,24 @@ public class WishCardMatchService : IWishCardMatchService
         if (story == null || story.IsDeleted)
         {
             throw new NotFoundException("Truyện", storyId);
+        }
+    }
+
+    private async Task<T> WithStoryLockAsync<T>(int storyId, Func<Task<T>> action, CancellationToken ct)
+    {
+        await _unitOfWork.BeginTransactionAsync(ct);
+        try
+        {
+            await _unitOfWork.AcquireTransactionLockAsync(storyId, ct);
+            var result = await action();
+            await _unitOfWork.CommitTransactionAsync(ct);
+            return result;
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+            _unitOfWork.DiscardTrackedChanges();
+            throw;
         }
     }
 

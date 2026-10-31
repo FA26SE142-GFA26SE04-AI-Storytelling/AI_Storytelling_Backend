@@ -33,6 +33,11 @@ public sealed class AIExceptionHandlingMiddleware
             _logger.LogWarning("Gray zone evaluation failed: {ErrorCode}", exception.Code);
             await WriteErrorAsync(context, (HttpStatusCode)exception.StatusCode, "Gray zone evaluation is unavailable.", exception.Code);
         }
+        catch (StoryPlatform.AI.Application.WishCards.WishCardOutputException)
+        {
+            _logger.LogWarning("Wish card matching output rejected.");
+            await WriteErrorAsync(context, HttpStatusCode.BadGateway, "Wish card matching output failed validation.", "WISH_CARD_OUTPUT_INVALID");
+        }
         catch (TimeoutException)
         {
             _logger.LogWarning("AI upstream timed out. TraceId={TraceId}", System.Diagnostics.Activity.Current?.TraceId.ToString() ?? context.TraceIdentifier);

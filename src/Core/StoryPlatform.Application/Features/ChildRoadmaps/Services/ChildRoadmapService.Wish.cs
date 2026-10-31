@@ -8,11 +8,19 @@ namespace StoryPlatform.Application.Features.ChildRoadmaps.Services;
 /// <summary>Dùng truyện có sẵn cho điều ước.</summary>
 public partial class ChildRoadmapService
 {
-    public async Task<WishRoadmapResultDto> AddForWishAsync(
+    public Task<WishRoadmapResultDto> AddForWishAsync(
         int actorUserId,
         int childProfileId,
         int storyId,
         CancellationToken cancellationToken = default)
+        => AddWishStoryAsync(actorUserId, childProfileId, storyId, null, cancellationToken);
+
+    public Task<WishRoadmapResultDto> AddForWishAsync(int actorUserId, int childProfileId, int storyId,
+        int wishId, CancellationToken cancellationToken = default)
+        => AddWishStoryAsync(actorUserId, childProfileId, storyId, wishId, cancellationToken);
+
+    private async Task<WishRoadmapResultDto> AddWishStoryAsync(int actorUserId, int childProfileId, int storyId,
+        int? wishId, CancellationToken cancellationToken)
     {
         await _guard.EnsureOwnerAsync(
             childProfileId, actorUserId, cancellationToken);
@@ -50,6 +58,22 @@ public partial class ChildRoadmapService
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
+            StoryWish? wish = null;
+            if (wishId.HasValue)
+            {
+                await _unitOfWork.AcquireTransactionLockAsync(-childProfileId, cancellationToken);
+                wish = await _unitOfWork.Repository<StoryWish>().FirstOrDefaultAsync(
+                    x => x.Id == wishId && !x.IsDeleted, cancellationToken: cancellationToken)
+                    ?? throw new NotFoundException("StoryWish", wishId.Value);
+                await _guard.EnsureOwnerAsync(childProfileId, actorUserId, cancellationToken);
+                if (wish.ChildProfileId != childProfileId || wish.Kind != StoryWishKind.Wish ||
+                    wish.Status != StoryWishStatus.Pending || wish.GeneratedStoryId.HasValue || wish.GenerationRequestId.HasValue)
+                    throw new ConflictException("WISH_ALREADY_HANDLED");
+                if (!await _unitOfWork.Repository<StoryWishSuggestion>().ExistsAsync(
+                    x => x.StoryWishId == wish.Id && x.StoryId == storyId && !x.IsDeleted && x.CommunitySubmissionId == null,
+                    cancellationToken))
+                    throw new BadRequestException("WISH_STORY_NOT_SUGGESTED");
+            }
             var inserted = (await _inserter.InsertAsync(new InsertRequest(
                 childProfileId,
                 actorUserId,
@@ -71,6 +95,19 @@ public partial class ChildRoadmapService
             }
 
             await _advancer.AdvanceAsync(childProfileId, cancellationToken);
+
+            if (wish is not null)
+            {
+                wish.Status = StoryWishStatus.Fulfilled;
+                wish.FulfilledStoryId = storyId;
+                wish.FulfilledWithExistingStory = true;
+                wish.ResolvedByUserId = actorUserId;
+                wish.ResolvedAt = DateTime.UtcNow;
+                wish.UpdatedAt = wish.ResolvedAt;
+                _unitOfWork.Repository<StoryWish>().Update(wish);
+                await _auditLogWriter.LogAsync(actorUserId, "StoryWishFulfilledWithExistingStory", nameof(StoryWish), wish.Id,
+                    new { status = StoryWishStatus.Pending.ToString() }, new { status = wish.Status.ToString(), storyId }, cancellationToken);
+            }
 
             var outcome = inserted.Created ? "Added" : inserted.Moved ? "MovedToNext" : "Tagged";
             await _auditLogWriter.LogAsync(
@@ -95,6 +132,7 @@ public partial class ChildRoadmapService
         catch
         {
             await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+            _unitOfWork.DiscardTrackedChanges();
             throw;
         }
     }

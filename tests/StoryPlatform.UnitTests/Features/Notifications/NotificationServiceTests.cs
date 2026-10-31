@@ -13,6 +13,16 @@ namespace StoryPlatform.UnitTests.Features.Notifications;
 
 public class NotificationServiceTests
 {
+    [Fact]
+    public async Task CreateStoredAsync_PersistsWithoutPublishing()
+    {
+        _repository.Setup(x => x.AddAsync(It.IsAny<Notification>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Notification row, CancellationToken _) => { row.Id = 42; return row; });
+        var result = await _sut.CreateStoredAsync(7, NotificationType.StoryWishExpiring, "{\"childProfileId\":1}");
+        Assert.Equal(42, result.Id);
+        _unitOfWork.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _publisher.VerifyNoOtherCalls();
+    }
     private readonly Mock<IGenericRepository<Notification>> _repository = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<INotificationRealtimePublisher> _publisher = new();

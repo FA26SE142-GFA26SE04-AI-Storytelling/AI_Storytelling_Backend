@@ -198,7 +198,7 @@ public sealed class VertexAIGeminiClient : ILlmClient
                 if (ex is OperationCanceledException && cancellationToken.IsCancellationRequested)
                     _logger.LogInformation("Sensitive AI provider call cancelled by caller. TraceId={TraceId}, SchemaName={SchemaName}, LatencyMs={LatencyMs}", Activity.Current?.TraceId.ToString(), schemaName, stopwatch.ElapsedMilliseconds);
                 else
-                    _logger.LogWarning("Sensitive AI provider failed. TraceId={TraceId}, SchemaName={SchemaName}, LatencyMs={LatencyMs}, StatusCode={StatusCode}, ErrorType={ErrorType}, RetryAfterSeconds={RetryAfterSeconds}, QuotaMetric={QuotaMetric}, QuotaValue={QuotaValue}", Activity.Current?.TraceId.ToString(), schemaName, stopwatch.ElapsedMilliseconds, statusCode, ex.GetType().Name, retryAfter?.TotalSeconds, GetQuotaHint(ex, "quotaMetric") ?? GetQuotaHint(ex, "quotaId"), GetQuotaHint(ex, "quotaValue"));
+                    _logger.LogWarning("Sensitive AI provider failed. TraceId={TraceId}, SchemaName={SchemaName}, LatencyMs={LatencyMs}, StatusCode={StatusCode}, ErrorType={ErrorType}, RetryAfterSeconds={RetryAfterSeconds}, QuotaMetric={QuotaMetric}, QuotaValue={QuotaValue}, Diagnostic={Diagnostic}", Activity.Current?.TraceId.ToString(), schemaName, stopwatch.ElapsedMilliseconds, statusCode, ex.GetType().Name, retryAfter?.TotalSeconds, GetQuotaHint(ex, "quotaMetric") ?? GetQuotaHint(ex, "quotaId"), GetQuotaHint(ex, "quotaValue"), ClassifyProviderDiagnostic(ex.Message));
                 if (ex is OperationCanceledException or TimeoutException) throw;
                 if (statusCode is 408 or 504) throw new TimeoutException("Sensitive AI provider timed out.");
                 var failure = new HttpRequestException("Sensitive AI provider failed.", null, statusCode.HasValue ? (HttpStatusCode)statusCode.Value : null);
@@ -255,7 +255,8 @@ public sealed class VertexAIGeminiClient : ILlmClient
 
     private static bool IsSensitiveSchema(string schemaName) => schemaName.StartsWith("creator_assistance", StringComparison.Ordinal)
         || schemaName.StartsWith("gray_zone", StringComparison.Ordinal)
-        || schemaName.StartsWith("learning_", StringComparison.Ordinal);
+        || schemaName.StartsWith("learning_", StringComparison.Ordinal)
+        || schemaName == "wish_card_matching";
 
     private static int? GetStatusCode(Exception exception) => exception switch
     {
@@ -264,6 +265,15 @@ public sealed class VertexAIGeminiClient : ILlmClient
         HttpRequestException { StatusCode: not null } httpError => (int)httpError.StatusCode.Value,
         _ => null
     };
+
+    // Return only fixed labels. Provider messages can echo prompts or credentials.
+    internal static string ClassifyProviderDiagnostic(string message)
+    {
+        var labels = new List<string>();
+        foreach (var field in new[] { "additionalProperties", "maxItems", "responseSchema", "maxOutputTokens", "thinkingBudget", "INVALID_ARGUMENT", "PERMISSION_DENIED", "NOT_FOUND" })
+            if (message.Contains(field, StringComparison.OrdinalIgnoreCase)) labels.Add(field);
+        return labels.Count == 0 ? "UNCLASSIFIED" : string.Join(",", labels);
+    }
 
     /// <summary>
     /// Name of the <see cref="Exception.Data"/> entry that carries the provider-requested backoff

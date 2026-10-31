@@ -5,6 +5,7 @@ using StoryPlatform.Application.Features.AIStoryInput.Interfaces;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
+using StoryPlatform.Application.Features.ChildRoadmaps;
 using StoryPlatform.Application.Features.StoryWishes;
 using StoryPlatform.Application.Features.StoryWishes.Interfaces;
 using StoryPlatform.Application.Features.StoryWishes.Services;
@@ -200,10 +201,19 @@ public class ParentStoryWishServiceTests
         var wish = Wish();
         Suggest(wish, 1, 31);
         Suggest(wish, 2, 32);
+        _roadmap.Setup(r => r.AddForWishAsync(Parent, ReadingHarness.Child, 32, wish.Id, It.IsAny<CancellationToken>()))
+            .Callback(() =>
+            {
+                wish.Status = StoryWishStatus.Fulfilled;
+                wish.FulfilledStoryId = 32;
+                wish.FulfilledWithExistingStory = true;
+                wish.ResolvedByUserId = Parent;
+                wish.ResolvedAt = UtcNow;
+            }).ReturnsAsync(new WishRoadmapResultDto());
 
         var result = await _sut.UseExistingAsync(Parent, wish.Id, new UseExistingStoryRequestDto { SuggestionRank = 2 });
 
-        _roadmap.Verify(r => r.AddForWishAsync(Parent, ReadingHarness.Child, 32, It.IsAny<CancellationToken>()), Times.Once);
+        _roadmap.Verify(r => r.AddForWishAsync(Parent, ReadingHarness.Child, 32, wish.Id, It.IsAny<CancellationToken>()), Times.Once);
         Assert.Equal(StoryWishStatus.Fulfilled, wish.Status);
         Assert.Equal(32, wish.FulfilledStoryId);
         Assert.True(wish.FulfilledWithExistingStory);
@@ -265,7 +275,7 @@ public class ParentStoryWishServiceTests
     {
         var wish = Wish();
         Suggest(wish, 1, 31);
-        _roadmap.Setup(r => r.AddForWishAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+        _roadmap.Setup(r => r.AddForWishAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), wish.Id, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new BadRequestException("Truyện này hiện không hợp với bé."));
 
         await Assert.ThrowsAsync<BadRequestException>(() =>
@@ -276,19 +286,28 @@ public class ParentStoryWishServiceTests
 
     // ---- CreateStoryAsync ----
 
-    private SubmitAIStoryInputRequestDto Request(int childId = ReadingHarness.Child) => new()
+    private SubmitAIStoryInputRequestDto Request(int childId = ReadingHarness.Child, string key = "story-wish-000001") => new()
     {
         Topic = "Chú mèo ở Khu rừng", CharacterMode = "specified", Characters = new[] { "Chú mèo" },
         SettingMode = "specified", Setting = "Khu rừng", Lesson = "Chia sẻ", VocabularyLevel = "level_2",
-        Language = "vi", TargetLength = 800, ChildProfileId = childId, IdempotencyKey = "story-wish-000001"
+        Language = "vi", TargetLength = 800, ChildProfileId = childId, IdempotencyKey = key
     };
 
     [Fact]
     public async Task CreateStory_SendsTheEditedFormToGeneration_AndAcceptsTheWish()
     {
         var wish = Wish();
-        var request = Request();
-        _aiInput.Setup(a => a.SubmitAsync(Parent, request, It.IsAny<CancellationToken>()))
+        var request = Request(key: "client-cannot-create-a-second-story");
+        _aiInput.Setup(a => a.SubmitAsync(Parent, It.Is<SubmitAIStoryInputRequestDto>(r =>
+                r.SourceWishId == wish.Id && r.IdempotencyKey == StoryWishDecisionPolicy.GenerationKey(wish.Id) &&
+                r.Topic == request.Topic && r.Lesson == request.Lesson && r.ChildProfileId == request.ChildProfileId), It.IsAny<CancellationToken>()))
+            .Callback(() =>
+            {
+                wish.Status = StoryWishStatus.Accepted;
+                wish.GeneratedStoryId = 500;
+                wish.GenerationRequestId = 77;
+                wish.ResolvedByUserId = Parent;
+            })
             .ReturnsAsync(new AIStoryInputProgressDto { StoryId = 500, RequestId = 77 });
 
         var result = await _sut.CreateStoryAsync(Parent, wish.Id, request);
@@ -339,6 +358,46 @@ public class ParentStoryWishServiceTests
     }
 
     // ---- DeclineAsync ----
+
+    [Theory]
+    [InlineData(900, 1200, 900)]
+    [InlineData(1500, 1200, 1200)]
+    public async Task GenerationForm_UsesAgeRecommendationWithinChildPolicy(int recommended, int maximum, int expected)
+    {
+        var wish = Wish();
+        _aiInput.Setup(x => x.GetContextAsync(Parent, ReadingHarness.Child, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AIStoryInputContextDto { RecommendedTargetLength = recommended, MaximumLength = maximum });
+        Assert.Equal(expected, (await _sut.GetGenerationFormAsync(Parent, wish.Id)).Request.TargetLength);
+    }
+
+    [Fact]
+    public async Task GenerationProgress_UsesStoredStoryAndRequest_AndChecksParentPermission()
+    {
+        var wish = Wish(StoryWishStatus.Accepted);
+        wish.GeneratedStoryId = 500;
+        wish.GenerationRequestId = 77;
+        var expected = new AIStoryInputProgressDto { StoryId = 500, RequestId = 77, InputStatus = "input_accepted" };
+        _aiInput.Setup(x => x.GetProgressAsync(Parent, 500, 77, It.IsAny<CancellationToken>())).ReturnsAsync(expected);
+        Assert.Same(expected, await _sut.GetGenerationProgressAsync(Parent, wish.Id));
+        _guard.Verify(x => x.EnsureOwnerAsync(ReadingHarness.Child, Parent, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GenerationProgress_BeforeCreation_IsConflict()
+    {
+        var wish = Wish();
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.GetGenerationProgressAsync(Parent, wish.Id));
+        _aiInput.Verify(x => x.GetProgressAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateStory_DoesNotAcceptExistingStory()
+    {
+        var wish = Wish();
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.CreateStoryAsync(Parent, wish.Id,
+            new SubmitAIStoryInputRequestDto { ChildProfileId = ReadingHarness.Child, ExistingStoryId = 4 }));
+        _aiInput.Verify(x => x.SubmitAsync(It.IsAny<int>(), It.IsAny<SubmitAIStoryInputRequestDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
 
     [Fact]
     public async Task Decline_StoresTheParentOnlyReason()

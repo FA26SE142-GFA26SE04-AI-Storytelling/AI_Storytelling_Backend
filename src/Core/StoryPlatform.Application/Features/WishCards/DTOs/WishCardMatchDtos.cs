@@ -1,5 +1,14 @@
 namespace StoryPlatform.Application.Features.WishCards;
 
+public sealed class MatchStoryWishCardsRequestDto
+{
+    [System.ComponentModel.DataAnnotations.Range(1, int.MaxValue)]
+    public int StoryVersionId { get; init; }
+}
+
+public sealed record StoryWishCardAiMatchResult(int StoryId, int StoryVersionId, int AddedCount,
+    IReadOnlyList<StoryPlatform.Contracts.AI.WishCards.WishCardEvidence> Matches, string SourceFingerprint);
+
 public class AddWishCardMatchRequestDto
 {
     public int WishCardId { get; set; }

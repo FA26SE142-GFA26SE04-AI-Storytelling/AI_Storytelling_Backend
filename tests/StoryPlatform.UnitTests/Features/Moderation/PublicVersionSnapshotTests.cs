@@ -25,10 +25,6 @@ public class PublicVersionSnapshotTests
         {
             Id = 1, StoryVersionId = PublicStoryReviewHarness.VersionId, Term = "kiên nhẫn", Definition = "bền bỉ"
         });
-        _h.Discussions.Add(new DiscussionQuestion
-        {
-            Id = 1, StoryVersionId = PublicStoryReviewHarness.VersionId, Question = "Vì sao?", IsMoralLesson = true
-        });
     }
 
     private async Task<(string Original, string Copy)> FingerprintsAfter(Action<int> change)
@@ -38,6 +34,11 @@ public class PublicVersionSnapshotTests
         change(copy.Id);
         return ((await Load(PublicStoryReviewHarness.VersionId)).Fingerprint(), (await Load(copy.Id)).Fingerprint());
     }
+
+    [Fact]
+    public void Snapshot_HasNoDiscussionPart() =>
+        Assert.Empty(typeof(PublicVersionSnapshot).GetProperties()
+            .Where(property => property.Name.Contains("Discussion", StringComparison.OrdinalIgnoreCase)));
 
     [Fact]
     public async Task LoadAsync_ReturnsOnlyTheRequestedVersion()
@@ -52,7 +53,6 @@ public class PublicVersionSnapshotTests
         Assert.Equal(2, snapshot.Beats.Count);
         Assert.Single(snapshot.Quizzes);
         Assert.Single(snapshot.Vocabulary);
-        Assert.Single(snapshot.Discussions);
         Assert.All(snapshot.Assets, asset => Assert.Equal(PublicStoryReviewHarness.VersionId, asset.StoryVersionId));
     }
 
@@ -85,7 +85,6 @@ public class PublicVersionSnapshotTests
     [InlineData("audio")]
     [InlineData("quiz")]
     [InlineData("vocabulary")]
-    [InlineData("discussion")]
     public async Task Fingerprint_AnyRelevantContentChange_Differs(string changeKind)
     {
         var (original, copy) = await FingerprintsAfter(id =>
@@ -98,7 +97,6 @@ public class PublicVersionSnapshotTests
                 case "audio": _h.Assets.First(asset => asset.StoryVersionId == id && asset.Type == MediaType.TtsAudio).Url = "new-audio"; break;
                 case "quiz": _h.Quizzes.Single(quiz => quiz.StoryVersionId == id).CorrectAnswer = "Thỏ"; break;
                 case "vocabulary": _h.Vocabulary.Add(new StoryVocabulary { Id = 900, StoryVersionId = id, Term = "mới", Definition = "thêm" }); break;
-                case "discussion": _h.Discussions.RemoveAll(question => question.StoryVersionId == id); break;
             }
         });
 

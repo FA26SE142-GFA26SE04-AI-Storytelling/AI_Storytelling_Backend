@@ -89,7 +89,6 @@ public partial class ContentReportReviewService : IContentReportReviewService
             detail.Scenes = ReportedContentBuilder.BuildScenes(snapshot, Mask);
             detail.Vocabulary = ReportedContentBuilder.BuildVocabulary(snapshot, Mask);
             detail.Quizzes = ReportedContentBuilder.BuildQuizzes(snapshot, Mask);
-            detail.DiscussionQuestions = ReportedContentBuilder.BuildDiscussions(snapshot, Mask);
         }
 
         await _auditLogWriter.LogAsync(

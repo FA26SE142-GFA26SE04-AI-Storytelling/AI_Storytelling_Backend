@@ -42,7 +42,6 @@ public class PublishedStoryContentDto
     public List<ReportedSceneDto> Scenes { get; set; } = new();
     public List<ReportedVocabularyDto> Vocabulary { get; set; } = new();
     public List<ReportedQuizDto> Quizzes { get; set; } = new();
-    public List<ReportedDiscussionDto> DiscussionQuestions { get; set; } = new();
 }
 
 public class PublishedRoadmapDto

@@ -236,8 +236,7 @@ public partial class PublicStoryReviewService
                 id.HasValue && content.Quizzes.Any(quiz => quiz.Id == id.Value),
             PublicReviewRequirements.VocabularyPart =>
                 id.HasValue && content.Vocabulary.Any(word => word.Id == id.Value),
-            PublicReviewRequirements.DiscussionPart =>
-                id.HasValue && content.Discussions.Any(question => question.Id == id.Value),
+
             PublicReviewRequirements.MetadataPart => !id.HasValue,
             _ => throw new BadRequestException($"PartType \"{type}\" không hợp lệ.")
         };

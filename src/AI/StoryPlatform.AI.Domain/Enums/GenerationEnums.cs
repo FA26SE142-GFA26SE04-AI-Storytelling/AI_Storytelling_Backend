@@ -25,6 +25,5 @@ public enum PromptType
     StoryContentRefinement = 5,
     Vocabulary = 6,
     Quiz = 7,
-    Discussion = 8,
     ContentSafety = 9
 }

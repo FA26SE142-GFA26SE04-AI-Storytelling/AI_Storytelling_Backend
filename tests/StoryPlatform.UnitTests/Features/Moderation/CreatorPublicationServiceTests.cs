@@ -103,7 +103,6 @@ public sealed class CreatorPublicationServiceTests
         var review = new StoryReviewService(h.UnitOfWork.Object, new Mock<IAIStoryGenerationClient>(MockBehavior.Strict).Object, new InMemoryProposalCache());
         await Assert.ThrowsAsync<ConflictException>(() => review.UpdateVocabularyAsync(Creator, StoryId, new() { VersionId = VersionId }));
         await Assert.ThrowsAsync<ConflictException>(() => review.UpdateQuizAsync(Creator, StoryId, new() { VersionId = VersionId }));
-        await Assert.ThrowsAsync<ConflictException>(() => review.UpdateDiscussionAsync(Creator, StoryId, new() { VersionId = VersionId }));
         await Assert.ThrowsAsync<ConflictException>(() => service.CreateRevisionAsync(Creator, StoryId, new() { SourceVersionId = VersionId }));
         Assert.Single(h.Versions);
     }
@@ -117,5 +116,35 @@ public sealed class CreatorPublicationServiceTests
             new() { Approve = true, Reason = "Gá»¡", RowVersion = claim.RowVersion - 1 }));
         await Assert.ThrowsAsync<ForbiddenException>(() => service.CreateRevisionAsync(PublicStoryReviewHarness.OtherModeratorId, StoryId,
             new() { SourceVersionId = VersionId }));
+    }
+
+    [Fact]
+    public async Task Revision_copies_listening_interactions_in_order_without_scene_binding()
+    {
+        h.Stories[0].IsPublished = false; h.Versions[0].Moderation.ReviewStatus = VersionReviewStatus.ChangesRequested;
+        h.Items.Add(new()
+        {
+            Id = 1, ItemType = ModerationItemType.PublicStoryReview, StoryId = StoryId, StoryVersionId = VersionId,
+            Status = ModerationItemStatus.ChangesRequested, CreatedByUserId = Creator
+        });
+        h.ListeningInteractions.Add(new() { Id = 7, StoryVersionId = VersionId, Type = ListeningInteractionType.Checkpoint, AnchorOffset = 9,
+            StorySceneId = 3, Kind = CheckpointKind.Emotion, Prompt = "first", SourceQuote = "q", SourceStart = 0, SourceEnd = 1, MatchFeedback = "ok" });
+        h.ListeningInteractions.Add(new() { Id = 5, StoryVersionId = VersionId, Type = ListeningInteractionType.Checkpoint, AnchorOffset = 20, Prompt = "deleted", IsDeleted = true });
+        h.ListeningInteractions.Add(new() { Id = 8, StoryVersionId = VersionId, Type = ListeningInteractionType.EventOrdering, AnchorOffset = 30, Prompt = "second" });
+        h.ListeningOptions.Add(new() { Id = 1, ListeningInteractionId = 7, SortOrder = 1, Text = "a", Feedback = "fa", IsMatch = true });
+        h.ListeningOptions.Add(new() { Id = 2, ListeningInteractionId = 7, SortOrder = 2, Text = "old", IsDeleted = true });
+        h.ListeningOptions.Add(new() { Id = 3, ListeningInteractionId = 8, SortOrder = 1, Text = "e1", CorrectOrder = 2, SourceQuote = "x", SourceStart = 3, SourceEnd = 4, ImageDescription = "img" });
+
+        var revision = await service.CreateRevisionAsync(Creator, StoryId, new() { SourceVersionId = VersionId });
+
+        var copied = h.ListeningInteractions.Where(x => x.StoryVersionId == revision.VersionId).OrderBy(x => x.Id).ToArray();
+        Assert.Equal(["first", "second"], copied.Select(x => x.Prompt!).ToArray());
+        Assert.All(copied, x => Assert.Null(x.StorySceneId)); // scene thuộc version cũ; Phase 5 gắn lại
+        Assert.Equal((9, CheckpointKind.Emotion, "q", 0, 1, "ok"),
+            (copied[0].AnchorOffset, copied[0].Kind!.Value, copied[0].SourceQuote, copied[0].SourceStart!.Value, copied[0].SourceEnd!.Value, copied[0].MatchFeedback));
+        Assert.Equal(["a"], h.ListeningOptions.Where(x => x.ListeningInteractionId == copied[0].Id).Select(x => x.Text).ToArray());
+        var eventOption = Assert.Single(h.ListeningOptions, x => x.ListeningInteractionId == copied[1].Id);
+        Assert.Equal((2, "x", 3, 4, "img"), (eventOption.CorrectOrder!.Value, eventOption.SourceQuote, eventOption.SourceStart!.Value, eventOption.SourceEnd!.Value, eventOption.ImageDescription));
+        Assert.Equal(3, h.ListeningInteractions.Count(x => x.StoryVersionId == VersionId)); // bản cũ giữ nguyên
     }
 }

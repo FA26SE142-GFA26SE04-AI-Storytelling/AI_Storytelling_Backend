@@ -50,7 +50,7 @@ Nhóm chặn lấy từ các ContentCategory đang hoạt động có preset cho
 - Để replay cùng request, giữ nguyên key và payload. Đổi nội dung/nhóm tuổi phải dùng key mới.
 - `existingStoryId` chỉ dùng lại AI draft thuộc chính Creator, chưa có accepted request/job đang hoạt động.
   Không chuyển bản nháp thủ công hoặc truyện Parent qua trường này.
-- `outputMode=reading_media_only` bỏ qua vocabulary/quiz/discussion; `learning` chạy cả chuỗi artifacts.
+- `outputMode=reading_media_only` bỏ qua vocabulary/quiz/tương tác lúc nghe; `learning` chạy cả chuỗi artifacts.
 
 Theo dõi input:
 `GET /api/v1/creator/ai-story-input/stories/{storyId}/requests/{requestId}`.
@@ -83,7 +83,7 @@ Chấp nhận outline xếp hàng GenerateContent gắn với đúng phiên outl
 - `GET /review` và `GET /review/story`: xem gói review và nội dung.
 - `PUT /review/story`: sửa nội dung qua schema UpdateStoryRequestDto trong Swagger.
 - `POST /review/story/complete`: xác nhận đã xem nội dung.
-- Với mode `learning`, rà soát vocabulary/quiz/discussion và sử dụng các endpoint hoàn tất tương ứng.
+- Với mode `learning`, rà soát vocabulary/quiz/tương tác lúc nghe và sử dụng các endpoint hoàn tất tương ứng.
 - `GET /review/validation`: kiểm tra `canConfirmContent` trước khi xác nhận nội dung; `canApprove=false` cho Creator.
 - `POST /api/v1/creator/stories/{storyId}/generation/confirm-content` với body `{ "versionId": 123 }` (ID phiên hiện tại): khi validation đạt, trả 202 và chuyển sang `MediaProcessing`, xếp hàng media. ID cũ trả 409; không đổi trạng thái kiểm duyệt/công khai của phiên bản.
 

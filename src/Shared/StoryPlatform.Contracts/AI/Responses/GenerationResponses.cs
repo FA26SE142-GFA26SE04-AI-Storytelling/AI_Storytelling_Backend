@@ -69,13 +69,6 @@ public sealed record GenerateQuizResponse
     public GenerationMetadataDto Metadata { get; init; } = new();
 }
 
-public sealed record GenerateDiscussionResponse
-{
-    public string RequestId { get; init; } = string.Empty;
-    public IReadOnlyList<DiscussionQuestionDto> Items { get; init; } = [];
-    public GenerationMetadataDto Metadata { get; init; } = new();
-}
-
 /// <summary>The AI fills only the list of the requested interaction type.</summary>
 public sealed record GenerateListeningInteractionResponse
 {

@@ -17,7 +17,6 @@ public sealed class ProposalService : IProposalService
     private readonly IGenericRepository<StoryVersion> _versionRepo;
     private readonly IGenericRepository<StoryVocabulary> _vocabRepo;
     private readonly IGenericRepository<QuizItem> _quizRepo;
-    private readonly IGenericRepository<DiscussionQuestion> _discussionRepo;
     private readonly IStoryReviewService? _reviewService;
 
     public ProposalService(
@@ -30,7 +29,6 @@ public sealed class ProposalService : IProposalService
         _versionRepo = unitOfWork.Repository<StoryVersion>();
         _vocabRepo = unitOfWork.Repository<StoryVocabulary>();
         _quizRepo = unitOfWork.Repository<QuizItem>();
-        _discussionRepo = unitOfWork.Repository<DiscussionQuestion>();
     }
 
     public async Task<AIProposalDto?> GetProposalAsync(int userId, int storyId, string proposalId, CancellationToken cancellationToken = default)
@@ -82,12 +80,9 @@ public sealed class ProposalService : IProposalService
                     return true;
                 }, cancellationToken);
                 break;
-            case "discussion":
-                await CreatorPublicationGuard.WriteAsync(_unitOfWork, storyId, proposal.StoryVersionId, async () =>
-                {
-                    await ApplyDiscussionProposalAsync(proposal, cancellationToken);
-                    return true;
-                }, cancellationToken);
+            case var listening when listening.StartsWith("listening:", StringComparison.Ordinal):
+                if (_reviewService is null) throw new ConflictException("CREATOR_REVIEW_SERVICE_REQUIRED");
+                await _reviewService.ApplyListeningProposalAsync(userId, proposal, cancellationToken);
                 break;
             default:
                 throw new BadRequestException($"Unknown artifact type: {proposal.ArtifactType}");
@@ -229,36 +224,6 @@ public sealed class ProposalService : IProposalService
         }
     }
 
-    private async Task ApplyDiscussionProposalAsync(AIProposalDto proposal, CancellationToken cancellationToken)
-    {
-        // Delete all existing discussion questions
-        var existing = await _discussionRepo.FindAsync(d => d.StoryVersionId == proposal.StoryVersionId, cancellationToken: cancellationToken);
-        foreach (var item in existing)
-        {
-            _discussionRepo.Delete(item);
-        }
-
-        // Add new discussion questions from proposal
-        if (proposal.SuggestedContent is JsonElement element && element.TryGetProperty("items", out var itemsElement))
-        {
-            foreach (var item in itemsElement.EnumerateArray())
-            {
-                var question = item.GetProperty("question").GetString();
-                var isMoralLesson = item.TryGetProperty("isMoralLesson", out var iml) && iml.GetBoolean();
-
-                if (!string.IsNullOrEmpty(question))
-                {
-                    await _discussionRepo.AddAsync(new DiscussionQuestion
-                    {
-                        StoryVersionId = proposal.StoryVersionId,
-                        Question = question,
-                        IsMoralLesson = isMoralLesson
-                    }, cancellationToken);
-                }
-            }
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
-    }
 
 
     private static JsonElement NormalizePropertyNames(JsonElement content)

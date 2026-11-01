@@ -61,14 +61,6 @@ internal static class ReportedContentBuilder
             Choices = mask(quiz.Choices)
         }).ToList();
 
-    public static List<ReportedDiscussionDto> BuildDiscussions(
-        PublicVersionSnapshot snapshot, Func<string?, string?> mask) =>
-        snapshot.Discussions.Select(question => new ReportedDiscussionDto
-        {
-            Question = mask(question.Question) ?? string.Empty,
-            IsMoralLesson = question.IsMoralLesson
-        }).ToList();
-
     public static async Task<List<ReportedLabelDto>> LoadLabelsAsync(
         IUnitOfWork unitOfWork, int storyId, CancellationToken cancellationToken)
     {

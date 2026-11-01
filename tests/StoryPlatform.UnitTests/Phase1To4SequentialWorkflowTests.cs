@@ -27,7 +27,6 @@ using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using Xunit;
 
-using ReviewDiscussionItemDto = StoryPlatform.Application.Features.StoryReview.DTOs.DiscussionItemDto;
 using ReviewQuizItemDto = StoryPlatform.Application.Features.StoryReview.DTOs.QuizItemDto;
 using ReviewVocabularyItemDto = StoryPlatform.Application.Features.StoryReview.DTOs.VocabularyItemDto;
 
@@ -128,15 +127,6 @@ public sealed class Phase1To4SequentialWorkflowTests
                 }
             ]
         });
-        await reviewService.UpdateDiscussionAsync(1, story.Id, new UpdateDiscussionRequestDto
-        {
-            VersionId = stableVersion.Id,
-            Items =
-            [
-                new ReviewDiscussionItemDto { Question = "Em học được gì từ câu chuyện?", IsMoralLesson = true },
-                new ReviewDiscussionItemDto { Question = "Em sẽ chia sẻ điều gì với bạn?" }
-            ]
-        });
 
         var afterReview = await reviewService.ValidateAsync(1, story.Id);
         Assert.True(afterReview.CanApprove, string.Join("; ", afterReview.Issues));
@@ -159,7 +149,6 @@ public sealed class Phase1To4SequentialWorkflowTests
         Assert.Empty(store.Items<StoryVersion>());
         Assert.Empty(store.Items<StoryVocabulary>());
         Assert.Empty(store.Items<QuizItem>());
-        Assert.Empty(store.Items<DiscussionQuestion>());
     }
 
     [Fact]
@@ -256,7 +245,6 @@ public sealed class Phase1To4SequentialWorkflowTests
             job => Assert.Equal(GenerationJobStatus.Completed, job.Status));
         Assert.NotEmpty(store.Items<StoryVocabulary>());
         Assert.NotEmpty(store.Items<QuizItem>());
-        Assert.Empty(store.Items<DiscussionQuestion>());
     }
 
     [Fact]
@@ -512,16 +500,6 @@ public sealed class Phase1To4SequentialWorkflowTests
                         Type = "short_answer", Question = "Bài học là gì?", CorrectAnswer = "Biết chia sẻ", CorrectOptionIndex = -1
                     }
                 ]
-            });
-        }
-
-        public Task<GenerateDiscussionResponse> GenerateDiscussionAsync(GenerateDiscussionRequest request, CancellationToken cancellationToken = default)
-        {
-            Calls.Add("discussion");
-            return Task.FromResult(new GenerateDiscussionResponse
-            {
-                RequestId = request.RequestId,
-                Items = [new DiscussionQuestionDto("Em đã từng chia sẻ điều gì?")]
             });
         }
 

@@ -16,7 +16,6 @@ public class PublicVersionComparerTests
         _h.AddScene(2, 2);
         _h.Quizzes.Add(new QuizItem { Id = 1, StoryVersionId = PublicStoryReviewHarness.VersionId, Type = QuizType.TrueFalse, Question = "Rùa thắng?", CorrectAnswer = "Đúng" });
         _h.Vocabulary.Add(new StoryVocabulary { Id = 1, StoryVersionId = PublicStoryReviewHarness.VersionId, Term = "kiên nhẫn", Definition = "bền bỉ" });
-        _h.Discussions.Add(new DiscussionQuestion { Id = 1, StoryVersionId = PublicStoryReviewHarness.VersionId, Question = "Vì sao rùa thắng?" });
         var current = _h.CloneVersion(PublicStoryReviewHarness.VersionId, 51);
         change?.Invoke(current);
         var before = await PublicVersionSnapshot.LoadAsync(_h.UnitOfWork.Object, _h.Versions.Single(version => version.Id == PublicStoryReviewHarness.VersionId));
@@ -81,12 +80,10 @@ public class PublicVersionComparerTests
             _h.Quizzes.Single(quiz => quiz.StoryVersionId == version.Id).CorrectAnswer = "Sai";
             _h.Vocabulary.RemoveAll(word => word.StoryVersionId == version.Id);
             _h.Vocabulary.Add(new StoryVocabulary { Id = 801, StoryVersionId = version.Id, Term = "mới", Definition = "vừa thêm" });
-            _h.Discussions.RemoveAll(question => question.StoryVersionId == version.Id);
         });
 
         Assert.Contains(result.ArtifactChanges, change => change.Kind == "quiz" && change.Change == "modified");
         Assert.Contains(result.ArtifactChanges, change => change.Kind == "vocabulary" && change.Change == "removed");
         Assert.Contains(result.ArtifactChanges, change => change.Kind == "vocabulary" && change.Change == "added");
-        Assert.Contains(result.ArtifactChanges, change => change.Kind == "discussion" && change.Change == "removed");
     }
 }

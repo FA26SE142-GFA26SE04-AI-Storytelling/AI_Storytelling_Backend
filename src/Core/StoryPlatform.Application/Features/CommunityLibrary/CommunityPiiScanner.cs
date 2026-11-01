@@ -25,8 +25,6 @@ public static class CommunityPiiScanner
             ($"vocabulary {index + 1}", (string?)(word.Term + " " + word.Definition))));
         parts.AddRange(snapshot.Quizzes.Select((quiz, index) =>
             ($"quiz {index + 1}", (string?)(quiz.Question + " " + quiz.CorrectAnswer + " " + quiz.Choices))));
-        parts.AddRange(snapshot.Discussions.Select((question, index) =>
-            ($"discussion {index + 1}", (string?)question.Question)));
 
         return PiiDetector.Scan(parts, childNickname);
     }

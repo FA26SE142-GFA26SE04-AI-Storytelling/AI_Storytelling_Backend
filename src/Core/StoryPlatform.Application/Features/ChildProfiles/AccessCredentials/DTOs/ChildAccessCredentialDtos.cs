@@ -47,3 +47,42 @@ public class StartSupervisedChildSessionRequestDto
     [Required(ErrorMessage = "Refresh token của phiên Supervisor không được để trống.")]
     public string SupervisorRefreshToken { get; set; } = string.Empty;
 }
+
+public class StartStoryHandoverRequestDto
+{
+    [Range(1, int.MaxValue, ErrorMessage = "Hãy chọn truyện cho bé đọc.")]
+    public int StoryId { get; set; }
+
+    /// <summary>Refresh token của phiên Supervisor đang bàn giao thiết bị — dùng để gắn phiên trẻ, không cấp lại.</summary>
+    [Required(ErrorMessage = "Refresh token của phiên Supervisor không được để trống.")]
+    public string SupervisorRefreshToken { get; set; } = string.Empty;
+}
+
+/// <summary>Child Session "Cho bé đọc truyện này" — app mở thẳng StoryId bằng AccessToken của trẻ.</summary>
+public class ChildStoryHandoverDto : ChildSessionDto
+{
+    public int StoryId { get; set; }
+}
+
+/// <summary>Bé nào của phụ huynh đọc được truyện — để bật nút "Cho bé đọc truyện này" và gợi ý bé.</summary>
+public class StoryHandoverOptionsDto
+{
+    public int StoryId { get; set; }
+
+    /// <summary>Bé chủ truyện riêng nếu đọc được; nếu không, bé duy nhất đọc được; còn lại null.</summary>
+    public int? SuggestedChildProfileId { get; set; }
+
+    public List<StoryHandoverChildDto> Children { get; set; } = new();
+}
+
+public class StoryHandoverChildDto
+{
+    public int ChildProfileId { get; set; }
+    public string Nickname { get; set; } = string.Empty;
+    public bool CanRead { get; set; }
+
+    /// <summary>Mã trong ChildRoadmapSkipCodes; null khi đọc được.</summary>
+    public string? SkipCode { get; set; }
+
+    public string? Message { get; set; }
+}

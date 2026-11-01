@@ -33,8 +33,7 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
         IReadOnlyList<IllustrationBeat> Beats,
         IReadOnlyList<MediaAsset> Assets,
         IReadOnlyList<QuizItem> Quizzes,
-        IReadOnlyList<StoryVocabulary> Vocabulary,
-        IReadOnlyList<DiscussionQuestion> Discussions);
+        IReadOnlyList<StoryVocabulary> Vocabulary);
 
     public async Task<PublicReviewPackageDto> GetPackageAsync(
         int actorUserId, int itemId, CancellationToken cancellationToken = default)
@@ -118,10 +117,7 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
             x => x.StoryVersionId == versionId, cancellationToken: cancellationToken);
         var vocabulary = await _unitOfWork.Repository<StoryVocabulary>().FindAsync(
             x => x.StoryVersionId == versionId, cancellationToken: cancellationToken);
-        var discussions = await _unitOfWork.Repository<DiscussionQuestion>().FindAsync(
-            x => x.StoryVersionId == versionId, cancellationToken: cancellationToken);
-
-        return new ReviewContent(scenes, segments, beats, assets, quizzes, vocabulary, discussions);
+        return new ReviewContent(scenes, segments, beats, assets, quizzes, vocabulary);
     }
 
     private async Task<PublicReviewPackageDto> BuildPackageAsync(
@@ -220,12 +216,6 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
                 SourceQuote = x.SourceQuote, Explanation = x.Explanation, Hint = x.Hint,
                 LearningGoal = x.LearningGoal, OptionFeedbackJson = x.OptionFeedbackJson,
                 Choices = x.Choices
-            }).ToList(),
-            DiscussionQuestions = content.Discussions.OrderBy(x => x.Id).Select(x => new PublicReviewDiscussionDto
-            {
-                Id = x.Id,
-                Question = x.Question,
-                IsMoralLesson = x.IsMoralLesson
             }).ToList(),
             Flags = flags,
             AllFlagsResolved = flags.All(flag => flag.Resolved),

@@ -26,6 +26,7 @@ using StoryPlatform.Application.Features.Outline.Services;
 using StoryPlatform.Application.Features.ContentGeneration.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration.Quality;
 using StoryPlatform.Application.Features.ContentGeneration.Services;
+using StoryPlatform.Application.Features.ListeningInteractions.Services;
 using StoryPlatform.Application.Features.MediaGeneration;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
@@ -164,6 +165,7 @@ public static class DependencyInjection
         services.AddScoped<IOutlineService>(provider => provider.GetRequiredService<OutlineService>());
         services.AddScoped<IOutlineJobProcessor>(provider => provider.GetRequiredService<OutlineService>());
         services.AddSingleton<IOutlineReviewGuardrail, RuleBasedOutlineReviewGuardrail>();
+        services.AddScoped<ListeningInteractionGenerator>();
         services.AddScoped<ContentGenerationService>();
         services.AddScoped<IContentGenerationService>(provider => provider.GetRequiredService<ContentGenerationService>());
         services.AddScoped<IContentGenerationJobProcessor>(provider => provider.GetRequiredService<ContentGenerationService>());

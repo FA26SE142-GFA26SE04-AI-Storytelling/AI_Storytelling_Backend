@@ -53,9 +53,6 @@ public sealed class AIStoryGenerationClient : IAIStoryGenerationClient
     public Task<GenerateQuizResponse> GenerateQuizAsync(GenerateQuizRequest request, CancellationToken cancellationToken = default) =>
         PostAsync<GenerateQuizRequest, GenerateQuizResponse>("api/ai/story-content/quiz", request, cancellationToken);
 
-    public Task<GenerateDiscussionResponse> GenerateDiscussionAsync(GenerateDiscussionRequest request, CancellationToken cancellationToken = default) =>
-        PostAsync<GenerateDiscussionRequest, GenerateDiscussionResponse>("api/ai/story-content/discussion", request, cancellationToken);
-
     public Task<EvaluateContentSafetyResponse> EvaluateContentSafetyAsync(EvaluateContentSafetyRequest request, CancellationToken cancellationToken = default) =>
         PostAsync<EvaluateContentSafetyRequest, EvaluateContentSafetyResponse>("api/ai/story-content/content/safety", request, cancellationToken);
 

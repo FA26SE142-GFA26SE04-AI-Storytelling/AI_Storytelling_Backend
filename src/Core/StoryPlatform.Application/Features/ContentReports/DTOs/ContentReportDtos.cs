@@ -51,7 +51,6 @@ public class ContentReportDetailDto
     public List<ReportedSceneDto> Scenes { get; set; } = new();
     public List<ReportedVocabularyDto> Vocabulary { get; set; } = new();
     public List<ReportedQuizDto> Quizzes { get; set; } = new();
-    public List<ReportedDiscussionDto> DiscussionQuestions { get; set; } = new();
 }
 
 public class ReportedStoryDto
@@ -103,12 +102,6 @@ public class ReportedQuizDto
     public string Question { get; set; } = string.Empty;
     public string? CorrectAnswer { get; set; }
     public string? Choices { get; set; }
-}
-
-public class ReportedDiscussionDto
-{
-    public string Question { get; set; } = string.Empty;
-    public bool IsMoralLesson { get; set; }
 }
 
 public class DismissReportRequestDto

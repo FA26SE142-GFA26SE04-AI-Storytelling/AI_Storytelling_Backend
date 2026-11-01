@@ -1,5 +1,7 @@
 ﻿using StoryPlatform.Application.Features.StoryReview.DTOs;
 
+using StoryPlatform.Domain.Enums;
+
 namespace StoryPlatform.Application.Features.StoryReview.Interfaces;
 
 public interface IStoryReviewService
@@ -34,20 +36,17 @@ public interface IStoryReviewService
 
     #endregion
 
-    #region Discussion Review
-
-    Task<DiscussionReviewDto> GetDiscussionForReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default);
-    Task<DiscussionReviewDto> UpdateDiscussionAsync(int userId, int storyId, UpdateDiscussionRequestDto input, CancellationToken cancellationToken = default);
-    Task<CreateProposalResponseDto> CreateDiscussionProposalAsync(int userId, int storyId, CancellationToken cancellationToken = default);
-
-    #endregion
-
     #region Validation & Approval
+
+    Task<ListeningReviewDto> GetListeningForReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default);
+    Task<ListeningReviewDto> UpdateListeningInteractionAsync(int userId, int storyId, int interactionId, UpdateListeningInteractionRequestDto input, CancellationToken cancellationToken = default);
+    Task<bool> CompleteListeningReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default);
+    Task<CreateProposalResponseDto> CreateListeningProposalAsync(int userId, int storyId, ListeningInteractionType type, CancellationToken cancellationToken = default);
+    Task ApplyListeningProposalAsync(int userId, AIProposalDto proposal, CancellationToken cancellationToken = default);
 
     Task<bool> CompleteStoryReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default);
     Task<bool> CompleteVocabularyReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default);
     Task<bool> CompleteQuizReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default);
-    Task<bool> CompleteDiscussionReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default);
 
     Task<ValidationResultDto> ValidateAsync(int userId, int storyId, CancellationToken cancellationToken = default);
     Task<ConfirmCreatorContentResponseDto> ConfirmCreatorContentAsync(int userId, int storyId, ConfirmCreatorContentRequestDto input, CancellationToken cancellationToken = default);

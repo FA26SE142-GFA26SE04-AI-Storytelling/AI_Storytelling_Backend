@@ -9,6 +9,7 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ContentGeneration.Quality;
 using StoryPlatform.Application.Features.ExistingStories.DTOs;
 using StoryPlatform.Application.Features.ExistingStories.Interfaces;
+using StoryPlatform.Application.Features.ListeningInteractions.Services;
 using StoryPlatform.Application.Features.StoryReview.DTOs;
 using StoryPlatform.Application.Features.StoryReview.Interfaces;
 using StoryPlatform.Contracts.AI.Models;
@@ -31,14 +32,15 @@ public sealed partial class StoryReviewService : IStoryReviewService
     private readonly IGenericRepository<StoryVersion> _versionRepo;
     private readonly IGenericRepository<StoryVocabulary> _vocabRepo;
     private readonly IGenericRepository<QuizItem> _quizRepo;
-    private readonly IGenericRepository<DiscussionQuestion> _discussionRepo;
+    private readonly ListeningInteractionGenerator _listening;
 
     public StoryReviewService(
         IUnitOfWork unitOfWork,
         IAIStoryGenerationClient aiClient,
         IProposalCache proposalCache,
         IReviewCompletionStore? reviewCompletionStore = null,
-        IExistingStoryEvaluationCache? evaluationCache = null, GrayZoneContentCheckService? moderation = null)
+        IExistingStoryEvaluationCache? evaluationCache = null, GrayZoneContentCheckService? moderation = null,
+        ListeningInteractionGenerator? listeningGenerator = null)
     {
         _unitOfWork = unitOfWork;
         _aiClient = aiClient;
@@ -49,7 +51,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
         _versionRepo = unitOfWork.Repository<StoryVersion>();
         _vocabRepo = unitOfWork.Repository<StoryVocabulary>();
         _quizRepo = unitOfWork.Repository<QuizItem>();
-        _discussionRepo = unitOfWork.Repository<DiscussionQuestion>();
+        _listening = listeningGenerator ?? new ListeningInteractionGenerator(unitOfWork, aiClient);
     }
 
     #region Package
@@ -67,10 +69,11 @@ public sealed partial class StoryReviewService : IStoryReviewService
 
         var vocabCount = await _vocabRepo.CountAsync(v => v.StoryVersionId == version.Id, cancellationToken);
         var quizCount = await _quizRepo.CountAsync(q => q.StoryVersionId == version.Id, cancellationToken);
-        var discussionCount = await _discussionRepo.CountAsync(d => d.StoryVersionId == version.Id, cancellationToken);
-        var discussionRequired = await RequiresDiscussionAsync(version.Id, discussionCount, cancellationToken);
+
         var readability = ReadabilityCalculator.Calculate(version.Content, story.Language);
         var readingMediaOnly = story.OutputMode == StoryOutputMode.ReadingMediaOnly;
+
+        var listening = await InspectListeningAsync(story, version, cancellationToken);
 
         return new ReviewPackageDto
         {
@@ -88,7 +91,11 @@ public sealed partial class StoryReviewService : IStoryReviewService
             ReadabilityFre = version.ReadabilityFre ?? readability.Fre,
             Vocabulary = new ArtifactStatusDto { State = readingMediaOnly ? "skipped" : vocabCount > 0 ? "completed" : "pending", ItemCount = vocabCount },
             Quiz = new ArtifactStatusDto { State = readingMediaOnly ? "skipped" : quizCount > 0 ? "completed" : "pending", ItemCount = quizCount },
-            Discussion = new ArtifactStatusDto { State = readingMediaOnly || !discussionRequired ? "skipped" : discussionCount > 0 ? "completed" : "pending", ItemCount = discussionCount },
+            Listening = new ArtifactStatusDto
+            {
+                State = !listening.Required ? "skipped" : listening.Valid ? "completed" : "pending",
+                ItemCount = listening.Inspection?.Items.Count ?? 0
+            },
             CanEdit = story.Scope != StoryScope.Creator || story.Status == StoryStatus.ContentReview,
             CanApprove = story.Scope != StoryScope.Creator && story.Status == StoryStatus.ContentReview,
             CanConfirmContent = story.Scope == StoryScope.Creator && story.Status == StoryStatus.ContentReview,
@@ -220,7 +227,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
             story.MoralLesson = newVersion.Lesson;
             _storyRepo.Update(story);
 
-            // Artifact revalidation: vocab/quiz/discussion đã sinh cho version cũ không
+            // Artifact revalidation: vocab/quiz/tương tác lúc nghe đã sinh cho version cũ không
             // còn phù hợp -> đánh dấu job cũ là stale. Phase 3 worker sẽ tự skip job cũ
             // (qua StoryVersionId != current), và controller Phase 4 sẽ yêu cầu revalidate.
             // Ở đây ta KHÔNG xoá artifact cũ để giữ audit trail; chỉ đảm bảo chúng
@@ -637,143 +644,6 @@ public sealed partial class StoryReviewService : IStoryReviewService
 
     #endregion
 
-    #region Discussion Review
-
-    public async Task<DiscussionReviewDto> GetDiscussionForReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
-    {
-        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
-        await EnsureLearningModeAsync(userId, storyId, cancellationToken);
-        var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
-            ?? throw new NotFoundException("StoryVersion");
-
-        var allItems = await _discussionRepo.FindAsync(d => d.StoryVersionId == version.Id, cancellationToken: cancellationToken);
-        var items = allItems.Select(d => new DiscussionItemDto
-        {
-            Id = d.Id,
-            Question = d.Question,
-            IsMoralLesson = d.IsMoralLesson
-        }).ToList();
-
-        return new DiscussionReviewDto
-        {
-            StoryId = storyId,
-            VersionId = version.Id,
-            Items = items
-        };
-    }
-
-    public Task<DiscussionReviewDto> UpdateDiscussionAsync(int userId, int storyId, UpdateDiscussionRequestDto input, CancellationToken cancellationToken = default) =>
-        CreatorPublicationGuard.WriteAsync(_unitOfWork, storyId, input.VersionId,
-            () => UpdateDiscussionCoreAsync(userId, storyId, input, cancellationToken), cancellationToken);
-
-    private async Task<DiscussionReviewDto> UpdateDiscussionCoreAsync(int userId, int storyId, UpdateDiscussionRequestDto input, CancellationToken cancellationToken)
-    {
-        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
-        await EnsureLearningModeAsync(userId, storyId, cancellationToken);
-        var version = await _versionRepo.FirstOrDefaultAsync(v => v.Id == input.VersionId && v.StoryId == storyId, cancellationToken: cancellationToken)
-            ?? throw new NotFoundException("StoryVersion");
-
-        if (input.Items.Count < 2 || input.Items.Any(item => string.IsNullOrWhiteSpace(item.Question)))
-        {
-            throw new BadRequestException("Discussion requires at least two non-empty questions.");
-        }
-
-        var existingItems = await _discussionRepo.FindAsync(d => d.StoryVersionId == input.VersionId, cancellationToken: cancellationToken);
-        var existingIds = existingItems.Select(d => d.Id).ToHashSet();
-
-        var inputIds = input.Items.Where(i => i.Id.HasValue).Select(i => i.Id!.Value).ToHashSet();
-
-        // Delete removed items
-        var toDelete = existingIds.Except(inputIds);
-        foreach (var id in toDelete)
-        {
-            var item = existingItems.FirstOrDefault(d => d.Id == id);
-            if (item != null) _discussionRepo.Delete(item);
-        }
-
-        // Update existing and add new
-        foreach (var item in input.Items)
-        {
-            if (item.Id.HasValue)
-            {
-                var existing = existingItems.FirstOrDefault(d => d.Id == item.Id);
-                if (existing != null)
-                {
-                    existing.Question = item.Question.Trim();
-                    existing.IsMoralLesson = item.IsMoralLesson;
-                    _discussionRepo.Update(existing);
-                }
-            }
-            else
-            {
-                await _discussionRepo.AddAsync(new DiscussionQuestion
-                {
-                    StoryVersionId = input.VersionId,
-                    Question = item.Question.Trim(),
-                    IsMoralLesson = item.IsMoralLesson
-                }, cancellationToken);
-            }
-        }
-
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        return await GetDiscussionForReviewAsync(userId, storyId, cancellationToken);
-    }
-
-    public async Task<CreateProposalResponseDto> CreateDiscussionProposalAsync(int userId, int storyId, CancellationToken cancellationToken = default)
-    {
-        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
-        await EnsureLearningModeAsync(userId, storyId, cancellationToken);
-        var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
-            ?? throw new NotFoundException("StoryVersion");
-
-        var story = new StoryContentDto
-        {
-            Title = version.Title,
-            Lesson = version.Lesson ?? string.Empty,
-            StorySections = new List<StorySectionDto>
-            {
-                new(1, string.Empty, version.Content ?? string.Empty)
-            }
-        };
-
-        var audience = await _storyRepo.GetByIdAsync(storyId, cancellationToken) ?? throw new NotFoundException("Story", storyId);
-        var request = new GenerateDiscussionRequest
-        {
-            RequestId = Guid.NewGuid().ToString("N"),
-            Story = story,
-            Language = audience.Language,
-            AgeBand = audience.AgeBand
-        };
-
-        var result = await _aiClient.GenerateDiscussionAsync(request, cancellationToken);
-
-        var discussionItems = result.Items.Select(i => new DiscussionItemDto
-        {
-            Question = i.Question,
-            IsMoralLesson = false
-        }).ToList();
-
-        var proposal = new AIProposalDto
-        {
-            RequestedByUserId = userId,
-            StoryId = storyId,
-            StoryVersionId = version.Id,
-            ArtifactType = "discussion",
-            OperationType = "regenerate",
-            OriginalContent = JsonSerializer.SerializeToElement(new { }),
-            SuggestedContent = JsonSerializer.SerializeToElement(new { items = discussionItems }, ProposalJsonOptions),
-            Status = "pending",
-            CreatedAt = DateTime.UtcNow,
-            ExpiresAt = DateTime.UtcNow.AddHours(1)
-        };
-
-        var proposalId = await _proposalCache.CreateAsync(proposal);
-        return new CreateProposalResponseDto { ProposalId = proposalId, Message = "AI discussion proposal is ready for preview." };
-    }
-
-    #endregion
-
     #region Validation & Approval
 
     public async Task<bool> CompleteStoryReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
@@ -822,20 +692,6 @@ public sealed partial class StoryReviewService : IStoryReviewService
         return true;
     }
 
-    public async Task<bool> CompleteDiscussionReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
-    {
-        await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
-        await EnsureLearningModeAsync(userId, storyId, cancellationToken);
-        var story = await _storyRepo.GetByIdAsync(storyId, cancellationToken)
-                    ?? throw new NotFoundException("Story", storyId);
-        if (StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story)) throw new ConflictException("PARENT_MANUAL_USE_AUTHORING_API");
-        GenerationStoryAccess.EnsureSupported(story);
-        await EnsureReviewPermissionAsync(story, userId, cancellationToken);
-        var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken)
-                      ?? throw new NotFoundException("StoryVersion");
-        _reviewCompletionStore?.MarkDiscussionReviewed(storyId, version.Id, userId);
-        return true;
-    }
 
     public async Task<ValidationResultDto> ValidateAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
@@ -1004,20 +860,9 @@ public sealed partial class StoryReviewService : IStoryReviewService
         checks.Add(new ValidationCheckDto { Name = "quiz_valid", Passed = readingMediaOnly || quizPassed, Message = readingMediaOnly ? "skipped" : quizPassed ? $"{quizItems.Count} questions, all types" : "Missing types" });
         if (!readingMediaOnly && !quizPassed) issues.Add("Quiz needs at least 3 valid questions with all types and valid answers");
 
-        // 7. Check discussion
-        var discussionItems = await _discussionRepo.FindAsync(d => d.StoryVersionId == version.Id, cancellationToken: cancellationToken);
-        var discussionRequired = await RequiresDiscussionAsync(version.Id, discussionItems.Count, cancellationToken);
-        var discussionValid = !discussionRequired ||
-                              discussionItems.Count >= 2 &&
-                              discussionItems.All(item => !string.IsNullOrWhiteSpace(item.Question)) &&
-                              discussionItems.Any(item => item.IsMoralLesson);
-        checks.Add(new ValidationCheckDto { Name = "discussion_valid", Passed = readingMediaOnly || discussionValid, Message = readingMediaOnly || !discussionRequired ? "skipped" : $"{discussionItems.Count} questions" });
-        if (!readingMediaOnly && !discussionValid) issues.Add($"Discussion needs at least 2 non-empty questions including the moral lesson (current: {discussionItems.Count})");
-
-        // 8. Check Artifact Bindings
+        // 7. Check Artifact Bindings
         var bindingsPassed = vocabularyItems.All(v => v.StoryVersionId == version.Id) &&
-                             quizItems.All(q => q.StoryVersionId == version.Id) &&
-                             discussionItems.All(d => d.StoryVersionId == version.Id);
+                             quizItems.All(q => q.StoryVersionId == version.Id);
         checks.Add(new ValidationCheckDto
         {
             Name = "artifact_bindings_valid",
@@ -1026,9 +871,29 @@ public sealed partial class StoryReviewService : IStoryReviewService
         });
         if (!readingMediaOnly && !bindingsPassed) issues.Add("Artifacts must be bound to the current story version.");
 
-        // 9. Check Review Complete
+        // Tương tác lúc nghe phải khớp kế hoạch và được người duyệt xác nhận.
+        var listening = await InspectListeningAsync(story, version, cancellationToken);
+        var listeningReviewed = !listening.Required || (_reviewCompletionStore?.IsListeningReviewed(storyId, version.Id) ?? false);
+        checks.Add(new ValidationCheckDto
+        {
+            Name = "listening_valid",
+            Passed = listening.Valid,
+            Message = !listening.Required ? "skipped"
+                : listening.Valid ? $"{listening.Inspection!.Items.Count} interactions"
+                : string.Join(", ", ListeningIssues(listening).Select(i => i.Code).Distinct())
+        });
+        if (!listening.Valid) issues.Add("Listening interactions must match the plan and pass the rules; regenerate stale types.");
+        checks.Add(new ValidationCheckDto
+        {
+            Name = "listening_reviewed",
+            Passed = listeningReviewed,
+            Message = !listening.Required ? "skipped" : listeningReviewed ? "Confirmed" : "Waiting for reviewer confirmation"
+        });
+        if (!listeningReviewed) issues.Add("Listening interactions must be confirmed by the reviewer.");
+
+        // 8. Check Review Complete
         var isMarkedComplete = _reviewCompletionStore?.IsReviewCompleted(storyId, version.Id) ?? false;
-        var structurallyComplete = storyValid && vocabValid && quizPassed && discussionValid;
+        var structurallyComplete = storyValid && vocabValid && quizPassed;
         var autoApproval = !story.EverGrayZone && safetyPolicy is { ParentalGateEnabled: false, RequiredApprovalMode: ApprovalMode.AutoPublishOnThreshold };
         var reviewComplete = readingMediaOnly
             ? (_reviewCompletionStore?.IsStoryReviewed(storyId, version.Id) ?? false) || autoApproval
@@ -1045,7 +910,8 @@ public sealed partial class StoryReviewService : IStoryReviewService
                          readability.Passed &&
                          safetyPassed &&
                          profilePassed &&
-                         (readingMediaOnly || vocabValid && quizPassed && discussionValid && bindingsPassed) &&
+                         (readingMediaOnly || vocabValid && quizPassed && bindingsPassed) &&
+                         listening.Valid && listeningReviewed &&
                          reviewComplete;
 
         return new ValidationResultDto
@@ -1191,14 +1057,6 @@ public sealed partial class StoryReviewService : IStoryReviewService
 
         return versionId;
     }
-
-    /// <summary>
-    /// Phase 4 không còn sinh câu thảo luận (thay bằng tương tác lúc nghe). Chỉ version cũ, đã có câu thảo luận
-    /// hoặc có job Discussion, mới còn phải qua luật thảo luận.
-    /// </summary>
-    private async Task<bool> RequiresDiscussionAsync(int versionId, int discussionCount, CancellationToken cancellationToken) =>
-        discussionCount > 0 || await _unitOfWork.Repository<StoryGenerationJob>().ExistsAsync(
-            job => job.StoryVersionId == versionId && job.Operation == GenerationJobOperation.GenerateDiscussion, cancellationToken);
 
     public async Task<ApproveResponseDto?> EvaluateAndApplyAutoPublishAsync(
         int storyId, CancellationToken cancellationToken = default)

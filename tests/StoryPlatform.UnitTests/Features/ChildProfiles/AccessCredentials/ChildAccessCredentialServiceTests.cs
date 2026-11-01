@@ -9,6 +9,7 @@ using StoryPlatform.Application.Common.Security;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Services;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
+using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using Xunit;
@@ -23,6 +24,10 @@ public class ChildAccessCredentialServiceTests
     private readonly Mock<IGenericRepository<ChildSession>> _sessionRepo = new();
     private readonly Mock<IGenericRepository<ChildProfile>> _profileRepo = new();
     private readonly Mock<IGenericRepository<RefreshToken>> _refreshTokenRepo = new();
+    private readonly Mock<IGenericRepository<Story>> _storyRepo = new();
+    private readonly Mock<IGenericRepository<StoryVersion>> _versionRepo = new();
+    private readonly Mock<IGenericRepository<ChildRoadmapItem>> _roadmapItemRepo = new();
+    private readonly Mock<IChildRoadmapEligibility> _eligibility = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IChildProfileAccessGuard> _guard = new();
     private readonly Mock<IJwtTokenGenerator> _jwtTokenGenerator = new();
@@ -37,6 +42,9 @@ public class ChildAccessCredentialServiceTests
         _unitOfWork.Setup(u => u.Repository<ChildSession>()).Returns(_sessionRepo.Object);
         _unitOfWork.Setup(u => u.Repository<ChildProfile>()).Returns(_profileRepo.Object);
         _unitOfWork.Setup(u => u.Repository<RefreshToken>()).Returns(_refreshTokenRepo.Object);
+        _unitOfWork.Setup(u => u.Repository<Story>()).Returns(_storyRepo.Object);
+        _unitOfWork.Setup(u => u.Repository<StoryVersion>()).Returns(_versionRepo.Object);
+        _unitOfWork.Setup(u => u.Repository<ChildRoadmapItem>()).Returns(_roadmapItemRepo.Object);
         _profileRepo.Setup(r => r.GetByIdAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ChildProfile { Id = 1, Status = ChildProfileStatus.Active });
         _jwtTokenGenerator.Setup(generator => generator.ChildTokenExpiresInSeconds).Returns(14400);
@@ -51,7 +59,7 @@ public class ChildAccessCredentialServiceTests
             .Returns(Task.CompletedTask);
         _sut = new ChildAccessCredentialService(
             _unitOfWork.Object, _guard.Object, _jwtTokenGenerator.Object, _limiter.Object,
-            _auditLogWriter.Object);
+            _auditLogWriter.Object, _eligibility.Object);
     }
 
     // ---------- CreateOrRegenerateEasyLoginAsync ----------
@@ -529,7 +537,302 @@ public class ChildAccessCredentialServiceTests
         Assert.Equal(ChildAccessCredentialService.ChildEntryBlockedMessage, ex.Message);
     }
 
+    // ---------- StartStoryHandoverAsync ----------
+
+    [Fact]
+    public async Task StartStoryHandoverAsync_EligibleStory_StartsSupervisorPickSession()
+    {
+        AllowSupervision();
+        SetupSupervisorSession(SupervisorSession());
+        SetupCredentials(Credential("qr-secret"));
+        SetupStory(LibraryStory());
+        _jwtTokenGenerator.Setup(g => g.GenerateChildAccessToken(1, It.IsAny<string>()))
+            .Returns("child-jwt");
+        var addedSession = CaptureAddedSession();
+
+        var result = await _sut.StartStoryHandoverAsync(1, 2, 42, "supervisor-refresh");
+
+        Assert.Equal(42, result.StoryId);
+        Assert.Equal(1, result.ChildProfileId);
+        Assert.Equal("child-jwt", result.AccessToken);
+        Assert.Equal("avatar-fox", result.AvatarId);
+        Assert.Equal(14400, result.ExpiresInSeconds);
+        Assert.Equal(ChildEntryMethod.SupervisorPick, addedSession()!.EntryMethod);
+        Assert.Equal(77, addedSession()!.SupervisorSessionId);
+        Assert.Null(addedSession()!.ChildAccessCredentialId);
+    }
+
+    [Theory]
+    [InlineData(ChildRoadmapSkipReason.WrongAge, "Truyện không đúng độ tuổi của bé này.")]
+    [InlineData(ChildRoadmapSkipReason.BlockedTopic, "Truyện thuộc chủ đề đã bị chặn với bé này.")]
+    [InlineData(ChildRoadmapSkipReason.TooLong, "Truyện dài hơn mức cho phép của bé này.")]
+    [InlineData(ChildRoadmapSkipReason.StoryUnavailable, "Truyện hiện không còn đọc được.")]
+    public async Task StartStoryHandoverAsync_IneligibleStory_IsForbiddenWithParentMessage(
+        ChildRoadmapSkipReason reason, string message)
+    {
+        AllowSupervision();
+        SetupSupervisorSession(SupervisorSession());
+        SetupStory(LibraryStory());
+        SetupEligibility(1, reason);
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.StartStoryHandoverAsync(1, 2, 42, "supervisor-refresh"));
+
+        Assert.Equal(message, ex.Message);
+        _sessionRepo.Verify(r => r.AddAsync(
+            It.IsAny<ChildSession>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task StartStoryHandoverAsync_MissingStory_IsForbiddenAsUnavailable()
+    {
+        AllowSupervision();
+        SetupSupervisorSession(SupervisorSession());
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.StartStoryHandoverAsync(1, 2, 42, "supervisor-refresh"));
+
+        Assert.Equal("Truyện hiện không còn đọc được.", ex.Message);
+        _sessionRepo.Verify(r => r.AddAsync(
+            It.IsAny<ChildSession>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task StartStoryHandoverAsync_AnotherChildsPrivateStory_IsForbiddenWithoutEligibilityCheck()
+    {
+        AllowSupervision();
+        SetupSupervisorSession(SupervisorSession());
+        SetupStory(PrivateStory(9));
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.StartStoryHandoverAsync(1, 2, 42, "supervisor-refresh"));
+
+        Assert.Equal("Truyện hiện không còn đọc được.", ex.Message);
+        _eligibility.Verify(e => e.EvaluateAsync(
+            It.IsAny<ChildProfile>(), It.IsAny<Story?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task StartStoryHandoverAsync_SiblingStoryInManualRoadmap_Starts()
+    {
+        AllowSupervision();
+        SetupSupervisorSession(SupervisorSession());
+        SetupCredentials();
+        SetupStory(PrivateStory(9));
+        _roadmapItemRepo.Setup(r => r.ExistsAsync(
+                It.IsAny<Expression<Func<ChildRoadmapItem, bool>>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        var addedSession = CaptureAddedSession();
+
+        var result = await _sut.StartStoryHandoverAsync(1, 2, 42, "supervisor-refresh");
+
+        Assert.Equal(42, result.StoryId);
+        Assert.Equal(ChildEntryMethod.SupervisorPick, addedSession()!.EntryMethod);
+    }
+
+    [Fact]
+    public async Task StartStoryHandoverAsync_DoesNotCheckHoldMode()
+    {
+        AllowSupervision();
+        SetupSupervisorSession(SupervisorSession());
+        SetupCredentials();
+        SetupStory(LibraryStory());
+        CaptureAddedSession();
+
+        await _sut.StartStoryHandoverAsync(1, 2, 42, "supervisor-refresh");
+
+        _unitOfWork.Verify(u => u.Repository<InterventionCase>(), Times.Never);
+    }
+
+    [Fact]
+    public async Task StartStoryHandoverAsync_NotOwner_ThrowsBeforeCheckingTokenOrStory()
+    {
+        _guard.Setup(g => g.EnsureOwnerAsync(1, 2, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ForbiddenException("Không có quyền."));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.StartStoryHandoverAsync(1, 2, 42, "supervisor-refresh"));
+
+        _refreshTokenRepo.Verify(r => r.FirstOrDefaultAsync(
+            It.IsAny<Expression<Func<RefreshToken, bool>>>(), null,
+            It.IsAny<CancellationToken>()), Times.Never);
+        _storyRepo.Verify(r => r.GetByIdAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidSupervisorSessions))]
+    public async Task StartStoryHandoverAsync_InvalidSupervisorSession_ThrowsUnauthorized(RefreshToken? token)
+    {
+        AllowSupervision();
+        SetupSupervisorSession(token);
+
+        await Assert.ThrowsAsync<UnauthorizedException>(() =>
+            _sut.StartStoryHandoverAsync(1, 2, 42, "supervisor-refresh"));
+
+        _storyRepo.Verify(r => r.GetByIdAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Never);
+        _sessionRepo.Verify(r => r.AddAsync(
+            It.IsAny<ChildSession>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(ChildProfileStatus.Suspended)]
+    [InlineData(ChildProfileStatus.Draft)]
+    public async Task StartStoryHandoverAsync_ProfileNotActive_BlocksWithFriendlyMessage(ChildProfileStatus status)
+    {
+        AllowSupervision();
+        SetupSupervisorSession(SupervisorSession());
+        SetupProfileStatus(status);
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.StartStoryHandoverAsync(1, 2, 42, "supervisor-refresh"));
+
+        Assert.Equal(ChildAccessCredentialService.ChildEntryBlockedMessage, ex.Message);
+        _sessionRepo.Verify(r => r.AddAsync(
+            It.IsAny<ChildSession>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // ---------- GetStoryHandoverOptionsAsync ----------
+
+    [Fact]
+    public async Task GetStoryHandoverOptionsAsync_ListsOnlyOwnNonArchivedChildren()
+    {
+        SetupChildren(
+            Child(1),
+            Child(2, status: ChildProfileStatus.Suspended),
+            Child(3, status: ChildProfileStatus.Archived),
+            Child(4, ownerUserId: 99),
+            Child(5, isDeleted: true));
+        SetupStory(LibraryStory());
+
+        var result = await _sut.GetStoryHandoverOptionsAsync(42, 2);
+
+        Assert.Equal(42, result.StoryId);
+        Assert.Equal(new[] { 1, 2 }, result.Children.Select(c => c.ChildProfileId).ToArray());
+        var readable = result.Children[0];
+        Assert.True(readable.CanRead);
+        Assert.Null(readable.SkipCode);
+        Assert.Null(readable.Message);
+        Assert.Equal("Bé 1", readable.Nickname);
+        var suspended = result.Children[1];
+        Assert.False(suspended.CanRead);
+        Assert.Equal("profile_inactive", suspended.SkipCode);
+        Assert.Equal("Hồ sơ của bé đang không hoạt động.", suspended.Message);
+        Assert.Equal(1, result.SuggestedChildProfileId);
+    }
+
+    [Fact]
+    public async Task GetStoryHandoverOptionsAsync_PrivateStory_SuggestsOwningChild()
+    {
+        SetupChildren(Child(1), Child(7));
+        SetupStory(PrivateStory(7));
+
+        var result = await _sut.GetStoryHandoverOptionsAsync(42, 2);
+
+        var sibling = result.Children.Single(c => c.ChildProfileId == 1);
+        Assert.False(sibling.CanRead);
+        Assert.Equal("story_unavailable", sibling.SkipCode);
+        Assert.True(result.Children.Single(c => c.ChildProfileId == 7).CanRead);
+        Assert.Equal(7, result.SuggestedChildProfileId);
+    }
+
+    [Fact]
+    public async Task GetStoryHandoverOptionsAsync_PrivateStoryInSiblingRoadmap_StillSuggestsOwner()
+    {
+        SetupChildren(Child(1), Child(7));
+        SetupStory(PrivateStory(7));
+        _roadmapItemRepo.Setup(r => r.ExistsAsync(
+                It.IsAny<Expression<Func<ChildRoadmapItem, bool>>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var result = await _sut.GetStoryHandoverOptionsAsync(42, 2);
+
+        Assert.All(result.Children, c => Assert.True(c.CanRead));
+        Assert.Equal(7, result.SuggestedChildProfileId);
+    }
+
+    [Fact]
+    public async Task GetStoryHandoverOptionsAsync_TwoReadableChildren_HasNoSuggestion()
+    {
+        SetupChildren(Child(1), Child(7));
+        SetupStory(LibraryStory());
+
+        var result = await _sut.GetStoryHandoverOptionsAsync(42, 2);
+
+        Assert.All(result.Children, c => Assert.True(c.CanRead));
+        Assert.Null(result.SuggestedChildProfileId);
+    }
+
+    [Fact]
+    public async Task GetStoryHandoverOptionsAsync_OneReadableChild_SuggestsIt()
+    {
+        SetupChildren(Child(1), Child(7));
+        SetupStory(LibraryStory());
+        SetupEligibility(1, ChildRoadmapSkipReason.WrongAge);
+
+        var result = await _sut.GetStoryHandoverOptionsAsync(42, 2);
+
+        var tooYoung = result.Children.Single(c => c.ChildProfileId == 1);
+        Assert.False(tooYoung.CanRead);
+        Assert.Equal("wrong_age", tooYoung.SkipCode);
+        Assert.Equal("Truyện không đúng độ tuổi của bé này.", tooYoung.Message);
+        Assert.Equal(7, result.SuggestedChildProfileId);
+    }
+
+    [Fact]
+    public async Task GetStoryHandoverOptionsAsync_MissingStory_EveryChildUnavailable()
+    {
+        SetupChildren(Child(1), Child(7));
+
+        var result = await _sut.GetStoryHandoverOptionsAsync(42, 2);
+
+        Assert.All(result.Children, c =>
+        {
+            Assert.False(c.CanRead);
+            Assert.Equal("story_unavailable", c.SkipCode);
+            Assert.Equal("Truyện hiện không còn đọc được.", c.Message);
+        });
+        Assert.Null(result.SuggestedChildProfileId);
+    }
+
     // ---------- helpers ----------
+
+    private void SetupStory(Story story)
+    {
+        _storyRepo.Setup(r => r.GetByIdAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(story);
+        _versionRepo.Setup(r => r.FirstOrDefaultAsync(
+                It.IsAny<Expression<Func<StoryVersion, bool>>>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StoryVersion { Id = 420, StoryId = story.Id, IsCurrent = true });
+    }
+
+    private void SetupEligibility(int childProfileId, ChildRoadmapSkipReason? reason) => _eligibility
+        .Setup(e => e.EvaluateAsync(
+            It.Is<ChildProfile>(child => child.Id == childProfileId), It.IsAny<Story?>(),
+            It.IsAny<CancellationToken>()))
+        .ReturnsAsync(reason);
+
+    private static Story LibraryStory() => new()
+    {
+        Id = 42, Scope = StoryScope.Creator, Status = StoryStatus.Ready, IsPublished = true, AgeBand = "6-8"
+    };
+
+    private static Story PrivateStory(int childProfileId) => new()
+    {
+        Id = 42, Scope = StoryScope.Parent, ChildProfileId = childProfileId, Status = StoryStatus.Ready,
+        AgeBand = "6-8"
+    };
+
+    private void SetupChildren(params ChildProfile[] children) => _profileRepo
+        .Setup(r => r.FindAsync(
+            It.IsAny<Expression<Func<ChildProfile, bool>>>(), null, It.IsAny<CancellationToken>()))
+        .ReturnsAsync((Expression<Func<ChildProfile, bool>> predicate, string? _, CancellationToken _) =>
+            (IReadOnlyList<ChildProfile>)children.Where(predicate.Compile()).ToList());
+
+    private static ChildProfile Child(int id, int ownerUserId = 2,
+        ChildProfileStatus status = ChildProfileStatus.Active, bool isDeleted = false) => new()
+    {
+        Id = id, OwnerUserId = ownerUserId, Nickname = $"Bé {id}", Status = status, IsDeleted = isDeleted
+    };
 
     private void AllowSupervision() => _guard
         .Setup(g => g.EnsureOwnerAsync(1, 2, It.IsAny<CancellationToken>()))

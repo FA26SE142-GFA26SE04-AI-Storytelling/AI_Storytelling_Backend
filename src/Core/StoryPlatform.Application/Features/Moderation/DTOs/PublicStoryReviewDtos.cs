@@ -12,7 +12,6 @@ public class PublicReviewPackageDto
     public List<PublicReviewSceneDto> Scenes { get; set; } = new();
     public List<PublicReviewVocabularyDto> Vocabulary { get; set; } = new();
     public List<PublicReviewQuizDto> Quizzes { get; set; } = new();
-    public List<PublicReviewDiscussionDto> DiscussionQuestions { get; set; } = new();
     public List<PublicReviewFlagDto> Flags { get; set; } = new();
     public bool AllFlagsResolved { get; set; }
     public PublicReviewProgressDto Progress { get; set; } = new();
@@ -106,13 +105,6 @@ public class PublicReviewQuizDto
     public string Question { get; set; } = string.Empty;
     public string? CorrectAnswer { get; set; }
     public string? Choices { get; set; }
-}
-
-public class PublicReviewDiscussionDto
-{
-    public int Id { get; set; }
-    public string Question { get; set; } = string.Empty;
-    public bool IsMoralLesson { get; set; }
 }
 
 public class PublicReviewFlagDto

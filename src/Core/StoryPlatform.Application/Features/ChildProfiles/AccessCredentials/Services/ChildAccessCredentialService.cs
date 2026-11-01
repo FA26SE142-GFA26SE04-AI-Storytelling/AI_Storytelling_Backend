@@ -8,6 +8,9 @@ using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
+using StoryPlatform.Application.Features.ChildRoadmaps;
+using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
+using StoryPlatform.Application.Features.ReadingSessions;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -32,19 +35,22 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
     private readonly IClientAttemptLimiter _attemptLimiter;
     private readonly IAuditLogWriter _auditLogWriter;
+    private readonly IChildRoadmapEligibility _eligibility;
 
     public ChildAccessCredentialService(
         IUnitOfWork unitOfWork,
         IChildProfileAccessGuard accessGuard,
         IJwtTokenGenerator jwtTokenGenerator,
         IClientAttemptLimiter attemptLimiter,
-        IAuditLogWriter auditLogWriter)
+        IAuditLogWriter auditLogWriter,
+        IChildRoadmapEligibility eligibility)
     {
         _unitOfWork = unitOfWork;
         _accessGuard = accessGuard;
         _jwtTokenGenerator = jwtTokenGenerator;
         _attemptLimiter = attemptLimiter;
         _auditLogWriter = auditLogWriter;
+        _eligibility = eligibility;
     }
 
     public async Task<ChildAccessCredentialDto> GetCredentialAsync(
@@ -206,6 +212,80 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
             ChildEntryMethod.ProfileSwitcher, cancellationToken);
     }
 
+    public async Task<StoryHandoverOptionsDto> GetStoryHandoverOptionsAsync(
+        int storyId, int currentUserId, CancellationToken cancellationToken = default)
+    {
+        var children = await _unitOfWork.Repository<ChildProfile>().FindAsync(
+            value => value.OwnerUserId == currentUserId
+                     && !value.IsDeleted
+                     && value.Status != ChildProfileStatus.Archived
+                     && value.Status != ChildProfileStatus.Deleted,
+            cancellationToken: cancellationToken);
+
+        var options = new List<StoryHandoverChildDto>();
+        int? storyOwnerChildId = null;
+        foreach (var child in children.OrderBy(value => value.Id))
+        {
+            var (skipCode, story) = await EvaluateStoryForChildAsync(child, storyId, cancellationToken);
+            if (story is { Scope: StoryScope.Parent })
+            {
+                storyOwnerChildId = story.ChildProfileId;
+            }
+
+            options.Add(new StoryHandoverChildDto
+            {
+                ChildProfileId = child.Id,
+                Nickname = child.Nickname,
+                CanRead = skipCode == null,
+                SkipCode = skipCode,
+                Message = skipCode == null ? null : HandoverMessageFor(skipCode)
+            });
+        }
+
+        var readable = options.Where(option => option.CanRead).ToList();
+        int? suggested = readable.Any(option => option.ChildProfileId == storyOwnerChildId)
+            ? storyOwnerChildId
+            : readable.Count == 1 ? readable[0].ChildProfileId : null;
+
+        return new StoryHandoverOptionsDto
+        {
+            StoryId = storyId,
+            SuggestedChildProfileId = suggested,
+            Children = options
+        };
+    }
+
+    // "Cho bé đọc truyện này" — cùng luật mở truyện với ChildReadingService.StartAsync; Hold Mode chưa áp ở luồng này.
+    public async Task<ChildStoryHandoverDto> StartStoryHandoverAsync(
+        int childProfileId, int currentUserId, int storyId, string supervisorRefreshToken,
+        CancellationToken cancellationToken = default)
+    {
+        await _accessGuard.EnsureOwnerAsync(childProfileId, currentUserId, cancellationToken);
+        var supervisorSession = await ResolveSupervisorSessionAsync(
+            currentUserId, supervisorRefreshToken, cancellationToken);
+        var child = await EnsureChildCanEnterAsync(childProfileId, cancellationToken);
+
+        var (skipCode, _) = await EvaluateStoryForChildAsync(child, storyId, cancellationToken);
+        if (skipCode != null)
+        {
+            throw new ForbiddenException(HandoverMessageFor(skipCode));
+        }
+
+        var credential = await FindActiveCredentialAsync(childProfileId, cancellationToken);
+        var session = await StartChildSessionAsync(
+            childProfileId, credential?.AvatarId ?? string.Empty, null, supervisorSession.Id,
+            ChildEntryMethod.SupervisorPick, cancellationToken);
+
+        return new ChildStoryHandoverDto
+        {
+            ChildProfileId = session.ChildProfileId,
+            AvatarId = session.AvatarId,
+            AccessToken = session.AccessToken,
+            ExpiresInSeconds = session.ExpiresInSeconds,
+            StoryId = storyId
+        };
+    }
+
     public async Task<ChildSessionProfileDto> GetMySessionProfileAsync(
         int childProfileId, CancellationToken cancellationToken = default)
     {
@@ -225,7 +305,7 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
     }
 
     // Hold Mode (Luồng 4) cố ý không chặn ở đây — trẻ cần vào đọc để được tự mở khoá khi cải thiện.
-    private async Task EnsureChildCanEnterAsync(
+    private async Task<ChildProfile> EnsureChildCanEnterAsync(
         int childProfileId, CancellationToken cancellationToken)
     {
         var profile = await _unitOfWork.Repository<ChildProfile>()
@@ -234,7 +314,45 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
         {
             throw new ForbiddenException(ChildEntryBlockedMessage);
         }
+
+        return profile;
     }
+
+    private async Task<(string? SkipCode, Story? Story)> EvaluateStoryForChildAsync(
+        ChildProfile child, int storyId, CancellationToken cancellationToken)
+    {
+        if (child.IsDeleted || child.Status != ChildProfileStatus.Active)
+        {
+            return (ChildRoadmapSkipCodes.ProfileInactive, null);
+        }
+
+        var found = await ChildStoryLookup.FindAsync(_unitOfWork, child.Id, storyId, cancellationToken);
+        if (found == null)
+        {
+            return (ChildRoadmapSkipCodes.StoryUnavailable, null);
+        }
+
+        var reason = await _eligibility.EvaluateAsync(child, found.Value.Story, cancellationToken);
+        return (reason == null ? null : SkipCodeFor(reason.Value), found.Value.Story);
+    }
+
+    private static string SkipCodeFor(ChildRoadmapSkipReason reason) => reason switch
+    {
+        ChildRoadmapSkipReason.BlockedTopic => ChildRoadmapSkipCodes.BlockedTopic,
+        ChildRoadmapSkipReason.WrongAge => ChildRoadmapSkipCodes.WrongAge,
+        ChildRoadmapSkipReason.TooLong => ChildRoadmapSkipCodes.TooLong,
+        _ => ChildRoadmapSkipCodes.StoryUnavailable
+    };
+
+    // Cùng câu báo với lộ trình (ChildRoadmapService.MessageFor) — phụ huynh thấy lý do, trẻ thì không.
+    private static string HandoverMessageFor(string skipCode) => skipCode switch
+    {
+        ChildRoadmapSkipCodes.ProfileInactive => "Hồ sơ của bé đang không hoạt động.",
+        ChildRoadmapSkipCodes.BlockedTopic => "Truyện thuộc chủ đề đã bị chặn với bé này.",
+        ChildRoadmapSkipCodes.WrongAge => "Truyện không đúng độ tuổi của bé này.",
+        ChildRoadmapSkipCodes.TooLong => "Truyện dài hơn mức cho phép của bé này.",
+        _ => "Truyện hiện không còn đọc được."
+    };
 
     private async Task<RefreshToken> ResolveSupervisorSessionAsync(
         int currentUserId, string supervisorRefreshToken, CancellationToken cancellationToken)

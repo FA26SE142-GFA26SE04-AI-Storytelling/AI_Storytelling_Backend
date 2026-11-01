@@ -94,17 +94,6 @@ internal static class GenerationSchemas
         }
         """);
 
-    public static JsonElement Discussion => Parse("""
-        {
-          "type":"object",
-          "properties":{
-            "items":{"type":"array","minItems":1,"items":{"type":"object","properties":{"question":{"type":"string"}},"required":["question"],"additionalProperties":false}}
-          },
-          "required":["items"],
-          "additionalProperties":false
-        }
-        """);
-
     public static JsonElement ContentSafety => Parse("""
         {
           "type":"object",

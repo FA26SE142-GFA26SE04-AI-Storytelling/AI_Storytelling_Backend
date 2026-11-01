@@ -64,7 +64,6 @@ rectangle "AI Storytelling Platform\nStory Creation and Content Review" {
     usecase "Generate Learning\nArtifacts" as UC_GenerateArtifacts
     usecase "Generate Vocabulary" as UC_GenerateVocabulary
     usecase "Generate Quiz" as UC_GenerateQuiz
-    usecase "Generate Discussion\nQuestions" as UC_GenerateDiscussion
 
     usecase "Review Learning\nArtifacts" as UC_ReviewArtifacts
     usecase "Review Vocabulary" as UC_ReviewVocabulary
@@ -75,10 +74,6 @@ rectangle "AI Storytelling Platform\nStory Creation and Content Review" {
     usecase "Edit Quiz" as UC_EditQuiz
     usecase "Regenerate Quiz" as UC_RegenerateQuiz
     usecase "Complete Quiz Review" as UC_CompleteQuiz
-    usecase "Review Discussion\nQuestions" as UC_ReviewDiscussion
-    usecase "Edit Discussion\nQuestions" as UC_EditDiscussion
-    usecase "Regenerate Discussion\nQuestions" as UC_RegenerateDiscussion
-    usecase "Complete Discussion\nReview" as UC_CompleteDiscussion
   }
 
   package "Validation and Approval" {
@@ -150,19 +145,14 @@ UC_CompleteContentReview ..> UC_QueueArtifacts : <<include>>
 UC_QueueArtifacts ..> UC_GenerateArtifacts : <<include>>
 UC_GenerateArtifacts ..> UC_GenerateVocabulary : <<include>>
 UC_GenerateArtifacts ..> UC_GenerateQuiz : <<include>>
-UC_GenerateArtifacts ..> UC_GenerateDiscussion : <<include>>
 UC_ReviewArtifacts ..> UC_ReviewVocabulary : <<include>>
 UC_ReviewArtifacts ..> UC_ReviewQuiz : <<include>>
-UC_ReviewArtifacts ..> UC_ReviewDiscussion : <<include>>
 UC_EditVocabulary ..> UC_ReviewVocabulary : <<extend>>
 UC_RegenerateVocabulary ..> UC_ReviewVocabulary : <<extend>>
 UC_CompleteVocabulary ..> UC_ReviewVocabulary : <<extend>>
 UC_EditQuiz ..> UC_ReviewQuiz : <<extend>>
 UC_RegenerateQuiz ..> UC_ReviewQuiz : <<extend>>
 UC_CompleteQuiz ..> UC_ReviewQuiz : <<extend>>
-UC_EditDiscussion ..> UC_ReviewDiscussion : <<extend>>
-UC_RegenerateDiscussion ..> UC_ReviewDiscussion : <<extend>>
-UC_CompleteDiscussion ..> UC_ReviewDiscussion : <<extend>>
 
 ' Package approval
 UC_ApprovePackage ..> UC_ValidatePackage : <<include>>
@@ -178,17 +168,14 @@ LLM -- UC_GenerateContent
 LLM -- UC_PartialEdit
 LLM -- UC_GenerateVocabulary
 LLM -- UC_GenerateQuiz
-LLM -- UC_GenerateDiscussion
 LLM -- UC_RegenerateVocabulary
 LLM -- UC_RegenerateQuiz
-LLM -- UC_RegenerateDiscussion
 
 note bottom of UC_ApprovePackage
   Preconditions:
   - Story review completed
   - Vocabulary review completed
   - Quiz review completed
-  - Discussion review completed
   - Package validation passed
   - Actor has approval permission
 end note

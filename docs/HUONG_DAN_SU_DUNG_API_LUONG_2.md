@@ -26,7 +26,7 @@ Tài liệu này cung cấp các bước thực thi API chuẩn từ đầu đ�
        ↓ (Tạo Story Draft + InputAccepted)
 [Phase 2: Sinh & Duyệt Dàn ý (Outline)]  ← Story 11 hiện đang ở đây
        ↓ (Approve Outline)
-[Phase 3: AI Sinh Nội dung tuần tự (Story + Vocab + Quiz + Discussion)]
+[Phase 3: AI Sinh Nội dung tuần tự (Story + Vocab + Quiz + tương tác lúc nghe)]
        ↓ (AI hoàn tất → Chuyển sang ContentReview)
 [Phase 4: Phụ huynh/Giáo viên Kiểm duyệt & Chỉnh sửa (Review & Edit)]
        ↓ (Validation đạt chuẩn → Approve Story)
@@ -193,7 +193,7 @@ Sau khi dàn ý được duyệt, hệ thống nền tự động xử lý tuầ
 1. Sinh nội dung toàn bài truyện (`GenerateContent`).
 2. Trích xuất và giải nghĩa từ vựng (`GenerateVocabulary`).
 3. Tạo bộ câu hỏi trắc nghiệm kiểm tra hiểu biết (`GenerateQuiz`).
-4. Xây dựng câu hỏi thảo luận & bài học đạo đức (`GenerateDiscussion`).
+4. Sinh tương tác lúc nghe theo kế hoạch sau Quiz.
 
 * **Endpoint:** `GET /api/v1/stories/{storyId}/generation/progress`
 * **Ví dụ:** `GET /api/v1/stories/11/generation/progress`
@@ -275,27 +275,12 @@ Sau khi dàn ý được duyệt, hệ thống nền tự động xử lý tuầ
   ```
   *(Quy chuẩn để duyệt: Tối thiểu 3 câu hỏi và có đủ cả 3 loại: MultipleChoice, TrueFalse, ShortAnswer).*
 
-#### 4.5. Xem & Sửa câu hỏi thảo luận (Discussion)
-* **Xem:** `GET /api/v1/stories/{storyId}/review/discussion`
-* **Sửa:** `PUT /api/v1/stories/{storyId}/review/discussion`
-* **Body mẫu:**
-  ```json
-  {
-    "versionId": 11,
-    "items": [
-      { "id": null, "question": "Con thích nhất hành động nào của Bé An trong câu chuyện?", "isMoralLesson": false },
-      { "id": null, "question": "Khi bạn của con gặp khó khăn, con sẽ làm gì để giúp đỡ bạn?", "isMoralLesson": true }
-    ]
-  }
-  ```
-  *(Quy chuẩn để duyệt: Tối thiểu 2 câu hỏi và có ít nhất 1 câu mang bài học đạo đức `isMoralLesson: true`).*
-
-#### 4.6. Kiểm tra điều kiện phê duyệt (Validation Check)
+#### 4.5. Kiểm tra điều kiện phê duyệt (Validation Check)
 * **Endpoint:** `GET /api/v1/stories/{storyId}/review/validation`
 * **Ví dụ:** `GET /api/v1/stories/11/review/validation`
 * **Yêu cầu:** Trường `data.canApprove` phải đạt `true`. Nếu `false`, kiểm tra mảng `issues` để bổ sung phần chưa đạt.
 
-#### 4.7. Phê duyệt chính thức câu chuyện (Approve Story)
+#### 4.6. Phê duyệt chính thức câu chuyện (Approve Story)
 * **Endpoint:** `POST /api/v1/stories/{storyId}/review/approve`
 * **Ví dụ:** `POST /api/v1/stories/11/review/approve`
 * **Kết quả:** Truyện được cập nhật trạng thái `"Approved"`, hệ thống tự động tạo job bàn giao sang Phase 5 để tạo hình ảnh và giọng đọc.
@@ -331,7 +316,6 @@ Sau khi dàn ý được duyệt, hệ thống nền tự động xử lý tuầ
 | **Phase 4** | Xem / Sửa nội dung truyện | `GET` / `PUT` | `/api/v1/stories/{storyId}/review/story` |
 | **Phase 4** | Xem / Sửa từ vựng | `GET` / `PUT` | `/api/v1/stories/{storyId}/review/vocabulary` |
 | **Phase 4** | Xem / Sửa trắc nghiệm Quiz | `GET` / `PUT` | `/api/v1/stories/{storyId}/review/quiz` |
-| **Phase 4** | Xem / Sửa câu hỏi thảo luận | `GET` / `PUT` | `/api/v1/stories/{storyId}/review/discussion` |
 | **Phase 4** | Kiểm tra điều kiện duyệt trước khi submit | `GET` | `/api/v1/stories/{storyId}/review/validation` |
 | **Phase 4** | **Phê duyệt toàn bộ truyện (Sang Phase 5)** | `POST` | `/api/v1/stories/{storyId}/review/approve` |
 | **Phase 5** | Theo dõi sinh ảnh & giọng đọc TTS | `GET` | `/api/v1/stories/{storyId}/media/progress` |

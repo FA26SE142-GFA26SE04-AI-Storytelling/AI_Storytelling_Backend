@@ -33,8 +33,7 @@ public static class PublicVersionComparer
             quiz => quiz.Question.Trim(), quiz => $"{quiz.Type}|{quiz.CorrectAnswer}|{quiz.Choices}|{quiz.SourceQuote}|{quiz.Explanation}|{quiz.Hint}|{quiz.LearningGoal}|{quiz.OptionFeedbackJson}");
         DiffKeyed(result.ArtifactChanges, "vocabulary", before.Vocabulary, current.Vocabulary,
             word => word.Term.Trim(), word => $"{word.Definition}|{word.SourceQuote}|{word.Example}");
-        DiffKeyed(result.ArtifactChanges, "discussion", before.Discussions, current.Discussions,
-            question => question.Question.Trim(), question => question.IsMoralLesson.ToString());
+
 
         return result;
     }

@@ -34,7 +34,8 @@ public sealed class PublicStoryReviewHarness
     public readonly List<MediaAsset> Assets = new();
     public readonly List<QuizItem> Quizzes = new();
     public readonly List<StoryVocabulary> Vocabulary = new();
-    public readonly List<DiscussionQuestion> Discussions = new();
+    public readonly List<ListeningInteraction> ListeningInteractions = new();
+    public readonly List<ListeningInteractionOption> ListeningOptions = new();
     public readonly List<StoryCategory> StoryCategories = new();
     public readonly List<ContentCategory> ContentCategories = new();
 
@@ -53,7 +54,8 @@ public sealed class PublicStoryReviewHarness
         Back(Assets);
         Back(Quizzes);
         Back(Vocabulary);
-        Back(Discussions);
+        Back(ListeningInteractions);
+        Back(ListeningOptions);
         Back(StoryCategories);
         Back(ContentCategories);
 
@@ -304,18 +306,6 @@ public sealed class PublicStoryReviewHarness
                 StoryVersionId = newVersionId,
                 Term = word.Term,
                 Definition = word.Definition
-            });
-        }
-
-        foreach (var question in Discussions
-                     .Where(question => question.StoryVersionId == sourceVersionId).ToList())
-        {
-            Discussions.Add(new DiscussionQuestion
-            {
-                Id = question.Id + offset,
-                StoryVersionId = newVersionId,
-                Question = question.Question,
-                IsMoralLesson = question.IsMoralLesson
             });
         }
 

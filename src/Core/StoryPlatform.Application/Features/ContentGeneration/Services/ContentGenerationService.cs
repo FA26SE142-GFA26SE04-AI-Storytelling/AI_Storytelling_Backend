@@ -39,8 +39,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
     private readonly int _maxRefinementAttempts;
     private readonly int _artifactMaxAttempts;
     private readonly TimeSpan _jobLease;
+    private readonly ListeningInteractionGenerator _listeningGenerator;
     private readonly int _contentExecutionBudgetSeconds;
-    private readonly IReadOnlyCollection<string> _listeningGradingWords;
     private readonly ILearningBatchService? _learningBatches;
     private readonly ILogger<ContentGenerationService> _logger;
 
@@ -53,7 +53,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         ContentGenerationOptions options,
         IStoryReviewService? reviewService = null,
         IGrayZoneEvaluator? moderation = null, GrayZoneWorkflowService? grayZone = null, ILearningBatchService? learningBatches = null,
-        ILogger<ContentGenerationService>? logger = null)
+        ILogger<ContentGenerationService>? logger = null,
+        ListeningInteractionGenerator? listeningGenerator = null)
     {
         _unitOfWork = unitOfWork;
         _aiClient = aiClient;
@@ -67,8 +68,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         _maxRefinementAttempts = Math.Clamp(options.MaxContentRefinementAttempts, 0, 2);
         _artifactMaxAttempts = Math.Clamp(options.ArtifactMaxAttempts, 1, 3);
         _jobLease = TimeSpan.FromMinutes(Math.Clamp(options.JobLeaseMinutes, 1, 30));
+        _listeningGenerator = listeningGenerator ?? new ListeningInteractionGenerator(unitOfWork, aiClient, options);
         _contentExecutionBudgetSeconds = Math.Clamp(options.ContentExecutionBudgetSeconds, 6, 180);
-        _listeningGradingWords = options.ListeningGradingWords is { Length: > 0 } words ? words : ListeningInteractionRules.DefaultGradingWords;
     }
 
     public async Task<ContentGenerationProgressDto> GetProgressAsync(
@@ -92,8 +93,6 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             .ExistsAsync(item => item.StoryVersionId == stable.Id, cancellationToken);
         var quizDone = stable is not null && await _unitOfWork.Repository<QuizItem>()
             .ExistsAsync(item => item.StoryVersionId == stable.Id, cancellationToken);
-        var discussionDone = stable is not null && await _unitOfWork.Repository<DiscussionQuestion>()
-            .ExistsAsync(item => item.StoryVersionId == stable.Id, cancellationToken);
         // Mỗi loại kế tiếp được tạo cùng transaction với loại vừa lưu.
         var listeningJobs = jobs.Where(item => item.Operation == GenerationJobOperation.GenerateListeningInteraction &&
             stable is not null && item.StoryVersionId == stable.Id).ToArray();
@@ -111,7 +110,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                 GenerationJobOperation.GenerateContent => stable is null || item.ErrorCode == "CONTENT_ARTIFACT_HANDOFF_FAILED",
                 GenerationJobOperation.GenerateVocabulary => (!vocabularyDone || batches.Any(x => x.RootJobId == item.Id)) && item.StoryVersionId == stable?.Id,
                 GenerationJobOperation.GenerateQuiz => !quizDone && item.StoryVersionId == stable?.Id,
-                GenerationJobOperation.GenerateDiscussion => !discussionDone && item.StoryVersionId == stable?.Id,
+                GenerationJobOperation.GenerateDiscussion => item.StoryVersionId == stable?.Id,
                 GenerationJobOperation.GenerateListeningInteraction => item.StoryVersionId == stable?.Id,
                 _ => false
             }))
@@ -163,9 +162,6 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             Content = stable is not null ? "stable" : JobState(jobs, GenerationJobOperation.GenerateContent),
             Vocabulary = readingMediaOnly ? "skipped" : vocabularyDone ? "completed" : JobState(jobs, GenerationJobOperation.GenerateVocabulary),
             Quiz = readingMediaOnly ? "skipped" : quizDone ? "completed" : JobState(jobs, GenerationJobOperation.GenerateQuiz),
-            Discussion = readingMediaOnly ? "skipped" : discussionDone ? "completed" :
-                jobs.Any(item => item.Operation == GenerationJobOperation.GenerateDiscussion && item.StoryVersionId == stable?.Id)
-                    ? JobState(jobs, GenerationJobOperation.GenerateDiscussion) : "skipped",
             Listening = readingMediaOnly ? "skipped" :
                 listeningJobs.Length == 0 ? (quizDone && contentComplete ? "skipped" : "not_started") :
                 listeningDone ? "completed" : JobState(listeningJobs, GenerationJobOperation.GenerateListeningInteraction),
@@ -637,41 +633,11 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         }, ListeningNext(ListeningPlan(state.Context, ListeningBlockParser.Parse(state.Version.Content!)), null), cancellationToken);
     }
 
+    // Job Discussion cũ chỉ được đóng để truyện sang ContentReview.
     private async Task ProcessDiscussionAsync(int jobId, string claimedToken, CancellationToken cancellationToken)
     {
         var state = await LoadArtifactStateAsync(jobId, GenerationJobOperation.GenerateDiscussion, cancellationToken);
-        if (!await _unitOfWork.Repository<StoryVocabulary>().ExistsAsync(item => item.StoryVersionId == state.Version.Id, cancellationToken) ||
-            !await _unitOfWork.Repository<QuizItem>().ExistsAsync(item => item.StoryVersionId == state.Version.Id, cancellationToken))
-            throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
-        GenerateDiscussionResponse? response = null;
-        string[] questions = [];
-        for (var attempt = 1; attempt <= _artifactMaxAttempts; attempt++)
-        {
-            response = await _aiClient.GenerateDiscussionAsync(new GenerateDiscussionRequest
-            {
-                RequestId = $"discussion-job-{jobId}-attempt-{attempt}",
-                Story = ToContent(state.Version),
-                AgeBand = state.Context.AgeBand,
-                Language = state.Context.Language,
-                ComprehensionGoal = state.Context.ComprehensionGoal
-            }, cancellationToken);
-            questions = response.Items.Select(item => item.Question.Trim()).Where(item => item.Length > 0)
-                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-            if (questions.Length > 0 && questions.All(item => IsArtifactSafe(item, state.Context)) &&
-                questions.All(item => HasRelevantTerm(item, $"{state.Version.Content} {state.Version.Lesson}"))) break;
-            if (attempt == _artifactMaxAttempts) throw new InvalidOperationException("DISCUSSION_VALIDATION_FAILED");
-        }
-
-        await CompleteArtifactAsync(state, claimedToken, response!.Metadata, async () =>
-        {
-            if (!await _unitOfWork.Repository<DiscussionQuestion>().ExistsAsync(item => item.StoryVersionId == state.Version.Id, cancellationToken))
-                await _unitOfWork.Repository<DiscussionQuestion>().AddRangeAsync(questions.Select((question, index) => new DiscussionQuestion
-                {
-                    StoryVersionId = state.Version.Id,
-                    Question = question,
-                    IsMoralLesson = index == 0
-                }), cancellationToken);
-        }, null, cancellationToken);
+        await CompleteArtifactAsync(state, claimedToken, new GenerationMetadataDto(), () => Task.CompletedTask, null, cancellationToken);
     }
 
     private async Task CompleteArtifactAsync(
@@ -817,7 +783,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             return true;
         }, cancellationToken);
 
-        // Handoff sang chuá»—i Vocabulary â†’ Quiz â†’ Discussion qua entry point duy nháº¥t.
+        // Handoff sang chuỗi Vocabulary → Quiz → tương tác lúc nghe qua entry point duy nhất.
         // QueueArtifactsAsync má»Ÿ transaction riÃªng, nÃªn gá»i sau khi transaction Content Ä‘Ã£ commit hoÃ n táº¥t.
     }
 
@@ -1173,8 +1139,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
     }
 
     private static bool IsArtifactSafe(string value, AIStoryInputContextSnapshot context) =>
-        !PolicyTerms(context.BlockedCategoryTerms, context.BlockedCategoryCodes).Any(term => ContainsTerm(value, term)) &&
-        !PolicyTerms(context.RestrictedCategoryTerms, context.RestrictedCategoryCodes).Any(term => ContainsTerm(value, term));
+        ListeningInteractionGenerator.IsSafe(value, context);
 
     private static bool HasRelevantTerm(string value, string source) => LearningArtifactGrounding.HasRelevantTerm(value, source);
 

@@ -1,3 +1,10 @@
+using System.Text.Json;
+using Moq;
+using StoryPlatform.Application.Abstractions.AI;
+using StoryPlatform.Application.Features.AIStoryInput.Models;
+using StoryPlatform.Application.Features.ListeningInteractions.Services;
+using StoryPlatform.Contracts.AI.Requests;
+using StoryPlatform.Domain.Entities;
 using StoryPlatform.Application.Features.ListeningInteractions.Models;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
@@ -157,4 +164,54 @@ internal static class ListeningTestStory
         },
         _ => throw new ArgumentOutOfRangeException(nameof(type))
     };
+    /// <summary>Truyện AI của phụ huynh đang ContentReview: nội dung = Content, đủ từ vựng/quiz hợp lệ, có ngữ cảnh sinh.</summary>
+    public static StoryReviewServiceTests.FakeUnitOfWork SeedReviewStory(string ageBand = "6-8", bool withContext = true)
+    {
+        var uow = StoryReviewServiceTests.SeedContentReview();
+        var story = uow.Items<Story>().Single();
+        story.Language = "vi";
+        story.ReadingLevel = 2;
+        story.AgeBand = ageBand;
+        var version = uow.Items<StoryVersion>().Single();
+        version.Content = Content;
+        version.Lesson = "Nhờ người lớn giúp khi bị lạc";
+        version.SafetyScore = 95m;
+        string[] terms = ["Thỏ", "rừng", "bác Gấu", "cửa hang", "người lớn"];
+        for (var i = 0; i < terms.Length; i++)
+            uow.Seed(new StoryVocabulary { Id = i + 1, StoryVersionId = version.Id, Term = terms[i], Definition = "Nghĩa của từ trong truyện" });
+        uow.Seed(new QuizItem { Id = 1, StoryVersionId = version.Id, Type = QuizType.MultipleChoice, Question = "Ai giúp Thỏ?", Choices = "[\"Bác Gấu\",\"Mẹ Thỏ\"]", CorrectAnswer = "Bác Gấu" });
+        uow.Seed(new QuizItem { Id = 2, StoryVersionId = version.Id, Type = QuizType.TrueFalse, Question = "Thỏ bị lạc trong rừng?", CorrectAnswer = "true" });
+        uow.Seed(new QuizItem { Id = 3, StoryVersionId = version.Id, Type = QuizType.ShortAnswer, Question = "Thỏ học được gì?", CorrectAnswer = "Nhờ người lớn" });
+        if (withContext)
+            uow.Seed(new StoryGenerationRequest
+            {
+                Id = 1,
+                StoryId = story.Id,
+                Status = GenerationInputStatus.InputAccepted,
+                ContextSnapshotJson = JsonSerializer.Serialize(
+                    new AIStoryInputContextSnapshot(1, ageBand, 2, "level_2", "vi", 1000, "always_manual", [], [], [], [],
+                        ConsentRecordedAt: DateTime.UtcNow),
+                    new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            });
+        return uow;
+    }
+
+    /// <summary>Client AI giả: trả AiResponse hợp lệ theo loại được hỏi.</summary>
+    public static Mock<IAIStoryGenerationClient> AiClient()
+    {
+        var ai = new Mock<IAIStoryGenerationClient>();
+        ai.Setup(x => x.GenerateListeningInteractionAsync(It.IsAny<GenerateListeningInteractionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((GenerateListeningInteractionRequest request, CancellationToken _) =>
+                AiResponse(Enum.Parse<ListeningInteractionType>(request.InteractionType)));
+        return ai;
+    }
+
+    /// <summary>Sinh và lưu đủ mọi loại trong kế hoạch, như job Phase 4 chạy xong.</summary>
+    public static async Task SeedPackageAsync(StoryReviewServiceTests.FakeUnitOfWork uow, params ListeningInteractionType[] only)
+    {
+        var generator = new ListeningInteractionGenerator(uow, AiClient().Object);
+        var scope = await generator.LoadScopeAsync(uow.Items<Story>().Single(), uow.Items<StoryVersion>().Single(x => x.IsCurrent), default);
+        foreach (var item in scope.Plan.Items.Where(x => only.Length == 0 || only.Contains(x.Type)))
+            await generator.InsertAsync(scope.Version.Id, (await generator.GenerateAsync(scope, item.Type, "seed", default)).Drafts, default);
+    }
 }

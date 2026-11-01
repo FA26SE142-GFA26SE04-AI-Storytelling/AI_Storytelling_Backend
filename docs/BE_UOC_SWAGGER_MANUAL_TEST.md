@@ -335,22 +335,20 @@ GET /api/v1/stories/STORY_ID/review
 GET /api/v1/stories/STORY_ID/review/story
 GET /api/v1/stories/STORY_ID/review/vocabulary
 GET /api/v1/stories/STORY_ID/review/quiz
-GET /api/v1/stories/STORY_ID/review/discussion
 ```
 
-Mong đợi: truyện phù hợp với lựa chọn thẻ và ràng buộc Parent đã xác nhận. Có vocabulary, quiz và discussion theo outputMode learning; nội dung học liệu bám vào truyện.
+Mong đợi: truyện phù hợp với lựa chọn thẻ và ràng buộc Parent đã xác nhận. Có vocabulary, quiz và tương tác lúc nghe theo outputMode learning; nội dung học liệu bám vào truyện.
 
 Nếu job báo lỗi, ghi `errorCode`, trạng thái và ID job. Không gọi tạo lại tất cả học liệu khi các job cũ vẫn chạy.
 
 ### TC19 — Parent xác nhận nội dung và xếp hàng media
 
-Sau khi đã đọc từng phần, lần lượt gọi bốn POST không có body:
+Sau khi đã đọc từng phần, lần lượt gọi ba POST không có body:
 
 ```http
 POST /api/v1/stories/STORY_ID/review/story/complete
 POST /api/v1/stories/STORY_ID/review/vocabulary/complete
 POST /api/v1/stories/STORY_ID/review/quiz/complete
-POST /api/v1/stories/STORY_ID/review/discussion/complete
 ```
 
 Kiểm tra:

@@ -1,4 +1,5 @@
-﻿using StoryPlatform.Api.Extensions;
+using StoryPlatform.Domain.Enums;
+using StoryPlatform.Api.Extensions;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
@@ -172,39 +173,39 @@ public sealed class ReviewController : ControllerBase
 
     #endregion
 
-    #region Discussion Review
+    #region Listening Review
 
-    [HttpGet("discussion")]
-    public async Task<ActionResult<ApiResponse<DiscussionReviewDto>>> GetDiscussion(
+    [HttpGet("listening")]
+    public async Task<ActionResult<ApiResponse<ListeningReviewDto>>> GetListening(
         int storyId, CancellationToken cancellationToken)
     {
-        var result = await _reviewService.GetDiscussionForReviewAsync(CurrentUserId(), storyId, cancellationToken);
-        return Ok(ApiResponse<DiscussionReviewDto>.Ok(result));
+        var result = await _reviewService.GetListeningForReviewAsync(CurrentUserId(), storyId, cancellationToken);
+        return Ok(ApiResponse<ListeningReviewDto>.Ok(result));
     }
 
-    [HttpPut("discussion")]
-    public async Task<ActionResult<ApiResponse<DiscussionReviewDto>>> UpdateDiscussion(
-        int storyId, [FromBody] UpdateDiscussionRequestDto input, CancellationToken cancellationToken)
+    [HttpPut("listening/{interactionId:int}")]
+    public async Task<ActionResult<ApiResponse<ListeningReviewDto>>> UpdateListening(
+        int storyId, int interactionId, [FromBody] UpdateListeningInteractionRequestDto input, CancellationToken cancellationToken)
     {
-        var result = await _reviewService.UpdateDiscussionAsync(CurrentUserId(), storyId, input, cancellationToken);
-        return Ok(ApiResponse<DiscussionReviewDto>.Ok(result, "Discussion đã được cập nhật."));
+        var result = await _reviewService.UpdateListeningInteractionAsync(CurrentUserId(), storyId, interactionId, input, cancellationToken);
+        return Ok(ApiResponse<ListeningReviewDto>.Ok(result, "Đã lưu tương tác lúc nghe."));
     }
 
-    [HttpPost("discussion/ai/regenerate")]
+    [HttpPost("listening/{type}/ai/regenerate")]
     [EnableRateLimiting(RateLimitPolicies.Ai)]
-    public async Task<ActionResult<ApiResponse<CreateProposalResponseDto>>> RegenerateDiscussion(
-        int storyId, CancellationToken cancellationToken)
+    public async Task<ActionResult<ApiResponse<CreateProposalResponseDto>>> RegenerateListening(
+        int storyId, ListeningInteractionType type, CancellationToken cancellationToken)
     {
-        var result = await _reviewService.CreateDiscussionProposalAsync(CurrentUserId(), storyId, cancellationToken);
-        return Accepted(ApiResponse<CreateProposalResponseDto>.Ok(result, "Đã tạo đề xuất discussion để xem trước."));
+        var result = await _reviewService.CreateListeningProposalAsync(CurrentUserId(), storyId, type, cancellationToken);
+        return Accepted(ApiResponse<CreateProposalResponseDto>.Ok(result, "Đã tạo đề xuất tương tác lúc nghe để xem trước."));
     }
 
-    [HttpPost("discussion/complete")]
-    public async Task<ActionResult<ApiResponse<bool>>> CompleteDiscussion(
+    [HttpPost("listening/complete")]
+    public async Task<ActionResult<ApiResponse<bool>>> CompleteListening(
         int storyId, CancellationToken cancellationToken)
     {
-        var result = await _reviewService.CompleteDiscussionReviewAsync(CurrentUserId(), storyId, cancellationToken);
-        return Ok(ApiResponse<bool>.Ok(result, "Discussion review đã hoàn tất."));
+        var result = await _reviewService.CompleteListeningReviewAsync(CurrentUserId(), storyId, cancellationToken);
+        return Ok(ApiResponse<bool>.Ok(result, "Đã xác nhận duyệt tương tác lúc nghe."));
     }
 
     #endregion

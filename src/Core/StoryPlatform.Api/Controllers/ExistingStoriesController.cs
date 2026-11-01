@@ -19,7 +19,7 @@ namespace StoryPlatform.Api.Controllers;
 ///
 /// Sau khi có StoryVersion ổn định, controller gọi
 /// <see cref="IStableVersionArtifactHandoffService.QueueArtifactsAsync"/> để
-/// vào chuỗi Phase 3 (Vocabulary → Quiz → Discussion).
+/// vào chuỗi Phase 3 (Vocabulary → Quiz → tương tác lúc nghe).
 /// </summary>
 [ApiController]
 [Authorize(Roles = "User")]

@@ -15,8 +15,7 @@ public sealed record PublicVersionSnapshot(
     IReadOnlyList<IllustrationBeat> Beats,
     IReadOnlyList<MediaAsset> Assets,
     IReadOnlyList<QuizItem> Quizzes,
-    IReadOnlyList<StoryVocabulary> Vocabulary,
-    IReadOnlyList<DiscussionQuestion> Discussions)
+    IReadOnlyList<StoryVocabulary> Vocabulary)
 {
     public static async Task<PublicVersionSnapshot> LoadAsync(
         IUnitOfWork unitOfWork,
@@ -42,12 +41,8 @@ public sealed record PublicVersionSnapshot(
         var vocabulary = (await unitOfWork.Repository<StoryVocabulary>().FindAsync(
                 word => word.StoryVersionId == versionId, cancellationToken: cancellationToken))
             .OrderBy(word => word.Id).ToList();
-        var discussions = (await unitOfWork.Repository<DiscussionQuestion>().FindAsync(
-                question => question.StoryVersionId == versionId, cancellationToken: cancellationToken))
-            .OrderBy(question => question.Id).ToList();
-
         return new PublicVersionSnapshot(
-            version, scenes, segments, beats, assets, quizzes, vocabulary, discussions);
+            version, scenes, segments, beats, assets, quizzes, vocabulary);
     }
 
     /// <summary>URL ảnh sẵn sàng của một scene theo thứ tự beat; bỏ qua beat chưa có ảnh.</summary>
@@ -128,11 +123,6 @@ public sealed record PublicVersionSnapshot(
             rows.Add(new[] { "vocabulary", word.Term, word.Definition });
             if (!string.IsNullOrEmpty(word.SourceQuote) || !string.IsNullOrEmpty(word.Example))
                 rows.Add(new[] { "vocabulary-learning", word.Term, word.SourceQuote ?? "", word.Example ?? "" });
-        }
-
-        foreach (var question in Discussions)
-        {
-            rows.Add(new[] { "discussion", question.Question, question.IsMoralLesson.ToString() });
         }
 
         var json = JsonSerializer.Serialize(rows);

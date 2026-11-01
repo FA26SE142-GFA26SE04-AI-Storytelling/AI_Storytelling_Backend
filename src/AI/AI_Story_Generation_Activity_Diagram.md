@@ -63,11 +63,11 @@ flowchart TD
         E8[/Generate quiz questions/]
         E9{/Validate quiz/}
         E10[/Persist Quiz/]
-        E11[/Queue Discussion Job/]
-        E12([Background: ProcessDiscussion])
-        E13[/Generate discussion questions/]
+        E11[/Queue Listening Interaction Job/]
+        E12([Background: ProcessListening])
+        E13[/Generate listening interactions/]
         E14{/Validate questions/}
-        E15[/Persist Discussion/]
+        E15[/Persist Listening Interactions/]
         E16[/Update Status: ContentReview/]
     end
 
@@ -329,7 +329,7 @@ flowchart TD
 
 ---
 
-## Artifact Pipeline: Vocabulary → Quiz → Discussion
+## Artifact Pipeline: Vocabulary → Quiz → tương tác lúc nghe
 
 ```mermaid
 flowchart LR
@@ -349,11 +349,11 @@ flowchart LR
         Q5([Complete])
     end
 
-    subgraph Discussion["Generate Discussion"]
+    subgraph Discussion["Generate Listening Interactions"]
         D1([Start])
         D2[/Call LLM: Generate questions/]
         D3{/Validate questions contextual?}
-        D4[/Persist DiscussionQuestions/]
+        D4[/Persist ListeningInteractions/]
         D5([Complete])
     end
 
@@ -387,7 +387,7 @@ flowchart TD
     C[/Display: Story content/]
     D[/Display: Vocabulary/]
     E[/Display: Quiz/]
-    F[/Display: Discussion questions/]
+    F[/Display: Listening interactions/]
 
     G{Choice}
     G1[Approve]
@@ -518,7 +518,7 @@ flowchart TD
         A2[/Phase 1: Input Guardrail/]
         A3[/Phase 2: Generate & Review Outline/]
         A4[/Phase 3: Generate Content/]
-        A5[/Phase 3a-3c: Vocabulary → Quiz → Discussion/]
+        A5[/Phase 3a-3c: Vocabulary → Quiz → tương tác lúc nghe/]
         A6[/Phase 4: Human Content Review/]
         A7[/Phase 5: Media Generation/]
         A1 --> A2 --> A3 --> A4 --> A5 --> A6 --> A7
@@ -531,7 +531,7 @@ flowchart TD
         E3[/Phase 2: SKIP (No Outline)/]
         E4[/Phase 3: Evaluate Profile Fit/]
         E5[/Phase 3: Supervisor Decision/]
-        E6[/Phase 3a-3c: Vocabulary → Quiz → Discussion (Reuse)/]
+        E6[/Phase 3a-3c: Vocabulary → Quiz → tương tác lúc nghe (Reuse)/]
         E7[/Phase 4: Human Content Review (Reuse)/]
         E8[/Phase 5: Media Generation (Reuse)/]
         E1 --> E2 --> E3 --> E4 --> E5 --> E6 --> E7 --> E8
@@ -546,7 +546,7 @@ flowchart TD
         C1[/StableVersionArtifactHandoffService/]
         C2[/GenerateVocabulary Job/]
         C3[/GenerateQuiz Job/]
-        C4[/GenerateDiscussion Job/]
+        C4[/GenerateListening Interaction Job/]
         C5[/Status = ContentReview/]
         C1 --> C2 --> C3 --> C4 --> C5
     end
@@ -906,7 +906,7 @@ flowchart TD
     H -->|Yes| Y1([Skip: Jobs already queued])
     H -->|No| I[/Queue GenerateVocabulary Job/]
     I --> J[/Queue GenerateQuiz Job/]
-    J --> K[/Queue GenerateDiscussion Job/]
+    J --> K[/Queue GenerateListening Interaction Job/]
     K --> Y2([End: Artifacts queued])
 
     style A fill:#e1f5fe
@@ -980,8 +980,8 @@ sequenceDiagram
     API->>+DB: Save quiz
     DB-->>-API: Saved
 
-    Worker->>+API: ProcessDiscussionAsync
-    API->>+LLM: Generate discussion
+    Worker->>+API: ProcessListeningAsync
+    API->>+LLM: Generate listening interactions
     LLM-->>-API: Questions
     API->>+DB: Save questions + Status=ContentReview
     DB-->>-API: Ready for review
@@ -1030,7 +1030,7 @@ flowchart LR
     end
 
     subgraph Convergence["Convergence"]
-        C1[/Vocabulary → Quiz → Discussion/]
+        C1[/Vocabulary → Quiz → tương tác lúc nghe/]
     end
 
     P1 --> P2 --> P3 --> P4 --> P5
@@ -1100,8 +1100,8 @@ sequenceDiagram
     LLM-->>-API: Quiz items
     API->>+DB: Save quiz
 
-    Worker->>+API: ProcessDiscussionAsync
-    API->>+LLM: Generate discussion
+    Worker->>+API: ProcessListeningAsync
+    API->>+LLM: Generate listening interactions
     LLM-->>-API: Questions
     API->>+DB: Save questions + Status=ContentReview
 

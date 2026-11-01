@@ -25,7 +25,6 @@ public sealed class LearningArtifactServiceBranchTests
     {
         ReturnVocabulary(new GeneratedVocabularyItemDto("chăm chỉ", "cố gắng liên tục"));
         ReturnQuiz(new AiQuizItem { Type = "multiple_choice", Question = "Mèo thích gì?", Options = ["Học", "Chơi"], CorrectAnswer = "Học" });
-        ReturnDiscussion(new DiscussionQuestionDto("Em thích mèo không?"));
     }
 
     // ---- GenerateArtifactsAsync ----
@@ -43,7 +42,7 @@ public sealed class LearningArtifactServiceBranchTests
     }
 
     [Fact]
-    public async Task GenerateArtifactsAsync_NullRequest_GeneratesAllThreeArtifactsForCurrentVersion()
+    public async Task GenerateArtifactsAsync_NullRequest_GeneratesVocabularyAndQuizForCurrentVersion()
     {
         var store = Seed();
 
@@ -51,7 +50,7 @@ public sealed class LearningArtifactServiceBranchTests
 
         Assert.True(result.Success);
         Assert.Equal(2, result.StoryVersionId);
-        Assert.Equal((1, 1, 1), (result.VocabularyCount, result.QuizCount, result.DiscussionCount));
+        Assert.Equal((1, 1), (result.VocabularyCount, result.QuizCount));
     }
 
     [Fact]
@@ -61,11 +60,11 @@ public sealed class LearningArtifactServiceBranchTests
 
         var result = await Service(store).GenerateArtifactsAsync(1, 1, new GenerateArtifactsRequestDto
         {
-            IncludeVocabulary = false, IncludeQuiz = false, IncludeDiscussion = false
+            IncludeVocabulary = false, IncludeQuiz = false
         });
 
         Assert.True(result.Success);
-        Assert.Equal((0, 0, 0), (result.VocabularyCount, result.QuizCount, result.DiscussionCount));
+        Assert.Equal((0, 0), (result.VocabularyCount, result.QuizCount));
         _ai.VerifyNoOtherCalls();
     }
 
@@ -279,59 +278,6 @@ public sealed class LearningArtifactServiceBranchTests
         Assert.Null(sent.ComprehensionThresholdPercent);
     }
 
-    // ---- Discussion ----
-
-    [Fact]
-    public async Task GenerateDiscussionAsync_ExistingRows_ReplacedAndFirstQuestionIsMoralLesson()
-    {
-        var store = Seed();
-        store.Seed(new DiscussionQuestion { Id = 1, StoryVersionId = 2, Question = "cũ" });
-        ReturnDiscussion(new DiscussionQuestionDto(" Bài học là gì? "), new DiscussionQuestionDto("Bài học là gì?"),
-            new DiscussionQuestionDto("  "), new DiscussionQuestionDto("Em sẽ làm gì?"));
-
-        Assert.Equal(2, await Service(store).GenerateDiscussionAsync(1, 1));
-
-        var rows = store.Items<DiscussionQuestion>().ToArray();
-        Assert.Equal(["Bài học là gì?", "Em sẽ làm gì?"], rows.Select(item => item.Question).ToArray());
-        Assert.Equal([true, false], rows.Select(item => item.IsMoralLesson).ToArray());
-    }
-
-    [Fact]
-    public async Task GenerateDiscussionAsync_AiReturnsOnlyBlankQuestions_ThrowsInvalidOperation()
-    {
-        ReturnDiscussion(new DiscussionQuestionDto("   "));
-
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => Service(Seed()).GenerateDiscussionAsync(1, 1));
-
-        Assert.Equal("Không thể tạo câu hỏi thảo luận từ câu chuyện.", error.Message);
-    }
-
-    [Fact]
-    public async Task GenerateDiscussionAsync_CommitFails_RollsBackAndRethrows()
-    {
-        var store = Seed();
-        store.FailCommitNumber = 1;
-
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => Service(store).GenerateDiscussionAsync(1, 1));
-
-        Assert.Equal("simulated commit failure", error.Message);
-    }
-
-    [Fact]
-    public async Task GenerateDiscussionAsync_CreatorStoryUnderPublicReview_ThrowsConflict()
-    {
-        var store = SeedCreator();
-        store.Seed(new ModerationItem
-        {
-            Id = 1, StoryId = 1, ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.Pending
-        });
-
-        var error = await Assert.ThrowsAsync<ConflictException>(() => Service(store).GenerateDiscussionAsync(7, 1));
-
-        Assert.Equal("CREATOR_PUBLICATION_LOCKED", error.Message);
-        _ai.VerifyNoOtherCalls();
-    }
-
     // ---- helpers ----
 
     private LearningArtifactService Service(Store store) => new(store, _ai.Object, _guard.Object);
@@ -343,10 +289,6 @@ public sealed class LearningArtifactServiceBranchTests
     private void ReturnQuiz(params AiQuizItem[] items) =>
         _ai.Setup(item => item.GenerateQuizAsync(It.IsAny<GenerateQuizRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new GenerateQuizResponse { Items = items });
-
-    private void ReturnDiscussion(params DiscussionQuestionDto[] items) =>
-        _ai.Setup(item => item.GenerateDiscussionAsync(It.IsAny<GenerateDiscussionRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new GenerateDiscussionResponse { Items = items });
 
     private static Store Seed(bool withChild = true, bool withLearningProfile = true)
     {

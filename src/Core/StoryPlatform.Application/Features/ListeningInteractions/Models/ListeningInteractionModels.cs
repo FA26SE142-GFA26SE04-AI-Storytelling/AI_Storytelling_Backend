@@ -1,5 +1,8 @@
 using StoryPlatform.Application.Features.ListeningInteractions.Services;
+using StoryPlatform.Application.Features.AIStoryInput.Models;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
+using StoryPlatform.Contracts.AI.Models;
+using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.ListeningInteractions.Models;
@@ -76,4 +79,20 @@ public sealed record ListeningRuleContext
     /// <summary>Guardrail an toàn của Phase 4 (IsArtifactSafe), truyền từ service gọi.</summary>
     public Func<string, bool> IsSafe { get; init; } = _ => true;
     public IReadOnlyCollection<string> GradingWords { get; init; } = ListeningInteractionRules.DefaultGradingWords;
+}
+
+/// <summary>Ngữ cảnh, các đoạn và kế hoạch tương tác của một version.</summary>
+public sealed record ListeningScope(
+    StoryVersion Version, AIStoryInputContextSnapshot Context, IReadOnlyList<StoryTextBlock> Blocks, ListeningInteractionPlan Plan);
+
+public sealed record ListeningGenerationResult(IReadOnlyList<ListeningInteractionDraft> Drafts, GenerationMetadataDto Metadata);
+
+public sealed record ListeningSavedItem(
+    ListeningInteraction Interaction, IReadOnlyList<ListeningInteractionOption> Options, ListeningInteractionDraft Draft, bool IsStale);
+
+public sealed record ListeningIssue(string Code, ListeningInteractionType? Type = null, int? ItemIndex = null, string? Field = null);
+
+public sealed record ListeningInspection(IReadOnlyList<ListeningSavedItem> Items, IReadOnlyList<ListeningIssue> Issues)
+{
+    public bool Valid => Issues.Count == 0;
 }

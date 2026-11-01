@@ -23,6 +23,27 @@ namespace StoryPlatform.UnitTests;
 public sealed class ContentGenerationServiceTests
 {
     [Fact]
+    public async Task Legacy_discussion_job_is_closed_without_calling_ai()
+    {
+        var store = Seed();
+        var version = store.Items<StoryVersion>().Single();
+        version.Content = "Lan và Minh cùng chia sẻ một quyển sách.";
+        var job = store.Items<StoryGenerationJob>().Single();
+        job.Operation = GenerationJobOperation.GenerateDiscussion;
+        job.Stage = JobStage.ContentArtifactPending;
+        job.StoryVersionId = version.Id;
+        job.BaseStoryVersionId = version.Id;
+        var ai = new FakeAIClient();
+
+        Assert.True(await Service(store, ai).ProcessNextAsync());
+
+        Assert.Equal(GenerationJobStatus.Completed, job.Status);
+        Assert.Equal(StoryStatus.ContentReview, store.Items<Story>().Single().Status);
+        Assert.Empty(ai.Calls);
+        Assert.False(await Service(store, ai).ProcessNextAsync());
+    }
+
+    [Fact]
     public async Task Content_deadline_does_not_cancel_the_post_promotion_handoff()
     {
         var store = Seed(); var ai = new FakeAIClient(); var queued = new RecordingHandoffService(store);
@@ -197,7 +218,6 @@ public sealed class ContentGenerationServiceTests
         Assert.Equal(new[] { "content", "safety", "vocabulary", "quiz", "listening:Checkpoint" }, ai.Calls);
         Assert.Single(store.Items<ListeningInteraction>());
         Assert.Equal(4, store.Items<ListeningInteractionOption>().Count);
-        Assert.Empty(store.Items<DiscussionQuestion>());
     }
 
     [Fact]
@@ -361,7 +381,6 @@ public sealed class ContentGenerationServiceTests
         Assert.True(done.IsComplete);
         Assert.Equal("complete", done.CurrentStep);
         Assert.Equal("completed", done.Listening);
-        Assert.Equal("skipped", done.Discussion);
     }
 
     [Fact]
@@ -486,7 +505,6 @@ public sealed class ContentGenerationServiceTests
         Assert.True(progress.IsComplete);
         Assert.Equal("skipped", progress.Vocabulary);
         Assert.Equal("skipped", progress.Quiz);
-        Assert.Equal("skipped", progress.Discussion);
         Assert.Equal("skipped", progress.Listening);
     }
 
@@ -524,7 +542,6 @@ public sealed class ContentGenerationServiceTests
         Assert.False(store.Items<StoryVersion>().Single(item => item.Content is null).IsCurrent);
         Assert.Single(store.Items<StoryVocabulary>());
         Assert.Equal(3, store.Items<QuizItem>().Count);
-        Assert.Empty(store.Items<DiscussionQuestion>());
         Assert.Empty(store.Items<ListeningInteraction>());
         Assert.Equal(new[] { "content", "safety", "vocabulary", "quiz" }, ai.Calls);
 
@@ -1011,15 +1028,6 @@ public sealed class ContentGenerationServiceTests
                     new QuizItemDto { Type = "true_false", Question = "Hai bạn cùng đọc sách?", CorrectAnswer = "true", CorrectOptionIndex = -1 },
                     new QuizItemDto { Type = "short_answer", Question = "Bài học là gì?", CorrectAnswer = "Biết chia sẻ", CorrectOptionIndex = -1 }
                 ]
-            });
-        }
-        public Task<GenerateDiscussionResponse> GenerateDiscussionAsync(GenerateDiscussionRequest request, CancellationToken cancellationToken = default)
-        {
-            Calls.Add("discussion");
-            return Task.FromResult(new GenerateDiscussionResponse
-            {
-                RequestId = request.RequestId,
-                Items = [new DiscussionQuestionDto("Em đã từng chia sẻ điều gì?")]
             });
         }
         public Func<GenerateListeningInteractionRequest, GenerateListeningInteractionResponse>? Listening { get; init; }

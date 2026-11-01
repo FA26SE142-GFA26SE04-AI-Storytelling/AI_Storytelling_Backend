@@ -250,26 +250,6 @@ public sealed class GenerateQuizHandler
     }
 }
 
-public sealed class GenerateDiscussionHandler
-{
-    private readonly StoryContentGenerationExecutor _executor;
-    private readonly IPromptTemplateProvider _prompts;
-    public GenerateDiscussionHandler(StoryContentGenerationExecutor executor, IPromptTemplateProvider prompts) => (_executor, _prompts) = (executor, prompts);
-
-    public async Task<GenerateDiscussionResponse> HandleAsync(GenerateDiscussionRequest request, CancellationToken cancellationToken = default)
-    {
-        GenerateVocabularyHandler.ValidateArtifactRequest(request.RequestId, request.Story);
-        var template = SnapshotPromptResolver.Resolve(request.Snapshot, PromptType.Discussion,
-            request.Language, request.AgeBand, _prompts);
-        var generated = await _executor.ExecuteAsync(
-            PromptComposer.Compose(template, request), "story_discussion", GenerationSchemas.Discussion,
-            json => JsonSerializer.Deserialize<DiscussionPayload>(json, JsonDefaults.Options), cancellationToken);
-        return new GenerateDiscussionResponse { RequestId = request.RequestId, Items = generated.Value.Items, Metadata = generated.Generation.ToMetadata(template.Version) with { AttemptCount = generated.AttemptCount } };
-    }
-
-    private sealed record DiscussionPayload(IReadOnlyList<DiscussionQuestionDto> Items);
-}
-
 public sealed class EvaluateContentSafetyHandler
 {
     private readonly StoryContentGenerationExecutor _executor;

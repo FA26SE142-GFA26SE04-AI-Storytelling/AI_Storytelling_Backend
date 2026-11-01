@@ -17,7 +17,7 @@ namespace StoryPlatform.UnitTests;
 public sealed class LearningArtifactServiceTests
 {
     [Fact]
-    public async Task GenerateArtifacts_GeneratesVocabularyQuizAndDiscussion()
+    public async Task GenerateArtifacts_GeneratesVocabularyAndQuiz()
     {
         var uow = SeedStoryWithVersion();
         var guard = new MockAccessGuard();
@@ -28,8 +28,7 @@ public sealed class LearningArtifactServiceTests
         {
             StoryVersionId = 1,
             IncludeVocabulary = true,
-            IncludeQuiz = true,
-            IncludeDiscussion = true
+            IncludeQuiz = true
         });
 
         Assert.True(result.Success);
@@ -37,16 +36,13 @@ public sealed class LearningArtifactServiceTests
         Assert.Equal(1, result.StoryVersionId);
         Assert.Equal(2, result.VocabularyCount);
         Assert.Equal(3, result.QuizCount);
-        Assert.Equal(2, result.DiscussionCount);
 
         // Verify entities were persisted in UnitOfWork
         var vocabItems = uow.Items<StoryVocabulary>().Where(v => v.StoryVersionId == 1).ToList();
         var quizItems = uow.Items<QuizItem>().Where(q => q.StoryVersionId == 1).ToList();
-        var discItems = uow.Items<DiscussionQuestion>().Where(d => d.StoryVersionId == 1).ToList();
 
         Assert.Equal(2, vocabItems.Count);
         Assert.Equal(3, quizItems.Count);
-        Assert.Equal(2, discItems.Count);
     }
 
     [Fact]
@@ -156,17 +152,6 @@ public sealed class LearningArtifactServiceTests
                     new Contracts.AI.Models.QuizItemDto { Type = "multiple_choice", Question = "Mèo con thích làm gì?", Options = ["Đi học", "Đi chơi"], CorrectAnswer = "Đi học" },
                     new Contracts.AI.Models.QuizItemDto { Type = "true_false", Question = "Mèo con rất lười?", CorrectAnswer = "false" },
                     new Contracts.AI.Models.QuizItemDto { Type = "short_answer", Question = "Bài học là gì?", CorrectAnswer = "Chăm chỉ" }
-                ]
-            });
-
-        public Task<GenerateDiscussionResponse> GenerateDiscussionAsync(GenerateDiscussionRequest request, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new GenerateDiscussionResponse
-            {
-                RequestId = request.RequestId,
-                Items =
-                [
-                    new DiscussionQuestionDto("Em có thích chú mèo chăm chỉ không?"),
-                    new DiscussionQuestionDto("Em sẽ làm gì để học tập tốt hơn?")
                 ]
             });
 

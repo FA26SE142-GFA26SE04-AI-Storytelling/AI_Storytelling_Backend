@@ -22,4 +22,11 @@ public interface IChildAccessCredentialService
     Task<ChildSessionDto> StartSupervisedSessionAsync(
         int childProfileId, int currentUserId, string supervisorRefreshToken,
         CancellationToken cancellationToken = default);
+
+    Task<StoryHandoverOptionsDto> GetStoryHandoverOptionsAsync(
+        int storyId, int currentUserId, CancellationToken cancellationToken = default);
+
+    Task<ChildStoryHandoverDto> StartStoryHandoverAsync(
+        int childProfileId, int currentUserId, int storyId, string supervisorRefreshToken,
+        CancellationToken cancellationToken = default);
 }

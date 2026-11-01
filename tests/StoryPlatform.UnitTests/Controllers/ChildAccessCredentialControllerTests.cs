@@ -146,4 +146,51 @@ public class ChildAccessCredentialControllerTests
 
         Assert.Equal("User", authorize.Roles);
     }
+    [Fact]
+    public async Task GetStoryHandoverOptions_DelegatesWithStoryIdAndCurrentUserId()
+    {
+        var expected = new StoryHandoverOptionsDto { StoryId = 9 };
+        _service.Setup(service => service.GetStoryHandoverOptionsAsync(
+                9, 42, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+
+        var response = await _sut.GetStoryHandoverOptions(9, CancellationToken.None);
+
+        var result = Assert.IsType<OkObjectResult>(response.Result);
+        var apiResponse = Assert.IsType<ApiResponse<StoryHandoverOptionsDto>>(result.Value);
+        Assert.Same(expected, apiResponse.Data);
+    }
+
+    [Fact]
+    public async Task StartStoryHandover_DelegatesWithCurrentUserIdStoryAndRefreshToken()
+    {
+        var expected = new ChildStoryHandoverDto { ChildProfileId = 5, AccessToken = "child-jwt", StoryId = 9 };
+        _service.Setup(service => service.StartStoryHandoverAsync(
+                5, 42, 9, "supervisor-refresh", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+
+        var response = await _sut.StartStoryHandover(
+            5, new StartStoryHandoverRequestDto
+            {
+                StoryId = 9,
+                SupervisorRefreshToken = "supervisor-refresh"
+            }, CancellationToken.None);
+
+        var result = Assert.IsType<OkObjectResult>(response.Result);
+        var apiResponse = Assert.IsType<ApiResponse<ChildStoryHandoverDto>>(result.Value);
+        Assert.Same(expected, apiResponse.Data);
+    }
+
+    [Theory]
+    [InlineData(nameof(ChildAccessCredentialController.GetStoryHandoverOptions))]
+    [InlineData(nameof(ChildAccessCredentialController.StartStoryHandover))]
+    public void StoryHandoverEndpoints_OnlyUser(string methodName)
+    {
+        var method = typeof(ChildAccessCredentialController).GetMethod(methodName)!;
+        var authorize = Assert.Single(method.GetCustomAttributes(
+            typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), false)
+            .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>());
+
+        Assert.Equal("User", authorize.Roles);
+    }
 }

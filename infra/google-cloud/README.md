@@ -57,8 +57,9 @@ Bind the proxy only to loopback, and stop it when testing is complete.
    invoker IAM check or add `allUsers`/`allAuthenticatedUsers` bindings.
 6. Create `taletale-ai-deployer`, restricted to the AI registry (Writer), AI service
    (Cloud Run Developer and Invoker), runtime service account (Service Account
-   User), and AI internal-key secret (Secret Accessor). The deployer has OpenID
-   Connect Identity Token Creator on itself for authenticated CI smoke tests.
+   User), and AI internal-key secret (Secret Accessor). The trusted WIF principal
+   receives Workload Identity User on the deployer, including permission to create
+   its ID token. CI does not require the deployer to impersonate itself.
    Cloud Run Developer must be service-scoped, not project-wide.
 7. Configure GitHub OIDC in pool `taletale-github`, provider `github`, on the
    deployer. Restrict to repository ID `1361038590`, owner ID `322398367`, refs
@@ -112,8 +113,34 @@ python infra/google-cloud/cloudrun.py smoke --project gen-lang-client-0675088605
 
 The smoke test does not print tokens, internal keys, or generated story text. It
 checks IAM denial, health, Swagger UI/OpenAPI, missing/invalid internal keys, and
-a real Vertex outline call. CI uses `--identity-service-account` for an audience-
-bound token. This is not proof that every AI feature or the AWS integration works.
+a real Vertex outline call. The command above preserves the local gcloud identity
+flow; local ADC is unchanged. Explicit `--identity-service-account` remains
+available for local/admin testing with the appropriate impersonation permission.
+
+CI resolves `status.url`, then runs `google-github-actions/auth@v3` again with
+`token_format: id_token`, that URL as `id_token_audience`, and email included.
+The token-only step sets `create_credentials_file: false` and
+`export_environment_variables: false` so the original WIF credentials used for
+deployment and Secret Manager remain active. The action masks its ID token output;
+the smoke step receives it only through `AI_SMOKE_ID_TOKEN` and selects it with
+`--identity-token-env AI_SMOKE_ID_TOKEN`. It never invokes gcloud impersonation
+to mint another token. Missing/blank environment tokens fail without fallback.
+The two explicit token-source flags are mutually exclusive. Never put the token
+itself in command arguments, repository files, logs, or persistent GitHub Secrets.
+
+Run the offline authentication regression tests before committing:
+
+```powershell
+python -m unittest discover -s infra/google-cloud/tests -p 'test_*.py' -v
+```
+
+The GitHub test job runs these tests too. After the fix is approved and reaches
+`dev`/`main`, verify a workflow run on the new commit; rerunning the old run still
+uses its old workflow/script. Only a successful live GitHub smoke step confirms
+the WIF token exchange and invocation, not a local test. This is not proof that
+every AI feature or the AWS integration works. Inspect the exact WIF principal
+and its `getOpenIdToken` permission if token generation fails; do not broaden
+IAM permissions or disable Cloud Run IAM to bypass a failure.
 
 Before production: complete multi-feature live acceptance, compare candidate GA
 models against the baseline on the agreed evaluation set, review output quality,

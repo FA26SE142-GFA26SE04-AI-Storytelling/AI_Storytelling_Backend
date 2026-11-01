@@ -51,6 +51,7 @@ public class ContentReportDetailDto
     public List<ReportedSceneDto> Scenes { get; set; } = new();
     public List<ReportedVocabularyDto> Vocabulary { get; set; } = new();
     public List<ReportedQuizDto> Quizzes { get; set; } = new();
+    public List<ReportedListeningDto> Listening { get; set; } = new();
 }
 
 public class ReportedStoryDto
@@ -102,6 +103,32 @@ public class ReportedQuizDto
     public string Question { get; set; } = string.Empty;
     public string? CorrectAnswer { get; set; }
     public string? Choices { get; set; }
+}
+
+public class ReportedListeningDto
+{
+    public string Type { get; set; } = string.Empty;
+    public string? Kind { get; set; }
+    public string? Prompt { get; set; }
+    public string? CharacterName { get; set; }
+    public string? SourceQuote { get; set; }
+    public string? HiddenWord { get; set; }
+    public string? Hint { get; set; }
+    public string? Explanation { get; set; }
+    public string? MatchFeedback { get; set; }
+    public string? NoMatchFeedback { get; set; }
+    public string? WaitFeedback { get; set; }
+    public List<ReportedListeningOptionDto> Options { get; set; } = new();
+}
+
+public class ReportedListeningOptionDto
+{
+    public string Text { get; set; } = string.Empty;
+    public string? Feedback { get; set; }
+    public bool IsMatch { get; set; }
+    public int? CorrectOrder { get; set; }
+    public string? ImageDescription { get; set; }
+    public string? ImageUrl { get; set; }
 }
 
 public class DismissReportRequestDto

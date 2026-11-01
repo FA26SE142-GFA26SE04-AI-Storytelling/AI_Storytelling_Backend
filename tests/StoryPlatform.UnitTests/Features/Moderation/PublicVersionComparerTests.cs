@@ -86,4 +86,37 @@ public class PublicVersionComparerTests
         Assert.Contains(result.ArtifactChanges, change => change.Kind == "vocabulary" && change.Change == "removed");
         Assert.Contains(result.ArtifactChanges, change => change.Kind == "vocabulary" && change.Change == "added");
     }
+
+    [Fact]
+    public async Task Compare_SameListening_ReportsNoListeningChange()
+    {
+        _h.AddListening(1, PublicStoryReviewHarness.VersionId, ListeningInteractionType.Checkpoint, 10, "Thỏ thấy gì?", "Sợ", "Vui");
+        var result = await CompareAsync();
+        Assert.True(result.IsIdentical);
+        Assert.DoesNotContain(result.ArtifactChanges, change => change.Kind == "listening");
+    }
+
+    [Fact]
+    public async Task Compare_Listening_ReportsAddedRemovedAndModifiedByTypeAndAnchor()
+    {
+        _h.AddListening(1, PublicStoryReviewHarness.VersionId, ListeningInteractionType.Checkpoint, 10, "Thỏ thấy gì?", "Sợ", "Vui");
+        _h.AddListening(2, PublicStoryReviewHarness.VersionId, ListeningInteractionType.RolePlay, 20, null);
+        _h.AddListening(3, PublicStoryReviewHarness.VersionId, ListeningInteractionType.EventOrdering, 40, null, "Lạc", "Về nhà");
+        var result = await CompareAsync(current =>
+        {
+            var copied = _h.ListeningInteractions.Where(x => x.StoryVersionId == current.Id).ToList();
+            copied.Single(x => x.Type == ListeningInteractionType.Checkpoint).Prompt = "Thỏ nghĩ gì?";
+            copied.Single(x => x.Type == ListeningInteractionType.RolePlay).IsDeleted = true;
+            var ordering = copied.Single(x => x.Type == ListeningInteractionType.EventOrdering);
+            _h.ListeningOptions.First(x => x.ListeningInteractionId == ordering.Id).CorrectOrder = 2;
+            _h.AddListening(9, current.Id, ListeningInteractionType.PicturePrediction, 30, "Ai chờ?", "Mẹ");
+        });
+        var listening = result.ArtifactChanges.Where(change => change.Kind == "listening").ToList();
+        Assert.False(result.IsIdentical);
+        Assert.Equal(4, listening.Count);
+        Assert.Contains(listening, c => c.Change == "modified" && c.Key == "Checkpoint@10");
+        Assert.Contains(listening, c => c.Change == "removed" && c.Key == "RolePlay@20");
+        Assert.Contains(listening, c => c.Change == "added" && c.Key == "PicturePrediction@30");
+        Assert.Contains(listening, c => c.Change == "modified" && c.Key == "EventOrdering@40");
+    }
 }

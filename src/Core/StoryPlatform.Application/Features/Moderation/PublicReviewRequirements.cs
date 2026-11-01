@@ -42,6 +42,7 @@ public static class PublicReviewRequirements
     public const string SceneAudioPart = "scene_audio";
     public const string QuizPart = "quiz";
     public const string VocabularyPart = "vocabulary";
+    public const string ListeningPart = "listening";
     public const string MetadataPart = "metadata";
 
     public static readonly string[] UnsupportedChangeParts =

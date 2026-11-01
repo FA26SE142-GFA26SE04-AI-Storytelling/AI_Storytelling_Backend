@@ -53,6 +53,7 @@ public partial class CommunityReviewService : ICommunityReviewService
             Scenes = ReportedContentBuilder.BuildScenes(snapshot, Mask),
             Vocabulary = ReportedContentBuilder.BuildVocabulary(snapshot, Mask),
             Quizzes = ReportedContentBuilder.BuildQuizzes(snapshot, Mask),
+            Listening = ReportedContentBuilder.BuildListening(snapshot, Mask),
             Labels = labels,
             CopyrightDeclaration = context.Item.CopyrightDeclaration?.ToString(),
             PiiCheckSummary = context.Item.PiiCheckResult,

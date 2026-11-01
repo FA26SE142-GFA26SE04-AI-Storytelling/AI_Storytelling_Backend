@@ -83,6 +83,7 @@ public class PublishedContentReviewService : IPublishedContentReviewService
             content.Scenes = ReportedContentBuilder.BuildScenes(snapshot, Mask);
             content.Vocabulary = ReportedContentBuilder.BuildVocabulary(snapshot, Mask);
             content.Quizzes = ReportedContentBuilder.BuildQuizzes(snapshot, Mask);
+            content.Listening = ReportedContentBuilder.BuildListening(snapshot, Mask);
         }
 
         await _auditLogWriter.LogAsync(

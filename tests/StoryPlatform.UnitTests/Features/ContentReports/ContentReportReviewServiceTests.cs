@@ -204,6 +204,35 @@ public class ContentReportReviewServiceTests
     }
 
     [Fact]
+    public async Task GetDetailAsync_ShowsListeningMaskedAndWithoutDeletedRows()
+    {
+        var item = _h.AddReportItem(storyId: ContentReportHarness.PrivateStoryId, versionId: 60);
+        _h.Children.Single().Nickname = "Bé Na";
+        _h.ListeningInteractions.Add(new ListeningInteraction
+        {
+            Id = 1, StoryVersionId = 60, Type = ListeningInteractionType.Checkpoint, AnchorOffset = 10,
+            Kind = CheckpointKind.Emotion, Prompt = "Bé Na thấy gì?", MatchFeedback = "Gọi 0912345678 nhé"
+        });
+        _h.ListeningInteractions.Add(new ListeningInteraction
+        {
+            Id = 2, StoryVersionId = 60, Type = ListeningInteractionType.RolePlay, AnchorOffset = 20, IsDeleted = true
+        });
+        _h.ListeningOptions.Add(new ListeningInteractionOption
+        { Id = 11, ListeningInteractionId = 1, SortOrder = 2, Text = "Vui", Feedback = "Ý hay" });
+        _h.ListeningOptions.Add(new ListeningInteractionOption
+        { Id = 10, ListeningInteractionId = 1, SortOrder = 1, Text = "Bé Na sợ", Feedback = "Đúng rồi", IsMatch = true });
+
+        var detail = await GetDetailAsync(item.Id);
+        var listening = Assert.Single(detail.Listening);
+        Assert.Equal("Checkpoint", listening.Type);
+        Assert.Equal("Emotion", listening.Kind);
+        Assert.Equal("[tên bé] thấy gì?", listening.Prompt);
+        Assert.Equal("Gọi [số điện thoại] nhé", listening.MatchFeedback);
+        Assert.Equal(new[] { "[tên bé] sợ", "Vui" }, listening.Options.Select(x => x.Text));
+        Assert.True(listening.Options[0].IsMatch);
+    }
+
+    [Fact]
     public async Task GetDetailAsync_DoesNotExposeReporterOrChildProfile()
     {
         var item = _h.AddReportItem(

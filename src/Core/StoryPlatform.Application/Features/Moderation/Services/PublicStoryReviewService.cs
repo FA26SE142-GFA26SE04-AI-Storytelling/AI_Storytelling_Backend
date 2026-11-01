@@ -33,7 +33,9 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
         IReadOnlyList<IllustrationBeat> Beats,
         IReadOnlyList<MediaAsset> Assets,
         IReadOnlyList<QuizItem> Quizzes,
-        IReadOnlyList<StoryVocabulary> Vocabulary);
+        IReadOnlyList<StoryVocabulary> Vocabulary,
+        IReadOnlyList<ListeningInteraction> Listening,
+        IReadOnlyList<ListeningInteractionOption> ListeningOptions);
 
     public async Task<PublicReviewPackageDto> GetPackageAsync(
         int actorUserId, int itemId, CancellationToken cancellationToken = default)
@@ -117,7 +119,14 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
             x => x.StoryVersionId == versionId, cancellationToken: cancellationToken);
         var vocabulary = await _unitOfWork.Repository<StoryVocabulary>().FindAsync(
             x => x.StoryVersionId == versionId, cancellationToken: cancellationToken);
-        return new ReviewContent(scenes, segments, beats, assets, quizzes, vocabulary);
+        // Dòng xoá mềm là bản cũ, không đưa cho Moderator.
+        var listening = (await _unitOfWork.Repository<ListeningInteraction>().FindAsync(
+                x => x.StoryVersionId == versionId && !x.IsDeleted, cancellationToken: cancellationToken))
+            .OrderBy(x => x.AnchorOffset).ToList();
+        var listeningIds = listening.Select(x => x.Id).ToList();
+        var listeningOptions = await _unitOfWork.Repository<ListeningInteractionOption>().FindAsync(
+            x => listeningIds.Contains(x.ListeningInteractionId) && !x.IsDeleted, cancellationToken: cancellationToken);
+        return new ReviewContent(scenes, segments, beats, assets, quizzes, vocabulary, listening, listeningOptions);
     }
 
     private async Task<PublicReviewPackageDto> BuildPackageAsync(
@@ -216,6 +225,47 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
                 SourceQuote = x.SourceQuote, Explanation = x.Explanation, Hint = x.Hint,
                 LearningGoal = x.LearningGoal, OptionFeedbackJson = x.OptionFeedbackJson,
                 Choices = x.Choices
+            }).ToList(),
+            ListeningInteractions = content.Listening.Select(interaction => new PublicReviewListeningDto
+            {
+                Id = interaction.Id,
+                Type = interaction.Type.ToString(),
+                Kind = interaction.Kind?.ToString(),
+                StorySceneId = interaction.StorySceneId,
+                AnchorOffset = interaction.AnchorOffset,
+                Prompt = interaction.Prompt,
+                SourceQuote = interaction.SourceQuote,
+                CharacterName = interaction.CharacterName,
+                HiddenWord = interaction.HiddenWord,
+                Hint = interaction.Hint,
+                RevealOffset = interaction.RevealOffset,
+                Explanation = interaction.Explanation,
+                MatchFeedback = interaction.MatchFeedback,
+                NoMatchFeedback = interaction.NoMatchFeedback,
+                WaitFeedback = interaction.WaitFeedback,
+                Options = content.ListeningOptions
+                    .Where(option => option.ListeningInteractionId == interaction.Id)
+                    .OrderBy(option => option.SortOrder)
+                    .Select(option => new PublicReviewListeningOptionDto
+                    {
+                        Id = option.Id,
+                        SortOrder = option.SortOrder,
+                        Text = option.Text,
+                        Feedback = option.Feedback,
+                        IsMatch = option.IsMatch,
+                        CorrectOrder = option.CorrectOrder,
+                        SourceQuote = option.SourceQuote,
+                        ImageDescription = option.ImageDescription,
+                        ImageUrl = content.Assets.FirstOrDefault(asset =>
+                            asset.ListeningInteractionOptionId == option.Id && asset.Type == MediaType.ListeningImage
+                            && asset.Status == MediaStatus.Ready)?.Url
+                    }).ToList(),
+                Audio = content.Assets
+                    .Where(asset => asset.ListeningInteractionId == interaction.Id && asset.Type == MediaType.ListeningAudio
+                                    && asset.Status == MediaStatus.Ready && !string.IsNullOrWhiteSpace(asset.Url))
+                    .OrderBy(asset => asset.AudioPartKey, StringComparer.Ordinal)
+                    .Select(asset => new PublicReviewListeningAudioDto { PartKey = asset.AudioPartKey, AssetId = asset.Id, Url = asset.Url })
+                    .ToList()
             }).ToList(),
             Flags = flags,
             AllFlagsResolved = flags.All(flag => flag.Resolved),

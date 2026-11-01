@@ -17,6 +17,61 @@ public class PublicStoryReviewServiceTests
     private readonly PublicStoryReviewHarness _h = new();
 
     [Fact]
+    public async Task GetPackageAsync_ShowsListeningInteractionsWithOptionsAndMedia()
+    {
+        _h.AddScene(1, 1);
+        var checkpoint = _h.AddListening(1, PublicStoryReviewHarness.VersionId, ListeningInteractionType.Checkpoint, 10, "Thỏ thấy gì?", "Sợ", "Vui");
+        checkpoint.StorySceneId = 1;
+        _h.AddListening(2, PublicStoryReviewHarness.VersionId, ListeningInteractionType.EventOrdering, 30, null, "Thỏ lạc", "Gấu giúp");
+        _h.AddListening(3, PublicStoryReviewHarness.VersionId, ListeningInteractionType.RolePlay, 20, null).IsDeleted = true;
+        _h.Assets.Add(new MediaAsset
+        {
+            Id = 900, StoryVersionId = PublicStoryReviewHarness.VersionId, ListeningInteractionId = 1,
+            Type = MediaType.ListeningAudio, AudioPartKey = "prompt", Status = MediaStatus.Ready,
+            Url = "https://cdn.test/listen1.mp3", IsCurrent = true
+        });
+        _h.Assets.Add(new MediaAsset
+        {
+            Id = 901, StoryVersionId = PublicStoryReviewHarness.VersionId, ListeningInteractionOptionId = 11,
+            Type = MediaType.ListeningImage, Status = MediaStatus.Ready, Url = "https://cdn.test/opt11.png", IsCurrent = true
+        });
+
+        var package = await _h.Sut.GetPackageAsync(PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId);
+        Assert.Equal(new[] { 1, 2 }, package.ListeningInteractions.Select(x => x.Id));
+        var first = package.ListeningInteractions[0];
+        Assert.Equal("Checkpoint", first.Type);
+        Assert.Equal(1, first.StorySceneId);
+        Assert.Equal("Thỏ thấy gì?", first.Prompt);
+        Assert.Equal(new[] { "Sợ", "Vui" }, first.Options.Select(x => x.Text));
+        Assert.True(first.Options[0].IsMatch);
+        Assert.Equal("https://cdn.test/opt11.png", first.Options[0].ImageUrl);
+        Assert.Equal("https://cdn.test/listen1.mp3", first.Audio.Single().Url);
+        Assert.Equal(new int?[] { 1, 2 }, package.ListeningInteractions[1].Options.Select(x => x.CorrectOrder));
+    }
+
+    [Fact]
+    public async Task RequestChangesAsync_AcceptsListeningPartOfThisVersionOnly()
+    {
+        _h.AddScene(1, 1);
+        _h.AddListening(1, PublicStoryReviewHarness.VersionId, ListeningInteractionType.Checkpoint, 10, "Thỏ thấy gì?", "Sợ", "Vui");
+        _h.AddListening(2, PublicStoryReviewHarness.VersionId, ListeningInteractionType.RolePlay, 20, null).IsDeleted = true;
+        RequestChangesDto Request(int id) => new()
+        {
+            GeneralNote = "Sửa câu hỏi tương tác.",
+            Parts = new List<ChangeRequestPartDto> { new() { PartType = "listening", PartId = id, Note = "Câu hỏi khó hiểu." } }
+        };
+
+        await Assert.ThrowsAsync<BadRequestException>(() => RequestChangesDecisionAsync(Request(2)));
+        await Assert.ThrowsAsync<BadRequestException>(() => RequestChangesDecisionAsync(Request(999)));
+        var result = await RequestChangesDecisionAsync(Request(1));
+        Assert.Equal("ChangesRequested", result.Decision);
+        using var feedback = JsonDocument.Parse(_h.Versions[0].Moderation.ReviewFeedback!);
+        var part = feedback.RootElement.GetProperty("parts")[0];
+        Assert.Equal("listening", part.GetProperty("partType").GetString());
+        Assert.Equal(1, part.GetProperty("partId").GetInt32());
+    }
+
+    [Fact]
     public async Task GetPackageAsync_ClaimedByActor_ReturnsFullSubmittedVersion()
     {
         _h.AddScene(1, 1);

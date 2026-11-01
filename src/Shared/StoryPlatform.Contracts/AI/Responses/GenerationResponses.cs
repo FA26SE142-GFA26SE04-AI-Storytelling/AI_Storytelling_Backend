@@ -76,6 +76,18 @@ public sealed record GenerateDiscussionResponse
     public GenerationMetadataDto Metadata { get; init; } = new();
 }
 
+/// <summary>The AI fills only the list of the requested interaction type.</summary>
+public sealed record GenerateListeningInteractionResponse
+{
+    public string RequestId { get; init; } = string.Empty;
+    public IReadOnlyList<CheckpointItemDto> Checkpoints { get; init; } = [];
+    public IReadOnlyList<RolePlayItemDto> RolePlays { get; init; } = [];
+    public IReadOnlyList<FillBlankItemDto> FillBlanks { get; init; } = [];
+    public IReadOnlyList<EventOrderingItemDto> EventOrderings { get; init; } = [];
+    public IReadOnlyList<PicturePredictionItemDto> PicturePredictions { get; init; } = [];
+    public GenerationMetadataDto Metadata { get; init; } = new();
+}
+
 public sealed record EvaluateContentSafetyResponse
 {
     public string RequestId { get; init; } = string.Empty;

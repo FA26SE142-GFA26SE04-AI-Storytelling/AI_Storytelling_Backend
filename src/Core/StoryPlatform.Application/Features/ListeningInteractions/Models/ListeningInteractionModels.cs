@@ -4,7 +4,11 @@ using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.ListeningInteractions.Models;
 
-public sealed record ListeningPlanItem(ListeningInteractionType Type, int Count);
+public sealed record ListeningPlanItem(ListeningInteractionType Type, int Count)
+{
+    /// <summary>Zones[i] = các đoạn mục thứ i được phép neo vào. EventOrdering không có vùng (luôn sau đoạn cuối).</summary>
+    public IReadOnlyList<IReadOnlyList<string>> Zones { get; init; } = [];
+}
 
 /// <summary>Kế hoạch do backend tính: có loại nào, mỗi loại bao nhiêu. Thứ tự Items = thứ tự gọi AI.</summary>
 public sealed record ListeningInteractionPlan(int Slots, IReadOnlyList<ListeningPlanItem> Items, IReadOnlyList<string> DialogueBlockIds)
@@ -65,6 +69,8 @@ public sealed record ListeningRuleContext
     /// <summary>Neo của các loại khác đã lưu trên cùng version.</summary>
     public IReadOnlyCollection<int> OccupiedAnchorOffsets { get; init; } = [];
     public IReadOnlyCollection<string> DialogueBlockIds { get; init; } = [];
+    /// <summary>Vùng của từng mục theo kế hoạch (ListeningPlanItem.Zones); rỗng = không kiểm tra vùng.</summary>
+    public IReadOnlyList<IReadOnlyList<string>> Zones { get; init; } = [];
     /// <summary>Văn bản để kiểm tra NOT_GROUNDED, thường là Content + Lesson.</summary>
     public string GroundingSource { get; init; } = string.Empty;
     /// <summary>Guardrail an toàn của Phase 4 (IsArtifactSafe), truyền từ service gọi.</summary>

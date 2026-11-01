@@ -15,12 +15,235 @@ using StoryPlatform.Contracts.AI.Requests;
 using StoryPlatform.Contracts.AI.Responses;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.UnitTests.Features.ListeningInteractions;
 using Xunit;
 
 namespace StoryPlatform.UnitTests;
 
 public sealed class ContentGenerationServiceTests
 {
+    [Fact]
+    public async Task Quiz_hands_off_to_first_listening_type_and_story_waits_for_review_after_the_last()
+    {
+        var store = Seed();
+        var ai = new FakeAIClient(storyText: "Lan và Minh cùng chia sẻ một quyển sách.\n\nHai bạn đọc sách dưới gốc cây.")
+        {
+            Listening = _ => new GenerateListeningInteractionResponse
+            {
+                Checkpoints =
+                [
+                    new CheckpointItemDto
+                    {
+                        Kind = "Emotion", AfterBlockId = "P1", Question = "Khi chia sẻ sách, Lan thấy thế nào?",
+                        SourceQuote = "Lan và Minh cùng chia sẻ một quyển sách.", OtherFeedback = "Con nghĩ hay quá! Cùng nghe tiếp nhé.",
+                        Options =
+                        [
+                            new ListeningChoiceDto { Text = "Lan thấy vui", Feedback = "Ừ, chia sẻ làm Lan vui.", IsMatch = true },
+                            new ListeningChoiceDto { Text = "Lan thấy buồn", Feedback = "Cũng có thể lắm!" },
+                            new ListeningChoiceDto { Text = "Lan thấy sợ", Feedback = "Ý hay đó!" },
+                            new ListeningChoiceDto { Text = "Lan thấy tò mò", Feedback = "Lan cũng tò mò lắm!" }
+                        ]
+                    }
+                ]
+            }
+        };
+        var service = Service(store, ai);
+        var story = store.Items<Story>().Single();
+
+        for (var i = 0; i < 3; i++) Assert.True(await service.ProcessNextAsync()); // content, vocabulary, quiz
+        var next = PendingJob(store);
+        Assert.Equal(GenerationJobOperation.GenerateListeningInteraction, next.Operation);
+        Assert.Equal(ListeningInteractionType.Checkpoint, next.ListeningInteractionType);
+        Assert.NotEqual(StoryStatus.ContentReview, story.Status);
+
+        Assert.True(await service.ProcessNextAsync());
+        Assert.False(await service.ProcessNextAsync());
+        Assert.Equal(StoryStatus.ContentReview, story.Status);
+        Assert.Equal(new[] { "content", "safety", "vocabulary", "quiz", "listening:Checkpoint" }, ai.Calls);
+        Assert.Single(store.Items<ListeningInteraction>());
+        Assert.Equal(4, store.Items<ListeningInteractionOption>().Count);
+        Assert.Empty(store.Items<DiscussionQuestion>());
+    }
+
+    [Fact]
+    public async Task Listening_jobs_run_in_plan_order_and_send_occupied_blocks()
+    {
+        var store = SeedListening();
+        var ai = new FakeAIClient();
+        var service = Service(store, ai);
+
+        for (var i = 0; i < 4; i++) Assert.True(await service.ProcessNextAsync());
+        Assert.False(await service.ProcessNextAsync());
+
+        Assert.Equal(new[] { "listening:Checkpoint", "listening:RolePlay", "listening:PicturePrediction", "listening:EventOrdering" }, ai.Calls);
+        Assert.Equal(new[] { "", "P1,P3", "P1,P2,P3", "P1,P2,P3,P4" },
+            ai.ListeningRequests.Select(r => string.Join(",", r.OccupiedBlockIds)));
+        Assert.Equal(["P2"], ai.ListeningRequests[1].DialogueBlockIds);
+        Assert.Empty(ai.ListeningRequests[0].DialogueBlockIds);
+        // Vùng theo spec mục 4.1 cho truyện 6 đoạn: P1 | P2 | P3 | P4-P5; RolePlay lấy vùng có thoại (P2).
+        Assert.Equal(new[] { "P1|P3", "P2", "P4,P5", "" },
+            ai.ListeningRequests.Select(r => string.Join("|", r.AllowedBlockIds.Select(z => string.Join(",", z)))));
+        Assert.Equal(new[] { 2, 1, 1, 1 }, ai.ListeningRequests.Select(r => r.Count));
+        Assert.All(ai.ListeningRequests, r => Assert.EndsWith("-attempt-1", r.RequestId));
+
+        var saved = store.Items<ListeningInteraction>();
+        Assert.Equal(5, saved.Count);
+        var ordering = saved.Single(x => x.Type == ListeningInteractionType.EventOrdering);
+        Assert.Equal(ListeningTestStory.Content.Length, ordering.AnchorOffset); // sau đoạn cuối
+        Assert.Equal(3, store.Items<ListeningInteractionOption>().Count(o => o.ListeningInteractionId == ordering.Id));
+
+        var jobs = store.Items<StoryGenerationJob>().Where(x => x.Operation == GenerationJobOperation.GenerateListeningInteraction).ToArray();
+        Assert.Equal(4, jobs.Length);
+        Assert.All(jobs, x => Assert.Equal(GenerationJobStatus.Completed, x.Status));
+        Assert.Equal(4, jobs.Select(x => x.OperationKey).Distinct().Count());
+        Assert.Equal(StoryStatus.ContentReview, store.Items<Story>().Single().Status);
+    }
+
+    [Fact]
+    public async Task Listening_uses_configured_grading_words()
+    {
+        var store = SeedListening();
+        var service = new ContentGenerationService(store, new FakeAIClient(), new PassingQualityEvaluator(), new FakeFailureFinalizer(store),
+            new RecordingHandoffService(store), new ContentGenerationOptions { ListeningGradingWords = ["nghe tiếp"] });
+
+        Assert.True(await service.ProcessNextAsync());
+
+        var job = store.Items<StoryGenerationJob>().Single();
+        Assert.Equal(GenerationJobStatus.Failed, job.Status);
+        Assert.Equal("CHECKPOINT_VALIDATION_FAILED", job.ErrorCode); // "Cùng nghe tiếp nhé" bị chặn
+        Assert.Empty(store.Items<ListeningInteraction>());
+    }
+
+    private static GenerateListeningInteractionResponse CheckpointOnLastBlock()
+    {
+        var response = ListeningTestStory.AiResponse(ListeningInteractionType.Checkpoint);
+        return response with { Checkpoints = [response.Checkpoints[0] with { AfterBlockId = "P6" }, response.Checkpoints[1]] };
+    }
+
+    [Fact]
+    public async Task Listening_retry_sends_previous_error_codes_only()
+    {
+        var store = SeedListening();
+        var calls = 0;
+        var ai = new FakeAIClient
+        {
+            Listening = _ => ++calls == 1 ? CheckpointOnLastBlock() : ListeningTestStory.AiResponse(ListeningInteractionType.Checkpoint)
+        };
+
+        Assert.True(await Service(store, ai).ProcessNextAsync());
+
+        Assert.Equal(2, ai.ListeningRequests.Count);
+        Assert.Empty(ai.ListeningRequests[0].PreviousErrors);
+        Assert.Equal([new ListeningPreviousErrorDto("ANCHOR_INVALID", 0, "afterBlockId")], ai.ListeningRequests[1].PreviousErrors);
+        Assert.EndsWith("-Checkpoint-attempt-1", ai.ListeningRequests[0].RequestId);
+        Assert.EndsWith("-Checkpoint-attempt-2", ai.ListeningRequests[1].RequestId);
+        Assert.Equal(2, store.Items<ListeningInteraction>().Count);
+        Assert.Equal(ListeningInteractionType.RolePlay, PendingJob(store).ListeningInteractionType);
+    }
+
+    [Fact]
+    public async Task Listening_rejects_anchor_outside_its_zone_and_retries_with_code()
+    {
+        var store = SeedListening();
+        var valid = ListeningTestStory.AiResponse(ListeningInteractionType.Checkpoint);
+        // P2 hợp lệ theo luật chung nhưng điểm dừng đầu tiên chỉ được neo trong vùng P1.
+        var outside = valid with
+        {
+            Checkpoints = [valid.Checkpoints[0] with { AfterBlockId = "P2", SourceQuote = "Thỏ nghe tiếng sột soạt sau bụi cây." }, valid.Checkpoints[1]]
+        };
+        var calls = 0;
+        var ai = new FakeAIClient { Listening = _ => ++calls == 1 ? outside : valid };
+
+        Assert.True(await Service(store, ai).ProcessNextAsync());
+
+        Assert.Equal([new ListeningPreviousErrorDto("ANCHOR_OUT_OF_ZONE", 0, "afterBlockId")], ai.ListeningRequests[1].PreviousErrors);
+        Assert.Equal(2, store.Items<ListeningInteraction>().Count);
+        Assert.Equal(ListeningInteractionType.RolePlay, PendingJob(store).ListeningInteractionType);
+    }
+
+    [Fact]
+    public async Task Listening_fails_with_type_code_after_last_attempt()
+    {
+        var store = SeedListening();
+        var ai = new FakeAIClient { Listening = _ => CheckpointOnLastBlock() };
+
+        Assert.True(await Service(store, ai).ProcessNextAsync());
+
+        var job = store.Items<StoryGenerationJob>().Single();
+        Assert.Equal(GenerationJobStatus.Failed, job.Status);
+        Assert.Equal("CHECKPOINT_VALIDATION_FAILED", job.ErrorCode);
+        Assert.Equal(new ContentGenerationOptions().ArtifactMaxAttempts, ai.ListeningRequests.Count);
+        Assert.Empty(store.Items<ListeningInteraction>());
+    }
+
+    [Fact]
+    public async Task Event_ordering_failure_uses_snake_case_type_code()
+    {
+        var store = SeedListening(ListeningInteractionType.EventOrdering);
+        var valid = ListeningTestStory.AiResponse(ListeningInteractionType.EventOrdering);
+        var events = valid.EventOrderings[0].Events;
+        var sameBlock = valid with
+        {
+            EventOrderings = [valid.EventOrderings[0] with { Events = [events[0], events[1] with { BlockId = "P1", SourceQuote = "Trời bắt đầu tối." }, events[2]] }]
+        };
+
+        Assert.True(await Service(store, new FakeAIClient { Listening = _ => sameBlock }).ProcessNextAsync());
+
+        Assert.Equal("EVENT_ORDERING_VALIDATION_FAILED", store.Items<StoryGenerationJob>().Single().ErrorCode);
+    }
+
+    [Fact]
+    public async Task Listening_rerun_after_save_skips_ai_and_queues_next_type()
+    {
+        var store = SeedListening();
+        store.Seed(new ListeningInteraction
+        {
+            Id = 1, StoryVersionId = 1, Type = ListeningInteractionType.Checkpoint, AnchorOffset = ListeningTestStory.Block("P1").EndOffset
+        });
+        var ai = new FakeAIClient();
+
+        Assert.True(await Service(store, ai).ProcessNextAsync());
+
+        Assert.Empty(ai.ListeningRequests);
+        Assert.Single(store.Items<ListeningInteraction>());
+        Assert.Equal(ListeningInteractionType.RolePlay, PendingJob(store).ListeningInteractionType);
+    }
+
+    [Fact]
+    public async Task Progress_completes_only_after_every_listening_type_is_saved()
+    {
+        var store = SeedListening();
+        var service = Service(store, new FakeAIClient());
+
+        Assert.True(await service.ProcessNextAsync());
+        var midway = await service.GetProgressAsync(1, 1);
+        Assert.False(midway.IsComplete);
+        Assert.Equal("pending_listening", midway.CurrentStep);
+        Assert.Equal("pending", midway.Listening);
+
+        for (var i = 0; i < 3; i++) Assert.True(await service.ProcessNextAsync());
+        var done = await service.GetProgressAsync(1, 1);
+        Assert.True(done.IsComplete);
+        Assert.Equal("complete", done.CurrentStep);
+        Assert.Equal("completed", done.Listening);
+        Assert.Equal("skipped", done.Discussion);
+    }
+
+    [Fact]
+    public async Task Progress_reports_failed_listening_type()
+    {
+        var store = SeedListening();
+        var service = Service(store, new FakeAIClient { Listening = _ => CheckpointOnLastBlock() });
+
+        Assert.True(await service.ProcessNextAsync());
+        var progress = await service.GetProgressAsync(1, 1);
+
+        Assert.False(progress.IsComplete);
+        Assert.Equal("failed_listening", progress.CurrentStep);
+        Assert.Equal("CHECKPOINT_VALIDATION_FAILED", progress.LastErrorCode);
+        Assert.Equal("failed", progress.Listening);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -91,7 +314,7 @@ public sealed class ContentGenerationServiceTests
     }
     [Theory]
     [InlineData(StoryOutputMode.ReadingMediaOnly, 1)]
-    [InlineData(StoryOutputMode.Learning, 4)]
+    [InlineData(StoryOutputMode.Learning, 3)]
     public async Task Creator_GenerationReachesContentReviewForBothOutputModes(StoryOutputMode mode, int jobs)
     {
         var store = Seed();
@@ -129,6 +352,7 @@ public sealed class ContentGenerationServiceTests
         Assert.Equal("skipped", progress.Vocabulary);
         Assert.Equal("skipped", progress.Quiz);
         Assert.Equal("skipped", progress.Discussion);
+        Assert.Equal("skipped", progress.Listening);
     }
 
     [Fact]
@@ -142,7 +366,7 @@ public sealed class ContentGenerationServiceTests
     }
 
     [Fact]
-    public async Task Happy_path_runs_story_then_vocabulary_quiz_discussion()
+    public async Task Happy_path_runs_story_then_vocabulary_quiz_and_stops_when_listening_plan_is_empty()
     {
         var store = Seed();
         var ai = new FakeAIClient();
@@ -153,8 +377,7 @@ public sealed class ContentGenerationServiceTests
         Assert.True(await service.ProcessNextAsync());
         Assert.Equal(GenerationJobOperation.GenerateQuiz, PendingJob(store).Operation);
         Assert.True(await service.ProcessNextAsync());
-        Assert.Equal(GenerationJobOperation.GenerateDiscussion, PendingJob(store).Operation);
-        Assert.True(await service.ProcessNextAsync());
+        Assert.False(await service.ProcessNextAsync()); // truyện 1 đoạn: kế hoạch rỗng
 
         var story = store.Items<Story>().Single();
         var stable = store.Items<StoryVersion>().Single(item => item.Content is not null);
@@ -166,15 +389,15 @@ public sealed class ContentGenerationServiceTests
         Assert.False(store.Items<StoryVersion>().Single(item => item.Content is null).IsCurrent);
         Assert.Single(store.Items<StoryVocabulary>());
         Assert.Equal(3, store.Items<QuizItem>().Count);
-        Assert.Single(store.Items<DiscussionQuestion>());
-        Assert.Equal(new[] { "content", "safety", "vocabulary", "quiz", "discussion" }, ai.Calls);
+        Assert.Empty(store.Items<DiscussionQuestion>());
+        Assert.Empty(store.Items<ListeningInteraction>());
+        Assert.Equal(new[] { "content", "safety", "vocabulary", "quiz" }, ai.Calls);
 
         var progress = await service.GetProgressAsync(1, story.Id);
         Assert.True(progress.IsComplete);
         Assert.Equal("complete", progress.CurrentStep);
         Assert.Equal(stable.Id, progress.StableStoryVersionId);
     }
-
     [Fact]
     public async Task Existing_story_reaches_content_review_after_artifact_chain_completes()
     {
@@ -192,7 +415,6 @@ public sealed class ContentGenerationServiceTests
         job.BaseStoryVersionId = version.Id;
         var service = Service(store, new FakeAIClient());
 
-        Assert.True(await service.ProcessNextAsync());
         Assert.True(await service.ProcessNextAsync());
         Assert.True(await service.ProcessNextAsync());
 
@@ -404,23 +626,6 @@ public sealed class ContentGenerationServiceTests
     }
 
     [Fact]
-    public async Task Discussion_generation_automatically_marks_first_item_as_moral_lesson()
-    {
-        var store = Seed();
-        var ai = new FakeAIClient();
-        var service = Service(store, ai);
-
-        Assert.True(await service.ProcessNextAsync()); // Content
-        Assert.True(await service.ProcessNextAsync()); // Vocabulary
-        Assert.True(await service.ProcessNextAsync()); // Quiz
-        Assert.True(await service.ProcessNextAsync()); // Discussion
-
-        var questions = store.Items<DiscussionQuestion>().ToList();
-        Assert.NotEmpty(questions);
-        Assert.True(questions[0].IsMoralLesson);
-    }
-
-    [Fact]
     public async Task Quiz_true_false_vietnamese_answers_are_normalized_to_boolean_strings()
     {
         var store = Seed();
@@ -553,6 +758,24 @@ public sealed class ContentGenerationServiceTests
         return store;
     }
 
+    // Version đã chốt là truyện 6 đoạn P1..P6 (6-8 tuổi, P2 có thoại), đã có vocabulary và quiz, đang chờ job listening đầu tiên.
+    private static FakeUnitOfWork SeedListening(ListeningInteractionType firstType = ListeningInteractionType.Checkpoint)
+    {
+        var store = Seed();
+        var version = store.Items<StoryVersion>().Single();
+        version.Content = ListeningTestStory.Content;
+        version.Lesson = "Biết nhờ người lớn giúp đỡ";
+        var job = store.Items<StoryGenerationJob>().Single();
+        job.Operation = GenerationJobOperation.GenerateListeningInteraction;
+        job.ListeningInteractionType = firstType;
+        job.Stage = JobStage.ContentArtifactPending;
+        job.StoryVersionId = version.Id;
+        job.BaseStoryVersionId = version.Id;
+        store.Seed(new StoryVocabulary { Id = 1, StoryVersionId = version.Id, Term = "Thỏ", Definition = "Con vật nhỏ tai dài" });
+        store.Seed(new QuizItem { Id = 1, StoryVersionId = version.Id, Type = QuizType.ShortAnswer, Question = "Ai giúp Thỏ?", CorrectAnswer = "Bác Gấu" });
+        return store;
+    }
+
     private sealed class PassingQualityEvaluator : IContentQualityEvaluator
     {
         public ContentQualityResult Evaluate(StoryContentDto story, StoryOutlineDto approvedOutline,
@@ -598,7 +821,8 @@ public sealed class ContentGenerationServiceTests
     private class FakeAIClient(
         bool invalidFirstVocabulary = false,
         bool blockSafety = false,
-        double? safetyScore = null) : IAIStoryGenerationClient
+        double? safetyScore = null,
+        string? storyText = null) : IAIStoryGenerationClient
     {
         private int _vocabularyCalls;
         public List<string> Calls { get; } = [];
@@ -613,7 +837,9 @@ public sealed class ContentGenerationServiceTests
                     Title = "Tình bạn",
                     Description = "Một câu chuyện về tình bạn và sự sẻ chia.",
                     Lesson = "Biết chia sẻ",
-                    StorySections = [new StorySectionDto(1, "Câu chuyện", "Lan và Minh cùng chia sẻ một quyển sách.")]
+                    StorySections = [storyText is null
+                        ? new StorySectionDto(1, "Câu chuyện", "Lan và Minh cùng chia sẻ một quyển sách.")
+                        : new StorySectionDto(1, string.Empty, storyText)]
                 }
             });
         }
@@ -651,6 +877,15 @@ public sealed class ContentGenerationServiceTests
                 RequestId = request.RequestId,
                 Items = [new DiscussionQuestionDto("Em đã từng chia sẻ điều gì?")]
             });
+        }
+        public Func<GenerateListeningInteractionRequest, GenerateListeningInteractionResponse>? Listening { get; init; }
+        public List<GenerateListeningInteractionRequest> ListeningRequests { get; } = [];
+        public Task<GenerateListeningInteractionResponse> GenerateListeningInteractionAsync(GenerateListeningInteractionRequest request, CancellationToken cancellationToken = default)
+        {
+            Calls.Add($"listening:{request.InteractionType}");
+            ListeningRequests.Add(request);
+            return Task.FromResult(Listening?.Invoke(request) ??
+                ListeningTestStory.AiResponse(Enum.Parse<ListeningInteractionType>(request.InteractionType)));
         }
         public Task<EvaluateContentSafetyResponse> EvaluateContentSafetyAsync(EvaluateContentSafetyRequest request, CancellationToken cancellationToken = default)
         {

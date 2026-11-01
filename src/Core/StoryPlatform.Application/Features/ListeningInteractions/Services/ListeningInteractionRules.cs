@@ -33,7 +33,7 @@ public static partial class ListeningInteractionRules
                 case ListeningInteractionType.Checkpoint: ValidateCheckpoint(item, i, errors); break;
                 case ListeningInteractionType.RolePlay: ValidateRolePlay(item, i, context, errors); break;
                 case ListeningInteractionType.FillBlank: ValidateFillBlankStructure(item, i, errors); break;
-                case ListeningInteractionType.EventOrdering: ValidateOrdering(item, i, context, errors); break;
+                case ListeningInteractionType.EventOrdering: ValidateOrdering(item, i, errors); break;
                 case ListeningInteractionType.PicturePrediction: ValidatePicture(item, i, errors); break;
             }
             errors.AddRange(ValidateText(item, i, context));
@@ -88,7 +88,7 @@ public static partial class ListeningInteractionRules
         ListeningInteractionDraft item, int index, string content, IReadOnlyList<StoryTextBlock> blocks)
     {
         var ends = blocks.Select(b => b.EndOffset).ToHashSet();
-        var stale = item.AnchorOffset is not { } anchor || !ends.Contains(anchor) || anchor == blocks[^1].EndOffset ||
+        var stale = item.AnchorOffset is not { } anchor || !ends.Contains(anchor) || !LastBlockRuleHolds(item, anchor, blocks) ||
                     (item.RevealOffset is { } reveal && !ends.Contains(reveal)) ||
                     !QuoteAt(content, item.SourceQuote, item.SourceStart, item.SourceEnd) ||
                     item.Options.Any(o => !QuoteAt(content, o.SourceQuote, o.SourceStart, o.SourceEnd));
@@ -127,10 +127,17 @@ public static partial class ListeningInteractionRules
     {
         if (item.AnchorOffset is not { } anchor) return; // mapper đã báo ANCHOR_INVALID
         var isBlockEnd = context.Blocks.Any(b => b.EndOffset == anchor);
-        if (!isBlockEnd || anchor == context.Blocks[^1].EndOffset ||
+        if (!isBlockEnd || !LastBlockRuleHolds(item, anchor, context.Blocks) ||
             context.OccupiedAnchorOffsets.Contains(anchor) || !seen.Add(anchor))
             errors.Add(new("ANCHOR_INVALID", index, "afterBlockId"));
+        // Mỗi mục một lỗi neo: chỉ xét vùng khi neo đã hợp lệ theo luật chung.
+        else if (index < context.Zones.Count && !context.Zones[index].Contains(item.AnchorBlockId))
+            errors.Add(new("ANCHOR_OUT_OF_ZONE", index, "afterBlockId"));
     }
+
+    // Chỉ EventOrdering được, và phải, đặt sau đoạn cuối (trẻ đã nghe hết truyện).
+    private static bool LastBlockRuleHolds(ListeningInteractionDraft item, int anchor, IReadOnlyList<StoryTextBlock> blocks) =>
+        (anchor == blocks[^1].EndOffset) == (item.Type == ListeningInteractionType.EventOrdering);
 
     private static void ValidateCheckpoint(ListeningInteractionDraft item, int index, List<ListeningValidationError> errors)
     {
@@ -174,8 +181,7 @@ public static partial class ListeningInteractionRules
             errors.Add(new("LENGTH_LIMIT", index, "sentenceQuote"));
     }
 
-    private static void ValidateOrdering(ListeningInteractionDraft item, int index, ListeningRuleContext context,
-        List<ListeningValidationError> errors)
+    private static void ValidateOrdering(ListeningInteractionDraft item, int index, List<ListeningValidationError> errors)
     {
         var events = item.Options.OrderBy(o => o.CorrectOrder).ToArray();
         var starts = events.Select(o => o.SourceStart).ToArray();
@@ -185,8 +191,7 @@ public static partial class ListeningInteractionRules
                  starts.All(s => s is not null) &&
                  starts[0] < starts[1] && starts[1] < starts[2] &&
                  blocks.Distinct().Count() == 3 &&
-                 item.Options.Select(o => o.SourceStart).SequenceEqual(starts) && // thứ tự AI trả = thứ tự truyện
-                 context.Blocks.FirstOrDefault(b => b.BlockId == blocks[2])?.EndOffset == item.AnchorOffset;
+                 item.Options.Select(o => o.SourceStart).SequenceEqual(starts); // thứ tự AI trả = thứ tự truyện
         if (!ok) errors.Add(new("EVENT_ORDER_INVALID", index, "events"));
     }
 

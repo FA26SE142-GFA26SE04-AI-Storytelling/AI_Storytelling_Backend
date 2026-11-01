@@ -44,6 +44,19 @@ public sealed class ListeningInteractionRulesTests
     }
 
     [Fact]
+    public void AnchorOutsideZone_IsRejectedOnlyWhenAnchorIsOtherwiseValid()
+    {
+        var zoned = S.Context(T.Checkpoint, 2) with { Zones = [["P1"], ["P3"]] };
+        Assert.Equal([new ListeningValidationError("ANCHOR_OUT_OF_ZONE", 1, "afterBlockId")],
+            ListeningInteractionRules.Validate(Resolve(TwoCheckpoints()), zoned));
+
+        var last = TwoCheckpoints();
+        last[1] = S.Checkpoint("P6", CheckpointKind.Prediction, "Trời bắt đầu tối.");
+        Assert.Contains("ANCHOR_INVALID", Codes(Resolve(last), zoned));
+        Assert.DoesNotContain("ANCHOR_OUT_OF_ZONE", Codes(Resolve(last), zoned));
+    }
+
+    [Fact]
     public void Checkpoint_KindLimitAndEmotionRequirement()
     {
         var predictions = new[]
@@ -149,7 +162,7 @@ public sealed class ListeningInteractionRulesTests
 
     private static ListeningInteractionDraft Ordering() => new()
     {
-        Type = T.EventOrdering, AnchorBlockId = "P4",
+        Type = T.EventOrdering,
         MatchFeedback = "Con nhớ giỏi quá, đúng thứ tự rồi!", NoMatchFeedback = "Mình cùng nghe lại đoạn này rồi xếp lại nhé.",
         Options =
         [
@@ -164,12 +177,28 @@ public sealed class ListeningInteractionRulesTests
     {
         var context = S.Context(T.EventOrdering, 1);
         Assert.Empty(ListeningInteractionRules.Validate(Resolve(Ordering()), context));
-        Assert.Contains("EVENT_ORDER_INVALID", Codes(Resolve(Ordering() with { AnchorBlockId = "P5" }), context));
+        var sameBlock = Ordering();
+        sameBlock = sameBlock with { Options = [sameBlock.Options[0], sameBlock.Options[1] with { BlockId = "P1", SourceQuote = "Trời bắt đầu tối." }, sameBlock.Options[2]] };
+        Assert.Contains("EVENT_ORDER_INVALID", Codes(Resolve(sameBlock), context));
         var swapped = Ordering();
         swapped = swapped with { Options = [swapped.Options[1] with { CorrectOrder = 1 }, swapped.Options[0] with { CorrectOrder = 2 }, swapped.Options[2]] };
         Assert.Contains("EVENT_ORDER_INVALID", Codes(Resolve(swapped), context));
         // MatchFeedback được nói "đúng rồi".
         Assert.DoesNotContain("GRADING_WORD", Codes(Resolve(Ordering()), context));
+    }
+
+    [Fact]
+    public void EventOrdering_MustSitAfterLastBlock()
+    {
+        var context = S.Context(T.EventOrdering, 1);
+        var resolved = Resolve(Ordering())[0];
+        Assert.Equal(S.Blocks[^1].EndOffset, resolved.AnchorOffset);
+        Assert.Empty(ListeningInteractionRules.CheckStale(resolved, 0, S.Content, S.Blocks));
+
+        var midStory = resolved with { AnchorBlockId = "P4", AnchorOffset = S.Block("P4").EndOffset };
+        Assert.Contains("ANCHOR_INVALID", Codes([midStory], context));
+        Assert.Equal([new ListeningValidationError("STALE_ANCHOR", 0, null)],
+            ListeningInteractionRules.CheckStale(midStory, 0, S.Content, S.Blocks));
     }
 
     private static ListeningInteractionDraft Picture() => new()

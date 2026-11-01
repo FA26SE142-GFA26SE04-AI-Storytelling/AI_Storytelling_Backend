@@ -19,7 +19,6 @@ public sealed record ReviewPackageDto
     // Artifact statuses
     public ArtifactStatusDto Vocabulary { get; init; } = new();
     public ArtifactStatusDto Quiz { get; init; } = new();
-    public ArtifactStatusDto Discussion { get; init; } = new();
 
     // Permissions
     public bool CanEdit { get; init; }
@@ -137,30 +136,6 @@ public sealed record UpdateQuizRequestDto
 
 #endregion
 
-#region Discussion Review
-
-public sealed record DiscussionReviewDto
-{
-    public int StoryId { get; init; }
-    public int VersionId { get; init; }
-    public List<DiscussionItemDto> Items { get; init; } = new();
-}
-
-public sealed record DiscussionItemDto
-{
-    public int? Id { get; init; }
-    public string Question { get; init; } = string.Empty;
-    public bool IsMoralLesson { get; init; }
-}
-
-public sealed record UpdateDiscussionRequestDto
-{
-    public int VersionId { get; init; }
-    public List<DiscussionItemDto> Items { get; init; } = new();
-}
-
-#endregion
-
 #region Validation
 
 public sealed record ValidationResultDto
@@ -256,7 +231,6 @@ public sealed record GenerateArtifactsRequestDto
     public int? StoryVersionId { get; init; }
     public bool IncludeVocabulary { get; init; } = true;
     public bool IncludeQuiz { get; init; } = true;
-    public bool IncludeDiscussion { get; init; } = true;
 }
 
 public sealed record ArtifactGenerationResultDto
@@ -265,7 +239,6 @@ public sealed record ArtifactGenerationResultDto
     public int StoryVersionId { get; init; }
     public int VocabularyCount { get; init; }
     public int QuizCount { get; init; }
-    public int DiscussionCount { get; init; }
     public bool Success { get; init; }
     public string Message { get; init; } = string.Empty;
 }

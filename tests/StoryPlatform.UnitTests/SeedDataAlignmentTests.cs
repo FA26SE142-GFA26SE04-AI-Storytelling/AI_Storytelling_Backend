@@ -313,7 +313,7 @@ public sealed class SeedDataAlignmentTests
             root = root.Parent;
         Assert.NotNull(root);
         var scenesSql = File.ReadAllText(Path.Combine(root!.FullName, "Database", "Seed", "15_story_scenes.sql"));
-        var mediaSql = File.ReadAllText(Path.Combine(root.FullName, "Database", "Seed", "20_media_assets.sql"));
+        var mediaSql = File.ReadAllText(Path.Combine(root.FullName, "Database", "Seed", "19_media_assets.sql"));
         Assert.Contains("1, 3, 6, 10, 12, 14, 15, 16, 17, 18, 19", scenesSql);
         foreach (var versionId in new[] { 12, 14, 15, 16, 17, 18, 19 })
         {

@@ -172,43 +172,6 @@ public sealed class ReviewController : ControllerBase
 
     #endregion
 
-    #region Discussion Review
-
-    [HttpGet("discussion")]
-    public async Task<ActionResult<ApiResponse<DiscussionReviewDto>>> GetDiscussion(
-        int storyId, CancellationToken cancellationToken)
-    {
-        var result = await _reviewService.GetDiscussionForReviewAsync(CurrentUserId(), storyId, cancellationToken);
-        return Ok(ApiResponse<DiscussionReviewDto>.Ok(result));
-    }
-
-    [HttpPut("discussion")]
-    public async Task<ActionResult<ApiResponse<DiscussionReviewDto>>> UpdateDiscussion(
-        int storyId, [FromBody] UpdateDiscussionRequestDto input, CancellationToken cancellationToken)
-    {
-        var result = await _reviewService.UpdateDiscussionAsync(CurrentUserId(), storyId, input, cancellationToken);
-        return Ok(ApiResponse<DiscussionReviewDto>.Ok(result, "Discussion đã được cập nhật."));
-    }
-
-    [HttpPost("discussion/ai/regenerate")]
-    [EnableRateLimiting(RateLimitPolicies.Ai)]
-    public async Task<ActionResult<ApiResponse<CreateProposalResponseDto>>> RegenerateDiscussion(
-        int storyId, CancellationToken cancellationToken)
-    {
-        var result = await _reviewService.CreateDiscussionProposalAsync(CurrentUserId(), storyId, cancellationToken);
-        return Accepted(ApiResponse<CreateProposalResponseDto>.Ok(result, "Đã tạo đề xuất discussion để xem trước."));
-    }
-
-    [HttpPost("discussion/complete")]
-    public async Task<ActionResult<ApiResponse<bool>>> CompleteDiscussion(
-        int storyId, CancellationToken cancellationToken)
-    {
-        var result = await _reviewService.CompleteDiscussionReviewAsync(CurrentUserId(), storyId, cancellationToken);
-        return Ok(ApiResponse<bool>.Ok(result, "Discussion review đã hoàn tất."));
-    }
-
-    #endregion
-
     #region Validation & Approval
 
     [HttpGet("validation")]

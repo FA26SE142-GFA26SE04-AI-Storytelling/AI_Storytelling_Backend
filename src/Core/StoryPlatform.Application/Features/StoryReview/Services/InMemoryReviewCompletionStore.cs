@@ -10,7 +10,6 @@ public sealed class InMemoryReviewCompletionStore : IReviewCompletionStore
         public bool StoryReviewed { get; set; }
         public bool VocabularyReviewed { get; set; }
         public bool QuizReviewed { get; set; }
-        public bool DiscussionReviewed { get; set; }
     }
 
     private readonly ConcurrentDictionary<string, VersionReviewState> _states = new();
@@ -35,10 +34,6 @@ public sealed class InMemoryReviewCompletionStore : IReviewCompletionStore
         GetOrCreate(storyId, versionId).QuizReviewed = true;
     }
 
-    public void MarkDiscussionReviewed(int storyId, int versionId, int userId)
-    {
-        GetOrCreate(storyId, versionId).DiscussionReviewed = true;
-    }
 
     public bool IsStoryReviewed(int storyId, int versionId) =>
         _states.TryGetValue(Key(storyId, versionId), out var s) && s.StoryReviewed;
@@ -49,13 +44,11 @@ public sealed class InMemoryReviewCompletionStore : IReviewCompletionStore
     public bool IsQuizReviewed(int storyId, int versionId) =>
         _states.TryGetValue(Key(storyId, versionId), out var s) && s.QuizReviewed;
 
-    public bool IsDiscussionReviewed(int storyId, int versionId) =>
-        _states.TryGetValue(Key(storyId, versionId), out var s) && s.DiscussionReviewed;
 
     public bool IsReviewCompleted(int storyId, int versionId)
     {
         return _states.TryGetValue(Key(storyId, versionId), out var s) &&
-               s.StoryReviewed && s.VocabularyReviewed && s.QuizReviewed && s.DiscussionReviewed;
+               s.StoryReviewed && s.VocabularyReviewed && s.QuizReviewed;
     }
 
     public void Reset(int storyId, int versionId)

@@ -121,8 +121,6 @@ public sealed class LearningBatchGenerationTests
                 }).ToArray() };
                 return transform?.Invoke(r, response) ?? response;
             });
-        ai.Setup(x => x.GenerateDiscussionAsync(It.IsAny<GenerateDiscussionRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new GenerateDiscussionResponse { Items = [new("Vì sao Na kiên nhẫn sửa xe?")] });
         return ai;
     }
     private static ServiceProvider Provider(IUnitOfWork store, IAIStoryGenerationClient ai)

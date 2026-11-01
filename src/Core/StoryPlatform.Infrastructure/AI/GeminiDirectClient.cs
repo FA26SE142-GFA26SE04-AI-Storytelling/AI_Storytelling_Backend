@@ -109,13 +109,6 @@ public sealed class GeminiDirectClient : IAIStoryGenerationClient
         return ParseQuizResponse(response, request.RequestId);
     }
 
-    public async Task<GenerateDiscussionResponse> GenerateDiscussionAsync(GenerateDiscussionRequest request, CancellationToken cancellationToken = default)
-    {
-        var prompt = BuildDiscussionPrompt(request);
-        var response = await GenerateContentAsync(prompt, cancellationToken);
-        return ParseDiscussionResponse(response, request.RequestId);
-    }
-
     public async Task<EvaluateContentSafetyResponse> EvaluateContentSafetyAsync(EvaluateContentSafetyRequest request, CancellationToken cancellationToken = default)
     {
         var prompt = BuildSafetyPrompt(request);
@@ -487,40 +480,6 @@ Trả lời JSON:
 Chỉ trả về JSON.";
     }
 
-    private static string BuildDiscussionPrompt(GenerateDiscussionRequest request)
-    {
-        var story = request.Story;
-        var content = string.Join("\n", story.StorySections.Select(s => s.Content));
-
-        return $@"Tạo câu hỏi thảo luận từ truyện thiếu nhi.
-
-TRUYỆN: {story.Title}
-NỘI DUNG: {content}
-
-YÊU CẦU:
-- Độ tuổi: {request.AgeBand} tuổi
-- Số câu hỏi: 3
-- Ngôn ngữ: {request.Language}
-- Mục tiêu đọc hiểu: {request.ComprehensionGoal ?? "Hiểu và liên hệ nội dung truyện"}
-- Các câu hỏi PHẢI nhắc đến các nhân vật và sự việc trực tiếp trong truyện.
-
-TẠO CÂU HỎI:
-1. Hiểu câu chuyện
-2. Kết nối cá nhân
-3. Tư duy phản biện
-
-Trả lời JSON:
-{{
-    ""discussionQuestions"": [
-        {{ ""question"": ""Câu hỏi 1 nhắc đến nhân vật trong truyện?"" }},
-        {{ ""question"": ""Câu hỏi 2 liên hệ bài học câu chuyện với bản thân em?"" }},
-        {{ ""question"": ""Câu hỏi 3 về hành động của nhân vật trong truyện?"" }}
-    ]
-}}
-
-Chỉ trả về JSON.";
-    }
-
     private static string BuildSafetyPrompt(EvaluateContentSafetyRequest request)
     {
         var story = request.Story;
@@ -781,36 +740,6 @@ Chỉ trả về JSON.";
         catch (Exception ex)
         {
             throw new InvalidOperationException($"Failed to parse quiz response: {ex.Message}", ex);
-        }
-    }
-
-    private static GenerateDiscussionResponse ParseDiscussionResponse(string json, string requestId)
-    {
-        try
-        {
-            var cleaned = CleanJsonResponse(json);
-            using var doc = JsonDocument.Parse(cleaned);
-            var root = doc.RootElement;
-
-            var questions = new List<Contracts.AI.Models.DiscussionQuestionDto>();
-            if (root.TryGetProperty("discussionQuestions", out var questionsElement))
-            {
-                foreach (var item in questionsElement.EnumerateArray())
-                {
-                    questions.Add(new Contracts.AI.Models.DiscussionQuestionDto(
-                        GetString(item, "question")));
-                }
-            }
-
-            return new GenerateDiscussionResponse
-            {
-                RequestId = requestId,
-                Items = questions
-            };
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException($"Failed to parse discussion response: {ex.Message}", ex);
         }
     }
 

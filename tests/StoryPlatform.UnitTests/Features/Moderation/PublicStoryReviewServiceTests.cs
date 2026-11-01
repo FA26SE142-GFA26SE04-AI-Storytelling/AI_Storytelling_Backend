@@ -36,13 +36,6 @@ public class PublicStoryReviewServiceTests
             Term = "kiên nhẫn",
             Definition = "bền bỉ chờ đợi"
         });
-        _h.Discussions.Add(new DiscussionQuestion
-        {
-            Id = 1,
-            StoryVersionId = PublicStoryReviewHarness.VersionId,
-            Question = "Vì sao rùa thắng?",
-            IsMoralLesson = true
-        });
         _h.ContentCategories.Add(new ContentCategory
         { Id = 5, Code = "friendship", DisplayName = "Tình bạn" });
         _h.StoryCategories.Add(new StoryCategory
@@ -63,7 +56,6 @@ public class PublicStoryReviewServiceTests
         Assert.Equal("https://cdn.test/audio1.mp3", package.Scenes.Single().Segments.Single().AudioUrl);
         Assert.Equal("Rùa", package.Quizzes.Single().CorrectAnswer);
         Assert.Equal("kiên nhẫn", package.Vocabulary.Single().Term);
-        Assert.True(package.DiscussionQuestions.Single().IsMoralLesson);
         Assert.Equal("friendship", package.Story.Labels.Single().Code);
     }
 
@@ -641,8 +633,6 @@ public class PublicStoryReviewServiceTests
             Term = "a",
             Definition = "b"
         });
-        _h.Discussions.Add(new DiscussionQuestion
-        { Id = 5, StoryVersionId = PublicStoryReviewHarness.VersionId, Question = "Vì sao?" });
         var request = new RequestChangesDto
         {
             GeneralNote = "Sửa nhiều phần.",
@@ -652,7 +642,6 @@ public class PublicStoryReviewServiceTests
                 new() { PartType = "scene_audio", PartId = 1, Note = "audio" },
                 new() { PartType = "quiz", PartId = 3, Note = "quiz" },
                 new() { PartType = "vocabulary", PartId = 4, Note = "từ" },
-                new() { PartType = "discussion", PartId = 5, Note = "thảo luận" },
                 new() { PartType = "metadata", Note = "metadata" }
             }
         };

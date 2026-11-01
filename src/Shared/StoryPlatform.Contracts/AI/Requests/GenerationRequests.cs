@@ -110,16 +110,6 @@ public sealed record GenerateQuizRequest
     public decimal? ComprehensionThresholdPercent { get; init; }
 }
 
-public sealed record GenerateDiscussionRequest
-{
-    public AiGenerationSnapshot? Snapshot { get; init; }
-    public string RequestId { get; init; } = string.Empty;
-    public StoryContentDto Story { get; init; } = new();
-    public string AgeBand { get; init; } = string.Empty;
-    public string Language { get; init; } = "vi";
-    public string? ComprehensionGoal { get; init; }
-}
-
 public sealed record GenerateListeningInteractionRequest
 {
     public AiGenerationSnapshot? Snapshot { get; init; }

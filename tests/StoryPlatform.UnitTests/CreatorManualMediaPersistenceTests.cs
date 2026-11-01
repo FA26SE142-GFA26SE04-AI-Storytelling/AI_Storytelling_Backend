@@ -294,7 +294,7 @@ public sealed class CreatorManualMediaPersistenceTests
             uow.Setup(x => x.Repository<T>()).Returns(repository.Object);
         }
         Register<UserAccount>(); Register<Story>(); Register<StoryVersion>(); Register<ModerationItem>();
-        Empty<StoryVocabulary>(); Empty<QuizItem>(); Empty<DiscussionQuestion>();
+        Empty<StoryVocabulary>(); Empty<QuizItem>();
         uow.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.SaveChangesAsync(ct));
         uow.Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.BeginTransactionAsync(ct));
         uow.Setup(x => x.CommitTransactionAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.CommitTransactionAsync(ct));

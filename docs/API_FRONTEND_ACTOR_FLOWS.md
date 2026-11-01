@@ -217,7 +217,7 @@ User cần child Active, quyền chủ hồ sơ, learning/policy/consent hợp l
 
 Giữ storyId/requestId/inputStatus/handoffStatus/canRetry. 202 chưa có truyện; poll đúng prefix actor. 422 hiển thị reasonCode/fallbackMessage. Retry khi canRetry theo input/audience gốc; thay ý tưởng tạo request/key mới. ExistingStoryId chỉ dùng draft đúng luồng.
 
-Output learning tạo vocabulary/quiz/discussion; reading_media_only bỏ artifacts. TargetLength chịu context server, không chỉ Range DTO.
+Output learning tạo vocabulary/quiz/tương tác lúc nghe; reading_media_only bỏ artifacts. TargetLength chịu context server, không chỉ Range DTO.
 
 ### G2. Outline → nội dung
 
@@ -230,7 +230,7 @@ Output learning tạo vocabulary/quiz/discussion; reading_media_only bỏ artifa
 
 ### G3. Review và AI proposal
 
-GET /review và từng artifact áp dụng. PUT story/vocabulary/quiz/discussion với versionId thực. Vocabulary phải có từ trong truyện; quiz đúng choices/đáp án; discussion qua validator.
+GET /review và từng artifact áp dụng. PUT story/vocabulary/quiz/tương tác lúc nghe với versionId thực. Vocabulary phải có từ trong truyện; quiz đúng choices/đáp án.
 
 Partial edit gửi selection khớp nội dung. Partial edit/regenerate trả proposalId, chưa apply. GET proposal → xem so sánh → apply/discard; xử lý expiry/version đã đổi, không tự rebase.
 
@@ -1330,10 +1330,6 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 | [PUT /api/v1/stories/{storyId}/review/quiz](#ep-review-updatequiz-put) | GỌI_API |
 | [POST /api/v1/stories/{storyId}/review/quiz/ai/regenerate](#ep-review-regeneratequiz-post) | GỌI_API |
 | [POST /api/v1/stories/{storyId}/review/quiz/complete](#ep-review-completequiz-post) | GỌI_API |
-| [GET /api/v1/stories/{storyId}/review/discussion](#ep-review-getdiscussion-get) | GỌI_API |
-| [PUT /api/v1/stories/{storyId}/review/discussion](#ep-review-updatediscussion-put) | GỌI_API |
-| [POST /api/v1/stories/{storyId}/review/discussion/ai/regenerate](#ep-review-regeneratediscussion-post) | GỌI_API |
-| [POST /api/v1/stories/{storyId}/review/discussion/complete](#ep-review-completediscussion-post) | GỌI_API |
 | [GET /api/v1/stories/{storyId}/review/validation](#ep-review-validate-get) | GỌI_API |
 | [POST /api/v1/stories/{storyId}/review/auto-publish-check](#ep-review-autopublishcheck-post) | CHƯA_MAP |
 | [POST /api/v1/creator/stories/{storyId}/generation/confirm-content](#ep-creator-confirm-content-post) | CHƯA_MAP |
@@ -1473,42 +1469,6 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 #### POST /api/v1/stories/{storyId}/review/quiz/complete
 
 - Action/chức năng: **CompleteQuiz**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L160).
-- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
-- Request: **path** storyId: `int`; bắt buộc.
-- Response: ApiResponse.data: `bool`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [aiStoryCreationService.completeReview](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L120); nơi dùng: [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L88)
-
-<a id="ep-review-getdiscussion-get"></a>
-#### GET /api/v1/stories/{storyId}/review/discussion
-
-- Action/chức năng: **GetDiscussion**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L172).
-- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
-- Request: **path** storyId: `int`; bắt buộc.
-- Response: ApiResponse.data: [DiscussionReviewDto](#dto-discussionreviewdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [aiStoryCreationService.getDiscussionReview](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L117); nơi dùng: [CompletionCard.tsx](../../AI_Storytelling_Frontend/src/app/features/home/CompletionCard.tsx#L28); [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L42)
-
-<a id="ep-review-updatediscussion-put"></a>
-#### PUT /api/v1/stories/{storyId}/review/discussion
-
-- Action/chức năng: **UpdateDiscussion**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L180).
-- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
-- Request: **path** storyId: `int`; bắt buộc<br>**body** input: [UpdateDiscussionRequestDto](#dto-updatediscussionrequestdto); field/validation/ví dụ tại schema.
-- Response: ApiResponse.data: [DiscussionReviewDto](#dto-discussionreviewdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **GỌI_API** — [aiStoryCreationService.updateDiscussionReview](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L118); nơi dùng: [ReviewTools.tsx](../../AI_Storytelling_Frontend/src/app/features/review/ReviewTools.tsx#L57)
-
-<a id="ep-review-regeneratediscussion-post"></a>
-#### POST /api/v1/stories/{storyId}/review/discussion/ai/regenerate
-
-- Action/chức năng: **RegenerateDiscussion**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L188).
-- Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
-- Request: **path** storyId: `int`; bắt buộc.
-- Response: ApiResponse.data: [CreateProposalResponseDto](#dto-createproposalresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 202.
-- Frontend: **GỌI_API** — [aiStoryCreationService.regenerateReviewArtifact](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L125); nơi dùng: [ReviewTools.tsx](../../AI_Storytelling_Frontend/src/app/features/review/ReviewTools.tsx#L64); [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L113)
-
-<a id="ep-review-completediscussion-post"></a>
-#### POST /api/v1/stories/{storyId}/review/discussion/complete
-
-- Action/chức năng: **CompleteDiscussion**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L196).
 - Quyền: Authorize người lớn; kèm guard nghiệp vụ của nhóm.
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: `bool`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
@@ -3836,8 +3796,6 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [CreatorVersionDto](#dto-creatorversiondto) | [CreatorAuthoringDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAuthoring/DTOs/CreatorAuthoringDtos.cs#L62) |
 | [DeleteAccountPreviewDto](#dto-deleteaccountpreviewdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L188) |
 | [DeleteAccountRequestDto](#dto-deleteaccountrequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L195) |
-| [DiscussionItemDto](#dto-discussionitemdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L136) |
-| [DiscussionReviewDto](#dto-discussionreviewdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L129) |
 | [DismissReportRequestDto](#dto-dismissreportrequestdto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L114) |
 | [EasyLoginSecretDto](#dto-easyloginsecretdto) | [ChildAccessCredentialDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/AccessCredentials/DTOs/ChildAccessCredentialDtos.cs#L31) |
 | [EditOutlineRequestDto](#dto-editoutlinerequestdto) | [OutlineDtos.cs](../src/Core/StoryPlatform.Application/Features/Outline/DTOs/OutlineDtos.cs#L31) |
@@ -3899,7 +3857,6 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [PreviewCreatorImportRequest](#dto-previewcreatorimportrequest) | [CreatorAuthoringDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAuthoring/DTOs/CreatorAuthoringDtos.cs#L37) |
 | [PublicReviewChecklistDto](#dto-publicreviewchecklistdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L136) |
 | [PublicReviewDecisionResultDto](#dto-publicreviewdecisionresultdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L182) |
-| [PublicReviewDiscussionDto](#dto-publicreviewdiscussiondto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L104) |
 | [PublicReviewFlagDto](#dto-publicreviewflagdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L111) |
 | [PublicReviewFlagsResultDto](#dto-publicreviewflagsresultdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L164) |
 | [PublicReviewHistoryEntryDto](#dto-publicreviewhistoryentrydto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L226) |
@@ -3927,7 +3884,6 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [RejectRequestDto](#dto-rejectrequestdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L205) |
 | [RenderGuideRequest](#dto-renderguiderequest) | [AuthoringGuideService.cs](../src/Core/StoryPlatform.Application/Features/ParentAuthoring/AuthoringGuideService.cs#L11) |
 | [RenderGuideResult](#dto-renderguideresult) | [AuthoringGuideService.cs](../src/Core/StoryPlatform.Application/Features/ParentAuthoring/AuthoringGuideService.cs#L12) |
-| [ReportedDiscussionDto](#dto-reporteddiscussiondto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L108) |
 | [ReportedLabelDto](#dto-reportedlabeldto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L71) |
 | [ReportedQuizDto](#dto-reportedquizdto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L100) |
 | [ReportedSceneDto](#dto-reportedscenedto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L86) |
@@ -3980,7 +3936,6 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [TopicRelation](#dto-topicrelation) | [TopicRelation.cs](../src/Core/StoryPlatform.Domain/Enums/TopicRelation.cs#L3) |
 | [UpdateChildProfileRequestDto](#dto-updatechildprofilerequestdto) | [ChildProfileDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Profiles/DTOs/ChildProfileDtos.cs#L37) |
 | [UpdateContentCategoryRequestDto](#dto-updatecontentcategoryrequestdto) | [ContentCategoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentCategories/DTOs/ContentCategoryDtos.cs#L28) |
-| [UpdateDiscussionRequestDto](#dto-updatediscussionrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L143) |
 | [UpdateProfileRequestDto](#dto-updateprofilerequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L171) |
 | [UpdateQuizRequestDto](#dto-updatequizrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L119) |
 | [UpdateVocabularyRequestDto](#dto-updatevocabularyrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L93) |
@@ -4448,7 +4403,6 @@ Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRev
 | `storyVersionId` | `int` | Không | — |
 | `vocabularyCount` | `int` | Không | — |
 | `quizCount` | `int` | Không | — |
-| `discussionCount` | `int` | Không | — |
 | `success` | `bool` | Không | — |
 | `message` | `string` | Không | default `string.Empty` |
 
@@ -5021,7 +4975,6 @@ Nguồn: [ContentGenerationDtos.cs](../src/Core/StoryPlatform.Application/Featur
 | `content` | `string` | Không | default `"not_started"` |
 | `vocabulary` | `string` | Không | default `"not_started"` |
 | `quiz` | `string` | Không | default `"not_started"` |
-| `discussion` | `string` | Không | default `"not_started"` |
 | `isComplete` | `bool` | Không | — |
 | `waitingForModeration` | `bool` | Không | — |
 | `lastErrorCode` | `string?` | Có | — |
@@ -5087,7 +5040,6 @@ Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/C
 | `scenes` | [List&lt;ReportedSceneDto&gt;](#dto-reportedscenedto) | Không | default `new()` |
 | `vocabulary` | [List&lt;ReportedVocabularyDto&gt;](#dto-reportedvocabularydto) | Không | default `new()` |
 | `quizzes` | [List&lt;ReportedQuizDto&gt;](#dto-reportedquizdto) | Không | default `new()` |
-| `discussionQuestions` | [List&lt;ReportedDiscussionDto&gt;](#dto-reporteddiscussiondto) | Không | default `new()` |
 
 
 <a id="dto-contentreportreason"></a>
@@ -5527,28 +5479,6 @@ Ví dụ JSON minh họa shape request:
 }
 ~~~
 
-<a id="dto-discussionitemdto"></a>
-### DiscussionItemDto
-
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L136).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `id` | `int?` | Có | — |
-| `question` | `string` | Không | default `string.Empty` |
-| `isMoralLesson` | `bool` | Không | — |
-
-<a id="dto-discussionreviewdto"></a>
-### DiscussionReviewDto
-
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L129).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `storyId` | `int` | Không | — |
-| `versionId` | `int` | Không | — |
-| `items` | [List&lt;DiscussionItemDto&gt;](#dto-discussionitemdto) | Không | default `new()` |
-
 <a id="dto-dismissreportrequestdto"></a>
 ### DismissReportRequestDto
 
@@ -5697,7 +5627,6 @@ Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRev
 | `storyVersionId` | `int?` | Có | — |
 | `includeVocabulary` | `bool` | Không | default `true` |
 | `includeQuiz` | `bool` | Không | default `true` |
-| `includeDiscussion` | `bool` | Không | default `true` |
 
 Ví dụ JSON minh họa shape request:
 
@@ -5705,8 +5634,7 @@ Ví dụ JSON minh họa shape request:
 {
   "storyVersionId": null,
   "includeVocabulary": true,
-  "includeQuiz": true,
-  "includeDiscussion": true
+  "includeQuiz": true
 }
 ~~~
 
@@ -6672,17 +6600,6 @@ Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Featur
 | `storyPublished` | `bool` | Không | — |
 | `decidedAt` | `DateTime` | Không | — |
 
-<a id="dto-publicreviewdiscussiondto"></a>
-### PublicReviewDiscussionDto
-
-Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L104).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `id` | `int` | Không | — |
-| `question` | `string` | Không | default `string.Empty` |
-| `isMoralLesson` | `bool` | Không | — |
-
 <a id="dto-publicreviewflagdto"></a>
 ### PublicReviewFlagDto
 
@@ -6772,7 +6689,6 @@ Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Featur
 | `scenes` | [List&lt;PublicReviewSceneDto&gt;](#dto-publicreviewscenedto) | Không | default `new()` |
 | `vocabulary` | [List&lt;PublicReviewVocabularyDto&gt;](#dto-publicreviewvocabularydto) | Không | default `new()` |
 | `quizzes` | [List&lt;PublicReviewQuizDto&gt;](#dto-publicreviewquizdto) | Không | default `new()` |
-| `discussionQuestions` | [List&lt;PublicReviewDiscussionDto&gt;](#dto-publicreviewdiscussiondto) | Không | default `new()` |
 | `flags` | [List&lt;PublicReviewFlagDto&gt;](#dto-publicreviewflagdto) | Không | default `new()` |
 | `allFlagsResolved` | `bool` | Không | — |
 | `progress` | [PublicReviewProgressDto](#dto-publicreviewprogressdto) | Không | default `new()` |
@@ -7107,16 +7023,6 @@ Nguồn: [AuthoringGuideService.cs](../src/Core/StoryPlatform.Application/Featur
 | `text` | `string` | Không | — |
 | `isPlainText` | `bool` | Không | default `true` |
 
-<a id="dto-reporteddiscussiondto"></a>
-### ReportedDiscussionDto
-
-Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L108).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `question` | `string` | Không | default `string.Empty` |
-| `isMoralLesson` | `bool` | Không | — |
-
 <a id="dto-reportedlabeldto"></a>
 ### ReportedLabelDto
 
@@ -7427,7 +7333,6 @@ Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRev
 | `readabilityFre` | `decimal?` | Có | — |
 | `vocabulary` | [ArtifactStatusDto](#dto-artifactstatusdto) | Không | default `new()` |
 | `quiz` | [ArtifactStatusDto](#dto-artifactstatusdto) | Không | default `new()` |
-| `discussion` | [ArtifactStatusDto](#dto-artifactstatusdto) | Không | default `new()` |
 | `canEdit` | `bool` | Không | — |
 | `canApprove` | `bool` | Không | Parent pipeline; false cho Creator |
 | `canConfirmContent` | `bool` | Không | Creator xác nhận nội dung, không phải duyệt công khai |
@@ -8153,31 +8058,6 @@ Ví dụ JSON minh họa shape request:
 }
 ~~~
 
-<a id="dto-updatediscussionrequestdto"></a>
-### UpdateDiscussionRequestDto
-
-Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L143).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `versionId` | `int` | Không | — |
-| `items` | [List&lt;DiscussionItemDto&gt;](#dto-discussionitemdto) | Không | default `new()` |
-
-Ví dụ JSON minh họa shape request:
-
-~~~json
-{
-  "versionId": 1,
-  "items": [
-    {
-      "id": null,
-      "question": "<QUESTION>",
-      "isMoralLesson": false
-    }
-  ]
-}
-~~~
-
 <a id="dto-updateprofilerequestdto"></a>
 ### UpdateProfileRequestDto
 
@@ -8632,7 +8512,6 @@ Nguồn: [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features
 | `scenes` | [List&lt;ReportedSceneDto&gt;](#dto-reportedscenedto) | Không | default `new()` |
 | `vocabulary` | [List&lt;ReportedVocabularyDto&gt;](#dto-reportedvocabularydto) | Không | default `new()` |
 | `quizzes` | [List&lt;ReportedQuizDto&gt;](#dto-reportedquizdto) | Không | default `new()` |
-| `discussionQuestions` | [List&lt;ReportedDiscussionDto&gt;](#dto-reporteddiscussiondto) | Không | default `new()` |
 | `labels` | [List&lt;CommunityLabelDto&gt;](#dto-communitylabeldto) | Không | default `new()` |
 | `copyrightDeclaration` | `string?` | Có | AiGenerated hoặc OwnWork (người nộp khai). |
 | `piiCheckSummary` | `string?` | Có | JSON kết quả dò PII lúc nộp (chỉ loại và vị trí). |
@@ -8966,7 +8845,6 @@ Nguồn: [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Feat
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
 | `kind` | `string` | Không | default `string.Empty`; phone, email, url, social_handle, address, school, class hoặc child_nickname. |
-| `location` | `string` | Không | default `string.Empty`; title, description, content, lesson, scene N, vocabulary N, quiz N hoặc discussion N. |
 | `excerpt` | `string` | Không | default `string.Empty`; Đoạn ngắn quanh chỗ nghi để tự tìm và sửa (chỉ trả cho người nộp, không được lưu). |
 
 <a id="dto-publishedcontentitemdto"></a>
@@ -9057,7 +8935,6 @@ Nguồn: [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Feature
 | `scenes` | [List&lt;ReportedSceneDto&gt;](#dto-reportedscenedto) | Không | default `new()` |
 | `vocabulary` | [List&lt;ReportedVocabularyDto&gt;](#dto-reportedvocabularydto) | Không | default `new()` |
 | `quizzes` | [List&lt;ReportedQuizDto&gt;](#dto-reportedquizdto) | Không | default `new()` |
-| `discussionQuestions` | [List&lt;ReportedDiscussionDto&gt;](#dto-reporteddiscussiondto) | Không | default `new()` |
 
 <a id="dto-rejectcommunityrequestdto"></a>
 ### RejectCommunityRequestDto

@@ -29,7 +29,7 @@ namespace StoryPlatform.UnitTests;
             Register<ChildProfile>();
             Register<ChildSession>(); Register<StoryAssistanceTask>(); Register<StoryAssistanceStep>();
             Register<SafetyPolicy>(); Register<SafetyPolicyCategory>(); Register<ContentCategory>();
-            Register<LearningProfile>(); Register<StoryVocabulary>(); Register<QuizItem>(); Register<DiscussionQuestion>(); Register<ModerationItem>(); Register<ParentStoryOperation>(); Register<StoryGenerationJob>(); Register<StoryGenerationRequest>(); Register<MediaContext>(); Register<MediaAsset>(); Register<StoryScene>(); Register<StorySegment>(); Register<IllustrationBeat>();
+            Register<LearningProfile>(); Register<StoryVocabulary>(); Register<QuizItem>(); Register<ModerationItem>(); Register<ParentStoryOperation>(); Register<StoryGenerationJob>(); Register<StoryGenerationRequest>(); Register<MediaContext>(); Register<MediaAsset>(); Register<StoryScene>(); Register<StorySegment>(); Register<IllustrationBeat>();
             Register<AuthoringGuideCatalog>(); Register<AuthoringGuideCatalogVersion>();
             Register<AuthoringGuideItem>(); Register<AuthoringGuidePlaceholder>();
             Register<MediaAssetGenerationTask>();

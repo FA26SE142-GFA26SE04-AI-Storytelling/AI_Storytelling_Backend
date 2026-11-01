@@ -15,7 +15,7 @@ flowchart TD
     subgraph GEN["Sinh Học Liệu"]
         ARTIFACTS --> VOCAB[1. Từ vựng trọng tâm StoryVocabulary]
         ARTIFACTS --> QUIZ[2. Câu hỏi trắc nghiệm QuizItem]
-        ARTIFACTS --> DISC[3. Câu hỏi thảo luận DiscussionQuestion]
+        ARTIFACTS --> DISC[3. Tương tác lúc nghe ListeningInteraction]
     end
     
     VOCAB --> PKG[Gói Kiểm Duyệt Review Package]
@@ -55,9 +55,9 @@ flowchart TD
 
 ### 1.2. Các vấn đề kỹ thuật được xử lý
 * **Tính độc lập của học liệu (Artifact Independence)**:
-  - 3 nhóm học liệu (Từ vựng, Quiz, Thảo luận) được tạo bằng các tác vụ độc lập. Nếu người dùng chỉ muốn sinh lại Quiz, hệ thống chỉ gọi AI sinh Quiz mà không cần chạy lại Từ vựng hay Thảo luận, giúp tiết kiệm thời gian và chi phí API.
+  - 3 nhóm học liệu (Từ vựng, Quiz, tương tác lúc nghe) được tạo bằng các tác vụ độc lập. Nếu người dùng chỉ muốn sinh lại Quiz, hệ thống chỉ gọi AI sinh Quiz mà không cần chạy lại Từ vựng hay tương tác lúc nghe, giúp tiết kiệm thời gian và chi phí API.
 * **Ràng buộc chặt chẽ vào phiên bản (Strict Version Binding)**:
-  - Mọi bản ghi `StoryVocabulary`, `QuizItem`, `DiscussionQuestion` đều bắt buộc liên kết với `StoryVersionId` (không chỉ liên kết với `StoryId`).
+  - Mọi bản ghi `StoryVocabulary`, `QuizItem`, `ListeningInteraction` đều bắt buộc liên kết với `StoryVersionId` (không chỉ liên kết với `StoryId`).
   - **Cơ chế Stale Invalidation**: Nếu phụ huynh sửa đổi nội dung truyện ở Phase 4, hệ thống lập tức tạo một `StoryVersion` mới (`version_no++`) và đánh dấu toàn bộ học liệu của version cũ là hết hạn (`Stale`), ngăn chặn tình trạng câu hỏi kiểm tra những chi tiết không còn tồn tại trong truyện.
 * **Quy trình Phê duyệt kép (Approval Gate)**:
   - **Manual Approval**: Kiểm tra quyền hạn của người dùng (`approve_story`), kiểm tra trạng thái an toàn toàn diện (`Final Validation`) trước khi chuyển trạng thái sang `Approved`.
@@ -69,7 +69,7 @@ flowchart TD
 * **Google Gemini API** (`gemini-1.5-flash`):
   - Sinh từ vựng với cấu trúc: từ vựng, định nghĩa dễ hiểu cho trẻ, ngữ cảnh trong truyện.
   - Sinh Quiz trắc nghiệm gồm câu hỏi, 3-4 lựa chọn, đáp án đúng và giải thích ngắn.
-  - Sinh câu hỏi gợi mở thảo luận giữa phụ huynh và con cái dựa trên bài học đạo đức.
+  - Sinh tương tác lúc nghe theo kế hoạch, gồm điểm dừng cảm xúc và ý kiến.
 
 ---
 

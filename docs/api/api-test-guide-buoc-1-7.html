@@ -343,7 +343,7 @@ const STEPS = [
         "Phiên bản hiện hành đã Approved mà chưa có yêu cầu gỡ được Moderator đồng ý → 409 MODERATOR_REMOVAL_REQUIRED.",
         "Phiên bản chưa từng gửi duyệt (ReviewStatus = None) và truyện chưa Ready → 409 REVISION_NOT_REQUIRED (cứ sửa trực tiếp bản nháp)."]],
       ["Xử lý", [
-        "Tạo phiên bản mới: VersionNo = lớn nhất + 1, chép tiêu đề, nội dung, dàn ý, bài học, từ vựng, quiz, câu hỏi thảo luận từ bản nguồn; bản mới thành hiện hành.",
+        "Tạo phiên bản mới: VersionNo = lớn nhất + 1, chép tiêu đề, nội dung, dàn ý, bài học, từ vựng, quiz, tương tác lúc nghe từ bản nguồn; bản mới thành hiện hành.",
         "Không chép media: ảnh và audio vẫn gắn với bản cũ, bản mới phải tạo media riêng.",
         "Truyện về Draft (truyện AI về ContentReview), đổi revisionToken. Ghi audit CreatorRevisionCreated."]],
       ["Kết quả", ["storyId, versionId mới, itemId = null, status (Draft / ContentReview), revisionToken dùng cho các lần sửa tiếp theo."]]
@@ -468,7 +468,7 @@ const STEPS = [
       ["Kết quả", [
         "story (tiêu đề, mô tả, thể loại, độ tuổi, mức đọc, nhãn kèm nguồn) và version (tiêu đề, dàn ý, nội dung, bài học).",
         "scenes: từng cảnh kèm ảnh minh họa và các đoạn segment có audio; cờ viewed / heard; hasPronunciationWarning khi audio thiếu word timings.",
-        "vocabulary, quizzes, discussionQuestions (dùng Id của chúng khi Yêu cầu sửa).",
+        "vocabulary, quizzes (dùng Id của chúng khi Yêu cầu sửa).",
         "flags: cờ vùng xám (flagId, mã tiêu chí, đoạn trích, lý do, đã xử lý chưa); allFlagsResolved.",
         "progress: cảnh chưa xem, số audio đã nghe, đoạn có cảnh báo chưa nghe; requiredViewsComplete.",
         "checklist 8 tiêu chí (null = chưa chấm), approveBlockers + canApprove.",
@@ -576,7 +576,7 @@ const STEPS = [
         "textDiff: từng đoạn nội dung thêm / xóa / giữ (before, after).",
         "baseMetrics / currentMetrics: số từ, số câu, độ dài câu trung bình, chỉ số dễ đọc (FKGL, FRE).",
         "changedFields: các trường metadata đổi; sceneChanges: từng cảnh thêm / xóa / sửa kèm textChanged, imageChanged, audioChanged.",
-        "artifactChanges: quiz, từ vựng, câu hỏi thảo luận được thêm / xóa / sửa."]],
+        "artifactChanges: quiz, từ vựng được thêm / xóa / sửa."]],
       ["Lưu ý", ["Chỉ đọc, nhưng mỗi lần gọi ghi audit PublicStoryReviewCompared."]]
     ],
     warn: [
@@ -595,13 +595,13 @@ const STEPS = [
       ["neg","Mục đã quyết định (mục 21 sau khi Approve) hoặc chưa claim","403 \"Bạn chỉ được đọc mục đang do chính mình nhận.\""]
     ] },
   { m: "POST", p: "/api/v1/PublicStoryReview/{itemId}/request-changes", role: "Moderator, Administrator",
-    what: "Yêu cầu sửa: gửi lại cho Creator danh sách phần cần sửa kèm ghi chú. Creator sửa rồi gửi lại. partType hợp lệ: scene_text, scene_image, scene_audio (partId = Id cảnh), quiz, vocabulary, discussion (partId = Id mục đó), metadata (không có partId).",
+    what: "Yêu cầu sửa: gửi lại cho Creator danh sách phần cần sửa kèm ghi chú. Creator sửa rồi gửi lại. partType hợp lệ: scene_text, scene_image, scene_audio (partId = Id cảnh), quiz, vocabulary (partId = Id mục đó), metadata (không có partId).",
     detail: [
       ["Body", [
         "generalNote: bắt buộc, tối đa 2000 ký tự.",
         "parts: 1 đến 50 phần; mỗi phần có partType, partId, note (bắt buộc, tối đa 1000 ký tự).",
         "scene_text / scene_image / scene_audio: partId = Id cảnh của phiên bản đang duyệt.",
-        "quiz / vocabulary / discussion: partId = Id mục đó trong phiên bản.",
+        "quiz / vocabulary: partId = Id mục đó trong phiên bản.",
         "metadata: không được gửi partId.",
         "stop_point, character_card, summary: chưa hỗ trợ → 400; partType khác → 400; partId sai → 400."]],
       ["Xử lý (một transaction)", [
@@ -1033,7 +1033,7 @@ const STEPS = [
         "Report còn đúng trạng thái chờ (Pending, hoặc Escalated với ca Escalated) → nếu đã xử lý: 409."]],
       ["Kết quả", [
         "itemId, reportId, reason, description, attachmentUrl, isReviewItem (true = mục rà soát Moderator tự tạo), itemStatus, escalationReason, escalatedAt, createdAt.",
-        "story kèm nhãn; version, scenes, vocabulary, quizzes, discussionQuestions của đúng phiên bản người báo đã thấy.",
+        "story kèm nhãn; version, scenes, vocabulary, quizzes của đúng phiên bản người báo đã thấy.",
         "Mọi đoạn văn bản đã che số điện thoại, email và biệt danh bé (nếu là truyện riêng)."]],
       ["Lưu ý", ["Mỗi lần mở ghi audit ContentReportOpened."]]
     ],
@@ -1148,7 +1148,7 @@ const STEPS = [
         "Truyện tồn tại → nếu không: 404.",
         "Truyện là truyện Creator, đang công khai, chưa Archive → nếu không: 400."]],
       ["Kết quả", [
-        "story kèm nhãn; version, scenes, vocabulary, quizzes, discussionQuestions của phiên bản bé đang đọc.",
+        "story kèm nhãn; version, scenes, vocabulary, quizzes của phiên bản bé đang đọc.",
         "Văn bản đã che số điện thoại và email."]],
       ["Dùng khi", ["Moderator đọc truyện trước khi quyết định tạo mục rà soát chủ động (review-items)."]]
     ],
@@ -1396,7 +1396,7 @@ const STEPS = [
         "Dò lại thông tin cá nhân trên bản ghim, đọc checklist đã chấm, tính các khóa Approve.",
         "Mỗi lần mở ghi audit CommunityReviewPackageOpened."]],
       ["Kết quả", [
-        "Nội dung: story, version, scenes, vocabulary, quizzes, discussionQuestions (đã che).",
+        "Nội dung: story, version, scenes, vocabulary, quizzes (đã che).",
         "labels, copyrightDeclaration, isResubmission.",
         "piiCheckSummary = kết quả dò lúc nộp; piiRescan = kết quả dò lại bây giờ (chỉ kind và location).",
         "checklist (luôn đủ 3 tiêu chí), blockers và canApprove = true khi không còn khóa.",
@@ -2844,7 +2844,7 @@ const SEEDAPI = [
   ["PublicStoryReview/{itemId}/checklist", { as: "moderator_demo1", url: "PUT /api/v1/PublicStoryReview/21/checklist", body: '{ "safety": true, "ageFit": true, "education": true, "language": true, "copyright": true, "image": true, "audio": true, "interaction": true }', note: "Mục 21 đã nhận. Approve cần cả 8 tiêu chí = true." }],
   ["PublicStoryReview/{itemId}/labels", { as: "moderator_demo1", url: "PUT /api/v1/PublicStoryReview/21/labels", body: '{ "contentCategoryIds": [5] }', note: "Nhãn hợp lệ trong seed: 1 ANIMALS, 2 FANTASY, 3 ADVENTURE, 4 SCIENCE, 5 FRIENDSHIP, 6 FAMILY, 7 VIOLENCE, 8 SCARY_CONTENT." }],
   ["PublicStoryReview/{itemId}/approve", { as: "moderator_demo1", url: "POST /api/v1/PublicStoryReview/21/approve", note: "Mục 21 do creator_demo gửi. moderator_demo1 ≠ người gửi nên được duyệt. Trước khi Approve phải: claim mục 21, views scene 19 và audio 19, xử lý 2 cờ pii-1 và safety-1, chấm đủ 8 tiêu chí checklist (canApprove = true trong GET /PublicStoryReview/21)." }],
-  ["PublicStoryReview/{itemId}/request-changes", { as: "moderator_demo1", url: "POST /api/v1/PublicStoryReview/21/request-changes", note: "Mục 21 đã claim và CHƯA Approve/Reject. Phiên bản 19 có cảnh 19, quiz 16, từ vựng 16, câu thảo luận 16. Nếu mục 21 đã quyết định thì dùng mục mới từ submit truyện 11 / v12 (cảnh 12)." }],
+  ["PublicStoryReview/{itemId}/request-changes", { as: "moderator_demo1", url: "POST /api/v1/PublicStoryReview/21/request-changes", note: "Mục 21 đã claim và CHƯA Approve/Reject. Phiên bản 19 có cảnh 19, quiz 16, từ vựng 16. Nếu mục 21 đã quyết định thì dùng mục mới từ submit truyện 11 / v12 (cảnh 12)." }],
   ["PublicStoryReview/{itemId}/reject", { as: "moderator_demo1", url: "POST /api/v1/PublicStoryReview/21/reject", note: "Mục 21 đã claim và CHƯA Approve/Request-changes. Nếu đã quyết định thì dùng mục mới từ submit truyện 11 / v12." }],
   ["PublicStoryReview/{itemId}/compare", { as: "moderator_demo1", url: "GET /api/v1/PublicStoryReview/21/compare?against=previous", note: "Mục 21 đã claim và chưa Approve. Mục 21 là bản gửi lại (PreviousItemId = 20, phiên bản 18) nên against=previous so v19 với v18; truyện 14 có bản công khai v17 nên against=public so v19 với v17." }],
   ["=GET /api/v1/PublicStoryReview/{itemId}", { as: "moderator_demo1", url: "GET /api/v1/PublicStoryReview/21", note: "Nhận mục 21 rồi mới mở." }],

@@ -43,7 +43,7 @@ public class PiiFindingDto
     /// <summary>phone, email, url, social_handle, address, school, class hoặc child_nickname.</summary>
     public string Kind { get; set; } = string.Empty;
 
-    /// <summary>title, description, content, lesson, scene N, vocabulary N, quiz N hoặc discussion N.</summary>
+    /// <summary>title, description, content, lesson, scene N, vocabulary N, quiz N.</summary>
     public string Location { get; set; } = string.Empty;
 
     /// <summary>Đoạn ngắn quanh chỗ nghi để tự tìm và sửa (chỉ trả cho người nộp, không được lưu).</summary>

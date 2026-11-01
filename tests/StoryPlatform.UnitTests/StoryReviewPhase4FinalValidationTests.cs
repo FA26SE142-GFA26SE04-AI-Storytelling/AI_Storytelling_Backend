@@ -24,7 +24,6 @@ public sealed class StoryReviewPhase4FinalValidationTests
         uow.Items<Story>().Single().OutputMode = StoryOutputMode.ReadingMediaOnly;
         ((FakeRepo<StoryVocabulary>)uow.Repository<StoryVocabulary>()).Items.Clear();
         ((FakeRepo<QuizItem>)uow.Repository<QuizItem>()).Items.Clear();
-        ((FakeRepo<DiscussionQuestion>)uow.Repository<DiscussionQuestion>()).Items.Clear();
         var reviewStore = new InMemoryReviewCompletionStore();
         var service = BuildReviewService(uow, reviewStore: reviewStore);
 
@@ -37,7 +36,6 @@ public sealed class StoryReviewPhase4FinalValidationTests
         Assert.True(afterReview.CanApprove, string.Join("; ", afterReview.Issues));
         Assert.Contains(afterReview.Checks, c => c.Name == "vocabulary_valid" && c.Message == "skipped");
         Assert.Contains(afterReview.Checks, c => c.Name == "quiz_valid" && c.Message == "skipped");
-        Assert.Contains(afterReview.Checks, c => c.Name == "discussion_valid" && c.Message == "skipped");
     }
 
     [Fact]
@@ -63,7 +61,6 @@ public sealed class StoryReviewPhase4FinalValidationTests
         uow.Items<Story>().Single().OutputMode = StoryOutputMode.ReadingMediaOnly;
         ((FakeRepo<StoryVocabulary>)uow.Repository<StoryVocabulary>()).Items.Clear();
         ((FakeRepo<QuizItem>)uow.Repository<QuizItem>()).Items.Clear();
-        ((FakeRepo<DiscussionQuestion>)uow.Repository<DiscussionQuestion>()).Items.Clear();
         uow.Seed(new StoryGenerationRequest
         {
             Id = 19,
@@ -176,7 +173,6 @@ public sealed class StoryReviewPhase4FinalValidationTests
         await service.CompleteStoryReviewAsync(1, 1);
         await service.CompleteVocabularyReviewAsync(1, 1);
         await service.CompleteQuizReviewAsync(1, 1);
-        await service.CompleteDiscussionReviewAsync(1, 1);
 
         Assert.True(store.IsReviewCompleted(1, 1));
     }
@@ -207,45 +203,22 @@ public sealed class StoryReviewPhase4FinalValidationTests
     }
 
     [Fact]
-    public async Task AutoPublish_Succeeds_ForNewVersionWithoutDiscussion()
+    public async Task Validate_HasNoDiscussionCheck()
     {
         var uow = SeedContentReviewWithAllArtifacts();
-        ((FakeRepo<DiscussionQuestion>)uow.Repository<DiscussionQuestion>()).Items.Clear(); // Phase 4 không còn sinh câu thảo luận
-        uow.Items<StoryVersion>().Single().SafetyScore = 95m;
-        uow.Seed(new SafetyPolicy
-        {
-            Id = 1,
-            ChildProfileId = 1,
-            ParentalGateEnabled = false,
-            RequiredApprovalMode = ApprovalMode.AutoPublishOnThreshold,
-            SafetyScoreThreshold = 80m
-        });
-        var service = BuildReviewService(uow);
-
-        var validation = await service.ValidateAsync(1, 1);
-        Assert.Contains(validation.Checks, c => c.Name == "discussion_valid" && c.Passed && c.Message == "skipped");
-
-        var result = await service.EvaluateAndApplyAutoPublishAsync(1);
-
-        Assert.NotNull(result);
-        Assert.Equal(StoryStatus.Approved, uow.Items<Story>().Single().Status);
+        var result = await BuildReviewService(uow).ValidateAsync(1, 1);
+        Assert.DoesNotContain(result.Checks, c => c.Name.Contains("discussion", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result.Issues, i => i.Contains("Discussion", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
-    public async Task Validate_StillRequiresDiscussion_ForLegacyVersionWithDiscussionJob()
+    public void ReviewCompletion_RequiresOnlyStoryVocabularyAndQuiz()
     {
-        var uow = SeedContentReviewWithAllArtifacts();
-        ((FakeRepo<DiscussionQuestion>)uow.Repository<DiscussionQuestion>()).Items.Clear();
-        uow.Seed(new StoryGenerationJob
-        {
-            Id = 30, StoryId = 1, StoryVersionId = 1, Operation = GenerationJobOperation.GenerateDiscussion, Status = GenerationJobStatus.Failed
-        });
-
-        var result = await BuildReviewService(uow).ValidateAsync(1, 1);
-
-        Assert.False(result.CanApprove);
-        Assert.Contains(result.Checks, c => c.Name == "discussion_valid" && !c.Passed);
-        Assert.Contains(result.Issues, i => i.StartsWith("Discussion needs"));
+        var store = new InMemoryReviewCompletionStore();
+        store.MarkStoryReviewed(1, 1, 1);
+        store.MarkVocabularyReviewed(1, 1, 1);
+        store.MarkQuizReviewed(1, 1, 1);
+        Assert.True(store.IsReviewCompleted(1, 1));
     }
 
     [Fact]
@@ -348,8 +321,6 @@ public sealed class StoryReviewPhase4FinalValidationTests
         uow.Seed(new QuizItem { Id = 3, StoryVersionId = 1, Type = QuizType.ShortAnswer, Question = "Bài học là gì?", CorrectAnswer = "Tình bạn" });
 
         // 2 Discussion items
-        uow.Seed(new DiscussionQuestion { Id = 1, StoryVersionId = 1, Question = "Em có thích khu rừng không?", IsMoralLesson = true });
-        uow.Seed(new DiscussionQuestion { Id = 2, StoryVersionId = 1, Question = "Em sẽ giúp đỡ bạn bè như thế nào?" });
 
         return uow;
     }
@@ -364,7 +335,6 @@ public sealed class StoryReviewPhase4FinalValidationTests
         public Task<RefineStoryContentResponse> RefineStoryContentAsync(RefineStoryContentRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<GenerateVocabularyResponse> GenerateVocabularyAsync(GenerateVocabularyRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<GenerateQuizResponse> GenerateQuizAsync(GenerateQuizRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<GenerateDiscussionResponse> GenerateDiscussionAsync(GenerateDiscussionRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<EvaluateContentSafetyResponse> EvaluateContentSafetyAsync(EvaluateContentSafetyRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 

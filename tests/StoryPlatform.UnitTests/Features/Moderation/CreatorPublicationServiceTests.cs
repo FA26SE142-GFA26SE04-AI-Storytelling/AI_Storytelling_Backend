@@ -103,7 +103,6 @@ public sealed class CreatorPublicationServiceTests
         var review = new StoryReviewService(h.UnitOfWork.Object, new Mock<IAIStoryGenerationClient>(MockBehavior.Strict).Object, new InMemoryProposalCache());
         await Assert.ThrowsAsync<ConflictException>(() => review.UpdateVocabularyAsync(Creator, StoryId, new() { VersionId = VersionId }));
         await Assert.ThrowsAsync<ConflictException>(() => review.UpdateQuizAsync(Creator, StoryId, new() { VersionId = VersionId }));
-        await Assert.ThrowsAsync<ConflictException>(() => review.UpdateDiscussionAsync(Creator, StoryId, new() { VersionId = VersionId }));
         await Assert.ThrowsAsync<ConflictException>(() => service.CreateRevisionAsync(Creator, StoryId, new() { SourceVersionId = VersionId }));
         Assert.Single(h.Versions);
     }

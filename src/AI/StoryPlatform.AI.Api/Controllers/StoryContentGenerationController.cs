@@ -25,10 +25,6 @@ public sealed class StoryContentGenerationController : ControllerBase
     public Task<GenerateQuizResponse> GenerateQuiz([FromBody] GenerateQuizRequest request,
         [FromServices] GenerateQuizHandler handler, CancellationToken cancellationToken) => handler.HandleAsync(request, cancellationToken);
 
-    [HttpPost("discussion")]
-    public Task<GenerateDiscussionResponse> GenerateDiscussion([FromBody] GenerateDiscussionRequest request,
-        [FromServices] GenerateDiscussionHandler handler, CancellationToken cancellationToken) => handler.HandleAsync(request, cancellationToken);
-
     [HttpPost("content/safety")]
     public Task<EvaluateContentSafetyResponse> EvaluateContentSafety([FromBody] EvaluateContentSafetyRequest request,
         [FromServices] EvaluateContentSafetyHandler handler, CancellationToken cancellationToken) => handler.HandleAsync(request, cancellationToken);

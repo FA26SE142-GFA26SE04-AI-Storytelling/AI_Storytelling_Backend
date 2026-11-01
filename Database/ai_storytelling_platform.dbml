@@ -290,7 +290,7 @@ Enum generation_job_operation_enum {
   generate_content
   generate_vocabulary
   generate_quiz
-  generate_discussion
+  generate_discussion // chỉ còn ở job cũ, worker đóng không gọi AI
   generate_media_package
   build_media_context
   segment_story
@@ -877,7 +877,7 @@ Table story_versions {
     StoryVersion — Lưu trữ bất biến từng lần Edit/Regenerate (Bước 2.5).
     CẢI THIỆN v9.3: Bước 2.4 (sinh nội dung) tách 4 sub-step độc lập
     (2.4.1 nội dung truyện = bảng này; 2.4.2 story_vocabulary; 2.4.3
-    quiz_items; 2.4.4 discussion_questions) — nếu 1 sub-artifact fail
+    quiz_items; 2.4.4 tương tác lúc nghe (listening_interactions)) — nếu 1 sub-artifact fail
     validation, chỉ regenerate đúng phần đó, KHÔNG cần sinh lại toàn bộ.
     CẦN MIGRATION RIÊNG (v9.2-K, DBML không hỗ trợ trực tiếp, Mức 1 BẮT
     BUỘC): đảm bảo chỉ đúng 1 dòng is_current=true cho mỗi story_id:
@@ -1056,18 +1056,6 @@ Table quiz_items {
   choices text
 
   Note: 'Bộ câu hỏi đọc hiểu 3 dạng — Bước 2.4.3.'
-}
-
-Table discussion_questions {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  story_version_id integer [not null, ref: > story_versions.id]
-  question text [not null]
-  is_moral_lesson boolean [not null, default: false]
-
-  Note: 'Câu hỏi thảo luận dành riêng cho User (chủ hồ sơ trẻ) — Bước 2.4.4 & 4.3b.'
 }
 
 Table media_assets {

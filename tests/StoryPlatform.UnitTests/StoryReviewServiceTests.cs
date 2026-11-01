@@ -18,7 +18,6 @@ using Xunit;
 // Type aliases to avoid ambiguity with AI.Contracts models
 using AppVocabularyItemDto = StoryPlatform.Application.Features.StoryReview.DTOs.VocabularyItemDto;
 using AppQuizItemDto = StoryPlatform.Application.Features.StoryReview.DTOs.QuizItemDto;
-using AppDiscussionItemDto = StoryPlatform.Application.Features.StoryReview.DTOs.DiscussionItemDto;
 
 namespace StoryPlatform.UnitTests;
 
@@ -520,52 +519,6 @@ public sealed class StoryReviewServiceTests
 
     #endregion
 
-    #region Discussion Review Tests
-
-    [Fact]
-    public async Task GetDiscussion_ReturnsItems()
-    {
-        var unitOfWork = SeedContentReviewWithDiscussion();
-        var service = Service(unitOfWork);
-
-        var result = await service.GetDiscussionForReviewAsync(1, 1);
-
-        Assert.Equal(2, result.Items.Count);
-    }
-
-    [Fact]
-    public async Task UpdateDiscussion_AddNewQuestion()
-    {
-        var unitOfWork = SeedContentReview();
-        var service = Service(unitOfWork);
-
-        var result = await service.UpdateDiscussionAsync(1, 1, new UpdateDiscussionRequestDto
-        {
-            VersionId = 1,
-            Items = new List<AppDiscussionItemDto>
-            {
-                new() { Question = "Bạn nghĩ sao?", IsMoralLesson = true },
-                new() { Question = "Bạn sẽ làm gì?", IsMoralLesson = false }
-            }
-        });
-
-        Assert.Equal(2, result.Items.Count);
-    }
-
-    [Fact]
-    public async Task UpdateDiscussion_ThrowsBadRequest_WhenFewerThanTwoQuestions()
-    {
-        var service = Service(SeedContentReview());
-
-        await Assert.ThrowsAsync<BadRequestException>(() => service.UpdateDiscussionAsync(1, 1, new UpdateDiscussionRequestDto
-        {
-            VersionId = 1,
-            Items = [new() { Question = "Chỉ một câu hỏi", IsMoralLesson = true }]
-        }));
-    }
-
-    #endregion
-
     #region Validation Tests
 
     [Fact]
@@ -583,7 +536,7 @@ public sealed class StoryReviewServiceTests
     [Fact]
     public async Task Validate_ReturnsCanApproveFalse_WhenVocabularyInsufficient()
     {
-        var unitOfWork = SeedContentReviewWithQuizAndDiscussion();
+        var unitOfWork = SeedContentReviewWithQuiz();
         var service = Service(unitOfWork);
 
         var result = await service.ValidateAsync(1, 1);
@@ -602,18 +555,6 @@ public sealed class StoryReviewServiceTests
 
         Assert.False(result.CanApprove);
         Assert.Contains(result.Issues, i => i.Contains("Quiz"));
-    }
-
-    [Fact]
-    public async Task Validate_ReturnsCanApproveFalse_WhenDiscussionInsufficient()
-    {
-        var unitOfWork = SeedContentReviewWithVocabularyAndQuiz();
-        var service = Service(unitOfWork);
-
-        var result = await service.ValidateAsync(1, 1);
-
-        Assert.False(result.CanApprove);
-        Assert.Contains(result.Issues, i => i.Contains("Discussion"));
     }
 
     #endregion
@@ -793,7 +734,6 @@ public sealed class StoryReviewServiceTests
     [Theory]
     [InlineData("vocabulary")]
     [InlineData("quiz")]
-    [InlineData("discussion")]
     public async Task ApplyArtifactProposal_AcceptsLegacyPascalCaseItems(string artifact)
     {
         var store = SeedContentReview();
@@ -802,7 +742,7 @@ public sealed class StoryReviewServiceTests
         {
             "vocabulary" => new[] { new { Term = "friend", Definition = "A companion" } },
             "quiz" => new[] { new { Type = "MultipleChoice", Question = "Who helped?", CorrectAnswer = "Lan", Choices = new[] { "Lan", "Minh" } } },
-            _ => new[] { new { Question = "How can you help?", IsMoralLesson = true } }
+            _ => throw new ArgumentOutOfRangeException(nameof(artifact))
         };
         var id = await cache.CreateAsync(new AIProposalDto
         {
@@ -827,13 +767,11 @@ public sealed class StoryReviewServiceTests
             Assert.Equal("Lan", quiz.CorrectAnswer);
             Assert.Contains("Minh", quiz.Choices!);
         }
-        if (artifact == "discussion") Assert.True(Assert.Single(store.Items<DiscussionQuestion>()).IsMoralLesson);
     }
 
     [Theory]
     [InlineData("vocabulary", "term")]
     [InlineData("quiz", "question")]
-    [InlineData("discussion", "question")]
     public async Task GeneratedArtifactProposal_IsCamelCase_AndCanApply(string artifact, string field)
     {
         var store = SeedContentReview();
@@ -843,7 +781,7 @@ public sealed class StoryReviewServiceTests
         {
             "vocabulary" => await review.CreateVocabularyProposalAsync(1, 1),
             "quiz" => await review.CreateQuizProposalAsync(1, 1),
-            _ => await review.CreateDiscussionProposalAsync(1, 1)
+            _ => throw new ArgumentOutOfRangeException(nameof(artifact))
         };
         var proposal = (await cache.GetAsync(created.ProposalId))!;
         var suggested = Assert.IsType<JsonElement>(proposal.SuggestedContent);
@@ -916,14 +854,6 @@ public sealed class StoryReviewServiceTests
         return unitOfWork;
     }
 
-    internal static FakeUnitOfWork SeedContentReviewWithDiscussion()
-    {
-        var unitOfWork = SeedContentReview();
-        unitOfWork.Seed(new DiscussionQuestion { Id = 1, StoryVersionId = 1, Question = "Bạn nghĩ sao?" });
-        unitOfWork.Seed(new DiscussionQuestion { Id = 2, StoryVersionId = 1, Question = "Bạn sẽ làm gì?" });
-        return unitOfWork;
-    }
-
     internal static FakeUnitOfWork SeedContentReviewWithAllArtifacts()
     {
         var unitOfWork = SeedContentReview();
@@ -937,28 +867,6 @@ public sealed class StoryReviewServiceTests
         unitOfWork.Seed(new QuizItem { Id = 1, StoryVersionId = 1, Type = QuizType.MultipleChoice, Question = "Câu 1?", Choices = "[\"A\",\"B\"]", CorrectAnswer = "A" });
         unitOfWork.Seed(new QuizItem { Id = 2, StoryVersionId = 1, Type = QuizType.TrueFalse, Question = "Câu 2?", CorrectAnswer = "true" });
         unitOfWork.Seed(new QuizItem { Id = 3, StoryVersionId = 1, Type = QuizType.ShortAnswer, Question = "Câu 3?", CorrectAnswer = "Bài học" });
-        // Discussion (2 items)
-        unitOfWork.Seed(new DiscussionQuestion { Id = 1, StoryVersionId = 1, Question = "Bạn nghĩ sao?", IsMoralLesson = true });
-        unitOfWork.Seed(new DiscussionQuestion { Id = 2, StoryVersionId = 1, Question = "Bạn sẽ làm gì?" });
-        return unitOfWork;
-    }
-
-    internal static FakeUnitOfWork SeedContentReviewWithQuizAndDiscussion()
-    {
-        var unitOfWork = SeedContentReview();
-        unitOfWork.Seed(new QuizItem { Id = 1, StoryVersionId = 1, Type = QuizType.MultipleChoice, Question = "Câu 1?" });
-        unitOfWork.Seed(new DiscussionQuestion { Id = 1, StoryVersionId = 1, Question = "Bạn nghĩ sao?" });
-        return unitOfWork;
-    }
-
-    internal static FakeUnitOfWork SeedContentReviewWithVocabularyAndQuiz()
-    {
-        var unitOfWork = SeedContentReview();
-        unitOfWork.Seed(new StoryVocabulary { Id = 1, StoryVersionId = 1, Term = "rừng", Definition = "Nơi có nhiều cây" });
-        unitOfWork.Seed(new StoryVocabulary { Id = 2, StoryVersionId = 1, Term = "phiêu lưu", Definition = "Đi chơi xa" });
-        unitOfWork.Seed(new StoryVocabulary { Id = 3, StoryVersionId = 1, Term = "bạn bè", Definition = "Người cùng chơi" });
-        unitOfWork.Seed(new QuizItem { Id = 1, StoryVersionId = 1, Type = QuizType.MultipleChoice, Question = "Câu 1?" });
-        unitOfWork.Seed(new DiscussionQuestion { Id = 1, StoryVersionId = 1, Question = "Bạn nghĩ sao?" });
         return unitOfWork;
     }
 
@@ -1014,17 +922,6 @@ public sealed class StoryReviewServiceTests
                 Items = new List<Contracts.AI.Models.QuizItemDto>
                 {
                     new() { Type = "MultipleChoice", Question = "New Question?", Options = new[] { "A", "B", "C" } }
-                },
-                Metadata = new GenerationMetadataDto { ModelProvider = "test", Model = "test" }
-            });
-
-        public Task<GenerateDiscussionResponse> GenerateDiscussionAsync(GenerateDiscussionRequest request, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new GenerateDiscussionResponse
-            {
-                RequestId = request.RequestId,
-                Items = new List<Contracts.AI.Models.DiscussionQuestionDto>
-                {
-                    new("New Discussion?")
                 },
                 Metadata = new GenerationMetadataDto { ModelProvider = "test", Model = "test" }
             });

@@ -906,40 +906,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("content_reports", (string)null);
                 });
 
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.DiscussionQuestion", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsMoralLesson")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Question")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("StoryVersionId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("StoryVersionId");
-
-                    b.ToTable("discussion_questions", (string)null);
-                });
-
             modelBuilder.Entity("StoryPlatform.Domain.Entities.IllustrationBeat", b =>
                 {
                     b.Property<int>("Id")
@@ -4793,17 +4759,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("ReviewedByUser");
 
                     b.Navigation("Story");
-
-                    b.Navigation("StoryVersion");
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.DiscussionQuestion", b =>
-                {
-                    b.HasOne("StoryPlatform.Domain.Entities.StoryVersion", "StoryVersion")
-                        .WithMany()
-                        .HasForeignKey("StoryVersionId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
 
                     b.Navigation("StoryVersion");
                 });

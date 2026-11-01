@@ -238,7 +238,6 @@ public sealed class CreatorReviewConcurrencyTests
         foreach (var x in source.Items<StoryGenerationRequest>()) db.Seed(x);
         foreach (var x in source.Items<StoryVocabulary>()) db.Seed(x);
         foreach (var x in source.Items<QuizItem>()) db.Seed(x);
-        foreach (var x in source.Items<DiscussionQuestion>()) db.Seed(x);
         return db;
     }
     private static async Task PrepareArtifacts(Database db, int versionId)
@@ -247,7 +246,6 @@ public sealed class CreatorReviewConcurrencyTests
         await session.BeginTransactionAsync(); await session.AcquireTransactionLockAsync(1);
         foreach (var x in db.Read<StoryVocabulary>()) { x.Id = 0; x.StoryVersionId = versionId; await session.Repository<StoryVocabulary>().AddAsync(x); }
         foreach (var x in db.Read<QuizItem>()) { x.Id = 0; x.StoryVersionId = versionId; await session.Repository<QuizItem>().AddAsync(x); }
-        foreach (var x in db.Read<DiscussionQuestion>()) { x.Id = 0; x.StoryVersionId = versionId; await session.Repository<DiscussionQuestion>().AddAsync(x); }
         await session.CommitTransactionAsync();
     }
     private sealed class SafetyGate

@@ -47,7 +47,7 @@ flowchart TD
     end
 
     subgraph ARTIFACTS["Phase 4: Học liệu & Duyệt xuất bản"]
-        FSV --> P4[Sinh Từ vựng + Câu hỏi Đọc hiểu + Thảo luận]
+        FSV --> P4[Sinh Từ vựng + Câu hỏi Đọc hiểu + tương tác lúc nghe]
         P4 --> P4_Rev[Kiểm duyệt gói học liệu & Phê duyệt Story]
     end
 
@@ -102,7 +102,7 @@ erDiagram
     Story ||--o{ StoryVersion : "chứa các phiên bản"
     StoryVersion ||--o{ StoryVocabulary : "học liệu từ vựng"
     StoryVersion ||--o{ QuizItem : "câu hỏi trắc nghiệm"
-    StoryVersion ||--o{ DiscussionQuestion : "câu hỏi thảo luận"
+    StoryVersion ||--o{ ListeningInteraction : "tương tác lúc nghe"
     StoryVersion ||--o{ StoryScene : "chia thành các cảnh"
     StoryScene ||--o{ StorySegment : "chia thành các phân đoạn audio"
     StoryScene ||--o| MediaAsset : "1 ảnh minh họa (Illustration)"
@@ -142,7 +142,7 @@ Hệ thống phân biệt rõ trạng thái nghiệp vụ cấp cao (`Story.Stat
    - Bản gốc của người dùng (`UploadedOriginal`) không bao giờ bị ghi đè.
    - Khi chỉnh sửa ở Phase 3 hoặc Phase 4, hệ thống tự động tăng `version_no` (v1 $\rightarrow$ v2 $\rightarrow$ v3).
 2. **Version-Bound Artifacts (Ràng buộc phiên bản cho học liệu)**:
-   - Từ vựng (`StoryVocabulary`), Quiz, Câu hỏi thảo luận và Media đều trỏ trực tiếp đến `StoryVersionId`.
+   - Từ vựng (`StoryVocabulary`), Quiz, tương tác lúc nghe và Media đều trỏ trực tiếp đến `StoryVersionId`.
    - Nếu nội dung truyện thay đổi tạo ra version mới, toàn bộ học liệu của version cũ bị đánh dấu `stale` và bắt buộc phải re-validate hoặc regenerate.
 3. **Stale Job Protection (Chống ghi đè dữ liệu cũ do bất đồng bộ)**:
    - Các tác vụ AI và Media chạy bất đồng bộ (Background worker). Nếu một job sinh ảnh cho `v1` hoàn thành sau khi người dùng đã chuyển sang `v2`, hệ thống kiểm tra `JobToken` và `VersionId` hiện tại; nếu phát hiện lệch phiên bản, kết quả cũ sẽ bị hủy an toàn (`STALE_MEDIA_RESULT`), ngăn chặn ghi đè tài nguyên sai lệch.

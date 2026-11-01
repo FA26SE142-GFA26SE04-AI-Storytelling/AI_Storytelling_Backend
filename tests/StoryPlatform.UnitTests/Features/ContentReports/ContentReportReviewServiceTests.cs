@@ -153,10 +153,6 @@ public class ContentReportReviewServiceTests
         {
             Id = 1, StoryVersionId = 50, Term = "chia sẻ", Definition = "cùng dùng"
         });
-        _h.Discussions.Add(new DiscussionQuestion
-        {
-            Id = 1, StoryVersionId = 50, Question = "Vì sao?", IsMoralLesson = true
-        });
 
         var detail = await GetDetailAsync(item.Id);
 
@@ -173,7 +169,6 @@ public class ContentReportReviewServiceTests
         Assert.Equal(["https://cdn.test/audio1.mp3"], scene.AudioUrls);
         Assert.Equal("chia sẻ", detail.Vocabulary.Single().Term);
         Assert.Equal("Đúng", detail.Quizzes.Single().CorrectAnswer);
-        Assert.True(detail.DiscussionQuestions.Single().IsMoralLesson);
     }
 
     [Fact]

@@ -180,7 +180,8 @@ function Assert-EfModelSeedCoverage {
 
     # Hai bang nay duoc AuthoringGuideCatalogSeeder nap luc ung dung khoi dong (JSON nhung),
     # khong qua file seed SQL. Giu dong bo voi SeedDataAlignmentTests.seededByCode.
-    $seededByCode = @('authoring_guide_catalog_versions', 'authoring_guide_catalogs')
+    $seededByCode = @('authoring_guide_catalog_versions', 'authoring_guide_catalogs',
+        'authoring_guide_items', 'authoring_guide_placeholders')
 
     $snapshot = [System.IO.File]::ReadAllText($SnapshotPath)
     $mappedTables = @([regex]::Matches($snapshot, '\.ToTable\("(?<table>[a-z][a-z0-9_]*)"') |

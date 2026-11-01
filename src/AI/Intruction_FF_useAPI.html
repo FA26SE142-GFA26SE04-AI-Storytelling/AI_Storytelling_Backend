@@ -309,7 +309,7 @@
               <tr>
                 <td><strong>Giai đoạn Hội tụ (Phần 4)</strong></td>
                 <td colspan="2" style="background: #eef7f3; font-weight: 600; text-align: center; color: #166534;">
-                  HỘI TỤ HOÀN TOÀN: Sinh Từ vựng (Vocabulary) ➔ Trắc nghiệm (Quiz) ➔ Thảo luận (Discussion) ➔ Phê duyệt (Approve) ➔ Sinh Media (Ảnh + Giọng đọc TTS).
+                  HỘI TỤ HOÀN TOÀN: Sinh Từ vựng (Vocabulary) ➔ Trắc nghiệm (Quiz) ➔ tương tác lúc nghe ➔ Phê duyệt (Approve) ➔ Sinh Media (Ảnh + Giọng đọc TTS).
                 </td>
               </tr>
             </tbody>
@@ -460,7 +460,7 @@
             <strong>Hoạt động phía Backend:</strong>
             1. Backend đóng băng Dàn ý (ghi nhận <code>OutlineApprovedAt</code>).<br />
             2. Tự động khởi tạo Background Job <code>GenerateContent</code> để AI viết toàn bộ câu chuyện chi tiết.<br />
-            3. Ngay sau khi câu chuyện viết xong, Backend tự động nối tiếp chuỗi sinh học liệu Phase 3 (Từ vựng ➔ Trắc nghiệm ➔ Thảo luận).
+            3. Ngay sau khi câu chuyện viết xong, Backend tự động nối tiếp chuỗi sinh học liệu Phase 3 (Từ vựng ➔ Trắc nghiệm ➔ tương tác lúc nghe).
           </div>
           <p><strong>Lưu ý Frontend:</strong> Sau khi bấm Duyệt, chuyển ngay sang màn hình <strong>Giai đoạn hội tụ chung (Bước C1: Polling sinh học liệu)</strong>.</p>
         </div>
@@ -689,7 +689,7 @@ Content-Type: application/json
             Hệ thống Worker ngầm chạy tuần tự 3 công việc (Jobs):<br />
             1. <strong>GenerateVocabulary:</strong> AI trích xuất 5 từ vựng tiêu biểu trong câu chuyện kèm giải nghĩa thân thiện cho trẻ ➔ Lưu bảng <code>story_vocabulary</code>.<br />
             2. <strong>GenerateQuiz:</strong> AI sinh 3 câu hỏi trắc nghiệm kiểm tra độ ghi nhớ ➔ Lưu bảng <code>quiz_items</code>.<br />
-            3. <strong>GenerateDiscussion:</strong> AI sinh 3-4 câu hỏi gợi mở thảo luận bài học đạo đức ➔ Lưu bảng <code>discussion_questions</code>.<br />
+            3. <strong>GenerateListeningInteraction:</strong> AI sinh tương tác lúc nghe theo kế hoạch ➔ Lưu bảng <code>listening_interactions</code>.<br />
             Khi hoàn thành cả 3 job, Backend tự động chuyển trạng thái truyện từ <code>Draft</code> sang <code>ContentReview</code>.
           </div>
           <p><strong>Response mẫu khi hoàn tất (`200 OK`):</strong></p>
@@ -701,7 +701,7 @@ Content-Type: application/json
     "currentPhase": "ContentReview",
     "vocabularyCompleted": true,
     "quizCompleted": true,
-    "discussionCompleted": true
+    "listening": "completed"
   }
 }</code></pre>
           <p><strong>Lưu ý Frontend:</strong> Hiển thị Animation loading hoặc thanh tiến trình từng bước. Khi <code>isComplete === true</code>, dừng polling và mở màn hình <strong>Review Package</strong>.</p>
@@ -715,7 +715,7 @@ Content-Type: application/json
           </div>
           <div class="explanation">
             <strong>Hoạt động phía Backend:</strong>
-            Tổng hợp dữ liệu đồng thời từ các bảng <code>stories</code>, <code>story_versions</code>, <code>story_vocabulary</code>, <code>quiz_items</code>, và <code>discussion_questions</code> vào một gói dữ liệu thống nhất (<code>ReviewPackageDto</code>).
+            Tổng hợp dữ liệu đồng thời từ các bảng <code>stories</code>, <code>story_versions</code>, <code>story_vocabulary</code>, <code>quiz_items</code> vào một gói dữ liệu thống nhất (<code>ReviewPackageDto</code>).
           </div>
           <p><strong>Response mẫu (`200 OK`):</strong></p>
           <pre><code>{
@@ -736,9 +736,6 @@ Content-Type: application/json
         "options": ["Những quả hạt dẻ vàng", "Những quả táo đỏ", "Những bông hoa dại"],
         "correctAnswer": "Những quả hạt dẻ vàng"
       }
-    ],
-    "discussion": [
-      { "question": "Vì sao Sóc Bông lại muốn chia sẻ hạt dẻ cho các bạn Nhím và Thỏ?" }
     ]
   }
 }</code></pre>
@@ -755,7 +752,6 @@ Content-Type: application/json
             <li><strong>Sửa nội dung truyện:</strong> <code>PUT /api/v1/stories/{storyId}/review/story</code> kèm <code>{ versionId, title, content, lesson }</code>.</li>
             <li><strong>Sửa từ vựng:</strong> <code>PUT /api/v1/stories/{storyId}/review/vocabulary</code> kèm danh sách từ mới.</li>
             <li><strong>Sửa trắc nghiệm:</strong> <code>PUT /api/v1/stories/{storyId}/review/quiz</code> kèm danh sách câu hỏi &amp; đáp án đúng.</li>
-            <li><strong>Sửa thảo luận:</strong> <code>PUT /api/v1/stories/{storyId}/review/discussion</code>.</li>
             <li><strong>Bôi đen nhờ AI viết lại 1 đoạn:</strong> <code>POST /api/v1/stories/{storyId}/review/story/ai/partial-edit</code>. Backend tạo Proposal xem trước trước khi Apply.</li>
           </ul>
         </div>
@@ -939,8 +935,8 @@ export const StoryService = {
           <li><strong>Trường hợp 2 (Existing):</strong> Xử lý đầy đủ cả 3 kết quả Đánh giá (Suitable, AdaptRecommended, Blocked).</li>
           <li><strong>Trường hợp 2 (Existing):</strong> Nút "Sử dụng bản gốc" gọi thành công <code>/keep-original</code> và kích hoạt sinh học liệu.</li>
           <li><strong>Trường hợp 2 (Existing):</strong> Chức năng AI Adapt gọi thành công <code>/adapt</code> và cập nhật phiên bản mới <code>AiRefined</code>.</li>
-          <li><strong>Hội tụ chung:</strong> Polling tiến độ sinh học liệu (Vocab ➔ Quiz ➔ Discussion) kết thúc chính xác khi <code>isComplete === true</code>.</li>
-          <li><strong>Hội tụ chung:</strong> Gói Review hiển thị đầy đủ truyện, từ vựng, trắc nghiệm và câu hỏi thảo luận.</li>
+          <li><strong>Hội tụ chung:</strong> Polling tiến độ sinh học liệu (Vocab ➔ Quiz ➔ tương tác lúc nghe) kết thúc chính xác khi <code>isComplete === true</code>.</li>
+          <li><strong>Hội tụ chung:</strong> Gói Review hiển thị đầy đủ truyện, từ vựng, trắc nghiệm và tương tác lúc nghe.</li>
           <li><strong>Hội tụ chung:</strong> Phê duyệt thành công và hiển thị thanh tiến độ Media (Tranh minh họa + Audio TTS) cho tới khi Ready.</li>
         </ul>
       </section>

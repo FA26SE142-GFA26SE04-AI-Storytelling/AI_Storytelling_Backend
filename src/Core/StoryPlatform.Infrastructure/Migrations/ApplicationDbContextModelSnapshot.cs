@@ -217,7 +217,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasColumnType("character varying(50)");
 
                     b.Property<string>("ContentJson")
-                        .IsRequired()
                         .HasColumnType("jsonb");
 
                     b.Property<DateTime>("CreatedAt")
@@ -264,6 +263,116 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasFilter("NOT \"IsDeleted\"");
 
                     b.ToTable("authoring_guide_catalog_versions", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.AuthoringGuideItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CatalogVersionId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Example")
+                        .HasColumnType("text");
+
+                    b.Property<string>("GuideKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Instruction")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ItemType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer");
+
+                    b.Property<List<string>>("Purposes")
+                        .IsRequired()
+                        .HasColumnType("text[]");
+
+                    b.Property<string>("SupportGroup")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("TemplateText")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CatalogVersionId", "GuideKey")
+                        .IsUnique()
+                        .HasFilter("NOT \"IsDeleted\"");
+
+                    b.ToTable("authoring_guide_items", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.AuthoringGuidePlaceholder", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Hint")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Label")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ItemId", "Key")
+                        .IsUnique()
+                        .HasFilter("NOT \"IsDeleted\"");
+
+                    b.ToTable("authoring_guide_placeholders", (string)null);
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.Badge", b =>
@@ -795,69 +904,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasIndex("StoryVersionId");
 
                     b.ToTable("content_reports", (string)null);
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.DataRequest", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int?>("ChildProfileId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("DeletionMethod")
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasDefaultValue("Anonymize");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("LegalBasisNote")
-                        .HasColumnType("text");
-
-                    b.Property<string>("RejectionReason")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("RequestType")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<int>("RequestedByUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("ResolvedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("ResolvedByUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ChildProfileId");
-
-                    b.HasIndex("RequestedByUserId");
-
-                    b.HasIndex("ResolvedByUserId");
-
-                    b.ToTable("data_requests", (string)null);
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.DiscussionQuestion", b =>
@@ -4322,6 +4368,24 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("Catalog");
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.AuthoringGuideItem", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.AuthoringGuideCatalogVersion", null)
+                        .WithMany()
+                        .HasForeignKey("CatalogVersionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.AuthoringGuidePlaceholder", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.AuthoringGuideItem", null)
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.Badge", b =>
                 {
                     b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
@@ -4502,31 +4566,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("Story");
 
                     b.Navigation("StoryVersion");
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.DataRequest", b =>
-                {
-                    b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
-                        .WithMany()
-                        .HasForeignKey("ChildProfileId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "RequestedByUser")
-                        .WithMany()
-                        .HasForeignKey("RequestedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "ResolvedByUser")
-                        .WithMany()
-                        .HasForeignKey("ResolvedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("ChildProfile");
-
-                    b.Navigation("RequestedByUser");
-
-                    b.Navigation("ResolvedByUser");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.DiscussionQuestion", b =>

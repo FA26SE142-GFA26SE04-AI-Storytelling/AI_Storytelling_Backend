@@ -237,7 +237,7 @@ API giới hạn số request theo cửa sổ cố định. Vượt hạn mức 
 
 | Nhóm | Áp dụng cho | Đếm theo | Mặc định |
 |---|---|---|---|
-| `RateLimiting:Auth` | `Auth/login`, `Auth/forgot-password`, `Auth/resend-verification-email` | IP + endpoint | 10 request / 60 giây |
+| `RateLimiting:Auth` | `Auth/login`, `Auth/forgot-password`, `Auth/reset-password`, `Auth/verify-email`, `Auth/resend-verification-email`, `StaffAccount/{userId}/resend-invite` | IP + endpoint | 10 request / 60 giây |
 | `RateLimiting:Ai` | Các endpoint kích hoạt sinh AI (ai-story-input, outline, review/ai, media regenerate, assistance) | Tài khoản (chưa đăng nhập thì theo IP) | 20 request / 60 giây |
 
 Mặc định trên dành cho production, **không đổi trong code**. Khi cả nhóm system test dùng chung một mạng (cùng IP công khai), hạn mức `Auth` sẽ nhanh chóng bị dùng hết. Khi đó, chỉ nâng hạn mức **trên môi trường test** bằng biến môi trường:
@@ -254,6 +254,12 @@ RateLimiting__Ai__WindowSeconds=60
 - AWS (ECS): thêm `RateLimiting__Auth__PermitLimit` vào biến môi trường của task **chỉ cho stack test**; không thêm cho production.
 
 Giá trị phải là số nguyên dương, nếu không API sẽ không khởi động.
+
+**IP dùng để đếm khi chạy sau proxy.** Trên production request đi qua client → Cloudflare → `cloudflared` (sidecar trong cùng task ECS, gọi API qua `localhost`) → API, nên IP kết nối tới API luôn là loopback. API chỉ đọc header IP client từ các hop nằm trong `ForwardedHeaders:KnownNetworks` (dải CIDR), lùi tối đa `ForwardedHeaders:ForwardLimit` hop (mặc định `2`), và đọc IP từ header `ForwardedHeaders:ForwardedForHeaderName` (mặc định `X-Forwarded-For`). Nhờ vậy mỗi người dùng có hạn mức riêng theo IP thật, còn header tự đặt từ nguồn không tin cậy bị bỏ qua.
+
+- AWS (ECS): CDK đặt `KnownNetworks` = `127.0.0.1/32` và `::1/128`, `ForwardLimit` = `1`, `ForwardedForHeaderName` = `CF-Connecting-IP` (Cloudflare luôn ghi đè header này bằng IP người truy cập). Task không có inbound rule nào, nên không ai gọi thẳng được API để giả header. Cách dựng tunnel: xem mục "Cloudflare Tunnel" trong `infra/aws-cdk/RUNBOOK.md`.
+- Local / Docker Compose: không có proxy phía trước nên không cấu hình `ForwardedHeaders:KnownNetworks`; khi đó API bỏ qua mọi header `X-Forwarded-*` và đếm theo IP kết nối thực.
+- Dải không đúng định dạng CIDR (ví dụ `10.0.0.1` thiếu `/16`) hoặc `ForwardLimit` không dương thì API sẽ không khởi động.
 
 ### 6.3. Cập nhật Cơ sở dữ liệu (EF Core Migration)
 Chạy lệnh migration để tự động sinh cấu trúc bảng trên PostgreSQL:

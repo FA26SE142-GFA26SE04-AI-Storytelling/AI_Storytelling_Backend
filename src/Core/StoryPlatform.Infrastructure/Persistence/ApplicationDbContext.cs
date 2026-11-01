@@ -53,6 +53,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<PromptCatalogVersion> PromptCatalogVersions => Set<PromptCatalogVersion>();
     public DbSet<AuthoringGuideCatalog> AuthoringGuideCatalogs => Set<AuthoringGuideCatalog>();
     public DbSet<AuthoringGuideCatalogVersion> AuthoringGuideCatalogVersions => Set<AuthoringGuideCatalogVersion>();
+    public DbSet<AuthoringGuideItem> AuthoringGuideItems => Set<AuthoringGuideItem>();
+    public DbSet<AuthoringGuidePlaceholder> AuthoringGuidePlaceholders => Set<AuthoringGuidePlaceholder>();
     public DbSet<ModerationRubricVersion> ModerationRubricVersions => Set<ModerationRubricVersion>();
     public DbSet<ModerationRubricAuditLog> ModerationRubricAuditLogs => Set<ModerationRubricAuditLog>();
     public DbSet<ContentReport> ContentReports => Set<ContentReport>();
@@ -75,7 +77,6 @@ public class ApplicationDbContext : DbContext
     public DbSet<InterventionCase> InterventionCases => Set<InterventionCase>();
     public DbSet<AiGovernanceMetric> AiGovernanceMetrics => Set<AiGovernanceMetric>();
     public DbSet<BusinessReport> BusinessReports => Set<BusinessReport>();
-    public DbSet<DataRequest> DataRequests => Set<DataRequest>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<LearningInsight> LearningInsights => Set<LearningInsight>();
     public DbSet<Recommendation> Recommendations => Set<Recommendation>();

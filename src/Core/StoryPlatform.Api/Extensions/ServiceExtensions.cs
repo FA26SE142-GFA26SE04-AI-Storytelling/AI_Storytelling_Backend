@@ -21,21 +21,69 @@ public static class ServiceExtensions
     public const string ChildSessionPolicy = "ChildSession";
     public const string ChildTokenType = "child";
 
+    public const string ForwardedHeadersKnownNetworksKey = "ForwardedHeaders:KnownNetworks";
+    public const string ForwardedHeadersForwardLimitKey = "ForwardedHeaders:ForwardLimit";
+    public const string ForwardedHeadersForwardedForHeaderNameKey = "ForwardedHeaders:ForwardedForHeaderName";
+    private const int DefaultForwardLimit = 2;
+
     /// <summary>
-    /// API chạy sau ApplicationLoadBalancer trong VPC (xem infra/aws-cdk) nên IP kết nối là IP của ALB;
-    /// tin header X-Forwarded-For/Proto do ALB gắn để lấy IP client thật (dùng cho khóa quét sai Easy Login).
-    /// Chỉ an toàn khi API KHÔNG nhận lưu lượng trực tiếp từ Internet.
+    /// Chỉ tin header IP client/Proto khi hop gửi tới nằm trong "ForwardedHeaders:KnownNetworks" (CIDR), lùi tối đa
+    /// "ForwardedHeaders:ForwardLimit" hop, để RemoteIpAddress là IP client thật cho rate limiter và khóa quét sai
+    /// Easy Login. "ForwardedHeaders:ForwardedForHeaderName" đổi header chứa IP client (mặc định X-Forwarded-For).
+    /// Production: client → Cloudflare → cloudflared (sidecar cùng task, gọi qua loopback) → API, nên CDK đặt
+    /// KnownNetworks = loopback, ForwardLimit = 1 và đọc CF-Connecting-IP (xem infra/aws-cdk).
+    /// Không cấu hình dải nào (local/compose) thì bỏ qua header.
     /// </summary>
-    public static IServiceCollection AddLoadBalancerForwardedHeaders(this IServiceCollection services)
+    public static IServiceCollection AddLoadBalancerForwardedHeaders(this IServiceCollection services, IConfiguration configuration)
     {
+        var knownNetworks = ResolveForwardedHeadersKnownNetworks(configuration);
+        var forwardLimit = configuration.GetValue(ForwardedHeadersForwardLimitKey, DefaultForwardLimit);
+        if (forwardLimit <= 0)
+        {
+            throw new InvalidOperationException($"'{ForwardedHeadersForwardLimitKey}' phải là số nguyên dương.");
+        }
+
+        var forwardedForHeaderName = configuration[ForwardedHeadersForwardedForHeaderNameKey]?.Trim();
+
         services.Configure<ForwardedHeadersOptions>(options =>
         {
-            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
             options.KnownIPNetworks.Clear();
             options.KnownProxies.Clear();
+            if (knownNetworks.Length == 0)
+            {
+                options.ForwardedHeaders = ForwardedHeaders.None;
+                return;
+            }
+
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+            options.ForwardLimit = forwardLimit;
+            if (!string.IsNullOrEmpty(forwardedForHeaderName))
+            {
+                options.ForwardedForHeaderName = forwardedForHeaderName;
+            }
+            foreach (var network in knownNetworks)
+            {
+                options.KnownIPNetworks.Add(network);
+            }
         });
 
         return services;
+    }
+
+    public static System.Net.IPNetwork[] ResolveForwardedHeadersKnownNetworks(IConfiguration configuration)
+    {
+        var configured = (configuration.GetSection(ForwardedHeadersKnownNetworksKey).Get<string[]>() ?? [])
+            .Select(network => network.Trim())
+            .Where(network => network.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return configured
+            .Select(network => System.Net.IPNetwork.TryParse(network, out var parsed)
+                ? parsed
+                : throw new InvalidOperationException(
+                    $"'{ForwardedHeadersKnownNetworksKey}' chỉ nhận dải CIDR (ví dụ 10.0.0.0/16), không nhận '{network}'."))
+            .ToArray();
     }
 
     public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)
@@ -323,7 +371,10 @@ public static class ServiceExtensions
             .ToArray();
         foreach (var origin in configured)
         {
-            if (origin == "*" || !Uri.TryCreate(origin, UriKind.Absolute, out var uri) || uri.AbsolutePath != "/")
+            // Origin chỉ gồm scheme://host[:port]: không path, query, fragment hay user-info.
+            if (origin == "*" || origin.IndexOfAny(['?', '#', '@']) >= 0 ||
+                !Uri.TryCreate(origin, UriKind.Absolute, out var uri) || uri.AbsolutePath != "/" ||
+                uri.Query.Length > 0 || uri.Fragment.Length > 0 || uri.UserInfo.Length > 0)
             {
                 throw new InvalidOperationException(
                     $"'{CorsAllowedOriginsKey}' chỉ nhận origin dạng scheme://host[:port], không nhận '{origin}'.");

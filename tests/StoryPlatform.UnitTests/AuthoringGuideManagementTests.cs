@@ -33,9 +33,26 @@ public sealed class AuthoringGuideManagementTests
         public AuthoringGuideCatalog Catalog => Store.Items<AuthoringGuideCatalog>().Single();
     }
 
+    private static GuidePlaceholder[] P(params string[] keys) => keys.Select(k => new GuidePlaceholder(k, "Nhãn " + k, "ví dụ: " + k)).ToArray();
+
     private static UpsertGuideItemRequest Item(string? token, string text = "Sáng nay, {{person}} thử {{activity}}.",
         string[]? placeholders = null, string title = "Mẫu mới") =>
-        new(token, ["free"], "opening", "template", title, "Điền rồi chèn.", null, text, placeholders ?? ["person", "activity"], 31);
+        new(token, ["free"], "opening", "template", title, "Điền rồi chèn.", null, text, P(placeholders ?? ["person", "activity"]), 31);
+
+    private static void BreakDraft(Harness h, bool empty = false)
+    {
+        var draftId = h.Catalog.DraftVersionId!.Value;
+        foreach (var row in h.Store.Items<AuthoringGuideItem>().Where(x => x.CatalogVersionId == draftId)) row.IsDeleted = true;
+        if (empty) return;
+        h.Store.Items<AuthoringGuideItem>().Add(new()
+        {
+            Id = 9001, CatalogVersionId = draftId, GuideKey = "x", ItemType = "template", SupportGroup = "opening",
+            Purposes = ["free"], Title = "t", Instruction = "i", TemplateText = "{{a}}", Order = 1
+        });
+    }
+
+    private static List<(int, bool, string)> ItemRows(Harness h, int versionId) =>
+        h.Store.Items<AuthoringGuideItem>().Where(x => x.CatalogVersionId == versionId).Select(x => (x.Id, x.IsDeleted, x.Title)).ToList();
 
     [Fact]
     public async Task Only_active_moderator_or_administrator_may_manage()
@@ -80,9 +97,9 @@ public sealed class AuthoringGuideManagementTests
         var versionId = h.Store.Items<AuthoringGuideCatalogVersion>().Single().Id;
         var detail = await h.Service.GetVersionAsync(Moderator, versionId, Ct);
         Assert.Equal(30, detail.Items.Length);
-        Assert.Equal(1, detail.SchemaVersion);
+        Assert.Equal(2, detail.SchemaVersion);
 
-        h.Store.Items<AuthoringGuideCatalogVersion>().Add(new() { Id = 77, CatalogId = 999, VersionNo = 1, CatalogVersion = "other-1", ContentJson = "{}" });
+        h.Store.Items<AuthoringGuideCatalogVersion>().Add(new() { Id = 77, CatalogId = 999, VersionNo = 1, CatalogVersion = "other-1" });
         await Assert.ThrowsAsync<NotFoundException>(() => h.Service.GetVersionAsync(Moderator, 77, Ct));
         await Assert.ThrowsAsync<NotFoundException>(() => h.Service.GetVersionAsync(Moderator, 12345, Ct));
     }
@@ -119,7 +136,7 @@ public sealed class AuthoringGuideManagementTests
         await Assert.ThrowsAsync<NotFoundException>(() => fresh.Service.CreateDraftAsync(Moderator, new(424242), Ct));
         fresh.Store.Items<AuthoringGuideCatalogVersion>().Add(new()
         {
-            Id = 50, CatalogId = fresh.Catalog.Id, VersionNo = 9, CatalogVersion = "x", Status = AuthoringGuideVersionStatus.Draft, ContentJson = "{}"
+            Id = 50, CatalogId = fresh.Catalog.Id, VersionNo = 9, CatalogVersion = "x", Status = AuthoringGuideVersionStatus.Draft
         });
         Assert.Equal("GUIDE_SOURCE_VERSION_INVALID",
             (await Assert.ThrowsAsync<BadRequestException>(() => fresh.Service.CreateDraftAsync(Moderator, new(50), Ct))).Message);
@@ -278,9 +295,7 @@ public sealed class AuthoringGuideManagementTests
         Assert.Equal("GUIDE_REVISION_TOKEN_REQUIRED", (await Assert.ThrowsAsync<BadRequestException>(() =>
             h.Service.PreviewAsync(Moderator, new(null, null, null), Ct))).Message);
 
-        h.Store.Items<AuthoringGuideCatalogVersion>().Single(x => x.Status == AuthoringGuideVersionStatus.Draft).ContentJson =
-            "{\"schemaVersion\":1,\"items\":[{\"id\":\"x\",\"audienceRole\":\"Parent\",\"purposes\":[\"free\"],\"supportGroup\":\"opening\"," +
-            "\"itemType\":\"template\",\"title\":\"t\",\"instruction\":\"i\",\"example\":null,\"templateText\":\"{{a}}\",\"placeholderDefinitions\":[],\"order\":1}]}";
+        BreakDraft(h);
         Assert.Equal("GUIDE_PLACEHOLDERS_MISMATCH", (await Assert.ThrowsAsync<BadRequestException>(() =>
             h.Service.PreviewAsync(Moderator, new(t0, null, null), Ct))).Message);
     }
@@ -309,10 +324,10 @@ public sealed class AuthoringGuideManagementTests
             draftId, It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
 
         // Bản đã phát hành không sửa được: không còn bản nháp để sửa.
-        var contentBefore = h.Store.Items<AuthoringGuideCatalogVersion>().Single(x => x.Id == draftId).ContentJson;
+        var contentBefore = ItemRows(h, draftId);
         Assert.Equal("GUIDE_DRAFT_NOT_FOUND", (await Assert.ThrowsAsync<NotFoundException>(() =>
             h.Service.UpsertItemAsync(Moderator, "opening-1", Item(published.RevisionToken, title: "Sửa lén"), Ct))).Message);
-        Assert.Equal(contentBefore, h.Store.Items<AuthoringGuideCatalogVersion>().Single(x => x.Id == draftId).ContentJson);
+        Assert.Equal(contentBefore, ItemRows(h, draftId));
     }
 
     [Fact]
@@ -328,17 +343,13 @@ public sealed class AuthoringGuideManagementTests
         Assert.Equal("GUIDE_REVISION_TOKEN_REQUIRED", (await Assert.ThrowsAsync<BadRequestException>(() =>
             h.Service.PublishAsync(Moderator, new(null), Ct))).Message);
 
-        var draft = h.Store.Items<AuthoringGuideCatalogVersion>().Single(x => x.Status == AuthoringGuideVersionStatus.Draft);
-        draft.ContentJson = "{\"schemaVersion\":1,\"items\":[]}";
+        BreakDraft(h, empty: true);
         Assert.Equal("GUIDE_CATALOG_EMPTY", (await Assert.ThrowsAsync<BadRequestException>(() =>
             h.Service.PublishAsync(Moderator, new(t0), Ct))).Message);
 
         // Không rỗng nhưng không hợp lệ: vẫn bị chặn và không thay đổi gì.
         var draftId = h.Catalog.DraftVersionId;
-        draft = h.Store.Items<AuthoringGuideCatalogVersion>().Single(x => x.Id == draftId);
-        draft.ContentJson =
-            "{\"schemaVersion\":1,\"items\":[{\"id\":\"x\",\"audienceRole\":\"Parent\",\"purposes\":[\"free\"],\"supportGroup\":\"opening\"," +
-            "\"itemType\":\"template\",\"title\":\"t\",\"instruction\":\"i\",\"example\":null,\"templateText\":\"{{a}}\",\"placeholderDefinitions\":[],\"order\":1}]}";
+        BreakDraft(h);
         Assert.Equal("GUIDE_PLACEHOLDERS_MISMATCH", (await Assert.ThrowsAsync<BadRequestException>(() =>
             h.Service.PublishAsync(Moderator, new(t0), Ct))).Message);
         Assert.Equal(AuthoringGuideVersionStatus.Draft, h.Store.Items<AuthoringGuideCatalogVersion>().Single(x => x.Id == draftId).Status);
@@ -484,8 +495,8 @@ public sealed class AuthoringGuideManagementTests
     {
         var (h, token) = await DraftWithNewItemAsync();
         var published = await h.Service.PublishAsync(Moderator, new(token), Ct);
-        List<(int, bool, string)> Snapshot() =>
-            h.Store.Items<AuthoringGuideCatalogVersion>().Select(x => (x.Id, x.IsDeleted, x.ContentJson)).ToList();
+        List<(int, bool, AuthoringGuideVersionStatus, int)> Snapshot() =>
+            h.Store.Items<AuthoringGuideCatalogVersion>().Select(x => (x.Id, x.IsDeleted, x.Status, ItemRows(h, x.Id).Count(r => !r.Item2))).ToList();
         var before = Snapshot();
 
         Assert.Equal("GUIDE_DRAFT_NOT_FOUND", (await Assert.ThrowsAsync<NotFoundException>(() =>
@@ -529,5 +540,41 @@ public sealed class AuthoringGuideManagementTests
             h.Service.DiscardDraftAsync(Moderator, token, Ct))).Message);
         Assert.Equal((draftId, token), (h.Catalog.DraftVersionId, h.Catalog.RevisionToken));
         Assert.False(h.Store.Items<AuthoringGuideCatalogVersion>().Single(x => x.Id == draftId).IsDeleted);
+    }
+
+    [Fact]
+    public async Task Saving_a_template_requires_a_label_for_every_blank_and_changes_nothing_when_missing()
+    {
+        var h = new Harness();
+        var t0 = (await h.Service.CreateDraftAsync(Moderator, new(null), Ct)).RevisionToken;
+        h.Audit.Invocations.Clear();
+        var unlabeled = Item(t0) with { PlaceholderDefinitions = [new("person", "Ai?", null), new("activity", null, null)] };
+
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => h.Service.UpsertItemAsync(Moderator, "opening-9", unlabeled, Ct));
+
+        Assert.Equal("GUIDE_PLACEHOLDER_LABEL_INVALID", ex.Message);
+        Assert.Equal(t0, h.Catalog.RevisionToken);
+        Assert.Empty(h.Audit.Invocations);
+    }
+
+    [Fact]
+    public async Task Draft_copies_rows_with_labels_and_editing_it_never_touches_the_published_rows()
+    {
+        var h = new Harness();
+        var publishedId = h.Catalog.PublishedVersionId!.Value;
+        var publishedRows = ItemRows(h, publishedId);
+        var t0 = (await h.Service.CreateDraftAsync(Moderator, new(null), Ct)).RevisionToken;
+        var draftId = h.Catalog.DraftVersionId!.Value;
+        Assert.Equal(30, ItemRows(h, draftId).Count);
+        Assert.Equal(72, h.Store.Items<AuthoringGuidePlaceholder>().Count); // 36 của bản phát hành + 36 bản sao
+
+        var relabeled = Item(t0, "Hôm ấy, {{person}} cùng {{companion}} thử {{activity}}.", ["person", "companion", "activity"], "Mở đầu mới");
+        await h.Service.UpsertItemAsync(Moderator, "opening-1", relabeled, Ct);
+
+        var draft = (await h.Service.GetVersionAsync(Moderator, draftId, Ct)).Items.Single(x => x.Id == "opening-1");
+        Assert.Equal(("Mở đầu mới", "Nhãn person"), (draft.Title, draft.PlaceholderDefinitions[0].Label));
+        var published = (await h.Service.GetVersionAsync(Moderator, publishedId, Ct)).Items.Single(x => x.Id == "opening-1");
+        Assert.Equal(("Mẫu diễn đạt 1", "Ai?"), (published.Title, published.PlaceholderDefinitions[0].Label));
+        Assert.Equal(publishedRows, ItemRows(h, publishedId));
     }
 }

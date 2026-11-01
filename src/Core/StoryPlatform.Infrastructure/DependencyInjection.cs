@@ -8,7 +8,6 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Application.Abstractions.Communication;
-using StoryPlatform.Application.Abstractions.Export;
 using StoryPlatform.Application.Abstractions.Payments;
 using StoryPlatform.Application.Features.Outline.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration.Interfaces;
@@ -20,7 +19,6 @@ using StoryPlatform.Infrastructure.AI;
 using StoryPlatform.Infrastructure.BackgroundServices;
 using StoryPlatform.Infrastructure.Caching;
 using StoryPlatform.Infrastructure.Communication;
-using StoryPlatform.Infrastructure.Export;
 using StoryPlatform.Infrastructure.Payments;
 using StoryPlatform.Infrastructure.Persistence;
 using StoryPlatform.Infrastructure.Persistence.Repositories;
@@ -28,6 +26,7 @@ using StoryPlatform.Infrastructure.Security;
 using StoryPlatform.Infrastructure.Storage;
 using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 using StoryPlatform.Application.Features.CreatorAuthoring;
+using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 
 namespace StoryPlatform.Infrastructure;
 
@@ -71,8 +70,6 @@ public static class DependencyInjection
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IClientAttemptLimiter, InMemoryClientAttemptLimiter>();
-        services.AddSingleton<IWorkbookExportBuilder, ClosedXmlWorkbookExportBuilder>();
-        services.AddSingleton<IArchiveExportBuilder, ZipCsvArchiveExportBuilder>();
         services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
         services.Configure<ResendOptions>(configuration.GetSection(ResendOptions.SectionName));
         services.AddHttpClient<IEmailSender, ResendEmailSender>();
@@ -215,6 +212,16 @@ public static class DependencyInjection
             _ => throw new InvalidOperationException(
                 $"Unsupported AI:TTS:Provider '{ttsOptions.Provider}'. Supported values: GeminiTTS, GoogleCloudTTS.")
         }, new MediaBranchProviderGate(mediaOptions.Audio, sp.GetRequiredService<ILoggerFactory>().CreateLogger("MediaProviderTiming"), "Audio")));
+        services.AddOptions<SpeechToTextOptions>()
+            .Bind(configuration.GetSection(SpeechToTextOptions.SectionName))
+            .PostConfigure<Microsoft.Extensions.Options.IOptions<VertexOptions>>((stt, vertex) =>
+            {
+                if (string.IsNullOrWhiteSpace(stt.ProjectId)) stt.ProjectId = vertex.Value.ProjectId;
+            });
+        services.AddTransient<SpeechToTextAuthHandler>();
+        services.AddHttpClient<GoogleSpeechToTextRecognizer>(client => client.Timeout = TimeSpan.FromSeconds(60))
+            .AddHttpMessageHandler<SpeechToTextAuthHandler>();
+        services.AddScoped<ISpeechRecognizer>(sp => sp.GetRequiredService<GoogleSpeechToTextRecognizer>());
         services.AddSingleton<IMediaAlignmentEvaluator>(sp => sp.GetRequiredService<GeminiMediaAlignmentEvaluator>());
         services.AddSingleton<IMediaSafetyEvaluator>(sp => sp.GetRequiredService<GeminiMediaSafetyEvaluator>());
         services.AddSingleton<ISemanticSceneSegmentationProvider>(sp => sp.GetRequiredService<GeminiSemanticSceneSegmentationProvider>());

@@ -14,7 +14,6 @@ public class NotificationTypeTests
     [InlineData("OwnershipTransferRequest")]
     [InlineData("OwnershipTransferResult")]
     [InlineData("AccountSecurityChanged")]
-    [InlineData("DataRequestCompleted")]
     [InlineData("ModerationSlaWarning")]
     public void NotificationType_ContainsSpecName(string name) =>
         Assert.Contains(name, Enum.GetNames<NotificationType>());

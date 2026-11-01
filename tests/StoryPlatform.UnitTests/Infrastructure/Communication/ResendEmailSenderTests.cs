@@ -138,20 +138,6 @@ public class ResendEmailSenderTests
     }
 
     [Fact]
-    public async Task SendDataRequestCompletedEmailAsync_Rejected_SendsToRecipient()
-    {
-        var handler = new FakeHttpMessageHandler();
-        var sender = CreateSender(handler);
-
-        await sender.SendDataRequestCompletedEmailAsync(
-            "owner@example.com", "An", "delete", "rejected", "reason-text");
-
-        Assert.NotNull(handler.LastRequest);
-        Assert.Contains("owner@example.com", handler.LastRequestBody);
-        Assert.Contains("reason-text", handler.LastRequestBody);
-    }
-
-    [Fact]
     public async Task SendPasswordResetEmailAsync_MissingApiKey_ThrowsInvalidOperationException()
     {
         var handler = new FakeHttpMessageHandler();

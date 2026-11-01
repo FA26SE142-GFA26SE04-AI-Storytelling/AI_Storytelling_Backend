@@ -21,8 +21,6 @@ public static class ChildReadingPolicy
         TelemetryEventType.PageCompleted,
         TelemetryEventType.TtsStarted,
         TelemetryEventType.TtsCompleted,
-        TelemetryEventType.AsrWordResult,
-        TelemetryEventType.PronunciationError,
         TelemetryEventType.LibrarySearched
     };
 

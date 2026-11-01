@@ -3,7 +3,6 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
-    <PackageReference Include="ClosedXML" Version="0.105.1" />
     <PackageReference Include="Google.Apis.Auth" Version="1.73.0" />
     <PackageReference Include="Google.Cloud.TextToSpeech.V1Beta1" Version="2.0.0-beta18" />
     <ProjectReference Include="..\StoryPlatform.Application\StoryPlatform.Application.csproj" />

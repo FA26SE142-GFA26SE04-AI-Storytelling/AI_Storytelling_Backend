@@ -49,8 +49,6 @@ using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.AuditLogs.Services;
 using StoryPlatform.Application.Features.Administration.Interfaces;
 using StoryPlatform.Application.Features.Administration.Services;
-using StoryPlatform.Application.Features.DataRequests.Interfaces;
-using StoryPlatform.Application.Features.DataRequests.Services;
 using StoryPlatform.Application.Features.BusinessReports.Interfaces;
 using StoryPlatform.Application.Features.BusinessReports.Services;
 using StoryPlatform.Application.Features.Payments.Interfaces;
@@ -147,6 +145,7 @@ public static class DependencyInjection
         services.AddScoped<IParentReadingFeedbackService, ParentReadingFeedbackService>();
         services.AddScoped<IChildQuizService, ChildQuizService>();
         services.AddScoped<IChildNotebookService, ChildNotebookService>();
+        services.AddScoped<IChildReadAloudService, ChildReadAloudService>();
         services.AddScoped<IRoadmapLibraryService, RoadmapLibraryService>();
         services.AddScoped<IPublishedContentReviewService, PublishedContentReviewService>();
         services.AddScoped<ICommunitySubmissionService, CommunitySubmissionService>();
@@ -156,7 +155,6 @@ public static class DependencyInjection
         services.AddScoped<IRoadmapTemplateService, RoadmapTemplateService>();
         services.AddScoped<IRoadmapReviewService, RoadmapReviewService>();
         services.AddScoped<IStaffAccountService, StaffAccountService>();
-        services.AddScoped<IDataRequestService, DataRequestService>();
         services.AddScoped<IBusinessReportService, BusinessReportService>();
         services.AddScoped<IPaymentService, PaymentService>();
         services.AddScoped<ITokenQuotaService, TokenQuotaService>();

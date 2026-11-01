@@ -57,6 +57,7 @@ public sealed record EvaluateStoryRequest
 
 public sealed record GenerateStoryContentRequest
 {
+    public int? ExecutionBudgetSeconds { get; init; }
     public AiGenerationSnapshot? Snapshot { get; init; }
     public string RequestId { get; init; } = string.Empty;
     public string AgeBand { get; init; } = string.Empty;
@@ -72,6 +73,8 @@ public sealed record GenerateStoryContentRequest
 
 public sealed record RefineStoryContentRequest
 {
+    public int? ExecutionBudgetSeconds { get; init; }
+    public ContentRefinementFeedback? Feedback { get; init; }
     public AiGenerationSnapshot? Snapshot { get; init; }
     public string RequestId { get; init; } = string.Empty;
     public StoryContentDto Story { get; init; } = new();
@@ -122,6 +125,7 @@ public sealed record GenerateDiscussionRequest
 
 public sealed record EvaluateContentSafetyRequest
 {
+    public int? ExecutionBudgetSeconds { get; init; }
     public AiGenerationSnapshot? Snapshot { get; init; }
     public string RequestId { get; init; } = string.Empty;
     public StoryContentDto Story { get; init; } = new();

@@ -27,14 +27,14 @@ public sealed class GenerateStoryContentHandler
         var minimumSections = request.Snapshot is null ? 1 : Math.Clamp(request.Snapshot.Config.MinStorySections, 2, 10);
         var maximumSections = request.Snapshot is null ? int.MaxValue : Math.Clamp(request.Snapshot.Config.MaxStorySections, 3, 20);
         if (minimumSections > maximumSections) throw new ArgumentException("Invalid pinned section limits.", nameof(request));
-        var prompt = PromptComposer.Compose(template, request);
-        if (request.Constraints.MinimumWords > 0)
-            prompt += $"\nThe story body must contain {request.Constraints.MinimumWords}-{request.Constraints.MaximumWords} Unicode lexical units (whitespace-separated Vietnamese syllables count individually). Target {request.StoryParameters.RequestedLength}. Do not pad by repeating sentences.";
+        var prompt = ContentWritingPrompt.Append(PromptComposer.Compose(template, request),
+            request.Constraints, request.StoryParameters.RequestedLength);
         if (request.Snapshot is not null)
             prompt += $"\nReturn {minimumSections} to {maximumSections} non-empty story sections.";
         var generated = await _executor.ExecuteAsync(
             prompt, "story_content", GenerationSchemas.StoryContent,
-            json => DeserializeStory(json, minimumSections, maximumSections), cancellationToken);
+            json => DeserializeStory(json, minimumSections, maximumSections), cancellationToken,
+            executionBudgetSeconds: request.ExecutionBudgetSeconds);
         return new GenerateStoryContentResponse
         {
             RequestId = request.RequestId,
@@ -112,11 +112,14 @@ public sealed class RefineStoryContentHandler
             throw new ArgumentException("A request id and refinement reasons are required.", nameof(request));
         }
         ValidateRefinementInput(request.Story);
+        RequestGuard.Validate(request.RequestId, null, request.Constraints);
         var template = SnapshotPromptResolver.Resolve(request.Snapshot, PromptType.StoryContentRefinement,
             request.Language, request.AgeBand, _prompts);
         var generated = await _executor.ExecuteAsync(
-            PromptComposer.Compose(template, request), "refined_story_content", GenerationSchemas.StoryContent,
-            json => DeserializeRefinedStory(json), cancellationToken);
+            ContentWritingPrompt.Append(PromptComposer.Compose(template, request), request.Constraints,
+                request.TargetLength, request.Feedback), "refined_story_content", GenerationSchemas.StoryContent,
+            json => DeserializeRefinedStory(json), cancellationToken,
+            executionBudgetSeconds: request.ExecutionBudgetSeconds);
         GenerateStoryContentHandler.ValidateStory(generated.Value);
         return new RefineStoryContentResponse
         {
@@ -281,7 +284,8 @@ public sealed class EvaluateContentSafetyHandler
             request.Language, request.AgeBand, _prompts);
         var generated = await _executor.ExecuteAsync(
             PromptComposer.Compose(template, request), "content_safety", GenerationSchemas.ContentSafety,
-            json => JsonSerializer.Deserialize<SafetyPayload>(json, JsonDefaults.Options), cancellationToken);
+            json => JsonSerializer.Deserialize<SafetyPayload>(json, JsonDefaults.Options), cancellationToken,
+            executionBudgetSeconds: request.ExecutionBudgetSeconds);
         return new EvaluateContentSafetyResponse
         {
             RequestId = request.RequestId,

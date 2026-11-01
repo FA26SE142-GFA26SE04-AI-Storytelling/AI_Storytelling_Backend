@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       promote_production:
-        description: 'Promote the staging-tested image to the separate production project'
+        description: 'Deploy a production candidate, test it, then switch traffic (main only)'
         type: boolean
         default: false
 
@@ -31,34 +31,44 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - name: Smoke authentication regression tests (offline mocks)
+      - name: Deployment and authentication regression tests (offline mocks)
         run: python3 -m unittest discover -s infra/google-cloud/tests -p 'test_*.py' -v
       - name: AI unit tests
         run: dotnet test tests/StoryPlatform.AI.UnitTests/StoryPlatform.AI.UnitTests.csproj -c Release
       - name: AI integration tests (offline fixtures)
         run: dotnet test tests/StoryPlatform.AI.IntegrationTests/StoryPlatform.AI.IntegrationTests.csproj -c Release
 
-  staging:
+  production:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.promote_production)
     needs: test
     runs-on: ubuntu-latest
-    environment: ai-staging
+    environment: ai-production
     permissions:
       contents: read
       id-token: write
-    outputs:
-      image: ${{ steps.image.outputs.digest }}
     env:
       PROJECT_ID: gen-lang-client-0675088605
       REGION: asia-southeast1
-      SERVICE: taletale-ai-staging
+      SERVICE: taletale-ai-production
+      RUNTIME: ${{ vars.GCP_RUNTIME_SERVICE_ACCOUNT }}
+      DEPLOYER: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      WIF_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      SECRET: ${{ vars.AI_INTERNAL_KEY_SECRET }}
+      SECRET_VERSION: ${{ vars.AI_INTERNAL_KEY_SECRET_VERSION }}
       MODEL: ${{ vars.AI_TEXT_MODEL || 'gemini-3.8-flash' }}
     steps:
       - uses: actions/checkout@v4
+      - name: Validate production configuration
+        run: |
+          test -n "$RUNTIME" && test -n "$DEPLOYER" && test -n "$WIF_PROVIDER"
+          test -n "$SECRET" && [[ "$SECRET_VERSION" =~ ^[1-9][0-9]*$ ]]
       - uses: google-github-actions/auth@v3
         with:
-          workload_identity_provider: projects/679679810390/locations/global/workloadIdentityPools/taletale-github/providers/github
-          service_account: taletale-ai-deployer@gen-lang-client-0675088605.iam.gserviceaccount.com
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOYER }}
       - uses: google-github-actions/setup-gcloud@v3
+      - name: Require the bootstrapped private production service
+        run: gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --format='value(metadata.name)'
       - uses: docker/setup-buildx-action@v3
       - name: Configure registry authentication
         run: gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
@@ -72,100 +82,57 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: asia-southeast1-docker.pkg.dev/gen-lang-client-0675088605/taletale-ai/ai-api:${{ github.sha }}
-      - name: Record immutable image
-        id: image
+      - name: Deploy production candidate without serving traffic
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
-        run: echo "digest=$REGION-docker.pkg.dev/$PROJECT_ID/taletale-ai/ai-api@$DIGEST" >> "$GITHUB_OUTPUT"
-      - name: Deploy staging
-        env:
-          IMAGE: ${{ steps.image.outputs.digest }}
         run: >-
           python infra/google-cloud/cloudrun.py deploy
           --project "$PROJECT_ID" --region "$REGION" --service "$SERVICE"
-          --runtime "taletale-ai-runtime@$PROJECT_ID.iam.gserviceaccount.com"
-          --image "$IMAGE" --model "$MODEL"
-          --secret taletale-ai-staging-internal-key --secret-version 1
-      - name: Resolve staging service URL
-        id: service-url
-        run: |
-          url=$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)')
-          test -n "$url"
-          echo "url=$url" >> "$GITHUB_OUTPUT"
-      - name: Generate staging smoke ID token through WIF
-        id: smoke-auth
-        uses: google-github-actions/auth@v3
-        with:
-          workload_identity_provider: projects/679679810390/locations/global/workloadIdentityPools/taletale-github/providers/github
-          service_account: taletale-ai-deployer@gen-lang-client-0675088605.iam.gserviceaccount.com
-          token_format: id_token
-          id_token_audience: ${{ steps.service-url.outputs.url }}
-          id_token_include_email: true
-          create_credentials_file: false
-          export_environment_variables: false
-      - name: Verify staging including a real Vertex call
-        env:
-          SERVICE_URL: ${{ steps.service-url.outputs.url }}
-          AI_SMOKE_ID_TOKEN: ${{ steps.smoke-auth.outputs.id_token }}
-        run: >-
-          python infra/google-cloud/cloudrun.py smoke --project "$PROJECT_ID"
-          --url "$SERVICE_URL" --secret taletale-ai-staging-internal-key
-          --identity-token-env AI_SMOKE_ID_TOKEN --live
-
-  production:
-    if: github.event_name == 'workflow_dispatch' && inputs.promote_production && github.ref == 'refs/heads/main'
-    needs: staging
-    runs-on: ubuntu-latest
-    environment: ai-production
-    permissions:
-      contents: read
-      id-token: write
-    env:
-      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-      RUNTIME: ${{ vars.GCP_RUNTIME_SERVICE_ACCOUNT }}
-      SECRET: ${{ vars.AI_INTERNAL_KEY_SECRET }}
-      SECRET_VERSION: ${{ vars.AI_INTERNAL_KEY_SECRET_VERSION }}
-      MODEL: ${{ vars.AI_TEXT_MODEL }}
-      IMAGE: ${{ needs.staging.outputs.image }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Require a separately bootstrapped production project
-        run: |
-          test -n "$PROJECT_ID" && test "$PROJECT_ID" != gen-lang-client-0675088605
-          test -n "$RUNTIME" && test -n "$SECRET" && test -n "$SECRET_VERSION" && test -n "$MODEL"
-      - uses: google-github-actions/auth@v3
-        with:
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
-      - uses: google-github-actions/setup-gcloud@v3
-      - name: Promote the staging-tested image digest
-        run: >-
-          python infra/google-cloud/cloudrun.py deploy
-          --project "$PROJECT_ID" --service taletale-ai-production
-          --runtime "$RUNTIME" --image "$IMAGE" --model "$MODEL"
+          --runtime "$RUNTIME" --model "$MODEL"
+          --image "$REGION-docker.pkg.dev/$PROJECT_ID/taletale-ai/ai-api@$DIGEST"
           --secret "$SECRET" --secret-version "$SECRET_VERSION" --environment production
-      - name: Resolve production service URL
-        id: service-url
+          --candidate-tag candidate --revision-suffix "gh-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          --rollout-state "$RUNNER_TEMP/ai-rollout.json"
+      - name: Resolve exact candidate and canonical audience
+        id: candidate
         run: |
-          url=$(gcloud run services describe taletale-ai-production --project "$PROJECT_ID" --region asia-southeast1 --format='value(status.url)')
-          test -n "$url"
-          echo "url=$url" >> "$GITHUB_OUTPUT"
-      - name: Generate production smoke ID token through WIF
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          state = json.loads((Path(os.environ['RUNNER_TEMP']) / 'ai-rollout.json').read_text())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f"url={state['candidate_url']}\naudience={state['audience']}\n")
+          PY
+      - name: Generate candidate smoke ID token through WIF
         id: smoke-auth
         uses: google-github-actions/auth@v3
         with:
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOYER }}
           token_format: id_token
-          id_token_audience: ${{ steps.service-url.outputs.url }}
+          id_token_audience: ${{ steps.candidate.outputs.audience }}
           id_token_include_email: true
           create_credentials_file: false
           export_environment_variables: false
-      - name: Verify production
+      - name: Verify real Vertex connection and generation on candidate
         env:
-          SERVICE_URL: ${{ steps.service-url.outputs.url }}
+          CANDIDATE_URL: ${{ steps.candidate.outputs.url }}
           AI_SMOKE_ID_TOKEN: ${{ steps.smoke-auth.outputs.id_token }}
         run: >-
-          python infra/google-cloud/cloudrun.py smoke --project "$PROJECT_ID"
-          --url "$SERVICE_URL" --secret "$SECRET" --secret-version "$SECRET_VERSION"
-          --identity-token-env AI_SMOKE_ID_TOKEN --live
+          python infra/google-cloud/cloudrun.py verify-vertex --project "$PROJECT_ID"
+          --url "$CANDIDATE_URL" --secret "$SECRET" --secret-version "$SECRET_VERSION"
+          --identity-token-env AI_SMOKE_ID_TOKEN --expected-model "$MODEL"
+          --rollout-state "$RUNNER_TEMP/ai-rollout.json"
+      - name: Switch traffic to the verified revision
+        run: >-
+          python infra/google-cloud/cloudrun.py promote
+          --project "$PROJECT_ID" --region "$REGION" --service "$SERVICE"
+          --rollout-state "$RUNNER_TEMP/ai-rollout.json"
+      - name: Save deployment and rollback information (no credentials)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-rollout-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ai-rollout.json
+          if-no-files-found: ignore
+          retention-days: 14

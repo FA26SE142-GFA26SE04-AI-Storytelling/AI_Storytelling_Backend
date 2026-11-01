@@ -73,6 +73,37 @@ public class ChildAccessCredentialController : BaseApiController
     }
 
     /// <summary>
+    /// "Cho bé đọc truyện này" — bé nào của phụ huynh đọc được truyện này (cùng luật với lúc trẻ mở truyện),
+    /// kèm lý do cho phụ huynh và bé được gợi ý. Truyện không tồn tại thì mọi bé là story_unavailable.
+    /// </summary>
+    [HttpGet("story-handover")]
+    [Authorize(Roles = "User")]
+    public async Task<ActionResult<ApiResponse<StoryHandoverOptionsDto>>> GetStoryHandoverOptions(
+        [FromQuery] int storyId, CancellationToken cancellationToken)
+    {
+        var result = await _childAccessCredentialService.GetStoryHandoverOptionsAsync(
+            storyId, GetCurrentUserId(), cancellationToken);
+        return HandleResult(result, "Lấy danh sách bé đọc được truyện thành công.");
+    }
+
+    /// <summary>
+    /// "Cho bé đọc truyện này" — bàn giao thiết bị cho trẻ để mở thẳng truyện đã chọn. Phát sinh Child Session
+    /// SupervisorPick gắn với phiên Supervisor; trẻ đọc bằng AccessToken trả về.
+    /// </summary>
+    [HttpPost("{childProfileId:int}/handover-story")]
+    [Authorize(Roles = "User")]
+    public async Task<ActionResult<ApiResponse<ChildStoryHandoverDto>>> StartStoryHandover(
+        int childProfileId,
+        [FromBody] StartStoryHandoverRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _childAccessCredentialService.StartStoryHandoverAsync(
+            childProfileId, GetCurrentUserId(), request.StoryId, request.SupervisorRefreshToken,
+            cancellationToken);
+        return HandleResult(result, "Đã bàn giao thiết bị cho trẻ đọc truyện.");
+    }
+
+    /// <summary>
     /// Trẻ quét QR Easy Login để vào Child Session, không cần phiên Supervisor.
     /// Quét sai 5 lần liên tiếp trên cùng thiết bị (IP client) thì khóa 5 phút.
     /// </summary>

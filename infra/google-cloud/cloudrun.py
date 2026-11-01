@@ -39,10 +39,15 @@ def request(url, token=None, key=None, body=None):
 
 
 def smoke(args):
-    token_args = ["auth", "print-identity-token"]
-    if args.identity_service_account:
-        token_args += ["--impersonate-service-account=" + args.identity_service_account, "--audiences=" + args.url.rstrip("/")]
-    token = gcloud(*token_args)
+    if args.identity_token_env is not None:
+        token = os.environ.get(args.identity_token_env, "").strip()
+        if not token:
+            raise RuntimeError("The selected environment variable must contain a non-empty ID token.")
+    else:
+        token_args = ["auth", "print-identity-token"]
+        if args.identity_service_account:
+            token_args += ["--impersonate-service-account=" + args.identity_service_account, "--audiences=" + args.url.rstrip("/")]
+        token = gcloud(*token_args)
     key = gcloud("secrets", "versions", "access", args.secret_version, "--secret=" + args.secret,
                  "--project=" + args.project)
     url = args.url.rstrip("/")
@@ -156,7 +161,9 @@ def main():
             p.set_defaults(func=deploy)
         else:
             p.add_argument("--url", required=True)
-            p.add_argument("--identity-service-account")
+            identity = p.add_mutually_exclusive_group()
+            identity.add_argument("--identity-token-env", help="Read an existing ID token from this environment variable (CI).")
+            identity.add_argument("--identity-service-account", help="Explicit gcloud impersonation for local/admin testing only.")
             p.add_argument("--live", action="store_true")
             p.set_defaults(func=smoke)
     args = parser.parse_args()

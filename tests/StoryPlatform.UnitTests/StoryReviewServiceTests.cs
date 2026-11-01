@@ -633,28 +633,44 @@ public sealed class StoryReviewServiceTests
     }
 
     [Fact]
-    public async Task Archive_SetsStatusToArchived()
+    public async Task Reject_SetsStatusToRejected()
     {
         var unitOfWork = SeedContentReview();
         var service = Service(unitOfWork);
 
-        var result = await service.ArchiveAsync(1, 1, new ArchiveRequestDto { Reason = "Test" });
+        var result = await service.RejectAsync(1, 1, new RejectStoryRequestDto { Reason = "Test" });
 
         Assert.True(result.Success);
-        Assert.Equal("Archived", result.Status);
+        Assert.Equal("Rejected", result.Status);
 
         var story = unitOfWork.Items<Story>().First();
-        Assert.Equal(StoryStatus.Archived, story.Status);
+        Assert.Equal(StoryStatus.Rejected, story.Status);
+    }
+
+    [Theory]
+    [InlineData(StoryStatus.Approved)]
+    [InlineData(StoryStatus.MediaReview)]
+    [InlineData(StoryStatus.Ready)]
+    public async Task Reject_OutsideContentReview_ThrowsConflictAndKeepsStatus(StoryStatus status)
+    {
+        var unitOfWork = SeedContentReview();
+        unitOfWork.Items<Story>().Single().Status = status;
+
+        var exception = await Assert.ThrowsAsync<ConflictException>(() =>
+            Service(unitOfWork).RejectAsync(1, 1, new RejectStoryRequestDto { Reason = "Late" }));
+
+        Assert.Equal("INVALID_STORY_STATUS", exception.Message);
+        Assert.Equal(status, unitOfWork.Items<Story>().Single().Status);
     }
 
     [Fact]
-    public async Task Archive_WithoutStoryPermission_ThrowsForbidden()
+    public async Task Reject_WithoutStoryPermission_ThrowsForbidden()
     {
         var unitOfWork = SeedContentReview();
         unitOfWork.Items<Story>().Single().AuthorUserId = 99;
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
-            Service(unitOfWork).ArchiveAsync(2, 1, new ArchiveRequestDto { Reason = "No access" }));
+            Service(unitOfWork).RejectAsync(2, 1, new RejectStoryRequestDto { Reason = "No access" }));
 
         Assert.Equal(StoryStatus.ContentReview, unitOfWork.Items<Story>().Single().Status);
     }

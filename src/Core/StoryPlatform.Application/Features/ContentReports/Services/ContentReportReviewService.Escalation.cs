@@ -91,7 +91,7 @@ public partial class ContentReportReviewService
             ReportId = report.Id,
             StoryId = context.Story.Id,
             Decision = ModerationItemStatus.Escalated.ToString(),
-            StoryArchived = context.Story.Status == StoryStatus.Archived || context.Story.ArchivedAt != null,
+            StoryArchived = context.Story.ArchivedAt != null,
             DecidedAt = now
         };
     }

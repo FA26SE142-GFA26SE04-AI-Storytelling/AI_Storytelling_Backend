@@ -32,7 +32,7 @@ public class PublishedContentReviewServiceTests
         _h.Stories.Single(story => story.Id == PublicStory).PublishedAt = now.AddDays(-5);
         _h.AddPublicStory(30, "9-10", now.AddDays(-1));
         var archived = _h.AddPublicStory(31, "6-8", now);
-        archived.Status = StoryStatus.Archived;
+        archived.Status = StoryStatus.Rejected;
 
         var result = await _sut.ListAsync(Moderator, new PublishedContentQueryDto
         {
@@ -154,7 +154,7 @@ public class PublishedContentReviewServiceTests
         await Assert.ThrowsAsync<BadRequestException>(() =>
             _sut.GetStoryContentAsync(Moderator, privateStory));
 
-        _h.Stories.Single(story => story.Id == PublicStory).Status = StoryStatus.Archived;
+        _h.Stories.Single(story => story.Id == PublicStory).Status = StoryStatus.Rejected;
         await Assert.ThrowsAsync<BadRequestException>(() =>
             _sut.GetStoryContentAsync(Moderator, PublicStory));
     }
@@ -190,7 +190,7 @@ public class PublishedContentReviewServiceTests
             PublicStory, 30);
         _h.AddRoadmap(2, AgeBand.Age_6_8, 6, DateTime.UtcNow.AddDays(-1),
             PublicStory);
-        _h.Stories.Single(story => story.Id == 30).Status = StoryStatus.Archived;
+        _h.Stories.Single(story => story.Id == 30).Status = StoryStatus.Rejected;
 
         var result = await _sut.ListAsync(Moderator, new PublishedContentQueryDto
         {
@@ -217,7 +217,9 @@ public class PublishedContentReviewServiceTests
     {
         _h.AddPublicStory(30, "6-8", DateTime.UtcNow.AddDays(-1));
         _h.AddRoadmap(1, AgeBand.Age_6_8, 5, DateTime.UtcNow, PublicStory, 30);
-        _h.Stories.Single(story => story.Id == 30).Status = StoryStatus.Archived;
+        var removed = _h.Stories.Single(story => story.Id == 30);
+        removed.Status = StoryStatus.Rejected;
+        removed.ArchivedAt = DateTime.UtcNow.AddDays(-1);
 
         var result = await _sut.GetRoadmapAsync(Moderator, 1);
 

@@ -478,7 +478,7 @@ public class PublicStoryReviewServiceTests
     }
 
     [Theory]
-    [InlineData(StoryStatus.Archived, "story_archived")]
+    [InlineData(StoryStatus.Rejected, "story_archived")]
     [InlineData(StoryStatus.MediaProcessing, "story_not_ready")]
     public async Task GetPackageAsync_InvalidStoryState_BlocksApprove(
         StoryStatus status, string expectedCode)

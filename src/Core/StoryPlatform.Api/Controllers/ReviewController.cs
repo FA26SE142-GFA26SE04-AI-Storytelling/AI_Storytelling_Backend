@@ -252,13 +252,13 @@ public sealed class ReviewController : ControllerBase
         return Ok(ApiResponse<ApproveResponseDto>.Ok(result, "Story đã được phê duyệt."));
     }
 
-    [HttpPost("archive")]
+    [HttpPost("reject")]
     [Authorize(Roles = "User,Administrator")]
-    public async Task<ActionResult<ApiResponse<ArchiveResponseDto>>> Archive(
-        int storyId, [FromBody] ArchiveRequestDto input, CancellationToken cancellationToken)
+    public async Task<ActionResult<ApiResponse<RejectStoryResponseDto>>> Reject(
+        int storyId, [FromBody] RejectStoryRequestDto input, CancellationToken cancellationToken)
     {
-        var result = await _reviewService.ArchiveAsync(CurrentUserId(), storyId, input, cancellationToken);
-        return Ok(ApiResponse<ArchiveResponseDto>.Ok(result, "Story đã được lưu trữ."));
+        var result = await _reviewService.RejectAsync(CurrentUserId(), storyId, input, cancellationToken);
+        return Ok(ApiResponse<RejectStoryResponseDto>.Ok(result, "Đã từ chối truyện."));
     }
 
     #endregion

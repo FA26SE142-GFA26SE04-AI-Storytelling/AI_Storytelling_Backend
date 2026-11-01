@@ -15,7 +15,7 @@ public partial class PublicStoryReviewService
         var story = context.Story;
         var item = context.Item;
 
-        if (story.Status == StoryStatus.Archived || story.ArchivedAt != null)
+        if (story.Status == StoryStatus.Rejected || story.ArchivedAt != null)
         {
             blockers.Add(Blocker(
                 ApproveBlockerCodes.StoryArchived,

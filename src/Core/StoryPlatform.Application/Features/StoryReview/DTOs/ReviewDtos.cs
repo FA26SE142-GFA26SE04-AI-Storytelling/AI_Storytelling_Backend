@@ -27,7 +27,7 @@ public sealed record ReviewPackageDto
     public bool CanEdit { get; init; }
     public bool CanApprove { get; init; }
     public bool CanConfirmContent { get; init; }
-    public bool CanArchive { get; init; }
+    public bool CanReject { get; init; }
 }
 
 public sealed record ArtifactStatusDto
@@ -269,12 +269,12 @@ public sealed record ApproveResponseDto
     public DateTime ApprovedAt { get; init; }
 }
 
-public sealed record ArchiveRequestDto
+public sealed record RejectStoryRequestDto
 {
     public string? Reason { get; init; }
 }
 
-public sealed record ArchiveResponseDto
+public sealed record RejectStoryResponseDto
 {
     public bool Success { get; init; }
     public int StoryId { get; init; }

@@ -193,7 +193,7 @@ public class CommunityLibraryServiceTests
     public async Task ListAsync_SourceStoryArchivedOrDeleted_DisappearsFromTheLibrary()
     {
         Approved();
-        _h.Stories.Single(story => story.Id == Story).Status = StoryStatus.Archived;
+        _h.Stories.Single(story => story.Id == Story).Status = StoryStatus.Rejected;
         Assert.Empty((await ListAsync()).Items);
 
         _h.Stories.Single(story => story.Id == Story).Status = StoryStatus.Ready;

@@ -132,7 +132,7 @@ public class CommunitySubmissionServiceTests
     [Fact]
     public async Task CheckAsync_ArchivedStory_IsBlocked()
     {
-        PrivateStory.Status = StoryStatus.Archived;
+        PrivateStory.Status = StoryStatus.Rejected;
 
         Assert.Contains("story_archived", Codes(await _sut.CheckAsync(Owner, Request())));
     }

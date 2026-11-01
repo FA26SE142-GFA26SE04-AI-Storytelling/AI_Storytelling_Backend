@@ -89,7 +89,7 @@ public class ChildRoadmapAdvancerTests
         var broken = _h.Stories.Single(story => story.Id == 10);
         switch (problem)
         {
-            case "archived-status": broken.Status = StoryStatus.Archived; break;
+            case "archived-status": broken.Status = StoryStatus.Rejected; break;
             case "archived-at": broken.ArchivedAt = DateTime.UtcNow; break;
             case "not-ready": broken.Status = StoryStatus.MediaProcessing; break;
         }
@@ -165,8 +165,8 @@ public class ChildRoadmapAdvancerTests
     [Fact]
     public async Task AdvanceAsync_EveryWaitingStepUnavailable_SkipsThemAllAndOpensNothing()
     {
-        _h.Stories.Single(story => story.Id == 10).Status = StoryStatus.Archived;
-        _h.Stories.Single(story => story.Id == 11).Status = StoryStatus.Archived;
+        _h.Stories.Single(story => story.Id == 10).Status = StoryStatus.Rejected;
+        _h.Stories.Single(story => story.Id == 11).Status = StoryStatus.Rejected;
         _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Waiting);
         _h.AddItem(2, Child, 11, ChildRoadmapItemStatus.Waiting);
 

@@ -486,7 +486,7 @@ public sealed class ExistingStoryServiceTests
             CancellationToken.None);
 
         Assert.True(result);
-        Assert.Equal(StoryStatus.Archived, store.Items<Story>().Single().Status);
+        Assert.Equal(StoryStatus.Rejected, store.Items<Story>().Single().Status);
         Assert.Equal(ArchivedReason.SafetyConcern, store.Items<Story>().Single().ArchivedReason);
     }
 

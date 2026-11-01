@@ -20,7 +20,7 @@ internal static class ReportedContentBuilder
             ReadingLevel = story.ReadingLevel,
             Language = story.Language,
             Scope = story.Scope.ToString(),
-            IsArchived = story.Status == StoryStatus.Archived || story.ArchivedAt != null,
+            IsArchived = story.ArchivedAt != null,
             Labels = labels
         };
 

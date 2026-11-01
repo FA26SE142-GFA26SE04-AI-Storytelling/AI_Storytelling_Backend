@@ -15,7 +15,7 @@ public static class CreatorPublicationGuard
         var story = await uow.Repository<Story>().FirstOrDefaultAsync(x => x.Id == storyId, cancellationToken: ct)
             ?? throw new NotFoundException("Story", storyId);
         if (story.Scope != StoryScope.Creator) return;
-        if (story.IsDeleted || story.IsPublished || story.ArchivedAt != null || story.Status == StoryStatus.Archived)
+        if (story.IsDeleted || story.IsPublished || story.ArchivedAt != null || story.Status == StoryStatus.Rejected)
             throw new ConflictException("CREATOR_PUBLICATION_LOCKED");
         if (await uow.Repository<ModerationItem>().ExistsAsync(x => x.StoryId == storyId && !x.IsDeleted &&
             (x.ItemType == ModerationItemType.PublicStoryReview || x.ItemType == ModerationItemType.PublicStoryRemoval) &&

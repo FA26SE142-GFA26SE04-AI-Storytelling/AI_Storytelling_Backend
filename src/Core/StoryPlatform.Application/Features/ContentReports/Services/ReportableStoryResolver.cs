@@ -28,7 +28,7 @@ public class ReportableStoryResolver : IReportableStoryResolver
             throw new NotFoundException("Truyện", storyId);
         }
 
-        if (!story.IsPublished || story.Status == StoryStatus.Archived || story.ArchivedAt != null)
+        if (!story.IsPublished || story.Status == StoryStatus.Rejected || story.ArchivedAt != null)
         {
             throw new ForbiddenException(NotAccessibleMessage);
         }

@@ -92,7 +92,7 @@ public class CommunityLibraryService : ICommunityLibraryService
         {
             if (!stories.TryGetValue(item.StoryId!.Value, out var story)
                 || story.IsDeleted
-                || story.Status == StoryStatus.Archived
+                || story.Status == StoryStatus.Rejected
                 || story.ArchivedAt != null
                 || !versions.TryGetValue(item.StoryVersionId!.Value, out var version)
                 || story.AgeBand != ageText)

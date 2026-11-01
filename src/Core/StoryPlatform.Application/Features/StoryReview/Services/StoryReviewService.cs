@@ -99,7 +99,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
             CanEdit = story.Scope != StoryScope.Creator || story.Status == StoryStatus.ContentReview,
             CanApprove = story.Scope != StoryScope.Creator && story.Status == StoryStatus.ContentReview,
             CanConfirmContent = story.Scope == StoryScope.Creator && story.Status == StoryStatus.ContentReview,
-            CanArchive = story.Status == StoryStatus.ContentReview
+            CanReject = story.Status == StoryStatus.ContentReview
         };
     }
 
@@ -1088,7 +1088,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
         return await ApproveAsync(story.AuthorUserId, storyId, cancellationToken);
     }
 
-    public async Task<ArchiveResponseDto> ArchiveAsync(int userId, int storyId, ArchiveRequestDto input, CancellationToken cancellationToken = default)
+    public async Task<RejectStoryResponseDto> RejectAsync(int userId, int storyId, RejectStoryRequestDto input, CancellationToken cancellationToken = default)
     {
         await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
@@ -1101,7 +1101,9 @@ public sealed partial class StoryReviewService : IStoryReviewService
             if (StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story)) throw new ConflictException("PARENT_MANUAL_USE_AUTHORING_API");
             GenerationStoryAccess.EnsureSupported(story);
             await EnsureReviewPermissionAsync(story, userId, cancellationToken);
-            story.Status = StoryStatus.Archived;
+            if (story.Status != StoryStatus.ContentReview)
+                throw new ConflictException("INVALID_STORY_STATUS");
+            story.Status = StoryStatus.Rejected;
             _storyRepo.Update(story);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
         }
@@ -1111,11 +1113,11 @@ public sealed partial class StoryReviewService : IStoryReviewService
             throw;
         }
 
-        return new ArchiveResponseDto
+        return new RejectStoryResponseDto
         {
             Success = true,
             StoryId = storyId,
-            Status = "Archived"
+            Status = "Rejected"
         };
     }
 

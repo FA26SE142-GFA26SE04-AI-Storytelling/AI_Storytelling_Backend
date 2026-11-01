@@ -18,7 +18,7 @@ VALUES
     (6, 'Bí Mật Đại Dương', 'Khám phá thế giới kỳ diệu dưới đáy đại dương', 'Sau lớp sóng biển xanh là cả một thế giới kỳ diệu...', 'https://example.com/covers/story6.png', 'Phiêu lưu', 'Bảo vệ môi trường biển', 'vi', '9-10', 4, 'level_4', 'Ready', 'Ai', true, NOW() - INTERVAL '20 days' + INTERVAL '2 hours', NULL, 9, 6, NOW() - INTERVAL '20 days', false, 'Parent', 'Learning', 1, 1, md5('seed-parent-story-6'), 'reading'),
     (7, 'Gia Đình Hạnh Phúc', 'Những khoảnh khắc ấm áp trong một gia đình nhỏ', 'Mỗi buổi tối, cả gia đình quây quần bên nhau...', 'https://example.com/covers/story7.png', 'Đời thường', 'Yêu thương gia đình', 'vi', '6-8', 2, 'level_2', 'Draft', 'Manual', false, NULL, NULL, 5, 7, NOW() - INTERVAL '19 days', false, 'Parent', 'Learning', 1, 1, md5('seed-parent-story-7'), 'reading'),
     (8, 'Siêu Nhân Tí Hon', 'Cậu bé có sức mạnh đặc biệt bảo vệ xóm làng', 'Trong một ngôi làng nhỏ, có một cậu bé sở hữu sức mạnh đặc biệt...', 'https://example.com/covers/story8.png', 'Siêu anh hùng', 'Dũng cảm bảo vệ người yếu thế', 'vi', '9-10', 5, 'level_5', 'OutlineReview', 'Ai', false, NULL, NULL, 10, 8, NOW() - INTERVAL '17 days', false, 'Parent', 'Learning', 1, 1, md5('seed-parent-story-8'), 'reading'),
-    (9, 'Chuyến Phiêu Lưu Rừng Rậm', 'Nhóm bạn cùng nhau khám phá khu rừng bí ẩn', 'Bốn người bạn quyết định khám phá khu rừng phía sau làng...', 'https://example.com/covers/story9.png', 'Phiêu lưu', 'Đoàn kết tạo nên sức mạnh', 'vi', '6-8', 3, 'level_3', 'Archived', 'Manual', false, NULL, 'SafetyConcern', 6, 9, NOW() - INTERVAL '15 days', false, 'Parent', 'Learning', 1, 1, md5('seed-parent-story-9'), 'reading'),
+    (9, 'Chuyến Phiêu Lưu Rừng Rậm', 'Nhóm bạn cùng nhau khám phá khu rừng bí ẩn', 'Bốn người bạn quyết định khám phá khu rừng phía sau làng...', 'https://example.com/covers/story9.png', 'Phiêu lưu', 'Đoàn kết tạo nên sức mạnh', 'vi', '6-8', 3, 'level_3', 'Rejected', 'Manual', false, NULL, 'SafetyConcern', 6, 9, NOW() - INTERVAL '15 days', false, 'Parent', 'Learning', 1, 1, md5('seed-parent-story-9'), 'reading'),
     (10, 'Trận Bóng Đá Đáng Nhớ', 'Bài học về tinh thần thể thao và fair-play', 'Trận chung kết bóng đá của trường diễn ra đầy kịch tính...', 'https://example.com/covers/story10.png', 'Thể thao', 'Tinh thần fair-play trong thể thao', 'vi', '9-10', 4, 'level_4', 'Ready', 'Ai', true, NOW() - INTERVAL '13 days' + INTERVAL '2 hours', NULL, 7, 10, NOW() - INTERVAL '13 days', false, 'Parent', 'Learning', 1, 1, md5('seed-parent-story-10'), 'reading'),
     (11, 'Hạt giống của Lan', 'Mẫu gửi duyệt và rút yêu cầu WF-L5A', 'Lan gieo một hạt giống nhỏ. Minh giúp Lan tưới nước mỗi sáng. Khi chiếc lá đầu tiên xuất hiện, hai bạn cùng mỉm cười.', NULL, 'Tình bạn', NULL, 'vi', '6-8', NULL, NULL, 'Ready', 'Manual', false, NULL, NULL, 13, NULL, NOW() - INTERVAL '2 days', false, 'Creator', 'ReadingMediaOnly', 1, 2, md5('seed-creator-story-11'), 'reading'),
     (12, 'Chiếc ô tình bạn', 'Mẫu kiểm thử Creator trên Story/StoryVersion dùng chung', 'Thỏ tìm thấy một chiếc ô bên đường. Khi trời mưa, Thỏ mời Sóc cùng trú dưới ô. Hai bạn vui vẻ đi về nhà.', NULL, 'Tình bạn', NULL, 'vi', '6-8', NULL, NULL, 'Draft', 'Manual', false, NULL, NULL, 13, NULL, NOW() - INTERVAL '2 days', false, 'Creator', 'ReadingMediaOnly', 1, 1, md5('seed-creator-story-12'), 'reading'),
@@ -57,12 +57,12 @@ SET "EverGrayZone" = true
 WHERE "Id" IN (4, 6) AND "EverGrayZone" = false;
 
 UPDATE stories
-SET "Status" = 'Archived', "ArchivedReason" = 'SafetyConcern'
-WHERE "Id" = 9 AND "Status" = 'Rejected';
+SET "ArchivedReason" = 'SafetyConcern'
+WHERE "Id" = 9 AND "Status" = 'Rejected' AND "ArchivedReason" IS NULL;
 
 UPDATE stories
 SET "ArchivedAt" = NOW() - INTERVAL '14 days'
-WHERE "Id" = 9 AND "Status" = 'Archived' AND "ArchivedAt" IS NULL;
+WHERE "Id" = 9 AND "Status" = 'Rejected' AND "ArchivedAt" IS NULL;
 
 -- Parent V4 private demo fixture; requires AddParentManualAuthoring. No child access grant.
 INSERT INTO stories (

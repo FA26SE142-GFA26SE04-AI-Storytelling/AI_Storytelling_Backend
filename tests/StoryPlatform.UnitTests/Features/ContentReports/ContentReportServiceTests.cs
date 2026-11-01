@@ -403,7 +403,7 @@ public class ContentReportServiceTests
         await Assert.ThrowsAsync<ForbiddenException>(() =>
             CreateReviewAsync(ReviewRequest(), ContentReportHarness.AdminId));
 
-        _h.Stories.Single(story => story.Id == PublicStory).Status = StoryStatus.Archived;
+        _h.Stories.Single(story => story.Id == PublicStory).Status = StoryStatus.Rejected;
         await Assert.ThrowsAsync<BadRequestException>(() => CreateReviewAsync(ReviewRequest()));
         _h.Stories.Single(story => story.Id == PublicStory).Status = StoryStatus.Ready;
 

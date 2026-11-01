@@ -48,7 +48,7 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
         {
             throw new ForbiddenException("Bạn chỉ được gửi duyệt truyện do chính mình tạo.");
         }
-        if (story.Status == StoryStatus.Archived || story.ArchivedAt != null)
+        if (story.Status == StoryStatus.Rejected || story.ArchivedAt != null)
         {
             throw new BadRequestException("Truyện đã bị Archive, không thể gửi duyệt.");
         }

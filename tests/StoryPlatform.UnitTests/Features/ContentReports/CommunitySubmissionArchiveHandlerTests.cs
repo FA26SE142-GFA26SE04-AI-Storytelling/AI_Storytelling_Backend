@@ -27,7 +27,7 @@ public class CommunitySubmissionArchiveHandlerTests
     private StoryArchiveContext Context(ArchivedReason reason = ArchivedReason.SafetyConcern, int? reporter = null)
     {
         var story = _h.Stories.Single(existing => existing.Id == Story);
-        story.Status = StoryStatus.Archived;
+        story.Status = StoryStatus.Rejected;
         return new StoryArchiveContext(story, reason, Moderator, DateTime.UtcNow, reporter);
     }
 

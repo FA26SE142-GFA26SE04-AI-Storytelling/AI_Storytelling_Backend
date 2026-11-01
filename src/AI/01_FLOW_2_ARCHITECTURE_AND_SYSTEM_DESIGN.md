@@ -111,7 +111,7 @@ erDiagram
 ```
 
 ### Chi tiết các thực thể cốt lõi:
-1. **`Story`**: Đại diện cho câu chuyện tổng thể (`Title`, `Source: AI | Manual`, `Status: Draft | ContentReview | Approved | MediaProcessing | Ready | Archived`, `ChildProfileId`).
+1. **`Story`**: Đại diện cho câu chuyện tổng thể (`Title`, `Source: AI | Manual`, `Status: Draft | OutlineReview | ContentReview | Approved | MediaProcessing | MediaReview | Ready | Rejected`, `ChildProfileId`).
 2. **`StoryVersion`**: Bản ghi nội dung truyện bất biến (`VersionNo`, `Content`, `RawContent`, `GenerationType: AiGenerated | UploadedOriginal | AiAdapted | ManualEdit`, `IsCurrent`). Khi người dùng sửa truyện hoặc AI adapt, một version mới được sinh ra; version cũ được giữ nguyên phục vụ audit trail.
 3. **`StoryScene`**: Đại diện cho 1 cảnh trực quan (Visual & Narrative Scene) phục vụ việc vẽ tranh minh họa. Đảm bảo phủ 100% nội dung truyện không bị trùng lặp hay sót từ.
 4. **`StorySegment`**: Phân đoạn câu nói trong cảnh phục vụ Text-To-Speech (`SegmentOrder`, `RawText`, `CleanText`, `SsmlContent`, `WordCount`, `EstimatedDurationMs`).
@@ -135,7 +135,7 @@ Hệ thống phân biệt rõ trạng thái nghiệp vụ cấp cao (`Story.Stat
 | `Approved` | Phụ huynh đã phê duyệt nội dung và học liệu. | Chuyển sang kích hoạt sinh media Phase 5. |
 | `MediaProcessing` | Đang sinh ảnh minh họa và audio TTS bất đồng bộ. | Hệ thống chạy background jobs; chưa hiển thị cho trẻ em. |
 | `Ready` | Toàn bộ ảnh và audio của version hiện tại đã sẵn sàng. | Trẻ em có thể đọc và tương tác đầy đủ. |
-| `Archived` | Truyện bị hủy hoặc lưu trữ ẩn. | Không cho phép chỉnh sửa hay sinh tiếp. |
+| `Rejected` | Truyện bị Phụ huynh từ chối hoặc Moderator gỡ (có `ArchivedAt`). | Không cho phép chỉnh sửa, sinh tiếp hay hiển thị cho trẻ. |
 
 ### 4.2. Các cơ chế bảo vệ cốt lõi (Core Safeguards)
 1. **Version Immutability (Bất biến phiên bản)**:

@@ -716,7 +716,7 @@ public sealed class ExistingStoryService : IExistingStoryService
         {
             await _unitOfWork.AcquireTransactionLockAsync(story.Id, cancellationToken);
 
-            story.Status = StoryStatus.Archived;
+            story.Status = StoryStatus.Rejected;
             story.ArchivedReason = ArchivedReason.SafetyConcern;
             _unitOfWork.Repository<Story>().Update(story);
 

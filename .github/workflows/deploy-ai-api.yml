@@ -1,0 +1,128 @@
+name: Deploy AI API
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - 'src/AI/**'
+      - 'src/Shared/StoryPlatform.Contracts/**'
+      - 'tests/StoryPlatform.AI.*/**'
+      - 'infra/google-cloud/**'
+      - '.github/workflows/deploy-ai-api.yml'
+  workflow_dispatch:
+    inputs:
+      promote_production:
+        description: 'Promote the staging-tested image to the separate production project'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-ai-api
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: AI unit tests
+        run: dotnet test tests/StoryPlatform.AI.UnitTests/StoryPlatform.AI.UnitTests.csproj -c Release
+      - name: AI integration tests (offline fixtures)
+        run: dotnet test tests/StoryPlatform.AI.IntegrationTests/StoryPlatform.AI.IntegrationTests.csproj -c Release
+
+  staging:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: ai-staging
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image: ${{ steps.image.outputs.digest }}
+    env:
+      PROJECT_ID: gen-lang-client-0675088605
+      REGION: asia-southeast1
+      SERVICE: taletale-ai-staging
+      MODEL: ${{ vars.AI_TEXT_MODEL || 'gemini-3.8-flash' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/679679810390/locations/global/workloadIdentityPools/taletale-github/providers/github
+          service_account: taletale-ai-deployer@gen-lang-client-0675088605.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Configure registry authentication
+        run: gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+      - name: Build and push AI-only image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: src/AI/StoryPlatform.AI.Api/Dockerfile
+          target: ai-api
+          platforms: linux/amd64
+          push: true
+          tags: asia-southeast1-docker.pkg.dev/gen-lang-client-0675088605/taletale-ai/ai-api:${{ github.sha }}
+      - name: Record immutable image
+        id: image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: echo "digest=$REGION-docker.pkg.dev/$PROJECT_ID/taletale-ai/ai-api@$DIGEST" >> "$GITHUB_OUTPUT"
+      - name: Deploy staging
+        env:
+          IMAGE: ${{ steps.image.outputs.digest }}
+        run: >-
+          python infra/google-cloud/cloudrun.py deploy
+          --project "$PROJECT_ID" --region "$REGION" --service "$SERVICE"
+          --runtime "taletale-ai-runtime@$PROJECT_ID.iam.gserviceaccount.com"
+          --image "$IMAGE" --model "$MODEL"
+          --secret taletale-ai-staging-internal-key --secret-version 1
+      - name: Verify staging including a real Vertex call
+        run: |
+          url=$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)')
+          python infra/google-cloud/cloudrun.py smoke --project "$PROJECT_ID" --url "$url" --secret taletale-ai-staging-internal-key --identity-service-account "taletale-ai-deployer@$PROJECT_ID.iam.gserviceaccount.com" --live
+
+  production:
+    if: github.event_name == 'workflow_dispatch' && inputs.promote_production && github.ref == 'refs/heads/main'
+    needs: staging
+    runs-on: ubuntu-latest
+    environment: ai-production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      RUNTIME: ${{ vars.GCP_RUNTIME_SERVICE_ACCOUNT }}
+      SECRET: ${{ vars.AI_INTERNAL_KEY_SECRET }}
+      SECRET_VERSION: ${{ vars.AI_INTERNAL_KEY_SECRET_VERSION }}
+      MODEL: ${{ vars.AI_TEXT_MODEL }}
+      DEPLOYER: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      IMAGE: ${{ needs.staging.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require a separately bootstrapped production project
+        run: |
+          test -n "$PROJECT_ID" && test "$PROJECT_ID" != gen-lang-client-0675088605
+          test -n "$RUNTIME" && test -n "$SECRET" && test -n "$SECRET_VERSION" && test -n "$MODEL"
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Promote the staging-tested image digest
+        run: >-
+          python infra/google-cloud/cloudrun.py deploy
+          --project "$PROJECT_ID" --service taletale-ai-production
+          --runtime "$RUNTIME" --image "$IMAGE" --model "$MODEL"
+          --secret "$SECRET" --secret-version "$SECRET_VERSION" --environment production
+      - name: Verify production
+        run: |
+          url=$(gcloud run services describe taletale-ai-production --project "$PROJECT_ID" --region asia-southeast1 --format='value(status.url)')
+          python infra/google-cloud/cloudrun.py smoke --project "$PROJECT_ID" --url "$url" --secret "$SECRET" --secret-version "$SECRET_VERSION" --identity-service-account "$DEPLOYER" --live

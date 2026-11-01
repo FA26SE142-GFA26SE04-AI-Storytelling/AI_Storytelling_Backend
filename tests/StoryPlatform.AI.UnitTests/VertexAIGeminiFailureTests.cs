@@ -142,6 +142,35 @@ public sealed class VertexAIGeminiFailureTests
         Assert.DoesNotContain("private", body.RootElement.GetRawText());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Deadline_is_a_timeout_but_caller_cancellation_is_preserved(bool callerCancels)
+    {
+        using var transport = new SlowTransport();
+        using var sdk = new Client(vertexAI: true, project: "offline-test-project", location: "global",
+            credential: GoogleCredential.FromAccessToken("offline-test-token"),
+            clientOptions: new ClientOptions { HttpClientFactory = () => new HttpClient(transport, disposeHandler: false) });
+        var client = new VertexAIGeminiClient(Options.Create(new VertexAIOptions
+        {
+            ProjectId = "offline-test-project", Model = "test-model", TimeoutSeconds = 1
+        }), NullLogger<VertexAIGeminiClient>.Instance, sdk);
+        using var caller = new CancellationTokenSource();
+        if (callerCancels) caller.CancelAfter(50);
+        var operation = client.GenerateStructuredAsync("test", "learning_timeout_test", Schema, caller.Token);
+        if (callerCancels) await Assert.ThrowsAnyAsync<OperationCanceledException>(() => operation);
+        else await Assert.ThrowsAsync<TimeoutException>(() => operation);
+    }
+
+    private sealed class SlowTransport : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            throw new InvalidOperationException("Unreachable");
+        }
+    }
+
     private static VertexAIGeminiClient CreateClient(Client sdk) => new(Options.Create(new VertexAIOptions
     {
         AuthMode = "Adc", ProjectId = "offline-test-project", Location = "global", Model = "test-model"

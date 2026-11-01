@@ -44,6 +44,141 @@ public sealed class ContentGenerationServiceTests
     }
 
     [Fact]
+    public async Task Content_deadline_does_not_cancel_the_post_promotion_handoff()
+    {
+        var store = Seed(); var ai = new FakeAIClient(); var queued = new RecordingHandoffService(store);
+        var handoff = new ScriptedHandoff(async (call, ct) =>
+        {
+            await Task.Delay(1200, ct);
+            Assert.True(ai.ContentToken.IsCancellationRequested);
+            Assert.False(ct.IsCancellationRequested);
+            return await queued.QueueArtifactsAsync(1, store.Items<StoryVersion>().Single(x => x.IsCurrent).Id, 1, 1, ct);
+        });
+        var service = new ContentGenerationService(store, ai, new PassingQualityEvaluator(), new FakeFailureFinalizer(store),
+            handoff, new() { ContentExecutionBudgetSeconds = 6 });
+        Assert.True(await service.ProcessNextAsync());
+        Assert.Equal(GenerationJobStatus.Completed, store.Items<StoryGenerationJob>().Single(x => x.Operation == GenerationJobOperation.GenerateContent).Status);
+        Assert.Single(store.Items<StoryGenerationJob>(), x => x.Operation == GenerationJobOperation.GenerateVocabulary);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Failed_handoff_retry_preserves_content_and_does_not_duplicate_artifacts(bool queuedBeforeFailure)
+    {
+        var store = Seed(); var ai = new FakeAIClient(); var queued = new RecordingHandoffService(store);
+        var handoff = new ScriptedHandoff(async (call, ct) =>
+        {
+            var version = store.Items<StoryVersion>().Single(x => x.IsCurrent);
+            if (call == 1)
+            {
+                if (queuedBeforeFailure) await queued.QueueArtifactsAsync(1, version.Id, 1, 1, ct);
+                throw new OperationCanceledException();
+            }
+            return await queued.QueueArtifactsAsync(1, version.Id, 1, 1, ct);
+        });
+        var service = new ContentGenerationService(store, ai, new PassingQualityEvaluator(), new FakeFailureFinalizer(store), handoff, new());
+        await service.ProcessNextAsync();
+        var progress = await service.GetProgressAsync(1, 1);
+        var contentJob = store.Items<StoryGenerationJob>().Single(x => x.Operation == GenerationJobOperation.GenerateContent);
+        Assert.Equal("CONTENT_ARTIFACT_HANDOFF_FAILED", contentJob.ErrorCode);
+        var stableId = store.Items<StoryVersion>().Single(x => x.IsCurrent).Id;
+        var versions = store.Items<StoryVersion>().Count;
+        await service.RetryAsync(1, 1, new() { RetryKey = "handoff-recovery-01" });
+        await service.RetryAsync(1, 1, new() { RetryKey = "handoff-recovery-01" });
+        await service.ProcessNextAsync();
+        Assert.Equal(GenerationJobStatus.Completed, contentJob.Status);
+        Assert.Equal(stableId, store.Items<StoryVersion>().Single(x => x.IsCurrent).Id);
+        Assert.Equal(versions, store.Items<StoryVersion>().Count);
+        Assert.Single(ai.Calls, x => x == "content");
+        Assert.Single(store.Items<StoryGenerationJob>(), x => x.Operation == GenerationJobOperation.GenerateVocabulary);
+    }
+
+    [Fact]
+    public async Task Worker_reclaims_promoted_content_after_shutdown_without_regenerating()
+    {
+        var store = Seed(); var ai = new FakeAIClient(); using var stopping = new CancellationTokenSource();
+        var queued = new RecordingHandoffService(store);
+        var handoff = new ScriptedHandoff(async (call, ct) =>
+        {
+            if (call == 1) { stopping.Cancel(); ct.ThrowIfCancellationRequested(); }
+            return await queued.QueueArtifactsAsync(1, store.Items<StoryVersion>().Single(x => x.IsCurrent).Id, 1, 1, ct);
+        });
+        var service = new ContentGenerationService(store, ai, new PassingQualityEvaluator(), new FakeFailureFinalizer(store), handoff, new());
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.ProcessNextAsync(stopping.Token));
+        var job = store.Items<StoryGenerationJob>().Single();
+        Assert.Equal(GenerationJobStatus.Processing, job.Status);
+        job.AttemptNo = job.MaxAttempts; // Finishing a durable handoff must not need another AI attempt.
+        job.LeaseExpiresAt = DateTime.UtcNow.AddSeconds(-1);
+        await service.ProcessNextAsync();
+        Assert.Equal(GenerationJobStatus.Completed, job.Status);
+        Assert.Single(ai.Calls, x => x == "content");
+    }
+
+    private sealed class ScriptedHandoff(Func<int, CancellationToken, Task<StableVersionHandoffResult>> run) : IStableVersionArtifactHandoffService
+    {
+        private int _calls;
+        public Task<StableVersionHandoffResult> QueueArtifactsAsync(int storyId, int storyVersionId, int requestedByUserId,
+            int? generationRequestId, CancellationToken cancellationToken = default) => run(++_calls, cancellationToken);
+    }
+
+    [Fact]
+    public async Task Retry_recovers_a_legacy_completed_content_job_with_no_artifact_root()
+    {
+        var store = Seed(); var ai = new FakeAIClient(); var queued = new RecordingHandoffService(store);
+        var handoff = new ScriptedHandoff(async (call, ct) =>
+        {
+            if (call == 1) throw new OperationCanceledException();
+            return await queued.QueueArtifactsAsync(1, store.Items<StoryVersion>().Single(x => x.IsCurrent).Id, 1, 1, ct);
+        });
+        var service = new ContentGenerationService(store, ai, new PassingQualityEvaluator(), new FakeFailureFinalizer(store), handoff, new());
+        await service.ProcessNextAsync();
+        var job = store.Items<StoryGenerationJob>().Single();
+        // State left by the old implementation: promotion committed before the handoff was cancelled.
+        job.Status = GenerationJobStatus.Completed;
+        job.Stage = JobStage.ContentStable;
+        job.ErrorCode = null;
+        await service.RetryAsync(1, 1, new() { RetryKey = "legacy-handoff-recovery" });
+        await service.ProcessNextAsync();
+        Assert.Single(ai.Calls, x => x == "content");
+        Assert.Single(store.Items<StoryGenerationJob>(), x => x.Operation == GenerationJobOperation.GenerateVocabulary);
+        Assert.Equal(GenerationJobStatus.Completed, job.Status);
+    }
+    [Fact]
+    public async Task Worker_budget_timeout_is_explicit_and_does_not_promote_content()
+    {
+        var store = Seed();
+        var service = new ContentGenerationService(store, new WaitingContentClient(), new PassingQualityEvaluator(),
+            new FakeFailureFinalizer(store), new RecordingHandoffService(store),
+            new ContentGenerationOptions { ContentExecutionBudgetSeconds = 6 });
+        Assert.True(await service.ProcessNextAsync());
+        var progress = await service.GetProgressAsync(1, 1);
+        Assert.Equal("CONTENT_GENERATION_TIMEOUT", progress.LastErrorCode);
+        Assert.Null(progress.StableStoryVersionId);
+        Assert.Single(store.Items<StoryVersion>());
+    }
+
+    [Fact]
+    public async Task Worker_shutdown_propagates_instead_of_recording_a_content_timeout()
+    {
+        var store = Seed();
+        var service = Service(store, new WaitingContentClient());
+        using var stop = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.ProcessNextAsync(stop.Token));
+        Assert.NotEqual("CONTENT_GENERATION_TIMEOUT", store.Items<StoryGenerationJob>().Single().ErrorCode);
+    }
+
+    private sealed class WaitingContentClient : FakeAIClient
+    {
+        public override async Task<GenerateStoryContentResponse> GenerateStoryContentAsync(GenerateStoryContentRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("unreachable");
+        }
+    }
+
+    [Fact]
     public async Task Quiz_hands_off_to_first_listening_type_and_story_waits_for_review_after_the_last()
     {
         var store = Seed();
@@ -541,9 +676,10 @@ public sealed class ContentGenerationServiceTests
     public async Task Failed_content_progress_returns_specific_quality_gate_details()
     {
         var store = Seed();
+        var client = new FakeAIClient();
         var service = new ContentGenerationService(
             store,
-            new FakeAIClient(),
+            client,
             new AlwaysFailReadabilityQualityEvaluator(),
             new FakeFailureFinalizer(store),
             new RecordingHandoffService(store),
@@ -557,6 +693,11 @@ public sealed class ContentGenerationServiceTests
         Assert.Equal("CONTENT_QUALITY_NOT_MET", progress.LastErrorCode);
         Assert.NotNull(progress.QualityFailure);
         Assert.Equal(2, progress.QualityFailure.RefinementAttempts);
+        Assert.Equal(2, progress.RefinementAttempts);
+        Assert.NotNull(progress.LastMeasuredWordCount);
+        Assert.NotNull(client.LastRefinement?.Feedback);
+        Assert.Contains("CONTENT_READABILITY_NOT_MET", client.LastRefinement.Feedback.FailedGateCodes);
+        Assert.Equal(14m, client.LastRefinement.Constraints.Readability!.MaximumAverageWordsPerSentence);
         var gate = Assert.Single(progress.QualityFailure.FailedGates);
         Assert.Equal("readability", gate.Gate);
         Assert.Equal("CONTENT_READABILITY_NOT_MET", gate.ReasonCode);
@@ -843,8 +984,11 @@ public sealed class ContentGenerationServiceTests
     {
         private int _vocabularyCalls;
         public List<string> Calls { get; } = [];
-        public Task<GenerateStoryContentResponse> GenerateStoryContentAsync(GenerateStoryContentRequest request, CancellationToken cancellationToken = default)
+        public RefineStoryContentRequest? LastRefinement { get; private set; }
+        public CancellationToken ContentToken { get; private set; }
+        public virtual Task<GenerateStoryContentResponse> GenerateStoryContentAsync(GenerateStoryContentRequest request, CancellationToken cancellationToken = default)
         {
+            ContentToken = cancellationToken;
             Calls.Add("content");
             return Task.FromResult(new GenerateStoryContentResponse
             {
@@ -909,6 +1053,7 @@ public sealed class ContentGenerationServiceTests
         }
         public Task<RefineStoryContentResponse> RefineStoryContentAsync(RefineStoryContentRequest request, CancellationToken cancellationToken = default)
         {
+            LastRefinement = request;
             Calls.Add("refine");
             return Task.FromResult(new RefineStoryContentResponse
             {
@@ -948,7 +1093,7 @@ public sealed class ContentGenerationServiceTests
         public Task MarkFailedAsync(int jobId, string expectedConcurrencyToken, string errorCode, CancellationToken cancellationToken = default)
         {
             var job = store.Items<StoryGenerationJob>().Single(item => item.Id == jobId);
-            if (job.ConcurrencyToken == expectedConcurrencyToken)
+            if (job.Status == GenerationJobStatus.Processing && job.ConcurrencyToken == expectedConcurrencyToken)
             {
                 job.Status = GenerationJobStatus.Failed;
                 job.ErrorCode = errorCode;

@@ -1,170 +1,144 @@
-# TaleTale AI API on Google Cloud Run
+# TaleTale AI API: production trong project hiện tại
 
-This deployment owns only the AI API. Core, AWS/CDK, the Core workflow, database,
-and media providers in Core are unchanged. No Terraform is used.
+Chỉ áp dụng AI API. Core trên AWS, database, migration/seed và provider media trong Core không được thay đổi.
 
-## First deployment: 2026-10-31
+## Đích triển khai
 
-The user selected the existing Google project for the first deployment. A separate
-production project has **not** been created; this is a staging deployment.
-
-- Project: `gen-lang-client-0675088605` (`679679810390`).
-- Service: `taletale-ai-staging`, region `asia-southeast1`.
-- URL: `https://taletale-ai-staging-679679810390.asia-southeast1.run.app`.
-- Canonical URL/audience returned by the API: `https://taletale-ai-staging-m63yiaft7q-as.a.run.app`.
-- Runtime: `taletale-ai-runtime@gen-lang-client-0675088605.iam.gserviceaccount.com`.
+- Google Cloud project: `gen-lang-client-0675088605`, project number `679679810390`.
+- Cloud Run service: `taletale-ai-production`, region `asia-southeast1`.
 - Registry: `asia-southeast1-docker.pkg.dev/gen-lang-client-0675088605/taletale-ai/ai-api`.
-- Internal key: Secret Manager `taletale-ai-staging-internal-key`, version `1`.
-- Initial revision: `taletale-ai-staging-00001-khw`.
-- Initial image digest: `sha256:1fecded2f1eae8c4defb620fd7d09a507c9ac3a74b9bf59ea89d2ff02cd1d691`.
-- Initial model: `gemini-3.8-flash`, Vertex location `global`.
-- Initial resources: 1 CPU, 1 GiB, concurrency 4, timeout 300s, min 0/max 2 instances.
+- Mặc định model: `gemini-3.8-flash`, Vertex location `global`.
+- 1 CPU, 1 GiB RAM, concurrency 4, request timeout 300 giây, provider timeout 120 giây.
+- Min instances 0, max instances 2. Scale-to-zero có cold start; credit/quota không bảo đảm mọi lượt gọi miễn phí.
 
-Cloud Run is reachable over HTTPS and requires IAM authentication. Swagger being
-enabled does not make this service public. The runtime uses its attached Google
-service account through ADC. Neither local ADC nor a JSON service account key is
-uploaded. Local `gcloud auth application-default login` and `compose.adc.yaml`
-remain unchanged.
+Workflow không còn deploy staging và không yêu cầu project production riêng.
+Service staging cũ không bị xóa hoặc chuyển traffic. Không thay URL Core đang dùng trước khi production được kiểm chứng.
 
-## Open Swagger
+## Luồng GitHub Actions
 
-Sign in to gcloud with an identity that has Cloud Run Invoker on this service:
+`test → build image → deploy candidate 0% traffic → smoke candidate → chuyển 100% traffic sang đúng revision`
 
-```powershell
-gcloud run services proxy taletale-ai-staging --project=gen-lang-client-0675088605 --region=asia-southeast1 --port=8085
-```
+- Push có thay đổi phù hợp trên `main`: chạy test và production. Trên `dev`: chỉ test.
+- Chạy thủ công: chọn `main` và bật `promote_production`.
+- Environment `ai-production` nên có required reviewers và deployment branch rule chỉ cho `main`.
+- Không build lại giữa smoke và promotion. Image dùng digest; revision theo run ID/attempt, tag cố định `candidate`.
+- Candidate được gọi qua URL tag, nhưng ID token dùng audience là URL canonical của service.
+- Không tắt IAM. Bài `verify-vertex` kiểm tra anonymous bị chặn, health, Swagger/OpenAPI, internal key và một lượt tạo outline Vertex thật.
+- Bài test yêu cầu `modelProvider=VertexAI`, model đúng cấu hình deploy, modelVersion/generationId không rỗng, requestId khớp lượt gọi duy nhất và input/output tokens cùng latency đều dương. Chỉ HTTP 200 chưa được tính đạt.
+- Chỉ test thành công mới ghi `verified=true` và `vertex_verification` vào rollout state. Promotion yêu cầu bằng chứng provider/model, kiểm tra lại revision/image/tag và traffic cũ trước khi chuyển.
+- Smoke lỗi: step chuyển traffic không chạy; traffic cũ giữ nguyên. Revision/tag candidate có thể còn để truy vết.
+- Artifact `ai-rollout-<run>-<attempt>` giữ revision, digest, URL và phân bổ traffic cũ, không chứa credential.
+- Smoke outline không chứng minh mọi chức năng content, quiz, media hoặc kết nối AWS đều hoàn tất.
 
-Open `http://127.0.0.1:8085/swagger/index.html`. The proxy supplies Cloud Run IAM
-authentication. Use Swagger's **Authorize** button to supply the internal key for
-business API requests. Obtain that key through Secret Manager using an authorized
-identity; never paste it into chat, a command argument, Git, or this document.
+## Test kết nối và sinh nội dung Vertex thật
 
-If gcloud prompts to install the Cloud Run proxy component, install it using your
-normal SDK setup. The first deployment verification used the Google proxy binary
-in a temporary task directory to avoid modifying the local SDK or ADC.
-Bind the proxy only to loopback, and stop it when testing is complete.
+Đây là bài integration qua `Cloud Run AI API → runtime service account → Google GenAI SDK → Vertex`.
+Không dùng mock ở workflow deploy; test sử dụng token và có thể tiêu thụ credit. Nó xác minh cấu hình/quyền model và khả năng sinh output, không chứng minh toàn bộ nghiệp vụ.
 
-## Bootstrap resources (Google Cloud Console)
-
-1. Confirm project and billing. Enable Cloud Run, Artifact Registry, Cloud Build
-   (for the first remote build), Secret Manager, Vertex AI, IAM Service Account
-   Credentials, and Security Token Service APIs.
-2. Create the Docker repository `taletale-ai` in Singapore.
-3. Create the runtime identity and grant Vertex AI User on the model project.
-4. Generate a new environment-specific internal key directly in Secret Manager.
-   Grant Secret Accessor to the runtime identity on that secret only.
-5. Deploy using `cloud-run.template.yaml` via `cloudrun.py`. Never disable the
-   invoker IAM check or add `allUsers`/`allAuthenticatedUsers` bindings.
-6. Create `taletale-ai-deployer`, restricted to the AI registry (Writer), AI service
-   (Cloud Run Developer and Invoker), runtime service account (Service Account
-   User), and AI internal-key secret (Secret Accessor). The trusted WIF principal
-   receives Workload Identity User on the deployer, including permission to create
-   its ID token. CI does not require the deployer to impersonate itself.
-   Cloud Run Developer must be service-scoped, not project-wide.
-7. Configure GitHub OIDC in pool `taletale-github`, provider `github`, on the
-   deployer. Restrict to repository ID `1361038590`, owner ID `322398367`, refs
-   `main`/`dev`, and GitHub environment `ai-staging`.
-
-The first deployment used the existing default Cloud Build service account. It
-was granted Artifact Registry Writer and Logs Writer to complete the one-time
-remote build. Ongoing GitHub builds use the dedicated deployer and AI registry.
-
-## Repeat deployment
-
-The first remote build used an explicitly packaged AI-only context because Docker
-Desktop was not running. Packaging excludes Core/AWS, `.env`, ADC, appsettings,
-build outputs, and unrelated repository files:
+Lệnh mẫu một dòng (thay URL canonical và tên secret, không nhập giá trị key):
 
 ```powershell
-python infra/google-cloud/cloudrun.py package --output "$env:TEMP/taletale-ai-source-NEW-UNIQUE-ID"
-gcloud builds submit "$env:TEMP/taletale-ai-source-NEW-UNIQUE-ID" --project=gen-lang-client-0675088605 --region=asia-southeast1 --config=infra/google-cloud/cloudbuild.ai.yaml --substitutions=_IMAGE=asia-southeast1-docker.pkg.dev/gen-lang-client-0675088605/taletale-ai/ai-api:NEW-UNIQUE-TAG
+python infra/google-cloud/cloudrun.py verify-vertex --project gen-lang-client-0675088605 --url <PRODUCTION_CANONICAL_URL> --secret <PRODUCTION_SECRET_NAME> --secret-version 1 --expected-model gemini-3.8-flash
 ```
 
-Resolve the image digest from the successful build. Run `cloudrun.py deploy` with
-`--project`, `--service`, `--runtime`, immutable `--image`, explicit `--model`, and
-`--secret`. The script renders the versioned service template into a temporary
-file, deploys it, and verifies there are no public IAM bindings.
-Secrets are referenced by numeric version; rotation requires a new revision.
+Local dùng gcloud identity hiện có với quyền Invoker và đọc secret. CI dùng ID token qua WIF,
+gọi candidate URL với audience canonical và truyền `--rollout-state` để lưu bằng chứng trước khi chuyển traffic.
+Kết quả chỉ log request/generation ID, provider/model/version, số token và latency; không log JWT, key hoặc truyện sinh ra.
+Lệnh `smoke` cũ vẫn giữ cho kiểm tra nhanh. Workflow production dùng `verify-vertex`; artifact thiếu bằng chứng Vertex sẽ không được promote.
 
-`.github/workflows/deploy-ai-api.yml` builds only the AI image after the AI tests,
-then deploys staging and runs authenticated live smoke tests. It uses GitHub OIDC,
-not a stored Google key. It runs for relevant pushes to `main`/`dev` or manual
-dispatch from those branches. Its Google trust rejects other branches.
-The workflow must be committed/merged before GitHub can execute it.
+## Cấu hình environment ai-production
 
-Create GitHub Environment `ai-staging`. Optionally set environment variable
-`AI_TEXT_MODEL`; otherwise the baseline is `gemini-3.8-flash`.
+Trong GitHub → Settings → Environments → ai-production → Environment variables:
 
-Production promotion remains disabled by default. Before enabling it, bootstrap
-a separate project/service and GitHub Environment `ai-production` with required
-reviewers. Configure `GCP_PROJECT_ID`, `GCP_RUNTIME_SERVICE_ACCOUNT`,
-`GCP_DEPLOY_SERVICE_ACCOUNT`, `GCP_WORKLOAD_IDENTITY_PROVIDER`,
-`AI_INTERNAL_KEY_SECRET`, `AI_INTERNAL_KEY_SECRET_VERSION`, and `AI_TEXT_MODEL`.
-Grant the production Cloud Run service agent read access to the staging image
-repository so promotion uses the exact staging-tested digest. Its OIDC provider
-must trust only `main` and environment `ai-production`. The workflow refuses to
-deploy production into the first-deployment/staging project.
+- `GCP_WORKLOAD_IDENTITY_PROVIDER`: đường dẫn provider WIF.
+- `GCP_DEPLOY_SERVICE_ACCOUNT`: email deployer.
+- `GCP_RUNTIME_SERVICE_ACCOUNT`: email runtime service account.
+- `AI_INTERNAL_KEY_SECRET`: tên secret production trong Secret Manager, không phải giá trị key.
+- `AI_INTERNAL_KEY_SECRET_VERSION`: version số cụ thể, ví dụ `1`; không dùng `latest`.
+- `AI_TEXT_MODEL`: tùy chọn; mặc định `gemini-3.8-flash`.
 
-## Verification and remaining acceptance work
+Project, region và tên service được ghim trong workflow. Không còn cần biến `GCP_PROJECT_ID`.
+
+Có thể dùng các identity hiện hữu sau khi kiểm tra quyền:
+- Runtime: `taletale-ai-runtime@gen-lang-client-0675088605.iam.gserviceaccount.com`.
+- Deployer: `taletale-ai-deployer@gen-lang-client-0675088605.iam.gserviceaccount.com`.
+- Provider: `projects/679679810390/locations/global/workloadIdentityPools/taletale-github/providers/github`.
+
+Đây là identifier, không phải credential. Không tự động tái sử dụng secret staging.
+Tạo secret production qua kênh an toàn và cấp Secret Accessor cho runtime/deployer trên đúng secret.
+
+**WIF phải cập nhật bên Google Cloud:** trust cho đúng repo, ref `refs/heads/main` và subject
+`repo:FA26SE142-GFA26SE04-AI-Storytelling/AI_Storytelling_Backend:environment:ai-production`.
+Điều kiện cũ chỉ chấp nhận `ai-staging` sẽ chặn workflow mới. Không mở trust cho mọi repo/branch.
+
+Runtime cần Vertex AI User. Deployer cần quyền ghi registry, deploy và invoke đúng service,
+actAs runtime, đọc đúng secret và tạo ID token qua WIF. Giữ quyền theo resource, không dùng Owner/Editor.
+Không upload ADC local hoặc JSON service-account key. Không thêm allUsers/allAuthenticatedUsers.
+
+## Khởi tạo production lần đầu
+
+Rollout giữ nguyên traffic yêu cầu service đã tồn tại; workflow sẽ dừng sớm nếu chưa bootstrap.
+Không thể giữ một revision production cũ nếu service chưa có revision nào.
+
+Một admin chuẩn bị API, registry, secret và runtime/deployer permissions, rồi tạo service private một lần.
+Chọn digest image đã biết từ registry. Lệnh mẫu PowerShell (thay các giá trị placeholder):
 
 ```powershell
-python infra/google-cloud/cloudrun.py smoke --project gen-lang-client-0675088605 --url https://taletale-ai-staging-m63yiaft7q-as.a.run.app --secret taletale-ai-staging-internal-key --live
+$IMAGE = 'asia-southeast1-docker.pkg.dev/gen-lang-client-0675088605/taletale-ai/ai-api@sha256:<DIGEST_64_HEX>'
+$RUNTIME = '<RUNTIME_SERVICE_ACCOUNT_EMAIL>'
+$SECRET = '<PRODUCTION_SECRET_NAME>'
+python infra/google-cloud/cloudrun.py deploy --project gen-lang-client-0675088605 --region asia-southeast1 --service taletale-ai-production --runtime $RUNTIME --image $IMAGE --model gemini-3.8-flash --secret $SECRET --secret-version 1 --environment production --bootstrap-production
 ```
 
-The smoke test does not print tokens, internal keys, or generated story text. It
-checks IAM denial, health, Swagger UI/OpenAPI, missing/invalid internal keys, and
-a real Vertex outline call. The command above preserves the local gcloud identity
-flow; local ADC is unchanged. Explicit `--identity-service-account` remains
-available for local/admin testing with the appropriate impersonation permission.
+Bootstrap chỉ chấp nhận service chưa tồn tại và không thay service production đang chạy.
+Revision đầu có traffic của chính service mới; chưa kết nối Core/người dùng vào URL đó.
+Sau bootstrap, cấp Invoker/Developer theo service cho deployer, chạy workflow candidate/smoke/promotion thành công
+rồi mới kết nối Core. Không có rollback về revision trước ở lần bootstrap đầu.
 
-CI resolves `status.url`, then runs `google-github-actions/auth@v3` again with
-`token_format: id_token`, that URL as `id_token_audience`, and email included.
-The token-only step sets `create_credentials_file: false` and
-`export_environment_variables: false` so the original WIF credentials used for
-deployment and Secret Manager remain active. The action masks its ID token output;
-the smoke step receives it only through `AI_SMOKE_ID_TOKEN` and selects it with
-`--identity-token-env AI_SMOKE_ID_TOKEN`. It never invokes gcloud impersonation
-to mint another token. Missing/blank environment tokens fail without fallback.
-The two explicit token-source flags are mutually exclusive. Never put the token
-itself in command arguments, repository files, logs, or persistent GitHub Secrets.
+Bootstrap không được script/workflow tự thực hiện. Thay đổi IAM/secret/cloud resources cần được admin thực hiện riêng.
 
-Run the offline authentication regression tests before committing:
+## Rollback
+
+Lấy `previous_traffic` trong artifact rollout. Chuyển về đúng revision đã lưu; ví dụ:
+
+```powershell
+gcloud run services update-traffic taletale-ai-production --project=gen-lang-client-0675088605 --region=asia-southeast1 --to-revisions=PREVIOUS_READY_REVISION=100
+```
+
+Nếu trước đó chia traffic nhiều revision, khôi phục đủ các phần trăm từ artifact.
+Không dùng `--to-latest` vì latest có thể là candidate bị lỗi.
+Promotion kiểm tra drift trước khi ghi, nhưng không thay thế việc kiểm soát người có quyền sửa traffic;
+không deploy thủ công đồng thời với workflow. Không xóa revision trước khi hết nhu cầu rollback.
+
+## Swagger và kết nối Core
+
+```powershell
+gcloud run services proxy taletale-ai-production --project=gen-lang-client-0675088605 --region=asia-southeast1 --port=8085
+```
+
+Mở `http://127.0.0.1:8085/swagger/index.html`; proxy identity phải có Invoker.
+Internal key lấy từ Secret Manager qua kênh được cấp quyền, không đưa vào Git/chat/command argument.
+
+Core trên AWS cần URL canonical production, internal key tương ứng và ID token Cloud Run IAM.
+Không chỉ đổi BaseUrl nếu Core chưa có cơ chế lấy ID token. Images/TTS trong Core vẫn dùng cấu hình riêng.
+Local ADC và Docker Compose không đổi.
+
+## Kiểm thử offline
 
 ```powershell
 python -m unittest discover -s infra/google-cloud/tests -p 'test_*.py' -v
 ```
 
-The GitHub test job runs these tests too. After the fix is approved and reaches
-`dev`/`main`, verify a workflow run on the new commit; rerunning the old run still
-uses its old workflow/script. Only a successful live GitHub smoke step confirms
-the WIF token exchange and invocation, not a local test. This is not proof that
-every AI feature or the AWS integration works. Inspect the exact WIF principal
-and its `getOpenIdToken` permission if token generation fails; do not broaden
-IAM permissions or disable Cloud Run IAM to bypass a failure.
+Các test mock gcloud/HTTP, không deploy hoặc gọi Vertex. Chỉ workflow/cloud smoke thành công mới xác minh
+WIF, Secret Manager, quyền invoke và provider thật. Chưa có tuyên bố đã production-ready cho toàn bộ nghiệp vụ.
 
-Before production: complete multi-feature live acceptance, compare candidate GA
-models against the baseline on the agreed evaluation set, review output quality,
-load-test, configure notification channels/budgets, and rehearse rollback. Do not
-silently change model IDs if a candidate is unavailable.
+## Service staging lịch sử
 
-Use Cloud Run's Metrics/Logs for latency, memory, instances, failures and 429s.
-Vertex completion logs include input/output/thought/total tokens and finish reason.
-Raw prompt/output logging has been removed from the Vertex client. Health probes
-only check process health and do not prove Google permissions or model availability.
+Ngày 2026-10-31 từng deploy `taletale-ai-staging` trong cùng project.
+URL canonical cũ: `https://taletale-ai-staging-m63yiaft7q-as.a.run.app`.
+Secret cũ: `taletale-ai-staging-internal-key`, version 1.
+Workflow mới không sử dụng hoặc xóa service này. Chỉ dọn sau khi production và Core đã hoạt động đúng.
 
-## Rollback and handoff
-
-Record the currently serving revision before each update. Restore it with:
-
-```powershell
-gcloud run services update-traffic taletale-ai-staging --project=gen-lang-client-0675088605 --region=asia-southeast1 --to-revisions=PREVIOUS_READY_REVISION=100
-```
-
-For the first deployment there is no previous revision to restore. Future
-deployments create revisions without deleting the previous image/configuration.
-
-The Core/AWS team receives the canonical URL/audience, API/OpenAPI contract,
-IAM Invoker requirements, and the internal-key secret location through an approved
-secret channel. It must configure AWS-to-Google authentication independently.
-Images/TTS in Core still require their own Google authentication. No AWS changes,
-Core deployment, migrations, or Core-to-AI end-to-end verification were performed.
+Tài liệu Google:
+- [Deploy tagged revision và chuyển traffic](https://docs.cloud.google.com/run/docs/rollouts-rollbacks-traffic-migration).
+- [ID-token audience khi gọi service](https://docs.cloud.google.com/run/docs/authenticating/service-to-service).

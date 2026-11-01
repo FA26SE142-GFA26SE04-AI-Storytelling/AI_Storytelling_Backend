@@ -31,7 +31,28 @@ public sealed class StoryContentGenerationExecutor
         string schemaName,
         JsonElement schema,
         Func<string, T?> deserialize,
-        CancellationToken cancellationToken, int? technicalAttempts = null)
+        CancellationToken cancellationToken, int? technicalAttempts = null, int? executionBudgetSeconds = null)
+        where T : class
+    {
+        if (executionBudgetSeconds is null)
+            return await ExecuteWithinBudgetAsync(prompt, schemaName, schema, deserialize, cancellationToken, technicalAttempts);
+        if (executionBudgetSeconds is < 1 or > 300)
+            throw new ArgumentOutOfRangeException(nameof(executionBudgetSeconds));
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        budget.CancelAfter(TimeSpan.FromSeconds(executionBudgetSeconds.Value));
+        try
+        {
+            return await ExecuteWithinBudgetAsync(prompt, schemaName, schema, deserialize, budget.Token, technicalAttempts);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && budget.IsCancellationRequested)
+        {
+            throw new TimeoutException("AI content request exhausted its execution budget.");
+        }
+    }
+
+    private async Task<StoryContentGenerationResult<T>> ExecuteWithinBudgetAsync<T>(
+        string prompt, string schemaName, JsonElement schema, Func<string, T?> deserialize,
+        CancellationToken cancellationToken, int? technicalAttempts)
         where T : class
     {
         var maxAttempts = Math.Clamp(technicalAttempts ?? _options.MaxTechnicalAttempts, 1, 3);

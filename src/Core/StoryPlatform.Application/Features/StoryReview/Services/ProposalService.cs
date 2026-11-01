@@ -80,6 +80,10 @@ public sealed class ProposalService : IProposalService
                     return true;
                 }, cancellationToken);
                 break;
+            case var listening when listening.StartsWith("listening:", StringComparison.Ordinal):
+                if (_reviewService is null) throw new ConflictException("CREATOR_REVIEW_SERVICE_REQUIRED");
+                await _reviewService.ApplyListeningProposalAsync(userId, proposal, cancellationToken);
+                break;
             default:
                 throw new BadRequestException($"Unknown artifact type: {proposal.ArtifactType}");
         }

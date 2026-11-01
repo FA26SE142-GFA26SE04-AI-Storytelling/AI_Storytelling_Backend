@@ -9,6 +9,7 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ContentGeneration.Quality;
 using StoryPlatform.Application.Features.ExistingStories.DTOs;
 using StoryPlatform.Application.Features.ExistingStories.Interfaces;
+using StoryPlatform.Application.Features.ListeningInteractions.Services;
 using StoryPlatform.Application.Features.StoryReview.DTOs;
 using StoryPlatform.Application.Features.StoryReview.Interfaces;
 using StoryPlatform.Contracts.AI.Models;
@@ -31,13 +32,15 @@ public sealed partial class StoryReviewService : IStoryReviewService
     private readonly IGenericRepository<StoryVersion> _versionRepo;
     private readonly IGenericRepository<StoryVocabulary> _vocabRepo;
     private readonly IGenericRepository<QuizItem> _quizRepo;
+    private readonly ListeningInteractionGenerator _listening;
 
     public StoryReviewService(
         IUnitOfWork unitOfWork,
         IAIStoryGenerationClient aiClient,
         IProposalCache proposalCache,
         IReviewCompletionStore? reviewCompletionStore = null,
-        IExistingStoryEvaluationCache? evaluationCache = null, GrayZoneContentCheckService? moderation = null)
+        IExistingStoryEvaluationCache? evaluationCache = null, GrayZoneContentCheckService? moderation = null,
+        ListeningInteractionGenerator? listeningGenerator = null)
     {
         _unitOfWork = unitOfWork;
         _aiClient = aiClient;
@@ -48,6 +51,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
         _versionRepo = unitOfWork.Repository<StoryVersion>();
         _vocabRepo = unitOfWork.Repository<StoryVocabulary>();
         _quizRepo = unitOfWork.Repository<QuizItem>();
+        _listening = listeningGenerator ?? new ListeningInteractionGenerator(unitOfWork, aiClient);
     }
 
     #region Package
@@ -69,6 +73,8 @@ public sealed partial class StoryReviewService : IStoryReviewService
         var readability = ReadabilityCalculator.Calculate(version.Content, story.Language);
         var readingMediaOnly = story.OutputMode == StoryOutputMode.ReadingMediaOnly;
 
+        var listening = await InspectListeningAsync(story, version, cancellationToken);
+
         return new ReviewPackageDto
         {
             AssistanceRevisionToken = story.Source == StorySource.Ai && story.Status == StoryStatus.ContentReview && story.AuthorUserId == userId
@@ -85,6 +91,11 @@ public sealed partial class StoryReviewService : IStoryReviewService
             ReadabilityFre = version.ReadabilityFre ?? readability.Fre,
             Vocabulary = new ArtifactStatusDto { State = readingMediaOnly ? "skipped" : vocabCount > 0 ? "completed" : "pending", ItemCount = vocabCount },
             Quiz = new ArtifactStatusDto { State = readingMediaOnly ? "skipped" : quizCount > 0 ? "completed" : "pending", ItemCount = quizCount },
+            Listening = new ArtifactStatusDto
+            {
+                State = !listening.Required ? "skipped" : listening.Valid ? "completed" : "pending",
+                ItemCount = listening.Inspection?.Items.Count ?? 0
+            },
             CanEdit = story.Scope != StoryScope.Creator || story.Status == StoryStatus.ContentReview,
             CanApprove = story.Scope != StoryScope.Creator && story.Status == StoryStatus.ContentReview,
             CanConfirmContent = story.Scope == StoryScope.Creator && story.Status == StoryStatus.ContentReview,
@@ -860,6 +871,26 @@ public sealed partial class StoryReviewService : IStoryReviewService
         });
         if (!readingMediaOnly && !bindingsPassed) issues.Add("Artifacts must be bound to the current story version.");
 
+        // Tương tác lúc nghe phải khớp kế hoạch và được người duyệt xác nhận.
+        var listening = await InspectListeningAsync(story, version, cancellationToken);
+        var listeningReviewed = !listening.Required || (_reviewCompletionStore?.IsListeningReviewed(storyId, version.Id) ?? false);
+        checks.Add(new ValidationCheckDto
+        {
+            Name = "listening_valid",
+            Passed = listening.Valid,
+            Message = !listening.Required ? "skipped"
+                : listening.Valid ? $"{listening.Inspection!.Items.Count} interactions"
+                : string.Join(", ", ListeningIssues(listening).Select(i => i.Code).Distinct())
+        });
+        if (!listening.Valid) issues.Add("Listening interactions must match the plan and pass the rules; regenerate stale types.");
+        checks.Add(new ValidationCheckDto
+        {
+            Name = "listening_reviewed",
+            Passed = listeningReviewed,
+            Message = !listening.Required ? "skipped" : listeningReviewed ? "Confirmed" : "Waiting for reviewer confirmation"
+        });
+        if (!listeningReviewed) issues.Add("Listening interactions must be confirmed by the reviewer.");
+
         // 8. Check Review Complete
         var isMarkedComplete = _reviewCompletionStore?.IsReviewCompleted(storyId, version.Id) ?? false;
         var structurallyComplete = storyValid && vocabValid && quizPassed;
@@ -880,6 +911,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
                          safetyPassed &&
                          profilePassed &&
                          (readingMediaOnly || vocabValid && quizPassed && bindingsPassed) &&
+                         listening.Valid && listeningReviewed &&
                          reviewComplete;
 
         return new ValidationResultDto

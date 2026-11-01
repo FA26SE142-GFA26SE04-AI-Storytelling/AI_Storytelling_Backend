@@ -1,4 +1,6 @@
-﻿namespace StoryPlatform.Application.Features.StoryReview.DTOs;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+namespace StoryPlatform.Application.Features.StoryReview.DTOs;
 
 #region Review Package
 
@@ -19,6 +21,7 @@ public sealed record ReviewPackageDto
     // Artifact statuses
     public ArtifactStatusDto Vocabulary { get; init; } = new();
     public ArtifactStatusDto Quiz { get; init; } = new();
+    public ArtifactStatusDto Listening { get; init; } = new();
 
     // Permissions
     public bool CanEdit { get; init; }
@@ -155,6 +158,93 @@ public sealed record ValidationCheckDto
 
 #endregion
 
+#region Listening Review
+
+public sealed record ListeningReviewDto
+{
+    public int StoryId { get; init; }
+    public int VersionId { get; init; }
+    /// <summary>false = truyện không có tương tác (1 đoạn, ReadingMediaOnly hoặc không do AI sinh).</summary>
+    public bool Required { get; init; }
+    public bool Reviewed { get; init; }
+    public IReadOnlyList<ListeningPlanItemDto> Plan { get; init; } = [];
+    public IReadOnlyList<ListeningInteractionReviewDto> Items { get; init; } = [];
+    public IReadOnlyList<ListeningIssueDto> Issues { get; init; } = [];
+}
+
+public sealed record ListeningPlanItemDto
+{
+    public string Type { get; init; } = string.Empty;
+    public int Count { get; init; }
+    public IReadOnlyList<IReadOnlyList<string>> Zones { get; init; } = [];
+}
+
+public sealed record ListeningInteractionReviewDto
+{
+    public int Id { get; init; }
+    public string Type { get; init; } = string.Empty;
+    public string AnchorBlockId { get; init; } = string.Empty;
+    public int AnchorOffset { get; init; }
+    public string? Kind { get; init; }
+    public string? Prompt { get; init; }
+    public string? SourceQuote { get; init; }
+    public string? CharacterName { get; init; }
+    public string? HiddenWord { get; init; }
+    public string? Hint { get; init; }
+    public string? RevealBlockId { get; init; }
+    public string? Explanation { get; init; }
+    public string? MatchFeedback { get; init; }
+    public string? NoMatchFeedback { get; init; }
+    public string? WaitFeedback { get; init; }
+    public bool IsStale { get; init; }
+    public IReadOnlyList<ListeningOptionReviewDto> Options { get; init; } = [];
+}
+
+public sealed record ListeningOptionReviewDto
+{
+    public int Id { get; init; }
+    public int SortOrder { get; init; }
+    public string Text { get; init; } = string.Empty;
+    public string? Feedback { get; init; }
+    public bool IsMatch { get; init; }
+    public int? CorrectOrder { get; init; }
+    public string? BlockId { get; init; }
+    public string? SourceQuote { get; init; }
+    public string? ImageDescription { get; init; }
+}
+
+public sealed record ListeningIssueDto
+{
+    public string Code { get; init; } = string.Empty;
+    public string? Type { get; init; }
+    public int? ItemIndex { get; init; }
+    public string? Field { get; init; }
+}
+
+/// <summary>Chỉ sửa chữ (spec 6.1). null = giữ nguyên. Trường không được sửa rơi vào ExtensionData và bị trả FIELD_NOT_EDITABLE.</summary>
+public sealed record UpdateListeningInteractionRequestDto
+{
+    public int VersionId { get; init; }
+    public string? Prompt { get; init; }
+    public string? Hint { get; init; }
+    public string? Explanation { get; init; }
+    public string? MatchFeedback { get; init; }
+    public string? NoMatchFeedback { get; init; }
+    public string? WaitFeedback { get; init; }
+    public IReadOnlyList<UpdateListeningOptionDto>? Options { get; init; }
+    [JsonExtensionData] public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
+
+public sealed record UpdateListeningOptionDto
+{
+    public int Id { get; init; }
+    public string? Text { get; init; }
+    public string? Feedback { get; init; }
+    [JsonExtensionData] public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
+
+#endregion
+
 #region Approval
 
 public sealed record ConfirmCreatorContentRequestDto
@@ -231,6 +321,7 @@ public sealed record GenerateArtifactsRequestDto
     public int? StoryVersionId { get; init; }
     public bool IncludeVocabulary { get; init; } = true;
     public bool IncludeQuiz { get; init; } = true;
+    public bool IncludeListening { get; init; } = true;
 }
 
 public sealed record ArtifactGenerationResultDto
@@ -239,6 +330,7 @@ public sealed record ArtifactGenerationResultDto
     public int StoryVersionId { get; init; }
     public int VocabularyCount { get; init; }
     public int QuizCount { get; init; }
+    public int ListeningCount { get; init; }
     public bool Success { get; init; }
     public string Message { get; init; } = string.Empty;
 }

@@ -22,73 +22,26 @@ public sealed partial class ContentGenerationService
         if (!await _unitOfWork.Repository<StoryVocabulary>().ExistsAsync(x => x.StoryVersionId == versionId, cancellationToken) ||
             !await _unitOfWork.Repository<QuizItem>().ExistsAsync(x => x.StoryVersionId == versionId, cancellationToken))
             throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
-        var blocks = ListeningBlockParser.Parse(state.Version.Content!);
-        var plan = ListeningPlan(state.Context, blocks);
-        var item = plan.Items.FirstOrDefault(x => x.Type == type) ?? throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
-        var saved = await _unitOfWork.Repository<ListeningInteraction>().FindAsync(
-            x => x.StoryVersionId == versionId, cancellationToken: cancellationToken);
+        var scope = ListeningInteractionGenerator.CreateScope(state.Version, state.Context);
+        if (scope.Plan.Items.All(x => x.Type != type)) throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
         IReadOnlyList<ListeningInteractionDraft> drafts = [];
         var metadata = new GenerationMetadataDto();
-        if (!saved.Any(x => x.Type == type))
-            (drafts, metadata) = await GenerateListeningDraftsAsync(state, item, plan, blocks, saved, cancellationToken);
+        if (!await HasListeningTypeAsync(versionId, type, cancellationToken))
+            (drafts, metadata) = await _listeningGenerator.GenerateAsync(scope, type, $"listening-job-{state.Job.Id}", cancellationToken);
 
         await CompleteArtifactAsync(state, claimedToken, metadata, async () =>
         {
-            if (await _unitOfWork.Repository<ListeningInteraction>().ExistsAsync(
-                    x => x.StoryVersionId == versionId && x.Type == type, cancellationToken)) return;
-            foreach (var draft in drafts)
-            {
-                var (interaction, options) = ListeningInteractionMapper.ToEntities(draft, versionId);
-                await _unitOfWork.Repository<ListeningInteraction>().AddAsync(interaction, cancellationToken);
-                await _unitOfWork.SaveChangesAsync(cancellationToken); // option cần Id của tương tác
-                foreach (var option in options) option.ListeningInteractionId = interaction.Id;
-                await _unitOfWork.Repository<ListeningInteractionOption>().AddRangeAsync(options, cancellationToken);
-            }
-        }, ListeningNext(plan, type), cancellationToken);
+            if (await HasListeningTypeAsync(versionId, type, cancellationToken)) return;
+            await _listeningGenerator.InsertAsync(versionId, drafts, cancellationToken);
+        }, ListeningNext(scope.Plan, type), cancellationToken);
     }
 
-    private async Task<(IReadOnlyList<ListeningInteractionDraft> Drafts, GenerationMetadataDto Metadata)> GenerateListeningDraftsAsync(
-        ArtifactState state, ListeningPlanItem item, ListeningInteractionPlan plan, IReadOnlyList<StoryTextBlock> blocks,
-        IReadOnlyList<ListeningInteraction> saved, CancellationToken cancellationToken)
-    {
-        var content = state.Version.Content!;
-        // Neo của các loại khác đã lưu; loại đang sinh không tự chặn mình.
-        var occupied = saved.Where(x => x.Type != item.Type).Select(x => x.AnchorOffset).ToArray();
-        var context = new ListeningRuleContext
-        {
-            Type = item.Type,
-            Count = item.Count,
-            AgeBand = ToListeningAgeBand(state.Context.AgeBand),
-            Content = content,
-            Blocks = blocks,
-            OccupiedAnchorOffsets = occupied,
-            DialogueBlockIds = plan.DialogueBlockIds,
-            Zones = item.Zones, // vùng của từng mục (spec mục 4.1)
-            GroundingSource = $"{content} {state.Version.Lesson}",
-            IsSafe = text => IsArtifactSafe(text, state.Context),
-            GradingWords = _listeningGradingWords
-        };
-        var vocabulary = item.Type == ListeningInteractionType.FillBlank
-            ? (await _unitOfWork.Repository<StoryVocabulary>().FindAsync(
-                x => x.StoryVersionId == state.Version.Id, cancellationToken: cancellationToken)).Select(x => x.Term).ToArray()
-            : [];
-        IReadOnlyList<ListeningValidationError> previous = [];
-        for (var attempt = 1; ; attempt++)
-        {
-            var response = await _aiClient.GenerateListeningInteractionAsync(ListeningInteractionAiMapper.BuildRequest(
-                $"listening-job-{state.Job.Id}-{item.Type}-attempt-{attempt}", item.Type, item.Count, context.AgeBand, state.Context.Language,
-                state.Version.Title, state.Version.Lesson ?? string.Empty, blocks, plan.DialogueBlockIds, occupied, item.Zones, vocabulary, previous),
-                cancellationToken);
-            var mapped = ListeningInteractionMapper.Resolve(ListeningInteractionAiMapper.ToDrafts(response, item.Type), content, blocks);
-            var errors = mapped.Errors.Concat(ListeningInteractionRules.Validate(mapped.Items, context)).Distinct().ToArray();
-            if (errors.Length == 0) return (mapped.Items, response.Metadata);
-            if (attempt >= _artifactMaxAttempts) throw ListeningFailure(item.Type, errors[0]);
-            previous = errors;
-        }
-    }
+    private Task<bool> HasListeningTypeAsync(int versionId, ListeningInteractionType type, CancellationToken cancellationToken) =>
+        _unitOfWork.Repository<ListeningInteraction>().ExistsAsync(
+            x => x.StoryVersionId == versionId && x.Type == type && !x.IsDeleted, cancellationToken);
 
     private static ListeningInteractionPlan ListeningPlan(AIStoryInputContextSnapshot context, IReadOnlyList<StoryTextBlock> blocks) =>
-        ListeningInteractionPlanner.Create(ToListeningAgeBand(context.AgeBand), blocks);
+        ListeningInteractionPlanner.Create(ListeningInteractionGenerator.ToAgeBand(context.AgeBand), blocks);
 
     /// <summary>Job kế tiếp sau loại after (null = ngay sau Quiz); null khi đã hết kế hoạch, truyện sang ContentReview.</summary>
     private static NextArtifact? ListeningNext(ListeningInteractionPlan plan, ListeningInteractionType? after)
@@ -97,15 +50,6 @@ public sealed partial class ContentGenerationService
         return index < plan.Items.Count ? new(GenerationJobOperation.GenerateListeningInteraction, plan.Items[index].Type) : null;
     }
 
-    // Snapshot lưu "6-8" / "9-10"; chấp nhận cả tên enum như LearningBatchOptions.
-    private static AgeBand ToListeningAgeBand(string ageBand) => ageBand is "9-10" or "Age_9_10" ? AgeBand.Age_9_10 : AgeBand.Age_6_8;
 
-    private static InvalidOperationException ListeningFailure(ListeningInteractionType type, ListeningValidationError error)
-    {
-        var failure = new InvalidOperationException($"{ToSnake(type.ToString()).ToUpperInvariant()}_VALIDATION_FAILED");
-        failure.Data["ValidationCode"] = error.Code;
-        if (error.ItemIndex.HasValue) failure.Data["LearningItemIndex"] = error.ItemIndex.Value;
-        return failure;
-    }
 }
 

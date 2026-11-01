@@ -38,7 +38,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
     private readonly int _maxRefinementAttempts;
     private readonly int _artifactMaxAttempts;
     private readonly TimeSpan _jobLease;
-    private readonly IReadOnlyCollection<string> _listeningGradingWords;
+    private readonly ListeningInteractionGenerator _listeningGenerator;
     private readonly ILearningBatchService? _learningBatches;
     private readonly ILogger<ContentGenerationService> _logger;
 
@@ -51,7 +51,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         ContentGenerationOptions options,
         IStoryReviewService? reviewService = null,
         IGrayZoneEvaluator? moderation = null, GrayZoneWorkflowService? grayZone = null, ILearningBatchService? learningBatches = null,
-        ILogger<ContentGenerationService>? logger = null)
+        ILogger<ContentGenerationService>? logger = null,
+        ListeningInteractionGenerator? listeningGenerator = null)
     {
         _unitOfWork = unitOfWork;
         _aiClient = aiClient;
@@ -65,7 +66,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         _maxRefinementAttempts = Math.Clamp(options.MaxContentRefinementAttempts, 0, 2);
         _artifactMaxAttempts = Math.Clamp(options.ArtifactMaxAttempts, 1, 3);
         _jobLease = TimeSpan.FromMinutes(Math.Clamp(options.JobLeaseMinutes, 1, 30));
-        _listeningGradingWords = options.ListeningGradingWords is { Length: > 0 } words ? words : ListeningInteractionRules.DefaultGradingWords;
+        _listeningGenerator = listeningGenerator ?? new ListeningInteractionGenerator(unitOfWork, aiClient, options);
     }
 
     public async Task<ContentGenerationProgressDto> GetProgressAsync(
@@ -1064,8 +1065,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
     }
 
     private static bool IsArtifactSafe(string value, AIStoryInputContextSnapshot context) =>
-        !PolicyTerms(context.BlockedCategoryTerms, context.BlockedCategoryCodes).Any(term => ContainsTerm(value, term)) &&
-        !PolicyTerms(context.RestrictedCategoryTerms, context.RestrictedCategoryCodes).Any(term => ContainsTerm(value, term));
+        ListeningInteractionGenerator.IsSafe(value, context);
 
     private static bool HasRelevantTerm(string value, string source) => LearningArtifactGrounding.HasRelevantTerm(value, source);
 

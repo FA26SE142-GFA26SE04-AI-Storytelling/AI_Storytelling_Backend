@@ -1,5 +1,7 @@
 ﻿using StoryPlatform.Application.Features.StoryReview.DTOs;
 
+using StoryPlatform.Domain.Enums;
+
 namespace StoryPlatform.Application.Features.StoryReview.Interfaces;
 
 public interface IStoryReviewService
@@ -35,6 +37,12 @@ public interface IStoryReviewService
     #endregion
 
     #region Validation & Approval
+
+    Task<ListeningReviewDto> GetListeningForReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default);
+    Task<ListeningReviewDto> UpdateListeningInteractionAsync(int userId, int storyId, int interactionId, UpdateListeningInteractionRequestDto input, CancellationToken cancellationToken = default);
+    Task<bool> CompleteListeningReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default);
+    Task<CreateProposalResponseDto> CreateListeningProposalAsync(int userId, int storyId, ListeningInteractionType type, CancellationToken cancellationToken = default);
+    Task ApplyListeningProposalAsync(int userId, AIProposalDto proposal, CancellationToken cancellationToken = default);
 
     Task<bool> CompleteStoryReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default);
     Task<bool> CompleteVocabularyReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default);

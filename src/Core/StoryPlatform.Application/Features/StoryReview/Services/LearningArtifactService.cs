@@ -1,4 +1,4 @@
-﻿using StoryPlatform.Application.Common;
+using StoryPlatform.Application.Common;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,6 +13,8 @@ using StoryPlatform.Application.Features.ChildProfiles.Safety.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.StoryReview.DTOs;
 using StoryPlatform.Application.Features.StoryReview.Interfaces;
+using StoryPlatform.Application.Features.ListeningInteractions.Models;
+using StoryPlatform.Application.Features.ListeningInteractions.Services;
 using StoryPlatform.Contracts.AI.Models;
 using StoryPlatform.Contracts.AI.Requests;
 using StoryPlatform.Domain.Entities;
@@ -34,6 +36,7 @@ public sealed class LearningArtifactService : ILearningArtifactService
     private readonly ISafetyPolicyService? _safetyPolicyService;
     private readonly ILearningProfileService? _learningProfileService;
     private readonly IReviewCompletionStore? _reviewCompletionStore;
+    private readonly ListeningInteractionGenerator _listening;
 
     public LearningArtifactService(
         IUnitOfWork unitOfWork,
@@ -41,7 +44,8 @@ public sealed class LearningArtifactService : ILearningArtifactService
         IChildProfileAccessGuard accessGuard,
         ISafetyPolicyService? safetyPolicyService = null,
         ILearningProfileService? learningProfileService = null,
-        IReviewCompletionStore? reviewCompletionStore = null)
+        IReviewCompletionStore? reviewCompletionStore = null,
+        ListeningInteractionGenerator? listeningGenerator = null)
     {
         _unitOfWork = unitOfWork;
         _aiClient = aiClient;
@@ -49,6 +53,7 @@ public sealed class LearningArtifactService : ILearningArtifactService
         _safetyPolicyService = safetyPolicyService;
         _learningProfileService = learningProfileService;
         _reviewCompletionStore = reviewCompletionStore;
+        _listening = listeningGenerator ?? new ListeningInteractionGenerator(unitOfWork, aiClient);
     }
 
     public async Task<ArtifactGenerationResultDto> GenerateArtifactsAsync(
@@ -76,12 +81,17 @@ public sealed class LearningArtifactService : ILearningArtifactService
             quizCount = await GenerateQuizInternalAsync(userId, story, version, cancellationToken);
         }
 
+        var listeningCount = 0;
+        if ((request?.IncludeListening ?? true) && story.Source == StorySource.Ai && ListeningInteractionGenerator.HasPlan(version.Content))
+            listeningCount = await GenerateListeningInternalAsync(story, version, cancellationToken);
+
         return new ArtifactGenerationResultDto
         {
             StoryId = story.Id,
             StoryVersionId = version.Id,
             VocabularyCount = vocabCount,
             QuizCount = quizCount,
+            ListeningCount = listeningCount,
             Success = true,
             Message = "Đã sinh thành công các learning artifacts cho Phase 4."
         };
@@ -287,5 +297,51 @@ public sealed class LearningArtifactService : ILearningArtifactService
     {
         return await _unitOfWork.Repository<SafetyPolicy>().FirstOrDefaultAsync(
             sp => sp.ChildProfileId == childProfileId, cancellationToken: cancellationToken);
+    }
+    /// <summary>Sinh lại cả gói theo kế hoạch, từng loại một; loại nào xong thì thay luôn. Loại ngoài kế hoạch bị dọn.</summary>
+    private async Task<int> GenerateListeningInternalAsync(Story story, StoryVersion version, CancellationToken cancellationToken)
+    {
+        // Gói sắp đổi: bỏ xác nhận cũ ngay từ đầu, kể cả khi giữa chừng có loại hỏng.
+        _reviewCompletionStore?.ClearListeningReviewed(story.Id, version.Id);
+        var scope = await _listening.LoadScopeAsync(story, version, cancellationToken);
+        var count = 0;
+        foreach (var item in scope.Plan.Items)
+        {
+            IReadOnlyList<ListeningInteractionDraft> drafts;
+            try
+            {
+                drafts = (await _listening.GenerateAsync(scope, item.Type,
+                    $"listening-artifacts-{story.Id}-{version.Id}-{Guid.NewGuid():N}", cancellationToken)).Drafts;
+            }
+            catch (InvalidOperationException ex) when (ex.Message.EndsWith("_VALIDATION_FAILED", StringComparison.Ordinal))
+            {
+                throw new ConflictException(ex.Message);
+            }
+            count += await ReplaceListeningAsync(story.Id, version.Id, item.Type, drafts, cancellationToken);
+        }
+        var outsidePlan = (await _listening.LoadSavedAsync(version.Id, cancellationToken))
+            .Select(x => x.Type).Distinct().Where(t => scope.Plan.Items.All(p => p.Type != t)).ToArray();
+        foreach (var type in outsidePlan)
+            await ReplaceListeningAsync(story.Id, version.Id, type, [], cancellationToken);
+        return count;
+    }
+
+    private async Task<int> ReplaceListeningAsync(
+        int storyId, int versionId, ListeningInteractionType type, IReadOnlyList<ListeningInteractionDraft> drafts, CancellationToken cancellationToken)
+    {
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
+            await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, storyId, versionId, cancellationToken);
+            var count = await _listening.ReplaceAsync(versionId, type, drafts, cancellationToken);
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            return count;
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            throw;
+        }
     }
 }

@@ -9,10 +9,13 @@ public interface IReviewCompletionStore
     void MarkStoryReviewed(int storyId, int versionId, int userId);
     void MarkVocabularyReviewed(int storyId, int versionId, int userId);
     void MarkQuizReviewed(int storyId, int versionId, int userId);
+    void MarkListeningReviewed(int storyId, int versionId, int userId);
 
     bool IsStoryReviewed(int storyId, int versionId);
     bool IsVocabularyReviewed(int storyId, int versionId);
     bool IsQuizReviewed(int storyId, int versionId);
+    bool IsListeningReviewed(int storyId, int versionId);
+    void ClearListeningReviewed(int storyId, int versionId);
 
     bool IsReviewCompleted(int storyId, int versionId);
     void Reset(int storyId, int versionId);

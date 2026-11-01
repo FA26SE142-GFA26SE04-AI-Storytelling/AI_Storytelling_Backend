@@ -33,6 +33,7 @@ namespace StoryPlatform.UnitTests;
             Register<AuthoringGuideCatalog>(); Register<AuthoringGuideCatalogVersion>();
             Register<AuthoringGuideItem>(); Register<AuthoringGuidePlaceholder>();
             Register<MediaAssetGenerationTask>();
+            Register<ListeningInteraction>(); Register<ListeningInteractionOption>();
             Uow.Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>())).Returns<CancellationToken>(async ct => {
                 await _transaction.WaitAsync(ct);
                 _snapshot = _data.ToDictionary(x => x.Key, x => System.Text.Json.JsonSerializer.Deserialize(

@@ -72,3 +72,85 @@ public sealed record ReadabilityMetricsDto
     public double? FleschKincaidGradeLevel { get; init; }
     public double? FleschReadingEase { get; init; }
 }
+
+public sealed record ListeningStoryInfoDto
+{
+    public string Title { get; init; } = string.Empty;
+    public string Lesson { get; init; } = string.Empty;
+}
+
+public sealed record ListeningBlockDto(string BlockId, string Text);
+
+/// <summary>Only the error codes of the previous attempt are sent back, never the generated text.</summary>
+public sealed record ListeningPreviousErrorDto(string Code, int? ItemIndex, string? Field);
+
+public sealed record ListeningChoiceDto
+{
+    public string? Text { get; init; }
+    public string? Feedback { get; init; }
+    public bool IsMatch { get; init; }
+}
+
+public sealed record CheckpointItemDto
+{
+    public string? Kind { get; init; }
+    public string? AfterBlockId { get; init; }
+    public string? Question { get; init; }
+    public string? SourceQuote { get; init; }
+    public string? Explanation { get; init; }
+    public IReadOnlyList<ListeningChoiceDto> Options { get; init; } = [];
+    public string? OtherFeedback { get; init; }
+}
+
+public sealed record RolePlayItemDto
+{
+    public string? AfterBlockId { get; init; }
+    public string? CharacterName { get; init; }
+    public string? LineQuote { get; init; }
+    public string? PraiseFeedback { get; init; }
+}
+
+public sealed record FillBlankItemDto
+{
+    public string? AfterBlockId { get; init; }
+    public string? SentenceQuote { get; init; }
+    public string? HiddenWord { get; init; }
+    public IReadOnlyList<string> AcceptedAnswers { get; init; } = [];
+    public string? Hint { get; init; }
+    public string? MatchFeedback { get; init; }
+    public string? SuggestFeedback { get; init; }
+}
+
+public sealed record ListeningEventDto
+{
+    public int Order { get; init; }
+    public string? BlockId { get; init; }
+    public string? Text { get; init; }
+    public string? SourceQuote { get; init; }
+}
+
+/// <summary>No afterBlockId: the backend always places event ordering after the last block.</summary>
+public sealed record EventOrderingItemDto
+{
+    public IReadOnlyList<ListeningEventDto> Events { get; init; } = [];
+    public string? MatchFeedback { get; init; }
+    public string? RetryFeedback { get; init; }
+}
+
+public sealed record PicturePredictionOptionDto
+{
+    public string? Label { get; init; }
+    public string? ImageDescription { get; init; }
+    public string? Feedback { get; init; }
+    public bool IsMatch { get; init; }
+}
+
+public sealed record PicturePredictionItemDto
+{
+    public string? AfterBlockId { get; init; }
+    public string? RevealBlockId { get; init; }
+    public string? Question { get; init; }
+    public string? SourceQuote { get; init; }
+    public string? WaitFeedback { get; init; }
+    public IReadOnlyList<PicturePredictionOptionDto> Options { get; init; } = [];
+}

@@ -207,6 +207,48 @@ public sealed class StoryReviewPhase4FinalValidationTests
     }
 
     [Fact]
+    public async Task AutoPublish_Succeeds_ForNewVersionWithoutDiscussion()
+    {
+        var uow = SeedContentReviewWithAllArtifacts();
+        ((FakeRepo<DiscussionQuestion>)uow.Repository<DiscussionQuestion>()).Items.Clear(); // Phase 4 không còn sinh câu thảo luận
+        uow.Items<StoryVersion>().Single().SafetyScore = 95m;
+        uow.Seed(new SafetyPolicy
+        {
+            Id = 1,
+            ChildProfileId = 1,
+            ParentalGateEnabled = false,
+            RequiredApprovalMode = ApprovalMode.AutoPublishOnThreshold,
+            SafetyScoreThreshold = 80m
+        });
+        var service = BuildReviewService(uow);
+
+        var validation = await service.ValidateAsync(1, 1);
+        Assert.Contains(validation.Checks, c => c.Name == "discussion_valid" && c.Passed && c.Message == "skipped");
+
+        var result = await service.EvaluateAndApplyAutoPublishAsync(1);
+
+        Assert.NotNull(result);
+        Assert.Equal(StoryStatus.Approved, uow.Items<Story>().Single().Status);
+    }
+
+    [Fact]
+    public async Task Validate_StillRequiresDiscussion_ForLegacyVersionWithDiscussionJob()
+    {
+        var uow = SeedContentReviewWithAllArtifacts();
+        ((FakeRepo<DiscussionQuestion>)uow.Repository<DiscussionQuestion>()).Items.Clear();
+        uow.Seed(new StoryGenerationJob
+        {
+            Id = 30, StoryId = 1, StoryVersionId = 1, Operation = GenerationJobOperation.GenerateDiscussion, Status = GenerationJobStatus.Failed
+        });
+
+        var result = await BuildReviewService(uow).ValidateAsync(1, 1);
+
+        Assert.False(result.CanApprove);
+        Assert.Contains(result.Checks, c => c.Name == "discussion_valid" && !c.Passed);
+        Assert.Contains(result.Issues, i => i.StartsWith("Discussion needs"));
+    }
+
+    [Fact]
     public async Task AutoPublish_ReturnsNull_WhenParentalGateEnabled()
     {
         var uow = SeedContentReviewWithAllArtifacts();

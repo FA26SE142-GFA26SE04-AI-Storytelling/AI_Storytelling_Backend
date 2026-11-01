@@ -215,8 +215,10 @@ public sealed class StableVersionArtifactHandoffServiceTests
         Assert.Single(store.Items<StoryGenerationRequest>());
     }
 
-    [Fact]
-    public async Task ReadingMediaOnly_RejectsExistingLearningJobForCurrentVersion()
+    [Theory]
+    [InlineData(GenerationJobOperation.GenerateVocabulary)]
+    [InlineData(GenerationJobOperation.GenerateListeningInteraction)]
+    public async Task ReadingMediaOnly_RejectsExistingLearningJobForCurrentVersion(GenerationJobOperation operation)
     {
         var store = Seed();
         store.Items<Story>().Single().OutputMode = StoryOutputMode.ReadingMediaOnly;
@@ -225,7 +227,7 @@ public sealed class StableVersionArtifactHandoffServiceTests
             Id = 7,
             StoryId = 1,
             StoryVersionId = 1,
-            Operation = GenerationJobOperation.GenerateVocabulary,
+            Operation = operation,
             Status = GenerationJobStatus.Pending
         });
 

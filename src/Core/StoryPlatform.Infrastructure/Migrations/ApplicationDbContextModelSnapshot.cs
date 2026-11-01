@@ -1288,6 +1288,205 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("learning_profile_topics", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ListeningInteraction", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AnchorOffset")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("CharacterName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Explanation")
+                        .HasColumnType("text");
+
+                    b.Property<string>("HiddenWord")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Hint")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Kind")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("MatchFeedback")
+                        .HasColumnType("text");
+
+                    b.Property<string>("NoMatchFeedback")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Prompt")
+                        .HasColumnType("text");
+
+                    b.Property<int?>("RevealOffset")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("SourceEnd")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SourceQuote")
+                        .HasColumnType("text");
+
+                    b.Property<int?>("SourceStart")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("StorySceneId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("StoryVersionId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("WaitFeedback")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StorySceneId");
+
+                    b.HasIndex("StoryVersionId", "AnchorOffset")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.HasIndex("StoryVersionId", "Type");
+
+                    b.ToTable("listening_interactions", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ListeningInteractionAttempt", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AnswerText")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("AttemptedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ChildProfileId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool?>("IsMatch")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ListeningInteractionId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("OrderedOptionIdsJson")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("ReadingSessionId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("SelectedOptionId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChildProfileId");
+
+                    b.HasIndex("ListeningInteractionId");
+
+                    b.HasIndex("SelectedOptionId");
+
+                    b.HasIndex("ReadingSessionId", "ListeningInteractionId");
+
+                    b.ToTable("listening_interaction_attempts", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ListeningInteractionOption", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("CorrectOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Feedback")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ImageDescription")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsMatch")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ListeningInteractionId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("SourceEnd")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SourceQuote")
+                        .HasColumnType("text");
+
+                    b.Property<int?>("SourceStart")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ListeningInteractionId", "SortOrder")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.ToTable("listening_interaction_options", (string)null);
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.MediaAsset", b =>
                 {
                     b.Property<int>("Id")
@@ -1298,6 +1497,10 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.Property<int>("AttemptCount")
                         .HasColumnType("integer");
+
+                    b.Property<string>("AudioPartKey")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
 
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1319,6 +1522,12 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<string>("LastValidationReason")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
+
+                    b.Property<int?>("ListeningInteractionId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ListeningInteractionOptionId")
+                        .HasColumnType("integer");
 
                     b.Property<string>("MimeType")
                         .HasMaxLength(100)
@@ -1397,6 +1606,11 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ListeningInteractionId")
+                        .HasFilter("\"ListeningInteractionId\" IS NOT NULL");
+
+                    b.HasIndex("ListeningInteractionOptionId");
+
                     b.HasIndex("ReplacesMediaAssetId")
                         .IsUnique()
                         .HasFilter("\"ReplacesMediaAssetId\" IS NOT NULL AND \"ReplacementResolvedAt\" IS NULL AND \"IsDeleted\" = false");
@@ -1424,6 +1638,10 @@ namespace StoryPlatform.Infrastructure.Migrations
                             t.HasCheckConstraint("CK_media_assets_beat_must_be_null_for_audio", "\"Type\" <> 'TtsAudio' OR \"IllustrationBeatId\" IS NULL");
 
                             t.HasCheckConstraint("CK_media_assets_beat_required_for_illustration", "\"Type\" <> 'Illustration' OR \"StorySceneId\" IS NULL OR \"IllustrationBeatId\" IS NOT NULL");
+
+                            t.HasCheckConstraint("CK_media_assets_interaction_required_for_listening_audio", "\"Type\" <> 'ListeningAudio' OR \"ListeningInteractionId\" IS NOT NULL");
+
+                            t.HasCheckConstraint("CK_media_assets_option_required_for_listening_image", "\"Type\" <> 'ListeningImage' OR \"ListeningInteractionOptionId\" IS NOT NULL");
 
                             t.HasCheckConstraint("CK_media_assets_segment_must_be_null_for_illustration", "\"Type\" <> 'Illustration' OR \"StorySegmentId\" IS NULL");
 
@@ -2265,6 +2483,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<string>("LastReadingMode")
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
+
+                    b.Property<bool>("ListenOnly")
+                        .HasColumnType("boolean");
 
                     b.Property<int>("StoryId")
                         .HasColumnType("integer");
@@ -3323,6 +3544,10 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<DateTime?>("LeaseExpiresAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ListeningInteractionType")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
                     b.Property<int>("MaxAttempts")
                         .HasColumnType("integer");
 
@@ -3393,7 +3618,11 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasIndex("Operation", "StoryVersionId")
                         .IsUnique()
-                        .HasFilter("\"StoryVersionId\" IS NOT NULL AND \"IsDeleted\" = false");
+                        .HasFilter("\"StoryVersionId\" IS NOT NULL AND \"IsDeleted\" = false AND \"Operation\" <> 'GenerateListeningInteraction'");
+
+                    b.HasIndex("StoryVersionId", "ListeningInteractionType")
+                        .IsUnique()
+                        .HasFilter("\"Operation\" = 'GenerateListeningInteraction' AND \"StoryVersionId\" IS NOT NULL AND \"IsDeleted\" = false");
 
                     b.HasIndex("ParentJobId", "Status", "NextAttemptAt");
 
@@ -4689,11 +4918,84 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("LearningProfile");
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ListeningInteraction", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryScene", "StoryScene")
+                        .WithMany()
+                        .HasForeignKey("StorySceneId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryVersion", "StoryVersion")
+                        .WithMany()
+                        .HasForeignKey("StoryVersionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("StoryScene");
+
+                    b.Navigation("StoryVersion");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ListeningInteractionAttempt", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
+                        .WithMany()
+                        .HasForeignKey("ChildProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.ListeningInteraction", "ListeningInteraction")
+                        .WithMany()
+                        .HasForeignKey("ListeningInteractionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.ReadingSession", "ReadingSession")
+                        .WithMany()
+                        .HasForeignKey("ReadingSessionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.ListeningInteractionOption", "SelectedOption")
+                        .WithMany()
+                        .HasForeignKey("SelectedOptionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ChildProfile");
+
+                    b.Navigation("ListeningInteraction");
+
+                    b.Navigation("ReadingSession");
+
+                    b.Navigation("SelectedOption");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ListeningInteractionOption", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.ListeningInteraction", "ListeningInteraction")
+                        .WithMany()
+                        .HasForeignKey("ListeningInteractionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ListeningInteraction");
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.MediaAsset", b =>
                 {
                     b.HasOne("StoryPlatform.Domain.Entities.IllustrationBeat", "IllustrationBeat")
                         .WithMany()
                         .HasForeignKey("IllustrationBeatId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.ListeningInteraction", "ListeningInteraction")
+                        .WithMany()
+                        .HasForeignKey("ListeningInteractionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.ListeningInteractionOption", "ListeningInteractionOption")
+                        .WithMany()
+                        .HasForeignKey("ListeningInteractionOptionId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("StoryPlatform.Domain.Entities.MediaAsset", null)
@@ -4723,6 +5025,10 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("IllustrationBeat");
+
+                    b.Navigation("ListeningInteraction");
+
+                    b.Navigation("ListeningInteractionOption");
 
                     b.Navigation("StoryScene");
 

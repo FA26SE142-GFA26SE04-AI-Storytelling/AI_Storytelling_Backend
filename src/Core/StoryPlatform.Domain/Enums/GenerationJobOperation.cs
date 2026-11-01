@@ -14,5 +14,6 @@ public enum GenerationJobOperation
     GenerateIllustration = 10,
     GenerateTts = 11,
     ValidateIllustration = 12,
-    FinalizeMedia = 13
+    FinalizeMedia = 13,
+    GenerateListeningInteraction = 14
 }

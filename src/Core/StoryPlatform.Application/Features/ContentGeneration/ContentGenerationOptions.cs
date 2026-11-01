@@ -6,4 +6,5 @@ public sealed class ContentGenerationOptions
     public int MaxContentRefinementAttempts { get; set; } = 2;
     public int ArtifactMaxAttempts { get; set; } = 2;
     public int JobLeaseMinutes { get; set; } = 4;
+    public int ContentExecutionBudgetSeconds { get; set; } = 180;
 }

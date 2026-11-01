@@ -4,5 +4,7 @@ public enum MediaType
 {
     TtsAudio = 1,
     Illustration = 2,
-    VocabularyAudio = 3
+    VocabularyAudio = 3,
+    ListeningAudio = 4,
+    ListeningImage = 5
 }

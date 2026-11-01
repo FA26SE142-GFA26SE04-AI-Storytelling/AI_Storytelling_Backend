@@ -13,4 +13,6 @@ public class ReadingProgress : BaseEntity
     public string? LastReadingMode { get; set; }
     public bool IsFavorited { get; set; } = false;
     public bool IsBookmarked { get; set; } = false;
+    /// <summary>"Chỉ nghe truyện": tắt tương tác lúc nghe cho truyện này.</summary>
+    public bool ListenOnly { get; set; } = false;
 }

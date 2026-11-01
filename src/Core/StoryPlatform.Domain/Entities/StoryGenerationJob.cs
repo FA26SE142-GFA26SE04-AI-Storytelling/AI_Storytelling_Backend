@@ -29,6 +29,8 @@ public class StoryGenerationJob : BaseEntity
     public string? OperationKey { get; set; }
 
     public GenerationJobOperation Operation { get; set; } = GenerationJobOperation.GenerateOutline;
+    /// <summary>Chỉ có giá trị khi Operation = GenerateListeningInteraction.</summary>
+    public ListeningInteractionType? ListeningInteractionType { get; set; }
     public JobStage Stage { get; set; } = JobStage.InputValidated;
     public GenerationJobStatus Status { get; set; } = GenerationJobStatus.Pending;
     public int AttemptNo { get; set; }

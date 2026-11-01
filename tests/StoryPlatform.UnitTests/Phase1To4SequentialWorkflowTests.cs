@@ -70,7 +70,7 @@ public sealed class Phase1To4SequentialWorkflowTests
         Assert.Single(store.Items<StoryGenerationJob>(), job =>
             job.Operation == GenerationJobOperation.GenerateContent && job.Status == GenerationJobStatus.Pending);
 
-        // Phase 3: generate content, vocabulary, quiz and discussion sequentially.
+        // Phase 3: generate content, vocabulary and quiz sequentially.
         var artifactHandoff = new RecordingArtifactHandoff(store);
         var contentService = new ContentGenerationService(
             store,
@@ -85,12 +85,11 @@ public sealed class Phase1To4SequentialWorkflowTests
             Assert.Single(artifactHandoff.Calls).GenerationRequestId);
         Assert.True(await contentService.ProcessNextAsync());
         Assert.True(await contentService.ProcessNextAsync());
-        Assert.True(await contentService.ProcessNextAsync());
 
         var stableVersion = store.Items<StoryVersion>().Single(version => version.IsCurrent && version.Content is not null);
         Assert.Equal(StoryStatus.ContentReview, story.Status);
         Assert.Equal(
-            ["outline", "content", "safety", "vocabulary", "quiz", "discussion"],
+            ["outline", "content", "safety", "vocabulary", "quiz"],
             ai.Calls);
 
         // Phase 4: raw Phase 3 output is not approvable until the human completes required artifacts.
@@ -247,7 +246,7 @@ public sealed class Phase1To4SequentialWorkflowTests
 
         Assert.Equal(StoryStatus.ContentReview, story.Status);
         Assert.True(stableVersion.IsCurrent);
-        Assert.Equal(["outline", "content", "safety", "vocabulary", "quiz", "discussion"], ai.Calls);
+        Assert.Equal(["outline", "content", "safety", "vocabulary", "quiz"], ai.Calls);
         Assert.All(
             store.Items<StoryGenerationJob>().Where(job => job.Operation is
                 GenerationJobOperation.GenerateContent or
@@ -257,7 +256,7 @@ public sealed class Phase1To4SequentialWorkflowTests
             job => Assert.Equal(GenerationJobStatus.Completed, job.Status));
         Assert.NotEmpty(store.Items<StoryVocabulary>());
         Assert.NotEmpty(store.Items<QuizItem>());
-        Assert.NotEmpty(store.Items<DiscussionQuestion>());
+        Assert.Empty(store.Items<DiscussionQuestion>());
     }
 
     [Fact]
@@ -358,7 +357,6 @@ public sealed class Phase1To4SequentialWorkflowTests
             outline.VersionNo,
             new ApproveOutlineRequestDto { ApprovalKey = "phase3-handoff-approval" });
         var contentService = CreateContentService(store, ai);
-        Assert.True(await contentService.ProcessNextAsync());
         Assert.True(await contentService.ProcessNextAsync());
         Assert.True(await contentService.ProcessNextAsync());
         Assert.True(await contentService.ProcessNextAsync());

@@ -43,7 +43,7 @@ public sealed class LearningBatchGenerationTests
         await service.RetryAsync(1,1,new() {RetryKey="resume-cached-coordinator"});
         Assert.Equal(GenerationJobStatus.Pending,s.Root.Status);
         Assert.All(s.Store.Items<LearningArtifactGenerationBatch>(),x=>{Assert.Equal(GenerationJobStatus.Completed,x.Status);Assert.Equal(saved[x.Id],x.ResultJson);});
-        for(var i=0;i<3;i++)Assert.True(await service.ProcessNextAsync());
+        for(var i=0;i<2;i++)Assert.True(await service.ProcessNextAsync());
         Assert.Equal(StoryStatus.ContentReview,s.Story.Status);Assert.Equal(24,s.Store.Items<QuizItem>().Count);
         client.Verify(x=>x.GenerateVocabularyAsync(It.IsAny<GenerateVocabularyRequest>(),It.IsAny<CancellationToken>()),Times.Once);
         client.Verify(x=>x.GenerateQuizAsync(It.IsAny<GenerateQuizRequest>(),It.IsAny<CancellationToken>()),Times.Exactly(3));
@@ -277,7 +277,7 @@ public sealed class LearningBatchGenerationTests
         invalid = false;
         await service.RetryAsync(1, 1, new() { RetryKey = "repair-feedback-after-exhaustion" });
         Assert.Equal("QUIZ_OPTIONS_INVALID", facts.ErrorCode);
-        for (var i = 0; i < 3; i++) Assert.True(await service.ProcessNextAsync());
+        for (var i = 0; i < 2; i++) Assert.True(await service.ProcessNextAsync());
         Assert.Equal(StoryStatus.ContentReview, s.Story.Status);
         Assert.Equal(24, s.Store.Items<QuizItem>().Count);
         client.Verify(x => x.GenerateVocabularyAsync(It.IsAny<GenerateVocabularyRequest>(), It.IsAny<CancellationToken>()), Times.Once);
@@ -296,7 +296,7 @@ public sealed class LearningBatchGenerationTests
         var service = new ContentGenerationService(s.Store, client.Object, new Mock<IContentQualityEvaluator>().Object,
             finalizer.Object, new Mock<IStableVersionArtifactHandoffService>().Object, new ContentGenerationOptions(),
             learningBatches: scope.ServiceProvider.GetRequiredService<ILearningBatchService>());
-        for (var i = 0; i < 3; i++) Assert.True(await service.ProcessNextAsync());
+        for (var i = 0; i < 2; i++) Assert.True(await service.ProcessNextAsync());
         Assert.All(s.Store.Items<StoryGenerationJob>(), x => Assert.True(x.Status == GenerationJobStatus.Completed, x.ErrorCode));
         Assert.Equal(StoryStatus.ContentReview, s.Story.Status);
         Assert.Equal(12, s.Store.Items<StoryVocabulary>().Count);
@@ -354,7 +354,7 @@ public sealed class LearningBatchGenerationTests
         Assert.Equal(vocabularyResult, vocabulary.ResultJson);
         Assert.All(s.Store.Items<LearningArtifactGenerationBatch>().Where(x => x.Kind != "vocabulary"), x =>
         { Assert.Equal(GenerationJobStatus.Pending, x.Status); Assert.Null(x.ResultJson); });
-        for (var i = 0; i < 3; i++) Assert.True(await service.ProcessNextAsync(),
+        for (var i = 0; i < 2; i++) Assert.True(await service.ProcessNextAsync(),
             string.Join("; ", s.Store.Items<StoryGenerationJob>().Select(x => $"{x.Operation}:{x.Status}:{x.ErrorCode}")));
         Assert.All(s.Store.Items<StoryGenerationJob>(), x => Assert.Equal(GenerationJobStatus.Completed, x.Status));
         Assert.Equal(StoryStatus.ContentReview, s.Story.Status);

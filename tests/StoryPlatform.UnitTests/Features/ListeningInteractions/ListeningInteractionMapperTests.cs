@@ -64,7 +64,7 @@ public sealed class ListeningInteractionMapperTests
     {
         var draft = new ListeningInteractionDraft
         {
-            Type = ListeningInteractionType.EventOrdering, AnchorBlockId = "P4",
+            Type = ListeningInteractionType.EventOrdering, AnchorBlockId = "P4", // bị bỏ qua: luôn đặt sau đoạn cuối
             Options =
             [
                 new() { Text = "Thỏ đi lạc", CorrectOrder = 1, BlockId = "P1", SourceQuote = "Thỏ con đi lạc vào rừng." },
@@ -73,6 +73,7 @@ public sealed class ListeningInteractionMapperTests
             ]
         };
         var result = ListeningInteractionMapper.Resolve([draft], S.Content, S.Blocks);
+        Assert.Equal(S.Block("P6").EndOffset, result.Items[0].AnchorOffset);
         Assert.Equal(0, result.Items[0].Options[0].SourceStart);
         Assert.Contains(new ListeningValidationError("QUOTE_NOT_FOUND", 0, "events[1].sourceQuote"), result.Errors);
         Assert.Contains(new ListeningValidationError("EVENT_ORDER_INVALID", 0, "events[2].blockId"), result.Errors);

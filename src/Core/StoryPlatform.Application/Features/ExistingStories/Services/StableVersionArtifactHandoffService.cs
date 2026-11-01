@@ -93,7 +93,8 @@ public sealed class StableVersionArtifactHandoffService : IStableVersionArtifact
                         job => job.StoryId == storyId && job.StoryVersionId == storyVersionId &&
                                (job.Operation == GenerationJobOperation.GenerateVocabulary ||
                                 job.Operation == GenerationJobOperation.GenerateQuiz ||
-                                job.Operation == GenerationJobOperation.GenerateDiscussion), cancellationToken))
+                                job.Operation == GenerationJobOperation.GenerateDiscussion ||
+                                job.Operation == GenerationJobOperation.GenerateListeningInteraction), cancellationToken))
                     throw new ConflictException("OUTPUT_MODE_CONFLICT: learning job đã tồn tại cho version này.");
                 // Dù không tạo learning job, Phase 5 vẫn cần snapshot profile/safety đã accepted.
                 await EnsureGenerationRequestAsync(

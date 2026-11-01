@@ -123,6 +123,25 @@ public sealed record GenerateDiscussionRequest
     public string? ComprehensionGoal { get; init; }
 }
 
+public sealed record GenerateListeningInteractionRequest
+{
+    public AiGenerationSnapshot? Snapshot { get; init; }
+    public string RequestId { get; init; } = string.Empty;
+    public string InteractionType { get; init; } = string.Empty;
+    public int Count { get; init; }
+    public string AgeBand { get; init; } = string.Empty;
+    public string Language { get; init; } = "vi";
+    public ListeningStoryInfoDto Story { get; init; } = new();
+    public IReadOnlyList<ListeningBlockDto> Blocks { get; init; } = [];
+    public string LastBlockId { get; init; } = string.Empty;
+    public IReadOnlyList<string> OccupiedBlockIds { get; init; } = [];
+    public IReadOnlyList<string> VocabularyTerms { get; init; } = [];
+    public IReadOnlyList<string> DialogueBlockIds { get; init; } = [];
+    /// <summary>AllowedBlockIds[i] = blocks item i may be placed after (empty for event ordering).</summary>
+    public IReadOnlyList<IReadOnlyList<string>> AllowedBlockIds { get; init; } = [];
+    public IReadOnlyList<ListeningPreviousErrorDto> PreviousErrors { get; init; } = [];
+}
+
 public sealed record EvaluateContentSafetyRequest
 {
     public int? ExecutionBudgetSeconds { get; init; }

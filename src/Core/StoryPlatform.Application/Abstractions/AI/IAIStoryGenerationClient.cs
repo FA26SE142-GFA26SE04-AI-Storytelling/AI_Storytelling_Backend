@@ -19,6 +19,8 @@ public interface IAIStoryGenerationClient
         throw new NotSupportedException();
     Task<GenerateDiscussionResponse> GenerateDiscussionAsync(GenerateDiscussionRequest request, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException();
+    Task<GenerateListeningInteractionResponse> GenerateListeningInteractionAsync(GenerateListeningInteractionRequest request, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
     Task<EvaluateContentSafetyResponse> EvaluateContentSafetyAsync(EvaluateContentSafetyRequest request, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException();
 }

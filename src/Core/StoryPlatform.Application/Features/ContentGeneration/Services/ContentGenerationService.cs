@@ -15,6 +15,7 @@ using StoryPlatform.Application.Features.ContentGeneration.DTOs;
 using StoryPlatform.Application.Features.ContentGeneration.Interfaces;
 using StoryPlatform.Application.Features.ContentGeneration.Quality;
 using StoryPlatform.Application.Features.ExistingStories.Interfaces;
+using StoryPlatform.Application.Features.ListeningInteractions.Services;
 using StoryPlatform.Application.Features.StoryReview.Interfaces;
 using StoryPlatform.Contracts.AI.Models;
 using StoryPlatform.Contracts.AI.Requests;
@@ -39,6 +40,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
     private readonly int _artifactMaxAttempts;
     private readonly TimeSpan _jobLease;
     private readonly int _contentExecutionBudgetSeconds;
+    private readonly IReadOnlyCollection<string> _listeningGradingWords;
     private readonly ILearningBatchService? _learningBatches;
     private readonly ILogger<ContentGenerationService> _logger;
 
@@ -66,6 +68,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         _artifactMaxAttempts = Math.Clamp(options.ArtifactMaxAttempts, 1, 3);
         _jobLease = TimeSpan.FromMinutes(Math.Clamp(options.JobLeaseMinutes, 1, 30));
         _contentExecutionBudgetSeconds = Math.Clamp(options.ContentExecutionBudgetSeconds, 6, 180);
+        _listeningGradingWords = options.ListeningGradingWords is { Length: > 0 } words ? words : ListeningInteractionRules.DefaultGradingWords;
     }
 
     public async Task<ContentGenerationProgressDto> GetProgressAsync(
@@ -77,7 +80,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                     (item.Operation == GenerationJobOperation.GenerateContent ||
                      item.Operation == GenerationJobOperation.GenerateVocabulary ||
                      item.Operation == GenerationJobOperation.GenerateQuiz ||
-                     item.Operation == GenerationJobOperation.GenerateDiscussion),
+                     item.Operation == GenerationJobOperation.GenerateDiscussion ||
+                     item.Operation == GenerationJobOperation.GenerateListeningInteraction),
             cancellationToken: cancellationToken);
         var stable = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
                 item => item.StoryId == storyId && item.IsCurrent && item.Content != null,
@@ -90,6 +94,10 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             .ExistsAsync(item => item.StoryVersionId == stable.Id, cancellationToken);
         var discussionDone = stable is not null && await _unitOfWork.Repository<DiscussionQuestion>()
             .ExistsAsync(item => item.StoryVersionId == stable.Id, cancellationToken);
+        // Mỗi loại kế tiếp được tạo cùng transaction với loại vừa lưu.
+        var listeningJobs = jobs.Where(item => item.Operation == GenerationJobOperation.GenerateListeningInteraction &&
+            stable is not null && item.StoryVersionId == stable.Id).ToArray();
+        var listeningDone = listeningJobs.All(item => item.Status == GenerationJobStatus.Completed);
         var active = jobs.Where(item => item.Status is GenerationJobStatus.Pending or GenerationJobStatus.Processing)
             .OrderByDescending(item => item.Id).FirstOrDefault();
         var batches = _learningBatches is not null && stable is not null
@@ -97,13 +105,14 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             : Array.Empty<LearningArtifactGenerationBatch>();
         var failed = jobs.Where(item => item.Operation == GenerationJobOperation.GenerateContent ||
                 stable is not null && item.StoryVersionId == stable.Id)
-            .GroupBy(item => item.Operation).Select(group => group.OrderByDescending(item => item.Id).First())
+            .GroupBy(item => (item.Operation, item.ListeningInteractionType)).Select(group => group.OrderByDescending(item => item.Id).First())
             .Where(item => item.Status == GenerationJobStatus.Failed && (item.Operation switch
             {
                 GenerationJobOperation.GenerateContent => stable is null || item.ErrorCode == "CONTENT_ARTIFACT_HANDOFF_FAILED",
                 GenerationJobOperation.GenerateVocabulary => (!vocabularyDone || batches.Any(x => x.RootJobId == item.Id)) && item.StoryVersionId == stable?.Id,
                 GenerationJobOperation.GenerateQuiz => !quizDone && item.StoryVersionId == stable?.Id,
                 GenerationJobOperation.GenerateDiscussion => !discussionDone && item.StoryVersionId == stable?.Id,
+                GenerationJobOperation.GenerateListeningInteraction => item.StoryVersionId == stable?.Id,
                 _ => false
             }))
             .OrderByDescending(item => item.CompletedAt ?? item.StartedAt).ThenByDescending(item => item.Id).FirstOrDefault();
@@ -112,7 +121,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         var readingMediaOnly = story.OutputMode == StoryOutputMode.ReadingMediaOnly;
         var contentComplete = stable is not null && story.Status is
             (StoryStatus.ContentReview or StoryStatus.Approved or StoryStatus.MediaProcessing or StoryStatus.MediaReview or StoryStatus.Ready);
-        var isComplete = active is null && !waiting && contentComplete && (readingMediaOnly || vocabularyDone && quizDone && discussionDone);
+        var isComplete = active is null && !waiting && contentComplete && (readingMediaOnly || vocabularyDone && quizDone && listeningDone);
         var contentJob = jobs.Where(x => x.Operation == GenerationJobOperation.GenerateContent).OrderByDescending(x => x.Id).FirstOrDefault();
         CandidateMetadataEnvelope? latestCandidate = null;
         if (!string.IsNullOrWhiteSpace(contentJob?.GenerationMetadataJson))
@@ -154,7 +163,12 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             Content = stable is not null ? "stable" : JobState(jobs, GenerationJobOperation.GenerateContent),
             Vocabulary = readingMediaOnly ? "skipped" : vocabularyDone ? "completed" : JobState(jobs, GenerationJobOperation.GenerateVocabulary),
             Quiz = readingMediaOnly ? "skipped" : quizDone ? "completed" : JobState(jobs, GenerationJobOperation.GenerateQuiz),
-            Discussion = readingMediaOnly ? "skipped" : discussionDone ? "completed" : JobState(jobs, GenerationJobOperation.GenerateDiscussion),
+            Discussion = readingMediaOnly ? "skipped" : discussionDone ? "completed" :
+                jobs.Any(item => item.Operation == GenerationJobOperation.GenerateDiscussion && item.StoryVersionId == stable?.Id)
+                    ? JobState(jobs, GenerationJobOperation.GenerateDiscussion) : "skipped",
+            Listening = readingMediaOnly ? "skipped" :
+                listeningJobs.Length == 0 ? (quizDone && contentComplete ? "skipped" : "not_started") :
+                listeningDone ? "completed" : JobState(listeningJobs, GenerationJobOperation.GenerateListeningInteraction),
             IsComplete = isComplete,
             LastErrorCode = active is null && !waiting && !isComplete ? failed?.ErrorCode : null,
             QualityFailure = isComplete ? null : qualityFailure,
@@ -215,7 +229,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                             (item.Operation == GenerationJobOperation.GenerateContent ||
                              item.Operation == GenerationJobOperation.GenerateVocabulary ||
                              item.Operation == GenerationJobOperation.GenerateQuiz ||
-                             item.Operation == GenerationJobOperation.GenerateDiscussion) &&
+                             item.Operation == GenerationJobOperation.GenerateDiscussion ||
+                             item.Operation == GenerationJobOperation.GenerateListeningInteraction) &&
                             (item.Status == GenerationJobStatus.Pending || item.Status == GenerationJobStatus.Processing),
                     cancellationToken))
             {
@@ -227,7 +242,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                             (item.Operation == GenerationJobOperation.GenerateContent ||
                              item.Operation == GenerationJobOperation.GenerateVocabulary ||
                              item.Operation == GenerationJobOperation.GenerateQuiz ||
-                             item.Operation == GenerationJobOperation.GenerateDiscussion) &&
+                             item.Operation == GenerationJobOperation.GenerateDiscussion ||
+                             item.Operation == GenerationJobOperation.GenerateListeningInteraction) &&
                             item.Status == GenerationJobStatus.Failed,
                     cancellationToken: cancellationToken))
                 .OrderByDescending(item => item.Id)
@@ -268,7 +284,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             item => (item.Operation == GenerationJobOperation.GenerateContent ||
                      item.Operation == GenerationJobOperation.GenerateVocabulary ||
                      item.Operation == GenerationJobOperation.GenerateQuiz ||
-                     item.Operation == GenerationJobOperation.GenerateDiscussion) &&
+                     item.Operation == GenerationJobOperation.GenerateDiscussion ||
+                     item.Operation == GenerationJobOperation.GenerateListeningInteraction) &&
                     (item.AttemptNo < item.MaxAttempts ||
                      item.Operation == GenerationJobOperation.GenerateContent && item.Stage == JobStage.ContentStable) &&
                     (item.Status == GenerationJobStatus.Pending ||
@@ -315,6 +332,9 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                     break;
                 case GenerationJobOperation.GenerateDiscussion:
                     await ProcessDiscussionAsync(job.Id, claimedToken, cancellationToken);
+                    break;
+                case GenerationJobOperation.GenerateListeningInteraction:
+                    await ProcessListeningAsync(job.Id, claimedToken, cancellationToken);
                     break;
             }
         }
@@ -569,7 +589,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                     Example = string.IsNullOrEmpty(item.Example) ? null : item.Example
                 }), cancellationToken);
             }
-        }, GenerationJobOperation.GenerateQuiz, cancellationToken);
+        }, new NextArtifact(GenerationJobOperation.GenerateQuiz), cancellationToken);
     }
 
     private async Task ProcessQuizAsync(int jobId, string claimedToken, CancellationToken cancellationToken)
@@ -614,7 +634,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             if (!await _unitOfWork.Repository<QuizItem>().ExistsAsync(item => item.StoryVersionId == state.Version.Id, cancellationToken))
                 await _unitOfWork.Repository<QuizItem>().AddRangeAsync(
                     mapped.Select(item => (QuizItem)(item with { StoryVersionId = state.Version.Id })), cancellationToken);
-        }, GenerationJobOperation.GenerateDiscussion, cancellationToken);
+        }, ListeningNext(ListeningPlan(state.Context, ListeningBlockParser.Parse(state.Version.Content!)), null), cancellationToken);
     }
 
     private async Task ProcessDiscussionAsync(int jobId, string claimedToken, CancellationToken cancellationToken)
@@ -656,7 +676,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
 
     private async Task CompleteArtifactAsync(
         ArtifactState state, string claimedToken, GenerationMetadataDto metadata, Func<Task> persist,
-        GenerationJobOperation? nextOperation, CancellationToken cancellationToken)
+        NextArtifact? next, CancellationToken cancellationToken)
     {
         await InStoryTransactionAsync(state.Job.StoryId, async () =>
         {
@@ -676,14 +696,14 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             }
             await persist();
             job.Status = GenerationJobStatus.Completed;
-            job.Stage = nextOperation.HasValue ? JobStage.ContentArtifactCompleted : JobStage.ContentPackageCompleted;
+            job.Stage = next is not null ? JobStage.ContentArtifactCompleted : JobStage.ContentPackageCompleted;
             job.CompletedAt = DateTime.UtcNow;
             job.LeaseExpiresAt = null;
             job.GenerationMetadataJson = JsonSerializer.Serialize(metadata, JsonOptions);
             RotateToken(job);
             _unitOfWork.Repository<StoryGenerationJob>().Update(job);
-            if (nextOperation.HasValue)
-                await EnsureNextJobAsync(job, version.Id, nextOperation.Value, cancellationToken);
+            if (next is not null)
+                await EnsureNextJobAsync(job, version.Id, next, cancellationToken);
             else
             {
                 var story = await _unitOfWork.Repository<Story>().GetByIdAsync(job.StoryId, cancellationToken)
@@ -695,7 +715,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             return true;
         }, cancellationToken);
 
-        if (!nextOperation.HasValue && _reviewService is not null)
+        if (next is null && _reviewService is not null)
         {
             try
             {
@@ -802,10 +822,13 @@ public sealed partial class ContentGenerationService : IContentGenerationService
     }
 
     private async Task EnsureNextJobAsync(
-        StoryGenerationJob source, int stableVersionId, GenerationJobOperation operation, CancellationToken cancellationToken)
+        StoryGenerationJob source, int stableVersionId, NextArtifact next, CancellationToken cancellationToken)
     {
+        var operation = next.Operation;
+        var listeningType = next.ListeningType;
         var existing = await _unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(
-            item => item.Operation == operation && item.StoryVersionId == stableVersionId, cancellationToken: cancellationToken);
+            item => item.Operation == operation && item.StoryVersionId == stableVersionId &&
+                    item.ListeningInteractionType == listeningType, cancellationToken: cancellationToken);
         if (existing is not null)
         {
             if (_learningBatches is not null && source.Operation == GenerationJobOperation.GenerateVocabulary &&
@@ -821,6 +844,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             }
             return;
         }
+        var key = $"p3:{source.StoryId}:{stableVersionId}:{OperationName(operation)}";
         await _unitOfWork.Repository<StoryGenerationJob>().AddAsync(new StoryGenerationJob
         {
             StoryId = source.StoryId,
@@ -828,8 +852,9 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             StoryVersionId = stableVersionId,
             BaseStoryVersionId = stableVersionId,
             RequestedByUserId = source.RequestedByUserId,
-            OperationKey = $"p3:{source.StoryId}:{stableVersionId}:{OperationName(operation)}",
+            OperationKey = listeningType is null ? key : $"{key}:{listeningType}",
             Operation = operation,
+            ListeningInteractionType = listeningType,
             Stage = JobStage.ContentArtifactPending,
             Status = GenerationJobStatus.Pending,
             AttemptNo = 0,
@@ -980,7 +1005,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
     private static void RotateToken(StoryGenerationJob job) => job.ConcurrencyToken = Guid.NewGuid().ToString("N");
     private static bool IsContentGenerationOperation(GenerationJobOperation operation) => operation is
         GenerationJobOperation.GenerateContent or GenerationJobOperation.GenerateVocabulary or
-        GenerationJobOperation.GenerateQuiz or GenerationJobOperation.GenerateDiscussion;
+        GenerationJobOperation.GenerateQuiz or GenerationJobOperation.GenerateDiscussion or
+        GenerationJobOperation.GenerateListeningInteraction;
     private static ContentQualityFailureDto? ToQualityFailure(StoryGenerationJob? failedJob)
     {
         if (failedJob is null || string.IsNullOrWhiteSpace(failedJob.GenerationMetadataJson)) return null;
@@ -1036,6 +1062,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         GenerationJobOperation.GenerateVocabulary => "vocabulary",
         GenerationJobOperation.GenerateQuiz => "quiz",
         GenerationJobOperation.GenerateDiscussion => "discussion",
+        GenerationJobOperation.GenerateListeningInteraction => "listening",
         _ => "unknown"
     };
     private static string JobState(IEnumerable<StoryGenerationJob> jobs, GenerationJobOperation operation)
@@ -1054,6 +1081,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             GenerationJobOperation.GenerateVocabulary => "VOCABULARY_GENERATION_FAILED",
             GenerationJobOperation.GenerateQuiz => "QUIZ_GENERATION_FAILED",
             GenerationJobOperation.GenerateDiscussion => "DISCUSSION_GENERATION_FAILED",
+            GenerationJobOperation.GenerateListeningInteraction => "LISTENING_GENERATION_FAILED",
             _ => "CONTENT_TECHNICAL_GENERATION_FAILED"
         }
     };
@@ -1159,6 +1187,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         string? Description = null,
         int? LastMeasuredWordCount = null);
     private sealed record ArtifactState(StoryGenerationJob Job, StoryVersion Version, AIStoryInputContextSnapshot Context);
+    private sealed record NextArtifact(GenerationJobOperation Operation, ListeningInteractionType? ListeningType = null);
     private sealed record QuizItemSeed(QuizType Type, string Question, string CorrectAnswer, string Choices)
     {
         public StoryPlatform.Contracts.AI.Models.QuizItemDto? Detail { get; init; }

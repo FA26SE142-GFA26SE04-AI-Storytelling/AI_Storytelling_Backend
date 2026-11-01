@@ -22,6 +22,8 @@ public static class ListeningInteractionMapper
         for (var i = 0; i < items.Count; i++)
         {
             var item = items[i];
+            // Sắp xếp luôn đặt sau đoạn cuối: backend tự gán, AI không chọn chỗ.
+            if (item.Type == ListeningInteractionType.EventOrdering) item = item with { AnchorBlockId = blocks[^1].BlockId };
             if (!byId.TryGetValue(item.AnchorBlockId, out var anchor))
             {
                 errors.Add(new("ANCHOR_INVALID", i, "afterBlockId"));

@@ -68,6 +68,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
         var vocabCount = await _vocabRepo.CountAsync(v => v.StoryVersionId == version.Id, cancellationToken);
         var quizCount = await _quizRepo.CountAsync(q => q.StoryVersionId == version.Id, cancellationToken);
         var discussionCount = await _discussionRepo.CountAsync(d => d.StoryVersionId == version.Id, cancellationToken);
+        var discussionRequired = await RequiresDiscussionAsync(version.Id, discussionCount, cancellationToken);
         var readability = ReadabilityCalculator.Calculate(version.Content, story.Language);
         var readingMediaOnly = story.OutputMode == StoryOutputMode.ReadingMediaOnly;
 
@@ -87,7 +88,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
             ReadabilityFre = version.ReadabilityFre ?? readability.Fre,
             Vocabulary = new ArtifactStatusDto { State = readingMediaOnly ? "skipped" : vocabCount > 0 ? "completed" : "pending", ItemCount = vocabCount },
             Quiz = new ArtifactStatusDto { State = readingMediaOnly ? "skipped" : quizCount > 0 ? "completed" : "pending", ItemCount = quizCount },
-            Discussion = new ArtifactStatusDto { State = readingMediaOnly ? "skipped" : discussionCount > 0 ? "completed" : "pending", ItemCount = discussionCount },
+            Discussion = new ArtifactStatusDto { State = readingMediaOnly || !discussionRequired ? "skipped" : discussionCount > 0 ? "completed" : "pending", ItemCount = discussionCount },
             CanEdit = story.Scope != StoryScope.Creator || story.Status == StoryStatus.ContentReview,
             CanApprove = story.Scope != StoryScope.Creator && story.Status == StoryStatus.ContentReview,
             CanConfirmContent = story.Scope == StoryScope.Creator && story.Status == StoryStatus.ContentReview,
@@ -1005,10 +1006,12 @@ public sealed partial class StoryReviewService : IStoryReviewService
 
         // 7. Check discussion
         var discussionItems = await _discussionRepo.FindAsync(d => d.StoryVersionId == version.Id, cancellationToken: cancellationToken);
-        var discussionValid = discussionItems.Count >= 2 &&
+        var discussionRequired = await RequiresDiscussionAsync(version.Id, discussionItems.Count, cancellationToken);
+        var discussionValid = !discussionRequired ||
+                              discussionItems.Count >= 2 &&
                               discussionItems.All(item => !string.IsNullOrWhiteSpace(item.Question)) &&
                               discussionItems.Any(item => item.IsMoralLesson);
-        checks.Add(new ValidationCheckDto { Name = "discussion_valid", Passed = readingMediaOnly || discussionValid, Message = readingMediaOnly ? "skipped" : $"{discussionItems.Count} questions" });
+        checks.Add(new ValidationCheckDto { Name = "discussion_valid", Passed = readingMediaOnly || discussionValid, Message = readingMediaOnly || !discussionRequired ? "skipped" : $"{discussionItems.Count} questions" });
         if (!readingMediaOnly && !discussionValid) issues.Add($"Discussion needs at least 2 non-empty questions including the moral lesson (current: {discussionItems.Count})");
 
         // 8. Check Artifact Bindings
@@ -1188,6 +1191,14 @@ public sealed partial class StoryReviewService : IStoryReviewService
 
         return versionId;
     }
+
+    /// <summary>
+    /// Phase 4 không còn sinh câu thảo luận (thay bằng tương tác lúc nghe). Chỉ version cũ, đã có câu thảo luận
+    /// hoặc có job Discussion, mới còn phải qua luật thảo luận.
+    /// </summary>
+    private async Task<bool> RequiresDiscussionAsync(int versionId, int discussionCount, CancellationToken cancellationToken) =>
+        discussionCount > 0 || await _unitOfWork.Repository<StoryGenerationJob>().ExistsAsync(
+            job => job.StoryVersionId == versionId && job.Operation == GenerationJobOperation.GenerateDiscussion, cancellationToken);
 
     public async Task<ApproveResponseDto?> EvaluateAndApplyAutoPublishAsync(
         int storyId, CancellationToken cancellationToken = default)

@@ -2,6 +2,7 @@ namespace StoryPlatform.Contracts.AI.Models;
 
 public sealed record GenerationConstraintsDto
 {
+    public ContentReadabilityLimits? Readability { get; init; }
     public int MinimumWords { get; init; }
     public int MaximumWords { get; init; } = 1200;
     public IReadOnlyList<string> BlockedTopics { get; init; } = [];

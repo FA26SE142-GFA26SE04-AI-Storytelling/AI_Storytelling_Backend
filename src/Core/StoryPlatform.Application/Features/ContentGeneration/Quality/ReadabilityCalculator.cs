@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using StoryPlatform.Contracts.AI.Models;
 
 namespace StoryPlatform.Application.Features.ContentGeneration.Quality;
 
@@ -34,25 +35,10 @@ public static partial class ReadabilityCalculator
     {
         var level = Math.Clamp(readingLevel, 1, 5);
         var metrics = Calculate(content, language);
-        var minimumEase = configuredMinimumEaseScore is >= 0m and <= 100m
-            ? configuredMinimumEaseScore.Value
-            : DefaultMinimumEase(level);
-        var maximumGrade = level switch
-        {
-            1 => 3m,
-            2 => 5m,
-            3 => 7m,
-            4 => 9m,
-            _ => 11m
-        };
-        var maximumAverageWords = level switch
-        {
-            1 => 10m,
-            2 => 14m,
-            3 => 18m,
-            4 => 22m,
-            _ => 26m
-        };
+        var limits = ContentReadabilityLimits.ForLevel(level, configuredMinimumEaseScore);
+        var minimumEase = limits.MinimumEaseScore;
+        var maximumGrade = limits.MaximumGradeLevel;
+        var maximumAverageWords = limits.MaximumAverageWordsPerSentence;
 
         var passed = metrics.Fkgl.HasValue && metrics.Fre.HasValue &&
                      metrics.Fkgl.Value <= maximumGrade &&
@@ -94,14 +80,6 @@ public static partial class ReadabilityCalculator
             Round(gradeEquivalent), Round(ease));
     }
 
-    private static decimal DefaultMinimumEase(int readingLevel) => readingLevel switch
-    {
-        1 => 65m,
-        2 => 55m,
-        3 => 45m,
-        4 => 35m,
-        _ => 25m
-    };
 
     private static string Algorithm(string? language) =>
         IsVietnamese(language) ? "VI_READABILITY_V1" : "FKGL_FRE_EN_V1";

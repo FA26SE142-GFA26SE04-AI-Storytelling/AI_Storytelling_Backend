@@ -14,6 +14,63 @@ namespace StoryPlatform.AI.IntegrationTests;
 
 public sealed class StoryContentGenerationHandlerTests
 {
+    [Theory]
+    [InlineData(900, 810, 990)]
+    [InlineData(1500, 1350, 1650)]
+    public async Task Generation_and_refinement_share_lexical_count_and_readability_instructions(int target, int minimum, int maximum)
+    {
+        const string payload = """{"title":"A toy","storySections":[{"order":1,"heading":"Start","content":"Na repaired a toy."}],"lesson":"Be kind"}""";
+        var llm = new StubLlmClient(payload, payload);
+        var executor = new StoryContentGenerationExecutor(llm, Options.Create(new StoryContentGenerationOptions()));
+        var constraints = new GenerationConstraintsDto { MinimumWords = minimum, MaximumWords = maximum,
+            Readability = ContentReadabilityLimits.ForLevel(2, 60m) };
+        var request = ValidRequest() with { Constraints = constraints,
+            StoryParameters = ValidRequest().StoryParameters with { RequestedLength = target } };
+        var generated = await new GenerateStoryContentHandler(executor, new StubPromptProvider()).HandleAsync(request);
+        var first = llm.LastPrompt;
+        await new RefineStoryContentHandler(executor, new StubPromptProvider()).HandleAsync(new()
+        {
+            RequestId = "repair-length", Story = generated.Story, AgeBand = "6-8", Language = "vi",
+            TargetLength = target, Constraints = constraints, Reasons = ["Length exceeds upper limit"],
+            Feedback = new() { CurrentWordCount = target + 259, TargetWords = target, MinimumWords = minimum,
+                MaximumWords = maximum, FailedGateCodes = ["CONTENT_LENGTH_INVALID"] }
+        });
+        foreach (var prompt in new[] { first, llm.LastPrompt })
+        {
+            Assert.Contains($"{minimum}-{maximum} Unicode lexical units", prompt);
+            Assert.Contains("Vietnamese syllables count individually", prompt);
+            Assert.Contains("ease >= 60", prompt);
+            Assert.Contains("sentence <= 14", prompt);
+        }
+        Assert.Contains("Remove approximately 259", llm.LastPrompt);
+        Assert.Contains("preserve the main events and ending", llm.LastPrompt);
+    }
+
+    [Fact]
+    public async Task Provider_retry_backoff_cannot_outlive_the_total_request_budget()
+    {
+        var error = new HttpRequestException("Rate limited", null, HttpStatusCode.TooManyRequests);
+        error.Data["RetryAfterSeconds"] = 60d;
+        var llm = new StubLlmClient(error);
+        var handler = new GenerateStoryContentHandler(new StoryContentGenerationExecutor(llm,
+            Options.Create(new StoryContentGenerationOptions())), new StubPromptProvider());
+        await Assert.ThrowsAsync<TimeoutException>(() => handler.HandleAsync(ValidRequest() with { ExecutionBudgetSeconds = 1 }));
+        Assert.Equal(1, llm.CallCount);
+    }
+
+    [Fact]
+    public async Task Caller_cancellation_is_not_relabelled_as_budget_timeout()
+    {
+        var error = new HttpRequestException("Rate limited", null, HttpStatusCode.TooManyRequests);
+        error.Data["RetryAfterSeconds"] = 60d;
+        var llm = new StubLlmClient(error);
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        var handler = new GenerateStoryContentHandler(new StoryContentGenerationExecutor(llm,
+            Options.Create(new StoryContentGenerationOptions())), new StubPromptProvider());
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => handler.HandleAsync(
+            ValidRequest() with { ExecutionBudgetSeconds = 90 }, cancelled.Token));
+    }
     [Fact]
     public async Task Quiz_contract_rejects_missing_required_types_before_Core_caches_the_batch()
     {

@@ -24,6 +24,11 @@ public sealed class ContentQualityFailureDto
 
 public sealed class ContentGenerationProgressDto
 {
+    public double? ElapsedSeconds { get; init; }
+    public int? RefinementAttempts { get; init; }
+    public int? LastMeasuredWordCount { get; init; }
+    public int? MinimumWords { get; init; }
+    public int? MaximumWords { get; init; }
     public int StoryId { get; init; }
     public string OutputMode { get; init; } = "learning";
     public string StoryStatus { get; init; } = string.Empty;

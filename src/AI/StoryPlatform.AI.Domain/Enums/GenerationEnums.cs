@@ -25,5 +25,10 @@ public enum PromptType
     StoryContentRefinement = 5,
     Vocabulary = 6,
     Quiz = 7,
-    ContentSafety = 9
+    ContentSafety = 9,
+    ListeningCheckpoint = 10,
+    ListeningRolePlay = 11,
+    ListeningFillBlank = 12,
+    ListeningPicturePrediction = 13,
+    ListeningEventOrdering = 14
 }

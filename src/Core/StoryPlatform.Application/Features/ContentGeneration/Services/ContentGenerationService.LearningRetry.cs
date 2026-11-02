@@ -30,11 +30,12 @@ public sealed partial class ContentGenerationService
                 return true;
             }
             if (await _unitOfWork.Repository<StoryGenerationJob>().ExistsAsync(x => x.StoryId == storyId &&
+                x.Operation != GenerationJobOperation.GenerateDiscussion &&
                 (x.Status == GenerationJobStatus.Processing || x.Status == GenerationJobStatus.Pending), ct))
                 throw new ConflictException("LEARNING_JOB_ACTIVE");
             var failed = (await _unitOfWork.Repository<StoryGenerationJob>().FindAsync(x => x.StoryVersionId == version.Id &&
                 (x.Operation == GenerationJobOperation.GenerateVocabulary || x.Operation == GenerationJobOperation.GenerateQuiz ||
-                 x.Operation == GenerationJobOperation.GenerateDiscussion || x.Operation == GenerationJobOperation.GenerateListeningInteraction) &&
+                 x.Operation == GenerationJobOperation.GenerateListeningInteraction) &&
                 x.Status == GenerationJobStatus.Failed, cancellationToken: ct))
                 .OrderByDescending(x => x.CompletedAt ?? x.StartedAt).ThenByDescending(x => x.Id).FirstOrDefault();
             if (failed is null) throw new ConflictException("LEARNING_JOB_NOT_FAILED");

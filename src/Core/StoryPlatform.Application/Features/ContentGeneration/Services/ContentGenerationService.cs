@@ -81,7 +81,6 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                     (item.Operation == GenerationJobOperation.GenerateContent ||
                      item.Operation == GenerationJobOperation.GenerateVocabulary ||
                      item.Operation == GenerationJobOperation.GenerateQuiz ||
-                     item.Operation == GenerationJobOperation.GenerateDiscussion ||
                      item.Operation == GenerationJobOperation.GenerateListeningInteraction),
             cancellationToken: cancellationToken);
         var stable = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
@@ -110,7 +109,6 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                 GenerationJobOperation.GenerateContent => stable is null || item.ErrorCode == "CONTENT_ARTIFACT_HANDOFF_FAILED",
                 GenerationJobOperation.GenerateVocabulary => (!vocabularyDone || batches.Any(x => x.RootJobId == item.Id)) && item.StoryVersionId == stable?.Id,
                 GenerationJobOperation.GenerateQuiz => !quizDone && item.StoryVersionId == stable?.Id,
-                GenerationJobOperation.GenerateDiscussion => item.StoryVersionId == stable?.Id,
                 GenerationJobOperation.GenerateListeningInteraction => item.StoryVersionId == stable?.Id,
                 _ => false
             }))
@@ -225,7 +223,6 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                             (item.Operation == GenerationJobOperation.GenerateContent ||
                              item.Operation == GenerationJobOperation.GenerateVocabulary ||
                              item.Operation == GenerationJobOperation.GenerateQuiz ||
-                             item.Operation == GenerationJobOperation.GenerateDiscussion ||
                              item.Operation == GenerationJobOperation.GenerateListeningInteraction) &&
                             (item.Status == GenerationJobStatus.Pending || item.Status == GenerationJobStatus.Processing),
                     cancellationToken))
@@ -238,7 +235,6 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                             (item.Operation == GenerationJobOperation.GenerateContent ||
                              item.Operation == GenerationJobOperation.GenerateVocabulary ||
                              item.Operation == GenerationJobOperation.GenerateQuiz ||
-                             item.Operation == GenerationJobOperation.GenerateDiscussion ||
                              item.Operation == GenerationJobOperation.GenerateListeningInteraction) &&
                             item.Status == GenerationJobStatus.Failed,
                     cancellationToken: cancellationToken))
@@ -280,7 +276,6 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             item => (item.Operation == GenerationJobOperation.GenerateContent ||
                      item.Operation == GenerationJobOperation.GenerateVocabulary ||
                      item.Operation == GenerationJobOperation.GenerateQuiz ||
-                     item.Operation == GenerationJobOperation.GenerateDiscussion ||
                      item.Operation == GenerationJobOperation.GenerateListeningInteraction) &&
                     (item.AttemptNo < item.MaxAttempts ||
                      item.Operation == GenerationJobOperation.GenerateContent && item.Stage == JobStage.ContentStable) &&
@@ -325,9 +320,6 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                     break;
                 case GenerationJobOperation.GenerateQuiz:
                     await ProcessQuizAsync(job.Id, claimedToken, cancellationToken);
-                    break;
-                case GenerationJobOperation.GenerateDiscussion:
-                    await ProcessDiscussionAsync(job.Id, claimedToken, cancellationToken);
                     break;
                 case GenerationJobOperation.GenerateListeningInteraction:
                     await ProcessListeningAsync(job.Id, claimedToken, cancellationToken);
@@ -631,13 +623,6 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                 await _unitOfWork.Repository<QuizItem>().AddRangeAsync(
                     mapped.Select(item => (QuizItem)(item with { StoryVersionId = state.Version.Id })), cancellationToken);
         }, ListeningNext(ListeningPlan(state.Context, ListeningBlockParser.Parse(state.Version.Content!)), null), cancellationToken);
-    }
-
-    // Job Discussion cũ chỉ được đóng để truyện sang ContentReview.
-    private async Task ProcessDiscussionAsync(int jobId, string claimedToken, CancellationToken cancellationToken)
-    {
-        var state = await LoadArtifactStateAsync(jobId, GenerationJobOperation.GenerateDiscussion, cancellationToken);
-        await CompleteArtifactAsync(state, claimedToken, new GenerationMetadataDto(), () => Task.CompletedTask, null, cancellationToken);
     }
 
     private async Task CompleteArtifactAsync(
@@ -971,7 +956,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
     private static void RotateToken(StoryGenerationJob job) => job.ConcurrencyToken = Guid.NewGuid().ToString("N");
     private static bool IsContentGenerationOperation(GenerationJobOperation operation) => operation is
         GenerationJobOperation.GenerateContent or GenerationJobOperation.GenerateVocabulary or
-        GenerationJobOperation.GenerateQuiz or GenerationJobOperation.GenerateDiscussion or
+        GenerationJobOperation.GenerateQuiz or
         GenerationJobOperation.GenerateListeningInteraction;
     private static ContentQualityFailureDto? ToQualityFailure(StoryGenerationJob? failedJob)
     {
@@ -1027,7 +1012,6 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         GenerationJobOperation.GenerateContent => "content",
         GenerationJobOperation.GenerateVocabulary => "vocabulary",
         GenerationJobOperation.GenerateQuiz => "quiz",
-        GenerationJobOperation.GenerateDiscussion => "discussion",
         GenerationJobOperation.GenerateListeningInteraction => "listening",
         _ => "unknown"
     };
@@ -1046,7 +1030,6 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         {
             GenerationJobOperation.GenerateVocabulary => "VOCABULARY_GENERATION_FAILED",
             GenerationJobOperation.GenerateQuiz => "QUIZ_GENERATION_FAILED",
-            GenerationJobOperation.GenerateDiscussion => "DISCUSSION_GENERATION_FAILED",
             GenerationJobOperation.GenerateListeningInteraction => "LISTENING_GENERATION_FAILED",
             _ => "CONTENT_TECHNICAL_GENERATION_FAILED"
         }

@@ -23,7 +23,7 @@ namespace StoryPlatform.UnitTests;
 public sealed class ContentGenerationServiceTests
 {
     [Fact]
-    public async Task Legacy_discussion_job_is_closed_without_calling_ai()
+    public async Task Legacy_discussion_job_is_not_executed_or_used_to_advance_the_story()
     {
         var store = Seed();
         var version = store.Items<StoryVersion>().Single();
@@ -35,12 +35,57 @@ public sealed class ContentGenerationServiceTests
         job.BaseStoryVersionId = version.Id;
         var ai = new FakeAIClient();
 
-        Assert.True(await Service(store, ai).ProcessNextAsync());
+        Assert.False(await Service(store, ai).ProcessNextAsync());
 
-        Assert.Equal(GenerationJobStatus.Completed, job.Status);
-        Assert.Equal(StoryStatus.ContentReview, store.Items<Story>().Single().Status);
+        Assert.Equal(GenerationJobStatus.Pending, job.Status);
+        Assert.Equal(StoryStatus.OutlineReview, store.Items<Story>().Single().Status);
         Assert.Empty(ai.Calls);
         Assert.False(await Service(store, ai).ProcessNextAsync());
+    }
+
+    [Theory]
+    [InlineData(GenerationJobStatus.Pending)]
+    [InlineData(GenerationJobStatus.Processing)]
+    [InlineData(GenerationJobStatus.Failed)]
+    [InlineData(GenerationJobStatus.WaitingForModeration)]
+    public async Task Legacy_discussion_does_not_affect_current_generation_progress(GenerationJobStatus status)
+    {
+        var store = Seed();
+        store.Seed(new StoryGenerationJob
+        {
+            Id = 99, StoryId = 1, Operation = GenerationJobOperation.GenerateDiscussion,
+            Status = status, ErrorCode = "DISCUSSION_GENERATION_FAILED"
+        });
+
+        var progress = await Service(store, new FakeAIClient()).GetProgressAsync(1, 1);
+
+        Assert.Equal("pending_content", progress.CurrentStep);
+        Assert.False(progress.WaitingForModeration);
+        Assert.Null(progress.LastErrorCode);
+    }
+
+    [Theory]
+    [InlineData(GenerationJobStatus.Pending)]
+    [InlineData(GenerationJobStatus.Processing)]
+    [InlineData(GenerationJobStatus.Failed)]
+    public async Task Legacy_discussion_does_not_block_or_replace_content_retry(GenerationJobStatus status)
+    {
+        var store = Seed();
+        var content = store.Items<StoryGenerationJob>().Single();
+        content.Status = GenerationJobStatus.Failed;
+        content.ErrorCode = "CONTENT_TECHNICAL_GENERATION_FAILED";
+        var legacy = new StoryGenerationJob
+        {
+            Id = 99, StoryId = 1, Operation = GenerationJobOperation.GenerateDiscussion,
+            Status = status, ErrorCode = "DISCUSSION_GENERATION_FAILED"
+        };
+        store.Seed(legacy);
+
+        await Service(store, new FakeAIClient()).RetryAsync(1, 1, new() { RetryKey = "content-retry-with-legacy-discussion" });
+
+        Assert.Single(store.Items<StoryGenerationJob>(), x =>
+            x.Operation == GenerationJobOperation.GenerateContent && x.Status == GenerationJobStatus.Pending);
+        Assert.Equal(status, legacy.Status);
     }
 
     [Fact]

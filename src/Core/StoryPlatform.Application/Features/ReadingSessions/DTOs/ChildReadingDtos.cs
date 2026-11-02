@@ -55,6 +55,8 @@ public class ReadingContentDto
     public int StoryId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string? Lesson { get; set; }
+    /// <summary>"Chỉ nghe truyện" của truyện này; true thì app không dừng để hỏi tương tác.</summary>
+    public bool ListenOnly { get; set; }
     public List<ReadingSceneDto> Scenes { get; set; } = new();
     public List<ReadingVocabularyDto> Vocabulary { get; set; } = new();
 }
@@ -65,6 +67,55 @@ public class ReadingSceneDto
     public string Text { get; set; } = string.Empty;
     public string? IllustrationUrl { get; set; }
     public List<ReadingSegmentDto> Segments { get; set; } = new();
+    /// <summary>Tương tác hiện khi nghe hết scene này; null nếu không có.</summary>
+    public ReadingInteractionDto? Interaction { get; set; }
+    /// <summary>Trẻ đã thử tương tác này trong phiên hiện tại, nên mở lại thì không hỏi nữa.</summary>
+    public bool AttemptedInSession { get; set; }
+}
+
+/// <summary>Tương tác lúc nghe cho trẻ. Không có đáp án: không IsMatch, CorrectOrder, HiddenWord, Explanation.</summary>
+public class ReadingInteractionDto
+{
+    /// <summary>Dùng làm interactionId khi gửi câu trả lời.</summary>
+    public int Id { get; set; }
+    /// <summary>"Checkpoint", "RolePlay", "FillBlank", "EventOrdering" hoặc "PicturePrediction".</summary>
+    public string Type { get; set; } = string.Empty;
+    /// <summary>Checkpoint: "Prediction", "Emotion" hoặc "Opinion".</summary>
+    public string? Kind { get; set; }
+    /// <summary>Câu hỏi (Checkpoint, PicturePrediction).</summary>
+    public string? Prompt { get; set; }
+    /// <summary>RolePlay: nhân vật trẻ nói theo.</summary>
+    public string? CharacterName { get; set; }
+    /// <summary>RolePlay: câu thoại để trẻ nói theo.</summary>
+    public string? ModelSentence { get; set; }
+    /// <summary>RolePlay: audio của đoạn truyện chứa câu thoại.</summary>
+    public string? ModelAudioUrl { get; set; }
+    /// <summary>FillBlank: câu có ô trống "____".</summary>
+    public string? MaskedSentence { get; set; }
+    /// <summary>FillBlank: gợi ý, không chứa đáp án.</summary>
+    public string? Hint { get; set; }
+    /// <summary>PicturePrediction: phát ngay khi trẻ chọn hình.</summary>
+    public string? WaitFeedback { get; set; }
+    /// <summary>PicturePrediction: nghe hết scene này rồi mới phát phản hồi của hình đã chọn.</summary>
+    public int? RevealSceneIndex { get; set; }
+    /// <summary>Audio của cả tương tác theo AudioPartKey: prompt, wait, match, noMatch, hint.</summary>
+    public Dictionary<string, string> AudioUrls { get; set; } = new();
+    /// <summary>Thẻ của Checkpoint, PicturePrediction, EventOrdering (đã xáo). Rỗng với RolePlay, FillBlank.</summary>
+    public List<ReadingInteractionOptionDto> Options { get; set; } = new();
+}
+
+public class ReadingInteractionOptionDto
+{
+    /// <summary>Dùng làm optionId hoặc trong orderedOptionIds khi gửi câu trả lời.</summary>
+    public int Id { get; set; }
+    public string Text { get; set; } = string.Empty;
+    /// <summary>PicturePrediction: hình của lựa chọn.</summary>
+    public string? ImageUrl { get; set; }
+    /// <summary>Audio đọc chữ trên thẻ.</summary>
+    public string? AudioUrl { get; set; }
+    /// <summary>Phản hồi khi chọn thẻ này; chỉ Checkpoint và PicturePrediction.</summary>
+    public string? Feedback { get; set; }
+    public string? FeedbackAudioUrl { get; set; }
 }
 
 public class ReadingSegmentDto
@@ -122,6 +173,8 @@ public class ReadingFlagsDto
 {
     public bool IsBookmarked { get; set; }
     public bool IsFavorited { get; set; }
+    /// <summary>"Chỉ nghe truyện" của truyện này.</summary>
+    public bool ListenOnly { get; set; }
 }
 
 public class SetFeelingRequestDto

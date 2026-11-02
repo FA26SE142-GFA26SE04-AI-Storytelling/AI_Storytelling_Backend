@@ -145,6 +145,7 @@ public static class DependencyInjection
         services.AddScoped<IChildRewardService, ChildRewardService>();
         services.AddScoped<IParentReadingFeedbackService, ParentReadingFeedbackService>();
         services.AddScoped<IChildQuizService, ChildQuizService>();
+        services.AddScoped<IChildListeningService, ChildListeningService>();
         services.AddScoped<IChildNotebookService, ChildNotebookService>();
         services.AddScoped<IChildReadAloudService, ChildReadAloudService>();
         services.AddScoped<IRoadmapLibraryService, RoadmapLibraryService>();

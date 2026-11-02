@@ -234,12 +234,26 @@ public class ChildReadingService : IChildReadingService
         var vocabularyAudio = await VocabularyAudioLookup.FindUrlsAsync(
             _unitOfWork, vocabulary.Select(word => word.Id).ToList(), ct);
 
+        var interactions = await _unitOfWork.Repository<ListeningInteraction>().FindAsync(
+            interaction => interaction.StoryVersionId == versionId && !interaction.IsDeleted, cancellationToken: ct);
+        var interactionIds = interactions.Select(interaction => interaction.Id).ToList();
+        IReadOnlyList<ListeningInteractionOption> options = interactionIds.Count == 0 ? [] :
+            await _unitOfWork.Repository<ListeningInteractionOption>().FindAsync(
+                option => interactionIds.Contains(option.ListeningInteractionId) && !option.IsDeleted, cancellationToken: ct);
+        IReadOnlyList<ListeningInteractionAttempt> attempts = interactionIds.Count == 0 ? [] :
+            await _unitOfWork.Repository<ListeningInteractionAttempt>().FindAsync(
+                attempt => attempt.ReadingSessionId == sessionId && !attempt.IsDeleted, cancellationToken: ct);
+        var listening = ChildListeningContent.Build(sessionId, scenes, segments, interactions, options, assets, attempts);
+        var progress = await _unitOfWork.Repository<ReadingProgress>().FirstOrDefaultAsync(
+            row => row.ChildProfileId == childProfileId && row.StoryId == session.StoryId, cancellationToken: ct);
+
         return new ReadingContentDto
         {
             SessionId = session.Id,
             StoryId = session.StoryId,
             Title = version.Title,
             Lesson = version.Lesson,
+            ListenOnly = progress?.ListenOnly ?? false,
             Scenes = scenes.Select(scene => new ReadingSceneDto
             {
                 SceneIndex = scene.SceneIndex,
@@ -259,7 +273,9 @@ public class ChildReadingService : IChildReadingService
                             AudioUrl = audio?.Url,
                             WordTimingsJson = audio?.WordTimings
                         };
-                    }).ToList()
+                    }).ToList(),
+                Interaction = listening.GetValueOrDefault(scene.Id)?.Interaction,
+                AttemptedInSession = listening.GetValueOrDefault(scene.Id)?.AttemptedInSession ?? false
             }).ToList(),
             Vocabulary = vocabulary.OrderBy(word => word.Id)
                 .Select(word => new ReadingVocabularyDto
@@ -458,14 +474,19 @@ public class ChildReadingService : IChildReadingService
         };
     }
 
+    private enum ReadingFlag { Bookmark, Favorite, ListenOnly }
+
     public Task<ReadingFlagsDto> SetBookmarkAsync(int childProfileId, int sessionId, bool value, CancellationToken ct = default) =>
-        SetFlagAsync(childProfileId, sessionId, value, bookmark: true, ct);
+        SetFlagAsync(childProfileId, sessionId, value, ReadingFlag.Bookmark, ct);
 
     public Task<ReadingFlagsDto> SetFavoriteAsync(int childProfileId, int sessionId, bool value, CancellationToken ct = default) =>
-        SetFlagAsync(childProfileId, sessionId, value, bookmark: false, ct);
+        SetFlagAsync(childProfileId, sessionId, value, ReadingFlag.Favorite, ct);
+
+    public Task<ReadingFlagsDto> SetListenOnlyAsync(int childProfileId, int sessionId, bool value, CancellationToken ct = default) =>
+        SetFlagAsync(childProfileId, sessionId, value, ReadingFlag.ListenOnly, ct);
 
     private async Task<ReadingFlagsDto> SetFlagAsync(
-        int childProfileId, int sessionId, bool value, bool bookmark, CancellationToken ct)
+        int childProfileId, int sessionId, bool value, ReadingFlag flag, CancellationToken ct)
     {
         var session = await RequireSessionAsync(childProfileId, sessionId, ct);
         await _unitOfWork.BeginTransactionAsync(ct);
@@ -484,13 +505,11 @@ public class ChildReadingService : IChildReadingService
                 row => row.ChildProfileId == childProfileId && row.StoryId == storyId, cancellationToken: ct);
             var isNew = progress == null;
             progress ??= new ReadingProgress { ChildProfileId = childProfileId, StoryId = storyId };
-            if (bookmark)
+            switch (flag)
             {
-                progress.IsBookmarked = value;
-            }
-            else
-            {
-                progress.IsFavorited = value;
+                case ReadingFlag.Bookmark: progress.IsBookmarked = value; break;
+                case ReadingFlag.Favorite: progress.IsFavorited = value; break;
+                case ReadingFlag.ListenOnly: progress.ListenOnly = value; break;
             }
 
             progress.UpdatedAt = DateTime.UtcNow;
@@ -503,12 +522,14 @@ public class ChildReadingService : IChildReadingService
                 repository.Update(progress);
             }
 
-            await AddTelemetryAsync(session.Id,
-                bookmark ? TelemetryEventType.StoryBookmarked : TelemetryEventType.StoryFavorited,
-                new { value }, ct);
+            if (flag != ReadingFlag.ListenOnly)
+                await AddTelemetryAsync(session.Id,
+                    flag == ReadingFlag.Bookmark ? TelemetryEventType.StoryBookmarked : TelemetryEventType.StoryFavorited,
+                    new { value }, ct);
             await _unitOfWork.SaveChangesAsync(ct);
             await _unitOfWork.CommitTransactionAsync(ct);
-            return new ReadingFlagsDto { IsBookmarked = progress.IsBookmarked, IsFavorited = progress.IsFavorited };
+            return new ReadingFlagsDto { IsBookmarked = progress.IsBookmarked, IsFavorited = progress.IsFavorited,
+                ListenOnly = progress.ListenOnly };
         }
         catch
         {

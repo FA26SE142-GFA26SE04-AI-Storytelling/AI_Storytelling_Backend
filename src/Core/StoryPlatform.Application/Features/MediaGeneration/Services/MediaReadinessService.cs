@@ -79,15 +79,7 @@ public sealed class MediaReadinessService : IMediaReadinessService
         foreach (var interaction in interactions.OrderBy(x => x.AnchorOffset))
         {
             if (interaction.StorySceneId is null) missing.Add($"{interaction.Id}:scene");
-            foreach (var part in ListeningAudioParts.For(interaction, options))
-                if (!assets.Any(a => a.Type == MediaType.ListeningAudio && a.ListeningInteractionId == interaction.Id &&
-                        a.ListeningInteractionOptionId == part.OptionId && a.AudioPartKey == part.PartKey))
-                    missing.Add($"{interaction.Id}:{(part.OptionId is int optionId ? $"o{optionId}" : "i")}:{part.PartKey}");
-            if (interaction.Type != ListeningInteractionType.PicturePrediction) continue;
-            foreach (var option in options.Where(x => x.ListeningInteractionId == interaction.Id).OrderBy(x => x.SortOrder))
-                if (!assets.Any(a => a.Type == MediaType.ListeningImage && a.ListeningInteractionOptionId == option.Id &&
-                        a.ValidationStatus == ValidationStatus.Passed))
-                    missing.Add($"{interaction.Id}:o{option.Id}:image");
+            missing.AddRange(ListeningMediaRequirements.Missing(interaction, options, assets));
         }
         return missing;
     }

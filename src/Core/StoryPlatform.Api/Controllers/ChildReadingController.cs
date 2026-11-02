@@ -21,15 +21,17 @@ public sealed class ChildReadingController : ControllerBase
     private readonly IChildReadingService _reading;
     private readonly IChildNotebookService _notebook;
     private readonly IChildReadAloudService _readAloud;
+    private readonly IChildListeningService _listening;
 
     public ChildReadingController(
         IChildStoryBrowseService browse, IChildReadingService reading, IChildNotebookService notebook,
-        IChildReadAloudService readAloud)
+        IChildReadAloudService readAloud, IChildListeningService listening)
     {
         _browse = browse;
         _reading = reading;
         _notebook = notebook;
         _readAloud = readAloud;
+        _listening = listening;
     }
 
     private int ChildId
@@ -112,6 +114,24 @@ public sealed class ChildReadingController : ControllerBase
     {
         var result = await _reading.SetFavoriteAsync(ChildId, sessionId, request.Value, ct);
         return Ok(ApiResponse<ReadingFlagsDto>.Ok(result));
+    }
+
+    /// <summary>"Chỉ nghe truyện": bật thì app không dừng để hỏi tương tác lúc nghe. Lưu theo truyện.</summary>
+    [HttpPut("sessions/{sessionId:int}/listen-only")]
+    public async Task<ActionResult<ApiResponse<ReadingFlagsDto>>> SetListenOnly(
+        int sessionId, [FromBody] SetFlagRequestDto request, CancellationToken ct)
+    {
+        var result = await _reading.SetListenOnlyAsync(ChildId, sessionId, request.Value, ct);
+        return Ok(ApiResponse<ReadingFlagsDto>.Ok(result));
+    }
+
+    /// <summary>Trẻ trả lời một tương tác lúc nghe. Bỏ qua thì không gọi. Không cộng hay trừ EXP.</summary>
+    [HttpPost("sessions/{sessionId:int}/interactions/{interactionId:int}/attempts")]
+    public async Task<ActionResult<ApiResponse<ListeningAttemptResultDto>>> SubmitListeningAttempt(
+        int sessionId, int interactionId, [FromBody] SubmitListeningAttemptRequestDto request, CancellationToken ct)
+    {
+        var result = await _listening.SubmitAttemptAsync(ChildId, sessionId, interactionId, request, ct);
+        return Ok(ApiResponse<ListeningAttemptResultDto>.Ok(result));
     }
 
     /// <summary>Trẻ chọn cảm nhận sau khi đọc xong. Chỉ ghi lại, không có phản hồi hay thưởng.</summary>

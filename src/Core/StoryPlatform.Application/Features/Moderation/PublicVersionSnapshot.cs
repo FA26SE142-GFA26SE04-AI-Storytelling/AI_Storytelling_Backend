@@ -106,12 +106,22 @@ public sealed record PublicVersionSnapshot(
         option.CorrectOrder?.ToString() ?? string.Empty, option.SourceQuote ?? string.Empty,
         option.ImageDescription ?? string.Empty))));
 
-    public string ListeningMediaKey(ListeningInteraction interaction) => string.Join(";", Assets
-        .Where(asset => asset.ListeningInteractionId == interaction.Id && asset.Type == MediaType.ListeningAudio
-                        && asset.Status == MediaStatus.Ready)
-        .OrderBy(asset => asset.AudioPartKey, StringComparer.Ordinal)
-        .Select(asset => $"{asset.AudioPartKey}={asset.Url}")
-        .Concat(OptionsOf(interaction.Id).Select(option => $"{option.SortOrder}={ListeningImageUrl(option.Id)}")));
+    // Audio của thẻ ghi kèm SortOrder (Id đổi khi chép revision); audio của cả tương tác giữ khoá cũ.
+    public string ListeningMediaKey(ListeningInteraction interaction)
+    {
+        var options = OptionsOf(interaction.Id);
+        var audio = Assets
+            .Where(asset => asset.ListeningInteractionId == interaction.Id && asset.Type == MediaType.ListeningAudio
+                            && asset.Status == MediaStatus.Ready)
+            .Select(asset => (Asset: asset, Option: options.FirstOrDefault(option => option.Id == asset.ListeningInteractionOptionId)))
+            .Where(x => x.Asset.ListeningInteractionOptionId is null || x.Option is not null)
+            .OrderBy(x => x.Option?.SortOrder ?? 0)
+            .ThenBy(x => x.Asset.AudioPartKey, StringComparer.Ordinal)
+            .Select(x => x.Option is null
+                ? $"{x.Asset.AudioPartKey}={x.Asset.Url}"
+                : $"o{x.Option.SortOrder}:{x.Asset.AudioPartKey}={x.Asset.Url}");
+        return string.Join(";", audio.Concat(options.Select(option => $"{option.SortOrder}={ListeningImageUrl(option.Id)}")));
+    }
 
     public string? ListeningImageUrl(int optionId) => ReadyUrl(asset =>
         asset.ListeningInteractionOptionId == optionId && asset.Type == MediaType.ListeningImage) is { Length: > 0 } url ? url : null;

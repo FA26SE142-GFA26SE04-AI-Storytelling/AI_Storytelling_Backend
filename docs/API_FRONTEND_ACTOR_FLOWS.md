@@ -341,6 +341,18 @@ GET /api/v1/CommunityLibrary?pageIndex=1&pageSize=20 → GET /{submissionId}. Ba
 
 Nguồn: [MyRoadmapService](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/Services/MyRoadmapService.cs), [CommunityLibraryService](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/Services/CommunityLibraryService.cs).
 
+### C6. Thành tích, Cây tri thức và Sổ tay (sau khi đọc)
+
+Mọi API dưới đây dùng **token trẻ** (policy ChildSession), trẻ lấy từ claim.
+
+- GET /api/v1/child/rewards → expTotal, streakDays, badges (đủ danh mục, có earned/earnedAt; gồm WORD_COLLECTOR_50, ROADMAP_FINISHER) và knowledgeTree: stage (SEED / SPROUT / SAPLING / GROWN / FLOWERING), stageName, currentTreeExp, nextStageAt (null khi đã ra hoa), flowerAt (500), floweredTreeCount (số cây trong vườn), expToWater (EXP chưa tưới).
+- POST /api/v1/child/rewards/knowledge-tree/water (không body) → expPoured, newTreePlanted, previousStage, tree. Đổ toàn bộ EXP chưa tưới, tối đa tới mốc ra hoa; tổng EXP không giảm. expToWater = 0 thì làm mờ nút; gọi vẫn trả 200 với expPoured = 0. Cây FLOWERING được giữ tới lần tưới kế tiếp, lần đó cây vào vườn và trồng hạt mới (newTreePlanted = true). Khóa nút trong lúc chờ để tránh bấm đôi.
+- POST /api/v1/child/notebook/sessions/{sessionId}/words → thêm expGained (1 khi lưu từ lần đầu, 0 khi lưu lại) và newBadges (có thể có WORD_COLLECTOR_50 khi sổ đủ 50 từ).
+- DELETE /api/v1/child/notebook/{entryId} chỉ ẩn từ khỏi sổ: không trừ EXP, không thu hồi huy hiệu; lưu lại cùng từ thì hiện lại với cùng entryId, expGained = 0.
+- POST /api/v1/child/reading/sessions/{sessionId}/complete: newBadges có thể chứa ROADMAP_FINISHER khi trẻ đọc xong truyện cuối của lộ trình (cùng lúc phụ huynh nhận roadmap_completed).
+
+Nguồn: [ChildRewardService](../src/Core/StoryPlatform.Application/Features/ReadingSessions/Services/ChildRewardService.cs), [KnowledgeTreePolicy](../src/Core/StoryPlatform.Application/Features/ReadingSessions/KnowledgeTreePolicy.cs), [ChildNotebookService](../src/Core/StoryPlatform.Application/Features/ReadingSessions/Services/ChildNotebookService.cs).
+
 <a id="creator"></a>
 ## 9. ContentCreator — sáng tác và gửi duyệt
 

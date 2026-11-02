@@ -26,5 +26,6 @@ VALUES
     (21, 0, NULL, NULL, NULL),
     (22, 0, NULL, NULL, NULL),
     (23, 0, NULL, NULL, NULL),
-    (24, 0, NULL, NULL, NULL)
+    (24, 0, NULL, NULL, NULL),
+    (900, 0, NULL, NULL, NULL)
 ON CONFLICT ("StoryVersionId") DO NOTHING;

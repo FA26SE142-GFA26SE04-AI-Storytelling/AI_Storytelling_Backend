@@ -1,4 +1,4 @@
--- 18. quiz_items (16)
+-- 18. quiz_items (19: 16 + 3 của truyện 900 cho tương tác lúc nghe)
 INSERT INTO quiz_items ("Id", "StoryVersionId", "Type", "Question", "Choices", "CorrectAnswer", "CreatedAt", "IsDeleted")
 VALUES
     (1, 1, 'MultipleChoice', 'Nhân vật chính trong câu chuyện là ai?', '["Chú Thỏ","Chú Ruồi","Chú Rùa"]', 'Chú Thỏ', NOW() - INTERVAL '30 days', false),
@@ -17,4 +17,12 @@ VALUES
     (14, 17, 'TrueFalse', 'Ngọn đèn giúp các bạn tìm đường.', '["Đúng","Sai"]', 'Đúng', NOW() - INTERVAL '8 days', false),
     (15, 18, 'TrueFalse', 'Đặt đèn sát rèm cửa là an toàn.', '["Đúng","Sai"]', 'Sai', NOW() - INTERVAL '1 day', false),
     (16, 19, 'TrueFalse', 'An đặt ngọn đèn ở vị trí an toàn.', '["Đúng","Sai"]', 'Đúng', NOW() - INTERVAL '1 hour', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- Truyện 900 (tương tác lúc nghe): đủ 3 loại câu hỏi để gói duyệt có quiz.
+INSERT INTO quiz_items ("Id", "StoryVersionId", "Type", "Question", "Choices", "CorrectAnswer", "CreatedAt", "IsDeleted")
+VALUES
+    (900, 900, 'MultipleChoice', 'Ai giúp Thỏ tìm đường về?', '["Bác Gấu","Mẹ Thỏ"]', 'Bác Gấu', NOW() - INTERVAL '1 day', false),
+    (901, 900, 'TrueFalse', 'Thỏ bị lạc trong rừng.', '["Đúng","Sai"]', 'Đúng', NOW() - INTERVAL '1 day', false),
+    (902, 900, 'ShortAnswer', 'Khi bị lạc, Thỏ học được điều gì?', NULL, 'Nhờ người lớn', NOW() - INTERVAL '1 day', false)
 ON CONFLICT ("Id") DO NOTHING;

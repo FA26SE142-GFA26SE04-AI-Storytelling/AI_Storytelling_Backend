@@ -1,4 +1,4 @@
--- 13. story_versions (24: 12 Parent versions, 12 Creator versions)
+-- 13. story_versions (25: 13 Parent versions, 12 Creator versions)
 -- Creator Story 11: versions 11 -> 12 (current); Creator Story 12: version 13 (Import/current).
 -- Command receipts and protected preview tokens are created by the API, not fabricated in seed data.
 INSERT INTO story_versions (
@@ -66,4 +66,12 @@ INSERT INTO story_versions (
 )
 VALUES
     (20, 15, 1, 'Chiều cùng con', 'Bắp làm đổ nước. Mẹ cùng Bắp lau bàn. Hai mẹ con mỉm cười.', 'HumanEdited', 2, true, '2026-10-18T01:05:00Z', false, 1)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- Tương tác lúc nghe: bản duy nhất của truyện 900 (xem 11_stories.sql), đã qua kiểm duyệt dàn ý, chờ người lớn duyệt.
+INSERT INTO story_versions (
+    "Id", "StoryId", "VersionNo", "Title", "Content", "OutlineOpening", "OutlineDevelopment", "OutlineEnding", "Lesson", "ReadabilityFkgl", "ReadabilityFre", "SafetyScore", "EditType", "EditorUserId", "OutlineApprovedByUserId", "OutlineApprovedAt", "IsCurrent", "CreatedAt", "IsDeleted", "AudienceRevision", "BaseVersionId"
+)
+VALUES
+    (900, 900, 1, 'Thỏ con đi lạc', E'Thỏ con đi lạc vào rừng. Trời bắt đầu tối.\n\nThỏ nghe tiếng sột soạt sau bụi cây. Thỏ hỏi: "Có ai ở đó không?"\n\nHóa ra đó là bác Gấu đến giúp Thỏ tìm đường về.\n\nBác Gấu dẫn Thỏ về tới cửa hang.\n\nMẹ Thỏ ôm Thỏ vào lòng.\n\nTừ đó Thỏ luôn nhờ người lớn khi bị lạc.', 'Thỏ đi lạc', 'Bác Gấu giúp Thỏ', 'Thỏ về nhà', 'Nhờ người lớn giúp khi bị lạc', NULL, NULL, 95.000, 'Initial', NULL, 2, NOW() - INTERVAL '1 day', true, NOW() - INTERVAL '1 day', false, 1, NULL)
 ON CONFLICT ("Id") DO NOTHING;

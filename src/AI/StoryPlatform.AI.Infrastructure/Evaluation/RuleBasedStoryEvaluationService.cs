@@ -67,12 +67,6 @@ public sealed partial class RuleBasedStoryEvaluationService : IStoryEvaluationSe
         }
 
         var quizPassed = ValidateQuiz(story.Quiz, issueToken: issueDetails);
-        var discussionPassed = story.DiscussionQuestions.Count > 0 &&
-                               story.DiscussionQuestions.All(item => !string.IsNullOrWhiteSpace(item.Question));
-        if (!discussionPassed)
-        {
-            AddIssue(issueDetails, "discussion_questions_invalid", "discussion", "review_required", "$.discussionQuestions", "At least one complete discussion question is required.", true);
-        }
 
         var readabilityMetrics = new ReadabilityMetricsDto
         {
@@ -89,7 +83,6 @@ public sealed partial class RuleBasedStoryEvaluationService : IStoryEvaluationSe
             ReadabilityPassed = lengthPassed && sentenceComplexityPassed,
             VocabularyPassed = vocabularyPassed,
             QuizPassed = quizPassed,
-            DiscussionPassed = discussionPassed,
             Issues = issueDetails.Select(issue => issue.Message).ToArray(),
             IssueDetails = issueDetails,
             ReadabilityMetrics = readabilityMetrics,

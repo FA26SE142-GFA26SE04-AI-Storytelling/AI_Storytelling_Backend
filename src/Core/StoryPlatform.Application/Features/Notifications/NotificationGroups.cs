@@ -30,7 +30,8 @@ public static class NotificationGroups
             or NotificationType.RoadmapStoryRemoved
             or NotificationType.RoadmapCompleted
             or NotificationType.StoryWishSubmitted
-            or NotificationType.StoryWishExpiring => Children,
+            or NotificationType.StoryWishExpiring
+            or NotificationType.StorySummarySent => Children,
 
         NotificationType.ContentReported
             or NotificationType.ModerationSlaWarning

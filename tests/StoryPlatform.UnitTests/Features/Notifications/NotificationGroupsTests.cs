@@ -21,6 +21,7 @@ public class NotificationGroupsTests
     [InlineData(NotificationType.RoadmapCompleted, "children")]
     [InlineData(NotificationType.StoryWishSubmitted, "children")]
     [InlineData(NotificationType.StoryWishExpiring, "children")]
+    [InlineData(NotificationType.StorySummarySent, "children")]
     [InlineData(NotificationType.AccountSecurityChanged, "account")]
     [InlineData(NotificationType.PaymentConfirmed, "account")]
     [InlineData(NotificationType.AdminRoleChanged, "account")]

@@ -38,34 +38,38 @@ public sealed partial class MediaGenerationService
             {
                 var asset = await GetOrCreateIllustrationAssetAsync(versionId, scene, beat, ct);
                 if (asset.Status == MediaStatus.Ready) continue;
-                var task = await _unitOfWork.Repository<MediaAssetGenerationTask>().FirstOrDefaultAsync(
-                    x => x.MediaAssetId == asset.Id, cancellationToken: ct);
-                var added = task is null;
-                if (task is null)
-                {
-                    task = new MediaAssetGenerationTask { StoryId = branch.StoryId, StoryVersionId = versionId,
-                        BranchJobId = branch.Id, MediaAssetId = asset.Id, IllustrationBeatId = beat.Id };
-                }
-                else
-                {
-                    _unitOfWork.Repository<MediaAssetGenerationTask>().Update(task);
-                    task.ConcurrencyToken = Guid.NewGuid().ToString("N");
-                }
-                task.MediaContextId = branch.MediaContextId!.Value;
-                task.PackageRevision = branch.MediaPackageRevision!.Value;
-                task.Status = GenerationJobStatus.Pending;
-                task.QueuedAt = _clock.GetUtcNow().UtcDateTime;
-                task.LeaseExpiresAt = task.NextAttemptAt = task.CompletedAt = null;
-                task.ErrorCode = null;
-                task.AttemptNo = 0;
-                if (added) await _unitOfWork.Repository<MediaAssetGenerationTask>().AddAsync(task, ct);
-                else _unitOfWork.Repository<MediaAssetGenerationTask>().Update(task);
+                await UpsertImageTaskAsync(branch, versionId, asset.Id, beat.Id, ct);
             }
         }
+        await QueueListeningImageTasksAsync(branch, versionId, ct);
         branch.Status = GenerationJobStatus.Processing;
         branch.Stage = JobStage.MediaGenerating;
         branch.LeaseExpiresAt = null;
         _unitOfWork.Repository<StoryGenerationJob>().Update(branch);
+    }
+
+    private async Task UpsertImageTaskAsync(StoryGenerationJob branch, int versionId, int assetId, int beatId, CancellationToken ct)
+    {
+        var task = await _unitOfWork.Repository<MediaAssetGenerationTask>().FirstOrDefaultAsync(
+            x => x.MediaAssetId == assetId, cancellationToken: ct);
+        var added = task is null;
+        if (task is null)
+            task = new MediaAssetGenerationTask { StoryId = branch.StoryId, StoryVersionId = versionId,
+                BranchJobId = branch.Id, MediaAssetId = assetId, IllustrationBeatId = beatId };
+        else
+        {
+            _unitOfWork.Repository<MediaAssetGenerationTask>().Update(task);
+            task.ConcurrencyToken = Guid.NewGuid().ToString("N");
+        }
+        task.MediaContextId = branch.MediaContextId!.Value;
+        task.PackageRevision = branch.MediaPackageRevision!.Value;
+        task.Status = GenerationJobStatus.Pending;
+        task.QueuedAt = _clock.GetUtcNow().UtcDateTime;
+        task.LeaseExpiresAt = task.NextAttemptAt = task.CompletedAt = null;
+        task.ErrorCode = null;
+        task.AttemptNo = 0;
+        if (added) await _unitOfWork.Repository<MediaAssetGenerationTask>().AddAsync(task, ct);
+        else _unitOfWork.Repository<MediaAssetGenerationTask>().Update(task);
     }
 
     private async Task ReconcileImageBranchesAsync(CancellationToken ct)
@@ -223,12 +227,19 @@ public sealed partial class MediaGenerationService
                 var beat = await FreshAsync<IllustrationBeat>(task.IllustrationBeatId, ct) ?? throw new InvalidOperationException("STALE_MEDIA_RESULT");
                 var scene = await FreshAsync<StoryScene>(beat.StorySceneId, ct) ?? throw new InvalidOperationException("STALE_MEDIA_RESULT");
                 var context = await FreshAsync<MediaContext>(task.MediaContextId, ct) ?? throw new InvalidOperationException("STALE_MEDIA_RESULT");
-                if (asset.StoryVersionId != task.StoryVersionId || asset.IllustrationBeatId != beat.Id || scene.StoryVersionId != task.StoryVersionId)
+                if (asset.StoryVersionId != task.StoryVersionId || scene.StoryVersionId != task.StoryVersionId)
                     throw new InvalidOperationException("STALE_MEDIA_RESULT");
                 var spec = _specificationBuilder.Build(task.StoryVersionId, scene.Id, scene.SceneIndex,
                     scene.SceneText, scene.VisualDescription, context.ContextJson);
-                await EnsureIllustrationAsync(branch.Id, token, task.StoryId, task.StoryVersionId, context, scene, beat,
-                    spec.ForBeat(scene.SceneText[beat.StartOffset..beat.EndOffset], beat.VisualFocus), ct);
+                if (asset.Type == MediaType.ListeningImage)
+                    await EnsureListeningImageAsync(branch.Id, token, task.StoryId, context, asset, spec, ct);
+                else
+                {
+                    if (asset.Type != MediaType.Illustration || asset.IllustrationBeatId != beat.Id)
+                        throw new InvalidOperationException("STALE_MEDIA_RESULT");
+                    await EnsureIllustrationAsync(branch.Id, token, task.StoryId, task.StoryVersionId, context, scene, beat,
+                        spec.ForBeat(scene.SceneText[beat.StartOffset..beat.EndOffset], beat.VisualFocus), ct);
+                }
                 await FinishImageTaskAsync(task, branch, token, null, ct);
                 return MediaJobProcessResult.Completed;
             }

@@ -63,6 +63,8 @@ public class ReadingContentDto
 
 public class ReadingSceneDto
 {
+    /// <summary>Dùng làm sceneIds khi trẻ đánh cờ chỗ còn thắc mắc cuối truyện.</summary>
+    public int SceneId { get; set; }
     public int SceneIndex { get; set; }
     public string Text { get; set; } = string.Empty;
     public string? IllustrationUrl { get; set; }

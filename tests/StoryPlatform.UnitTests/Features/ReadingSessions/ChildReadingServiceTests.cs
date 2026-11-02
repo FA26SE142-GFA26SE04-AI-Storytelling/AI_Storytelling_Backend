@@ -438,6 +438,7 @@ public class ChildReadingServiceTests
         Assert.Equal("Truyện 10", content.Title);
         Assert.Equal("Biết chia sẻ", content.Lesson);
         Assert.Equal(new[] { 0, 1 }, content.Scenes.Select(s => s.SceneIndex));
+        Assert.All(content.Scenes, scene => Assert.Contains(_h.Scenes, stored => stored.Id == scene.SceneId && stored.SceneIndex == scene.SceneIndex));
         Assert.Equal(2, content.Scenes[0].Segments.Count);
         Assert.Equal("https://cdn.test/a1.mp3", content.Scenes[0].Segments[0].AudioUrl);
         Assert.Equal("[{\"w\":\"Thỏ\",\"t\":0}]", content.Scenes[0].Segments[0].WordTimingsJson);

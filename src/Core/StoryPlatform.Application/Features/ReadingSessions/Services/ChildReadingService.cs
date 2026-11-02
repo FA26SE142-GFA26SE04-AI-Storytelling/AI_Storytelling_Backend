@@ -256,6 +256,7 @@ public class ChildReadingService : IChildReadingService
             ListenOnly = progress?.ListenOnly ?? false,
             Scenes = scenes.Select(scene => new ReadingSceneDto
             {
+                SceneId = scene.Id,
                 SceneIndex = scene.SceneIndex,
                 Text = scene.SceneText,
                 IllustrationUrl = assets.FirstOrDefault(asset =>

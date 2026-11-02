@@ -3,6 +3,7 @@ using StoryPlatform.AI.Api.Middleware;
 using StoryPlatform.AI.Application;
 using StoryPlatform.AI.Infrastructure;
 using StoryPlatform.AI.Api.Configuration;
+using StoryPlatform.AI.Api.Diagnostics;
 // Load .env file if present in working directory or parents
 var currentDir = new DirectoryInfo(Directory.GetCurrentDirectory());
 while (currentDir != null)
@@ -37,11 +38,15 @@ if (builder.Environment.IsDevelopment() && OperatingSystem.IsWindows())
 {
     // Keep Vertex failures visible even when the developer cannot write Windows Event Log.
     builder.Logging.ClearProviders();
-    builder.Logging.AddConsole();
     builder.Logging.AddDebug();
 }
+builder.Logging.AddSimpleConsole(options =>
+{
+    options.IncludeScopes = true;
+    options.TimestampFormat = "HH:mm:ss ";
+});
 
-builder.Services.AddControllers();
+builder.Services.AddControllers(options => options.Filters.Add<AiRequestLoggingFilter>());
 builder.Services.AddHealthChecks();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>

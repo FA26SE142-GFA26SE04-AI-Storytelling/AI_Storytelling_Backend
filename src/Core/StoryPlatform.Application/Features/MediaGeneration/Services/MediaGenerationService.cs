@@ -11,6 +11,7 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
+using StoryPlatform.Application.Features.ListeningInteractions.Services;
 using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -554,6 +555,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         var blocks = _blockParser.Parse(state.Version.Content!);
         var selections = await _segmenter.SegmentAsync(
             new SceneSegmentationRequest(state.Version.Content!, blocks, mediaContext.ContextJson), cancellationToken);
+        selections = await EnforceInteractionBoundariesAsync(state.Version.Id, blocks, selections, cancellationToken);
         var validated = _coverageValidator.ValidateAndAssemble(state.Version.Content!, blocks, selections);
         await AssertFreshAsync(state.Job.Id, claimedToken, state.Version.Id, mediaContext.Id, cancellationToken);
         var scenes = validated.Select(x => new StoryScene
@@ -568,6 +570,23 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         await _unitOfWork.Repository<StoryScene>().AddRangeAsync(scenes, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return scenes;
+    }
+
+    // Cắt scene tại đoạn neo, đoạn sự kiện và đoạn đáp án của Đoán tranh.
+    private async Task<IReadOnlyList<SceneSelection>> EnforceInteractionBoundariesAsync(
+        int versionId, IReadOnlyList<StoryTextBlock> blocks, IReadOnlyList<SceneSelection> selections,
+        CancellationToken cancellationToken)
+    {
+        var interactions = await _unitOfWork.Repository<ListeningInteraction>().FindAsync(
+            x => x.StoryVersionId == versionId && !x.IsDeleted, cancellationToken: cancellationToken);
+        if (interactions.Count == 0) return selections;
+        var eventIds = interactions.Where(x => x.Type == ListeningInteractionType.EventOrdering)
+            .Select(x => x.Id).ToList();
+        IReadOnlyList<ListeningInteractionOption> options = eventIds.Count == 0
+            ? []
+            : await _unitOfWork.Repository<ListeningInteractionOption>().FindAsync(
+                x => eventIds.Contains(x.ListeningInteractionId) && !x.IsDeleted, cancellationToken: cancellationToken);
+        return InteractionSceneBoundaryEnforcer.Enforce(blocks, selections, interactions, options);
     }
 
     private async Task<IReadOnlyList<IllustrationBeat>> GetOrCreateBeatsAsync(
@@ -1071,6 +1090,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             "TTS_SEGMENT_RETRY_EXHAUSTED" => "TTS_RETRY_EXHAUSTED",
             _ when unwrapped.Message.StartsWith("TTS_SEGMENT_RETRY_EXHAUSTED") => "TTS_RETRY_EXHAUSTED",
             _ when unwrapped.Message.StartsWith("AUDIO_QUALITY_GATE_DETERMINISTIC_FAILURE") => "TTS_RETRY_EXHAUSTED",
+            "INTERACTION_BOUNDARY_UNRESOLVED" => "INTERACTION_BOUNDARY_UNRESOLVED",
             "MEDIA_PACKAGE_INCOMPLETE" => "MEDIA_PACKAGE_INCOMPLETE",
             "INVALID_MEDIA_HANDOFF" => "INVALID_MEDIA_HANDOFF",
             _ when unwrapped is TimeoutException or OperationCanceledException => "MEDIA_PROVIDER_TIMEOUT",
@@ -1089,6 +1109,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
                 "SCENE_COVERAGE_EMPTY" or "INVALID_SCENE_ORDER" or "UNKNOWN_SCENE_BLOCK" or
                 "NON_CONTIGUOUS_SCENE_BLOCKS" or "SCENE_TEXT_NOT_CANONICAL" or
                 "INCOMPLETE_OR_OVERLAPPING_SCENE_COVERAGE" or
+                "INTERACTION_BOUNDARY_UNRESOLVED" or
                 "IMAGE_ALIGNMENT_FAILED" or "IMAGE_SAFETY_FAILED" or
                 "MEDIA_EVALUATOR_NOT_CONFIGURED" or
                 "STALE_MEDIA_HANDOFF" or "DUPLICATE_ACTIVE_JOB" or
@@ -1132,6 +1153,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             "CONCURRENT_CLAIM_DETECTED", "DUPLICATE_ACTIVE_JOB",
             "ILLUSTRATION_RETRY_EXHAUSTED", "TTS_SEGMENT_RETRY_EXHAUSTED",
             "MEDIA_PACKAGE_INCOMPLETE", "INVALID_PERSISTED_SCENE_COVERAGE",
+            "INTERACTION_BOUNDARY_UNRESOLVED",
             "INVALID_MEDIA_HANDOFF", "STORY_NOT_FOUND"
         };
         var current = exception;

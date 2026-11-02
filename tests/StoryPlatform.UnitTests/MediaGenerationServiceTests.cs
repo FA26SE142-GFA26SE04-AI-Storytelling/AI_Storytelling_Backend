@@ -162,6 +162,43 @@ public sealed partial class MediaGenerationServiceTests
     }
 
     [Fact]
+    public async Task ProcessNext_SplitsAiSceneAtListeningInteractionAnchor()
+    {
+        var uow = Seed();
+        uow.Items<StoryVersion>().Single().Content = "A\n\nB\n\nC";
+        uow.Seed(new ListeningInteraction
+        {
+            Id = 70, StoryVersionId = 10, Type = ListeningInteractionType.Checkpoint, AnchorOffset = "A\n\n".Length
+        });
+        var service = Create(uow, segmenter: new WholeStorySegmenter());
+
+        Assert.True((await service.RunPackageAsync()).Success);
+
+        var scenes = uow.Items<StoryScene>().OrderBy(x => x.SceneIndex).ToArray();
+        Assert.Equal(new[] { 0, 1 }, scenes.Select(x => x.SceneIndex));
+        Assert.Equal(new[] { "A\n\n", "B\n\nC" }, scenes.Select(x => x.SceneText));
+        Assert.Equal("A\n\n".Length, scenes[0].TextRangeEnd);
+        Assert.All(scenes, x => Assert.Equal("whole story", x.VisualDescription));
+    }
+
+    [Fact]
+    public async Task ProcessNext_FailsPermanentlyWhenInteractionAnchorIsNotABlockEnd()
+    {
+        var uow = Seed();
+        uow.Items<StoryVersion>().Single().Content = "A\n\nB\n\nC";
+        uow.Seed(new ListeningInteraction
+        {
+            Id = 70, StoryVersionId = 10, Type = ListeningInteractionType.Checkpoint, AnchorOffset = 1
+        });
+        var finalizer = new RecordingFinalizer();
+        var service = Create(uow, finalizer: finalizer, segmenter: new WholeStorySegmenter());
+
+        Assert.False((await service.RunPackageAsync()).Success);
+        Assert.Equal("INTERACTION_BOUNDARY_UNRESOLVED", finalizer.ErrorCode);
+        Assert.Empty(uow.Items<StoryScene>());
+    }
+
+    [Fact]
     public async Task ManualVersionsKeepSeparateAudioFiles()
     {
         var (store, confirm, _) = CreatorManualMediaTests.Setup();
@@ -850,7 +887,8 @@ public sealed partial class MediaGenerationServiceTests
         RecordingFinalizer? finalizer = null,
         IIllustrationBeatPlanner? planner = null,
         IMediaReadinessService? readiness = null, IChildProfileAccessGuard? supervision = null,
-        Microsoft.Extensions.Logging.ILogger<MediaGenerationService>? logger = null, MediaGenerationOptions? options = null)
+        Microsoft.Extensions.Logging.ILogger<MediaGenerationService>? logger = null, MediaGenerationOptions? options = null,
+        ISceneSegmentationProvider? segmenter = null)
     {
         var evaluatorImpl = evaluator ?? new PassingEvaluator();
         var clock = new MediaTestPump.Clock();
@@ -860,7 +898,7 @@ public sealed partial class MediaGenerationServiceTests
             uow,
             new MediaContextBuilder(),
             new StoryBlockParser(),
-            new ParagraphSceneSegmentationProvider(),
+            segmenter ?? new ParagraphSceneSegmentationProvider(),
             new SceneCoverageValidator(),
             new SceneSpecificationBuilder(),
             planner ?? new SingleBeatPlanner(),
@@ -885,6 +923,15 @@ public sealed partial class MediaGenerationServiceTests
             IllustrationBeatPlanRequest request, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<IllustrationBeatSelection>>([
                 new(1, 0, request.SceneText.Length, "Main visual moment")]);
+    }
+
+    // Giả lập AI gom cả truyện vào một scene.
+    private sealed class WholeStorySegmenter : ISceneSegmentationProvider
+    {
+        public Task<IReadOnlyList<SceneSelection>> SegmentAsync(
+            SceneSegmentationRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<SceneSelection>>([
+                new SceneSelection(0, request.Blocks.Select(x => x.BlockId).ToArray(), "whole story")]);
     }
 
     private sealed class FixedBeatPlanner(IReadOnlyList<IllustrationBeatSelection> beats) : IIllustrationBeatPlanner

@@ -1,4 +1,4 @@
--- 11. stories (19: 12 Parent, 7 Creator)
+-- 11. stories (20: 13 Parent, 7 Creator)
 -- Creator: Id 11 = manual V2, Id 12 = imported text V1; author is creator_demo (Id 13).
 -- WF-L5A fixtures: Id 11 = first submit/withdraw; Id 13 = creator resubmit;
 -- Id 14 = recent pending resubmission for moderator queue/history/compare;
@@ -73,4 +73,15 @@ INSERT INTO stories (
 VALUES
     (15, 'Chiều cùng con', 'Bắp làm đổ nước. Mẹ cùng Bắp lau bàn. Hai mẹ con mỉm cười.', 'vi', '6-8', 'Draft', 'Manual', false,
      2, 1, '2026-10-18T01:00:00Z', false, 'Parent', 'ReadingMediaOnly', 1, 1, md5('seed-parent-v4-story-15'), 'reading', 'seed-parent-manual-15', 'family_memory')
+ON CONFLICT ("Id") DO NOTHING;
+
+-- Tương tác lúc nghe: truyện AI 6-8 tuổi của bé 1 (parent_demo1), đang chờ duyệt (ContentReview).
+-- Fixture của docs/api/api-test-tuong-tac-luc-nghe-p1-p4.html, giữ Id 900 để tài liệu test khớp.
+-- Nội dung 6 đoạn (offset neo của 64_listening_interactions.sql tính theo đúng chuỗi này).
+-- Chưa có scene/media: Phase 5 sinh sau khi duyệt, hoặc nạp media giả bằng SQL trong tài liệu.
+INSERT INTO stories (
+    "Id", "Title", "Description", "Content", "CoverImageUrl", "Genre", "MoralLesson", "Language", "AgeBand", "ReadingLevel", "VocabularyLevel", "Status", "Source", "IsPublished", "ChildVisibleAt", "ArchivedReason", "AuthorUserId", "ChildProfileId", "CreatedAt", "IsDeleted", "Scope", "OutputMode", "AudienceRevision", "AuthoringLastVersionNo", "AuthoringRevisionToken", "ExperienceMode"
+)
+VALUES
+    (900, 'Thỏ con đi lạc', 'Mẫu tương tác lúc nghe của bé 1, đang chờ duyệt', E'Thỏ con đi lạc vào rừng. Trời bắt đầu tối.\n\nThỏ nghe tiếng sột soạt sau bụi cây. Thỏ hỏi: "Có ai ở đó không?"\n\nHóa ra đó là bác Gấu đến giúp Thỏ tìm đường về.\n\nBác Gấu dẫn Thỏ về tới cửa hang.\n\nMẹ Thỏ ôm Thỏ vào lòng.\n\nTừ đó Thỏ luôn nhờ người lớn khi bị lạc.', NULL, 'Ngụ ngôn', 'Nhờ người lớn giúp khi bị lạc', 'vi', '6-8', 2, 'level_2', 'ContentReview', 'Ai', false, NULL, NULL, 2, 1, NOW() - INTERVAL '1 day', false, 'Parent', 'Learning', 1, 1, md5('seed-parent-story-900'), 'reading')
 ON CONFLICT ("Id") DO NOTHING;

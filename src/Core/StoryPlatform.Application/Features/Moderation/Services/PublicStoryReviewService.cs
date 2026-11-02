@@ -260,11 +260,20 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
                             asset.ListeningInteractionOptionId == option.Id && asset.Type == MediaType.ListeningImage
                             && asset.Status == MediaStatus.Ready)?.Url
                     }).ToList(),
+                // Audio của cả tương tác trước, rồi audio từng thẻ theo thứ tự thẻ; bỏ audio của thẻ đã xoá.
                 Audio = content.Assets
                     .Where(asset => asset.ListeningInteractionId == interaction.Id && asset.Type == MediaType.ListeningAudio
                                     && asset.Status == MediaStatus.Ready && !string.IsNullOrWhiteSpace(asset.Url))
-                    .OrderBy(asset => asset.AudioPartKey, StringComparer.Ordinal)
-                    .Select(asset => new PublicReviewListeningAudioDto { PartKey = asset.AudioPartKey, AssetId = asset.Id, Url = asset.Url })
+                    .Select(asset => (Asset: asset, Option: content.ListeningOptions.FirstOrDefault(option =>
+                        option.ListeningInteractionId == interaction.Id && option.Id == asset.ListeningInteractionOptionId)))
+                    .Where(x => x.Asset.ListeningInteractionOptionId is null || x.Option is not null)
+                    .OrderBy(x => x.Option?.SortOrder ?? 0)
+                    .ThenBy(x => x.Asset.AudioPartKey, StringComparer.Ordinal)
+                    .Select(x => new PublicReviewListeningAudioDto
+                    {
+                        OptionId = x.Asset.ListeningInteractionOptionId, PartKey = x.Asset.AudioPartKey,
+                        AssetId = x.Asset.Id, Url = x.Asset.Url
+                    })
                     .ToList()
             }).ToList(),
             Flags = flags,

@@ -20,9 +20,10 @@ public class ChildReadingControllerTests
     private readonly Mock<IChildReadingService> _reading = new(MockBehavior.Strict);
     private readonly Mock<IChildNotebookService> _notebook = new(MockBehavior.Strict);
     private readonly Mock<IChildReadAloudService> _readAloud = new(MockBehavior.Strict);
+    private readonly Mock<IChildListeningService> _listening = new(MockBehavior.Strict);
 
     private ChildReadingController Controller(params Claim[] claims) =>
-        new(_browse.Object, _reading.Object, _notebook.Object, _readAloud.Object)
+        new(_browse.Object, _reading.Object, _notebook.Object, _readAloud.Object, _listening.Object)
     {
         ControllerContext = new ControllerContext
         {
@@ -47,7 +48,34 @@ public class ChildReadingControllerTests
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Select(method => method.Name).OrderBy(name => name).ToArray();
 
-        Assert.Equal(new[] { "Complete", "GetContent", "GetDefinition", "GetSignal", "LogEvent", "ReadAloud", "SaveProgress", "SearchStories", "SetBookmark", "SetFavorite", "SetFeeling", "Start" }, methods);
+        Assert.Equal(new[] { "Complete", "GetContent", "GetDefinition", "GetSignal", "LogEvent", "ReadAloud", "SaveProgress", "SearchStories", "SetBookmark", "SetFavorite", "SetFeeling", "SetListenOnly", "Start", "SubmitListeningAttempt" }, methods);
+    }
+
+    [Fact]
+    public async Task SetListenOnly_ForwardsValue()
+    {
+        Assert.Equal("sessions/{sessionId:int}/listen-only",
+            typeof(ChildReadingController).GetMethod("SetListenOnly")!.GetCustomAttribute<HttpPutAttribute>()!.Template);
+        var expected = new ReadingFlagsDto { ListenOnly = true };
+        _reading.Setup(r => r.SetListenOnlyAsync(100, 22, true, It.IsAny<CancellationToken>())).ReturnsAsync(expected);
+        var result = await Controller(new Claim(ClaimTypes.NameIdentifier, "100"))
+            .SetListenOnly(22, new SetFlagRequestDto { Value = true }, default);
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Same(expected, Assert.IsType<ApiResponse<ReadingFlagsDto>>(ok.Value).Data);
+    }
+
+    [Fact]
+    public async Task SubmitListeningAttempt_ForwardsSessionAndIdentity()
+    {
+        Assert.Equal("sessions/{sessionId:int}/interactions/{interactionId:int}/attempts",
+            typeof(ChildReadingController).GetMethod("SubmitListeningAttempt")!.GetCustomAttribute<HttpPostAttribute>()!.Template);
+        var request = new SubmitListeningAttemptRequestDto { OptionId = 10 };
+        var expected = new ListeningAttemptResultDto { InteractionId = 7 };
+        _listening.Setup(l => l.SubmitAttemptAsync(100, 22, 7, request, It.IsAny<CancellationToken>())).ReturnsAsync(expected);
+        var result = await Controller(new Claim(ClaimTypes.NameIdentifier, "100"))
+            .SubmitListeningAttempt(22, 7, request, default);
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Same(expected, Assert.IsType<ApiResponse<ListeningAttemptResultDto>>(ok.Value).Data);
     }
 
     [Fact]

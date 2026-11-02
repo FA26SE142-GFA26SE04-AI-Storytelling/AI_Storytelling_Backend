@@ -121,6 +121,47 @@ public class PublicVersionSnapshotTests
     }
 
     [Fact]
+    public async Task ListeningMediaKey_NamesOptionAudioBySortOrder()
+    {
+        const int version = PublicStoryReviewHarness.VersionId;
+        var interaction = _h.AddListening(1, version, ListeningInteractionType.Checkpoint, 10, "Thỏ thấy gì?", "Sợ", "Vui");
+        void Audio(int id, int? optionId, string key) => _h.Assets.Add(new MediaAsset
+        {
+            Id = id, StoryVersionId = version, ListeningInteractionId = 1, ListeningInteractionOptionId = optionId,
+            Type = MediaType.ListeningAudio, AudioPartKey = key, Status = MediaStatus.Ready, Url = $"u{id}", IsCurrent = true
+        });
+        Audio(910, 12, "text");
+        Audio(911, 11, "text");
+        Audio(912, null, "prompt");
+        Audio(913, 11, "feedback");
+
+        var snapshot = await Load(version);
+
+        Assert.Equal("prompt=u912;o1:feedback=u913;o1:text=u911;o2:text=u910;1=;2=", snapshot.ListeningMediaKey(interaction));
+    }
+
+    [Fact]
+    public async Task Fingerprint_ChangesWhenOptionAudioMovesToAnotherOption()
+    {
+        _h.AddListening(1, PublicStoryReviewHarness.VersionId, ListeningInteractionType.Checkpoint, 10, "Thỏ thấy gì?", "Sợ", "Vui");
+        _h.Assets.Add(new MediaAsset
+        {
+            Id = 920, StoryVersionId = PublicStoryReviewHarness.VersionId, ListeningInteractionId = 1,
+            ListeningInteractionOptionId = 11, Type = MediaType.ListeningAudio, AudioPartKey = "text",
+            Status = MediaStatus.Ready, Url = "u920", IsCurrent = true
+        });
+
+        var (original, copy) = await FingerprintsAfter(copyId =>
+        {
+            var moved = _h.Assets.Single(x => x.StoryVersionId == copyId && x.Type == MediaType.ListeningAudio);
+            moved.ListeningInteractionOptionId = _h.ListeningOptions
+                .Single(x => x.ListeningInteractionId == moved.ListeningInteractionId && x.SortOrder == 2).Id;
+        });
+
+        Assert.NotEqual(original, copy);
+    }
+
+    [Fact]
     public async Task Fingerprint_SameListeningInCopiedVersion_IsIdentical()
     {
         _h.AddListening(1, PublicStoryReviewHarness.VersionId, ListeningInteractionType.Checkpoint, 10, "Thỏ thấy gì?", "Sợ", "Vui");

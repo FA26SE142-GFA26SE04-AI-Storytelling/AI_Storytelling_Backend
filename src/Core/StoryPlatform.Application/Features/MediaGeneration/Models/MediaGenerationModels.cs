@@ -49,6 +49,11 @@ public sealed record SceneSpecification(
     public SceneSpecification ForBeat(string beatText, string visualFocus) =>
         new(StoryVersionId, StorySceneId, SceneIndex, SceneText, VisualDescription,
             MediaContextJson, new[] { visualFocus }, MustNotContradict, null, beatText, visualFocus);
+
+    // Ảnh lựa chọn Đoán tranh dùng bối cảnh scene và mô tả hình của option.
+    public SceneSpecification ForListeningOption(string imageDescription) =>
+        new(StoryVersionId, StorySceneId, SceneIndex, SceneText, VisualDescription,
+            MediaContextJson, new[] { imageDescription }, MustNotContradict, null, imageDescription, imageDescription);
 }
 
 public enum MediaEvaluationDecision { Pass = 1, Fail = 2, Uncertain = 3 }
@@ -98,7 +103,10 @@ public sealed record MediaReadinessResult(
     IReadOnlyList<int> ScenesWithoutValidBeats,
     IReadOnlyList<int> MissingIllustrationBeatIds,
     IReadOnlyList<int> MissingAudioSegmentIds,
-    IReadOnlyList<int> ManualReviewAssetIds);
+    IReadOnlyList<int> ManualReviewAssetIds)
+{
+    public IReadOnlyList<string> MissingListeningMedia { get; init; } = [];
+}
 
 public sealed record IllustrationBeatMediaItem(
     int BeatId, int BeatOrder, int StartOffset, int EndOffset, string VisualFocus,

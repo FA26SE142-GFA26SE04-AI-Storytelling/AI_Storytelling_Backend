@@ -1,4 +1,4 @@
--- 20. story_vocabulary (16)
+-- 20. story_vocabulary (21: 16 + 5 của truyện 900 cho tương tác lúc nghe)
 INSERT INTO story_vocabulary ("Id", "StoryVersionId", "Term", "Definition", "CreatedAt", "IsDeleted")
 VALUES
     (1, 1, 'thông minh', 'Có khả năng suy nghĩ nhanh và chính xác', NOW() - INTERVAL '30 days', false),
@@ -17,4 +17,14 @@ VALUES
     (14, 17, 'dẫn đường', 'Giúp người khác nhận ra lối đi', NOW() - INTERVAL '8 days', false),
     (15, 18, 'an toàn', 'Tránh những điều có thể gây nguy hiểm', NOW() - INTERVAL '1 day', false),
     (16, 19, 'dịu', 'Nhẹ nhàng, không gây chói hoặc khó chịu', NOW() - INTERVAL '1 hour', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- Truyện 900 (tương tác lúc nghe): 5 từ đều xuất hiện trong nội dung truyện.
+INSERT INTO story_vocabulary ("Id", "StoryVersionId", "Term", "Definition", "CreatedAt", "IsDeleted")
+VALUES
+    (900, 900, 'Thỏ', 'Con vật nhỏ, tai dài, chạy nhảy rất nhanh', NOW() - INTERVAL '1 day', false),
+    (901, 900, 'rừng', 'Nơi có rất nhiều cây cối mọc thành một vùng rộng', NOW() - INTERVAL '1 day', false),
+    (902, 900, 'bác Gấu', 'Chú gấu lớn tuổi, to khỏe và tốt bụng trong truyện', NOW() - INTERVAL '1 day', false),
+    (903, 900, 'cửa hang', 'Chỗ mở ra để đi vào bên trong hang', NOW() - INTERVAL '1 day', false),
+    (904, 900, 'người lớn', 'Những người đã trưởng thành như bố mẹ, ông bà, thầy cô', NOW() - INTERVAL '1 day', false)
 ON CONFLICT ("Id") DO NOTHING;

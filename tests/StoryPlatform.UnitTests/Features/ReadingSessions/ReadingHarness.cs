@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using Moq;
 using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Features.ListeningInteractions.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -44,6 +45,11 @@ public sealed class ReadingHarness
     public readonly List<ContentCategory> Categories = new();
     public readonly List<StoryWish> StoryWishes = new();
     public readonly List<UserAccount> Users = new();
+    public readonly List<StorySummary> Summaries = new();
+    public readonly List<StorySummaryFlag> SummaryFlags = new();
+    public readonly List<ListeningInteraction> ListeningInteractions = new();
+    public readonly List<ListeningInteractionOption> ListeningOptions = new();
+    public readonly List<ListeningInteractionAttempt> ListeningAttempts = new();
 
     public readonly List<StoryWishCardMatch> CardMatches = new();
     public readonly List<StoryWishSuggestion> Suggestions = new();
@@ -78,7 +84,8 @@ public sealed class ReadingHarness
         Back(Cases); Back(ModerationItems); Back(Quizzes); Back(Attempts); Back(Achievements); Back(Badges);
         Back(Policies); Back(PolicyCategories); Back(StoryCategories); Back(RoadmapItems);
         Back(WishCards); Back(Categories);
-        Back(StoryWishes); Back(Users);
+        Back(StoryWishes); Back(Users); Back(Summaries); Back(SummaryFlags);
+        Back(ListeningInteractions); Back(ListeningOptions); Back(ListeningAttempts);
 
         Children.Add(new ChildProfile
         {
@@ -134,6 +141,26 @@ public sealed class ReadingHarness
         };
         Assets.Add(asset);
         return asset;
+    }
+
+    public void AddListeningMedia(ListeningInteraction interaction)
+    {
+        foreach (var part in ListeningAudioParts.For(interaction, ListeningOptions))
+            Assets.Add(new MediaAsset
+            {
+                Id = Assets.Count + 1, StoryVersionId = interaction.StoryVersionId, ListeningInteractionId = interaction.Id,
+                ListeningInteractionOptionId = part.OptionId, AudioPartKey = part.PartKey, Type = MediaType.ListeningAudio,
+                Status = MediaStatus.Ready, ValidationStatus = ValidationStatus.Passed,
+                Url = $"listen-{interaction.Id}-{part.OptionId?.ToString() ?? "i"}-{part.PartKey}.mp3"
+            });
+        if (interaction.Type != ListeningInteractionType.PicturePrediction) return;
+        foreach (var option in ListeningOptions.Where(x => x.ListeningInteractionId == interaction.Id))
+            Assets.Add(new MediaAsset
+            {
+                Id = Assets.Count + 1, StoryVersionId = interaction.StoryVersionId, ListeningInteractionId = interaction.Id,
+                ListeningInteractionOptionId = option.Id, Type = MediaType.ListeningImage, Status = MediaStatus.Ready,
+                ValidationStatus = ValidationStatus.Passed, Url = $"picture-{option.Id}.png"
+            });
     }
 
     public MediaAsset AddIllustration(StoryScene scene, string url)

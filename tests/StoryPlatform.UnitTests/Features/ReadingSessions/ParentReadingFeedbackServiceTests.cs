@@ -179,4 +179,75 @@ public class ParentReadingFeedbackServiceTests
         Assert.Equal(50, huge.PageSize);
         Assert.Equal(5, huge.Items.Count);
     }
+    private void Interaction(int id, CheckpointKind? kind, ListeningInteractionType type = ListeningInteractionType.Checkpoint,
+        int? sceneId = null) =>
+        _h.ListeningInteractions.Add(new ListeningInteraction
+        {
+            Id = id, StoryVersionId = ReadingHarness.Version, Type = type, Kind = kind,
+            Prompt = $"Câu hỏi {id}", StorySceneId = sceneId
+        });
+
+    private void Choice(int optionId, int interactionId, string text) =>
+        _h.ListeningOptions.Add(new ListeningInteractionOption
+        {
+            Id = optionId, ListeningInteractionId = interactionId, SortOrder = 1, Text = text
+        });
+
+    private void Answered(int sessionId, int interactionId, int optionId, DateTime at) =>
+        _h.ListeningAttempts.Add(new ListeningInteractionAttempt
+        {
+            Id = _h.ListeningAttempts.Count + 1, ReadingSessionId = sessionId, ChildProfileId = ReadingHarness.Child,
+            ListeningInteractionId = interactionId, SelectedOptionId = optionId, AttemptedAt = at
+        });
+
+    [Fact]
+    public async Task ListAsync_ShowsEmotionAndOpinionAnswersInOrder_WithSceneIndex()
+    {
+        var scene = _h.AddScene(2, "Scene 2");
+        var session = Done(DateTime.UtcNow);
+        Interaction(1, CheckpointKind.Emotion, sceneId: scene.Id);
+        Interaction(2, CheckpointKind.Opinion);
+        Choice(10, 1, "Thỏ đang sợ");
+        Choice(20, 2, "Con thích bác Gấu");
+        var start = new DateTime(2026, 11, 2, 8, 0, 0, DateTimeKind.Utc);
+        Answered(session.Id, 2, 20, start.AddMinutes(2));
+        Answered(session.Id, 1, 10, start);
+
+        var answers = (await List()).Items.Single().ConversationAnswers;
+
+        Assert.Equal(new[] { "Câu hỏi 1", "Câu hỏi 2" }, answers.Select(x => x.Question));
+        Assert.Equal(new[] { "Emotion", "Opinion" }, answers.Select(x => x.Kind));
+        Assert.Equal(new[] { "Thỏ đang sợ", "Con thích bác Gấu" }, answers.Select(x => x.AnswerText));
+        Assert.Equal(new int?[] { 2, null }, answers.Select(x => x.SceneIndex));
+        Assert.Equal(start, answers[0].AnsweredAt);
+    }
+
+    [Fact]
+    public async Task ListAsync_HidesPredictionPictureAndOtherTypes_AndKeepsSessionsApart()
+    {
+        var mine = Done(DateTime.UtcNow);
+        var other = Done(DateTime.UtcNow.AddDays(-1));
+        Interaction(1, CheckpointKind.Prediction);
+        Interaction(2, null, ListeningInteractionType.PicturePrediction);
+        Interaction(3, CheckpointKind.Emotion);
+        Choice(10, 1, "Bác Gấu");
+        Choice(20, 2, "Mẹ Thỏ");
+        Choice(30, 3, "Vui");
+        Answered(mine.Id, 1, 10, DateTime.UtcNow);
+        Answered(mine.Id, 2, 20, DateTime.UtcNow);
+        Answered(other.Id, 3, 30, DateTime.UtcNow);
+
+        var page = await List();
+
+        Assert.Empty(page.Items.Single(x => x.SessionId == mine.Id).ConversationAnswers);
+        Assert.Equal("Vui", page.Items.Single(x => x.SessionId == other.Id).ConversationAnswers.Single().AnswerText);
+    }
+
+    [Fact]
+    public async Task ListAsync_WithoutAnswers_ReturnsEmptyList()
+    {
+        Done(DateTime.UtcNow);
+
+        Assert.Empty((await List()).Items.Single().ConversationAnswers);
+    }
 }

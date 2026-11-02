@@ -10101,3 +10101,32 @@ Progress và retry cũng cần phân biệt thứ tự attempt: ID job giữ ngu
 Kết quả chạy thật sau sửa: khởi động lại riêng Core với migration/seed bị tắt, xác nhận healthz 200; gọi retry business service cho đúng truyện 33 và giữ kết quả cache. Job 23, 24, 25 đều Completed; truyện chuyển ContentReview, giữ nội dung phiên bản 49 và 12 vocabulary, lưu được 24 quiz và 4 discussion. Không sửa schema, không ép job thành công bằng SQL và không tạo lại nội dung/quiz. Log Core tại `.artifacts/story33-recovery/core.stdout.log`; 87 test nhóm content/learning/workflow, gồm regression persistence và retry, đạt.
 
 Đã tải lại đúng tab trình duyệt `/?storyId=33#studio` và xác nhận giao diện thực tế sang bước 6/8 “Chờ bạn duyệt truyện”, hiển thị nội dung phiên bản 49, các tab 12 từ vựng / 24 câu hỏi / 4 gợi ý thảo luận và nút “Duyệt và tạo minh hoạ”. Không bấm duyệt hoặc tự chuyển sang sinh media. Ảnh xác nhận tại `.artifacts/story33-recovery/studio-review.jpg`.
+
+## Bổ sung — Tóm tắt cuối truyện gửi bố mẹ (02/11/2026)
+
+Nguồn nghiệp vụ: "Luồng 3 — Danh sách tương tác của trẻ", mục 6. Cuối truyện, trẻ có thể gửi cho chủ hồ sơ bản ghi âm kể lại truyện và/hoặc các cảnh còn thắc mắc. Không dùng AI; không ảnh hưởng EXP, quiz, Hold Mode. Nút Bỏ qua ở frontend = không gọi API. File ghi âm lưu tới khi chủ hồ sơ xóa; chỉ chủ hồ sơ xem/nghe/xóa.
+
+### Phía trẻ (policy ChildSession)
+
+| Endpoint | Request | Response / lỗi |
+|---|---|---|
+| `POST /api/v1/child/reading/sessions/{sessionId}/summary/recording` | `multipart/form-data`, field `audio` (webm/ogg/wav/mp3/m4a/flac), tối đa 3 000 000 byte | `ApiResponse<StorySummarySentDto>` (`summaryId`, `message` = "Đã gửi cho bố mẹ"). 403 khi bố mẹ chưa bật giọng nói (`voiceAnswersEnabled`) hoặc phiên bị ngắt; 400 khi file rỗng/quá lớn/sai định dạng; 404 khi phiên không thuộc trẻ; 409 khi phiên đã kết thúc kiểu Abandoned hoặc đã gửi ghi âm |
+| `POST /api/v1/child/reading/sessions/{sessionId}/summary/flags` | JSON `StorySummaryFlagsRequestDto` `{ "sceneIds": [12, 13] }` — 1–5 cảnh thuộc phiên bản truyện của phiên; trùng id được gộp | `ApiResponse<StorySummarySentDto>`. 400 khi rỗng, quá 5 hoặc cảnh không thuộc truyện; 409 khi đã gửi cờ |
+
+Phiên phải đang đọc hoặc `Completed`. Mỗi phiên gửi ghi âm tối đa 1 lần và gửi cờ tối đa 1 lần; hai cách dùng chung một bản tóm tắt. Frontend lấy ảnh cảnh làm thẻ gợi nhớ từ `GET /api/v1/child/reading/sessions/{sessionId}/content`.
+
+### Phía chủ hồ sơ (role User, chỉ Owner)
+
+| Endpoint | Response |
+|---|---|
+| `GET /api/v1/ParentStorySummary/{childProfileId}?pageIndex=1&pageSize=20` | `ApiResponse<PagedResult<ParentStorySummaryItemDto>>` — mới nhất trước; `pageSize` tối đa 50 |
+| `DELETE /api/v1/ParentStorySummary/{childProfileId}/{summaryId}` | `ApiResponse<object?>` — xóa file khỏi kho lưu trữ, ẩn bản tóm tắt và các cờ; 404 khi không thuộc trẻ |
+
+`ParentStorySummaryItemDto`: `summaryId`, `sessionId`, `storyId`, `title`, `createdAt`, `recordingUrl` (signed URL hết hạn sau 15 phút; null khi không ghi âm — gọi lại danh sách để lấy link mới), `recordingSentAt`, `flagsSentAt`, `flags[]`.
+`ParentStorySummaryFlagDto`: `sceneId`, `sceneIndex`, `sceneText`, `illustrationUrl` (null khi cảnh chưa có ảnh).
+
+### Thông báo và dữ liệu
+
+- `NotificationType.StorySummarySent` (31), nhóm `children`, gửi cho chủ hồ sơ khi trẻ gửi; payload `{ childProfileId, summaryId, storyId, kind: "recording" | "flags" }`. Lỗi gửi thông báo không làm hỏng thao tác của trẻ.
+- Bảng `story_summaries` (một dòng còn hiệu lực cho mỗi phiên đọc) và `story_summary_flags`; migration `AddStorySummaries`.
+- Khi chủ hồ sơ xóa tài khoản, sau khi xóa thành công hệ thống xóa mọi file ghi âm tóm tắt của các hồ sơ trẻ bị xóa; lỗi kho lưu trữ chỉ ghi log.

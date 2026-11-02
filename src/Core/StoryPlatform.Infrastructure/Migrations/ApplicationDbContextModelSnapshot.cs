@@ -3808,6 +3808,101 @@ namespace StoryPlatform.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.StorySummary", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("AudioBytes")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("AudioContentType")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("AudioStoragePath")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("ChildProfileId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("FlagsSentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ReadingSessionId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("RecordingSentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("StoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("StoryVersionId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReadingSessionId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_story_summaries_one_per_session")
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.HasIndex("StoryId");
+
+                    b.HasIndex("ChildProfileId", "CreatedAt")
+                        .HasDatabaseName("IX_story_summaries_child_created");
+
+                    b.ToTable("story_summaries", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.StorySummaryFlag", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("StorySceneId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("StorySummaryId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StorySceneId");
+
+                    b.HasIndex("StorySummaryId", "StorySceneId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_story_summary_flags_summary_scene");
+
+                    b.ToTable("story_summary_flags", (string)null);
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryVersion", b =>
                 {
                     b.Property<int>("Id")
@@ -5689,6 +5784,52 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("StoryScene");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.StorySummary", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
+                        .WithMany()
+                        .HasForeignKey("ChildProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.ReadingSession", "ReadingSession")
+                        .WithMany()
+                        .HasForeignKey("ReadingSessionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.Story", "Story")
+                        .WithMany()
+                        .HasForeignKey("StoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ChildProfile");
+
+                    b.Navigation("ReadingSession");
+
+                    b.Navigation("Story");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.StorySummaryFlag", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryScene", "StoryScene")
+                        .WithMany()
+                        .HasForeignKey("StorySceneId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.StorySummary", "StorySummary")
+                        .WithMany()
+                        .HasForeignKey("StorySummaryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("StoryScene");
+
+                    b.Navigation("StorySummary");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryVersion", b =>

@@ -61,6 +61,7 @@ public class ParentReadingFeedbackService : IParentReadingFeedbackService
                 cancellationToken: ct))
             .OrderBy(attempt => attempt.Id).ToList();
 
+        var conversation = await LoadConversationAnswersAsync(sessions.Select(session => session.Id).ToList(), ct);
         var rows = sessions.Select(session =>
         {
             var versionId = session.StoryVersionId;
@@ -79,10 +80,57 @@ public class ParentReadingFeedbackService : IParentReadingFeedbackService
                 Feeling = session.Feeling?.ToString(),
                 FeelingLabel = session.Feeling.HasValue ? StoryFeelingLabels.Label(session.Feeling.Value) : null,
                 QuizTotalQuestions = itemIds.Count,
-                QuizBestPercent = itemIds.Count == 0 ? null : QuizRunCalculator.BestPercent(runs, itemIds.Count)
+                QuizBestPercent = itemIds.Count == 0 ? null : QuizRunCalculator.BestPercent(runs, itemIds.Count),
+                ConversationAnswers = conversation.GetValueOrDefault(session.Id) ?? new()
             };
         }).ToList();
 
         return new PagedResult<ParentReadingFeedbackItemDto>(rows, total, pageIndex, pageSize);
+    }
+    // Chỉ Checkpoint cảm xúc/cảm nhận: các loại có đáp án không đưa cho phụ huynh như bài kiểm tra (spec 9).
+    private async Task<Dictionary<int, List<ConversationAnswerDto>>> LoadConversationAnswersAsync(
+        List<int> sessionIds, CancellationToken ct)
+    {
+        if (sessionIds.Count == 0) return new();
+        var attempts = await _unitOfWork.Repository<ListeningInteractionAttempt>().FindAsync(
+            attempt => sessionIds.Contains(attempt.ReadingSessionId) && attempt.SelectedOptionId != null && !attempt.IsDeleted,
+            cancellationToken: ct);
+        if (attempts.Count == 0) return new();
+
+        var interactionIds = attempts.Select(attempt => attempt.ListeningInteractionId).Distinct().ToList();
+        var interactions = (await _unitOfWork.Repository<ListeningInteraction>().FindAsync(
+                interaction => interactionIds.Contains(interaction.Id) && !interaction.IsDeleted
+                               && interaction.Type == ListeningInteractionType.Checkpoint
+                               && (interaction.Kind == CheckpointKind.Emotion || interaction.Kind == CheckpointKind.Opinion),
+                cancellationToken: ct))
+            .ToDictionary(interaction => interaction.Id);
+        var optionIds = attempts.Select(attempt => attempt.SelectedOptionId!.Value).Distinct().ToList();
+        var options = (await _unitOfWork.Repository<ListeningInteractionOption>().FindAsync(
+                option => optionIds.Contains(option.Id), cancellationToken: ct))
+            .ToDictionary(option => option.Id);
+        var sceneIds = interactions.Values.Where(interaction => interaction.StorySceneId.HasValue)
+            .Select(interaction => interaction.StorySceneId!.Value).Distinct().ToList();
+        var scenes = (await _unitOfWork.Repository<StoryScene>().FindAsync(
+                scene => sceneIds.Contains(scene.Id), cancellationToken: ct))
+            .ToDictionary(scene => scene.Id);
+
+        return attempts
+            .Where(attempt => interactions.ContainsKey(attempt.ListeningInteractionId)
+                              && options.ContainsKey(attempt.SelectedOptionId!.Value))
+            .OrderBy(attempt => attempt.AttemptedAt).ThenBy(attempt => attempt.Id)
+            .GroupBy(attempt => attempt.ReadingSessionId)
+            .ToDictionary(group => group.Key, group => group.Select(attempt =>
+            {
+                var interaction = interactions[attempt.ListeningInteractionId];
+                return new ConversationAnswerDto
+                {
+                    Question = interaction.Prompt ?? string.Empty,
+                    Kind = interaction.Kind!.Value.ToString(),
+                    AnswerText = options[attempt.SelectedOptionId!.Value].Text,
+                    SceneIndex = interaction.StorySceneId is int sceneId && scenes.TryGetValue(sceneId, out var scene)
+                        ? scene.SceneIndex : null,
+                    AnsweredAt = attempt.AttemptedAt
+                };
+            }).ToList());
     }
 }

@@ -50,6 +50,30 @@ public class PublicStoryReviewServiceTests
     }
 
     [Fact]
+    public async Task GetPackageAsync_ListeningAudioCarriesOptionIdInOptionOrder()
+    {
+        _h.AddScene(1, 1);
+        _h.AddListening(1, PublicStoryReviewHarness.VersionId, ListeningInteractionType.Checkpoint, 10, "Thỏ thấy gì?", "Sợ", "Vui");
+        _h.ListeningOptions.Add(new ListeningInteractionOption { Id = 13, ListeningInteractionId = 1, SortOrder = 3, Text = "Xoá", IsDeleted = true });
+        void Audio(int id, int? optionId, string key) => _h.Assets.Add(new MediaAsset
+        {
+            Id = id, StoryVersionId = PublicStoryReviewHarness.VersionId, ListeningInteractionId = 1,
+            ListeningInteractionOptionId = optionId, Type = MediaType.ListeningAudio, AudioPartKey = key,
+            Status = MediaStatus.Ready, Url = $"https://cdn.test/{id}.mp3", IsCurrent = true
+        });
+        Audio(910, 12, "text");
+        Audio(911, 11, "text");
+        Audio(912, null, "prompt");
+        Audio(913, 11, "feedback");
+        Audio(914, 13, "text");
+
+        var package = await _h.Sut.GetPackageAsync(PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId);
+
+        Assert.Equal(new (int?, string?)[] { (null, "prompt"), (11, "feedback"), (11, "text"), (12, "text") },
+            package.ListeningInteractions.Single().Audio.Select(x => (x.OptionId, x.PartKey)));
+    }
+
+    [Fact]
     public async Task RequestChangesAsync_AcceptsListeningPartOfThisVersionOnly()
     {
         _h.AddScene(1, 1);

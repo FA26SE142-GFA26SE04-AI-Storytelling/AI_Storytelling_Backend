@@ -1,1529 +1,2282 @@
 Project ai_storytelling_platform {
   database_type: 'PostgreSQL'
-  Note: '''
-    Database Schema hoàn thiện cho AI Storytelling Platform for Children.
-    Bám sát Workflow_AI_Storytelling_v8 (6 luồng nghiệp vụ khép kín):
-    - Luồng 1: Profile Setup
-    - Luồng 2: Guided AI Story Generation Pipeline
-    - Luồng 3: Child Reading Experience & Telemetry
-    - Luồng 4: Content Distribution & Intervention
-    - Luồng 5: Administrator Portal, AI Governance & Reporting
-    - Luồng 6: Adaptive Learning Analysis & Recommendation
-    CẬP NHẬT 24/09/2026: đối chiếu đủ 63 entity cụ thể với EF Core;
-    bổ sung child_sessions để lưu phiên đăng nhập của Trẻ qua PIN/
-    EasyLogin QR, phục vụ idle-timeout 20 phút; bổ sung các trường
-    EasyLogin còn thiếu trong child_access_credentials.
-    CẬP NHẬT 22/09/2026: đối chiếu 62 entity cụ thể với EF Core; thêm
-    story_segments, các trường mở rộng của media_assets và các cột kế
-    thừa BaseEntity. Script DBML này mô tả mô hình; tên cột/giá trị enum
-    vật lý trong PostgreSQL do EF Core mapping và migration quyết định.
-    CẬP NHẬT 17/09/2026: bổ sung story generation input request/job,
-    story_scenes, media_contexts, personal token quota và notification types.
-    Bổ sung tiến độ đọc nhanh (Bookmarks/Favorites).
-    CẢI THIỆN v9: Chuẩn hóa content category (safety_policy_categories)
-    qua bảng content_categories, thay cho varchar tự do.
-    CẢI THIỆN v9.1:
-    (C) stories.safety_tags (varchar tự do) được thay bằng bảng nối
-        story_categories tham chiếu content_categories, đồng bộ chuẩn hóa
-        với safety_policy_categories để Guardrail so khớp chính xác.
-    (D) learning_profile_topics.relation đổi từ varchar sang enum
-        topic_relation_enum (chỉ 2 giá trị cố định).
-    CẢI THIỆN v9.2:
-    (P) recommendation_reviews thêm is_final + had_final_authority —
-        giải quyết câu hỏi "kiểm tra quyền TẠI THỜI ĐIỂM nào" khi Owner
-        thay đổi quyền giữa lúc review và lúc áp dụng.
-        had_final_authority là snapshot bất biến tại thời điểm review,
-        KHÔNG tính lại mỗi lần đọc.
-    Điểm đã kiểm tra và XÁC NHẬN KHÔNG CẦN THÊM CỘT:
-    - intervention_cases.trigger_type đã có sẵn giá trị recommended_by_ai
-      — khớp hoàn hảo với Recommendation category=learning_intervention
-      (Luồng 6, Bước 6.7 Nhánh C) khi đề xuất Hold Mode được duyệt.
-    - recommendation_status_enum đã có sẵn 'applied' — đủ dùng cho
-      Nhánh B (Advisory-only, category=content_personalization).
-
-    CẢI THIỆN v9.4 (MỚI — kết quả rà soát toàn bộ 7 tài liệu workflow):
-    (S) 2 bảng MỚI dùng chung toàn hệ thống: notifications (Luồng 1,
-        Mục 7b) — mọi điểm "hệ thống gửi thông báo" trong 7 luồng PHẢI
-        tạo 1 dòng ở đây, không được là hành vi ngầm không lưu vết; và
-        child_access_credentials (Luồng 1, Bước 1.10) — cho phép Trẻ tự
-        vào giao diện đọc độc lập (Easy Login QR lâu dài) mà không cần UserAccount
-        riêng, tách biệt phiên đăng nhập của Supervisor.
-    (T) user_accounts thêm role_before_admin — lưu role gốc trước khi
-        được Grant làm Administrator (Luồng 5, Bước 5.1b), phục vụ
-        Revoke đúng role mà không bị treo ở trạng thái không xác định.
-    (U) stories thêm child_visible_at — SLA hậu kiểm cho auto-publish
-        (Luồng 2, Bước 2.5): truyện auto-publish chỉ hiển thị cho Trẻ
-        sau approved_at + 2 giờ, cho Supervisor kịp hậu kiểm trước khi
-        Trẻ có thể đọc; truyện duyệt thủ công hiển thị ngay lập tức.
-    (V) reading_sessions thêm force_exit_requested_at — cơ chế ngắt an
-        toàn real-time (Luồng 2, Bước 2.5 giải pháp B5 & Luồng 3, Bước
-        3.2): khi Supervisor Archive truyện đang đọc vì safety_concern,
-        set cột này để buộc Trẻ thoát khỏi truyện trong tối đa ~15 giây
-        (client poll nhịp ngắn trong Immersive Mode) — vá lỗ hổng an
-        toàn trẻ em thực sự từng bị bỏ ngỏ.
-    (X) recommendations thêm expires_at — cơ chế timeout cho Awaiting
-        Review (Luồng 6, Bước 6.5): quá 14 ngày không ai review,
-        status tự động chuyển 'stale' (không xóa, giữ audit trail).
-    (Y) data_requests: ĐÃ CHỐT quyết định Anonymize/Hard Delete từng để
-        ngỏ ở v9.3 — thêm created_at (mốc bắt đầu tính SLA 72 giờ, trước
-        đây thiếu hoàn toàn), resolved_by_user_id (ai xử lý),
-        deletion_method (mặc định anonymize; hard_delete chỉ khi có căn
-        cứ pháp lý minh thị), legal_basis_note (bắt buộc khi
-        deletion_method=hard_delete). Anonymize giữ triết lý Auditability
-        xuyên suốt schema; Hard Delete là lối thoát có kiểm soát cho yêu
-        cầu pháp lý, không phải mặc định.
-
-    (AA) recommendation_status_enum thêm 'stale' (xem mục X).
-
-    CẢI THIỆN v9.5 (MỚI — kết quả rà soát bảo mật xác thực + tính năng
-    Payment SePay, phiên rà soát tiếp theo sau v9.4):
-    (AB) user_accounts thêm token_version (tăng lên khi có thay đổi
-        quyền nhạy cảm — Grant/Revoke
-        Admin Bước 5.1b — mọi access
-        token JWT cũ mang version cũ bị middleware từ chối NGAY dù
-        chưa hết hạn), mfa_secret/mfa_enabled (đã gỡ 2026-10-28 — bỏ MFA), email_verification_token_hash/
-        email_verification_token_expires_at (Bước 1.1 — bắt buộc xác thực
-        email khi đăng ký cold-start, không qua invitation_code),
-        failed_login_attempts/locked_until (chống brute-force đăng
-        nhập Supervisor, đối xứng child_access_credentials). Bảng MỚI
-        refresh_tokens (Luồng 1, Mục 7c) — lưu trữ có thể thu hồi từng
-        phiên cụ thể (logout 1 thiết bị), độc lập với token_version
-        (vốn thu hồi TOÀN BỘ session cùng lúc).
-    (AC) safety_policies thêm comprehension_threshold_percent (✅ ĐÃ
-        CHỐT = 70) và comprehension_window_size (✅ ĐÃ CHỐT = 3 bài đọc
-        gần nhất) cho ngưỡng Hold Mode (Luồng 4, Bước 4.5); thêm
-        safety_score_threshold/readability_score_threshold (v9.2-I,
-        ngưỡng auto-publish, NULL mặc định = luôn cần duyệt thủ công);
-        thêm consent_policy_version (Luồng 1, Mục 9 — phục vụ re-consent
-        khi Điều khoản/Chính sách thay đổi sau này).
-    (AD) stories thêm archived_reason (v9.2-L — phân biệt
-        supervisor_preference/safety_concern khi Archive, quyết định có
-        ngắt phiên đọc real-time hay không).
-    (AE) media_assets thêm word_timings (v9.2-J — dữ liệu đồng bộ
-        TTS-Karaoke, Luồng 3 Bước 3.2; chỉ áp dụng type=tts_audio).
-    (AF) reading_sessions thêm story_version_id (v9.2-M — ghim đúng
-        phiên bản truyện tại thời điểm Bước 3.1 Trigger, tránh lệch nếu
-        Supervisor Edit/Regenerate giữa lúc trẻ đang đọc dở) và
-        child_access_credential_id/supervisor_session_id (Luồng 3, Bước
-        3.0 — biết Child Session đến từ lối vào nào, đúng 1 trong 2 cột
-        có giá trị, phục vụ audit).
-    (AH) 3 bảng MỚI — Payment & Token Quota (Luồng 5, Bước 5.1c/5.6,
-        tính năng Thanh toán qua SePay): token_quota_configs (giới hạn
-        lượt sinh truyện theo cấp system/child/personal, Luồng 2
-        Bước 2.1 phải kiểm tra trước khi generate); subscription_plans
-        (✅ ĐÃ CHỐT gói seed: Personal 49.000đ/+50 lượt);
-        payment_transactions (giao dịch top-up qua
-        SePay — VietQR + webhook đối soát, KHÔNG BAO GIỜ cộng quota nếu
-        status khác 'paid'). Mô hình top-up một lần, không phải subscription tự động gia hạn.
-    (AI) Bảng MỚI content_reports (Luồng 4, Bước 4.6 — Report/Flag
-        Content) — cho phép User báo cáo bất kỳ truyện nào tới
-        Moderator/Administrator. notification_type_enum bổ sung
-        content_reported và payment_confirmed tương ứng 2 tính năng
-        MỚI (AH)/(AI).
-    CẢI THIỆN v10 (MỚI — Luồng 4 Deep Dive v10: Hold Mode chuyển từ
-    unlock thủ công sang Auto-unlock):
-    (AK) intervention_cases thêm triggering_story_id (Bước 4.5.1 —
-        truyện đã gây kích hoạt Hold Mode, dùng để đối chiếu khi trẻ
-        retake), resolution_type (ENUM MỚI intervention_resolution_
-        type_enum: manual_parent/auto_retake_pass — nguồn gốc lần
-        unlock), notes_added_by_user_id + notes_added_at (Bước 4.5.3b —
-        User ghi skill_gap_notes SAU khi đã unlock, tách khỏi thời
-        điểm resolved_at). resolved_by_user_id giữ nguyên nullable
-        (không đổi cấu trúc cột) nhưng nay mang ý nghĩa NULL = unlock
-        tự động, không còn là actor bắt buộc. Bước 4.5.3 tách thành
-        4.5.3a (Auto-unlock, hệ thống, TỰ ĐỘNG khi retake đúng truyện
-        trigger đạt comprehension_threshold_percent) và 4.5.3b (User
-        bổ sung skill gap notes, thủ công, TÙY CHỌN, không còn chặn
-        unlock) — đổi từ giám sát CHẶN TRƯỚC sang giám sát SONG SONG.
-        notification_type_enum bổ sung hold_mode_auto_unlocked tương
-        ứng thông báo tự động gửi khi 4.5.3a hoàn tất. CÒN TREO (chưa
-        thêm cột): giới hạn số lần retake/ngày hoặc khoảng cách thời
-        gian tối thiểu giữa các lần retake, để giữ ý nghĩa sư phạm của
-        Hold Mode — trẻ hiện có thể retake liên tục để "đoán" đạt
-        ngưỡng mà không có hướng dẫn thực chất.
-  '''
+  Note: 'ERD derived from the current EF Core model. Column names follow PostgreSQL mappings; enum columns use Domain enum names for the diagram; their EF PostgreSQL storage types are noted on each column. Database defaults are omitted; this file does not assert that migrations were applied to a live database.'
 }
 
-// =====================================================================
-// ENUMS: Luồng 1 — Profile
-// =====================================================================
-Enum user_role {
-  user
-  moderator
-  administrator
-  content_creator
+// Enum values are taken from StoryPlatform.Domain.Enums.
+// The EF mapping stores these columns as the physical type shown in each column note.
+
+Enum AccountStatus {
+  Registered
+  Active
+  PasswordResetPending
+  Suspended
 }
 
-Enum account_status {
-  registered
-  active
-  password_reset_pending
-  suspended
+Enum AgeBand {
+  Age_6_8
+  Age_9_10
 }
 
-Enum age_band_enum {
-  age_6_8
-  age_9_10
+Enum ApprovalMode {
+  AlwaysManual
+  AutoPublishOnThreshold
 }
 
-Enum child_profile_status {
-  draft
-  active
-  suspended
-  archived
-  deleted
+Enum ArchivedReason {
+  SupervisorPreference
+  SafetyConcern
+  Copyright
+  Inappropriate
 }
 
-Enum approval_mode_enum {
-  always_manual
-  auto_publish_on_threshold
+Enum AuthoringGuideVersionStatus {
+  Draft
+  Published
 }
 
-Enum child_creation_mode_enum {
-  review_first
-  listen_now
+Enum CatalogStatus {
+  Draft
+  Published
+  Deprecated
+  RolledBack
 }
 
-Enum reading_mode_enum {
-  listen_first
-  read_first
+Enum CheckpointKind {
+  Prediction
+  Emotion
+  Opinion
 }
 
-Enum version_history_source_enum {
-  manual
-  recommendation
+Enum ChildCreationMode {
+  ReviewFirst
+  ListenNow
 }
 
-Enum policy_rule_enum {
-  allowed
-  restricted
-  blocked
+Enum ChildEntryMethod {
+  EasyLogin
+  ProfileSwitcher
+  SupervisorPick
 }
 
-Enum topic_relation_enum {
-  favorite_topic
-  priority_focus_area
+Enum ChildProfileStatus {
+  Draft
+  Active
+  Suspended
+  Archived
+  Deleted
 }
 
-// MỚI v9.5 (Luồng 1, Mục 7c) — payload access token JWT: session_scope
-// PHẢI được middleware kiểm tra TRƯỚC TIÊN ở mọi route Guardian
-// Management Area/Admin Portal, chặn cứng nếu scope=child.
-Enum session_scope_enum {
-  supervisor
-  child
-  admin
+Enum ChildRoadmapItemSource {
+  Manual
+  TemplateCopy
+  Wish
 }
 
-Enum child_entry_method_enum {
-  easy_login
-  profile_switcher
-  supervisor_pick
+Enum ChildRoadmapItemStatus {
+  Waiting
+  Open
+  Completed
+  Skipped
+  Removed
 }
 
-// =====================================================================
-// ENUMS: Luồng 2 — Guided AI Generation
-// =====================================================================
-Enum story_source_enum {
-  ai
-  manual
+Enum ChildRoadmapSkipReason {
+  BlockedTopic
+  WrongAge
+  TooLong
+  StoryUnavailable
+  SourceDeleted
+  DataDeleted
 }
 
-Enum story_status_enum {
-  draft
-  outline_review
-  content_review
-  approved
-  media_processing
-  ready
-  rejected
-  media_review
+Enum ContentReportReason {
+  SafetyConcern
+  Inappropriate
+  WrongAgeBand
+  Other
+  Copyright
+  Cultural
 }
 
-Enum version_edit_type_enum {
-  initial
-  edit
-  regenerate
+Enum ContentReportStatus {
+  Pending
+  ReviewedDismissed
+  ReviewedArchived
+  Escalated
+  Closed
 }
 
-Enum job_stage_enum {
-  input_validated
-  outline_draft
-  outline_approved
-  content_review
-  approved
-  media_processing
-  ready
-  rejected
-  outline_pending
-  outline_generating
-  outline_generated
-  outline_failed
-  outline_rejected
-  content_pending
-  content_generating
-  content_stable
-  content_artifact_pending
-  content_artifact_generating
-  content_artifact_completed
-  content_package_completed
-  content_failed
-  media_pending
-  media_context_building
-  media_segmenting
-  media_generating
-  media_finalizing
-  media_completed
-  media_failed
+Enum CopyrightDeclaration {
+  AiGenerated
+  OwnWork
+  FamilyUse
 }
 
-Enum generation_input_status_enum {
-  pending_input
-  checking_input
-  input_accepted
-  input_blocked
-  input_check_failed
+Enum GenerationInputStatus {
+  PendingInput
+  CheckingInput
+  InputAccepted
+  InputBlocked
+  InputCheckFailed
 }
 
-Enum generation_job_operation_enum {
-  generate_outline
-  regenerate_outline
-  generate_content
-  generate_vocabulary
-  generate_quiz
-  generate_discussion // chỉ còn ở job cũ, worker đóng không gọi AI
-  generate_media_package
-  build_media_context
-  segment_story
-  generate_illustration
-  generate_tts
-  validate_illustration
-  finalize_media
+Enum GenerationJobOperation {
+  GenerateOutline
+  RegenerateOutline
+  GenerateContent
+  GenerateVocabulary
+  GenerateQuiz
+  GenerateDiscussion
+  GenerateMediaPackage
+  BuildMediaContext
+  SegmentStory
+  GenerateIllustration
+  GenerateTts
+  ValidateIllustration
+  FinalizeMedia
+  GenerateListeningInteraction
 }
 
-Enum generation_job_status_enum {
-  pending
-  processing
-  completed
-  failed
-  cancelled
+Enum GenerationJobStatus {
+  Pending
+  Processing
+  Completed
+  Failed
+  Cancelled
+  WaitingForModeration
 }
 
-Enum guardrail_result_enum {
-  passed
-  fast_fail
+Enum GuardrailResult {
+  Passed
+  FastFail
 }
 
-Enum media_type_enum {
-  tts_audio
-  illustration
+Enum InsightStatus {
+  InsightDetected
+  Reviewed
 }
 
-Enum media_status_enum {
-  queued
-  processing
-  generated
-  ready
-  failed
-  manual_review
+Enum InterventionResolutionType {
+  ManualParent
+  AutoRetakePass
 }
 
-Enum validation_status_enum {
-  pending
-  passed
-  failed
+Enum InterventionStatus {
+  OpenHoldMode
+  UnderReview
+  ResolvedUnlocked
 }
 
-Enum quiz_type_enum {
-  multiple_choice
-  true_false
-  short_answer
+Enum InterventionTrigger {
+  AutoBelowThreshold
+  RecommendedByAi
 }
 
-// MỚI v9.5 (v9.2-L, Bước 2.5 giải pháp B5) — quyết định có ngắt phiên
-// đọc real-time (reading_sessions.force_exit_requested_at) hay không.
-Enum archived_reason_enum {
-  supervisor_preference  // KHÔNG ngắt — để trẻ đọc nốt phiên đang mở
-  safety_concern         // PHẢI ngắt sớm nhất có thể (~15 giây)
+Enum JobStage {
+  InputValidated
+  OutlineDraft
+  OutlineApproved
+  ContentReview
+  Approved
+  MediaProcessing
+  Ready
+  Rejected
+  OutlinePending
+  OutlineGenerating
+  OutlineGenerated
+  OutlineFailed
+  OutlineRejected
+  ContentPending
+  ContentGenerating
+  ContentStable
+  ContentArtifactPending
+  ContentArtifactGenerating
+  ContentArtifactCompleted
+  ContentPackageCompleted
+  ContentFailed
+  MediaPending
+  MediaContextBuilding
+  MediaSegmenting
+  MediaGenerating
+  MediaFinalizing
+  MediaCompleted
+  MediaFailed
 }
 
-// =====================================================================
-// ENUMS: Luồng 3 — Reading Experience
-// =====================================================================
-Enum session_status_enum {
-  started
-  reading
-  activity
-  completed
-  abandoned
+Enum ListeningInteractionType {
+  Checkpoint
+  RolePlay
+  FillBlank
+  EventOrdering
+  PicturePrediction
 }
 
-Enum telemetry_event_type_enum {
-  session_started
-  session_completed
-  page_viewed
-  page_completed
-  tts_started
-  tts_completed
-  asr_word_result
-  pronunciation_error
-  vocabulary_opened
-  vocabulary_collected
-  quiz_answered
-  quiz_completed
-  reward_granted
-  badge_unlocked
-  story_bookmarked
-  story_favorited
-  library_searched
+Enum MediaStatus {
+  Queued
+  Processing
+  Ready
+  Failed
+  Generated
+  ManualReview
 }
 
-Enum share_mode_enum {
-  one_to_one
-  broadcast
+Enum MediaType {
+  TtsAudio
+  Illustration
+  VocabularyAudio
+  ListeningAudio
+  ListeningImage
 }
 
-Enum recipient_status_enum {
-  pending
-  accepted
-  declined
-  revoked
+Enum ModerationItemStatus {
+  Pending
+  Claimed
+  Approved
+  ChangesRequested
+  Rejected
+  Cleared
+  Blocked
+  Dismissed
+  Archived
+  Escalated
+  Withdrawn
+  Removed
+  Closed
 }
 
-Enum intervention_trigger_enum {
-  auto_below_threshold   // Luồng 4: tự động, comprehension < 70% liên tục
-  recommended_by_ai      // Luồng 6: đề xuất qua Recommendation (Bước 6.7 Nhánh C), cần duyệt
+Enum ModerationItemType {
+  PublicStoryReview
+  GrayZoneStory
+  ContentReport
+  RoadmapTemplateReview
+  CommunitySubmission
+  PublicStoryRemoval
 }
 
-Enum intervention_status_enum {
-  open_hold_mode
-  under_review
-  resolved_unlocked   // = "Unlocked" trong tài liệu Luồng 4 v10 — đạt được qua auto-unlock (mặc định) hoặc unlock thủ công (dự phòng, xem resolution_type)
+Enum ModerationPriority {
+  High
+  Medium
+  Low
 }
 
-// MỚI v10 (Luồng 4, Bước 4.5.3a) — nguồn gốc của lần unlock một
-// intervention_case. auto_retake_pass là đường mặc định từ v10 trở đi;
-// manual_parent được giữ lại làm dự phòng nếu cần bật lại unlock thủ
-// công sau này, dù hiện tại pipeline chỉ tạo ra auto_retake_pass.
-Enum intervention_resolution_type_enum {
-  manual_parent
-  auto_retake_pass
+Enum ModerationRubricStatus {
+  Draft
+  Active
+  Retired
 }
 
-// MỚI v9.5 (Luồng 4, Bước 4.6 — Report/Flag Content, cross-cutting)
-Enum content_report_reason_enum {
-  safety_concern
-  inappropriate
-  wrong_age_band
-  other
+Enum ModerationZone {
+  Safe
+  GrayZone
+  HardBlock
 }
 
-Enum content_report_status_enum {
-  pending
-  reviewed_dismissed
-  reviewed_archived
+Enum NotificationReadStatus {
+  Unread
+  Read
 }
 
-// =====================================================================
-// ENUMS: Luồng 5 — Administrator & AI Governance
-// =====================================================================
-Enum catalog_status_enum {
-  draft
-  published
-  deprecated
-  rolled_back
+Enum NotificationType {
+  SupervisionInvite
+  SupervisionInviteResult
+  SupervisionRevoked
+  PermissionRequest
+  PermissionRequestResult
+  OwnershipTransferRequest
+  OwnershipTransferResult
+  AccountSecurityChanged
+  HoldModeAlert
+  RecommendationAwaitingReview
+  AdminRoleChanged
+  ContentReported
+  ModerationSlaWarning
+  ContentReportResolved
+  PaymentConfirmed
+  ContentReportEscalated
+  ContentModerationResult
+  StoryModerationResult
+  StoryArchivedByModeration
+  CreatorContentFlagged
+  CommunityLibraryReviewed
+  StaffInvite
+  RoadmapStoryAdded
+  RoadmapStoryRemoved
+  RoadmapCompleted
+  StoryWishSubmitted
+  StoryWishExpiring
+  StorySummarySent
 }
 
-Enum report_status_enum {
-  compiling
-  published
+Enum PaymentStatus {
+  Pending
+  Paid
+  Expired
+  MismatchAmount
 }
 
-// MỚI v9.5 (Luồng 5, Bước 5.1c — Token Quota)
-Enum token_quota_scope_enum {
-  system
-  child
-  personal
+Enum PolicyRule {
+  Allowed
+  Restricted
+  Blocked
 }
 
-// MỚI v9.5 (Luồng 5, Bước 5.6 — Payment & Subscription qua SePay)
-Enum payment_status_enum {
-  pending
-  paid
-  expired
-  mismatch_amount
+Enum QuizType {
+  MultipleChoice
+  TrueFalse
+  ShortAnswer
 }
 
-// =====================================================================
-// ENUMS: Luồng 6 — Adaptive Learning & Recommendation
-// =====================================================================
-Enum insight_status_enum {
-  insight_detected
-  reviewed
+Enum ReadingMode {
+  ListenFirst
+  ReadFirst
 }
 
-Enum recommendation_category_enum {
-  reading_difficulty
-  learning_focus
-  content_personalization
-  learning_intervention
+Enum RecommendationCategory {
+  ReadingDifficulty
+  LearningFocus
+  ContentPersonalization
+  LearningIntervention
 }
 
-Enum recommendation_status_enum {
-  detected
-  recommendation_created
-  awaiting_review
-  stale                    // MỚI v9.4 — Bước 6.5: quá 14 ngày (recommendations.expires_at) ở awaiting_review mà không có review nào is_final=true. KHÔNG xóa, chỉ ẩn khỏi hàng đợi 'Cần xử lý' chính, giữ audit trail.
-  modified
-  observe_more
-  rejected
-  approved
-  applied
-  monitoring
-  validated
-  reassessment_required
+Enum RecommendationStatus {
+  Detected
+  RecommendationCreated
+  AwaitingReview
+  Modified
+  ObserveMore
+  Rejected
+  Approved
+  Applied
+  Monitoring
+  Validated
+  ReassessmentRequired
+  Stale
 }
 
-Enum review_decision_enum {
-  accept
-  modify
-  reject
-  observe_more
+Enum ReportStatus {
+  Compiling
+  Published
 }
 
-Enum version_history_status_enum {
-  draft_version
-  active_version
-  superseded
+Enum ReviewDecision {
+  Accept
+  Modify
+  Reject
+  ObserveMore
 }
 
-Enum consent_status_enum {
-  pending
-  accepted
-  rejected
+Enum RoadmapArchiveReason {
+  ReplacedByClone
+  Manual
 }
 
-// =====================================================================
-// ENUMS: Notification — dùng chung toàn hệ thống (MỚI v9.4)
-// =====================================================================
-
-// MỚI v9.4 (Luồng 1, Mục 7b) — mọi điểm "hệ thống gửi thông báo" xuyên
-// suốt 7 luồng PHẢI dùng đúng 1 trong các giá trị này, không tự ý thêm
-// loại mới ngoài danh sách đã ánh xạ trong tài liệu workflow.
-Enum notification_type_enum {
-  supervision_invite              // Legacy: chỉ giữ để đọc dữ liệu cũ
-  supervision_invite_result       // Legacy
-  supervision_revoked             // Legacy
-  hold_mode_alert                 // Luồng 4, Bước 4.5.2
-  hold_mode_auto_unlocked         // MỚI v10 — Luồng 4, Bước 4.5.3a
-  recommendation_awaiting_review  // Luồng 6, Bước 6.5 (kể cả lần nhắc ngày thứ 7)
-  admin_role_changed              // Luồng 5, Bước 5.1b (MỚI)
-  content_reported                // MỚI v9.5 — Luồng 4, Bước 4.6
-  moderation_sla_warning          // Luồng 4, Bước 4.6 — báo cáo sắp quá hạn xử lý
-  content_report_resolved         // Luồng 4, Bước 4.6 — báo cáo đã được xử lý xong
-  payment_confirmed               // MỚI v9.5 — Luồng 5, Bước 5.6.2
-  permission_request // Legacy
-  permission_request_result // Legacy
-  ownership_transfer_request // Legacy
-  ownership_transfer_result // Legacy
-  account_security_changed
+Enum RoadmapTemplateStatus {
+  Draft
+  PendingReview
+  Published
+  Archived
 }
 
-Enum notification_read_status_enum {
-  unread
-  read
+Enum SessionScope {
+  Supervisor
+  Child
+  Admin
+  Moderator
 }
 
-// #####################################################################
-// LUỒNG 1 — CHILD LEARNING PROFILE SETUP
-// #####################################################################
-
-Table user_accounts {
-  id integer [pk, increment]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  username varchar(50) [not null, unique]
-  email varchar [not null, unique]
-  password_hash varchar [not null]
-  full_name varchar(100) [not null]
-  phone_number varchar(20)
-  avatar_url varchar(500)
-  role user_role [not null]
-  status account_status [not null, default: 'registered']
-  reset_token_hash varchar [note: 'Lưu token đặt lại mật khẩu — Bước 1.1']
-  reset_token_expires_at timestamp [note: 'Thời hạn token đặt lại mật khẩu']
-  refresh_token_hash varchar(64)
-  refresh_token_expires_at timestamp
-  email_verification_token_hash varchar [note: 'MỚI v9.5 — Bước 1.1: xác thực email khi đăng ký bằng OTP.']
-  email_verification_token_expires_at timestamp [note: 'MỚI v9.5']
-  email_verified_at timestamp [note: 'NULL = chưa xác thực email (OTP) — Bước 1.1']
-  email_verification_failed_attempts integer [not null, default: 0]
-  password_changed_at timestamp
-  pending_email varchar [note: 'Email mới chờ xác thực OTP — BR-1.18']
-  pending_email_otp_hash varchar
-  pending_email_otp_expires_at timestamp
-  pending_email_otp_failed_attempts integer [not null, default: 0]
-  failed_login_attempts integer [not null, default: 0, note: 'MỚI v9.5 — chống brute-force đăng nhập User, đối xứng child_access_credentials.failed_attempts']
-  locked_until timestamp [note: 'MỚI v9.5 — khoá tạm thời sau quá nhiều lần đăng nhập sai liên tiếp']
-  token_version integer [not null, default: 1, note: 'MỚI v9.5 — Luồng 1, Mục 7c: tăng lên 1 khi có thay đổi quyền nhạy cảm (Grant/Revoke Admin Bước 5.1b, Remove/Demote Bước 7.2b/7.2d) — mọi access token JWT cũ mang version không khớp bị middleware từ chối NGAY dù chưa hết hạn.']
-  last_login_at timestamp
-  role_before_admin user_role [note: 'MỚI v9.4 — Luồng 5, Bước 5.1b: lưu role hiện tại TRƯỚC khi được Grant làm administrator, phục vụ khôi phục đúng role khi Revoke. NULL nếu tài khoản được tạo làm administrator ngay từ đầu (khôi phục mặc định về User).']
-  created_at timestamp [not null, default: `now()`]
-
-  Note: 'Role tài khoản hiện hành: User, Moderator, Administrator, ContentCreator. Truy cập hồ sơ trẻ dựa trên owner_user_id.'
+Enum SessionStatus {
+  Started
+  Reading
+  Activity
+  Completed
+  Abandoned
+  ForceExited
 }
 
-Table refresh_tokens {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  user_account_id integer [not null, ref: > user_accounts.id]
-  token_hash varchar [not null, unique]
-  session_scope session_scope_enum [not null]
-  issued_at timestamp [not null, default: `now()`]
-  expires_at timestamp [not null]
-  revoked_at timestamp
+Enum StoryFeeling {
+  VeryLike
+  Like
+  Neutral
+  Dislike
+}
 
-  Note: '''
-    RefreshToken — Luồng 1, Mục 7c (MỚI v9.5). Cho phép thu hồi TỪNG
-    phiên cụ thể (VD "Đăng xuất khỏi thiết bị này") — độc lập với
-    user_accounts.token_version (vốn thu hồi TOÀN BỘ session cùng lúc
-    khi có thay đổi quyền nhạy cảm). "Đăng xuất khỏi mọi thiết bị" =
-    set revoked_at=now() cho MỌI dòng của user_account_id này.
-    Access token (JWT) chỉ chứa session_scope, KHÔNG chứa permission
-    chi tiết — mọi thao tác nhạy cảm vẫn phải re-query
-    owner_user_id trên child_profiles và trạng thái hồ sơ hiện hành.
-    Còn treo: TTL cụ thể theo session_scope (child nên ngắn hơn nhiều
-    so với supervisor, do dùng trên thiết bị lớp học dùng chung).
-  '''
+Enum StoryOutputMode {
+  Learning
+  ReadingMediaOnly
+}
+
+Enum StoryScope {
+  Parent
+  Creator
+}
+
+Enum StorySource {
+  Ai
+  Manual
+}
+
+Enum StoryStatus {
+  Draft
+  OutlineReview
+  ContentReview
+  Approved
+  MediaProcessing
+  Ready
+  Rejected
+  MediaReview
+}
+
+Enum StoryWishKind {
+  Wish
+  Creation
+}
+
+Enum StoryWishStatus {
+  Draft
+  Pending
+  Accepted
+  Fulfilled
+  Declined
+  Expired
+  Cancelled
+}
+
+Enum TagSource {
+  Ai
+  Moderator
+  Parent
+}
+
+Enum TelemetryEventType {
+  SessionStarted
+  SessionCompleted
+  PageViewed
+  PageCompleted
+  TtsStarted
+  TtsCompleted
+  AsrWordResult
+  PronunciationError
+  VocabularyOpened
+  VocabularyCollected
+  QuizAnswered
+  QuizCompleted
+  RewardGranted
+  BadgeUnlocked
+  StoryBookmarked
+  StoryFavorited
+  LibrarySearched
+}
+
+Enum TokenQuotaScope {
+  System
+  Child
+  Personal
+}
+
+Enum TopicRelation {
+  FavoriteTopic
+  PriorityFocusArea
+}
+
+Enum UserRole {
+  User
+  Moderator
+  Administrator
+  ContentCreator
+}
+
+Enum ValidationStatus {
+  Pending
+  Passed
+  Failed
+}
+
+Enum VersionEditType {
+  Initial
+  Edit
+  Regenerate
+  HumanEdited
+  AiRegenerated
+  AiRefined
+}
+
+Enum VersionHistorySource {
+  Manual
+  Recommendation
+}
+
+Enum VersionHistoryStatus {
+  DraftVersion
+  ActiveVersion
+  Superseded
+}
+
+Enum VersionReviewStatus {
+  None
+  Pending
+  Approved
+  ChangesRequested
+  Rejected
+}
+
+Enum WishCardGroup {
+  Character
+  Place
+  Challenge
+  Lesson
+  Desire
+  Event
+  Ending
+}
+
+Enum WishCardMatchSource {
+  Ai
+  Moderator
+}
+
+Table achievements {
+  ChildProfileId int [not null]
+  CreatedAt timestamptz [not null]
+  ExpTotal int [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  LastStreakDate date
+  StreakDays int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    ChildProfileId [unique]
+  }
+}
+
+Table ai_governance_metrics {
+  ApprovalRate numeric(6,3)
+  AvgLatencyMs int
+  CreatedAt timestamptz [not null]
+  GenerationSuccessRate numeric(6,3)
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  MetricDate timestamptz [not null]
+  RegenerationRate numeric(6,3)
+  SafetyFlagRate numeric(6,3)
+  UpdatedAt timestamptz
+}
+
+Table audit_logs {
+  Action varchar(150) [not null]
+  ActorUserId int
+  AfterState text
+  BeforeState text
+  CreatedAt timestamptz [not null]
+  EntityId int [not null]
+  EntityType varchar(150) [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  OccurredAt timestamptz [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    ActorUserId
+  }
+}
+
+Table authoring_guide_catalog_versions {
+  CatalogId int [not null]
+  CatalogVersion varchar(50) [not null]
+  ContentJson jsonb
+  CreatedAt timestamptz [not null]
+  CreatedByUserId int
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  PublishedAt timestamptz
+  PublishedByUserId int
+  Status AuthoringGuideVersionStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  UpdatedAt timestamptz
+  UpdatedByUserId int
+  VersionNo int [not null]
+  Indexes {
+    CatalogId [unique, note: '"Status" = ''Draft'' AND NOT "IsDeleted"']
+    (CatalogId, CatalogVersion) [unique, note: 'NOT "IsDeleted"']
+    (CatalogId, VersionNo) [unique, note: 'NOT "IsDeleted"']
+  }
+}
+
+Table authoring_guide_catalogs {
+  AudienceRole varchar(30) [not null]
+  CreatedAt timestamptz [not null]
+  DraftVersionId int
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  Locale varchar(10) [not null]
+  PublishedVersionId int
+  RevisionToken varchar(64) [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    DraftVersionId
+    PublishedVersionId
+    (Locale, AudienceRole) [unique]
+  }
+}
+
+Table authoring_guide_items {
+  CatalogVersionId int [not null]
+  CreatedAt timestamptz [not null]
+  Example text
+  GuideKey varchar(100) [not null]
+  Id int [pk, not null, increment]
+  Instruction text [not null]
+  IsDeleted boolean [not null]
+  ItemType varchar(20) [not null]
+  Order int [not null]
+  Purposes text[] [not null]
+  SupportGroup varchar(30) [not null]
+  TemplateText text
+  Title text [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    (CatalogVersionId, GuideKey) [unique, note: 'NOT "IsDeleted"']
+  }
+}
+
+Table authoring_guide_placeholders {
+  CreatedAt timestamptz [not null]
+  Hint varchar(200)
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  ItemId int [not null]
+  Key varchar(50) [not null]
+  Label varchar(100)
+  Order int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    (ItemId, Key) [unique, note: 'NOT "IsDeleted"']
+  }
+}
+
+Table badges {
+  BadgeCode varchar(100) [not null]
+  ChildProfileId int [not null]
+  CreatedAt timestamptz [not null]
+  EarnedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    (ChildProfileId, BadgeCode) [unique]
+  }
+}
+
+Table business_reports {
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  PeriodEnd timestamptz [not null]
+  PeriodStart timestamptz [not null]
+  PublishedAt timestamptz
+  ReadingSessionsCompleted int [not null]
+  Status ReportStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  StoriesApproved int [not null]
+  StoriesGenerated int [not null]
+  StoriesRejected int [not null]
+  UpdatedAt timestamptz
+}
+
+Table child_access_credentials {
+  AvatarId varchar(100) [not null]
+  ChildProfileId int [not null]
+  CreatedAt timestamptz [not null]
+  CreatedByUserId int [not null]
+  EasyLoginCreatedAt timestamptz
+  EasyLoginSecretHash varchar(64)
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  RevokedAt timestamptz
+  UpdatedAt timestamptz
+  Indexes {
+    ChildProfileId [unique, note: '"RevokedAt" IS NULL AND "IsDeleted" = false']
+    CreatedByUserId
+    EasyLoginSecretHash [unique, note: '"EasyLoginSecretHash" IS NOT NULL']
+  }
+}
+
+Table child_profile_version_history {
+  AppliedAt timestamptz [not null]
+  AppliedByUserId int
+  ChildProfileId int [not null]
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  NewConfig text [not null]
+  PreviousConfig text [not null]
+  RecommendationId int
+  Source VersionHistorySource [not null, note: 'EF PostgreSQL type: character varying(30)']
+  UpdatedAt timestamptz
+  VersionStatus VersionHistoryStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  Indexes {
+    AppliedByUserId
+    ChildProfileId
+    RecommendationId
+  }
 }
 
 Table child_profiles {
-  id integer [pk, increment]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  owner_user_id integer [not null, ref: > user_accounts.id]
-  nickname varchar [not null]
-  avatar_id varchar [not null, default: 'avatar-default', note: 'Hệ thống tự gán khi tạo — Bước 1.2']
-  age_band age_band_enum [not null]
-  language varchar [not null, default: 'vi']
-  status child_profile_status [not null, default: 'draft']
-  created_at timestamp [not null, default: `now()`]
-
-  Note: '''
-    ChildProfile — Bước 1.2. owner_user_id = User tạo hồ sơ, là người
-    DUY NHẤT xem / sửa / giám sát / đặt PIN cho trẻ (Luồng 1).
-    Status active khi có Learning Profile + Safety Policy có consent.
-  '''
-}
-
-Table learning_profiles {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  is_deleted boolean [not null, default: false]
-  child_profile_id integer [not null, unique, ref: - child_profiles.id]
-  reading_level integer [not null, note: '1..5, dùng cho Luồng 2 & Luồng 6']
-  reading_mode reading_mode_enum [not null, default: 'listen_first', note: 'Mặc định theo age_band — Bước 1.3']
-  comprehension_goal varchar
-  updated_at timestamp [not null, default: `now()`]
-
-  Note: 'LearningProfile 1-1 với ChildProfile — Bước 1.3.'
-}
-
-Table learning_profile_topics {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  learning_profile_id integer [not null, ref: > learning_profiles.id]
-  topic varchar [not null]
-  relation topic_relation_enum [not null]
-
-  Note: '''
-    Danh mục chủ đề yêu thích / lĩnh vực ưu tiên (Bước 1.3).
-    CẢI THIỆN v9.1 (D): relation đã đổi từ varchar sang enum
-    topic_relation_enum — chỉ có 2 giá trị cố định, tránh gõ sai.
-  '''
-}
-
-// =====================================================================
-// Content Categories — chuẩn hóa danh mục nội dung (v9)
-// =====================================================================
-Table content_categories {
-  id integer [pk, increment]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  code varchar [not null, unique, note: 'Mã chuẩn hóa, ví dụ: violence, mature_language, scary_content']
-  display_name varchar [not null, note: 'Tên hiển thị, ví dụ: Bạo lực, Ngôn ngữ người lớn']
-  is_active boolean [not null, default: true]
-  created_by_admin_id integer [ref: > user_accounts.id]
-  default_blocked_age_bands "age_band_enum[]" [not null, default: '{}', note: 'Preset Blocked theo age_band — Bước 1.4; Administrator sửa ở Luồng 5 Bước 5.3']
-  created_at timestamp [not null, default: `now()`]
-
-  Note: 'Danh mục nội dung chuẩn hóa — quản lý bởi Administrator (Luồng 5), dùng chung cho SafetyPolicy (Luồng 1) và Guardrail check (Luồng 2). Thay thế varchar tự do trước đây ở safety_policy_categories.'
-}
-
-Table safety_policies {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  is_deleted boolean [not null, default: false]
-  child_profile_id integer [not null, unique, ref: - child_profiles.id]
-  max_story_length integer [not null]
-  required_approval_mode approval_mode_enum [not null, default: 'always_manual']
-  parental_gate_enabled boolean [not null, default: true]
-  consent_recorded boolean [not null, default: false]
-  consent_recorded_at timestamp
-  consent_policy_version integer [not null, default: 1, note: 'MỚI v9.5 — Luồng 1, Mục 9: version điều khoản tại thời điểm Parent đồng ý, phục vụ yêu cầu re-consent nếu Điều khoản/Chính sách bảo mật thay đổi sau này (Nghị định 13/2023/NĐ-CP).']
-  safety_score_threshold decimal [note: 'MỚI v9.2-I / v9.5 — ngưỡng auto-publish cho safety_score. NULL (mặc định) = required_approval_mode luôn always_manual, Owner tự bật auto_publish_on_threshold và đặt ngưỡng riêng nếu muốn.']
-  readability_score_threshold decimal [note: 'MỚI v9.2-I / v9.5 — ngưỡng auto-publish cho readability, đi kèm safety_score_threshold']
-  comprehension_threshold_percent decimal [not null, default: 70, note: '✅ ĐÃ CHỐT v9.5 — Luồng 4, Bước 4.5: Hold Mode kích hoạt khi tỷ lệ đọc hiểu LIÊN TỤC dưới ngưỡng này. User có thể ghi đè riêng qua policy này, không bắt buộc cứng toàn hệ thống.']
-  comprehension_window_size integer [not null, default: 3, note: '✅ ĐÃ CHỐT v9.5 — số bài đọc GẦN NHẤT liên tiếp dùng để tính "liên tục" (KHÔNG phải số ngày).']
-  story_wishes_enabled boolean [not null, default: true]
-  allow_interactive_stories boolean [not null, default: true]
-  child_creation_enabled boolean [not null, default: true]
-  child_creation_mode child_creation_mode_enum [not null, default: 'review_first']
-  voice_answers_enabled boolean [not null, default: false]
-  voice_consent_at timestamp [note: 'Owner đồng ý mục (e) giọng nói — Bước 1.4']
-  voice_enable_requested_at timestamp [note: 'Additional Supervisor xin bật giọng nói khi Owner chưa đồng ý — Luồng 4 Bước 4.3c đọc cột này']
-  updated_at timestamp [not null, default: `now()`]
-
-  Note: '''
-    SafetyPolicy 1-1 với ChildProfile — Bước 1.4.
-  '''
-}
-
-Table safety_policy_categories {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  safety_policy_id integer [not null, ref: > safety_policies.id]
-  content_category_id integer [not null, ref: > content_categories.id]
-  rule policy_rule_enum [not null]
-
-  Note: 'Allowed/Restricted/Blocked content categories — Bước 1.4. CẢI THIỆN v9: category đã chuẩn hóa qua content_categories thay vì varchar tự do, tránh lệch dữ liệu (vd "Violence" vs "violence") giữa cấu hình phụ huynh và Guardrail check ở Luồng 2.'
-
-  indexes {
-    (safety_policy_id, content_category_id) [unique]
+  AgeBand AgeBand [not null, note: 'EF PostgreSQL type: character varying(30)']
+  AvatarId varchar(100) [not null]
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  Language varchar(10) [not null]
+  Nickname varchar(150) [not null]
+  OwnerUserId int [not null]
+  Status ChildProfileStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  UpdatedAt timestamptz
+  Indexes {
+    OwnerUserId
   }
 }
 
-// =====================================================================
-// Child Access Credential, Child Session & Notification — dùng chung toàn hệ thống
-// =====================================================================
-
-Table child_access_credentials {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  is_deleted boolean [not null, default: false]
-  child_profile_id integer [not null, ref: - child_profiles.id, note: 'Chỉ 1 credential đang hiệu lực cho mỗi hồ sơ; partial unique index WHERE revoked_at IS NULL AND is_deleted=false.']
-  avatar_id varchar [not null, note: 'Tạm thời còn ở đây (mặc định avatar-default); sẽ chuyển sang child_profiles.avatar_id ở bước riêng.']
-  easy_login_secret_hash varchar(64) [unique, note: 'SHA-256 (hex) của secret QR ngẫu nhiên ≥128 bit. KHÔNG lưu secret. NULL khi chưa tạo hoặc đã thu hồi. Unique index chỉ áp dụng khi khác NULL. Không có TTL (BR-1.15).']
-  easy_login_created_at timestamp [note: 'Thời điểm tạo/tạo lại secret hiện hành.']
-  revoked_at timestamp [note: 'Thời điểm credential bị thu hồi hoặc được thay thế; NULL khi còn hiệu lực.']
-  created_by_user_id integer [not null, ref: > user_accounts.id, note: 'Owner/Additional Supervisor (có manage_safety_settings) đã tạo credential này']
-  updated_at timestamp [not null, default: `now()`]
-
-  Note: '''
-    ChildAccessCredential — Bước 1.10. Easy Login lâu dài để chính Trẻ
-    (không có user_accounts riêng) tự vào giao diện đọc bằng cách quét
-    QR. Chỉ Owner hoặc người có manage_safety_settings được tạo/tạo lại/
-    thu hồi. Tạo lại = đặt revoked_at cho credential cũ rồi tạo dòng mới;
-    secret cũ vô hiệu ngay. Thu hồi = đặt revoked_at và kết thúc mọi
-    child_sessions sinh từ credential; giữ dòng cũ cho audit.
-    Quét sai 5 lần liên tiếp trên cùng thiết bị (IP client) bị khóa 5
-    phút — bộ đếm nằm trong bộ nhớ của máy chủ, không lưu DB.
-    Không còn PIN. Nếu chưa có Easy Login, Trẻ chỉ vào được qua
-    ProfileSwitcher của Supervisor (Bước 1.9a).
-  '''
+Table child_roadmap_items {
+  AddedByUserId int [not null]
+  ChildProfileId int [not null]
+  CompletedAt timestamptz
+  CreatedAt timestamptz [not null]
+  ExpectedCompletionAt timestamptz
+  ExpectedDays int
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  Note varchar(500)
+  OpenedAt timestamptz
+  Position int [not null]
+  RemovedAt timestamptz
+  RemovedByUserId int
+  SkipReason ChildRoadmapSkipReason [note: 'EF PostgreSQL type: character varying(30)']
+  SkippedAt timestamptz
+  Source ChildRoadmapItemSource [not null, note: 'EF PostgreSQL type: character varying(30)']
+  SourceReadingRoadmapId int
+  Status ChildRoadmapItemStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  StoryId int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    AddedByUserId
+    ChildProfileId [unique, note: '"Status" = ''Open'' AND NOT "IsDeleted"']
+    RemovedByUserId
+    SourceReadingRoadmapId
+    StoryId
+    (ChildProfileId, StoryId) [unique, note: '"Status" IN (''Waiting'', ''Open'') AND NOT "IsDeleted"']
+    (ChildProfileId, Status, Position)
+  }
 }
 
 Table child_sessions {
-  id integer [pk, increment]
-  child_profile_id integer [not null, ref: > child_profiles.id]
-  session_key varchar(64) [not null, unique]
-  child_access_credential_id integer [ref: > child_access_credentials.id, note: 'MỚI — Luồng 3, Bước 3.0: set khi Child Session đến từ lối vào độc lập EasyLogin QR.']
-  supervisor_session_id integer [ref: > refresh_tokens.id, note: 'MỚI — Luồng 3, Bước 3.0: set khi Supervisor bàn giao thiết bị qua ProfileSwitcher (Bước 1.9a).']
-  last_activity_at timestamp [not null]
-  entry_method child_entry_method_enum [not null, default: 'profile_switcher']
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
+  ChildAccessCredentialId int
+  ChildProfileId int [not null]
+  CreatedAt timestamptz [not null]
+  EntryMethod ChildEntryMethod [not null, note: 'EF PostgreSQL type: character varying(30)']
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  LastActivityAt timestamptz [not null]
+  SessionKey varchar(64) [not null]
+  SupervisorSessionId int
+  UpdatedAt timestamptz
+  Indexes {
+    ChildAccessCredentialId
+    ChildProfileId
+    SessionKey [unique]
+    SupervisorSessionId
+  }
+  Note: 'CHECK constraints: CK_child_sessions_exactly_one_entry_source: ("ChildAccessCredentialId" IS NOT NULL AND "SupervisorSessionId" IS NULL) OR ("ChildAccessCredentialId" IS NULL AND "SupervisorSessionId" IS NOT NULL)'
+}
 
-  Note: '''
-    ChildSession — Bước 1.10 (MỚI 24/09/2026). Lưu phiên đăng
-    nhập của Trẻ sau khi xác thực thành công bằng
-    EasyLogin QR hoặc ProfileSwitcher. session_key duy nhất được nhúng trong JWT qua claim
-    child_session; middleware truy vấn lại bản ghi này để áp
-    idle-timeout 20 phút. last_activity_at chỉ cần ghi lại tối đa
-    mỗi phút một lần, trong khi thời hạn JWT vẫn là trần
-    tuyệt đối. Quan hệ N-1 với child_profiles dùng Restrict khi
-    xóa; query filter loại các dòng is_deleted=true.
-    Bước 3.0: CHECK CK_child_sessions_exactly_one_entry_source — đúng 1 trong 2
-    cột child_access_credential_id / supervisor_session_id có giá trị; Bước 3.1
-    chép nguyên cặp này sang reading_sessions.
-  '''
-
-  indexes {
-    child_profile_id
-    child_access_credential_id
-    supervisor_session_id
+Table content_categories {
+  Code varchar(100) [not null]
+  CreatedAt timestamptz [not null]
+  CreatedByAdminId int
+  DefaultBlockedAgeBands text[] [not null]
+  DisplayName varchar(150) [not null]
+  Id int [pk, not null, increment]
+  IsActive boolean [not null]
+  IsDeleted boolean [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    Code [unique]
+    CreatedByAdminId
   }
 }
 
-Table notifications {
-  id integer [pk, increment]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  recipient_user_id integer [not null, ref: > user_accounts.id]
-  child_profile_id integer [ref: > child_profiles.id, note: 'Hồ sơ trẻ liên quan, nếu thông báo thuộc ngữ cảnh một trẻ cụ thể.']
-  type notification_type_enum [not null]
-  payload jsonb [note: 'Ngữ cảnh tùy loại: child_profile_id, story_id...']
-  status notification_read_status_enum [not null, default: 'unread']
-  created_at timestamp [not null, default: `now()`]
-  read_at timestamp
-
-  Note: '''
-    Notification — Luồng 1, Mục 7b (MỚI v9.4). Bảng dùng CHUNG cho MỌI
-    điểm "hệ thống gửi thông báo" xuyên suốt 7 luồng nghiệp vụ, đóng
-    vai trò tương tự audit_logs nhưng hướng tới người dùng cuối thay vì
-    kiểm toán nội bộ. BUSINESS RULE BẮT BUỘC: bất kỳ đặc tả nào viết
-    "hệ thống gửi thông báo cho X" đều ngầm định một INSERT vào bảng
-    này với recipient_user_id=X — KHÔNG được hiểu là hành vi tức thời
-    không lưu vết (vd chỉ bắn email rồi thôi). Kênh gửi thật sự (in-app/
-    email/push) là quyết định hạ tầng nằm ngoài phạm vi schema này.
-  '''
+Table content_reports {
+  AttachmentUrl varchar(500)
+  CreatedAt timestamptz [not null]
+  Description text
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  IsReviewItem boolean [not null]
+  ReadingRoadmapId int
+  Reason ContentReportReason [not null, note: 'EF PostgreSQL type: character varying(30)']
+  ReporterUserId int [not null]
+  ResolvedAt timestamptz
+  ReviewedAt timestamptz
+  ReviewedByUserId int
+  Status ContentReportStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  StoryId int [not null]
+  StoryVersionId int
+  UpdatedAt timestamptz
+  Indexes {
+    ReadingRoadmapId
+    ReporterUserId
+    ReviewedByUserId
+    StoryId
+    StoryVersionId
+  }
 }
 
-// #####################################################################
-// LUỒNG 2 — GUIDED AI STORY GENERATION PIPELINE
-// #####################################################################
+Table illustration_beats {
+  BeatOrder int [not null]
+  CreatedAt timestamptz [not null]
+  EndOffset int [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  StartOffset int [not null]
+  StorySceneId int [not null]
+  UpdatedAt timestamptz
+  VisualFocus varchar(500) [not null]
+  Indexes {
+    (StorySceneId, BeatOrder) [unique]
+  }
+  Note: 'CHECK constraints: CK_illustration_beats_offsets: "StartOffset" >= 0 AND "EndOffset" > "StartOffset"; CK_illustration_beats_order: "BeatOrder" BETWEEN 1 AND 3'
+}
+
+Table intervention_cases {
+  ChildProfileId int [not null]
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  NotesAddedAt timestamptz
+  NotesAddedByUserId int
+  OpenedAt timestamptz [not null]
+  RecommendationId int
+  ResolutionType InterventionResolutionType [note: 'EF PostgreSQL type: character varying(30)']
+  ResolvedAt timestamptz
+  ResolvedByUserId int
+  SkillGapNotes text
+  Status InterventionStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  TriggerType InterventionTrigger [not null, note: 'EF PostgreSQL type: character varying(30)']
+  TriggeringStoryId int
+  UpdatedAt timestamptz
+  Indexes {
+    ChildProfileId
+    NotesAddedByUserId
+    RecommendationId
+    ResolvedByUserId
+    TriggeringStoryId
+  }
+}
+
+Table learning_artifact_generation_batches {
+  AttemptCount int [not null]
+  BatchNumber int [not null]
+  CompletedAt timestamptz
+  ConcurrencyToken varchar(32) [not null]
+  ContextFingerprint varchar(64) [not null]
+  CreatedAt timestamptz [not null]
+  ErrorCode varchar(100)
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  Kind varchar(40) [not null]
+  LeaseExpiresAt timestamptz
+  NextAttemptAt timestamptz
+  RequestJson jsonb [not null]
+  RequestedByUserId int [not null]
+  ResultJson jsonb
+  RootClaimToken varchar(32)
+  RootJobId int [not null]
+  ShortfallReason varchar(300)
+  SourceFingerprint varchar(64) [not null]
+  Status GenerationJobStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  StoryId int [not null]
+  StoryVersionId int [not null]
+  TargetCount int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    RequestedByUserId
+    StoryVersionId
+    (RootJobId, Kind, BatchNumber) [unique]
+    (StoryId, Status, LeaseExpiresAt)
+  }
+}
+
+Table learning_insights {
+  ChildProfileId int [not null]
+  CreatedAt timestamptz [not null]
+  DetectedAt timestamptz [not null]
+  Evidence text [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  Observation text [not null]
+  Status InsightStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  UpdatedAt timestamptz
+  Indexes {
+    ChildProfileId
+  }
+}
+
+Table learning_profile_topics {
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  LearningProfileId int [not null]
+  Relation TopicRelation [not null, note: 'EF PostgreSQL type: character varying(30)']
+  Topic varchar(150) [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    LearningProfileId
+  }
+}
+
+Table learning_profiles {
+  ChildProfileId int [not null]
+  ComprehensionGoal varchar(500)
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  ReadingLevel int [not null]
+  ReadingMode ReadingMode [not null, note: 'EF PostgreSQL type: character varying(30)']
+  UpdatedAt timestamptz
+  Indexes {
+    ChildProfileId [unique]
+  }
+}
+
+Table listening_interaction_attempts {
+  AnswerText varchar(200)
+  AttemptedAt timestamptz [not null]
+  ChildProfileId int [not null]
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  IsMatch boolean
+  ListeningInteractionId int [not null]
+  OrderedOptionIdsJson varchar(200)
+  ReadingSessionId int [not null]
+  SelectedOptionId int
+  UpdatedAt timestamptz
+  Indexes {
+    ChildProfileId
+    ListeningInteractionId
+    SelectedOptionId
+    (ReadingSessionId, ListeningInteractionId)
+  }
+}
+
+Table listening_interaction_options {
+  CorrectOrder int
+  CreatedAt timestamptz [not null]
+  Feedback text
+  Id int [pk, not null, increment]
+  ImageDescription text
+  IsDeleted boolean [not null]
+  IsMatch boolean [not null]
+  ListeningInteractionId int [not null]
+  SortOrder int [not null]
+  SourceEnd int
+  SourceQuote text
+  SourceStart int
+  Text text [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    (ListeningInteractionId, SortOrder) [unique, note: '"IsDeleted" = false']
+  }
+}
+
+Table listening_interactions {
+  AnchorOffset int [not null]
+  CharacterName varchar(100)
+  CreatedAt timestamptz [not null]
+  Explanation text
+  HiddenWord varchar(100)
+  Hint text
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  Kind CheckpointKind [note: 'EF PostgreSQL type: character varying(30)']
+  MatchFeedback text
+  NoMatchFeedback text
+  Prompt text
+  RevealOffset int
+  SourceEnd int
+  SourceQuote text
+  SourceStart int
+  StorySceneId int
+  StoryVersionId int [not null]
+  Type ListeningInteractionType [not null, note: 'EF PostgreSQL type: character varying(30)']
+  UpdatedAt timestamptz
+  WaitFeedback text
+  Indexes {
+    StorySceneId
+    (StoryVersionId, AnchorOffset) [unique, note: '"IsDeleted" = false']
+    (StoryVersionId, Type)
+  }
+}
+
+Table media_asset_generation_tasks {
+  AttemptNo int [not null]
+  BranchJobId int [not null]
+  CompletedAt timestamptz
+  ConcurrencyToken varchar(32) [not null]
+  CreatedAt timestamptz [not null]
+  ErrorCode varchar(100)
+  Id int [pk, not null, increment]
+  IllustrationBeatId int [not null]
+  IsDeleted boolean [not null]
+  LeaseExpiresAt timestamptz
+  MediaAssetId int [not null]
+  MediaContextId int [not null]
+  NextAttemptAt timestamptz
+  PackageRevision int [not null]
+  QueuedAt timestamptz [not null]
+  StartedAt timestamptz
+  Status GenerationJobStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  StoryId int [not null]
+  StoryVersionId int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    IllustrationBeatId
+    MediaAssetId [unique]
+    MediaContextId
+    StoryVersionId
+    (Status, NextAttemptAt, QueuedAt)
+    (StoryId, Status, LeaseExpiresAt)
+    (BranchJobId, PackageRevision, Status, NextAttemptAt)
+  }
+}
+
+Table media_assets {
+  AttemptCount int [not null]
+  AudioPartKey varchar(30)
+  CompletedAt timestamptz
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IllustrationBeatId int
+  IsCurrent boolean [not null]
+  IsDeleted boolean [not null]
+  LastValidationReason varchar(500)
+  ListeningInteractionId int
+  ListeningInteractionOptionId int
+  MimeType varchar(100)
+  Model varchar(120)
+  Provider varchar(50)
+  ProviderAssetId varchar(200)
+  ProviderRequestId varchar(120)
+  ReferenceImageAssetId int
+  ReplacementResolvedAt timestamptz
+  ReplacesMediaAssetId int
+  RequestedPackageRevision int
+  SceneIndex int
+  Status MediaStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  StorySceneId int
+  StorySegmentId int
+  StoryVersionId int [not null]
+  StoryVocabularyId int
+  Type MediaType [not null, note: 'EF PostgreSQL type: character varying(30)']
+  UpdatedAt timestamptz
+  Url varchar(500)
+  ValidationResultJson text
+  ValidationStatus ValidationStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  WordTimings text
+  Indexes {
+    ListeningInteractionId [note: '"ListeningInteractionId" IS NOT NULL']
+    ListeningInteractionOptionId
+    ReplacesMediaAssetId [unique, note: '"ReplacesMediaAssetId" IS NOT NULL AND "ReplacementResolvedAt" IS NULL AND "IsDeleted" = false']
+    StorySceneId
+    (IllustrationBeatId, Type) [unique, note: '"IllustrationBeatId" IS NOT NULL AND "IsDeleted" = false AND "IsCurrent" = true']
+    (StorySegmentId, Type) [unique, note: '"StorySegmentId" IS NOT NULL AND "IsDeleted" = false AND "IsCurrent" = true']
+    (StoryVersionId, RequestedPackageRevision)
+    (StoryVocabularyId, Type) [unique, note: '"StoryVocabularyId" IS NOT NULL AND "IsDeleted" = false AND "IsCurrent" = true']
+  }
+  Note: 'CHECK constraints: CK_media_assets_attempt_count: "AttemptCount" >= 0; CK_media_assets_beat_must_be_null_for_audio: "Type" <> ''TtsAudio'' OR "IllustrationBeatId" IS NULL; CK_media_assets_beat_required_for_illustration: "Type" <> ''Illustration'' OR "StorySceneId" IS NULL OR "IllustrationBeatId" IS NOT NULL; CK_media_assets_interaction_required_for_listening_audio: "Type" <> ''ListeningAudio'' OR "ListeningInteractionId" IS NOT NULL; CK_media_assets_option_required_for_listening_image: "Type" <> ''ListeningImage'' OR "ListeningInteractionOptionId" IS NOT NULL; CK_media_assets_segment_must_be_null_for_illustration: "Type" <> ''Illustration'' OR "StorySegmentId" IS NULL; CK_media_assets_segment_required_for_audio: "Type" <> ''TtsAudio'' OR "StorySegmentId" IS NOT NULL; CK_media_assets_vocabulary_required_for_vocabulary_audio: "Type" <> ''VocabularyAudio'' OR "StoryVocabularyId" IS NOT NULL'
+}
+
+Table media_contexts {
+  ContextJson jsonb [not null]
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  Revision int [not null]
+  StoryVersionId int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    (StoryVersionId, Revision) [unique]
+  }
+  Note: 'CHECK constraints: CK_media_contexts_revision: "Revision" > 0'
+}
+
+Table moderation_items {
+  Checklist jsonb
+  ClaimedAt timestamptz
+  ClaimedByUserId int
+  ClosedReason varchar(50)
+  ContentReportId int
+  CopyrightDeclaration CopyrightDeclaration [note: 'EF PostgreSQL type: character varying(30)']
+  CreatedAt timestamptz [not null]
+  CreatedByUserId int
+  DecidedAt timestamptz
+  DecidedByUserId int
+  DecisionReason text
+  EscalatedAt timestamptz
+  EscalationReason varchar(1000)
+  Feedback jsonb
+  Flags jsonb
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  IsResubmission boolean [not null]
+  ItemType ModerationItemType [not null, note: 'EF PostgreSQL type: character varying(30)']
+  PiiCheckResult jsonb
+  PreviousItemId int
+  Priority ModerationPriority [not null, note: 'EF PostgreSQL type: character varying(30)']
+  ReadingRoadmapId int
+  RemovedAt timestamptz
+  ReviewProgress jsonb
+  RowVersion int [not null]
+  SlaDueAt timestamptz
+  SlaWarnedAt timestamptz
+  SourceChildProfileId int
+  Status ModerationItemStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  StoryId int
+  StoryVersionId int
+  UpdatedAt timestamptz
+  WithdrawnAt timestamptz
+  Indexes {
+    ContentReportId
+    CreatedByUserId
+    DecidedByUserId
+    PreviousItemId
+    ReadingRoadmapId [unique, note: '"ItemType" = ''RoadmapTemplateReview'' AND "Status" IN (''Pending'', ''Claimed'') AND NOT "IsDeleted"']
+    SourceChildProfileId
+    StoryId [unique, note: '"ItemType" = ''CommunitySubmission'' AND "Status" IN (''Pending'', ''Approved'') AND NOT "IsDeleted"']
+    StoryVersionId
+    (ClaimedByUserId, Status)
+    (ItemType, Status, Priority)
+  }
+  Note: 'CHECK constraints: ck_moderation_items_claimer_is_not_creator: "ClaimedByUserId" IS NULL OR "CreatedByUserId" IS NULL OR "ClaimedByUserId" <> "CreatedByUserId"'
+}
+
+Table moderation_review_views {
+  CreatedAt timestamptz [not null]
+  ExpiresAt timestamptz [not null]
+  GrantedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  ModeratorUserId int [not null]
+  ReadingRoadmapId int
+  SourceTab varchar(30) [not null]
+  StoryId int
+  StoryVersionId int
+  UpdatedAt timestamptz
+  Indexes {
+    ReadingRoadmapId
+    StoryId
+    StoryVersionId
+    (ModeratorUserId, ReadingRoadmapId, ExpiresAt)
+    (ModeratorUserId, StoryId, ExpiresAt)
+  }
+  Note: 'CHECK constraints: ck_moderation_review_views_has_target: "StoryId" IS NOT NULL OR "ReadingRoadmapId" IS NOT NULL'
+}
+
+Table moderation_rubric_audit_logs {
+  Action varchar(40) [not null]
+  ActorUserId int [not null]
+  AfterJson jsonb
+  BeforeJson jsonb
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  RubricVersionId int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    ActorUserId
+    (RubricVersionId, CreatedAt)
+  }
+}
+
+Table moderation_rubric_versions {
+  ActivatedAt timestamptz
+  ActivatedByUserId int
+  Code varchar(40) [not null]
+  ContentHash varchar(64) [not null]
+  CreatedAt timestamptz [not null]
+  CreatedByUserId int [not null]
+  DefinitionJson jsonb [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  Name varchar(200) [not null]
+  RetiredAt timestamptz
+  Revision int [not null]
+  SchemaVersion varchar(60) [not null]
+  Status ModerationRubricStatus [not null, note: 'EF PostgreSQL type: character varying(20)']
+  UpdatedAt timestamptz
+  VersionNo varchar(50) [not null]
+  Indexes {
+    ActivatedByUserId
+    Code [unique, note: '"Status" = ''Active'' AND NOT "IsDeleted"']
+    CreatedByUserId
+    (Code, VersionNo) [unique]
+  }
+  Note: 'CHECK constraints: CK_rubric_revision: "Revision" > 0'
+}
+
+Table notifications {
+  ChildProfileId int
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  Payload jsonb
+  ReadAt timestamptz
+  RecipientUserId int [not null]
+  Status NotificationReadStatus [not null, note: 'EF PostgreSQL type: character varying(20)']
+  Type NotificationType [not null, note: 'EF PostgreSQL type: character varying(40)']
+  UpdatedAt timestamptz
+  Indexes {
+    ChildProfileId
+    RecipientUserId
+  }
+}
+
+Table parent_story_operations {
+  ActorUserId int [not null]
+  ChildProfileId int [not null]
+  ContextFingerprint varchar(64) [not null]
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  Kind varchar(40) [not null]
+  OperationId varchar(100) [not null]
+  RequestHash varchar(64) [not null]
+  ResultJson text [not null]
+  RevokedAt timestamptz
+  StoryId int [not null]
+  StoryVersionId int
+  UpdatedAt timestamptz
+  Indexes {
+    ActorUserId
+    StoryVersionId
+    (ChildProfileId, Kind)
+    (StoryId, Kind)
+    (StoryId, ActorUserId, OperationId) [unique]
+  }
+}
+
+Table payment_transactions {
+  Amount int [not null]
+  CreatedAt timestamptz [not null]
+  ExpiresAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  PaidAt timestamptz
+  PayerUserId int [not null]
+  PlanId int [not null]
+  QrCodeUrl text
+  SepayTransactionId text
+  Status PaymentStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  TransactionCode varchar(100) [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    PayerUserId
+    PlanId
+    TransactionCode [unique]
+  }
+}
+
+Table prompt_catalog_versions {
+  CreatedAt timestamptz [not null]
+  CreatedByAdminId int [not null]
+  EffectiveDate timestamptz
+  GradeBand varchar(50) [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  RestrictedKeywords text
+  Status CatalogStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  UpdatedAt timestamptz
+  VersionNo varchar(50) [not null]
+  Indexes {
+    CreatedByAdminId
+  }
+}
+
+Table quiz_attempts {
+  AnswerGiven text
+  AnsweredAt timestamptz [not null]
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsCorrect boolean
+  IsDeleted boolean [not null]
+  QuizItemId int [not null]
+  ReadingSessionId int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    QuizItemId
+    ReadingSessionId
+  }
+}
+
+Table quiz_items {
+  Choices text
+  CorrectAnswer text
+  CreatedAt timestamptz [not null]
+  Explanation text
+  Hint text
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  LearningGoal text
+  OptionFeedbackJson text
+  Question text [not null]
+  SourceEnd int
+  SourceQuote text
+  SourceStart int
+  StoryVersionId int [not null]
+  Type QuizType [not null, note: 'EF PostgreSQL type: character varying(30)']
+  UpdatedAt timestamptz
+  Indexes {
+    StoryVersionId
+  }
+}
+
+Table reading_progress {
+  ChildProfileId int [not null]
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsBookmarked boolean [not null]
+  IsDeleted boolean [not null]
+  IsFavorited boolean [not null]
+  LastPageRead int [not null]
+  LastReadingMode varchar(30)
+  ListenOnly boolean [not null]
+  StoryId int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    StoryId
+    (ChildProfileId, StoryId) [unique]
+  }
+}
+
+Table reading_roadmap_items {
+  CreatedAt timestamptz [not null]
+  Days int
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  Position int [not null]
+  ReadingRoadmapId int [not null]
+  StoryId int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    StoryId
+    (ReadingRoadmapId, Position) [unique]
+    (ReadingRoadmapId, StoryId) [unique]
+  }
+}
+
+Table reading_roadmaps {
+  AgeBand AgeBand [not null, note: 'EF PostgreSQL type: character varying(30)']
+  ArchiveNote varchar(500)
+  ArchivedAt timestamptz
+  ArchivedByUserId int
+  ArchivedReason RoadmapArchiveReason [note: 'EF PostgreSQL type: character varying(30)']
+  ClonedFromId int
+  CreatedAt timestamptz [not null]
+  CreatedByUserId int [not null]
+  DefaultDaysPerStory int [not null]
+  Description text
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  MainCategoryId int [not null]
+  Name varchar(200) [not null]
+  PublishedAt timestamptz
+  PublishedByUserId int
+  ReadingLevelMax int [not null]
+  ReadingLevelMin int [not null]
+  Status RoadmapTemplateStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  SubmittedAt timestamptz
+  UpdatedAt timestamptz
+  Indexes {
+    ArchivedByUserId
+    ClonedFromId [unique, note: '"Status" IN (''Draft'', ''PendingReview'') AND NOT "IsDeleted"']
+    CreatedByUserId
+    MainCategoryId
+    PublishedByUserId
+    (AgeBand, MainCategoryId) [unique, note: '"Status" = ''Published'' AND NOT "IsDeleted"']
+  }
+}
+
+Table reading_sessions {
+  ChildAccessCredentialId int
+  ChildProfileId int [not null]
+  ChildRoadmapItemId int
+  CompletedAt timestamptz
+  CreatedAt timestamptz [not null]
+  Feeling StoryFeeling [note: 'EF PostgreSQL type: character varying(20)']
+  ForceExitRequestedAt timestamptz
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  PagesCompleted int [not null]
+  StartedAt timestamptz [not null]
+  Status SessionStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  StoryId int [not null]
+  StoryVersionId int
+  SupervisorSessionId int
+  TimeSpentSeconds int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    ChildAccessCredentialId
+    ChildProfileId
+    ChildRoadmapItemId
+    StoryId
+    StoryVersionId
+    SupervisorSessionId
+  }
+  Note: 'CHECK constraints: CK_reading_sessions_exactly_one_entry_source: ("ChildAccessCredentialId" IS NOT NULL AND "SupervisorSessionId" IS NULL) OR ("ChildAccessCredentialId" IS NULL AND "SupervisorSessionId" IS NOT NULL)'
+}
+
+Table recommendation_reviews {
+  CreatedAt timestamptz [not null]
+  Decision ReviewDecision [not null, note: 'EF PostgreSQL type: character varying(30)']
+  HadFinalAuthority boolean [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  IsFinal boolean [not null]
+  ModifiedValue text
+  Reason text
+  RecommendationId int [not null]
+  ReviewedAt timestamptz [not null]
+  ReviewerUserId int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    RecommendationId
+    ReviewerUserId
+  }
+}
+
+Table recommendations {
+  Category RecommendationCategory [not null, note: 'EF PostgreSQL type: character varying(30)']
+  ChildProfileId int [not null]
+  CreatedAt timestamptz [not null]
+  CurrentState text [not null]
+  Evidence text [not null]
+  ExpiresAt timestamptz
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  LearningInsightId int [not null]
+  ProposedChange text [not null]
+  Status RecommendationStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  UpdatedAt timestamptz
+  Indexes {
+    ChildProfileId
+    LearningInsightId
+  }
+}
+
+Table refresh_tokens {
+  CreatedAt timestamptz [not null]
+  ExpiresAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  IssuedAt timestamptz [not null]
+  RevokedAt timestamptz
+  SessionScope SessionScope [not null, note: 'EF PostgreSQL type: character varying(20)']
+  TokenHash varchar(255) [not null]
+  UpdatedAt timestamptz
+  UserAccountId int [not null]
+  Indexes {
+    TokenHash [unique]
+    UserAccountId
+  }
+}
+
+Table safety_policies {
+  AllowInteractiveStories boolean [not null]
+  ChildCreationEnabled boolean [not null]
+  ChildCreationMode ChildCreationMode [not null, note: 'EF PostgreSQL type: character varying(30)']
+  ChildProfileId int [not null]
+  ComprehensionThresholdPercent numeric(5,2) [not null]
+  ComprehensionWindowSize int [not null]
+  ConsentPolicyVersion int [not null]
+  ConsentRecorded boolean [not null]
+  ConsentRecordedAt timestamptz
+  ConsentedByUserId int
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  MaxStoryLength int [not null]
+  ParentalGateEnabled boolean [not null]
+  ReadabilityScoreThreshold numeric(5,2)
+  RequiredApprovalMode ApprovalMode [not null, note: 'EF PostgreSQL type: character varying(30)']
+  SafetyScoreThreshold numeric(5,2)
+  StoryWishesEnabled boolean [not null]
+  UpdatedAt timestamptz
+  VoiceAnswersEnabled boolean [not null]
+  VoiceConsentAt timestamptz
+  VoiceEnableRequestedAt timestamptz
+  Indexes {
+    ChildProfileId [unique]
+    ConsentedByUserId
+  }
+}
+
+Table safety_policy_categories {
+  ContentCategoryId int [not null]
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  Rule PolicyRule [not null, note: 'EF PostgreSQL type: character varying(30)']
+  SafetyPolicyId int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    ContentCategoryId
+    (SafetyPolicyId, ContentCategoryId) [unique]
+  }
+}
 
 Table stories {
-  id integer [pk, increment]
-  is_deleted boolean [not null, default: false]
-  author_user_id integer [not null, ref: > user_accounts.id]
-  child_profile_id integer [not null, ref: > child_profiles.id]
-  source story_source_enum [not null]
-  status story_status_enum [not null, default: 'draft']
-  title varchar
-  description varchar(1000)
-  content text
-  cover_image_url varchar(500)
-  genre varchar(50)
-  moral_lesson varchar(500)
-  age_band varchar(20) [not null, default: '6-8']
-  reading_level integer
-  vocabulary_level varchar
-  language varchar(10) [not null, default: 'vi']
-  is_published boolean [not null, default: false]
-  child_visible_at timestamp [note: 'MỚI v9.4 — Bước 2.5 B4: SLA hậu kiểm auto-publish = approved_at + 2 giờ; duyệt thủ công = approved_at ngay lập tức. Luồng 3, Bước 3.1 PHẢI filter child_visible_at <= now().']
-  archived_reason archived_reason_enum [note: 'MỚI v9.2-L / v9.5 — Bước 2.5 giải pháp B5: bắt buộc chọn khi Archive, quyết định có kích hoạt cơ chế ngắt real-time (reading_sessions.force_exit_requested_at) hay không.']
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
+  AgeBand varchar(20) [not null]
+  ArchivedAt timestamptz
+  ArchivedReason ArchivedReason [note: 'EF PostgreSQL type: character varying(30)']
+  AudienceRevision int [not null]
+  AuthorUserId int [not null]
+  AuthoringLastVersionNo int [not null]
+  AuthoringRevisionToken varchar(32) [not null]
+  ChildProfileId int
+  ChildVisibleAt timestamptz
+  Content text
+  CoverImageUrl varchar(500)
+  CreateOperationId varchar(100)
+  CreateRequestHash varchar(64)
+  CreateResponseJson text
+  CreatedAt timestamptz [not null]
+  Description varchar(1000)
+  EverGrayZone boolean [not null]
+  ExperienceMode varchar(20) [not null]
+  Genre varchar(50)
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  IsPublished boolean [not null]
+  Language varchar(10) [not null]
+  MoralLesson varchar(500)
+  OutputMode StoryOutputMode [not null, note: 'EF PostgreSQL type: character varying(30)']
+  PublishedAt timestamptz
+  ReadingLevel int
+  Scope StoryScope [not null, note: 'EF PostgreSQL type: character varying(30)']
+  Source StorySource [not null, note: 'EF PostgreSQL type: character varying(30)']
+  Status StoryStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  Title varchar(200)
+  UpdatedAt timestamptz
+  VocabularyLevel varchar(20)
+  WritingPurpose varchar(30)
+  Indexes {
+    ChildProfileId
+    (AuthorUserId, CreateOperationId) [unique, note: '"CreateOperationId" IS NOT NULL']
+  }
+  Note: 'CHECK constraints: CK_Story_ScopeChild: ("Scope" = ''Parent'' AND "ChildProfileId" IS NOT NULL AND "ChildProfileId" > 0) OR ("Scope" = ''Creator'' AND "ChildProfileId" IS NULL)'
+}
 
-  Note: '''
-    Story — đầu ra Luồng 2. Hỗ trợ cả AI và Manual.
-    CẢI THIỆN v9.1 (C): cột safety_tags (varchar tự do) đã được thay
-    bằng bảng nối story_categories, tham chiếu content_categories —
-    đồng bộ chuẩn hóa với safety_policy_categories để Guardrail so khớp
-    chính xác giữa nội dung truyện và chính sách an toàn của trẻ.
-  '''
+Table story_assistance_steps {
+  CompletedAt timestamptz
+  CreatedAt timestamptz [not null]
+  DirectionStepId int
+  ErrorCode varchar(100)
+  Id int [pk, not null, increment]
+  InputJson jsonb [not null]
+  IsDeleted boolean [not null]
+  Kind varchar(30) [not null]
+  Model varchar(200)
+  OperationId varchar(100) [not null]
+  OutputJson jsonb
+  PromptVersion varchar(100)
+  Provider varchar(100)
+  RequestHash varchar(64) [not null]
+  ResponseJson text
+  ResultingTaskRevision int [not null]
+  Sequence int [not null]
+  Status varchar(30) [not null]
+  TaskId int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    DirectionStepId
+    (TaskId, OperationId) [unique]
+    (TaskId, Sequence) [unique]
+  }
+}
+
+Table story_assistance_tasks {
+  AcceptedAnswerStepId int
+  ActiveClarificationStepId int
+  ActiveDirectionStepId int
+  ActiveOperationId varchar(100)
+  ActiveOptionsStepId int
+  ActiveReviewStepId int
+  ActiveTrialStepId int
+  AgeBand varchar(20) [not null]
+  AudienceRevision int [not null]
+  ContextJson jsonb [not null]
+  CreateOperationId varchar(100) [not null]
+  CreateRequestHash varchar(64) [not null]
+  CreateResponseJson text [not null]
+  CreatedAt timestamptz [not null]
+  EntryPoint varchar(30) [not null]
+  FindingId varchar(50)
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  Language varchar(10) [not null]
+  LastSequence int [not null]
+  LeaseExpiresAt timestamptz
+  OwnerUserId int [not null]
+  ParentTaskId int
+  SnapshotHash varchar(64) [not null]
+  SourceReviewStepId int
+  SourceRevisionToken varchar(32) [not null]
+  SourceVersionId int
+  Status varchar(30) [not null]
+  StoryId int [not null]
+  TaskRevision int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    ParentTaskId
+    SourceReviewStepId
+    SourceVersionId
+    (OwnerUserId, StoryId, CreatedAt)
+    (StoryId, OwnerUserId, CreateOperationId) [unique]
+  }
+}
+
+Table story_authoring_operations {
+  ActorUserId int [not null]
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  Kind varchar(30) [not null]
+  OperationId varchar(100) [not null]
+  OperationResponseJson text [not null]
+  RequestHash varchar(64) [not null]
+  StoryId int [not null]
+  StoryVersionId int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    ActorUserId
+    (StoryId, OperationId) [unique]
+    (StoryVersionId, StoryId)
+  }
 }
 
 Table story_categories {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  story_id integer [not null, ref: > stories.id]
-  content_category_id integer [not null, ref: > content_categories.id]
+  ContentCategoryId int [not null]
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  Source TagSource [not null, note: 'EF PostgreSQL type: character varying(30)']
+  StoryId int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    ContentCategoryId
+    (StoryId, ContentCategoryId) [unique]
+  }
+}
 
-  Note: '''
-    MỚI (v9.1, cải thiện C): Gắn nhãn danh mục nội dung cho từng Story,
-    thay cho cột safety_tags varchar tự do trước đây. Dùng chung
-    content_categories với safety_policy_categories để Guardrail
-    (Luồng 2) so khớp chính xác giữa Story và SafetyPolicy của trẻ.
-  '''
+Table story_generation_jobs {
+  AttemptNo int [not null]
+  BaseStoryVersionId int
+  CompletedAt timestamptz
+  ConcurrencyToken varchar(32) [not null]
+  CreatedAt timestamptz [not null]
+  ErrorCode varchar(100)
+  FallbackMessage text
+  GenerationMetadataJson jsonb
+  GenerationRequestId int
+  GuardrailResult GuardrailResult [note: 'EF PostgreSQL type: character varying(30)']
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  LeaseExpiresAt timestamptz
+  ListeningInteractionType ListeningInteractionType [note: 'EF PostgreSQL type: character varying(30)']
+  MaxAttempts int [not null]
+  MediaContextId int
+  MediaPackageRevision int
+  NextAttemptAt timestamptz
+  Operation GenerationJobOperation [not null, note: 'EF PostgreSQL type: character varying(30)']
+  OperationKey varchar(100)
+  ParentJobId int
+  PromptCatalogVersionId int
+  RequestedByUserId int
+  Stage JobStage [not null, note: 'EF PostgreSQL type: character varying(30)']
+  StartedAt timestamptz [not null]
+  Status GenerationJobStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  StoryId int [not null]
+  StoryVersionId int
+  UpdatedAt timestamptz
+  Indexes {
+    BaseStoryVersionId
+    GenerationRequestId
+    MediaContextId
+    PromptCatalogVersionId
+    StoryId [unique, note: '"Operation" IN (''GenerateOutline'', ''RegenerateOutline'') AND "Status" IN (''Pending'', ''Processing'') AND "IsDeleted" = false']
+    StoryVersionId
+    (Operation, StoryVersionId) [unique, note: '"StoryVersionId" IS NOT NULL AND "IsDeleted" = false AND "Operation" <> ''GenerateListeningInteraction''']
+    (StoryVersionId, ListeningInteractionType) [unique, note: '"Operation" = ''GenerateListeningInteraction'' AND "StoryVersionId" IS NOT NULL AND "IsDeleted" = false']
+    (ParentJobId, Status, NextAttemptAt)
+    (RequestedByUserId, Operation, OperationKey) [unique, note: '"RequestedByUserId" IS NOT NULL AND "OperationKey" IS NOT NULL AND "IsDeleted" = false']
+    (Status, Stage, LeaseExpiresAt)
+  }
+}
 
-  indexes {
-    (story_id, content_category_id) [unique]
+Table story_generation_requests {
+  AcceptedInputJson jsonb
+  AttemptCount int [not null]
+  AttemptStartedAt timestamptz
+  CanRetry boolean [not null]
+  ConcurrencyToken varchar(32) [not null]
+  ContextFingerprint varchar(64) [not null]
+  ContextSnapshotJson jsonb [not null]
+  CreatedAt timestamptz [not null]
+  FallbackMessage varchar(500)
+  GuardrailCheckVersion varchar(100)
+  GuardrailCheckedAt timestamptz
+  GuardrailDecision varchar(30)
+  HandoffCreatedAt timestamptz
+  HandoffJobId int
+  Id int [pk, not null, increment]
+  IdempotencyKey varchar(100) [not null]
+  InputFingerprint varchar(64) [not null]
+  IsDeleted boolean [not null]
+  LastRetryKey varchar(100)
+  MaxAttempts int [not null]
+  ReasonCode varchar(100)
+  Status GenerationInputStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  StoryId int [not null]
+  SubmittedByUserId int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    HandoffJobId [unique]
+    StoryId [unique, note: '"Status" IN (''PendingInput'', ''CheckingInput'', ''InputAccepted'') AND "IsDeleted" = false']
+    (SubmittedByUserId, IdempotencyKey) [unique]
+  }
+}
+
+Table story_scenes {
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  SceneIndex int [not null]
+  SceneText text [not null]
+  StoryVersionId int [not null]
+  TextRangeEnd int [not null]
+  TextRangeStart int [not null]
+  UpdatedAt timestamptz
+  VisualDescription text
+  Indexes {
+    (StoryVersionId, SceneIndex) [unique]
+  }
+  Note: 'CHECK constraints: CK_story_scenes_scene_index: "SceneIndex" >= 0; CK_story_scenes_text_range: "TextRangeStart" >= 0 AND "TextRangeEnd" > "TextRangeStart"'
+}
+
+Table story_segments {
+  CreatedAt timestamptz [not null]
+  EndOffset int [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  SegmentOrder int [not null]
+  StartOffset int [not null]
+  StorySceneId int [not null]
+  TextContent text [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    (StorySceneId, SegmentOrder) [unique]
+  }
+  Note: 'CHECK constraints: CK_story_segments_offsets: "StartOffset" >= 0 AND "EndOffset" > "StartOffset"; CK_story_segments_segment_order: "SegmentOrder" >= 1'
+}
+
+Table story_summaries {
+  AudioBytes int
+  AudioContentType varchar(50)
+  AudioStoragePath varchar(500)
+  ChildProfileId int [not null]
+  CreatedAt timestamptz [not null]
+  FlagsSentAt timestamptz
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  ReadingSessionId int [not null]
+  RecordingSentAt timestamptz
+  StoryId int [not null]
+  StoryVersionId int
+  UpdatedAt timestamptz
+  Indexes {
+    ReadingSessionId [unique, note: '"IsDeleted" = false']
+    (ChildProfileId, CreatedAt)
+    StoryId
+  }
+  Note: 'Tóm tắt cuối truyện trẻ gửi chủ hồ sơ (ghi âm và/hoặc đánh cờ). File lưu tới khi chủ hồ sơ xóa.'
+}
+
+Table story_summary_flags {
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  StorySceneId int [not null]
+  StorySummaryId int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    StorySceneId
+    (StorySummaryId, StorySceneId) [unique]
+  }
+}
+
+Table story_version_authoring_metadata {
+  AssistanceProvenanceJson jsonb
+  AuthoringOrigin varchar(20)
+  ImportFileName varchar(255)
+  ImportPreviewHash varchar(64)
+  ImportSourceHash varchar(64)
+  RightsDeclaration varchar(2000) [not null]
+  SourceDeclaration varchar(2000) [not null]
+  StoryId int [not null]
+  StoryVersionId int [pk, not null]
+  Indexes {
+    (StoryId, ImportPreviewHash) [unique, note: '"ImportPreviewHash" IS NOT NULL']
+  }
+}
+
+Table story_version_media_states {
+  ConfirmedMediaPackageRevision int
+  MediaConfirmedAt timestamptz
+  MediaConfirmedByUserId int
+  MediaPackageRevision int [not null]
+  StoryVersionId int [pk, not null]
+  Indexes {
+    MediaConfirmedByUserId
+  }
+}
+
+Table story_version_moderation_states {
+  GrayZoneCleared boolean [not null]
+  GrayZoneClearedAt timestamptz
+  GrayZoneClearedByUserId int
+  GrayZoneFlags jsonb
+  ModerationZone ModerationZone [note: 'EF PostgreSQL type: character varying(30)']
+  ReviewFeedback jsonb
+  ReviewStatus VersionReviewStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  ReviewSubmittedAt timestamptz
+  ReviewedAt timestamptz
+  ReviewedByUserId int
+  StoryVersionId int [pk, not null]
+  Indexes {
+    GrayZoneClearedByUserId
+    ReviewedByUserId
   }
 }
 
 Table story_versions {
-  id integer [pk, increment]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  story_id integer [not null, ref: > stories.id]
-  version_no integer [not null]
-  edit_type version_edit_type_enum [not null, default: 'initial']
-  editor_user_id integer [ref: > user_accounts.id]
-  title varchar [not null]
-  outline_opening text
-  outline_development text
-  outline_ending text
-  content text
-  lesson text
-  readability_fkgl decimal
-  readability_fre decimal
-  safety_score decimal
-  is_current boolean [not null, default: false]
-  outline_approved_by_user_id integer [ref: > user_accounts.id]
-  outline_approved_at timestamp
-  created_at timestamp [not null, default: `now()`]
-
-  Note: '''
-    StoryVersion — Lưu trữ bất biến từng lần Edit/Regenerate (Bước 2.5).
-    CẢI THIỆN v9.3: Bước 2.4 (sinh nội dung) tách 4 sub-step độc lập
-    (2.4.1 nội dung truyện = bảng này; 2.4.2 story_vocabulary; 2.4.3
-    quiz_items; 2.4.4 tương tác lúc nghe (listening_interactions)) — nếu 1 sub-artifact fail
-    validation, chỉ regenerate đúng phần đó, KHÔNG cần sinh lại toàn bộ.
-    CẦN MIGRATION RIÊNG (v9.2-K, DBML không hỗ trợ trực tiếp, Mức 1 BẮT
-    BUỘC): đảm bảo chỉ đúng 1 dòng is_current=true cho mỗi story_id:
-      CREATE UNIQUE INDEX story_versions_one_current_per_story
-      ON story_versions (story_id) WHERE is_current = true;
-  '''
-}
-
-Table media_contexts {
-  id integer [pk, increment]
-  story_version_id integer [not null, ref: > story_versions.id]
-  revision integer [not null]
-  context_json jsonb [not null]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-
-  indexes {
-    (story_version_id, revision) [unique]
+  AudienceRevision int [not null]
+  BaseVersionId int
+  Content text
+  CreatedAt timestamptz [not null]
+  EditType VersionEditType [not null, note: 'EF PostgreSQL type: character varying(30)']
+  EditorUserId int
+  Id int [pk, not null, increment]
+  IsCurrent boolean [not null]
+  IsDeleted boolean [not null]
+  Lesson text
+  OutlineApprovedAt timestamptz
+  OutlineApprovedByUserId int
+  OutlineDevelopment text
+  OutlineEnding text
+  OutlineOpening text
+  ReadabilityFkgl numeric(6,3)
+  ReadabilityFre numeric(6,3)
+  RestoredFromVersionId int
+  SafetyScore numeric(6,3)
+  StoryId int [not null]
+  Title varchar(200) [not null]
+  UpdatedAt timestamptz
+  VersionNo int [not null]
+  Indexes {
+    (Id, StoryId) [unique]
+    BaseVersionId
+    EditorUserId
+    OutlineApprovedByUserId
+    RestoredFromVersionId
+    StoryId [unique, note: '"IsCurrent" = true AND "IsDeleted" = false']
+    (StoryId, VersionNo) [unique]
   }
-
-  Note: '''
-    Ngữ cảnh continuity có version dùng chung cho toàn bộ media artifact của
-    một StoryVersion. Dữ liệu revision là append-only, không ghi đè revision cũ.
-    Migration áp dụng CHECK revision > 0.
-  '''
-}
-
-Table story_scenes {
-  id integer [pk, increment]
-  story_version_id integer [not null, ref: > story_versions.id]
-  scene_index integer [not null]
-  text_range_start integer [not null]
-  text_range_end integer [not null]
-  scene_text text [not null]
-  visual_description text
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-
-  indexes {
-    (story_version_id, scene_index) [unique]
-  }
-
-  Note: '''
-    Ánh xạ bất biến giữa StoryVersion đã duyệt và từng cảnh media chuẩn hóa.
-    scene_text phải khớp đoạn content[text_range_start..text_range_end].
-    Migration áp dụng CHECK scene_index >= 0, text_range_start >= 0 và
-    text_range_end > text_range_start.
-  '''
-}
-
-Table story_segments {
-  id integer [pk, increment]
-  story_scene_id integer [not null, ref: > story_scenes.id]
-  segment_order integer [not null]
-  start_offset integer [not null]
-  end_offset integer [not null]
-  text_content text [not null]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-
-  indexes {
-    (story_scene_id, segment_order) [unique]
-  }
-
-  Note: '''
-    Một phần văn bản của StoryScene dùng để gắn âm thanh TTS và word timing.
-    Offset tính theo [start_offset, end_offset), text_content phải khớp
-    scene_text[start_offset..end_offset]. EF Core áp dụng CHECK
-    segment_order >= 1, start_offset >= 0 và end_offset > start_offset.
-  '''
-}
-
-Table story_generation_requests {
-  id integer [pk, increment]
-  story_id integer [not null, ref: > stories.id]
-  submitted_by_user_id integer [not null, ref: > user_accounts.id]
-  idempotency_key varchar(100) [not null]
-  input_fingerprint varchar(64) [not null]
-  context_fingerprint varchar(64) [not null]
-  context_snapshot_json jsonb [not null]
-  accepted_input_json jsonb
-  status generation_input_status_enum [not null, default: 'pending_input']
-  attempt_count integer [not null, default: 0]
-  max_attempts integer [not null, default: 3]
-  concurrency_token varchar(32) [not null]
-  last_retry_key varchar(100)
-  attempt_started_at timestamp
-  guardrail_decision varchar(30)
-  reason_code varchar(100)
-  fallback_message varchar(500)
-  can_retry boolean [not null, default: false]
-  guardrail_check_version varchar(100)
-  guardrail_checked_at timestamp
-  handoff_job_id integer [ref: - story_generation_jobs.id]
-  handoff_created_at timestamp
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-
-  indexes {
-    (submitted_by_user_id, idempotency_key) [unique]
-    handoff_job_id [unique]
-  }
-
-  Note: '''
-    Input-validation request của pipeline AI. Chỉ lưu accepted_input_json sau khi
-    guardrail cho phép; hỗ trợ idempotency, retry và handoff sang generation job.
-    Migration phải tạo partial unique index trên story_id khi status thuộc
-    PendingInput/CheckingInput/InputAccepted và is_deleted=false.
-  '''
-}
-
-Table story_generation_jobs {
-  id integer [pk, increment]
-  story_id integer [not null, ref: > stories.id]
-  prompt_catalog_version_id integer [ref: > prompt_catalog_versions.id]
-  generation_request_id integer [ref: > story_generation_requests.id]
-  story_version_id integer [ref: > story_versions.id]
-  base_story_version_id integer [ref: > story_versions.id]
-  requested_by_user_id integer [ref: > user_accounts.id]
-  operation_key varchar(100)
-  operation generation_job_operation_enum [not null, default: 'generate_outline']
-  stage job_stage_enum [not null, default: 'input_validated']
-  status generation_job_status_enum [not null, default: 'pending']
-  attempt_no integer [not null, default: 0]
-  max_attempts integer [not null, default: 3]
-  concurrency_token varchar(32) [not null]
-  lease_expires_at timestamp
-  guardrail_result guardrail_result_enum
-  fallback_message text
-  error_code varchar(100)
-  generation_metadata_json jsonb
-  started_at timestamp [not null, default: `now()`]
-  completed_at timestamp
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-
-  indexes {
-    (status, stage, lease_expires_at)
-  }
-
-  Note: '''
-    StoryGenerationJob — giám sát pipeline AI, retry, lease và Guardrails.
-    Migration phải tạo 3 partial unique index: (1) story_id cho outline job đang
-    Pending/Processing; (2) operation + story_version_id khi version khác NULL;
-    (3) requested_by_user_id + operation + operation_key khi các key khác NULL.
-    Cả ba index đều chỉ áp dụng khi is_deleted=false.
-  '''
 }
 
 Table story_vocabulary {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  story_version_id integer [not null, ref: > story_versions.id]
-  term varchar [not null]
-  definition text [not null]
-
-  Note: 'Từ vựng trích xuất từ truyện — Bước 2.4.2.'
-}
-
-Table quiz_items {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  story_version_id integer [not null, ref: > story_versions.id]
-  type quiz_type_enum [not null]
-  question text [not null]
-  correct_answer text
-  choices text
-
-  Note: 'Bộ câu hỏi đọc hiểu 3 dạng — Bước 2.4.3.'
-}
-
-Table media_assets {
-  id integer [pk, increment]
-  story_version_id integer [not null, ref: > story_versions.id]
-  story_scene_id integer [ref: > story_scenes.id]
-  story_segment_id integer [ref: > story_segments.id]
-  type media_type_enum [not null]
-  status media_status_enum [not null, default: 'queued']
-  validation_status validation_status_enum [not null, default: 'pending']
-  scene_index integer
-  url varchar(500)
-  word_timings text [note: 'MỚI v9.2-J / v9.5 — JSON timing map, CHỈ áp dụng type=tts_audio, phục vụ đồng bộ TTS-Karaoke (Luồng 3, Bước 3.2). Còn treo: AI Generation Engine hay dịch vụ TTS bên thứ ba là bên sinh ra dữ liệu này.']
-  mime_type varchar(100)
-  provider varchar(50)
-  model varchar(120)
-  provider_request_id varchar(120)
-  provider_asset_id varchar(200)
-  validation_result_json text
-  reference_image_asset_id integer
-  attempt_count integer [not null, default: 0]
-  completed_at timestamp
-  last_validation_reason varchar(500)
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-
-  Note: '''
-    MediaAsset — TTS và minh họa xử lý async sau khi duyệt truyện.
-    TTS audio gắn StorySegment; illustration gắn StoryScene. EF Core áp dụng
-    CHECK attempt_count >= 0; TtsAudio cần story_segment_id, Illustration
-    không được có story_segment_id. Partial unique index (story_scene_id,
-    type) chỉ áp dụng khi story_scene_id khác NULL, story_segment_id NULL,
-    is_deleted=false; partial unique index (story_segment_id, type) chỉ
-    áp dụng khi story_segment_id khác NULL và is_deleted=false.
-  '''
-}
-
-// #####################################################################
-// LUỒNG 3 — CHILD READING EXPERIENCE & ENGAGEMENT
-// #####################################################################
-
-Table reading_sessions {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  child_profile_id integer [not null, ref: > child_profiles.id]
-  story_id integer [not null, ref: > stories.id]
-  story_version_id integer [ref: > story_versions.id, note: 'MỚI v9.2-M / v9.5 — ghim đúng phiên bản truyện tại thời điểm Bước 3.1 (Trigger) chọn truyện, dùng cố định cho toàn bộ session. Tránh lệch nếu Supervisor Edit/Regenerate (story_versions.is_current đổi) NGAY LÚC trẻ đang đọc dở.']
-  child_access_credential_id integer [ref: > child_access_credentials.id, note: 'MỚI v9.5 — Luồng 3, Bước 3.0: set khi Child Session đến từ lối vào độc lập (avatar+PIN). Đúng 1 trong 2 cột (cột này / supervisor_session_id) có giá trị, không cả hai.']
-  supervisor_session_id integer [ref: > refresh_tokens.id, note: 'MỚI v9.5 — Luồng 3, Bước 3.0: set khi Child Session đến từ ProfileSwitcher của Supervisor (Bước 1.9a) — phân biệt "trẻ tự vào" với "phụ huynh bàn giao thiết bị", phục vụ audit.']
-  status session_status_enum [not null, default: 'started']
-  started_at timestamp [not null, default: `now()`]
-  completed_at timestamp
-  time_spent_seconds integer [not null, default: 0]
-  pages_completed integer [not null, default: 0]
-  force_exit_requested_at timestamp [note: 'MỚI v9.4 — cơ chế ngắt an toàn real-time (Luồng 2, Bước 2.5 giải pháp B5). Set khi Supervisor Archive story vì safety_concern; client (Bước 3.2, Immersive Mode) poll cột này ở nhịp 15 giây/lần, buộc thoát ngay khi có giá trị.']
-
-  Note: '''
-    Phiên đọc của trẻ — Bước 3.1-3.4.
-    Còn treo (Bước 3.0): định nghĩa chính xác khi nào session được đánh
-    dấu 'abandoned' (session_status_enum) — chưa có ngưỡng timeout cụ thể.
-    Ràng buộc: CHECK CK_reading_sessions_exactly_one_entry_source — đúng 1
-    trong 2 cột child_access_credential_id / supervisor_session_id có giá trị.
-  '''
-}
-
-Table reading_progress {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  is_deleted boolean [not null, default: false]
-  child_profile_id integer [not null, ref: > child_profiles.id]
-  story_id integer [not null, ref: > stories.id]
-  last_page_read integer [not null, default: 1, note: 'Vị trí trang đọc dở cho Continue Reading']
-  is_favorited boolean [not null, default: false, note: 'Đánh dấu yêu thích']
-  is_bookmarked boolean [not null, default: false, note: 'Đánh dấu trang']
-  updated_at timestamp [not null, default: `now()`]
-
-  Note: 'Trạng thái đọc nhanh của trẻ — Bước 3.2 (tránh quét bảng log).'
-
-  indexes {
-    (child_profile_id, story_id) [unique]
+  CreatedAt timestamptz [not null]
+  Definition text [not null]
+  Example text
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  SourceEnd int
+  SourceQuote text
+  SourceStart int
+  StoryVersionId int [not null]
+  Term varchar(150) [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    StoryVersionId
   }
 }
 
-Table telemetry_logs {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  reading_session_id integer [not null, ref: > reading_sessions.id]
-  event_type telemetry_event_type_enum [not null]
-  event_payload text
-  occurred_at timestamp [not null, default: `now()`]
-
-  Note: 'Dữ liệu hành vi chi tiết theo thời gian thực (Mục 3.3).'
-}
-
-Table quiz_attempts {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  reading_session_id integer [not null, ref: > reading_sessions.id]
-  quiz_item_id integer [not null, ref: > quiz_items.id]
-  answer_given text
-  is_correct boolean
-  answered_at timestamp [not null, default: `now()`]
-
-  Note: 'Lịch sử trả lời câu hỏi đọc hiểu của trẻ.'
-}
-
-Table achievements {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  is_deleted boolean [not null, default: false]
-  child_profile_id integer [not null, unique, ref: - child_profiles.id]
-  exp_total integer [not null, default: 0]
-  streak_days integer [not null, default: 0]
-  updated_at timestamp [not null, default: `now()`]
-
-  Note: 'Điểm EXP cá nhân và chuỗi ngày đọc sách liên tục.'
-}
-
-Table badges {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  child_profile_id integer [not null, ref: > child_profiles.id]
-  badge_code varchar [not null]
-  earned_at timestamp [not null, default: `now()`]
-
-  Note: 'Huy hiệu thành tích đạt được.'
-}
-
-Table vocabulary_notebook_entries {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  child_profile_id integer [not null, ref: > child_profiles.id]
-  story_vocabulary_id integer [not null, ref: > story_vocabulary.id]
-  collected_at timestamp [not null, default: `now()`]
-
-  Note: 'Sổ tay từ vựng của trẻ — Bước 3.2 & 3.4.'
-
-  indexes {
-    (child_profile_id, story_vocabulary_id) [unique]
+Table story_wish_card_matches {
+  CreatedAt timestamptz [not null]
+  CreatedByUserId int
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  Source WishCardMatchSource [not null, note: 'EF PostgreSQL type: character varying(20)']
+  StoryId int [not null]
+  UpdatedAt timestamptz
+  WishCardId int [not null]
+  Indexes {
+    WishCardId
+    (StoryId, WishCardId) [unique]
   }
 }
 
-// #####################################################################
-// LUỒNG 4 — CONTENT DISTRIBUTION & LEARNING INTERVENTION
-// #####################################################################
-
-Table intervention_cases {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  child_profile_id integer [not null, ref: > child_profiles.id]
-  recommendation_id integer [ref: > recommendations.id]
-  trigger_type intervention_trigger_enum [not null]
-  status intervention_status_enum [not null, default: 'open_hold_mode']
-  skill_gap_notes text
-  opened_at timestamp [not null, default: `now()`]
-  triggering_story_id integer [ref: > stories.id, note: 'MỚI v10 — Bước 4.5.1: truyện của phiên đọc cuối cùng trong chuỗi <70% đã gây kích hoạt Hold Mode. Dùng để đối chiếu ở Bước 4.5.3a khi trẻ retake — chỉ đúng truyện này mới tính là điều kiện auto-unlock.']
-  resolution_type intervention_resolution_type_enum [note: 'MỚI v10 — nguồn gốc của lần unlock (auto_retake_pass là đường mặc định từ v10; manual_parent giữ lại làm dự phòng). NULL khi case chưa được unlock.']
-  resolved_by_user_id integer [ref: > user_accounts.id, note: 'MỚI v10: NULL khi resolution_type=auto_retake_pass — không còn actor con người thực hiện unlock trong đường mặc định.']
-  resolved_at timestamp
-  notes_added_by_user_id integer [ref: > user_accounts.id, note: 'MỚI v10 — Bước 4.5.3b: User nào đã ghi skill_gap_notes, tách biệt khỏi resolved_by_user_id vì việc ghi notes xảy ra SAU và ĐỘC LẬP với thời điểm unlock.']
-  notes_added_at timestamp [note: 'MỚI v10 — thời điểm skill_gap_notes được ghi, có thể trễ hơn nhiều so với resolved_at vì đây là hành động thủ công, tùy chọn, không có thời hạn cố định.']
-
-  Note: '''
-    Ca can thiệp sư phạm (Hold Mode).
-    CẢI THIỆN v9.3: Bước 4.5 tách 4 sub-step độc lập theo actor/thời
-    điểm — 4.5.1 Auto-detect (hệ thống, tự động, trigger_type=
-    auto_below_threshold) → 4.5.2 Gửi cảnh báo (hệ thống, tự động) →
-    4.5.3 Phân tích & Unlock → 4.5.4 Báo cáo ngày (hệ thống, định kỳ,
-    ĐỘC LẬP với Hold Mode, không thuộc bảng này). trigger_type=
-    recommended_by_ai được tạo từ Luồng 6, Bước 6.7 Nhánh C khi
-    Recommendation category=learning_intervention (đề xuất Hold Mode)
-    được duyệt — KHÔNG ghi vào child_profile_version_history.
-
-    CẢI THIỆN v10 (Luồng 4 Deep Dive, THAY THẾ mô hình unlock
-    thủ công cũ): Bước 4.5.3 tách thành 4.5.3a (Auto-unlock, hệ thống,
-    TỰ ĐỘNG) và 4.5.3b (User bổ sung skill_gap_notes, thủ công, TÙY
-    CHỌN). 4.5.3a kích hoạt khi reading_sessions chuyển Completed với
-    story_id TRÙNG triggering_story_id của case đang open_hold_mode cho
-    đúng trẻ đó VÀ điểm quiz retake ≥ safety_policies.
-    comprehension_threshold_percent (không cần đủ lại window_size bài
-    liên tục như lúc kích hoạt ban đầu — 1 lần retake đạt ngưỡng là đủ).
-    Xử lý GIỐNG NHAU bất kể trigger_type là auto_below_threshold hay
-    recommended_by_ai. Khi unlock tự động: status='resolved_unlocked',
-    resolution_type='auto_retake_pass', resolved_by_user_id=NULL,
-    resolved_at=now() — KHÔNG chờ người xác nhận. 4.5.3b diễn ra SAU
-    ĐÓ, bất kỳ lúc nào, KHÔNG đổi status — chỉ set skill_gap_notes +
-    notes_added_by_user_id + notes_added_at. Đổi từ giám sát CHẶN TRƯỚC
-    (Human-in-the-loop bắt buộc) sang giám sát SONG SONG (User xem
-    sau, không chặn). CÒN TREO (ghi nhận, chưa thiết kế cột): giới hạn
-    số lần retake/ngày hoặc khoảng cách thời gian tối thiểu giữa các
-    lần retake — hiện trẻ có thể retake liên tục để "đoán" đạt ngưỡng.
-  '''
+Table story_wish_suggestions {
+  CommunitySubmissionId int
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  MatchedCardIds varchar(100) [not null]
+  Rank int [not null]
+  Score int [not null]
+  StoryId int [not null]
+  StoryWishId int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    StoryId
+    (StoryWishId, Rank) [unique]
+    (StoryWishId, StoryId) [unique]
+  }
 }
 
-Table content_reports {
-  id integer [pk, increment]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  story_id integer [not null, ref: > stories.id]
-  reporter_user_id integer [not null, ref: > user_accounts.id]
-  reason content_report_reason_enum [not null]
-  description text
-  status content_report_status_enum [not null, default: 'pending']
-  reviewed_by_user_id integer [ref: > user_accounts.id]
-  reviewed_at timestamp
-  created_at timestamp [not null, default: `now()`]
-
-  Note: '''
-    ContentReport — Luồng 4, Bước 4.6 (MỚI v9.5, Report/Flag Content).
-    Dùng CHUNG cho MỌI loại truyện (Community Library hay truyện
-    riêng trong thư viện cá nhân). Report KHÔNG tự động Archive truyện
-    — chỉ tạo bản ghi + notification (type=content_reported) tới
-    Moderator/Administrator nếu reason=safety_concern HOẶC cùng story_id đã bị
-    report từ ≥2 reporter_user_id khác nhau (tín hiệu lan rộng). Người
-    xử lý có thể Archive (stories.archived_reason=safety_concern, tái
-    dùng cơ chế ngắt real-time đã có) hoặc Dismiss kèm ghi chú lý do.
-    Còn treo: ngưỡng "≥2
-    reporter khác nhau" là con số đề xuất ban đầu, nên rà lại cùng lúc
-    với các threshold khác đã có (Hold Mode, Token Quota).
-  '''
-}
-
-// #####################################################################
-// LUỒNG 5 — ADMINISTRATOR PORTAL, AI GOVERNANCE & BUSINESS REPORTING
-// #####################################################################
-
-Table prompt_catalog_versions {
-  id integer [pk, increment]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  version_no varchar [not null]
-  grade_band varchar [not null]
-  restricted_keywords text
-  status catalog_status_enum [not null, default: 'draft']
-  effective_date date
-  created_by_admin_id integer [not null, ref: > user_accounts.id]
-  created_at timestamp [not null, default: `now()`]
-
-  Note: 'Quản lý phiên bản Prompt mẫu có thể rollback — Bước 5.3.'
-}
-
-Table ai_governance_metrics {
-  id integer [pk, increment]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  metric_date date [not null]
-  generation_success_rate decimal
-  safety_flag_rate decimal
-  regeneration_rate decimal
-  approval_rate decimal
-  avg_latency_ms integer
-  created_at timestamp [not null, default: `now()`]
-
-  Note: 'Chỉ số đo lường hiệu năng và mức độ an toàn của AI — Bước 5.2.'
-}
-
-Table business_reports {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  period_start date [not null]
-  period_end date [not null]
-  stories_generated integer [not null, default: 0]
-  stories_approved integer [not null, default: 0]
-  stories_rejected integer [not null, default: 0]
-  reading_sessions_completed integer [not null, default: 0]
-  status report_status_enum [not null, default: 'compiling']
-  published_at timestamp
-
-  Note: 'Báo cáo tổng hợp vận hành cấp hệ thống — Bước 5.5.'
-}
-
-Table audit_logs {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  actor_user_id integer [ref: > user_accounts.id]
-  action varchar [not null]
-  entity_type varchar [not null]
-  entity_id integer [not null]
-  before_state text
-  after_state text
-  occurred_at timestamp [not null, default: `now()`]
-
-  Note: 'Nhật ký kiểm toán mọi hành động nhạy cảm toàn hệ thống.'
-}
-
-Table token_quota_configs {
-  id integer [pk, increment]
-  scope token_quota_scope_enum [not null]
-  user_id integer [ref: > user_accounts.id, note: 'Bắt buộc khi scope=personal']
-  child_profile_id integer [ref: > child_profiles.id, note: 'Bắt buộc khi scope=child']
-  quota_limit integer [not null]
-  quota_used integer [not null, default: 0]
-  period_start date [not null]
-  period_end date [not null]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-
-  Note: '''
-    TokenQuotaConfig — Luồng 5, Bước 5.1c (MỚI v9.5). Luồng 2, Bước 2.1
-    (Input Preparation) PHẢI kiểm tra quota_used < quota_limit TRƯỚC
-    khi tạo GenerationRequest — Fast Fail với fallback message thân
-    thiện nếu vượt (KHÔNG phải lỗi kỹ thuật). Vượt quota KHÔNG tự động
-    Suspend tài khoản — chỉ tạm chặn tạo truyện MỚI trong
-    chu kỳ hiện tại, tự mở lại khi period kế tiếp bắt đầu. quota_used
-    được CỘNG DỒN khi payment_transactions chuyển 'paid' (Bước 5.6.2).
-    Còn treo: giá trị quota_limit mặc định (miễn phí, không phải mua)
-    theo từng cấp — khác với số lượt mua thêm qua subscription_plans.
-  '''
+Table story_wishes {
+  ChallengeCardId int
+  CharacterCardId int
+  ChildProfileId int [not null]
+  CreatedAt timestamptz [not null]
+  DeclineReason varchar(500)
+  ExpiryWarnedAt timestamptz
+  FulfilledStoryId int
+  FulfilledWithExistingStory boolean [not null]
+  GeneratedStoryId int
+  GenerationRequestId int
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  Kind StoryWishKind [not null, note: 'EF PostgreSQL type: character varying(20)']
+  LessonCardId int
+  LessonLeftToParent boolean [not null]
+  PendingSince timestamptz
+  PlaceCardId int
+  ResolutionNote varchar(50)
+  ResolvedAt timestamptz
+  ResolvedByUserId int
+  Status StoryWishStatus [not null, note: 'EF PostgreSQL type: character varying(20)']
+  SubmittedAt timestamptz
+  UpdatedAt timestamptz
+  Indexes {
+    ChallengeCardId
+    CharacterCardId
+    ChildProfileId [unique, note: '"Status" = ''Draft'' AND "IsDeleted" = false']
+    FulfilledStoryId
+    GeneratedStoryId
+    LessonCardId
+    PlaceCardId
+    (Status, PendingSince)
+    (ChildProfileId, Status, SubmittedAt)
+  }
 }
 
 Table subscription_plans {
-  id integer [pk, increment]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  name varchar [not null]
-  price_vnd integer [not null]
-  quota_amount integer [not null, note: 'Số lượt sinh truyện cộng thêm vào token_quota_configs khi mua thành công']
-  is_active boolean [not null, default: true]
-  created_at timestamp [not null, default: `now()`]
-
-  Note: '''
-    SubscriptionPlan — Luồng 5, Bước 5.6 (MỚI v9.5, SePay top-up).
-    ✅ ĐÃ CHỐT — gói seed mặc định:
-      Personal:     49.000đ → +50 lượt sinh truyện AI
-    Mô hình MUA TOP-UP một lần, KHÔNG PHẢI subscription tự động gia
-    hạn định kỳ (chuyển khoản QR không hỗ trợ tự động trừ tiền định kỳ
-    như thẻ tín dụng). Administrator có thể sửa quota_amount
-    qua Admin Portal bất kỳ lúc nào mà không ảnh hưởng giao dịch đã bán
-    trước đó (chỉ áp dụng cho giao dịch MỚI).
-  '''
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsActive boolean [not null]
+  IsDeleted boolean [not null]
+  Name varchar(150) [not null]
+  PriceVnd int [not null]
+  QuotaAmount int [not null]
+  UpdatedAt timestamptz
 }
 
-Table payment_transactions {
-  id integer [pk, increment]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  plan_id integer [not null, ref: > subscription_plans.id]
-  payer_user_id integer [not null, ref: > user_accounts.id]
-  transaction_code varchar [not null, unique, note: 'Nội dung chuyển khoản (VietQR) để SePay đối soát chính xác giao dịch']
-  amount integer [not null]
-  status payment_status_enum [not null, default: 'pending']
-  sepay_transaction_id varchar [note: 'Mã giao dịch SePay trả về kèm webhook, sau khi thanh toán thành công']
-  qr_code_url varchar
-  created_at timestamp [not null, default: `now()`]
-  expires_at timestamp [not null, note: 'created_at + 15 phút — QR hết hạn KHÔNG được tái sử dụng, phải tạo giao dịch mới']
-  paid_at timestamp
-
-  Note: '''
-    PaymentTransaction — Luồng 5, Bước 5.6.1-5.6.3 (MỚI v9.5).
-    Webhook SePay PHẢI được xác thực bằng API Key/Secret (biến môi
-    trường, KHÔNG lưu ở đây) TRƯỚC khi xử lý — chặn webhook giả mạo.
-    Đối chiếu amount nhận được với plan_id.price_vnd: khớp → status=
-    'paid', paid_at=now(), cộng dồn token_quota_configs.quota_limit
-    tương ứng scope của plan; không khớp → status='mismatch_amount',
-    KHÔNG tự động cộng quota, cần Administrator xử lý thủ công (đối
-    soát tay, còn treo quy trình chi tiết: hoàn tiền/cộng theo tỷ lệ).
-    Business rule bất biến: KHÔNG BAO GIỜ cộng quota nếu status khác
-    'paid' — kể cả khi Administrator thấy tiền đã vào tài khoản ngân
-    hàng qua kênh khác (sao kê thủ công), phải cập nhật status thủ
-    công qua Admin Portal có ghi audit_logs, không có đường tắt khác
-    ngoài webhook SePay. Job định kỳ chuyển 'pending' quá expires_at
-    sang 'expired'. Không cho 2 giao dịch pending cùng lúc cho cùng
-    payer_user_id trên cùng plan_id.
-  '''
+Table telemetry_logs {
+  CreatedAt timestamptz [not null]
+  EventPayload text
+  EventType TelemetryEventType [not null, note: 'EF PostgreSQL type: character varying(40)']
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  OccurredAt timestamptz [not null]
+  ReadingSessionId int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    ReadingSessionId
+  }
 }
 
-// #####################################################################
-// LUỒNG 6 — ADAPTIVE LEARNING ANALYSIS, RECOMMENDATION & PROFILE ADJUSTMENT
-// #####################################################################
-
-Table learning_insights {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  child_profile_id integer [not null, ref: > child_profiles.id]
-  status insight_status_enum [not null, default: 'insight_detected']
-  observation text [not null]
-  evidence text [not null]
-  detected_at timestamp [not null, default: `now()`]
-
-  Note: 'Nhận định học tập từ AI qua phân tích đa chiều — Bước 6.2.'
+Table token_quota_configs {
+  ChildProfileId int
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  PeriodEnd date [not null]
+  PeriodStart date [not null]
+  QuotaLimit int [not null]
+  QuotaUsed int [not null]
+  Scope TokenQuotaScope [not null, note: 'EF PostgreSQL type: character varying(20)']
+  UpdatedAt timestamptz
+  UserId int
+  Indexes {
+    ChildProfileId
+    UserId
+  }
 }
 
-Table recommendations {
-  id integer [pk, increment]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  learning_insight_id integer [not null, ref: > learning_insights.id]
-  child_profile_id integer [not null, ref: > child_profiles.id]
-  category recommendation_category_enum [not null]
-  current_state text [not null]
-  proposed_change text [not null]
-  evidence text [not null]
-  status recommendation_status_enum [not null, default: 'recommendation_created']
-  expires_at timestamp [note: 'MỚI v9.4 — set = created_at + 14 ngày ngay khi chuyển sang awaiting_review (Bước 6.5). Quá hạn mà chưa có review is_final=true → status tự động chuyển stale.']
-  created_at timestamp [not null, default: `now()`]
-
-  Note: '''
-    Đề xuất thích ứng 12 trạng thái (bổ sung 'stale' v9.4) — Bước 6.3/6.4.
-    CẢI THIỆN v9.3: Bước 6.5 (hiển thị cho supervisor) đổi từ mô hình
-    PUSH (chốt cứng danh sách người nhận tại thời điểm tạo) sang PULL
-    (hàng đợi live — quyền approve_reading_level được truy vấn LẠI mỗi
-    lần Dashboard tải hoặc Bước 6.6 được gọi, KHÔNG cache). Bước 6.7 áp
-    dụng theo status/category vào ĐÚNG 1 trong 3 nhánh:
-      - Nhánh A (category IN reading_difficulty, learning_focus) →
-        ghi child_profile_version_history, cần approve_reading_level.
-      - Nhánh B (category=content_personalization) → KHÔNG ghi version
-        history, KHÔNG cần permission đặc biệt, chỉ set status='applied'.
-      - Nhánh C (category=learning_intervention, đề xuất Hold Mode) →
-        ghi vào intervention_cases (Luồng 4) với trigger_type=
-        recommended_by_ai, KHÔNG ghi child_profile_version_history.
-  '''
+Table user_accounts {
+  AvatarUrl varchar(500)
+  CommitmentAcceptedAt timestamptz
+  CreatedAt timestamptz [not null]
+  Email varchar(150) [not null]
+  EmailVerificationFailedAttempts int [not null]
+  EmailVerificationTokenExpiresAt timestamptz
+  EmailVerificationTokenHash varchar(64)
+  EmailVerifiedAt timestamptz
+  Expertise varchar(200)
+  FailedLoginAttempts int [not null]
+  FullName varchar(100) [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  LastLoginAt timestamptz
+  LockedUntil timestamptz
+  PasswordChangedAt timestamptz
+  PasswordHash varchar(255) [not null]
+  PendingEmail varchar(150)
+  PendingEmailOtpExpiresAt timestamptz
+  PendingEmailOtpFailedAttempts int [not null]
+  PendingEmailOtpHash varchar(64)
+  PhoneNumber varchar(20)
+  RefreshTokenExpiresAt timestamptz
+  RefreshTokenHash varchar(64)
+  ResetTokenExpiresAt timestamptz
+  ResetTokenHash varchar(255)
+  Role UserRole [not null, note: 'EF PostgreSQL type: character varying(30)']
+  RoleBeforeAdmin UserRole [note: 'EF PostgreSQL type: character varying(30)']
+  Status AccountStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  TokenVersion int [not null]
+  UpdatedAt timestamptz
+  Username varchar(50) [not null]
+  Indexes {
+    Email [unique]
+    Username [unique]
+  }
 }
 
-Table recommendation_reviews {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  recommendation_id integer [not null, ref: > recommendations.id]
-  reviewer_user_id integer [not null, ref: > user_accounts.id]
-  decision review_decision_enum [not null]
-  modified_value text
-  reason text
-  is_final boolean [not null, default: false, note: 'MỚI v9.2 — đánh dấu review nào là quyết định cuối cùng khi có nhiều dòng review cho cùng 1 recommendation']
-  had_final_authority boolean [not null, default: false, note: 'MỚI v9.2 — snapshot permission approve_reading_level TẠI THỜI ĐIỂM review này được tạo, KHÔNG tính lại sau']
-  reviewed_at timestamp [not null, default: `now()`]
-
-  Note: '''
-    Quyết định duyệt/điều chỉnh của người giám sát — Bước 6.6. Mỗi
-    supervisor review độc lập, KHÔNG ghi đè review của người khác — mỗi
-    người INSERT 1 dòng riêng. is_final luôn ưu tiên áp dụng lên
-    recommendations.status, bất kể thứ tự thời gian.
-  '''
+Table vocabulary_notebook_entries {
+  ChildProfileId int [not null]
+  CollectedAt timestamptz [not null]
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  StoryVocabularyId int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    StoryVocabularyId
+    (ChildProfileId, StoryVocabularyId) [unique]
+  }
 }
 
-Table child_profile_version_history {
-  id integer [pk, increment]
-  created_at timestamp [not null, default: `now()`]
-  updated_at timestamp
-  is_deleted boolean [not null, default: false]
-  child_profile_id integer [not null, ref: > child_profiles.id]
-  recommendation_id integer [ref: > recommendations.id]
-  previous_config text [not null]
-  new_config text [not null]
-  source version_history_source_enum [not null, note: 'manual = Owner/approve_reading_level sửa trực tiếp; recommendation = áp dụng đề xuất Luồng 6']
-  applied_by_user_id integer [ref: > user_accounts.id]
-  version_status version_history_status_enum [not null, default: 'draft_version']
-  applied_at timestamp [not null, default: `now()`]
-
-  Note: 'Lịch sử snapshot phiên bản hồ sơ học tập bất biến — Bước 6.7 Nhánh A. CHỈ dùng cho category IN (reading_difficulty, learning_focus) — KHÔNG dùng cho Nhánh B (content_personalization, xem recommendations.status) hay Nhánh C (learning_intervention/Hold Mode, xem intervention_cases).'
+Table wish_cards {
+  AgeBand AgeBand [note: 'EF PostgreSQL type: character varying(30)']
+  AudioUrl varchar(500)
+  ContentCategoryId int
+  CreatedAt timestamptz [not null]
+  CreatedByUserId int
+  Group WishCardGroup [not null, note: 'EF PostgreSQL type: character varying(30)']
+  Id int [pk, not null, increment]
+  ImageUrl varchar(500) [not null]
+  IsActive boolean [not null]
+  IsDeleted boolean [not null]
+  Label varchar(100) [not null]
+  SortOrder int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    ContentCategoryId
+    (Group, IsActive, SortOrder)
+  }
 }
+
+Ref: achievements.ChildProfileId > child_profiles.Id
+Ref: audit_logs.ActorUserId > user_accounts.Id
+Ref: authoring_guide_catalog_versions.CatalogId > authoring_guide_catalogs.Id
+Ref: authoring_guide_catalogs.DraftVersionId > authoring_guide_catalog_versions.Id
+Ref: authoring_guide_catalogs.PublishedVersionId > authoring_guide_catalog_versions.Id
+Ref: authoring_guide_items.CatalogVersionId > authoring_guide_catalog_versions.Id
+Ref: authoring_guide_placeholders.ItemId > authoring_guide_items.Id
+Ref: badges.ChildProfileId > child_profiles.Id
+Ref: child_access_credentials.ChildProfileId > child_profiles.Id
+Ref: child_access_credentials.CreatedByUserId > user_accounts.Id
+Ref: child_profile_version_history.AppliedByUserId > user_accounts.Id
+Ref: child_profile_version_history.ChildProfileId > child_profiles.Id
+Ref: child_profile_version_history.RecommendationId > recommendations.Id
+Ref: child_profiles.OwnerUserId > user_accounts.Id
+Ref: child_roadmap_items.AddedByUserId > user_accounts.Id
+Ref: child_roadmap_items.ChildProfileId > child_profiles.Id
+Ref: child_roadmap_items.RemovedByUserId > user_accounts.Id
+Ref: child_roadmap_items.SourceReadingRoadmapId > reading_roadmaps.Id
+Ref: child_roadmap_items.StoryId > stories.Id
+Ref: child_sessions.ChildAccessCredentialId > child_access_credentials.Id
+Ref: child_sessions.ChildProfileId > child_profiles.Id
+Ref: child_sessions.SupervisorSessionId > refresh_tokens.Id
+Ref: content_categories.CreatedByAdminId > user_accounts.Id
+Ref: content_reports.ReadingRoadmapId > reading_roadmaps.Id
+Ref: content_reports.ReporterUserId > user_accounts.Id
+Ref: content_reports.ReviewedByUserId > user_accounts.Id
+Ref: content_reports.StoryId > stories.Id
+Ref: content_reports.StoryVersionId > story_versions.Id
+Ref: illustration_beats.StorySceneId > story_scenes.Id
+Ref: intervention_cases.ChildProfileId > child_profiles.Id
+Ref: intervention_cases.NotesAddedByUserId > user_accounts.Id
+Ref: intervention_cases.RecommendationId > recommendations.Id
+Ref: intervention_cases.ResolvedByUserId > user_accounts.Id
+Ref: intervention_cases.TriggeringStoryId > stories.Id
+Ref: learning_artifact_generation_batches.RequestedByUserId > user_accounts.Id
+Ref: learning_artifact_generation_batches.RootJobId > story_generation_jobs.Id
+Ref: learning_artifact_generation_batches.StoryId > stories.Id
+Ref: learning_artifact_generation_batches.StoryVersionId > story_versions.Id
+Ref: learning_insights.ChildProfileId > child_profiles.Id
+Ref: learning_profile_topics.LearningProfileId > learning_profiles.Id
+Ref: learning_profiles.ChildProfileId > child_profiles.Id
+Ref: listening_interaction_attempts.ChildProfileId > child_profiles.Id
+Ref: listening_interaction_attempts.ListeningInteractionId > listening_interactions.Id
+Ref: listening_interaction_attempts.ReadingSessionId > reading_sessions.Id
+Ref: listening_interaction_attempts.SelectedOptionId > listening_interaction_options.Id
+Ref: listening_interaction_options.ListeningInteractionId > listening_interactions.Id
+Ref: listening_interactions.StorySceneId > story_scenes.Id
+Ref: listening_interactions.StoryVersionId > story_versions.Id
+Ref: media_asset_generation_tasks.BranchJobId > story_generation_jobs.Id
+Ref: media_asset_generation_tasks.IllustrationBeatId > illustration_beats.Id
+Ref: media_asset_generation_tasks.MediaAssetId > media_assets.Id
+Ref: media_asset_generation_tasks.MediaContextId > media_contexts.Id
+Ref: media_asset_generation_tasks.StoryId > stories.Id
+Ref: media_asset_generation_tasks.StoryVersionId > story_versions.Id
+Ref: media_assets.IllustrationBeatId > illustration_beats.Id
+Ref: media_assets.ListeningInteractionId > listening_interactions.Id
+Ref: media_assets.ListeningInteractionOptionId > listening_interaction_options.Id
+Ref: media_assets.ReplacesMediaAssetId > media_assets.Id
+Ref: media_assets.StorySceneId > story_scenes.Id
+Ref: media_assets.StorySegmentId > story_segments.Id
+Ref: media_assets.StoryVersionId > story_versions.Id
+Ref: media_assets.StoryVocabularyId > story_vocabulary.Id
+Ref: media_contexts.StoryVersionId > story_versions.Id
+Ref: moderation_items.ClaimedByUserId > user_accounts.Id
+Ref: moderation_items.ContentReportId > content_reports.Id
+Ref: moderation_items.CreatedByUserId > user_accounts.Id
+Ref: moderation_items.DecidedByUserId > user_accounts.Id
+Ref: moderation_items.PreviousItemId > moderation_items.Id
+Ref: moderation_items.ReadingRoadmapId > reading_roadmaps.Id
+Ref: moderation_items.SourceChildProfileId > child_profiles.Id
+Ref: moderation_items.StoryId > stories.Id
+Ref: moderation_items.StoryVersionId > story_versions.Id
+Ref: moderation_review_views.ModeratorUserId > user_accounts.Id
+Ref: moderation_review_views.ReadingRoadmapId > reading_roadmaps.Id
+Ref: moderation_review_views.StoryId > stories.Id
+Ref: moderation_review_views.StoryVersionId > story_versions.Id
+Ref: moderation_rubric_audit_logs.ActorUserId > user_accounts.Id
+Ref: moderation_rubric_audit_logs.RubricVersionId > moderation_rubric_versions.Id
+Ref: moderation_rubric_versions.ActivatedByUserId > user_accounts.Id
+Ref: moderation_rubric_versions.CreatedByUserId > user_accounts.Id
+Ref: notifications.ChildProfileId > child_profiles.Id
+Ref: notifications.RecipientUserId > user_accounts.Id
+Ref: parent_story_operations.ActorUserId > user_accounts.Id
+Ref: parent_story_operations.ChildProfileId > child_profiles.Id
+Ref: parent_story_operations.StoryId > stories.Id
+Ref: parent_story_operations.StoryVersionId > story_versions.Id
+Ref: payment_transactions.PayerUserId > user_accounts.Id
+Ref: payment_transactions.PlanId > subscription_plans.Id
+Ref: prompt_catalog_versions.CreatedByAdminId > user_accounts.Id
+Ref: quiz_attempts.QuizItemId > quiz_items.Id
+Ref: quiz_attempts.ReadingSessionId > reading_sessions.Id
+Ref: quiz_items.StoryVersionId > story_versions.Id
+Ref: reading_progress.ChildProfileId > child_profiles.Id
+Ref: reading_progress.StoryId > stories.Id
+Ref: reading_roadmap_items.ReadingRoadmapId > reading_roadmaps.Id
+Ref: reading_roadmap_items.StoryId > stories.Id
+Ref: reading_roadmaps.ArchivedByUserId > user_accounts.Id
+Ref: reading_roadmaps.ClonedFromId > reading_roadmaps.Id
+Ref: reading_roadmaps.CreatedByUserId > user_accounts.Id
+Ref: reading_roadmaps.MainCategoryId > content_categories.Id
+Ref: reading_roadmaps.PublishedByUserId > user_accounts.Id
+Ref: reading_sessions.ChildAccessCredentialId > child_access_credentials.Id
+Ref: reading_sessions.ChildProfileId > child_profiles.Id
+Ref: reading_sessions.ChildRoadmapItemId > child_roadmap_items.Id
+Ref: reading_sessions.StoryId > stories.Id
+Ref: reading_sessions.StoryVersionId > story_versions.Id
+Ref: reading_sessions.SupervisorSessionId > refresh_tokens.Id
+Ref: recommendation_reviews.RecommendationId > recommendations.Id
+Ref: recommendation_reviews.ReviewerUserId > user_accounts.Id
+Ref: recommendations.ChildProfileId > child_profiles.Id
+Ref: recommendations.LearningInsightId > learning_insights.Id
+Ref: refresh_tokens.UserAccountId > user_accounts.Id
+Ref: safety_policies.ChildProfileId > child_profiles.Id
+Ref: safety_policies.ConsentedByUserId > user_accounts.Id
+Ref: safety_policy_categories.ContentCategoryId > content_categories.Id
+Ref: safety_policy_categories.SafetyPolicyId > safety_policies.Id
+Ref: stories.AuthorUserId > user_accounts.Id
+Ref: stories.ChildProfileId > child_profiles.Id
+Ref: story_assistance_steps.DirectionStepId > story_assistance_steps.Id
+Ref: story_assistance_steps.TaskId > story_assistance_tasks.Id
+Ref: story_assistance_tasks.OwnerUserId > user_accounts.Id
+Ref: story_assistance_tasks.ParentTaskId > story_assistance_tasks.Id
+Ref: story_assistance_tasks.SourceReviewStepId > story_assistance_steps.Id
+Ref: story_assistance_tasks.SourceVersionId > story_versions.Id
+Ref: story_assistance_tasks.StoryId > stories.Id
+Ref: story_authoring_operations.(StoryVersionId, StoryId) > story_versions.(Id, StoryId)
+Ref: story_authoring_operations.ActorUserId > user_accounts.Id
+Ref: story_categories.ContentCategoryId > content_categories.Id
+Ref: story_categories.StoryId > stories.Id
+Ref: story_generation_jobs.BaseStoryVersionId > story_versions.Id
+Ref: story_generation_jobs.GenerationRequestId > story_generation_requests.Id
+Ref: story_generation_jobs.MediaContextId > media_contexts.Id
+Ref: story_generation_jobs.ParentJobId > story_generation_jobs.Id
+Ref: story_generation_jobs.PromptCatalogVersionId > prompt_catalog_versions.Id
+Ref: story_generation_jobs.RequestedByUserId > user_accounts.Id
+Ref: story_generation_jobs.StoryId > stories.Id
+Ref: story_generation_jobs.StoryVersionId > story_versions.Id
+Ref: story_generation_requests.HandoffJobId > story_generation_jobs.Id
+Ref: story_generation_requests.StoryId > stories.Id
+Ref: story_generation_requests.SubmittedByUserId > user_accounts.Id
+Ref: story_scenes.StoryVersionId > story_versions.Id
+Ref: story_segments.StorySceneId > story_scenes.Id
+Ref: story_version_authoring_metadata.StoryId > stories.Id
+Ref: story_version_authoring_metadata.StoryVersionId - story_versions.Id
+Ref: story_version_media_states.MediaConfirmedByUserId > user_accounts.Id
+Ref: story_version_media_states.StoryVersionId - story_versions.Id
+Ref: story_version_moderation_states.GrayZoneClearedByUserId > user_accounts.Id
+Ref: story_version_moderation_states.ReviewedByUserId > user_accounts.Id
+Ref: story_version_moderation_states.StoryVersionId - story_versions.Id
+Ref: story_versions.BaseVersionId > story_versions.Id
+Ref: story_versions.EditorUserId > user_accounts.Id
+Ref: story_versions.OutlineApprovedByUserId > user_accounts.Id
+Ref: story_versions.RestoredFromVersionId > story_versions.Id
+Ref: story_versions.StoryId > stories.Id
+Ref: story_vocabulary.StoryVersionId > story_versions.Id
+Ref: story_wish_card_matches.StoryId > stories.Id
+Ref: story_wish_card_matches.WishCardId > wish_cards.Id
+Ref: story_wish_suggestions.StoryId > stories.Id
+Ref: story_summaries.ChildProfileId > child_profiles.Id
+Ref: story_summaries.ReadingSessionId > reading_sessions.Id
+Ref: story_summaries.StoryId > stories.Id
+Ref: story_summary_flags.StorySceneId > story_scenes.Id
+Ref: story_summary_flags.StorySummaryId > story_summaries.Id [delete: cascade]
+Ref: story_wish_suggestions.StoryWishId > story_wishes.Id
+Ref: story_wishes.ChallengeCardId > wish_cards.Id
+Ref: story_wishes.CharacterCardId > wish_cards.Id
+Ref: story_wishes.ChildProfileId > child_profiles.Id
+Ref: story_wishes.FulfilledStoryId > stories.Id
+Ref: story_wishes.GeneratedStoryId > stories.Id
+Ref: story_wishes.LessonCardId > wish_cards.Id
+Ref: story_wishes.PlaceCardId > wish_cards.Id
+Ref: telemetry_logs.ReadingSessionId > reading_sessions.Id
+Ref: token_quota_configs.ChildProfileId > child_profiles.Id
+Ref: token_quota_configs.UserId > user_accounts.Id
+Ref: vocabulary_notebook_entries.ChildProfileId > child_profiles.Id
+Ref: vocabulary_notebook_entries.StoryVocabularyId > story_vocabulary.Id
+Ref: wish_cards.ContentCategoryId > content_categories.Id

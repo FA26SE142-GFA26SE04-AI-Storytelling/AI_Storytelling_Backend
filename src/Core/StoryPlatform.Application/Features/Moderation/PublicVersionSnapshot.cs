@@ -15,7 +15,9 @@ public sealed record PublicVersionSnapshot(
     IReadOnlyList<IllustrationBeat> Beats,
     IReadOnlyList<MediaAsset> Assets,
     IReadOnlyList<QuizItem> Quizzes,
-    IReadOnlyList<StoryVocabulary> Vocabulary)
+    IReadOnlyList<StoryVocabulary> Vocabulary,
+    IReadOnlyList<ListeningInteraction> Listening,
+    IReadOnlyList<ListeningInteractionOption> ListeningOptions)
 {
     public static async Task<PublicVersionSnapshot> LoadAsync(
         IUnitOfWork unitOfWork,
@@ -41,8 +43,18 @@ public sealed record PublicVersionSnapshot(
         var vocabulary = (await unitOfWork.Repository<StoryVocabulary>().FindAsync(
                 word => word.StoryVersionId == versionId, cancellationToken: cancellationToken))
             .OrderBy(word => word.Id).ToList();
+        // Bỏ các dòng đã xoá mềm khi dựng nội dung để duyệt.
+        var listening = (await unitOfWork.Repository<ListeningInteraction>().FindAsync(
+                interaction => interaction.StoryVersionId == versionId && !interaction.IsDeleted,
+                cancellationToken: cancellationToken))
+            .OrderBy(interaction => interaction.AnchorOffset).ToList();
+        var listeningIds = listening.Select(interaction => interaction.Id).ToList();
+        var listeningOptions = (await unitOfWork.Repository<ListeningInteractionOption>().FindAsync(
+                option => listeningIds.Contains(option.ListeningInteractionId) && !option.IsDeleted,
+                cancellationToken: cancellationToken))
+            .OrderBy(option => option.ListeningInteractionId).ThenBy(option => option.SortOrder).ToList();
         return new PublicVersionSnapshot(
-            version, scenes, segments, beats, assets, quizzes, vocabulary);
+            version, scenes, segments, beats, assets, quizzes, vocabulary, listening, listeningOptions);
     }
 
     /// <summary>URL ảnh sẵn sàng của một scene theo thứ tự beat; bỏ qua beat chưa có ảnh.</summary>
@@ -74,6 +86,35 @@ public sealed record PublicVersionSnapshot(
         .OrderBy(segment => segment.SegmentOrder)
         .Select(segment => $"{segment.SegmentOrder}={ReadyUrl(asset =>
             asset.StorySegmentId == segment.Id && asset.Type == MediaType.TtsAudio)}"));
+
+    public IReadOnlyList<ListeningInteractionOption> OptionsOf(int interactionId) => ListeningOptions
+        .Where(option => option.ListeningInteractionId == interactionId)
+        .OrderBy(option => option.SortOrder).ToList();
+
+    public static string ListeningKey(ListeningInteraction interaction) => $"{interaction.Type}@{interaction.AnchorOffset}";
+
+    public string ListeningValues(ListeningInteraction interaction) => string.Join("|", new[]
+    {
+        interaction.Kind?.ToString() ?? string.Empty, interaction.Prompt ?? string.Empty,
+        interaction.SourceQuote ?? string.Empty, interaction.CharacterName ?? string.Empty,
+        interaction.HiddenWord ?? string.Empty, interaction.Hint ?? string.Empty,
+        interaction.RevealOffset?.ToString() ?? string.Empty, interaction.Explanation ?? string.Empty,
+        interaction.MatchFeedback ?? string.Empty, interaction.NoMatchFeedback ?? string.Empty,
+        interaction.WaitFeedback ?? string.Empty
+    }.Concat(OptionsOf(interaction.Id).Select(option => string.Join("~",
+        option.SortOrder, option.Text, option.Feedback ?? string.Empty, option.IsMatch,
+        option.CorrectOrder?.ToString() ?? string.Empty, option.SourceQuote ?? string.Empty,
+        option.ImageDescription ?? string.Empty))));
+
+    public string ListeningMediaKey(ListeningInteraction interaction) => string.Join(";", Assets
+        .Where(asset => asset.ListeningInteractionId == interaction.Id && asset.Type == MediaType.ListeningAudio
+                        && asset.Status == MediaStatus.Ready)
+        .OrderBy(asset => asset.AudioPartKey, StringComparer.Ordinal)
+        .Select(asset => $"{asset.AudioPartKey}={asset.Url}")
+        .Concat(OptionsOf(interaction.Id).Select(option => $"{option.SortOrder}={ListeningImageUrl(option.Id)}")));
+
+    public string? ListeningImageUrl(int optionId) => ReadyUrl(asset =>
+        asset.ListeningInteractionOptionId == optionId && asset.Type == MediaType.ListeningImage) is { Length: > 0 } url ? url : null;
 
     public string Fingerprint()
     {
@@ -124,6 +165,9 @@ public sealed record PublicVersionSnapshot(
             if (!string.IsNullOrEmpty(word.SourceQuote) || !string.IsNullOrEmpty(word.Example))
                 rows.Add(new[] { "vocabulary-learning", word.Term, word.SourceQuote ?? "", word.Example ?? "" });
         }
+
+        foreach (var interaction in Listening)
+            rows.Add(new[] { "listening", ListeningKey(interaction), ListeningValues(interaction), ListeningMediaKey(interaction) });
 
         var json = JsonSerializer.Serialize(rows);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));

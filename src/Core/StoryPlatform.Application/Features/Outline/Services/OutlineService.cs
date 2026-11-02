@@ -382,7 +382,8 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
             ? await _unitOfWork.Repository<StoryGenerationRequest>().GetByIdAsync(job.GenerationRequestId.Value, cancellationToken)
             : await _unitOfWork.Repository<StoryGenerationRequest>().FirstOrDefaultAsync(
                 item => item.HandoffJobId == job.Id, cancellationToken: cancellationToken);
-        if (story.Source != StorySource.Ai || story.Status is StoryStatus.Archived or StoryStatus.Ready ||
+        if (story.Source != StorySource.Ai || story.Status == StoryStatus.Ready ||
+            (story.Status == StoryStatus.Rejected && job.Operation != GenerationJobOperation.RegenerateOutline) ||
             request is null || request.Status != GenerationInputStatus.InputAccepted ||
             string.IsNullOrWhiteSpace(request.AcceptedInputJson))
         {

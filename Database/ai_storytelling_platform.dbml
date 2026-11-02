@@ -236,7 +236,7 @@ Enum story_status_enum {
   media_processing
   ready
   rejected
-  archived
+  media_review
 }
 
 Enum version_edit_type_enum {

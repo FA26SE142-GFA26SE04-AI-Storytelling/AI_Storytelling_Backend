@@ -12,6 +12,7 @@ public class PublicReviewPackageDto
     public List<PublicReviewSceneDto> Scenes { get; set; } = new();
     public List<PublicReviewVocabularyDto> Vocabulary { get; set; } = new();
     public List<PublicReviewQuizDto> Quizzes { get; set; } = new();
+    public List<PublicReviewListeningDto> ListeningInteractions { get; set; } = new();
     public List<PublicReviewFlagDto> Flags { get; set; } = new();
     public bool AllFlagsResolved { get; set; }
     public PublicReviewProgressDto Progress { get; set; } = new();
@@ -105,6 +106,48 @@ public class PublicReviewQuizDto
     public string Question { get; set; } = string.Empty;
     public string? CorrectAnswer { get; set; }
     public string? Choices { get; set; }
+}
+
+/// <summary>Một tương tác lúc nghe cho Moderator, kèm đáp án.</summary>
+public class PublicReviewListeningDto
+{
+    public int Id { get; set; }
+    public string Type { get; set; } = string.Empty;
+    public string? Kind { get; set; }
+    public int? StorySceneId { get; set; }
+    public int AnchorOffset { get; set; }
+    public string? Prompt { get; set; }
+    public string? SourceQuote { get; set; }
+    public string? CharacterName { get; set; }
+    public string? HiddenWord { get; set; }
+    public string? Hint { get; set; }
+    public int? RevealOffset { get; set; }
+    public string? Explanation { get; set; }
+    public string? MatchFeedback { get; set; }
+    public string? NoMatchFeedback { get; set; }
+    public string? WaitFeedback { get; set; }
+    public List<PublicReviewListeningOptionDto> Options { get; set; } = new();
+    public List<PublicReviewListeningAudioDto> Audio { get; set; } = new();
+}
+
+public class PublicReviewListeningOptionDto
+{
+    public int Id { get; set; }
+    public int SortOrder { get; set; }
+    public string Text { get; set; } = string.Empty;
+    public string? Feedback { get; set; }
+    public bool IsMatch { get; set; }
+    public int? CorrectOrder { get; set; }
+    public string? SourceQuote { get; set; }
+    public string? ImageDescription { get; set; }
+    public string? ImageUrl { get; set; }
+}
+
+public class PublicReviewListeningAudioDto
+{
+    public string? PartKey { get; set; }
+    public int AssetId { get; set; }
+    public string? Url { get; set; }
 }
 
 public class PublicReviewFlagDto

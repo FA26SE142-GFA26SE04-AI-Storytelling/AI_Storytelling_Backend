@@ -21,7 +21,7 @@ public class PendingSubmissionArchiveHandlerTests
     private StoryArchiveContext Context(ArchivedReason reason = ArchivedReason.Copyright)
     {
         var story = _h.Stories.Single(existing => existing.Id == ContentReportHarness.PublicStoryId);
-        story.Status = StoryStatus.Archived;
+        story.Status = StoryStatus.Rejected;
         return new StoryArchiveContext(
             story, reason, ContentReportHarness.ModeratorId, DateTime.UtcNow);
     }

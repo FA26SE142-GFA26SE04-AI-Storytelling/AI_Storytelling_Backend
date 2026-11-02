@@ -40,7 +40,7 @@ public sealed class GrayZoneWorkflowService(IUnitOfWork uow, IAuditLogWriter aud
                 || assessment.Language is not null && assessment.Language != story.Language
                 || assessment.AudienceRevision.HasValue && assessment.AudienceRevision != story.AudienceRevision)
                 throw new ConflictException("MODERATION_CONTEXT_CHANGED");
-            if (story.IsDeleted || story.Status == StoryStatus.Archived || story.IsPublished
+            if (story.IsDeleted || story.Status == StoryStatus.Rejected || story.IsPublished
                 || version.Moderation.ReviewStatus != VersionReviewStatus.None)
                 throw new ConflictException("MODERATION_SOURCE_LOCKED");
             if (story.Scope == StoryScope.Parent && !jobId.HasValue && await uow.Repository<ParentStoryOperation>().ExistsAsync(
@@ -189,7 +189,7 @@ public sealed class GrayZoneWorkflowService(IUnitOfWork uow, IAuditLogWriter aud
                 ?? throw new ConflictException("MODERATION_CHECKPOINT_MISSING");
             var story = await uow.Repository<Story>().FirstOrDefaultAsync(x => x.Id == item.StoryId, cancellationToken: ct);
             var version = await uow.Repository<StoryVersion>().FirstOrDefaultAsync(x => x.Id == item.StoryVersionId, cancellationToken: ct);
-            if (story is null || story.IsDeleted || story.Scope != StoryScope.Parent || story.Status == StoryStatus.Archived
+            if (story is null || story.IsDeleted || story.Scope != StoryScope.Parent || story.Status == StoryStatus.Rejected
                 || version is null || version.StoryId != story.Id || ReadAssessment(version)?.Fingerprint != checkpoint.Fingerprint)
                 throw new ConflictException("MODERATION_SOURCE_CHANGED");
             StoryGenerationJob? job = null;
@@ -278,7 +278,7 @@ public sealed class GrayZoneWorkflowService(IUnitOfWork uow, IAuditLogWriter aud
                 if (checkpoint is null) { await uow.CommitTransactionAsync(ct); continue; }
                 var job = checkpoint.JobId.HasValue
                     ? await uow.Repository<StoryGenerationJob>().FirstOrDefaultAsync(x => x.Id == checkpoint.JobId, cancellationToken: ct) : null;
-                var obsolete = story is null || story.IsDeleted || story.Status == StoryStatus.Archived
+                var obsolete = story is null || story.IsDeleted || story.Status == StoryStatus.Rejected
                     || (checkpoint.JobId.HasValue ? job is null || job.Status == GenerationJobStatus.Cancelled
                         || !await uow.Repository<StoryVersion>().ExistsAsync(x => x.Id == job.BaseStoryVersionId && x.IsCurrent, ct)
                         : !await uow.Repository<StoryVersion>().ExistsAsync(x => x.Id == item.StoryVersionId && x.IsCurrent, ct));

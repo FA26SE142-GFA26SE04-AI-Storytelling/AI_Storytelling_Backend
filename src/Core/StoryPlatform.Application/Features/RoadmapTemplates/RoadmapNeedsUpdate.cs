@@ -9,7 +9,7 @@ internal static class RoadmapNeedsUpdate
     public static bool IsRetired(Story? story) =>
         story == null
         || story.IsDeleted
-        || story.Status == StoryStatus.Archived
+        || story.Status == StoryStatus.Rejected
         || story.ArchivedAt != null;
 
     public static async Task<Dictionary<int, List<int>>> RetiredStoriesByRoadmapAsync(

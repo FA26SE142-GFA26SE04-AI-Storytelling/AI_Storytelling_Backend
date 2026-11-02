@@ -9,6 +9,6 @@ public enum StoryStatus
     MediaProcessing = 5,
     Ready = 6,
     Rejected = 7,
-    Archived = 8,
+    // Giá trị 8 từng là Archived; không tái sử dụng.
     MediaReview = 9
 }

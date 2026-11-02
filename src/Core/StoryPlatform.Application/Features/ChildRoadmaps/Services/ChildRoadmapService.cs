@@ -225,7 +225,7 @@ public partial class ChildRoadmapService : IChildRoadmapService
                 CompletedAt = item.CompletedAt,
                 AddedByUserId = item.AddedByUserId,
                 IsStoryAvailable = story != null && !story.IsDeleted
-                                   && story.Status != StoryStatus.Archived && story.ArchivedAt == null
+                                   && story.Status != StoryStatus.Rejected && story.ArchivedAt == null
             };
         }
 

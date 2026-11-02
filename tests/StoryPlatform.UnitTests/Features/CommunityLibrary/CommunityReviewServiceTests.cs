@@ -188,7 +188,7 @@ public class CommunityReviewServiceTests
     public async Task GetPackageAsync_ArchivedStoryOrNoLabelsOrOwnSubmission_BlockApprove()
     {
         Claimed(claimedBy: Moderator, createdBy: Moderator);
-        _h.Stories.Single(story => story.Id == Story).Status = StoryStatus.Archived;
+        _h.Stories.Single(story => story.Id == Story).Status = StoryStatus.Rejected;
         _h.StoryCategories.Clear();
         await _sut.SaveChecklistAsync(Moderator, 80, Checklist());
 
@@ -507,7 +507,7 @@ public class CommunityReviewServiceTests
     public async Task ApproveAsync_StoryArchivedMeanwhile_IsBlocked()
     {
         await ReadyToApproveAsync();
-        _h.Stories.Single(story => story.Id == Story).Status = StoryStatus.Archived;
+        _h.Stories.Single(story => story.Id == Story).Status = StoryStatus.Rejected;
 
         await Assert.ThrowsAsync<BadRequestException>(() => _sut.ApproveAsync(Reviewer, 80));
     }

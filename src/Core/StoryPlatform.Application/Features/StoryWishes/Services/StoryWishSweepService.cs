@@ -119,7 +119,7 @@ public class StoryWishSweepService : IStoryWishSweepService
             }
         }
 
-        // 5. Accepted: truyện mới ready → Fulfilled; bị lưu trữ / mất → Declined; bị từ chối 7 ngày → Declined.
+        // 5. Accepted: truyện mới ready → Fulfilled; bị gỡ / mất → Declined; bị từ chối 7 ngày → Declined.
         var accepted = remaining.Where(wish => wish.Status == StoryWishStatus.Accepted && wish.GeneratedStoryId.HasValue).ToList();
         var storyIds = accepted.Select(wish => wish.GeneratedStoryId!.Value).Distinct().ToList();
         var stories = (await _unitOfWork.Repository<Story>().FindAsync(
@@ -128,8 +128,7 @@ public class StoryWishSweepService : IStoryWishSweepService
         {
             if (!stories.TryGetValue(wish.GeneratedStoryId!.Value, out var story)
                 || story.IsDeleted
-                || story.ArchivedAt != null
-                || story.Status == StoryStatus.Archived)
+                || story.ArchivedAt != null)
             {
                 Close(wish, StoryWishStatus.Declined, StoryWishDecisionPolicy.NoteStoryArchived, now);
                 declined++;

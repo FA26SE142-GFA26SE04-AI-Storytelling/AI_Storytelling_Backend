@@ -57,6 +57,7 @@ public class CommunityReviewPackageDto
     public List<ReportedSceneDto> Scenes { get; set; } = new();
     public List<ReportedVocabularyDto> Vocabulary { get; set; } = new();
     public List<ReportedQuizDto> Quizzes { get; set; } = new();
+    public List<ReportedListeningDto> Listening { get; set; } = new();
     public List<CommunityLabelDto> Labels { get; set; } = new();
 
     /// <summary>AiGenerated hoặc OwnWork (người nộp khai).</summary>

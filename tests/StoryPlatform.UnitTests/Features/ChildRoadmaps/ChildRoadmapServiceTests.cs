@@ -420,7 +420,7 @@ public class ChildRoadmapServiceTests
                 story.Content = string.Join(' ', Enumerable.Repeat("bé", 500));
                 break;
             case "archived":
-                story.Status = StoryStatus.Archived;
+                story.Status = StoryStatus.Rejected;
                 break;
         }
 

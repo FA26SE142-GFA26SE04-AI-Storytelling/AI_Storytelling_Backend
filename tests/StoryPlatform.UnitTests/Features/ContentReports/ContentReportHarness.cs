@@ -36,6 +36,8 @@ public sealed class ContentReportHarness
     public readonly List<MediaAsset> Assets = new();
     public readonly List<QuizItem> Quizzes = new();
     public readonly List<StoryVocabulary> Vocabulary = new();
+    public readonly List<ListeningInteraction> ListeningInteractions = new();
+    public readonly List<ListeningInteractionOption> ListeningOptions = new();
     public readonly List<StoryCategory> StoryCategories = new();
     public readonly List<ContentCategory> ContentCategories = new();
     public readonly List<ReadingRoadmap> Roadmaps = new();
@@ -78,6 +80,8 @@ public sealed class ContentReportHarness
         Back(Assets);
         Back(Quizzes);
         Back(Vocabulary);
+        Back(ListeningInteractions);
+        Back(ListeningOptions);
         Back(StoryCategories);
         Back(ContentCategories);
         Back(Roadmaps);

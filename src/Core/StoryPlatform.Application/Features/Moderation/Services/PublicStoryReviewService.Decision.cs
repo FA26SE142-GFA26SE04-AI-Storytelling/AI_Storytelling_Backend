@@ -15,7 +15,7 @@ public partial class PublicStoryReviewService
         var story = context.Story;
         var item = context.Item;
 
-        if (story.Status == StoryStatus.Archived || story.ArchivedAt != null)
+        if (story.Status == StoryStatus.Rejected || story.ArchivedAt != null)
         {
             blockers.Add(Blocker(
                 ApproveBlockerCodes.StoryArchived,
@@ -236,6 +236,8 @@ public partial class PublicStoryReviewService
                 id.HasValue && content.Quizzes.Any(quiz => quiz.Id == id.Value),
             PublicReviewRequirements.VocabularyPart =>
                 id.HasValue && content.Vocabulary.Any(word => word.Id == id.Value),
+            PublicReviewRequirements.ListeningPart =>
+                id.HasValue && content.Listening.Any(interaction => interaction.Id == id.Value),
 
             PublicReviewRequirements.MetadataPart => !id.HasValue,
             _ => throw new BadRequestException($"PartType \"{type}\" không hợp lệ.")

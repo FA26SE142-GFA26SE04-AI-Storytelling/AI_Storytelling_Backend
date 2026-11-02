@@ -124,7 +124,7 @@ public class ContentReportArchiveConsequencesIntegrationTests
             Reason = "Không an toàn"
         });
 
-        Assert.Equal(StoryStatus.Archived, observedStatus);
+        Assert.Equal(StoryStatus.Rejected, observedStatus);
         _consequences.Verify(service => service.ApplyAsync(
             It.Is<StoryArchiveContext>(context =>
                 context.Story.Id == ContentReportHarness.PublicStoryId
@@ -141,7 +141,9 @@ public class ContentReportArchiveConsequencesIntegrationTests
             new DismissReportRequestDto { Reason = "Không vi phạm" });
 
         var archived = _h.AddReportItem(ContentReportReason.Copyright);
-        _h.Stories.Single(story => story.Id == ContentReportHarness.PublicStoryId).Status = StoryStatus.Archived;
+        var removed = _h.Stories.Single(story => story.Id == ContentReportHarness.PublicStoryId);
+        removed.Status = StoryStatus.Rejected;
+        removed.ArchivedAt = DateTime.UtcNow.AddDays(-1);
         await _sut.ArchiveAsync(ContentReportHarness.ModeratorId, archived.Id,
             new ArchiveReportRequestDto
             {

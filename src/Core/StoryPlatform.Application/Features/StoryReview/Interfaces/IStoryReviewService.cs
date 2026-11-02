@@ -52,7 +52,7 @@ public interface IStoryReviewService
     Task<ConfirmCreatorContentResponseDto> ConfirmCreatorContentAsync(int userId, int storyId, ConfirmCreatorContentRequestDto input, CancellationToken cancellationToken = default);
     Task<ApproveResponseDto> ApproveAsync(int userId, int storyId, CancellationToken cancellationToken = default);
     Task<ApproveResponseDto?> EvaluateAndApplyAutoPublishAsync(int storyId, CancellationToken cancellationToken = default);
-    Task<ArchiveResponseDto> ArchiveAsync(int userId, int storyId, ArchiveRequestDto input, CancellationToken cancellationToken = default);
+    Task<RejectStoryResponseDto> RejectAsync(int userId, int storyId, RejectStoryRequestDto input, CancellationToken cancellationToken = default);
 
     #endregion
 }

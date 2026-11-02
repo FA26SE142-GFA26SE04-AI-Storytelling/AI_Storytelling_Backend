@@ -145,7 +145,7 @@ public class ContentReportService : IContentReportService
         }
 
         if (story.Scope != StoryScope.Creator || !story.IsPublished
-            || story.Status == StoryStatus.Archived || story.ArchivedAt != null)
+            || story.Status == StoryStatus.Rejected || story.ArchivedAt != null)
         {
             throw new BadRequestException("Chỉ tạo mục rà soát cho nội dung Public Library đang công khai.");
         }

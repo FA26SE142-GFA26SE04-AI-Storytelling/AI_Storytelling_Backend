@@ -60,7 +60,7 @@ public class PublishedContentReviewService : IPublishedContentReviewService
 
         // Không cần bước "Xem để rà soát": mọi lần mở đều được ghi audit PublishedContentOpened bên dưới.
         if (story.Scope != StoryScope.Creator || !story.IsPublished
-            || story.Status == StoryStatus.Archived || story.ArchivedAt != null)
+            || story.Status == StoryStatus.Rejected || story.ArchivedAt != null)
         {
             throw new BadRequestException("Chỉ xem được truyện Public Library đang công khai.");
         }
@@ -83,6 +83,7 @@ public class PublishedContentReviewService : IPublishedContentReviewService
             content.Scenes = ReportedContentBuilder.BuildScenes(snapshot, Mask);
             content.Vocabulary = ReportedContentBuilder.BuildVocabulary(snapshot, Mask);
             content.Quizzes = ReportedContentBuilder.BuildQuizzes(snapshot, Mask);
+            content.Listening = ReportedContentBuilder.BuildListening(snapshot, Mask);
         }
 
         await _auditLogWriter.LogAsync(
@@ -143,7 +144,7 @@ public class PublishedContentReviewService : IPublishedContentReviewService
                     Title = Mask(story?.Title),
                     AgeBand = story?.AgeBand ?? string.Empty,
                     IsArchived = story != null
-                                 && (story.Status == StoryStatus.Archived || story.ArchivedAt != null)
+                                 && story.ArchivedAt != null
                 };
             }).ToList()
         };
@@ -178,7 +179,7 @@ public class PublishedContentReviewService : IPublishedContentReviewService
         var to = query.PublishedTo ?? DateTime.MaxValue;
         Expression<Func<Story, bool>> filter = story =>
             !story.IsDeleted && story.Scope == StoryScope.Creator && story.IsPublished
-            && story.Status != StoryStatus.Archived && story.ArchivedAt == null
+            && story.Status != StoryStatus.Rejected && story.ArchivedAt == null
             && (!filterByAge || story.AgeBand == ageText)
             && (!filterByCategory || categoryStoryIds.Contains(story.Id))
             && (!filterFrom || story.PublishedAt >= from)

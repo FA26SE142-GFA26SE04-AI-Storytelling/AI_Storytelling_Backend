@@ -130,7 +130,7 @@ public class ReportableStoryResolverTests
     [Fact]
     public async Task ResolveAsync_ArchivedStory_IsForbidden()
     {
-        _h.Stories.Single(story => story.Id == ContentReportHarness.PublicStoryId).Status = StoryStatus.Archived;
+        _h.Stories.Single(story => story.Id == ContentReportHarness.PublicStoryId).Status = StoryStatus.Rejected;
 
         await Assert.ThrowsAsync<ForbiddenException>(() => Resolve(ContentReportHarness.PublicStoryId));
     }

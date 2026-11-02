@@ -102,4 +102,59 @@ public class PublicVersionSnapshotTests
 
         Assert.NotEqual(original, copy);
     }
+
+    [Fact]
+    public async Task LoadAsync_IncludesListeningOfThisVersionOnly_SortedByAnchor_WithoutDeletedRows()
+    {
+        const int version = PublicStoryReviewHarness.VersionId;
+        _h.AddListening(2, version, ListeningInteractionType.RolePlay, 20, null);
+        _h.AddListening(1, version, ListeningInteractionType.Checkpoint, 10, "Thỏ thấy gì?", "Sợ", "Vui");
+        _h.AddListening(3, version, ListeningInteractionType.PicturePrediction, 30, "Ai chờ?", "Mẹ").IsDeleted = true;
+        _h.ListeningOptions.Single(x => x.Id == 12).IsDeleted = true;
+        _h.CloneVersion(version, 51);
+
+        var snapshot = await Load(version);
+
+        Assert.Equal(new[] { 1, 2 }, snapshot.Listening.Select(x => x.Id));
+        Assert.Equal(new[] { "Sợ" }, snapshot.OptionsOf(1).Select(x => x.Text));
+        Assert.Equal("Checkpoint@10", PublicVersionSnapshot.ListeningKey(snapshot.Listening[0]));
+    }
+
+    [Fact]
+    public async Task Fingerprint_SameListeningInCopiedVersion_IsIdentical()
+    {
+        _h.AddListening(1, PublicStoryReviewHarness.VersionId, ListeningInteractionType.Checkpoint, 10, "Thỏ thấy gì?", "Sợ", "Vui");
+        var (original, copy) = await FingerprintsAfter(_ => { });
+        Assert.Equal(original, copy);
+    }
+
+    [Theory]
+    [InlineData("prompt")]
+    [InlineData("optionFeedback")]
+    [InlineData("added")]
+    [InlineData("removed")]
+    [InlineData("media")]
+    public async Task Fingerprint_ChangesWhenListeningChanges(string change)
+    {
+        _h.AddListening(1, PublicStoryReviewHarness.VersionId, ListeningInteractionType.Checkpoint, 10, "Thỏ thấy gì?", "Sợ", "Vui");
+        var (original, copy) = await FingerprintsAfter(copyId =>
+        {
+            var copied = _h.ListeningInteractions.Single(x => x.StoryVersionId == copyId);
+            switch (change)
+            {
+                case "prompt": copied.Prompt = "Thỏ nghĩ gì?"; break;
+                case "optionFeedback": _h.ListeningOptions.First(x => x.ListeningInteractionId == copied.Id).Feedback = "Khác"; break;
+                case "added": _h.AddListening(9, copyId, ListeningInteractionType.RolePlay, 20, null); break;
+                case "removed": copied.IsDeleted = true; break;
+                case "media":
+                    _h.Assets.Add(new MediaAsset
+                    {
+                        Id = 990, StoryVersionId = copyId, ListeningInteractionId = copied.Id, Type = MediaType.ListeningAudio,
+                        AudioPartKey = "prompt", Status = MediaStatus.Ready, Url = "https://cdn.test/listen.mp3", IsCurrent = true
+                    });
+                    break;
+            }
+        });
+        Assert.NotEqual(original, copy);
+    }
 }

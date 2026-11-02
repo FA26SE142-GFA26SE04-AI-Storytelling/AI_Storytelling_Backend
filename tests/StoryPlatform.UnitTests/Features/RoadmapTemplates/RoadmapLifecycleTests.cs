@@ -44,7 +44,7 @@ public class RoadmapLifecycleTests
         source.ReadingLevelMax = 5;
         source.DefaultDaysPerStory = 4;
         _h.RoadmapItems.Single(item => item.ReadingRoadmapId == 2 && item.StoryId == 11).Days = 3;
-        _h.Stories.Single(story => story.Id == 11).Status = StoryStatus.Archived;
+        _h.Stories.Single(story => story.Id == 11).Status = StoryStatus.Rejected;
 
         var result = await _sut.CloneAsync(Moderator, source.Id);
 

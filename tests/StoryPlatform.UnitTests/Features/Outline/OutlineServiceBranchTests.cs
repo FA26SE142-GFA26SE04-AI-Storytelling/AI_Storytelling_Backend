@@ -609,7 +609,7 @@ public sealed class OutlineServiceBranchTests
     public async Task ProcessNextAsync_StoryArchived_FailsWithInvalidPhase1Handoff()
     {
         var store = OutlineServiceTests.Seed();
-        store.Items<Story>().Single().Status = StoryStatus.Archived;
+        store.Items<Story>().Single().Status = StoryStatus.Rejected;
         var finalizer = new CapturingFinalizer(store);
 
         Assert.True(await Service(store, failureFinalizer: finalizer).ProcessNextAsync());

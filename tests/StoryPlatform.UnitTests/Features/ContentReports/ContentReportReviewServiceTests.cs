@@ -204,6 +204,35 @@ public class ContentReportReviewServiceTests
     }
 
     [Fact]
+    public async Task GetDetailAsync_ShowsListeningMaskedAndWithoutDeletedRows()
+    {
+        var item = _h.AddReportItem(storyId: ContentReportHarness.PrivateStoryId, versionId: 60);
+        _h.Children.Single().Nickname = "Bé Na";
+        _h.ListeningInteractions.Add(new ListeningInteraction
+        {
+            Id = 1, StoryVersionId = 60, Type = ListeningInteractionType.Checkpoint, AnchorOffset = 10,
+            Kind = CheckpointKind.Emotion, Prompt = "Bé Na thấy gì?", MatchFeedback = "Gọi 0912345678 nhé"
+        });
+        _h.ListeningInteractions.Add(new ListeningInteraction
+        {
+            Id = 2, StoryVersionId = 60, Type = ListeningInteractionType.RolePlay, AnchorOffset = 20, IsDeleted = true
+        });
+        _h.ListeningOptions.Add(new ListeningInteractionOption
+        { Id = 11, ListeningInteractionId = 1, SortOrder = 2, Text = "Vui", Feedback = "Ý hay" });
+        _h.ListeningOptions.Add(new ListeningInteractionOption
+        { Id = 10, ListeningInteractionId = 1, SortOrder = 1, Text = "Bé Na sợ", Feedback = "Đúng rồi", IsMatch = true });
+
+        var detail = await GetDetailAsync(item.Id);
+        var listening = Assert.Single(detail.Listening);
+        Assert.Equal("Checkpoint", listening.Type);
+        Assert.Equal("Emotion", listening.Kind);
+        Assert.Equal("[tên bé] thấy gì?", listening.Prompt);
+        Assert.Equal("Gọi [số điện thoại] nhé", listening.MatchFeedback);
+        Assert.Equal(new[] { "[tên bé] sợ", "Vui" }, listening.Options.Select(x => x.Text));
+        Assert.True(listening.Options[0].IsMatch);
+    }
+
+    [Fact]
     public async Task GetDetailAsync_DoesNotExposeReporterOrChildProfile()
     {
         var item = _h.AddReportItem(
@@ -547,19 +576,35 @@ public class ContentReportReviewServiceTests
 
         await ArchiveAsync(item.Id, ArchivedReason.Copyright);
 
-        Assert.Equal(StoryStatus.Archived, storyStatusSeen);
+        Assert.Equal(StoryStatus.Rejected, storyStatusSeen);
     }
 
     [Fact]
     public async Task ArchiveAsync_StoryAlreadyArchived_DoesNotApplyTheConsequencesAgain()
     {
         var item = _h.AddReportItem(ContentReportReason.SafetyConcern);
-        _h.Stories.Single(story => story.Id == PublicStory).Status = StoryStatus.Archived;
+        var story = _h.Stories.Single(existing => existing.Id == PublicStory);
+        story.Status = StoryStatus.Rejected;
+        story.ArchivedAt = DateTime.UtcNow.AddDays(-1);
 
         await ArchiveAsync(item.Id, ArchivedReason.SafetyConcern);
 
         _consequences.Verify(c => c.ApplyAsync(
             It.IsAny<StoryArchiveContext>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ArchiveAsync_RejectedWithoutRemovalMetadata_StillAppliesConsequences()
+    {
+        var item = _h.AddReportItem(ContentReportReason.SafetyConcern);
+        var story = _h.Stories.Single(existing => existing.Id == PublicStory);
+        story.Status = StoryStatus.Rejected;
+
+        await ArchiveAsync(item.Id, ArchivedReason.SafetyConcern);
+
+        Assert.NotNull(story.ArchivedAt);
+        _consequences.Verify(c => c.ApplyAsync(
+            It.IsAny<StoryArchiveContext>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -602,7 +647,7 @@ public class ContentReportReviewServiceTests
         Assert.Equal(1, item.RowVersion);
         Assert.Equal(ContentReportStatus.ReviewedArchived, _h.Reports.Single().Status);
         var story = _h.Stories.Single(existing => existing.Id == PublicStory);
-        Assert.Equal(StoryStatus.Archived, story.Status);
+        Assert.Equal(StoryStatus.Rejected, story.Status);
         Assert.Equal(ArchivedReason.SafetyConcern, story.ArchivedReason);
         Assert.NotNull(story.ArchivedAt);
         Assert.False(story.IsDeleted);
@@ -713,7 +758,7 @@ public class ContentReportReviewServiceTests
         var item = _h.AddReportItem();
         var story = _h.Stories.Single(existing => existing.Id == PublicStory);
         var archivedAt = DateTime.UtcNow.AddDays(-2);
-        story.Status = StoryStatus.Archived;
+        story.Status = StoryStatus.Rejected;
         story.ArchivedReason = ArchivedReason.SupervisorPreference;
         story.ArchivedAt = archivedAt;
         var sent = new List<(int Recipient, NotificationType Type, string? Payload)>();
@@ -737,7 +782,7 @@ public class ContentReportReviewServiceTests
 
         await ArchiveAsync(item.Id);
 
-        Assert.Equal(StoryStatus.Archived, _h.Stories.Single(existing => existing.Id == PublicStory).Status);
+        Assert.Equal(StoryStatus.Rejected, _h.Stories.Single(existing => existing.Id == PublicStory).Status);
         Assert.Equal(ContentReportHarness.ReporterId, Assert.Single(sent).Recipient);
     }
 

@@ -57,7 +57,7 @@
 - Bổ sung luồng Parent giao/sắp xếp lộ trình, sao chép bộ mẫu và gửi truyện cộng đồng; ChildSession có MyRoadmap/CommunityLibrary.
 - Moderator có soạn/duyệt bộ mẫu, duyệt cộng đồng, quyết định vùng xám, xử lý yêu cầu gỡ Creator và rà soát nội dung đang public; report có bước escalate sang Administrator.
 - Rubric có Draft/Active/Retired, revision, clone, validate, thử AI và audit; chỉ Administrator activate.
-- Sửa kết luận Creator approve/archive: đây là route Parent; Creator đã có confirm-content riêng. Chênh lệch role ở manual/assistance vẫn được ghi riêng tại CR1.
+- Sửa kết luận Creator approve/reject: đây là route Parent; Creator đã có confirm-content riêng. Chênh lệch role ở manual/assistance vẫn được ghi riêng tại CR1.
 - Cập nhật waitingForModeration, bằng chứng/offset của public-review flags, field escalation và enum moderation; ghi rõ các ngoại lệ response để frontend không ép cùng một parser.
 
 <a id="quy-uoc"></a>
@@ -236,7 +236,7 @@ Partial edit gửi selection khớp nội dung. Partial edit/regenerate trả pr
 
 Complete từng artifact → GET /review/validation. Với Creator, dùng `canConfirmContent` cho nút xác nhận; `canApprove=false`. Trường tương ứng trong GET /review cũng tách quyền; không coi nút xác nhận là quyền Moderator. Parent generation dùng `/review/approve`; Creator dùng API `POST /api/v1/creator/stories/{storyId}/generation/confirm-content` với `versionId` hiện tại. Bỏ learning endpoints nếu chỉ đọc. Creator xác nhận nội dung để chuẩn bị media, không tự duyệt tác phẩm công khai.
 
-**Phân quyền:** `/review/approve` và `/review/archive` vẫn chỉ dành cho Parent,Administrator. Creator gọi `generation/confirm-content` riêng; service cũng từ chối Creator qua `ApproveAsync`. Moderator quyết định kiểm duyệt/công khai trong Public Story Review; không chuyển quyền đó cho Creator.
+**Phân quyền:** `/review/approve` và `/review/reject` vẫn chỉ dành cho Parent,Administrator. Creator gọi `generation/confirm-content` riêng; service cũng từ chối Creator qua `ApproveAsync`. Moderator quyết định kiểm duyệt/công khai trong Public Story Review; không chuyển quyền đó cho Creator.
 
 /review/auto-publish-check kiểm theo policy, không thay quyết định thủ công và không tự công khai Creator.
 
@@ -354,7 +354,7 @@ Manual versions không sửa AI generation: service chặn AI_STORY_USE_GENERATI
 
 ### CR2. Sinh AI
 
-G1 bằng prefix Creator, chọn ageBand/readingLevel/language từ context; scope Creator/source Ai/child null. Outline/content/review/media chung có guard tác giả. Creator xác nhận phiên bản qua `POST /api/v1/creator/stories/{storyId}/generation/confirm-content` (202), rồi poll media. Không gọi `/review/approve` hoặc `/review/archive` bằng token Creator; hai API đó trả 403 theo thiết kế.
+G1 bằng prefix Creator, chọn ageBand/readingLevel/language từ context; scope Creator/source Ai/child null. Outline/content/review/media chung có guard tác giả. Creator xác nhận phiên bản qua `POST /api/v1/creator/stories/{storyId}/generation/confirm-content` (202), rồi poll media. Không gọi `/review/approve` hoặc `/review/reject` bằng token Creator; hai API đó trả 403 theo thiết kế.
 
 ```mermaid
 flowchart LR
@@ -1334,7 +1334,7 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 | [POST /api/v1/stories/{storyId}/review/auto-publish-check](#ep-review-autopublishcheck-post) | CHƯA_MAP |
 | [POST /api/v1/creator/stories/{storyId}/generation/confirm-content](#ep-creator-confirm-content-post) | CHƯA_MAP |
 | [POST /api/v1/stories/{storyId}/review/approve](#ep-review-approve-post) | GỌI_API |
-| [POST /api/v1/stories/{storyId}/review/archive](#ep-review-archive-post) | GỌI_API |
+| [POST /api/v1/stories/{storyId}/review/reject](#ep-review-reject-post) | GỌI_API |
 | [GET /api/v1/stories/{storyId}/review/proposals/{proposalId}](#ep-review-getproposal-get) | GỌI_API |
 | [POST /api/v1/stories/{storyId}/review/proposals/{proposalId}/apply](#ep-review-applyproposal-post) | GỌI_API |
 | [POST /api/v1/stories/{storyId}/review/proposals/{proposalId}/discard](#ep-review-discardproposal-post) | GỌI_API |
@@ -1520,15 +1520,15 @@ Guard/nghiệp vụ: [StoryReviewService.cs](../src/Core/StoryPlatform.Applicati
 - **Phạm vi actor:** Parent/Administrator; Creator không dùng endpoint này. Xác nhận nội dung qua POST /api/v1/creator/stories/{storyId}/generation/confirm-content; gỡ bản công khai qua removal-requests. Không mở role chỉ để tái sử dụng nút UI.
 - Frontend: **GỌI_API** — [aiStoryCreationService.approveStory](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L122); nơi dùng: [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L96)
 
-<a id="ep-review-archive-post"></a>
-#### POST /api/v1/stories/{storyId}/review/archive
+<a id="ep-review-reject-post"></a>
+#### POST /api/v1/stories/{storyId}/review/reject
 
-- Action/chức năng: **Archive**. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L249).
+- Action/chức năng: **Reject**. Từ chối nội dung đang `ContentReview`, truyện thành `Rejected`; trạng thái khác trả 409 `INVALID_STORY_STATUS`. [ReviewController](../src/Core/StoryPlatform.Api/Controllers/ReviewController.cs#L249).
 - Quyền: (Parent hoặc Administrator); kèm guard nghiệp vụ của nhóm.
-- Request: **path** storyId: `int`; bắt buộc<br>**body** input: [ArchiveRequestDto](#dto-archiverequestdto); field/validation/ví dụ tại schema.
-- Response: ApiResponse.data: [ArchiveResponseDto](#dto-archiveresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
+- Request: **path** storyId: `int`; bắt buộc<br>**body** input: [RejectStoryRequestDto](#dto-rejectstoryrequestdto); field/validation/ví dụ tại schema.
+- Response: ApiResponse.data: [RejectStoryResponseDto](#dto-rejectstoryresponsedto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - **Phạm vi actor:** Parent/Administrator; Creator không dùng endpoint này. Xác nhận nội dung qua POST /api/v1/creator/stories/{storyId}/generation/confirm-content; gỡ bản công khai qua removal-requests. Không mở role chỉ để tái sử dụng nút UI.
-- Frontend: **GỌI_API** — [aiStoryCreationService.archiveStory](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L123); nơi dùng: [ReviewTools.tsx](../../AI_Storytelling_Frontend/src/app/features/review/ReviewTools.tsx#L152); [useStoryReview.ts](../../AI_Storytelling_Frontend/src/app/features/story-workflow/useStoryReview.ts#L125)
+- Frontend: **CẦN SỬA** — đổi `aiStoryCreationService.archiveStory` sang API `review/reject` và `canReject` trong ReviewTools/useStoryReview (repo Frontend).
 
 <a id="ep-review-getproposal-get"></a>
 #### GET /api/v1/stories/{storyId}/review/proposals/{proposalId}
@@ -2289,7 +2289,7 @@ Guard/nghiệp vụ: [CreatorAssistanceService.cs](../src/Core/StoryPlatform.App
 <a id="controller-creatoraistoryinput"></a>
 ### CreatorAIStoryInput — 4 route
 
-CR2/G1. Controller chuyên biệt cho Creator. ContentCreator active; query ageBand/readingLevel/language. Không childProfileId; xác nhận nội dung qua API Creator confirm-content riêng, không qua review/approve hoặc review/archive.
+CR2/G1. Controller chuyên biệt cho Creator. ContentCreator active; query ageBand/readingLevel/language. Không childProfileId; xác nhận nội dung qua API Creator confirm-content riêng, không qua review/approve hoặc review/reject.
 
 Guard/nghiệp vụ: [AIStoryInputService.cs](../src/Core/StoryPlatform.Application/Features/AIStoryInput/Services/AIStoryInputService.cs).
 
@@ -3727,8 +3727,8 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [ApproveResponseDto](#dto-approveresponsedto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L186) |
 | [ArchiveExistingStoryRequestDto](#dto-archiveexistingstoryrequestdto) | [ExistingStoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ExistingStories/DTOs/ExistingStoryDtos.cs#L124) |
 | [ArchiveReportRequestDto](#dto-archivereportrequestdto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L120) |
-| [ArchiveRequestDto](#dto-archiverequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L194) |
-| [ArchiveResponseDto](#dto-archiveresponsedto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L199) |
+| [RejectStoryRequestDto](#dto-rejectstoryrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L272) |
+| [RejectStoryResponseDto](#dto-rejectstoryresponsedto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L277) |
 | [ArchivedReason](#dto-archivedreason) | [ArchivedReason.cs](../src/Core/StoryPlatform.Domain/Enums/ArchivedReason.cs#L3) |
 | [ArtifactChangeDto](#dto-artifactchangedto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L280) |
 | [ArtifactGenerationResultDto](#dto-artifactgenerationresultdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L249) |
@@ -4338,8 +4338,8 @@ Ví dụ JSON minh họa shape request:
 }
 ~~~
 
-<a id="dto-archiverequestdto"></a>
-### ArchiveRequestDto
+<a id="dto-rejectstoryrequestdto"></a>
+### RejectStoryRequestDto
 
 Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L194).
 
@@ -4355,8 +4355,8 @@ Ví dụ JSON minh họa shape request:
 }
 ~~~
 
-<a id="dto-archiveresponsedto"></a>
-### ArchiveResponseDto
+<a id="dto-rejectstoryresponsedto"></a>
+### RejectStoryResponseDto
 
 Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L199).
 
@@ -4745,7 +4745,7 @@ Nguồn: [BusinessReportDtos.cs](../src/Core/StoryPlatform.Application/Features/
 | `periodEnd` | `DateTime` | Không | — |
 | `storiesGenerated` | `int` | Không | — |
 | `storiesApproved` | `int` | Không | — |
-| `storiesRejected` | `int` | Không | — |
+| `storiesRejected` | `int` | Không | Đếm mọi truyện `Rejected` trong kỳ, gồm cả truyện Moderator đã gỡ. |
 | `readingSessionsCompleted` | `int` | Không | — |
 | `status` | `string` | Không | default `string.Empty` |
 | `publishedAt` | `DateTime?` | Có | — |
@@ -5015,7 +5015,7 @@ Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/C
 | `reportId` | `int` | Không | — |
 | `storyId` | `int` | Không | — |
 | `decision` | `string` | Không | default `string.Empty` |
-| `storyArchived` | `bool` | Không | — |
+| `storyArchived` | `bool` | Không | True khi truyện có `ArchivedAt` (Moderator đã gỡ). |
 | `decidedAt` | `DateTime` | Không | — |
 
 <a id="dto-contentreportdetaildto"></a>
@@ -7072,7 +7072,7 @@ Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/C
 | `readingLevel` | `int?` | Có | — |
 | `language` | `string` | Không | default `string.Empty` |
 | `scope` | `string` | Không | default `string.Empty` |
-| `isArchived` | `bool` | Không | — |
+| `isArchived` | `bool` | Không | True khi truyện có `ArchivedAt` (Moderator đã gỡ). |
 | `labels` | [List&lt;ReportedLabelDto&gt;](#dto-reportedlabeldto) | Không | default `new()` |
 
 <a id="dto-reportedversiondto"></a>
@@ -7336,7 +7336,7 @@ Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRev
 | `canEdit` | `bool` | Không | — |
 | `canApprove` | `bool` | Không | Parent pipeline; false cho Creator |
 | `canConfirmContent` | `bool` | Không | Creator xác nhận nội dung, không phải duyệt công khai |
-| `canArchive` | `bool` | Không | — |
+| `canReject` | `bool` | Không | Chỉ true khi truyện ở `ContentReview`. |
 
 <a id="dto-safetypolicycategorydto"></a>
 ### SafetyPolicyCategoryDto
@@ -7799,7 +7799,7 @@ Nguồn: [StoryStatus.cs](../src/Core/StoryPlatform.Domain/Enums/StoryStatus.cs#
 | `MediaProcessing` | 5 |
 | `Ready` | 6 |
 | `Rejected` | 7 |
-| `Archived` | 8 |
+| `MediaReview` | 9 |
 
 Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
 
@@ -8921,7 +8921,7 @@ Nguồn: [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Feature
 | `days` | `int?` | Có | — |
 | `title` | `string?` | Có | — |
 | `ageBand` | `string` | Không | default `string.Empty` |
-| `isArchived` | `bool` | Không | — |
+| `isArchived` | `bool` | Không | True khi truyện có `ArchivedAt` (Moderator đã gỡ). |
 
 <a id="dto-publishedstorycontentdto"></a>
 ### PublishedStoryContentDto

@@ -180,12 +180,12 @@ public class StoryWishSweepServiceTests
     }
 
     [Theory]
-    [InlineData(StoryStatus.Archived, false)]
-    [InlineData(StoryStatus.Ready, true)]
-    public async Task Sweep_NewStoryArchivedBeforeReady_DeclinesTheWish(StoryStatus status, bool archivedAtSet)
+    [InlineData(StoryStatus.Rejected)]
+    [InlineData(StoryStatus.Ready)]
+    public async Task Sweep_NewStoryRemovedByModerator_DeclinesTheWishImmediately(StoryStatus status)
     {
         var wish = Wish(StoryWishStatus.Accepted);
-        NewStory(502, status, archivedAt: archivedAtSet ? UtcNow.AddHours(-1) : null);
+        NewStory(502, status, archivedAt: UtcNow.AddHours(-1));
         wish.GeneratedStoryId = 502;
 
         var result = await _sut.SweepAsync();
@@ -193,6 +193,19 @@ public class StoryWishSweepServiceTests
         Assert.Equal(1, result.Declined);
         Assert.Equal(StoryWishStatus.Declined, wish.Status);
         Assert.Equal(StoryWishDecisionPolicy.NoteStoryArchived, wish.ResolutionNote);
+    }
+
+    [Fact]
+    public async Task Sweep_NewStoryRejectedByParentRecently_StaysAcceptedDuringGrace()
+    {
+        var wish = Wish(StoryWishStatus.Accepted);
+        NewStory(504, StoryStatus.Rejected, updatedAt: UtcNow.AddDays(-1));
+        wish.GeneratedStoryId = 504;
+
+        var result = await _sut.SweepAsync();
+
+        Assert.Equal(0, result.Declined);
+        Assert.Equal(StoryWishStatus.Accepted, wish.Status);
     }
 
     [Fact]

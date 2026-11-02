@@ -88,7 +88,7 @@ public partial class ContentReportReviewService
         var story = context.Story;
         var previousStatus = item.Status;
         var now = DateTime.UtcNow;
-        var storyAlreadyArchived = story.Status == StoryStatus.Archived || story.ArchivedAt != null;
+        var storyAlreadyArchived = story.ArchivedAt != null;
         var archiveNow = archiveReason.HasValue && !storyAlreadyArchived;
 
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
@@ -109,8 +109,8 @@ public partial class ContentReportReviewService
 
             if (archiveNow)
             {
-                // Không xóa cứng; IsPublished giữ nguyên vì bộ lọc hiển thị kiểm trạng thái Archived.
-                story.Status = StoryStatus.Archived;
+                // Không xóa cứng; bộ lọc hiển thị chặn trạng thái Rejected.
+                story.Status = StoryStatus.Rejected;
                 story.ArchivedReason = archiveReason!.Value;
                 story.ArchivedAt = now;
                 _unitOfWork.Repository<Story>().Update(story);
@@ -163,7 +163,7 @@ public partial class ContentReportReviewService
             ReportId = report.Id,
             StoryId = story.Id,
             Decision = itemStatus.ToString(),
-            StoryArchived = story.Status == StoryStatus.Archived || story.ArchivedAt != null,
+            StoryArchived = story.ArchivedAt != null,
             DecidedAt = now
         };
     }

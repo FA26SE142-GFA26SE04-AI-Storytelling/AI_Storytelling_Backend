@@ -20,7 +20,7 @@ internal static class ReportedContentBuilder
             ReadingLevel = story.ReadingLevel,
             Language = story.Language,
             Scope = story.Scope.ToString(),
-            IsArchived = story.Status == StoryStatus.Archived || story.ArchivedAt != null,
+            IsArchived = story.ArchivedAt != null,
             Labels = labels
         };
 
@@ -59,6 +59,32 @@ internal static class ReportedContentBuilder
             Question = mask(quiz.Question) ?? string.Empty,
             CorrectAnswer = mask(quiz.CorrectAnswer),
             Choices = mask(quiz.Choices)
+        }).ToList();
+
+    public static List<ReportedListeningDto> BuildListening(
+        PublicVersionSnapshot snapshot, Func<string?, string?> mask) =>
+        snapshot.Listening.Select(interaction => new ReportedListeningDto
+        {
+            Type = interaction.Type.ToString(),
+            Kind = interaction.Kind?.ToString(),
+            Prompt = mask(interaction.Prompt),
+            CharacterName = mask(interaction.CharacterName),
+            SourceQuote = mask(interaction.SourceQuote),
+            HiddenWord = mask(interaction.HiddenWord),
+            Hint = mask(interaction.Hint),
+            Explanation = mask(interaction.Explanation),
+            MatchFeedback = mask(interaction.MatchFeedback),
+            NoMatchFeedback = mask(interaction.NoMatchFeedback),
+            WaitFeedback = mask(interaction.WaitFeedback),
+            Options = snapshot.OptionsOf(interaction.Id).Select(option => new ReportedListeningOptionDto
+            {
+                Text = mask(option.Text) ?? string.Empty,
+                Feedback = mask(option.Feedback),
+                IsMatch = option.IsMatch,
+                CorrectOrder = option.CorrectOrder,
+                ImageDescription = mask(option.ImageDescription),
+                ImageUrl = snapshot.ListeningImageUrl(option.Id)
+            }).ToList()
         }).ToList();
 
     public static async Task<List<ReportedLabelDto>> LoadLabelsAsync(

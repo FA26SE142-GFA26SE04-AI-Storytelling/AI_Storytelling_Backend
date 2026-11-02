@@ -149,7 +149,7 @@ public class RoadmapTemplateServiceTests
         {
             Id = 2, StoryId = 12, ContentCategoryId = 5
         });
-        _h.Stories.Single(story => story.Id == 11).Status = StoryStatus.Archived;
+        _h.Stories.Single(story => story.Id == 11).Status = StoryStatus.Rejected;
 
         var result = await _sut.ListCandidatesAsync(RoadmapHarness.AdminId, new CandidateQueryDto
         {

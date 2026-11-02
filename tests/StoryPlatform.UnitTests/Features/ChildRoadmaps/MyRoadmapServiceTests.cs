@@ -159,7 +159,7 @@ public class MyRoadmapServiceTests
         var done = _h.AddItem(3, Child, 12, ChildRoadmapItemStatus.Completed);
         done.CompletedAt = DateTime.UtcNow;
         _h.AddItem(4, Child, 13, ChildRoadmapItemStatus.Waiting);
-        _h.Stories.Single(story => story.Id == 10).Status = StoryStatus.Archived;
+        _h.Stories.Single(story => story.Id == 10).Status = StoryStatus.Rejected;
         _h.Stories.Single(story => story.Id == 11).IsDeleted = true;
         _h.Stories.Single(story => story.Id == 12).ArchivedAt = DateTime.UtcNow;
 

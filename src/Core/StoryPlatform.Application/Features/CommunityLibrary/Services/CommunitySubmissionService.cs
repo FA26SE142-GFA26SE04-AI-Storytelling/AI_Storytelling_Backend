@@ -80,7 +80,7 @@ public partial class CommunitySubmissionService : ICommunitySubmissionService
         await _guard.EnsureOwnerAsync(childId, actor.Id, cancellationToken);
         var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(childId, cancellationToken);
 
-        if (story.Status == StoryStatus.Archived || story.ArchivedAt != null)
+        if (story.Status == StoryStatus.Rejected || story.ArchivedAt != null)
         {
             AddBlocker(dto, CommunityBlockerCodes.StoryArchived, "Truyện đã bị lưu trữ nên không nộp được.");
         }

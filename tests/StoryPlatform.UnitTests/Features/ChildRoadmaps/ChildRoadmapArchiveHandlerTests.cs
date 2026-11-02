@@ -28,7 +28,7 @@ public class ChildRoadmapArchiveHandlerTests
     private StoryArchiveContext Context(ArchivedReason reason = ArchivedReason.SafetyConcern)
     {
         var story = _h.Stories.Single(existing => existing.Id == ArchivedStory);
-        story.Status = StoryStatus.Archived;
+        story.Status = StoryStatus.Rejected;
         return new StoryArchiveContext(story, reason, Moderator, DateTime.UtcNow);
     }
 

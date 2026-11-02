@@ -74,7 +74,7 @@ public class RoadmapLibraryServiceTests
     {
         var roadmap = Published(1);
         roadmap.ReadingLevelMax = 4;
-        _h.Stories.Single(story => story.Id == 12).Status = StoryStatus.Archived;
+        _h.Stories.Single(story => story.Id == 12).Status = StoryStatus.Rejected;
         _h.AddTemplate(2, AgeBand.Age_9_10, 6, RoadmapTemplateStatus.Published, 10)
             .ReadingLevelMin = 5;
 
@@ -103,7 +103,7 @@ public class RoadmapLibraryServiceTests
     {
         Published(1, 5, 12, 10, 11);
         _h.SetItemDays(1, 10, 5);
-        _h.Stories.Single(story => story.Id == 11).Status = StoryStatus.Archived;
+        _h.Stories.Single(story => story.Id == 11).Status = StoryStatus.Rejected;
 
         var detail = await _sut.GetAsync(Owner, 1);
 
@@ -157,7 +157,7 @@ public class RoadmapLibraryServiceTests
             _h.AddPolicy(Child, 100);
             story.Content = string.Join(' ', Enumerable.Repeat("bé", 500));
         }
-        if (problem == "archived") story.Status = StoryStatus.Archived;
+        if (problem == "archived") story.Status = StoryStatus.Rejected;
         if (problem == "deleted") story.IsDeleted = true;
 
         var child = (await _sut.PreviewAsync(Owner, 1, Copy(new[] { Child }))).Children.Single();
@@ -238,7 +238,7 @@ public class RoadmapLibraryServiceTests
     {
         Published();
         _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Waiting);
-        _h.Stories.Single(story => story.Id == 11).Status = StoryStatus.Archived;
+        _h.Stories.Single(story => story.Id == 11).Status = StoryStatus.Rejected;
 
         var result = await _sut.CopyAsync(Owner, 1, Copy(new[] { Child }));
 
@@ -284,7 +284,7 @@ public class RoadmapLibraryServiceTests
         Published();
         foreach (var story in _h.Stories.Where(story => new[] { 10, 11, 12 }.Contains(story.Id)))
         {
-            story.Status = StoryStatus.Archived;
+            story.Status = StoryStatus.Rejected;
         }
 
         var result = await _sut.CopyAsync(Owner, 1, Copy(new[] { Child }));

@@ -15,7 +15,7 @@ public sealed class StoryPublishingTests
     [InlineData(StoryStatus.ContentReview)]
     [InlineData(StoryStatus.Approved)]
     [InlineData(StoryStatus.MediaProcessing)]
-    [InlineData(StoryStatus.Archived)]
+    [InlineData(StoryStatus.Rejected)]
     public async Task PublishStoryAsync_ThrowsConflict_WhenStatusIsNotReady(StoryStatus status)
     {
         var uow = new FakeUnitOfWork();

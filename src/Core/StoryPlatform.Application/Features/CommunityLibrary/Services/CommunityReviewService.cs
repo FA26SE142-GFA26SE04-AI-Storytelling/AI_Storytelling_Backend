@@ -53,6 +53,7 @@ public partial class CommunityReviewService : ICommunityReviewService
             Scenes = ReportedContentBuilder.BuildScenes(snapshot, Mask),
             Vocabulary = ReportedContentBuilder.BuildVocabulary(snapshot, Mask),
             Quizzes = ReportedContentBuilder.BuildQuizzes(snapshot, Mask),
+            Listening = ReportedContentBuilder.BuildListening(snapshot, Mask),
             Labels = labels,
             CopyrightDeclaration = context.Item.CopyrightDeclaration?.ToString(),
             PiiCheckSummary = context.Item.PiiCheckResult,
@@ -250,7 +251,7 @@ public partial class CommunityReviewService : ICommunityReviewService
                 + "). Nếu truyện chưa đạt, hãy chọn Reject."));
         }
 
-        if (context.Story.Status == StoryStatus.Archived || context.Story.ArchivedAt != null)
+        if (context.Story.Status == StoryStatus.Rejected || context.Story.ArchivedAt != null)
         {
             blockers.Add(Blocker(CommunityReviewBlockerCodes.StoryArchived,
                 "Truyện gốc đã bị lưu trữ nên không thể Approve."));

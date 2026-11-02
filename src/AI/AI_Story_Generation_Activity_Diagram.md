@@ -416,7 +416,7 @@ flowchart TD
     G --> G3 --> H3 --> H3A --> H3B
     H3B -->|Yes| H3C --> H2A
     H3B -->|No| A
-    G --> G4 --> H4 --> H4A --> Y2([End: Archived])
+    G --> G4 --> H4 --> H4A --> Y2([End: Rejected])
 
     style Y1 fill:#c8e6c9
     style Y2 fill:#ffcccc
@@ -719,7 +719,7 @@ flowchart TD
     G2A[AI Adapt]
     G2B[Manual Edit]
     G2C[Keep Original + Override Reason]
-    G3[/Archive story/]
+    G3[/Reject story/]
 
     A --> B --> C --> D --> E --> F
     F --> F1 --> G1 --> Y([End: Hand off to artifacts])
@@ -730,7 +730,7 @@ flowchart TD
     G2A --> Y
     G2B --> Y
     G2C --> Y
-    F --> F3 --> G3 --> Y2([End: Archived])
+    F --> F3 --> G3 --> Y2([End: Rejected])
 
     style A fill:#fff3e0
     style Y fill:#c8e6c9
@@ -833,7 +833,7 @@ flowchart TD
 flowchart TD
     A([Start: Archive Story])
     B[/POST /stories/{id}/existing/archive/]
-    C[/Set Story.Status = Archived/]
+    C[/Set Story.Status = Rejected/]
     D[/Set Story.ArchivedReason/]
     E[/Log in audit trail/]
 

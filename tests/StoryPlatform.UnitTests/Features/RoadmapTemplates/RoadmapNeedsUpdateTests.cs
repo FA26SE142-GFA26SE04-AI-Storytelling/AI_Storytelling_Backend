@@ -41,7 +41,7 @@ public class RoadmapNeedsUpdateTests
     public async Task PublishedRoadmapWithArchivedStories_IsFlaggedWithCountAndIds()
     {
         Published();
-        _h.Stories.Single(story => story.Id == 10).Status = StoryStatus.Archived;
+        _h.Stories.Single(story => story.Id == 10).Status = StoryStatus.Rejected;
         _h.Stories.Single(story => story.Id == 11).ArchivedAt = DateTime.UtcNow;
 
         var row = Assert.Single((await ListAsync()).Items);
@@ -82,7 +82,7 @@ public class RoadmapNeedsUpdateTests
     {
         Published(2, 10, 11);
         Published(3, 12);
-        _h.Stories.Single(story => story.Id == 11).Status = StoryStatus.Archived;
+        _h.Stories.Single(story => story.Id == 11).Status = StoryStatus.Rejected;
 
         var rows = (await ListAsync()).Items;
 
@@ -95,7 +95,7 @@ public class RoadmapNeedsUpdateTests
     {
         _h.AddRoadmap(2, AgeBand.Age_6_8, 5, RoadmapTemplateStatus.Draft, Moderator, 10, 11);
         _h.AddRoadmap(3, AgeBand.Age_9_10, 6, RoadmapTemplateStatus.Archived, OtherModerator, 10, 11);
-        _h.Stories.Single(story => story.Id == 10).Status = StoryStatus.Archived;
+        _h.Stories.Single(story => story.Id == 10).Status = StoryStatus.Rejected;
 
         var draft = await _sut.ListAsync(
             Moderator, new RoadmapListQueryDto { Group = RoadmapListGroup.Drafts });
@@ -111,7 +111,7 @@ public class RoadmapNeedsUpdateTests
     public async Task LabelDisappearsWhenHealthyReplacementIsPublished()
     {
         Published(2, 10, 11);
-        _h.Stories.Single(story => story.Id == 11).Status = StoryStatus.Archived;
+        _h.Stories.Single(story => story.Id == 11).Status = StoryStatus.Rejected;
         Assert.True(Assert.Single((await ListAsync()).Items).NeedsUpdate);
 
         var old = _h.Roadmaps.Single(roadmap => roadmap.Id == 2);
@@ -128,7 +128,7 @@ public class RoadmapNeedsUpdateTests
     public async Task ReadingLabelDoesNotSendNotifications()
     {
         Published();
-        _h.Stories.Single(story => story.Id == 11).Status = StoryStatus.Archived;
+        _h.Stories.Single(story => story.Id == 11).Status = StoryStatus.Rejected;
 
         await ListAsync();
         await _sut.GetAsync(Moderator, 2);

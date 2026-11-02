@@ -33,7 +33,9 @@ public static class PublicVersionComparer
             quiz => quiz.Question.Trim(), quiz => $"{quiz.Type}|{quiz.CorrectAnswer}|{quiz.Choices}|{quiz.SourceQuote}|{quiz.Explanation}|{quiz.Hint}|{quiz.LearningGoal}|{quiz.OptionFeedbackJson}");
         DiffKeyed(result.ArtifactChanges, "vocabulary", before.Vocabulary, current.Vocabulary,
             word => word.Term.Trim(), word => $"{word.Definition}|{word.SourceQuote}|{word.Example}");
-
+        DiffKeyed(result.ArtifactChanges, "listening", before.Listening, current.Listening,
+            PublicVersionSnapshot.ListeningKey,
+            interaction => ListeningValue(interaction.StoryVersionId == before.Version.Id ? before : current, interaction));
 
         return result;
     }
@@ -136,4 +138,8 @@ public static class PublicVersionComparer
             changes.Add(new ArtifactChangeDto { Kind = kind, Change = "modified", Key = sharedKey });
         }
     }
+
+    // Option và media phải lấy từ snapshot chứa tương tác tương ứng.
+    private static string ListeningValue(PublicVersionSnapshot snapshot, ListeningInteraction interaction) =>
+        $"{snapshot.ListeningValues(interaction)}#{snapshot.ListeningMediaKey(interaction)}";
 }

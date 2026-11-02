@@ -356,7 +356,7 @@ public sealed partial class MediaGenerationServiceTests
     public async Task ProcessNext_InvalidStoryState_IsPermanentInsteadOfReportedAsNoJob()
     {
         var uow = Seed();
-        uow.Items<Story>().Single().Status = StoryStatus.Archived;
+        uow.Items<Story>().Single().Status = StoryStatus.Rejected;
         var finalizer = new RecordingFinalizer();
         var service = Create(uow, finalizer: finalizer);
 

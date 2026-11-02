@@ -283,16 +283,16 @@ public sealed class Phase1To4SequentialWorkflowTests
     }
 
     [Fact]
-    public async Task Phase4_archive_ends_workflow_without_approval()
+    public async Task Phase4_reject_ends_workflow_without_approval()
     {
         var (store, ai, story, _) = await RunToContentReviewAsync();
         var reviewService = new StoryReviewService(store, ai, new InMemoryProposalCache());
 
-        var result = await reviewService.ArchiveAsync(1, story.Id, new ArchiveRequestDto { Reason = "Parent chose not to use it" });
+        var result = await reviewService.RejectAsync(1, story.Id, new RejectStoryRequestDto { Reason = "Parent chose not to use it" });
 
         Assert.True(result.Success);
-        Assert.Equal("Archived", result.Status);
-        Assert.Equal(StoryStatus.Archived, story.Status);
+        Assert.Equal("Rejected", result.Status);
+        Assert.Equal(StoryStatus.Rejected, story.Status);
     }
 
     [Fact]

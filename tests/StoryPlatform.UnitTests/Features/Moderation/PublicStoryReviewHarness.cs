@@ -198,6 +198,25 @@ public sealed class PublicStoryReviewHarness
         return segmentId;
     }
 
+    public ListeningInteraction AddListening(int id, int versionId, ListeningInteractionType type, int anchorOffset,
+        string? prompt, params string[] optionTexts)
+    {
+        var interaction = new ListeningInteraction
+        {
+            Id = id, StoryVersionId = versionId, Type = type, AnchorOffset = anchorOffset, Prompt = prompt,
+            MatchFeedback = "Giỏi lắm!", NoMatchFeedback = "Cùng nghe tiếp nhé."
+        };
+        ListeningInteractions.Add(interaction);
+        for (var i = 0; i < optionTexts.Length; i++)
+            ListeningOptions.Add(new ListeningInteractionOption
+            {
+                Id = id * 10 + i + 1, ListeningInteractionId = id, SortOrder = i + 1, Text = optionTexts[i],
+                Feedback = $"Phản hồi {i + 1}", IsMatch = i == 0,
+                CorrectOrder = type == ListeningInteractionType.EventOrdering ? i + 1 : null
+            });
+        return interaction;
+    }
+
     public StoryVersion CloneVersion(int sourceVersionId, int newVersionId)
     {
         var source = Versions.Single(version => version.Id == sourceVersionId);
@@ -278,6 +297,11 @@ public sealed class PublicStoryReviewHarness
                 StorySegmentId = asset.StorySegmentId.HasValue
                     ? segmentMap[asset.StorySegmentId.Value]
                     : null,
+                ListeningInteractionId = asset.ListeningInteractionId.HasValue
+                    ? asset.ListeningInteractionId.Value + offset : null,
+                ListeningInteractionOptionId = asset.ListeningInteractionOptionId.HasValue
+                    ? asset.ListeningInteractionOptionId.Value + offset : null,
+                AudioPartKey = asset.AudioPartKey,
                 Type = asset.Type,
                 Status = asset.Status,
                 Url = asset.Url,
@@ -307,6 +331,28 @@ public sealed class PublicStoryReviewHarness
                 Term = word.Term,
                 Definition = word.Definition
             });
+        }
+
+        foreach (var interaction in ListeningInteractions.Where(x => x.StoryVersionId == sourceVersionId && !x.IsDeleted).ToList())
+        {
+            ListeningInteractions.Add(new ListeningInteraction
+            {
+                Id = interaction.Id + offset, StoryVersionId = newVersionId, Type = interaction.Type,
+                AnchorOffset = interaction.AnchorOffset, Kind = interaction.Kind, Prompt = interaction.Prompt,
+                SourceQuote = interaction.SourceQuote, SourceStart = interaction.SourceStart, SourceEnd = interaction.SourceEnd,
+                CharacterName = interaction.CharacterName, HiddenWord = interaction.HiddenWord, Hint = interaction.Hint,
+                RevealOffset = interaction.RevealOffset, Explanation = interaction.Explanation,
+                MatchFeedback = interaction.MatchFeedback, NoMatchFeedback = interaction.NoMatchFeedback,
+                WaitFeedback = interaction.WaitFeedback
+            });
+            foreach (var option in ListeningOptions.Where(x => x.ListeningInteractionId == interaction.Id && !x.IsDeleted).ToList())
+                ListeningOptions.Add(new ListeningInteractionOption
+                {
+                    Id = option.Id + offset, ListeningInteractionId = interaction.Id + offset, SortOrder = option.SortOrder,
+                    Text = option.Text, Feedback = option.Feedback, IsMatch = option.IsMatch, CorrectOrder = option.CorrectOrder,
+                    SourceQuote = option.SourceQuote, SourceStart = option.SourceStart, SourceEnd = option.SourceEnd,
+                    ImageDescription = option.ImageDescription
+                });
         }
 
         return copy;

@@ -85,7 +85,7 @@ public sealed class CreatorPublicationService(IUnitOfWork uow, IModerationQueueS
         Locked(storyId, async () =>
         {
             var story = await AuthorizeCreator(userId, storyId, ct);
-            if (story.IsPublished || story.Status == StoryStatus.Archived || story.ArchivedAt != null)
+            if (story.IsPublished || story.Status == StoryStatus.Rejected || story.ArchivedAt != null)
                 throw new ConflictException("MODERATOR_REMOVAL_REQUIRED");
             await EnsureNoOpenReview(storyId, ct);
             var source = await Current(storyId, ct);

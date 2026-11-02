@@ -10,6 +10,7 @@ using StoryPlatform.Application.Features.Auth.DTOs;
 using StoryPlatform.Application.Features.Auth.Services;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Sessions.Interfaces;
+using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using Xunit;
@@ -28,6 +29,7 @@ public class AccountDeletionServiceTests
     private readonly Mock<IChildSessionRevoker> _childSessionRevoker = new();
     private readonly Mock<IEmailSender> _emailSender = new();
     private readonly Mock<IAuditLogWriter> _auditLogWriter = new();
+    private readonly Mock<IParentStorySummaryService> _storySummaries = new();
     private readonly AccountDeletionService _sut;
 
     public AccountDeletionServiceTests()
@@ -44,8 +46,51 @@ public class AccountDeletionServiceTests
         _passwordHasher.Setup(p => p.VerifyPassword("Pass@123", "stored-hash")).Returns(true);
         _passwordHasher.Setup(p => p.HashPassword(It.IsAny<string>())).Returns("random-hash");
         _sut = new AccountDeletionService(_unitOfWork.Object, _passwordHasher.Object, _eraser.Object,
-            _childSessionRevoker.Object, _emailSender.Object, _auditLogWriter.Object,
+            _childSessionRevoker.Object, _emailSender.Object, _auditLogWriter.Object, _storySummaries.Object,
             NullLogger<AccountDeletionService>.Instance);
+    }
+
+    [Fact]
+    public async Task DeleteAccountAsync_Confirmed_PurgesStorySummaryAudioOfEveryErasedChild()
+    {
+        SetupUser();
+        SetupOwnedProfiles(
+            new ChildProfile { Id = 5, OwnerUserId = 1, Nickname = "Bin", Status = ChildProfileStatus.Active },
+            new ChildProfile { Id = 6, OwnerUserId = 1, Nickname = "Na", Status = ChildProfileStatus.Archived });
+
+        await _sut.DeleteAccountAsync(1,
+            new DeleteAccountRequestDto { CurrentPassword = "Pass@123", DeleteChildProfiles = true });
+
+        _storySummaries.Verify(s => s.PurgeChildAsync(5, It.IsAny<CancellationToken>()), Times.Once);
+        _storySummaries.Verify(s => s.PurgeChildAsync(6, It.IsAny<CancellationToken>()), Times.Once);
+        _unitOfWork.Verify(u => u.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteAccountAsync_StillSucceeds_WhenStorySummaryPurgeFails()
+    {
+        var user = SetupUser();
+        SetupOwnedProfiles(new ChildProfile { Id = 5, OwnerUserId = 1, Nickname = "Bin", Status = ChildProfileStatus.Active });
+        _storySummaries.Setup(s => s.PurgeChildAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("storage down"));
+
+        await _sut.DeleteAccountAsync(1,
+            new DeleteAccountRequestDto { CurrentPassword = "Pass@123", DeleteChildProfiles = true });
+
+        Assert.True(user.IsDeleted);
+        _unitOfWork.Verify(u => u.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteAccountAsync_WrongPassword_DoesNotPurgeStorySummaries()
+    {
+        SetupUser();
+        SetupOwnedProfiles(new ChildProfile { Id = 5, OwnerUserId = 1, Nickname = "Bin", Status = ChildProfileStatus.Active });
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.DeleteAccountAsync(1,
+            new DeleteAccountRequestDto { CurrentPassword = "wrong", DeleteChildProfiles = true }));
+
+        _storySummaries.Verify(s => s.PurgeChildAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

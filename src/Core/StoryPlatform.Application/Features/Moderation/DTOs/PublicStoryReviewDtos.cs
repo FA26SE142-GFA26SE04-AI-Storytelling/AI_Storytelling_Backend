@@ -145,6 +145,8 @@ public class PublicReviewListeningOptionDto
 
 public class PublicReviewListeningAudioDto
 {
+    /// <summary>Null với audio của cả tương tác; có giá trị với audio của một thẻ (text, feedback).</summary>
+    public int? OptionId { get; set; }
     public string? PartKey { get; set; }
     public int AssetId { get; set; }
     public string? Url { get; set; }

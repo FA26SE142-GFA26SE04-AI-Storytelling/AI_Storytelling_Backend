@@ -1,4 +1,4 @@
--- 22. story_generation_requests (5 - chi cho story co Source = Ai)
+-- 22. story_generation_requests (6 - chi cho story co Source = Ai; Id 900 la truyen tuong tac luc nghe)
 -- HandoffJobId duoc gan sau khi insert job vi hai bang tham chieu vong nhau.
 INSERT INTO story_generation_requests (
     "Id", "StoryId", "SubmittedByUserId", "IdempotencyKey", "InputFingerprint", "ContextFingerprint",
@@ -25,4 +25,17 @@ VALUES
      '{"childProfileId":10,"ageBand":"9-10","readingLevel":3,"vocabularyLevel":"level_3","language":"vi","maximumLength":1800,"requiredApprovalMode":"always_manual","interests":[],"allowedCategoryCodes":["FAMILY"],"restrictedCategoryCodes":[],"blockedCategoryCodes":["FANTASY"]}'::jsonb,
      '{"topic":"Trận bóng đá đáng nhớ","genre":"Thể thao","characterMode":"ai_suggested","characters":[],"settingMode":"specified","setting":"Sân bóng của trường","lesson":"Tinh thần fair-play trong thể thao","vocabularyLevel":"level_3","language":"vi","targetLength":900}'::jsonb,
      'InputAccepted', 1, 3, md5('seed-request-5'), 'Allow', false, 'seed-v1', NOW() - INTERVAL '13 days', NOW() - INTERVAL '13 days', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- Truyện 900 (tương tác lúc nghe): ngữ cảnh đã chấp nhận, có consentRecordedAt.
+-- Thiếu ngữ cảnh này thì gói tương tác báo LISTENING_CONTEXT_MISSING khi duyệt.
+INSERT INTO story_generation_requests (
+    "Id", "StoryId", "SubmittedByUserId", "IdempotencyKey", "InputFingerprint", "ContextFingerprint",
+    "ContextSnapshotJson", "AcceptedInputJson", "Status", "AttemptCount", "MaxAttempts", "ConcurrencyToken",
+    "GuardrailDecision", "CanRetry", "GuardrailCheckVersion", "GuardrailCheckedAt", "CreatedAt", "IsDeleted")
+VALUES
+    (900, 900, 2, 'seed-ai-story-900', encode(sha256('seed-input-900'::bytea), 'hex'), encode(sha256('seed-context-900'::bytea), 'hex'),
+     '{"childProfileId":1,"ageBand":"6-8","readingLevel":2,"vocabularyLevel":"level_2","language":"vi","maximumLength":1500,"requiredApprovalMode":"always_manual","interests":[],"allowedCategoryCodes":[],"restrictedCategoryCodes":[],"blockedCategoryCodes":[],"parentalGateEnabled":true,"consentPolicyVersion":1,"consentRecordedAt":"2026-10-01T00:00:00Z"}'::jsonb,
+     '{"topic":"Thỏ con đi lạc","genre":"Ngụ ngôn","characterMode":"specified","characters":["Thỏ con","Bác Gấu"],"settingMode":"specified","setting":"Khu rừng","lesson":"Nhờ người lớn giúp khi bị lạc","vocabularyLevel":"level_2","language":"vi","targetLength":600}'::jsonb,
+     'InputAccepted', 1, 3, md5('seed-request-900'), 'Allow', false, 'seed-v1', NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day', false)
 ON CONFLICT ("Id") DO NOTHING;

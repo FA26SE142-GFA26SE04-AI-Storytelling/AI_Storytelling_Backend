@@ -152,6 +152,7 @@ public sealed partial class MediaGenerationService
                 x => x.StoryVersionId == versionId && !x.IsDeleted, cancellationToken: ct);
             foreach (var word in vocabulary.OrderBy(x => x.Id))
                 await EnsureVocabularyAudioAsync(child.Id, token, child.StoryId, versionId, context, word, ct);
+            await EnsureListeningAudioAsync(child.Id, token, child.StoryId, versionId, context, ct);
             await CompleteBranchAsync(child, token, context.Id, ct);
             return MediaJobProcessResult.Completed;
         }
@@ -202,7 +203,8 @@ public sealed partial class MediaGenerationService
                 return;
             }
             var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(x => x.StoryVersionId == branch.StoryVersionId &&
-                x.Type == type && (x.IsCurrent || x.ReplacesMediaAssetId != null && x.ReplacementResolvedAt == null), cancellationToken: ct);
+                (x.Type == type || type == MediaType.TtsAudio && x.Type == MediaType.ListeningAudio) &&
+                (x.IsCurrent || x.ReplacesMediaAssetId != null && x.ReplacementResolvedAt == null), cancellationToken: ct);
             var attempts = assets.Where(x => x.Status != MediaStatus.Ready).Select(x => x.AttemptCount).DefaultIfEmpty(0).Max();
             var invalidated = IsStale(ex) || ex is ForbiddenException or ConflictException or NotFoundException;
             var retry = !invalidated && !IsTerminalBranchFailure(ex) && attempts < _assetMaxAttempts;

@@ -35,6 +35,7 @@ application_default_credentials.json
 /docs/api/*
 !/docs/api/api-test-guide-buoc-1-7.html
 !/docs/api/HUONG_DAN_TEST_AUDIO_PHAT_AM_TU_VUNG.html
+!/docs/api/story-summary-api-test-guide.html
 
 # AppSettings
 appsettings*.json

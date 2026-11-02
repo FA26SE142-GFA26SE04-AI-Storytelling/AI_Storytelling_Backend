@@ -19,4 +19,18 @@ public class ParentReadingFeedbackItemDto
     public int QuizTotalQuestions { get; set; }
     /// <summary>Phần trăm của lần làm quiz tốt nhất; null nếu con chưa làm hoặc truyện không có quiz.</summary>
     public decimal? QuizBestPercent { get; set; }
+    /// <summary>Câu con trả lời ở Điểm dừng cảm xúc/cảm nhận trong lần đọc này, theo thời gian.</summary>
+    public List<ConversationAnswerDto> ConversationAnswers { get; set; } = new();
+}
+
+public class ConversationAnswerDto
+{
+    public string Question { get; set; } = string.Empty;
+    /// <summary>"Emotion" hoặc "Opinion".</summary>
+    public string Kind { get; set; } = string.Empty;
+    /// <summary>Chữ của thẻ con đã chọn.</summary>
+    public string AnswerText { get; set; } = string.Empty;
+    /// <summary>Scene có câu hỏi; null nếu không còn tìm thấy.</summary>
+    public int? SceneIndex { get; set; }
+    public DateTime AnsweredAt { get; set; }
 }

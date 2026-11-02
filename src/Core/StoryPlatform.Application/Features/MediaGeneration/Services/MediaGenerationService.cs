@@ -11,6 +11,7 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
+using StoryPlatform.Application.Features.ListeningInteractions.Services;
 using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -499,6 +500,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         var state = await LoadStateAsync(jobId, claimedToken, cancellationToken);
         var mediaContext = await GetOrCreateContextAsync(state, cancellationToken);
         var scenes = await GetOrCreateScenesAsync(state, claimedToken, mediaContext, cancellationToken);
+        await BindListeningInteractionsAsync(state, claimedToken, mediaContext, scenes, cancellationToken);
         await UpdateStageAsync(state.Job.Id, claimedToken, JobStage.MediaGenerating, cancellationToken);
 
         foreach (var scene in scenes.OrderBy(x => x.SceneIndex))
@@ -554,6 +556,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         var blocks = _blockParser.Parse(state.Version.Content!);
         var selections = await _segmenter.SegmentAsync(
             new SceneSegmentationRequest(state.Version.Content!, blocks, mediaContext.ContextJson), cancellationToken);
+        selections = await EnforceInteractionBoundariesAsync(state.Version.Id, blocks, selections, cancellationToken);
         var validated = _coverageValidator.ValidateAndAssemble(state.Version.Content!, blocks, selections);
         await AssertFreshAsync(state.Job.Id, claimedToken, state.Version.Id, mediaContext.Id, cancellationToken);
         var scenes = validated.Select(x => new StoryScene
@@ -568,6 +571,23 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         await _unitOfWork.Repository<StoryScene>().AddRangeAsync(scenes, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return scenes;
+    }
+
+    // Cắt scene tại đoạn neo, đoạn sự kiện và đoạn đáp án của Đoán tranh.
+    private async Task<IReadOnlyList<SceneSelection>> EnforceInteractionBoundariesAsync(
+        int versionId, IReadOnlyList<StoryTextBlock> blocks, IReadOnlyList<SceneSelection> selections,
+        CancellationToken cancellationToken)
+    {
+        var interactions = await _unitOfWork.Repository<ListeningInteraction>().FindAsync(
+            x => x.StoryVersionId == versionId && !x.IsDeleted, cancellationToken: cancellationToken);
+        if (interactions.Count == 0) return selections;
+        var eventIds = interactions.Where(x => x.Type == ListeningInteractionType.EventOrdering)
+            .Select(x => x.Id).ToList();
+        IReadOnlyList<ListeningInteractionOption> options = eventIds.Count == 0
+            ? []
+            : await _unitOfWork.Repository<ListeningInteractionOption>().FindAsync(
+                x => eventIds.Contains(x.ListeningInteractionId) && !x.IsDeleted, cancellationToken: cancellationToken);
+        return InteractionSceneBoundaryEnforcer.Enforce(blocks, selections, interactions, options);
     }
 
     private async Task<IReadOnlyList<IllustrationBeat>> GetOrCreateBeatsAsync(
@@ -648,7 +668,18 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
     {
         var asset = await GetOrCreateIllustrationAssetAsync(versionId, scene, beat, cancellationToken);
         if (asset.Status == MediaStatus.Ready) return;
+        await GenerateImageAssetAsync(jobId, claimedToken, storyId, versionId, mediaContext, asset, baseSpecification,
+            $"scene-{scene.SceneIndex}-beat-{beat.BeatOrder}", cancellationToken);
+        _logger.LogInformation(
+            "Illustration ready Story={StoryId} Version={VersionId} Scene={SceneId} Beat={BeatId} Asset={AssetId} Attempt={Attempt}",
+            storyId, versionId, scene.Id, beat.Id, asset.Id, asset.AttemptCount);
+    }
 
+    // Ảnh minh hoạ và ảnh Đoán tranh dùng chung kiểm tra căn chỉnh, an toàn và lưu trữ.
+    private async Task GenerateImageAssetAsync(
+        int jobId, string claimedToken, int storyId, int versionId, MediaContext mediaContext,
+        MediaAsset asset, SceneSpecification baseSpecification, string pathStem, CancellationToken cancellationToken)
+    {
         // Failure-feedback history for this asset (reset when retrying).
         var failureHistory = new List<(string Code, string Reason)>();
         if (!string.IsNullOrWhiteSpace(asset.LastValidationReason)) failureHistory.Add(("PREVIOUS_VALIDATION_FAILED", asset.LastValidationReason));
@@ -715,7 +746,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             }
 
             await AssertFreshAsync(jobId, claimedToken, versionId, mediaContext.Id, cancellationToken);
-            var storagePath = $"{storyId}/versions/{versionId}/v{mediaContext.Revision}/scene-{scene.SceneIndex}-beat-{beat.BeatOrder}-asset-{asset.Id}-{Guid.NewGuid():N}-a{attempt + 1}{illustration.SuggestedExtension}";
+            var storagePath = $"{storyId}/versions/{versionId}/v{mediaContext.Revision}/{pathStem}-asset-{asset.Id}-{Guid.NewGuid():N}-a{attempt + 1}{illustration.SuggestedExtension}";
             await using var content = illustration.OpenReadStream();
             asset.Url = await MeasureMediaStageAsync("ImageUpload", jobId, asset,
                 () => _mediaStorage.UploadAsync(storagePath, content, illustration.MimeType, cancellationToken));
@@ -726,9 +757,6 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             asset.ValidationStatus = ValidationStatus.Passed;
             asset.CompletedAt = _clock.GetUtcNow().UtcDateTime;
             await PersistReadyAssetAsync(jobId, claimedToken, mediaContext.Id, asset, cancellationToken);
-            _logger.LogInformation(
-                "Illustration ready Story={StoryId} Version={VersionId} Scene={SceneId} Beat={BeatId} Asset={AssetId} Attempt={Attempt}",
-                storyId, versionId, scene.Id, beat.Id, asset.Id, asset.AttemptCount);
             return;
         }
         catch (PermanentMediaGenerationException) when (!cancellationToken.IsCancellationRequested)
@@ -1071,6 +1099,9 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             "TTS_SEGMENT_RETRY_EXHAUSTED" => "TTS_RETRY_EXHAUSTED",
             _ when unwrapped.Message.StartsWith("TTS_SEGMENT_RETRY_EXHAUSTED") => "TTS_RETRY_EXHAUSTED",
             _ when unwrapped.Message.StartsWith("AUDIO_QUALITY_GATE_DETERMINISTIC_FAILURE") => "TTS_RETRY_EXHAUSTED",
+            "INTERACTION_BOUNDARY_UNRESOLVED" => "INTERACTION_BOUNDARY_UNRESOLVED",
+            "INTERACTION_SCENE_UNRESOLVED" => "INTERACTION_SCENE_UNRESOLVED",
+            "LISTENING_AUDIO_RETRY_EXHAUSTED" => "LISTENING_AUDIO_RETRY_EXHAUSTED",
             "MEDIA_PACKAGE_INCOMPLETE" => "MEDIA_PACKAGE_INCOMPLETE",
             "INVALID_MEDIA_HANDOFF" => "INVALID_MEDIA_HANDOFF",
             _ when unwrapped is TimeoutException or OperationCanceledException => "MEDIA_PROVIDER_TIMEOUT",
@@ -1089,6 +1120,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
                 "SCENE_COVERAGE_EMPTY" or "INVALID_SCENE_ORDER" or "UNKNOWN_SCENE_BLOCK" or
                 "NON_CONTIGUOUS_SCENE_BLOCKS" or "SCENE_TEXT_NOT_CANONICAL" or
                 "INCOMPLETE_OR_OVERLAPPING_SCENE_COVERAGE" or
+                "INTERACTION_BOUNDARY_UNRESOLVED" or
+                "INTERACTION_SCENE_UNRESOLVED" or
                 "IMAGE_ALIGNMENT_FAILED" or "IMAGE_SAFETY_FAILED" or
                 "MEDIA_EVALUATOR_NOT_CONFIGURED" or
                 "STALE_MEDIA_HANDOFF" or "DUPLICATE_ACTIVE_JOB" or
@@ -1132,6 +1165,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             "CONCURRENT_CLAIM_DETECTED", "DUPLICATE_ACTIVE_JOB",
             "ILLUSTRATION_RETRY_EXHAUSTED", "TTS_SEGMENT_RETRY_EXHAUSTED",
             "MEDIA_PACKAGE_INCOMPLETE", "INVALID_PERSISTED_SCENE_COVERAGE",
+            "INTERACTION_BOUNDARY_UNRESOLVED",
+            "INTERACTION_SCENE_UNRESOLVED", "LISTENING_AUDIO_RETRY_EXHAUSTED",
             "INVALID_MEDIA_HANDOFF", "STORY_NOT_FOUND"
         };
         var current = exception;

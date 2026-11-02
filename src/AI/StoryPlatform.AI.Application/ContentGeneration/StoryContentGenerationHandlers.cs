@@ -28,7 +28,7 @@ public sealed class GenerateStoryContentHandler
         var maximumSections = request.Snapshot is null ? int.MaxValue : Math.Clamp(request.Snapshot.Config.MaxStorySections, 3, 20);
         if (minimumSections > maximumSections) throw new ArgumentException("Invalid pinned section limits.", nameof(request));
         var prompt = ContentWritingPrompt.Append(PromptComposer.Compose(template, request),
-            request.Constraints, request.StoryParameters.RequestedLength);
+            request.Constraints, request.StoryParameters.RequestedLength, language: request.Language);
         if (request.Snapshot is not null)
             prompt += $"\nReturn {minimumSections} to {maximumSections} non-empty story sections.";
         var generated = await _executor.ExecuteAsync(
@@ -117,7 +117,7 @@ public sealed class RefineStoryContentHandler
             request.Language, request.AgeBand, _prompts);
         var generated = await _executor.ExecuteAsync(
             ContentWritingPrompt.Append(PromptComposer.Compose(template, request), request.Constraints,
-                request.TargetLength, request.Feedback), "refined_story_content", GenerationSchemas.StoryContent,
+                request.TargetLength, request.Feedback, request.Language), "refined_story_content", GenerationSchemas.StoryContent,
             json => DeserializeRefinedStory(json), cancellationToken,
             executionBudgetSeconds: request.ExecutionBudgetSeconds);
         GenerateStoryContentHandler.ValidateStory(generated.Value);

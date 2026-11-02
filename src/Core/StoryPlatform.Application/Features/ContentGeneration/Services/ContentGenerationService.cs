@@ -502,6 +502,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                 ExecutionBudgetSeconds = RemainingCallBudget(timer, 90),
                 Feedback = new ContentRefinementFeedback
                 {
+                    Readability = quality.ReadabilityDetails,
                     CurrentWordCount = measuredWords,
                     TargetWords = handoff.Input.TargetLength,
                     MinimumWords = handoff.Context.LearningProfile?.MinimumWords ?? Math.Max(100, (int)Math.Floor(handoff.Input.TargetLength * .7)),
@@ -939,8 +940,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         StorySections = [new StorySectionDto(1, string.Empty, version.Content ?? string.Empty)],
         Lesson = !string.IsNullOrWhiteSpace(version.Lesson) ? version.Lesson : (!string.IsNullOrWhiteSpace(version.Title) ? version.Title : "Bài học từ câu chuyện")
     };
-    private static string Flatten(StoryContentDto story) => string.Join("\n\n", story.StorySections.OrderBy(item => item.Order)
-        .Select(item => string.IsNullOrWhiteSpace(item.Heading) ? item.Content.Trim() : $"{item.Heading.Trim()}\n{item.Content.Trim()}"));
+    private static string Flatten(StoryContentDto story) => CanonicalStoryContent.Render(story);
     private static string NormalizeDescription(string? description, string? content)
     {
         var source = string.IsNullOrWhiteSpace(description) ? content : description;
@@ -990,6 +990,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             {
                 RefinementAttempts = envelope.RefinementAttempts,
                 SafetyScore = quality.SafetyScore,
+                Readability = quality.ReadabilityDetails,
                 FailedGates = failedGates
             };
         }

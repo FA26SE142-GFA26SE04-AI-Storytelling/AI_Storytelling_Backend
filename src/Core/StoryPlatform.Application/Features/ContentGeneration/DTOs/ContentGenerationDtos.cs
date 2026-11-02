@@ -17,6 +17,7 @@ public sealed class ContentQualityGateFailureDto
 
 public sealed class ContentQualityFailureDto
 {
+    public StoryPlatform.Contracts.AI.Models.ContentReadabilityFeedback? Readability { get; init; }
     public int RefinementAttempts { get; init; }
     public decimal? SafetyScore { get; init; }
     public IReadOnlyList<ContentQualityGateFailureDto> FailedGates { get; init; } = [];

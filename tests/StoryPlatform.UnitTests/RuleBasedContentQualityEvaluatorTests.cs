@@ -8,6 +8,56 @@ namespace StoryPlatform.UnitTests;
 public sealed class RuleBasedContentQualityEvaluatorTests
 {
     [Fact]
+    public void Headings_cannot_make_a_passing_body_fail_only_after_generation()
+    {
+        var body = string.Join(' ', Enumerable.Repeat("Lan và Minh cùng chia sẻ sách rồi đi.", 12));
+        var story = Story(body) with
+        {
+            StorySections = [new StorySectionDto(1, string.Join(' ', Enumerable.Repeat("Lan và Minh", 12)), body)]
+        };
+        var context = Context() with { ReadingLevel = 3, ReadabilityScoreThreshold = 70m };
+        Assert.True(ReadabilityCalculator.EvaluateForProfile(body, "vi", 3, 70m).Passed);
+
+        var generated = new RuleBasedContentQualityEvaluator().Evaluate(story,
+            new StoryOutlineDto("Lan gặp Minh", "Hai bạn chia sẻ", "Hai bạn cùng đọc sách"), Input(), context);
+        var reviewed = ReadabilityCalculator.EvaluateForProfile(CanonicalStoryContent.Render(story), "vi", 3, 70m);
+
+        Assert.False(reviewed.Passed);
+        Assert.False(generated.Readability.Passed);
+        Assert.False(generated.IsPassed);
+        Assert.Equal(reviewed.Metrics.Fre, generated.ReadabilityDetails!.Ease);
+        Assert.Equal(reviewed.Metrics.Fkgl, generated.ReadabilityDetails.Grade);
+        Assert.Equal(reviewed.Metrics.AverageWordsPerSentence, generated.ReadabilityDetails.AverageWordsPerSentence);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(40)]
+    public void Improving_ease_does_not_bypass_the_body_length_gate(int sentences)
+    {
+        var result = new RuleBasedContentQualityEvaluator().Evaluate(
+            Story(string.Join(' ', Enumerable.Repeat("Lan và Minh cùng chia sẻ sách.", sentences))),
+            new StoryOutlineDto("Lan gặp Minh", "Hai bạn chia sẻ", "Hai bạn cùng đọc sách"), Input(),
+            Context() with { ReadingLevel = 3, ReadabilityScoreThreshold = 70m });
+        Assert.True(result.Readability.Passed);
+        Assert.False(result.Length.Passed);
+        Assert.False(result.IsPassed);
+    }
+
+    [Fact]
+    public void Readability_feedback_identifies_ease_only_and_preserves_snapshot_threshold()
+    {
+        var context = Context() with { ReadingLevel = 3, ReadabilityScoreThreshold = 70m };
+        var result = new RuleBasedContentQualityEvaluator().Evaluate(
+            Story(string.Join(' ', Enumerable.Repeat("Lan và Minh cùng chia sẻ sách rồi đi chơi ở sân.", 12))),
+            new StoryOutlineDto("Lan gặp Minh", "Hai bạn chia sẻ", "Hai bạn cùng đọc sách"), Input(), context);
+        Assert.Equal(new[] { "ease" }, result.ReadabilityDetails!.FailedMetrics);
+        Assert.Equal(70m, result.ReadabilityDetails.Limits.MinimumEaseScore);
+        Assert.Equal(8, result.ReadabilityDetails.SentenceTarget);
+        Assert.False(result.Readability.Passed);
+    }
+
+    [Fact]
     public void Safe_story_with_expected_length_passes_content_only_gates()
     {
         var result = new RuleBasedContentQualityEvaluator().Evaluate(

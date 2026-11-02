@@ -6,7 +6,7 @@ namespace StoryPlatform.AI.Application.ContentGeneration;
 internal static class ContentWritingPrompt
 {
     public static string Append(string prompt, GenerationConstraintsDto constraints, int target,
-        ContentRefinementFeedback? feedback = null)
+        ContentRefinementFeedback? feedback = null, string? language = null)
     {
         if (constraints.MinimumWords > 0)
         {
@@ -18,11 +18,15 @@ internal static class ContentWritingPrompt
         if (constraints.Readability is { } limits)
         {
             prompt += FormattableString.Invariant($"\nReading limits: grade <= {limits.MaximumGradeLevel}, ease >= {limits.MinimumEaseScore}, average lexical units per sentence <= {limits.MaximumAverageWordsPerSentence}. Use many short, complete sentences and concrete, familiar words. Aim for average sentence length comfortably below the limit. Reach the total length through events, actions and dialogue, not longer sentences.");
-            var sentenceTarget = Math.Max(5, (int)Math.Floor(limits.MaximumAverageWordsPerSentence * .7m));
+            var sentenceTarget = limits.SentenceTarget(language);
             prompt += FormattableString.Invariant($"\nAim for about {sentenceTarget} lexical units per sentence, with roughly {(int)Math.Ceiling((double)target / sentenceTarget)} complete sentences across the body. This is a planning aid, not an extra output field. Use sentence-ending punctuation; commas alone do not split long sentences.");
         }
         if (feedback is not null)
         {
+            if (feedback.Readability is { } measured && feedback.FailedGateCodes.Contains("CONTENT_READABILITY_NOT_MET"))
+            {
+                prompt += FormattableString.Invariant($"\nCore readability measurement ({measured.Algorithm}): grade={measured.Grade} (maximum {measured.Limits.MaximumGradeLevel}), ease={measured.Ease} (minimum {measured.Limits.MinimumEaseScore}), average lexical units per sentence={measured.AverageWordsPerSentence} (maximum {measured.Limits.MaximumAverageWordsPerSentence}). Failed metrics: {string.Join(", ", measured.FailedMetrics)}. Split long sentences into short, complete sentences; use familiar, concrete words. Aim for about {measured.SentenceTarget} lexical units per sentence. Preserve story events and the required total body length; do not discard story content to raise ease.");
+            }
             var delta = feedback.CurrentWordCount - feedback.TargetWords;
             prompt += FormattableString.Invariant($"\nCore measured {feedback.CurrentWordCount} body lexical units. Target {feedback.TargetWords}, valid range {feedback.MinimumWords}-{feedback.MaximumWords}. ");
             if (delta > 0 && feedback.FailedGateCodes.Contains("CONTENT_LENGTH_INVALID"))

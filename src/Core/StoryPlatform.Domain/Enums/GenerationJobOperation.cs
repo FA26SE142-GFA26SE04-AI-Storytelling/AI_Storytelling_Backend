@@ -7,6 +7,7 @@ public enum GenerationJobOperation
     GenerateContent = 3,
     GenerateVocabulary = 4,
     GenerateQuiz = 5,
+    // Reserved for persisted legacy jobs; never enqueue, execute or retry this operation.
     GenerateDiscussion = 6,
     GenerateMediaPackage = 7,
     BuildMediaContext = 8,

@@ -305,6 +305,7 @@ Enum NotificationType {
   RoadmapCompleted
   StoryWishSubmitted
   StoryWishExpiring
+  StorySummarySent
 }
 
 Enum PaymentStatus {
@@ -1785,6 +1786,41 @@ Table story_segments {
   Note: 'CHECK constraints: CK_story_segments_offsets: "StartOffset" >= 0 AND "EndOffset" > "StartOffset"; CK_story_segments_segment_order: "SegmentOrder" >= 1'
 }
 
+Table story_summaries {
+  AudioBytes int
+  AudioContentType varchar(50)
+  AudioStoragePath varchar(500)
+  ChildProfileId int [not null]
+  CreatedAt timestamptz [not null]
+  FlagsSentAt timestamptz
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  ReadingSessionId int [not null]
+  RecordingSentAt timestamptz
+  StoryId int [not null]
+  StoryVersionId int
+  UpdatedAt timestamptz
+  Indexes {
+    ReadingSessionId [unique, note: '"IsDeleted" = false']
+    (ChildProfileId, CreatedAt)
+    StoryId
+  }
+  Note: 'Tóm tắt cuối truyện trẻ gửi chủ hồ sơ (ghi âm và/hoặc đánh cờ). File lưu tới khi chủ hồ sơ xóa.'
+}
+
+Table story_summary_flags {
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  StorySceneId int [not null]
+  StorySummaryId int [not null]
+  UpdatedAt timestamptz
+  Indexes {
+    StorySceneId
+    (StorySummaryId, StorySceneId) [unique]
+  }
+}
+
 Table story_version_authoring_metadata {
   AssistanceProvenanceJson jsonb
   AuthoringOrigin varchar(20)
@@ -2225,6 +2261,11 @@ Ref: story_vocabulary.StoryVersionId > story_versions.Id
 Ref: story_wish_card_matches.StoryId > stories.Id
 Ref: story_wish_card_matches.WishCardId > wish_cards.Id
 Ref: story_wish_suggestions.StoryId > stories.Id
+Ref: story_summaries.ChildProfileId > child_profiles.Id
+Ref: story_summaries.ReadingSessionId > reading_sessions.Id
+Ref: story_summaries.StoryId > stories.Id
+Ref: story_summary_flags.StorySceneId > story_scenes.Id
+Ref: story_summary_flags.StorySummaryId > story_summaries.Id [delete: cascade]
 Ref: story_wish_suggestions.StoryWishId > story_wishes.Id
 Ref: story_wishes.ChallengeCardId > wish_cards.Id
 Ref: story_wishes.CharacterCardId > wish_cards.Id

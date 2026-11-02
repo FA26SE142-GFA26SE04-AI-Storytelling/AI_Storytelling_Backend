@@ -8,6 +8,7 @@ using StoryPlatform.Application.Features.Auth.DTOs;
 using StoryPlatform.Application.Features.Auth.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Sessions.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
+using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -24,6 +25,7 @@ public class AccountDeletionService : IAccountDeletionService
     private readonly IChildSessionRevoker _childSessionRevoker;
     private readonly IEmailSender _emailSender;
     private readonly IAuditLogWriter _auditLogWriter;
+    private readonly IParentStorySummaryService _storySummaries;
     private readonly ILogger<AccountDeletionService> _logger;
 
     public AccountDeletionService(
@@ -33,6 +35,7 @@ public class AccountDeletionService : IAccountDeletionService
         IChildSessionRevoker childSessionRevoker,
         IEmailSender emailSender,
         IAuditLogWriter auditLogWriter,
+        IParentStorySummaryService storySummaries,
         ILogger<AccountDeletionService> logger)
     {
         _unitOfWork = unitOfWork;
@@ -41,6 +44,7 @@ public class AccountDeletionService : IAccountDeletionService
         _childSessionRevoker = childSessionRevoker;
         _emailSender = emailSender;
         _auditLogWriter = auditLogWriter;
+        _storySummaries = storySummaries;
         _logger = logger;
     }
 
@@ -116,6 +120,20 @@ public class AccountDeletionService : IAccountDeletionService
         {
             await _unitOfWork.RollbackTransactionAsync(cancellationToken);
             throw;
+        }
+
+        // Giọng nói của trẻ không được nằm lại trong kho lưu trữ; lỗi kho lưu trữ không làm hỏng việc xóa tài khoản.
+        foreach (var profile in erased)
+        {
+            try
+            {
+                await _storySummaries.PurgeChildAsync(profile.Id, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Story summary audio purge failed. ChildProfileId={ChildProfileId}, ErrorType={ErrorType}",
+                    profile.Id, ex.GetType().Name);
+            }
         }
 
         foreach (var profile in erased)

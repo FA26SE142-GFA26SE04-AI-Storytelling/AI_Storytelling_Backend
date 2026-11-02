@@ -45,6 +45,8 @@ public sealed class ReadingHarness
     public readonly List<ContentCategory> Categories = new();
     public readonly List<StoryWish> StoryWishes = new();
     public readonly List<UserAccount> Users = new();
+    public readonly List<StorySummary> Summaries = new();
+    public readonly List<StorySummaryFlag> SummaryFlags = new();
     public readonly List<ListeningInteraction> ListeningInteractions = new();
     public readonly List<ListeningInteractionOption> ListeningOptions = new();
     public readonly List<ListeningInteractionAttempt> ListeningAttempts = new();
@@ -82,7 +84,7 @@ public sealed class ReadingHarness
         Back(Cases); Back(ModerationItems); Back(Quizzes); Back(Attempts); Back(Achievements); Back(Badges);
         Back(Policies); Back(PolicyCategories); Back(StoryCategories); Back(RoadmapItems);
         Back(WishCards); Back(Categories);
-        Back(StoryWishes); Back(Users);
+        Back(StoryWishes); Back(Users); Back(Summaries); Back(SummaryFlags);
         Back(ListeningInteractions); Back(ListeningOptions); Back(ListeningAttempts);
 
         Children.Add(new ChildProfile

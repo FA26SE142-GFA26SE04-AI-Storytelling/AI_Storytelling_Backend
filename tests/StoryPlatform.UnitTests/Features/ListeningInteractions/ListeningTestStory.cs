@@ -10,6 +10,7 @@ using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.Contracts.AI.Responses;
+using StoryPlatform.Contracts.AI.Models;
 
 namespace StoryPlatform.UnitTests.Features.ListeningInteractions;
 
@@ -200,6 +201,9 @@ internal static class ListeningTestStory
     public static Mock<IAIStoryGenerationClient> AiClient()
     {
         var ai = new Mock<IAIStoryGenerationClient>();
+        ai.Setup(x => x.GetListeningPromptSnapshotAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string type, string age, string language, CancellationToken _) =>
+                new ListeningPromptSnapshotDto("Listening" + type, "fixture-v1", "Generate {{context}}"));
         ai.Setup(x => x.GenerateListeningInteractionAsync(It.IsAny<GenerateListeningInteractionRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((GenerateListeningInteractionRequest request, CancellationToken _) =>
                 AiResponse(Enum.Parse<ListeningInteractionType>(request.InteractionType)));

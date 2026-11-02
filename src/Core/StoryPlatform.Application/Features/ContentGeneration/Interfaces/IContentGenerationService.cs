@@ -21,3 +21,8 @@ public interface IContentGenerationJobFailureFinalizer
 {
     Task MarkFailedAsync(int jobId, string expectedConcurrencyToken, string errorCode, CancellationToken cancellationToken = default);
 }
+
+public interface IContentGenerationJobLease
+{
+    Task<bool> RenewAsync(int jobId, string expectedToken, TimeSpan lease, CancellationToken ct);
+}

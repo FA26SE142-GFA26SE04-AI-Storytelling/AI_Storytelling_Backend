@@ -138,6 +138,7 @@ public sealed class LearningBatchProcessor(IUnitOfWork uow, IAIStoryGenerationCl
                     if (code == "AI_PROVIDER_429" && options.QuotaRetryFloorSeconds > 0 &&
                         delay < TimeSpan.FromSeconds(options.QuotaRetryFloorSeconds))
                         delay = TimeSpan.FromSeconds(options.QuotaRetryFloorSeconds);
+                    if (ex is AIServiceRequestException { StatusCode: 429 }) gate.Defer(delay);
                     fresh.NextAttemptAt = fresh.Status == GenerationJobStatus.Pending ? DateTime.UtcNow.Add(delay) : null;
                     uow.Repository<LearningArtifactGenerationBatch>().Update(fresh);
                     await uow.CommitTransactionAsync(ct);

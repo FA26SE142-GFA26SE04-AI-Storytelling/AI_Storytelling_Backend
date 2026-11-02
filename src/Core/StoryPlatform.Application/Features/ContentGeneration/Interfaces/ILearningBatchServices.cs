@@ -20,6 +20,7 @@ public interface ILearningBatchProcessor
 public interface ILearningRequestGate
 {
     Task<IDisposable> EnterAsync(CancellationToken ct);
+    void Defer(TimeSpan delay) { }
 }
 public interface ILearningBatchService
 {

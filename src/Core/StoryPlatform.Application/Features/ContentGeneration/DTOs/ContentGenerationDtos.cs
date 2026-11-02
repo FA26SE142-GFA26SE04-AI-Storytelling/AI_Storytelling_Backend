@@ -38,6 +38,7 @@ public sealed class ContentGenerationProgressDto
     public string Vocabulary { get; init; } = "not_started";
     public string Quiz { get; init; } = "not_started";
     public string Listening { get; init; } = "not_started";
+    public IReadOnlyList<ListeningGenerationDetailDto> ListeningDetails { get; init; } = [];
     public bool IsComplete { get; init; }
     public bool WaitingForModeration { get; init; }
     public string? LastErrorCode { get; init; }
@@ -51,3 +52,6 @@ public sealed class ContentGenerationProgressDto
     public int CompletedLearningBatches { get; init; }
     public IReadOnlyList<string> LearningWarnings { get; init; } = [];
 }
+
+public sealed record ListeningGenerationDetailDto(string Type, string Status, int ProviderCalls, int ValidationFailures,
+    string? ErrorCode, string? ValidationCode, bool CanRetry, DateTime? NextRetryAt, int? RequiredCount, int SavedCount);

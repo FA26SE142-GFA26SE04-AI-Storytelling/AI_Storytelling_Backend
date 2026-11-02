@@ -61,6 +61,15 @@ public sealed partial class ContentGenerationService
             // This prevents a second worker from consuming a partially regenerated package.
             resume.Status = GenerationJobStatus.Pending; resume.AttemptNo = 0; resume.ErrorCode = null;
             resume.LeaseExpiresAt = resume.CompletedAt = null;
+            resume.NextAttemptAt = null;
+            if (resume.Operation == GenerationJobOperation.GenerateListeningInteraction)
+            {
+                var listening = ReadListeningState(resume.GenerationMetadataJson);
+                listening.ProviderCalls = listening.ValidationFailures = 0;
+                listening.PreviousErrors = [];
+                resume.GenerationMetadataJson = JsonSerializer.Serialize(listening, JsonOptions);
+                resume.MaxAttempts = 3;
+            }
             _unitOfWork.Repository<StoryGenerationJob>().Update(resume);
             RotateToken(resume);
             _unitOfWork.Repository<StoryGenerationJob>().Update(resume);

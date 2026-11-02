@@ -33,6 +33,7 @@ public sealed record EvaluationResultDto
     public bool ReadabilityPassed { get; init; }
     public bool VocabularyPassed { get; init; }
     public bool QuizPassed { get; init; } = true;
+    // Retained for legacy payloads; discussion is no longer an evaluation gate.
     public bool DiscussionPassed { get; init; } = true;
     public IReadOnlyList<string> Issues { get; init; } = [];
     public IReadOnlyList<EvaluationIssueDto> IssueDetails { get; init; } = [];
@@ -43,7 +44,7 @@ public sealed record EvaluationResultDto
         : "blocked";
     public string? FallbackMessage { get; init; }
 
-    public bool Passed => SchemaValid && SafetyPassed && ReadabilityPassed && VocabularyPassed && QuizPassed && DiscussionPassed;
+    public bool Passed => SchemaValid && SafetyPassed && ReadabilityPassed && VocabularyPassed && QuizPassed;
 }
 
 public sealed record EvaluationIssueDto

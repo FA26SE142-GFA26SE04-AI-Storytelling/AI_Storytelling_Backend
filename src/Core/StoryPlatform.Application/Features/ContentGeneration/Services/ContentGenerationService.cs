@@ -108,7 +108,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             .GroupBy(item => (item.Operation, item.ListeningInteractionType)).Select(group => group.OrderByDescending(item => item.Id).First())
             .Where(item => item.Status == GenerationJobStatus.Failed && (item.Operation switch
             {
-                GenerationJobOperation.GenerateContent => stable is null || item.ErrorCode == "CONTENT_ARTIFACT_HANDOFF_FAILED",
+                GenerationJobOperation.GenerateContent => stable is null || item.ErrorCode == "CONTENT_ARTIFACT_HANDOFF_FAILED" ||
+                    item.OperationKey?.StartsWith(RepairPrefix, StringComparison.Ordinal) == true && item.BaseStoryVersionId == stable.Id,
                 GenerationJobOperation.GenerateVocabulary => (!vocabularyDone || batches.Any(x => x.RootJobId == item.Id)) && item.StoryVersionId == stable?.Id,
                 GenerationJobOperation.GenerateQuiz => !quizDone && item.StoryVersionId == stable?.Id,
                 GenerationJobOperation.GenerateListeningInteraction => item.StoryVersionId == stable?.Id,
@@ -161,9 +162,10 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             CurrentStep = waiting ? "waiting_for_moderation" : active is not null
                     ? $"{(active.Status == GenerationJobStatus.Processing ? "generating" : "pending")}_{OperationName(active.Operation)}"
                     : isComplete ? "complete" : failed is not null ? $"failed_{OperationName(failed.Operation)}" : "not_started",
-            Content = stable is not null ? "stable" : JobState(jobs, GenerationJobOperation.GenerateContent),
-            Vocabulary = readingMediaOnly ? "skipped" : vocabularyDone ? "completed" : JobState(jobs, GenerationJobOperation.GenerateVocabulary),
-            Quiz = readingMediaOnly ? "skipped" : quizDone ? "completed" : JobState(jobs, GenerationJobOperation.GenerateQuiz),
+            Content = active?.Operation == GenerationJobOperation.GenerateContent ? (active.Status == GenerationJobStatus.Pending ? "pending" : "processing") :
+                failed?.Operation == GenerationJobOperation.GenerateContent ? "failed" : stable is not null ? "stable" : JobState(jobs, GenerationJobOperation.GenerateContent),
+            Vocabulary = readingMediaOnly ? "skipped" : vocabularyDone ? "completed" : JobState(jobs.Where(x => stable is not null && x.StoryVersionId == stable.Id), GenerationJobOperation.GenerateVocabulary),
+            Quiz = readingMediaOnly ? "skipped" : quizDone ? "completed" : JobState(jobs.Where(x => stable is not null && x.StoryVersionId == stable.Id), GenerationJobOperation.GenerateQuiz),
             Listening = readingMediaOnly ? "skipped" :
                 listeningJobs.Length == 0 ? (quizDone && contentComplete ? "skipped" : "not_started") :
                 listeningDone ? "completed" : JobState(listeningJobs, GenerationJobOperation.GenerateListeningInteraction),
@@ -191,6 +193,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         CancellationToken cancellationToken = default)
     {
         ValidateObject(input);
+        if (await TryQueueReadabilityRepairAsync(userId, storyId, input.RetryKey.Trim(), cancellationToken))
+            return await GetProgressAsync(userId, storyId, cancellationToken);
         if (await RetryStableHandoffAsync(userId, storyId, input.RetryKey.Trim(), cancellationToken))
             return await GetProgressAsync(userId, storyId, cancellationToken);
         if (_learningBatches is not null && await RetryLearningArtifactsAsync(userId, storyId, input.RetryKey.Trim(), cancellationToken))
@@ -416,11 +420,25 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         var refinement = 0;
         if (persistedCandidate is null)
         {
-            var response = await _aiClient.GenerateStoryContentAsync(
-                BuildContentRequest(handoff.Job, handoff.BaseVersion, handoff.Input, handoff.Context) with
-                { ExecutionBudgetSeconds = RemainingCallBudget(timer, 90) }, cancellationToken);
-            storyContent = response.Story;
-            metadata = response.Metadata;
+            if (handoff.Job.OperationKey?.StartsWith(RepairPrefix, StringComparison.Ordinal) == true)
+            {
+                if (_maxRefinementAttempts < 1) throw new InvalidOperationException("CONTENT_QUALITY_NOT_MET");
+                var source = ToContent(handoff.BaseVersion);
+                var quality = _qualityEvaluator.Evaluate(source, ToOutline(handoff.BaseVersion), handoff.Input, handoff.Context);
+                if (!quality.Safety.Passed && !quality.Safety.CanRefine) throw new ConflictException("CONTENT_SAFETY_BLOCKED");
+                var repaired = await RefineContentAsync(handoff, source, quality, 1, RemainingCallBudget(timer, 90), cancellationToken);
+                storyContent = repaired.Story;
+                metadata = repaired.Metadata;
+                refinement = 1;
+            }
+            else
+            {
+                var response = await _aiClient.GenerateStoryContentAsync(
+                    BuildContentRequest(handoff.Job, handoff.BaseVersion, handoff.Input, handoff.Context) with
+                    { ExecutionBudgetSeconds = RemainingCallBudget(timer, 90) }, cancellationToken);
+                storyContent = response.Story;
+                metadata = response.Metadata;
+            }
         }
         else
         {
@@ -430,9 +448,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                 : JsonSerializer.Deserialize<CandidateMetadataEnvelope>(handoff.Job.GenerationMetadataJson, JsonOptions);
             storyContent = storyContent with { Description = candidateEnvelope?.Description };
             metadata = candidateEnvelope?.Generation ?? new GenerationMetadataDto();
-            refinement = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
-                    item => item.StoryId == handoff.Job.StoryId && item.Content != null && item.EditType == VersionEditType.AiRefined,
-                    cancellationToken: cancellationToken)).Count;
+            refinement = candidateEnvelope?.RefinementAttempts ?? 0;
         }
 
         for (; ; )
@@ -526,30 +542,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                 throw new InvalidOperationException("CONTENT_QUALITY_NOT_MET");
 
             refinement++;
-            var refined = await _aiClient.RefineStoryContentAsync(new RefineStoryContentRequest
-            {
-                ExecutionBudgetSeconds = RemainingCallBudget(timer, 90),
-                Feedback = new ContentRefinementFeedback
-                {
-                    Readability = quality.ReadabilityDetails,
-                    CurrentWordCount = measuredWords,
-                    TargetWords = handoff.Input.TargetLength,
-                    MinimumWords = handoff.Context.LearningProfile?.MinimumWords ?? Math.Max(100, (int)Math.Floor(handoff.Input.TargetLength * .7)),
-                    MaximumWords = Constraints(handoff.Context).MaximumWords,
-                    FailedGateCodes = new[] { quality.Length, quality.Readability, quality.Safety, quality.OutlineConsistency, quality.VocabularyCompliance }
-                        .Where(x => !x.Passed && x.CanRefine && x.ReasonCode is not null).Select(x => x.ReasonCode!).ToArray()
-                },
-                RequestId = $"content-job-{handoff.Job.Id}-refine-{refinement}",
-                Story = storyContent,
-                Outline = ToOutline(handoff.BaseVersion),
-                AgeBand = handoff.Context.AgeBand,
-                ReadingLevel = handoff.Context.ReadingLevel.ToString(),
-                VocabularyLevel = handoff.Context.VocabularyLevel,
-                Language = handoff.Context.Language,
-                TargetLength = handoff.Input.TargetLength,
-                Constraints = Constraints(handoff.Context),
-                Reasons = quality.RefinementReasons
-            }, cancellationToken);
+            var refined = await RefineContentAsync(handoff, storyContent, quality, refinement, RemainingCallBudget(timer, 90), cancellationToken);
             storyContent = refined.Story;
             metadata = refined.Metadata;
         }
@@ -759,6 +752,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                 SafetyScore = quality.SafetyScore ?? (quality.Safety.Passed ? 1m : 0m),
                 IsCurrent = false
             };
+            candidate.BaseVersionId = handoff.BaseVersion.Id;
             await _unitOfWork.Repository<StoryVersion>().AddAsync(candidate, cancellationToken);
             var job = await _unitOfWork.Repository<StoryGenerationJob>().GetByIdAsync(handoff.Job.Id, cancellationToken);
             if (job is not null)
@@ -875,7 +869,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         if (request is null || request.Status != GenerationInputStatus.InputAccepted ||
             string.IsNullOrWhiteSpace(request.AcceptedInputJson) || string.IsNullOrWhiteSpace(request.ContextSnapshotJson) ||
             baseVersion is null || baseVersion.StoryId != job.StoryId || !baseVersion.IsCurrent ||
-            !baseVersion.OutlineApprovedAt.HasValue || baseVersion.Content is not null ||
+            !baseVersion.OutlineApprovedAt.HasValue ||
+            (baseVersion.Content is not null && job.OperationKey?.StartsWith(RepairPrefix, StringComparison.Ordinal) != true) ||
             story is null || story.Source != StorySource.Ai || story.Status != StoryStatus.OutlineReview)
             throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
         var input = JsonSerializer.Deserialize<AcceptedAIStoryInputSnapshot>(request.AcceptedInputJson, JsonOptions)
@@ -883,6 +878,14 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         var context = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(request.ContextSnapshotJson, JsonOptions)
                       ?? throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
         GenerationStoryAccess.ValidateSnapshot(story!, context);
+        if (job.OperationKey?.StartsWith(RepairPrefix, StringComparison.Ordinal) == true)
+        {
+            var fingerprint = ReadabilityEvaluationEvidence.Hash(baseVersion.Content ?? string.Empty);
+            if (!await _unitOfWork.Repository<StoryAuthoringOperation>().ExistsAsync(x => x.StoryId == job.StoryId &&
+                x.StoryVersionId == baseVersion.Id && x.ActorUserId == job.RequestedByUserId &&
+                x.Kind == "content-repair" && x.RequestHash == fingerprint, cancellationToken))
+                throw new ConflictException("STALE_REPAIR_SOURCE");
+        }
         return new ContentHandoff(job, request, baseVersion, input, context);
     }
 

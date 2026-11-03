@@ -153,11 +153,8 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
                     item => item.StoryId == story.Id, cancellationToken))
                 throw new ConflictException("OUTPUT_MODE_LOCKED: Story draft đã có generation job.");
             story.OutputMode = outputMode;
-            if (creator)
-            {
-                story.AgeBand = context.AgeBand; story.ReadingLevel = context.ReadingLevel;
-                story.Language = context.Language; story.VocabularyLevel = context.VocabularyLevel;
-            }
+            story.AgeBand = context.AgeBand; story.ReadingLevel = context.ReadingLevel;
+            story.Language = context.Language; story.VocabularyLevel = context.VocabularyLevel;
         }
         else
         {

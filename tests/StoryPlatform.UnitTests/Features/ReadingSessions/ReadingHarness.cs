@@ -38,6 +38,7 @@ public sealed class ReadingHarness
     public readonly List<QuizAttempt> Attempts = new();
     public readonly List<Achievement> Achievements = new();
     public readonly List<Badge> Badges = new();
+    public readonly List<KnowledgeTree> KnowledgeTrees = new();
     public readonly List<SafetyPolicy> Policies = new();
     public readonly List<SafetyPolicyCategory> PolicyCategories = new();
     public readonly List<StoryCategory> StoryCategories = new();
@@ -81,7 +82,7 @@ public sealed class ReadingHarness
         Back(CardMatches); Back(Suggestions); Back(LearningProfiles);
         Back(Children); Back(ChildSessions); Back(Stories); Back(Versions); Back(Scenes); Back(Segments);
         Back(Assets); Back(Sessions); Back(Progress); Back(Vocabulary); Back(Notebook); Back(Telemetry);
-        Back(Cases); Back(ModerationItems); Back(Quizzes); Back(Attempts); Back(Achievements); Back(Badges);
+        Back(Cases); Back(ModerationItems); Back(Quizzes); Back(Attempts); Back(Achievements); Back(Badges); Back(KnowledgeTrees);
         Back(Policies); Back(PolicyCategories); Back(StoryCategories); Back(RoadmapItems);
         Back(WishCards); Back(Categories);
         Back(StoryWishes); Back(Users); Back(Summaries); Back(SummaryFlags);

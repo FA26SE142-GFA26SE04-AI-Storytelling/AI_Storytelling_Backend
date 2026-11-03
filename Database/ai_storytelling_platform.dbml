@@ -549,6 +549,21 @@ Table achievements {
   }
 }
 
+Table knowledge_trees {
+  ChildProfileId int [not null]
+  CreatedAt timestamptz [not null]
+  CurrentTreeExp int [not null]
+  ExpInvested int [not null]
+  FloweredTreeCount int [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  LastWateredAt timestamptz
+  UpdatedAt timestamptz
+  Indexes {
+    ChildProfileId [unique]
+  }
+}
+
 Table ai_governance_metrics {
   ApprovalRate numeric(6,3)
   AvgLatencyMs int
@@ -2075,6 +2090,7 @@ Table vocabulary_notebook_entries {
   CreatedAt timestamptz [not null]
   Id int [pk, not null, increment]
   IsDeleted boolean [not null]
+  RemovedAt timestamptz
   StoryVocabularyId int [not null]
   UpdatedAt timestamptz
   Indexes {
@@ -2104,6 +2120,7 @@ Table wish_cards {
 }
 
 Ref: achievements.ChildProfileId > child_profiles.Id
+Ref: knowledge_trees.ChildProfileId > child_profiles.Id
 Ref: audit_logs.ActorUserId > user_accounts.Id
 Ref: authoring_guide_catalog_versions.CatalogId > authoring_guide_catalogs.Id
 Ref: authoring_guide_catalogs.DraftVersionId > authoring_guide_catalog_versions.Id

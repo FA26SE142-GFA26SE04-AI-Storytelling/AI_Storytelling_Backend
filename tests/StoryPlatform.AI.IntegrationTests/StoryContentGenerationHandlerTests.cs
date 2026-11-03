@@ -17,6 +17,39 @@ public sealed class StoryContentGenerationHandlerTests
     [Theory]
     [InlineData(900, 810, 990)]
     [InlineData(1500, 1350, 1650)]
+    public async Task Strict_Vietnamese_ease_controls_both_prompts_and_targeted_refinement(int target, int minimum, int maximum)
+    {
+        const string payload = """{"title":"A toy","storySections":[{"order":1,"heading":"Start","content":"Na repaired a toy."}],"lesson":"Be kind"}""";
+        var llm = new StubLlmClient(payload, payload);
+        var executor = new StoryContentGenerationExecutor(llm, Options.Create(new StoryContentGenerationOptions()));
+        var limits = ContentReadabilityLimits.ForLevel(3, 70m);
+        var constraints = new GenerationConstraintsDto { MinimumWords = minimum, MaximumWords = maximum, Readability = limits };
+        var generated = await new GenerateStoryContentHandler(executor, new StubPromptProvider()).HandleAsync(
+            ValidRequest() with { Language = "vi", Constraints = constraints });
+        var first = llm.LastPrompt;
+        await new RefineStoryContentHandler(executor, new StubPromptProvider()).HandleAsync(new()
+        {
+            RequestId = "repair-ease", Story = generated.Story, AgeBand = "6-8", Language = "vi",
+            TargetLength = target, Constraints = constraints, Reasons = ["Ease below minimum"],
+            Feedback = new() { CurrentWordCount = 898, TargetWords = target, MinimumWords = minimum, MaximumWords = maximum,
+                FailedGateCodes = ["CONTENT_READABILITY_NOT_MET"],
+                Readability = new("VI_READABILITY_V1", 2.43m, 65.11m, 11.51m, limits, 8, ["ease"]) }
+        });
+        foreach (var prompt in new[] { first, llm.LastPrompt })
+        {
+            Assert.Contains("about 8 lexical units per sentence", prompt);
+            Assert.Contains("ease >= 70", prompt);
+            Assert.Contains($"{minimum}-{maximum} Unicode lexical units", prompt);
+        }
+        Assert.Contains("ease=65.11 (minimum 70)", llm.LastPrompt);
+        Assert.Contains("Failed metrics: ease", llm.LastPrompt);
+        Assert.Contains("do not discard story content", llm.LastPrompt);
+        Assert.DoesNotContain("Remove approximately", llm.LastPrompt);
+    }
+
+    [Theory]
+    [InlineData(900, 810, 990)]
+    [InlineData(1500, 1350, 1650)]
     public async Task Generation_and_refinement_share_lexical_count_and_readability_instructions(int target, int minimum, int maximum)
     {
         const string payload = """{"title":"A toy","storySections":[{"order":1,"heading":"Start","content":"Na repaired a toy."}],"lesson":"Be kind"}""";

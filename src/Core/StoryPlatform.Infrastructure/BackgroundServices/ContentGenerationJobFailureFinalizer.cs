@@ -6,10 +6,20 @@ using StoryPlatform.Infrastructure.Persistence;
 
 namespace StoryPlatform.Infrastructure.BackgroundServices;
 
-public sealed class ContentGenerationJobFailureFinalizer : IContentGenerationJobFailureFinalizer
+public sealed class ContentGenerationJobFailureFinalizer : IContentGenerationJobFailureFinalizer, IContentGenerationJobLease
 {
     private readonly IServiceScopeFactory _scopeFactory;
     public ContentGenerationJobFailureFinalizer(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
+
+    public async Task<bool> RenewAsync(int jobId, string expectedToken, TimeSpan lease, CancellationToken ct)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var now = DateTime.UtcNow;
+        return await context.StoryGenerationJobs.Where(x => x.Id == jobId && x.Status == GenerationJobStatus.Processing &&
+            x.ConcurrencyToken == expectedToken && x.LeaseExpiresAt > now)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.LeaseExpiresAt, now.Add(lease)), ct) == 1;
+    }
 
     public async Task MarkFailedAsync(
         int jobId, string expectedConcurrencyToken, string errorCode, CancellationToken cancellationToken = default)

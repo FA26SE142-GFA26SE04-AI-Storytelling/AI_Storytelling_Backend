@@ -94,7 +94,8 @@ public sealed class VertexAIGeminiClient : ILlmClient
             HttpOptions = new HttpOptions { Timeout = checked(_options.TimeoutSeconds * 1000) }
         };
         // Content executor owns retry/backoff; SDK retries would consume its budget invisibly.
-        if (schemaName is "story_content" or "refined_story_content" or "content_safety")
+        if (schemaName is "story_content" or "refined_story_content" or "content_safety" ||
+            schemaName.StartsWith("listening_", StringComparison.Ordinal))
             config.HttpOptions.RetryOptions = new HttpRetryOptions { Attempts = 1 };
         if (IsSensitiveSchema(schemaName))
         {

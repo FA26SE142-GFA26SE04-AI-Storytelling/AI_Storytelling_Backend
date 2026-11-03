@@ -24,12 +24,27 @@ public sealed class LearningBatchRunner(IServiceScopeFactory scopes, LearningBat
 
 public sealed class LearningRequestGate(LearningBatchOptions options) : ILearningRequestGate, IDisposable
 {
+    private long _notBeforeTicks;
+    public void Defer(TimeSpan delay)
+    {
+        if (delay <= TimeSpan.Zero) return;
+        var target = DateTime.UtcNow.AddSeconds(Math.Clamp(delay.TotalSeconds, 1, 86400)).Ticks;
+        long current;
+        do { current = Interlocked.Read(ref _notBeforeTicks); if (target <= current) return; }
+        while (Interlocked.CompareExchange(ref _notBeforeTicks, target, current) != current);
+    }
     private readonly SemaphoreSlim _slots = new(Math.Clamp(options.MaxConcurrentRequests, 1, 8));
     private readonly MediaRequestRateLimiter _rate = new(new MediaGenerationOptions { RateLimit = new() { RequestsPerMinute = options.RequestsPerMinute, BurstSize = options.BurstSize } });
     public async Task<IDisposable> EnterAsync(CancellationToken ct)
     {
         await _slots.WaitAsync(ct);
-        try { await _rate.WaitAsync(ct); return new Permit(_slots); }
+        try
+        {
+            await _rate.WaitAsync(ct);
+            while (Interlocked.Read(ref _notBeforeTicks) - DateTime.UtcNow.Ticks is var ticks && ticks > 0)
+                await Task.Delay(TimeSpan.FromTicks(ticks), ct);
+            return new Permit(_slots);
+        }
         catch { _slots.Release(); throw; }
     }
     private sealed class Permit(SemaphoreSlim slots) : IDisposable

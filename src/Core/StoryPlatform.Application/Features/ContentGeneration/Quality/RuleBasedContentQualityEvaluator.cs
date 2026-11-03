@@ -39,7 +39,7 @@ public sealed partial class RuleBasedContentQualityEvaluator : IContentQualityEv
         var safety = Gate(safetyPassed, false, "CONTENT_SAFETY_BLOCKED", safetyReason);
 
         var readabilityResult = ReadabilityCalculator.EvaluateForProfile(
-            content,
+            CanonicalStoryContent.Render(story),
             context.Language,
             context.ReadingLevel,
             context.ReadabilityScoreThreshold);
@@ -56,7 +56,17 @@ public sealed partial class RuleBasedContentQualityEvaluator : IContentQualityEv
             $"Độ dài từ trung bình {averageWordLength:F1} chưa phù hợp {context.VocabularyLevel}.");
 
         var passed = outline.Passed && length.Passed && safety.Passed && readability.Passed && vocabulary.Passed;
-        return new ContentQualityResult(passed, outline, length, safety, readability, vocabulary, safetyPassed ? 1m : 0m);
+        var limits = ContentReadabilityLimits.ForLevel(context.ReadingLevel, context.ReadabilityScoreThreshold);
+        var metrics = readabilityResult.Metrics;
+        var failedMetrics = new List<string>();
+        if (metrics.Fkgl is null || metrics.Fkgl > limits.MaximumGradeLevel) failedMetrics.Add("grade");
+        if (metrics.Fre is null || metrics.Fre < limits.MinimumEaseScore) failedMetrics.Add("ease");
+        if (metrics.AverageWordsPerSentence > limits.MaximumAverageWordsPerSentence) failedMetrics.Add("average_words_per_sentence");
+        return new ContentQualityResult(passed, outline, length, safety, readability, vocabulary, safetyPassed ? 1m : 0m)
+        {
+            ReadabilityDetails = new(metrics.Algorithm, metrics.Fkgl, metrics.Fre,
+                metrics.AverageWordsPerSentence, limits, limits.SentenceTarget(context.Language), failedMetrics)
+        };
     }
 
     private static ContentQualityGate Gate(bool passed, bool canRefine, string code, string violation) =>

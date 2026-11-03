@@ -5,6 +5,29 @@ namespace StoryPlatform.UnitTests;
 
 public sealed class ReadabilityCalculatorTests
 {
+    [Theory]
+    [InlineData(45, 12)]
+    [InlineData(70, 8)]
+    [InlineData(80, 5)]
+    public void Vietnamese_sentence_guidance_accounts_for_configured_ease(int ease, int target)
+    {
+        var limits = StoryPlatform.Contracts.AI.Models.ContentReadabilityLimits.ForLevel(3, ease);
+        Assert.Equal(target, limits.SentenceTarget("vi-VN"));
+        Assert.Equal(12, limits.SentenceTarget("en"));
+        Assert.Equal(ease, limits.MinimumEaseScore);
+    }
+
+    [Fact]
+    public void Ease_can_fail_even_when_grade_and_sentence_length_pass()
+    {
+        var result = ReadabilityCalculator.EvaluateForProfile(
+            string.Join(' ', Enumerable.Repeat("Lan và Minh cùng chia sẻ sách rồi đi chơi ở sân.", 75)), "vi", 3, 70m);
+        Assert.True(result.Metrics.Fkgl <= result.MaximumGradeLevel);
+        Assert.True(result.Metrics.AverageWordsPerSentence <= result.MaximumAverageWordsPerSentence);
+        Assert.True(result.Metrics.Fre < result.MinimumEaseScore);
+        Assert.False(result.Passed);
+    }
+
     [Fact]
     public void Vietnamese_content_produces_versioned_grade_and_ease_metrics()
     {

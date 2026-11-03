@@ -15,6 +15,9 @@ namespace StoryPlatform.Infrastructure.AI;
 /// </summary>
 public sealed class GeminiDirectClient : IAIStoryGenerationClient
 {
+    public Task<GenerateListeningInteractionResponse> GenerateListeningInteractionAsync(GenerateListeningInteractionRequest request,
+        CancellationToken cancellationToken = default) =>
+        throw new AIServiceRequestException(501, "LISTENING_PROVIDER_UNSUPPORTED", "Use the AI Service for listening generation.");
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
     private readonly string _model;

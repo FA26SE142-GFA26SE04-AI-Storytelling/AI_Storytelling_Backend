@@ -5,6 +5,9 @@ namespace StoryPlatform.Application.Abstractions.AI;
 
 public interface IAIStoryGenerationClient
 {
+    Task<StoryPlatform.Contracts.AI.Models.ListeningPromptSnapshotDto> GetListeningPromptSnapshotAsync(
+        string interactionType, string ageBand, string language, CancellationToken cancellationToken = default) =>
+        throw new AIServiceRequestException(501, "LISTENING_PROVIDER_UNSUPPORTED", "Listening snapshots are not supported by this client.");
     Task<GenerateOutlineResponse> GenerateOutlineAsync(GenerateOutlineRequest request, CancellationToken cancellationToken = default);
     Task<GenerateStoryResponse> GenerateStoryAsync(GenerateStoryRequest request, CancellationToken cancellationToken = default);
     Task<RefineStoryResponse> RefineStoryAsync(RefineStoryRequest request, CancellationToken cancellationToken = default);

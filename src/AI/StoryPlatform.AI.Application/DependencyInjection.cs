@@ -24,6 +24,7 @@ public static class DependencyInjection
         services.AddScoped<RefineStoryContentHandler>();
         services.AddScoped<GenerateVocabularyHandler>();
         services.AddScoped<GenerateQuizHandler>();
+        services.AddScoped<GenerateListeningInteractionHandler>();
         services.AddScoped<EvaluateContentSafetyHandler>();
         return services;
     }

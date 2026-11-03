@@ -123,6 +123,7 @@ public static class DependencyInjection
         configuration.GetSection(ContentGenerationOptions.SectionName).Bind(contentOptions);
         services.AddSingleton(contentOptions);
         services.AddSingleton<IContentGenerationJobFailureFinalizer, ContentGenerationJobFailureFinalizer>();
+        services.AddSingleton<IContentGenerationJobLease>(sp => (ContentGenerationJobFailureFinalizer)sp.GetRequiredService<IContentGenerationJobFailureFinalizer>());
         services.AddHostedService<ContentGenerationWorker>();
 
         services.Configure<MediaGenerationOptions>(configuration.GetSection(MediaGenerationOptions.SectionName));

@@ -18,6 +18,27 @@ namespace StoryPlatform.UnitTests.Infrastructure.AI;
 
 public sealed class GeminiImageGenerationProviderTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Prompt_requires_text_free_artwork_for_scene_and_regenerated_beat(bool beat)
+    {
+        string? prompt = null;
+        var handler = new MockHttpMessageHandler(async (request, ct) =>
+        {
+            using var doc = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+            prompt = doc.RootElement.GetProperty("contents")[0].GetProperty("parts")[0].GetProperty("text").GetString();
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(CreateGeminiImageResponseJson(ValidPngBytes)) };
+        });
+        var spec = CreateTestSpec() with { PromptFeedback = "Add the story paragraph as a caption." };
+        if (beat) spec = spec with { BeatText = "Bé thỏ đọc sách.", BeatVisualFocus = "A rabbit holding a book." };
+        await CreateProvider(handler).GenerateAsync(spec);
+        Assert.Contains("no visible text in any language", prompt);
+        Assert.Contains("never text to print inside the image", prompt);
+        Assert.Contains("Keep books, signs and clothing blank", prompt);
+        Assert.True(prompt!.LastIndexOf("TEXT-FREE ILLUSTRATION", StringComparison.Ordinal) >
+            prompt.IndexOf("Add the story paragraph", StringComparison.Ordinal));
+    }
     private static readonly byte[] ValidPngBytes = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x00];
 
     private static SceneSpecification CreateTestSpec() => new(

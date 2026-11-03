@@ -12,6 +12,31 @@ namespace StoryPlatform.UnitTests.Infrastructure.AI;
 
 public sealed class GeminiMediaEvaluatorTests
 {
+    [Theory]
+    [InlineData("true", "ILLUSTRATION_CONTAINS_TEXT")]
+    [InlineData("null", "ILLUSTRATION_TEXT_CHECK_MISSING")]
+    [InlineData("\"false\"", "ILLUSTRATION_TEXT_CHECK_MISSING")]
+    public async Task Text_is_rejected_even_when_visual_alignment_score_is_high(string flag, string reason)
+    {
+        var handler = new MockHandler((_, _) => Task.FromResult(JsonResponse(
+            "{\"alignmentScore\":1.0,\"containsVisibleText\":" + flag + ",\"reason\":\"Perfect match\"}")));
+        var evaluator = new GeminiMediaAlignmentEvaluator(new HttpClient(handler), Options.Create(new GeminiOptions()),
+            Options.Create(Vertex()), Options.Create(new MediaEvaluationOptions()), NullLogger<GeminiMediaAlignmentEvaluator>.Instance);
+        var result = await evaluator.EvaluateAsync(Specification, Illustration);
+        Assert.False(result.Passed);
+        Assert.Equal(reason, result.Reason);
+    }
+
+    [Fact]
+    public async Task Missing_text_inspection_cannot_pass_on_score_alone()
+    {
+        var handler = new MockHandler((_, _) => Task.FromResult(JsonResponse("{\"alignmentScore\":1.0,\"reason\":\"Matches\"}")));
+        var evaluator = new GeminiMediaAlignmentEvaluator(new HttpClient(handler), Options.Create(new GeminiOptions()),
+            Options.Create(Vertex()), Options.Create(new MediaEvaluationOptions()), NullLogger<GeminiMediaAlignmentEvaluator>.Instance);
+        var result = await evaluator.EvaluateAsync(Specification, Illustration);
+        Assert.False(result.Passed);
+        Assert.Equal("ILLUSTRATION_TEXT_CHECK_MISSING", result.Reason);
+    }
     private static readonly SceneSpecification Specification = new(
         1, 1, 0, "Lan giúp một chú chim nhỏ.", "Lan đứng cạnh chú chim trong khu vườn.", "{}",
         ["Lan", "chú chim"], ["bạo lực"], null);
@@ -25,7 +50,7 @@ public sealed class GeminiMediaEvaluatorTests
         var handler = new MockHandler(async (request, cancellationToken) =>
         {
             requestBody = await request.Content!.ReadAsStringAsync(cancellationToken);
-            return JsonResponse("{\"alignmentScore\":0.92,\"reason\":\"Matches the scene\"}");
+            return JsonResponse("{\"containsVisibleText\":false,\"alignmentScore\":0.92,\"reason\":\"Matches the scene\"}");
         });
         var evaluator = new GeminiMediaAlignmentEvaluator(
             new HttpClient(handler), Options.Create(new GeminiOptions()), Options.Create(Vertex()),
@@ -36,6 +61,7 @@ public sealed class GeminiMediaEvaluatorTests
         Assert.True(result.Passed);
         using var body = JsonDocument.Parse(requestBody!);
         var parts = body.RootElement.GetProperty("contents")[0].GetProperty("parts");
+        Assert.Contains("Inspect the actual image for visible writing", parts[0].GetProperty("text").GetString());
         Assert.Equal("image/png", parts[1].GetProperty("inlineData").GetProperty("mimeType").GetString());
         Assert.Equal(Convert.ToBase64String(Illustration.Content),
             parts[1].GetProperty("inlineData").GetProperty("data").GetString());
@@ -59,7 +85,7 @@ public sealed class GeminiMediaEvaluatorTests
     public async Task AlignmentEvaluator_parses_string_number_score()
     {
         var handler = new MockHandler((request, cancellationToken) =>
-            Task.FromResult(JsonResponse("{\"alignmentScore\":\"0.85\",\"reason\":\"Matches the scene nicely\"}")));
+            Task.FromResult(JsonResponse("{\"containsVisibleText\":false,\"alignmentScore\":\"0.85\",\"reason\":\"Matches the scene nicely\"}")));
         var evaluator = new GeminiMediaAlignmentEvaluator(
             new HttpClient(handler), Options.Create(new GeminiOptions()), Options.Create(Vertex()),
             Options.Create(new MediaEvaluationOptions()), NullLogger<GeminiMediaAlignmentEvaluator>.Instance);
@@ -74,7 +100,7 @@ public sealed class GeminiMediaEvaluatorTests
     public async Task AlignmentEvaluator_parses_snake_case_alignment_score()
     {
         var handler = new MockHandler((request, cancellationToken) =>
-            Task.FromResult(JsonResponse("{\"alignment_score\":0.78,\"explanation\":\"Good portrayal\"}")));
+            Task.FromResult(JsonResponse("{\"containsVisibleText\":false,\"alignment_score\":0.78,\"explanation\":\"Good portrayal\"}")));
         var evaluator = new GeminiMediaAlignmentEvaluator(
             new HttpClient(handler), Options.Create(new GeminiOptions()), Options.Create(Vertex()),
             Options.Create(new MediaEvaluationOptions()), NullLogger<GeminiMediaAlignmentEvaluator>.Instance);
@@ -89,7 +115,7 @@ public sealed class GeminiMediaEvaluatorTests
     public async Task AlignmentEvaluator_parses_string_pass_as_successful()
     {
         var handler = new MockHandler((request, cancellationToken) =>
-            Task.FromResult(JsonResponse("{\"score\":\"Pass\",\"alignmentReason\":\"Characters look accurate\"}")));
+            Task.FromResult(JsonResponse("{\"containsVisibleText\":false,\"score\":\"Pass\",\"alignmentReason\":\"Characters look accurate\"}")));
         var evaluator = new GeminiMediaAlignmentEvaluator(
             new HttpClient(handler), Options.Create(new GeminiOptions()), Options.Create(Vertex()),
             Options.Create(new MediaEvaluationOptions()), NullLogger<GeminiMediaAlignmentEvaluator>.Instance);
@@ -104,7 +130,7 @@ public sealed class GeminiMediaEvaluatorTests
     public async Task AlignmentEvaluator_passes_score_at_70_percent_threshold()
     {
         var handler = new MockHandler((request, cancellationToken) =>
-            Task.FromResult(JsonResponse("{\"alignmentScore\":0.70,\"reason\":\"Acceptable alignment\"}")));
+            Task.FromResult(JsonResponse("{\"containsVisibleText\":false,\"alignmentScore\":0.70,\"reason\":\"Acceptable alignment\"}")));
         var evaluator = new GeminiMediaAlignmentEvaluator(
             new HttpClient(handler), Options.Create(new GeminiOptions()), Options.Create(Vertex()),
             Options.Create(new MediaEvaluationOptions()), NullLogger<GeminiMediaAlignmentEvaluator>.Instance);
@@ -118,7 +144,7 @@ public sealed class GeminiMediaEvaluatorTests
     public async Task AlignmentEvaluator_fails_score_below_70_percent()
     {
         var handler = new MockHandler((request, cancellationToken) =>
-            Task.FromResult(JsonResponse("{\"alignmentScore\":0.55,\"reason\":\"Characters mismatch\"}")));
+            Task.FromResult(JsonResponse("{\"containsVisibleText\":false,\"alignmentScore\":0.55,\"reason\":\"Characters mismatch\"}")));
         var evaluator = new GeminiMediaAlignmentEvaluator(
             new HttpClient(handler), Options.Create(new GeminiOptions()), Options.Create(Vertex()),
             Options.Create(new MediaEvaluationOptions()), NullLogger<GeminiMediaAlignmentEvaluator>.Instance);
@@ -133,7 +159,7 @@ public sealed class GeminiMediaEvaluatorTests
     public async Task AlignmentEvaluator_missing_score_with_positive_reasoning_falls_back_to_pass()
     {
         var handler = new MockHandler((request, cancellationToken) =>
-            Task.FromResult(JsonResponse("{\"reason\":\"The illustration matches key elements from the story scene.\"}")));
+            Task.FromResult(JsonResponse("{\"containsVisibleText\":false,\"reason\":\"The illustration matches key elements from the story scene.\"}")));
         var evaluator = new GeminiMediaAlignmentEvaluator(
             new HttpClient(handler), Options.Create(new GeminiOptions()), Options.Create(Vertex()),
             Options.Create(new MediaEvaluationOptions()), NullLogger<GeminiMediaAlignmentEvaluator>.Instance);
@@ -146,7 +172,7 @@ public sealed class GeminiMediaEvaluatorTests
     [Fact]
     public async Task AlignmentEvaluator_parses_fenced_json_with_additional_commentary()
     {
-        var markdownText = "Here is my evaluation:\n```json\n{\n  \"alignmentScore\": 0.95,\n  \"reason\": \"Perfect match\"\n}\n```\nHope this helps!";
+        var markdownText = "Here is my evaluation:\n```json\n{\n  \"containsVisibleText\": false,\n  \"alignmentScore\": 0.95,\n  \"reason\": \"Perfect match\"\n}\n```\nHope this helps!";
         var handler = new MockHandler((request, cancellationToken) =>
             Task.FromResult(JsonResponse(markdownText)));
         var evaluator = new GeminiMediaAlignmentEvaluator(

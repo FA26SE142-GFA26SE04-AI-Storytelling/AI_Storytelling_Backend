@@ -37,7 +37,7 @@ public class TokenQuotaServiceTests
 
     private static StoryPlatform.Domain.Entities.TokenQuotaConfig MakeConfig(
         TokenQuotaScope scope, int quotaLimit, int quotaUsed,
-        int? childProfileId = null, int? userId = null,
+        int? userId = null,
         DateOnly? periodStart = null, DateOnly? periodEnd = null)
     {
         var start = periodStart ?? DateOnly.FromDateTime(DateTime.UtcNow);
@@ -46,7 +46,6 @@ public class TokenQuotaServiceTests
         {
             Id = 1,
             Scope = scope,
-            ChildProfileId = childProfileId,
             UserId = userId,
             QuotaLimit = quotaLimit,
             QuotaUsed = quotaUsed,
@@ -80,32 +79,32 @@ public class TokenQuotaServiceTests
     }
 
     [Fact]
-    public async Task EnsureWithinQuotaAsync_ChildConfigAtLimit_ThrowsConflict()
+    public async Task EnsureWithinQuotaAsync_PersonalConfigAtLimit_ThrowsConflict()
     {
         SetupChild(MakePersonalChild());
-        SetupConfigLookup(MakeConfig(TokenQuotaScope.Child, quotaLimit: 5, quotaUsed: 5, childProfileId: 1));
+        SetupConfigLookup(MakeConfig(TokenQuotaScope.Personal, quotaLimit: 5, quotaUsed: 5, userId: 1));
 
         await Assert.ThrowsAsync<ConflictException>(() => _sut.EnsureWithinQuotaAsync(1));
     }
 
     [Fact]
-    public async Task EnsureWithinQuotaAsync_ChildConfigUnderLimit_DoesNotThrow()
+    public async Task EnsureWithinQuotaAsync_PersonalConfigUnderLimit_DoesNotThrow()
     {
         SetupChild(MakePersonalChild());
-        SetupConfigLookup(MakeConfig(TokenQuotaScope.Child, quotaLimit: 5, quotaUsed: 4, childProfileId: 1));
+        SetupConfigLookup(MakeConfig(TokenQuotaScope.Personal, quotaLimit: 5, quotaUsed: 4, userId: 1));
 
         await _sut.EnsureWithinQuotaAsync(1);
     }
 
     [Fact]
-    public async Task EnsureWithinQuotaAsync_ChildConfigTakesPriorityOverPersonalConfig()
+    public async Task EnsureWithinQuotaAsync_PersonalConfigTakesPriorityOverSystemConfig()
     {
         SetupChild(MakePersonalChild(ownerUserId: 7));
         SetupConfigLookup(
-            MakeConfig(TokenQuotaScope.Child, quotaLimit: 5, quotaUsed: 1, childProfileId: 1),
-            MakeConfig(TokenQuotaScope.Personal, quotaLimit: 1, quotaUsed: 1, userId: 7));
+            MakeConfig(TokenQuotaScope.Personal, quotaLimit: 5, quotaUsed: 1, userId: 7),
+            MakeConfig(TokenQuotaScope.System, quotaLimit: 1, quotaUsed: 1));
 
-        await _sut.EnsureWithinQuotaAsync(1); // child config (1/5) wins, not the exhausted personal config
+        await _sut.EnsureWithinQuotaAsync(1);
     }
 
     [Fact]
@@ -115,6 +114,21 @@ public class TokenQuotaServiceTests
         SetupConfigLookup(MakeConfig(TokenQuotaScope.Personal, quotaLimit: 1, quotaUsed: 1, userId: 7));
 
         await Assert.ThrowsAsync<ConflictException>(() => _sut.EnsureWithinQuotaAsync(1));
+    }
+
+    [Fact]
+    public async Task PersonalQuota_IsSharedByTwoChildrenOfTheSameOwner()
+    {
+        SetupChild(MakePersonalChild(id: 1, ownerUserId: 7));
+        SetupChild(MakePersonalChild(id: 2, ownerUserId: 7));
+        var config = MakeConfig(TokenQuotaScope.Personal, quotaLimit: 1, quotaUsed: 0, userId: 7);
+        SetupConfigLookup(config);
+
+        await _sut.EnsureWithinQuotaAsync(1);
+        await _sut.IncrementUsageAsync(1);
+
+        Assert.Equal(1, config.QuotaUsed);
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.EnsureWithinQuotaAsync(2));
     }
 
     [Fact]
@@ -136,7 +150,7 @@ public class TokenQuotaServiceTests
         SetupChild(MakePersonalChild());
         var yesterday = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1);
         var config = MakeConfig(
-            TokenQuotaScope.Child, quotaLimit: 5, quotaUsed: 5, childProfileId: 1,
+            TokenQuotaScope.Personal, quotaLimit: 5, quotaUsed: 5, userId: 1,
             periodStart: yesterday.AddDays(-30), periodEnd: yesterday);
         SetupConfigLookup(config);
 
@@ -161,7 +175,7 @@ public class TokenQuotaServiceTests
         SetupChild(MakePersonalChild());
         var yesterday = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1);
         var config = MakeConfig(
-            TokenQuotaScope.Child, quotaLimit: 5, quotaUsed: 5, childProfileId: 1,
+            TokenQuotaScope.Personal, quotaLimit: 5, quotaUsed: 5, userId: 1,
             periodStart: yesterday.AddDays(-30), periodEnd: yesterday);
         SetupConfigLookup(config);
 
@@ -190,7 +204,7 @@ public class TokenQuotaServiceTests
     public async Task IncrementUsageAsync_WithApplicableConfig_IncrementsQuotaUsedByOne()
     {
         SetupChild(MakePersonalChild());
-        var config = MakeConfig(TokenQuotaScope.Child, quotaLimit: 5, quotaUsed: 2, childProfileId: 1);
+        var config = MakeConfig(TokenQuotaScope.Personal, quotaLimit: 5, quotaUsed: 2, userId: 1);
         SetupConfigLookup(config);
 
         await _sut.IncrementUsageAsync(1);
@@ -252,12 +266,15 @@ public class TokenQuotaServiceTests
 
     // ---------- SetConfigAsync ----------
 
-    [Fact]
-    public async Task SetConfigAsync_InvalidScopeString_ThrowsBadRequest()
+    [Theory]
+    [InlineData("not-a-scope")]
+    [InlineData("Child")]
+    [InlineData("3")]
+    public async Task SetConfigAsync_InvalidScopeString_ThrowsBadRequest(string scope)
     {
         await Assert.ThrowsAsync<BadRequestException>(() => _sut.SetConfigAsync(1, new SetTokenQuotaConfigRequestDto
         {
-            Scope = "not-a-scope", QuotaLimit = 10,
+            Scope = scope, QuotaLimit = 10,
             PeriodStart = DateOnly.FromDateTime(DateTime.UtcNow),
             PeriodEnd = DateOnly.FromDateTime(DateTime.UtcNow).AddMonths(1)
         }));
@@ -315,13 +332,13 @@ public class TokenQuotaServiceTests
     [Fact]
     public async Task SetConfigAsync_ExistingConfigForSameTarget_UpdatesInPlace()
     {
-        var existing = MakeConfig(TokenQuotaScope.Child, quotaLimit: 5, quotaUsed: 2, childProfileId: 3);
+        var existing = MakeConfig(TokenQuotaScope.Personal, quotaLimit: 5, quotaUsed: 2, userId: 3);
         SetupConfigLookup(existing);
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var result = await _sut.SetConfigAsync(99, new SetTokenQuotaConfigRequestDto
         {
-            Scope = "Child", ChildProfileId = 3, QuotaLimit = 20, PeriodStart = today, PeriodEnd = today.AddMonths(1)
+            Scope = "Personal", UserId = 3, QuotaLimit = 20, PeriodStart = today, PeriodEnd = today.AddMonths(1)
         });
 
         Assert.Equal(20, existing.QuotaLimit);
@@ -337,7 +354,7 @@ public class TokenQuotaServiceTests
         var configs = new[]
         {
             MakeConfig(TokenQuotaScope.System, quotaLimit: 1000, quotaUsed: 1),
-            MakeConfig(TokenQuotaScope.Child, quotaLimit: 5, quotaUsed: 0, childProfileId: 3)
+            MakeConfig(TokenQuotaScope.Personal, quotaLimit: 5, quotaUsed: 0, userId: 3)
         };
         _configRepository
             .Setup(r => r.FindAsync(
@@ -382,7 +399,7 @@ public class TokenQuotaServiceTests
         SetupChild(MakePersonalChild(ownerUserId: 1));
         _userRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new UserAccount { Id = 1, Role = UserRole.User });
-        SetupConfigLookup(MakeConfig(TokenQuotaScope.Child, quotaLimit: 10, quotaUsed: 4, childProfileId: 1));
+        SetupConfigLookup(MakeConfig(TokenQuotaScope.Personal, quotaLimit: 10, quotaUsed: 4, userId: 1));
 
         var result = await _sut.GetStatusForChildAsync(1, 1);
 

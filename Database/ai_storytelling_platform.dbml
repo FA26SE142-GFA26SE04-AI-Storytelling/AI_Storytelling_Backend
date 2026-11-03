@@ -418,7 +418,6 @@ Enum TelemetryEventType {
 
 Enum TokenQuotaScope {
   System
-  Child
   Personal
 }
 
@@ -1894,7 +1893,6 @@ Table telemetry_logs {
 }
 
 Table token_quota_configs {
-  ChildProfileId int
   CreatedAt timestamptz [not null]
   Id int [pk, not null, increment]
   IsDeleted boolean [not null]
@@ -1906,7 +1904,6 @@ Table token_quota_configs {
   UpdatedAt timestamptz
   UserId int
   Indexes {
-    ChildProfileId
     UserId
   }
 }
@@ -2147,7 +2144,6 @@ Ref: story_wishes.GeneratedStoryId > stories.Id
 Ref: story_wishes.LessonCardId > wish_cards.Id
 Ref: story_wishes.PlaceCardId > wish_cards.Id
 Ref: telemetry_logs.ReadingSessionId > reading_sessions.Id
-Ref: token_quota_configs.ChildProfileId > child_profiles.Id
 Ref: token_quota_configs.UserId > user_accounts.Id
 Ref: vocabulary_notebook_entries.ChildProfileId > child_profiles.Id
 Ref: vocabulary_notebook_entries.StoryVocabularyId > story_vocabulary.Id

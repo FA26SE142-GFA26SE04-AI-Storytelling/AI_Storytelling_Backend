@@ -3,7 +3,6 @@ namespace StoryPlatform.Application.Features.TokenQuota.DTOs;
 public class SetTokenQuotaConfigRequestDto
 {
     public string Scope { get; set; } = string.Empty;
-    public int? ChildProfileId { get; set; }
     public int? UserId { get; set; }
     public int QuotaLimit { get; set; }
     public DateOnly PeriodStart { get; set; }
@@ -14,7 +13,6 @@ public class TokenQuotaConfigDto
 {
     public int Id { get; set; }
     public string Scope { get; set; } = string.Empty;
-    public int? ChildProfileId { get; set; }
     public int? UserId { get; set; }
     public int QuotaLimit { get; set; }
     public int QuotaUsed { get; set; }

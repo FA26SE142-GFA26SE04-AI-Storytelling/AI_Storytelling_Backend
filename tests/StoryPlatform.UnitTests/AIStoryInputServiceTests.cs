@@ -168,6 +168,7 @@ public sealed partial class AIStoryInputServiceTests
         var unitOfWork = CreateEligibleUnitOfWork(blockedTerm: "bạo lực");
         var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
         var blocked = await service.SubmitAsync(1, ValidRequest(topic: "Một câu chuyện bạo lực"));
+        unitOfWork.Items<LearningProfile>().Single().ReadingLevel = 3;
         var next = new SubmitAIStoryInputRequestDto
         {
             ChildProfileId = 1, ExistingStoryId = blocked.StoryId, IdempotencyKey = "operation-0002",
@@ -181,6 +182,7 @@ public sealed partial class AIStoryInputServiceTests
         Assert.Equal(blocked.StoryId, accepted.StoryId);
         Assert.Equal("reading_media_only", accepted.OutputMode);
         Assert.Equal(StoryOutputMode.ReadingMediaOnly, unitOfWork.Items<Story>().Single().OutputMode);
+        Assert.Equal(3, unitOfWork.Items<Story>().Single().ReadingLevel);
     }
 
     [Fact]

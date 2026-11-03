@@ -17,11 +17,259 @@ using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.UnitTests.Features.ListeningInteractions;
 using Xunit;
+using StoryPlatform.Application.Common.Exceptions;
 
 namespace StoryPlatform.UnitTests;
 
 public sealed class ContentGenerationServiceTests
 {
+    private static FakeUnitOfWork RepairSource()
+    {
+        var store = Seed();
+        var story = store.Items<Story>().Single();
+        story.Status = StoryStatus.ContentReview; story.ReadingLevel = 3; story.Language = "vi";
+        var version = store.Items<StoryVersion>().Single();
+        version.Content = string.Join(' ', Enumerable.Repeat("Lan và Minh cùng chia sẻ sách rồi đi chơi ở sân.", 12));
+        var job = store.Items<StoryGenerationJob>().Single();
+        job.Status = GenerationJobStatus.Completed; job.Stage = JobStage.ContentStable; job.StoryVersionId = version.Id;
+        var request = store.Items<StoryGenerationRequest>().Single();
+        var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var context = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(request.ContextSnapshotJson, json)!;
+        request.ContextSnapshotJson = JsonSerializer.Serialize(context with { ReadingLevel = 3, ReadabilityScoreThreshold = 70m }, json);
+        var input = JsonSerializer.Deserialize<AcceptedAIStoryInputSnapshot>(request.AcceptedInputJson!, json)!;
+        request.AcceptedInputJson = JsonSerializer.Serialize(input with { TargetLength = 100 }, json);
+        store.Seed(new SafetyPolicy { Id = 1, ChildProfileId = 1, ConsentRecorded = true, ConsentRecordedAt = DateTime.UtcNow,
+            ConsentPolicyVersion = 1, ReadabilityScoreThreshold = 70m });
+        return store;
+    }
+
+    [Fact]
+    public async Task Retry_repairs_legacy_content_without_overwriting_source_or_copying_artifacts()
+    {
+        var store = RepairSource(); var ai = new RepairAI();
+        var source = store.Items<StoryVersion>().Single(); var original = source.Content;
+        store.Seed(new StoryVocabulary { Id = 1, StoryVersionId = source.Id, Term = "sách", Definition = "Đồ để đọc" });
+        var service = new ContentGenerationService(store, ai, new RuleBasedContentQualityEvaluator(), new FakeFailureFinalizer(store),
+            new RecordingHandoffService(store), new ContentGenerationOptions());
+        var input = new RetryContentGenerationRequestDto { RetryKey = new string('r', 100) };
+        await service.RetryAsync(1, 1, input);
+        await service.RetryAsync(1, 1, input);
+        Assert.Equal(2, store.Items<StoryGenerationJob>().Count);
+        Assert.True(source.IsCurrent); Assert.Equal(original, source.Content);
+        Assert.True(await service.ProcessNextAsync());
+        var current = store.Items<StoryVersion>().Single(x => x.IsCurrent);
+        Assert.NotEqual(source.Id, current.Id); Assert.Equal(source.Id, current.BaseVersionId);
+        Assert.Equal(original, source.Content); Assert.False(source.IsCurrent);
+        Assert.DoesNotContain(store.Items<StoryVocabulary>(), x => x.StoryVersionId == current.Id);
+        Assert.Equal(new[] { "refine", "safety" }, ai.Calls);
+        Assert.Equal(70m, ai.LastRepair!.Constraints.Readability!.MinimumEaseScore);
+        var repaired = store.Items<StoryGenerationJob>().Single(x => x.OperationKey!.StartsWith("repair:"));
+        Assert.Equal(GenerationJobStatus.Completed, repaired.Status);
+        Assert.Contains(ReadabilityEvaluationEvidence.Hash(current.Content!), repaired.GenerationMetadataJson);
+    }
+
+    [Fact]
+    public async Task Repair_rejects_changed_policy_and_active_jobs()
+    {
+        var store = RepairSource(); var service = Service(store, new FakeAIClient());
+        store.Items<SafetyPolicy>().Single().ReadabilityScoreThreshold = 80m;
+        var error = await Assert.ThrowsAsync<ConflictException>(() => service.RetryAsync(1, 1, new() { RetryKey = "repair-policy-01" }));
+        Assert.Equal("READABILITY_POLICY_CHANGED", error.Message);
+        store.Items<SafetyPolicy>().Single().ReadabilityScoreThreshold = 70m;
+        store.Items<StoryGenerationJob>().Single().Status = GenerationJobStatus.Processing;
+        await Assert.ThrowsAsync<ConflictException>(() => service.RetryAsync(1, 1, new() { RetryKey = "repair-active-01" }));
+        Assert.Single(store.Items<StoryVersion>());
+    }
+
+    [Fact]
+    public async Task Repair_timeout_preserves_source_and_exposes_retryable_failure()
+    {
+        var store = RepairSource(); var source = store.Items<StoryVersion>().Single();
+        var service = Service(store, new RepairAI(fail: true));
+        await service.RetryAsync(1, 1, new() { RetryKey = "repair-timeout-01" });
+        Assert.True(await service.ProcessNextAsync());
+        var progress = await service.GetProgressAsync(1, 1);
+        Assert.Equal("CONTENT_GENERATION_TIMEOUT", progress.LastErrorCode);
+        Assert.Equal("failed_content", progress.CurrentStep);
+        Assert.True(source.IsCurrent); Assert.Single(store.Items<StoryVersion>());
+        await service.RetryAsync(1, 1, new() { RetryKey = "repair-timeout-02" });
+        Assert.Equal(3, store.Items<StoryGenerationJob>().Count);
+    }
+
+    private sealed class RepairAI(bool fail = false) : FakeAIClient
+    {
+        public override Task<RefineStoryContentResponse> RefineStoryContentAsync(RefineStoryContentRequest request, CancellationToken ct = default)
+        {
+            LastRepair = request; Calls.Add("refine");
+            if (fail) throw new TimeoutException();
+            return Task.FromResult(new RefineStoryContentResponse { RequestId = request.RequestId,
+                Story = request.Story with { StorySections = [new StorySectionDto(1, "", string.Join(' ', Enumerable.Repeat("Lan và Minh cùng chia sẻ sách.", 15)))] } });
+        }
+        public RefineStoryContentRequest? LastRepair { get; private set; }
+    }
+
+    [Fact]
+    public async Task Repair_rejects_source_changes_while_job_is_waiting()
+    {
+        var store = RepairSource(); var ai = new RepairAI(); var service = Service(store, ai);
+        await service.RetryAsync(1, 1, new() { RetryKey = "repair-stale-source-01" });
+        store.Items<StoryVersion>().Single().Content += " Một chi tiết khác.";
+        Assert.True(await service.ProcessNextAsync());
+        Assert.Empty(ai.Calls);
+        Assert.Equal("STALE_REPAIR_SOURCE", (await service.GetProgressAsync(1, 1)).LastErrorCode);
+        Assert.Single(store.Items<StoryVersion>());
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Expired_last_listening_claim_is_recovered_or_closed_instead_of_stuck_processing(bool providerBudgetSpent)
+    {
+        var store = SeedListening();
+        using var stop = new CancellationTokenSource();
+        var interrupted = new FakeAIClient { Listening = _ => { stop.Cancel(); throw new OperationCanceledException(stop.Token); } };
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Service(store, interrupted).ProcessNextAsync(stop.Token));
+        var job = store.Items<StoryGenerationJob>().Single();
+        job.AttemptNo = job.MaxAttempts;
+        job.LeaseExpiresAt = DateTime.UtcNow.AddSeconds(-1);
+        if (providerBudgetSpent)
+        {
+            var receipt = JsonSerializer.Deserialize<StoryPlatform.Application.Features.ListeningInteractions.Models.ListeningJobState>(
+                job.GenerationMetadataJson!, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+            receipt.ProviderCalls = 3;
+            job.GenerationMetadataJson = JsonSerializer.Serialize(receipt, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        }
+        var resumed = new FakeAIClient();
+        Assert.True(await Service(store, resumed).ProcessNextAsync());
+        Assert.Equal(providerBudgetSpent ? GenerationJobStatus.Failed : GenerationJobStatus.Completed, job.Status);
+        if (providerBudgetSpent)
+        {
+            Assert.Empty(resumed.ListeningRequests);
+            Assert.Equal("LISTENING_RETRY_EXHAUSTED", job.ErrorCode);
+        }
+        else Assert.Single(resumed.ListeningRequests);
+    }
+
+    [Fact]
+    public async Task Listening_rejects_changed_content_even_when_version_id_is_unchanged()
+    {
+        var store = SeedListening();
+        var ai = new FakeAIClient { Listening = _ =>
+        {
+            store.Items<StoryVersion>().Single().Content += "\n\nMột đoạn mới được thêm vào.";
+            return ListeningTestStory.AiResponse(ListeningInteractionType.Checkpoint);
+        } };
+        Assert.True(await Service(store, ai).ProcessNextAsync());
+        Assert.Empty(store.Items<ListeningInteraction>());
+        Assert.Equal("LISTENING_SOURCE_STALE", store.Items<StoryGenerationJob>().Single().ErrorCode);
+    }
+
+    [Fact]
+    public async Task Listening_rate_limit_defers_job_and_restart_reuses_pinned_request()
+    {
+        var store = SeedListening();
+        var calls = 0;
+        var ai = new FakeAIClient { Listening = _ => ++calls == 1
+            ? throw new AIServiceRequestException(429, "AI_PROVIDER_429", "fixture", TimeSpan.FromSeconds(7))
+            : ListeningTestStory.AiResponse(ListeningInteractionType.Checkpoint) };
+        Assert.True(await Service(store, ai).ProcessNextAsync());
+        var job = store.Items<StoryGenerationJob>().Single();
+        Assert.Equal(GenerationJobStatus.Pending, job.Status);
+        Assert.True(job.NextAttemptAt > DateTime.UtcNow);
+        Assert.False(await Service(store, ai).ProcessNextAsync());
+        Assert.Single(ai.ListeningRequests);
+        job.NextAttemptAt = DateTime.UtcNow.AddSeconds(-1);
+        ai.SnapshotVersion = "changed-after-restart";
+
+        Assert.True(await Service(store, ai).ProcessNextAsync());
+
+        Assert.Equal(GenerationJobStatus.Completed, job.Status);
+        Assert.Equal(1, ai.SnapshotCalls);
+        Assert.Null(job.ErrorCode);
+        Assert.Null(job.NextAttemptAt);
+        Assert.All(ai.ListeningRequests, x => Assert.Equal("fixture-listening-v1", x.Snapshot!.PromptVersionNo));
+        var receipt = JsonSerializer.Deserialize<StoryPlatform.Application.Features.ListeningInteractions.Models.ListeningJobState>(
+            job.GenerationMetadataJson!, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        Assert.Equal(2, receipt.ProviderCalls);
+        Assert.NotNull(receipt.PinnedRequest);
+        Assert.Equal(2, store.Items<ListeningInteraction>().Count);
+    }
+
+    [Fact]
+    public async Task Listening_host_cancellation_keeps_snapshot_and_reclaim_does_not_refetch_it()
+    {
+        var store = SeedListening();
+        using var stopping = new CancellationTokenSource();
+        var ai = new FakeAIClient { Listening = _ => { stopping.Cancel(); throw new OperationCanceledException(stopping.Token); } };
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Service(store, ai).ProcessNextAsync(stopping.Token));
+        var job = store.Items<StoryGenerationJob>().Single();
+        Assert.Equal(GenerationJobStatus.Processing, job.Status);
+        Assert.Null(job.ErrorCode);
+        job.LeaseExpiresAt = DateTime.UtcNow.AddSeconds(-1);
+        var resumed = new FakeAIClient();
+
+        Assert.True(await Service(store, resumed).ProcessNextAsync());
+
+        Assert.Equal(0, resumed.SnapshotCalls);
+        Assert.EndsWith("attempt-2", Assert.Single(resumed.ListeningRequests).RequestId);
+        Assert.Equal(GenerationJobStatus.Completed, job.Status);
+    }
+
+    [Fact]
+    public async Task Listening_schema_error_uses_validation_budget_and_feedback()
+    {
+        var store = SeedListening();
+        var ai = new FakeAIClient { Listening = _ => throw new AIServiceRequestException(502, "AI_OUTPUT_INVALID", "fixture") };
+        Assert.True(await Service(store, ai).ProcessNextAsync());
+        Assert.Equal(2, ai.ListeningRequests.Count);
+        Assert.Equal("SCHEMA_INVALID", Assert.Single(ai.ListeningRequests[1].PreviousErrors).Code);
+        Assert.Equal("CHECKPOINT_VALIDATION_FAILED", store.Items<StoryGenerationJob>().Single().ErrorCode);
+    }
+
+    [Fact]
+    public async Task Listening_technical_retries_never_exceed_three_provider_calls()
+    {
+        var store = SeedListening();
+        var ai = new FakeAIClient { Listening = _ => throw new AIServiceRequestException(503, "AI_PROVIDER_ERROR", "fixture") };
+        for (var i = 0; i < 3; i++)
+        {
+            store.Items<StoryGenerationJob>().Single().NextAttemptAt = null;
+            Assert.True(await Service(store, ai).ProcessNextAsync());
+        }
+        Assert.Equal(3, ai.ListeningRequests.Count);
+        Assert.Equal(GenerationJobStatus.Failed, store.Items<StoryGenerationJob>().Single().Status);
+        Assert.False(await Service(store, ai).ProcessNextAsync());
+    }
+
+    [Fact]
+    public async Task Last_listening_type_cannot_complete_an_incomplete_package()
+    {
+        var store = SeedListening(ListeningInteractionType.EventOrdering);
+        Assert.True(await Service(store, new FakeAIClient()).ProcessNextAsync());
+        Assert.Equal("LISTENING_PACKAGE_INVALID", store.Items<StoryGenerationJob>().Single().ErrorCode);
+        Assert.NotEqual(StoryStatus.ContentReview, store.Items<Story>().Single().Status);
+    }
+
+    [Fact]
+    public async Task Listening_and_existing_learning_work_share_admission_slots()
+    {
+        var store = SeedListening();
+        var version = store.Items<StoryVersion>().Single();
+        var context = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(store.Items<StoryGenerationRequest>().Single().ContextSnapshotJson,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        using var gate = new StoryPlatform.Infrastructure.AI.LearningRequestGate(new() { MaxConcurrentRequests = 1 });
+        var vocabularyPermit = await gate.EnterAsync(default);
+        var ai = new FakeAIClient();
+        var generator = new StoryPlatform.Application.Features.ListeningInteractions.Services.ListeningInteractionGenerator(store, ai, gate: gate);
+        var generation = generator.GenerateAsync(
+            StoryPlatform.Application.Features.ListeningInteractions.Services.ListeningInteractionGenerator.CreateScope(version, context),
+            ListeningInteractionType.Checkpoint, "shared-gate", default);
+        Assert.False(generation.IsCompleted);
+        Assert.Empty(ai.ListeningRequests);
+        vocabularyPermit.Dispose();
+        Assert.Equal(2, (await generation).Drafts.Count);
+        Assert.Single(ai.ListeningRequests);
+    }
+
     [Fact]
     public async Task Legacy_discussion_job_is_not_executed_or_used_to_advance_the_story()
     {
@@ -742,6 +990,10 @@ public sealed class ContentGenerationServiceTests
         Assert.NotNull(progress.LastMeasuredWordCount);
         Assert.NotNull(client.LastRefinement?.Feedback);
         Assert.Contains("CONTENT_READABILITY_NOT_MET", client.LastRefinement.Feedback.FailedGateCodes);
+        Assert.Equal(65.11m, client.LastRefinement.Feedback.Readability!.Ease);
+        Assert.Equal(70m, progress.QualityFailure.Readability!.Limits.MinimumEaseScore);
+        Assert.Equal(8, progress.QualityFailure.Readability.SentenceTarget);
+        Assert.Equal(new[] { "ease" }, progress.QualityFailure.Readability.FailedMetrics);
         Assert.Equal(14m, client.LastRefinement.Constraints.Readability!.MaximumAverageWordsPerSentence);
         var gate = Assert.Single(progress.QualityFailure.FailedGates);
         Assert.Equal("readability", gate.Gate);
@@ -1017,7 +1269,11 @@ public sealed class ContentGenerationServiceTests
                 true,
                 "CONTENT_READABILITY_NOT_MET",
                 ["Câu quá dài."]);
-            return new ContentQualityResult(false, pass, pass, pass, fail, pass, 98m);
+            return new ContentQualityResult(false, pass, pass, pass, fail, pass, 98m)
+            {
+                ReadabilityDetails = new("VI_READABILITY_V1", 2.43m, 65.11m, 11.51m,
+                    ContentReadabilityLimits.ForLevel(3, 70m), 8, ["ease"])
+            };
         }
     }
 
@@ -1077,6 +1333,15 @@ public sealed class ContentGenerationServiceTests
         }
         public Func<GenerateListeningInteractionRequest, GenerateListeningInteractionResponse>? Listening { get; init; }
         public List<GenerateListeningInteractionRequest> ListeningRequests { get; } = [];
+        public int SnapshotCalls { get; private set; }
+        public string SnapshotVersion { get; set; } = "fixture-listening-v1";
+        public Task<ListeningPromptSnapshotDto> GetListeningPromptSnapshotAsync(string interactionType, string ageBand, string language,
+            CancellationToken cancellationToken = default)
+        {
+            SnapshotCalls++;
+            return Task.FromResult(new ListeningPromptSnapshotDto("Listening" + interactionType, SnapshotVersion, "Generate {{context}}"));
+        }
+
         public Task<GenerateListeningInteractionResponse> GenerateListeningInteractionAsync(GenerateListeningInteractionRequest request, CancellationToken cancellationToken = default)
         {
             Calls.Add($"listening:{request.InteractionType}");
@@ -1096,7 +1361,7 @@ public sealed class ContentGenerationServiceTests
                 ReasonCode = blockSafety ? "CONTENT_SAFETY_BLOCKED" : "CONTENT_SAFETY_ALLOWED"
             });
         }
-        public Task<RefineStoryContentResponse> RefineStoryContentAsync(RefineStoryContentRequest request, CancellationToken cancellationToken = default)
+        public virtual Task<RefineStoryContentResponse> RefineStoryContentAsync(RefineStoryContentRequest request, CancellationToken cancellationToken = default)
         {
             LastRefinement = request;
             Calls.Add("refine");

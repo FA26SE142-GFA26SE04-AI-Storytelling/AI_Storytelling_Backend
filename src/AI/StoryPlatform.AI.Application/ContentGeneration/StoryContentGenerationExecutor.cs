@@ -1,4 +1,7 @@
 using System.Text.Json;
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using StoryPlatform.AI.Application.Abstractions.LLM;
 using StoryPlatform.AI.Domain.Generation;
@@ -19,11 +22,14 @@ public sealed class StoryContentGenerationExecutor
 {
     private readonly ILlmClient _llmClient;
     private readonly StoryContentGenerationOptions _options;
+    private readonly ILogger<StoryContentGenerationExecutor> _logger;
 
-    public StoryContentGenerationExecutor(ILlmClient llmClient, IOptions<StoryContentGenerationOptions> options)
+    public StoryContentGenerationExecutor(ILlmClient llmClient, IOptions<StoryContentGenerationOptions> options,
+        ILogger<StoryContentGenerationExecutor>? logger = null)
     {
         _llmClient = llmClient;
         _options = options.Value;
+        _logger = logger ?? NullLogger<StoryContentGenerationExecutor>.Instance;
     }
 
     internal async Task<StoryContentGenerationResult<T>> ExecuteAsync<T>(
@@ -57,23 +63,29 @@ public sealed class StoryContentGenerationExecutor
     {
         var maxAttempts = Math.Clamp(technicalAttempts ?? _options.MaxTechnicalAttempts, 1, 3);
         Exception? lastError = null;
+        var elapsed = Stopwatch.StartNew();
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
             if (attempt > 1)
             {
-                await Task.Delay(GetRetryDelay(attempt, lastError), cancellationToken);
+                var delay = GetRetryDelay(attempt, lastError);
+                _logger.LogInformation("AI retry waiting. SchemaName={SchemaName} Attempt={Attempt} DelayMs={DelayMs}", schemaName, attempt, delay.TotalMilliseconds);
+                await Task.Delay(delay, cancellationToken);
             }
 
             try
             {
+                _logger.LogInformation("AI generation attempt started. SchemaName={SchemaName} Attempt={Attempt} MaxAttempts={MaxAttempts}", schemaName, attempt, maxAttempts);
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(_options.TimeoutSeconds, 10, 300)));
                 var result = await _llmClient.GenerateStructuredAsync(prompt, schemaName, schema, timeout.Token);
                 var value = deserialize(result.Content) ?? throw new JsonException("The LLM returned an empty payload.");
+                _logger.LogInformation("AI output parsed and validated. SchemaName={SchemaName} Attempt={Attempt} ElapsedMs={ElapsedMs}", schemaName, attempt, elapsed.ElapsedMilliseconds);
                 return new StoryContentGenerationResult<T>(value, result, attempt);
             }
             catch (Exception exception) when (IsRetryable(exception, cancellationToken))
             {
+                _logger.LogWarning("AI attempt rejected. SchemaName={SchemaName} Attempt={Attempt} ErrorType={ErrorType} ElapsedMs={ElapsedMs}", schemaName, attempt, exception.GetType().Name, elapsed.ElapsedMilliseconds);
                 // A durable Core batch owns the retry budget and needs the original status.
                 // Leave a long backoff to the caller instead of retrying before the provider's deadline.
                 if (technicalAttempts == 1 || ProviderRetryDelay(exception) > MaxProviderRetryDelay) throw;

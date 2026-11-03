@@ -106,6 +106,8 @@ public sealed class LearningBatchService(IUnitOfWork uow, ILearningBatchRunner r
                 rows.Add(row);
             }
             root.LeaseExpiresAt = DateTime.UtcNow.AddMinutes(Math.Clamp(options.LeaseMinutes, 8, 30));
+            root.PromptCatalogVersionId ??= requests.Select(x => x.Vocabulary?.Snapshot ?? x.Quiz?.Snapshot)
+                .FirstOrDefault(x => x is not null)?.PromptCatalogVersionId;
             uow.Repository<StoryGenerationJob>().Update(root);
             await uow.SaveChangesAsync(ct);
             await uow.CommitTransactionAsync(ct);

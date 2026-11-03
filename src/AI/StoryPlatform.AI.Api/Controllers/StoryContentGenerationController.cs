@@ -9,6 +9,15 @@ namespace StoryPlatform.AI.Api.Controllers;
 [Route("api/ai/story-content")]
 public sealed class StoryContentGenerationController : ControllerBase
 {
+    [HttpGet("listening/snapshot")]
+    public StoryPlatform.Contracts.AI.Models.ListeningPromptSnapshotDto ListeningSnapshot(
+        [FromQuery] string interactionType, [FromQuery] string ageBand, [FromQuery] string language,
+        [FromServices] GenerateListeningInteractionHandler handler) => handler.Snapshot(interactionType, ageBand, language);
+
+    [HttpPost("listening")]
+    public Task<GenerateListeningInteractionResponse> GenerateListening([FromBody] GenerateListeningInteractionRequest request,
+        [FromServices] GenerateListeningInteractionHandler handler, CancellationToken ct) => handler.HandleAsync(request, ct);
+
     [HttpPost("content")]
     public Task<GenerateStoryContentResponse> GenerateContent([FromBody] GenerateStoryContentRequest request,
         [FromServices] GenerateStoryContentHandler handler, CancellationToken cancellationToken) => handler.HandleAsync(request, cancellationToken);

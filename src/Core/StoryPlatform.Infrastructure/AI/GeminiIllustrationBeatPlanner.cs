@@ -38,6 +38,7 @@ public sealed class GeminiIllustrationBeatPlanner : IIllustrationBeatPlanner
             .AppendLine("For each beat, copy an EXACT nonempty excerpt from SceneText as anchorText. Do not change the text.")
             .AppendLine("Return ONLY a JSON array of objects: [{\"beatOrder\":1,\"anchorText\":\"exact excerpt\",\"visualFocus\":\"specific visible moment\"}].")
             .AppendLine("Use contiguous beatOrder starting at 1. Each focus must be specific and different.")
+            .AppendLine("Describe visible characters, actions and scenery only; never request captions, dialogue lettering or written story text in visualFocus.")
             .AppendLine("Media context (maintain characters, style, and child safety):")
             .AppendLine(request.MediaContextJson)
             .AppendLine("Scene visual description:").AppendLine(request.SceneVisualDescription)

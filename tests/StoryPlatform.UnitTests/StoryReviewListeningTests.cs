@@ -13,6 +13,81 @@ namespace StoryPlatform.UnitTests;
 
 public sealed class StoryReviewListeningTests
 {
+    [Fact]
+    public async Task Cached_story_proposal_cannot_mutate_a_confirmed_package()
+    {
+        var uow = ListeningTestStory.SeedReviewStory();
+        await ListeningTestStory.SeedPackageAsync(uow);
+        var (service, _, cache) = Build(uow);
+        var original = uow.Items<StoryVersion>().Single().Content;
+        var proposalId = await cache.CreateAsync(new AIProposalDto
+        {
+            RequestedByUserId = 1, StoryId = 1, StoryVersionId = 1,
+            ArtifactType = "story", OperationType = "partial_edit",
+            SuggestedContent = JsonSerializer.SerializeToElement(new { content = "Nội dung mới chưa được xác nhận." }),
+            ExpiresAt = DateTime.UtcNow.AddHours(1)
+        });
+        await service.ConfirmPackageAsync(1, 1, new() { VersionId = 1, OperationId = "confirm-before-apply-01" });
+
+        var error = await Assert.ThrowsAsync<ConflictException>(() =>
+            new ProposalService(cache, uow).ApplyProposalAsync(1, 1, proposalId));
+
+        Assert.Equal("CONFIRMED_CONTENT_PACKAGE_IMMUTABLE", error.Message);
+        Assert.Equal(original, uow.Items<StoryVersion>().Single().Content);
+        Assert.Equal("pending", (await cache.GetAsync(proposalId))!.Status);
+        Assert.Single(uow.Items<StoryGenerationJob>(), x => x.Operation == GenerationJobOperation.GenerateMediaPackage);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task One_package_confirmation_is_durable_and_does_not_need_separate_listening_click(bool creator)
+    {
+        var uow = ListeningTestStory.SeedReviewStory();
+        await ListeningTestStory.SeedPackageAsync(uow);
+        if (creator)
+        {
+            uow.Items<UserAccount>().Single().Role = UserRole.ContentCreator;
+            CreatorGenerationTestContext.Configure(uow.Items<Story>().Single(), uow.Items<StoryGenerationRequest>().Single());
+        }
+        var (service, _, _) = Build(uow);
+        Assert.Contains((await service.ValidateAsync(1, 1)).Checks, x => x.Name == "listening_reviewed" && !x.Passed);
+        var input = new ConfirmStoryPackageRequestDto { VersionId = 1, OperationId = "confirm-whole-package-01" };
+        var first = await service.ConfirmPackageAsync(1, 1, input);
+        var (restarted, _, _) = Build(uow);
+        var replay = await restarted.ConfirmPackageAsync(1, 1, input);
+        Assert.Equal(first, replay);
+        Assert.Single(uow.Items<StoryGenerationJob>(), x => x.Operation == GenerationJobOperation.GenerateMediaPackage);
+        Assert.Single(uow.Items<StoryAuthoringOperation>());
+        Assert.False(uow.Items<Story>().Single().IsPublished);
+        Assert.Equal(creator ? StoryStatus.MediaProcessing : StoryStatus.Approved, uow.Items<Story>().Single().Status);
+        await Assert.ThrowsAsync<ConflictException>(() => restarted.UpdateVocabularyAsync(1, 1,
+            new UpdateVocabularyRequestDto { VersionId = 1 }));
+    }
+
+    [Theory]
+    [InlineData("wrong-user")]
+    [InlineData("stale-version")]
+    [InlineData("invalid-listening")]
+    [InlineData("policy-changed")]
+    public async Task Package_confirmation_never_bypasses_permission_version_quality_or_policy(string scenario)
+    {
+        var uow = ListeningTestStory.SeedReviewStory();
+        await ListeningTestStory.SeedPackageAsync(uow);
+        if (scenario == "invalid-listening") uow.Items<ListeningInteraction>().First().Prompt = "";
+        if (scenario == "policy-changed") uow.Seed(new SafetyPolicy { Id = 1, ChildProfileId = 1, ReadabilityScoreThreshold = 99m });
+        var (service, _, _) = Build(uow);
+        var error = await Record.ExceptionAsync(() => service.ConfirmPackageAsync(scenario == "wrong-user" ? 99 : 1, 1,
+            new() { VersionId = scenario == "stale-version" ? 99 : 1, OperationId = "confirm-blocked-package-01" }));
+        if (scenario == "wrong-user") Assert.IsType<ForbiddenException>(error);
+        else if (scenario == "invalid-listening") Assert.IsType<BadRequestException>(error);
+        else Assert.IsType<ConflictException>(error);
+        if (scenario == "policy-changed") Assert.Equal("READABILITY_POLICY_CHANGED", error!.Message);
+        Assert.Empty(uow.Items<StoryGenerationJob>());
+        Assert.Empty(uow.Items<StoryAuthoringOperation>());
+        Assert.Equal(StoryStatus.ContentReview, uow.Items<Story>().Single().Status);
+    }
+
     private static (StoryReviewService Service, InMemoryReviewCompletionStore Store, InMemoryProposalCache Cache) Build(
         StoryReviewServiceTests.FakeUnitOfWork uow)
     {

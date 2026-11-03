@@ -5,6 +5,10 @@ using StoryPlatform.Application.Common;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AIStoryInput.Models;
 using StoryPlatform.Application.Features.ContentGeneration;
+using StoryPlatform.Application.Features.ContentGeneration.Interfaces;
+using StoryPlatform.Contracts.AI.Requests;
+using StoryPlatform.Contracts.AI.Models;
+using StoryPlatform.Contracts.AI.Responses;
 using StoryPlatform.Application.Features.ListeningInteractions.Models;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Domain.Entities;
@@ -24,12 +28,15 @@ public sealed class ListeningInteractionGenerator
     private readonly IAIStoryGenerationClient _aiClient;
     private readonly int _maxAttempts;
     private readonly IReadOnlyCollection<string> _gradingWords;
+    private readonly ILearningRequestGate? _gate;
 
-    public ListeningInteractionGenerator(IUnitOfWork unitOfWork, IAIStoryGenerationClient aiClient, ContentGenerationOptions? options = null)
+    public ListeningInteractionGenerator(IUnitOfWork unitOfWork, IAIStoryGenerationClient aiClient, ContentGenerationOptions? options = null,
+        ILearningRequestGate? gate = null)
     {
         options ??= new ContentGenerationOptions();
         _unitOfWork = unitOfWork;
         _aiClient = aiClient;
+        _gate = gate;
         _maxAttempts = Math.Clamp(options.ArtifactMaxAttempts, 1, 3);
         _gradingWords = options.ListeningGradingWords is { Length: > 0 } words ? words : ListeningInteractionRules.DefaultGradingWords;
     }
@@ -60,9 +67,12 @@ public sealed class ListeningInteractionGenerator
 
     /// <summary>Gọi AI cho một loại, thử lại kèm previousErrors (chỉ mã); hết lượt thì ném &lt;TYPE&gt;_VALIDATION_FAILED.</summary>
     public async Task<ListeningGenerationResult> GenerateAsync(
-        ListeningScope scope, ListeningInteractionType type, string requestIdPrefix, CancellationToken ct)
+        ListeningScope scope, ListeningInteractionType type, string requestIdPrefix, CancellationToken ct,
+        ListeningJobState? durableState = null, Func<ListeningJobState, CancellationToken, Task>? checkpoint = null)
     {
         var item = scope.Plan.Items.FirstOrDefault(x => x.Type == type) ?? throw new ConflictException("LISTENING_TYPE_NOT_IN_PLAN");
+        if (type == ListeningInteractionType.RolePlay && item.Zones.Any(zone => !zone.Any(scope.Plan.DialogueBlockIds.Contains)))
+            throw new ConflictException("LISTENING_PLAN_INFEASIBLE");
         // Neo của các loại khác đã lưu; loại đang sinh không tự chặn mình.
         var occupied = (await LoadSavedAsync(scope.Version.Id, ct)).Where(x => x.Type != type).Select(x => x.AnchorOffset).ToArray();
         var context = RuleContext(scope, item, occupied);
@@ -70,18 +80,71 @@ public sealed class ListeningInteractionGenerator
             ? (await _unitOfWork.Repository<StoryVocabulary>().FindAsync(
                 x => x.StoryVersionId == scope.Version.Id && !x.IsDeleted, cancellationToken: ct)).Select(x => x.Term).ToArray()
             : [];
-        IReadOnlyList<ListeningValidationError> previous = [];
+        var state = durableState ?? new ListeningJobState { MaximumValidationAttempts = _maxAttempts };
+        var fingerprint = ListeningJobState.Fingerprint(scope);
+        if (state.PinnedRequest is not null && state.SourceFingerprint != fingerprint)
+            throw new InvalidOperationException("LISTENING_SOURCE_STALE");
+        if (state.PinnedRequest is null)
+        {
+            var request = ListeningInteractionAiMapper.BuildRequest(requestIdPrefix, type, item.Count, context.AgeBand, scope.Context.Language,
+                scope.Version.Title, scope.Version.Lesson ?? string.Empty, scope.Blocks, scope.Plan.DialogueBlockIds, occupied,
+                item.Zones, vocabulary, []);
+            // Direct construction without a gate is retained for isolated unit fixtures. Production DI always supplies the shared gate.
+            if (_gate is not null || durableState is not null)
+            {
+                var snapshot = await _aiClient.GetListeningPromptSnapshotAsync(type.ToString(), context.AgeBand.ToString(), scope.Context.Language, ct);
+                if (snapshot is null || string.IsNullOrWhiteSpace(snapshot.Version) || string.IsNullOrWhiteSpace(snapshot.PromptType) ||
+                    snapshot.Template?.Contains("{{context}}", StringComparison.Ordinal) != true)
+                    throw new InvalidOperationException("LISTENING_SNAPSHOT_INVALID");
+                request = request with { Snapshot = new AiGenerationSnapshot
+                {
+                    PromptVersionNo = snapshot.Version,
+                    Templates = new Dictionary<string, string> { [snapshot.PromptType] = snapshot.Template }
+                } };
+            }
+            state.PinnedRequest = request;
+            state.SourceFingerprint = fingerprint;
+            if (checkpoint is not null) await checkpoint(state, ct);
+        }
+        if (state.PinnedRequest.InteractionType != type.ToString() || state.PinnedRequest.Count != item.Count)
+            throw new InvalidOperationException("LISTENING_SOURCE_STALE");
+        if (state.ValidationFailures >= state.MaximumValidationAttempts)
+            throw Failure(type, new(state.PreviousErrors.FirstOrDefault()?.Code ?? "LISTENING_VALIDATION_FAILED"));
         for (var attempt = 1; ; attempt++)
         {
-            var response = await _aiClient.GenerateListeningInteractionAsync(ListeningInteractionAiMapper.BuildRequest(
-                $"{requestIdPrefix}-{type}-attempt-{attempt}", type, item.Count, context.AgeBand, scope.Context.Language,
-                scope.Version.Title, scope.Version.Lesson ?? string.Empty, scope.Blocks, scope.Plan.DialogueBlockIds, occupied,
-                item.Zones, vocabulary, previous), ct);
+            using var permit = _gate is null ? null : await _gate.EnterAsync(ct);
+            if (state.ProviderCalls >= 3) throw new InvalidOperationException("LISTENING_RETRY_EXHAUSTED");
+            state.ProviderCalls++;
+            if (checkpoint is not null) await checkpoint(state, ct);
+            GenerateListeningInteractionResponse response;
+            try
+            {
+                response = await _aiClient.GenerateListeningInteractionAsync(state.PinnedRequest with
+                {
+                    RequestId = $"{requestIdPrefix}-{type}-attempt-{state.ProviderCalls}", PreviousErrors = state.PreviousErrors
+                }, ct);
+            }
+            catch (AIServiceRequestException ex) when (ex.ErrorCode == "AI_OUTPUT_INVALID")
+            {
+                state.ValidationFailures++;
+                state.PreviousErrors = [new("SCHEMA_INVALID", null, null)];
+                if (checkpoint is not null) await checkpoint(state, ct);
+                if (state.ValidationFailures >= state.MaximumValidationAttempts) throw Failure(type, new("SCHEMA_INVALID"));
+                continue;
+            }
+            catch (AIServiceRequestException ex) when (ex.StatusCode == 429)
+            {
+                _gate?.Defer(ex.RetryAfter is { } after && after > TimeSpan.Zero ? after : TimeSpan.FromSeconds(60));
+                throw;
+            }
+            if (response is null) throw new InvalidOperationException("LISTENING_RESPONSE_INVALID");
             var mapped = ListeningInteractionMapper.Resolve(ListeningInteractionAiMapper.ToDrafts(response, type), scope.Version.Content!, scope.Blocks);
             var errors = mapped.Errors.Concat(ListeningInteractionRules.Validate(mapped.Items, context)).Distinct().ToArray();
             if (errors.Length == 0) return new(mapped.Items, response.Metadata);
-            if (attempt >= _maxAttempts) throw Failure(type, errors[0]);
-            previous = errors;
+            state.ValidationFailures++;
+            state.PreviousErrors = errors.Select(e => new ListeningPreviousErrorDto(e.Code, e.ItemIndex, e.Field)).ToArray();
+            if (checkpoint is not null) await checkpoint(state, ct);
+            if (state.ValidationFailures >= state.MaximumValidationAttempts) throw Failure(type, errors[0]);
         }
     }
 

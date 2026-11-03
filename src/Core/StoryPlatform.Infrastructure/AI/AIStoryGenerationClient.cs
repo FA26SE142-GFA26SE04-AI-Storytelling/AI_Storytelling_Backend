@@ -56,6 +56,22 @@ public sealed class AIStoryGenerationClient : IAIStoryGenerationClient
     public Task<EvaluateContentSafetyResponse> EvaluateContentSafetyAsync(EvaluateContentSafetyRequest request, CancellationToken cancellationToken = default) =>
         PostAsync<EvaluateContentSafetyRequest, EvaluateContentSafetyResponse>("api/ai/story-content/content/safety", request, cancellationToken);
 
+    public Task<GenerateListeningInteractionResponse> GenerateListeningInteractionAsync(GenerateListeningInteractionRequest request,
+        CancellationToken cancellationToken = default) =>
+        PostAsync<GenerateListeningInteractionRequest, GenerateListeningInteractionResponse>("api/ai/story-content/listening", request, cancellationToken);
+
+    public async Task<StoryPlatform.Contracts.AI.Models.ListeningPromptSnapshotDto> GetListeningPromptSnapshotAsync(
+        string interactionType, string ageBand, string language, CancellationToken cancellationToken = default)
+    {
+        var path = $"api/ai/story-content/listening/snapshot?interactionType={Uri.EscapeDataString(interactionType)}&ageBand={Uri.EscapeDataString(ageBand)}&language={Uri.EscapeDataString(language)}";
+        using var response = await _httpClient.GetAsync(path, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw new AIServiceRequestException((int)response.StatusCode, "LISTENING_SNAPSHOT_UNAVAILABLE", "Listening prompt snapshot is unavailable.",
+                response.Headers.RetryAfter?.Delta ?? (response.Headers.RetryAfter?.Date - DateTimeOffset.UtcNow));
+        return await response.Content.ReadFromJsonAsync<StoryPlatform.Contracts.AI.Models.ListeningPromptSnapshotDto>(cancellationToken: cancellationToken)
+            ?? throw new AIServiceRequestException(502, "LISTENING_SNAPSHOT_INVALID", "Listening prompt snapshot is empty.");
+    }
+
     private async Task<TResponse> PostAsync<TRequest, TResponse>(
         string path,
         TRequest request,

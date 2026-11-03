@@ -40,6 +40,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
     private readonly int _artifactMaxAttempts;
     private readonly TimeSpan _jobLease;
     private readonly ListeningInteractionGenerator _listeningGenerator;
+    private readonly IContentGenerationJobLease? _leaseRenewer;
     private readonly int _contentExecutionBudgetSeconds;
     private readonly ILearningBatchService? _learningBatches;
     private readonly ILogger<ContentGenerationService> _logger;
@@ -54,7 +55,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         IStoryReviewService? reviewService = null,
         IGrayZoneEvaluator? moderation = null, GrayZoneWorkflowService? grayZone = null, ILearningBatchService? learningBatches = null,
         ILogger<ContentGenerationService>? logger = null,
-        ListeningInteractionGenerator? listeningGenerator = null)
+        ListeningInteractionGenerator? listeningGenerator = null, IContentGenerationJobLease? leaseRenewer = null)
     {
         _unitOfWork = unitOfWork;
         _aiClient = aiClient;
@@ -69,6 +70,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         _artifactMaxAttempts = Math.Clamp(options.ArtifactMaxAttempts, 1, 3);
         _jobLease = TimeSpan.FromMinutes(Math.Clamp(options.JobLeaseMinutes, 1, 30));
         _listeningGenerator = listeningGenerator ?? new ListeningInteractionGenerator(unitOfWork, aiClient, options);
+        _leaseRenewer = leaseRenewer;
         _contentExecutionBudgetSeconds = Math.Clamp(options.ContentExecutionBudgetSeconds, 6, 180);
     }
 
@@ -106,7 +108,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             .GroupBy(item => (item.Operation, item.ListeningInteractionType)).Select(group => group.OrderByDescending(item => item.Id).First())
             .Where(item => item.Status == GenerationJobStatus.Failed && (item.Operation switch
             {
-                GenerationJobOperation.GenerateContent => stable is null || item.ErrorCode == "CONTENT_ARTIFACT_HANDOFF_FAILED",
+                GenerationJobOperation.GenerateContent => stable is null || item.ErrorCode == "CONTENT_ARTIFACT_HANDOFF_FAILED" ||
+                    item.OperationKey?.StartsWith(RepairPrefix, StringComparison.Ordinal) == true && item.BaseStoryVersionId == stable.Id,
                 GenerationJobOperation.GenerateVocabulary => (!vocabularyDone || batches.Any(x => x.RootJobId == item.Id)) && item.StoryVersionId == stable?.Id,
                 GenerationJobOperation.GenerateQuiz => !quizDone && item.StoryVersionId == stable?.Id,
                 GenerationJobOperation.GenerateListeningInteraction => item.StoryVersionId == stable?.Id,
@@ -135,6 +138,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             catch (JsonException) { }
         }
 
+        var savedListening = stable is null || readingMediaOnly ? Array.Empty<ListeningInteraction>() :
+            await _unitOfWork.Repository<ListeningInteraction>().FindAsync(x => x.StoryVersionId == stable.Id && !x.IsDeleted, cancellationToken: cancellationToken);
         return new ContentGenerationProgressDto
         {
             ElapsedSeconds = contentJob is null || contentJob.Status == GenerationJobStatus.Pending ? null
@@ -157,13 +162,24 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             CurrentStep = waiting ? "waiting_for_moderation" : active is not null
                     ? $"{(active.Status == GenerationJobStatus.Processing ? "generating" : "pending")}_{OperationName(active.Operation)}"
                     : isComplete ? "complete" : failed is not null ? $"failed_{OperationName(failed.Operation)}" : "not_started",
-            Content = stable is not null ? "stable" : JobState(jobs, GenerationJobOperation.GenerateContent),
-            Vocabulary = readingMediaOnly ? "skipped" : vocabularyDone ? "completed" : JobState(jobs, GenerationJobOperation.GenerateVocabulary),
-            Quiz = readingMediaOnly ? "skipped" : quizDone ? "completed" : JobState(jobs, GenerationJobOperation.GenerateQuiz),
+            Content = active?.Operation == GenerationJobOperation.GenerateContent ? (active.Status == GenerationJobStatus.Pending ? "pending" : "processing") :
+                failed?.Operation == GenerationJobOperation.GenerateContent ? "failed" : stable is not null ? "stable" : JobState(jobs, GenerationJobOperation.GenerateContent),
+            Vocabulary = readingMediaOnly ? "skipped" : vocabularyDone ? "completed" : JobState(jobs.Where(x => stable is not null && x.StoryVersionId == stable.Id), GenerationJobOperation.GenerateVocabulary),
+            Quiz = readingMediaOnly ? "skipped" : quizDone ? "completed" : JobState(jobs.Where(x => stable is not null && x.StoryVersionId == stable.Id), GenerationJobOperation.GenerateQuiz),
             Listening = readingMediaOnly ? "skipped" :
                 listeningJobs.Length == 0 ? (quizDone && contentComplete ? "skipped" : "not_started") :
                 listeningDone ? "completed" : JobState(listeningJobs, GenerationJobOperation.GenerateListeningInteraction),
             IsComplete = isComplete,
+            ListeningDetails = listeningJobs.Select(job =>
+            {
+                StoryPlatform.Application.Features.ListeningInteractions.Models.ListeningJobState? receipt = null;
+                try { receipt = ReadListeningState(job.GenerationMetadataJson); } catch (JsonException) { }
+                return new ListeningGenerationDetailDto(job.ListeningInteractionType?.ToString() ?? "unknown",
+                    job.Status.ToString().ToLowerInvariant(), receipt?.ProviderCalls ?? 0, receipt?.ValidationFailures ?? 0,
+                    job.ErrorCode, receipt?.PreviousErrors.FirstOrDefault()?.Code,
+                    job.Status == GenerationJobStatus.Failed, job.NextAttemptAt, receipt?.PinnedRequest?.Count,
+                    savedListening.Count(x => x.Type == job.ListeningInteractionType));
+            }).ToArray(),
             LastErrorCode = active is null && !waiting && !isComplete ? failed?.ErrorCode : null,
             QualityFailure = isComplete ? null : qualityFailure,
             StableStoryVersionId = stable?.Id
@@ -177,6 +193,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         CancellationToken cancellationToken = default)
     {
         ValidateObject(input);
+        if (await TryQueueReadabilityRepairAsync(userId, storyId, input.RetryKey.Trim(), cancellationToken))
+            return await GetProgressAsync(userId, storyId, cancellationToken);
         if (await RetryStableHandoffAsync(userId, storyId, input.RetryKey.Trim(), cancellationToken))
             return await GetProgressAsync(userId, storyId, cancellationToken);
         if (_learningBatches is not null && await RetryLearningArtifactsAsync(userId, storyId, input.RetryKey.Trim(), cancellationToken))
@@ -278,24 +296,38 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                      item.Operation == GenerationJobOperation.GenerateQuiz ||
                      item.Operation == GenerationJobOperation.GenerateListeningInteraction) &&
                     (item.AttemptNo < item.MaxAttempts ||
-                     item.Operation == GenerationJobOperation.GenerateContent && item.Stage == JobStage.ContentStable) &&
+                     item.Operation == GenerationJobOperation.GenerateContent && item.Stage == JobStage.ContentStable ||
+                     item.Operation == GenerationJobOperation.GenerateListeningInteraction && item.Status == GenerationJobStatus.Processing &&
+                         item.LeaseExpiresAt < now) &&
                     (item.Status == GenerationJobStatus.Pending ||
-                     (item.Status == GenerationJobStatus.Processing && item.LeaseExpiresAt < now)),
+                     (item.Status == GenerationJobStatus.Processing && item.LeaseExpiresAt < now)) &&
+                    (item.NextAttemptAt == null || item.NextAttemptAt <= now),
             cancellationToken: cancellationToken);
         if (job is null) return false;
 
-        job.Status = GenerationJobStatus.Processing;
-        job.Stage = job.Operation == GenerationJobOperation.GenerateContent && job.Stage == JobStage.ContentStable
-            ? JobStage.ContentStable : job.Operation == GenerationJobOperation.GenerateContent
-            ? JobStage.ContentGenerating : JobStage.ContentArtifactGenerating;
-        job.AttemptNo++;
-        job.StartedAt = now;
-        job.LeaseExpiresAt = now.Add(_jobLease);
+        var observedToken = job.ConcurrencyToken;
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
             await _unitOfWork.AcquireTransactionLockAsync(job.StoryId, cancellationToken);
+            job = await _unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(x => x.Id == job.Id, cancellationToken: cancellationToken);
+            if (job is null || job.ConcurrencyToken != observedToken ||
+                job.Status is not (GenerationJobStatus.Pending or GenerationJobStatus.Processing) ||
+                job.Status == GenerationJobStatus.Processing && job.LeaseExpiresAt >= now ||
+                job.NextAttemptAt > now)
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                return false;
+            }
             _unitOfWork.Repository<StoryGenerationJob>().Update(job);
+            job.Status = GenerationJobStatus.Processing;
+            job.Stage = job.Operation == GenerationJobOperation.GenerateContent && job.Stage == JobStage.ContentStable
+                ? JobStage.ContentStable : job.Operation == GenerationJobOperation.GenerateContent
+                ? JobStage.ContentGenerating : JobStage.ContentArtifactGenerating;
+            job.AttemptNo++;
+            job.StartedAt = now;
+            job.NextAttemptAt = null;
+            job.LeaseExpiresAt = now.Add(_jobLease);
             RotateToken(job);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
         }
@@ -322,12 +354,13 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                     await ProcessQuizAsync(job.Id, claimedToken, cancellationToken);
                     break;
                 case GenerationJobOperation.GenerateListeningInteraction:
-                    await ProcessListeningAsync(job.Id, claimedToken, cancellationToken);
+                    await ProcessListeningWithLeaseAsync(job.Id, claimedToken, cancellationToken);
                     break;
             }
         }
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
+            if (await DeferListeningAsync(job, claimedToken, exception, CancellationToken.None)) return true;
             var errorCode = PublicErrorCode(exception, job.Operation);
             // Provider exception messages may contain story text. Log only fixed codes and identifiers.
             var validationCode = LearningValidationFeedback.Normalize(exception.Data["ValidationCode"] as string ?? exception.Message);
@@ -387,11 +420,25 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         var refinement = 0;
         if (persistedCandidate is null)
         {
-            var response = await _aiClient.GenerateStoryContentAsync(
-                BuildContentRequest(handoff.Job, handoff.BaseVersion, handoff.Input, handoff.Context) with
-                { ExecutionBudgetSeconds = RemainingCallBudget(timer, 90) }, cancellationToken);
-            storyContent = response.Story;
-            metadata = response.Metadata;
+            if (handoff.Job.OperationKey?.StartsWith(RepairPrefix, StringComparison.Ordinal) == true)
+            {
+                if (_maxRefinementAttempts < 1) throw new InvalidOperationException("CONTENT_QUALITY_NOT_MET");
+                var source = ToContent(handoff.BaseVersion);
+                var quality = _qualityEvaluator.Evaluate(source, ToOutline(handoff.BaseVersion), handoff.Input, handoff.Context);
+                if (!quality.Safety.Passed && !quality.Safety.CanRefine) throw new ConflictException("CONTENT_SAFETY_BLOCKED");
+                var repaired = await RefineContentAsync(handoff, source, quality, 1, RemainingCallBudget(timer, 90), cancellationToken);
+                storyContent = repaired.Story;
+                metadata = repaired.Metadata;
+                refinement = 1;
+            }
+            else
+            {
+                var response = await _aiClient.GenerateStoryContentAsync(
+                    BuildContentRequest(handoff.Job, handoff.BaseVersion, handoff.Input, handoff.Context) with
+                    { ExecutionBudgetSeconds = RemainingCallBudget(timer, 90) }, cancellationToken);
+                storyContent = response.Story;
+                metadata = response.Metadata;
+            }
         }
         else
         {
@@ -401,9 +448,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                 : JsonSerializer.Deserialize<CandidateMetadataEnvelope>(handoff.Job.GenerationMetadataJson, JsonOptions);
             storyContent = storyContent with { Description = candidateEnvelope?.Description };
             metadata = candidateEnvelope?.Generation ?? new GenerationMetadataDto();
-            refinement = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
-                    item => item.StoryId == handoff.Job.StoryId && item.Content != null && item.EditType == VersionEditType.AiRefined,
-                    cancellationToken: cancellationToken)).Count;
+            refinement = candidateEnvelope?.RefinementAttempts ?? 0;
         }
 
         for (; ; )
@@ -497,29 +542,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                 throw new InvalidOperationException("CONTENT_QUALITY_NOT_MET");
 
             refinement++;
-            var refined = await _aiClient.RefineStoryContentAsync(new RefineStoryContentRequest
-            {
-                ExecutionBudgetSeconds = RemainingCallBudget(timer, 90),
-                Feedback = new ContentRefinementFeedback
-                {
-                    CurrentWordCount = measuredWords,
-                    TargetWords = handoff.Input.TargetLength,
-                    MinimumWords = handoff.Context.LearningProfile?.MinimumWords ?? Math.Max(100, (int)Math.Floor(handoff.Input.TargetLength * .7)),
-                    MaximumWords = Constraints(handoff.Context).MaximumWords,
-                    FailedGateCodes = new[] { quality.Length, quality.Readability, quality.Safety, quality.OutlineConsistency, quality.VocabularyCompliance }
-                        .Where(x => !x.Passed && x.CanRefine && x.ReasonCode is not null).Select(x => x.ReasonCode!).ToArray()
-                },
-                RequestId = $"content-job-{handoff.Job.Id}-refine-{refinement}",
-                Story = storyContent,
-                Outline = ToOutline(handoff.BaseVersion),
-                AgeBand = handoff.Context.AgeBand,
-                ReadingLevel = handoff.Context.ReadingLevel.ToString(),
-                VocabularyLevel = handoff.Context.VocabularyLevel,
-                Language = handoff.Context.Language,
-                TargetLength = handoff.Input.TargetLength,
-                Constraints = Constraints(handoff.Context),
-                Reasons = quality.RefinementReasons
-            }, cancellationToken);
+            var refined = await RefineContentAsync(handoff, storyContent, quality, refinement, RemainingCallBudget(timer, 90), cancellationToken);
             storyContent = refined.Story;
             metadata = refined.Metadata;
         }
@@ -635,6 +658,14 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             var version = await _unitOfWork.Repository<StoryVersion>().FirstOrDefaultAsync(x => x.Id == state.Version.Id && !x.IsDeleted, cancellationToken: cancellationToken);
             if (version is null || !version.IsCurrent || string.IsNullOrWhiteSpace(version.Content))
                 throw new InvalidOperationException("STALE_BASE_VERSION");
+            if (job.Operation == GenerationJobOperation.GenerateListeningInteraction)
+            {
+                var receipt = ReadListeningState(job.GenerationMetadataJson);
+                if (receipt.PinnedRequest is not null && receipt.SourceFingerprint !=
+                    StoryPlatform.Application.Features.ListeningInteractions.Models.ListeningJobState.Fingerprint(
+                        ListeningInteractionGenerator.CreateScope(version, state.Context)))
+                    throw new InvalidOperationException("LISTENING_SOURCE_STALE");
+            }
             if (_learningBatches is not null && state.Context.LearningProfile is not null)
             {
                 var story = await _unitOfWork.Repository<Story>().FirstOrDefaultAsync(x => x.Id == job.StoryId, cancellationToken: cancellationToken)
@@ -647,10 +678,18 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             }
             await persist();
             job.Status = GenerationJobStatus.Completed;
+            job.ErrorCode = null;
+            job.NextAttemptAt = null;
             job.Stage = next is not null ? JobStage.ContentArtifactCompleted : JobStage.ContentPackageCompleted;
             job.CompletedAt = DateTime.UtcNow;
             job.LeaseExpiresAt = null;
-            job.GenerationMetadataJson = JsonSerializer.Serialize(metadata, JsonOptions);
+            if (job.Operation == GenerationJobOperation.GenerateListeningInteraction)
+            {
+                var receipt = ReadListeningState(job.GenerationMetadataJson);
+                receipt.Metadata = metadata;
+                job.GenerationMetadataJson = JsonSerializer.Serialize(receipt, JsonOptions);
+            }
+            else job.GenerationMetadataJson = JsonSerializer.Serialize(metadata, JsonOptions);
             RotateToken(job);
             _unitOfWork.Repository<StoryGenerationJob>().Update(job);
             if (next is not null)
@@ -713,6 +752,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                 SafetyScore = quality.SafetyScore ?? (quality.Safety.Passed ? 1m : 0m),
                 IsCurrent = false
             };
+            candidate.BaseVersionId = handoff.BaseVersion.Id;
             await _unitOfWork.Repository<StoryVersion>().AddAsync(candidate, cancellationToken);
             var job = await _unitOfWork.Repository<StoryGenerationJob>().GetByIdAsync(handoff.Job.Id, cancellationToken);
             if (job is not null)
@@ -803,13 +843,14 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             StoryVersionId = stableVersionId,
             BaseStoryVersionId = stableVersionId,
             RequestedByUserId = source.RequestedByUserId,
+            PromptCatalogVersionId = source.PromptCatalogVersionId,
             OperationKey = listeningType is null ? key : $"{key}:{listeningType}",
             Operation = operation,
             ListeningInteractionType = listeningType,
             Stage = JobStage.ContentArtifactPending,
             Status = GenerationJobStatus.Pending,
             AttemptNo = 0,
-            MaxAttempts = operation == GenerationJobOperation.GenerateContent ? 3 : _artifactMaxAttempts,
+            MaxAttempts = operation is GenerationJobOperation.GenerateContent or GenerationJobOperation.GenerateListeningInteraction ? 3 : _artifactMaxAttempts,
             StartedAt = DateTime.UtcNow
         }, cancellationToken);
     }
@@ -828,7 +869,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         if (request is null || request.Status != GenerationInputStatus.InputAccepted ||
             string.IsNullOrWhiteSpace(request.AcceptedInputJson) || string.IsNullOrWhiteSpace(request.ContextSnapshotJson) ||
             baseVersion is null || baseVersion.StoryId != job.StoryId || !baseVersion.IsCurrent ||
-            !baseVersion.OutlineApprovedAt.HasValue || baseVersion.Content is not null ||
+            !baseVersion.OutlineApprovedAt.HasValue ||
+            (baseVersion.Content is not null && job.OperationKey?.StartsWith(RepairPrefix, StringComparison.Ordinal) != true) ||
             story is null || story.Source != StorySource.Ai || story.Status != StoryStatus.OutlineReview)
             throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
         var input = JsonSerializer.Deserialize<AcceptedAIStoryInputSnapshot>(request.AcceptedInputJson, JsonOptions)
@@ -836,6 +878,14 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         var context = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(request.ContextSnapshotJson, JsonOptions)
                       ?? throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
         GenerationStoryAccess.ValidateSnapshot(story!, context);
+        if (job.OperationKey?.StartsWith(RepairPrefix, StringComparison.Ordinal) == true)
+        {
+            var fingerprint = ReadabilityEvaluationEvidence.Hash(baseVersion.Content ?? string.Empty);
+            if (!await _unitOfWork.Repository<StoryAuthoringOperation>().ExistsAsync(x => x.StoryId == job.StoryId &&
+                x.StoryVersionId == baseVersion.Id && x.ActorUserId == job.RequestedByUserId &&
+                x.Kind == "content-repair" && x.RequestHash == fingerprint, cancellationToken))
+                throw new ConflictException("STALE_REPAIR_SOURCE");
+        }
         return new ContentHandoff(job, request, baseVersion, input, context);
     }
 
@@ -939,8 +989,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         StorySections = [new StorySectionDto(1, string.Empty, version.Content ?? string.Empty)],
         Lesson = !string.IsNullOrWhiteSpace(version.Lesson) ? version.Lesson : (!string.IsNullOrWhiteSpace(version.Title) ? version.Title : "Bài học từ câu chuyện")
     };
-    private static string Flatten(StoryContentDto story) => string.Join("\n\n", story.StorySections.OrderBy(item => item.Order)
-        .Select(item => string.IsNullOrWhiteSpace(item.Heading) ? item.Content.Trim() : $"{item.Heading.Trim()}\n{item.Content.Trim()}"));
+    private static string Flatten(StoryContentDto story) => CanonicalStoryContent.Render(story);
     private static string NormalizeDescription(string? description, string? content)
     {
         var source = string.IsNullOrWhiteSpace(description) ? content : description;
@@ -990,6 +1039,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             {
                 RefinementAttempts = envelope.RefinementAttempts,
                 SafetyScore = quality.SafetyScore,
+                Readability = quality.ReadabilityDetails,
                 FailedGates = failedGates
             };
         }

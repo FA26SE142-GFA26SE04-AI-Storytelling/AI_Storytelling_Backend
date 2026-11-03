@@ -14,6 +14,8 @@ public sealed record ContentQualityResult(
     ContentQualityGate VocabularyCompliance,
     decimal? SafetyScore = null)
 {
+    public ContentReadabilityFeedback? ReadabilityDetails { get; init; }
+    public ReadabilityEvaluationEvidence? ReadabilityEvidence { get; init; }
     public IReadOnlyList<string> RefinementReasons =>
         new[] { OutlineConsistency, Length, Safety, Readability, VocabularyCompliance }
             .Where(item => !item.Passed && item.CanRefine)

@@ -77,7 +77,7 @@ ON CONFLICT ("Id") DO NOTHING;
 
 -- Tương tác lúc nghe: truyện AI 6-8 tuổi của bé 1 (parent_demo1), đang chờ duyệt (ContentReview).
 -- Fixture của docs/api/api-test-tuong-tac-luc-nghe-p1-p4.html, giữ Id 900 để tài liệu test khớp.
--- Nội dung 6 đoạn (offset neo của 64_listening_interactions.sql tính theo đúng chuỗi này).
+-- Nội dung 6 đoạn (offset neo của 60_listening_interactions.sql tính theo đúng chuỗi này).
 -- Chưa có scene/media: Phase 5 sinh sau khi duyệt, hoặc nạp media giả bằng SQL trong tài liệu.
 INSERT INTO stories (
     "Id", "Title", "Description", "Content", "CoverImageUrl", "Genre", "MoralLesson", "Language", "AgeBand", "ReadingLevel", "VocabularyLevel", "Status", "Source", "IsPublished", "ChildVisibleAt", "ArchivedReason", "AuthorUserId", "ChildProfileId", "CreatedAt", "IsDeleted", "Scope", "OutputMode", "AudienceRevision", "AuthoringLastVersionNo", "AuthoringRevisionToken", "ExperienceMode"

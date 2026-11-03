@@ -4,7 +4,7 @@ These instructions apply to every Codex task started in this repository.
 
 ## Access boundary
 
-- Treat `D:\Capstone_AI_Storytelling\AI_Storytelling_Backend` as the only project workspace.
+- Treat `E:\Capstone\AI_Storytelling_Backend` as the only project workspace.
 - Work autonomously inside this repository when the active permission profile allows it.
 - Never request, select, or emulate `danger-full-access`, `--add-dir`, or `--dangerously-bypass-approvals-and-sandbox` for repository work.
 - Do not create, modify, move, or delete files outside this repository. System/runtime reads required by build tools are allowed, but do not inspect unrelated user files or source trees.

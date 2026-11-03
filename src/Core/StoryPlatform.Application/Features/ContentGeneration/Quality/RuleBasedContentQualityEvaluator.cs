@@ -64,6 +64,8 @@ public sealed partial class RuleBasedContentQualityEvaluator : IContentQualityEv
         if (metrics.AverageWordsPerSentence > limits.MaximumAverageWordsPerSentence) failedMetrics.Add("average_words_per_sentence");
         return new ContentQualityResult(passed, outline, length, safety, readability, vocabulary, safetyPassed ? 1m : 0m)
         {
+            ReadabilityEvidence = new(ReadabilityEvaluationEvidence.Hash(CanonicalStoryContent.Render(story)),
+                metrics.Algorithm, context.Language, context.ReadingLevel, limits),
             ReadabilityDetails = new(metrics.Algorithm, metrics.Fkgl, metrics.Fre,
                 metrics.AverageWordsPerSentence, limits, limits.SentenceTarget(context.Language), failedMetrics)
         };

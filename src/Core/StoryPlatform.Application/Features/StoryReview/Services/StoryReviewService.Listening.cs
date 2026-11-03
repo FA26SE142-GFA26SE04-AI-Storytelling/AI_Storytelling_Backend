@@ -22,7 +22,10 @@ public sealed partial class StoryReviewService
     public async Task<ListeningReviewDto> GetListeningForReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default)
     {
         var (story, version) = await LoadListeningTargetAsync(userId, storyId, cancellationToken);
-        return ToListeningReviewDto(storyId, version.Id, await InspectListeningAsync(story, version, cancellationToken));
+        var dto = ToListeningReviewDto(storyId, version.Id, await InspectListeningAsync(story, version, cancellationToken));
+        var packageReviewed = await _unitOfWork.Repository<StoryAuthoringOperation>().ExistsAsync(
+            x => x.StoryId == storyId && x.StoryVersionId == version.Id && x.Kind == "package-confirm", cancellationToken);
+        return dto with { Reviewed = dto.Reviewed || packageReviewed };
     }
 
     public Task<ListeningReviewDto> UpdateListeningInteractionAsync(

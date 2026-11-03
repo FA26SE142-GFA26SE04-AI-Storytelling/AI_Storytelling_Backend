@@ -19,6 +19,7 @@ internal static class ContentWritingPrompt
         {
             prompt += FormattableString.Invariant($"\nReading limits: grade <= {limits.MaximumGradeLevel}, ease >= {limits.MinimumEaseScore}, average lexical units per sentence <= {limits.MaximumAverageWordsPerSentence}. Use many short, complete sentences and concrete, familiar words. Aim for average sentence length comfortably below the limit. Reach the total length through events, actions and dialogue, not longer sentences.");
             var sentenceTarget = limits.SentenceTarget(language);
+            prompt += "\nCore evaluates readability on the exact saved text, including section headings. Keep headings very short or omit optional headings; headings must not make otherwise short sentences exceed the readability targets.";
             prompt += FormattableString.Invariant($"\nAim for about {sentenceTarget} lexical units per sentence, with roughly {(int)Math.Ceiling((double)target / sentenceTarget)} complete sentences across the body. This is a planning aid, not an extra output field. Use sentence-ending punctuation; commas alone do not split long sentences.");
         }
         if (feedback is not null)

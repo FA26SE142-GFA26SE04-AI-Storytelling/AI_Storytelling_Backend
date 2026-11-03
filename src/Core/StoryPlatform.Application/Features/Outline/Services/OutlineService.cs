@@ -434,6 +434,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
             },
             Constraints = new GenerationConstraintsDto
             {
+                Readability = ContentReadabilityLimits.ForLevel(context.ReadingLevel, context.ReadabilityScoreThreshold),
                 MaximumWords = context.MaximumLength,
                 AllowedTopics = context.AllowedCategoryCodes,
                 RestrictedTopics = PolicyTerms(context.RestrictedCategoryTerms, context.RestrictedCategoryCodes),

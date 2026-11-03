@@ -16,6 +16,35 @@ namespace StoryPlatform.UnitTests;
 
 public sealed class LearningArtifactServiceTests
 {
+    [Theory]
+    [InlineData("package")]
+    [InlineData("vocabulary")]
+    [InlineData("quiz")]
+    public async Task Confirmed_package_cannot_be_regenerated_through_artifact_endpoints(string target)
+    {
+        var uow = SeedStoryWithVersion();
+        uow.Seed(new StoryAuthoringOperation
+        {
+            Id = 1, StoryId = 1, StoryVersionId = 1, ActorUserId = 1,
+            Kind = "package-confirm", OperationId = "confirmed-package-01"
+        });
+        uow.Seed(new StoryVocabulary { Id = 1, StoryVersionId = 1, Term = "sách", Definition = "Đồ để đọc" });
+        var ai = new Moq.Mock<IAIStoryGenerationClient>(Moq.MockBehavior.Strict);
+        var service = new LearningArtifactService(uow, ai.Object, new MockAccessGuard());
+        Task Generate() => target switch
+        {
+            "vocabulary" => service.GenerateVocabularyAsync(1, 1),
+            "quiz" => service.GenerateQuizAsync(1, 1),
+            _ => service.GenerateArtifactsAsync(1, 1)
+        };
+
+        var error = await Assert.ThrowsAsync<ConflictException>(Generate);
+
+        Assert.Equal("CONFIRMED_CONTENT_PACKAGE_IMMUTABLE", error.Message);
+        Assert.Equal("sách", Assert.Single(uow.Items<StoryVocabulary>()).Term);
+        ai.VerifyNoOtherCalls();
+    }
+
     [Fact]
     public async Task GenerateArtifacts_GeneratesVocabularyAndQuiz()
     {

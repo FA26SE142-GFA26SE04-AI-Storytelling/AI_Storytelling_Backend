@@ -111,6 +111,7 @@ public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
     {
         var sb = new StringBuilder();
         sb.AppendLine("Child-friendly storybook illustration. Avoid any unsafe content for children aged 6-12.");
+        sb.AppendLine(IllustrationTextPolicy.Instruction);
         sb.AppendLine($"People policy: {options.PersonGeneration}. Do not depict children in unsafe, sexualized, or exploitative situations.");
         sb.AppendLine("--- Story media context: preserve character appearance, style and safety across all beats ---");
         sb.AppendLine(spec.MediaContextJson);
@@ -134,6 +135,8 @@ public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
             sb.AppendLine("--- Constraints from previous failed attempt ---");
             sb.AppendLine(spec.PromptFeedback);
         }
+        sb.AppendLine("--- Mandatory final image constraint ---");
+        sb.AppendLine(IllustrationTextPolicy.Instruction);
         return sb.ToString();
     }
 

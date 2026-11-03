@@ -139,7 +139,7 @@ public sealed class LearningArtifactService : ILearningArtifactService
         if (string.IsNullOrWhiteSpace(version.Content))
             throw new BadRequestException("StoryVersion chưa có nội dung để tạo learning artifacts.");
 
-        await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, storyId, version.Id, cancellationToken);
+        await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, storyId, version.Id, cancellationToken, contentMutation: true);
         return (story, version);
     }
 
@@ -180,7 +180,7 @@ public sealed class LearningArtifactService : ILearningArtifactService
         try
         {
             await _unitOfWork.AcquireTransactionLockAsync(story.Id, cancellationToken);
-            await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, story.Id, version.Id, cancellationToken);
+            await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, story.Id, version.Id, cancellationToken, contentMutation: true);
             var vocabRepo = _unitOfWork.Repository<StoryVocabulary>();
             var existing = await vocabRepo.FindAsync(v => v.StoryVersionId == version.Id, cancellationToken: cancellationToken);
             foreach (var e in existing)
@@ -247,7 +247,7 @@ public sealed class LearningArtifactService : ILearningArtifactService
         try
         {
             await _unitOfWork.AcquireTransactionLockAsync(story.Id, cancellationToken);
-            await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, story.Id, version.Id, cancellationToken);
+            await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, story.Id, version.Id, cancellationToken, contentMutation: true);
             var quizRepo = _unitOfWork.Repository<QuizItem>();
             var existing = await quizRepo.FindAsync(q => q.StoryVersionId == version.Id, cancellationToken: cancellationToken);
             foreach (var e in existing)
@@ -333,7 +333,7 @@ public sealed class LearningArtifactService : ILearningArtifactService
         try
         {
             await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
-            await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, storyId, versionId, cancellationToken);
+            await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, storyId, versionId, cancellationToken, contentMutation: true);
             var count = await _listening.ReplaceAsync(versionId, type, drafts, cancellationToken);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
             return count;

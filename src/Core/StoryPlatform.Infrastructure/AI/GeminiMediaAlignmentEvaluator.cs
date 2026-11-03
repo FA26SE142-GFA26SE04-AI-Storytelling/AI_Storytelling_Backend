@@ -99,6 +99,8 @@ public sealed class GeminiMediaAlignmentEvaluator : IMediaAlignmentEvaluator
         var sb = new StringBuilder();
         sb.AppendLine("You are a story illustration quality evaluator for children aged 6-12.");
         sb.AppendLine("Evaluate whether the illustration depicts the specified visual beat and does not contradict the full scene.");
+        sb.AppendLine(IllustrationTextPolicy.Instruction);
+        sb.AppendLine("Inspect the actual image for visible writing, including tiny text or garbled letter-like story captions. Return containsVisibleText=true when any is present, even if the scene otherwise aligns well. Return false only when the image is text-free. Do not infer text presence from the reference story alone.");
         if (!string.IsNullOrWhiteSpace(spec.BeatText))
         {
             sb.AppendLine("BEAT TEXT:");
@@ -123,7 +125,7 @@ public sealed class GeminiMediaAlignmentEvaluator : IMediaAlignmentEvaluator
         foreach (var m in spec.MustNotContradict) sb.AppendLine($"- {m}");
         sb.AppendLine();
         sb.AppendLine("Respond ONLY with valid JSON:");
-        sb.AppendLine(@"{ ""alignmentScore"": 0.9, ""reason"": ""brief explanation"" }");
+        sb.AppendLine(@"{ ""alignmentScore"": 0.9, ""containsVisibleText"": false, ""reason"": ""brief explanation"" }");
         sb.AppendLine("Scoring guide: 0.7-1.0 = aligns well with key scene elements; below 0.7 = contradicts key elements.");
         return sb.ToString();
     }
@@ -157,6 +159,11 @@ public sealed class GeminiMediaAlignmentEvaluator : IMediaAlignmentEvaluator
         {
             using var doc = JsonDocument.Parse(GeminiResponseJson.ExtractFirstTextPayload(content));
             var root = doc.RootElement;
+            if (!root.TryGetProperty("containsVisibleText", out var visibleText) ||
+                visibleText.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                return new MediaEvaluationResult(MediaEvaluationDecision.Fail, "ILLUSTRATION_TEXT_CHECK_MISSING");
+            if (visibleText.GetBoolean())
+                return new MediaEvaluationResult(MediaEvaluationDecision.Fail, "ILLUSTRATION_CONTAINS_TEXT");
 
             JsonElement scoreElem = default;
             bool hasScore = root.TryGetProperty("alignmentScore", out scoreElem) ||

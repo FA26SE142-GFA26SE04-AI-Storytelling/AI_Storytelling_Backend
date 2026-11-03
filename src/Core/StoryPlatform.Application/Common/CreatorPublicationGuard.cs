@@ -10,11 +10,15 @@ public static class CreatorPublicationGuard
 {
     // FirstOrDefaultAsync is intentionally a no-tracking database read in GenericRepository.
     // Call under the story transaction lock when used before a write.
-    public static async Task EnsureWritableAsync(IUnitOfWork uow, int storyId, int? versionId, CancellationToken ct)
+    public static async Task EnsureWritableAsync(IUnitOfWork uow, int storyId, int? versionId, CancellationToken ct, bool contentMutation = false)
     {
         var story = await uow.Repository<Story>().FirstOrDefaultAsync(x => x.Id == storyId, cancellationToken: ct)
             ?? throw new NotFoundException("Story", storyId);
-        if (story.Scope != StoryScope.Creator) return;
+        if (story.Scope != StoryScope.Creator)
+        {
+            if (contentMutation) await EnsurePackageMutableAsync(uow, storyId, versionId, ct);
+            return;
+        }
         if (story.IsDeleted || story.IsPublished || story.ArchivedAt != null || story.Status == StoryStatus.Rejected)
             throw new ConflictException("CREATOR_PUBLICATION_LOCKED");
         if (await uow.Repository<ModerationItem>().ExistsAsync(x => x.StoryId == storyId && !x.IsDeleted &&
@@ -28,18 +32,26 @@ public static class CreatorPublicationGuard
             version.Moderation.ReviewSubmittedAt != null || await uow.Repository<ModerationItem>().ExistsAsync(x =>
                 x.ItemType == ModerationItemType.PublicStoryReview && x.StoryVersionId == version.Id, ct)))
             throw new ConflictException("SUBMITTED_VERSION_IMMUTABLE_CREATE_REVISION");
+        if (contentMutation) await EnsurePackageMutableAsync(uow, storyId, versionId, ct);
+    }
+
+    private static async Task EnsurePackageMutableAsync(IUnitOfWork uow, int storyId, int? versionId, CancellationToken ct)
+    {
+        var target = versionId ?? (await uow.Repository<StoryVersion>().FirstOrDefaultAsync(
+            x => x.StoryId == storyId && x.IsCurrent, cancellationToken: ct))?.Id;
+        if (target.HasValue && await uow.Repository<StoryAuthoringOperation>().ExistsAsync(
+            x => x.StoryId == storyId && x.StoryVersionId == target && x.Kind == "package-confirm", ct))
+            throw new ConflictException("CONFIRMED_CONTENT_PACKAGE_IMMUTABLE");
     }
 
     public static async Task<T> WriteAsync<T>(IUnitOfWork uow, int storyId, int? versionId,
         Func<Task<T>> action, CancellationToken ct)
     {
-        var creator = await uow.Repository<Story>().ExistsAsync(x => x.Id == storyId && x.Scope == StoryScope.Creator, ct);
-        if (!creator) return await action();
         await uow.BeginTransactionAsync(ct);
         try
         {
             await uow.AcquireTransactionLockAsync(storyId, ct);
-            await EnsureWritableAsync(uow, storyId, versionId, ct);
+            await EnsureWritableAsync(uow, storyId, versionId, ct, contentMutation: true);
             var result = await action();
             await uow.CommitTransactionAsync(ct);
             return result;

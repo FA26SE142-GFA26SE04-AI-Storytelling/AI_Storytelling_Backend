@@ -45,6 +45,6 @@ public sealed class ContentGenerationController : ControllerBase
         var result = await _service.RetryAsync(userId, storyId, input, cancellationToken);
         return Accepted(ApiResponse<ContentGenerationProgressDto>.Ok(
             result,
-            "Đã ghi nhận yêu cầu retry sinh nội dung từ outline đã duyệt."));
+            "Đã ghi nhận yêu cầu tiếp tục xử lý phần nội dung hoặc học liệu chưa đạt."));
     }
 }

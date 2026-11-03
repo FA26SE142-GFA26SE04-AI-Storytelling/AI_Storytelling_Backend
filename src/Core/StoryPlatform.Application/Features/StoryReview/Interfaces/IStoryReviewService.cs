@@ -49,6 +49,7 @@ public interface IStoryReviewService
     Task<bool> CompleteQuizReviewAsync(int userId, int storyId, CancellationToken cancellationToken = default);
 
     Task<ValidationResultDto> ValidateAsync(int userId, int storyId, CancellationToken cancellationToken = default);
+    Task<ConfirmStoryPackageResponseDto> ConfirmPackageAsync(int userId, int storyId, ConfirmStoryPackageRequestDto input, CancellationToken cancellationToken = default);
     Task<ConfirmCreatorContentResponseDto> ConfirmCreatorContentAsync(int userId, int storyId, ConfirmCreatorContentRequestDto input, CancellationToken cancellationToken = default);
     Task<ApproveResponseDto> ApproveAsync(int userId, int storyId, CancellationToken cancellationToken = default);
     Task<ApproveResponseDto?> EvaluateAndApplyAutoPublishAsync(int storyId, CancellationToken cancellationToken = default);

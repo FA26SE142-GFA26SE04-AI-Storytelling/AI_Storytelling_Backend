@@ -17,11 +17,108 @@ using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.UnitTests.Features.ListeningInteractions;
 using Xunit;
+using StoryPlatform.Application.Common.Exceptions;
 
 namespace StoryPlatform.UnitTests;
 
 public sealed class ContentGenerationServiceTests
 {
+    private static FakeUnitOfWork RepairSource()
+    {
+        var store = Seed();
+        var story = store.Items<Story>().Single();
+        story.Status = StoryStatus.ContentReview; story.ReadingLevel = 3; story.Language = "vi";
+        var version = store.Items<StoryVersion>().Single();
+        version.Content = string.Join(' ', Enumerable.Repeat("Lan và Minh cùng chia sẻ sách rồi đi chơi ở sân.", 12));
+        var job = store.Items<StoryGenerationJob>().Single();
+        job.Status = GenerationJobStatus.Completed; job.Stage = JobStage.ContentStable; job.StoryVersionId = version.Id;
+        var request = store.Items<StoryGenerationRequest>().Single();
+        var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var context = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(request.ContextSnapshotJson, json)!;
+        request.ContextSnapshotJson = JsonSerializer.Serialize(context with { ReadingLevel = 3, ReadabilityScoreThreshold = 70m }, json);
+        var input = JsonSerializer.Deserialize<AcceptedAIStoryInputSnapshot>(request.AcceptedInputJson!, json)!;
+        request.AcceptedInputJson = JsonSerializer.Serialize(input with { TargetLength = 100 }, json);
+        store.Seed(new SafetyPolicy { Id = 1, ChildProfileId = 1, ConsentRecorded = true, ConsentRecordedAt = DateTime.UtcNow,
+            ConsentPolicyVersion = 1, ReadabilityScoreThreshold = 70m });
+        return store;
+    }
+
+    [Fact]
+    public async Task Retry_repairs_legacy_content_without_overwriting_source_or_copying_artifacts()
+    {
+        var store = RepairSource(); var ai = new RepairAI();
+        var source = store.Items<StoryVersion>().Single(); var original = source.Content;
+        store.Seed(new StoryVocabulary { Id = 1, StoryVersionId = source.Id, Term = "sách", Definition = "Đồ để đọc" });
+        var service = new ContentGenerationService(store, ai, new RuleBasedContentQualityEvaluator(), new FakeFailureFinalizer(store),
+            new RecordingHandoffService(store), new ContentGenerationOptions());
+        var input = new RetryContentGenerationRequestDto { RetryKey = new string('r', 100) };
+        await service.RetryAsync(1, 1, input);
+        await service.RetryAsync(1, 1, input);
+        Assert.Equal(2, store.Items<StoryGenerationJob>().Count);
+        Assert.True(source.IsCurrent); Assert.Equal(original, source.Content);
+        Assert.True(await service.ProcessNextAsync());
+        var current = store.Items<StoryVersion>().Single(x => x.IsCurrent);
+        Assert.NotEqual(source.Id, current.Id); Assert.Equal(source.Id, current.BaseVersionId);
+        Assert.Equal(original, source.Content); Assert.False(source.IsCurrent);
+        Assert.DoesNotContain(store.Items<StoryVocabulary>(), x => x.StoryVersionId == current.Id);
+        Assert.Equal(new[] { "refine", "safety" }, ai.Calls);
+        Assert.Equal(70m, ai.LastRepair!.Constraints.Readability!.MinimumEaseScore);
+        var repaired = store.Items<StoryGenerationJob>().Single(x => x.OperationKey!.StartsWith("repair:"));
+        Assert.Equal(GenerationJobStatus.Completed, repaired.Status);
+        Assert.Contains(ReadabilityEvaluationEvidence.Hash(current.Content!), repaired.GenerationMetadataJson);
+    }
+
+    [Fact]
+    public async Task Repair_rejects_changed_policy_and_active_jobs()
+    {
+        var store = RepairSource(); var service = Service(store, new FakeAIClient());
+        store.Items<SafetyPolicy>().Single().ReadabilityScoreThreshold = 80m;
+        var error = await Assert.ThrowsAsync<ConflictException>(() => service.RetryAsync(1, 1, new() { RetryKey = "repair-policy-01" }));
+        Assert.Equal("READABILITY_POLICY_CHANGED", error.Message);
+        store.Items<SafetyPolicy>().Single().ReadabilityScoreThreshold = 70m;
+        store.Items<StoryGenerationJob>().Single().Status = GenerationJobStatus.Processing;
+        await Assert.ThrowsAsync<ConflictException>(() => service.RetryAsync(1, 1, new() { RetryKey = "repair-active-01" }));
+        Assert.Single(store.Items<StoryVersion>());
+    }
+
+    [Fact]
+    public async Task Repair_timeout_preserves_source_and_exposes_retryable_failure()
+    {
+        var store = RepairSource(); var source = store.Items<StoryVersion>().Single();
+        var service = Service(store, new RepairAI(fail: true));
+        await service.RetryAsync(1, 1, new() { RetryKey = "repair-timeout-01" });
+        Assert.True(await service.ProcessNextAsync());
+        var progress = await service.GetProgressAsync(1, 1);
+        Assert.Equal("CONTENT_GENERATION_TIMEOUT", progress.LastErrorCode);
+        Assert.Equal("failed_content", progress.CurrentStep);
+        Assert.True(source.IsCurrent); Assert.Single(store.Items<StoryVersion>());
+        await service.RetryAsync(1, 1, new() { RetryKey = "repair-timeout-02" });
+        Assert.Equal(3, store.Items<StoryGenerationJob>().Count);
+    }
+
+    private sealed class RepairAI(bool fail = false) : FakeAIClient
+    {
+        public override Task<RefineStoryContentResponse> RefineStoryContentAsync(RefineStoryContentRequest request, CancellationToken ct = default)
+        {
+            LastRepair = request; Calls.Add("refine");
+            if (fail) throw new TimeoutException();
+            return Task.FromResult(new RefineStoryContentResponse { RequestId = request.RequestId,
+                Story = request.Story with { StorySections = [new StorySectionDto(1, "", string.Join(' ', Enumerable.Repeat("Lan và Minh cùng chia sẻ sách.", 15)))] } });
+        }
+        public RefineStoryContentRequest? LastRepair { get; private set; }
+    }
+
+    [Fact]
+    public async Task Repair_rejects_source_changes_while_job_is_waiting()
+    {
+        var store = RepairSource(); var ai = new RepairAI(); var service = Service(store, ai);
+        await service.RetryAsync(1, 1, new() { RetryKey = "repair-stale-source-01" });
+        store.Items<StoryVersion>().Single().Content += " Một chi tiết khác.";
+        Assert.True(await service.ProcessNextAsync());
+        Assert.Empty(ai.Calls);
+        Assert.Equal("STALE_REPAIR_SOURCE", (await service.GetProgressAsync(1, 1)).LastErrorCode);
+        Assert.Single(store.Items<StoryVersion>());
+    }
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -87,6 +184,8 @@ public sealed class ContentGenerationServiceTests
 
         Assert.Equal(GenerationJobStatus.Completed, job.Status);
         Assert.Equal(1, ai.SnapshotCalls);
+        Assert.Null(job.ErrorCode);
+        Assert.Null(job.NextAttemptAt);
         Assert.All(ai.ListeningRequests, x => Assert.Equal("fixture-listening-v1", x.Snapshot!.PromptVersionNo));
         var receipt = JsonSerializer.Deserialize<StoryPlatform.Application.Features.ListeningInteractions.Models.ListeningJobState>(
             job.GenerationMetadataJson!, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
@@ -1262,7 +1361,7 @@ public sealed class ContentGenerationServiceTests
                 ReasonCode = blockSafety ? "CONTENT_SAFETY_BLOCKED" : "CONTENT_SAFETY_ALLOWED"
             });
         }
-        public Task<RefineStoryContentResponse> RefineStoryContentAsync(RefineStoryContentRequest request, CancellationToken cancellationToken = default)
+        public virtual Task<RefineStoryContentResponse> RefineStoryContentAsync(RefineStoryContentRequest request, CancellationToken cancellationToken = default)
         {
             LastRefinement = request;
             Calls.Add("refine");

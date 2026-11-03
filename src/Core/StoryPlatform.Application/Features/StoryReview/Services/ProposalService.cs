@@ -64,7 +64,14 @@ public sealed class ProposalService : IProposalService
         switch (proposal.ArtifactType)
         {
             case "story" when proposal.OperationType == "partial_edit":
-                await ApplyStoryProposalAsync(userId, proposal, cancellationToken);
+                if (targetStory?.Scope == StoryScope.Creator)
+                    await ApplyStoryProposalAsync(userId, proposal, cancellationToken);
+                else
+                    await CreatorPublicationGuard.WriteAsync(_unitOfWork, storyId, proposal.StoryVersionId, async () =>
+                    {
+                        await ApplyStoryProposalAsync(userId, proposal, cancellationToken);
+                        return true;
+                    }, cancellationToken);
                 break;
             case "vocabulary":
                 await CreatorPublicationGuard.WriteAsync(_unitOfWork, storyId, proposal.StoryVersionId, async () =>

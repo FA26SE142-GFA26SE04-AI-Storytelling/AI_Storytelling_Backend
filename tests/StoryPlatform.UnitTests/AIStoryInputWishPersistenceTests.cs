@@ -34,7 +34,7 @@ public sealed partial class AIStoryInputServiceTests
         db.Set<StoryWish>().Add(PendingWish());
         db.Set<TokenQuotaConfig>().Add(new()
         {
-            Scope = TokenQuotaScope.Child, ChildProfileId = 1, QuotaLimit = 10,
+            Scope = TokenQuotaScope.Personal, UserId = 1, QuotaLimit = 10,
             PeriodStart = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1)), PeriodEnd = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30))
         });
         await db.SaveChangesAsync();

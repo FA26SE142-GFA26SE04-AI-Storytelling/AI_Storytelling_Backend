@@ -4160,9 +4160,6 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<int?>("ChildProfileId")
-                        .HasColumnType("integer");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -4193,8 +4190,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("ChildProfileId");
 
                     b.HasIndex("UserId");
 
@@ -5885,17 +5880,10 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.TokenQuotaConfig", b =>
                 {
-                    b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
-                        .WithMany()
-                        .HasForeignKey("ChildProfileId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("ChildProfile");
 
                     b.Navigation("User");
                 });

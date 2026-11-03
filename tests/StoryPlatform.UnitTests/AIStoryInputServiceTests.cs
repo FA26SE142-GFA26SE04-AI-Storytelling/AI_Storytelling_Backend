@@ -384,8 +384,8 @@ public sealed partial class AIStoryInputServiceTests
         unitOfWork.Seed(new StoryPlatform.Domain.Entities.TokenQuotaConfig
         {
             Id = 1,
-            Scope = StoryPlatform.Domain.Enums.TokenQuotaScope.Child,
-            ChildProfileId = 1,
+            Scope = StoryPlatform.Domain.Enums.TokenQuotaScope.Personal,
+            UserId = 1,
             QuotaLimit = 1,
             QuotaUsed = 1,
             PeriodStart = today,
@@ -407,8 +407,8 @@ public sealed partial class AIStoryInputServiceTests
         var config = new StoryPlatform.Domain.Entities.TokenQuotaConfig
         {
             Id = 1,
-            Scope = StoryPlatform.Domain.Enums.TokenQuotaScope.Child,
-            ChildProfileId = 1,
+            Scope = StoryPlatform.Domain.Enums.TokenQuotaScope.Personal,
+            UserId = 1,
             QuotaLimit = 5,
             QuotaUsed = 0,
             PeriodStart = today,

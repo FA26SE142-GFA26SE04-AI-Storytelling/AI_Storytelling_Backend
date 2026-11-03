@@ -64,9 +64,10 @@ public class TokenQuotaService : ITokenQuotaService
     public async Task<TokenQuotaConfigDto> SetConfigAsync(
         int adminUserId, SetTokenQuotaConfigRequestDto request, CancellationToken cancellationToken = default)
     {
-        if (!Enum.TryParse<TokenQuotaScope>(request.Scope, ignoreCase: true, out var scope))
+        if (!Enum.TryParse<TokenQuotaScope>(request.Scope, ignoreCase: true, out var scope)
+            || scope is not (TokenQuotaScope.System or TokenQuotaScope.Personal))
         {
-            throw new BadRequestException("Scope phải là 'System', 'Child' hoặc 'Personal'.");
+            throw new BadRequestException("Scope phải là 'System' hoặc 'Personal'.");
         }
 
         if (request.PeriodEnd <= request.PeriodStart)
@@ -79,11 +80,6 @@ public class TokenQuotaService : ITokenQuotaService
             throw new BadRequestException("QuotaLimit không được âm.");
         }
 
-        if (scope == TokenQuotaScope.Child && !request.ChildProfileId.HasValue)
-        {
-            throw new BadRequestException("ChildProfileId là bắt buộc cho scope Child.");
-        }
-
         if (scope == TokenQuotaScope.Personal && !request.UserId.HasValue)
         {
             throw new BadRequestException("UserId là bắt buộc cho scope Personal.");
@@ -92,7 +88,6 @@ public class TokenQuotaService : ITokenQuotaService
         Expression<Func<TokenQuotaConfig, bool>> matchPredicate = scope switch
         {
             TokenQuotaScope.System => c => c.Scope == TokenQuotaScope.System,
-            TokenQuotaScope.Child => c => c.Scope == TokenQuotaScope.Child && c.ChildProfileId == request.ChildProfileId,
             TokenQuotaScope.Personal => c => c.Scope == TokenQuotaScope.Personal && c.UserId == request.UserId,
             _ => throw new BadRequestException("Scope không hợp lệ.")
         };
@@ -109,7 +104,6 @@ public class TokenQuotaService : ITokenQuotaService
             existing = new TokenQuotaConfig
             {
                 Scope = scope,
-                ChildProfileId = request.ChildProfileId,
                 UserId = request.UserId,
                 QuotaLimit = request.QuotaLimit,
                 QuotaUsed = 0,
@@ -212,22 +206,14 @@ public class TokenQuotaService : ITokenQuotaService
     }
 
     /// <summary>
-    /// Resolves the applicable config for a child by scope hierarchy (Child -> Personal
-    /// -> System) as a pure read — never rolls over or persists anything. Callers decide whether they
+    /// Resolves the applicable config for a child by scope hierarchy (Personal -> System)
+    /// as a pure read — never rolls over or persists anything. Callers decide whether they
     /// need a real (persisted) rollover (<see cref="IncrementUsageAsync"/>) or just an as-if-rolled-over
     /// view (<see cref="EnsureWithinQuotaAsync"/>, <see cref="GetStatusForChildAsync"/>).
     /// </summary>
     private async Task<TokenQuotaConfig?> ResolveApplicableConfigRawAsync(ChildProfile child, CancellationToken cancellationToken)
     {
         var repo = _unitOfWork.Repository<TokenQuotaConfig>();
-
-        var childConfig = await repo.FirstOrDefaultAsync(
-            c => c.Scope == TokenQuotaScope.Child && c.ChildProfileId == child.Id,
-            cancellationToken: cancellationToken);
-        if (childConfig != null)
-        {
-            return childConfig;
-        }
 
         var personalConfig = await repo.FirstOrDefaultAsync(
             c => c.Scope == TokenQuotaScope.Personal && c.UserId == child.OwnerUserId,
@@ -315,7 +301,6 @@ public class TokenQuotaService : ITokenQuotaService
     {
         Id = config.Id,
         Scope = config.Scope.ToString(),
-        ChildProfileId = config.ChildProfileId,
         UserId = config.UserId,
         QuotaLimit = config.QuotaLimit,
         QuotaUsed = config.QuotaUsed,

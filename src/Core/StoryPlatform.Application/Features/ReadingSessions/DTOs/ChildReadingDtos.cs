@@ -225,4 +225,8 @@ public class NotebookEntryDto
     /// <summary>Cảnh đầu tiên có từ này, để nút "Đọc lại đoạn này" nhảy tới; null nếu không tìm thấy.</summary>
     public int? SceneIndex { get; set; }
     public DateTime CollectedAt { get; set; }
+    /// <summary>EXP vừa nhận khi lưu từ (chỉ có ở kết quả lưu; 0 khi lưu lại từ đã xóa).</summary>
+    public int ExpGained { get; set; }
+    /// <summary>Mã huy hiệu vừa mở khi lưu từ.</summary>
+    public List<string> NewBadges { get; set; } = new();
 }

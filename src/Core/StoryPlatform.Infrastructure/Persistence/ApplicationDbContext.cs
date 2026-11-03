@@ -74,6 +74,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<TelemetryLog> TelemetryLogs => Set<TelemetryLog>();
     public DbSet<QuizAttempt> QuizAttempts => Set<QuizAttempt>();
     public DbSet<Achievement> Achievements => Set<Achievement>();
+    public DbSet<KnowledgeTree> KnowledgeTrees => Set<KnowledgeTree>();
     public DbSet<Badge> Badges => Set<Badge>();
     public DbSet<VocabularyNotebookEntry> VocabularyNotebookEntries => Set<VocabularyNotebookEntry>();
 

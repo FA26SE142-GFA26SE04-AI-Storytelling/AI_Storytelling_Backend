@@ -424,16 +424,19 @@ public class ChildReadingService : IChildReadingService
             await _unitOfWork.SaveChangesAsync(ct);
 
             // The recorder reuses this UOW transaction and may commit it. Queue all completion writes before it.
-            var step = await _recorder.RecordSessionCompletedAsync(session.Id, isRetake, ct);
+            var roadmap = await _recorder.RecordSessionCompletedAsync(session.Id, isRetake, ct);
             await _unitOfWork.CommitTransactionAsync(ct);
             return new ReadingCompletedDto
             {
                 SessionId = session.Id,
                 StoryId = storyId,
                 IsRetake = isRetake,
-                RoadmapStepCompleted = step != null,
+                RoadmapStepCompleted = roadmap != null,
                 ExpGained = reward.ExpGained,
-                NewBadges = reward.NewBadgeCodes.ToList()
+                NewBadges = reward.NewBadgeCodes
+                    .Concat(roadmap?.NewBadgeCodes ?? Array.Empty<string>())
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList()
             };
         }
         catch

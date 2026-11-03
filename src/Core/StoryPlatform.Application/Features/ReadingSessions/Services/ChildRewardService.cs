@@ -71,6 +71,28 @@ public class ChildRewardService : IChildRewardService
         return new RewardOutcome(exp, newBadges);
     }
 
+    public async Task<RewardOutcome> OnWordCollectedAsync(
+        ReadingSession session, int wordsInNotebook, CancellationToken ct = default)
+    {
+        var childId = session.ChildProfileId;
+        var (achievement, isNew) = await GetOrCreateAsync(childId, ct);
+        achievement.ExpTotal += RewardPolicy.WordCollectedExp;
+
+        var newBadges = wordsInNotebook >= RewardPolicy.WordCollectorCount
+            ? await AwardBadgesAsync(childId, new[] { BadgeCatalog.WordCollector50 }, ct)
+            : new List<string>();
+        await SaveAchievementAsync(achievement, isNew, ct);
+        await LogAsync(session.Id, RewardPolicy.WordCollectedExp, "WordCollected", newBadges, ct);
+        return new RewardOutcome(RewardPolicy.WordCollectedExp, newBadges);
+    }
+
+    public async Task<RewardOutcome> OnRoadmapFinishedAsync(ReadingSession session, CancellationToken ct = default)
+    {
+        var newBadges = await AwardBadgesAsync(session.ChildProfileId, new[] { BadgeCatalog.RoadmapFinisher }, ct);
+        await LogAsync(session.Id, 0, "RoadmapFinished", newBadges, ct);
+        return new RewardOutcome(0, newBadges);
+    }
+
     public async Task<ChildRewardsDto> GetSummaryAsync(int childProfileId, CancellationToken ct = default)
     {
         var achievement = await _unitOfWork.Repository<Achievement>().FirstOrDefaultAsync(
@@ -83,11 +105,13 @@ public class ChildRewardService : IChildRewardService
         var today = RewardPolicy.LocalToday(_clock);
         var last = achievement?.LastStreakDate;
         var alive = last.HasValue && (last.Value == today || last.Value == today.AddDays(-1));
+        var tree = await FindTreeAsync(childProfileId, ct) ?? new KnowledgeTree { ChildProfileId = childProfileId };
 
         return new ChildRewardsDto
         {
             ExpTotal = achievement?.ExpTotal ?? 0,
             StreakDays = alive ? achievement!.StreakDays : 0,
+            KnowledgeTree = ToTreeDto(tree, achievement?.ExpTotal ?? 0),
             Badges = BadgeCatalog.All.Select(info => new ChildBadgeDto
             {
                 Code = info.Code,
@@ -96,6 +120,74 @@ public class ChildRewardService : IChildRewardService
                 Earned = earned.ContainsKey(info.Code),
                 EarnedAt = earned.TryGetValue(info.Code, out var at) ? at : null
             }).ToList()
+        };
+    }
+
+    public async Task<WaterKnowledgeTreeResultDto> WaterKnowledgeTreeAsync(int childProfileId, CancellationToken ct = default)
+    {
+        var expTotal = (await _unitOfWork.Repository<Achievement>().FirstOrDefaultAsync(
+            row => row.ChildProfileId == childProfileId && !row.IsDeleted, cancellationToken: ct))?.ExpTotal ?? 0;
+        var existing = await FindTreeAsync(childProfileId, ct);
+        var tree = existing ?? new KnowledgeTree { ChildProfileId = childProfileId };
+        var previousStage = KnowledgeTreePolicy.StageOf(tree.CurrentTreeExp).Code;
+        var available = Math.Max(0, expTotal - tree.ExpInvested);
+        if (available == 0)
+        {
+            return new WaterKnowledgeTreeResultDto { PreviousStage = previousStage, Tree = ToTreeDto(tree, expTotal) };
+        }
+
+        // Cây đã ra hoa ở lại cho trẻ ngắm tới lần tưới này; giờ đưa vào vườn rồi trồng hạt mới.
+        var newTreePlanted = false;
+        if (tree.CurrentTreeExp >= KnowledgeTreePolicy.FlowerAt)
+        {
+            tree.FloweredTreeCount += 1;
+            tree.CurrentTreeExp = 0;
+            newTreePlanted = true;
+        }
+
+        // Ghi trên bảng riêng, không đụng dòng achievements đang được cộng EXP ở request khác.
+        var poured = Math.Min(available, KnowledgeTreePolicy.FlowerAt - tree.CurrentTreeExp);
+        tree.CurrentTreeExp += poured;
+        tree.ExpInvested += poured;
+        tree.LastWateredAt = DateTime.UtcNow;
+        tree.UpdatedAt = tree.LastWateredAt;
+
+        var repository = _unitOfWork.Repository<KnowledgeTree>();
+        if (existing == null)
+        {
+            await repository.AddAsync(tree, ct);
+        }
+        else
+        {
+            repository.Update(tree);
+        }
+
+        await _unitOfWork.SaveChangesAsync(ct);
+        return new WaterKnowledgeTreeResultDto
+        {
+            ExpPoured = poured,
+            NewTreePlanted = newTreePlanted,
+            PreviousStage = previousStage,
+            Tree = ToTreeDto(tree, expTotal)
+        };
+    }
+
+    private Task<KnowledgeTree?> FindTreeAsync(int childProfileId, CancellationToken ct) =>
+        _unitOfWork.Repository<KnowledgeTree>().FirstOrDefaultAsync(
+            row => row.ChildProfileId == childProfileId && !row.IsDeleted, cancellationToken: ct);
+
+    private static KnowledgeTreeDto ToTreeDto(KnowledgeTree tree, int expTotal)
+    {
+        var stage = KnowledgeTreePolicy.StageOf(tree.CurrentTreeExp);
+        return new KnowledgeTreeDto
+        {
+            Stage = stage.Code,
+            StageName = stage.Name,
+            CurrentTreeExp = tree.CurrentTreeExp,
+            NextStageAt = stage.NextAt,
+            FlowerAt = KnowledgeTreePolicy.FlowerAt,
+            FloweredTreeCount = tree.FloweredTreeCount,
+            ExpToWater = Math.Max(0, expTotal - tree.ExpInvested)
         };
     }
 

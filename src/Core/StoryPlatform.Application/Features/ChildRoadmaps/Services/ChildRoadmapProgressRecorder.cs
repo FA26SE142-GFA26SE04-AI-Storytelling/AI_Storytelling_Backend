@@ -1,6 +1,7 @@
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
+using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -12,20 +13,23 @@ public class ChildRoadmapProgressRecorder : IChildRoadmapProgressRecorder
     private readonly IChildRoadmapAdvancer _advancer;
     private readonly IChildRoadmapNotifier _notifier;
     private readonly IAuditLogWriter _auditLogWriter;
+    private readonly IChildRewardService _rewards;
 
     public ChildRoadmapProgressRecorder(
         IUnitOfWork unitOfWork,
         IChildRoadmapAdvancer advancer,
         IChildRoadmapNotifier notifier,
-        IAuditLogWriter auditLogWriter)
+        IAuditLogWriter auditLogWriter,
+        IChildRewardService rewards)
     {
         _unitOfWork = unitOfWork;
         _advancer = advancer;
         _notifier = notifier;
         _auditLogWriter = auditLogWriter;
+        _rewards = rewards;
     }
 
-    public async Task<ChildRoadmapItem?> RecordSessionCompletedAsync(
+    public async Task<RoadmapCompletionResult?> RecordSessionCompletedAsync(
         int readingSessionId, bool isRetake, CancellationToken cancellationToken = default)
     {
         if (isRetake)
@@ -61,6 +65,7 @@ public class ChildRoadmapProgressRecorder : IChildRoadmapProgressRecorder
         }
 
         var wasOpen = step.Status == ChildRoadmapItemStatus.Open;
+        IReadOnlyList<string> newBadges = Array.Empty<string>();
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
@@ -100,6 +105,9 @@ public class ChildRoadmapProgressRecorder : IChildRoadmapProgressRecorder
             if (remaining.Count == 0 && !holdMode)
             {
                 await _notifier.NotifyRoadmapCompletedAsync(childId, cancellationToken);
+                var finished = await _rewards.OnRoadmapFinishedAsync(session, cancellationToken);
+                newBadges = finished.NewBadgeCodes;
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
             }
 
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
@@ -110,6 +118,6 @@ public class ChildRoadmapProgressRecorder : IChildRoadmapProgressRecorder
             throw;
         }
 
-        return step;
+        return new RoadmapCompletionResult(step, newBadges);
     }
 }

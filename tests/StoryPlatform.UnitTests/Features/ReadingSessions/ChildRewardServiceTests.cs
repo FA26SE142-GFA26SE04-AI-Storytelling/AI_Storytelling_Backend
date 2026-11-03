@@ -1,3 +1,4 @@
+using Moq;
 using StoryPlatform.Application.Features.ReadingSessions;
 using StoryPlatform.Application.Features.ReadingSessions.Services;
 using StoryPlatform.Domain.Entities;
@@ -266,5 +267,200 @@ public class ChildRewardServiceTests
         Assert.Equal(earnedAt, bookworm.EarnedAt);
         Assert.False(summary.Badges.Single(b => b.Code == BadgeCatalog.FirstStory).Earned);
         Assert.Equal(BadgeCatalog.All.Count, summary.Badges.Count);
+    }
+    // ---- Sổ tay, lộ trình ----
+
+    [Fact]
+    public async Task WordCollected_GivesOneExp_KeepsStreak_AndLogsTheReward()
+    {
+        var session = Completed();
+
+        var outcome = await _sut.OnWordCollectedAsync(session, wordsInNotebook: 1);
+
+        Assert.Equal(1, outcome.ExpGained);
+        Assert.Empty(outcome.NewBadgeCodes);
+        Assert.Equal(1, Row().ExpTotal);
+        Assert.Equal(0, Row().StreakDays);
+        Assert.Null(Row().LastStreakDate);
+        Assert.Contains(_h.Telemetry, t => t.EventType == TelemetryEventType.RewardGranted && t.ReadingSessionId == session.Id);
+    }
+
+    [Fact]
+    public async Task WordCollected_AtFifty_AwardsWordCollectorOnlyOnce()
+    {
+        var session = Completed();
+
+        var atFifty = await _sut.OnWordCollectedAsync(session, wordsInNotebook: 50);
+        var atFiftyOne = await _sut.OnWordCollectedAsync(session, wordsInNotebook: 51);
+
+        Assert.Equal(new[] { BadgeCatalog.WordCollector50 }, atFifty.NewBadgeCodes);
+        Assert.Empty(atFiftyOne.NewBadgeCodes);
+        Assert.Single(_h.Badges, b => b.BadgeCode == BadgeCatalog.WordCollector50);
+    }
+
+    [Fact]
+    public async Task RoadmapFinished_AwardsTheBadgeOnce_WithoutExp()
+    {
+        var session = Completed();
+
+        var first = await _sut.OnRoadmapFinishedAsync(session);
+        var second = await _sut.OnRoadmapFinishedAsync(session);
+
+        Assert.Equal(0, first.ExpGained);
+        Assert.Equal(new[] { BadgeCatalog.RoadmapFinisher }, first.NewBadgeCodes);
+        Assert.Empty(second.NewBadgeCodes);
+        Assert.Empty(_h.Achievements);
+        Assert.Single(_h.Telemetry, t => t.EventType == TelemetryEventType.BadgeUnlocked);
+    }
+
+    // ---- Knowledge tree ----
+
+    private void HasExp(int exp) =>
+        _h.Achievements.Add(new Achievement { Id = 1, ChildProfileId = ReadingHarness.Child, ExpTotal = exp });
+
+    private KnowledgeTree Tree() => _h.KnowledgeTrees.Single(t => t.ChildProfileId == ReadingHarness.Child);
+
+    [Fact]
+    public async Task Summary_WithoutTree_ShowsASeedAndAllExpReadyToWater()
+    {
+        HasExp(45);
+
+        var summary = await _sut.GetSummaryAsync(ReadingHarness.Child);
+
+        Assert.Equal(KnowledgeTreePolicy.Seed, summary.KnowledgeTree.Stage);
+        Assert.Equal("Hạt", summary.KnowledgeTree.StageName);
+        Assert.Equal(0, summary.KnowledgeTree.CurrentTreeExp);
+        Assert.Equal(45, summary.KnowledgeTree.ExpToWater);
+        Assert.Equal(30, summary.KnowledgeTree.NextStageAt);
+        Assert.Empty(_h.KnowledgeTrees);
+    }
+
+    [Fact]
+    public async Task Water_PoursAllUnwateredExp_AndNeverLowersTotalExp()
+    {
+        HasExp(45);
+
+        var result = await _sut.WaterKnowledgeTreeAsync(ReadingHarness.Child);
+
+        Assert.Equal(45, result.ExpPoured);
+        Assert.Equal(KnowledgeTreePolicy.Seed, result.PreviousStage);
+        Assert.Equal(KnowledgeTreePolicy.Sprout, result.Tree.Stage);
+        Assert.Equal(0, result.Tree.ExpToWater);
+        Assert.False(result.NewTreePlanted);
+        Assert.Equal(45, Tree().ExpInvested);
+        Assert.Equal(45, Tree().CurrentTreeExp);
+        Assert.NotNull(Tree().LastWateredAt);
+        Assert.Equal(45, _h.Achievements.Single().ExpTotal);
+        _h.UnitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Water_OnlyPoursExpEarnedSinceTheLastWatering()
+    {
+        HasExp(60);
+        _h.KnowledgeTrees.Add(new KnowledgeTree { Id = 1, ChildProfileId = ReadingHarness.Child, ExpInvested = 40, CurrentTreeExp = 40 });
+
+        var result = await _sut.WaterKnowledgeTreeAsync(ReadingHarness.Child);
+
+        Assert.Equal(20, result.ExpPoured);
+        Assert.Equal(KnowledgeTreePolicy.Sprout, result.PreviousStage);
+        Assert.Equal(60, Tree().CurrentTreeExp);
+        Assert.Single(_h.KnowledgeTrees);
+    }
+
+    [Fact]
+    public async Task Water_StopsAtFlowering_AndKeepsTheRestForTheNextTree()
+    {
+        HasExp(520);
+        _h.KnowledgeTrees.Add(new KnowledgeTree { Id = 1, ChildProfileId = ReadingHarness.Child, ExpInvested = 480, CurrentTreeExp = 480 });
+
+        var result = await _sut.WaterKnowledgeTreeAsync(ReadingHarness.Child);
+
+        Assert.Equal(20, result.ExpPoured);
+        Assert.Equal(KnowledgeTreePolicy.Flowering, result.Tree.Stage);
+        Assert.Null(result.Tree.NextStageAt);
+        Assert.Equal(20, result.Tree.ExpToWater);
+        Assert.False(result.NewTreePlanted);
+        Assert.Equal(0, Tree().FloweredTreeCount);
+    }
+
+    [Fact]
+    public async Task Water_AFloweringTree_MovesItToTheGardenAndPlantsANewSeed()
+    {
+        HasExp(520);
+        _h.KnowledgeTrees.Add(new KnowledgeTree { Id = 1, ChildProfileId = ReadingHarness.Child, ExpInvested = 500, CurrentTreeExp = 500 });
+
+        var result = await _sut.WaterKnowledgeTreeAsync(ReadingHarness.Child);
+
+        Assert.True(result.NewTreePlanted);
+        Assert.Equal(KnowledgeTreePolicy.Flowering, result.PreviousStage);
+        Assert.Equal(20, result.ExpPoured);
+        Assert.Equal(1, Tree().FloweredTreeCount);
+        Assert.Equal(20, Tree().CurrentTreeExp);
+        Assert.Equal(520, Tree().ExpInvested);
+        Assert.Equal(KnowledgeTreePolicy.Seed, result.Tree.Stage);
+        Assert.Equal(1, result.Tree.FloweredTreeCount);
+    }
+
+    [Fact]
+    public async Task Water_AFloweringTreeWithNothingToWater_StaysFlowering()
+    {
+        HasExp(500);
+        _h.KnowledgeTrees.Add(new KnowledgeTree { Id = 1, ChildProfileId = ReadingHarness.Child, ExpInvested = 500, CurrentTreeExp = 500 });
+
+        var result = await _sut.WaterKnowledgeTreeAsync(ReadingHarness.Child);
+
+        Assert.Equal(0, result.ExpPoured);
+        Assert.False(result.NewTreePlanted);
+        Assert.Equal(KnowledgeTreePolicy.Flowering, result.Tree.Stage);
+        Assert.Equal(0, Tree().FloweredTreeCount);
+    }
+
+    [Fact]
+    public async Task Water_WithNothingToWater_ChangesNothing()
+    {
+        HasExp(30);
+        _h.KnowledgeTrees.Add(new KnowledgeTree { Id = 1, ChildProfileId = ReadingHarness.Child, ExpInvested = 30, CurrentTreeExp = 30 });
+
+        var result = await _sut.WaterKnowledgeTreeAsync(ReadingHarness.Child);
+
+        Assert.Equal(0, result.ExpPoured);
+        Assert.Equal(KnowledgeTreePolicy.Sprout, result.Tree.Stage);
+        Assert.Null(Tree().LastWateredAt);
+        _h.UnitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Water_WithoutAnyExp_CreatesNoTree()
+    {
+        var result = await _sut.WaterKnowledgeTreeAsync(ReadingHarness.Child);
+
+        Assert.Equal(0, result.ExpPoured);
+        Assert.Equal(KnowledgeTreePolicy.Seed, result.Tree.Stage);
+        Assert.Empty(_h.KnowledgeTrees);
+    }
+
+    [Fact]
+    public async Task Water_InvestedAboveTotal_NeverShowsNegativeExpToWater()
+    {
+        HasExp(10);
+        _h.KnowledgeTrees.Add(new KnowledgeTree { Id = 1, ChildProfileId = ReadingHarness.Child, ExpInvested = 40, CurrentTreeExp = 40 });
+
+        var result = await _sut.WaterKnowledgeTreeAsync(ReadingHarness.Child);
+
+        Assert.Equal(0, result.ExpPoured);
+        Assert.Equal(0, result.Tree.ExpToWater);
+    }
+
+    [Fact]
+    public async Task Water_DoesNotTouchAnotherChildsTree()
+    {
+        HasExp(40);
+        _h.KnowledgeTrees.Add(new KnowledgeTree { Id = 9, ChildProfileId = ReadingHarness.OtherChild, ExpInvested = 10, CurrentTreeExp = 10 });
+
+        await _sut.WaterKnowledgeTreeAsync(ReadingHarness.Child);
+
+        Assert.Equal(10, _h.KnowledgeTrees.Single(t => t.ChildProfileId == ReadingHarness.OtherChild).CurrentTreeExp);
+        Assert.Equal(40, Tree().CurrentTreeExp);
     }
 }

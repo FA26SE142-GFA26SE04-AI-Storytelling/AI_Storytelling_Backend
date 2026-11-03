@@ -21,6 +21,31 @@ public class ChildRewardsDto
     /// <summary>Streak đang còn hiệu lực (0 nếu trẻ đã bỏ lỡ từ hôm kia trở đi).</summary>
     public int StreakDays { get; set; }
     public List<ChildBadgeDto> Badges { get; set; } = new();
+    public KnowledgeTreeDto KnowledgeTree { get; set; } = new();
+}
+
+public class KnowledgeTreeDto
+{
+    public string Stage { get; set; } = KnowledgeTreePolicy.Seed;
+    public string StageName { get; set; } = string.Empty;
+    /// <summary>EXP đã tưới vào cây đang trồng.</summary>
+    public int CurrentTreeExp { get; set; }
+    /// <summary>EXP cần có để lên mốc sau; null khi cây đã ra hoa.</summary>
+    public int? NextStageAt { get; set; }
+    public int FlowerAt { get; set; } = KnowledgeTreePolicy.FlowerAt;
+    /// <summary>Số cây đã ra hoa trong vườn.</summary>
+    public int FloweredTreeCount { get; set; }
+    /// <summary>EXP chưa tưới, trẻ bấm "Tưới cây" để dùng.</summary>
+    public int ExpToWater { get; set; }
+}
+
+public class WaterKnowledgeTreeResultDto
+{
+    public int ExpPoured { get; set; }
+    /// <summary>Cây đã ra hoa được đưa vào vườn và trẻ vừa trồng hạt mới.</summary>
+    public bool NewTreePlanted { get; set; }
+    public string PreviousStage { get; set; } = KnowledgeTreePolicy.Seed;
+    public KnowledgeTreeDto Tree { get; set; } = new();
 }
 
 public class ChildBadgeDto

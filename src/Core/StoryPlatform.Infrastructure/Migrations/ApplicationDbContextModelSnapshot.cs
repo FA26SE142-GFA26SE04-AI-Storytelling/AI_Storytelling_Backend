@@ -1026,6 +1026,54 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("intervention_cases", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.KnowledgeTree", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ChildProfileId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CurrentTreeExp")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ExpInvested")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("FloweredTreeCount")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LastWateredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChildProfileId")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.ToTable("knowledge_trees", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_knowledge_trees_CurrentTreeExp", "\"CurrentTreeExp\" >= 0");
+
+                            t.HasCheckConstraint("CK_knowledge_trees_ExpInvested", "\"ExpInvested\" >= 0");
+
+                            t.HasCheckConstraint("CK_knowledge_trees_FloweredTreeCount", "\"FloweredTreeCount\" >= 0");
+                        });
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.LearningArtifactGenerationBatch", b =>
                 {
                     b.Property<int>("Id")
@@ -4536,6 +4584,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<DateTime?>("RemovedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("StoryVocabularyId")
                         .HasColumnType("integer");
 
@@ -4906,6 +4957,17 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("ResolvedByUser");
 
                     b.Navigation("TriggeringStory");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.KnowledgeTree", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
+                        .WithMany()
+                        .HasForeignKey("ChildProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ChildProfile");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.LearningArtifactGenerationBatch", b =>

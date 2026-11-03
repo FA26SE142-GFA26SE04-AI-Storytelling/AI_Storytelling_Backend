@@ -18,51 +18,6 @@ using Xunit;
 
 namespace StoryPlatform.UnitTests.Features.ReadingSessions;
 
-public class HoldModeLookupTests
-{
-    private readonly ReadingHarness _h = new();
-
-    [Fact]
-    public async Task FindOpenAsync_NoCase_ReturnsNull()
-    {
-        Assert.Null(await HoldModeLookup.FindOpenAsync(_h.UnitOfWork.Object, ReadingHarness.Child));
-    }
-
-    [Fact]
-    public async Task FindOpenAsync_ResolvedCase_ReturnsNull()
-    {
-        _h.AddHoldMode(ReadingHarness.Child, InterventionStatus.ResolvedUnlocked, triggeringStoryId: 10);
-
-        Assert.Null(await HoldModeLookup.FindOpenAsync(_h.UnitOfWork.Object, ReadingHarness.Child));
-    }
-
-    [Fact]
-    public async Task FindOpenAsync_OpenCaseOfAnotherChild_ReturnsNull()
-    {
-        _h.AddHoldMode(ReadingHarness.OtherChild, InterventionStatus.OpenHoldMode, triggeringStoryId: 10);
-
-        Assert.Null(await HoldModeLookup.FindOpenAsync(_h.UnitOfWork.Object, ReadingHarness.Child));
-    }
-
-    [Fact]
-    public async Task FindOpenAsync_OpenCase_ReturnsIt()
-    {
-        var added = _h.AddHoldMode(ReadingHarness.Child, InterventionStatus.UnderReview, triggeringStoryId: 10);
-
-        var found = await HoldModeLookup.FindOpenAsync(_h.UnitOfWork.Object, ReadingHarness.Child);
-
-        Assert.Equal(added.Id, found!.Id);
-    }
-
-    [Fact]
-    public async Task FindOpenAsync_DeletedCase_ReturnsNull()
-    {
-        _h.AddHoldMode(ReadingHarness.Child).IsDeleted = true;
-
-        Assert.Null(await HoldModeLookup.FindOpenAsync(_h.UnitOfWork.Object, ReadingHarness.Child));
-    }
-}
-
 public class ChildReadingServiceTests
 {
     private readonly ReadingHarness _h = new();
@@ -350,7 +305,7 @@ public class ChildReadingServiceTests
     }
 
     [Fact]
-    public async Task StartAsync_HoldModeOnAnotherStory_IsLocked_ButTriggeringStoryOpens()
+    public async Task StartAsync_TwoAvailableStories_BothOpen()
     {
         _h.Stories.Add(new Story
         {
@@ -358,14 +313,11 @@ public class ChildReadingServiceTests
             AuthorUserId = 7, ChildProfileId = ReadingHarness.Child
         });
         _h.Versions.Add(new StoryVersion { Id = 51, StoryId = 11, VersionNo = 1, IsCurrent = true });
-        _h.AddHoldMode(ReadingHarness.Child, triggeringStoryId: 11);
+        var first = await _sut.StartAsync(ReadingHarness.Child, ReadingHarness.SessionKey, Start(ReadingHarness.Story));
+        var second = await _sut.StartAsync(ReadingHarness.Child, ReadingHarness.SessionKey, Start(11));
 
-        var error = await Assert.ThrowsAsync<ForbiddenException>(() =>
-            _sut.StartAsync(ReadingHarness.Child, ReadingHarness.SessionKey, Start(ReadingHarness.Story)));
-        var allowed = await _sut.StartAsync(ReadingHarness.Child, ReadingHarness.SessionKey, Start(11));
-
-        Assert.Equal(ChildReadingPolicy.LibraryLockedMessage, error.Message);
-        Assert.Equal(11, allowed.StoryId);
+        Assert.Equal(ReadingHarness.Story, first.StoryId);
+        Assert.Equal(11, second.StoryId);
     }
 
     [Fact]
@@ -1063,10 +1015,9 @@ public class ChildReadingServiceTests
     }
 
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    public async Task CompleteAsync_RealRecorder_RespectsRetakesAndHoldMode(bool retake, bool hold)
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CompleteAsync_RealRecorder_RespectsRetakes(bool retake)
     {
         var roadmap = new ChildRoadmapHarness();
         var currentStep = roadmap.AddItem(1, ReadingHarness.Child, ReadingHarness.Story, ChildRoadmapItemStatus.Open);
@@ -1074,7 +1025,6 @@ public class ChildReadingServiceTests
         _h.Stories.Add(roadmap.Stories.Single(s => s.Id == 11));
         _h.UnitOfWork.Setup(u => u.Repository<ChildRoadmapItem>())
             .Returns(roadmap.UnitOfWork.Object.Repository<ChildRoadmapItem>());
-        if (hold) _h.AddHoldMode(ReadingHarness.Child, triggeringStoryId: ReadingHarness.Story);
         if (retake) _h.AddSession(SessionStatus.Completed);
         var session = _h.AddSession();
         var recorder = new ChildRoadmapProgressRecorder(_h.UnitOfWork.Object,
@@ -1090,7 +1040,7 @@ public class ChildReadingServiceTests
         Assert.Equal(retake, result.IsRetake);
         Assert.Equal(!retake, result.RoadmapStepCompleted);
         Assert.Equal(retake ? ChildRoadmapItemStatus.Open : ChildRoadmapItemStatus.Completed, currentStep.Status);
-        Assert.Equal(retake || hold ? ChildRoadmapItemStatus.Waiting : ChildRoadmapItemStatus.Open, nextStep.Status);
+        Assert.Equal(retake ? ChildRoadmapItemStatus.Waiting : ChildRoadmapItemStatus.Open, nextStep.Status);
         Assert.Equal(retake ? (int?)null : currentStep.Id, session.ChildRoadmapItemId);
         Assert.Equal(result.IsRetake, replay.IsRetake);
         Assert.Equal(result.RoadmapStepCompleted, replay.RoadmapStepCompleted);

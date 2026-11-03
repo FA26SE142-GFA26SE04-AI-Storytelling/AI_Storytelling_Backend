@@ -29,18 +29,13 @@ public class ChildProfileVersionHistoryConfiguration : IEntityTypeConfiguration<
         builder.Property(x => x.Source)
             .HasConversion<string>()
             .HasMaxLength(30)
-            .HasDefaultValue(VersionHistorySource.Recommendation)
-            .HasSentinel(VersionHistorySource.Recommendation)
+            .HasDefaultValue(VersionHistorySource.Manual)
+            .HasSentinel(VersionHistorySource.Manual)
             .IsRequired();
 
         builder.HasOne(x => x.ChildProfile)
             .WithMany()
             .HasForeignKey(x => x.ChildProfileId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        builder.HasOne(x => x.Recommendation)
-            .WithMany()
-            .HasForeignKey(x => x.RecommendationId)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne(x => x.AppliedByUser)

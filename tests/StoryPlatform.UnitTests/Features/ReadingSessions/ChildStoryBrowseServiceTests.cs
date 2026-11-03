@@ -41,7 +41,6 @@ public class ChildStoryBrowseServiceTests
 
         var page = await _sut.SearchAsync(ReadingHarness.Child, new ChildStoryQueryDto());
 
-        Assert.False(page.IsLocked);
         Assert.Equal(new[] { 10, 20 }, page.Items.Select(i => i.StoryId).OrderBy(id => id));
         Assert.Equal("mine", page.Items.Single(i => i.StoryId == 10).Source);
         Assert.Equal("library", page.Items.Single(i => i.StoryId == 20).Source);
@@ -96,20 +95,6 @@ public class ChildStoryBrowseServiceTests
 
         var page = await _sut.SearchAsync(ReadingHarness.Child, new ChildStoryQueryDto());
 
-        Assert.Empty(page.Items);
-    }
-
-    [Fact]
-    public async Task SearchAsync_HoldMode_ReturnsLockedWithUnlockStoryOnly()
-    {
-        _h.AddHoldMode(ReadingHarness.Child, triggeringStoryId: 10);
-        AddCreatorStory(20, "Thư viện 20");
-
-        var page = await _sut.SearchAsync(ReadingHarness.Child, new ChildStoryQueryDto());
-
-        Assert.True(page.IsLocked);
-        Assert.Equal(10, page.UnlockStoryId);
-        Assert.Equal(ChildReadingPolicy.LibraryLockedMessage, page.Message);
         Assert.Empty(page.Items);
     }
 

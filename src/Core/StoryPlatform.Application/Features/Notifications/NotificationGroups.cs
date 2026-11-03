@@ -24,9 +24,7 @@ public static class NotificationGroups
             or NotificationType.OwnershipTransferRequest
             or NotificationType.OwnershipTransferResult => Supervisors,
 
-        NotificationType.HoldModeAlert
-            or NotificationType.RecommendationAwaitingReview
-            or NotificationType.RoadmapStoryAdded
+        NotificationType.RoadmapStoryAdded
             or NotificationType.RoadmapStoryRemoved
             or NotificationType.RoadmapCompleted
             or NotificationType.StoryWishSubmitted

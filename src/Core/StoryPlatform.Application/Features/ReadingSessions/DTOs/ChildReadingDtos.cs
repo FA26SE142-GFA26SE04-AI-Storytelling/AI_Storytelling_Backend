@@ -20,9 +20,6 @@ public class ChildStoryItemDto
 
 public class ChildStoryPageDto
 {
-    public bool IsLocked { get; set; }
-    /// <summary>Khi bị khóa: truyện cần đọc lại để mở khóa.</summary>
-    public int? UnlockStoryId { get; set; }
     public string? Message { get; set; }
     public List<ChildStoryItemDto> Items { get; set; } = new();
     public int TotalCount { get; set; }

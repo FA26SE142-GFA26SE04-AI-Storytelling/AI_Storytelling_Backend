@@ -152,27 +152,6 @@ Enum GuardrailResult {
   FastFail
 }
 
-Enum InsightStatus {
-  InsightDetected
-  Reviewed
-}
-
-Enum InterventionResolutionType {
-  ManualParent
-  AutoRetakePass
-}
-
-Enum InterventionStatus {
-  OpenHoldMode
-  UnderReview
-  ResolvedUnlocked
-}
-
-Enum InterventionTrigger {
-  AutoBelowThreshold
-  RecommendedByAi
-}
-
 Enum JobStage {
   InputValidated
   OutlineDraft
@@ -286,8 +265,6 @@ Enum NotificationType {
   OwnershipTransferRequest
   OwnershipTransferResult
   AccountSecurityChanged
-  HoldModeAlert
-  RecommendationAwaitingReview
   AdminRoleChanged
   ContentReported
   ModerationSlaWarning
@@ -332,38 +309,9 @@ Enum ReadingMode {
   ReadFirst
 }
 
-Enum RecommendationCategory {
-  ReadingDifficulty
-  LearningFocus
-  ContentPersonalization
-  LearningIntervention
-}
-
-Enum RecommendationStatus {
-  Detected
-  RecommendationCreated
-  AwaitingReview
-  Modified
-  ObserveMore
-  Rejected
-  Approved
-  Applied
-  Monitoring
-  Validated
-  ReassessmentRequired
-  Stale
-}
-
 Enum ReportStatus {
   Compiling
   Published
-}
-
-Enum ReviewDecision {
-  Accept
-  Modify
-  Reject
-  ObserveMore
 }
 
 Enum RoadmapArchiveReason {
@@ -503,7 +451,6 @@ Enum VersionEditType {
 
 Enum VersionHistorySource {
   Manual
-  Recommendation
 }
 
 Enum VersionHistoryStatus {
@@ -609,7 +556,7 @@ Table authoring_guide_catalog_versions {
   UpdatedByUserId int
   VersionNo int [not null]
   Indexes {
-    CatalogId [unique, note: '"Status" = ''Draft'' AND NOT "IsDeleted"']
+    CatalogId [unique, note: '"Status" = \'Draft\' AND NOT "IsDeleted"']
     (CatalogId, CatalogVersion) [unique, note: 'NOT "IsDeleted"']
     (CatalogId, VersionNo) [unique, note: 'NOT "IsDeleted"']
   }
@@ -722,14 +669,12 @@ Table child_profile_version_history {
   IsDeleted boolean [not null]
   NewConfig text [not null]
   PreviousConfig text [not null]
-  RecommendationId int
   Source VersionHistorySource [not null, note: 'EF PostgreSQL type: character varying(30)']
   UpdatedAt timestamptz
   VersionStatus VersionHistoryStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
   Indexes {
     AppliedByUserId
     ChildProfileId
-    RecommendationId
   }
 }
 
@@ -772,11 +717,11 @@ Table child_roadmap_items {
   UpdatedAt timestamptz
   Indexes {
     AddedByUserId
-    ChildProfileId [unique, note: '"Status" = ''Open'' AND NOT "IsDeleted"']
+    ChildProfileId [unique, note: '"Status" = \'Open\' AND NOT "IsDeleted"']
     RemovedByUserId
     SourceReadingRoadmapId
     StoryId
-    (ChildProfileId, StoryId) [unique, note: '"Status" IN (''Waiting'', ''Open'') AND NOT "IsDeleted"']
+    (ChildProfileId, StoryId) [unique, note: '"Status" IN (\'Waiting\', \'Open\') AND NOT "IsDeleted"']
     (ChildProfileId, Status, Position)
   }
 }
@@ -859,32 +804,6 @@ Table illustration_beats {
   Note: 'CHECK constraints: CK_illustration_beats_offsets: "StartOffset" >= 0 AND "EndOffset" > "StartOffset"; CK_illustration_beats_order: "BeatOrder" BETWEEN 1 AND 3'
 }
 
-Table intervention_cases {
-  ChildProfileId int [not null]
-  CreatedAt timestamptz [not null]
-  Id int [pk, not null, increment]
-  IsDeleted boolean [not null]
-  NotesAddedAt timestamptz
-  NotesAddedByUserId int
-  OpenedAt timestamptz [not null]
-  RecommendationId int
-  ResolutionType InterventionResolutionType [note: 'EF PostgreSQL type: character varying(30)']
-  ResolvedAt timestamptz
-  ResolvedByUserId int
-  SkillGapNotes text
-  Status InterventionStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
-  TriggerType InterventionTrigger [not null, note: 'EF PostgreSQL type: character varying(30)']
-  TriggeringStoryId int
-  UpdatedAt timestamptz
-  Indexes {
-    ChildProfileId
-    NotesAddedByUserId
-    RecommendationId
-    ResolvedByUserId
-    TriggeringStoryId
-  }
-}
-
 Table learning_artifact_generation_batches {
   AttemptCount int [not null]
   BatchNumber int [not null]
@@ -915,21 +834,6 @@ Table learning_artifact_generation_batches {
     StoryVersionId
     (RootJobId, Kind, BatchNumber) [unique]
     (StoryId, Status, LeaseExpiresAt)
-  }
-}
-
-Table learning_insights {
-  ChildProfileId int [not null]
-  CreatedAt timestamptz [not null]
-  DetectedAt timestamptz [not null]
-  Evidence text [not null]
-  Id int [pk, not null, increment]
-  IsDeleted boolean [not null]
-  Observation text [not null]
-  Status InsightStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
-  UpdatedAt timestamptz
-  Indexes {
-    ChildProfileId
   }
 }
 
@@ -1105,7 +1009,7 @@ Table media_assets {
     (StoryVersionId, RequestedPackageRevision)
     (StoryVocabularyId, Type) [unique, note: '"StoryVocabularyId" IS NOT NULL AND "IsDeleted" = false AND "IsCurrent" = true']
   }
-  Note: 'CHECK constraints: CK_media_assets_attempt_count: "AttemptCount" >= 0; CK_media_assets_beat_must_be_null_for_audio: "Type" <> ''TtsAudio'' OR "IllustrationBeatId" IS NULL; CK_media_assets_beat_required_for_illustration: "Type" <> ''Illustration'' OR "StorySceneId" IS NULL OR "IllustrationBeatId" IS NOT NULL; CK_media_assets_interaction_required_for_listening_audio: "Type" <> ''ListeningAudio'' OR "ListeningInteractionId" IS NOT NULL; CK_media_assets_option_required_for_listening_image: "Type" <> ''ListeningImage'' OR "ListeningInteractionOptionId" IS NOT NULL; CK_media_assets_segment_must_be_null_for_illustration: "Type" <> ''Illustration'' OR "StorySegmentId" IS NULL; CK_media_assets_segment_required_for_audio: "Type" <> ''TtsAudio'' OR "StorySegmentId" IS NOT NULL; CK_media_assets_vocabulary_required_for_vocabulary_audio: "Type" <> ''VocabularyAudio'' OR "StoryVocabularyId" IS NOT NULL'
+  Note: 'CHECK constraints: CK_media_assets_attempt_count: "AttemptCount" >= 0; CK_media_assets_beat_must_be_null_for_audio: "Type" <> \'TtsAudio\' OR "IllustrationBeatId" IS NULL; CK_media_assets_beat_required_for_illustration: "Type" <> \'Illustration\' OR "StorySceneId" IS NULL OR "IllustrationBeatId" IS NOT NULL; CK_media_assets_interaction_required_for_listening_audio: "Type" <> \'ListeningAudio\' OR "ListeningInteractionId" IS NOT NULL; CK_media_assets_option_required_for_listening_image: "Type" <> \'ListeningImage\' OR "ListeningInteractionOptionId" IS NOT NULL; CK_media_assets_segment_must_be_null_for_illustration: "Type" <> \'Illustration\' OR "StorySegmentId" IS NULL; CK_media_assets_segment_required_for_audio: "Type" <> \'TtsAudio\' OR "StorySegmentId" IS NOT NULL; CK_media_assets_vocabulary_required_for_vocabulary_audio: "Type" <> \'VocabularyAudio\' OR "StoryVocabularyId" IS NOT NULL'
 }
 
 Table media_contexts {
@@ -1162,9 +1066,9 @@ Table moderation_items {
     CreatedByUserId
     DecidedByUserId
     PreviousItemId
-    ReadingRoadmapId [unique, note: '"ItemType" = ''RoadmapTemplateReview'' AND "Status" IN (''Pending'', ''Claimed'') AND NOT "IsDeleted"']
+    ReadingRoadmapId [unique, note: '"ItemType" = \'RoadmapTemplateReview\' AND "Status" IN (\'Pending\', \'Claimed\') AND NOT "IsDeleted"']
     SourceChildProfileId
-    StoryId [unique, note: '"ItemType" = ''CommunitySubmission'' AND "Status" IN (''Pending'', ''Approved'') AND NOT "IsDeleted"']
+    StoryId [unique, note: '"ItemType" = \'CommunitySubmission\' AND "Status" IN (\'Pending\', \'Approved\') AND NOT "IsDeleted"']
     StoryVersionId
     (ClaimedByUserId, Status)
     (ItemType, Status, Priority)
@@ -1229,7 +1133,7 @@ Table moderation_rubric_versions {
   VersionNo varchar(50) [not null]
   Indexes {
     ActivatedByUserId
-    Code [unique, note: '"Status" = ''Active'' AND NOT "IsDeleted"']
+    Code [unique, note: '"Status" = \'Active\' AND NOT "IsDeleted"']
     CreatedByUserId
     (Code, VersionNo) [unique]
   }
@@ -1410,11 +1314,11 @@ Table reading_roadmaps {
   UpdatedAt timestamptz
   Indexes {
     ArchivedByUserId
-    ClonedFromId [unique, note: '"Status" IN (''Draft'', ''PendingReview'') AND NOT "IsDeleted"']
+    ClonedFromId [unique, note: '"Status" IN (\'Draft\', \'PendingReview\') AND NOT "IsDeleted"']
     CreatedByUserId
     MainCategoryId
     PublishedByUserId
-    (AgeBand, MainCategoryId) [unique, note: '"Status" = ''Published'' AND NOT "IsDeleted"']
+    (AgeBand, MainCategoryId) [unique, note: '"Status" = \'Published\' AND NOT "IsDeleted"']
   }
 }
 
@@ -1445,44 +1349,6 @@ Table reading_sessions {
     SupervisorSessionId
   }
   Note: 'CHECK constraints: CK_reading_sessions_exactly_one_entry_source: ("ChildAccessCredentialId" IS NOT NULL AND "SupervisorSessionId" IS NULL) OR ("ChildAccessCredentialId" IS NULL AND "SupervisorSessionId" IS NOT NULL)'
-}
-
-Table recommendation_reviews {
-  CreatedAt timestamptz [not null]
-  Decision ReviewDecision [not null, note: 'EF PostgreSQL type: character varying(30)']
-  HadFinalAuthority boolean [not null]
-  Id int [pk, not null, increment]
-  IsDeleted boolean [not null]
-  IsFinal boolean [not null]
-  ModifiedValue text
-  Reason text
-  RecommendationId int [not null]
-  ReviewedAt timestamptz [not null]
-  ReviewerUserId int [not null]
-  UpdatedAt timestamptz
-  Indexes {
-    RecommendationId
-    ReviewerUserId
-  }
-}
-
-Table recommendations {
-  Category RecommendationCategory [not null, note: 'EF PostgreSQL type: character varying(30)']
-  ChildProfileId int [not null]
-  CreatedAt timestamptz [not null]
-  CurrentState text [not null]
-  Evidence text [not null]
-  ExpiresAt timestamptz
-  Id int [pk, not null, increment]
-  IsDeleted boolean [not null]
-  LearningInsightId int [not null]
-  ProposedChange text [not null]
-  Status RecommendationStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
-  UpdatedAt timestamptz
-  Indexes {
-    ChildProfileId
-    LearningInsightId
-  }
 }
 
 Table refresh_tokens {
@@ -1585,7 +1451,7 @@ Table stories {
     ChildProfileId
     (AuthorUserId, CreateOperationId) [unique, note: '"CreateOperationId" IS NOT NULL']
   }
-  Note: 'CHECK constraints: CK_Story_ScopeChild: ("Scope" = ''Parent'' AND "ChildProfileId" IS NOT NULL AND "ChildProfileId" > 0) OR ("Scope" = ''Creator'' AND "ChildProfileId" IS NULL)'
+  Note: 'CHECK constraints: CK_Story_ScopeChild: ("Scope" = \'Parent\' AND "ChildProfileId" IS NOT NULL AND "ChildProfileId" > 0) OR ("Scope" = \'Creator\' AND "ChildProfileId" IS NULL)'
 }
 
 Table story_assistance_steps {
@@ -1725,10 +1591,10 @@ Table story_generation_jobs {
     GenerationRequestId
     MediaContextId
     PromptCatalogVersionId
-    StoryId [unique, note: '"Operation" IN (''GenerateOutline'', ''RegenerateOutline'') AND "Status" IN (''Pending'', ''Processing'') AND "IsDeleted" = false']
+    StoryId [unique, note: '"Operation" IN (\'GenerateOutline\', \'RegenerateOutline\') AND "Status" IN (\'Pending\', \'Processing\') AND "IsDeleted" = false']
     StoryVersionId
-    (Operation, StoryVersionId) [unique, note: '"StoryVersionId" IS NOT NULL AND "IsDeleted" = false AND "Operation" <> ''GenerateListeningInteraction''']
-    (StoryVersionId, ListeningInteractionType) [unique, note: '"Operation" = ''GenerateListeningInteraction'' AND "StoryVersionId" IS NOT NULL AND "IsDeleted" = false']
+    (Operation, StoryVersionId) [unique, note: '"StoryVersionId" IS NOT NULL AND "IsDeleted" = false AND "Operation" <> \'GenerateListeningInteraction\'']
+    (StoryVersionId, ListeningInteractionType) [unique, note: '"Operation" = \'GenerateListeningInteraction\' AND "StoryVersionId" IS NOT NULL AND "IsDeleted" = false']
     (ParentJobId, Status, NextAttemptAt)
     (RequestedByUserId, Operation, OperationKey) [unique, note: '"RequestedByUserId" IS NOT NULL AND "OperationKey" IS NOT NULL AND "IsDeleted" = false']
     (Status, Stage, LeaseExpiresAt)
@@ -1763,7 +1629,7 @@ Table story_generation_requests {
   UpdatedAt timestamptz
   Indexes {
     HandoffJobId [unique]
-    StoryId [unique, note: '"Status" IN (''PendingInput'', ''CheckingInput'', ''InputAccepted'') AND "IsDeleted" = false']
+    StoryId [unique, note: '"Status" IN (\'PendingInput\', \'CheckingInput\', \'InputAccepted\') AND "IsDeleted" = false']
     (SubmittedByUserId, IdempotencyKey) [unique]
   }
 }
@@ -1992,7 +1858,7 @@ Table story_wishes {
   Indexes {
     ChallengeCardId
     CharacterCardId
-    ChildProfileId [unique, note: '"Status" = ''Draft'' AND "IsDeleted" = false']
+    ChildProfileId [unique, note: '"Status" = \'Draft\' AND "IsDeleted" = false']
     FulfilledStoryId
     GeneratedStoryId
     LessonCardId
@@ -2132,7 +1998,6 @@ Ref: child_access_credentials.ChildProfileId > child_profiles.Id
 Ref: child_access_credentials.CreatedByUserId > user_accounts.Id
 Ref: child_profile_version_history.AppliedByUserId > user_accounts.Id
 Ref: child_profile_version_history.ChildProfileId > child_profiles.Id
-Ref: child_profile_version_history.RecommendationId > recommendations.Id
 Ref: child_profiles.OwnerUserId > user_accounts.Id
 Ref: child_roadmap_items.AddedByUserId > user_accounts.Id
 Ref: child_roadmap_items.ChildProfileId > child_profiles.Id
@@ -2149,16 +2014,10 @@ Ref: content_reports.ReviewedByUserId > user_accounts.Id
 Ref: content_reports.StoryId > stories.Id
 Ref: content_reports.StoryVersionId > story_versions.Id
 Ref: illustration_beats.StorySceneId > story_scenes.Id
-Ref: intervention_cases.ChildProfileId > child_profiles.Id
-Ref: intervention_cases.NotesAddedByUserId > user_accounts.Id
-Ref: intervention_cases.RecommendationId > recommendations.Id
-Ref: intervention_cases.ResolvedByUserId > user_accounts.Id
-Ref: intervention_cases.TriggeringStoryId > stories.Id
 Ref: learning_artifact_generation_batches.RequestedByUserId > user_accounts.Id
 Ref: learning_artifact_generation_batches.RootJobId > story_generation_jobs.Id
 Ref: learning_artifact_generation_batches.StoryId > stories.Id
 Ref: learning_artifact_generation_batches.StoryVersionId > story_versions.Id
-Ref: learning_insights.ChildProfileId > child_profiles.Id
 Ref: learning_profile_topics.LearningProfileId > learning_profiles.Id
 Ref: learning_profiles.ChildProfileId > child_profiles.Id
 Ref: listening_interaction_attempts.ChildProfileId > child_profiles.Id
@@ -2227,10 +2086,6 @@ Ref: reading_sessions.ChildRoadmapItemId > child_roadmap_items.Id
 Ref: reading_sessions.StoryId > stories.Id
 Ref: reading_sessions.StoryVersionId > story_versions.Id
 Ref: reading_sessions.SupervisorSessionId > refresh_tokens.Id
-Ref: recommendation_reviews.RecommendationId > recommendations.Id
-Ref: recommendation_reviews.ReviewerUserId > user_accounts.Id
-Ref: recommendations.ChildProfileId > child_profiles.Id
-Ref: recommendations.LearningInsightId > learning_insights.Id
 Ref: refresh_tokens.UserAccountId > user_accounts.Id
 Ref: safety_policies.ChildProfileId > child_profiles.Id
 Ref: safety_policies.ConsentedByUserId > user_accounts.Id

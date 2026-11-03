@@ -156,11 +156,6 @@ public class StoryWishSuggestionService : IStoryWishSuggestionService
             return new List<WishSuggestionDto>();
         }
 
-        if (await HoldModeLookup.FindOpenAsync(_unitOfWork, wish.ChildProfileId, ct) != null)
-        {
-            return new List<WishSuggestionDto>();
-        }
-
         var rows = await LoadAsync(wish, ct);
         return rows.Select(row => Fill(new WishSuggestionDto(), row)).ToList();
     }

@@ -250,17 +250,6 @@ public class RoadmapLibraryServiceTests
     }
 
     [Fact]
-    public async Task Copy_HoldModeKeepsCopiedStoriesWaiting()
-    {
-        Published();
-        _h.AddHoldMode(Child);
-
-        await _sut.CopyAsync(Owner, 1, Copy(new[] { Child }));
-
-        Assert.All(_h.Items, item => Assert.Equal(ChildRoadmapItemStatus.Waiting, item.Status));
-    }
-
-    [Fact]
     public async Task Copy_NotifiesOnceAuditsAndCommitsPerChild()
     {
         Published();

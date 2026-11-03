@@ -148,9 +148,8 @@ public class StoryWishServiceTests
     }
 
     [Fact]
-    public async Task StartDraft_RequiresActiveEnabledProfile_ButHoldModeDoesNotBlock()
+    public async Task StartDraft_RequiresActiveEnabledProfile()
     {
-        _h.AddHoldMode(ReadingHarness.Child);
         Assert.NotEqual(0, (await _sut.StartDraftAsync(ReadingHarness.Child)).WishId);
         _h.StoryWishes.Clear();
         _h.Policies.Add(new SafetyPolicy { Id = 1, ChildProfileId = ReadingHarness.Child, StoryWishesEnabled = false });

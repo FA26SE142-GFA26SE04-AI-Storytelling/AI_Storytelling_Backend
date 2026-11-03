@@ -200,7 +200,6 @@ public class ChildProfileService : IChildProfileService
                 new ChildProfileVersionHistory
                 {
                     ChildProfileId = childProfileId,
-                    RecommendationId = null,
                     Source = VersionHistorySource.Manual,
                     PreviousConfig = JsonSerializer.Serialize(new { ageBand = previousAgeBand.ToString() }),
                     NewConfig = JsonSerializer.Serialize(new { ageBand = profile.AgeBand.ToString() }),
@@ -208,9 +207,6 @@ public class ChildProfileService : IChildProfileService
                     VersionStatus = VersionHistoryStatus.ActiveVersion,
                     AppliedAt = DateTime.UtcNow
                 }, cancellationToken);
-
-            // UC-L1A-05: đề xuất reading_difficulty / learning_intervention đang chờ không còn đúng nhóm tuổi.
-            await MarkPendingRecommendationsStaleAsync(childProfileId, cancellationToken);
         }
 
         await WriteChildProfileAuditAsync(
@@ -300,27 +296,6 @@ public class ChildProfileService : IChildProfileService
         await WriteChildProfileAuditAsync(currentUserId, auditAction, profile.Id, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return MapToChildProfileDto(profile);
-    }
-
-    private async Task MarkPendingRecommendationsStaleAsync(
-        int childProfileId, CancellationToken cancellationToken)
-    {
-        var repo = _unitOfWork.Repository<Recommendation>();
-        var pending = await repo.FindAsync(
-            value => value.ChildProfileId == childProfileId
-                     && (value.Category == RecommendationCategory.ReadingDifficulty
-                         || value.Category == RecommendationCategory.LearningIntervention)
-                     && (value.Status == RecommendationStatus.RecommendationCreated
-                         || value.Status == RecommendationStatus.AwaitingReview
-                         || value.Status == RecommendationStatus.Modified
-                         || value.Status == RecommendationStatus.ObserveMore),
-            cancellationToken: cancellationToken);
-        foreach (var recommendation in pending)
-        {
-            recommendation.Status = RecommendationStatus.Stale;
-            recommendation.UpdatedAt = DateTime.UtcNow;
-            repo.Update(recommendation);
-        }
     }
 
     private async Task<ChildProfile> LoadOwnedProfileAsync(

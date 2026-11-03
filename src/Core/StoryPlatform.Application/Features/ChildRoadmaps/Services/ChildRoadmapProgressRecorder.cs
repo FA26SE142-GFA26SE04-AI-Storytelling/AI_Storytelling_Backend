@@ -97,12 +97,7 @@ public class ChildRoadmapProgressRecorder : IChildRoadmapProgressRecorder
                 item => item.ChildProfileId == childId
                         && (item.Status == ChildRoadmapItemStatus.Open || item.Status == ChildRoadmapItemStatus.Waiting),
                 cancellationToken: cancellationToken);
-            var holdMode = await _unitOfWork.Repository<InterventionCase>().ExistsAsync(
-                holdCase => holdCase.ChildProfileId == childId
-                            && !holdCase.IsDeleted
-                            && holdCase.Status != InterventionStatus.ResolvedUnlocked,
-                cancellationToken);
-            if (remaining.Count == 0 && !holdMode)
+            if (remaining.Count == 0)
             {
                 await _notifier.NotifyRoadmapCompletedAsync(childId, cancellationToken);
                 var finished = await _rewards.OnRoadmapFinishedAsync(session, cancellationToken);

@@ -685,6 +685,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             }
             await persist();
             job.Status = GenerationJobStatus.Completed;
+            job.ErrorCode = null;
+            job.NextAttemptAt = null;
             job.Stage = next is not null ? JobStage.ContentArtifactCompleted : JobStage.ContentPackageCompleted;
             job.CompletedAt = DateTime.UtcNow;
             job.LeaseExpiresAt = null;

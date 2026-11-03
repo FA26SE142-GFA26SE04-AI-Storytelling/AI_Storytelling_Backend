@@ -87,6 +87,8 @@ public sealed class ContentGenerationServiceTests
 
         Assert.Equal(GenerationJobStatus.Completed, job.Status);
         Assert.Equal(1, ai.SnapshotCalls);
+        Assert.Null(job.ErrorCode);
+        Assert.Null(job.NextAttemptAt);
         Assert.All(ai.ListeningRequests, x => Assert.Equal("fixture-listening-v1", x.Snapshot!.PromptVersionNo));
         var receipt = JsonSerializer.Deserialize<StoryPlatform.Application.Features.ListeningInteractions.Models.ListeningJobState>(
             job.GenerationMetadataJson!, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;

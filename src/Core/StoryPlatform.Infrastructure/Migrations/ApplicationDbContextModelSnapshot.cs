@@ -597,15 +597,12 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<int?>("RecommendationId")
-                        .HasColumnType("integer");
-
                     b.Property<string>("Source")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)")
-                        .HasDefaultValue("Recommendation");
+                        .HasDefaultValue("Manual");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -620,8 +617,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasIndex("AppliedByUserId");
 
                     b.HasIndex("ChildProfileId");
-
-                    b.HasIndex("RecommendationId");
 
                     b.ToTable("child_profile_version_history", (string)null);
                 });
@@ -953,79 +948,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                         });
                 });
 
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.InterventionCase", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("ChildProfileId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTime?>("NotesAddedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("NotesAddedByUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("OpenedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("RecommendationId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("ResolutionType")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<DateTime?>("ResolvedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("ResolvedByUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("SkillGapNotes")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<string>("TriggerType")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<int?>("TriggeringStoryId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ChildProfileId");
-
-                    b.HasIndex("NotesAddedByUserId");
-
-                    b.HasIndex("RecommendationId");
-
-                    b.HasIndex("ResolvedByUserId");
-
-                    b.HasIndex("TriggeringStoryId");
-
-                    b.ToTable("intervention_cases", (string)null);
-                });
-
             modelBuilder.Entity("StoryPlatform.Domain.Entities.KnowledgeTree", b =>
                 {
                     b.Property<int>("Id")
@@ -1178,49 +1100,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasIndex("StoryId", "Status", "LeaseExpiresAt");
 
                     b.ToTable("learning_artifact_generation_batches", (string)null);
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.LearningInsight", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("ChildProfileId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("DetectedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Evidence")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Observation")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ChildProfileId");
-
-                    b.ToTable("learning_insights", (string)null);
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.LearningProfile", b =>
@@ -2735,115 +2614,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                         {
                             t.HasCheckConstraint("CK_reading_sessions_exactly_one_entry_source", "(\"ChildAccessCredentialId\" IS NOT NULL AND \"SupervisorSessionId\" IS NULL) OR (\"ChildAccessCredentialId\" IS NULL AND \"SupervisorSessionId\" IS NOT NULL)");
                         });
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.Recommendation", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Category")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<int>("ChildProfileId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CurrentState")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Evidence")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<int>("LearningInsightId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("ProposedChange")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ChildProfileId");
-
-                    b.HasIndex("LearningInsightId");
-
-                    b.ToTable("recommendations", (string)null);
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.RecommendationReview", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Decision")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<bool>("HadFinalAuthority")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsFinal")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("ModifiedValue")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Reason")
-                        .HasColumnType("text");
-
-                    b.Property<int>("RecommendationId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("ReviewedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("ReviewerUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RecommendationId");
-
-                    b.HasIndex("ReviewerUserId");
-
-                    b.ToTable("recommendation_reviews", (string)null);
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.RefreshToken", b =>
@@ -4781,16 +4551,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("StoryPlatform.Domain.Entities.Recommendation", "Recommendation")
-                        .WithMany()
-                        .HasForeignKey("RecommendationId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.Navigation("AppliedByUser");
 
                     b.Navigation("ChildProfile");
-
-                    b.Navigation("Recommendation");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ChildRoadmapItem", b =>
@@ -4920,45 +4683,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("StoryScene");
                 });
 
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.InterventionCase", b =>
-                {
-                    b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
-                        .WithMany()
-                        .HasForeignKey("ChildProfileId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "NotesAddedByUser")
-                        .WithMany()
-                        .HasForeignKey("NotesAddedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("StoryPlatform.Domain.Entities.Recommendation", "Recommendation")
-                        .WithMany()
-                        .HasForeignKey("RecommendationId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "ResolvedByUser")
-                        .WithMany()
-                        .HasForeignKey("ResolvedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("StoryPlatform.Domain.Entities.Story", "TriggeringStory")
-                        .WithMany()
-                        .HasForeignKey("TriggeringStoryId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("ChildProfile");
-
-                    b.Navigation("NotesAddedByUser");
-
-                    b.Navigation("Recommendation");
-
-                    b.Navigation("ResolvedByUser");
-
-                    b.Navigation("TriggeringStory");
-                });
-
             modelBuilder.Entity("StoryPlatform.Domain.Entities.KnowledgeTree", b =>
                 {
                     b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
@@ -4995,17 +4719,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasForeignKey("StoryVersionId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.LearningInsight", b =>
-                {
-                    b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
-                        .WithMany()
-                        .HasForeignKey("ChildProfileId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("ChildProfile");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.LearningProfile", b =>
@@ -5557,44 +5270,6 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("StoryVersion");
 
                     b.Navigation("SupervisorSession");
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.Recommendation", b =>
-                {
-                    b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", "ChildProfile")
-                        .WithMany()
-                        .HasForeignKey("ChildProfileId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("StoryPlatform.Domain.Entities.LearningInsight", "LearningInsight")
-                        .WithMany()
-                        .HasForeignKey("LearningInsightId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("ChildProfile");
-
-                    b.Navigation("LearningInsight");
-                });
-
-            modelBuilder.Entity("StoryPlatform.Domain.Entities.RecommendationReview", b =>
-                {
-                    b.HasOne("StoryPlatform.Domain.Entities.Recommendation", "Recommendation")
-                        .WithMany()
-                        .HasForeignKey("RecommendationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "ReviewerUser")
-                        .WithMany()
-                        .HasForeignKey("ReviewerUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Recommendation");
-
-                    b.Navigation("ReviewerUser");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.RefreshToken", b =>

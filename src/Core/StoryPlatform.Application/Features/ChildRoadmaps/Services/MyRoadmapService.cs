@@ -41,12 +41,6 @@ public class MyRoadmapService : IMyRoadmapService
         var visible = items.Where(item =>
             byId.TryGetValue(item.StoryId, out var story) && !RoadmapNeedsUpdate.IsRetired(story)).ToList();
 
-        var holdMode = await _unitOfWork.Repository<InterventionCase>().ExistsAsync(
-            holdCase => holdCase.ChildProfileId == childProfileId
-                        && !holdCase.IsDeleted
-                        && holdCase.Status != InterventionStatus.ResolvedUnlocked,
-            cancellationToken);
-
         var now = DateTime.UtcNow;
         var open = visible.FirstOrDefault(item => item.Status == ChildRoadmapItemStatus.Open);
         var waiting = visible.Where(item => item.Status == ChildRoadmapItemStatus.Waiting)
@@ -65,8 +59,7 @@ public class MyRoadmapService : IMyRoadmapService
                     Title = byId[open.StoryId].Title,
                     CoverImageUrl = byId[open.StoryId].CoverImageUrl,
                     Note = open.Note,
-                    ExpectedBy = open.ExpectedCompletionAt > now ? open.ExpectedCompletionAt : null,
-                    IsLocked = holdMode
+                    ExpectedBy = open.ExpectedCompletionAt > now ? open.ExpectedCompletionAt : null
                 },
             Upcoming = waiting.Select((item, index) => new MyRoadmapUpcomingDto
             {

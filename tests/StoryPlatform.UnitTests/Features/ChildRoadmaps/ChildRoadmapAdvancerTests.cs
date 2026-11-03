@@ -194,40 +194,6 @@ public class ChildRoadmapAdvancerTests
         Assert.Equal(ChildRoadmapItemStatus.Waiting, waiting.Status);
     }
 
-    [Theory]
-    [InlineData(InterventionStatus.OpenHoldMode)]
-    [InlineData(InterventionStatus.UnderReview)]
-    public async Task AdvanceAsync_HoldModeActive_KeepsTheStepWaiting(InterventionStatus status)
-    {
-        _h.AddHoldMode(Child, status);
-        var waiting = _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Waiting);
-
-        var result = await _sut.AdvanceAsync(Child);
-
-        Assert.Null(result);
-        Assert.Equal(ChildRoadmapItemStatus.Waiting, waiting.Status);
-    }
-
-    [Fact]
-    public async Task AdvanceAsync_HoldModeResolved_OpensNormally()
-    {
-        _h.AddHoldMode(Child, InterventionStatus.ResolvedUnlocked);
-        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Waiting);
-
-        var result = await _sut.AdvanceAsync(Child);
-
-        Assert.Equal(1, result!.Id);
-    }
-
-    [Fact]
-    public async Task AdvanceAsync_HoldModeOfAnotherChild_DoesNotBlock()
-    {
-        _h.AddHoldMode(ChildRoadmapHarness.OtherChild);
-        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Waiting);
-
-        Assert.NotNull(await _sut.AdvanceAsync(Child));
-    }
-
     [Fact]
     public async Task AdvanceAsync_OnlyTouchesTheGivenChild()
     {

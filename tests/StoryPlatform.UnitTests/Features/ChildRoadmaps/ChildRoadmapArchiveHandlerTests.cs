@@ -160,20 +160,4 @@ public class ChildRoadmapArchiveHandlerTests
         Assert.Equal(ChildRoadmapItemStatus.Open, Item(2).Status);
         Assert.Equal(ChildRoadmapItemStatus.Waiting, Item(3).Status);
     }
-
-    [Fact]
-    public async Task HandleAsync_EndToEndWithTheRealAdvancer_HoldModeKeepsTheNextStepWaiting()
-    {
-        _h.AddHoldMode(Child);
-        _h.AddItem(1, Child, ArchivedStory, ChildRoadmapItemStatus.Open);
-        _h.AddItem(2, Child, 11, ChildRoadmapItemStatus.Waiting);
-        var sut = new ChildRoadmapArchiveHandler(
-            _h.UnitOfWork.Object, _h.Audit.Object,
-            new ChildRoadmapAdvancer(_h.UnitOfWork.Object, new ChildRoadmapEligibility(_h.UnitOfWork.Object)));
-
-        await sut.HandleAsync(Context());
-
-        Assert.Equal(ChildRoadmapItemStatus.Skipped, Item(1).Status);
-        Assert.Equal(ChildRoadmapItemStatus.Waiting, Item(2).Status);
-    }
 }

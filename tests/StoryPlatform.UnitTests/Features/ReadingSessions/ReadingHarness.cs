@@ -32,7 +32,6 @@ public sealed class ReadingHarness
     public readonly List<StoryVocabulary> Vocabulary = new();
     public readonly List<VocabularyNotebookEntry> Notebook = new();
     public readonly List<TelemetryLog> Telemetry = new();
-    public readonly List<InterventionCase> Cases = new();
     public readonly List<ModerationItem> ModerationItems = new();
     public readonly List<QuizItem> Quizzes = new();
     public readonly List<QuizAttempt> Attempts = new();
@@ -82,7 +81,7 @@ public sealed class ReadingHarness
         Back(CardMatches); Back(Suggestions); Back(LearningProfiles);
         Back(Children); Back(ChildSessions); Back(Stories); Back(Versions); Back(Scenes); Back(Segments);
         Back(Assets); Back(Sessions); Back(Progress); Back(Vocabulary); Back(Notebook); Back(Telemetry);
-        Back(Cases); Back(ModerationItems); Back(Quizzes); Back(Attempts); Back(Achievements); Back(Badges); Back(KnowledgeTrees);
+        Back(ModerationItems); Back(Quizzes); Back(Attempts); Back(Achievements); Back(Badges); Back(KnowledgeTrees);
         Back(Policies); Back(PolicyCategories); Back(StoryCategories); Back(RoadmapItems);
         Back(WishCards); Back(Categories);
         Back(StoryWishes); Back(Users); Back(Summaries); Back(SummaryFlags);
@@ -203,18 +202,6 @@ public sealed class ReadingHarness
         };
         Assets.Add(asset);
         return asset;
-    }
-
-    public InterventionCase AddHoldMode(
-        int childId, InterventionStatus status = InterventionStatus.OpenHoldMode, int? triggeringStoryId = null)
-    {
-        var holdCase = new InterventionCase
-        {
-            Id = Cases.Count + 1, ChildProfileId = childId, Status = status, OpenedAt = DateTime.UtcNow.AddDays(-1),
-            TriggeringStoryId = triggeringStoryId
-        };
-        Cases.Add(holdCase);
-        return holdCase;
     }
 
     public WishCard AddCard(

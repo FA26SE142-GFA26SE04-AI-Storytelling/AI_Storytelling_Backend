@@ -239,15 +239,6 @@ public class StoryWishSuggestionServiceTests
     }
 
     [Fact]
-    public async Task ForChild_HiddenDuringHoldMode()
-    {
-        var wish = await WithTwoSuggestionsAsync();
-        _h.AddHoldMode(ReadingHarness.Child, triggeringStoryId: ReadingHarness.Story);
-
-        Assert.Empty(await _sut.ForChildAsync(wish));
-    }
-
-    [Fact]
     public async Task ForChild_ASuggestedStoryArchivedLater_IsLeftOut()
     {
         var wish = await WithTwoSuggestionsAsync();

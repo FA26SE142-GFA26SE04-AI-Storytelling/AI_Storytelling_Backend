@@ -35,19 +35,6 @@ public class ChildStoryBrowseService : IChildStoryBrowseService
         var pageIndex = Math.Max(query.PageIndex, 1);
         var pageSize = Math.Clamp(query.PageSize, 1, ChildReadingPolicy.MaxPageSize);
 
-        var hold = await HoldModeLookup.FindOpenAsync(_unitOfWork, childProfileId, cancellationToken);
-        if (hold != null)
-        {
-            return new ChildStoryPageDto
-            {
-                IsLocked = true,
-                UnlockStoryId = hold.TriggeringStoryId,
-                Message = ChildReadingPolicy.LibraryLockedMessage,
-                PageIndex = pageIndex,
-                PageSize = pageSize
-            };
-        }
-
         var age = RoadmapAge.ToText(child.AgeBand);
         var source = query.Source?.Trim().ToLowerInvariant();
         var search = query.Search?.Trim().ToLowerInvariant();

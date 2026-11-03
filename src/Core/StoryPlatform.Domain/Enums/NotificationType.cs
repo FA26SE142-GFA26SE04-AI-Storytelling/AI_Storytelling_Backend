@@ -14,8 +14,6 @@ public enum NotificationType
     OwnershipTransferRequest = 6,
     OwnershipTransferResult = 7,
     AccountSecurityChanged = 8,
-    HoldModeAlert = 9,
-    RecommendationAwaitingReview = 10,
     AdminRoleChanged = 13,
     ContentReported = 14,
     ModerationSlaWarning = 15,

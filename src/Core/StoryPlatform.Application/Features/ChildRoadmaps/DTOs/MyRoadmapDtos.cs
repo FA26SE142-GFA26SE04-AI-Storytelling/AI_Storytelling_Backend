@@ -16,9 +16,6 @@ public class MyRoadmapOpenStoryDto
 
     /// <summary>Chỉ có giá trị khi ngày mong đọc xong vẫn còn ở tương lai.</summary>
     public DateTime? ExpectedBy { get; set; }
-
-    /// <summary>Khóa trung tính, không tiết lộ lý do.</summary>
-    public bool IsLocked { get; set; }
 }
 
 /// <summary>Truyện chưa tới lượt trong lộ trình của trẻ.</summary>

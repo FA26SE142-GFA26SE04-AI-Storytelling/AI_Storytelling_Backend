@@ -1,5 +1,7 @@
 using Moq;
 using StoryPlatform.Application.Features.ChildRoadmaps.Services;
+using StoryPlatform.Application.Features.ReadingSessions;
+using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using Xunit;
@@ -9,6 +11,7 @@ namespace StoryPlatform.UnitTests.Features.ChildRoadmaps;
 public class ChildRoadmapProgressRecorderTests
 {
     private readonly ChildRoadmapHarness _h = new();
+    private readonly Mock<IChildRewardService> _rewards = new();
     private readonly ChildRoadmapProgressRecorder _sut;
 
     private const int Child = ChildRoadmapHarness.Child;
@@ -16,11 +19,14 @@ public class ChildRoadmapProgressRecorderTests
     public ChildRoadmapProgressRecorderTests()
     {
         var eligibility = new ChildRoadmapEligibility(_h.UnitOfWork.Object);
+        _rewards.Setup(r => r.OnRoadmapFinishedAsync(It.IsAny<ReadingSession>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RewardOutcome(0, new[] { BadgeCatalog.RoadmapFinisher }));
         _sut = new ChildRoadmapProgressRecorder(
             _h.UnitOfWork.Object,
             new ChildRoadmapAdvancer(_h.UnitOfWork.Object, eligibility),
             new ChildRoadmapNotifier(_h.UnitOfWork.Object, _h.Notifications.Object),
-            _h.Audit.Object);
+            _h.Audit.Object,
+            _rewards.Object);
     }
 
     private ReadingSession Session(int storyId, SessionStatus status = SessionStatus.Completed)
@@ -49,7 +55,9 @@ public class ChildRoadmapProgressRecorderTests
 
         var result = await _sut.RecordSessionCompletedAsync(1, false);
 
-        Assert.Equal(1, result!.Id);
+        Assert.Equal(1, result!.Step.Id);
+        Assert.Empty(result.NewBadgeCodes);
+        _rewards.Verify(r => r.OnRoadmapFinishedAsync(It.IsAny<ReadingSession>(), It.IsAny<CancellationToken>()), Times.Never);
         Assert.Equal(ChildRoadmapItemStatus.Completed, Item(1).Status);
         Assert.Equal(1, session.ChildRoadmapItemId);
         Assert.Equal(ChildRoadmapItemStatus.Open, Item(2).Status);
@@ -74,11 +82,14 @@ public class ChildRoadmapProgressRecorderTests
         _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Open);
         Session(10);
 
-        await _sut.RecordSessionCompletedAsync(1, false);
+        var result = await _sut.RecordSessionCompletedAsync(1, false);
 
         _h.Notifications.Verify(n => n.CreateAsync(
             ChildRoadmapHarness.ParentId, NotificationType.RoadmapCompleted,
             It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
+        _rewards.Verify(r => r.OnRoadmapFinishedAsync(
+            It.Is<ReadingSession>(s => s.ChildProfileId == Child), It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Equal(new[] { BadgeCatalog.RoadmapFinisher }, result!.NewBadgeCodes);
     }
 
     [Fact]
@@ -96,6 +107,7 @@ public class ChildRoadmapProgressRecorderTests
         _h.Notifications.Verify(n => n.CreateAsync(
             It.IsAny<int>(), NotificationType.RoadmapCompleted,
             It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+        _rewards.Verify(r => r.OnRoadmapFinishedAsync(It.IsAny<ReadingSession>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -106,6 +118,7 @@ public class ChildRoadmapProgressRecorderTests
 
         Assert.Null(await _sut.RecordSessionCompletedAsync(1, true));
         Assert.Equal(ChildRoadmapItemStatus.Open, Item(1).Status);
+        _rewards.VerifyNoOtherCalls();
         Assert.Null(session.ChildRoadmapItemId);
     }
 

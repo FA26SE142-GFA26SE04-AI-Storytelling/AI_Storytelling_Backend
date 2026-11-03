@@ -25,7 +25,7 @@ public class ChildRewardsControllerTests
     };
 
     [Fact]
-    public void Controller_IsOnlyForChildSessions_AndExposesOneAction()
+    public void Controller_IsOnlyForChildSessions_AndExposesTwoActions()
     {
         var type = typeof(ChildRewardsController);
         var authorize = type.GetCustomAttribute<AuthorizeAttribute>();
@@ -35,7 +35,7 @@ public class ChildRewardsControllerTests
         Assert.NotNull(authorize);
         Assert.Equal("ChildSession", authorize!.Policy);
         Assert.Null(authorize.Roles);
-        Assert.Equal(new[] { "Get" }, methods);
+        Assert.Equal(new[] { "Get", "WaterKnowledgeTree" }, methods);
         Assert.Equal("api/v1/child/rewards", type.GetCustomAttribute<RouteAttribute>()!.Template);
     }
 
@@ -57,6 +57,36 @@ public class ChildRewardsControllerTests
     public async Task Get_MissingIdentity_DoesNotCallService()
     {
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => Controller().Get(CancellationToken.None));
+
+        _rewards.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public void WaterKnowledgeTree_IsAPostOnTheTreeRoute()
+    {
+        var method = typeof(ChildRewardsController).GetMethod(nameof(ChildRewardsController.WaterKnowledgeTree))!;
+
+        Assert.Equal("knowledge-tree/water", method.GetCustomAttribute<HttpPostAttribute>()!.Template);
+    }
+
+    [Fact]
+    public async Task WaterKnowledgeTree_UsesTheChildFromTheToken()
+    {
+        using var cts = new CancellationTokenSource();
+        var expected = new WaterKnowledgeTreeResultDto { ExpPoured = 12 };
+        _rewards.Setup(r => r.WaterKnowledgeTreeAsync(100, cts.Token)).ReturnsAsync(expected);
+
+        var result = await Controller(new Claim(ClaimTypes.NameIdentifier, "100")).WaterKnowledgeTree(cts.Token);
+
+        var response = Assert.IsType<ApiResponse<WaterKnowledgeTreeResultDto>>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Same(expected, response.Data);
+        _rewards.VerifyAll();
+    }
+
+    [Fact]
+    public async Task WaterKnowledgeTree_MissingIdentity_DoesNotCallService()
+    {
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => Controller().WaterKnowledgeTree(CancellationToken.None));
 
         _rewards.VerifyNoOtherCalls();
     }

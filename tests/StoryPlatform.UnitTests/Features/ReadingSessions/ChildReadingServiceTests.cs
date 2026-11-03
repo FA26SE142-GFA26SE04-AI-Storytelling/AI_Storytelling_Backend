@@ -77,6 +77,8 @@ public class ChildReadingServiceTests
             .ReturnsAsync((ChildRoadmapSkipReason?)null);
         _rewards.Setup(r => r.OnStoryCompletedAsync(It.IsAny<ReadingSession>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(RewardOutcome.None);
+        _rewards.Setup(r => r.OnRoadmapFinishedAsync(It.IsAny<ReadingSession>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(RewardOutcome.None);
         _sut = new ChildReadingService(_h.UnitOfWork.Object, _eligibility.Object, _recorder.Object, _rewards.Object);
     }
 
@@ -979,7 +981,7 @@ public class ChildReadingServiceTests
     {
         var session = _h.AddSession();
         _recorder.Setup(r => r.RecordSessionCompletedAsync(session.Id, false, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ChildRoadmapItem { Id = 1 });
+            .ReturnsAsync(new RoadmapCompletionResult(new ChildRoadmapItem { Id = 1 }, Array.Empty<string>()));
 
         var result = await _sut.CompleteAsync(ReadingHarness.Child, session.Id);
 
@@ -988,6 +990,22 @@ public class ChildReadingServiceTests
         Assert.False(result.IsRetake);
         Assert.True(result.RoadmapStepCompleted);
         Assert.Contains(_h.Telemetry, t => t.EventType == TelemetryEventType.SessionCompleted);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_IncludesBadgesFromTheRoadmapRecorder_WithoutDuplicates()
+    {
+        var session = _h.AddSession();
+        _rewards.Setup(r => r.OnStoryCompletedAsync(It.IsAny<ReadingSession>(), false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RewardOutcome(10, new[] { BadgeCatalog.FirstStory }));
+        _recorder.Setup(r => r.RecordSessionCompletedAsync(session.Id, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RoadmapCompletionResult(
+                new ChildRoadmapItem { Id = 1 }, new[] { BadgeCatalog.RoadmapFinisher, BadgeCatalog.FirstStory }));
+
+        var result = await _sut.CompleteAsync(ReadingHarness.Child, session.Id);
+
+        Assert.Equal(new[] { BadgeCatalog.FirstStory, BadgeCatalog.RoadmapFinisher }, result.NewBadges);
+        Assert.Equal(10, result.ExpGained);
     }
 
     [Fact]
@@ -1061,7 +1079,7 @@ public class ChildReadingServiceTests
         var session = _h.AddSession();
         var recorder = new ChildRoadmapProgressRecorder(_h.UnitOfWork.Object,
             new ChildRoadmapAdvancer(_h.UnitOfWork.Object, _eligibility.Object),
-            Mock.Of<IChildRoadmapNotifier>(), Mock.Of<IAuditLogWriter>());
+            Mock.Of<IChildRoadmapNotifier>(), Mock.Of<IAuditLogWriter>(), _rewards.Object);
         var service = new ChildReadingService(_h.UnitOfWork.Object, _eligibility.Object, recorder, _rewards.Object);
 
         var result = await service.CompleteAsync(ReadingHarness.Child, session.Id);

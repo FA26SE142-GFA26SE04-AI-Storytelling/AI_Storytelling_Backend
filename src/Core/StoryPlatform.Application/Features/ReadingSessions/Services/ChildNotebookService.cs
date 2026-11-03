@@ -10,10 +10,12 @@ namespace StoryPlatform.Application.Features.ReadingSessions.Services;
 public class ChildNotebookService : IChildNotebookService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IChildRewardService _rewards;
 
-    public ChildNotebookService(IUnitOfWork unitOfWork)
+    public ChildNotebookService(IUnitOfWork unitOfWork, IChildRewardService rewards)
     {
         _unitOfWork = unitOfWork;
+        _rewards = rewards;
     }
 
     public async Task<VocabularyDefinitionDto> GetDefinitionAsync(
@@ -21,7 +23,8 @@ public class ChildNotebookService : IChildNotebookService
     {
         var (session, word) = await RequireWordAsync(childProfileId, sessionId, vocabularyId, ct);
         var collected = await _unitOfWork.Repository<VocabularyNotebookEntry>().ExistsAsync(
-            entry => entry.ChildProfileId == childProfileId && entry.StoryVocabularyId == vocabularyId, ct);
+            entry => entry.ChildProfileId == childProfileId && entry.StoryVocabularyId == vocabularyId
+                     && entry.RemovedAt == null, ct);
         var audio = await VocabularyAudioLookup.FindUrlsAsync(_unitOfWork, new[] { word.Id }, ct);
 
         await _unitOfWork.Repository<TelemetryLog>().AddAsync(NewLog(session.Id, TelemetryEventType.VocabularyOpened, word.Id), ct);
@@ -41,11 +44,15 @@ public class ChildNotebookService : IChildNotebookService
     {
         var (session, word) = await RequireWordAsync(childProfileId, sessionId, vocabularyId, ct);
         var repository = _unitOfWork.Repository<VocabularyNotebookEntry>();
+        // Dòng đã bỏ khỏi sổ (RemovedAt) vẫn được tìm thấy, để lưu lại chỉ hiện lại, không cộng EXP lần nữa.
         var entry = await repository.FirstOrDefaultAsync(
             existing => existing.ChildProfileId == childProfileId && existing.StoryVocabularyId == vocabularyId,
             cancellationToken: ct);
+        var reward = RewardOutcome.None;
         if (entry == null)
         {
+            var visibleBefore = await repository.CountAsync(
+                existing => existing.ChildProfileId == childProfileId && existing.RemovedAt == null, ct);
             entry = await repository.AddAsync(new VocabularyNotebookEntry
             {
                 ChildProfileId = childProfileId,
@@ -54,16 +61,28 @@ public class ChildNotebookService : IChildNotebookService
             }, ct);
             await _unitOfWork.Repository<TelemetryLog>().AddAsync(
                 NewLog(session.Id, TelemetryEventType.VocabularyCollected, word.Id), ct);
+            reward = await _rewards.OnWordCollectedAsync(session, visibleBefore + 1, ct);
+            await _unitOfWork.SaveChangesAsync(ct);
+        }
+        else if (entry.RemovedAt != null)
+        {
+            entry.RemovedAt = null;
+            entry.UpdatedAt = DateTime.UtcNow;
+            repository.Update(entry);
             await _unitOfWork.SaveChangesAsync(ct);
         }
 
-        return (await BuildAsync(new[] { entry }, ct)).Single();
+        var result = (await BuildAsync(new[] { entry }, ct)).Single();
+        result.ExpGained = reward.ExpGained;
+        result.NewBadges = reward.NewBadgeCodes.ToList();
+        return result;
     }
 
     public async Task<IReadOnlyList<NotebookEntryDto>> ListAsync(int childProfileId, CancellationToken ct = default)
     {
         var entries = (await _unitOfWork.Repository<VocabularyNotebookEntry>().FindAsync(
-                entry => entry.ChildProfileId == childProfileId && !entry.IsDeleted, cancellationToken: ct))
+                entry => entry.ChildProfileId == childProfileId && !entry.IsDeleted && entry.RemovedAt == null,
+                cancellationToken: ct))
             .OrderByDescending(entry => entry.CollectedAt).ThenByDescending(entry => entry.Id).ToList();
         return await BuildAsync(entries, ct);
     }
@@ -72,12 +91,15 @@ public class ChildNotebookService : IChildNotebookService
     {
         var repository = _unitOfWork.Repository<VocabularyNotebookEntry>();
         var entry = await repository.GetByIdAsync(entryId, ct);
-        if (entry == null || entry.IsDeleted || entry.ChildProfileId != childProfileId)
+        if (entry == null || entry.IsDeleted || entry.RemovedAt != null || entry.ChildProfileId != childProfileId)
         {
             throw new NotFoundException("Từ trong Sổ tay", entryId);
         }
 
-        repository.Delete(entry);
+        // Chỉ ẩn khỏi sổ: không trừ EXP, không thu hồi huy hiệu, lưu lại thì hiện lại.
+        entry.RemovedAt = DateTime.UtcNow;
+        entry.UpdatedAt = entry.RemovedAt;
+        repository.Update(entry);
         await _unitOfWork.SaveChangesAsync(ct);
     }
 

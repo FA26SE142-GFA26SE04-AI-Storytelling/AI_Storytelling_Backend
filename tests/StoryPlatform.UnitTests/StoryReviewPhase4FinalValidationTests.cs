@@ -67,7 +67,7 @@ public sealed class StoryReviewPhase4FinalValidationTests
             StoryId = 1,
             SubmittedByUserId = 1,
             Status = GenerationInputStatus.InputAccepted,
-            ContextSnapshotJson = "{}",
+            ContextSnapshotJson = """{"readingLevel":2,"language":"vi","ageBand":"6-8","vocabularyLevel":"level_2","maximumLength":1000,"requiredApprovalMode":"always_manual","interests":[],"allowedCategoryCodes":[],"restrictedCategoryCodes":[],"blockedCategoryCodes":[]}""",
             AcceptedInputJson = "{}"
         });
         var reviewStore = new InMemoryReviewCompletionStore();

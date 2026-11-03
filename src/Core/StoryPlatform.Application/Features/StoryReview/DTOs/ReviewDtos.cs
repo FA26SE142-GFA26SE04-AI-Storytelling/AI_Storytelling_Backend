@@ -247,6 +247,16 @@ public sealed record UpdateListeningOptionDto
 
 #region Approval
 
+public sealed record ConfirmStoryPackageRequestDto
+{
+    [System.ComponentModel.DataAnnotations.Range(1, int.MaxValue)]
+    public int VersionId { get; init; }
+    [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(90, MinimumLength = 8)]
+    public string OperationId { get; init; } = string.Empty;
+}
+
+public sealed record ConfirmStoryPackageResponseDto(int StoryId, int VersionId, string Status, DateTime ConfirmedAt);
+
 public sealed record ConfirmCreatorContentRequestDto
 {
     [System.ComponentModel.DataAnnotations.Range(1, int.MaxValue)]

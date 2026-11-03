@@ -186,6 +186,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
                 : await _versionRepo.FirstOrDefaultAsync(
                     v => v.Id == input.VersionId && v.StoryId == storyId && v.IsCurrent,
                     cancellationToken: cancellationToken) ?? throw new NotFoundException("StoryVersion");
+            await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, storyId, input.VersionId, cancellationToken, contentMutation: true);
 
             // Tạo version mới với EditType = HumanEdited, version_no = current + 1.
             var assistanceProvenance = await ValidateReviewAssistanceAsync(userId, story, currentVersion.Id, input.AssistanceReferences, cancellationToken);
@@ -693,7 +694,10 @@ public sealed partial class StoryReviewService : IStoryReviewService
     }
 
 
-    public async Task<ValidationResultDto> ValidateAsync(int userId, int storyId, CancellationToken cancellationToken = default)
+    public Task<ValidationResultDto> ValidateAsync(int userId, int storyId, CancellationToken cancellationToken = default) =>
+        ValidateCoreAsync(userId, storyId, false, cancellationToken);
+
+    private async Task<ValidationResultDto> ValidateCoreAsync(int userId, int storyId, bool packageConfirmation, CancellationToken cancellationToken)
     {
         await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         var checks = new List<ValidationCheckDto>();
@@ -750,6 +754,23 @@ public sealed partial class StoryReviewService : IStoryReviewService
         }
 
         // 2. Check Readability
+        var readabilityContextCurrent = true;
+        if (story.Scope == StoryScope.Parent && story.Source == StorySource.Ai)
+        {
+            var accepted = (await _unitOfWork.Repository<StoryGenerationRequest>().FindAsync(
+                x => x.StoryId == storyId && x.Status == GenerationInputStatus.InputAccepted, cancellationToken: cancellationToken))
+                .OrderByDescending(x => x.Id).FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(accepted?.ContextSnapshotJson))
+            {
+                var pinned = JsonSerializer.Deserialize<StoryPlatform.Application.Features.AIStoryInput.Models.AIStoryInputContextSnapshot>(accepted.ContextSnapshotJson, ProposalJsonOptions);
+                readabilityContextCurrent = pinned is not null && pinned.ReadingLevel == (story.ReadingLevel ?? 2) &&
+                    ContentReadabilityLimits.ForLevel(pinned.ReadingLevel, pinned.ReadabilityScoreThreshold) ==
+                    ContentReadabilityLimits.ForLevel(story.ReadingLevel ?? 2, safetyPolicy?.ReadabilityScoreThreshold);
+            }
+            checks.Add(new ValidationCheckDto { Name = "readability_context_current", Passed = readabilityContextCurrent,
+                Message = readabilityContextCurrent ? "Pinned readability context matches policy" : "READABILITY_POLICY_CHANGED" });
+            if (!readabilityContextCurrent) issues.Add("READABILITY_POLICY_CHANGED");
+        }
         var readability = ReadabilityCalculator.EvaluateForProfile(
             version.Content,
             story.Language,
@@ -873,7 +894,9 @@ public sealed partial class StoryReviewService : IStoryReviewService
 
         // Tương tác lúc nghe phải khớp kế hoạch và được người duyệt xác nhận.
         var listening = await InspectListeningAsync(story, version, cancellationToken);
-        var listeningReviewed = !listening.Required || (_reviewCompletionStore?.IsListeningReviewed(storyId, version.Id) ?? false);
+        var packageReviewed = packageConfirmation || await _unitOfWork.Repository<StoryAuthoringOperation>().ExistsAsync(
+            x => x.StoryId == storyId && x.StoryVersionId == version.Id && x.Kind == "package-confirm", cancellationToken);
+        var listeningReviewed = packageReviewed || !listening.Required || (_reviewCompletionStore?.IsListeningReviewed(storyId, version.Id) ?? false);
         checks.Add(new ValidationCheckDto
         {
             Name = "listening_valid",
@@ -895,9 +918,9 @@ public sealed partial class StoryReviewService : IStoryReviewService
         var isMarkedComplete = _reviewCompletionStore?.IsReviewCompleted(storyId, version.Id) ?? false;
         var structurallyComplete = storyValid && vocabValid && quizPassed;
         var autoApproval = !story.EverGrayZone && safetyPolicy is { ParentalGateEnabled: false, RequiredApprovalMode: ApprovalMode.AutoPublishOnThreshold };
-        var reviewComplete = readingMediaOnly
+        var reviewComplete = packageReviewed || (readingMediaOnly
             ? (_reviewCompletionStore?.IsStoryReviewed(storyId, version.Id) ?? false) || autoApproval
-            : isMarkedComplete || structurallyComplete;
+            : isMarkedComplete || structurallyComplete);
         checks.Add(new ValidationCheckDto
         {
             Name = "review_complete",
@@ -907,7 +930,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
         if (!reviewComplete) issues.Add("Required review is incomplete");
 
         var canApprove = !checks.Any(check => check.Name == "creator_audience_policy" && !check.Passed) && storyValid &&
-                         readability.Passed &&
+                         readability.Passed && readabilityContextCurrent &&
                          safetyPassed &&
                          profilePassed &&
                          (readingMediaOnly || vocabValid && quizPassed && bindingsPassed) &&
@@ -951,7 +974,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
 
     // Content confirmation queues media only; public review remains owned by Moderator.
     private async Task<int> QueueReviewedMediaAsync(int userId, int storyId, bool creatorConfirmation,
-        int? expectedVersionId, CancellationToken cancellationToken)
+        int? expectedVersionId, CancellationToken cancellationToken, ConfirmStoryPackageRequestDto? package = null)
     {
         await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         var storyForAuthorization = await _storyRepo.FirstOrDefaultAsync(
@@ -960,6 +983,8 @@ public sealed partial class StoryReviewService : IStoryReviewService
         await EnsureReviewPermissionAsync(storyForAuthorization, userId, cancellationToken);
         if (creatorConfirmation != (storyForAuthorization.Scope == StoryScope.Creator))
             throw new ForbiddenException("Creator phải xác nhận nội dung qua API confirm-content; duyệt công khai thuộc Moderator.");
+        if (package is not null && await FindPackageReceiptAsync(userId, storyId, package, cancellationToken) is { } replay)
+            return replay.StoryVersionId;
         if (storyForAuthorization.Status != StoryStatus.ContentReview)
             throw new ConflictException("INVALID_STORY_STATUS");
 
@@ -973,7 +998,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
             evaluatedVersionId = source.Id;
         }
         // Preserve Parent preflight behavior; Creator validation must follow the locked version check.
-        if (!creatorConfirmation)
+        if (!creatorConfirmation && package is null)
         {
             var validation = await ValidateAsync(userId, storyId, cancellationToken);
             if (!validation.CanApprove)
@@ -990,6 +1015,11 @@ public sealed partial class StoryReviewService : IStoryReviewService
             if (StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story)) throw new ConflictException("PARENT_MANUAL_USE_AUTHORING_API");
             GenerationStoryAccess.EnsureSupported(story);
             await EnsureReviewPermissionAsync(story, userId, cancellationToken);
+            if (package is not null && await FindPackageReceiptAsync(userId, storyId, package, cancellationToken) is { } lockedReplay)
+            {
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                return lockedReplay.StoryVersionId;
+            }
             if (story.Status != StoryStatus.ContentReview)
                 throw new ConflictException("INVALID_STORY_STATUS");
             var approvedVersion = await _versionRepo.FirstOrDefaultAsync(
@@ -1002,7 +1032,11 @@ public sealed partial class StoryReviewService : IStoryReviewService
                 throw new ConflictException("STALE_STORY_VERSION");
             if (creatorConfirmation) await RequireActiveCreatorAsync(story, userId, cancellationToken);
             await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, storyId, expectedVersionId, cancellationToken);
-            var lockedValidation = await ValidateAsync(userId, storyId, cancellationToken);
+            var lockedValidation = await ValidateCoreAsync(userId, storyId, package is not null, cancellationToken);
+            if (lockedValidation.Checks.Any(x => x.Name == "readability_context_current" && !x.Passed))
+                throw new ConflictException("READABILITY_POLICY_CHANGED");
+            if (package is not null && lockedValidation.Checks.Any(x => x.Name == "readability_valid" && !x.Passed))
+                throw new ConflictException("CONTENT_READABILITY_REPAIR_REQUIRED");
             if (!(creatorConfirmation ? lockedValidation.CanConfirmContent : lockedValidation.CanApprove))
                 throw new BadRequestException($"Content is not ready for media: {string.Join(", ", lockedValidation.Issues)}");
             versionId = approvedVersion.Id;
@@ -1046,6 +1080,14 @@ public sealed partial class StoryReviewService : IStoryReviewService
 
             story.Status = creatorConfirmation ? StoryStatus.MediaProcessing : StoryStatus.Approved;
             _storyRepo.Update(story);
+            if (package is not null)
+                await _unitOfWork.Repository<StoryAuthoringOperation>().AddAsync(new()
+                {
+                    StoryId = storyId, StoryVersionId = versionId, ActorUserId = userId,
+                    OperationId = package.OperationId.Trim(), Kind = "package-confirm", RequestHash = PackageHash(storyId, versionId),
+                    OperationResponseJson = JsonSerializer.Serialize(new ConfirmStoryPackageResponseDto(storyId, versionId,
+                        story.Status.ToString(), DateTime.UtcNow), ProposalJsonOptions)
+                }, cancellationToken);
 
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
         }

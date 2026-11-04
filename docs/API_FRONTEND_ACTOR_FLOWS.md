@@ -1,6 +1,6 @@
 # API backend theo actor và luồng tích hợp frontend
 
-> Parent Manual nhi?u b? (03/11/2026): [H?p ??ng package m?i](PARENT_MULTI_CHILD_PACKAGES_API_GUIDE.md). Ch?n tr? sau khi ch?t content, h?c li?u theo t?ng profile, batch giao to?n b? ho?c rollback. Backend source ?? b? sung; c?n migration ri?ng tr??c khi s? d?ng v?i PostgreSQL.
+> Parent Manual nhiều bé (04/11/2026): [Hướng dẫn tích hợp Frontend và contract package](PARENT_MULTI_CHILD_PACKAGES_API_GUIDE.md). Bao gồm request/response, token, polling, retry/revise, media có Authorization và Child Reader. Các mô tả Parent một bé bên dưới là baseline legacy khi khác với hướng dẫn package.
 
 > Phase 5 Image/TTS: [MEDIA_PHASE5_IMAGE_TTS_API_GUIDE.md](MEDIA_PHASE5_IMAGE_TTS_API_GUIDE.md)
 

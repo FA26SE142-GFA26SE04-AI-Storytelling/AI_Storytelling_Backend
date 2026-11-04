@@ -33,6 +33,7 @@ public class ModerationItemConfiguration : IEntityTypeConfiguration<ModerationIt
         builder.Property(x => x.Checklist).HasColumnType("jsonb");
         builder.Property(x => x.ReviewProgress).HasColumnType("jsonb");
         builder.Property(x => x.Feedback).HasColumnType("jsonb");
+        builder.Property(x => x.ProposedContentCategoryIds).HasColumnType("jsonb");
 
         builder.Property(x => x.DecisionReason).HasColumnType("text");
         builder.Property(x => x.EscalationReason).HasMaxLength(1000);

@@ -19,8 +19,9 @@ public class PublicStorySubmissionController : BaseApiController
 
     /// <summary>Gửi một phiên bản truyện vào hàng đợi kiểm duyệt Public Library.</summary>
     /// <remarks>
-    /// Chỉ chủ sở hữu truyện Creator đang Ready và có đầy đủ media mới được gửi. Nếu lần duyệt gần nhất
-    /// bị yêu cầu sửa hoặc từ chối, phiên bản mới phải có nội dung, media hoặc artifact khác bản bị trả về.
+    /// Chỉ chủ sở hữu truyện Creator đang Ready, có đầy đủ media và chọn ít nhất một nhãn đang hoạt động mới được gửi.
+    /// Nếu chỉ bị yêu cầu sửa metadata, Creator có thể gửi lại cùng phiên bản với bộ nhãn khác.
+    /// Các trường hợp bị trả về khác cần phiên bản mới có nội dung, media hoặc artifact khác bản bị trả về.
     /// Mỗi truyện chỉ có một mục Pending/Claimed tại một thời điểm.
     /// </remarks>
     [HttpPost("submit")]

@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test API Luồng 1 — User và chủ hồ sơ trẻ</title>
+<style>
+  :root { --bg:#f6f7f9; --panel:#fff; --text:#1d2330; --muted:#5d6679; --line:#dfe3ea; --accent:#2f5fd0; --ok:#1b8a4b; --bad:#c0392b; --warn:#a66300; --code:#eef1f6; }
+  @media (prefers-color-scheme:dark) { :root { --bg:#14171e; --panel:#1c212b; --text:#e6e9ef; --muted:#a8b0bf; --line:#2d3442; --accent:#7aa2ff; --ok:#4cc58a; --bad:#ff7b6b; --warn:#e5a23c; --code:#232a37; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.55 system-ui,"Segoe UI",sans-serif; }
+  header { max-width:1120px; margin:auto; padding:24px 16px 10px; }
+  h1 { margin:0 0 5px; font-size:25px; }
+  h2 { font-size:20px; margin:0 0 5px; }
+  h3 { margin:0 0 7px; font-size:16px; }
+  p { margin:5px 0 10px; }
+  .sub,.muted { color:var(--muted); }
+  .layout { max-width:1120px; margin:auto; padding:14px 16px 36px; display:grid; grid-template-columns:230px minmax(0,1fr); gap:22px; }
+  nav { position:sticky; top:12px; align-self:start; max-height:calc(100vh - 24px); overflow:auto; }
+  nav a { display:block; padding:7px 10px; border-radius:8px; color:var(--text); text-decoration:none; font-size:14px; }
+  nav a:hover { background:var(--panel); }
+  nav input { width:100%; padding:8px 10px; margin-bottom:8px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--text); font:inherit; }
+  nav .progress { color:var(--muted); font-size:13px; margin:10px; }
+  main { min-width:0; }
+  section { margin-bottom:30px; }
+  .box,details.api { background:var(--panel); border:1px solid var(--line); border-radius:12px; margin-bottom:11px; }
+  .box { padding:13px 16px; }
+  .note { border-left:3px solid var(--warn); }
+  .danger { border-left:3px solid var(--bad); }
+  .box ul,.box ol { margin:6px 0 0; padding-left:21px; }
+  .toolbar { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0 16px; }
+  button,select,input.note-input { font:inherit; border:1px solid var(--line); border-radius:7px; background:var(--panel); color:var(--text); }
+  button { padding:5px 10px; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  details.api > summary { cursor:pointer; list-style:none; display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:11px 14px; }
+  details.api > summary::-webkit-details-marker { display:none; }
+  .method { display:inline-block; min-width:62px; padding:2px 8px; border-radius:6px; color:#fff; text-align:center; font-size:12px; font-weight:700; }
+  .method.GET { background:#1b8a4b; }.method.POST { background:#2f5fd0; }.method.PUT,.method.PATCH { background:#b26a00; }.method.DELETE,.method.REMOVED { background:#c0392b; }
+  .path,pre,code { font-family:ui-monospace,Consolas,monospace; }
+  .path { overflow-wrap:anywhere; font-size:13.5px; }
+  .role { margin-left:auto; padding:1px 8px; border:1px solid var(--line); border-radius:999px; color:var(--muted); font-size:12px; }
+  .api-body { padding:4px 15px 15px; border-top:1px solid var(--line); }
+  pre { white-space:pre-wrap; overflow-wrap:anywhere; background:var(--code); border-radius:8px; padding:10px 12px; font-size:12.5px; }
+  code { background:var(--code); padding:1px 4px; border-radius:4px; font-size:13px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th,td { border-top:1px solid var(--line); padding:7px 8px; text-align:left; vertical-align:top; }
+  th { color:var(--muted); font-size:12px; text-transform:uppercase; }
+  td:first-child { width:52%; }
+  td:nth-child(2) { width:27%; }
+  select { width:100%; padding:5px; font-size:13px; }
+  input.note-input { width:100%; padding:5px 7px; margin-top:5px; font-size:12px; }
+  .hidden { display:none!important; }
+  @media(max-width:760px) { .layout { grid-template-columns:1fr; } nav { position:static; max-height:none; } .role { margin-left:0; } td:first-child { width:auto; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Test API Luồng 1 — User và chủ hồ sơ trẻ</h1>
+  <p class="sub">Checklist test tay cho thay đổi bỏ Supervisor, đổi role Parent thành User và xóa tài khoản. Chọn Pass/Fail và ghi chú; tiến độ được lưu trong trình duyệt.</p>
+</header>
+<div class="layout">
+  <nav id="nav"><input id="search" type="search" placeholder="Tìm API hoặc test case"><div id="links"></div><div class="progress" id="progress"></div></nav>
+  <main id="main">
+    <section id="prepare">
+      <h2>Chuẩn bị</h2>
+      <div class="box note"><b>Môi trường:</b> Dùng database test đã áp dụng migration <code>RemoveSupervisionAndRenameParentRole</code>. File migration đã được tạo trong repo, nhưng chưa được apply lên database nào. Trên DB cũ, tài khoản hiện có vẫn mang role <code>Parent</code> nên kết quả role sẽ không đúng checklist này.</div>
+      <div class="box">
+        <h3>Dữ liệu cần có</h3>
+        <ol>
+          <li>Hai tài khoản active role <code>User</code>: A là chủ hồ sơ trẻ, B là người khác. Lấy access token và refresh token từ <code>POST /api/v1/Auth/login</code>.</li>
+          <li>Một hồ sơ Draft của A và một hồ sơ Active của A đã có Learning Profile, Safety Policy và consent. Ghi lại <code>childProfileId</code>.</li>
+          <li>Một truyện riêng của hồ sơ Active đủ trạng thái để thử các API truyện. Các API AI, review, roadmap, cộng đồng còn phụ thuộc trạng thái truyện, chính sách, quota và consent.</li>
+          <li>Một tài khoản test riêng C cho ca xóa tài khoản; đừng dùng A/B hoặc dữ liệu muốn giữ.</li>
+        </ol>
+      </div>
+      <div class="box"><b>Quy ước:</b> Thay các giá trị <code>&lt;...&gt;</code> bằng ID, mật khẩu hoặc token thực trong Swagger/Postman. Trang này chỉ tạo hướng dẫn; không gửi request, không lưu token. Với các API có điều kiện nghiệp vụ, ca âm cần kiểm tra không đọc/sửa được dữ liệu của người khác; mã lỗi có thể là 403 hoặc 404 tùy endpoint.</div>
+      <div class="toolbar"><button id="expand" type="button">Mở tất cả</button><button id="collapse" type="button">Đóng tất cả</button><button id="reset" type="button">Xóa kết quả đã đánh dấu</button></div>
+    </section>
+  </main>
+</div>
+<script>
+"use strict";
+const removed = [
+  "POST /api/v1/Supervision/{childId}/invitations", "GET /api/v1/Supervision/{childId}/invitations",
+  "POST /api/v1/Supervision/invitations/claim", "POST /api/v1/Supervision/invitations/verify-otp",
+  "POST /api/v1/Supervision/invitations/reject", "POST /api/v1/Supervision/invitations/accept",
+  "DELETE /api/v1/Supervision/invitations/{invitationId}", "POST /api/v1/Supervision/invitations/{invitationId}/regenerate",
+  "GET /api/v1/Supervision/{childId}/relationships", "DELETE /api/v1/Supervision/relationships/{relationshipId}",
+  "POST /api/v1/Supervision/{childId}/transfer-ownership", "GET /api/v1/Supervision/{childId}/ownership-transfers",
+  "POST /api/v1/Supervision/ownership-transfers/{requestId}/accept", "POST /api/v1/Supervision/ownership-transfers/{requestId}/reject", "POST /api/v1/Supervision/ownership-transfers/{requestId}/cancel",
+  "GET /api/v1/Supervision/relationships/{relationshipId}/permissions", "POST /api/v1/Supervision/relationships/{relationshipId}/permissions/{permission}", "DELETE /api/v1/Supervision/relationships/{relationshipId}/permissions/{permission}",
+  "GET /api/v1/Permission", "GET /api/v1/Permission/relationships/{relationshipId}",
+  "POST /api/v1/Permission/relationships/{relationshipId}/{permission}", "DELETE /api/v1/Permission/relationships/{relationshipId}/{permission}",
+  "POST /api/v1/Permission/relationships/{relationshipId}/requests", "GET /api/v1/Permission/relationships/{relationshipId}/requests",
+  "POST /api/v1/Permission/requests/{requestId}/accept", "POST /api/v1/Permission/requests/{requestId}/reject", "POST /api/v1/Permission/requests/{requestId}/cancel"
+];
+const steps = [
+  { id:"role", title:"1. Role User", desc:"Đăng ký và xác thực tài khoản mới; kiểm tra role trong profile và token.", apis:[
+    { m:"POST", p:"/api/v1/Auth/register", role:"Anonymous", what:"Đăng ký không nhận role từ client; role mặc định là User. Cần xác thực email trước khi đăng nhập.", body:{username:"user_test_a",email:"<EMAIL_A>",fullName:"Người dùng A",password:"<PASSWORD_A>",confirmPassword:"<PASSWORD_A>"}, tests:[
+      ["Tạo tài khoản A với email chưa dùng", "200; thông báo kiểm tra email để lấy OTP."],
+      ["Thêm role=Administrator vào body", "Không tự cấp quyền Administrator; tài khoản vẫn là User."] ]},
+    { m:"POST", p:"/api/v1/Auth/login", role:"Anonymous", what:"Đăng nhập bằng username hoặc email sau khi xác thực email.", body:{identifier:"user_test_a",password:"<PASSWORD_A>"}, tests:[
+      ["A đăng nhập sau khi gọi /Auth/verify-email", "200; data có accessToken, refreshToken và user.role = User."],
+      ["Dùng mật khẩu sai", "Không nhận token."] ]},
+    { m:"GET", p:"/api/v1/Auth/me", role:"User", what:"Đọc role và ID của người đang đăng nhập.", tests:[
+      ["Bearer token của A", "200; data.role = User; ghi lại data.id."],
+      ["Không gửi token", "401."] ]}
+  ]},
+  { id:"removed", title:"2. API giám sát đã xóa", desc:"27 method/route cũ không còn được map. Thay ID mẫu bằng số hợp lệ khi thử.", apis:[
+    { m:"REMOVED", p:"/api/v1/Supervision/** và /api/v1/Permission/**", role:"Đã xóa", what:"Không còn API lời mời, quan hệ giám sát, xin/cấp quyền hoặc chuyển Owner.", tests:removed.map(route=>[route,"404; không còn endpoint trong Swagger."]) }
+  ]},
+  { id:"profiles", title:"3. Chủ hồ sơ trẻ", desc:"A sở hữu hồ sơ; B cùng role User nhưng không được đọc hoặc sửa hồ sơ của A.", apis:[
+    { m:"POST", p:"/api/v1/ChildProfile", role:"User", what:"Tạo hồ sơ Draft với ownerUserId là A; không tạo quan hệ supervision.", body:{nickname:"Bé kiểm thử",ageBand:"Age_6_8",language:"vi"}, tests:[
+      ["A tạo hồ sơ", "201; data.ownerUserId = ID của A, status = Draft. Ghi lại data.id."],
+      ["Không có token", "401."] ]},
+    { m:"GET", p:"/api/v1/ChildProfile/mine", role:"User", what:"Chỉ liệt kê hồ sơ do người gọi sở hữu; hồ sơ Archived không hiện trong mine.", tests:[
+      ["Gọi bằng A", "200; có hồ sơ vừa tạo của A."],
+      ["Gọi bằng B", "200; không có hồ sơ của A."] ]},
+    { m:"GET", p:"/api/v1/ChildProfile/{id}", role:"User", what:"Đọc chi tiết bằng ID hồ sơ của A.", tests:[
+      ["A đọc hồ sơ A", "200; ownerUserId = ID của A."],
+      ["B đọc hồ sơ A", "403; không lộ dữ liệu hồ sơ."],
+      ["ID không tồn tại", "404."] ]},
+    { m:"PUT", p:"/api/v1/ChildProfile/{id}", role:"User", what:"Cập nhật hồ sơ; dùng ID hồ sơ Draft của A.", body:{nickname:"Bé kiểm thử mới",ageBand:"Age_6_8",language:"vi"}, tests:[
+      ["B sửa hồ sơ A", "403; GET lại bằng A thấy dữ liệu chưa đổi."],
+      ["A sửa hồ sơ A", "200; nickname mới được lưu."] ]},
+    { m:"PUT", p:"/api/v1/LearningProfile/{childProfileId}", role:"User", what:"POST cùng route cũng dùng logic upsert; readingLevel từ 1 đến 5.", body:{readingLevel:2,readingMode:"ReadFirst",comprehensionGoal:"Đọc hiểu",topics:[]}, tests:[
+      ["A lưu Learning Profile", "200; GET cùng route bằng A đọc được."],
+      ["B lưu hoặc GET trên hồ sơ A", "403; không đọc/sửa được."] ]},
+    { m:"PUT", p:"/api/v1/SafetyPolicy/{childProfileId}", role:"User", what:"POST cùng route cũng dùng logic upsert; consent cần chủ hồ sơ ghi nhận.", body:{maxStoryLength:2000,requiredApprovalMode:"AlwaysManual",parentalGateEnabled:true,consentRecorded:true,categories:[]}, tests:[
+      ["A lưu Safety Policy", "200; data.consentRecorded = true nếu điều kiện consent hiện hành đạt."],
+      ["B lưu hoặc GET trên hồ sơ A", "403; không đọc/sửa được."] ]},
+    { m:"PATCH", p:"/api/v1/ChildProfile/{id}/activate", role:"User", what:"Kích hoạt khi đã có Learning Profile, Safety Policy và consent.", tests:[
+      ["A kích hoạt hồ sơ đủ điều kiện", "200; status = Active."],
+      ["B kích hoạt hồ sơ A", "403; status không đổi."],
+      ["Hồ sơ còn thiếu cấu hình/consent", "Không được chuyển Active."] ]}
+  ]},
+  { id:"handover", title:"4. Bàn giao thiết bị cho trẻ", desc:"Handover tạo ChildSession riêng; không chuyển Owner và không cấp quyền cho người lớn khác.", apis:[
+    { m:"POST", p:"/api/v1/ChildAccessCredential/{childProfileId}/handover", role:"User — chủ hồ sơ", what:"Dùng hồ sơ Active của A. supervisorRefreshToken là tên field cũ; gửi refresh token của chính phiên người lớn A. Không cần tạo Easy Login QR trước.", body:{supervisorRefreshToken:"<REFRESH_TOKEN_A>"}, tests:[
+      ["A bàn giao hồ sơ Active của A", "200; data có childProfileId, accessToken của trẻ và expiresInSeconds. Lưu token trẻ để thử /me."],
+      ["B dùng token của B với hồ sơ A", "403; không tạo ChildSession."],
+      ["A thiếu/sai/đã hết hạn supervisorRefreshToken", "401; không tạo ChildSession."],
+      ["A dùng hồ sơ Draft hoặc Suspended", "403; trẻ chưa được vào."] ]},
+    { m:"GET", p:"/api/v1/ChildAccessCredential/me", role:"ChildSession", what:"Dùng accessToken của trẻ vừa nhận từ handover.", tests:[
+      ["Bearer child access token", "200; childProfileId và nickname đúng hồ sơ đã bàn giao."],
+      ["Bearer access token người lớn", "Không được vào API ChildSession."] ]},
+    { m:"GET", p:"/api/v1/ChildAccessCredential/{childProfileId}", role:"User — chủ hồ sơ", what:"Xem trạng thái Easy Login, không trả secret hoặc hash.", tests:[
+      ["A xem hồ sơ A", "200; data.hasEasyLogin; không có secret/hash."],
+      ["B xem hồ sơ A", "403."] ]}
+  ]},
+  { id:"related", title:"5. Các luồng dùng quyền chủ hồ sơ", desc:"Chạy ca âm bằng B trên cùng childProfileId/storyId của A; ca dương còn phụ thuộc trạng thái nghiệp vụ.", apis:[
+    { m:"GET", p:"/api/v1/TokenQuota/child/{childProfileId}", role:"User hoặc Administrator", what:"Quota trẻ chỉ chủ hồ sơ hoặc Administrator xem được.", tests:[
+      ["A xem quota hồ sơ A", "200; data là quota hiện hành."], ["B xem quota hồ sơ A", "403."], ["Administrator xem", "200."] ]},
+    { m:"GET", p:"/api/v1/ai-story-input/children/{childProfileId}/context", role:"User", what:"Context tạo truyện AI của trẻ.", tests:[
+      ["A xem hồ sơ Active của A", "200 nếu policy/consent cho phép."], ["B xem hồ sơ A", "Không đọc được context của A."] ]},
+    { m:"GET", p:"/api/v1/stories/{storyId}/outline", role:"User — truyện riêng", what:"Thử với truyện riêng của hồ sơ A đã có outline.", tests:[
+      ["A xem outline truyện của hồ sơ A", "Nhận outline nếu truyện ở trạng thái phù hợp."], ["B xem cùng storyId", "Không đọc được outline."] ]},
+    { m:"GET", p:"/api/v1/stories/{storyId}/review", role:"User — truyện riêng", what:"Thử với truyện riêng của hồ sơ A ở giai đoạn review.", tests:[
+      ["A xem review truyện A", "Nhận dữ liệu review nếu trạng thái cho phép."], ["B xem cùng storyId", "Không đọc được dữ liệu review."] ]},
+    { m:"GET", p:"/api/v1/stories/{storyId}/media/progress", role:"User hoặc ContentCreator", what:"Với truyện Parent của A, chỉ A được xem tiến độ media.", tests:[
+      ["A xem truyện A", "Nhận progress nếu truyện đã có media job."], ["B xem cùng storyId", "Không đọc được progress."] ]},
+    { m:"GET", p:"/api/v1/ChildRoadmap/{childProfileId}", role:"User", what:"Lộ trình riêng của trẻ.", tests:[
+      ["A xem hồ sơ A", "200; danh sách lộ trình của trẻ."], ["B xem hồ sơ A", "Không đọc được lộ trình."] ]},
+    { m:"GET", p:"/api/v1/ParentReadingFeedback/{childProfileId}", role:"User", what:"Phản hồi tiến độ đọc của trẻ.", tests:[
+      ["A xem hồ sơ A", "200 nếu có dữ liệu phù hợp."], ["B xem hồ sơ A", "Không đọc được phản hồi."] ]},
+    { m:"GET", p:"/api/v1/parent/wishes", role:"User", what:"Điều ước thuộc các hồ sơ của người gọi; route parent được giữ nguyên.", tests:[
+      ["A xem danh sách", "200; không lẫn điều ước của B."], ["B xem danh sách", "200; không lẫn điều ước của A."] ]},
+    { m:"GET", p:"/api/v1/parent/stories", role:"User", what:"Truyện thủ công của người gọi; route parent được giữ nguyên.", tests:[
+      ["A xem danh sách", "200; chỉ truyện trong phạm vi của A."], ["B xem danh sách", "200; không lộ truyện của A."] ]},
+    { m:"GET", p:"/api/v1/authoring-guides", role:"User", what:"Không đổi audience Parent của bộ hướng dẫn; chỉ role JWT đổi thành User.", tests:[
+      ["A gọi bằng token User", "Được truy cập bộ hướng dẫn đã phát hành."], ["Không token", "401."] ]}
+  ]},
+  { id:"requests", title:"6. Dữ liệu, cộng đồng và báo cáo", desc:"Các ca ghi dữ liệu dưới đây chỉ nên chạy trên môi trường test và với truyện/hồ sơ phù hợp.", apis:[
+    { m:"POST", p:"/api/v1/CommunitySubmission/check", role:"User", what:"Kiểm tra khả năng nộp truyện riêng của trẻ lên thư viện cộng đồng; check không nộp thật.", body:{storyId:"<STORY_ID_A>",confirmNoPersonalInfo:false,copyrightDeclaration:"OwnWork"}, tests:[
+      ["A check truyện của hồ sơ A", "200; đọc canSubmit/blockers, không tạo submission."], ["B check cùng storyId", "Không được nộp truyện của A."] ]},
+    { m:"POST", p:"/api/v1/ContentReport", role:"User", what:"Báo cáo truyện công khai hoặc truyện riêng mà ít nhất một hồ sơ Active của người gọi được phép truy cập.", body:{storyId:"<PUBLISHED_STORY_ID>",reason:"SafetyConcern",description:"Nội dung cần kiểm tra"}, tests:[
+      ["A có hồ sơ Active đủ điều kiện và gửi báo cáo", "200; nhận reportId nếu truyện chưa có báo cáo xung đột."], ["User không có hồ sơ Active phù hợp", "403; không tạo report."] ]}
+  ]},
+  { id:"deletion", title:"7. Xóa tài khoản — chạy cuối", desc:"Dùng riêng tài khoản C có hồ sơ Draft và Active của chính C. Thao tác thành công sẽ làm tài khoản không dùng lại được.", apis:[
+    { m:"GET", p:"/api/v1/Auth/me/delete-preview", role:"User", what:"Danh sách mọi hồ sơ chưa xóa của C, gồm Draft/Active/Archived. DTO mới chỉ có childProfiles.", tests:[
+      ["C xem preview", "200; data.childProfiles chứa id, nickname, status của từng hồ sơ C."],
+      ["Kiểm tra contract cũ", "Không còn blockingProfiles, draftProfiles hoặc canDelete."],
+      ["B xem preview của mình", "Không thấy hồ sơ C."] ]},
+    { m:"DELETE", p:"/api/v1/Auth/me", role:"User", what:"Xóa và ẩn danh tài khoản C; xóa mềm/ẩn danh mọi hồ sơ do C sở hữu; thu hồi phiên trẻ. Chỉ dùng tài khoản test có thể bỏ.", body:{currentPassword:"<PASSWORD_C>",deleteChildProfiles:true}, tests:[
+      ["C gửi sai currentPassword", "400; tài khoản và hồ sơ không đổi."],
+      ["C gửi đúng mật khẩu, deleteChildProfiles=false khi còn hồ sơ", "400; phải xác nhận xóa mọi hồ sơ."],
+      ["C gửi đúng mật khẩu, deleteChildProfiles=true", "200; tài khoản và toàn bộ hồ sơ C bị ẩn danh/xóa mềm; child token cũ không còn dùng được."],
+      ["Truyện cộng đồng liên quan", "Không bị xóa theo tài khoản; tên tác giả hiển thị ẩn danh."] ]}
+  ]}
+];
+const storageKey="luong1-user-owner-manual-tests-v1";
+let results={};
+try { results=JSON.parse(localStorage.getItem(storageKey)||"{}"); } catch { results={}; }
+const main=document.getElementById("main"), links=document.getElementById("links");
+function save(){ try { localStorage.setItem(storageKey,JSON.stringify(results)); } catch {} }
+function el(tag,cls,text){ const n=document.createElement(tag); if(cls)n.className=cls; if(text!==undefined)n.textContent=text; return n; }
+function copyText(value,button){ const done=()=>{ const old=button.textContent; button.textContent="Đã copy"; setTimeout(()=>button.textContent=old,1200); }; if(navigator.clipboard?.writeText){navigator.clipboard.writeText(value).then(done,()=>fallback());} else fallback(); function fallback(){ const t=el("textarea"); t.value=value; document.body.append(t); t.select(); try{document.execCommand("copy");done();}finally{t.remove();} } }
+let total=0;
+for(const step of steps){
+  const section=el("section"); section.id=step.id; section.append(el("h2","",step.title),el("p","sub",step.desc));
+  const link=el("a","",step.title); link.href="#"+step.id; links.append(link);
+  for(const [ai,api] of step.apis.entries()){
+    const card=el("details","api"), summary=el("summary"), method=el("span","method "+api.m,api.m), path=el("span","path",api.p), role=el("span","role",api.role);
+    summary.append(method,path,role); card.append(summary); const body=el("div","api-body"); body.append(el("p","",api.what));
+    const pathButton=el("button","", "Copy route"); pathButton.type="button"; pathButton.onclick=()=>copyText(api.m+" "+api.p,pathButton); body.append(pathButton);
+    if(api.body){ const code=JSON.stringify(api.body,null,2); const label=el("p","","Body ví dụ — thay các giá trị <...> trước khi gửi"); const btn=el("button","","Copy body"); btn.type="button"; btn.onclick=()=>copyText(code,btn); body.append(label,btn,el("pre","",code)); }
+    const table=el("table"), head=el("thead"), headRow=el("tr"); for(const title of ["Test case","Kết quả mong đợi","Kết quả chạy"]){headRow.append(el("th","",title));} head.append(headRow); table.append(head); const tbody=el("tbody");
+    for(const [ti,test] of api.tests.entries()){
+      total++; const key=step.id+"."+ai+"."+ti, saved=results[key]||{}, row=el("tr"), caseCell=el("td","",test[0]), expect=el("td","",test[1]), actual=el("td");
+      const select=el("select"); for(const [v,label] of [["","Chưa chạy"],["pass","Pass"],["fail","Fail"],["skip","Bỏ qua"]]){ const option=el("option","",label); option.value=v; select.append(option); } select.value=saved.status||"";
+      const note=el("input","note-input"); note.type="text"; note.placeholder="Ghi chú / mã lỗi thực tế"; note.value=saved.note||"";
+      const persist=()=>{ results[key]={status:select.value,note:note.value}; save(); progress(); }; select.onchange=persist; note.oninput=persist;
+      actual.append(select,note); row.append(caseCell,expect,actual); tbody.append(row);
+    }
+    table.append(tbody); body.append(el("h3","","Test case"),table); card.append(body); section.append(card);
+    card.dataset.search=(api.m+" "+api.p+" "+api.role+" "+api.what+" "+api.tests.map(t=>t.join(" ")).join(" ")).toLowerCase();
+  }
+  main.append(section);
+}
+function progress(){ const values=Object.values(results); const count=(v)=>values.filter(x=>x.status===v).length; document.getElementById("progress").textContent=`${total} ca · Pass ${count("pass")} · Fail ${count("fail")} · Bỏ qua ${count("skip")}`; }
+progress();
+document.getElementById("search").oninput=e=>{ const q=e.target.value.trim().toLowerCase(); for(const step of steps){ const section=document.getElementById(step.id); let shown=0; for(const card of section.querySelectorAll("details.api")){ const match=!q||card.dataset.search.includes(q); card.classList.toggle("hidden",!match); if(match){shown++; if(q)card.open=true;} } section.classList.toggle("hidden",!shown); } };
+document.getElementById("expand").onclick=()=>document.querySelectorAll("details.api").forEach(x=>x.open=true);
+document.getElementById("collapse").onclick=()=>document.querySelectorAll("details.api").forEach(x=>x.open=false);
+document.getElementById("reset").onclick=()=>{ if(!confirm("Xóa toàn bộ kết quả và ghi chú đã lưu trên trình duyệt?"))return; results={}; save(); document.querySelectorAll("select").forEach(x=>x.value=""); document.querySelectorAll("input.note-input").forEach(x=>x.value=""); progress(); };
+</script>
+</body>
+</html>

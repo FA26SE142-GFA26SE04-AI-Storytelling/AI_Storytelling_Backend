@@ -139,55 +139,6 @@ public partial class PublicStoryReviewService
         return after;
     }
 
-    public async Task<List<PublicReviewLabelDto>> SetContentLabelsAsync(
-        int actorUserId, int itemId, SetContentLabelsRequestDto request, CancellationToken cancellationToken = default)
-    {
-        var context = await LoadClaimedContextAsync(actorUserId, itemId, cancellationToken);
-        var wanted = request.ContentCategoryIds.Distinct().ToList();
-        if (wanted.Count == 0)
-        {
-            throw new BadRequestException("Truyện phải có ít nhất một nhãn nội dung.");
-        }
-
-        var categories = await _unitOfWork.Repository<ContentCategory>().FindAsync(
-            x => wanted.Contains(x.Id), cancellationToken: cancellationToken);
-        var invalid = wanted.Where(id => !categories.Any(c => c.Id == id && c.IsActive)).ToList();
-        if (invalid.Count > 0)
-        {
-            throw new BadRequestException(
-                $"Nhãn không tồn tại hoặc không còn hoạt động: {string.Join(", ", invalid)}.");
-        }
-
-        var before = await LoadLabelsAsync(context.Story.Id, cancellationToken);
-        var repository = _unitOfWork.Repository<StoryCategory>();
-        var existing = await repository.FindAsync(
-            x => x.StoryId == context.Story.Id, cancellationToken: cancellationToken);
-
-        foreach (var link in existing.Where(link => !wanted.Contains(link.ContentCategoryId)))
-        {
-            repository.Delete(link);
-        }
-        foreach (var categoryId in wanted.Where(id => !existing.Any(link => link.ContentCategoryId == id)))
-        {
-            await repository.AddAsync(new StoryCategory
-            {
-                StoryId = context.Story.Id,
-                ContentCategoryId = categoryId,
-                Source = TagSource.Moderator
-            }, cancellationToken);
-        }
-
-        await SaveItemAsync(context.Item, cancellationToken);
-
-        var after = await LoadLabelsAsync(context.Story.Id, cancellationToken);
-        await _auditLogWriter.LogAsync(
-            context.Actor.Id, "PublicStoryReviewLabelsChanged", nameof(ModerationItem), context.Item.Id,
-            beforeState: new { labels = before.Select(x => x.ContentCategoryId) },
-            afterState: new { labels = after.Select(x => x.ContentCategoryId) },
-            cancellationToken: cancellationToken);
-        return after;
-    }
-
     private async Task SaveItemAsync(ModerationItem item, CancellationToken cancellationToken)
     {
         item.RowVersion += 1;

@@ -83,6 +83,9 @@ public sealed record GenerateListeningInteractionResponse
 
 public sealed record EvaluateContentSafetyResponse
 {
+    public string? RiskLevel { get; init; }
+    public string? ScoreRuleVersion { get; init; }
+    public IReadOnlyList<string> Evidence { get; init; } = [];
     public string RequestId { get; init; } = string.Empty;
     public bool IsAllowed { get; init; }
     public bool CanRefine { get; init; }

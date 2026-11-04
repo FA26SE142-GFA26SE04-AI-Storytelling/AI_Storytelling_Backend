@@ -80,13 +80,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<VocabularyNotebookEntry> VocabularyNotebookEntries => Set<VocabularyNotebookEntry>();
 
     // Learning intelligence & governance
-    public DbSet<InterventionCase> InterventionCases => Set<InterventionCase>();
     public DbSet<AiGovernanceMetric> AiGovernanceMetrics => Set<AiGovernanceMetric>();
     public DbSet<BusinessReport> BusinessReports => Set<BusinessReport>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
-    public DbSet<LearningInsight> LearningInsights => Set<LearningInsight>();
-    public DbSet<Recommendation> Recommendations => Set<Recommendation>();
-    public DbSet<RecommendationReview> RecommendationReviews => Set<RecommendationReview>();
     public DbSet<ChildProfileVersionHistory> ChildProfileVersionHistories => Set<ChildProfileVersionHistory>();
     public DbSet<TokenQuotaConfig> TokenQuotaConfigs => Set<TokenQuotaConfig>();
     public DbSet<SubscriptionPlan> SubscriptionPlans => Set<SubscriptionPlan>();

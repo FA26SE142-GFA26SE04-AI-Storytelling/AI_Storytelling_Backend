@@ -25,7 +25,6 @@ public sealed class ChildRoadmapHarness
     public readonly List<ChildProfile> Children = new();
     public readonly List<Story> Stories = new();
     public readonly List<ChildRoadmapItem> Items = new();
-    public readonly List<InterventionCase> Cases = new();
     public readonly List<SafetyPolicy> Policies = new();
     public readonly List<SafetyPolicyCategory> PolicyCategories = new();
     public readonly List<StoryCategory> StoryCategories = new();
@@ -43,7 +42,6 @@ public sealed class ChildRoadmapHarness
         Back(Children);
         Back(Stories);
         Back(Items);
-        Back(Cases);
         Back(Policies);
         Back(PolicyCategories);
         Back(StoryCategories);
@@ -109,16 +107,6 @@ public sealed class ChildRoadmapHarness
 
         Items.Add(item);
         return item;
-    }
-
-    public InterventionCase AddHoldMode(int childId, InterventionStatus status = InterventionStatus.OpenHoldMode)
-    {
-        var holdCase = new InterventionCase
-        {
-            Id = Cases.Count + 1, ChildProfileId = childId, Status = status, OpenedAt = DateTime.UtcNow.AddDays(-1)
-        };
-        Cases.Add(holdCase);
-        return holdCase;
     }
 
     public SafetyPolicy AddPolicy(int childId, int maxLength = 0)

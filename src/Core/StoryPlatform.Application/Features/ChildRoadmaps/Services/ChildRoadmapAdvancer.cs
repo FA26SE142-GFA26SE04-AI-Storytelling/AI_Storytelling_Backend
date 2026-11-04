@@ -6,7 +6,7 @@ using StoryPlatform.Domain.Enums;
 namespace StoryPlatform.Application.Features.ChildRoadmaps.Services;
 
 /// <summary>
-/// Mở truyện kế (UC-L4A-05): kiểm hồ sơ hoạt động, Hold Mode và tính hợp lệ của truyện
+/// Mở truyện kế (UC-L4A-05): kiểm hồ sơ hoạt động và tính hợp lệ của truyện
 /// (BR-L4A-07) bằng IChildRoadmapEligibility.
 /// </summary>
 public class ChildRoadmapAdvancer : IChildRoadmapAdvancer
@@ -38,17 +38,6 @@ public class ChildRoadmapAdvancer : IChildRoadmapAdvancer
         if (open != null)
         {
             return open;
-        }
-
-        // Hold Mode chưa được mở khóa thì không mở truyện kế (BR-L4A-10).
-        var holdModeActive = await _unitOfWork.Repository<InterventionCase>().ExistsAsync(
-            holdCase => holdCase.ChildProfileId == childProfileId
-                        && !holdCase.IsDeleted
-                        && holdCase.Status != InterventionStatus.ResolvedUnlocked,
-            cancellationToken);
-        if (holdModeActive)
-        {
-            return null;
         }
 
         var now = DateTime.UtcNow;

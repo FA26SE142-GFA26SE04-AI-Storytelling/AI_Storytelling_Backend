@@ -631,7 +631,7 @@ public class ChildAccessCredentialServiceTests
     }
 
     [Fact]
-    public async Task StartStoryHandoverAsync_DoesNotCheckHoldMode()
+    public async Task StartStoryHandoverAsync_StartsWithoutAdditionalAccessChecks()
     {
         AllowSupervision();
         SetupSupervisorSession(SupervisorSession());
@@ -641,7 +641,6 @@ public class ChildAccessCredentialServiceTests
 
         await _sut.StartStoryHandoverAsync(1, 2, 42, "supervisor-refresh");
 
-        _unitOfWork.Verify(u => u.Repository<InterventionCase>(), Times.Never);
     }
 
     [Fact]

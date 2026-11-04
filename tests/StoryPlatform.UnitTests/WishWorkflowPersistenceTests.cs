@@ -166,8 +166,7 @@ public sealed class WishWorkflowPersistenceTests
         protected override void OnModelCreating(ModelBuilder b)
         {
             Type[] types = [typeof(UserAccount), typeof(ChildProfile), typeof(StoryWish), typeof(Story), typeof(WishCard),
-                typeof(StoryWishCardMatch), typeof(AuditLog), typeof(Notification),
-                typeof(InterventionCase)];
+                typeof(StoryWishCardMatch), typeof(AuditLog), typeof(Notification)];
             foreach (var type in types)
                 foreach (var p in type.GetProperties().Where(p => typeof(BaseEntity).IsAssignableFrom(p.PropertyType) ||
                     p.PropertyType.IsGenericType && p.PropertyType.GetGenericArguments().Any(t => typeof(BaseEntity).IsAssignableFrom(t))))

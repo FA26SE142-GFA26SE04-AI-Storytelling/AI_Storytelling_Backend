@@ -224,7 +224,6 @@ public class LearningProfileServiceTests
             It.Is<ChildProfileVersionHistory>(history =>
                 history.ChildProfileId == 1
                 && history.Source == VersionHistorySource.Manual
-                && history.RecommendationId == null
                 && history.AppliedByUserId == 2
                 && history.VersionStatus == VersionHistoryStatus.ActiveVersion
                 && history.PreviousConfig.Contains("\"readingLevel\":1")

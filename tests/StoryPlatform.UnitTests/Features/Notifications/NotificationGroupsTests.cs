@@ -14,8 +14,6 @@ public class NotificationGroupsTests
     [InlineData(NotificationType.PermissionRequestResult, "supervisors")]
     [InlineData(NotificationType.OwnershipTransferRequest, "supervisors")]
     [InlineData(NotificationType.OwnershipTransferResult, "supervisors")]
-    [InlineData(NotificationType.HoldModeAlert, "children")]
-    [InlineData(NotificationType.RecommendationAwaitingReview, "children")]
     [InlineData(NotificationType.RoadmapStoryAdded, "children")]
     [InlineData(NotificationType.RoadmapStoryRemoved, "children")]
     [InlineData(NotificationType.RoadmapCompleted, "children")]

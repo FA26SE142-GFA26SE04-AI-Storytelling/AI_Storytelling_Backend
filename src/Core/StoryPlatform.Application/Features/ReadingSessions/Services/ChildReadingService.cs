@@ -53,12 +53,6 @@ public class ChildReadingService : IChildReadingService
         var (story, version) = await ResolveTargetAsync(childProfileId, request, ct);
         var versionId = version.Id;
 
-        var hold = await HoldModeLookup.FindOpenAsync(_unitOfWork, childProfileId, ct);
-        if (hold != null && hold.TriggeringStoryId != story.Id)
-        {
-            throw new ForbiddenException(ChildReadingPolicy.LibraryLockedMessage);
-        }
-
         // Community approval pins a version. Check its content without mutating the tracked source story.
         var eligibilityStory = request.CommunitySubmissionId.HasValue
             ? new Story

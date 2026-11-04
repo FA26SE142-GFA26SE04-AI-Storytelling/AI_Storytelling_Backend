@@ -23,7 +23,6 @@ public class ChildProfileServiceTests
     private readonly Mock<IGenericRepository<ChildAccessCredential>> _credentialRepo = new();
     private readonly Mock<IGenericRepository<AuditLog>> _auditLogRepo = new();
     private readonly Mock<IGenericRepository<ChildProfileVersionHistory>> _historyRepo = new();
-    private readonly Mock<IGenericRepository<Recommendation>> _recommendationRepo = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IChildProfileAccessGuard> _accessGuard = new();
     private readonly Mock<IChildSessionRevoker> _childSessionRevoker = new();
@@ -38,10 +37,6 @@ public class ChildProfileServiceTests
         _unitOfWork.Setup(u => u.Repository<ChildAccessCredential>()).Returns(_credentialRepo.Object);
         _unitOfWork.Setup(u => u.Repository<AuditLog>()).Returns(_auditLogRepo.Object);
         _unitOfWork.Setup(u => u.Repository<ChildProfileVersionHistory>()).Returns(_historyRepo.Object);
-        _unitOfWork.Setup(u => u.Repository<Recommendation>()).Returns(_recommendationRepo.Object);
-        _recommendationRepo.Setup(r => r.FindAsync(
-                It.IsAny<Expression<Func<Recommendation, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<Recommendation>());
         _sut = new ChildProfileService(
             _unitOfWork.Object, _accessGuard.Object, _childSessionRevoker.Object);
     }
@@ -400,23 +395,11 @@ public class ChildProfileServiceTests
         };
         _profileRepo.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(profile);
-        var pending = new Recommendation
-        {
-            ChildProfileId = 1,
-            Category = RecommendationCategory.ReadingDifficulty,
-            Status = RecommendationStatus.AwaitingReview
-        };
-        _recommendationRepo.Setup(r => r.FindAsync(
-                It.IsAny<Expression<Func<Recommendation, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<Recommendation> { pending });
-
         var result = await _sut.UpdateChildProfileAsync(1, 2, new UpdateChildProfileRequestDto
         {
             Nickname = "An",
             AgeBand = AgeBand.Age_9_10
         });
-
-        Assert.Equal(RecommendationStatus.Stale, pending.Status);
 
         Assert.Equal(AgeBand.Age_9_10, profile.AgeBand);
         Assert.True(result.ShouldReapplyBlockedPreset);
@@ -425,7 +408,6 @@ public class ChildProfileServiceTests
             It.Is<ChildProfileVersionHistory>(history =>
                 history.ChildProfileId == 1
                 && history.Source == VersionHistorySource.Manual
-                && history.RecommendationId == null
                 && history.AppliedByUserId == 2
                 && history.PreviousConfig.Contains("Age_6_8")
                 && history.NewConfig.Contains("Age_9_10")),

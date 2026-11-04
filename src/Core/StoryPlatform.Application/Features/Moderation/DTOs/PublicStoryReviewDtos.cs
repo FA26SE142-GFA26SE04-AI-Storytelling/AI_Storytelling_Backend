@@ -8,6 +8,7 @@ public class PublicReviewPackageDto
     public int VersionNo { get; set; }
     public bool IsResubmission { get; set; }
     public PublicReviewStoryDto Story { get; set; } = new();
+    public List<PublicReviewLabelDto> ProposedLabels { get; set; } = new();
     public PublicReviewVersionDto Version { get; set; } = new();
     public List<PublicReviewSceneDto> Scenes { get; set; } = new();
     public List<PublicReviewVocabularyDto> Vocabulary { get; set; } = new();
@@ -219,11 +220,6 @@ public class PublicReviewFlagsResultDto
     public bool VersionCleared { get; set; }
 }
 
-public class SetContentLabelsRequestDto
-{
-    public List<int> ContentCategoryIds { get; set; } = new();
-}
-
 public class ApproveBlockerDto
 {
     public string Code { get; set; } = string.Empty;
@@ -262,6 +258,7 @@ public class SubmitPublicStoryRequestDto
 {
     public int StoryId { get; set; }
     public int StoryVersionId { get; set; }
+    public List<int> ContentCategoryIds { get; set; } = new();
 }
 
 public class PublicStorySubmissionResultDto

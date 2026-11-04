@@ -162,7 +162,7 @@ public sealed class Luong1SchemaAlignmentModelTests
 
         var versionHistory = context.Model.FindEntityType(typeof(ChildProfileVersionHistory))!;
         Assert.Equal(
-            VersionHistorySource.Recommendation,
+            VersionHistorySource.Manual,
             versionHistory.FindProperty(nameof(ChildProfileVersionHistory.Source))!.GetDefaultValue());
     }
 

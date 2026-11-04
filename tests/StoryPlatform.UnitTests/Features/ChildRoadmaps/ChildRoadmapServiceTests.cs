@@ -378,17 +378,6 @@ public class ChildRoadmapServiceTests
     }
 
     [Fact]
-    public async Task AddForWishAsync_ChildInHoldMode_StoryWaitsAtTheFront()
-    {
-        Publish(10);
-        _h.AddHoldMode(Child);
-
-        await _sut.AddForWishAsync(Owner, Child, 10);
-
-        Assert.Equal(ChildRoadmapItemStatus.Waiting, _h.Items.Single().Status);
-    }
-
-    [Fact]
     public async Task AddForWishAsync_BlockedTopic_IsBadRequestWithTheReason()
     {
         Publish(10);

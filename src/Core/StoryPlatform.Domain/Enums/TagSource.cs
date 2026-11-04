@@ -4,5 +4,6 @@ public enum TagSource
 {
     Ai = 1,
     Moderator = 2,
-    Parent = 3
+    Parent = 3,
+    Creator = 4
 }

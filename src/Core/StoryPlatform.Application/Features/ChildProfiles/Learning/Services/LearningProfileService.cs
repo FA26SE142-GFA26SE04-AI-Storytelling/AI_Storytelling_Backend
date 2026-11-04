@@ -97,7 +97,6 @@ public class LearningProfileService : ILearningProfileService
                 new ChildProfileVersionHistory
                 {
                     ChildProfileId = childProfileId,
-                    RecommendationId = null,
                     Source = VersionHistorySource.Manual,
                     PreviousConfig = previousConfig,
                     NewConfig = newConfig,

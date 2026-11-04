@@ -122,8 +122,10 @@ public sealed class PublicStoryReviewHarness
             ClaimedAt = DateTime.UtcNow.AddMinutes(-10),
             StoryId = StoryId,
             StoryVersionId = VersionId,
-            CreatedByUserId = CreatorId
+            CreatedByUserId = CreatorId,
+            ProposedContentCategoryIds = "[5]"
         });
+        ContentCategories.Add(new ContentCategory { Id = 5, Code = "friendship", DisplayName = "Tình bạn", IsActive = true });
 
         Sut = new PublicStoryReviewService(UnitOfWork.Object, Audit.Object, Notifications.Object);
     }

@@ -93,24 +93,6 @@ public class ChildRoadmapProgressRecorderTests
     }
 
     [Fact]
-    public async Task HoldMode_CompletesCurrentButDoesNotOpenOrNotifyCompletion()
-    {
-        _h.AddHoldMode(Child);
-        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Open);
-        _h.AddItem(2, Child, 11, ChildRoadmapItemStatus.Waiting);
-        Session(10);
-
-        await _sut.RecordSessionCompletedAsync(1, false);
-
-        Assert.Equal(ChildRoadmapItemStatus.Completed, Item(1).Status);
-        Assert.Equal(ChildRoadmapItemStatus.Waiting, Item(2).Status);
-        _h.Notifications.Verify(n => n.CreateAsync(
-            It.IsAny<int>(), NotificationType.RoadmapCompleted,
-            It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
-        _rewards.Verify(r => r.OnRoadmapFinishedAsync(It.IsAny<ReadingSession>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
     public async Task RetakeSession_IsIgnored()
     {
         _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Open);

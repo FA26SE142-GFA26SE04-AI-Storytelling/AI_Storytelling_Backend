@@ -34,7 +34,6 @@ public class MyRoadmapServiceTests
         Assert.Equal("https://cdn.test/10.png", view.Open.CoverImageUrl);
         Assert.Equal("Đọc kỹ nhé", view.Open.Note);
         Assert.Equal(open.ExpectedCompletionAt, view.Open.ExpectedBy);
-        Assert.False(view.Open.IsLocked);
     }
 
     [Fact]
@@ -186,30 +185,6 @@ public class MyRoadmapServiceTests
         Assert.DoesNotContain(names, name => name.Contains("Hold", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(names, name => name.Contains("Overdue", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(names, name => name.Contains("Reason", StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Theory]
-    [InlineData(InterventionStatus.OpenHoldMode)]
-    [InlineData(InterventionStatus.UnderReview)]
-    public async Task GetAsync_HoldMode_LocksTheOpenStoryNeutrally(InterventionStatus status)
-    {
-        _h.AddHoldMode(Child, status);
-        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Open);
-
-        var view = await _sut.GetAsync(Child);
-
-        Assert.True(view.Open!.IsLocked);
-        Assert.Equal(10, view.Open.StoryId);
-    }
-
-    [Fact]
-    public async Task GetAsync_HoldModeResolvedOrOfAnotherChild_DoesNotLock()
-    {
-        _h.AddHoldMode(Child, InterventionStatus.ResolvedUnlocked);
-        _h.AddHoldMode(OtherChild);
-        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Open);
-
-        Assert.False((await _sut.GetAsync(Child)).Open!.IsLocked);
     }
 
     [Fact]

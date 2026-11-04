@@ -7,9 +7,11 @@ namespace StoryPlatform.Domain.Entities;
 /// </summary>
 public sealed class ParentStoryOperation : BaseEntity
 {
+    public int? ParentStoryPackageId { get; set; }
+
     public int StoryId { get; set; }
     public int ActorUserId { get; set; }
-    public int ChildProfileId { get; set; }
+    public int? ChildProfileId { get; set; }
     public int? StoryVersionId { get; set; }
     public string Kind { get; set; } = string.Empty;
     public string OperationId { get; set; } = string.Empty;

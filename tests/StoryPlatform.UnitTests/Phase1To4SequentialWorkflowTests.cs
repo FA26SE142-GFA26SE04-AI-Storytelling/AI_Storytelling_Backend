@@ -463,7 +463,7 @@ public sealed class Phase1To4SequentialWorkflowTests
             return Task.FromResult(new EvaluateContentSafetyResponse
             {
                 RequestId = request.RequestId,
-                IsAllowed = !blockContentSafety,
+                IsAllowed = !blockContentSafety, SafetyScore = blockContentSafety ? 0 : 100,
                 CanRefine = false,
                 ReasonCode = blockContentSafety ? "CONTENT_SAFETY_BLOCKED" : "CONTENT_SAFETY_ALLOWED"
             });

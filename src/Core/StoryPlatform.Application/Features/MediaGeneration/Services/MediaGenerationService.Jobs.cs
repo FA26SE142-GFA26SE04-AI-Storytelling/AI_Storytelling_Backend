@@ -49,7 +49,7 @@ public sealed partial class MediaGenerationService
                 child.ParentJobId = parent.Id;
                 child.MediaContextId = context.Id;
                 child.MediaPackageRevision = revision;
-                var replacement = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(x => x.StoryVersionId == state.Version.Id &&
+                var replacement = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(x => x.ParentStoryPackageId == null && x.StoryVersionId == state.Version.Id &&
                     x.ReplacesMediaAssetId != null && x.ReplacementResolvedAt == null && x.RequestedPackageRevision == revision,
                     cancellationToken: ct);
                 if (replacement is not null && BranchOperation(replacement.Type) != operation)
@@ -149,7 +149,7 @@ public sealed partial class MediaGenerationService
                     await EnsureSegmentAudioAsync(child.Id, token, child.StoryId, versionId, context, scene, segment, ct);
             }
             var vocabulary = await _unitOfWork.Repository<StoryVocabulary>().FindAsync(
-                x => x.StoryVersionId == versionId && !x.IsDeleted, cancellationToken: ct);
+                x => x.ParentStoryPackageId == null && x.StoryVersionId == versionId && !x.IsDeleted, cancellationToken: ct);
             foreach (var word in vocabulary.OrderBy(x => x.Id))
                 await EnsureVocabularyAudioAsync(child.Id, token, child.StoryId, versionId, context, word, ct);
             await EnsureListeningAudioAsync(child.Id, token, child.StoryId, versionId, context, ct);
@@ -202,7 +202,7 @@ public sealed partial class MediaGenerationService
                 await RollbackMediaAsync(ct);
                 return;
             }
-            var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(x => x.StoryVersionId == branch.StoryVersionId &&
+            var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(x => x.ParentStoryPackageId == null && x.StoryVersionId == branch.StoryVersionId &&
                 (x.Type == type || type == MediaType.TtsAudio && x.Type == MediaType.ListeningAudio) &&
                 (x.IsCurrent || x.ReplacesMediaAssetId != null && x.ReplacementResolvedAt == null), cancellationToken: ct);
             var attempts = assets.Where(x => x.Status != MediaStatus.Ready).Select(x => x.AttemptCount).DefaultIfEmpty(0).Max();

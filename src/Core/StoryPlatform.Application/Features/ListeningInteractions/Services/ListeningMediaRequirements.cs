@@ -22,13 +22,17 @@ public static class ListeningMediaRequirements
     }
 
     public static MediaAsset? FindAudio(IReadOnlyList<MediaAsset> assets, int interactionId, int? optionId, string partKey) =>
-        assets.FirstOrDefault(asset => asset.Type == MediaType.ListeningAudio && asset.ListeningInteractionId == interactionId &&
-            asset.ListeningInteractionOptionId == optionId && asset.AudioPartKey == partKey && IsUsable(asset));
+        NewestUsable(assets.Where(asset => asset.Type == MediaType.ListeningAudio && asset.ListeningInteractionId == interactionId &&
+            asset.ListeningInteractionOptionId == optionId && asset.AudioPartKey == partKey));
 
     public static MediaAsset? FindImage(IReadOnlyList<MediaAsset> assets, int optionId) =>
-        assets.FirstOrDefault(asset => asset.Type == MediaType.ListeningImage && asset.ListeningInteractionOptionId == optionId &&
-            asset.ValidationStatus == ValidationStatus.Passed && IsUsable(asset));
+        NewestUsable(assets.Where(asset => asset.Type == MediaType.ListeningImage && asset.ListeningInteractionOptionId == optionId));
 
-    private static bool IsUsable(MediaAsset asset) =>
-        asset.IsCurrent && !asset.IsDeleted && asset.Status == MediaStatus.Ready && !string.IsNullOrWhiteSpace(asset.Url);
+    internal static bool IsUsable(MediaAsset asset) =>
+        asset.IsCurrent && !asset.IsDeleted && asset.Status == MediaStatus.Ready &&
+        asset.ValidationStatus == ValidationStatus.Passed && !string.IsNullOrWhiteSpace(asset.Url);
+
+    private static MediaAsset? NewestUsable(IEnumerable<MediaAsset> assets) =>
+        assets.Where(IsUsable).OrderByDescending(asset => asset.CompletedAt ?? asset.CreatedAt)
+            .ThenByDescending(asset => asset.Id).FirstOrDefault();
 }

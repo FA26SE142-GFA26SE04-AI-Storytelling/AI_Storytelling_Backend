@@ -4,6 +4,7 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.ParentAuthoring;
 
 namespace StoryPlatform.Application.Features.ReadingSessions.Services;
 
@@ -35,7 +36,8 @@ public class ChildNotebookService : IChildNotebookService
             Term = word.Term,
             Definition = word.Definition,
             IsCollected = collected,
-            AudioUrl = audio.GetValueOrDefault(word.Id)
+            AudioUrl = word.ParentStoryPackageId is null ? audio.GetValueOrDefault(word.Id)
+                : (await PackageWordAccessAsync(word, childProfileId, ct)).AudioUrl
         };
     }
 
@@ -107,15 +109,23 @@ public class ChildNotebookService : IChildNotebookService
         int childProfileId, int sessionId, int vocabularyId, CancellationToken ct)
     {
         var session = await _unitOfWork.Repository<ReadingSession>().GetByIdAsync(sessionId, ct);
+        if (session is not null) await StoryPlatform.Application.Features.ParentAuthoring.ParentStoryPackageReader.ForSessionAsync(_unitOfWork, session, ct);
         if (session == null || session.IsDeleted || session.ChildProfileId != childProfileId)
         {
             throw new NotFoundException("Phiên đọc", sessionId);
         }
 
         var word = await _unitOfWork.Repository<StoryVocabulary>().GetByIdAsync(vocabularyId, ct);
-        if (word == null || word.IsDeleted || word.StoryVersionId != session.StoryVersionId)
+        if (word == null || word.IsDeleted || (word.StoryVersionId != session.StoryVersionId || word.ParentStoryPackageId != session.ParentStoryPackageId))
         {
             throw new NotFoundException("Từ vựng", vocabularyId);
+        }
+
+        if (session.ParentStoryPackageId is int packageId)
+        {
+            var package = await _unitOfWork.Repository<ParentStoryPackage>().GetByIdAsync(packageId, ct);
+            var manifest = JsonSerializer.Deserialize<ParentPackageManifest>(package!.ManifestJson, ParentPackageContext.Json)!;
+            if (!manifest.VocabularyIds.Contains(word.Id)) throw new NotFoundException("Vocabulary", vocabularyId);
         }
 
         return (session, word);
@@ -148,6 +158,14 @@ public class ChildNotebookService : IChildNotebookService
                 continue;
             }
 
+            string? packageAudio = null;
+            if (word.ParentStoryPackageId is not null)
+            {
+                var access = await PackageWordAccessAsync(word, entry.ChildProfileId, ct);
+                if (!access.Allowed) continue;
+                packageAudio = access.AudioUrl;
+            }
+
             var firstScene = scenes
                 .Where(scene => scene.StoryVersionId == word.StoryVersionId
                                 && scene.SceneText.Contains(word.Term, StringComparison.OrdinalIgnoreCase))
@@ -159,7 +177,7 @@ public class ChildNotebookService : IChildNotebookService
                 VocabularyId = word.Id,
                 Term = word.Term,
                 Definition = word.Definition,
-                AudioUrl = audio.GetValueOrDefault(word.Id),
+                AudioUrl = word.ParentStoryPackageId is null ? audio.GetValueOrDefault(word.Id) : packageAudio,
                 StoryId = version.StoryId,
                 StoryTitle = version.Title,
                 SceneIndex = firstScene?.SceneIndex,
@@ -168,6 +186,27 @@ public class ChildNotebookService : IChildNotebookService
         }
 
         return result;
+    }
+
+    private async Task<(bool Allowed, string? AudioUrl)> PackageWordAccessAsync(StoryVocabulary word, int childId, CancellationToken ct)
+    {
+        var grant = await _unitOfWork.Repository<ParentStoryOperation>().FirstOrDefaultAsync(x =>
+            x.ParentStoryPackageId == word.ParentStoryPackageId && x.ChildProfileId == childId &&
+            x.Kind == "FamilyConfirmation" && x.RevokedAt == null && !x.IsDeleted, cancellationToken: ct);
+        if (grant is null) return (false, null);
+        try
+        {
+            var reader = new ParentStoryPackageReader(_unitOfWork,
+                new StoryPlatform.Application.Features.ChildProfiles.Profiles.Services.ChildProfileAccessGuard(_unitOfWork));
+            var (package, _, _, _) = await reader.AuthorizeAsync(childId, grant.Id, ct);
+            var manifest = JsonSerializer.Deserialize<ParentPackageManifest>(package.ManifestJson, ParentPackageContext.Json)!;
+            if (!manifest.VocabularyIds.Contains(word.Id)) return (false, null);
+            var ids = manifest.MediaAssetIds.ToList();
+            var asset = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(x => ids.Contains(x.Id) &&
+                x.StoryVocabularyId == word.Id && x.Type == MediaType.VocabularyAudio && !x.IsDeleted, cancellationToken: ct);
+            return (true, asset is null ? null : ParentStoryPackageReader.ProxyAsset(asset, grant.Id).Url);
+        }
+        catch (AppException) { return (false, null); }
     }
 
     private static TelemetryLog NewLog(int sessionId, TelemetryEventType type, int vocabularyId) => new()

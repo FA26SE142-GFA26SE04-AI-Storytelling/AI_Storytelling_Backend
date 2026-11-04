@@ -1043,6 +1043,7 @@ public sealed partial class MediaGenerationServiceTests
 
     private sealed class RecordingTtsProvider : ITtsProvider
     {
+        public string ConfigurationFingerprint => "test-voice-v1";
         public List<string> Inputs { get; } = [];
         public Task<GeneratedMedia> GenerateAsync(string exactSceneText, CancellationToken cancellationToken = default)
         {

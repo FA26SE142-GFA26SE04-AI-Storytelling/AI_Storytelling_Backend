@@ -65,12 +65,12 @@ public sealed partial class MediaGenerationService
         catch { await RollbackMediaAsync(CancellationToken.None); throw; }
     }
     private async Task<MediaAsset> ReplacementOrCurrentAsync(MediaAsset current, CancellationToken ct) =>
-        await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(x => x.ReplacesMediaAssetId == current.Id &&
+        await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(x => x.ParentStoryPackageId == null && x.ReplacesMediaAssetId == current.Id &&
             !x.IsCurrent && x.ReplacementResolvedAt == null, cancellationToken: ct) ?? current;
 
     private async Task EnsureNoPendingReplacementAsync(int versionId, CancellationToken ct)
     {
-        if (await _unitOfWork.Repository<MediaAsset>().ExistsAsync(x => x.StoryVersionId == versionId &&
+        if (await _unitOfWork.Repository<MediaAsset>().ExistsAsync(x => x.ParentStoryPackageId == null && x.StoryVersionId == versionId &&
             x.ReplacesMediaAssetId != null && !x.IsCurrent && x.ReplacementResolvedAt == null, ct))
             throw new ConflictException("MEDIA_REPLACEMENT_UNRESOLVED");
     }
@@ -154,7 +154,7 @@ public sealed partial class MediaGenerationService
             var parent = await _unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(x => x.StoryId == storyId &&
                 x.StoryVersionId == version.Id && x.Operation == GenerationJobOperation.GenerateMediaPackage, cancellationToken: ct)
                 ?? throw new NotFoundException("Media job", storyId);
-            var current = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(x => x.StoryVersionId == version.Id &&
+            var current = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(x => x.ParentStoryPackageId == null && x.StoryVersionId == version.Id &&
                 x.IsCurrent && x.Type == type && (type == MediaType.Illustration ? x.IllustrationBeatId == targetId : x.StorySegmentId == targetId), cancellationToken: ct)
                 ?? throw new NotFoundException("Media asset", targetId);
             var scene = current.StorySceneId.HasValue ? await FreshAsync<StoryScene>(current.StorySceneId.Value, ct) : null;

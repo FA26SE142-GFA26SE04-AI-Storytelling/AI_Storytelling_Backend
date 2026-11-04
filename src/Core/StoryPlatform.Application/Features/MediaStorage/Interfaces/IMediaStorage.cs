@@ -2,6 +2,8 @@ namespace StoryPlatform.Application.Features.MediaStorage.Interfaces;
 
 public interface IMediaStorage
 {
+    Task<StoryPlatform.Application.Features.MediaStorage.Models.GeneratedMedia> ReadAsync(string storagePath,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException("MEDIA_READ_NOT_SUPPORTED");
     Task<string> UploadAsync(
         string storagePath,
         Stream content,

@@ -103,13 +103,13 @@ public sealed class ParentAuthoringTests
     }
 
     [Fact]
-    public async Task Owner_of_other_story_or_revoked_supervisor_cannot_access_parent_draft()
+    public async Task Only_the_author_can_access_a_draft_even_after_reference_child_ownership_changes()
     {
         var s = new ParentAuthoringTestStore(); var d = await s.Service.CreateParentDraftAsync(1, Create(), Ct);
         await Assert.ThrowsAsync<NotFoundException>(() => s.Service.GetDraftAsync(2, d.Story.StoryId, Ct));
         await Assert.ThrowsAsync<NotFoundException>(() => s.Creator.GetDraftAsync(1, d.Story.StoryId, Ct));
         s.Items<ChildProfile>()[0].OwnerUserId = 99;
-        await Assert.ThrowsAsync<ForbiddenException>(() => s.Service.GetDraftAsync(1, d.Story.StoryId, Ct));
+        Assert.Equal(d.Story.StoryId, (await s.Service.GetDraftAsync(1, d.Story.StoryId, Ct)).StoryId);
         await Assert.ThrowsAsync<ForbiddenException>(() => s.Service.CreateParentDraftAsync(1, Create(), Ct));
     }
 
@@ -210,10 +210,10 @@ public sealed class ParentAuthoringTests
     [InlineData("not-owner")]
     [InlineData("inactive")]
     [InlineData("deleted-child")]
-    public async Task List_filters_inaccessible_children_before_count_and_pagination(string reason)
+    public async Task List_keeps_authored_drafts_when_reference_child_becomes_unavailable(string reason)
     {
         var s = new ParentAuthoringTestStore();
-        await s.Service.CreateParentDraftAsync(1, Create("inaccessible"), Ct);
+        var original = await s.Service.CreateParentDraftAsync(1, Create("inaccessible"), Ct);
         s.Items<ChildProfile>().Add(new() { Id = 4, OwnerUserId = 1, Status = ChildProfileStatus.Active, Language = "vi", AgeBand = AgeBand.Age_6_8 });
         var a = await s.Service.CreateParentDraftAsync(1, Create("allowed-1") with { ChildProfileId = 4 }, Ct);
         var b = await s.Service.CreateParentDraftAsync(1, Create("allowed-2") with { ChildProfileId = 4 }, Ct);
@@ -228,10 +228,11 @@ public sealed class ParentAuthoringTests
         }
         var first = await s.Service.GetMineAsync(1, 1, 1, Ct);
         var second = await s.Service.GetMineAsync(1, 2, 1, Ct);
-        Assert.Equal(2, first.TotalCount); Assert.Equal(2, second.TotalCount);
-        Assert.Equal(a.Story.StoryId, Assert.Single(first.Items).StoryId);
-        Assert.Equal(b.Story.StoryId, Assert.Single(second.Items).StoryId);
-        Assert.Empty((await s.Service.GetMineAsync(1, 3, 1, Ct)).Items);
+        Assert.Equal(3, first.TotalCount); Assert.Equal(3, second.TotalCount);
+        Assert.Equal(original.Story.StoryId, Assert.Single(first.Items).StoryId);
+        Assert.Equal(a.Story.StoryId, Assert.Single(second.Items).StoryId);
+        Assert.Equal(b.Story.StoryId, Assert.Single((await s.Service.GetMineAsync(1, 3, 1, Ct)).Items).StoryId);
+        Assert.Empty((await s.Service.GetMineAsync(1, 4, 1, Ct)).Items);
     }
 
     [Fact]

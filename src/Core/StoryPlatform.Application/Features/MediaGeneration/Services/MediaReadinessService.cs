@@ -27,7 +27,7 @@ public sealed class MediaReadinessService : IMediaReadinessService
         var segments = await _unitOfWork.Repository<StorySegment>().FindAsync(
             x => sceneIds.Contains(x.StorySceneId), cancellationToken: cancellationToken);
         var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(
-            x => x.IsCurrent && x.StoryVersionId == storyVersionId && x.StorySceneId != null,
+            x => x.ParentStoryPackageId == null && x.IsCurrent && x.StoryVersionId == storyVersionId && x.StorySceneId != null,
             cancellationToken: cancellationToken);
 
         var scenesWithoutValidBeats = scenes.Where(scene =>
@@ -66,13 +66,13 @@ public sealed class MediaReadinessService : IMediaReadinessService
     private async Task<IReadOnlyList<string>> MissingListeningMediaAsync(int storyVersionId, CancellationToken ct)
     {
         var interactions = await _unitOfWork.Repository<ListeningInteraction>().FindAsync(
-            x => x.StoryVersionId == storyVersionId && !x.IsDeleted, cancellationToken: ct);
+            x => x.ParentStoryPackageId == null && x.StoryVersionId == storyVersionId && !x.IsDeleted, cancellationToken: ct);
         if (interactions.Count == 0) return [];
         var ids = interactions.Select(x => x.Id).ToList();
         var options = await _unitOfWork.Repository<ListeningInteractionOption>().FindAsync(
             x => ids.Contains(x.ListeningInteractionId) && !x.IsDeleted, cancellationToken: ct);
         var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(x =>
-            x.StoryVersionId == storyVersionId && x.IsCurrent && !x.IsDeleted && x.Status == MediaStatus.Ready &&
+            x.ParentStoryPackageId == null && x.StoryVersionId == storyVersionId && x.IsCurrent && !x.IsDeleted && x.Status == MediaStatus.Ready &&
             (x.Type == MediaType.ListeningAudio || x.Type == MediaType.ListeningImage), cancellationToken: ct);
 
         var missing = new List<string>();

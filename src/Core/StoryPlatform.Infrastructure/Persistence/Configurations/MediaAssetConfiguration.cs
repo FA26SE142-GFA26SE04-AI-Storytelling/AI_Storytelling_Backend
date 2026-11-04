@@ -105,14 +105,18 @@ public class MediaAssetConfiguration : IEntityTypeConfiguration<MediaAsset>
 
         builder.HasIndex(x => new { x.IllustrationBeatId, x.Type })
             .IsUnique()
-            .HasFilter("\"IllustrationBeatId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true");
+            .HasFilter("\"IllustrationBeatId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true AND \"ParentStoryPackageId\" IS NULL");
 
         builder.HasIndex(x => new { x.StorySegmentId, x.Type })
             .IsUnique()
-            .HasFilter("\"StorySegmentId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true");
+            .HasFilter("\"StorySegmentId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true AND \"ParentStoryPackageId\" IS NULL");
         builder.HasIndex(x => new { x.StoryVocabularyId, x.Type })
             .IsUnique()
-            .HasFilter("\"StoryVocabularyId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true");
+            .HasFilter("\"StoryVocabularyId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true AND \"ParentStoryPackageId\" IS NULL");
+        builder.HasIndex(x => new { x.ParentStoryPackageId, x.IllustrationBeatId, x.Type }).IsUnique()
+            .HasFilter("\"ParentStoryPackageId\" IS NOT NULL AND \"IllustrationBeatId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true");
+        builder.HasIndex(x => new { x.ParentStoryPackageId, x.StorySegmentId, x.Type }).IsUnique()
+            .HasFilter("\"ParentStoryPackageId\" IS NOT NULL AND \"StorySegmentId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true");
         builder.HasIndex(x => x.ReplacesMediaAssetId).IsUnique()
             .HasFilter("\"ReplacesMediaAssetId\" IS NOT NULL AND \"ReplacementResolvedAt\" IS NULL AND \"IsDeleted\" = false");
 

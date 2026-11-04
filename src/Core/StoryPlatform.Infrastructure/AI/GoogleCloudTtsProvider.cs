@@ -30,6 +30,7 @@ namespace StoryPlatform.Infrastructure.AI;
 /// </summary>
 public sealed class GoogleCloudTtsProvider : ITtsProvider
 {
+    public string ConfigurationFingerprint => _options.Fingerprint(nameof(GoogleCloudTtsProvider));
     private readonly TextToSpeechClient _client;
     private readonly TtsServiceOptions _options;
     private readonly ILogger<GoogleCloudTtsProvider> _logger;

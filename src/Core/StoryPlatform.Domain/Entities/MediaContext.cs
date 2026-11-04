@@ -6,6 +6,8 @@ namespace StoryPlatform.Domain.Entities;
 /// </summary>
 public sealed class MediaContext : BaseEntity
 {
+    public int? ParentStoryPackageId { get; set; }
+
     public int StoryVersionId { get; set; }
     public StoryVersion? StoryVersion { get; set; }
     public int Revision { get; set; }

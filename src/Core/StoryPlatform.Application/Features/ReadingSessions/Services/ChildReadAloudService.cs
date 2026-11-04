@@ -26,6 +26,7 @@ public class ChildReadAloudService : IChildReadAloudService
         int childProfileId, int sessionId, int segmentId, ReadAloudRequest request, CancellationToken ct = default)
     {
         var session = await _unitOfWork.Repository<ReadingSession>().GetByIdAsync(sessionId, ct);
+        if (session is not null) await StoryPlatform.Application.Features.ParentAuthoring.ParentStoryPackageReader.ForSessionAsync(_unitOfWork, session, ct);
         if (session == null || session.IsDeleted || session.ChildProfileId != childProfileId)
         {
             throw new NotFoundException("Phiên đọc", sessionId);

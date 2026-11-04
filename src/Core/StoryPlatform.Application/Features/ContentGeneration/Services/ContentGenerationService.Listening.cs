@@ -54,8 +54,8 @@ public sealed partial class ContentGenerationService
         var state = await LoadArtifactStateAsync(jobId, GenerationJobOperation.GenerateListeningInteraction, cancellationToken);
         var type = state.Job.ListeningInteractionType ?? throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
         var versionId = state.Version.Id;
-        if (!await _unitOfWork.Repository<StoryVocabulary>().ExistsAsync(x => x.StoryVersionId == versionId, cancellationToken) ||
-            !await _unitOfWork.Repository<QuizItem>().ExistsAsync(x => x.StoryVersionId == versionId, cancellationToken))
+        if (!await _unitOfWork.Repository<StoryVocabulary>().ExistsAsync(x => x.ParentStoryPackageId == null && x.StoryVersionId == versionId, cancellationToken) ||
+            !await _unitOfWork.Repository<QuizItem>().ExistsAsync(x => x.ParentStoryPackageId == null && x.StoryVersionId == versionId, cancellationToken))
             throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
         var scope = ListeningInteractionGenerator.CreateScope(state.Version, state.Context);
         if (scope.Plan.Items.All(x => x.Type != type)) throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
@@ -131,7 +131,7 @@ public sealed partial class ContentGenerationService
 
     private Task<bool> HasListeningTypeAsync(int versionId, ListeningInteractionType type, CancellationToken cancellationToken) =>
         _unitOfWork.Repository<ListeningInteraction>().ExistsAsync(
-            x => x.StoryVersionId == versionId && x.Type == type && !x.IsDeleted, cancellationToken);
+            x => x.ParentStoryPackageId == null && x.StoryVersionId == versionId && x.Type == type && !x.IsDeleted, cancellationToken);
 
     private static ListeningInteractionPlan ListeningPlan(AIStoryInputContextSnapshot context, IReadOnlyList<StoryTextBlock> blocks) =>
         ListeningInteractionPlanner.Create(ListeningInteractionGenerator.ToAgeBand(context.AgeBand), blocks);

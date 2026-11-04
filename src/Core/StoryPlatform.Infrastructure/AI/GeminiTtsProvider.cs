@@ -21,6 +21,7 @@ namespace StoryPlatform.Infrastructure.AI;
 /// </summary>
 public sealed class GeminiTtsProvider : ITtsProvider
 {
+    public string ConfigurationFingerprint => _options.Fingerprint(nameof(GeminiTtsProvider));
     private readonly HttpClient _httpClient;
     private readonly GeminiOptions _gemini;
     private readonly VertexOptions _vertex;

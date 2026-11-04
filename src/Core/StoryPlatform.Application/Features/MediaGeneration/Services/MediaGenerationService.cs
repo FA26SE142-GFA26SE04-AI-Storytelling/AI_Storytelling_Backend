@@ -142,7 +142,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         var beats = await _unitOfWork.Repository<IllustrationBeat>().FindAsync(
             x => sceneIds.Contains(x.StorySceneId), cancellationToken: cancellationToken);
         var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(
-            x => x.StoryVersionId == version.Id,
+            x => x.ParentStoryPackageId == null && x.StoryVersionId == version.Id,
             cancellationToken: cancellationToken);
         var segments = await _unitOfWork.Repository<StorySegment>().FindAsync(
             x => sceneIds.Contains(x.StorySceneId), cancellationToken: cancellationToken);
@@ -181,7 +181,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
                 x.IsCurrent ? "Applied" : x.ReplacementResolvedAt.HasValue ? "Kept" :
                 x.Status is MediaStatus.Failed or MediaStatus.ManualReview ? "Failed" : "Generating")).ToArray() };
         var vocabulary = await _unitOfWork.Repository<StoryVocabulary>().FindAsync(
-            x => x.StoryVersionId == version.Id && !x.IsDeleted, cancellationToken: cancellationToken);
+            x => x.ParentStoryPackageId == null && x.StoryVersionId == version.Id && !x.IsDeleted, cancellationToken: cancellationToken);
         package = package with { Vocabulary = vocabulary.OrderBy(x => x.Id).Select(word =>
         {
             var audio = assets.FirstOrDefault(x => x.IsCurrent && x.StoryVocabularyId == word.Id && x.Type == MediaType.VocabularyAudio);
@@ -267,7 +267,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
                 throw new ConflictException("INVALID_MEDIA_HANDOFF");
 
             var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(
-                x => x.StoryVersionId == versionId && (x.IsCurrent || x.ReplacementResolvedAt == null && x.ReplacesMediaAssetId != null) && x.Status != MediaStatus.Ready,
+                x => x.ParentStoryPackageId == null && x.StoryVersionId == versionId && (x.IsCurrent || x.ReplacementResolvedAt == null && x.ReplacesMediaAssetId != null) && x.Status != MediaStatus.Ready,
                 cancellationToken: cancellationToken);
             foreach (var asset in assets)
             {
@@ -418,6 +418,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             cancellationToken: cancellationToken);
         if (job is null) return MediaJobProcessResult.NoJob;
 
+        if (job.ParentStoryPackageId.HasValue) return await ProcessParentPackageMediaAsync(job, cancellationToken);
         var preClaimToken = job.ConcurrencyToken;
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
@@ -579,7 +580,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         CancellationToken cancellationToken)
     {
         var interactions = await _unitOfWork.Repository<ListeningInteraction>().FindAsync(
-            x => x.StoryVersionId == versionId && !x.IsDeleted, cancellationToken: cancellationToken);
+            x => x.ParentStoryPackageId == null && x.StoryVersionId == versionId && !x.IsDeleted, cancellationToken: cancellationToken);
         if (interactions.Count == 0) return selections;
         var eventIds = interactions.Where(x => x.Type == ListeningInteractionType.EventOrdering)
             .Select(x => x.Id).ToList();
@@ -604,7 +605,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         }
 
         var legacyAsset = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(
-            x => x.IsCurrent && x.StorySceneId == scene.Id && x.Type == MediaType.Illustration,
+            x => x.ParentStoryPackageId == null && x.IsCurrent && x.StorySceneId == scene.Id && x.Type == MediaType.Illustration,
             cancellationToken: cancellationToken);
         IReadOnlyList<IllustrationBeatSelection> selections = [];
         if (legacyAsset is null)
@@ -845,6 +846,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             asset.WordTimings = audio.GetMetadata("wordTimingsJson");
             asset.Provider = audio.GetMetadata("provider") ?? "GoogleCloud";
             asset.Model = audio.GetMetadata("model") ?? "unknown";
+            if (_parentMediaScope is not null)
+                asset.ValidationResultJson = JsonSerializer.Serialize(new { ttsConfigurationFingerprint = _ttsProvider.ConfigurationFingerprint });
             asset.Status = MediaStatus.Ready;
             asset.ValidationStatus = ValidationStatus.Passed;
             asset.CompletedAt = _clock.GetUtcNow().UtcDateTime;
@@ -872,7 +875,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         int versionId, StoryScene scene, IllustrationBeat beat, CancellationToken cancellationToken)
     {
         var existing = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(
-            x => x.IllustrationBeatId == beat.Id && x.Type == MediaType.Illustration && x.IsCurrent,
+            x => x.ParentStoryPackageId == (_parentMediaScope == null ? null : (int?)_parentMediaScope.Id) && x.IllustrationBeatId == beat.Id && x.Type == MediaType.Illustration && x.IsCurrent,
             cancellationToken: cancellationToken);
         if (existing is not null)
         {
@@ -883,7 +886,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         var asset = new MediaAsset
         {
             StoryVersionId = versionId,
-            RequestedPackageRevision = (await FreshAsync<StoryVersion>(versionId, cancellationToken))!.MediaState.MediaPackageRevision,
+            ParentStoryPackageId = _parentMediaScope?.Id,
+            RequestedPackageRevision = _parentMediaScope?.Revision ?? (await FreshAsync<StoryVersion>(versionId, cancellationToken))!.MediaState.MediaPackageRevision,
             StorySceneId = scene.Id,
             IllustrationBeatId = beat.Id,
             SceneIndex = scene.SceneIndex,
@@ -900,13 +904,14 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         int versionId, StorySegment segment, CancellationToken cancellationToken)
     {
         var existing = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(
-            x => x.StorySegmentId == segment.Id && x.Type == MediaType.TtsAudio && x.IsCurrent,
+            x => x.ParentStoryPackageId == (_parentMediaScope == null ? null : (int?)_parentMediaScope.Id) && x.StorySegmentId == segment.Id && x.Type == MediaType.TtsAudio && x.IsCurrent,
             cancellationToken: cancellationToken);
         if (existing is not null) return await ReplacementOrCurrentAsync(existing, cancellationToken);
         var asset = new MediaAsset
         {
             StoryVersionId = versionId,
-            RequestedPackageRevision = (await FreshAsync<StoryVersion>(versionId, cancellationToken))!.MediaState.MediaPackageRevision,
+            ParentStoryPackageId = _parentMediaScope?.Id,
+            RequestedPackageRevision = _parentMediaScope?.Revision ?? (await FreshAsync<StoryVersion>(versionId, cancellationToken))!.MediaState.MediaPackageRevision,
             StorySceneId = segment.StorySceneId,
             StorySegmentId = segment.Id,
             SceneIndex = null,
@@ -981,6 +986,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         int jobId, string token, int versionId, int contextId, CancellationToken cancellationToken)
     {
         var job = await RequireClaimedJobAsync(jobId, token, cancellationToken);
+        if (job.ParentStoryPackageId.HasValue) { await AssertParentPackageMediaAsync(job, versionId, contextId, cancellationToken); return; }
         await AssertImageTaskClaimAsync(jobId, cancellationToken);
         await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, job.StoryId, versionId, cancellationToken);
         var story = await FreshAsync<Story>(job.StoryId, cancellationToken);
@@ -1009,6 +1015,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         int jobId, string token, int versionId, CancellationToken cancellationToken)
     {
         var job = await RequireClaimedJobAsync(jobId, token, cancellationToken);
+        if (job.ParentStoryPackageId.HasValue) { await AssertParentPackageMediaAsync(job, versionId, null, cancellationToken); return; }
         var story = await FreshAsync<Story>(job.StoryId, cancellationToken);
         var version = await FreshAsync<StoryVersion>(versionId, cancellationToken);
         if (story?.Status != StoryStatus.MediaProcessing || version is null || !version.IsCurrent ||
@@ -1102,7 +1109,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             "INTERACTION_BOUNDARY_UNRESOLVED" => "INTERACTION_BOUNDARY_UNRESOLVED",
             "INTERACTION_SCENE_UNRESOLVED" => "INTERACTION_SCENE_UNRESOLVED",
             "LISTENING_AUDIO_RETRY_EXHAUSTED" => "LISTENING_AUDIO_RETRY_EXHAUSTED",
-            "MEDIA_PACKAGE_INCOMPLETE" => "MEDIA_PACKAGE_INCOMPLETE",
+            "VOCABULARY_AUDIO_RETRY_EXHAUSTED" => "VOCABULARY_AUDIO_RETRY_EXHAUSTED",
+            "MEDIA_PACKAGE_INCOMPLETE" or "PACKAGE_MEDIA_INCOMPLETE" => "MEDIA_PACKAGE_INCOMPLETE",
             "INVALID_MEDIA_HANDOFF" => "INVALID_MEDIA_HANDOFF",
             _ when unwrapped is TimeoutException or OperationCanceledException => "MEDIA_PROVIDER_TIMEOUT",
             _ => "MEDIA_GENERATION_FAILED"

@@ -1123,6 +1123,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<DateTime?>("NextAttemptAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int?>("ParentStoryPackageId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("RequestJson")
                         .IsRequired()
                         .HasColumnType("jsonb");
@@ -1167,6 +1170,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ParentStoryPackageId");
 
                     b.HasIndex("RequestedByUserId");
 
@@ -1343,6 +1348,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<string>("NoMatchFeedback")
                         .HasColumnType("text");
 
+                    b.Property<int?>("ParentStoryPackageId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Prompt")
                         .HasColumnType("text");
 
@@ -1379,9 +1387,13 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasIndex("StorySceneId");
 
+                    b.HasIndex("ParentStoryPackageId", "AnchorOffset")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NOT NULL");
+
                     b.HasIndex("StoryVersionId", "AnchorOffset")
                         .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false");
+                        .HasFilter("\"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NULL");
 
                     b.HasIndex("StoryVersionId", "Type");
 
@@ -1551,6 +1563,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasMaxLength(120)
                         .HasColumnType("character varying(120)");
 
+                    b.Property<int?>("ParentStoryPackageId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Provider")
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
@@ -1633,17 +1648,25 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasIndex("IllustrationBeatId", "Type")
                         .IsUnique()
-                        .HasFilter("\"IllustrationBeatId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true");
+                        .HasFilter("\"IllustrationBeatId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true AND \"ParentStoryPackageId\" IS NULL");
 
                     b.HasIndex("StorySegmentId", "Type")
                         .IsUnique()
-                        .HasFilter("\"StorySegmentId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true");
+                        .HasFilter("\"StorySegmentId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true AND \"ParentStoryPackageId\" IS NULL");
 
                     b.HasIndex("StoryVersionId", "RequestedPackageRevision");
 
                     b.HasIndex("StoryVocabularyId", "Type")
                         .IsUnique()
-                        .HasFilter("\"StoryVocabularyId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true");
+                        .HasFilter("\"StoryVocabularyId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true AND \"ParentStoryPackageId\" IS NULL");
+
+                    b.HasIndex("ParentStoryPackageId", "IllustrationBeatId", "Type")
+                        .IsUnique()
+                        .HasFilter("\"ParentStoryPackageId\" IS NOT NULL AND \"IllustrationBeatId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true");
+
+                    b.HasIndex("ParentStoryPackageId", "StorySegmentId", "Type")
+                        .IsUnique()
+                        .HasFilter("\"ParentStoryPackageId\" IS NOT NULL AND \"StorySegmentId\" IS NOT NULL AND \"IsDeleted\" = false AND \"IsCurrent\" = true");
 
                     b.ToTable("media_assets", null, t =>
                         {
@@ -1774,6 +1797,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<int?>("ParentStoryPackageId")
+                        .HasColumnType("integer");
+
                     b.Property<int>("Revision")
                         .HasColumnType("integer");
 
@@ -1785,8 +1811,13 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ParentStoryPackageId")
+                        .IsUnique()
+                        .HasFilter("\"ParentStoryPackageId\" IS NOT NULL");
+
                     b.HasIndex("StoryVersionId", "Revision")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("\"ParentStoryPackageId\" IS NULL");
 
                     b.ToTable("media_contexts", null, t =>
                         {
@@ -1861,6 +1892,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
 
+                    b.Property<int?>("ParentStoryPackageId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("PiiCheckResult")
                         .HasColumnType("jsonb");
 
@@ -1922,6 +1956,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasIndex("CreatedByUserId");
 
                     b.HasIndex("DecidedByUserId");
+
+                    b.HasIndex("ParentStoryPackageId");
 
                     b.HasIndex("PreviousItemId");
 
@@ -2195,7 +2231,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("ActorUserId")
                         .HasColumnType("integer");
 
-                    b.Property<int>("ChildProfileId")
+                    b.Property<int?>("ChildProfileId")
                         .HasColumnType("integer");
 
                     b.Property<string>("ContextFingerprint")
@@ -2218,6 +2254,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<int?>("ParentStoryPackageId")
+                        .HasColumnType("integer");
 
                     b.Property<string>("RequestHash")
                         .IsRequired()
@@ -2244,16 +2283,129 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasIndex("ActorUserId");
 
+                    b.HasIndex("ParentStoryPackageId");
+
                     b.HasIndex("StoryVersionId");
 
                     b.HasIndex("ChildProfileId", "Kind");
+
+                    b.HasIndex("StoryId", "ChildProfileId")
+                        .IsUnique()
+                        .HasFilter("\"ParentStoryPackageId\" IS NOT NULL AND \"Kind\" = 'FamilyConfirmation' AND \"RevokedAt\" IS NULL AND \"IsDeleted\" = false");
 
                     b.HasIndex("StoryId", "Kind");
 
                     b.HasIndex("StoryId", "ActorUserId", "OperationId")
                         .IsUnique();
 
-                    b.ToTable("parent_story_operations", (string)null);
+                    b.ToTable("parent_story_operations", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_parent_grant_has_child", "\"Kind\" <> 'FamilyConfirmation' OR \"ChildProfileId\" IS NOT NULL");
+                        });
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ParentStoryPackage", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CheckResultJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<int>("ChildProfileId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ComponentsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime?>("ConfirmedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ConfirmedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ContextFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ContextSnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CreatedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("GrayZoneAssessmentJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("LastErrorCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ManifestJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<int?>("PreviousPackageId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SourceFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<int>("StoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("StoryVersionId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChildProfileId");
+
+                    b.HasIndex("ConfirmedByUserId");
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("PreviousPackageId");
+
+                    b.HasIndex("StoryId", "Status");
+
+                    b.HasIndex("StoryVersionId", "ChildProfileId", "Revision")
+                        .IsUnique();
+
+                    b.ToTable("parent_story_packages", (string)null);
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.PaymentTransaction", b =>
@@ -2437,6 +2589,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<string>("OptionFeedbackJson")
                         .HasColumnType("text");
 
+                    b.Property<int?>("ParentStoryPackageId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Question")
                         .IsRequired()
                         .HasColumnType("text");
@@ -2462,6 +2617,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ParentStoryPackageId");
 
                     b.HasIndex("StoryVersionId");
 
@@ -2681,6 +2838,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int?>("FamilyConfirmationId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Feeling")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
@@ -2692,6 +2852,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<int>("PagesCompleted")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ParentStoryPackageId")
                         .HasColumnType("integer");
 
                     b.Property<DateTime>("StartedAt")
@@ -2725,6 +2888,10 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasIndex("ChildRoadmapItemId");
 
+                    b.HasIndex("FamilyConfirmationId");
+
+                    b.HasIndex("ParentStoryPackageId");
+
                     b.HasIndex("StoryId");
 
                     b.HasIndex("StoryVersionId");
@@ -2734,6 +2901,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("reading_sessions", null, t =>
                         {
                             t.HasCheckConstraint("CK_reading_sessions_exactly_one_entry_source", "(\"ChildAccessCredentialId\" IS NOT NULL AND \"SupervisorSessionId\" IS NULL) OR (\"ChildAccessCredentialId\" IS NULL AND \"SupervisorSessionId\" IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_reading_sessions_parent_package_source", "(\"ParentStoryPackageId\" IS NULL AND \"FamilyConfirmationId\" IS NULL) OR (\"ParentStoryPackageId\" IS NOT NULL AND \"FamilyConfirmationId\" IS NOT NULL)");
                         });
                 });
 
@@ -3183,7 +3352,7 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.ToTable("stories", null, t =>
                         {
-                            t.HasCheckConstraint("CK_Story_ScopeChild", "(\"Scope\" = 'Parent' AND \"ChildProfileId\" IS NOT NULL AND \"ChildProfileId\" > 0) OR (\"Scope\" = 'Creator' AND \"ChildProfileId\" IS NULL)");
+                            t.HasCheckConstraint("CK_Story_ScopeChild", "(\"Scope\" = 'Parent' AND ((\"ChildProfileId\" IS NOT NULL AND \"ChildProfileId\" > 0) OR (\"Source\" = 'Manual' AND \"ChildProfileId\" IS NULL AND \"CreateOperationId\" IS NOT NULL AND \"CreateOperationId\" <> ''))) OR (\"Scope\" = 'Creator' AND \"ChildProfileId\" IS NULL)");
                         });
                 });
 
@@ -3586,6 +3755,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int?>("ParentJobId")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("ParentStoryPackageId")
+                        .HasColumnType("integer");
+
                     b.Property<int?>("PromptCatalogVersionId")
                         .HasColumnType("integer");
 
@@ -3632,11 +3804,15 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasIndex("Operation", "StoryVersionId")
                         .IsUnique()
-                        .HasFilter("\"StoryVersionId\" IS NOT NULL AND \"IsDeleted\" = false AND \"Operation\" <> 'GenerateListeningInteraction'");
+                        .HasFilter("\"StoryVersionId\" IS NOT NULL AND \"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NULL AND \"Operation\" <> 'GenerateListeningInteraction'");
+
+                    b.HasIndex("ParentStoryPackageId", "Operation")
+                        .IsUnique()
+                        .HasFilter("\"ParentStoryPackageId\" IS NOT NULL AND \"IsDeleted\" = false");
 
                     b.HasIndex("StoryVersionId", "ListeningInteractionType")
                         .IsUnique()
-                        .HasFilter("\"Operation\" = 'GenerateListeningInteraction' AND \"StoryVersionId\" IS NOT NULL AND \"IsDeleted\" = false");
+                        .HasFilter("\"ParentStoryPackageId\" IS NULL AND \"Operation\" = 'GenerateListeningInteraction' AND \"StoryVersionId\" IS NOT NULL AND \"IsDeleted\" = false");
 
                     b.HasIndex("ParentJobId", "Status", "NextAttemptAt");
 
@@ -4070,6 +4246,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<int?>("ParentStoryPackageId")
+                        .HasColumnType("integer");
+
                     b.Property<int?>("SourceEnd")
                         .HasColumnType("integer");
 
@@ -4091,6 +4270,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ParentStoryPackageId");
 
                     b.HasIndex("StoryVersionId");
 
@@ -4972,6 +5153,11 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.LearningArtifactGenerationBatch", b =>
                 {
+                    b.HasOne("StoryPlatform.Domain.Entities.ParentStoryPackage", null)
+                        .WithMany()
+                        .HasForeignKey("ParentStoryPackageId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("StoryPlatform.Domain.Entities.UserAccount", null)
                         .WithMany()
                         .HasForeignKey("RequestedByUserId")
@@ -5032,6 +5218,11 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ListeningInteraction", b =>
                 {
+                    b.HasOne("StoryPlatform.Domain.Entities.ParentStoryPackage", null)
+                        .WithMany()
+                        .HasForeignKey("ParentStoryPackageId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("StoryPlatform.Domain.Entities.StoryScene", "StoryScene")
                         .WithMany()
                         .HasForeignKey("StorySceneId")
@@ -5108,6 +5299,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasOne("StoryPlatform.Domain.Entities.ListeningInteractionOption", "ListeningInteractionOption")
                         .WithMany()
                         .HasForeignKey("ListeningInteractionOptionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.ParentStoryPackage", null)
+                        .WithMany()
+                        .HasForeignKey("ParentStoryPackageId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("StoryPlatform.Domain.Entities.MediaAsset", null)
@@ -5192,6 +5388,11 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.MediaContext", b =>
                 {
+                    b.HasOne("StoryPlatform.Domain.Entities.ParentStoryPackage", null)
+                        .WithMany()
+                        .HasForeignKey("ParentStoryPackageId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("StoryPlatform.Domain.Entities.StoryVersion", "StoryVersion")
                         .WithMany()
                         .HasForeignKey("StoryVersionId")
@@ -5221,6 +5422,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "DecidedByUser")
                         .WithMany()
                         .HasForeignKey("DecidedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.ParentStoryPackage", null)
+                        .WithMany()
+                        .HasForeignKey("ParentStoryPackageId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("StoryPlatform.Domain.Entities.ModerationItem", "PreviousItem")
@@ -5359,8 +5565,12 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", null)
                         .WithMany()
                         .HasForeignKey("ChildProfileId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.ParentStoryPackage", null)
+                        .WithMany()
+                        .HasForeignKey("ParentStoryPackageId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("StoryPlatform.Domain.Entities.Story", null)
                         .WithMany()
@@ -5372,6 +5582,43 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("StoryVersionId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ParentStoryPackage", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.ChildProfile", null)
+                        .WithMany()
+                        .HasForeignKey("ChildProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", null)
+                        .WithMany()
+                        .HasForeignKey("ConfirmedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.ParentStoryPackage", null)
+                        .WithMany()
+                        .HasForeignKey("PreviousPackageId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.Story", null)
+                        .WithMany()
+                        .HasForeignKey("StoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryVersion", null)
+                        .WithMany()
+                        .HasForeignKey("StoryVersionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.PaymentTransaction", b =>
@@ -5425,6 +5672,11 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.QuizItem", b =>
                 {
+                    b.HasOne("StoryPlatform.Domain.Entities.ParentStoryPackage", null)
+                        .WithMany()
+                        .HasForeignKey("ParentStoryPackageId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("StoryPlatform.Domain.Entities.StoryVersion", "StoryVersion")
                         .WithMany()
                         .HasForeignKey("StoryVersionId")
@@ -5528,6 +5780,16 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasOne("StoryPlatform.Domain.Entities.ChildRoadmapItem", "ChildRoadmapItem")
                         .WithMany()
                         .HasForeignKey("ChildRoadmapItemId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.ParentStoryOperation", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyConfirmationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.ParentStoryPackage", null)
+                        .WithMany()
+                        .HasForeignKey("ParentStoryPackageId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("StoryPlatform.Domain.Entities.Story", "Story")
@@ -5764,6 +6026,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasOne("StoryPlatform.Domain.Entities.StoryGenerationJob", null)
                         .WithMany()
                         .HasForeignKey("ParentJobId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.ParentStoryPackage", null)
+                        .WithMany()
+                        .HasForeignKey("ParentStoryPackageId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("StoryPlatform.Domain.Entities.PromptCatalogVersion", "PromptCatalogVersion")
@@ -6097,6 +6364,11 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryVocabulary", b =>
                 {
+                    b.HasOne("StoryPlatform.Domain.Entities.ParentStoryPackage", null)
+                        .WithMany()
+                        .HasForeignKey("ParentStoryPackageId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("StoryPlatform.Domain.Entities.StoryVersion", "StoryVersion")
                         .WithMany()
                         .HasForeignKey("StoryVersionId")

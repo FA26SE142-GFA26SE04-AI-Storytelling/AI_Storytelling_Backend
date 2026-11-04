@@ -76,6 +76,9 @@ public static class DependencyInjection
         services.AddScoped<WishCardAiMatchService>();
         services.AddScoped<ICreatorAuthoringService, CreatorAuthoringService>();
         services.AddScoped<StoryPlatform.Application.Features.ParentAuthoring.ParentAuthoringService>();
+        services.AddScoped<StoryPlatform.Application.Features.ParentAuthoring.ParentStoryPackageService>();
+        services.AddScoped<StoryPlatform.Application.Features.ParentAuthoring.ParentStoryPackageProcessor>();
+        services.AddScoped<StoryPlatform.Application.Features.ParentAuthoring.ParentStoryPackageReader>();
         services.AddScoped<Features.CreatorAuthoring.Services.CreatorManualMediaService>();
         services.AddScoped<StoryPlatform.Application.Features.ParentAuthoring.ParentAssistanceService>();
         services.AddScoped<StoryPlatform.Application.Features.ParentAuthoring.AuthoringGuideService>();

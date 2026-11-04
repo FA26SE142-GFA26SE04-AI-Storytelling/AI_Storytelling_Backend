@@ -16,5 +16,7 @@ public enum GenerationJobOperation
     GenerateTts = 11,
     ValidateIllustration = 12,
     FinalizeMedia = 13,
-    GenerateListeningInteraction = 14
+    GenerateListeningInteraction = 14,
+    CheckParentPackage = 15,
+    BuildParentPackage = 16
 }

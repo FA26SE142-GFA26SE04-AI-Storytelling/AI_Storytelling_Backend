@@ -19,7 +19,7 @@ public sealed class ListeningMediaRequirementsTests
     private static MediaAsset Audio(int? optionId, string key) => new()
     {
         Type = MediaType.ListeningAudio, ListeningInteractionId = 5, ListeningInteractionOptionId = optionId,
-        AudioPartKey = key, Status = MediaStatus.Ready, Url = $"{optionId}-{key}.mp3"
+        AudioPartKey = key, Status = MediaStatus.Ready, ValidationStatus = ValidationStatus.Passed, Url = $"{optionId}-{key}.mp3"
     };
     private static MediaAsset Image(ValidationStatus validation = ValidationStatus.Passed) => new()
     {
@@ -60,5 +60,32 @@ public sealed class ListeningMediaRequirementsTests
         Assert.Equal("-prompt.mp3", ListeningMediaRequirements.FindAudio(assets, 5, null, "prompt")!.Url);
         Assert.Equal("50-feedback.mp3", ListeningMediaRequirements.FindAudio(assets, 5, 50, "feedback")!.Url);
         Assert.Null(ListeningMediaRequirements.FindAudio(assets, 6, null, "prompt"));
+    }
+
+    [Fact]
+    public void AudioMustHavePassedValidation()
+    {
+        var assets = Complete();
+        assets[0].ValidationStatus = ValidationStatus.Pending;
+        Assert.Equal(["5:i:prompt"], ListeningMediaRequirements.Missing(Picture, Options, assets));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SelectionUsesNewestValidAssetWithIdTieBreaker(bool image)
+    {
+        var older = image ? Image() : Audio(null, "prompt");
+        older.Id = 1; older.CompletedAt = DateTime.UtcNow.AddMinutes(-1);
+        var newer = image ? Image() : Audio(null, "prompt");
+        newer.Id = 2; newer.CompletedAt = DateTime.UtcNow;
+        var tied = image ? Image() : Audio(null, "prompt");
+        tied.Id = 3; tied.CompletedAt = newer.CompletedAt;
+        var invalid = image ? Image() : Audio(null, "prompt");
+        invalid.Id = 4; invalid.CompletedAt = newer.CompletedAt.Value.AddMinutes(1); invalid.ValidationStatus = ValidationStatus.Failed;
+        MediaAsset[] assets = [invalid, older, newer, tied];
+        var selected = image ? ListeningMediaRequirements.FindImage(assets, 50)
+            : ListeningMediaRequirements.FindAudio(assets, 5, null, "prompt");
+        Assert.Same(tied, selected);
     }
 }

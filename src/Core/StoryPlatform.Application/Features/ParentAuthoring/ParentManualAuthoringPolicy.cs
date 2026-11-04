@@ -15,14 +15,11 @@ public sealed class ParentManualAuthoringPolicy(IUnitOfWork uow, IChildProfileAc
 
     public Expression<Func<Story, bool>> VisibleStories(int userId)
     {
-        var children = uow.Repository<ChildProfile>().Query();
         var requests = uow.Repository<StoryGenerationRequest>().Query();
         // Keep authorization inside the database predicate, before COUNT and pagination.
         return story => story.Scope == StoryScope.Parent && story.Source == StorySource.Manual &&
             story.CreateOperationId != null && story.CreateOperationId != "" &&
-            !requests.Any(request => request.StoryId == story.Id) && story.AuthorUserId == userId && !story.IsDeleted &&
-            children.Any(child => child.Id == story.ChildProfileId && !child.IsDeleted &&
-                child.Status == ChildProfileStatus.Active && child.OwnerUserId == userId);
+            !requests.Any(request => request.StoryId == story.Id) && story.AuthorUserId == userId && !story.IsDeleted;
     }
 
     public async Task<ChildProfile> RequireChildAsync(int user, int childId, CancellationToken ct)
@@ -38,11 +35,12 @@ public sealed class ParentManualAuthoringPolicy(IUnitOfWork uow, IChildProfileAc
     public async Task InitializeAsync(int userId, Story story, ManualDraftContext? context, CancellationToken ct)
     {
         if (context is null) throw new BadRequestException("CHILD_REQUIRED");
-        var child = await RequireChildAsync(userId, context.ChildProfileId, ct);
+        var child = context.ChildProfileId is int childId ? await RequireChildAsync(userId, childId, ct) : null;
         ValidatePurpose(context.Purpose);
-        story.ChildProfileId = child.Id;
+        story.ChildProfileId = child?.Id;
         story.WritingPurpose = context.Purpose ?? "free";
         if (string.IsNullOrWhiteSpace(story.Title)) story.Title = "Truyện của gia đình";
+        if (child is null) return;
         var age = child.AgeBand == AgeBand.Age_9_10 ? "9-10" : "6-8";
         if (story.Language != child.Language || story.AgeBand != age)
             throw new BadRequestException("CHILD_CONTEXT_MISMATCH");
@@ -54,7 +52,7 @@ public sealed class ParentManualAuthoringPolicy(IUnitOfWork uow, IChildProfileAc
             throw new NotFoundException("Story", story.Id);
         if (await uow.Repository<StoryGenerationRequest>().ExistsAsync(x => x.StoryId == story.Id, ct))
             throw new ConflictException("AUTHORING_PIPELINE_CONFLICT");
-        await RequireChildAsync(userId, story.ChildProfileId ?? 0, ct);
+        // Editing authority belongs to the author. Recipient access is checked at package/grant boundaries.
     }
 
     public Task ValidateAssistanceContextAsync(Story story, string? context, CancellationToken ct) =>
@@ -67,6 +65,8 @@ public sealed class ParentManualAuthoringPolicy(IUnitOfWork uow, IChildProfileAc
     public async Task EnsureWritableAsync(Story story, CancellationToken ct)
     {
         if (await IsLockedAsync(story.Id, ct)) throw new ConflictException("PARENT_STORY_FINALIZED");
+        if (await ParentStoryPackageService.IsContentFinalizedAsync(uow, story.Id, ct))
+            throw new ConflictException("PARENT_CONTENT_REOPEN_REQUIRED");
         if (await uow.Repository<StoryGenerationJob>().ExistsAsync(x => x.StoryId == story.Id &&
             x.Operation == GenerationJobOperation.GenerateMediaPackage &&
             (x.Status == GenerationJobStatus.Pending || x.Status == GenerationJobStatus.Processing), ct))

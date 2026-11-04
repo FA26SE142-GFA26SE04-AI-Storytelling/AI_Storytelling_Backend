@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Features.ParentAuthoring;
 using System.Text.Json;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
@@ -173,9 +174,11 @@ public class ChildQuizService : IChildQuizService
             throw new ConflictException(ChildQuizPolicy.ReadFirstMessage);
         }
 
+        var parentPackage = await ParentStoryPackageReader.ForSessionAsync(_unitOfWork, session, ct);
         var versionId = session.StoryVersionId ?? throw new ForbiddenException(ChildReadingPolicy.StoryUnavailableMessage);
+        var manifestIds = parentPackage is null ? new List<int>() : System.Text.Json.JsonSerializer.Deserialize<ParentPackageManifest>(parentPackage.ManifestJson, ParentPackageContext.Json)!.QuizIds.ToList();
         var items = (await _unitOfWork.Repository<QuizItem>().FindAsync(
-                item => item.StoryVersionId == versionId && !item.IsDeleted, cancellationToken: ct))
+                item => item.StoryVersionId == versionId && item.ParentStoryPackageId == session.ParentStoryPackageId && (parentPackage == null || manifestIds.Contains(item.Id)) && !item.IsDeleted, cancellationToken: ct))
             .OrderBy(item => item.Id).ToList();
 
         var storyId = session.StoryId;

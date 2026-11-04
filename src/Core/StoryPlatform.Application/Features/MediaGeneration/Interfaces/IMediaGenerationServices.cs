@@ -45,6 +45,8 @@ public interface IImageGenerationProvider
 
 public interface ITtsProvider
 {
+    /// <summary>Non-secret identity of voice/format settings. Null disables reuse across packages.</summary>
+    string? ConfigurationFingerprint => null;
     Task<GeneratedMedia> GenerateAsync(string exactSceneText, CancellationToken cancellationToken = default);
 }
 

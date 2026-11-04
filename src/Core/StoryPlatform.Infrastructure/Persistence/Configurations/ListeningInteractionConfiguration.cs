@@ -44,7 +44,9 @@ public class ListeningInteractionConfiguration : IEntityTypeConfiguration<Listen
         // Mỗi đoạn neo tối đa 1 tương tác, nên mỗi scene tối đa 1 tương tác.
         builder.HasIndex(x => new { x.StoryVersionId, x.AnchorOffset })
             .IsUnique()
-            .HasFilter("\"IsDeleted\" = false");
+            .HasFilter("\"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NULL");
+        builder.HasIndex(x => new { x.ParentStoryPackageId, x.AnchorOffset }).IsUnique()
+            .HasFilter("\"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NOT NULL");
 
         builder.HasIndex(x => new { x.StoryVersionId, x.Type });
 

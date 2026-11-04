@@ -8,6 +8,8 @@ namespace StoryPlatform.Domain.Entities;
 /// </summary>
 public class ListeningInteraction : BaseEntity
 {
+    public int? ParentStoryPackageId { get; set; }
+
     public int StoryVersionId { get; set; }
     public virtual StoryVersion? StoryVersion { get; set; }
 

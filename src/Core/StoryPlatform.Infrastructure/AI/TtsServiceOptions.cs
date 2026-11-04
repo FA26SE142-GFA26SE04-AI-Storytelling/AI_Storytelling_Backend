@@ -6,6 +6,9 @@ namespace StoryPlatform.Infrastructure.AI;
 /// </summary>
 public sealed class TtsServiceOptions
 {
+    public string Fingerprint(string provider) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+        System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(new
+        { provider, Model, VoiceName, LanguageCode, AudioEncoding, SpeakingRate, Pitch, VolumeGainDb, EnableWordTimings }))));
     public const string SectionName = "AI:TTS";
 
     public string Provider { get; set; } = "GeminiTTS";

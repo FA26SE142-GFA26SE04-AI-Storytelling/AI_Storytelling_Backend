@@ -139,7 +139,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         }
 
         var savedListening = stable is null || readingMediaOnly ? Array.Empty<ListeningInteraction>() :
-            await _unitOfWork.Repository<ListeningInteraction>().FindAsync(x => x.StoryVersionId == stable.Id && !x.IsDeleted, cancellationToken: cancellationToken);
+            await _unitOfWork.Repository<ListeningInteraction>().FindAsync(x => x.ParentStoryPackageId == null && x.StoryVersionId == stable.Id && !x.IsDeleted, cancellationToken: cancellationToken);
         return new ContentGenerationProgressDto
         {
             ElapsedSeconds = contentJob is null || contentJob.Status == GenerationJobStatus.Pending ? null
@@ -150,8 +150,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             MaximumWords = pinnedContext is null ? null : Constraints(pinnedContext).MaximumWords,
             VocabularyTarget = batches.Where(x => x.Kind == "vocabulary").Sum(x => x.TargetCount),
             QuizTarget = batches.Where(x => x.Kind.StartsWith("quiz_")).Sum(x => x.TargetCount),
-            VocabularyCount = stable is null ? 0 : await _unitOfWork.Repository<StoryVocabulary>().CountAsync(x => x.StoryVersionId == stable.Id, cancellationToken),
-            QuizCount = stable is null ? 0 : await _unitOfWork.Repository<QuizItem>().CountAsync(x => x.StoryVersionId == stable.Id, cancellationToken),
+            VocabularyCount = stable is null ? 0 : await _unitOfWork.Repository<StoryVocabulary>().CountAsync(x => x.ParentStoryPackageId == null && x.StoryVersionId == stable.Id, cancellationToken),
+            QuizCount = stable is null ? 0 : await _unitOfWork.Repository<QuizItem>().CountAsync(x => x.ParentStoryPackageId == null && x.StoryVersionId == stable.Id, cancellationToken),
             TotalLearningBatches = batches.Count,
             CompletedLearningBatches = batches.Count(x => x.Status == GenerationJobStatus.Completed),
             LearningWarnings = batches.Where(x => !string.IsNullOrWhiteSpace(x.ShortfallReason)).Select(x => x.ShortfallReason!).Distinct().ToArray(),
@@ -466,7 +466,9 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                     BlockedTopics = PolicyTerms(handoff.Context.BlockedCategoryTerms, handoff.Context.BlockedCategoryCodes),
                     RestrictedTopics = PolicyTerms(handoff.Context.RestrictedCategoryTerms, handoff.Context.RestrictedCategoryCodes)
                 }, cancellationToken);
-                var safetyScore = (decimal)(semanticSafety.SafetyScore ?? (semanticSafety.IsAllowed ? 100d : 0d));
+                if (semanticSafety.SafetyScore is not double reportedScore || !double.IsFinite(reportedScore) || reportedScore is < 0 or > 100)
+                    throw new InvalidOperationException("CONTENT_SAFETY_SCORE_UNAVAILABLE");
+                var safetyScore = (decimal)reportedScore;
                 var meetsThreshold = !handoff.Context.SafetyScoreThreshold.HasValue ||
                                      safetyScore >= handoff.Context.SafetyScoreThreshold.Value;
                 if (!semanticSafety.IsAllowed || !meetsThreshold)
@@ -587,7 +589,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
 
         await CompleteArtifactAsync(state, claimedToken, response!.Metadata, async () =>
         {
-            if (!await _unitOfWork.Repository<StoryVocabulary>().ExistsAsync(item => item.StoryVersionId == state.Version.Id, cancellationToken))
+            if (!await _unitOfWork.Repository<StoryVocabulary>().ExistsAsync(item => item.ParentStoryPackageId == null && item.StoryVersionId == state.Version.Id, cancellationToken))
             {
                 await _unitOfWork.Repository<StoryVocabulary>().AddRangeAsync(items.Select(item => new StoryVocabulary
                 {
@@ -607,7 +609,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
     {
         var state = await LoadArtifactStateAsync(jobId, GenerationJobOperation.GenerateQuiz, cancellationToken);
         var vocabulary = await _unitOfWork.Repository<StoryVocabulary>().FindAsync(
-            item => item.StoryVersionId == state.Version.Id, cancellationToken: cancellationToken);
+            item => item.ParentStoryPackageId == null && item.StoryVersionId == state.Version.Id, cancellationToken: cancellationToken);
         if (vocabulary.Count == 0) throw new InvalidOperationException("INVALID_PHASE3_HANDOFF");
         GenerateQuizResponse? response = null;
         IReadOnlyList<QuizItemSeed>? mapped = null;
@@ -642,7 +644,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
 
         await CompleteArtifactAsync(state, claimedToken, response!.Metadata, async () =>
         {
-            if (!await _unitOfWork.Repository<QuizItem>().ExistsAsync(item => item.StoryVersionId == state.Version.Id, cancellationToken))
+            if (!await _unitOfWork.Repository<QuizItem>().ExistsAsync(item => item.ParentStoryPackageId == null && item.StoryVersionId == state.Version.Id, cancellationToken))
                 await _unitOfWork.Repository<QuizItem>().AddRangeAsync(
                     mapped.Select(item => (QuizItem)(item with { StoryVersionId = state.Version.Id })), cancellationToken);
         }, ListeningNext(ListeningPlan(state.Context, ListeningBlockParser.Parse(state.Version.Content!)), null), cancellationToken);
@@ -1087,6 +1089,9 @@ public sealed partial class ContentGenerationService : IContentGenerationService
     private static bool IsCode(string value) => value.Length <= 100 && value.All(character => char.IsUpper(character) || char.IsDigit(character) || character == '_');
     private static string ToSnake(string value) => string.Concat(value.Select((character, index) =>
         char.IsUpper(character) && index > 0 ? $"_{char.ToLowerInvariant(character)}" : char.ToLowerInvariant(character).ToString()));
+
+    internal static IReadOnlyList<QuizItem> MapPackageQuiz(IReadOnlyList<QuizItemDto> items, string content, AIStoryInputContextSnapshot context) =>
+        ValidateAndMapQuiz(items, content, context).Select(x => (QuizItem)x).ToArray();
 
     private static IReadOnlyList<QuizItemSeed> ValidateAndMapQuiz(
         IReadOnlyList<QuizItemDto> items, string storyContent, AIStoryInputContextSnapshot context)

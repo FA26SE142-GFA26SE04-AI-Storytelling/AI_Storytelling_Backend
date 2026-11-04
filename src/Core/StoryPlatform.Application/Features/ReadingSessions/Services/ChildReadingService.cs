@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Features.ParentAuthoring;
 using System.Text.Json;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
@@ -30,7 +31,7 @@ public class ChildReadingService : IChildReadingService
     public async Task<ReadingSessionStartedDto> StartAsync(
         int childProfileId, string sessionKey, StartReadingRequestDto request, CancellationToken ct = default)
     {
-        if (request.StoryId.HasValue == request.CommunitySubmissionId.HasValue)
+        if ((request.StoryId.HasValue ? 1 : 0) + (request.CommunitySubmissionId.HasValue ? 1 : 0) + (request.FamilyConfirmationId.HasValue ? 1 : 0) != 1)
         {
             throw new BadRequestException("Hãy chọn đúng một truyện để đọc.");
         }
@@ -71,7 +72,7 @@ public class ChildReadingService : IChildReadingService
                 Content = version.Content
             }
             : story;
-        if (await _eligibility.EvaluateAsync(child, eligibilityStory, ct) != null)
+        if (!request.FamilyConfirmationId.HasValue && await _eligibility.EvaluateAsync(child, eligibilityStory, ct) != null)
         {
             throw new ForbiddenException(ChildReadingPolicy.StoryUnavailableMessage);
         }
@@ -82,11 +83,14 @@ public class ChildReadingService : IChildReadingService
         {
             // Serialize starts for this story before checking sessions and the unique progress row.
             await _unitOfWork.AcquireTransactionLockAsync(storyId, ct);
+            if (request.FamilyConfirmationId is int lockedGrant)
+                await new ParentStoryPackageReader(_unitOfWork, new StoryPlatform.Application.Features.ChildProfiles.Profiles.Services.ChildProfileAccessGuard(_unitOfWork)).AuthorizeAsync(childProfileId, lockedGrant, ct);
             var sessions = _unitOfWork.Repository<ReadingSession>();
             var open = (await sessions.FindAsync(
                     session => session.ChildProfileId == childProfileId
                                && session.StoryId == storyId
                                && session.StoryVersionId == versionId
+                               && session.FamilyConfirmationId == request.FamilyConfirmationId
                                && !session.IsDeleted
                                && session.ForceExitRequestedAt == null
                                && (session.Status == SessionStatus.Started
@@ -104,6 +108,8 @@ public class ChildReadingService : IChildReadingService
                     ChildProfileId = childProfileId,
                     StoryId = storyId,
                     StoryVersionId = versionId,
+                    FamilyConfirmationId = request.FamilyConfirmationId,
+                    ParentStoryPackageId = request.FamilyConfirmationId is int grantId ? (await _unitOfWork.Repository<ParentStoryOperation>().GetByIdAsync(grantId, ct))!.ParentStoryPackageId : null,
                     Status = SessionStatus.Started,
                     StartedAt = DateTime.UtcNow,
                     ChildAccessCredentialId = childSession.ChildAccessCredentialId,
@@ -138,6 +144,11 @@ public class ChildReadingService : IChildReadingService
     {
         Story? story;
         StoryVersion? version;
+        if (request.FamilyConfirmationId is int familyId)
+        {
+            var family = await new ParentStoryPackageReader(_unitOfWork, new StoryPlatform.Application.Features.ChildProfiles.Profiles.Services.ChildProfileAccessGuard(_unitOfWork)).AuthorizeAsync(childProfileId, familyId, ct);
+            return (family.Story, family.Version);
+        }
         if (request.CommunitySubmissionId.HasValue)
         {
             var submissionId = request.CommunitySubmissionId.Value;
@@ -205,6 +216,7 @@ public class ChildReadingService : IChildReadingService
             throw new NotFoundException("Phiên đọc", sessionId);
         }
 
+        await ParentStoryPackageReader.ForSessionAsync(_unitOfWork, session, ct);
         return session;
     }
 
@@ -218,6 +230,11 @@ public class ChildReadingService : IChildReadingService
 
         var version = await RequireSessionVersionAsync(session, ct);
         var versionId = version.Id;
+        var parentPackage = await ParentStoryPackageReader.ForSessionAsync(_unitOfWork, session, ct);
+        var manifest = parentPackage is null ? null : JsonSerializer.Deserialize<ParentPackageManifest>(parentPackage.ManifestJson, ParentPackageContext.Json)!;
+        var allowedAssets = manifest?.MediaAssetIds.ToList() ?? [];
+        var allowedWords = manifest?.VocabularyIds.ToList() ?? [];
+        var allowedListening = manifest?.ListeningIds.ToList() ?? [];
 
         var scenes = (await _unitOfWork.Repository<StoryScene>().FindAsync(
                 scene => scene.StoryVersionId == versionId && !scene.IsDeleted, cancellationToken: ct))
@@ -226,16 +243,17 @@ public class ChildReadingService : IChildReadingService
         var segments = await _unitOfWork.Repository<StorySegment>().FindAsync(
             segment => sceneIds.Contains(segment.StorySceneId) && !segment.IsDeleted, cancellationToken: ct);
         var assets = (await _unitOfWork.Repository<MediaAsset>().FindAsync(
-            asset => asset.StoryVersionId == versionId && asset.Status == MediaStatus.Ready && !asset.IsDeleted,
+            asset => asset.StoryVersionId == versionId && (parentPackage == null ? asset.ParentStoryPackageId == null : allowedAssets.Contains(asset.Id)) && asset.Status == MediaStatus.Ready && !asset.IsDeleted,
             cancellationToken: ct))
             .OrderByDescending(asset => asset.CompletedAt ?? asset.CreatedAt).ThenByDescending(asset => asset.Id).ToList();
         var vocabulary = await _unitOfWork.Repository<StoryVocabulary>().FindAsync(
-            word => word.StoryVersionId == versionId && !word.IsDeleted, cancellationToken: ct);
-        var vocabularyAudio = await VocabularyAudioLookup.FindUrlsAsync(
+            word => word.StoryVersionId == versionId && word.ParentStoryPackageId == session.ParentStoryPackageId && (parentPackage == null || allowedWords.Contains(word.Id)) && !word.IsDeleted, cancellationToken: ct);
+        if (parentPackage is not null) assets = assets.Select(x => ParentStoryPackageReader.ProxyAsset(x, session.FamilyConfirmationId!.Value)).ToList();
+        var vocabularyAudio = parentPackage is not null ? assets.Where(x => x.Type == MediaType.VocabularyAudio && x.StoryVocabularyId.HasValue).ToDictionary(x => x.StoryVocabularyId!.Value, x => x.Url!) : await VocabularyAudioLookup.FindUrlsAsync(
             _unitOfWork, vocabulary.Select(word => word.Id).ToList(), ct);
 
         var interactions = await _unitOfWork.Repository<ListeningInteraction>().FindAsync(
-            interaction => interaction.StoryVersionId == versionId && !interaction.IsDeleted, cancellationToken: ct);
+            interaction => interaction.StoryVersionId == versionId && interaction.ParentStoryPackageId == session.ParentStoryPackageId && (parentPackage == null || allowedListening.Contains(interaction.Id)) && !interaction.IsDeleted, cancellationToken: ct);
         var interactionIds = interactions.Select(interaction => interaction.Id).ToList();
         IReadOnlyList<ListeningInteractionOption> options = interactionIds.Count == 0 ? [] :
             await _unitOfWork.Repository<ListeningInteractionOption>().FindAsync(

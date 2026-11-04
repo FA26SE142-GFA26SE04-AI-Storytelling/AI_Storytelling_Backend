@@ -813,8 +813,25 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
 
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(_options.Audio.ProviderTimeoutSeconds, 1, 600)));
-            var audio = await MeasureMediaStageAsync("TtsGeneration", jobId, asset,
-                () => _ttsProvider.GenerateAsync(segment.TextContent, timeout.Token));
+            using var ttsScope = _logger.BeginScope(new Dictionary<string, object>
+            {
+                ["StoryId"] = storyId, ["MediaJobId"] = jobId, ["SceneId"] = scene.Id,
+                ["SegmentId"] = segment.Id, ["AssetId"] = asset.Id, ["Attempt"] = asset.AttemptCount
+            });
+            _logger.LogInformation("TTS segment started Characters={Characters} ApplicationTimeoutSeconds={ApplicationTimeoutSeconds}",
+                segment.TextContent.Length, _options.Audio.ProviderTimeoutSeconds);
+            StoryPlatform.Application.Features.MediaStorage.Models.GeneratedMedia audio;
+            try
+            {
+                audio = await MeasureMediaStageAsync("TtsGeneration", jobId, asset,
+                    () => _ttsProvider.GenerateAsync(segment.TextContent, timeout.Token));
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogWarning("TTS segment cancelled CancellationSource={CancellationSource}",
+                    cancellationToken.IsCancellationRequested ? "WorkerShutdown" : timeout.IsCancellationRequested ? "ApplicationBudget" : "HttpClientTimeout");
+                throw;
+            }
             timeout.Token.ThrowIfCancellationRequested();
 
             // Structural quality gate — magic bytes + word timings check.

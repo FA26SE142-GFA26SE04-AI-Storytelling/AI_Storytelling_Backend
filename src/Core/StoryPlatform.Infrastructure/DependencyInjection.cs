@@ -184,7 +184,7 @@ public static class DependencyInjection
             services.AddHttpClient<GeminiImageGenerationProvider>(client => client.Timeout = TimeSpan.FromMinutes(2)),
             new MediaGenerationOptions { CircuitBreaker = mediaOptions.Images.CircuitBreaker }, 0, imageOptions.TransportRetryBaseDelayMs);
         ConfigureMediaHttpClient(
-            services.AddHttpClient<GeminiTtsProvider>(client => client.Timeout = TimeSpan.FromMinutes(2)),
+            services.AddHttpClient<GeminiTtsProvider>(client => client.Timeout = TimeSpan.FromSeconds(Math.Clamp(ttsOptions.TimeoutSeconds, 1, 600))),
             new MediaGenerationOptions { CircuitBreaker = mediaOptions.Audio.CircuitBreaker }, 0, ttsOptions.TransportRetryBaseDelayMs);
         ConfigureMediaHttpClient(
             services.AddHttpClient<GeminiMediaAlignmentEvaluator>(client => client.Timeout = TimeSpan.FromMinutes(2)),

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Text;
@@ -41,11 +42,39 @@ public sealed class GeminiTtsProvider : ITtsProvider
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-        if (_httpClient.Timeout == Timeout.InfiniteTimeSpan || _httpClient.Timeout > TimeSpan.FromSeconds(_options.TimeoutSeconds))
-            _httpClient.Timeout = TimeSpan.FromSeconds(_options.TimeoutSeconds);
+        // Use the configured TTS budget, including when HttpClient's default (100s) is shorter.
+        _httpClient.Timeout = TimeSpan.FromSeconds(Math.Clamp(_options.TimeoutSeconds, 1, 600));
     }
 
     public async Task<GeneratedMedia> GenerateAsync(string exactSceneText, CancellationToken cancellationToken = default)
+    {
+        var elapsed = Stopwatch.StartNew();
+        _logger.LogInformation("TTS request started Characters={Characters} HttpTimeoutSeconds={HttpTimeoutSeconds}",
+            exactSceneText?.Length ?? 0, _httpClient.Timeout.TotalSeconds);
+        try
+        {
+            var audio = await GenerateCoreAsync(exactSceneText!, cancellationToken);
+            _logger.LogInformation("TTS request completed DurationMs={DurationMs} Bytes={Bytes} MimeType={MimeType}",
+                elapsed.Elapsed.TotalMilliseconds, audio.Content.Length, audio.MimeType);
+            return audio;
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("TTS request cancelled DurationMs={DurationMs} CancellationSource={CancellationSource}",
+                elapsed.Elapsed.TotalMilliseconds, cancellationToken.IsCancellationRequested ? "Caller" : "HttpClientTimeout");
+            throw;
+        }
+        catch (Exception error)
+        {
+            _logger.LogWarning("TTS request failed DurationMs={DurationMs} ErrorType={ErrorType} Code={Code}",
+                elapsed.Elapsed.TotalMilliseconds, error.GetType().Name,
+                error is PermanentMediaGenerationException permanent ? permanent.ErrorCode :
+                error is TransientMediaGenerationException transient ? transient.ErrorCode : "TTS_PROVIDER_FAILED");
+            throw;
+        }
+    }
+
+    private async Task<GeneratedMedia> GenerateCoreAsync(string exactSceneText, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(exactSceneText))
             throw new PermanentMediaGenerationException("TTS_EMPTY_TEXT");

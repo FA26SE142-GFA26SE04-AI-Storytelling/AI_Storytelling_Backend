@@ -1,5 +1,7 @@
 # API backend theo actor và luồng tích hợp frontend
 
+> Parent Manual nhi?u b? (03/11/2026): [H?p ??ng package m?i](PARENT_MULTI_CHILD_PACKAGES_API_GUIDE.md). Ch?n tr? sau khi ch?t content, h?c li?u theo t?ng profile, batch giao to?n b? ho?c rollback. Backend source ?? b? sung; c?n migration ri?ng tr??c khi s? d?ng v?i PostgreSQL.
+
 > Phase 5 Image/TTS: [MEDIA_PHASE5_IMAGE_TTS_API_GUIDE.md](MEDIA_PHASE5_IMAGE_TTS_API_GUIDE.md)
 
 > Bổ sung 26/10/2026: assistance theo bản nháp dùng cho **soạn thủ công và sửa nội dung truyện AI** của Parent/Creator tại M3. Phần mapping baseline bên dưới là lịch sử; đợt bổ sung đã nối giao diện, chưa xác nhận triển khai hay provider thật.

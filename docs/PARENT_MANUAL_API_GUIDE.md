@@ -1,5 +1,7 @@
 # Parent authoring và Creative Suggestion Engine — backend
 
+> B? sung 03/11/2026: [M?t truy?n cho nhi?u b?, h?c li?u/media theo package](PARENT_MULTI_CHILD_PACKAGES_API_GUIDE.md). B?n nh?p m?i ???c ph?p ch?a ch?n b?; ph?n b?t bu?c m?t child d??i ??y m? t? lu?ng legacy. Schema m?i c?n migration ri?ng; ch?a ???c ?p d?ng l?n PostgreSQL.
+
 Cập nhật 19/10/2026: Parent tự viết và dùng AI hỗ trợ trên cùng bản nháp. Phạm vi lần này là backend; chưa tích hợp UI/Reader frontend, chưa tạo/apply migration hoặc chạy API xuống DB thật.
 
 ## Trạng thái triển khai

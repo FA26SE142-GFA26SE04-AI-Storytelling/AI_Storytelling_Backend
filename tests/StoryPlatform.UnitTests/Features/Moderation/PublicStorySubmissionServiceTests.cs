@@ -26,6 +26,7 @@ public class PublicStorySubmissionServiceTests
     public PublicStorySubmissionServiceTests()
     {
         _h.Items.Clear();
+        _h.ContentCategories.Add(new ContentCategory { Id = 5, Code = "friendship", DisplayName = "Tình bạn", IsActive = true });
         _h.AddScene(1, 1);
         SetMediaReady(true);
         var queue = new ModerationQueueService(_h.UnitOfWork.Object, _h.Audit.Object);
@@ -38,7 +39,7 @@ public class PublicStorySubmissionServiceTests
                 Array.Empty<int>(), Array.Empty<int>(), Array.Empty<int>(), Array.Empty<int>()));
 
     private Task<PublicStorySubmissionResultDto> SubmitAsync(int versionId = V1, int actorId = Creator) =>
-        _sut.SubmitAsync(actorId, new SubmitPublicStoryRequestDto { StoryId = StoryId, StoryVersionId = versionId });
+        _sut.SubmitAsync(actorId, new SubmitPublicStoryRequestDto { StoryId = StoryId, StoryVersionId = versionId, ContentCategoryIds = [5] });
 
     private ModerationItem AddItem(int id, ModerationItemStatus status, int versionId = V1, DateTime? decidedAt = null)
     {
@@ -75,12 +76,78 @@ public class PublicStorySubmissionServiceTests
         Assert.Equal("Pending", result.Status);
         Assert.False(result.IsResubmission);
         Assert.Equal(ModerationItemStatus.Pending, item.Status);
+        Assert.Equal("[5]", item.ProposedContentCategoryIds);
+        Assert.Empty(_h.StoryCategories);
         Assert.Equal(Creator, item.CreatedByUserId);
         Assert.Equal(VersionReviewStatus.Pending, _h.Versions[0].Moderation.ReviewStatus);
         Assert.NotNull(_h.Versions[0].Moderation.ReviewSubmittedAt);
         _h.UnitOfWork.Verify(unit => unit.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
         _h.Audit.Verify(audit => audit.LogAsync(Creator, "PublicStorySubmitted", nameof(ModerationItem), item.Id,
             It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SubmitAsync_WithoutLabels_IsBadRequest()
+    {
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.SubmitAsync(Creator,
+            new SubmitPublicStoryRequestDto { StoryId = StoryId, StoryVersionId = V1 }));
+        Assert.Empty(_h.Items);
+    }
+
+    [Fact]
+    public async Task SubmitAsync_MetadataOnly_ChangedLabelsCanReuseVersion()
+    {
+        _h.ContentCategories.Add(new ContentCategory { Id = 6, Code = "animals", DisplayName = "Động vật", IsActive = true });
+        _h.Versions[0].Moderation.ReviewStatus = VersionReviewStatus.ChangesRequested;
+        var previous = AddItem(90, ModerationItemStatus.ChangesRequested, V1, DateTime.UtcNow.AddMinutes(-1));
+        previous.ProposedContentCategoryIds = "[5]";
+        previous.Feedback = "{\"parts\":[{\"partType\":\"metadata\"}]}";
+
+        var result = await _sut.SubmitAsync(Creator, new SubmitPublicStoryRequestDto
+            { StoryId = StoryId, StoryVersionId = V1, ContentCategoryIds = [6, 6] });
+
+        Assert.True(result.IsResubmission);
+        Assert.Equal(90, result.PreviousItemId);
+        Assert.Equal("[6]", _h.Items.Single(x => x.Id == result.ItemId).ProposedContentCategoryIds);
+        Assert.Empty(_h.StoryCategories);
+    }
+
+    [Fact]
+    public async Task SubmitAsync_MetadataOnly_UnchangedLabelsAreRejected()
+    {
+        _h.Versions[0].Moderation.ReviewStatus = VersionReviewStatus.ChangesRequested;
+        var previous = AddItem(90, ModerationItemStatus.ChangesRequested, V1, DateTime.UtcNow.AddMinutes(-1));
+        previous.ProposedContentCategoryIds = "[5]";
+        previous.Feedback = "{\"parts\":[{\"partType\":\"metadata\"}]}";
+
+        var error = await Assert.ThrowsAsync<BadRequestException>(() => SubmitAsync());
+        Assert.Contains("Bộ nhãn chưa thay đổi", error.Message);
+    }
+
+    [Theory]
+    [InlineData("{\"parts\":[{\"partType\":\"metadata\"},{\"partType\":\"scene_text\"}]}", ModerationItemStatus.ChangesRequested)]
+    [InlineData("{\"parts\":[{\"partType\":\"metadata\"}]}", ModerationItemStatus.Rejected)]
+    public async Task SubmitAsync_SameVersion_RequiresMetadataOnlyChangesRequest(string feedback, ModerationItemStatus status)
+    {
+        _h.ContentCategories.Add(new ContentCategory { Id = 6, Code = "animals", IsActive = true });
+        _h.Versions[0].Moderation.ReviewStatus = status == ModerationItemStatus.Rejected
+            ? VersionReviewStatus.Rejected : VersionReviewStatus.ChangesRequested;
+        var previous = AddItem(90, status, V1, DateTime.UtcNow.AddMinutes(-1));
+        previous.ProposedContentCategoryIds = "[5]";
+        previous.Feedback = feedback;
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.SubmitAsync(Creator,
+            new SubmitPublicStoryRequestDto { StoryId = StoryId, StoryVersionId = V1, ContentCategoryIds = [6] }));
+    }
+
+    [Theory]
+    [InlineData(6)]
+    [InlineData(999)]
+    public async Task SubmitAsync_InactiveOrUnknownLabel_IsRejected(int id)
+    {
+        _h.ContentCategories.Add(new ContentCategory { Id = 6, Code = "old", IsActive = false });
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.SubmitAsync(Creator,
+            new SubmitPublicStoryRequestDto { StoryId = StoryId, StoryVersionId = V1, ContentCategoryIds = [id] }));
     }
 
     [Theory]

@@ -28,6 +28,19 @@ public sealed class CreatorPublicationServiceTests
     private Task<CreatorPublicationResult> Request() => service.RequestRemovalAsync(Creator, StoryId, new() { Reason = "Chá»‰nh sá»­a ná»™i dung" });
 
     [Fact]
+    public async Task PublicationStatus_ShowsApprovedAndLastProposedLabels()
+    {
+        h.StoryCategories.Add(new StoryCategory { StoryId = StoryId, ContentCategoryId = 5, Source = TagSource.Creator });
+        h.Items.Add(new ModerationItem { Id = 110, StoryId = StoryId, StoryVersionId = VersionId,
+            ItemType = ModerationItemType.PublicStoryReview, ProposedContentCategoryIds = "[5]" });
+
+        var status = await service.GetStatusAsync(Creator, StoryId);
+
+        Assert.Equal(5, Assert.Single(status.Labels).ContentCategoryId);
+        Assert.Equal(5, Assert.Single(status.LastProposedLabels).ContentCategoryId);
+    }
+
+    [Fact]
     public async Task RemovalRequest_DoesNotUnlockUntilClaimedModeratorApproves_ThenClonesVersion()
     {
         var old = h.Versions[0];

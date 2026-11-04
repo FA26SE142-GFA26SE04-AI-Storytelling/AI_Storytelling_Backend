@@ -73,21 +73,6 @@ public class PublicStoryReviewController : BaseApiController
         return HandleResult(result, "Đã lưu checklist.");
     }
 
-    /// <summary>Thay toàn bộ nhãn nội dung của truyện đang được duyệt.</summary>
-    /// <remarks>
-    /// Lưu ý: đây là ngoại lệ duy nhất cho phép Moderator sửa dữ liệu truyện trong lượt duyệt.
-    /// Danh sách mới phải có ít nhất một nhãn đang hoạt động; ID trùng được tự loại bỏ và nhãn mới
-    /// mang nguồn Moderator. Thao tác tăng RowVersion và ghi audit bộ nhãn trước/sau.
-    /// </remarks>
-    [HttpPut("{itemId:int}/labels")]
-    public async Task<ActionResult<ApiResponse<List<PublicReviewLabelDto>>>> SetLabels(
-        int itemId, [FromBody] SetContentLabelsRequestDto request, CancellationToken cancellationToken)
-    {
-        var result = await _reviewService.SetContentLabelsAsync(
-            GetCurrentUserId(), itemId, request, cancellationToken);
-        return HandleResult(result, "Đã cập nhật nhãn nội dung.");
-    }
-
     /// <summary>Approve phiên bản và công khai truyện ngay khi đủ mọi điều kiện.</summary>
     /// <remarks>
     /// Lưu ý: server luôn kiểm tra lại các điều kiện trong ApproveBlockers. Nội dung do chính người
@@ -107,6 +92,7 @@ public class PublicStoryReviewController : BaseApiController
     /// Lưu ý: bắt buộc ghi chú chung và từ 1 đến 50 phần cần sửa. Mỗi phần phải có loại, vị trí
     /// hợp lệ thuộc đúng phiên bản và ghi chú tối đa 1000 ký tự. Quyết định không gỡ bản truyện
     /// đã công khai trước đó và được ghi audit, gửi thông báo trong cùng transaction.
+    /// Khi nhãn đề xuất sai, chọn phần metadata để Creator sửa và gửi lại.
     /// </remarks>
     [HttpPost("{itemId:int}/request-changes")]
     public async Task<ActionResult<ApiResponse<PublicReviewDecisionResultDto>>> RequestChanges(

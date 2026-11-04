@@ -1753,6 +1753,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasColumnType("character varying(30)")
                         .HasDefaultValue("Medium");
 
+                    b.Property<string>("ProposedContentCategoryIds")
+                        .HasColumnType("jsonb");
+
                     b.Property<int?>("ReadingRoadmapId")
                         .HasColumnType("integer");
 

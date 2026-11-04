@@ -48,6 +48,7 @@ public class ModerationItem : BaseEntity
     public string? Checklist { get; set; }
     public string? ReviewProgress { get; set; }
     public string? Feedback { get; set; }
+    public string? ProposedContentCategoryIds { get; set; }
 
     public string? DecisionReason { get; set; }
     public string? EscalationReason { get; set; }

@@ -14,6 +14,11 @@ public partial class PublicStoryReviewService
         var blockers = new List<ApproveBlockerDto>();
         var story = context.Story;
         var item = context.Item;
+        var proposedIds = PublicStoryLabels.Parse(item.ProposedContentCategoryIds);
+        if (proposedIds.Count == 0)
+            blockers.Add(Blocker(ApproveBlockerCodes.NoLabels, "Truyện phải có ít nhất một nhãn nội dung đề xuất."));
+        else if (proposedIds.Any(id => !content.ProposedCategories.Any(category => category.Id == id && category.IsActive)))
+            blockers.Add(Blocker(ApproveBlockerCodes.InactiveLabels, "Nhãn đề xuất không tồn tại hoặc không còn hoạt động."));
 
         if (story.Status == StoryStatus.Rejected || story.ArchivedAt != null)
         {
@@ -100,6 +105,7 @@ public partial class PublicStoryReviewService
     {
         var context = await LoadClaimedContextAsync(actorUserId, itemId, cancellationToken);
         var content = await LoadContentAsync(context.Version.Id, cancellationToken);
+        content = await WithProposedCategoriesAsync(content, context.Item, cancellationToken);
         var blockers = EvaluateApproveBlockers(context, content);
 
         var ownContent = blockers.FirstOrDefault(blocker => blocker.Code == ApproveBlockerCodes.OwnContent);
@@ -266,6 +272,8 @@ public partial class PublicStoryReviewService
         var version = context.Version;
         var story = context.Story;
         var now = DateTime.UtcNow;
+        List<int>? labelsBefore = null;
+        List<int>? labelsAfter = null;
 
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
@@ -286,6 +294,17 @@ public partial class PublicStoryReviewService
 
             if (publish)
             {
+                var wanted = PublicStoryLabels.Parse(item.ProposedContentCategoryIds);
+                var repository = _unitOfWork.Repository<StoryCategory>();
+                var existing = await repository.FindAsync(x => x.StoryId == story.Id, cancellationToken: cancellationToken);
+                labelsBefore = existing.Select(x => x.ContentCategoryId).OrderBy(id => id).ToList();
+                foreach (var link in existing.Where(link => !wanted.Contains(link.ContentCategoryId))) repository.Delete(link);
+                foreach (var id in wanted.Where(id => !existing.Any(link => link.ContentCategoryId == id)))
+                    await repository.AddAsync(new StoryCategory
+                    {
+                        StoryId = story.Id, ContentCategoryId = id, Source = TagSource.Creator
+                    }, cancellationToken);
+                labelsAfter = wanted;
                 story.IsPublished = true;
                 story.PublishedAt ??= now;
                 story.ChildVisibleAt ??= now;
@@ -298,13 +317,14 @@ public partial class PublicStoryReviewService
                 auditAction,
                 nameof(ModerationItem),
                 item.Id,
-                beforeState: new { status = ModerationItemStatus.Claimed.ToString() },
+                beforeState: new { status = ModerationItemStatus.Claimed.ToString(), labelsBefore },
                 afterState: new
                 {
                     status = itemStatus.ToString(),
                     storyId = story.Id,
                     storyVersionId = version.Id,
-                    reason
+                    reason,
+                    labelsAfter
                 },
                 cancellationToken);
 

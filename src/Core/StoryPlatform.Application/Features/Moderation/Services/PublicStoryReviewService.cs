@@ -35,13 +35,15 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
         IReadOnlyList<QuizItem> Quizzes,
         IReadOnlyList<StoryVocabulary> Vocabulary,
         IReadOnlyList<ListeningInteraction> Listening,
-        IReadOnlyList<ListeningInteractionOption> ListeningOptions);
+        IReadOnlyList<ListeningInteractionOption> ListeningOptions,
+        IReadOnlyList<ContentCategory> ProposedCategories);
 
     public async Task<PublicReviewPackageDto> GetPackageAsync(
         int actorUserId, int itemId, CancellationToken cancellationToken = default)
     {
         var context = await LoadClaimedContextAsync(actorUserId, itemId, cancellationToken);
         var content = await LoadContentAsync(context.Version.Id, cancellationToken);
+        content = await WithProposedCategoriesAsync(content, context.Item, cancellationToken);
         var package = await BuildPackageAsync(context, content, cancellationToken);
 
         await _auditLogWriter.LogAsync(
@@ -126,7 +128,15 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
         var listeningIds = listening.Select(x => x.Id).ToList();
         var listeningOptions = await _unitOfWork.Repository<ListeningInteractionOption>().FindAsync(
             x => listeningIds.Contains(x.ListeningInteractionId) && !x.IsDeleted, cancellationToken: cancellationToken);
-        return new ReviewContent(scenes, segments, beats, assets, quizzes, vocabulary, listening, listeningOptions);
+        return new ReviewContent(scenes, segments, beats, assets, quizzes, vocabulary, listening, listeningOptions, []);
+    }
+
+    private async Task<ReviewContent> WithProposedCategoriesAsync(ReviewContent content, ModerationItem item, CancellationToken ct)
+    {
+        var ids = PublicStoryLabels.Parse(item.ProposedContentCategoryIds);
+        var categories = await _unitOfWork.Repository<ContentCategory>().FindAsync(
+            category => ids.Contains(category.Id), cancellationToken: ct);
+        return content with { ProposedCategories = categories };
     }
 
     private async Task<PublicReviewPackageDto> BuildPackageAsync(
@@ -146,6 +156,11 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
             StoryVersionId = context.Version.Id,
             VersionNo = context.Version.VersionNo,
             IsResubmission = item.IsResubmission,
+            ProposedLabels = content.ProposedCategories.OrderBy(x => x.Id).Select(category => new PublicReviewLabelDto
+            {
+                ContentCategoryId = category.Id, Code = category.Code,
+                DisplayName = category.DisplayName, Source = TagSource.Creator.ToString()
+            }).ToList(),
             Story = new PublicReviewStoryDto
             {
                 Title = context.Story.Title,

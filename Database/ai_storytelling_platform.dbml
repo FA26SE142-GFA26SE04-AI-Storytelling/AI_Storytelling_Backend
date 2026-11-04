@@ -1048,6 +1048,7 @@ Table moderation_items {
   PiiCheckResult jsonb
   PreviousItemId int
   Priority ModerationPriority [not null, note: 'EF PostgreSQL type: character varying(30)']
+  ProposedContentCategoryIds jsonb
   ReadingRoadmapId int
   RemovedAt timestamptz
   ReviewProgress jsonb

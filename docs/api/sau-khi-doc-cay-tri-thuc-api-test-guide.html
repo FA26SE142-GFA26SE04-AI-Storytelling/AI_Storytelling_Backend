@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hướng dẫn test API Sau khi đọc</title>
+<style>
+  :root{
+    --bg:#f7f8fa; --card:#fff; --ink:#1c2430; --muted:#5b6678; --line:#dfe3ea;
+    --accent:#2f6fed; --ok:#16794c; --okbg:#e5f6ed; --warn:#9a5b00; --warnbg:#fff3dc;
+    --bad:#b3261e; --badbg:#fde8e6; --code:#f0f2f6; --child:#7a3fd1; --parent:#0f7b8a;
+    --sys:#5b6678; --db:#9a5b00;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#12161d; --card:#1a2029; --ink:#e7ebf2; --muted:#9aa5b8; --line:#2c3543;
+      --accent:#7aa5ff; --ok:#5fd39b; --okbg:#143324; --warn:#f0b35a; --warnbg:#3a2b10;
+      --bad:#ff8a80; --badbg:#3d1a17; --code:#232b37; --child:#c3a0ff; --parent:#6fd6e4;
+      --sys:#9aa5b8; --db:#f0b35a;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#12161d; --card:#1a2029; --ink:#e7ebf2; --muted:#9aa5b8; --line:#2c3543;
+    --accent:#7aa5ff; --ok:#5fd39b; --okbg:#143324; --warn:#f0b35a; --warnbg:#3a2b10;
+    --bad:#ff8a80; --badbg:#3d1a17; --code:#232b37; --child:#c3a0ff; --parent:#6fd6e4;
+    --sys:#9aa5b8; --db:#f0b35a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:1000px;margin:0 auto;padding:24px 16px 64px}
+  h1{font-size:26px;margin:0 0 4px}
+  h2{font-size:20px;margin:40px 0 12px;padding-top:8px;border-top:1px solid var(--line)}
+  h3{font-size:16px;margin:24px 0 8px}
+  p{margin:8px 0}
+  a{color:var(--accent)}
+  .sub{color:var(--muted);margin:0 0 20px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin:12px 0}
+  .note{border-left:4px solid var(--warn);background:var(--warnbg);padding:10px 14px;border-radius:6px;margin:12px 0}
+  .tip{border-left:4px solid var(--accent);background:var(--code);padding:10px 14px;border-radius:6px;margin:12px 0}
+  code,pre{font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  code{background:var(--code);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
+  pre{background:var(--code);padding:12px 14px;border-radius:8px;overflow:auto;margin:8px 0;position:relative}
+  pre code{background:none;padding:0}
+  .copy{position:absolute;top:6px;right:6px;font-size:12px;padding:2px 8px;border:1px solid var(--line);
+        background:var(--card);color:var(--ink);border-radius:6px;cursor:pointer}
+  table{border-collapse:collapse;width:100%;margin:8px 0;font-size:14px}
+  th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
+  th{background:var(--code)}
+  .scroll{overflow-x:auto}
+  .m{display:inline-block;font:700 12px ui-monospace,monospace;padding:1px 7px;border-radius:5px;color:#fff;margin-right:6px}
+  .POST{background:#2f6fed}.GET{background:#16794c}.DELETE{background:#b3261e}.PUT{background:#9a5b00}.PATCH{background:#7a3fd1}
+  .who{font-size:12px;font-weight:600;padding:1px 8px;border-radius:99px;border:1px solid currentColor;white-space:nowrap}
+  .who.child{color:var(--child)}.who.parent{color:var(--parent)}
+  .s2{color:var(--ok);font-weight:700}.s4{color:var(--warn);font-weight:700}.s5{color:var(--bad);font-weight:700}
+  nav ol{columns:2;margin:8px 0;padding-left:20px}
+  @media (max-width:640px){nav ol{columns:1}}
+  .flow{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px;overflow-x:auto;margin:10px 0}
+  .flow svg{display:block;min-width:820px;width:100%;height:auto}
+  .flow text{fill:var(--ink);font:13px system-ui,sans-serif}
+  .flow .box{fill:var(--card);stroke:var(--sys);stroke-width:1.5}
+  .flow .pbox{fill:var(--card);stroke:var(--parent);stroke-width:2}
+  .flow .cbox{fill:var(--card);stroke:var(--child);stroke-width:2}
+  .flow .dbox{fill:var(--code);stroke:var(--db);stroke-width:1.5;stroke-dasharray:4 3}
+  .flow .arrow{stroke:var(--muted);stroke-width:1.6;fill:none}
+  .flow .warrow{stroke:var(--db);stroke-width:1.6;fill:none}
+  .flow .carrow{stroke:var(--child);stroke-width:1.6;fill:none}
+  .flow .small{font-size:11px;fill:var(--muted)}
+  .flow .lane{font-size:12px;font-weight:700;fill:var(--muted);letter-spacing:.04em}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin:6px 0}
+  .legend i{display:inline-block;width:12px;height:12px;border-radius:3px;border:2px solid;margin-right:6px;vertical-align:-1px}
+  .stages{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+  .stage{flex:1 1 140px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--card)}
+  .stage b{display:block;font-size:13px}
+  .stage span{font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Hướng dẫn test API: Sau khi đọc — Cây tri thức, EXP Sổ tay, huy hiệu</h1>
+<p class="sub">Nhánh <code>feat/interactions</code> · Luồng 3 mục 8 (WF-L3A UC-L3A-08, UC-L3A-09) · Cây tri thức lớn dần qua mọi truyện, +1 EXP khi lưu từ mới, huy hiệu <code>WORD_COLLECTOR_50</code> và <code>ROADMAP_FINISHER</code>.</p>
+
+<nav class="card">
+  <strong>Mục lục</strong>
+  <ol>
+    <li><a href="#prep">Chuẩn bị và quy ước</a></li>
+    <li><a href="#rules">Luật EXP và Cây tri thức</a></li>
+    <li><a href="#order">Sơ đồ thứ tự gọi API</a></li>
+    <li><a href="#arch">Sơ đồ API giao tiếp với nhau</a></li>
+    <li><a href="#setup">Bước 0: tạo dữ liệu nền</a></li>
+    <li><a href="#api1">API 1: Xem thành tích và cây</a></li>
+    <li><a href="#api2">API 2: Tưới cây</a></li>
+    <li><a href="#api3">API 3: Lưu từ vào Sổ tay</a></li>
+    <li><a href="#api4">API 4: Xóa từ khỏi Sổ tay</a></li>
+    <li><a href="#api5">API 5: Hoàn thành truyện và ROADMAP_FINISHER</a></li>
+    <li><a href="#scenario">Kịch bản end-to-end</a></li>
+    <li><a href="#checklist">Checklist tổng hợp</a></li>
+  </ol>
+</nav>
+
+<h2 id="prep">1. Chuẩn bị và quy ước</h2>
+<div class="card">
+  <ul>
+    <li>Chạy Core API (Swagger ở trang gốc hoặc Postman). Đặt <code>BASE</code> = địa chỉ API, ví dụ <code>http://localhost:5259</code>.</li>
+    <li>Database phải đã áp migration <code>AddKnowledgeTreesAndNotebookRemovedAt</code> (bảng <code>knowledge_trees</code>, cột <code>vocabulary_notebook_entries.RemovedAt</code>).</li>
+    <li>Hai loại token: <span class="who parent">PARENT_TOKEN</span> (tài khoản User, chủ hồ sơ) và <span class="who child">CHILD_TOKEN</span> (token của trẻ). Mọi API của trang này trừ lộ trình đều dùng <span class="who child">CHILD_TOKEN</span>; trẻ được lấy từ token, không truyền <code>childProfileId</code>.</li>
+    <li>Mọi response có dạng <code>{ "success": ..., "message": ..., "data": ... }</code>. Lỗi nghiệp vụ trả 400/403/404/409 kèm <code>message</code>.</li>
+    <li>Không có API nào ở đây gọi AI. Không trừ lượt tạo truyện.</li>
+  </ul>
+  <table>
+    <tr><th>Biến</th><th>Lấy ở đâu</th></tr>
+    <tr><td><code>PARENT_TOKEN</code>, <code>REFRESH</code></td><td>Bước 0.1 (<code>data.accessToken</code>, <code>data.refreshToken</code>)</td></tr>
+    <tr><td><code>CHILD_ID</code></td><td>Bước 0.2 (<code>data.id</code>), hồ sơ đã Active</td></tr>
+    <tr><td><code>STORY_A</code>, <code>STORY_B</code></td><td>Hai truyện <code>Ready</code> trẻ đọc được, có từ vựng và quiz</td></tr>
+    <tr><td><code>CHILD_TOKEN</code></td><td>Bước 0.4 (<code>data.accessToken</code>)</td></tr>
+    <tr><td><code>SESSION_ID</code></td><td>Bước 0.5 (<code>data.sessionId</code>)</td></tr>
+    <tr><td><code>VOCAB_1</code>, <code>VOCAB_2</code></td><td>Bước 0.6 (<code>data.vocabulary[].id</code>)</td></tr>
+    <tr><td><code>QUIZ_ITEM</code></td><td>Bước 0.7 (<code>GET /api/v1/child/quiz/sessions/{SESSION_ID}</code>)</td></tr>
+    <tr><td><code>ENTRY_ID</code></td><td>API 3 (<code>data.entryId</code>)</td></tr>
+  </table>
+</div>
+
+<h2 id="rules">2. Luật EXP và Cây tri thức</h2>
+<div class="card">
+  <table>
+    <tr><th>Nguồn EXP</th><th>Cộng</th><th>Khi nào không cộng</th></tr>
+    <tr><td>Hoàn thành truyện (<code>POST .../complete</code>)</td><td>+10</td><td>Đọc lại truyện đã từng hoàn thành; gọi complete lần hai</td></tr>
+    <tr><td>Câu quiz đúng (<code>POST /child/quiz/.../answers</code>)</td><td>+2</td><td>Câu đó đã từng đúng ở lần nào trước</td></tr>
+    <tr><td>Lưu từ mới vào Sổ tay (<code>POST /child/notebook/.../words</code>)</td><td>+1</td><td>Từ đã có trong sổ; lưu lại từ đã xóa</td></tr>
+    <tr><td>Tưới cây</td><td>0</td><td>Tưới <strong>không làm giảm</strong> <code>expTotal</code></td></tr>
+  </table>
+  <p><strong>Mốc của cây</strong> (tính theo EXP đã tưới vào cây đang trồng, <code>currentTreeExp</code>):</p>
+  <div class="stages">
+    <div class="stage"><b>SEED · Hạt</b><span>0 – 29</span></div>
+    <div class="stage"><b>SPROUT · Mầm</b><span>30 – 99</span></div>
+    <div class="stage"><b>SAPLING · Cây non</b><span>100 – 249</span></div>
+    <div class="stage"><b>GROWN · Cây lớn</b><span>250 – 499</span></div>
+    <div class="stage"><b>FLOWERING · Ra hoa</b><span>500</span></div>
+  </div>
+  <ul>
+    <li><code>expToWater = max(0, expTotal − expInvested)</code>. Mỗi lần tưới đổ hết số này, nhưng không vượt 500 cho cây hiện tại; phần dư giữ lại.</li>
+    <li>Cây đạt 500 → <code>FLOWERING</code>, được giữ nguyên cho trẻ ngắm. Lần tưới kế tiếp (còn EXP chưa tưới): cây vào vườn (<code>floweredTreeCount + 1</code>), trồng hạt mới và tưới hạt đó (<code>newTreePlanted = true</code>).</li>
+    <li>Cây không reset khi đọc truyện mới, hết lộ trình, bật Hold Mode hay tạm dừng hồ sơ. Không gắn với lộ trình.</li>
+    <li>Huy hiệu: <code>WORD_COLLECTOR_50</code> khi số từ đang hiện trong sổ đạt 50 ngay sau một lần lưu; <code>ROADMAP_FINISHER</code> khi trẻ đọc xong truyện cuối của lộ trình và không ở Hold Mode (cùng lúc phụ huynh nhận <code>RoadmapCompleted</code>). Mỗi huy hiệu nhận một lần.</li>
+  </ul>
+</div>
+
+<h2 id="order">3. Sơ đồ thứ tự gọi API</h2>
+<p>Đi từ trên xuống ở cột trái để có dữ liệu, rồi sang cột phải. Ô <span class="who parent">viền xanh lam</span> dùng token phụ huynh, ô <span class="who child">viền tím</span> dùng token của trẻ.</p>
+<div class="legend"><span><i style="border-color:var(--parent)"></i>Phụ huynh</span><span><i style="border-color:var(--child)"></i>Trẻ</span><span><i style="border-color:var(--sys)"></i>Hệ thống</span></div>
+<div class="flow">
+<svg viewBox="0 0 820 610" role="img" aria-label="Sơ đồ thứ tự gọi API">
+  <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--muted)"/></marker></defs>
+
+  <text class="lane" x="20" y="18">CHUẨN BỊ</text>
+  <rect class="pbox" x="20" y="28" width="360" height="44" rx="8"/><text x="34" y="48">0.1 Đăng nhập phụ huynh</text><text class="small" x="34" y="64">POST /api/v1/Auth/login</text>
+  <rect class="pbox" x="20" y="88" width="360" height="44" rx="8"/><text x="34" y="108">0.2 Hồ sơ trẻ Active (tạo, Learning, Safety, activate)</text><text class="small" x="34" y="124">POST /ChildProfile · /LearningProfile · /SafetyPolicy · PATCH activate</text>
+  <rect class="pbox" x="20" y="148" width="360" height="44" rx="8"/><text x="34" y="168">0.3 Thêm STORY_A vào lộ trình (cho API 5)</text><text class="small" x="34" y="184">POST /api/v1/ChildRoadmap/stories</text>
+  <rect class="pbox" x="20" y="208" width="360" height="44" rx="8"/><text x="34" y="228">0.4 Mở phiên trẻ → CHILD_TOKEN</text><text class="small" x="34" y="244">POST /api/v1/ChildAccessCredential/{id}/handover</text>
+  <rect class="cbox" x="20" y="268" width="360" height="44" rx="8"/><text x="34" y="288">0.5 Mở phiên đọc STORY_A → SESSION_ID</text><text class="small" x="34" y="304">POST /api/v1/child/reading/sessions</text>
+  <rect class="cbox" x="20" y="328" width="360" height="44" rx="8"/><text x="34" y="348">0.6 Lấy nội dung → VOCAB_1, VOCAB_2</text><text class="small" x="34" y="364">GET /api/v1/child/reading/sessions/{id}/content</text>
+  <rect class="cbox" x="20" y="388" width="360" height="44" rx="8"/><text x="34" y="408">0.7 Lấy quiz → QUIZ_ITEM</text><text class="small" x="34" y="424">GET /api/v1/child/quiz/sessions/{id}</text>
+  <path class="arrow" d="M200 72V88M200 132V148M200 192V208M200 252V268M200 312V328M200 372V388" marker-end="url(#ah)"/>
+
+  <text class="lane" x="440" y="18">KIẾM EXP</text>
+  <rect class="cbox" x="440" y="28" width="360" height="44" rx="8"/><text x="454" y="48">API 3 · Lưu từ (+1, có thể WORD_COLLECTOR_50)</text><text class="small" x="454" y="64">POST /api/v1/child/notebook/sessions/{id}/words</text>
+  <rect class="cbox" x="440" y="88" width="360" height="44" rx="8"/><text x="454" y="108">API 4 · Xóa từ (ẩn, không trừ EXP)</text><text class="small" x="454" y="124">DELETE /api/v1/child/notebook/{entryId}</text>
+  <rect class="cbox" x="440" y="148" width="360" height="44" rx="8"/><text x="454" y="168">Trả lời quiz (+2 câu đúng lần đầu)</text><text class="small" x="454" y="184">POST /api/v1/child/quiz/sessions/{id}/answers</text>
+  <rect class="cbox" x="440" y="208" width="360" height="44" rx="8"/><text x="454" y="228">API 5 · Hoàn thành truyện (+10, ROADMAP_FINISHER)</text><text class="small" x="454" y="244">POST /api/v1/child/reading/sessions/{id}/complete</text>
+  <path class="arrow" d="M380 410H410V50H440" marker-end="url(#ah)"/>
+  <path class="arrow" d="M620 72V88M620 132V148M620 192V208" marker-end="url(#ah)"/>
+
+  <rect class="box" x="440" y="268" width="360" height="44" rx="8"/><text x="454" y="288">Hệ thống: thông báo RoadmapCompleted cho phụ huynh</text><text class="small" x="454" y="304">GET /api/v1/Notification (PARENT_TOKEN)</text>
+  <path class="arrow" d="M620 252V268" marker-end="url(#ah)"/>
+
+  <text class="lane" x="440" y="344">DÙNG EXP</text>
+  <rect class="cbox" x="440" y="354" width="360" height="44" rx="8"/><text x="454" y="374">API 1 · Xem thành tích: expTotal, badges, knowledgeTree</text><text class="small" x="454" y="390">GET /api/v1/child/rewards</text>
+  <rect class="cbox" x="440" y="414" width="360" height="44" rx="8"/><text x="454" y="434">API 2 · Tưới cây (đổ hết expToWater)</text><text class="small" x="454" y="450">POST /api/v1/child/rewards/knowledge-tree/water</text>
+  <rect class="cbox" x="440" y="474" width="360" height="44" rx="8"/><text x="454" y="494">API 1 lại · expToWater = 0, cây lên mốc</text><text class="small" x="454" y="510">GET /api/v1/child/rewards</text>
+  <path class="arrow" d="M620 312V354M620 398V414M620 458V474" marker-end="url(#ah)"/>
+  <path class="arrow" d="M800 494H812V376H800" marker-end="url(#ah)"/>
+  <text class="small" x="700" y="540">đọc tiếp để có thêm EXP → lặp lại</text>
+
+  <text class="small" x="20" y="580">Test mốc ra hoa (TC-W05 → W07) và 50 từ (TC-N07): cần nhiều EXP / nhiều từ, dùng câu SQL ở bước 0.8 trên DB local.</text>
+  <text class="small" x="20" y="598">Test bị chặn quyền: gọi API của trẻ bằng PARENT_TOKEN, hoặc không có token.</text>
+</svg>
+</div>
+
+<h2 id="arch">4. Sơ đồ API giao tiếp với nhau</h2>
+<p>API nào gọi service nào, service ghi vào bảng nào. Nét <span style="color:var(--db);font-weight:600">cam</span> là ghi dữ liệu. Điểm quan trọng: các API kiếm EXP chỉ ghi <code>achievements.ExpTotal</code>; API tưới cây chỉ <em>đọc</em> <code>ExpTotal</code> và chỉ <em>ghi</em> bảng <code>knowledge_trees</code>, nên hai việc chạy cùng lúc không ghi đè nhau.</p>
+<div class="legend"><span><i style="border-color:var(--child)"></i>API của trẻ</span><span><i style="border-color:var(--sys)"></i>Service</span><span><i style="border-color:var(--db);border-style:dashed"></i>Bảng dữ liệu</span></div>
+<div class="flow">
+<svg viewBox="0 0 900 540" role="img" aria-label="Sơ đồ API, service và bảng dữ liệu">
+  <defs>
+    <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--muted)"/></marker>
+    <marker id="ahw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--db)"/></marker>
+  </defs>
+  <text class="lane" x="20" y="18">API CỦA TRẺ</text>
+  <text class="lane" x="300" y="18">SERVICE</text>
+  <text class="lane" x="660" y="18">BẢNG</text>
+
+  <rect class="cbox" x="20" y="30" width="240" height="44" rx="8"/><text x="32" y="50">POST notebook/.../words</text><text class="small" x="32" y="66">API 3 · lưu từ</text>
+  <rect class="cbox" x="20" y="86" width="240" height="44" rx="8"/><text x="32" y="106">DELETE notebook/{entryId}</text><text class="small" x="32" y="122">API 4 · ẩn từ</text>
+  <rect class="cbox" x="20" y="150" width="240" height="44" rx="8"/><text x="32" y="170">POST quiz/.../answers</text><text class="small" x="32" y="186">trả lời quiz</text>
+  <rect class="cbox" x="20" y="210" width="240" height="44" rx="8"/><text x="32" y="230">POST reading/.../complete</text><text class="small" x="32" y="246">API 5 · hoàn thành</text>
+  <rect class="cbox" x="20" y="380" width="240" height="44" rx="8"/><text x="32" y="400">GET child/rewards</text><text class="small" x="32" y="416">API 1 · xem thành tích, cây</text>
+  <rect class="cbox" x="20" y="436" width="240" height="44" rx="8"/><text x="32" y="456">POST rewards/knowledge-tree/water</text><text class="small" x="32" y="472">API 2 · tưới cây</text>
+
+  <rect class="box" x="300" y="50" width="210" height="44" rx="8"/><text x="312" y="70">ChildNotebookService</text><text class="small" x="312" y="86">Collect · Remove (ẩn)</text>
+  <rect class="box" x="300" y="150" width="210" height="44" rx="8"/><text x="312" y="176">ChildQuizService</text>
+  <rect class="box" x="300" y="210" width="210" height="44" rx="8"/><text x="312" y="236">ChildReadingService</text>
+  <rect class="box" x="300" y="270" width="210" height="44" rx="8"/><text x="312" y="290">ChildRoadmapProgressRecorder</text><text class="small" x="312" y="306">gửi RoadmapCompleted</text>
+  <rect class="box" x="300" y="370" width="320" height="110" rx="8"/>
+  <text x="314" y="394">ChildRewardService</text>
+  <text class="small" x="314" y="414">OnWordCollected · OnQuizAnswered</text>
+  <text class="small" x="314" y="430">OnStoryCompleted · OnRoadmapFinished</text>
+  <text class="small" x="314" y="446">GetSummary · WaterKnowledgeTree</text>
+  <text class="small" x="314" y="468">Tưới cây: đọc ExpTotal, chỉ ghi knowledge_trees</text>
+
+  <rect class="dbox" x="660" y="30" width="220" height="40" rx="6"/><text x="672" y="54">vocabulary_notebook_entries</text>
+  <rect class="dbox" x="660" y="250" width="220" height="40" rx="6"/><text x="672" y="274">child_roadmap_items</text>
+  <rect class="dbox" x="660" y="300" width="220" height="40" rx="6"/><text x="672" y="324">notifications</text>
+  <rect class="dbox" x="660" y="360" width="220" height="40" rx="6"/><text x="672" y="384">achievements (ExpTotal)</text>
+  <rect class="dbox" x="660" y="405" width="220" height="40" rx="6"/><text x="672" y="429">badges</text>
+  <rect class="dbox" x="660" y="450" width="220" height="40" rx="6"/><text x="672" y="474">knowledge_trees</text>
+  <rect class="dbox" x="660" y="495" width="220" height="40" rx="6"/><text x="672" y="519">telemetry_logs</text>
+
+  <path class="arrow" d="M260 52H280V66H300M260 108H280V78H300" marker-end="url(#ah2)"/>
+  <path class="arrow" d="M260 172H300" marker-end="url(#ah2)"/>
+  <path class="arrow" d="M260 232H300" marker-end="url(#ah2)"/>
+  <path class="arrow" d="M260 402H300" marker-end="url(#ah2)"/>
+  <path class="arrow" d="M260 458H300" marker-end="url(#ah2)"/>
+  <path class="arrow" d="M405 254V270" marker-end="url(#ah2)"/>
+
+  <path class="arrow" d="M510 78H540M510 172H540M510 232H540M510 304H540"/>
+  <path class="arrow" d="M540 78V370" marker-end="url(#ah2)"/>
+  <text class="small" x="548" y="150">gọi thưởng</text>
+  <text class="small" x="548" y="164">EXP / huy hiệu</text>
+
+  <path class="warrow" d="M510 60H660" marker-end="url(#ahw)"/>
+  <path class="warrow" d="M510 280H620V270H660" marker-end="url(#ahw)"/>
+  <path class="warrow" d="M510 292H630V320H660" marker-end="url(#ahw)"/>
+  <path class="warrow" d="M620 380H660" marker-end="url(#ahw)"/>
+  <path class="warrow" d="M620 425H660" marker-end="url(#ahw)"/>
+  <path class="warrow" d="M620 470H660" marker-end="url(#ahw)"/>
+  <path class="warrow" d="M620 476H640V515H660" marker-end="url(#ahw)"/>
+</svg>
+</div>
+
+<h3>Trình tự khi hoàn thành truyện cuối của lộ trình (API 5)</h3>
+<div class="flow">
+<svg viewBox="0 0 820 340" role="img" aria-label="Trình tự hoàn thành truyện và trao ROADMAP_FINISHER">
+  <defs><marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--muted)"/></marker></defs>
+  <path class="arrow" d="M70 44V330M250 44V330M455 44V330M675 44V330" stroke-dasharray="3 4"/>
+  <rect class="cbox" x="10" y="10" width="120" height="34" rx="6"/><text x="22" y="32">Trẻ</text>
+  <rect class="box" x="170" y="10" width="160" height="34" rx="6"/><text x="182" y="32">ChildReadingService</text>
+  <rect class="box" x="380" y="10" width="150" height="34" rx="6"/><text x="392" y="32">ChildRewardService</text>
+  <rect class="box" x="560" y="10" width="230" height="34" rx="6"/><text x="572" y="32">ChildRoadmapProgressRecorder</text>
+
+  <path class="arrow" d="M70 75H250" marker-end="url(#ah3)"/><text class="small" x="78" y="69">POST .../complete</text>
+  <path class="arrow" d="M250 110H455" marker-end="url(#ah3)"/><text class="small" x="258" y="104">OnStoryCompletedAsync (+10)</text>
+  <path class="arrow" d="M250 145H675" marker-end="url(#ah3)"/><text class="small" x="258" y="139">RecordSessionCompletedAsync(sessionId, isRetake)</text>
+
+  <rect class="box" x="560" y="160" width="230" height="64" rx="6"/>
+  <text class="small" x="570" y="180">Bước lộ trình → Completed, mở bước kế</text>
+  <text class="small" x="570" y="196">Không còn bước và không Hold Mode:</text>
+  <text class="small" x="570" y="212">gửi RoadmapCompleted cho phụ huynh</text>
+
+  <path class="arrow" d="M675 255H455" marker-end="url(#ah3)"/><text class="small" x="470" y="249">OnRoadmapFinishedAsync</text>
+  <text class="small" x="262" y="268">trao ROADMAP_FINISHER (một lần) ←</text>
+  <path class="arrow" d="M675 290H250" marker-end="url(#ah3)"/><text class="small" x="470" y="284">RoadmapCompletionResult</text>
+  <path class="arrow" d="M250 320H70" marker-end="url(#ah3)"/><text class="small" x="78" y="314">expGained, newBadges (gộp)</text>
+</svg>
+</div>
+
+<h2 id="setup">5. Bước 0: tạo dữ liệu nền</h2>
+<p>Làm tuần tự. Các bước 0.1–0.4 dùng <span class="who parent">PARENT_TOKEN</span>, từ 0.5 dùng <span class="who child">CHILD_TOKEN</span>.</p>
+
+<h3><span class="m POST">POST</span>0.1 Đăng nhập phụ huynh <span class="who parent">không cần token</span></h3>
+<pre><code>POST {BASE}/api/v1/Auth/login
+{
+  "identifier": "email-hoac-username",
+  "password": "mat-khau"
+}</code></pre>
+<p>Lưu <code>data.accessToken</code> → <code>PARENT_TOKEN</code>, <code>data.refreshToken</code> → <code>REFRESH</code>.</p>
+
+<h3>0.2 Hồ sơ trẻ Active</h3>
+<p>Dùng hồ sơ đã Active, hoặc tạo mới theo thứ tự: <code>POST /api/v1/ChildProfile</code> → <code>POST /api/v1/LearningProfile/{CHILD_ID}</code> → <code>POST /api/v1/SafetyPolicy/{CHILD_ID}</code> (có <code>"consentRecorded": true</code>) → <code>PATCH /api/v1/ChildProfile/{CHILD_ID}/activate</code>. Body mẫu xem <code>docs/api/story-summary-api-test-guide.html</code> bước 0.2–0.5.</p>
+<div class="tip">Hồ sơ trẻ mới tạo chưa có dòng trong <code>achievements</code> và <code>knowledge_trees</code>. Đây là trạng thái tốt nhất để test từ đầu.</div>
+
+<h3><span class="m POST">POST</span>0.3 Thêm truyện vào lộ trình (chỉ cần cho API 5) <span class="who parent">PARENT_TOKEN</span></h3>
+<pre><code>POST {BASE}/api/v1/ChildRoadmap/stories
+{
+  "storyId": STORY_A,
+  "childProfileIds": [ CHILD_ID ],
+  "position": "End"
+}</code></pre>
+<p>Kiểm tra: <code>GET {BASE}/api/v1/ChildRoadmap/{CHILD_ID}</code> có đúng 1 bước <code>Open</code> là <code>STORY_A</code>.</p>
+
+<h3><span class="m POST">POST</span>0.4 Mở phiên trẻ → CHILD_TOKEN <span class="who parent">PARENT_TOKEN</span></h3>
+<pre><code>POST {BASE}/api/v1/ChildAccessCredential/{CHILD_ID}/handover
+{ "supervisorRefreshToken": "REFRESH" }</code></pre>
+<p>Lưu <code>data.accessToken</code> → <code>CHILD_TOKEN</code>.</p>
+
+<h3><span class="m POST">POST</span>0.5 Mở phiên đọc <span class="who child">CHILD_TOKEN</span></h3>
+<pre><code>POST {BASE}/api/v1/child/reading/sessions
+{ "storyId": STORY_A }</code></pre>
+<p>Lưu <code>data.sessionId</code> → <code>SESSION_ID</code>.</p>
+
+<h3><span class="m GET">GET</span>0.6 Lấy nội dung → id từ vựng <span class="who child">CHILD_TOKEN</span></h3>
+<pre><code>GET {BASE}/api/v1/child/reading/sessions/{SESSION_ID}/content</code></pre>
+<p>Lấy hai giá trị <code>data.vocabulary[].id</code> → <code>VOCAB_1</code>, <code>VOCAB_2</code>.</p>
+
+<h3><span class="m GET">GET</span>0.7 Lấy quiz <span class="who child">CHILD_TOKEN</span></h3>
+<pre><code>GET {BASE}/api/v1/child/quiz/sessions/{SESSION_ID}</code></pre>
+<p>Lấy một <code>quizItemId</code> → <code>QUIZ_ITEM</code>. Trả lời đúng một câu để có +2 EXP:</p>
+<pre><code>POST {BASE}/api/v1/child/quiz/sessions/{SESSION_ID}/answers
+{ "quizItemId": QUIZ_ITEM, "answer": "dap-an-dung" }</code></pre>
+
+<h3 id="sql">0.8 Câu SQL hỗ trợ (chỉ DB local / test)</h3>
+<p>Dùng để test mốc ra hoa và 50 từ mà không phải đọc hàng chục truyện. <strong>Không chạy trên DB dùng chung hay production.</strong></p>
+<pre><code>-- Cho trẻ có 520 EXP (tạo dòng nếu chưa có)
+INSERT INTO achievements ("ChildProfileId","ExpTotal","StreakDays","CreatedAt","IsDeleted")
+VALUES (CHILD_ID, 520, 0, NOW(), false)
+ON CONFLICT ("ChildProfileId") DO UPDATE SET "ExpTotal" = 520;
+
+-- Xem trạng thái cây
+SELECT * FROM knowledge_trees WHERE "ChildProfileId" = CHILD_ID;
+
+-- Đếm từ đang hiện trong Sổ tay
+SELECT COUNT(*) FROM vocabulary_notebook_entries
+WHERE "ChildProfileId" = CHILD_ID AND "RemovedAt" IS NULL AND NOT "IsDeleted";</code></pre>
+<div class="note">Muốn test <code>WORD_COLLECTOR_50</code> bằng SQL: chèn 49 dòng <code>vocabulary_notebook_entries</code> cho <code>CHILD_ID</code> với các <code>StoryVocabularyId</code> có thật (khác <code>VOCAB_1</code>), rồi gọi API 3 với <code>VOCAB_1</code>. Bảng có unique (<code>ChildProfileId</code>, <code>StoryVocabularyId</code>), nên mỗi dòng phải là một từ khác nhau.</div>
+
+<h2 id="api1">6. API 1: Xem thành tích và cây <span class="who child">CHILD_TOKEN</span></h2>
+<div class="card">
+<p><span class="m GET">GET</span><code>/api/v1/child/rewards</code></p>
+<p>Không body. Chỉ đọc, không tạo dòng nào trong DB.</p>
+<pre><code>{
+  "success": true,
+  "message": "Thao tác thành công.",
+  "data": {
+    "expTotal": 14,
+    "streakDays": 1,
+    "badges": [
+      { "code": "FIRST_STORY_COMPLETED", "name": "Truyện đầu tiên", "description": "...", "earned": true,  "earnedAt": "2026-11-02T08:00:00Z" },
+      { "code": "WORD_COLLECTOR_50",     "name": "Nhà sưu tầm từ",   "description": "Em đã lưu 50 từ vào Sổ tay!", "earned": false, "earnedAt": null },
+      { "code": "ROADMAP_FINISHER",      "name": "Về đích lộ trình", "description": "Em đã đọc hết các truyện bố mẹ chọn!", "earned": false, "earnedAt": null }
+    ],
+    "knowledgeTree": {
+      "stage": "SEED",
+      "stageName": "Hạt",
+      "currentTreeExp": 0,
+      "nextStageAt": 30,
+      "flowerAt": 500,
+      "floweredTreeCount": 0,
+      "expToWater": 14
+    }
+  }
+}</code></pre>
+</div>
+<div class="scroll"><table>
+<tr><th>Mã</th><th>Tình huống</th><th>Mong đợi</th></tr>
+<tr><td>TC-R01</td><td>Trẻ mới, chưa đọc gì</td><td><span class="s2">200</span>; <code>expTotal = 0</code>; <code>knowledgeTree.stage = "SEED"</code>, <code>expToWater = 0</code>, <code>nextStageAt = 30</code>; mọi badge <code>earned = false</code></td></tr>
+<tr><td>TC-R02</td><td>Sau khi kiếm 14 EXP (hoàn thành +10, 1 câu quiz +2, 2 từ +2), chưa tưới</td><td><span class="s2">200</span>; <code>expTotal = 14</code>, <code>expToWater = 14</code>, <code>currentTreeExp = 0</code>; DB chưa có dòng <code>knowledge_trees</code></td></tr>
+<tr><td>TC-R03</td><td>Danh sách badge</td><td>Có đủ 7 mã, gồm <code>WORD_COLLECTOR_50</code> và <code>ROADMAP_FINISHER</code></td></tr>
+<tr><td>TC-R04</td><td>Gọi bằng PARENT_TOKEN</td><td><span class="s4">403</span> (policy ChildSession)</td></tr>
+<tr><td>TC-R05</td><td>Không có header Authorization</td><td><span class="s4">401</span></td></tr>
+<tr><td>TC-R06</td><td>Hai trẻ khác nhau</td><td>Mỗi token chỉ thấy số liệu của trẻ đó</td></tr>
+</table></div>
+
+<h2 id="api2">7. API 2: Tưới cây <span class="who child">CHILD_TOKEN</span></h2>
+<div class="card">
+<p><span class="m POST">POST</span><code>/api/v1/child/rewards/knowledge-tree/water</code></p>
+<p>Không body. Đổ hết <code>expToWater</code>, tối đa tới 500 cho cây đang trồng. Tự lưu.</p>
+<pre><code>{
+  "success": true,
+  "message": "Thao tác thành công.",
+  "data": {
+    "expPoured": 14,
+    "newTreePlanted": false,
+    "previousStage": "SEED",
+    "tree": {
+      "stage": "SEED", "stageName": "Hạt", "currentTreeExp": 14, "nextStageAt": 30,
+      "flowerAt": 500, "floweredTreeCount": 0, "expToWater": 0
+    }
+  }
+}</code></pre>
+</div>
+<div class="scroll"><table>
+<tr><th>Mã</th><th>Trạng thái trước</th><th>Mong đợi</th></tr>
+<tr><td>TC-W01</td><td><code>expTotal = 14</code>, chưa có cây</td><td><span class="s2">200</span>; <code>expPoured = 14</code>, <code>tree.currentTreeExp = 14</code>, <code>stage = "SEED"</code>, <code>expToWater = 0</code>; DB tạo 1 dòng <code>knowledge_trees</code> (<code>ExpInvested = 14</code>, <code>LastWateredAt</code> có giá trị). API 1 sau đó: <code>expTotal</code> vẫn 14</td></tr>
+<tr><td>TC-W02</td><td>Gọi lại ngay (không còn EXP chưa tưới)</td><td><span class="s2">200</span>; <code>expPoured = 0</code>, <code>newTreePlanted = false</code>; DB không đổi (<code>LastWateredAt</code> giữ nguyên)</td></tr>
+<tr><td>TC-W03</td><td>Đã tưới 14, kiếm thêm 20 (<code>expTotal = 34</code>)</td><td><code>expPoured = 20</code>, <code>previousStage = "SEED"</code>, <code>tree.stage = "SPROUT"</code>, <code>currentTreeExp = 34</code>, <code>nextStageAt = 100</code>; vẫn 1 dòng cây</td></tr>
+<tr><td>TC-W04</td><td>Trẻ chưa có EXP nào</td><td><span class="s2">200</span>; <code>expPoured = 0</code>; <strong>không</strong> tạo dòng <code>knowledge_trees</code></td></tr>
+<tr><td>TC-W05</td><td>Cây 480, <code>expTotal = 520</code> (SQL bước 0.8)</td><td><code>expPoured = 20</code>, <code>tree.stage = "FLOWERING"</code>, <code>nextStageAt = null</code>, <code>expToWater = 20</code>, <code>newTreePlanted = false</code>, <code>floweredTreeCount = 0</code></td></tr>
+<tr><td>TC-W06</td><td>Tiếp TC-W05: cây đang FLOWERING, còn 20 chưa tưới</td><td><code>newTreePlanted = true</code>, <code>previousStage = "FLOWERING"</code>, <code>expPoured = 20</code>, <code>tree.stage = "SEED"</code>, <code>currentTreeExp = 20</code>, <code>floweredTreeCount = 1</code>; DB <code>ExpInvested = 520</code></td></tr>
+<tr><td>TC-W07</td><td>Cây FLOWERING (500), không còn EXP chưa tưới</td><td><code>expPoured = 0</code>, cây vẫn <code>FLOWERING</code>, <code>floweredTreeCount</code> không tăng</td></tr>
+<tr><td>TC-W08</td><td>Cây 0, <code>expTotal = 600</code></td><td>Lần 1: <code>expPoured = 500</code>, <code>FLOWERING</code>, <code>expToWater = 100</code>. Lần 2: <code>newTreePlanted = true</code>, <code>expPoured = 100</code>, <code>SAPLING</code>, <code>floweredTreeCount = 1</code></td></tr>
+<tr><td>TC-W09</td><td>Bấm 2 lần gần như cùng lúc (2 request song song) khi <code>expToWater = 14</code></td><td>Cả hai trả <span class="s2">200</span>; tổng <code>ExpInvested</code> chỉ tăng 14, không cộng đôi. (Lần tưới đầu tiên của trẻ có thể có 1 request lỗi do unique index — frontend nên khóa nút khi đang chờ)</td></tr>
+<tr><td>TC-W10</td><td>Trẻ đang Hold Mode</td><td>Vẫn tưới được (<span class="s2">200</span>); Hold Mode chỉ khóa mở truyện mới</td></tr>
+<tr><td>TC-W11</td><td>Trong lúc tưới, trẻ trả lời quiz ở tab khác</td><td><code>expTotal</code> sau cùng = trước + EXP quiz (không bị ghi đè bởi lần tưới)</td></tr>
+<tr><td>TC-W12</td><td>Gọi bằng PARENT_TOKEN / không token</td><td><span class="s4">403</span> / <span class="s4">401</span></td></tr>
+</table></div>
+
+<h2 id="api3">8. API 3: Lưu từ vào Sổ tay <span class="who child">CHILD_TOKEN</span></h2>
+<div class="card">
+<p><span class="m POST">POST</span><code>/api/v1/child/notebook/sessions/{sessionId}/words</code></p>
+<pre><code>{ "vocabularyId": VOCAB_1 }</code></pre>
+<p>Response (thêm 2 field mới <code>expGained</code>, <code>newBadges</code>):</p>
+<pre><code>{
+  "success": true,
+  "message": "Thao tác thành công.",
+  "data": {
+    "entryId": 31,
+    "vocabularyId": 501,
+    "term": "cà rốt",
+    "definition": "củ màu cam",
+    "audioUrl": "https://...signed-url...",
+    "storyId": 10,
+    "storyTitle": "Thỏ con và vườn rau",
+    "sceneIndex": 1,
+    "collectedAt": "2026-11-02T08:10:00Z",
+    "expGained": 1,
+    "newBadges": []
+  }
+}</code></pre>
+</div>
+<div class="scroll"><table>
+<tr><th>Mã</th><th>Tình huống</th><th>Mong đợi</th></tr>
+<tr><td>TC-N01</td><td>Lưu <code>VOCAB_1</code> lần đầu</td><td><span class="s2">200</span>; <code>expGained = 1</code>, <code>newBadges = []</code>; API 1: <code>expTotal</code> +1, <code>expToWater</code> +1; telemetry <code>VocabularyCollected</code> và <code>RewardGranted</code></td></tr>
+<tr><td>TC-N02</td><td>Lưu <code>VOCAB_1</code> lần hai (đang có trong sổ)</td><td><span class="s2">200</span>; cùng <code>entryId</code>, <code>expGained = 0</code>; không tạo dòng mới</td></tr>
+<tr><td>TC-N03</td><td>Xóa <code>VOCAB_1</code> (API 4) rồi lưu lại</td><td><span class="s2">200</span>; <strong>cùng</strong> <code>entryId</code> cũ, <code>expGained = 0</code>; DB <code>RemovedAt</code> về null; từ hiện lại trong <code>GET /child/notebook</code></td></tr>
+<tr><td>TC-N04</td><td>Lưu từ khi đang đọc lại truyện đã hoàn thành</td><td>Từ chưa từng lưu: <code>expGained = 1</code> (mỗi từ chỉ cộng một lần, không phụ thuộc lần đọc)</td></tr>
+<tr><td>TC-N05</td><td><code>vocabularyId</code> thuộc truyện khác với phiên</td><td><span class="s4">404</span> Không tìm thấy từ vựng</td></tr>
+<tr><td>TC-N06</td><td><code>sessionId</code> của trẻ khác</td><td><span class="s4">404</span> Không tìm thấy phiên đọc</td></tr>
+<tr><td>TC-N07</td><td>Sổ đang có 49 từ hiện, lưu từ thứ 50 (SQL bước 0.8)</td><td><code>expGained = 1</code>, <code>newBadges = ["WORD_COLLECTOR_50"]</code>; API 1 badge <code>earned = true</code></td></tr>
+<tr><td>TC-N08</td><td>Tiếp TC-N07: lưu từ thứ 51</td><td><code>newBadges = []</code>; chỉ có 1 dòng badge <code>WORD_COLLECTOR_50</code></td></tr>
+<tr><td>TC-N09</td><td>Có 49 từ hiện + 1 từ đã xóa, lưu 1 từ mới</td><td>Đủ 50 từ hiện → nhận badge (từ đã xóa không tính, nhưng từ mới thì tính)</td></tr>
+<tr><td>TC-N10</td><td>Gọi bằng PARENT_TOKEN / không token</td><td><span class="s4">403</span> / <span class="s4">401</span></td></tr>
+</table></div>
+
+<h2 id="api4">9. API 4: Xóa từ khỏi Sổ tay <span class="who child">CHILD_TOKEN</span></h2>
+<div class="card">
+<p><span class="m DELETE">DELETE</span><code>/api/v1/child/notebook/{entryId}</code></p>
+<p>Không body. Hành vi mới: chỉ <strong>ẩn</strong> (đặt <code>RemovedAt</code>), không xóa dòng, không trừ EXP, không thu hồi huy hiệu.</p>
+</div>
+<div class="scroll"><table>
+<tr><th>Mã</th><th>Tình huống</th><th>Mong đợi</th></tr>
+<tr><td>TC-D01</td><td>Xóa <code>ENTRY_ID</code> của chính trẻ</td><td><span class="s2">200</span>; <code>GET /api/v1/child/notebook</code> không còn từ đó; DB dòng vẫn còn, <code>RemovedAt</code> có giá trị</td></tr>
+<tr><td>TC-D02</td><td>Kiểm tra EXP sau khi xóa</td><td>API 1: <code>expTotal</code> không giảm</td></tr>
+<tr><td>TC-D03</td><td>Xóa lại cùng <code>ENTRY_ID</code></td><td><span class="s4">404</span> Không tìm thấy từ trong Sổ tay</td></tr>
+<tr><td>TC-D04</td><td><code>entryId</code> của trẻ khác</td><td><span class="s4">404</span>; dòng của trẻ kia không đổi</td></tr>
+<tr><td>TC-D05</td><td>Xem nghĩa từ đã xóa: <code>GET /api/v1/child/reading/sessions/{SESSION_ID}/vocabulary/{VOCAB_1}</code></td><td><span class="s2">200</span>; <code>isCollected = false</code></td></tr>
+<tr><td>TC-D06</td><td>Đã có <code>WORD_COLLECTOR_50</code>, xóa vài từ cho dưới 50</td><td>Badge vẫn <code>earned = true</code></td></tr>
+</table></div>
+
+<h2 id="api5">10. API 5: Hoàn thành truyện và ROADMAP_FINISHER <span class="who child">CHILD_TOKEN</span></h2>
+<div class="card">
+<p><span class="m POST">POST</span><code>/api/v1/child/reading/sessions/{sessionId}/complete</code></p>
+<p>Không body. <code>newBadges</code> giờ gộp cả huy hiệu từ lộ trình.</p>
+<pre><code>{
+  "success": true,
+  "message": "Thao tác thành công.",
+  "data": {
+    "expGained": 10,
+    "newBadges": [ "FIRST_STORY_COMPLETED", "ROADMAP_FINISHER" ],
+    "sessionId": 77,
+    "storyId": 10,
+    "isRetake": false,
+    "roadmapStepCompleted": true
+  }
+}</code></pre>
+</div>
+<div class="scroll"><table>
+<tr><th>Mã</th><th>Tình huống</th><th>Mong đợi</th></tr>
+<tr><td>TC-C01</td><td>Lộ trình chỉ có <code>STORY_A</code> (bước 0.3), hoàn thành phiên đọc <code>STORY_A</code> lần đầu</td><td><span class="s2">200</span>; <code>expGained = 10</code>, <code>roadmapStepCompleted = true</code>, <code>newBadges</code> chứa <code>ROADMAP_FINISHER</code>; phụ huynh có thông báo <code>RoadmapCompleted</code>; API 1 badge <code>earned = true</code></td></tr>
+<tr><td>TC-C02</td><td>Lộ trình có 2 truyện, hoàn thành truyện thứ nhất</td><td><code>roadmapStepCompleted = true</code>; <strong>không</strong> có <code>ROADMAP_FINISHER</code>; bước 2 chuyển Open</td></tr>
+<tr><td>TC-C03</td><td>Tiếp TC-C02: hoàn thành truyện thứ hai</td><td>Có <code>ROADMAP_FINISHER</code> và thông báo <code>RoadmapCompleted</code></td></tr>
+<tr><td>TC-C04</td><td>Đã có badge, phụ huynh thêm <code>STORY_B</code>, trẻ đọc xong <code>STORY_B</code></td><td>Phụ huynh vẫn nhận <code>RoadmapCompleted</code>; <code>newBadges</code> không có <code>ROADMAP_FINISHER</code> (mỗi trẻ một lần)</td></tr>
+<tr><td>TC-C05</td><td>Trẻ đang Hold Mode, đọc xong truyện cuối của lộ trình</td><td>Không có thông báo <code>RoadmapCompleted</code> và không có <code>ROADMAP_FINISHER</code></td></tr>
+<tr><td>TC-C06</td><td>Đọc lại truyện đã từng hoàn thành (<code>isRetake = true</code>)</td><td><code>expGained = 0</code>, <code>roadmapStepCompleted = false</code>, không có <code>ROADMAP_FINISHER</code></td></tr>
+<tr><td>TC-C07</td><td>Truyện không nằm trong lộ trình</td><td><code>roadmapStepCompleted = false</code>; vẫn +10 nếu đọc lần đầu</td></tr>
+<tr><td>TC-C08</td><td>Gọi complete lần hai cho cùng phiên</td><td><code>expGained = 0</code>, không trao badge lặp</td></tr>
+</table></div>
+
+<h2 id="scenario">11. Kịch bản end-to-end (trẻ mới)</h2>
+<div class="card scroll">
+<table>
+<tr><th>#</th><th>Gọi</th><th>expTotal</th><th>Cây (current / stage)</th><th>expToWater</th><th>Kiểm tra thêm</th></tr>
+<tr><td>1</td><td>API 1</td><td>0</td><td>0 / SEED</td><td>0</td><td>Chưa có dòng cây</td></tr>
+<tr><td>2</td><td>API 3 lưu <code>VOCAB_1</code>, <code>VOCAB_2</code></td><td>2</td><td>0 / SEED</td><td>2</td><td>Mỗi lần <code>expGained = 1</code></td></tr>
+<tr><td>3</td><td>Quiz: 1 câu đúng</td><td>4</td><td>0 / SEED</td><td>4</td><td>Kết quả câu: <code>expGained = 2</code></td></tr>
+<tr><td>4</td><td>API 5 complete <code>STORY_A</code> (truyện duy nhất của lộ trình)</td><td>14</td><td>0 / SEED</td><td>14</td><td><code>newBadges</code>: <code>FIRST_STORY_COMPLETED</code>, <code>ROADMAP_FINISHER</code></td></tr>
+<tr><td>5</td><td>API 2 tưới</td><td>14</td><td>14 / SEED</td><td>0</td><td><code>expPoured = 14</code></td></tr>
+<tr><td>6</td><td>API 4 xóa <code>VOCAB_1</code>, API 3 lưu lại</td><td>14</td><td>14 / SEED</td><td>0</td><td>Lưu lại <code>expGained = 0</code>, cùng <code>entryId</code></td></tr>
+<tr><td>7</td><td>Đọc <code>STORY_B</code> (+10), 3 câu đúng (+6)</td><td>30</td><td>14 / SEED</td><td>16</td><td>—</td></tr>
+<tr><td>8</td><td>API 2 tưới</td><td>30</td><td>30 / SPROUT</td><td>0</td><td><code>previousStage = "SEED"</code> → frontend chạy hiệu ứng lên mốc</td></tr>
+</table>
+</div>
+
+<h2 id="checklist">12. Checklist tổng hợp</h2>
+<div class="card">
+<ul>
+  <li>☐ Migration <code>AddKnowledgeTreesAndNotebookRemovedAt</code> đã áp; seed <code>69_knowledge_trees.sql</code> nạp được.</li>
+  <li>☐ API 1: TC-R01 → R06</li>
+  <li>☐ API 2: TC-W01 → W12 (W05–W08 cần SQL bước 0.8)</li>
+  <li>☐ API 3: TC-N01 → N10 (N07–N09 cần SQL bước 0.8)</li>
+  <li>☐ API 4: TC-D01 → D06</li>
+  <li>☐ API 5: TC-C01 → C08</li>
+  <li>☐ Kịch bản end-to-end mục 11 cho ra đúng từng cột.</li>
+  <li>☐ Mọi API của trẻ từ chối PARENT_TOKEN (403) và request không token (401).</li>
+  <li>☐ <code>expTotal</code> không bao giờ giảm sau khi tưới cây hay xóa từ.</li>
+</ul>
+<p class="sub">Nguồn: <code>ChildRewardService</code>, <code>KnowledgeTreePolicy</code>, <code>ChildNotebookService</code>, <code>ChildRoadmapProgressRecorder</code>, <code>ChildReadingService</code>; plan <code>docs/superpowers/plans/2026-11-02-cay-tri-thuc.md</code>.</p>
+</div>
+
+</div>
+<script>
+  document.querySelectorAll('pre').forEach(function (pre) {
+    var button = document.createElement('button');
+    button.className = 'copy';
+    button.type = 'button';
+    button.textContent = 'Copy';
+    button.addEventListener('click', function () {
+      try {
+        navigator.clipboard.writeText(pre.innerText.replace(/Copy$/, '').trim());
+        button.textContent = 'Đã copy';
+        setTimeout(function () { button.textContent = 'Copy'; }, 1200);
+      } catch (e) { button.textContent = 'Lỗi'; }
+    });
+    pre.appendChild(button);
+  });
+</script>
+</body>
+</html>

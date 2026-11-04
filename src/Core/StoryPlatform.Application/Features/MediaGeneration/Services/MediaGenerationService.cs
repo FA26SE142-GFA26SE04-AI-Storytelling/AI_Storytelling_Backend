@@ -65,7 +65,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         IMediaGenerationJobFailureFinalizer failureFinalizer,
         IMediaReadinessService readinessService,
         MediaGenerationOptions options,
-        ILogger<MediaGenerationService> logger, IChildProfileAccessGuard? supervision = null, TimeProvider? clock = null)
+        ILogger<MediaGenerationService> logger, IChildProfileAccessGuard? supervision = null, TimeProvider? clock = null,
+        IMediaUploadValidator? uploadValidator = null)
     {
         _unitOfWork = unitOfWork;
         _options = options;
@@ -87,6 +88,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         _failureFinalizer = failureFinalizer;
         _readinessService = readinessService;
         _logger = logger;
+        _uploadValidator = uploadValidator;
         _jobLease = TimeSpan.FromSeconds(Math.Max(Math.Clamp(options.JobLeaseMinutes, 1, 30) * 60,
             Math.Clamp(Math.Max(options.Images.ProviderTimeoutSeconds, options.Audio.ProviderTimeoutSeconds), 1, 600) + 180));
         _assetMaxAttempts = Math.Clamp(options.AssetMaxAttempts, 1, 5);
@@ -117,6 +119,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             readiness.ManualReviewAssetIds, readiness.ScenesWithoutValidBeats)
         {
             PackageRevision = version.MediaState.MediaPackageRevision,
+            MediaMode = CreatorMediaSelection.Mode(job),
+            IsAwaitingSelection = await HasUnselectedCreatorMediaAsync(job, cancellationToken),
             IsGenerated = readiness.IsReady,
             IsAwaitingConfirmation = story.Status == StoryStatus.MediaReview && readiness.IsReady && !confirmed,
             IsConfirmed = readiness.IsReady && confirmed,
@@ -152,7 +156,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
                 {
                     var asset = assets.FirstOrDefault(a => a.IsCurrent && a.IllustrationBeatId == beat.Id && a.Type == MediaType.Illustration);
                     return new IllustrationBeatMediaItem(beat.Id, beat.BeatOrder, beat.StartOffset, beat.EndOffset,
-                        beat.VisualFocus, asset?.Id, asset?.Status.ToString() ?? "Queued", asset?.Url);
+                        beat.VisualFocus, asset?.Id, asset?.Source == MediaAssetSource.Unspecified ? "AwaitingSelection" : asset?.Status.ToString() ?? "Queued", asset?.Url)
+                        { Source = asset?.Source.ToString() ?? "Unspecified" };
                 }).ToArray())
             {
                 Text = scene.SceneText,
@@ -160,13 +165,18 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
                 {
                     var audio = assets.FirstOrDefault(x => x.IsCurrent && x.StorySegmentId == segment.Id && x.Type == MediaType.TtsAudio);
                     return new AudioMediaItem(segment.Id, segment.SegmentOrder, segment.TextContent, audio?.Id,
-                        audio?.Status.ToString() ?? "Queued", audio?.Url, audio?.WordTimings);
+                        audio?.Source == MediaAssetSource.Unspecified ? "AwaitingSelection" : audio?.Status.ToString() ?? "Queued", audio?.Url, audio?.WordTimings)
+                        { Source = audio?.Source.ToString() ?? "Unspecified" };
                 }).ToArray()
             }).ToArray());
         var readiness = await _readinessService.CheckAsync(version.Id, null, cancellationToken);
         var confirmed = MediaPackageConfirmation.IsConfirmed(version);
+        var mediaJob = await _unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(x => x.ParentStoryPackageId == null &&
+            x.StoryVersionId == version.Id && x.Operation == GenerationJobOperation.GenerateMediaPackage, cancellationToken: cancellationToken);
         package = package with
         {
+            MediaMode = CreatorMediaSelection.Mode(mediaJob),
+            IsAwaitingSelection = await HasUnselectedCreatorMediaAsync(mediaJob, cancellationToken),
             PackageRevision = version.MediaState.MediaPackageRevision,
             IsGenerated = readiness.IsReady,
             IsAwaitingConfirmation = story.Status == StoryStatus.MediaReview && readiness.IsReady && !confirmed,
@@ -275,7 +285,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
                 asset.ValidationStatus = ValidationStatus.Pending;
                 asset.AttemptCount = 0;
                 asset.LastValidationReason = null;
-                asset.ValidationResultJson = null;
+                // Uploaded file identity and rights declarations are needed by the next validation attempt.
+                if (asset.Source != MediaAssetSource.UserUpload) asset.ValidationResultJson = null;
                 asset.CompletedAt = null;
                 _unitOfWork.Repository<MediaAsset>().Update(asset);
             }
@@ -407,6 +418,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
 
     public async Task<MediaJobProcessResult> ProcessNextAsync(CancellationToken cancellationToken = default)
     {
+        if (await TryFinalizeCreatorChoiceAsync(cancellationToken)) return MediaJobProcessResult.Completed;
         await ReconcileImageBranchesAsync(cancellationToken);
         if (await TryFinalizeNextAsync(cancellationToken)) return MediaJobProcessResult.Completed;
         var now = _clock.GetUtcNow().UtcDateTime;
@@ -509,7 +521,9 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             await GetOrCreateBeatsAsync(jobId, claimedToken, state.Version.Id, mediaContext, scene, cancellationToken);
             await PrepareSegmentsAsync(scene, cancellationToken);
         }
-        await QueueBranchesAsync(state, mediaContext, claimedToken, cancellationToken);
+        if (CreatorMediaSelection.Mode(state.Job) == "choose")
+            await PrepareCreatorChoiceAsync(state, mediaContext, claimedToken, scenes, cancellationToken);
+        else await QueueBranchesAsync(state, mediaContext, claimedToken, cancellationToken);
     }
 
     private async Task<MediaContext> GetOrCreateContextAsync(MediaState state, CancellationToken cancellationToken)

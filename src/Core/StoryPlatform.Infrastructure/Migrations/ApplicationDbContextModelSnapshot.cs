@@ -1593,6 +1593,13 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int?>("SceneIndex")
                         .HasColumnType("integer");
 
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("AiGenerated");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(30)
@@ -1718,11 +1725,18 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
-                    b.Property<int>("IllustrationBeatId")
+                    b.Property<int?>("IllustrationBeatId")
                         .HasColumnType("integer");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("GenerateImage");
 
                     b.Property<DateTime?>("LeaseExpiresAt")
                         .HasColumnType("timestamp with time zone");
@@ -5358,8 +5372,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasOne("StoryPlatform.Domain.Entities.IllustrationBeat", null)
                         .WithMany()
                         .HasForeignKey("IllustrationBeatId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("StoryPlatform.Domain.Entities.MediaAsset", null)
                         .WithMany()

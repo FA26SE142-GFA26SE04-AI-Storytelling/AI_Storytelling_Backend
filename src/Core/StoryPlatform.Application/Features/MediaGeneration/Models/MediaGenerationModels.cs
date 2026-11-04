@@ -88,6 +88,8 @@ public sealed record MediaGenerationProgress(
     public int? ConfirmedByUserId { get; init; }
     public DateTime? ConfirmedAt { get; init; }
     public IReadOnlyList<MediaGenerationIssue> Issues { get; init; } = [];
+    public string MediaMode { get; init; } = "auto";
+    public bool IsAwaitingSelection { get; init; }
 }
 
 /// <summary>Current package diagnostics only; no provider response, prompt or storage URL.</summary>
@@ -110,7 +112,8 @@ public sealed record MediaReadinessResult(
 
 public sealed record IllustrationBeatMediaItem(
     int BeatId, int BeatOrder, int StartOffset, int EndOffset, string VisualFocus,
-    int? AssetId, string Status, string? Url);
+    int? AssetId, string Status, string? Url)
+{ public string Source { get; init; } = "AiGenerated"; }
 
 public sealed record SceneMediaItem(int SceneId, int SceneIndex, IReadOnlyList<IllustrationBeatMediaItem> Illustrations)
 {
@@ -119,12 +122,15 @@ public sealed record SceneMediaItem(int SceneId, int SceneIndex, IReadOnlyList<I
 }
 
 public sealed record AudioMediaItem(int SegmentId, int SegmentOrder, string Text, int? AssetId,
-    string Status, string? Url, string? WordTimings);
+    string Status, string? Url, string? WordTimings)
+{ public string Source { get; init; } = "AiGenerated"; }
 
 public sealed record VocabularyAudioMediaItem(int VocabularyId, string Term, int? AssetId, string Status, string? Url);
 
 public sealed record StoryMediaPackage(int StoryId, int StoryVersionId, IReadOnlyList<SceneMediaItem> Scenes)
 {
+    public string MediaMode { get; init; } = "auto";
+    public bool IsAwaitingSelection { get; init; }
     public IReadOnlyList<MediaReplacementItem> Replacements { get; init; } = [];
     public IReadOnlyList<VocabularyAudioMediaItem> Vocabulary { get; init; } = [];
     public bool IsReady { get; init; }

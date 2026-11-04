@@ -231,6 +231,7 @@ public static class DependencyInjection
         services.AddSingleton<IParagraphSceneSegmentationProvider>(sp => sp.GetRequiredService<ParagraphSceneSegmentationProvider>());
         services.AddSingleton<IMediaContextExtractor>(sp => sp.GetRequiredService<GeminiMediaContextExtractor>());
         services.AddSingleton<IAudioQualityGate, BinaryAudioQualityGate>();
+        services.AddSingleton<StoryPlatform.Application.Features.MediaGeneration.Models.IMediaUploadValidator, CreatorMediaUploadValidator>();
         services.AddSingleton<IMediaGenerationJobFailureFinalizer, MediaGenerationJobFailureFinalizer>();
         services.AddHostedService<MediaGenerationWorker>();
         services.AddHostedService<ImageGenerationWorker>();

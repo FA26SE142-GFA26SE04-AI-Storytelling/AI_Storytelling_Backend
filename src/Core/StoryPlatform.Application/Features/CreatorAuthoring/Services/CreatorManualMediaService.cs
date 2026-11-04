@@ -16,7 +16,7 @@ namespace StoryPlatform.Application.Features.CreatorAuthoring.Services;
 
 public sealed record ConfirmManualContentRequest(
     [Range(1, int.MaxValue)] int VersionId,
-    [Required] string RevisionToken);
+    [Required] string RevisionToken, string MediaMode = "auto");
 
 public sealed record ConfirmManualContentResult(int StoryId, int VersionId, int JobId, string Status,
     string JobStatus, string ProgressUrl, string PackageUrl);
@@ -27,10 +27,15 @@ public sealed class CreatorManualMediaService(IUnitOfWork uow, GrayZoneContentCh
 {
     public async Task<ConfirmManualContentResult> ConfirmAsync(int userId, int storyId, ConfirmManualContentRequest input, CancellationToken ct = default)
     {
+        if (input.MediaMode is not ("auto" or "choose")) throw new BadRequestException("MEDIA_MODE_INVALID");
         var (story, version) = await LoadAsync(userId, storyId, input, ct);
         await CreatorPublicationGuard.EnsureWritableAsync(uow, storyId, version.Id, ct);
         var prior = await JobAsync(storyId, version.Id, ct);
-        if (prior is not null) return Result(story, prior);
+        if (prior is not null)
+        {
+            if (CreatorMediaSelection.Mode(prior) != input.MediaMode) throw new ConflictException("MEDIA_MODE_ALREADY_SELECTED");
+            return Result(story, prior);
+        }
         Validate(story, version);
         var source = Source(story, version);
         if (!checks.IsConfigured) throw new ConflictException("MODERATION_NOT_CONFIGURED");
@@ -51,6 +56,7 @@ public sealed class CreatorManualMediaService(IUnitOfWork uow, GrayZoneContentCh
             prior = await JobAsync(storyId, version.Id, ct);
             if (prior is not null)
             {
+                if (CreatorMediaSelection.Mode(prior) != input.MediaMode) throw new ConflictException("MEDIA_MODE_ALREADY_SELECTED");
                 await uow.CommitTransactionAsync(ct);
                 return Result(story, prior);
             }
@@ -88,6 +94,7 @@ public sealed class CreatorManualMediaService(IUnitOfWork uow, GrayZoneContentCh
                 RequestedByUserId = userId,
                 OperationKey = $"p5:{storyId}:{version.Id}",
                 Operation = GenerationJobOperation.GenerateMediaPackage,
+                GenerationMetadataJson = JsonSerializer.Serialize(new { mediaMode = input.MediaMode }),
                 Stage = JobStage.MediaPending,
                 Status = GenerationJobStatus.Pending,
                 MaxAttempts = 3,

@@ -68,6 +68,9 @@ public class PublicReviewSceneDto
 
 public class PublicReviewIllustrationDto
 {
+    public string Source { get; set; } = "AiGenerated";
+    public string? SourceDeclaration { get; set; }
+    public string? RightsDeclaration { get; set; }
     public int BeatOrder { get; set; }
     public string VisualFocus { get; set; } = string.Empty;
     public int? AssetId { get; set; }
@@ -76,6 +79,10 @@ public class PublicReviewIllustrationDto
 
 public class PublicReviewSegmentDto
 {
+    public string AudioSource { get; set; } = "AiGenerated";
+    public bool RequiresFullAudioReview { get; set; }
+    public string? SourceDeclaration { get; set; }
+    public string? RightsDeclaration { get; set; }
     public int SegmentId { get; set; }
     public int SegmentOrder { get; set; }
     public string Text { get; set; } = string.Empty;

@@ -10,6 +10,7 @@ public sealed class MediaAssetGenerationTaskConfiguration : IEntityTypeConfigura
     {
         builder.ToTable("media_asset_generation_tasks");
         builder.HasKey(x => x.Id);
+        builder.Property(x => x.Kind).HasConversion<string>().HasMaxLength(30).HasDefaultValue(StoryPlatform.Domain.Enums.MediaTaskKind.GenerateImage);
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(30).IsRequired();
         builder.Property(x => x.ConcurrencyToken).HasMaxLength(32).IsRequired().IsConcurrencyToken();
         builder.Property(x => x.ErrorCode).HasMaxLength(100);

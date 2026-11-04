@@ -64,6 +64,8 @@ public interface IMediaSafetyEvaluator
 
 public interface IMediaGenerationService
 {
+    Task<CreatorMediaCommandResult> SelectCreatorMediaAsync(int userId, int storyId, int targetId, bool image,
+        CreatorMediaCommand command, CreatorMediaUploadCommand? upload, GeneratedMedia? file, CancellationToken ct = default);
     Task<MediaGenerationProgress> GetProgressAsync(int userId, int storyId, CancellationToken cancellationToken = default);
     Task<StoryMediaPackage> GetPackageAsync(int userId, int storyId, CancellationToken cancellationToken = default);
     Task<MediaGenerationProgress> RetryAsync(int userId, int storyId, CancellationToken cancellationToken = default);

@@ -35,6 +35,7 @@ public class MediaAssetConfiguration : IEntityTypeConfiguration<MediaAsset>
         });
 
         builder.HasKey(x => x.Id);
+        builder.Property(x => x.Source).HasConversion<string>().HasMaxLength(20).HasDefaultValue(StoryPlatform.Domain.Enums.MediaAssetSource.AiGenerated);
         builder.Property(x => x.IsCurrent).HasDefaultValue(true);
         builder.HasOne<MediaAsset>().WithMany().HasForeignKey(x => x.ReplacesMediaAssetId).OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(x => new { x.StoryVersionId, x.RequestedPackageRevision });

@@ -8,6 +8,7 @@ namespace StoryPlatform.Domain.Entities;
 /// </summary>
 public class ModerationItem : BaseEntity
 {
+    public int? ParentStoryPackageId { get; set; }
     public ModerationItemType ItemType { get; set; }
     public ModerationItemStatus Status { get; set; } = ModerationItemStatus.Pending;
     public ModerationPriority Priority { get; set; } = ModerationPriority.Medium;

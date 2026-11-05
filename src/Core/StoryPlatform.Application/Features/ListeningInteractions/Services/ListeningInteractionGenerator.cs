@@ -74,11 +74,11 @@ public sealed class ListeningInteractionGenerator
         if (type == ListeningInteractionType.RolePlay && item.Zones.Any(zone => !zone.Any(scope.Plan.DialogueBlockIds.Contains)))
             throw new ConflictException("LISTENING_PLAN_INFEASIBLE");
         // Neo của các loại khác đã lưu; loại đang sinh không tự chặn mình.
-        var occupied = (await LoadSavedAsync(scope.Version.Id, ct)).Where(x => x.Type != type).Select(x => x.AnchorOffset).ToArray();
+        var occupied = (await LoadSavedAsync(scope.Version.Id, ct, scope.ParentStoryPackageId)).Where(x => x.Type != type).Select(x => x.AnchorOffset).ToArray();
         var context = RuleContext(scope, item, occupied);
         var vocabulary = type == ListeningInteractionType.FillBlank
             ? (await _unitOfWork.Repository<StoryVocabulary>().FindAsync(
-                x => x.StoryVersionId == scope.Version.Id && !x.IsDeleted, cancellationToken: ct)).Select(x => x.Term).ToArray()
+                x => x.StoryVersionId == scope.Version.Id && x.ParentStoryPackageId == scope.ParentStoryPackageId && !x.IsDeleted, cancellationToken: ct)).Select(x => x.Term).ToArray()
             : [];
         var state = durableState ?? new ListeningJobState { MaximumValidationAttempts = _maxAttempts };
         var fingerprint = ListeningJobState.Fingerprint(scope);
@@ -88,7 +88,7 @@ public sealed class ListeningInteractionGenerator
         {
             var request = ListeningInteractionAiMapper.BuildRequest(requestIdPrefix, type, item.Count, context.AgeBand, scope.Context.Language,
                 scope.Version.Title, scope.Version.Lesson ?? string.Empty, scope.Blocks, scope.Plan.DialogueBlockIds, occupied,
-                item.Zones, vocabulary, []);
+                item.Zones, vocabulary, []) with { ReadingLevel = scope.Context.ReadingLevel };
             // Direct construction without a gate is retained for isolated unit fixtures. Production DI always supplies the shared gate.
             if (_gate is not null || durableState is not null)
             {
@@ -163,16 +163,17 @@ public sealed class ListeningInteractionGenerator
         GradingWords = _gradingWords
     };
 
-    public async Task<IReadOnlyList<ListeningInteraction>> LoadSavedAsync(int versionId, CancellationToken ct) =>
+    public async Task<IReadOnlyList<ListeningInteraction>> LoadSavedAsync(int versionId, CancellationToken ct, int? parentStoryPackageId = null) =>
         await _unitOfWork.Repository<ListeningInteraction>().FindAsync(
-            x => x.StoryVersionId == versionId && !x.IsDeleted, cancellationToken: ct);
+            x => x.StoryVersionId == versionId && x.ParentStoryPackageId == parentStoryPackageId && !x.IsDeleted, cancellationToken: ct);
 
     /// <summary>Lưu draft đã qua luật. Người gọi lo transaction và lần SaveChanges cuối.</summary>
-    public async Task<int> InsertAsync(int versionId, IReadOnlyList<ListeningInteractionDraft> drafts, CancellationToken ct)
+    public async Task<int> InsertAsync(int versionId, IReadOnlyList<ListeningInteractionDraft> drafts, CancellationToken ct, int? parentStoryPackageId = null)
     {
         foreach (var draft in drafts)
         {
             var (interaction, options) = ListeningInteractionMapper.ToEntities(draft, versionId);
+            interaction.ParentStoryPackageId = parentStoryPackageId;
             await _unitOfWork.Repository<ListeningInteraction>().AddAsync(interaction, ct);
             await _unitOfWork.SaveChangesAsync(ct); // option cần Id của tương tác
             foreach (var option in options) option.ListeningInteractionId = interaction.Id;
@@ -183,12 +184,12 @@ public sealed class ListeningInteractionGenerator
 
     /// <summary>Thay toàn bộ dòng của một loại: xoá mềm dòng cũ, tắt media gắn với chúng, rồi thêm dòng mới.</summary>
     public async Task<int> ReplaceAsync(
-        int versionId, ListeningInteractionType type, IReadOnlyList<ListeningInteractionDraft> drafts, CancellationToken ct)
+        int versionId, ListeningInteractionType type, IReadOnlyList<ListeningInteractionDraft> drafts, CancellationToken ct, int? parentStoryPackageId = null)
     {
         var interactionRepo = _unitOfWork.Repository<ListeningInteraction>();
         var optionRepo = _unitOfWork.Repository<ListeningInteractionOption>();
         var old = await interactionRepo.FindAsync(
-            x => x.StoryVersionId == versionId && x.Type == type && !x.IsDeleted, cancellationToken: ct);
+            x => x.StoryVersionId == versionId && x.ParentStoryPackageId == parentStoryPackageId && x.Type == type && !x.IsDeleted, cancellationToken: ct);
         // List, không dùng mảng: C# 14 gắn int[].Contains vào ReadOnlySpan và EF không dịch được.
         var ids = old.Select(x => x.Id).ToList();
         var options = await optionRepo.FindAsync(x => ids.Contains(x.ListeningInteractionId) && !x.IsDeleted, cancellationToken: ct);
@@ -204,7 +205,7 @@ public sealed class ListeningInteractionGenerator
         }
         await RetireMediaAsync(ids, options.Select(x => x.Id).ToList(), ct);
         await _unitOfWork.SaveChangesAsync(ct); // xoá mềm trước để neo cũ không đụng index unique khi thêm mới
-        var count = await InsertAsync(versionId, drafts, ct);
+        var count = await InsertAsync(versionId, drafts, ct, parentStoryPackageId);
         await _unitOfWork.SaveChangesAsync(ct);
         return count;
     }
@@ -227,7 +228,7 @@ public sealed class ListeningInteractionGenerator
     /// <summary>Luật trước khi duyệt (spec 5.3, 6.1): khớp kế hoạch, qua rules (kể cả vùng), không có neo lệch.</summary>
     public async Task<ListeningInspection> InspectAsync(ListeningScope scope, CancellationToken ct)
     {
-        var saved = await LoadSavedAsync(scope.Version.Id, ct);
+        var saved = await LoadSavedAsync(scope.Version.Id, ct, scope.ParentStoryPackageId);
         var ids = saved.Select(x => x.Id).ToList();
         var options = (await _unitOfWork.Repository<ListeningInteractionOption>().FindAsync(
                 x => ids.Contains(x.ListeningInteractionId) && !x.IsDeleted, cancellationToken: ct))

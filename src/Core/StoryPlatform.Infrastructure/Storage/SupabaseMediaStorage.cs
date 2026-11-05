@@ -59,6 +59,30 @@ public sealed class SupabaseMediaStorage : IMediaStorage
         return normalizedPath;
     }
 
+    public async Task<StoryPlatform.Application.Features.MediaStorage.Models.GeneratedMedia> ReadAsync(string storagePath, CancellationToken cancellationToken = default)
+    {
+        var normalized = NormalizePath(storagePath);
+        using var response = await _httpClient.GetAsync(BuildStorageUri($"object/authenticated/{EncodePath(_options.Bucket)}/{EncodePath(normalized)}"),
+            HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        const int limit = 32 * 1024 * 1024;
+        if (response.Content.Headers.ContentLength > limit) throw new InvalidOperationException("MEDIA_TOO_LARGE");
+        var mime = response.Content.Headers.ContentType?.MediaType ?? "";
+        if (!AllowedMimeTypes.Contains(mime)) throw new InvalidOperationException("UNSUPPORTED_MEDIA_TYPE");
+        await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        int read;
+        while ((read = await source.ReadAsync(chunk, cancellationToken)) != 0)
+        {
+            if (buffer.Length + read > limit) throw new InvalidOperationException("MEDIA_TOO_LARGE");
+            buffer.Write(chunk, 0, read);
+        }
+        var bytes = buffer.ToArray();
+        ValidateContentMatchesMime(bytes, mime);
+        return new(bytes, mime);
+    }
+
     private static void ValidateContentMatchesMime(byte[] bytes, string mimeType)
     {
         if (mimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
@@ -153,6 +177,8 @@ public sealed class SupabaseMediaStorage : IMediaStorage
     private static string NormalizePath(string storagePath)
     {
         if (string.IsNullOrWhiteSpace(storagePath)) throw new ArgumentException("Storage path is required.", nameof(storagePath));
+        if (storagePath.Contains(':') || storagePath.StartsWith("//", StringComparison.Ordinal))
+            throw new ArgumentException("Storage path must be a relative object key.", nameof(storagePath));
         var normalized = storagePath.Replace('\\', '/').Trim('/');
         var segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (segments.Length == 0 || segments.Any(segment => segment is "." or ".." || segment.Contains('?') || segment.Contains('#')))

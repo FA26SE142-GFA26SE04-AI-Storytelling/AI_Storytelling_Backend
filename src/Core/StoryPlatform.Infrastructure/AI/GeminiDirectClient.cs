@@ -116,7 +116,10 @@ public sealed class GeminiDirectClient : IAIStoryGenerationClient
     {
         var prompt = BuildSafetyPrompt(request);
         var response = await GenerateContentAsync(prompt, cancellationToken);
-        return ParseSafetyResponse(response, request.RequestId);
+        var result = ParseSafetyResponse(response, request.RequestId);
+        StoryPlatform.Contracts.AI.Models.ContentSafetyScoring.Validate(result, request.Story.Title + "\n" +
+            string.Join("\n", request.Story.StorySections.Select(x => x.Content)) + "\n" + request.Story.Lesson);
+        return result;
     }
 
     #endregion
@@ -510,6 +513,8 @@ Trả lời JSON:
 {{
     ""isAllowed"": true,
     ""safetyScore"": 100.0,
+    ""riskLevel"": ""none"",
+    ""evidence"": [],
     ""canRefine"": false,
     ""reasonCode"": ""CONTENT_SAFETY_ALLOWED"",
     ""violations"": []
@@ -782,6 +787,8 @@ Chỉ trả về JSON.";
 
             return new EvaluateContentSafetyResponse
             {
+                RiskLevel = GetString(root, "riskLevel"), Evidence = GetStringArray(root, "evidence"),
+                ScoreRuleVersion = StoryPlatform.Contracts.AI.Models.ContentSafetyScoring.Version,
                 RequestId = requestId,
                 IsAllowed = GetBool(root, "isAllowed"),
                 SafetyScore = TryGetPropertyCaseInsensitive(root, "safetyScore", out var scoreElement) &&

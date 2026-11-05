@@ -26,6 +26,9 @@ public interface ILearningBatchService
 {
     Task<LearningBatchPackage> GenerateAsync(StoryGenerationJob root, string token, StoryVersion version,
         AIStoryInputContextSnapshot context, CancellationToken ct);
+    Task<LearningBatchPackage> GenerateSelectedAsync(StoryGenerationJob root, string token, StoryVersion version,
+        AIStoryInputContextSnapshot context, bool vocabulary, bool quiz, CancellationToken ct) =>
+        vocabulary && quiz ? GenerateAsync(root, token, version, context, ct) : throw new NotSupportedException("SELECTED_LEARNING_NOT_SUPPORTED");
     Task<GenerateQuizResponse> ReadQuizAsync(int storyId, int versionId, CancellationToken ct);
     Task ValidateSourceAsync(int rootJobId, Story story, StoryVersion version, int actor, CancellationToken ct);
 }

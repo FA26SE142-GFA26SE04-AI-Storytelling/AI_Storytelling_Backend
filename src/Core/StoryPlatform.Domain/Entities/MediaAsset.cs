@@ -15,6 +15,9 @@ namespace StoryPlatform.Domain.Entities;
 /// </summary>
 public class MediaAsset : BaseEntity
 {
+    public MediaAssetSource Source { get; set; } = MediaAssetSource.AiGenerated;
+    public int? ParentStoryPackageId { get; set; }
+
     public bool IsCurrent { get; set; } = true;
     public int? ReplacesMediaAssetId { get; set; }
     public int? RequestedPackageRevision { get; set; }

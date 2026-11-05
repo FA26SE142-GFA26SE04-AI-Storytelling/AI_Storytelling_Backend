@@ -5,7 +5,7 @@ using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.ManualAuthoring.Services;
 
-public sealed record ManualDraftContext(int ChildProfileId, string? Purpose);
+public sealed record ManualDraftContext(int? ChildProfileId, string? Purpose);
 
 public interface IManualAuthoringPolicy
 {

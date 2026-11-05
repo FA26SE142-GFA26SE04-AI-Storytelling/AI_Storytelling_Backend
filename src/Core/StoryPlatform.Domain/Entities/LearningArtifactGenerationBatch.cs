@@ -4,6 +4,8 @@ namespace StoryPlatform.Domain.Entities;
 
 public class LearningArtifactGenerationBatch : BaseEntity
 {
+    public int? ParentStoryPackageId { get; set; }
+
     public int StoryId { get; set; }
     public int StoryVersionId { get; set; }
     public int RootJobId { get; set; }

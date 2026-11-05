@@ -97,12 +97,15 @@ internal static class GenerationSchemas
         {
           "type":"object",
           "properties":{
+            "riskLevel":{"type":"string","enum":["none","low","moderate","high","critical"]},
+            "safetyScore":{"type":"number","minimum":0,"maximum":100},
+            "evidence":{"type":"array","items":{"type":"string"}},
             "isAllowed":{"type":"boolean"},
             "canRefine":{"type":"boolean"},
             "reasonCode":{"type":"string"},
             "violations":{"type":"array","items":{"type":"string"}}
           },
-          "required":["isAllowed","canRefine","reasonCode","violations"],
+          "required":["riskLevel","safetyScore","evidence","isAllowed","canRefine","reasonCode","violations"],
           "additionalProperties":false
         }
         """);

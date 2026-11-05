@@ -9,7 +9,7 @@ public class StoryConfiguration : IEntityTypeConfiguration<Story>
     public void Configure(EntityTypeBuilder<Story> builder)
     {
         builder.ToTable("stories", t => t.HasCheckConstraint("CK_Story_ScopeChild",
-            "(\"Scope\" = 'Parent' AND \"ChildProfileId\" IS NOT NULL AND \"ChildProfileId\" > 0) OR (\"Scope\" = 'Creator' AND \"ChildProfileId\" IS NULL)"));
+            "(\"Scope\" = 'Parent' AND ((\"ChildProfileId\" IS NOT NULL AND \"ChildProfileId\" > 0) OR (\"Source\" = 'Manual' AND \"ChildProfileId\" IS NULL AND \"CreateOperationId\" IS NOT NULL AND \"CreateOperationId\" <> ''))) OR (\"Scope\" = 'Creator' AND \"ChildProfileId\" IS NULL)"));
 
         builder.HasKey(s => s.Id);
 

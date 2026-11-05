@@ -83,7 +83,8 @@ public sealed record ListeningRuleContext
 
 /// <summary>Ngữ cảnh, các đoạn và kế hoạch tương tác của một version.</summary>
 public sealed record ListeningScope(
-    StoryVersion Version, AIStoryInputContextSnapshot Context, IReadOnlyList<StoryTextBlock> Blocks, ListeningInteractionPlan Plan);
+    StoryVersion Version, AIStoryInputContextSnapshot Context, IReadOnlyList<StoryTextBlock> Blocks, ListeningInteractionPlan Plan)
+{ public int? ParentStoryPackageId { get; init; } }
 
 public sealed record ListeningGenerationResult(IReadOnlyList<ListeningInteractionDraft> Drafts, GenerationMetadataDto Metadata);
 

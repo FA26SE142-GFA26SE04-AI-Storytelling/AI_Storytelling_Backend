@@ -19,8 +19,18 @@ public static class LearningBatchAccess
     public static string Source(Story story, StoryVersion version) => Hash(new { StoryId = story.Id, VersionId = version.Id, version.Title, version.Content,
         version.Lesson, story.AgeBand, story.ReadingLevel, story.VocabularyLevel, story.Language, story.OutputMode });
 
-    public static async Task<string> AuthorizeAsync(IUnitOfWork uow, IChildProfileAccessGuard guard, Story story, StoryVersion version, int actor, CancellationToken ct)
+    public static async Task<string> AuthorizeAsync(IUnitOfWork uow, IChildProfileAccessGuard guard, Story story, StoryVersion version, int actor, CancellationToken ct, int? parentStoryPackageId = null)
     {
+        if (parentStoryPackageId is int packageId)
+        {
+            var package = await uow.Repository<ParentStoryPackage>().FirstOrDefaultAsync(x => x.Id == packageId && !x.IsDeleted, cancellationToken: ct)
+                ?? throw new ConflictException("PARENT_PACKAGE_NOT_FOUND");
+            if (package.StoryId != story.Id || package.StoryVersionId != version.Id || package.CreatedByUserId != actor || package.Status != "Generating")
+                throw new ConflictException("STALE_LEARNING_SOURCE");
+            await ParentPackageContext.ValidateAsync(uow, guard, package, ct, true);
+            GrayZoneGate.EnsureCanContinue(story, version);
+            return package.ContextFingerprint;
+        }
         if (story.IsDeleted || version.IsDeleted || !version.IsCurrent || version.StoryId != story.Id || string.IsNullOrWhiteSpace(version.Content) ||
             story.OutputMode != StoryOutputMode.Learning || story.Status is not (StoryStatus.Draft or StoryStatus.OutlineReview or StoryStatus.ContentReview))
             throw new ConflictException("STALE_LEARNING_SOURCE");

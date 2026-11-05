@@ -49,7 +49,7 @@ public sealed partial class MediaGenerationService
                 child.ParentJobId = parent.Id;
                 child.MediaContextId = context.Id;
                 child.MediaPackageRevision = revision;
-                var replacement = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(x => x.StoryVersionId == state.Version.Id &&
+                var replacement = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(x => x.ParentStoryPackageId == null && x.StoryVersionId == state.Version.Id &&
                     x.ReplacesMediaAssetId != null && x.ReplacementResolvedAt == null && x.RequestedPackageRevision == revision,
                     cancellationToken: ct);
                 if (replacement is not null && BranchOperation(replacement.Type) != operation)
@@ -78,6 +78,8 @@ public sealed partial class MediaGenerationService
     public async Task<MediaJobProcessResult> ProcessBranchNextAsync(MediaType type, CancellationToken ct = default)
     {
         if (type is not (MediaType.Illustration or MediaType.TtsAudio)) throw new ArgumentOutOfRangeException(nameof(type));
+        var selectedWork = await ProcessCreatorChoiceTaskAsync(type, ct);
+        if (selectedWork.JobFound) return selectedWork;
         if (type == MediaType.Illustration) return await ProcessImageTaskNextAsync(ct);
         var now = _clock.GetUtcNow().UtcDateTime;
         var operation = BranchOperation(type);
@@ -149,7 +151,7 @@ public sealed partial class MediaGenerationService
                     await EnsureSegmentAudioAsync(child.Id, token, child.StoryId, versionId, context, scene, segment, ct);
             }
             var vocabulary = await _unitOfWork.Repository<StoryVocabulary>().FindAsync(
-                x => x.StoryVersionId == versionId && !x.IsDeleted, cancellationToken: ct);
+                x => x.ParentStoryPackageId == null && x.StoryVersionId == versionId && !x.IsDeleted, cancellationToken: ct);
             foreach (var word in vocabulary.OrderBy(x => x.Id))
                 await EnsureVocabularyAudioAsync(child.Id, token, child.StoryId, versionId, context, word, ct);
             await EnsureListeningAudioAsync(child.Id, token, child.StoryId, versionId, context, ct);
@@ -202,7 +204,7 @@ public sealed partial class MediaGenerationService
                 await RollbackMediaAsync(ct);
                 return;
             }
-            var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(x => x.StoryVersionId == branch.StoryVersionId &&
+            var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(x => x.ParentStoryPackageId == null && x.StoryVersionId == branch.StoryVersionId &&
                 (x.Type == type || type == MediaType.TtsAudio && x.Type == MediaType.ListeningAudio) &&
                 (x.IsCurrent || x.ReplacesMediaAssetId != null && x.ReplacementResolvedAt == null), cancellationToken: ct);
             var attempts = assets.Where(x => x.Status != MediaStatus.Ready).Select(x => x.AttemptCount).DefaultIfEmpty(0).Max();
@@ -259,6 +261,7 @@ public sealed partial class MediaGenerationService
             x.Status == GenerationJobStatus.Processing && x.MediaContextId != null, cancellationToken: ct);
         foreach (var parent in parents)
         {
+            if (CreatorMediaSelection.Mode(parent) == "choose") continue;
             var branches = await _unitOfWork.Repository<StoryGenerationJob>().FindAsync(x => x.ParentJobId == parent.Id &&
                 x.MediaPackageRevision == parent.MediaPackageRevision, cancellationToken: ct);
             if (branches.Count != 2 || branches.Any(x => x.Status is GenerationJobStatus.Pending or GenerationJobStatus.Processing)) continue;
@@ -285,6 +288,24 @@ public sealed partial class MediaGenerationService
 
     private async Task<MediaBranchProgress> BranchProgressAsync(StoryGenerationJob parent, MediaType type, int required, int ready, CancellationToken ct)
     {
+        if (CreatorMediaSelection.Mode(parent) == "choose")
+        {
+            var chosen = await _unitOfWork.Repository<MediaAssetGenerationTask>().FindAsync(x => x.BranchJobId == parent.Id &&
+                x.PackageRevision == parent.MediaPackageRevision && (type == MediaType.Illustration
+                    ? x.Kind == MediaTaskKind.GenerateChosenImage || x.Kind == MediaTaskKind.ValidateUploadedImage
+                    : x.Kind == MediaTaskKind.GenerateChosenAudio || x.Kind == MediaTaskKind.ValidateUploadedAudio), cancellationToken: ct);
+            var unselected = await _unitOfWork.Repository<MediaAsset>().ExistsAsync(x => x.StoryVersionId == parent.StoryVersionId &&
+                x.Type == type && x.IsCurrent && !x.IsDeleted && x.Source == MediaAssetSource.Unspecified, ct);
+            var status = chosen.Any(x => x.Status == GenerationJobStatus.Processing) ? "Processing" :
+                chosen.Any(x => x.Status == GenerationJobStatus.Pending) ? "Pending" : chosen.Any(x => x.Status == GenerationJobStatus.Failed)
+                    ? "Failed" : unselected ? "AwaitingSelection" : ready == required ? "Completed" : "Preparing";
+            return new(status, required, ready, chosen.FirstOrDefault(x => x.ErrorCode != null)?.ErrorCode,
+                chosen.Where(x => x.Status == GenerationJobStatus.Pending).Select(x => x.NextAttemptAt).OrderBy(x => x).FirstOrDefault())
+            {
+                RunningCount = chosen.Count(x => x.Status == GenerationJobStatus.Processing),
+                QueuedCount = chosen.Count(x => x.Status == GenerationJobStatus.Pending), FailedCount = chosen.Count(x => x.Status == GenerationJobStatus.Failed)
+            };
+        }
         var branch = await _unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(x => x.ParentJobId == parent.Id &&
             x.Operation == BranchOperation(type) && x.MediaPackageRevision == parent.MediaPackageRevision, cancellationToken: ct);
         if (type == MediaType.Illustration && branch is not null)

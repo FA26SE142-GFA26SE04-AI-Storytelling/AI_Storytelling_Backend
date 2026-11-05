@@ -8,10 +8,15 @@ public sealed partial class MediaGenerationService
 {
     private async Task EnsureVocabularyAudioAsync(
         int jobId, string claimedToken, int storyId, int versionId, MediaContext mediaContext,
-        StoryVocabulary word, CancellationToken cancellationToken)
+        StoryVocabulary word, CancellationToken cancellationToken, bool required = false)
     {
         var asset = await GetOrCreateVocabularyAudioAssetAsync(versionId, word, cancellationToken);
-        if (asset.Status is MediaStatus.Ready or MediaStatus.ManualReview || asset.AttemptCount >= _assetMaxAttempts) return;
+        if (asset.Status == MediaStatus.Ready && (!required || asset.ValidationStatus == ValidationStatus.Passed && !string.IsNullOrWhiteSpace(asset.Url))) return;
+        if (asset.Status == MediaStatus.ManualReview || asset.AttemptCount >= _assetMaxAttempts)
+        {
+            if (required) throw new InvalidOperationException("VOCABULARY_AUDIO_RETRY_EXHAUSTED");
+            return;
+        }
 
         var attempt = asset.AttemptCount;
         try
@@ -50,8 +55,9 @@ public sealed partial class MediaGenerationService
         {
             await RecordAssetFailureAsync(jobId, claimedToken, mediaContext.Id, asset, cancellationToken);
             _logger.LogWarning(exception,
-                "Vocabulary audio skipped Story={StoryId} Version={VersionId} Vocabulary={VocabularyId} Asset={AssetId} Attempt={Attempt} Code={Code}",
-                storyId, versionId, word.Id, asset.Id, asset.AttemptCount, PublicErrorCode(exception));
+                "Vocabulary audio failed Story={StoryId} Version={VersionId} Vocabulary={VocabularyId} Asset={AssetId} Attempt={Attempt} Code={Code} Required={Required}",
+                storyId, versionId, word.Id, asset.Id, asset.AttemptCount, PublicErrorCode(exception), required);
+            if (required) throw;
         }
     }
 
@@ -59,13 +65,14 @@ public sealed partial class MediaGenerationService
         int versionId, StoryVocabulary word, CancellationToken cancellationToken)
     {
         var existing = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(
-            x => x.StoryVocabularyId == word.Id && x.Type == MediaType.VocabularyAudio && x.IsCurrent,
+            x => x.ParentStoryPackageId == (_parentMediaScope == null ? null : (int?)_parentMediaScope.Id) && x.StoryVocabularyId == word.Id && x.Type == MediaType.VocabularyAudio && x.IsCurrent,
             cancellationToken: cancellationToken);
         if (existing is not null) return existing;
         var asset = new MediaAsset
         {
             StoryVersionId = versionId,
-            RequestedPackageRevision = (await FreshAsync<StoryVersion>(versionId, cancellationToken))!.MediaState.MediaPackageRevision,
+            ParentStoryPackageId = _parentMediaScope?.Id,
+            RequestedPackageRevision = _parentMediaScope?.Revision ?? (await FreshAsync<StoryVersion>(versionId, cancellationToken))!.MediaState.MediaPackageRevision,
             StoryVocabularyId = word.Id,
             Type = MediaType.VocabularyAudio,
             Status = MediaStatus.Queued,

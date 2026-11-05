@@ -90,6 +90,7 @@ internal sealed class GatedImageProvider(IImageGenerationProvider inner, MediaBr
 
 internal sealed class GatedTtsProvider(ITtsProvider inner, MediaBranchProviderGate gate) : ITtsProvider
 {
+    public string? ConfigurationFingerprint => inner.ConfigurationFingerprint;
     public Task<GeneratedMedia> GenerateAsync(string text, CancellationToken cancellationToken = default) =>
         gate.ExecuteAsync(ct => inner.GenerateAsync(text, ct), cancellationToken);
 }

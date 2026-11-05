@@ -15,6 +15,37 @@ namespace StoryPlatform.AI.IntegrationTests;
 public sealed class StoryContentGenerationHandlerTests
 {
     [Theory]
+    [InlineData("none", 100)]
+    [InlineData("low", 90)]
+    [InlineData("moderate", 70)]
+    [InlineData("high", 40)]
+    [InlineData("critical", 0)]
+    public async Task Content_safety_has_versioned_score_and_grounded_evidence(string risk, int score)
+    {
+        var payload = JsonSerializer.Serialize(new { riskLevel = risk, safetyScore = score, evidence = risk == "none" ? Array.Empty<string>() : new[] { "Na repaired the toy." },
+            isAllowed = risk is "none" or "low" or "moderate", canRefine = risk is "none" or "low" or "moderate", reasonCode = "ASSESSMENT", violations = Array.Empty<string>() });
+        var llm = new StubLlmClient(payload);
+        var handler = new EvaluateContentSafetyHandler(new StoryContentGenerationExecutor(llm, Options.Create(new StoryContentGenerationOptions())), new StubPromptProvider());
+        var result = await handler.HandleAsync(new() { RequestId = "safety-score", Story = GroundedStory(), AgeBand = "6-8", Language = "en" });
+        Assert.Equal(score, result.SafetyScore); Assert.Equal(ContentSafetyScoring.Version, result.ScoreRuleVersion);
+        Assert.Contains("highest observed risk", llm.LastPrompt);
+        Assert.Contains("safetyScore", llm.LastSchema.GetProperty("required").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal(1, llm.CallCount);
+    }
+
+    [Theory]
+    [InlineData("""{"isAllowed":true,"canRefine":false,"reasonCode":"OK","violations":[],"riskLevel":"none","evidence":[]}""")]
+    [InlineData("""{"isAllowed":true,"canRefine":true,"reasonCode":"OK","violations":[],"riskLevel":"high","safetyScore":40,"evidence":["Na repaired the toy."]}""")]
+    [InlineData("""{"isAllowed":true,"canRefine":true,"reasonCode":"OK","violations":[],"riskLevel":"low","safetyScore":90,"evidence":["invented quote"]}""")]
+    [InlineData("""{"isAllowed":true,"canRefine":true,"reasonCode":"OK","violations":[],"riskLevel":"low","safetyScore":100,"evidence":["Na repaired the toy."]}""")]
+    public async Task Invalid_safety_score_or_evidence_never_becomes_approval(string payload)
+    {
+        var handler = new EvaluateContentSafetyHandler(new StoryContentGenerationExecutor(new StubLlmClient(payload),
+            Options.Create(new StoryContentGenerationOptions { MaxTechnicalAttempts = 1 })), new StubPromptProvider());
+        await Assert.ThrowsAsync<JsonException>(() => handler.HandleAsync(new() { RequestId = "bad-safety", Story = GroundedStory(), AgeBand = "6-8", Language = "en" }));
+    }
+
+    [Theory]
     [InlineData(900, 810, 990)]
     [InlineData(1500, 1350, 1650)]
     public async Task Strict_Vietnamese_ease_controls_both_prompts_and_targeted_refinement(int target, int minimum, int maximum)

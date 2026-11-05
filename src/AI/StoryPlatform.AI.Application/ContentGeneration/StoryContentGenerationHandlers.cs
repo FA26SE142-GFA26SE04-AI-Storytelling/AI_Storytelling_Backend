@@ -217,6 +217,7 @@ public sealed class GenerateQuizHandler
         GenerateVocabularyHandler.ValidateArtifactRequest(request.RequestId, request.Story);
         if (request.Vocabulary.Count == 0 && request.Batch?.Kind is not ("quiz_facts" or "quiz_reasoning"))
             throw new ArgumentException("Validated vocabulary is required.", nameof(request));
+        if (request.ReadingLevel is < 1 or > 5) throw new ArgumentException("Reading level must be between 1 and 5.");
         LearningBatchPrompt.Validate(request.Batch, "quiz_facts", "quiz_reasoning", "quiz_vocabulary");
         var template = SnapshotPromptResolver.Resolve(request.Snapshot, PromptType.Quiz,
             request.Language, request.AgeBand, _prompts);
@@ -263,12 +264,14 @@ public sealed class EvaluateContentSafetyHandler
         var template = SnapshotPromptResolver.Resolve(request.Snapshot, PromptType.ContentSafety,
             request.Language, request.AgeBand, _prompts);
         var generated = await _executor.ExecuteAsync(
-            PromptComposer.Compose(template, request), "content_safety", GenerationSchemas.ContentSafety,
+            StoryPlatform.Contracts.AI.Models.ContentSafetyScoring.Instruction + "\n" + PromptComposer.Compose(template, request), "content_safety", GenerationSchemas.ContentSafety,
             json => JsonSerializer.Deserialize<SafetyPayload>(json, JsonDefaults.Options), cancellationToken,
             executionBudgetSeconds: request.ExecutionBudgetSeconds);
-        return new EvaluateContentSafetyResponse
+        var response = new EvaluateContentSafetyResponse
         {
             RequestId = request.RequestId,
+            RiskLevel = generated.Value.RiskLevel, SafetyScore = generated.Value.SafetyScore, Evidence = generated.Value.Evidence,
+            ScoreRuleVersion = StoryPlatform.Contracts.AI.Models.ContentSafetyScoring.Version,
             IsAllowed = generated.Value.IsAllowed,
             CanRefine = generated.Value.IsAllowed || generated.Value.CanRefine,
             ReasonCode = string.IsNullOrWhiteSpace(generated.Value.ReasonCode)
@@ -277,7 +280,10 @@ public sealed class EvaluateContentSafetyHandler
             Violations = generated.Value.Violations,
             Metadata = generated.Generation.ToMetadata(template.Version) with { AttemptCount = generated.AttemptCount }
         };
+        StoryPlatform.Contracts.AI.Models.ContentSafetyScoring.Validate(response, request.Story.Title + "\n" + string.Join("\n", request.Story.StorySections.Select(x => x.Content)) + "\n" + request.Story.Lesson);
+        return response;
     }
 
-    private sealed record SafetyPayload(bool IsAllowed, bool CanRefine, string ReasonCode, IReadOnlyList<string> Violations);
+    private sealed record SafetyPayload(bool IsAllowed, bool CanRefine, string ReasonCode, IReadOnlyList<string> Violations,
+        string RiskLevel, double SafetyScore, IReadOnlyList<string> Evidence);
 }

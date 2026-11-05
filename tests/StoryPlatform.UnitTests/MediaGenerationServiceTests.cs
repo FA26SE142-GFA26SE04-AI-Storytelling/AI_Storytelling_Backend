@@ -913,7 +913,7 @@ public sealed partial class MediaGenerationServiceTests
             recorder,
             readiness ?? new MediaReadinessService(uow),
             options ?? new MediaGenerationOptions { AssetMaxAttempts = 3, JobLeaseMinutes = 5 },
-            logger ?? NullLogger<MediaGenerationService>.Instance, supervision ?? new Mock<IChildProfileAccessGuard>().Object, clock);
+            logger ?? NullLogger<MediaGenerationService>.Instance, supervision ?? new Mock<IChildProfileAccessGuard>().Object, clock, new CreatorMediaUploadValidator());
         MediaTestPump.Register(service, uow, clock);
         return service;
     }
@@ -1044,6 +1044,7 @@ public sealed partial class MediaGenerationServiceTests
 
     private sealed class RecordingTtsProvider : ITtsProvider
     {
+        public string ConfigurationFingerprint => "test-voice-v1";
         public List<string> Inputs { get; } = [];
         public Task<GeneratedMedia> GenerateAsync(string exactSceneText, CancellationToken cancellationToken = default)
         {

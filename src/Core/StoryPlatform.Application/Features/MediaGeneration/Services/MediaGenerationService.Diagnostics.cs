@@ -12,7 +12,7 @@ public sealed partial class MediaGenerationService
         var sceneIds = scenes.Select(x => x.Id).ToList();
         var beats = await _unitOfWork.Repository<IllustrationBeat>().FindAsync(x => sceneIds.Contains(x.StorySceneId) && !x.IsDeleted, cancellationToken: ct);
         var segments = await _unitOfWork.Repository<StorySegment>().FindAsync(x => sceneIds.Contains(x.StorySceneId) && !x.IsDeleted, cancellationToken: ct);
-        var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(x => x.StoryVersionId == parent.StoryVersionId && !x.IsDeleted &&
+        var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(x => x.ParentStoryPackageId == null && x.StoryVersionId == parent.StoryVersionId && !x.IsDeleted &&
             (x.IsCurrent || x.ReplacesMediaAssetId != null && x.ReplacementResolvedAt == null) &&
             (x.RequestedPackageRevision == null || x.RequestedPackageRevision == revision) && x.Status != MediaStatus.Ready, cancellationToken: ct);
         var branches = await _unitOfWork.Repository<StoryGenerationJob>().FindAsync(x => x.ParentJobId == parent.Id &&

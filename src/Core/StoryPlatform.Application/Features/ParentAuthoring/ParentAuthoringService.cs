@@ -45,13 +45,13 @@ public sealed class ParentAuthoringService : ManualAuthoringService
 
     public async Task<ParentDraftDto> CreateParentDraftAsync(int user, CreateParentDraftRequest request, CancellationToken ct)
     {
-        var child = await _policy.RequireChildAsync(user, request.ChildProfileId, ct);
+        var child = request.ChildProfileId is int childId ? await _policy.RequireChildAsync(user, childId, ct) : null;
         var draft = await CreateDraftWithContextAsync(user, new CreateCreatorDraftRequest
         {
             OperationId = request.OperationId,
             Title = request.Title,
-            Language = request.Language ?? child.Language,
-            AgeBand = child.AgeBand == AgeBand.Age_9_10 ? "9-10" : "6-8",
+            Language = request.Language ?? child?.Language ?? "vi",
+            AgeBand = child is null ? request.AgeBand : child.AgeBand == AgeBand.Age_9_10 ? "9-10" : "6-8",
             ExperienceMode = request.ExperienceMode
         }, new ManualDraftContext(request.ChildProfileId, request.Purpose), ct);
         return await GetParentDraftAsync(user, draft.StoryId, ct);
@@ -61,14 +61,15 @@ public sealed class ParentAuthoringService : ManualAuthoringService
     {
         var draft = await GetDraftAsync(user, storyId, ct);
         var story = await StoryAsync(user, storyId, ct);
-        var locked = await _policy.IsLockedAsync(story.Id, ct);
+        var locked = await _policy.IsLockedAsync(story.Id, ct) || await ParentStoryPackageService.IsContentFinalizedAsync(_uow, story.Id, ct);
         string? aiReason = locked ? "PARENT_STORY_FINALIZED" : null;
         if (!locked)
         {
             try { await new ParentAssistanceAccessPolicy(_uow, _guard).CaptureContextAsync(story, ct); }
             catch (StoryPlatform.Application.Features.CreatorAssistance.AssistanceException ex) { aiReason = ex.Code; }
+            catch (AppException) { aiReason = "CHILD_REFERENCE_UNAVAILABLE"; }
         }
-        return new(draft, story.ChildProfileId!.Value, story.WritingPurpose ?? "free",
+        return new(draft, story.ChildProfileId, story.WritingPurpose ?? "free",
             locked, locked ? "PARENT_STORY_FINALIZED" : null, aiReason is null, aiReason);
     }
 
@@ -76,7 +77,7 @@ public sealed class ParentAuthoringService : ManualAuthoringService
     {
         var draft = await GetDraftAsync(user, id, ct);
         var story = await StoryAsync(user, id, ct);
-        var fingerprint = (await ContextAsync(story, ct)).Fingerprint;
+        var fingerprint = story.ChildProfileId.HasValue ? (await ContextAsync(story, ct)).Fingerprint : "";
         var operations = await _uow.Repository<ParentStoryOperation>().FindAsync(x => x.StoryId == id && !x.IsDeleted, cancellationToken: ct);
         return operations.OrderByDescending(x => x.Id).Select(x => new ParentOperationDto(x.Id, x.Kind,
             x.StoryVersionId, x.StoryVersionId == draft.SelectedVersionId && x.ContextFingerprint == fingerprint,
@@ -90,12 +91,14 @@ public sealed class ParentAuthoringService : ManualAuthoringService
             ParentManualAuthoringPolicy.ValidatePurpose(request.Purpose);
             var mode = request.ExperienceMode ?? story.ExperienceMode;
             if (mode is not ("reading" or "listening" or "combined")) throw new BadRequestException("EXPERIENCE_MODE_INVALID");
-            var child = await _policy.RequireChildAsync(user, story.ChildProfileId!.Value, ct);
+            var child = story.ChildProfileId is int referenceChild && !await _uow.Repository<ParentStoryPackage>().ExistsAsync(x => x.StoryId == id && !x.IsDeleted, ct)
+                ? await _policy.RequireChildAsync(user, referenceChild, ct) : null;
             var language = request.Language ?? story.Language;
-            if (language != child.Language || language is not ("vi" or "en")) throw new BadRequestException("LANGUAGE_CONTEXT_MISMATCH");
+            if (child is not null && language != child.Language || language is not ("vi" or "en")) throw new BadRequestException("LANGUAGE_CONTEXT_MISMATCH");
             if (language != story.Language || mode != story.ExperienceMode) story.AudienceRevision++;
             story.Language = language; story.ExperienceMode = mode;
-            var age = child.AgeBand == AgeBand.Age_9_10 ? "9-10" : "6-8";
+            var age = child is null ? request.AgeBand ?? story.AgeBand : child.AgeBand == AgeBand.Age_9_10 ? "9-10" : "6-8";
+            if (age is not ("6-8" or "9-10")) throw new BadRequestException("AGE_BAND_INVALID");
             if (story.AgeBand != age) { story.AgeBand = age; story.AudienceRevision++; }
             story.WritingPurpose = request.Purpose ?? story.WritingPurpose;
             if ((await CurrentAsync(id, ct))?.MediaState.MediaPackageRevision > 0) story.Status = StoryStatus.Draft;
@@ -271,6 +274,8 @@ public sealed class ParentAuthoringService : ManualAuthoringService
         var grant = await _uow.Repository<ParentStoryOperation>().GetByIdAsync(confirmationId, ct);
         if (grant is null || grant.IsDeleted || grant.Kind != "FamilyConfirmation" || grant.RevokedAt.HasValue)
             throw new NotFoundException("Family confirmation", confirmationId);
+        if (grant.ParentStoryPackageId.HasValue)
+            return await new ParentStoryPackageReader(_uow, _guard).ReadAsync(childId, confirmationId, ct);
         var decision = JsonSerializer.Deserialize<ParentFamilyConfirmationDto>(grant.ResultJson, Json)!;
         if (decision.ChildProfileId != childId) throw new NotFoundException("Family confirmation", confirmationId);
         var story = await _uow.Repository<Story>().GetByIdAsync(grant.StoryId, ct) ?? throw new NotFoundException("Story", grant.StoryId);
@@ -294,6 +299,7 @@ public sealed class ParentAuthoringService : ManualAuthoringService
             var grant = await _uow.Repository<ParentStoryOperation>().GetByIdAsync(request.ConfirmationId, ct);
             if (grant is null || grant.StoryId != id || grant.Kind != "FamilyConfirmation" || grant.IsDeleted)
                 throw new NotFoundException("Family confirmation", request.ConfirmationId);
+            await _guard.EnsureOwnerAsync(grant.ChildProfileId ?? throw new ConflictException("CHILD_REQUIRED"), user, ct);
             var wasActive = grant.RevokedAt is null;
             grant.RevokedAt ??= DateTime.UtcNow;
             if (wasActive && !await _uow.Repository<ParentStoryOperation>().ExistsAsync(x => x.StoryId == id &&
@@ -305,6 +311,8 @@ public sealed class ParentAuthoringService : ManualAuthoringService
             }
             _uow.Repository<ParentStoryOperation>().Update(grant);
             operation.StoryVersionId = grant.StoryVersionId;
+            operation.ChildProfileId = grant.ChildProfileId;
+            operation.ParentStoryPackageId = grant.ParentStoryPackageId;
             return true;
         }, ct);
 
@@ -361,10 +369,12 @@ public sealed class ParentAuthoringService : ManualAuthoringService
             await _uow.AcquireTransactionLockAsync(id, ct);
             await GetDraftAsync(user, id, ct);
             var story = await StoryAsync(user, id, ct);
+            if (kind is not ("FamilyRevocation" or "Setup") && await _uow.Repository<ParentStoryPackage>().ExistsAsync(x => x.StoryId == id && !x.IsDeleted, ct))
+                throw new ConflictException("PARENT_USE_PACKAGE_API");
             if (kind is "FamilyConfirmation" or "FamilyRevocation")
             {
-                await _guard.EnsureOwnerAsync(story.ChildProfileId!.Value, user, ct);
-                await _guard.EnsureOwnerAsync(story.ChildProfileId.Value, user, ct);
+                if (kind != "FamilyRevocation")
+                    await _guard.EnsureOwnerAsync(story.ChildProfileId ?? throw new ConflictException("PARENT_USE_PACKAGE_API"), user, ct);
             }
             if (await _uow.Repository<StoryAuthoringOperation>().ExistsAsync(x => x.StoryId == id && x.OperationId == request.OperationId, ct))
                 throw new ConflictException("OPERATION_ID_REUSED");
@@ -377,7 +387,10 @@ public sealed class ParentAuthoringService : ManualAuthoringService
                 return replay;
             }
             if (kind != "FamilyRevocation") await _policy.EnsureWritableAsync(story, ct);
-            var operation = new ParentStoryOperation { StoryId = id, ChildProfileId = story.ChildProfileId!.Value, ActorUserId = user, Kind = kind, OperationId = request.OperationId, RequestHash = hash };
+            var operationChild = story.ChildProfileId ?? (request is ParentFamilyRevokeRequest revoke
+                ? (await _uow.Repository<ParentStoryOperation>().GetByIdAsync(revoke.ConfirmationId, ct))?.ChildProfileId : null);
+            if (operationChild is null && kind != "Setup") throw new ConflictException("PARENT_USE_PACKAGE_API");
+            var operation = new ParentStoryOperation { StoryId = id, ChildProfileId = operationChild, ActorUserId = user, Kind = kind, OperationId = request.OperationId, RequestHash = hash };
             await _uow.Repository<ParentStoryOperation>().AddAsync(operation, ct);
             await _uow.SaveChangesAsync(ct);
             var result = await action(story, operation);

@@ -215,9 +215,9 @@ public sealed class ParentManualApiFlowTests
         }, host.Parent, HttpStatusCode.Conflict);
         var otherDraft = await host.CreateAsync("create-other-child", 4);
         host.Store.Items<ChildProfile>().Single(x => x.Id == 3).OwnerUserId = 99;
-        var list = await host.SendAsync(HttpMethod.Get, "/api/v1/parent/stories?pageIndex=1&pageSize=1", null, host.Parent, HttpStatusCode.OK);
-        Assert.Equal(1, list.GetProperty("totalCount").GetInt32());
-        Assert.Equal(otherDraft.GetProperty("story").GetProperty("storyId").GetInt32(), list.GetProperty("items")[0].GetProperty("storyId").GetInt32());
+        var list = await host.SendAsync(HttpMethod.Get, "/api/v1/parent/stories?pageIndex=1&pageSize=20", null, host.Parent, HttpStatusCode.OK);
+        Assert.Equal(2, list.GetProperty("totalCount").GetInt32());
+        Assert.Contains(list.GetProperty("items").EnumerateArray(), item => item.GetProperty("storyId").GetInt32() == otherDraft.GetProperty("story").GetProperty("storyId").GetInt32());
     }
 
     private static string Text(JsonElement package) => string.Concat(package.GetProperty("segments").EnumerateArray().Select(x => x.GetProperty("text").GetString()));

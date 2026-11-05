@@ -26,8 +26,9 @@ namespace StoryPlatform.UnitTests;
         public ParentAuthoringTestStore(CreatorAuthoringOptions? options = null)
         {
             Register<UserAccount>(); Register<Story>(); Register<StoryVersion>(); Register<StoryAuthoringOperation>(); Register<AuditLog>();
-            Register<ChildProfile>();
+            Register<ChildProfile>(); Register<ParentStoryPackage>(); Register<LearningArtifactGenerationBatch>(); Register<PromptCatalogVersion>(); Register<ListeningInteractionAttempt>(); Register<ReadingSession>(); Register<QuizAttempt>();
             Register<ChildSession>(); Register<StoryAssistanceTask>(); Register<StoryAssistanceStep>();
+            Register<VocabularyNotebookEntry>(); Register<TelemetryLog>();
             Register<SafetyPolicy>(); Register<SafetyPolicyCategory>(); Register<ContentCategory>(); Register<StoryCategory>();
             Register<LearningProfile>(); Register<StoryVocabulary>(); Register<QuizItem>(); Register<ModerationItem>(); Register<ParentStoryOperation>(); Register<StoryGenerationJob>(); Register<StoryGenerationRequest>(); Register<MediaContext>(); Register<MediaAsset>(); Register<StoryScene>(); Register<StorySegment>(); Register<IllustrationBeat>();
             Register<AuthoringGuideCatalog>(); Register<AuthoringGuideCatalogVersion>();
@@ -43,8 +44,12 @@ namespace StoryPlatform.UnitTests;
             Uow.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
             Uow.Setup(x => x.CommitTransactionAsync(It.IsAny<CancellationToken>())).Returns(() => { _snapshot = null; _transaction.Release(); return Task.CompletedTask; });
             Uow.Setup(x => x.RollbackTransactionAsync(It.IsAny<CancellationToken>())).Returns(() => {
-                if (_snapshot is not null) { _data.Clear(); foreach (var pair in _snapshot) _data[pair.Key] = pair.Value; }
-                _snapshot = null; _transaction.Release(); return Task.CompletedTask;
+                if (_snapshot is not null)
+                {
+                    _data.Clear(); foreach (var pair in _snapshot) _data[pair.Key] = pair.Value;
+                    _snapshot = null; _transaction.Release();
+                }
+                return Task.CompletedTask;
             });
             Items<UserAccount>().AddRange([
                 new UserAccount { Id = 1, Status = AccountStatus.Active },

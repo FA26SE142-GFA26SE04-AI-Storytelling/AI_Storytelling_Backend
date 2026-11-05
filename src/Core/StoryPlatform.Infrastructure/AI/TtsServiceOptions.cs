@@ -6,6 +6,9 @@ namespace StoryPlatform.Infrastructure.AI;
 /// </summary>
 public sealed class TtsServiceOptions
 {
+    public string Fingerprint(string provider) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+        System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(new
+        { provider, Model, VoiceName, LanguageCode, AudioEncoding, SpeakingRate, Pitch, VolumeGainDb, EnableWordTimings }))));
     public const string SectionName = "AI:TTS";
 
     public string Provider { get; set; } = "GeminiTTS";
@@ -18,7 +21,7 @@ public sealed class TtsServiceOptions
     public double VolumeGainDb { get; set; } = 0.0;
     public bool EnableWordTimings { get; set; } = false;
     public int MaxTextLength { get; set; } = 5000;
-    public int TimeoutSeconds { get; set; } = 30;
+    public int TimeoutSeconds { get; set; } = 120;
     public int TransportRetryCount { get; set; } = 3;
     public int TransportRetryBaseDelayMs { get; set; } = 500;
     public string? CredentialsFilePath { get; set; }

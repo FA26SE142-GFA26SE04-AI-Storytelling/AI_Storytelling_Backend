@@ -102,6 +102,8 @@ public sealed record GenerateVocabularyRequest
 
 public sealed record GenerateQuizRequest
 {
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public int? ReadingLevel { get; init; }
     public LearningBatchSpec? Batch { get; init; }
     public AiGenerationSnapshot? Snapshot { get; init; }
     public string RequestId { get; init; } = string.Empty;
@@ -115,6 +117,8 @@ public sealed record GenerateQuizRequest
 
 public sealed record GenerateListeningInteractionRequest
 {
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public int? ReadingLevel { get; init; }
     public AiGenerationSnapshot? Snapshot { get; init; }
     public string RequestId { get; init; } = string.Empty;
     public string InteractionType { get; init; } = string.Empty;

@@ -17,6 +17,22 @@ public class PublicStoryReviewServiceTests
     private readonly PublicStoryReviewHarness _h = new();
 
     [Fact]
+    public async Task Uploaded_audio_requires_every_segment_heard_even_with_word_timings()
+    {
+        var first=_h.MakeApprovable();
+        var second=_h.AddScene(2,2,withWordTimings:true);
+        _h.Assets.Single(x=>x.StorySegmentId==second && x.Type==MediaType.TtsAudio).Source=MediaAssetSource.UserUpload;
+        _h.Items[0].ReviewProgress=$"{{\"viewed\":{{\"scene\":[1,2],\"audio\":[{first}]}}}}";
+        var package=await _h.Sut.GetPackageAsync(PublicStoryReviewHarness.ModeratorId,PublicStoryReviewHarness.ItemId);
+        Assert.False(package.CanApprove); Assert.Contains(second,package.Progress.MissingWarningSegmentIds);
+        Assert.True(package.Scenes.Single(x=>x.SceneId==2).Segments.Single().RequiresFullAudioReview);
+        await _h.Sut.MarkViewedAsync(PublicStoryReviewHarness.ModeratorId,PublicStoryReviewHarness.ItemId,
+            new MarkPartViewedRequestDto {PartType="audio",PartId=second});
+        package=await _h.Sut.GetPackageAsync(PublicStoryReviewHarness.ModeratorId,PublicStoryReviewHarness.ItemId);
+        Assert.True(package.CanApprove);
+    }
+
+    [Fact]
     public async Task GetPackageAsync_ShowsListeningInteractionsWithOptionsAndMedia()
     {
         _h.AddScene(1, 1);

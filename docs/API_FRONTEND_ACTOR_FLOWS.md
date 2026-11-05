@@ -1,6 +1,10 @@
 # API backend theo actor và luồng tích hợp frontend
 
+> Parent Manual nhiều bé (04/11/2026): [Hướng dẫn tích hợp Frontend và contract package](PARENT_MULTI_CHILD_PACKAGES_API_GUIDE.md). Bao gồm request/response, token, polling, retry/revise, media có Authorization và Child Reader. Các mô tả Parent một bé bên dưới là baseline legacy khi khác với hướng dẫn package.
+
 > Phase 5 Image/TTS: [MEDIA_PHASE5_IMAGE_TTS_API_GUIDE.md](MEDIA_PHASE5_IMAGE_TTS_API_GUIDE.md)
+>
+> Creator Manual upload ảnh/audio và chọn AI theo từng phần: [CREATOR_MANUAL_MEDIA_UPLOAD_API_GUIDE.md](CREATOR_MANUAL_MEDIA_UPLOAD_API_GUIDE.md). Áp dụng migration `AddCreatorMediaUploads` trên môi trường đích trước khi dùng API mới; database local đã cập nhật ngày 04/11/2026.
 
 > Bổ sung 26/10/2026: assistance theo bản nháp dùng cho **soạn thủ công và sửa nội dung truyện AI** của Parent/Creator tại M3. Phần mapping baseline bên dưới là lịch sử; đợt bổ sung đã nối giao diện, chưa xác nhận triển khai hay provider thật.
 

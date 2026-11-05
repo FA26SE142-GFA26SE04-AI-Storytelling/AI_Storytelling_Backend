@@ -182,7 +182,7 @@ public sealed class LearningBatchProcessor(IUnitOfWork uow, IAIStoryGenerationCl
         if (root?.Status != GenerationJobStatus.Processing || root.ConcurrencyToken != rootToken || root.LeaseExpiresAt <= DateTime.UtcNow ||
             root.StoryVersionId != version.Id || root.StoryId != story.Id || LearningBatchAccess.Source(story, version) != batch.SourceFingerprint)
             throw new ConflictException("STALE_LEARNING_SOURCE");
-        if (await LearningBatchAccess.AuthorizeAsync(uow, guard, story, version, batch.RequestedByUserId, ct) != batch.ContextFingerprint)
+        if (await LearningBatchAccess.AuthorizeAsync(uow, guard, story, version, batch.RequestedByUserId, ct, batch.ParentStoryPackageId) != batch.ContextFingerprint)
             throw new ConflictException("STALE_LEARNING_CONTEXT");
     }
     private static void ValidateSafety(string text, LearningBatchRequest request)

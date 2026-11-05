@@ -184,7 +184,7 @@ public static class DependencyInjection
             services.AddHttpClient<GeminiImageGenerationProvider>(client => client.Timeout = TimeSpan.FromMinutes(2)),
             new MediaGenerationOptions { CircuitBreaker = mediaOptions.Images.CircuitBreaker }, 0, imageOptions.TransportRetryBaseDelayMs);
         ConfigureMediaHttpClient(
-            services.AddHttpClient<GeminiTtsProvider>(client => client.Timeout = TimeSpan.FromMinutes(2)),
+            services.AddHttpClient<GeminiTtsProvider>(client => client.Timeout = TimeSpan.FromSeconds(Math.Clamp(ttsOptions.TimeoutSeconds, 1, 600))),
             new MediaGenerationOptions { CircuitBreaker = mediaOptions.Audio.CircuitBreaker }, 0, ttsOptions.TransportRetryBaseDelayMs);
         ConfigureMediaHttpClient(
             services.AddHttpClient<GeminiMediaAlignmentEvaluator>(client => client.Timeout = TimeSpan.FromMinutes(2)),
@@ -231,6 +231,7 @@ public static class DependencyInjection
         services.AddSingleton<IParagraphSceneSegmentationProvider>(sp => sp.GetRequiredService<ParagraphSceneSegmentationProvider>());
         services.AddSingleton<IMediaContextExtractor>(sp => sp.GetRequiredService<GeminiMediaContextExtractor>());
         services.AddSingleton<IAudioQualityGate, BinaryAudioQualityGate>();
+        services.AddSingleton<StoryPlatform.Application.Features.MediaGeneration.Models.IMediaUploadValidator, CreatorMediaUploadValidator>();
         services.AddSingleton<IMediaGenerationJobFailureFinalizer, MediaGenerationJobFailureFinalizer>();
         services.AddHostedService<MediaGenerationWorker>();
         services.AddHostedService<ImageGenerationWorker>();

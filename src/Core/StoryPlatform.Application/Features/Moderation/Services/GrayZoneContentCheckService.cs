@@ -36,7 +36,8 @@ public sealed class GrayZoneContentCheckService(IUnitOfWork uow, IGrayZoneEvalua
                 throw new ForbiddenException("CONSENT_REQUIRED");
             if (ConsentPolicy.IsOutdated(policy.ConsentPolicyVersion)) throw new ForbiddenException("CONSENT_OUTDATED");
             var rules = await uow.Repository<SafetyPolicyCategory>().FindAsync(x => x.SafetyPolicyId == policy.Id && x.Rule == PolicyRule.Blocked, cancellationToken: ct);
-            var ids = rules.Select(x => x.ContentCategoryId).ToArray();
+            // List.Contains remains an EF-translatable call; array.Contains can bind to ReadOnlySpan in C# 14.
+            var ids = rules.Select(x => x.ContentCategoryId).ToList();
             var categories = await uow.Repository<ContentCategory>().FindAsync(x => x.IsActive && ids.Contains(x.Id), cancellationToken: ct);
             blocked.AddRange(categories.SelectMany(x => new[] { x.Code, x.DisplayName }));
         }

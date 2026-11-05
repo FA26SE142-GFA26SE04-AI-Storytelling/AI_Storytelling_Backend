@@ -5,6 +5,8 @@ namespace StoryPlatform.Domain.Entities;
 
 public class StoryGenerationJob : BaseEntity
 {
+    public int? ParentStoryPackageId { get; set; }
+
     public int? ParentJobId { get; set; }
     public int? MediaContextId { get; set; }
     public int? MediaPackageRevision { get; set; }

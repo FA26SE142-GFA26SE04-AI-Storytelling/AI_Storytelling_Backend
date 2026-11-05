@@ -12,7 +12,8 @@ public sealed class MediaContextConfiguration : IEntityTypeConfiguration<MediaCo
             table.HasCheckConstraint("CK_media_contexts_revision", "\"Revision\" > 0"));
         builder.HasKey(x => x.Id);
         builder.Property(x => x.ContextJson).HasColumnType("jsonb").IsRequired();
-        builder.HasIndex(x => new { x.StoryVersionId, x.Revision }).IsUnique();
+        builder.HasIndex(x => new { x.StoryVersionId, x.Revision }).IsUnique().HasFilter("\"ParentStoryPackageId\" IS NULL");
+        builder.HasIndex(x => x.ParentStoryPackageId).IsUnique().HasFilter("\"ParentStoryPackageId\" IS NOT NULL");
         builder.HasOne(x => x.StoryVersion).WithMany().HasForeignKey(x => x.StoryVersionId)
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasQueryFilter(x => !x.IsDeleted);

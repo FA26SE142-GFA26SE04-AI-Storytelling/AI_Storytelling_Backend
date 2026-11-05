@@ -37,7 +37,10 @@ public sealed class ContentGenerationWorker : BackgroundService
             {
                 await using var scope = _scopeFactory.CreateAsyncScope();
                 var processor = scope.ServiceProvider.GetRequiredService<IContentGenerationJobProcessor>();
-                if (!await processor.ProcessNextAsync(stoppingToken))
+                var packages = scope.ServiceProvider.GetRequiredService<StoryPlatform.Application.Features.ParentAuthoring.ParentStoryPackageProcessor>();
+                var packageWorked = await packages.ProcessNextAsync(stoppingToken);
+                var generationWorked = await processor.ProcessNextAsync(stoppingToken);
+                if (!packageWorked && !generationWorked)
                     await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(_options.IdleDelaySeconds, 1, 30)), stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

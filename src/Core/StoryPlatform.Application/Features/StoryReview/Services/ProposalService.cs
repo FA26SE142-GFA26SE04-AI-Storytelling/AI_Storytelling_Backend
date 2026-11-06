@@ -217,10 +217,30 @@ public sealed class ProposalService : IProposalService
 
                 if (!string.IsNullOrEmpty(type) && !string.IsNullOrEmpty(question))
                 {
+                    // AI trả loại dạng snake_case (multiple_choice); bỏ dấu gạch dưới rồi đọc không phân biệt hoa thường.
+                    var quizType = Enum.TryParse<QuizType>(type.Replace("_", string.Empty).Replace("-", string.Empty), true, out var parsedType)
+                        ? parsedType
+                        : throw new BadRequestException($"Unknown quiz type: {type}");
+                    // Đúng/Sai được lưu là "true"/"false" (xem ContentGenerationService và kiểm tra IsValidQuizItem); AI trả "Đúng"/"Sai".
+                    if (quizType == QuizType.TrueFalse)
+                    {
+                        if (string.Equals(correctAnswer, "true", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(correctAnswer, "đúng", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(correctAnswer, "dung", StringComparison.OrdinalIgnoreCase))
+                        {
+                            correctAnswer = "true";
+                        }
+                        else if (string.Equals(correctAnswer, "false", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(correctAnswer, "sai", StringComparison.OrdinalIgnoreCase))
+                        {
+                            correctAnswer = "false";
+                        }
+                    }
+
                     await _quizRepo.AddAsync(new QuizItem
                     {
                         StoryVersionId = proposal.StoryVersionId,
-                        Type = Enum.Parse<QuizType>(type, true),
+                        Type = quizType,
                         Question = question,
                         CorrectAnswer = correctAnswer,
                         Choices = choices != null ? JsonSerializer.Serialize(choices) : null

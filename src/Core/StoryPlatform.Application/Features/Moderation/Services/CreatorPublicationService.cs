@@ -19,15 +19,22 @@ public sealed class CreatorPublicationService(IUnitOfWork uow, IModerationQueueS
         var open = (await uow.Repository<ModerationItem>().FindAsync(x => x.StoryId == storyId && !x.IsDeleted &&
             (x.ItemType == ModerationItemType.PublicStoryReview || x.ItemType == ModerationItemType.PublicStoryRemoval) &&
             (x.Status == ModerationItemStatus.Pending || x.Status == ModerationItemStatus.Claimed), cancellationToken: ct)).OrderByDescending(x => x.Id).FirstOrDefault();
-        var latest = (await uow.Repository<ModerationItem>().FindAsync(x => x.StoryId == storyId &&
-            x.ItemType == ModerationItemType.PublicStoryReview, cancellationToken: ct))
-            .OrderByDescending(x => x.Id).FirstOrDefault();
+        var reviews = await uow.Repository<ModerationItem>().FindAsync(x => x.StoryId == storyId && !x.IsDeleted &&
+            x.ItemType == ModerationItemType.PublicStoryReview, cancellationToken: ct);
+        var latest = reviews.OrderByDescending(x => x.Id).FirstOrDefault();
+        var decided = reviews.Where(x => x.DecidedAt != null && x.Status is ModerationItemStatus.Approved
+                or ModerationItemStatus.ChangesRequested or ModerationItemStatus.Rejected)
+            .OrderByDescending(x => x.DecidedAt).ThenByDescending(x => x.Id).FirstOrDefault();
         var links = await uow.Repository<StoryCategory>().FindAsync(x => x.StoryId == storyId, cancellationToken: ct);
         var proposedIds = PublicStoryLabels.Parse(latest?.ProposedContentCategoryIds);
         var categoryIds = links.Select(x => x.ContentCategoryId).Concat(proposedIds).Distinct().ToList();
         var categories = await uow.Repository<ContentCategory>().FindAsync(x => categoryIds.Contains(x.Id), cancellationToken: ct);
         return new(storyId, version.Id, story.IsPublished, version.Moderation.ReviewStatus.ToString(), open?.Id, open?.ItemType.ToString(), open?.Status.ToString())
         {
+            CanResubmitLabels = !story.IsPublished && story.Status == StoryStatus.Ready && open == null
+                && version.Moderation.ReviewStatus == VersionReviewStatus.ChangesRequested
+                && decided?.Status == ModerationItemStatus.ChangesRequested && decided.StoryVersionId == version.Id
+                && PublicStoryLabels.HasOnlyMetadataFeedback(decided.Feedback),
             Labels = links.Join(categories, link => link.ContentCategoryId, category => category.Id,
                 (link, category) => new PublicReviewLabelDto { ContentCategoryId = category.Id, Code = category.Code,
                     DisplayName = category.DisplayName, Source = link.Source.ToString() }).OrderBy(x => x.ContentCategoryId).ToList(),

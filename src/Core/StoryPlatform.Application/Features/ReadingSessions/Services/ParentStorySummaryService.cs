@@ -16,12 +16,15 @@ public class ParentStorySummaryService : IParentStorySummaryService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IChildProfileAccessGuard _guard;
     private readonly IMediaStorage _storage;
+    private readonly IChildMediaUrlSigner? _mediaUrls;
 
-    public ParentStorySummaryService(IUnitOfWork unitOfWork, IChildProfileAccessGuard guard, IMediaStorage storage)
+    public ParentStorySummaryService(IUnitOfWork unitOfWork, IChildProfileAccessGuard guard, IMediaStorage storage,
+        IChildMediaUrlSigner? mediaUrls = null)
     {
         _unitOfWork = unitOfWork;
         _guard = guard;
         _storage = storage;
+        _mediaUrls = mediaUrls;
     }
 
     public async Task<PagedResult<ParentStorySummaryItemDto>> ListAsync(
@@ -49,7 +52,10 @@ public class ParentStorySummaryService : IParentStorySummaryService
                 cancellationToken: ct))
             .OrderByDescending(asset => asset.CompletedAt ?? asset.CreatedAt).ThenByDescending(asset => asset.Id)
             .GroupBy(asset => asset.StorySceneId!.Value)
-            .ToDictionary(group => group.Key, group => group.First().Url);
+            .Where(group => group.First().Url != null)
+            .ToDictionary(group => group.Key, group => group.First().Url!);
+        // Tranh của cảnh con đánh dấu cũng là đường dẫn trong kho: ký link để phụ huynh xem được.
+        var illustrationUrls = await _mediaUrls.SignValuesAsync(illustrations, ct);
         var versionIds = summaries.Where(summary => summary.StoryVersionId.HasValue)
             .Select(summary => summary.StoryVersionId!.Value).Distinct().ToList();
         var titles = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
@@ -82,7 +88,7 @@ public class ParentStorySummaryService : IParentStorySummaryService
                         SceneId = scene.Id,
                         SceneIndex = scene.SceneIndex,
                         SceneText = scene.SceneText,
-                        IllustrationUrl = illustrations.TryGetValue(scene.Id, out var image) ? image : null
+                        IllustrationUrl = illustrationUrls.TryGetValue(scene.Id, out var image) ? image : null
                     }).ToList()
             });
         }

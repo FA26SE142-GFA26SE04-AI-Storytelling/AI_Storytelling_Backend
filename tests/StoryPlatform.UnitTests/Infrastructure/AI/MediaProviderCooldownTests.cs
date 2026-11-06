@@ -7,6 +7,27 @@ namespace StoryPlatform.UnitTests.Infrastructure.AI;
 
 public sealed class MediaProviderCooldownTests
 {
+    [Fact]
+    public async Task Audio_circuit_waits_until_deadline_then_recovers_without_extending_on_blocked_calls()
+    {
+        var clock=new Clock();
+        var gate=new MediaBranchProviderGate(new() {RateLimit=new(){BurstSize=100},
+            CircuitBreaker=new(){FailureThreshold=2,DurationOfBreakSeconds=20}},modality:"Audio",clock:clock);
+        var calls=0;
+        Task<GeneratedMedia> Fail(CancellationToken _) {calls++;throw new TimeoutException();}
+        for(var i=0;i<2;i++)await Assert.ThrowsAsync<TimeoutException>(()=>gate.ExecuteAsync(Fail,default));
+        clock.Now+=TimeSpan.FromSeconds(10);
+        for(var i=0;i<3;i++)
+        {
+            var blocked=await Assert.ThrowsAsync<TransientMediaGenerationException>(()=>gate.ExecuteAsync(Fail,default));
+            Assert.Equal("MEDIA_CIRCUIT_OPEN",blocked.ErrorCode);
+            Assert.Equal(TimeSpan.FromSeconds(10),blocked.RetryAfter);
+        }
+        Assert.Equal(2,calls);
+        clock.Now+=TimeSpan.FromSeconds(11);
+        await gate.ExecuteAsync(_=>{calls++;return Task.FromResult(new GeneratedMedia([1],"audio/wav"));},default);
+        Assert.Equal(3,calls);
+    }
     private sealed class Clock : TimeProvider
     {
         public DateTimeOffset Now { get; set; } = DateTimeOffset.UtcNow;

@@ -4,6 +4,7 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.Moderation.DTOs;
 using StoryPlatform.Application.Features.Moderation.Interfaces;
+using StoryPlatform.Application.Features.Moderation;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -18,7 +19,22 @@ public sealed class CreatorPublicationService(IUnitOfWork uow, IModerationQueueS
         var open = (await uow.Repository<ModerationItem>().FindAsync(x => x.StoryId == storyId && !x.IsDeleted &&
             (x.ItemType == ModerationItemType.PublicStoryReview || x.ItemType == ModerationItemType.PublicStoryRemoval) &&
             (x.Status == ModerationItemStatus.Pending || x.Status == ModerationItemStatus.Claimed), cancellationToken: ct)).OrderByDescending(x => x.Id).FirstOrDefault();
-        return new(storyId, version.Id, story.IsPublished, version.Moderation.ReviewStatus.ToString(), open?.Id, open?.ItemType.ToString(), open?.Status.ToString());
+        var latest = (await uow.Repository<ModerationItem>().FindAsync(x => x.StoryId == storyId &&
+            x.ItemType == ModerationItemType.PublicStoryReview, cancellationToken: ct))
+            .OrderByDescending(x => x.Id).FirstOrDefault();
+        var links = await uow.Repository<StoryCategory>().FindAsync(x => x.StoryId == storyId, cancellationToken: ct);
+        var proposedIds = PublicStoryLabels.Parse(latest?.ProposedContentCategoryIds);
+        var categoryIds = links.Select(x => x.ContentCategoryId).Concat(proposedIds).Distinct().ToList();
+        var categories = await uow.Repository<ContentCategory>().FindAsync(x => categoryIds.Contains(x.Id), cancellationToken: ct);
+        return new(storyId, version.Id, story.IsPublished, version.Moderation.ReviewStatus.ToString(), open?.Id, open?.ItemType.ToString(), open?.Status.ToString())
+        {
+            Labels = links.Join(categories, link => link.ContentCategoryId, category => category.Id,
+                (link, category) => new PublicReviewLabelDto { ContentCategoryId = category.Id, Code = category.Code,
+                    DisplayName = category.DisplayName, Source = link.Source.ToString() }).OrderBy(x => x.ContentCategoryId).ToList(),
+            LastProposedLabels = categories.Where(category => proposedIds.Contains(category.Id)).OrderBy(x => x.Id)
+                .Select(category => new PublicReviewLabelDto { ContentCategoryId = category.Id, Code = category.Code,
+                    DisplayName = category.DisplayName, Source = TagSource.Creator.ToString() }).ToList()
+        };
     }
 
     public Task<CreatorPublicationResult> RequestRemovalAsync(int userId, int storyId, CreatorRemovalRequest input, CancellationToken ct = default) =>

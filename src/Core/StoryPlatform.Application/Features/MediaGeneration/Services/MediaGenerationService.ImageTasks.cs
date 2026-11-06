@@ -158,7 +158,7 @@ public sealed partial class MediaGenerationService
     {
         var now = _clock.GetUtcNow().UtcDateTime;
         var candidates = await _unitOfWork.Repository<MediaAssetGenerationTask>().FindAsync(x =>
-            (x.NextAttemptAt == null || x.NextAttemptAt <= now) && (x.Status == GenerationJobStatus.Pending ||
+            x.Kind == MediaTaskKind.GenerateImage && (x.NextAttemptAt == null || x.NextAttemptAt <= now) && (x.Status == GenerationJobStatus.Pending ||
                 x.Status == GenerationJobStatus.Processing && x.LeaseExpiresAt <= now), cancellationToken: ct);
         foreach (var candidate in candidates.OrderBy(x => x.NextAttemptAt ?? x.QueuedAt).ThenBy(x => x.Id))
         {
@@ -224,7 +224,7 @@ public sealed partial class MediaGenerationService
             {
                 await AssertFreshAsync(branch.Id, token, task.StoryVersionId, task.MediaContextId, ct);
                 var asset = await FreshAsync<MediaAsset>(task.MediaAssetId, ct) ?? throw new InvalidOperationException("STALE_MEDIA_RESULT");
-                var beat = await FreshAsync<IllustrationBeat>(task.IllustrationBeatId, ct) ?? throw new InvalidOperationException("STALE_MEDIA_RESULT");
+                var beat = await FreshAsync<IllustrationBeat>(task.IllustrationBeatId ?? throw new InvalidOperationException("STALE_MEDIA_RESULT"), ct) ?? throw new InvalidOperationException("STALE_MEDIA_RESULT");
                 var scene = await FreshAsync<StoryScene>(beat.StorySceneId, ct) ?? throw new InvalidOperationException("STALE_MEDIA_RESULT");
                 var context = await FreshAsync<MediaContext>(task.MediaContextId, ct) ?? throw new InvalidOperationException("STALE_MEDIA_RESULT");
                 if (asset.StoryVersionId != task.StoryVersionId || scene.StoryVersionId != task.StoryVersionId)
@@ -284,12 +284,11 @@ public sealed partial class MediaGenerationService
             }
             else
             {
-                var invalidated = IsStale(error) || error is ForbiddenException or ConflictException or NotFoundException;
                 var deferred = IsProviderDeferral(error);
                 if (deferred && asset.AttemptCount > 0)
                 { asset.AttemptCount--; _unitOfWork.Repository<MediaAsset>().Update(asset); }
                 if (deferred && task.AttemptNo > 0) task.AttemptNo--;
-                var retry = !invalidated && !IsTerminalBranchFailure(error) && (deferred || asset.AttemptCount < _assetMaxAttempts);
+                var retry = ShouldRetryGeneratedImage(error, asset.AttemptCount, deferred);
                 task.Status = retry ? GenerationJobStatus.Pending : GenerationJobStatus.Failed;
                 task.ErrorCode = PublicErrorCode(error);
                 var delay = deferred ? (error as TransientMediaGenerationException)?.RetryAfter ?? TimeSpan.FromSeconds(Math.Clamp(_options.Images.CircuitBreaker.DurationOfBreakSeconds, 10, 1800))
@@ -321,4 +320,8 @@ public sealed partial class MediaGenerationService
     // a real consumed generation attempt, not a request rejected before generation.
     private bool IsProviderDeferral(Exception error) => !_imageGenerationCompleted && error is TransientMediaGenerationException
         { ErrorCode: "MEDIA_CIRCUIT_OPEN" or "MEDIA_PROVIDER_COOLDOWN" };
+
+    private bool ShouldRetryGeneratedImage(Exception error, int attempts, bool deferred) =>
+        !IsStale(error) && error is not (ForbiddenException or ConflictException or NotFoundException) &&
+        !IsTerminalBranchFailure(error) && (deferred || attempts < _assetMaxAttempts);
 }

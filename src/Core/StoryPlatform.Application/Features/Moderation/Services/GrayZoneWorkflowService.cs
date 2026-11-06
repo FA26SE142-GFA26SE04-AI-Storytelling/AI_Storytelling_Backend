@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Features.ParentAuthoring;
 using System.Text.Json;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
@@ -148,6 +149,7 @@ public sealed class GrayZoneWorkflowService(IUnitOfWork uow, IAuditLogWriter aud
     public async Task<GrayZoneReviewDto> GetAsync(int userId, int id, CancellationToken ct)
     {
         var item = await RequireClaimAsync(userId, id, ct);
+        if (item.ParentStoryPackageId.HasValue) return await ParentPackageModeration.ReviewAsync(uow, item, ct);
         var version = await uow.Repository<StoryVersion>().FirstOrDefaultAsync(x => x.Id == item.StoryVersionId && x.StoryId == item.StoryId, cancellationToken: ct)
             ?? throw new NotFoundException("StoryVersion", item.StoryVersionId ?? 0);
         var story = await uow.Repository<Story>().FirstOrDefaultAsync(x => x.Id == item.StoryId, cancellationToken: ct)
@@ -185,6 +187,13 @@ public sealed class GrayZoneWorkflowService(IUnitOfWork uow, IAuditLogWriter aud
             // Attach the original concurrency value before incrementing a detached read.
             uow.Repository<ModerationItem>().Update(item);
             if (item.RowVersion != request.RowVersion) throw new ConflictException("STALE_MODERATION_ITEM");
+            if (item.ParentStoryPackageId.HasValue)
+            {
+                await ParentPackageModeration.DecideAsync(uow, item, request.Decision == "Clear", userId, request.Reason.Trim(), ct);
+                await audit.LogAsync(userId, "ParentPackageGrayZone" + request.Decision, nameof(ModerationItem), id, null,
+                    new { item.ParentStoryPackageId, reason = request.Reason.Trim() }, ct);
+                await uow.SaveChangesAsync(ct); await uow.CommitTransactionAsync(ct); return;
+            }
             var checkpoint = TryReadCheckpoint(item.Flags)
                 ?? throw new ConflictException("MODERATION_CHECKPOINT_MISSING");
             var story = await uow.Repository<Story>().FirstOrDefaultAsync(x => x.Id == item.StoryId, cancellationToken: ct);
@@ -271,6 +280,16 @@ public sealed class GrayZoneWorkflowService(IUnitOfWork uow, IAuditLogWriter aud
                 var item = await uow.Repository<ModerationItem>().FirstOrDefaultAsync(x => x.Id == candidate.Id, cancellationToken: ct);
                 if (item is null || item.Status is not (ModerationItemStatus.Pending or ModerationItemStatus.Claimed))
                 { await uow.CommitTransactionAsync(ct); continue; }
+                if (item.ParentStoryPackageId.HasValue)
+                {
+                    if (await ParentPackageModeration.IsObsoleteAsync(uow, item, ct))
+                    {
+                        uow.Repository<ModerationItem>().Update(item);
+                        item.Status = ModerationItemStatus.Closed; item.ClosedReason = "PACKAGE_SOURCE_CHANGED"; item.RowVersion++;
+                        uow.Repository<ModerationItem>().Update(item);
+                    }
+                    await uow.SaveChangesAsync(ct); await uow.CommitTransactionAsync(ct); continue;
+                }
                 var story = await uow.Repository<Story>().FirstOrDefaultAsync(x => x.Id == item.StoryId, cancellationToken: ct);
                 var checkpoint = TryReadCheckpoint(item.Flags);
                 // Legacy queue items are valid but have no new continuation checkpoint.

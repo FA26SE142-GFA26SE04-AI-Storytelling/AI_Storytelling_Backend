@@ -1280,7 +1280,7 @@ public sealed class ContentGenerationServiceTests
     private class FakeAIClient(
         bool invalidFirstVocabulary = false,
         bool blockSafety = false,
-        double? safetyScore = null,
+        double? safetyScore = 100,
         string? storyText = null) : IAIStoryGenerationClient
     {
         private int _vocabularyCalls;

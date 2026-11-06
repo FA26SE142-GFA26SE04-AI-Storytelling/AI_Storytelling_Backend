@@ -46,6 +46,7 @@ public partial class ManualAuthoringService
             {
                 Scope = _policy.Scope,
                 Source = StorySource.Manual,
+                CreateOperationId = request.OperationId,
                 ChildProfileId = null,
                 AuthorUserId = userId,
                 Title = Limited(request.Title, 200, "Tên truyện"),

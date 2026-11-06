@@ -5,6 +5,8 @@ namespace StoryPlatform.Application.Features.CreatorAssistance.DTOs;
 
 public sealed record CreateAssistanceTaskRequest
 {
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public int? TargetChildProfileId { get; init; }
     [Required, StringLength(100)] public string OperationId { get; init; } = "";
     [Required] public string EntryPoint { get; init; } = "ContinueWriting";
     public int? BaseVersionId { get; init; }

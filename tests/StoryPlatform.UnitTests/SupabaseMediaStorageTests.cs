@@ -9,6 +9,31 @@ namespace StoryPlatform.UnitTests;
 public sealed class SupabaseMediaStorageTests
 {
     [Fact]
+    public async Task ReadAsync_UsesAuthenticatedObjectRouteAndValidatesBinary()
+    {
+        byte[] validWebp = [0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 1, 2];
+        var storage = CreateStorage(request =>
+        {
+            Assert.Equal(HttpMethod.Get, request.Method);
+            Assert.Equal("https://project.supabase.co/storage/v1/object/authenticated/story-media/123/image.webp", request.RequestUri!.AbsoluteUri);
+            Assert.Equal("test-secret", Assert.Single(request.Headers.GetValues("apikey")));
+            var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(validWebp) };
+            response.Content.Headers.ContentType = new("image/webp"); return Task.FromResult(response);
+        });
+        var result = await storage.ReadAsync("123/image.webp");
+        Assert.Equal(validWebp, result.Content); Assert.Equal("image/webp", result.MimeType);
+    }
+
+    [Theory]
+    [InlineData("https://foreign.example/image.webp")]
+    [InlineData("../private.webp")]
+    public async Task ReadAsync_RejectsForeignUrlsAndTraversalBeforeHttp(string path)
+    {
+        var storage = CreateStorage(_ => throw new InvalidOperationException("Must not make a request"));
+        await Assert.ThrowsAsync<ArgumentException>(() => storage.ReadAsync(path));
+    }
+
+    [Fact]
     public async Task UploadAsync_SendsPrivateBackendRequestAndReturnsStoragePath()
     {
         HttpRequestMessage? captured = null;

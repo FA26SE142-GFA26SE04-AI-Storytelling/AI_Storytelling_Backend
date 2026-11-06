@@ -11,7 +11,7 @@ public sealed partial class MediaGenerationService
 {
     private Task<IReadOnlyList<ListeningInteraction>> LoadListeningInteractionsAsync(int versionId, CancellationToken ct) =>
         _unitOfWork.Repository<ListeningInteraction>().FindAsync(
-            x => x.StoryVersionId == versionId && !x.IsDeleted, cancellationToken: ct);
+            x => x.StoryVersionId == versionId && x.ParentStoryPackageId == (_parentMediaScope == null ? null : (int?)_parentMediaScope.Id) && !x.IsDeleted, cancellationToken: ct);
 
     private async Task<IReadOnlyList<ListeningInteractionOption>> LoadListeningOptionsAsync(
         IReadOnlyList<ListeningInteraction> interactions, CancellationToken ct)
@@ -57,9 +57,11 @@ public sealed partial class MediaGenerationService
         int jobId, string claimedToken, int storyId, int versionId, MediaContext mediaContext,
         ListeningInteraction interaction, ListeningAudioPart part, CancellationToken ct)
     {
-        var asset = await GetOrCreateListeningAudioAssetAsync(versionId, interaction.Id, part, ct);
-        if (asset.Status == MediaStatus.Ready) return;
-        if (asset.AttemptCount >= _assetMaxAttempts) throw new InvalidOperationException("LISTENING_AUDIO_RETRY_EXHAUSTED");
+        var asset = await GetOrCreateClaimedListeningAssetAsync(jobId, claimedToken, versionId, mediaContext.Id,
+            () => GetOrCreateListeningAudioAssetAsync(versionId, interaction.Id, part, ct), ct);
+        if (ListeningMediaRequirements.IsUsable(asset)) return;
+        if (asset.Status == MediaStatus.ManualReview || asset.AttemptCount >= _assetMaxAttempts)
+            throw new InvalidOperationException("LISTENING_AUDIO_RETRY_EXHAUSTED");
         var attempt = asset.AttemptCount;
         try
         {
@@ -116,15 +118,20 @@ public sealed partial class MediaGenerationService
     {
         var optionId = part.OptionId;
         var key = part.PartKey;
-        var existing = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(x =>
+        var packageId = _parentMediaScope?.Id;
+        var candidates = await _unitOfWork.Repository<MediaAsset>().FindAsync(x =>
+            x.StoryVersionId == versionId && x.ParentStoryPackageId == packageId &&
             x.ListeningInteractionId == interactionId && x.ListeningInteractionOptionId == optionId &&
             x.AudioPartKey == key && x.Type == MediaType.ListeningAudio && x.IsCurrent && !x.IsDeleted,
             cancellationToken: ct);
+        var existing = ListeningMediaRequirements.FindAudio(candidates, interactionId, optionId, key) ??
+            candidates.OrderByDescending(x => x.Id).FirstOrDefault();
         if (existing is not null) return existing;
         var asset = new MediaAsset
         {
             StoryVersionId = versionId,
-            RequestedPackageRevision = (await FreshAsync<StoryVersion>(versionId, ct))!.MediaState.MediaPackageRevision,
+            ParentStoryPackageId = _parentMediaScope?.Id,
+            RequestedPackageRevision = _parentMediaScope?.Revision ?? (await FreshAsync<StoryVersion>(versionId, ct))!.MediaState.MediaPackageRevision,
             ListeningInteractionId = interactionId,
             ListeningInteractionOptionId = optionId,
             AudioPartKey = key,
@@ -152,7 +159,7 @@ public sealed partial class MediaGenerationService
             foreach (var option in options.Where(x => x.ListeningInteractionId == interaction.Id).OrderBy(x => x.SortOrder))
             {
                 var asset = await GetOrCreateListeningImageAssetAsync(versionId, interaction.Id, option.Id, ct);
-                if (asset.Status == MediaStatus.Ready) continue;
+                if (ListeningMediaRequirements.IsUsable(asset)) continue;
                 await UpsertImageTaskAsync(branch, versionId, asset.Id, beat.Id, ct);
             }
         }
@@ -161,14 +168,18 @@ public sealed partial class MediaGenerationService
     private async Task<MediaAsset> GetOrCreateListeningImageAssetAsync(
         int versionId, int interactionId, int optionId, CancellationToken ct)
     {
-        var existing = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(x =>
+        var packageId = _parentMediaScope?.Id;
+        var candidates = await _unitOfWork.Repository<MediaAsset>().FindAsync(x =>
+            x.StoryVersionId == versionId && x.ParentStoryPackageId == packageId && x.ListeningInteractionId == interactionId &&
             x.ListeningInteractionOptionId == optionId && x.Type == MediaType.ListeningImage && x.IsCurrent && !x.IsDeleted,
             cancellationToken: ct);
+        var existing = ListeningMediaRequirements.FindImage(candidates, optionId) ?? candidates.OrderByDescending(x => x.Id).FirstOrDefault();
         if (existing is not null) return existing;
         var asset = new MediaAsset
         {
             StoryVersionId = versionId,
-            RequestedPackageRevision = (await FreshAsync<StoryVersion>(versionId, ct))!.MediaState.MediaPackageRevision,
+            ParentStoryPackageId = _parentMediaScope?.Id,
+            RequestedPackageRevision = _parentMediaScope?.Revision ?? (await FreshAsync<StoryVersion>(versionId, ct))!.MediaState.MediaPackageRevision,
             ListeningInteractionId = interactionId,
             ListeningInteractionOptionId = optionId,
             Type = MediaType.ListeningImage,
@@ -180,11 +191,28 @@ public sealed partial class MediaGenerationService
         return asset;
     }
 
+    // QueueListeningImageTasksAsync already owns this transaction and story lock. Direct generation uses this wrapper.
+    private async Task<MediaAsset> GetOrCreateClaimedListeningAssetAsync(int jobId, string token, int versionId,
+        int contextId, Func<Task<MediaAsset>> findOrCreate, CancellationToken ct)
+    {
+        await _unitOfWork.BeginTransactionAsync(ct);
+        try
+        {
+            var job = await RequireClaimedJobAsync(jobId, token, ct);
+            await _unitOfWork.AcquireTransactionLockAsync(job.StoryId, ct);
+            await AssertFreshAsync(jobId, token, versionId, contextId, ct);
+            var asset = await findOrCreate();
+            await _unitOfWork.CommitTransactionAsync(ct);
+            return asset;
+        }
+        catch { await RollbackMediaAsync(CancellationToken.None); throw; }
+    }
+
     private async Task EnsureListeningImageAsync(
         int jobId, string claimedToken, int storyId, MediaContext mediaContext,
         MediaAsset asset, SceneSpecification sceneSpecification, CancellationToken ct)
     {
-        if (asset.Status == MediaStatus.Ready) return;
+        if (ListeningMediaRequirements.IsUsable(asset)) return;
         var option = asset.ListeningInteractionOptionId is int optionId
             ? await FreshAsync<ListeningInteractionOption>(optionId, ct) : null;
         if (option is null || option.IsDeleted || option.ListeningInteractionId != asset.ListeningInteractionId ||

@@ -45,6 +45,28 @@ public sealed class ListeningInteractionGeneratorTests
     }
 
     [Fact]
+    public async Task Package_replace_does_not_read_or_retire_another_childs_interactions_or_media()
+    {
+        var (uow, generator) = Setup();
+        var source = await ScopeAsync(uow, generator);
+        var a = source with { ParentStoryPackageId = 41 };
+        var b = source with { ParentStoryPackageId = 42 };
+        foreach (var scope in new[] { a, b })
+            foreach (var item in scope.Plan.Items)
+                await generator.InsertAsync(scope.Version.Id, (await generator.GenerateAsync(scope, item.Type, "scoped", default)).Drafts, default, scope.ParentStoryPackageId);
+        var savedA = (await generator.InspectAsync(a, default)).Items.Select(x => x.Interaction.Id).ToArray();
+        var interactionA = uow.Items<ListeningInteraction>().First(x => x.ParentStoryPackageId == 41);
+        var assetA = new MediaAsset { Id = 1, ParentStoryPackageId = 41, ListeningInteractionId = interactionA.Id, IsCurrent = true };
+        uow.Seed(assetA);
+        var drafts = (await generator.GenerateAsync(b, ListeningInteractionType.Checkpoint, "replace-b", default)).Drafts;
+        await generator.ReplaceAsync(b.Version.Id, ListeningInteractionType.Checkpoint, drafts, default, b.ParentStoryPackageId);
+        Assert.Equal(savedA, (await generator.InspectAsync(a, default)).Items.Select(x => x.Interaction.Id));
+        Assert.True((await generator.InspectAsync(b, default)).Valid);
+        Assert.True(assetA.IsCurrent);
+        Assert.DoesNotContain(uow.Items<ListeningInteraction>(), x => x.ParentStoryPackageId == 41 && x.IsDeleted);
+    }
+
+    [Fact]
     public async Task Content_shift_after_saving_is_reported_as_stale_anchor()
     {
         var (uow, generator) = Setup();

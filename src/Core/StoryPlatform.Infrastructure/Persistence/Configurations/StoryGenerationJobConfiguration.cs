@@ -89,15 +89,17 @@ public class StoryGenerationJobConfiguration : IEntityTypeConfiguration<StoryGen
 
         builder.HasIndex(x => new { x.Operation, x.StoryVersionId })
             .IsUnique()
-            .HasFilter("\"StoryVersionId\" IS NOT NULL AND \"IsDeleted\" = false AND \"Operation\" <> 'GenerateListeningInteraction'");
+            .HasFilter("\"StoryVersionId\" IS NOT NULL AND \"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NULL AND \"Operation\" <> 'GenerateListeningInteraction'");
 
         // Giữ index FK thường: index tương tác lúc nghe bên dưới có filter nên không thay được nó.
+        builder.HasIndex(x => new { x.ParentStoryPackageId, x.Operation }).IsUnique()
+            .HasFilter("\"ParentStoryPackageId\" IS NOT NULL AND \"IsDeleted\" = false");
         builder.HasIndex(x => x.StoryVersionId);
 
         // Tương tác lúc nghe: một job cho mỗi loại trên cùng một version.
         builder.HasIndex(x => new { x.StoryVersionId, x.ListeningInteractionType })
             .IsUnique()
-            .HasFilter("\"Operation\" = 'GenerateListeningInteraction' AND \"StoryVersionId\" IS NOT NULL AND \"IsDeleted\" = false");
+            .HasFilter("\"ParentStoryPackageId\" IS NULL AND \"Operation\" = 'GenerateListeningInteraction' AND \"StoryVersionId\" IS NOT NULL AND \"IsDeleted\" = false");
 
         builder.HasIndex(x => new { x.RequestedByUserId, x.Operation, x.OperationKey })
             .IsUnique()

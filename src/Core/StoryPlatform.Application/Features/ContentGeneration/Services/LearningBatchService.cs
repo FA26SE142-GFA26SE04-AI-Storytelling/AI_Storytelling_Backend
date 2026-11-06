@@ -18,7 +18,11 @@ public sealed class LearningBatchService(IUnitOfWork uow, ILearningBatchRunner r
     internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public async Task<LearningBatchPackage> GenerateAsync(StoryGenerationJob root, string token, StoryVersion version,
-        AIStoryInputContextSnapshot context, CancellationToken ct)
+        AIStoryInputContextSnapshot context, CancellationToken ct) =>
+        await GenerateSelectedAsync(root, token, version, context, true, true, ct);
+
+    public async Task<LearningBatchPackage> GenerateSelectedAsync(StoryGenerationJob root, string token, StoryVersion version,
+        AIStoryInputContextSnapshot context, bool vocabulary, bool quiz, CancellationToken ct)
     {
         var profile = context.LearningProfile ?? options.Profile(context.AgeBand);
         var catalogue = root.PromptCatalogVersionId is int id
@@ -33,7 +37,7 @@ public sealed class LearningBatchService(IUnitOfWork uow, ILearningBatchRunner r
             Templates = new Dictionary<string, string>
             {
                 ["Vocabulary"] = "Create child-friendly vocabulary grounded only in the supplied story. Use its language, age band and reading level. Follow the structured batch contract. Context JSON: {{context}}",
-                ["Quiz"] = "Create child-friendly learning questions grounded only in the supplied story. Use its language and age band. Explain answers using evidence. Follow the structured batch contract. Context JSON: {{context}}"
+                ["Quiz"] = "Create child-friendly learning questions grounded only in the supplied story. Use its language, age band and reading level. Explain answers using evidence. Follow the structured batch contract. Context JSON: {{context}}"
             }
         };
         var storyDto = new StoryContentDto { Title = version.Title, Lesson = version.Lesson ?? "",
@@ -44,28 +48,32 @@ public sealed class LearningBatchService(IUnitOfWork uow, ILearningBatchRunner r
         GenerateQuizRequest Quiz(string kind, int count, IReadOnlyList<GeneratedVocabularyItemDto>? terms = null,
             IReadOnlyList<string>? excluded = null) => new()
         {
-            Story = storyDto, AgeBand = context.AgeBand, Language = context.Language, Snapshot = snapshot,
+            Story = storyDto, AgeBand = context.AgeBand, ReadingLevel = context.ReadingLevel, Language = context.Language, Snapshot = snapshot,
             ComprehensionGoal = context.ComprehensionGoal, Vocabulary = terms ?? [],
             Batch = new() { Kind = kind, TargetCount = count, ExcludedQuestions = excluded ?? [],
                 RequiredQuestionTypes = LearningBatchSpec.QuizTypesForBatch(kind, count) }
         };
-        var initial = new[]
+        var initial = new List<LearningBatchRequest>();
+        if (vocabulary) initial.Add(new(vocab, null, context));
+        if (quiz)
         {
-            new LearningBatchRequest(vocab, null, context),
-            new LearningBatchRequest(null, Quiz("quiz_facts", (profile.QuizTarget + 2) / 3), context),
-            new LearningBatchRequest(null, Quiz("quiz_reasoning", (profile.QuizTarget + 1) / 3), context)
-        };
+            initial.Add(new(null, Quiz("quiz_facts", vocabulary ? (profile.QuizTarget + 2) / 3 : (profile.QuizTarget + 1) / 2), context));
+            initial.Add(new(null, Quiz("quiz_reasoning", vocabulary ? (profile.QuizTarget + 1) / 3 : profile.QuizTarget / 2), context));
+        }
+        if (initial.Count == 0) return new(new(), new());
         var ids = await QueueAsync(root, token, version, initial, ct);
         await runner.RunAsync(ids, token, ct);
         var completed = await RowsAsync(root.Id, ct, ["vocabulary", "quiz_facts", "quiz_reasoning"]);
-        var words = Deserialize<GenerateVocabularyResponse>(completed.Single(x => x.Kind == "vocabulary").ResultJson);
-        var previous = completed.Where(x => x.Kind.StartsWith("quiz_", StringComparison.Ordinal)).SelectMany(x => Deserialize<GenerateQuizResponse>(x.ResultJson).Items)
-            .Select(x => x.Question).ToArray();
-        // This dependency is explicit: story-only quizzes need no invented vocabulary input.
-        ids = await QueueAsync(root, token, version,
-            [new(null, Quiz("quiz_vocabulary", profile.QuizTarget / 3, words.Items, previous), context)], ct);
-        await runner.RunAsync(ids, token, ct);
-        return Merge(await RowsAsync(root.Id, ct));
+        var words = vocabulary ? Deserialize<GenerateVocabularyResponse>(completed.Single(x => x.Kind == "vocabulary").ResultJson) : new();
+        if (quiz && vocabulary)
+        {
+            var previous = completed.Where(x => x.Kind.StartsWith("quiz_", StringComparison.Ordinal))
+                .SelectMany(x => Deserialize<GenerateQuizResponse>(x.ResultJson).Items).Select(x => x.Question).ToArray();
+            ids = await QueueAsync(root, token, version,
+                [new(null, Quiz("quiz_vocabulary", profile.QuizTarget / 3, words.Items, previous), context)], ct);
+            await runner.RunAsync(ids, token, ct);
+        }
+        return Merge(await RowsAsync(root.Id, ct), vocabulary, quiz);
     }
 
     private async Task<IReadOnlyList<int>> QueueAsync(StoryGenerationJob observed, string token, StoryVersion version,
@@ -81,7 +89,7 @@ public sealed class LearningBatchService(IUnitOfWork uow, ILearningBatchRunner r
             if (root?.Status != GenerationJobStatus.Processing || root.ConcurrencyToken != token || root.StoryVersionId != version.Id || root.LeaseExpiresAt <= DateTime.UtcNow)
                 throw new ConflictException("STALE_LEARNING_JOB");
             var actor = root.RequestedByUserId ?? story.AuthorUserId;
-            var contextHash = await LearningBatchAccess.AuthorizeAsync(uow, guard, story, fresh, actor, ct);
+            var contextHash = await LearningBatchAccess.AuthorizeAsync(uow, guard, story, fresh, actor, ct, root.ParentStoryPackageId);
             var source = LearningBatchAccess.Source(story, fresh);
             if (source != LearningBatchAccess.Source(story, version)) throw new ConflictException("STALE_LEARNING_SOURCE");
             var rows = new List<LearningArtifactGenerationBatch>();
@@ -100,7 +108,7 @@ public sealed class LearningBatchService(IUnitOfWork uow, ILearningBatchRunner r
                 var pinned = request with { Vocabulary = request.Vocabulary is null ? null : request.Vocabulary with { RequestId = key },
                     Quiz = request.Quiz is null ? null : request.Quiz with { RequestId = key } };
                 row = new() { StoryId = story.Id, StoryVersionId = version.Id, RootJobId = root.Id, RequestedByUserId = actor,
-                    SourceFingerprint = source, ContextFingerprint = contextHash, Kind = spec.Kind, BatchNumber = spec.BatchNumber,
+                    ParentStoryPackageId = root.ParentStoryPackageId, SourceFingerprint = source, ContextFingerprint = contextHash, Kind = spec.Kind, BatchNumber = spec.BatchNumber,
                     TargetCount = spec.TargetCount, RequestJson = JsonSerializer.Serialize(pinned, Json) };
                 await uow.Repository<LearningArtifactGenerationBatch>().AddAsync(row, ct);
                 rows.Add(row);
@@ -129,7 +137,7 @@ public sealed class LearningBatchService(IUnitOfWork uow, ILearningBatchRunner r
         var version = await uow.Repository<StoryVersion>().FirstOrDefaultAsync(x => x.Id == versionId && x.IsCurrent, cancellationToken: ct) ?? throw new ConflictException("STALE_LEARNING_SOURCE");
         var story = await uow.Repository<Story>().FirstOrDefaultAsync(x => x.Id == storyId, cancellationToken: ct) ?? throw new ConflictException("STALE_LEARNING_SOURCE");
         var root = await uow.Repository<StoryGenerationJob>().FirstOrDefaultAsync(x => x.StoryId == storyId && x.StoryVersionId == versionId &&
-            x.Operation == GenerationJobOperation.GenerateVocabulary && x.Status == GenerationJobStatus.Completed, cancellationToken: ct) ?? throw new ConflictException("LEARNING_BATCH_INCOMPLETE");
+            x.ParentStoryPackageId == null && x.Operation == GenerationJobOperation.GenerateVocabulary && x.Status == GenerationJobStatus.Completed, cancellationToken: ct) ?? throw new ConflictException("LEARNING_BATCH_INCOMPLETE");
         var rows = await RowsAsync(root.Id, ct);
         if (rows.Any(x => x.SourceFingerprint != LearningBatchAccess.Source(story, version))) throw new ConflictException("STALE_LEARNING_SOURCE");
         return Merge(rows).Quiz;
@@ -142,11 +150,12 @@ public sealed class LearningBatchService(IUnitOfWork uow, ILearningBatchRunner r
             throw new ConflictException("STALE_LEARNING_SOURCE");
     }
     private static T Deserialize<T>(string? json) => JsonSerializer.Deserialize<T>(json ?? throw new ConflictException("LEARNING_BATCH_INCOMPLETE"), Json)!;
-    private static LearningBatchPackage Merge(IReadOnlyList<LearningArtifactGenerationBatch> rows)
+    private static LearningBatchPackage Merge(IReadOnlyList<LearningArtifactGenerationBatch> rows, bool wantVocabulary = true, bool wantQuiz = true)
     {
-        if (!new[] { "vocabulary", "quiz_facts", "quiz_reasoning", "quiz_vocabulary" }.All(kind => rows.Any(x => x.Kind == kind)))
+        if ((wantVocabulary && !rows.Any(x => x.Kind == "vocabulary")) || (wantQuiz && !new[] { "quiz_facts", "quiz_reasoning" }.Concat(wantVocabulary ? new[] { "quiz_vocabulary" } : []).All(kind => rows.Any(x => x.Kind == kind))))
             throw new ConflictException("LEARNING_BATCH_INCOMPLETE");
-        var vocabulary = Deserialize<GenerateVocabularyResponse>(rows.Single(x => x.Kind == "vocabulary").ResultJson);
+        var vocabulary = wantVocabulary ? Deserialize<GenerateVocabularyResponse>(rows.Single(x => x.Kind == "vocabulary").ResultJson) : new();
+        if (!wantQuiz) return new(vocabulary, new());
         var quizzes = rows.Where(x => x.Kind.StartsWith("quiz_", StringComparison.Ordinal)).OrderBy(x => x.Kind)
             .Select(x => Deserialize<GenerateQuizResponse>(x.ResultJson)).ToArray();
         var all = quizzes.SelectMany(x => x.Items).ToArray();

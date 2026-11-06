@@ -9,7 +9,8 @@ public interface IAssistanceAccessPolicy
     string RouteSegment { get; }
     Task AuthorizeAsync(int user, Story story, CancellationToken ct);
     Task EnsureWritableAsync(Story story, CancellationToken ct);
-    Task<string?> CaptureContextAsync(Story story, CancellationToken ct);
+    string AgeBandForContext(Story story, string? snapshot) => story.AgeBand;
+    Task<string?> CaptureContextAsync(Story story, CancellationToken ct, int? targetChildProfileId = null);
     Task ValidateContextAsync(Story story, string? snapshot, CancellationToken ct);
 }
 
@@ -23,6 +24,6 @@ public sealed class CreatorAssistanceAccessPolicy(StoryPlatform.Application.Abst
         await StoryPlatform.Application.Common.CreatorPublicationGuard.EnsureWritableAsync(uow, story.Id, null, ct);
         await AssistanceGenerationAccess.EnsureWritableAsync(uow,story,ct);
     }
-    public Task<string?> CaptureContextAsync(Story story, CancellationToken ct) => Task.FromResult<string?>(null);
+    public Task<string?> CaptureContextAsync(Story story, CancellationToken ct, int? targetChildProfileId = null) => Task.FromResult<string?>(null);
     public Task ValidateContextAsync(Story story, string? snapshot, CancellationToken ct) => Task.CompletedTask;
 }

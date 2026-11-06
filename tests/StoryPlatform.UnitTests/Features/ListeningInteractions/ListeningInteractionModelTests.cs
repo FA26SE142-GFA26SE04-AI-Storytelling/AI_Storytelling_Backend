@@ -23,7 +23,10 @@ public sealed class ListeningInteractionModelTests
         Assert.Equal("listening_interactions", entity.GetTableName());
         var index = Index(entity, nameof(ListeningInteraction.StoryVersionId), nameof(ListeningInteraction.AnchorOffset));
         Assert.True(index.IsUnique);
-        Assert.Equal("\"IsDeleted\" = false", index.GetFilter());
+        Assert.Equal("\"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NULL", index.GetFilter());
+        var packageIndex = Index(entity, nameof(ListeningInteraction.ParentStoryPackageId), nameof(ListeningInteraction.AnchorOffset));
+        Assert.True(packageIndex.IsUnique);
+        Assert.Contains("IS NOT NULL", packageIndex.GetFilter());
         Assert.Equal("Checkpoint", entity.FindProperty(nameof(ListeningInteraction.Type))!.GetTypeMapping().Converter!
             .ConvertToProvider(StoryPlatform.Domain.Enums.ListeningInteractionType.Checkpoint));
     }

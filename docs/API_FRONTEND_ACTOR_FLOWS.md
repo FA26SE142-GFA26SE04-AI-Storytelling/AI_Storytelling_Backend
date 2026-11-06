@@ -1,6 +1,10 @@
 # API backend theo actor và luồng tích hợp frontend
 
+> Parent Manual nhiều bé (04/11/2026): [Hướng dẫn tích hợp Frontend và contract package](PARENT_MULTI_CHILD_PACKAGES_API_GUIDE.md). Bao gồm request/response, token, polling, retry/revise, media có Authorization và Child Reader. Các mô tả Parent một bé bên dưới là baseline legacy khi khác với hướng dẫn package.
+
 > Phase 5 Image/TTS: [MEDIA_PHASE5_IMAGE_TTS_API_GUIDE.md](MEDIA_PHASE5_IMAGE_TTS_API_GUIDE.md)
+>
+> Creator Manual upload ảnh/audio và chọn AI theo từng phần: [CREATOR_MANUAL_MEDIA_UPLOAD_API_GUIDE.md](CREATOR_MANUAL_MEDIA_UPLOAD_API_GUIDE.md). Áp dụng migration `AddCreatorMediaUploads` trên môi trường đích trước khi dùng API mới; database local đã cập nhật ngày 04/11/2026.
 
 > Bổ sung 26/10/2026: assistance theo bản nháp dùng cho **soạn thủ công và sửa nội dung truyện AI** của Parent/Creator tại M3. Phần mapping baseline bên dưới là lịch sử; đợt bổ sung đã nối giao diện, chưa xác nhận triển khai hay provider thật.
 
@@ -384,7 +388,7 @@ Creator chỉ xác nhận quyết định sáng tác. Approve outline cũng là 
 
 ### CR3. Gửi Public Library
 
-Chỉ khi version đủ Ready/media/tác giả: POST /PublicStorySubmission/submit với storyId/storyVersionId → giữ itemId/status. Không dùng /community-submissions giả định của Parent.
+Chỉ khi version đủ Ready/media/tác giả: POST /PublicStorySubmission/submit với storyId/storyVersionId/contentCategoryIds → giữ itemId/status. Không dùng /community-submissions giả định của Parent.
 
 POST /{itemId}/withdraw chỉ khi Pending và do mình gửi; Claimed không rút được. Sau withdraw, ChangesRequested hoặc Rejected, gọi API revisions để tạo phiên mới trước khi sửa rồi gửi lại. Phiên đã nộp vẫn bất biến. Có submission API không chứng minh manual Creator đã có bước Ready.
 
@@ -401,7 +405,7 @@ POST /{itemId}/withdraw chỉ khi Pending và do mình gửi; Claimed không rú
 
 | Method + route | Quyền và contract | Frontend |
 |---|---|---|
-| `GET /api/v1/creator/stories/{storyId}/publication` | Creator Active/đúng tác giả. 200: `storyId`, `versionId`, `isPublished`, `reviewStatus`, `openItemId`, `openItemType`, `openItemStatus`. Dùng để kiểm tra trạng thái sau timeout/poll yêu cầu gỡ. | CHƯA_MAP |
+| `GET /api/v1/creator/stories/{storyId}/publication` | Creator Active/đúng tác giả. 200: `storyId`, `versionId`, `isPublished`, `reviewStatus`, `openItemId`, `openItemType`, `openItemStatus`, `labels`, `lastProposedLabels`. Dùng để kiểm tra trạng thái sau timeout/poll yêu cầu gỡ. | CHƯA_MAP |
 | `POST /api/v1/creator/stories/{storyId}/removal-requests` | Creator đúng tác giả, truyện đang công khai, current version đã Approved; không có mục duyệt/gỡ đang mở. Body `{ "reason": "Cần chỉnh sửa phần kết" }`, 1–2000 ký tự. 200: `CreatorPublicationResult`, status Pending. Không gỡ ngay. | CHƯA_MAP |
 | `POST /api/v1/moderation/public-story-removals/{itemId}/decision` | Moderator/Administrator theo quy tắc claim hiện có; không tự duyệt, phải đang giữ claim còn hạn. Body `{ "approve": true, "reason": "Cho phép gỡ để chỉnh sửa", "rowVersion": 1 }`. Lấy rowVersion từ response claim/open; không hardcode. 200: Approved/Rejected. Approve đặt isPublished=false, giữ nguyên nội dung phiên đã duyệt. | CHƯA_MAP |
 | `POST /api/v1/creator/stories/{storyId}/revisions` | Creator đúng tác giả; không công khai/Archive hoặc có mục duyệt/gỡ đang mở. Body `{ "sourceVersionId": 123 }`, phải là phiên current. 200: `CreatorPublicationResult`; không tự phát hành. | CHƯA_MAP |
@@ -2443,7 +2447,6 @@ Guard/nghiệp vụ: [PublicStoryReviewService.cs](../src/Core/StoryPlatform.App
 | [POST /api/v1/PublicStoryReview/{itemId}/views](#ep-publicstoryreview-markviewed-post) | CHƯA_MAP |
 | [POST /api/v1/PublicStoryReview/{itemId}/flags/resolve](#ep-publicstoryreview-resolveflag-post) | CHƯA_MAP |
 | [PUT /api/v1/PublicStoryReview/{itemId}/checklist](#ep-publicstoryreview-savechecklist-put) | CHƯA_MAP |
-| [PUT /api/v1/PublicStoryReview/{itemId}/labels](#ep-publicstoryreview-setlabels-put) | CHƯA_MAP |
 | [POST /api/v1/PublicStoryReview/{itemId}/approve](#ep-publicstoryreview-approve-post) | CHƯA_MAP |
 | [POST /api/v1/PublicStoryReview/{itemId}/request-changes](#ep-publicstoryreview-requestchanges-post) | CHƯA_MAP |
 | [POST /api/v1/PublicStoryReview/{itemId}/reject](#ep-publicstoryreview-reject-post) | CHƯA_MAP |
@@ -2485,15 +2488,6 @@ Guard/nghiệp vụ: [PublicStoryReviewService.cs](../src/Core/StoryPlatform.App
 - Response: ApiResponse.data: [PublicReviewChecklistDto](#dto-publicreviewchecklistdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
 
-<a id="ep-publicstoryreview-setlabels-put"></a>
-#### PUT /api/v1/PublicStoryReview/{itemId}/labels
-
-- Action/chức năng: **SetLabels** — Thay toàn bộ nhãn nội dung của truyện đang được duyệt.. [PublicStoryReviewController](../src/Core/StoryPlatform.Api/Controllers/PublicStoryReviewController.cs#L83).
-- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
-- Request: **path** itemId: `int`; bắt buộc<br>**body** request: [SetContentLabelsRequestDto](#dto-setcontentlabelsrequestdto); field/validation/ví dụ tại schema.
-- Response: ApiResponse.data: [List&lt;PublicReviewLabelDto&gt;](#dto-publicreviewlabeldto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
-- Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
-
 <a id="ep-publicstoryreview-approve-post"></a>
 #### POST /api/v1/PublicStoryReview/{itemId}/approve
 
@@ -2505,6 +2499,8 @@ Guard/nghiệp vụ: [PublicStoryReviewService.cs](../src/Core/StoryPlatform.App
 
 <a id="ep-publicstoryreview-requestchanges-post"></a>
 #### POST /api/v1/PublicStoryReview/{itemId}/request-changes
+
+Nếu nhãn đề xuất sai, Moderator chọn phần `metadata`; Creator sửa `contentCategoryIds` rồi gửi lại.
 
 - Action/chức năng: **RequestChanges** — Yêu cầu Content Creator sửa các phần cụ thể của phiên bản.. [PublicStoryReviewController](../src/Core/StoryPlatform.Api/Controllers/PublicStoryReviewController.cs#L112).
 - Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
@@ -3920,7 +3916,6 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [SceneMediaItem](#dto-scenemediaitem) | [MediaGenerationModels.cs](../src/Core/StoryPlatform.Application/Features/MediaGeneration/Models/MediaGenerationModels.cs#L92) |
 | [SePayWebhookPayloadDto](#dto-sepaywebhookpayloaddto) | [PaymentDtos.cs](../src/Core/StoryPlatform.Application/Features/Payments/DTOs/PaymentDtos.cs#L35) |
 | [SessionDto](#dto-sessiondto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L210) |
-| [SetContentLabelsRequestDto](#dto-setcontentlabelsrequestdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L171) |
 | [SetLearningProfileRequestDto](#dto-setlearningprofilerequestdto) | [LearningProfileDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Learning/DTOs/LearningProfileDtos.cs#L23) |
 | [SetLearningProfileTopicRequestDto](#dto-setlearningprofiletopicrequestdto) | [LearningProfileDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Learning/DTOs/LearningProfileDtos.cs#L38) |
 | [SetSafetyPolicyCategoryRequestDto](#dto-setsafetypolicycategoryrequestdto) | [SafetyPolicyDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Safety/DTOs/SafetyPolicyDtos.cs#L88) |
@@ -6697,6 +6692,7 @@ Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Featur
 | `versionNo` | `int` | Không | — |
 | `isResubmission` | `bool` | Không | — |
 | `story` | [PublicReviewStoryDto](#dto-publicreviewstorydto) | Không | default `new()` |
+| `proposedLabels` | [List&lt;PublicReviewLabelDto&gt;](#dto-publicreviewlabeldto) | Không | nhãn Creator đề xuất, chỉ áp khi Approve |
 | `version` | [PublicReviewVersionDto](#dto-publicreviewversiondto) | Không | default `new()` |
 | `scenes` | [List&lt;PublicReviewSceneDto&gt;](#dto-publicreviewscenedto) | Không | default `new()` |
 | `vocabulary` | [List&lt;PublicReviewVocabularyDto&gt;](#dto-publicreviewvocabularydto) | Không | default `new()` |
@@ -7478,23 +7474,6 @@ Nguồn: [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/
 | `issuedAt` | `DateTime` | Không | — |
 | `expiresAt` | `DateTime` | Không | — |
 
-<a id="dto-setcontentlabelsrequestdto"></a>
-### SetContentLabelsRequestDto
-
-Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L171).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `contentCategoryIds` | `List<int>` | Không | default `new()` |
-
-Ví dụ JSON minh họa shape request:
-
-~~~json
-{
-  "contentCategoryIds": []
-}
-~~~
-
 <a id="dto-setlearningprofilerequestdto"></a>
 ### SetLearningProfileRequestDto
 
@@ -7917,13 +7896,15 @@ Nguồn: [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Featur
 |---|---|---|---|
 | `storyId` | `int` | Không | — |
 | `storyVersionId` | `int` | Không | — |
+| `contentCategoryIds` | `List<int>` | Không | bắt buộc ít nhất một nhãn đang hoạt động; ID trùng tự gộp |
 
 Ví dụ JSON minh họa shape request:
 
 ~~~json
 {
   "storyId": 1,
-  "storyVersionId": 1
+  "storyVersionId": 1,
+  "contentCategoryIds": [5]
 }
 ~~~
 
@@ -8667,6 +8648,8 @@ Nguồn: [CreatorPublicationDtos.cs](../src/Core/StoryPlatform.Application/Featu
 | `openItemId` | `int?` | Có | — |
 | `openItemType` | `string?` | Có | — |
 | `openItemStatus` | `string?` | Có | — |
+| `labels` | [List&lt;PublicReviewLabelDto&gt;](#dto-publicreviewlabeldto) | Không | nhãn chính thức của truyện |
+| `lastProposedLabels` | [List&lt;PublicReviewLabelDto&gt;](#dto-publicreviewlabeldto) | Không | nhãn đề xuất của lượt gửi gần nhất |
 
 <a id="dto-creatorremovalrequest"></a>
 ### CreatorRemovalRequest

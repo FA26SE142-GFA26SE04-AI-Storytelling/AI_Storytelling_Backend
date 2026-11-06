@@ -29,5 +29,6 @@ public enum JobStage
     MediaGenerating = 33,
     MediaFinalizing = 34,
     MediaCompleted = 35,
+    MediaAwaitingSelection = 36,
     MediaFailed = 39
 }

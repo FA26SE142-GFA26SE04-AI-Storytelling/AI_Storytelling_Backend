@@ -33,7 +33,7 @@ public sealed class Luong5ModeratorSchemaModelTests
         Assert.Equal(new[] { "High", "Medium", "Low" }, Enum.GetNames<ModerationPriority>());
         Assert.Equal(new[] { "Draft", "PendingReview", "Published", "Archived" }, Enum.GetNames<RoadmapTemplateStatus>());
         Assert.Equal(new[] { "ReplacedByClone", "Manual" }, Enum.GetNames<RoadmapArchiveReason>());
-        Assert.Equal(new[] { "Ai", "Moderator", "Parent" }, Enum.GetNames<TagSource>());
+        Assert.Equal(new[] { "Ai", "Moderator", "Parent", "Creator" }, Enum.GetNames<TagSource>());
         Assert.Equal(new[] { "Safe", "GrayZone", "HardBlock" }, Enum.GetNames<ModerationZone>());
         Assert.Equal(
             new[] { "None", "Pending", "Approved", "ChangesRequested", "Rejected" },

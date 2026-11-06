@@ -1,5 +1,7 @@
 # Parent authoring và Creative Suggestion Engine — backend
 
+> Hướng dẫn hiện hành (04/11/2026): [Frontend — một truyện nhiều bé, package và Reader](PARENT_MULTI_CHILD_PACKAGES_API_GUIDE.md). Luồng mới cho phép viết nháp trước khi chọn bé; các phần bắt buộc một child hoặc mô tả giới hạn media/migration bên dưới là baseline legacy. Dùng tài liệu package để tích hợp API mới; việc đã push source không xác nhận server đã deploy hoặc cập nhật schema.
+
 Cập nhật 19/10/2026: Parent tự viết và dùng AI hỗ trợ trên cùng bản nháp. Phạm vi lần này là backend; chưa tích hợp UI/Reader frontend, chưa tạo/apply migration hoặc chạy API xuống DB thật.
 
 ## Trạng thái triển khai

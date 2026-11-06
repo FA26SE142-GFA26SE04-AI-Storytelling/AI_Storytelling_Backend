@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using StoryPlatform.Application.Features.MediaGeneration;
@@ -47,7 +48,8 @@ public sealed class GeminiTtsProviderTests
         TtsServiceOptions? ttsOptions = null,
         VertexOptions? vertexOptions = null,
         GeminiOptions? geminiOptions = null,
-        bool useResiliencePipeline = false)
+        bool useResiliencePipeline = false,
+        ILogger<GeminiTtsProvider>? logger = null)
     {
         var resolvedTtsOptions = ttsOptions ?? new TtsServiceOptions();
         HttpClient client;
@@ -70,7 +72,7 @@ public sealed class GeminiTtsProviderTests
         var ttsOpts = Options.Create(resolvedTtsOptions);
         var vtxOpts = Options.Create(vertexOptions ?? new VertexOptions { UseVertex = true, ProjectId = "test-proj", Location = "global" });
         var gemOpts = Options.Create(geminiOptions ?? new GeminiOptions());
-        return new GeminiTtsProvider(client, gemOpts, vtxOpts, ttsOpts, NullLogger<GeminiTtsProvider>.Instance);
+        return new GeminiTtsProvider(client, gemOpts, vtxOpts, ttsOpts, logger ?? NullLogger<GeminiTtsProvider>.Instance);
     }
 
     [Fact]
@@ -253,6 +255,55 @@ public sealed class GeminiTtsProviderTests
             provider.GenerateAsync("Test", cts.Token));
 
         Assert.Equal(1, callCount); // Must propagate immediately after 1 attempt without retries
+    }
+
+    [Fact]
+    public void Configured_timeout_overrides_shorter_HttpClient_default()
+    {
+        using var client=new HttpClient();
+        _=new GeminiTtsProvider(client,Options.Create(new GeminiOptions()),Options.Create(new VertexOptions()),
+            Options.Create(new TtsServiceOptions()),NullLogger<GeminiTtsProvider>.Instance);
+        Assert.Equal(TimeSpan.FromSeconds(120),client.Timeout);
+    }
+
+    [Fact]
+    public async Task Audio_returned_after_30_seconds_succeeds_with_default_budget_and_one_request()
+    {
+        var calls=0;
+        var handler=new MockHttpMessageHandler(async (_,ct)=>
+        {
+            calls++;
+            await Task.Delay(TimeSpan.FromSeconds(31),ct);
+            return new HttpResponseMessage(HttpStatusCode.OK) {Content=new StringContent(CreateGeminiAudioResponseJson(ValidWavBytes))};
+        });
+        var result=await CreateProvider(handler).GenerateAsync("Đoạn kể chậm hơn ba mươi giây");
+        Assert.Equal(ValidWavBytes,result.Content);
+        Assert.Equal(1,calls);
+    }
+
+    [Fact]
+    public async Task Http_timeout_is_logged_without_content_and_does_not_retry_inside_provider()
+    {
+        var calls=0;var logger=new RecordingLogger();
+        var handler=new MockHttpMessageHandler(async (_,ct)=>
+        {
+            calls++;await Task.Delay(Timeout.Infinite,ct);
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(()=>CreateProvider(handler,
+            new TtsServiceOptions {TimeoutSeconds=1},logger:logger).GenerateAsync("private story text"));
+        Assert.Equal(1,calls);
+        Assert.Contains(logger.Messages,x=>x.Contains("HttpClientTimeout"));
+        Assert.DoesNotContain(logger.Messages,x=>x.Contains("private story text"));
+    }
+
+    private sealed class RecordingLogger : ILogger<GeminiTtsProvider>
+    {
+        public List<string> Messages {get;}=[];
+        public IDisposable? BeginScope<TState>(TState state) where TState:notnull => null;
+        public bool IsEnabled(LogLevel level)=>true;
+        public void Log<TState>(LogLevel level,EventId id,TState state,Exception? error,Func<TState,Exception?,string> format)
+            =>Messages.Add(format(state,error));
     }
 
     private sealed class MockHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> sendAsyncFunc)

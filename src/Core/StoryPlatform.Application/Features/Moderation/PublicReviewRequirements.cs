@@ -70,4 +70,6 @@ public static class ApproveBlockerCodes
     public const string ViewsIncomplete = "views_incomplete";
     public const string FlagsUnresolved = "flags_unresolved";
     public const string ChecklistIncomplete = "checklist_incomplete";
+    public const string NoLabels = "no_labels";
+    public const string InactiveLabels = "labels_inactive";
 }

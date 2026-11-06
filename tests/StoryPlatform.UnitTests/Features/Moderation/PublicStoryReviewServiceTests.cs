@@ -17,6 +17,22 @@ public class PublicStoryReviewServiceTests
     private readonly PublicStoryReviewHarness _h = new();
 
     [Fact]
+    public async Task Uploaded_audio_requires_every_segment_heard_even_with_word_timings()
+    {
+        var first=_h.MakeApprovable();
+        var second=_h.AddScene(2,2,withWordTimings:true);
+        _h.Assets.Single(x=>x.StorySegmentId==second && x.Type==MediaType.TtsAudio).Source=MediaAssetSource.UserUpload;
+        _h.Items[0].ReviewProgress=$"{{\"viewed\":{{\"scene\":[1,2],\"audio\":[{first}]}}}}";
+        var package=await _h.Sut.GetPackageAsync(PublicStoryReviewHarness.ModeratorId,PublicStoryReviewHarness.ItemId);
+        Assert.False(package.CanApprove); Assert.Contains(second,package.Progress.MissingWarningSegmentIds);
+        Assert.True(package.Scenes.Single(x=>x.SceneId==2).Segments.Single().RequiresFullAudioReview);
+        await _h.Sut.MarkViewedAsync(PublicStoryReviewHarness.ModeratorId,PublicStoryReviewHarness.ItemId,
+            new MarkPartViewedRequestDto {PartType="audio",PartId=second});
+        package=await _h.Sut.GetPackageAsync(PublicStoryReviewHarness.ModeratorId,PublicStoryReviewHarness.ItemId);
+        Assert.True(package.CanApprove);
+    }
+
+    [Fact]
     public async Task GetPackageAsync_ShowsListeningInteractionsWithOptionsAndMedia()
     {
         _h.AddScene(1, 1);
@@ -115,8 +131,6 @@ public class PublicStoryReviewServiceTests
             Term = "kiên nhẫn",
             Definition = "bền bỉ chờ đợi"
         });
-        _h.ContentCategories.Add(new ContentCategory
-        { Id = 5, Code = "friendship", DisplayName = "Tình bạn" });
         _h.StoryCategories.Add(new StoryCategory
         {
             Id = 1,
@@ -411,50 +425,7 @@ public class PublicStoryReviewServiceTests
     }
 
     [Fact]
-    public async Task SetContentLabelsAsync_ReplacesLabelsAndMarksNewSource()
-    {
-        GivenCategories();
-        var before = _h.Items[0].RowVersion;
-
-        var labels = await _h.Sut.SetContentLabelsAsync(
-            PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId,
-            new SetContentLabelsRequestDto { ContentCategoryIds = new List<int> { 6, 6 } });
-
-        Assert.Single(labels);
-        Assert.Equal(6, labels[0].ContentCategoryId);
-        Assert.Equal("Moderator", labels[0].Source);
-        Assert.Single(_h.StoryCategories);
-        Assert.Equal(before + 1, _h.Items[0].RowVersion);
-        _h.Audit.Verify(a => a.LogAsync(
-            PublicStoryReviewHarness.ModeratorId, "PublicStoryReviewLabelsChanged", nameof(ModerationItem),
-            PublicStoryReviewHarness.ItemId, It.IsAny<object?>(), It.IsAny<object?>(),
-            It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Theory]
-    [InlineData(7)]
-    [InlineData(999)]
-    public async Task SetContentLabelsAsync_InactiveOrUnknown_IsBadRequest(int categoryId)
-    {
-        GivenCategories();
-
-        await Assert.ThrowsAsync<BadRequestException>(() => _h.Sut.SetContentLabelsAsync(
-            PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId,
-            new SetContentLabelsRequestDto { ContentCategoryIds = new List<int> { categoryId } }));
-    }
-
-    [Fact]
-    public async Task SetContentLabelsAsync_EmptySet_IsBadRequest()
-    {
-        GivenCategories();
-
-        await Assert.ThrowsAsync<BadRequestException>(() => _h.Sut.SetContentLabelsAsync(
-            PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId,
-            new SetContentLabelsRequestDto()));
-    }
-
-    [Fact]
-    public void Controller_IsRestrictedAndExposesNineEndpoints()
+    public void Controller_IsRestrictedAndExposesEightEndpoints()
     {
         var authorize = typeof(PublicStoryReviewController).GetCustomAttribute<AuthorizeAttribute>();
         var methods = typeof(PublicStoryReviewController)
@@ -467,7 +438,7 @@ public class PublicStoryReviewServiceTests
             new[]
             {
                 "Approve", "Compare", "GetPackage", "MarkViewed", "Reject", "RequestChanges", "ResolveFlag",
-                "SaveChecklist", "SetLabels"
+                "SaveChecklist"
             },
             methods);
     }
@@ -545,9 +516,42 @@ public class PublicStoryReviewServiceTests
         Assert.True(_h.Stories[0].PublishedAt >= before);
         Assert.True(_h.Stories[0].ChildVisibleAt >= before);
         Assert.Equal(StoryStatus.Ready, _h.Stories[0].Status);
+        Assert.Equal(TagSource.Creator, Assert.Single(_h.StoryCategories).Source);
         Assert.Equal(1, _h.Items[0].RowVersion);
         _h.UnitOfWork.Verify(unit => unit.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
         _h.UnitOfWork.Verify(unit => unit.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetPackageAsync_MissingOrInactiveProposedLabels_BlocksApproval()
+    {
+        _h.MakeApprovable();
+        _h.Items[0].ProposedContentCategoryIds = null;
+        var missing = await _h.Sut.GetPackageAsync(PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId);
+        Assert.Contains(missing.ApproveBlockers, x => x.Code == "no_labels");
+        await Assert.ThrowsAsync<BadRequestException>(ApproveDecisionAsync);
+
+        _h.Items[0].ProposedContentCategoryIds = "[5]";
+        _h.ContentCategories[0].IsActive = false;
+        var inactive = await _h.Sut.GetPackageAsync(PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId);
+        Assert.Contains(inactive.ApproveBlockers, x => x.Code == "labels_inactive");
+    }
+
+    [Fact]
+    public async Task ApproveAsync_ReplacesLabelsButKeepsMatchingLink()
+    {
+        _h.MakeApprovable();
+        var kept = new StoryCategory { Id = 1, StoryId = PublicStoryReviewHarness.StoryId, ContentCategoryId = 5, Source = TagSource.Ai };
+        _h.StoryCategories.Add(kept);
+        _h.StoryCategories.Add(new StoryCategory { Id = 2, StoryId = PublicStoryReviewHarness.StoryId, ContentCategoryId = 7, Source = TagSource.Moderator });
+        _h.ContentCategories.Add(new ContentCategory { Id = 6, Code = "animals", IsActive = true });
+        _h.Items[0].ProposedContentCategoryIds = "[5,6]";
+
+        await ApproveDecisionAsync();
+
+        Assert.Contains(kept, _h.StoryCategories);
+        Assert.DoesNotContain(_h.StoryCategories, x => x.ContentCategoryId == 7);
+        Assert.Equal(TagSource.Creator, _h.StoryCategories.Single(x => x.ContentCategoryId == 6).Source);
     }
 
     [Fact]
@@ -908,6 +912,7 @@ public class PublicStoryReviewServiceTests
 
     private void GivenCategories()
     {
+        _h.ContentCategories.Clear();
         _h.ContentCategories.Add(new ContentCategory
         { Id = 5, Code = "friendship", DisplayName = "Tình bạn", IsActive = true });
         _h.ContentCategories.Add(new ContentCategory

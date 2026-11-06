@@ -2,14 +2,15 @@ using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Domain.Entities;
 
-/// <summary>Durable, independently leased work for one illustration asset.</summary>
+/// <summary>Durable, independently leased generation or upload-validation work for a media asset.</summary>
 public class MediaAssetGenerationTask : BaseEntity
 {
     public int StoryId { get; set; }
     public int StoryVersionId { get; set; }
     public int BranchJobId { get; set; }
     public int MediaAssetId { get; set; }
-    public int IllustrationBeatId { get; set; }
+    public int? IllustrationBeatId { get; set; }
+    public MediaTaskKind Kind { get; set; } = MediaTaskKind.GenerateImage;
     public int MediaContextId { get; set; }
     public int PackageRevision { get; set; }
     public GenerationJobStatus Status { get; set; } = GenerationJobStatus.Pending;

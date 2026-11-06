@@ -16,4 +16,8 @@ public sealed record RemovalDecisionRequest
 }
 public sealed record CreatorPublicationResult(int StoryId, int VersionId, int? ItemId, string Status, string RevisionToken);
 
-public sealed record CreatorPublicationStatus(int StoryId, int VersionId, bool IsPublished, string ReviewStatus, int? OpenItemId, string? OpenItemType, string? OpenItemStatus);
+public sealed record CreatorPublicationStatus(int StoryId, int VersionId, bool IsPublished, string ReviewStatus, int? OpenItemId, string? OpenItemType, string? OpenItemStatus)
+{
+    public List<PublicReviewLabelDto> Labels { get; init; } = new();
+    public List<PublicReviewLabelDto> LastProposedLabels { get; init; } = new();
+}

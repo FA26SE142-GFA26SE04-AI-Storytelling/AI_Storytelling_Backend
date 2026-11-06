@@ -24,6 +24,19 @@ namespace StoryPlatform.UnitTests;
 
 public sealed class LearningBatchGenerationTests
 {
+    [Theory]
+    [InlineData(true, false, 12, 0, 1)]
+    [InlineData(false, true, 0, 24, 2)]
+    public async Task Selected_components_do_not_generate_an_unrequested_dependency(bool vocabulary, bool quiz, int words, int questions, int batches)
+    {
+        var s = Seed(); var client = Client(); using var provider = Provider(s.Store, client.Object); using var scope = provider.CreateScope();
+        var result = await scope.ServiceProvider.GetRequiredService<ILearningBatchService>()
+            .GenerateSelectedAsync(s.Root, s.Root.ConcurrencyToken, s.Version, s.Context, vocabulary, quiz, default);
+        Assert.Equal(words, result.Vocabulary.Items.Count); Assert.Equal(questions, result.Quiz.Items.Count);
+        Assert.Equal(batches, s.Store.Items<LearningArtifactGenerationBatch>().Count);
+        client.Verify(x => x.GenerateVocabularyAsync(It.IsAny<GenerateVocabularyRequest>(), It.IsAny<CancellationToken>()), vocabulary ? Times.Once() : Times.Never());
+        Assert.DoesNotContain(s.Store.Items<LearningArtifactGenerationBatch>(), x => !vocabulary && x.Kind == "quiz_vocabulary");
+    }
     [Fact]
     public async Task Retry_latest_coordinator_failure_preserves_new_valid_quizzes_instead_of_replaying_old_quiz_failure()
     {

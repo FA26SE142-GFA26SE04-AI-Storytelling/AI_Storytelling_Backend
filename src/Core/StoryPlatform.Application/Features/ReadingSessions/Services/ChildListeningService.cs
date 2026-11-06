@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Features.ParentAuthoring;
 using System.Text;
 using System.Text.Json;
 using StoryPlatform.Application.Abstractions.Persistence;
@@ -191,9 +192,12 @@ public class ChildListeningService : IChildListeningService
         if (!ChildReadingPolicy.IsActive(session.Status))
             throw new ConflictException(SessionClosedCode);
 
+        var parentPackage = await ParentStoryPackageReader.ForSessionAsync(_unitOfWork, session, ct);
         var versionId = session.StoryVersionId ?? throw new ForbiddenException(ChildReadingPolicy.StoryUnavailableMessage);
         var interaction = await _unitOfWork.Repository<ListeningInteraction>().FirstOrDefaultAsync(
-            value => value.Id == interactionId && value.StoryVersionId == versionId && !value.IsDeleted, cancellationToken: ct);
+            value => value.Id == interactionId && value.StoryVersionId == versionId && value.ParentStoryPackageId == session.ParentStoryPackageId && !value.IsDeleted, cancellationToken: ct);
+        if (parentPackage is not null && !System.Text.Json.JsonSerializer.Deserialize<ParentPackageManifest>(parentPackage.ManifestJson, ParentPackageContext.Json)!.ListeningIds.Contains(interactionId))
+            throw new NotFoundException("Interaction", interactionId);
         if (interaction?.StorySceneId is null) throw new NotFoundException("Tương tác", interactionId);
 
         var options = (await _unitOfWork.Repository<ListeningInteractionOption>().FindAsync(
@@ -202,6 +206,11 @@ public class ChildListeningService : IChildListeningService
         var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(
             value => value.StoryVersionId == versionId && value.ListeningInteractionId == interactionId && !value.IsDeleted,
             cancellationToken: ct);
+        if (parentPackage is not null)
+        {
+            var manifest = System.Text.Json.JsonSerializer.Deserialize<ParentPackageManifest>(parentPackage.ManifestJson, ParentPackageContext.Json)!;
+            assets = assets.Where(x => manifest.MediaAssetIds.Contains(x.Id)).Select(x => ParentStoryPackageReader.ProxyAsset(x, session.FamilyConfirmationId!.Value)).ToArray();
+        }
         if (ListeningMediaRequirements.Missing(interaction, options, assets).Count > 0)
             throw new NotFoundException("Tương tác", interactionId);
 

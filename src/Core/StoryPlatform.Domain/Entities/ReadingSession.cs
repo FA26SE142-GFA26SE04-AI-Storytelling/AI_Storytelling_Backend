@@ -5,6 +5,9 @@ namespace StoryPlatform.Domain.Entities;
 
 public class ReadingSession : BaseEntity
 {
+    public int? ParentStoryPackageId { get; set; }
+    public int? FamilyConfirmationId { get; set; }
+
     public int ChildProfileId { get; set; }
     public virtual ChildProfile? ChildProfile { get; set; }
 

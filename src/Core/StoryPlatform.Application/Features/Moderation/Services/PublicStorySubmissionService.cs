@@ -5,6 +5,8 @@ using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.Moderation.DTOs;
 using StoryPlatform.Application.Features.Moderation.Interfaces;
+using StoryPlatform.Application.Features.Moderation;
+using System.Text.Json;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -75,6 +77,13 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
         if (await _unitOfWork.Repository<ModerationItem>().ExistsAsync(x => x.ItemType == ModerationItemType.PublicStoryRemoval &&
             x.StoryId == story.Id && (x.Status == ModerationItemStatus.Pending || x.Status == ModerationItemStatus.Claimed), cancellationToken))
             throw new ConflictException("REMOVAL_REQUEST_PENDING");
+        var labels = await PublicStoryLabels.NormalizeAsync(_unitOfWork, request.ContentCategoryIds, cancellationToken);
+        var returned = await FindReturnedItemAsync(story.Id, cancellationToken);
+        var labelsOnly = returned != null && returned.StoryVersionId == version.Id
+            && returned.Status == ModerationItemStatus.ChangesRequested
+            && HasOnlyMetadataFeedback(returned.Feedback);
+        if (labelsOnly && labels.SequenceEqual(PublicStoryLabels.Parse(returned!.ProposedContentCategoryIds)))
+            throw new BadRequestException("Bộ nhãn chưa thay đổi so với lần bị trả về.");
         switch (version.Moderation.ReviewStatus)
         {
             case VersionReviewStatus.Pending:
@@ -82,12 +91,16 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
             case VersionReviewStatus.Approved:
                 throw new BadRequestException("Phiên bản này đã được duyệt.");
             case VersionReviewStatus.ChangesRequested:
+                if (labelsOnly) break;
+                throw new BadRequestException(
+                    "Phiên bản này đã bị trả về. Hãy sửa thành phiên bản mới rồi gửi lại.");
             case VersionReviewStatus.Rejected:
                 throw new BadRequestException(
                     "Phiên bản này đã bị trả về. Hãy sửa thành phiên bản mới rồi gửi lại.");
         }
 
-        await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, story.Id, version.Id, cancellationToken);
+        if (!labelsOnly)
+            await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, story.Id, version.Id, cancellationToken);
         var itemRepository = _unitOfWork.Repository<ModerationItem>();
         var openItems = await itemRepository.CountAsync(
             item => item.ItemType == ModerationItemType.PublicStoryReview
@@ -112,8 +125,7 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
             throw new BadRequestException("Media của phiên bản chưa hoàn tất nên chưa thể gửi duyệt.");
         }
 
-        var returned = await FindReturnedItemAsync(story.Id, cancellationToken);
-        if (returned != null)
+        if (returned != null && !labelsOnly)
         {
             await EnsureNotIdenticalToReturnedAsync(returned, version, cancellationToken);
         }
@@ -129,6 +141,8 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
             IsResubmission = returned != null,
             PreviousItemId = returned?.Id
         }, cancellationToken);
+        item.ProposedContentCategoryIds = PublicStoryLabels.Serialize(labels);
+        _unitOfWork.Repository<ModerationItem>().Update(item);
 
         version.Moderation.ReviewStatus = VersionReviewStatus.Pending;
         version.Moderation.ReviewSubmittedAt = now;
@@ -146,7 +160,8 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
                 storyId = story.Id,
                 storyVersionId = version.Id,
                 isResubmission = returned != null,
-                previousItemId = returned?.Id
+                previousItemId = returned?.Id,
+                contentCategoryIds = labels
             },
             cancellationToken);
 
@@ -267,6 +282,23 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
                && latest.Status is ModerationItemStatus.ChangesRequested or ModerationItemStatus.Rejected
             ? latest
             : null;
+    }
+
+    private static bool HasOnlyMetadataFeedback(string? feedback)
+    {
+        if (string.IsNullOrWhiteSpace(feedback)) return false;
+        try
+        {
+            using var document = JsonDocument.Parse(feedback);
+            if (!document.RootElement.TryGetProperty("parts", out var parts) || parts.ValueKind != JsonValueKind.Array)
+                return false;
+            var entries = parts.EnumerateArray().ToList();
+            return entries.Count > 0 && entries.All(part => part.ValueKind == JsonValueKind.Object
+                && part.TryGetProperty("partType", out var type)
+                && type.ValueKind == JsonValueKind.String
+                && type.GetString() == PublicReviewRequirements.MetadataPart);
+        }
+        catch (JsonException) { return false; }
     }
 
     private async Task EnsureNotIdenticalToReturnedAsync(

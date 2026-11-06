@@ -68,7 +68,7 @@ public partial class StoryAssistanceService(IUnitOfWork uow, ICreatorAssistanceA
                 return Read<AssistanceTaskDto>(prior.CreateResponseJson);
             }
             await _access.EnsureWritableAsync(story, ct);
-            var serverContext = await _access.CaptureContextAsync(story, ct);
+            var serverContext = await _access.CaptureContextAsync(story, ct, request.TargetChildProfileId);
             if (request.RevisionToken != story.AuthoringRevisionToken) throw Fail("STORY_REVISION_CONFLICT");
             var current = await uow.Repository<StoryVersion>().FirstOrDefaultAsync(x => x.StoryId == storyId && x.IsCurrent && !x.IsDeleted, cancellationToken: ct);
             if (request.BaseVersionId != current?.Id) throw Fail("STORY_REVISION_CONFLICT");
@@ -82,7 +82,7 @@ public partial class StoryAssistanceService(IUnitOfWork uow, ICreatorAssistanceA
             {
                 StoryId = storyId, OwnerUserId = userId, EntryPoint = request.EntryPoint,
                 SourceVersionId = request.BaseVersionId, SourceRevisionToken = request.RevisionToken,
-                AudienceRevision = story.AudienceRevision, Language = story.Language, AgeBand = story.AgeBand,
+                AudienceRevision = story.AudienceRevision, Language = story.Language, AgeBand = _access.AgeBandForContext(story, serverContext),
                 ContextJson = AssistanceContextStorage.Store(context, serverContext), SnapshotHash = Hash(Serialize(new[] { request.EditorSnapshot.Title, request.EditorSnapshot.Content })),
                 CreateOperationId = request.OperationId, CreateRequestHash = hash,
                 ParentTaskId = request.ParentTaskId, SourceReviewStepId = request.SourceReviewStepId, FindingId = request.FindingId

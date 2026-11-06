@@ -4,6 +4,8 @@ namespace StoryPlatform.Domain.Entities;
 
 public class QuizItem : BaseEntity
 {
+    public int? ParentStoryPackageId { get; set; }
+
     public int StoryVersionId { get; set; }
     public virtual StoryVersion? StoryVersion { get; set; }
 

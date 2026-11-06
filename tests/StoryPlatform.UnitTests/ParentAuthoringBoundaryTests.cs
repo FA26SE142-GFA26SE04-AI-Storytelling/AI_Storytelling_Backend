@@ -92,7 +92,8 @@ public sealed class ParentAuthoringBoundaryTests
         Assert.Equal("parent_story_operations", entity.GetTableName());
         Assert.Contains(entity.GetIndexes(), x => x.IsUnique && x.Properties.Select(p => p.Name)
             .SequenceEqual(new[] { "StoryId", "ActorUserId", "OperationId" }));
-        Assert.Equal(4, entity.GetForeignKeys().Count());
+        Assert.Equal(5, entity.GetForeignKeys().Count());
+        Assert.Contains(entity.GetForeignKeys(), x => x.Properties.Single().Name == "ParentStoryPackageId");
         Assert.Null(context.Model.FindEntityType(typeof(Story))!.FindProperty("AuthoringWorkflow"));
         Assert.Contains("ChildProfileId", context.ParentStoryOperations.Where(x => x.ChildProfileId == 3 && x.Kind == "FamilyConfirmation").ToQueryString());
     }
@@ -112,8 +113,8 @@ public sealed class ParentAuthoringBoundaryTests
         var policy = new ParentManualAuthoringPolicy(uow.Object, Mock.Of<IChildProfileAccessGuard>());
         var sql = context.Stories.Where(policy.VisibleStories(1)).OrderByDescending(x => x.CreatedAt)
             .Skip(1).Take(1).ToQueryString();
-        Assert.Contains("EXISTS", sql); Assert.Contains("OwnerUserId", sql);
-        Assert.Contains("child_profiles", sql);
+        Assert.Contains("AuthorUserId", sql); Assert.Contains("story_generation_requests", sql);
+        Assert.DoesNotContain("child_profiles", sql);
         Assert.Contains("LIMIT", sql); Assert.Contains("OFFSET", sql);
     }
 

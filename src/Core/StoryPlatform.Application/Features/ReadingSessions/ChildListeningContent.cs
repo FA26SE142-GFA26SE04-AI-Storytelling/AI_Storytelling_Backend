@@ -114,7 +114,7 @@ public static class ChildListeningContent
     }
 
     // Offset của segment tính trong SceneText; SourceStart tính trong cả truyện.
-    private static string? ModelAudioUrl(ListeningInteraction interaction, IReadOnlyList<StoryScene> scenes,
+    internal static string? ModelAudioUrl(ListeningInteraction interaction, IReadOnlyList<StoryScene> scenes,
         IReadOnlyList<StorySegment> segments, IReadOnlyList<MediaAsset> assets)
     {
         if (interaction.SourceStart is not int start) return null;

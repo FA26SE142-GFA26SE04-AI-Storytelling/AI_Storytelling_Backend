@@ -29,6 +29,7 @@ public class ChildStoryPageDto
 
 public class StartReadingRequestDto
 {
+    public int? FamilyConfirmationId { get; set; }
     public int? StoryId { get; set; }
     /// <summary>Mở truyện Cộng đồng: dùng mã nộp bài, không dùng StoryId gốc.</summary>
     public int? CommunitySubmissionId { get; set; }

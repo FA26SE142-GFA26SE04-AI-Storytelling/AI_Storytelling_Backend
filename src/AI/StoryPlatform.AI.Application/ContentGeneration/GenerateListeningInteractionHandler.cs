@@ -23,6 +23,7 @@ public sealed class GenerateListeningInteractionHandler(StoryContentGenerationEx
     {
         var type = ListeningGenerationContract.PromptTypeFor(request.InteractionType);
         ValidateProfile(request.InteractionType, request.AgeBand, request.Language);
+        if (request.ReadingLevel is < 1 or > 5) throw new ArgumentException("Reading level must be between 1 and 5.");
         if (string.IsNullOrWhiteSpace(request.RequestId) || request.Count is < 1 or > 4 ||
             (request.InteractionType != "Checkpoint" && request.Count != 1) ||
             request.Blocks.Count is < 2 or > 200 || request.Blocks.Any(b => string.IsNullOrWhiteSpace(b.BlockId) || string.IsNullOrWhiteSpace(b.Text)) ||

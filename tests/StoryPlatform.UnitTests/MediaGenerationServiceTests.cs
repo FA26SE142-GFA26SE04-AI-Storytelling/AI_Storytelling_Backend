@@ -39,10 +39,11 @@ public sealed partial class MediaGenerationServiceTests
         evaluator.Setup(x => x.CanReuseAsync(Moq.It.IsAny<StoryPlatform.Application.Features.Moderation.GrayZoneAssessment>(), Moq.It.IsAny<CancellationToken>())).ReturnsAsync(true);
         var submission = new StoryPlatform.Application.Features.Moderation.Services.PublicStorySubmissionService(store, queue.Object,
             new MediaReadinessService(store), new Moq.Mock<StoryPlatform.Application.Features.AuditLogs.Interfaces.IAuditLogWriter>().Object, evaluator.Object);
+        store.Seed(new ContentCategory { Id = 5, Code = "friendship", DisplayName = "Tình bạn", IsActive = true });
         await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.BadRequestException>(() =>
-            submission.SubmitAsync(1, new() { StoryId = 1, StoryVersionId = 10 }));
+            submission.SubmitAsync(1, new() { StoryId = 1, StoryVersionId = 10, ContentCategoryIds = [5] }));
         await Create(store).ConfirmAsync(1, 1, new(10, store.Items<StoryVersion>().Single().MediaState.MediaPackageRevision));
-        var result = await submission.SubmitAsync(1, new() { StoryId = 1, StoryVersionId = 10 });
+        var result = await submission.SubmitAsync(1, new() { StoryId = 1, StoryVersionId = 10, ContentCategoryIds = [5] });
         Assert.Equal(10, result.StoryVersionId);
         Assert.Equal(VersionReviewStatus.Pending, store.Items<StoryVersion>().Single().Moderation.ReviewStatus);
         Assert.False(store.Items<Story>().Single().IsPublished);
@@ -912,7 +913,7 @@ public sealed partial class MediaGenerationServiceTests
             recorder,
             readiness ?? new MediaReadinessService(uow),
             options ?? new MediaGenerationOptions { AssetMaxAttempts = 3, JobLeaseMinutes = 5 },
-            logger ?? NullLogger<MediaGenerationService>.Instance, supervision ?? new Mock<IChildProfileAccessGuard>().Object, clock);
+            logger ?? NullLogger<MediaGenerationService>.Instance, supervision ?? new Mock<IChildProfileAccessGuard>().Object, clock, new CreatorMediaUploadValidator());
         MediaTestPump.Register(service, uow, clock);
         return service;
     }
@@ -1043,6 +1044,7 @@ public sealed partial class MediaGenerationServiceTests
 
     private sealed class RecordingTtsProvider : ITtsProvider
     {
+        public string ConfigurationFingerprint => "test-voice-v1";
         public List<string> Inputs { get; } = [];
         public Task<GeneratedMedia> GenerateAsync(string exactSceneText, CancellationToken cancellationToken = default)
         {

@@ -5,17 +5,20 @@ namespace StoryPlatform.Application.Features.ParentAuthoring;
 
 public sealed record CreateParentDraftRequest : CreatorCommand
 {
-    [Range(1, int.MaxValue)] public int ChildProfileId { get; init; }
+    [Range(1, int.MaxValue)] public int? ChildProfileId { get; init; }
     [StringLength(200)] public string Title { get; init; } = "Truyện của gia đình";
+    public string AgeBand { get; init; } = "6-8";
     public string? Language { get; init; }
     public string? Purpose { get; init; }
     public string ExperienceMode { get; init; } = "reading";
 }
-public sealed record ParentDraftDto(CreatorDraftDto Story, int ChildProfileId, string Purpose,
+public sealed record ParentDraftDto(CreatorDraftDto Story, int? ChildProfileId, string Purpose,
     bool IsReadOnly = false, string? ReadOnlyReason = null,
     bool CanUseAiAssistance = false, string? AiUnavailableReason = null);
 public sealed record ParentSetupRequest : CreatorVersionCommand
 {
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? AgeBand { get; init; }
     public string? Purpose { get; init; }
     public string? Language { get; init; }
     public string? ExperienceMode { get; init; }
@@ -55,10 +58,12 @@ public sealed record ParentPreparationDto(int PreparationId, int StoryId, int St
     string ContextFingerprint, string Title, string Language, string ExperienceMode,
     ParentSegmentDto[] Segments, bool IsReady, string[] MissingRequirements)
 {
+    public int? ParentStoryPackageId { get; init; }
     public int? MediaPackageRevision { get; init; }
     public StoryPlatform.Application.Features.MediaGeneration.Models.StoryMediaPackage? Media { get; init; }
 }
 public sealed record ParentFamilyConfirmationDto(int ConfirmationId, int StoryId, int StoryVersionId,
-    int ChildProfileId, int PreparationId, DateTime ConfirmedAt);
+    int ChildProfileId, int PreparationId, DateTime ConfirmedAt)
+{ public int? ParentStoryPackageId { get; init; } }
 public sealed record ParentOperationDto(int Id, string Kind, int? StoryVersionId, bool SourceIsCurrent,
     DateTime? RevokedAt, System.Text.Json.JsonElement Result);

@@ -7,6 +7,8 @@ using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
+using System.Text.Json;
+
 namespace StoryPlatform.Application.Features.Moderation.Services;
 
 public partial class PublicStoryReviewService : IPublicStoryReviewService
@@ -35,13 +37,15 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
         IReadOnlyList<QuizItem> Quizzes,
         IReadOnlyList<StoryVocabulary> Vocabulary,
         IReadOnlyList<ListeningInteraction> Listening,
-        IReadOnlyList<ListeningInteractionOption> ListeningOptions);
+        IReadOnlyList<ListeningInteractionOption> ListeningOptions,
+        IReadOnlyList<ContentCategory> ProposedCategories);
 
     public async Task<PublicReviewPackageDto> GetPackageAsync(
         int actorUserId, int itemId, CancellationToken cancellationToken = default)
     {
         var context = await LoadClaimedContextAsync(actorUserId, itemId, cancellationToken);
         var content = await LoadContentAsync(context.Version.Id, cancellationToken);
+        content = await WithProposedCategoriesAsync(content, context.Item, cancellationToken);
         var package = await BuildPackageAsync(context, content, cancellationToken);
 
         await _auditLogWriter.LogAsync(
@@ -126,7 +130,15 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
         var listeningIds = listening.Select(x => x.Id).ToList();
         var listeningOptions = await _unitOfWork.Repository<ListeningInteractionOption>().FindAsync(
             x => listeningIds.Contains(x.ListeningInteractionId) && !x.IsDeleted, cancellationToken: cancellationToken);
-        return new ReviewContent(scenes, segments, beats, assets, quizzes, vocabulary, listening, listeningOptions);
+        return new ReviewContent(scenes, segments, beats, assets, quizzes, vocabulary, listening, listeningOptions, []);
+    }
+
+    private async Task<ReviewContent> WithProposedCategoriesAsync(ReviewContent content, ModerationItem item, CancellationToken ct)
+    {
+        var ids = PublicStoryLabels.Parse(item.ProposedContentCategoryIds);
+        var categories = await _unitOfWork.Repository<ContentCategory>().FindAsync(
+            category => ids.Contains(category.Id), cancellationToken: ct);
+        return content with { ProposedCategories = categories };
     }
 
     private async Task<PublicReviewPackageDto> BuildPackageAsync(
@@ -146,6 +158,11 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
             StoryVersionId = context.Version.Id,
             VersionNo = context.Version.VersionNo,
             IsResubmission = item.IsResubmission,
+            ProposedLabels = content.ProposedCategories.OrderBy(x => x.Id).Select(category => new PublicReviewLabelDto
+            {
+                ContentCategoryId = category.Id, Code = category.Code,
+                DisplayName = category.DisplayName, Source = TagSource.Creator.ToString()
+            }).ToList(),
             Story = new PublicReviewStoryDto
             {
                 Title = context.Story.Title,
@@ -188,7 +205,10 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
                             BeatOrder = beat.BeatOrder,
                             VisualFocus = beat.VisualFocus,
                             AssetId = asset?.Id,
-                            Url = asset?.Url
+                            Url = asset?.Url,
+                            Source = asset?.Source.ToString() ?? "AiGenerated",
+                            SourceDeclaration = UploadDeclaration(asset, "SourceDeclaration"),
+                            RightsDeclaration = UploadDeclaration(asset, "RightsDeclaration")
                         };
                     }).ToList(),
                 Segments = content.Segments
@@ -204,6 +224,10 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
                             Text = segment.TextContent,
                             AudioAssetId = audio?.Id,
                             AudioUrl = audio?.Url,
+                            AudioSource = audio?.Source.ToString() ?? "AiGenerated",
+                            RequiresFullAudioReview = audio?.Source == MediaAssetSource.UserUpload,
+                            SourceDeclaration = UploadDeclaration(audio, "SourceDeclaration"),
+                            RightsDeclaration = UploadDeclaration(audio, "RightsDeclaration"),
                             HasPronunciationWarning = PublicReviewRequirements.HasPronunciationWarning(audio),
                             Heard = heardAudio.Contains(segment.Id)
                         };
@@ -292,6 +316,13 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
             x.StorySegmentId == segmentId && x.Type == MediaType.TtsAudio
             && x.Status == MediaStatus.Ready && !string.IsNullOrWhiteSpace(x.Url));
 
+    private static string? UploadDeclaration(MediaAsset? asset, string key)
+    {
+        if (asset?.Source != MediaAssetSource.UserUpload || string.IsNullOrWhiteSpace(asset.ValidationResultJson)) return null;
+        try { return JsonSerializer.Deserialize<JsonElement>(asset.ValidationResultJson).TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null; }
+        catch (JsonException) { return null; }
+    }
+
     private static PublicReviewProgressDto BuildProgress(ModerationItem item, ReviewContent content)
     {
         var viewedScenes = PublicReviewState.GetViewed(item.ReviewProgress, PublicReviewRequirements.ScenePart);
@@ -304,7 +335,7 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
             .Where(pair => pair.Audio != null).ToList();
         var heardCount = audioSegments.Count(pair => heardAudio.Contains(pair.Segment.Id));
         var missingWarnings = audioSegments
-            .Where(pair => PublicReviewRequirements.HasPronunciationWarning(pair.Audio)
+            .Where(pair => (pair.Audio!.Source == MediaAssetSource.UserUpload || PublicReviewRequirements.HasPronunciationWarning(pair.Audio))
                            && !heardAudio.Contains(pair.Segment.Id))
             .Select(pair => pair.Segment.Id).ToList();
         var needsOne = audioSegments.Count > 0 && heardCount == 0;

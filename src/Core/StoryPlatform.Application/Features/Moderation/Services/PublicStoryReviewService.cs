@@ -2,6 +2,7 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.Moderation.DTOs;
+using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 using StoryPlatform.Application.Features.Moderation.Interfaces;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Domain.Entities;
@@ -16,15 +17,21 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly INotificationService _notificationService;
+    private readonly IMediaStorage? _mediaStorage;
+
+    /// <summary>Đường dẫn media trong gói duyệt sống 1 giờ; mỗi lần mở lại gói hoặc sau mỗi thao tác sẽ được ký lại.</summary>
+    private static readonly TimeSpan ReviewMediaUrlLifetime = TimeSpan.FromHours(1);
 
     public PublicStoryReviewService(
         IUnitOfWork unitOfWork,
         IAuditLogWriter auditLogWriter,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        IMediaStorage? mediaStorage = null)
     {
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
         _notificationService = notificationService;
+        _mediaStorage = mediaStorage;
     }
 
     private sealed record ReviewContext(UserAccount Actor, ModerationItem Item, Story Story, StoryVersion Version);
@@ -151,7 +158,7 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
         var blockers = EvaluateApproveBlockers(context, content);
         var history = await LoadReviewHistoryAsync(item, cancellationToken);
 
-        return new PublicReviewPackageDto
+        var package = new PublicReviewPackageDto
         {
             ItemId = item.Id,
             StoryId = context.Story.Id,
@@ -309,6 +316,40 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
             PreviousModeratorName = history.FirstOrDefault()?.DecidedByName,
             ReviewHistory = history
         };
+        await SignMediaUrlsAsync(package, cancellationToken);
+        return package;
+    }
+
+    /// <summary>
+    /// Tranh và giọng đọc lưu trong kho riêng tư nên cơ sở dữ liệu chỉ giữ đường dẫn nội bộ. Moderator cần đường dẫn có chữ ký
+    /// (giống phụ huynh xem gói media), nếu không trình duyệt không mở được và tranh/âm thanh luôn báo lỗi.
+    /// </summary>
+    private async Task SignMediaUrlsAsync(PublicReviewPackageDto package, CancellationToken cancellationToken)
+    {
+        if (_mediaStorage is null) return;
+        foreach (var scene in package.Scenes)
+        {
+            foreach (var illustration in scene.Illustrations)
+                illustration.Url = await SignMediaUrlAsync(illustration.Url, cancellationToken);
+            foreach (var segment in scene.Segments)
+                segment.AudioUrl = await SignMediaUrlAsync(segment.AudioUrl, cancellationToken);
+        }
+        foreach (var interaction in package.ListeningInteractions)
+        {
+            foreach (var option in interaction.Options)
+                option.ImageUrl = await SignMediaUrlAsync(option.ImageUrl, cancellationToken);
+            foreach (var audio in interaction.Audio)
+                audio.Url = await SignMediaUrlAsync(audio.Url, cancellationToken);
+        }
+    }
+
+    private async Task<string?> SignMediaUrlAsync(string? path, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return path;
+        // Gói cũ có thể lưu sẵn địa chỉ https ngoài kho: giữ nguyên. Địa chỉ tuyệt đối khác thì không đưa ra ngoài.
+        if (Uri.TryCreate(path, UriKind.Absolute, out var uri))
+            return uri.Scheme == Uri.UriSchemeHttps ? path : null;
+        return await _mediaStorage!.GetSignedUrlAsync(path, ReviewMediaUrlLifetime, cancellationToken);
     }
 
     private static MediaAsset? FindAudio(ReviewContent content, int segmentId) =>

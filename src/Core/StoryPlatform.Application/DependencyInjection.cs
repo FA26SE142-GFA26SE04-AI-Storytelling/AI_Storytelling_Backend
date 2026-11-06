@@ -136,6 +136,7 @@ public static class DependencyInjection
         services.AddScoped<IChildRoadmapService, ChildRoadmapService>();
         services.AddScoped<IMyRoadmapService, MyRoadmapService>();
         services.AddScoped<IChildStoryBrowseService, ChildStoryBrowseService>();
+        services.AddScoped<IChildMediaUrlSigner, ChildMediaUrlSigner>();
         services.AddScoped<IChildReadingService, ChildReadingService>();
         services.AddScoped<IWishCardManagementService, WishCardManagementService>();
         services.AddScoped<IChildWishCardService, ChildWishCardService>();

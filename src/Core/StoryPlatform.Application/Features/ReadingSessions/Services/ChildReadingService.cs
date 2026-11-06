@@ -14,14 +14,17 @@ public class ChildReadingService : IChildReadingService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IChildRoadmapEligibility _eligibility;
     private readonly IChildRoadmapProgressRecorder _recorder;
+    private readonly IChildMediaUrlSigner? _mediaUrls;
     private readonly IChildRewardService _rewards;
 
     public ChildReadingService(
         IUnitOfWork unitOfWork,
         IChildRoadmapEligibility eligibility,
         IChildRoadmapProgressRecorder recorder,
-        IChildRewardService rewards)
+        IChildRewardService rewards,
+        IChildMediaUrlSigner? mediaUrls = null)
     {
+        _mediaUrls = mediaUrls;
         _unitOfWork = unitOfWork;
         _eligibility = eligibility;
         _recorder = recorder;
@@ -259,7 +262,7 @@ public class ChildReadingService : IChildReadingService
         var progress = await _unitOfWork.Repository<ReadingProgress>().FirstOrDefaultAsync(
             row => row.ChildProfileId == childProfileId && row.StoryId == session.StoryId, cancellationToken: ct);
 
-        return new ReadingContentDto
+        var content = new ReadingContentDto
         {
             SessionId = session.Id,
             StoryId = session.StoryId,
@@ -296,6 +299,9 @@ public class ChildReadingService : IChildReadingService
                     Id = word.Id, Term = word.Term, AudioUrl = vocabularyAudio.GetValueOrDefault(word.Id)
                 }).ToList()
         };
+        // Media lưu bằng đường dẫn trong kho; ký link như gói media xem trước của phụ huynh để bé mở được tranh và giọng đọc.
+        await _mediaUrls.SignAsync(content, ct);
+        return content;
     }
 
     public async Task<ReadingProgressDto> SaveProgressAsync(

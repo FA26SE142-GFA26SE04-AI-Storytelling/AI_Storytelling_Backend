@@ -89,11 +89,23 @@ Số 20 chỉ là ví dụ; thay bằng version ID thật. Finalize không tạo
   "recipients": [
     {
       "childProfileId": 1,
-      "components": { "vocabulary": true, "quiz": true, "listening": false, "images": true, "narration": true }
+      "components": {
+        "vocabulary": true,
+        "quiz": true,
+        "listening": false,
+        "images": true,
+        "narration": true
+      }
     },
     {
       "childProfileId": 2,
-      "components": { "vocabulary": true, "quiz": false, "listening": false, "images": true, "narration": true }
+      "components": {
+        "vocabulary": true,
+        "quiz": false,
+        "listening": false,
+        "images": true,
+        "narration": true
+      }
     }
   ]
 }
@@ -121,7 +133,10 @@ Khi check đã đạt:
 `POST /api/v1/parent/stories/{storyId}/packages/{packageId}/generate`
 
 ```json
-{ "operationId": "family-001-generate-a", "packageToken": "COPY_LATEST_PACKAGE_TOKEN" }
+{
+  "operationId": "family-001-generate-a",
+  "packageToken": "COPY_LATEST_PACKAGE_TOKEN"
+}
 ```
 
 Trả 202; tiếp tục poll GET package. Chỉ sinh các phần đã chọn. Học liệu có evidence trong chính content; số lượng theo cấu hình/profile và khả năng nguồn, không bịa thêm để đạt target. Worker dùng batch/lease/gate/retry hiện có; không tạo outline hoặc request generation giả.
@@ -141,7 +156,10 @@ Khi mọi thành phần đã đạt, đọc packageToken mới nhất rồi gọ
 `POST /api/v1/parent/stories/{storyId}/packages/{packageId}/confirm`
 
 ```json
-{ "operationId": "family-001-confirm-a", "packageToken": "COPY_LATEST_PACKAGE_TOKEN" }
+{
+  "operationId": "family-001-confirm-a",
+  "packageToken": "COPY_LATEST_PACKAGE_TOKEN"
+}
 ```
 
 Confirm ghim manifest và trả token của gói đã xác nhận. Không tạo version truyện hoặc grant tại bước này.
@@ -244,7 +262,11 @@ type Envelope<T> = {
 };
 
 class CoreApiError extends Error {
-  constructor(public status: number, message: string, public errors?: unknown) {
+  constructor(
+    public status: number,
+    message: string,
+    public errors?: unknown,
+  ) {
     super(message);
   }
 }
@@ -402,14 +424,18 @@ Chỉ dùng URL/ID trong response hiện tại. Không ghép storage path, suy r
 
 ```ts
 async function loadProtectedMedia(
-  origin: string, token: string, relativeUrl: string, signal?: AbortSignal,
+  origin: string,
+  token: string,
+  relativeUrl: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   const response = await fetch(coreUrl(origin, relativeUrl), {
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
     signal,
   });
-  if (!response.ok) throw new CoreApiError(response.status, "MEDIA_LOAD_FAILED");
+  if (!response.ok)
+    throw new CoreApiError(response.status, "MEDIA_LOAD_FAILED");
   return URL.createObjectURL(await response.blob());
 }
 
@@ -545,7 +571,10 @@ Phần bổ sung cho Parent nhiều bé là `targetChildProfileId` trong request
   "entryPoint": "SupportSelection",
   "baseVersionId": 89,
   "revisionToken": "COPY_CURRENT_DRAFT_TOKEN",
-  "editorSnapshot": { "title": "Chiếc hộp của Mi", "content": "Mi tìm thấy một chiếc hộp. Em muốn sửa chiếc hộp cùng mẹ." },
+  "editorSnapshot": {
+    "title": "Chiếc hộp của Mi",
+    "content": "Mi tìm thấy một chiếc hộp. Em muốn sửa chiếc hộp cùng mẹ."
+  },
   "target": { "kind": "selection", "start": 0, "length": 26 },
   "goal": "Mô tả rõ hơn cảm xúc của Mi",
   "constraints": { "keep": [], "avoid": [] }

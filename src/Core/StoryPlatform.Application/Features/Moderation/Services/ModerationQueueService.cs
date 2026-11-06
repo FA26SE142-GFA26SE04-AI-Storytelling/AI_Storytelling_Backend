@@ -81,6 +81,7 @@ public class ModerationQueueService : IModerationQueueService
                     : item.Priority == ModerationPriority.Medium ? 1 : 2)
                 .ThenBy(item => item.SlaDueAt)
                 .ThenBy(item => item.Id),
+            includeProperties: nameof(ModerationItem.Story),
             cancellationToken: cancellationToken);
 
         return new PagedResult<ModerationItemSummaryDto>(
@@ -206,6 +207,7 @@ public class ModerationQueueService : IModerationQueueService
         dto.Status = item.Status.ToString();
         dto.Priority = item.Priority.ToString();
         dto.StoryId = item.StoryId;
+        dto.StoryTitle = item.Story?.Title;
         dto.StoryVersionId = item.StoryVersionId;
         dto.ContentReportId = item.ContentReportId;
         dto.ReadingRoadmapId = item.ReadingRoadmapId;

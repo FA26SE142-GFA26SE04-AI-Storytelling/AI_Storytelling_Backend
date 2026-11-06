@@ -42,6 +42,8 @@ public class ModerationItemSummaryDto
     public string Status { get; set; } = string.Empty;
     public string Priority { get; set; } = string.Empty;
     public int? StoryId { get; set; }
+    /// <summary>Tên truyện để nhận diện mục trong hàng đợi; không chứa nội dung bản thảo.</summary>
+    public string? StoryTitle { get; set; }
     public int? StoryVersionId { get; set; }
     public int? ContentReportId { get; set; }
     public int? ReadingRoadmapId { get; set; }

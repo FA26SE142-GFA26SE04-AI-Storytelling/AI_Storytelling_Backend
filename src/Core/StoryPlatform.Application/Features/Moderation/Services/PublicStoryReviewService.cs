@@ -327,21 +327,30 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
     private async Task SignMediaUrlsAsync(PublicReviewPackageDto package, CancellationToken cancellationToken)
     {
         if (_mediaStorage is null) return;
+        // Mỗi lần ký là một lệnh gọi mạng tới kho lưu trữ; gói có hàng chục tranh/âm thanh nên phải ký song song,
+        // nếu ký lần lượt thì mở gói mất hàng chục giây.
+        var tasks = new List<Task>();
+        void Sign(string? path, Action<string?> assign) =>
+            tasks.Add(SignAndAssignAsync(path, assign, cancellationToken));
         foreach (var scene in package.Scenes)
         {
             foreach (var illustration in scene.Illustrations)
-                illustration.Url = await SignMediaUrlAsync(illustration.Url, cancellationToken);
+                Sign(illustration.Url, signed => illustration.Url = signed);
             foreach (var segment in scene.Segments)
-                segment.AudioUrl = await SignMediaUrlAsync(segment.AudioUrl, cancellationToken);
+                Sign(segment.AudioUrl, signed => segment.AudioUrl = signed);
         }
         foreach (var interaction in package.ListeningInteractions)
         {
             foreach (var option in interaction.Options)
-                option.ImageUrl = await SignMediaUrlAsync(option.ImageUrl, cancellationToken);
+                Sign(option.ImageUrl, signed => option.ImageUrl = signed);
             foreach (var audio in interaction.Audio)
-                audio.Url = await SignMediaUrlAsync(audio.Url, cancellationToken);
+                Sign(audio.Url, signed => audio.Url = signed);
         }
+        await Task.WhenAll(tasks);
     }
+
+    private async Task SignAndAssignAsync(string? path, Action<string?> assign, CancellationToken cancellationToken) =>
+        assign(await SignMediaUrlAsync(path, cancellationToken));
 
     private async Task<string?> SignMediaUrlAsync(string? path, CancellationToken cancellationToken)
     {

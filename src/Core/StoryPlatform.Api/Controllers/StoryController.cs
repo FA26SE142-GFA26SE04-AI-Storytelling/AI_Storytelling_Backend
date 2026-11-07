@@ -3,6 +3,8 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
+using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
+using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.Stories.DTOs;
 using StoryPlatform.Application.Features.Stories.Interfaces;
 
@@ -11,10 +13,12 @@ namespace StoryPlatform.Api.Controllers;
 public class StoryController : BaseApiController
 {
     private readonly IStoryService _storyService;
+    private readonly IMediaGenerationService _mediaService;
 
-    public StoryController(IStoryService storyService)
+    public StoryController(IStoryService storyService, IMediaGenerationService mediaService)
     {
         _storyService = storyService;
+        _mediaService = mediaService;
     }
 
     /// <summary>
@@ -41,6 +45,19 @@ public class StoryController : BaseApiController
     {
         var result = await _storyService.GetPublishedCreatorStoriesAsync(filter, cancellationToken);
         return HandleResult(result, "Lấy thư viện cộng đồng thành công.");
+    }
+
+    /// <summary>
+    /// Thư viện cộng đồng: ảnh minh họa và giọng đọc của một truyện Creator đã công khai (chỉ đọc)
+    /// </summary>
+    [HttpGet("community/{id:int}/media")]
+    [Authorize(Roles = "User,ContentCreator,Moderator,Administrator")]
+    public async Task<ActionResult<ApiResponse<StoryMediaPackage>>> GetCommunityStoryMedia(
+        int id,
+        CancellationToken cancellationToken)
+    {
+        var package = await _mediaService.GetPublishedCreatorPackageAsync(id, cancellationToken);
+        return Ok(ApiResponse<StoryMediaPackage>.Ok(package));
     }
 
     /// <summary>

@@ -2921,7 +2921,7 @@ Adult theo người nhận, SignalR mục 12. Frontend USE_MOCK/notificationLoca
 - Frontend: **API_CÓ_MOCK_LOCAL** — [guardianService.deleteNotification](../../AI_Storytelling_Frontend/src/app/services/guardianService.ts#L132); nơi dùng: [NotificationBell.tsx](../../AI_Storytelling_Frontend/src/app/components/shell/NotificationBell.tsx#L61)
 
 <a id="controller-story"></a>
-### Story — 7 route
+### Story — 8 route
 
 GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PUT/DELETE/PATCH publish là CRUD cũ Parent, không thay review/manual. `GET /Story` và `GET /Story/{id}` chỉ trả truyện Parent (có test chặn Creator); truyện Creator đã duyệt đi qua `GET /Story/community`.
 
@@ -2929,6 +2929,7 @@ GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PU
 |---|---|
 | [GET /api/v1/Story](#ep-story-getstories-get) | GỌI_API |
 | [GET /api/v1/Story/community](#ep-story-getcommunitystories-get) | GỌI_API |
+| [GET /api/v1/Story/community/{id}/media](#ep-story-getcommunitystorymedia-get) | GỌI_API |
 | [GET /api/v1/Story/{id}](#ep-story-getstorybyid-get) | GỌI_API |
 | [POST /api/v1/Story](#ep-story-createstory-post) | CHƯA_MAP |
 | [PUT /api/v1/Story/{id}](#ep-story-updatestory-put) | CHƯA_MAP |
@@ -2952,6 +2953,15 @@ GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PU
 - Request: **query** filter: [StoryFilterRequestDto](#dto-storyfilterrequestdto); dùng searchTerm, genre, ageBand, authorUserId, isDescending, pageIndex, pageSize (status và isPublished không có tác dụng, luôn lọc cố định).
 - Response: ApiResponse.data: [PagedResult&lt;StoryDto&gt;](#dto-pagedresult). HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [storyService.getCommunityStories](../../AI_Storytelling_Frontend/src/app/services/storyService.ts); nơi dùng: [LibraryWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/library/LibraryWorkspace.tsx) (nhãn nguồn "Của creator").
+
+<a id="ep-story-getcommunitystorymedia-get"></a>
+#### GET /api/v1/Story/community/{id}/media
+
+- Action/chức năng: **GetCommunityStoryMedia** — Ảnh minh họa và giọng đọc (chỉ đọc) của một truyện Creator đã công khai, để mọi vai trò xem thử trong thư viện chung. `GET /stories/{id}/media/package` chỉ cho đúng tác giả Creator hoặc chủ hồ sơ bé nên không dùng được cho việc này. Truyện chưa công khai, chưa Ready, đã lưu trữ hoặc đã xóa trả 404. Không trả `replacements` và `confirmedByUserId`.
+- Quyền: Roles User, ContentCreator, Moderator, Administrator
+- Request: **path** id: `int`; bắt buộc.
+- Response: ApiResponse.data: StoryMediaPackage (cùng cấu trúc `GET /stories/{storyId}/media/package`). HTTP nhánh controller: 200.
+- Frontend: **GỌI_API** — [storyService.getCommunityStoryMedia](../../AI_Storytelling_Frontend/src/app/services/storyService.ts); nơi dùng: [LibraryWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/library/LibraryWorkspace.tsx) (khung Đọc thử, thẻ "Của creator").
 
 <a id="ep-story-getstorybyid-get"></a>
 #### GET /api/v1/Story/{id}

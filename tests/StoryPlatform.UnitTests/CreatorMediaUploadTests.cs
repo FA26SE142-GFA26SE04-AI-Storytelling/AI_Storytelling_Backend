@@ -106,6 +106,19 @@ public sealed class CreatorMediaUploadTests
         await Assert.ThrowsAsync<ConflictException>(()=>f.Media.ConfirmAsync(1,1,new(10,1)));
     }
 
+    [Fact]
+    public async Task PublishedCreatorPackage_IsReadableOnlyAfterPublish_AndHidesWorkflowFields()
+    {
+        var f=new Fixture(); await f.Initialize();
+        await Assert.ThrowsAsync<NotFoundException>(() => f.Media.GetPublishedCreatorPackageAsync(1));
+        var story=f.Store.Items<Story>().Single(); story.IsPublished=true; story.Status=StoryStatus.Ready;
+        var package=await f.Media.GetPublishedCreatorPackageAsync(1);
+        Assert.Equal(f.Package.Scenes.Count, package.Scenes.Count);
+        Assert.Empty(package.Replacements); Assert.Null(package.ConfirmedByUserId);
+        story.ArchivedAt=DateTime.UtcNow;
+        await Assert.ThrowsAsync<NotFoundException>(() => f.Media.GetPublishedCreatorPackageAsync(1));
+    }
+
     [Theory]
     [InlineData(true,true)]
     [InlineData(true,false)]

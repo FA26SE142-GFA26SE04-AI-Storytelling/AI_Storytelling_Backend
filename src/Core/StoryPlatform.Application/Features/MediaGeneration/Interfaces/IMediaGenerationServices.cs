@@ -68,6 +68,7 @@ public interface IMediaGenerationService
         CreatorMediaCommand command, CreatorMediaUploadCommand? upload, GeneratedMedia? file, CancellationToken ct = default);
     Task<MediaGenerationProgress> GetProgressAsync(int userId, int storyId, CancellationToken cancellationToken = default);
     Task<StoryMediaPackage> GetPackageAsync(int userId, int storyId, CancellationToken cancellationToken = default);
+    Task<StoryMediaPackage> GetPublishedCreatorPackageAsync(int storyId, CancellationToken cancellationToken = default);
     Task<MediaGenerationProgress> RetryAsync(int userId, int storyId, CancellationToken cancellationToken = default);
     Task RegenerateIllustrationBeatAsync(int userId, int storyId, int beatId, RegenerateMediaRequest request, CancellationToken cancellationToken = default);
     Task RegenerateSegmentAudioAsync(int userId, int storyId, int segmentId, RegenerateMediaRequest request, CancellationToken cancellationToken = default);

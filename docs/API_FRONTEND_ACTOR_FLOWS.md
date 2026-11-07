@@ -2921,13 +2921,14 @@ Adult theo người nhận, SignalR mục 12. Frontend USE_MOCK/notificationLoca
 - Frontend: **API_CÓ_MOCK_LOCAL** — [guardianService.deleteNotification](../../AI_Storytelling_Frontend/src/app/services/guardianService.ts#L132); nơi dùng: [NotificationBell.tsx](../../AI_Storytelling_Frontend/src/app/components/shell/NotificationBell.tsx#L61)
 
 <a id="controller-story"></a>
-### Story — 6 route
+### Story — 7 route
 
-GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PUT/DELETE/PATCH publish là CRUD cũ Parent, không thay review/manual.
+GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PUT/DELETE/PATCH publish là CRUD cũ Parent, không thay review/manual. `GET /Story` và `GET /Story/{id}` chỉ trả truyện Parent (có test chặn Creator); truyện Creator đã duyệt đi qua `GET /Story/community`.
 
 | Method + route | Mapping |
 |---|---|
 | [GET /api/v1/Story](#ep-story-getstories-get) | GỌI_API |
+| [GET /api/v1/Story/community](#ep-story-getcommunitystories-get) | GỌI_API |
 | [GET /api/v1/Story/{id}](#ep-story-getstorybyid-get) | GỌI_API |
 | [POST /api/v1/Story](#ep-story-createstory-post) | CHƯA_MAP |
 | [PUT /api/v1/Story/{id}](#ep-story-updatestory-put) | CHƯA_MAP |
@@ -2942,6 +2943,15 @@ GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PU
 - Request: **query** filter: [StoryFilterRequestDto](#dto-storyfilterrequestdto).
 - Response: ApiResponse.data: [PagedResult&lt;StoryDto&gt;](#dto-pagedresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [storyService.getStories](../../AI_Storytelling_Frontend/src/app/services/storyService.ts#L15); nơi dùng: [WorkspaceDataContext.tsx](../../AI_Storytelling_Frontend/src/app/context/WorkspaceDataContext.tsx#L58); [readingService.ts](../../AI_Storytelling_Frontend/src/app/services/readingService.ts#L68)
+
+<a id="ep-story-getcommunitystories-get"></a>
+#### GET /api/v1/Story/community
+
+- Action/chức năng: **GetCommunityStories** — Thư viện chung: danh sách truyện của Creator đã duyệt và công khai (Scope=Creator, IsPublished, Status=Ready, chưa lưu trữ, chưa xóa). Không trả bản nháp. Không thay `GET /CommunityLibrary` của phiên bé (đã lọc theo tuổi và chính sách an toàn của bé). [StoryController](../src/Core/StoryPlatform.Api/Controllers/StoryController.cs).
+- Quyền: Roles User, ContentCreator, Moderator, Administrator (chưa đăng nhập: 401)
+- Request: **query** filter: [StoryFilterRequestDto](#dto-storyfilterrequestdto); dùng searchTerm, genre, ageBand, authorUserId, isDescending, pageIndex, pageSize (status và isPublished không có tác dụng, luôn lọc cố định).
+- Response: ApiResponse.data: [PagedResult&lt;StoryDto&gt;](#dto-pagedresult). HTTP nhánh controller: 200.
+- Frontend: **GỌI_API** — [storyService.getCommunityStories](../../AI_Storytelling_Frontend/src/app/services/storyService.ts); nơi dùng: [LibraryWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/library/LibraryWorkspace.tsx) (nhãn nguồn "Của creator").
 
 <a id="ep-story-getstorybyid-get"></a>
 #### GET /api/v1/Story/{id}

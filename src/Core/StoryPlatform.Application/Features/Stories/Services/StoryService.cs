@@ -53,6 +53,30 @@ public class StoryService : IStoryService
         return new PagedResult<StoryDto>(dtos, totalCount, filter.PageIndex, filter.PageSize);
     }
 
+    public async Task<PagedResult<StoryDto>> GetPublishedCreatorStoriesAsync(StoryFilterRequestDto filter, CancellationToken cancellationToken = default)
+    {
+        // Thư viện cộng đồng: chỉ truyện Creator đã được duyệt và công khai. Không bao giờ trả bản nháp hay truyện đã lưu trữ.
+        Expression<Func<DomainStory, bool>> predicate = s =>
+            !s.IsDeleted && s.Scope == StoryScope.Creator && s.IsPublished && s.Status == StoryStatus.Ready && s.ArchivedAt == null &&
+            (!filter.AuthorUserId.HasValue || s.AuthorUserId == filter.AuthorUserId.Value) &&
+            (string.IsNullOrEmpty(filter.Genre) || s.Genre == filter.Genre) &&
+            (string.IsNullOrEmpty(filter.AgeBand) || s.AgeBand == filter.AgeBand) &&
+            (string.IsNullOrEmpty(filter.SearchTerm) || (s.Title != null && s.Title.Contains(filter.SearchTerm)) || (s.Description != null && s.Description.Contains(filter.SearchTerm)));
+
+        Func<IQueryable<DomainStory>, IOrderedQueryable<DomainStory>> orderBy = query =>
+            filter.IsDescending ? query.OrderByDescending(s => s.CreatedAt) : query.OrderBy(s => s.CreatedAt);
+
+        var (items, totalCount) = await _unitOfWork.Repository<DomainStory>().GetPagedAsync(
+            pageIndex: filter.PageIndex,
+            pageSize: filter.PageSize,
+            filter: predicate,
+            orderBy: orderBy,
+            includeProperties: "Author",
+            cancellationToken: cancellationToken);
+
+        return new PagedResult<StoryDto>(items.Select(MapToStoryDto).ToList(), totalCount, filter.PageIndex, filter.PageSize);
+    }
+
     public async Task<StoryDto> GetStoryByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         var storyRepo = _unitOfWork.Repository<DomainStory>();

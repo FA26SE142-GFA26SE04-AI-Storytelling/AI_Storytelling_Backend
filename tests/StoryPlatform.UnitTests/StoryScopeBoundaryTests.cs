@@ -68,6 +68,34 @@ public sealed class StoryScopeBoundaryTests
         Assert.Equal(1, Assert.Single(result.Items).Id);
     }
 
+    [Fact]
+    public async Task CommunityList_ReturnsOnlyPublishedReadyCreatorStories()
+    {
+        var repo = new Mock<IGenericRepository<Story>>();
+        var rows = new[]
+        {
+            new Story { Id = 1, Scope = StoryScope.Parent, IsPublished = true, Status = StoryStatus.Ready },
+            new Story { Id = 2, Scope = StoryScope.Creator, IsPublished = true, Status = StoryStatus.Ready },
+            new Story { Id = 3, Scope = StoryScope.Creator, IsPublished = false, Status = StoryStatus.Ready },
+            new Story { Id = 4, Scope = StoryScope.Creator, IsPublished = true, Status = StoryStatus.ContentReview },
+            new Story { Id = 5, Scope = StoryScope.Creator, IsPublished = true, Status = StoryStatus.Ready, ArchivedAt = DateTime.UtcNow },
+            new Story { Id = 6, Scope = StoryScope.Creator, IsPublished = true, Status = StoryStatus.Ready, IsDeleted = true },
+        };
+        repo.Setup(x => x.GetPagedAsync(It.IsAny<int>(), It.IsAny<int>(),
+                It.IsAny<Expression<Func<Story, bool>>>(), It.IsAny<Func<IQueryable<Story>, IOrderedQueryable<Story>>>(),
+                It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns((int _, int _, Expression<Func<Story, bool>> filter,
+                Func<IQueryable<Story>, IOrderedQueryable<Story>> _, string? _, CancellationToken _) =>
+            {
+                IReadOnlyList<Story> found = rows.Where(filter.Compile()).ToArray();
+                return Task.FromResult((found, found.Count));
+            });
+
+        var result = await Service(repo).GetPublishedCreatorStoriesAsync(new StoryFilterRequestDto());
+
+        Assert.Equal(2, Assert.Single(result.Items).Id);
+    }
+
     [Theory]
     [InlineData("read")]
     [InlineData("update")]

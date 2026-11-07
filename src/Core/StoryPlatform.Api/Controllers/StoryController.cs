@@ -31,6 +31,19 @@ public class StoryController : BaseApiController
     }
 
     /// <summary>
+    /// Thư viện cộng đồng: danh sách truyện của Creator đã được duyệt và công khai (dành cho User, Creator, Moderator, Administrator)
+    /// </summary>
+    [HttpGet("community")]
+    [Authorize(Roles = "User,ContentCreator,Moderator,Administrator")]
+    public async Task<ActionResult<ApiResponse<PagedResult<StoryDto>>>> GetCommunityStories(
+        [FromQuery] StoryFilterRequestDto filter,
+        CancellationToken cancellationToken)
+    {
+        var result = await _storyService.GetPublishedCreatorStoriesAsync(filter, cancellationToken);
+        return HandleResult(result, "Lấy thư viện cộng đồng thành công.");
+    }
+
+    /// <summary>
     /// Lấy chi tiết câu chuyện theo ID
     /// </summary>
     [HttpGet("{id:int}")]

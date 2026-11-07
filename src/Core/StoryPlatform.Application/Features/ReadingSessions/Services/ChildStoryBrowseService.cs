@@ -47,7 +47,8 @@ public class ChildStoryBrowseService : IChildStoryBrowseService
             && item.ChildProfileId == childProfileId && item.Source == ChildRoadmapItemSource.Manual
             && (item.Status == ChildRoadmapItemStatus.Waiting || item.Status == ChildRoadmapItemStatus.Open
                 || item.Status == ChildRoadmapItemStatus.Completed), cancellationToken: cancellationToken);
-        var selectedIds = selected.Select(item => item.StoryId).Distinct().ToArray();
+        // List, không phải mảng: EF Core trên .NET 10 không dịch được int[].Contains (thành ReadOnlySpan) trong biểu thức truy vấn nên trả 500.
+        var selectedIds = selected.Select(item => item.StoryId).Distinct().ToList();
 
         var (rows, total) = await _unitOfWork.Repository<Story>().GetPagedAsync(
             pageIndex,

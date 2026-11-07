@@ -10,7 +10,10 @@ public static class CreatorPublicationGuard
 {
     // FirstOrDefaultAsync is intentionally a no-tracking database read in GenericRepository.
     // Call under the story transaction lock when used before a write.
-    public static async Task EnsureWritableAsync(IUnitOfWork uow, int storyId, int? versionId, CancellationToken ct, bool contentMutation = false)
+    // allowSubmittedVersion: bỏ qua riêng điều kiện "phiên bản đã nộp duyệt là bất biến" cho thay đổi chỉ trên Story (như ảnh bìa),
+    // vẫn chặn khi truyện đang công khai, đang có mục duyệt/gỡ mở, bị từ chối, đã lưu trữ hoặc đã xóa.
+    public static async Task EnsureWritableAsync(IUnitOfWork uow, int storyId, int? versionId, CancellationToken ct, bool contentMutation = false,
+        bool allowSubmittedVersion = false)
     {
         var story = await uow.Repository<Story>().FirstOrDefaultAsync(x => x.Id == storyId, cancellationToken: ct)
             ?? throw new NotFoundException("Story", storyId);
@@ -28,7 +31,7 @@ public static class CreatorPublicationGuard
         var version = await uow.Repository<StoryVersion>().FirstOrDefaultAsync(x => x.StoryId == storyId &&
             (versionId.HasValue ? x.Id == versionId.Value : x.IsCurrent), cancellationToken: ct);
         if (versionId.HasValue && version == null) throw new ConflictException("STALE_STORY_VERSION");
-        if (version != null && (!version.IsCurrent || version.Moderation.ReviewStatus != VersionReviewStatus.None ||
+        if (!allowSubmittedVersion && version != null && (!version.IsCurrent || version.Moderation.ReviewStatus != VersionReviewStatus.None ||
             version.Moderation.ReviewSubmittedAt != null || await uow.Repository<ModerationItem>().ExistsAsync(x =>
                 x.ItemType == ModerationItemType.PublicStoryReview && x.StoryVersionId == version.Id, ct)))
             throw new ConflictException("SUBMITTED_VERSION_IMMUTABLE_CREATE_REVISION");

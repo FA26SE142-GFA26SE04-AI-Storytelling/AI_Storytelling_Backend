@@ -1,4 +1,6 @@
+using StoryPlatform.Application.Common;
 using StoryPlatform.Application.Features.CreatorAuthoring;
+using StoryPlatform.Application.Features.Stories.Interfaces;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -19,14 +21,16 @@ public partial class ManualAuthoringService
     private readonly CreatorAuthoringOptions _options;
     private readonly IImportPreviewProtector _previews;
     private readonly IManualAuthoringPolicy _policy;
+    private readonly IStoryCoverResolver? _covers;
 
     public ManualAuthoringService(IUnitOfWork uow, CreatorAuthoringOptions options,
-        IImportPreviewProtector previews, IManualAuthoringPolicy policy)
+        IImportPreviewProtector previews, IManualAuthoringPolicy policy, IStoryCoverResolver? covers = null)
     {
         _uow = uow;
         _options = options;
         _previews = previews;
         _policy = policy;
+        _covers = covers;
     }
 
     public Task<CreatorDraftDto> CreateDraftAsync(int userId, CreateCreatorDraftRequest request, CancellationToken ct = default) =>
@@ -342,10 +346,13 @@ public partial class ManualAuthoringService
         if (x.Scope == StoryScope.Creator && x.Source == StorySource.Ai)
             lastVersionNo = (await _uow.Repository<StoryVersion>().FindAsync(v => v.StoryId == x.Id && !v.IsDeleted,
                 cancellationToken: ct)).Select(v => v.VersionNo).DefaultIfEmpty().Max();
+        var cover = x.CoverImageUrl;
+        if (_covers is not null && StoryCover.IsSceneRef(cover))
+            cover = (await _covers.ResolveAsync([cover], ct))(cover);
         return new(x.Id, x.AuthorUserId, x.Title ?? string.Empty, x.Description ?? string.Empty,
             x.Language, x.AgeBand, x.Genre ?? string.Empty, x.ExperienceMode, x.AudienceRevision,
             x.AuthoringRevisionToken, (await CurrentVersionAsync(x.Id, ct))?.Id, lastVersionNo,
-            x.CreatedAt, x.UpdatedAt, x.Source.ToString(), x.Status.ToString());
+            x.CreatedAt, x.UpdatedAt, x.Source.ToString(), x.Status.ToString(), cover);
     }
     private static CreatorVersionDto ToVersion(StoryVersion x) => new(x.Id, x.StoryId, x.VersionNo,
         x.BaseVersionId, x.RestoredFromVersionId, x.EditorUserId ?? 0, x.Title, x.Content ?? string.Empty,

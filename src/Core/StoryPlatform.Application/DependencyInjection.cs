@@ -137,6 +137,8 @@ public static class DependencyInjection
         services.AddScoped<IMyRoadmapService, MyRoadmapService>();
         services.AddScoped<IChildStoryBrowseService, ChildStoryBrowseService>();
         services.AddScoped<IChildMediaUrlSigner, ChildMediaUrlSigner>();
+        services.AddScoped<StoryPlatform.Application.Features.Stories.Interfaces.IStoryCoverResolver, StoryPlatform.Application.Features.Stories.Services.StoryCoverResolver>();
+        services.AddScoped<StoryPlatform.Application.Features.Stories.Interfaces.IStoryCoverService, StoryPlatform.Application.Features.Stories.Services.StoryCoverService>();
         services.AddScoped<IChildReadingService, ChildReadingService>();
         services.AddScoped<IWishCardManagementService, WishCardManagementService>();
         services.AddScoped<IChildWishCardService, ChildWishCardService>();

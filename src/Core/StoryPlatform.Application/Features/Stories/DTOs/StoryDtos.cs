@@ -64,3 +64,14 @@ public class StoryFilterRequestDto : PageRequest
     public bool? IsPublished { get; set; }
     public int? AuthorUserId { get; set; }
 }
+
+/// <summary>
+/// Chọn một ảnh minh họa của chính truyện làm ảnh bìa. <c>MediaAssetId = null</c> là gỡ ảnh bìa.
+/// X, Y, W, H là vùng hiển thị (0–1, tỉ lệ so với cả tấm ảnh); bỏ trống cả bốn thì hiển thị mặc định.
+/// </summary>
+public sealed record SetStoryCoverRequestDto(
+    int? MediaAssetId,
+    double? X = null,
+    double? Y = null,
+    double? W = null,
+    double? H = null);

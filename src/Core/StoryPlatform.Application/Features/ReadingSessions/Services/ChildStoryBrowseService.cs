@@ -4,6 +4,7 @@ using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
 using StoryPlatform.Application.Features.ChildRoadmaps.Services;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 using StoryPlatform.Application.Features.RoadmapTemplates;
+using StoryPlatform.Application.Features.Stories.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -16,11 +17,13 @@ public class ChildStoryBrowseService : IChildStoryBrowseService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IChildRoadmapEligibility _eligibility;
+    private readonly IStoryCoverResolver? _covers;
 
-    public ChildStoryBrowseService(IUnitOfWork unitOfWork, IChildRoadmapEligibility eligibility)
+    public ChildStoryBrowseService(IUnitOfWork unitOfWork, IChildRoadmapEligibility eligibility, IStoryCoverResolver? covers = null)
     {
         _unitOfWork = unitOfWork;
         _eligibility = eligibility;
+        _covers = covers;
     }
 
     public async Task<ChildStoryPageDto> SearchAsync(
@@ -60,6 +63,7 @@ public class ChildStoryBrowseService : IChildStoryBrowseService
             orderBy: stories => stories.OrderByDescending(story => story.CreatedAt).ThenByDescending(story => story.Id),
             cancellationToken: cancellationToken);
 
+        var cover = _covers is null ? null : await _covers.ResolveAsync(rows.Select(row => row.CoverImageUrl), cancellationToken);
         var items = new List<ChildStoryItemDto>();
         foreach (var story in rows)
         {
@@ -72,7 +76,7 @@ public class ChildStoryBrowseService : IChildStoryBrowseService
             {
                 StoryId = story.Id,
                 Title = story.Title ?? string.Empty,
-                CoverImageUrl = story.CoverImageUrl,
+                CoverImageUrl = cover is null ? story.CoverImageUrl : cover(story.CoverImageUrl),
                 Description = story.Description,
                 Source = story.Scope == StoryScope.Parent || selectedIds.Contains(story.Id) ? MineSource : LibrarySource
             });

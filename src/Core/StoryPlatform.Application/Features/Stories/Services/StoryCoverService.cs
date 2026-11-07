@@ -32,15 +32,38 @@ public sealed class StoryCoverService : IStoryCoverService
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
         await MediaStoryAccess.AuthorizeAuthorAsync(_unitOfWork, _supervision, story, userId, cancellationToken);
-        if (story.Scope == StoryScope.Creator && story.IsPublished)
-            throw new ConflictException("STORY_PUBLISHED_COVER_LOCKED: Truyện đã công khai, hãy yêu cầu gỡ trước khi đổi ảnh bìa.");
 
-        story.CoverImageUrl = request.MediaAssetId is { } assetId
-            ? await BuildCoverAsync(story, assetId, request, cancellationToken)
-            : null;
+        async Task ApplyAsync()
+        {
+            story.CoverImageUrl = request.MediaAssetId is { } assetId
+                ? await BuildCoverAsync(story, assetId, request, cancellationToken)
+                : null;
+            _unitOfWork.Repository<Story>().Update(story);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
 
-        _unitOfWork.Repository<Story>().Update(story);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        if (story.Scope != StoryScope.Creator)
+        {
+            await ApplyAsync();
+            return;
+        }
+
+        // Truyện Creator theo quy tắc khóa chung của backend: đã công khai, đang chờ duyệt, bị từ chối, đã lưu trữ hoặc đã
+        // nộp duyệt thì không sửa được (409 CREATOR_PUBLICATION_LOCKED / SUBMITTED_VERSION_IMMUTABLE_CREATE_REVISION).
+        // Muốn đổi thì Creator gửi yêu cầu gỡ rồi tạo phiên bản chỉnh sửa. Ảnh bìa không phải sửa nội dung nên không xét gói đã chốt.
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await _unitOfWork.AcquireTransactionLockAsync(story.Id, cancellationToken);
+            await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, story.Id, null, cancellationToken);
+            await ApplyAsync();
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+            throw;
+        }
     }
 
     private async Task<string> BuildCoverAsync(Story story, int assetId, SetStoryCoverRequestDto request, CancellationToken ct)

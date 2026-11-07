@@ -131,6 +131,21 @@ public sealed class CreatorMediaUploadTests
 
         story.IsPublished=true;
         await Assert.ThrowsAsync<ConflictException>(() => cover.SetCoverAsync(1,1,new(assetId)));
+        story.IsPublished=false; story.ArchivedAt=DateTime.UtcNow;
+        await Assert.ThrowsAsync<ConflictException>(() => cover.SetCoverAsync(1,1,new(assetId)));
+        story.ArchivedAt=null; story.Status=StoryStatus.Rejected;
+        await Assert.ThrowsAsync<ConflictException>(() => cover.SetCoverAsync(1,1,new(assetId)));
+    }
+
+    [Fact]
+    public async Task SetCover_IsBlockedWhileACreatorReviewIsOpen()
+    {
+        var f=new Fixture(); await f.Initialize(); await f.Fill();
+        var package=await f.Media.GetPackageAsync(1,1);
+        var assetId=package.Scenes.SelectMany(x=>x.Illustrations).First(x=>x.AssetId.HasValue && x.Status=="Ready").AssetId!.Value;
+        var cover=new StoryCoverService(f.Store);
+        f.Store.Seed(new ModerationItem { Id=1, StoryId=1, ItemType=ModerationItemType.PublicStoryReview, Status=ModerationItemStatus.Pending });
+        await Assert.ThrowsAsync<ConflictException>(() => cover.SetCoverAsync(1,1,new(assetId)));
     }
 
     [Fact]

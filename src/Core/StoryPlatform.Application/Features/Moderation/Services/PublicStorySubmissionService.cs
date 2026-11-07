@@ -59,6 +59,12 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
                 "Truyện chưa sẵn sàng (chưa tạo xong media) nên chưa thể gửi duyệt.");
         }
 
+        // Ảnh bìa là một phần của bài đăng công khai: Creator phải chọn bìa (từ tranh trong truyện) trước khi gửi duyệt.
+        if (string.IsNullOrWhiteSpace(story.CoverImageUrl))
+        {
+            throw new BadRequestException("Truyện cần có ảnh bìa trước khi gửi duyệt. Hãy chọn một tranh làm ảnh bìa rồi gửi lại.");
+        }
+
         var version = await _unitOfWork.Repository<StoryVersion>()
                           .FirstOrDefaultAsync(x => x.Id == request.StoryVersionId, cancellationToken: cancellationToken)
                       ?? throw new NotFoundException("Phiên bản truyện", request.StoryVersionId);

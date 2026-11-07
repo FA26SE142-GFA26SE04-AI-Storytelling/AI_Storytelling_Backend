@@ -388,7 +388,7 @@ Creator chỉ xác nhận quyết định sáng tác. Approve outline cũng là 
 
 ### CR3. Gửi Public Library
 
-Chỉ khi version đủ Ready/media/tác giả: POST /PublicStorySubmission/submit với storyId/storyVersionId/contentCategoryIds → giữ itemId/status. Không dùng /community-submissions giả định của Parent.
+Chỉ khi version đủ Ready/media/tác giả **và truyện đã có ảnh bìa** (chọn bằng `PUT /stories/{storyId}/cover`; thiếu bìa → 400 "Truyện cần có ảnh bìa trước khi gửi duyệt"): POST /PublicStorySubmission/submit với storyId/storyVersionId/contentCategoryIds → giữ itemId/status. Không dùng /community-submissions giả định của Parent.
 
 POST /{itemId}/withdraw chỉ khi Pending và do mình gửi; Claimed không rút được. Sau withdraw, ChangesRequested hoặc Rejected, gọi API revisions để tạo phiên mới trước khi sửa rồi gửi lại. Phiên đã nộp vẫn bất biến. Có submission API không chứng minh manual Creator đã có bước Ready.
 

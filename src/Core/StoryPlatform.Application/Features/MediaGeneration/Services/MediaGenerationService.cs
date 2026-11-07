@@ -12,6 +12,7 @@ using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Application.Features.ListeningInteractions.Services;
+using StoryPlatform.Application.Features.Stories.Services;
 using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -137,6 +138,52 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
     {
         var story = await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
         return await BuildPackageAsync(story, storyId, cancellationToken);
+    }
+
+    public async Task SetCoverAsync(int userId, int storyId, SetStoryCoverRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var story = await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
+        if (story.Scope == StoryScope.Creator && story.IsPublished)
+            throw new ConflictException("STORY_PUBLISHED_COVER_LOCKED: Truyện đã công khai, hãy yêu cầu gỡ trước khi đổi ảnh bìa.");
+
+        if (request.MediaAssetId is null)
+        {
+            story.CoverImageUrl = null;
+        }
+        else
+        {
+            var version = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
+                x => x.StoryId == storyId && x.IsCurrent, cancellationToken: cancellationToken)).FirstOrDefault()
+                ?? throw new NotFoundException("Current story version", storyId);
+            var assetId = request.MediaAssetId.Value;
+            var asset = await _unitOfWork.Repository<MediaAsset>().FirstOrDefaultAsync(
+                x => x.Id == assetId && x.StoryVersionId == version.Id && x.ParentStoryPackageId == null
+                     && x.IsCurrent && x.Type == MediaType.Illustration && x.Status == MediaStatus.Ready
+                     && x.IllustrationBeatId != null && x.Url != null,
+                cancellationToken: cancellationToken)
+                ?? throw new BadRequestException("Ảnh này không thuộc truyện hoặc chưa sẵn sàng để làm ảnh bìa.");
+
+            if (request.X is { } x0 && request.Y is { } y0 && request.W is { } w0 && request.H is { } h0)
+            {
+                const double Tolerance = 1e-6;
+                if (!(w0 > 0 && w0 <= 1 && h0 > 0 && h0 <= 1 && x0 >= -Tolerance && y0 >= -Tolerance
+                      && x0 + w0 <= 1 + Tolerance && y0 + h0 <= 1 + Tolerance))
+                    throw new BadRequestException("Vùng hiển thị ảnh bìa không hợp lệ.");
+                story.CoverImageUrl = StoryCover.Build(asset.Id, Math.Max(x0, 0), Math.Max(y0, 0), w0, h0);
+            }
+            else if (request.X is null && request.Y is null && request.W is null && request.H is null)
+            {
+                story.CoverImageUrl = StoryCover.Build(asset.Id);
+            }
+            else
+            {
+                throw new BadRequestException("Vùng hiển thị ảnh bìa cần đủ x, y, w, h.");
+            }
+        }
+
+        _unitOfWork.Repository<Story>().Update(story);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>

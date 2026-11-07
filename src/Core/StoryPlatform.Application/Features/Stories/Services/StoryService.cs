@@ -18,11 +18,17 @@ namespace StoryPlatform.Application.Features.Stories.Services;
 public class StoryService : IStoryService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IStoryCoverResolver? _covers;
 
-    public StoryService(IUnitOfWork unitOfWork)
+    public StoryService(IUnitOfWork unitOfWork, IStoryCoverResolver? covers = null)
     {
         _unitOfWork = unitOfWork;
+        _covers = covers;
     }
+
+    /// <summary>Đổi tham chiếu ảnh bìa (scene:...) của các truyện thành link đã ký; không có bộ giải mã thì giữ nguyên.</summary>
+    private async Task<Func<string?, string?>?> CoverResolverAsync(IEnumerable<DomainStory> stories, CancellationToken cancellationToken) =>
+        _covers is null ? null : await _covers.ResolveAsync(stories.Select(story => story.CoverImageUrl), cancellationToken);
 
     public async Task<PagedResult<StoryDto>> GetStoriesAsync(StoryFilterRequestDto filter, CancellationToken cancellationToken = default)
     {
@@ -48,7 +54,8 @@ public class StoryService : IStoryService
             includeProperties: "Author",
             cancellationToken: cancellationToken);
 
-        var dtos = items.Select(MapToStoryDto).ToList();
+        var cover = await CoverResolverAsync(items, cancellationToken);
+        var dtos = items.Select(story => MapToStoryDto(story, cover)).ToList();
 
         return new PagedResult<StoryDto>(dtos, totalCount, filter.PageIndex, filter.PageSize);
     }
@@ -74,7 +81,8 @@ public class StoryService : IStoryService
             includeProperties: "Author",
             cancellationToken: cancellationToken);
 
-        return new PagedResult<StoryDto>(items.Select(MapToStoryDto).ToList(), totalCount, filter.PageIndex, filter.PageSize);
+        var cover = await CoverResolverAsync(items, cancellationToken);
+        return new PagedResult<StoryDto>(items.Select(story => MapToStoryDto(story, cover)).ToList(), totalCount, filter.PageIndex, filter.PageSize);
     }
 
     public async Task<StoryDto> GetStoryByIdAsync(int id, CancellationToken cancellationToken = default)
@@ -90,7 +98,7 @@ public class StoryService : IStoryService
             throw new NotFoundException("Câu chuyện", id);
         }
 
-        return MapToStoryDto(story);
+        return MapToStoryDto(story, await CoverResolverAsync([story], cancellationToken));
     }
 
     public async Task<StoryDto> CreateStoryAsync(int authorUserId, CreateStoryRequestDto request, CancellationToken cancellationToken = default)
@@ -224,7 +232,7 @@ public class StoryService : IStoryService
         return true;
     }
 
-    private static StoryDto MapToStoryDto(DomainStory story)
+    private static StoryDto MapToStoryDto(DomainStory story, Func<string?, string?>? cover = null)
     {
         return new StoryDto
         {
@@ -232,7 +240,7 @@ public class StoryService : IStoryService
             Title = story.Title ?? string.Empty,
             Description = story.Description,
             Content = story.Content,
-            CoverImageUrl = story.CoverImageUrl,
+            CoverImageUrl = cover is null ? story.CoverImageUrl : cover(story.CoverImageUrl),
             Genre = story.Genre,
             MoralLesson = story.MoralLesson,
             AgeBand = story.AgeBand,

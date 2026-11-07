@@ -158,6 +158,17 @@ public sealed record ConfirmMediaPackageRequest(
     [System.ComponentModel.DataAnnotations.Range(1, int.MaxValue)] int StoryVersionId,
     [System.ComponentModel.DataAnnotations.Range(1, int.MaxValue)] int PackageRevision);
 
+/// <summary>
+/// Chọn một ảnh minh họa của chính truyện làm ảnh bìa. <c>MediaAssetId = null</c> là gỡ ảnh bìa.
+/// X, Y, W, H là vùng hiển thị (0–1, tỉ lệ so với cả tấm ảnh); bỏ trống thì hiển thị mặc định.
+/// </summary>
+public sealed record SetStoryCoverRequest(
+    int? MediaAssetId,
+    double? X = null,
+    double? Y = null,
+    double? W = null,
+    double? H = null);
+
 public sealed record RegenerateMediaRequest(
     [System.ComponentModel.DataAnnotations.Range(1, int.MaxValue)] int StoryVersionId,
     [System.ComponentModel.DataAnnotations.Range(0, int.MaxValue)] int PackageRevision,

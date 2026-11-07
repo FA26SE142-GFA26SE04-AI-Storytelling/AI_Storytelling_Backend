@@ -37,6 +37,21 @@ public sealed class MediaGenerationController : ControllerBase
         return Ok(ApiResponse<StoryMediaPackage>.Ok(result));
     }
 
+    /// <summary>Chọn một ảnh minh họa của truyện làm ảnh bìa kèm vùng hiển thị; mediaAssetId = null để gỡ ảnh bìa.</summary>
+    [HttpPut("cover")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> SetCover(
+        int storyId, SetStoryCoverRequest request, CancellationToken cancellationToken)
+    {
+        var value = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (!int.TryParse(value, out var userId)) throw new UnauthorizedAccessException();
+        await _service.SetCoverAsync(userId, storyId, request, cancellationToken);
+        return NoContent();
+    }
+
     [HttpPost("illustration-beats/{beatId:int}/regenerate")]
     [EnableRateLimiting(RateLimitPolicies.Ai)]
     [ProducesResponseType(StatusCodes.Status202Accepted)]

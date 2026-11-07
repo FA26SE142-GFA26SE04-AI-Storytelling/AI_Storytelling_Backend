@@ -6,6 +6,7 @@ using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 using StoryPlatform.Application.Features.MediaStorage.Models;
+using StoryPlatform.Application.Features.Stories.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.Infrastructure.AI;
@@ -104,6 +105,42 @@ public sealed class CreatorMediaUploadTests
         Assert.Equal(StoryStatus.MediaProcessing,f.Store.Items<Story>().Single().Status);
         Assert.All(f.Store.Items<MediaAsset>(),x => Assert.Equal(MediaAssetSource.Unspecified,x.Source));
         await Assert.ThrowsAsync<ConflictException>(()=>f.Media.ConfirmAsync(1,1,new(10,1)));
+    }
+
+    [Fact]
+    public async Task SetCover_StoresSceneReference_ValidatesAssetAndCrop_AndBlocksPublishedStory()
+    {
+        var f=new Fixture(); await f.Initialize(); await f.Fill();
+        var package=await f.Media.GetPackageAsync(1,1);
+        var assetId=package.Scenes.SelectMany(x=>x.Illustrations).First(x=>x.AssetId.HasValue && x.Status=="Ready").AssetId!.Value;
+        var story=f.Store.Items<Story>().Single();
+
+        await f.Media.SetCoverAsync(1,1,new(assetId,0.1,0.2,0.5,0.5));
+        Assert.Equal($"scene:{assetId}#crop=0.1,0.2,0.5,0.5",story.CoverImageUrl);
+        await f.Media.SetCoverAsync(1,1,new(assetId));
+        Assert.Equal($"scene:{assetId}",story.CoverImageUrl);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => f.Media.SetCoverAsync(1,1,new(assetId,0.8,0.2,0.5,0.5)));
+        await Assert.ThrowsAsync<BadRequestException>(() => f.Media.SetCoverAsync(1,1,new(assetId,0.1,null,null,null)));
+        await Assert.ThrowsAsync<BadRequestException>(() => f.Media.SetCoverAsync(1,1,new(999999)));
+
+        await f.Media.SetCoverAsync(1,1,new(null));
+        Assert.Null(story.CoverImageUrl);
+
+        story.IsPublished=true;
+        await Assert.ThrowsAsync<ConflictException>(() => f.Media.SetCoverAsync(1,1,new(assetId)));
+    }
+
+    [Fact]
+    public async Task CoverReference_ParsesAndRejectsMalformedValues()
+    {
+        Assert.True(StoryCover.TryParse("scene:12#crop=0.1,0.2,0.5,0.5", out var id, out var tail));
+        Assert.Equal(12,id); Assert.Equal("#crop=0.1,0.2,0.5,0.5",tail);
+        Assert.True(StoryCover.TryParse("scene:7", out id, out tail)); Assert.Equal(7,id); Assert.Equal("",tail);
+        Assert.False(StoryCover.TryParse("scene:abc", out _, out _));
+        Assert.False(StoryCover.TryParse("scene:0", out _, out _));
+        Assert.False(StoryCover.TryParse("https://x/y.png", out _, out _));
+        await Task.CompletedTask;
     }
 
     [Fact]

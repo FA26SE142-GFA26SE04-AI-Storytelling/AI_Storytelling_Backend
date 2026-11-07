@@ -1584,6 +1584,7 @@ Guard/nghiệp vụ: [MediaGenerationService.cs](../src/Core/StoryPlatform.Appli
 |---|---|
 | [GET /api/v1/stories/{storyId}/media/progress](#ep-mediageneration-getprogress-get) | GỌI_API |
 | [GET /api/v1/stories/{storyId}/media/package](#ep-mediageneration-getpackage-get) | GỌI_API |
+| [PUT /api/v1/stories/{storyId}/media/cover](#ep-mediageneration-setcover-put) | GỌI_API |
 | [POST /api/v1/stories/{storyId}/media/illustration-beats/{beatId}/regenerate](#ep-mediageneration-regenerateillustrationbeat-post) | SERVICE_CHƯA_DÙNG |
 | [POST /api/v1/stories/{storyId}/media/retry](#ep-mediageneration-retry-post) | GỌI_API |
 
@@ -1604,6 +1605,17 @@ Guard/nghiệp vụ: [MediaGenerationService.cs](../src/Core/StoryPlatform.Appli
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [StoryMediaPackage](#dto-storymediapackage). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.getMediaPackage](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L130); nơi dùng: [readingService.ts](../../AI_Storytelling_Frontend/src/app/services/readingService.ts#L79)
+
+<a id="ep-mediageneration-setcover-put"></a>
+#### PUT /api/v1/stories/{storyId}/media/cover
+
+- Action/chức năng: **SetCover** — chọn một ảnh minh họa của chính truyện làm ảnh bìa kèm vùng hiển thị (như chọn ảnh đại diện). `mediaAssetId = null` gỡ ảnh bìa. Dùng cho Content Creator (tác giả) và phụ huynh (chủ truyện). [MediaGenerationController](../src/Core/StoryPlatform.Api/Controllers/MediaGenerationController.cs).
+- Quyền: Roles User, ContentCreator; cùng guard sở hữu như `GET .../media/package`.
+- Request: **path** storyId; **body** `{ mediaAssetId: int|null, x, y, w, h }` (x,y,w,h là vùng 0–1 so với cả tấm ảnh, hoặc bỏ cả bốn để hiển thị mặc định; thiếu một số trong bốn → 400).
+- Lưu trữ: `Story.CoverImageUrl = "scene:{mediaAssetId}#crop=x,y,w,h"` (tham chiếu, không lưu URL ký vì link hết hạn). Ảnh phải là tranh Ready, đang current, thuộc phiên bản hiện tại của truyện, nếu không → 400. Truyện Creator đã công khai → 409 `STORY_PUBLISHED_COVER_LOCKED`. Lưu phiên bản nội dung mới sẽ xóa ảnh bìa (tranh của phiên bản cũ không còn dùng).
+- Khi đọc: `StoryDto.coverImageUrl`, `CreatorDraftDto.coverImageUrl`, ảnh bìa trong danh sách truyện và lộ trình của bé được đổi thành link ảnh đã ký (hiệu lực 2 giờ) kèm `#crop=...`; tham chiếu hỏng → null. Màn duyệt của Moderator và gợi ý ước nguyện chưa đổi tham chiếu này.
+- Response: HTTP 204.
+- Frontend: **GỌI_API** — [storyService.setCover](../../AI_Storytelling_Frontend/src/app/services/storyService.ts); nơi dùng: [CoverPickerDialog.tsx](../../AI_Storytelling_Frontend/src/app/features/created/CoverPickerDialog.tsx) (Truyện đã tạo của phụ huynh, Truyện của tôi của Creator).
 
 <a id="ep-mediageneration-regenerateillustrationbeat-post"></a>
 #### POST /api/v1/stories/{storyId}/media/illustration-beats/{beatId}/regenerate

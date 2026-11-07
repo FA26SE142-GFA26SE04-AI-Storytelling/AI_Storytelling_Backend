@@ -13,12 +13,10 @@ namespace StoryPlatform.Api.Controllers;
 public class StoryController : BaseApiController
 {
     private readonly IStoryService _storyService;
-    private readonly IMediaGenerationService _mediaService;
 
-    public StoryController(IStoryService storyService, IMediaGenerationService mediaService)
+    public StoryController(IStoryService storyService)
     {
         _storyService = storyService;
-        _mediaService = mediaService;
     }
 
     /// <summary>
@@ -54,9 +52,10 @@ public class StoryController : BaseApiController
     [Authorize(Roles = "User,ContentCreator,Moderator,Administrator")]
     public async Task<ActionResult<ApiResponse<StoryMediaPackage>>> GetCommunityStoryMedia(
         int id,
+        [FromServices] IMediaGenerationService mediaService,
         CancellationToken cancellationToken)
     {
-        var package = await _mediaService.GetPublishedCreatorPackageAsync(id, cancellationToken);
+        var package = await mediaService.GetPublishedCreatorPackageAsync(id, cancellationToken);
         return Ok(ApiResponse<StoryMediaPackage>.Ok(package));
     }
 

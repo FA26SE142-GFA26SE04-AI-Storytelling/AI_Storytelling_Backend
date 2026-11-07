@@ -48,14 +48,15 @@ public sealed class StoryCoverService : IStoryCoverService
             return;
         }
 
-        // Truyện Creator theo quy tắc khóa chung của backend: đã công khai, đang chờ duyệt, bị từ chối, đã lưu trữ hoặc đã
-        // nộp duyệt thì không sửa được (409 CREATOR_PUBLICATION_LOCKED / SUBMITTED_VERSION_IMMUTABLE_CREATE_REVISION).
-        // Muốn đổi thì Creator gửi yêu cầu gỡ rồi tạo phiên bản chỉnh sửa. Ảnh bìa không phải sửa nội dung nên không xét gói đã chốt.
+        // Truyện Creator theo khóa chung của backend: đã công khai, đang có mục duyệt/gỡ mở, bị từ chối, đã lưu trữ thì không đổi
+        // được (409 CREATOR_PUBLICATION_LOCKED). Muốn đổi khi đang công khai thì Creator gửi yêu cầu gỡ trước.
+        // Ảnh bìa chỉ nằm trên Story, không sửa phiên bản đã nộp, nên không xét "phiên bản đã nộp bất biến" và gói media đã chốt;
+        // nhờ vậy truyện đã được gỡ vẫn đổi bìa được mà không cần tạo phiên bản mới.
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
             await _unitOfWork.AcquireTransactionLockAsync(story.Id, cancellationToken);
-            await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, story.Id, null, cancellationToken);
+            await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, story.Id, null, cancellationToken, allowSubmittedVersion: true);
             await ApplyAsync();
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
         }

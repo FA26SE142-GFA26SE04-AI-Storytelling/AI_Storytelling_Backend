@@ -138,6 +138,28 @@ public sealed class CreatorMediaUploadTests
     }
 
     [Fact]
+    public async Task SetCover_IsAllowedOnARemovedStoryWithoutANewRevision()
+    {
+        var f=new Fixture(); await f.Initialize(); await f.Fill();
+        var package=await f.Media.GetPackageAsync(1,1);
+        var assetId=package.Scenes.SelectMany(x=>x.Illustrations).First(x=>x.AssetId.HasValue && x.Status=="Ready").AssetId!.Value;
+        var cover=new StoryCoverService(f.Store);
+        var story=f.Store.Items<Story>().Single();
+        var version=f.Store.Items<StoryVersion>().Single(x=>x.IsCurrent);
+        // Đã từng nộp duyệt, được duyệt, rồi Moderator đồng ý gỡ: không công khai, không có mục nào đang mở.
+        version.Moderation.ReviewStatus=VersionReviewStatus.Approved;
+        f.Store.Seed(new ModerationItem { Id=1, StoryId=1, StoryVersionId=version.Id, ItemType=ModerationItemType.PublicStoryReview, Status=ModerationItemStatus.Approved });
+        f.Store.Seed(new ModerationItem { Id=2, StoryId=1, StoryVersionId=version.Id, ItemType=ModerationItemType.PublicStoryRemoval, Status=ModerationItemStatus.Approved, RemovedAt=DateTime.UtcNow });
+        story.IsPublished=false;
+
+        await cover.SetCoverAsync(1,1,new(assetId));
+        Assert.Equal($"scene:{assetId}",story.CoverImageUrl);
+
+        story.IsPublished=true;
+        await Assert.ThrowsAsync<ConflictException>(() => cover.SetCoverAsync(1,1,new(assetId)));
+    }
+
+    [Fact]
     public async Task SetCover_IsBlockedWhileACreatorReviewIsOpen()
     {
         var f=new Fixture(); await f.Initialize(); await f.Fill();

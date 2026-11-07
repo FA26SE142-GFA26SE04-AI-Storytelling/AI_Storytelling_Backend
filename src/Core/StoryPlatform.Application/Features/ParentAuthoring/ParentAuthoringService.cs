@@ -36,7 +36,7 @@ public sealed class ParentAuthoringService : ManualAuthoringService
     public ParentAuthoringService(IUnitOfWork uow, CreatorAuthoringOptions options, IImportPreviewProtector previews,
         IChildProfileAccessGuard guard, IStorySegmentService segments, GrayZoneContentCheckService? moderation = null,
         IMediaContextBuilder? mediaContexts = null, IMediaGenerationService? media = null, IGrayZoneEvaluator? evaluator = null,
-        StoryPlatform.Application.Features.Stories.Services.IStoryCoverResolver? covers = null)
+        StoryPlatform.Application.Features.Stories.Interfaces.IStoryCoverResolver? covers = null)
         : base(uow, options, previews, new ParentManualAuthoringPolicy(uow, guard), covers)
     {
         _uow = uow; _guard = guard; _segments = segments; _moderation = moderation;

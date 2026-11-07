@@ -6,5 +6,5 @@ namespace StoryPlatform.Application.Features.CreatorAuthoring.Services;
 
 // Retain the existing public service and API contract while sharing the writer with Parent.
 public sealed class CreatorAuthoringService(IUnitOfWork uow, CreatorAuthoringOptions options,
-    IImportPreviewProtector previews, StoryPlatform.Application.Features.Stories.Services.IStoryCoverResolver? covers = null)
+    IImportPreviewProtector previews, StoryPlatform.Application.Features.Stories.Interfaces.IStoryCoverResolver? covers = null)
     : ManualAuthoringService(uow, options, previews, new CreatorManualAuthoringPolicy(uow), covers), ICreatorAuthoringService;

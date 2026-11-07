@@ -1584,7 +1584,6 @@ Guard/nghiệp vụ: [MediaGenerationService.cs](../src/Core/StoryPlatform.Appli
 |---|---|
 | [GET /api/v1/stories/{storyId}/media/progress](#ep-mediageneration-getprogress-get) | GỌI_API |
 | [GET /api/v1/stories/{storyId}/media/package](#ep-mediageneration-getpackage-get) | GỌI_API |
-| [PUT /api/v1/stories/{storyId}/media/cover](#ep-mediageneration-setcover-put) | GỌI_API |
 | [POST /api/v1/stories/{storyId}/media/illustration-beats/{beatId}/regenerate](#ep-mediageneration-regenerateillustrationbeat-post) | SERVICE_CHƯA_DÙNG |
 | [POST /api/v1/stories/{storyId}/media/retry](#ep-mediageneration-retry-post) | GỌI_API |
 
@@ -1605,17 +1604,6 @@ Guard/nghiệp vụ: [MediaGenerationService.cs](../src/Core/StoryPlatform.Appli
 - Request: **path** storyId: `int`; bắt buộc.
 - Response: ApiResponse.data: [StoryMediaPackage](#dto-storymediapackage). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [aiStoryCreationService.getMediaPackage](../../AI_Storytelling_Frontend/src/app/services/aiStoryCreationService.ts#L130); nơi dùng: [readingService.ts](../../AI_Storytelling_Frontend/src/app/services/readingService.ts#L79)
-
-<a id="ep-mediageneration-setcover-put"></a>
-#### PUT /api/v1/stories/{storyId}/media/cover
-
-- Action/chức năng: **SetCover** — chọn một ảnh minh họa của chính truyện làm ảnh bìa kèm vùng hiển thị (như chọn ảnh đại diện). `mediaAssetId = null` gỡ ảnh bìa. Dùng cho Content Creator (tác giả) và phụ huynh (chủ truyện). [MediaGenerationController](../src/Core/StoryPlatform.Api/Controllers/MediaGenerationController.cs).
-- Quyền: Roles User, ContentCreator; cùng guard sở hữu như `GET .../media/package`.
-- Request: **path** storyId; **body** `{ mediaAssetId: int|null, x, y, w, h }` (x,y,w,h là vùng 0–1 so với cả tấm ảnh, hoặc bỏ cả bốn để hiển thị mặc định; thiếu một số trong bốn → 400).
-- Lưu trữ: `Story.CoverImageUrl = "scene:{mediaAssetId}#crop=x,y,w,h"` (tham chiếu, không lưu URL ký vì link hết hạn). Ảnh phải là tranh Ready, đang current, thuộc phiên bản hiện tại của truyện, nếu không → 400. Truyện Creator đã công khai → 409 `STORY_PUBLISHED_COVER_LOCKED`. Lưu phiên bản nội dung mới sẽ xóa ảnh bìa (tranh của phiên bản cũ không còn dùng).
-- Khi đọc: `StoryDto.coverImageUrl`, `CreatorDraftDto.coverImageUrl`, ảnh bìa trong danh sách truyện và lộ trình của bé được đổi thành link ảnh đã ký (hiệu lực 2 giờ) kèm `#crop=...`; tham chiếu hỏng → null. Màn duyệt của Moderator và gợi ý ước nguyện chưa đổi tham chiếu này.
-- Response: HTTP 204.
-- Frontend: **GỌI_API** — [storyService.setCover](../../AI_Storytelling_Frontend/src/app/services/storyService.ts); nơi dùng: [CoverPickerDialog.tsx](../../AI_Storytelling_Frontend/src/app/features/created/CoverPickerDialog.tsx) (Truyện đã tạo của phụ huynh, Truyện của tôi của Creator).
 
 <a id="ep-mediageneration-regenerateillustrationbeat-post"></a>
 #### POST /api/v1/stories/{storyId}/media/illustration-beats/{beatId}/regenerate
@@ -2933,7 +2921,7 @@ Adult theo người nhận, SignalR mục 12. Frontend USE_MOCK/notificationLoca
 - Frontend: **API_CÓ_MOCK_LOCAL** — [guardianService.deleteNotification](../../AI_Storytelling_Frontend/src/app/services/guardianService.ts#L132); nơi dùng: [NotificationBell.tsx](../../AI_Storytelling_Frontend/src/app/components/shell/NotificationBell.tsx#L61)
 
 <a id="controller-story"></a>
-### Story — 8 route
+### Story — 9 route
 
 GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PUT/DELETE/PATCH publish là CRUD cũ Parent, không thay review/manual. `GET /Story` và `GET /Story/{id}` chỉ trả truyện Parent (có test chặn Creator); truyện Creator đã duyệt đi qua `GET /Story/community`.
 
@@ -2942,6 +2930,7 @@ GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PU
 | [GET /api/v1/Story](#ep-story-getstories-get) | GỌI_API |
 | [GET /api/v1/Story/community](#ep-story-getcommunitystories-get) | GỌI_API |
 | [GET /api/v1/Story/community/{id}/media](#ep-story-getcommunitystorymedia-get) | GỌI_API |
+| [PUT /api/v1/stories/{storyId}/cover](#ep-storycover-setcover-put) | GỌI_API |
 | [GET /api/v1/Story/{id}](#ep-story-getstorybyid-get) | GỌI_API |
 | [POST /api/v1/Story](#ep-story-createstory-post) | CHƯA_MAP |
 | [PUT /api/v1/Story/{id}](#ep-story-updatestory-put) | CHƯA_MAP |
@@ -2960,7 +2949,7 @@ GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PU
 <a id="ep-story-getcommunitystories-get"></a>
 #### GET /api/v1/Story/community
 
-- Action/chức năng: **GetCommunityStories** — Thư viện chung: danh sách truyện của Creator đã duyệt và công khai (Scope=Creator, IsPublished, Status=Ready, chưa lưu trữ, chưa xóa). Không trả bản nháp. Không thay `GET /CommunityLibrary` của phiên bé (đã lọc theo tuổi và chính sách an toàn của bé). [StoryController](../src/Core/StoryPlatform.Api/Controllers/StoryController.cs).
+- Action/chức năng: **GetCommunityStories** — Thư viện chung: danh sách truyện của Creator đã duyệt và công khai (Scope=Creator, IsPublished, Status=Ready, chưa lưu trữ, chưa xóa). Không trả bản nháp. Không thay `GET /CommunityLibrary` của phiên bé (đã lọc theo tuổi và chính sách an toàn của bé). [StoryCommunityController](../src/Core/StoryPlatform.Api/Controllers/StoryCommunityController.cs).
 - Quyền: Roles User, ContentCreator, Moderator, Administrator (chưa đăng nhập: 401)
 - Request: **query** filter: [StoryFilterRequestDto](#dto-storyfilterrequestdto); dùng searchTerm, genre, ageBand, authorUserId, isDescending, pageIndex, pageSize (status và isPublished không có tác dụng, luôn lọc cố định).
 - Response: ApiResponse.data: [PagedResult&lt;StoryDto&gt;](#dto-pagedresult). HTTP nhánh controller: 200.
@@ -2974,6 +2963,17 @@ GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PU
 - Request: **path** id: `int`; bắt buộc.
 - Response: ApiResponse.data: StoryMediaPackage (cùng cấu trúc `GET /stories/{storyId}/media/package`). HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [storyService.getCommunityStoryMedia](../../AI_Storytelling_Frontend/src/app/services/storyService.ts); nơi dùng: [LibraryWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/library/LibraryWorkspace.tsx) (khung Đọc thử, thẻ "Của creator").
+
+<a id="ep-storycover-setcover-put"></a>
+#### PUT /api/v1/stories/{storyId}/cover
+
+- Action/chức năng: **SetCover** — chọn một ảnh minh họa của chính truyện làm ảnh bìa kèm vùng hiển thị (như chọn ảnh đại diện). `mediaAssetId = null` gỡ ảnh bìa. Dùng cho Content Creator (tác giả) và phụ huynh (chủ truyện). [StoryCoverController](../src/Core/StoryPlatform.Api/Controllers/StoryCoverController.cs); logic ở `Features/Stories/Services/StoryCoverService`, dùng chung guard tác giả `MediaStoryAccess.AuthorizeAuthorAsync` với `GET .../media/package`.
+- Quyền: Roles User, ContentCreator.
+- Request: **path** storyId; **body** `{ mediaAssetId: int|null, x, y, w, h }` (x,y,w,h là vùng 0–1 so với cả tấm ảnh, hoặc bỏ cả bốn để hiển thị mặc định; thiếu một số trong bốn → 400).
+- Lưu trữ: `Story.CoverImageUrl = "scene:{mediaAssetId}#crop=x,y,w,h"` (tham chiếu, không lưu URL ký vì link hết hạn; xem `Application/Common/StoryCover`). Ảnh phải là tranh Ready, đang current, thuộc phiên bản hiện tại của truyện, nếu không → 400. Truyện Creator đã công khai → 409 `STORY_PUBLISHED_COVER_LOCKED`. Lưu phiên bản nội dung mới sẽ xóa ảnh bìa (tranh của phiên bản cũ không còn dùng).
+- Khi đọc: `StoryDto.coverImageUrl`, `CreatorDraftDto.coverImageUrl`, ảnh bìa trong danh sách truyện và lộ trình của bé được đổi thành link ảnh đã ký (hiệu lực 2 giờ) kèm `#crop=...` qua `IStoryCoverResolver`; tham chiếu hỏng → null. Màn duyệt của Moderator và gợi ý ước nguyện chưa đổi tham chiếu này.
+- Response: HTTP 204.
+- Frontend: **GỌI_API** — [storyService.setCover](../../AI_Storytelling_Frontend/src/app/services/storyService.ts); nơi dùng: [CoverPickerDialog.tsx](../../AI_Storytelling_Frontend/src/app/features/created/CoverPickerDialog.tsx) (Truyện đã tạo của phụ huynh, Truyện của tôi của Creator).
 
 <a id="ep-story-getstorybyid-get"></a>
 #### GET /api/v1/Story/{id}

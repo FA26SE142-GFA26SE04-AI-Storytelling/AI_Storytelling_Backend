@@ -6,6 +6,7 @@ using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 using StoryPlatform.Application.Features.MediaStorage.Models;
+using StoryPlatform.Application.Common;
 using StoryPlatform.Application.Features.Stories.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -114,21 +115,22 @@ public sealed class CreatorMediaUploadTests
         var package=await f.Media.GetPackageAsync(1,1);
         var assetId=package.Scenes.SelectMany(x=>x.Illustrations).First(x=>x.AssetId.HasValue && x.Status=="Ready").AssetId!.Value;
         var story=f.Store.Items<Story>().Single();
+        var cover=new StoryCoverService(f.Store);
 
-        await f.Media.SetCoverAsync(1,1,new(assetId,0.1,0.2,0.5,0.5));
+        await cover.SetCoverAsync(1,1,new(assetId,0.1,0.2,0.5,0.5));
         Assert.Equal($"scene:{assetId}#crop=0.1,0.2,0.5,0.5",story.CoverImageUrl);
-        await f.Media.SetCoverAsync(1,1,new(assetId));
+        await cover.SetCoverAsync(1,1,new(assetId));
         Assert.Equal($"scene:{assetId}",story.CoverImageUrl);
 
-        await Assert.ThrowsAsync<BadRequestException>(() => f.Media.SetCoverAsync(1,1,new(assetId,0.8,0.2,0.5,0.5)));
-        await Assert.ThrowsAsync<BadRequestException>(() => f.Media.SetCoverAsync(1,1,new(assetId,0.1,null,null,null)));
-        await Assert.ThrowsAsync<BadRequestException>(() => f.Media.SetCoverAsync(1,1,new(999999)));
+        await Assert.ThrowsAsync<BadRequestException>(() => cover.SetCoverAsync(1,1,new(assetId,0.8,0.2,0.5,0.5)));
+        await Assert.ThrowsAsync<BadRequestException>(() => cover.SetCoverAsync(1,1,new(assetId,0.1,null,null,null)));
+        await Assert.ThrowsAsync<BadRequestException>(() => cover.SetCoverAsync(1,1,new(999999)));
 
-        await f.Media.SetCoverAsync(1,1,new(null));
+        await cover.SetCoverAsync(1,1,new(null));
         Assert.Null(story.CoverImageUrl);
 
         story.IsPublished=true;
-        await Assert.ThrowsAsync<ConflictException>(() => f.Media.SetCoverAsync(1,1,new(assetId)));
+        await Assert.ThrowsAsync<ConflictException>(() => cover.SetCoverAsync(1,1,new(assetId)));
     }
 
     [Fact]

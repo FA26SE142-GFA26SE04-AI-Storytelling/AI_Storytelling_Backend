@@ -3,8 +3,6 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
-using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
-using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.Stories.DTOs;
 using StoryPlatform.Application.Features.Stories.Interfaces;
 
@@ -30,33 +28,6 @@ public class StoryController : BaseApiController
     {
         var result = await _storyService.GetStoriesAsync(filter, cancellationToken);
         return HandleResult(result, "Lấy danh sách truyện thành công.");
-    }
-
-    /// <summary>
-    /// Thư viện cộng đồng: danh sách truyện của Creator đã được duyệt và công khai (dành cho User, Creator, Moderator, Administrator)
-    /// </summary>
-    [HttpGet("community")]
-    [Authorize(Roles = "User,ContentCreator,Moderator,Administrator")]
-    public async Task<ActionResult<ApiResponse<PagedResult<StoryDto>>>> GetCommunityStories(
-        [FromQuery] StoryFilterRequestDto filter,
-        CancellationToken cancellationToken)
-    {
-        var result = await _storyService.GetPublishedCreatorStoriesAsync(filter, cancellationToken);
-        return HandleResult(result, "Lấy thư viện cộng đồng thành công.");
-    }
-
-    /// <summary>
-    /// Thư viện cộng đồng: ảnh minh họa và giọng đọc của một truyện Creator đã công khai (chỉ đọc)
-    /// </summary>
-    [HttpGet("community/{id:int}/media")]
-    [Authorize(Roles = "User,ContentCreator,Moderator,Administrator")]
-    public async Task<ActionResult<ApiResponse<StoryMediaPackage>>> GetCommunityStoryMedia(
-        int id,
-        [FromServices] IMediaGenerationService mediaService,
-        CancellationToken cancellationToken)
-    {
-        var package = await mediaService.GetPublishedCreatorPackageAsync(id, cancellationToken);
-        return Ok(ApiResponse<StoryMediaPackage>.Ok(package));
     }
 
     /// <summary>

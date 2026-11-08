@@ -190,7 +190,7 @@ public class ModerationQueueServiceTests
         _itemRepoMock.Setup(r => r.GetPagedAsync(
                 1, 100, It.IsAny<Expression<Func<ModerationItem, bool>>>(),
                 It.IsAny<Func<IQueryable<ModerationItem>, IOrderedQueryable<ModerationItem>>>(),
-                nameof(ModerationItem.Story), It.IsAny<CancellationToken>()))
+                $"{nameof(ModerationItem.Story)},{nameof(ModerationItem.ClaimedByUser)}", It.IsAny<CancellationToken>()))
             .ReturnsAsync(((IReadOnlyList<ModerationItem>)new[] { item }, 120));
 
         var result = await _sut.ListAsync(11, new ModerationQueueQueryDto
@@ -215,7 +215,7 @@ public class ModerationQueueServiceTests
         _itemRepoMock.Setup(r => r.GetPagedAsync(
                 It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Expression<Func<ModerationItem, bool>>>(),
                 It.IsAny<Func<IQueryable<ModerationItem>, IOrderedQueryable<ModerationItem>>>(),
-                nameof(ModerationItem.Story), It.IsAny<CancellationToken>()))
+                $"{nameof(ModerationItem.Story)},{nameof(ModerationItem.ClaimedByUser)}", It.IsAny<CancellationToken>()))
             .Callback<int, int, Expression<Func<ModerationItem, bool>>?,
                 Func<IQueryable<ModerationItem>, IOrderedQueryable<ModerationItem>>?, string?, CancellationToken>(
                 (_, _, f, o, _, _) => { filter = f; order = o; })
@@ -468,10 +468,12 @@ public class ModerationQueueServiceTests
         item.StoryId = 48;
         item.StoryVersionId = 97;
         item.Story = new Story { Id = 48, Title = "Ngọn Đèn Dũng Cảm Của Titi" };
+        item.ClaimedByUserId = 21;
+        item.ClaimedByUser = new UserAccount { Id = 21, Username = "mod21", FullName = "Nguyễn Văn Kiểm" };
         _itemRepoMock.Setup(r => r.GetPagedAsync(2, 6,
                 It.IsAny<Expression<Func<ModerationItem, bool>>?>(),
                 It.IsAny<Func<IQueryable<ModerationItem>, IOrderedQueryable<ModerationItem>>?>(),
-                nameof(ModerationItem.Story), It.IsAny<CancellationToken>()))
+                $"{nameof(ModerationItem.Story)},{nameof(ModerationItem.ClaimedByUser)}", It.IsAny<CancellationToken>()))
             .ReturnsAsync((Items: (IReadOnlyList<ModerationItem>)new[] { item }, TotalCount: 7));
 
         var result = await _sut.ListAsync(_moderatorB.Id, new ModerationQueueQueryDto { PageIndex = 2, PageSize = 6 });
@@ -483,6 +485,8 @@ public class ModerationQueueServiceTests
         Assert.Equal(48, summary.StoryId);
         Assert.Equal(97, summary.StoryVersionId);
         Assert.Equal("Ngọn Đèn Dũng Cảm Của Titi", summary.StoryTitle);
+        Assert.Equal(21, summary.ClaimedByUserId);
+        Assert.Equal("Nguyễn Văn Kiểm", summary.ClaimedByName);
         Assert.Equal("Pending", summary.Status);
     }
 

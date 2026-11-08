@@ -6041,6 +6041,7 @@ Nguồn: [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features
 | `slaDueAt` | `DateTime?` | Có | — |
 | `isOverdue` | `bool` | Không | — |
 | `claimedByUserId` | `int?` | Có | — |
+| `claimedByName` | `string?` | Có | Họ tên người đang giữ/đã xử lý mục (tên đăng nhập nếu chưa có họ tên); `null` khi chưa có người nhận. |
 | `claimedAt` | `DateTime?` | Có | — |
 | `claimExpiresAt` | `DateTime?` | Có | Lúc mục tự trả về hàng đợi nếu chưa quyết định (ClaimedAt + 2 giờ). |
 | `createdAt` | `DateTime` | Không | — |
@@ -6092,6 +6093,7 @@ Nguồn: [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features
 | `slaDueAt` | `DateTime?` | Có | — |
 | `isOverdue` | `bool` | Không | — |
 | `claimedByUserId` | `int?` | Có | — |
+| `claimedByName` | `string?` | Có | Họ tên người đang giữ/đã xử lý mục (tên đăng nhập nếu chưa có họ tên); `null` khi chưa có người nhận. |
 | `claimedAt` | `DateTime?` | Có | — |
 | `claimExpiresAt` | `DateTime?` | Có | Lúc mục tự trả về hàng đợi nếu chưa quyết định (ClaimedAt + 2 giờ). |
 | `createdAt` | `DateTime` | Không | — |

@@ -2,6 +2,7 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
 using StoryPlatform.Application.Features.RoadmapTemplates;
+using StoryPlatform.Application.Features.Stories.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -10,10 +11,12 @@ namespace StoryPlatform.Application.Features.ChildRoadmaps.Services;
 public class MyRoadmapService : IMyRoadmapService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IStoryCoverResolver? _covers;
 
-    public MyRoadmapService(IUnitOfWork unitOfWork)
+    public MyRoadmapService(IUnitOfWork unitOfWork, IStoryCoverResolver? covers = null)
     {
         _unitOfWork = unitOfWork;
+        _covers = covers;
     }
 
     public async Task<MyRoadmapDto> GetAsync(
@@ -37,6 +40,8 @@ public class MyRoadmapService : IMyRoadmapService
         var stories = await _unitOfWork.Repository<Story>().FindAsync(
             story => storyIds.Contains(story.Id), cancellationToken: cancellationToken);
         var byId = stories.ToDictionary(story => story.Id);
+        var resolve = _covers is null ? null : await _covers.ResolveAsync(stories.Select(story => story.CoverImageUrl), cancellationToken);
+        string? CoverOf(int storyId) => resolve is null ? byId[storyId].CoverImageUrl : resolve(byId[storyId].CoverImageUrl);
 
         var visible = items.Where(item =>
             byId.TryGetValue(item.StoryId, out var story) && !RoadmapNeedsUpdate.IsRetired(story)).ToList();
@@ -57,7 +62,7 @@ public class MyRoadmapService : IMyRoadmapService
                 {
                     StoryId = open.StoryId,
                     Title = byId[open.StoryId].Title,
-                    CoverImageUrl = byId[open.StoryId].CoverImageUrl,
+                    CoverImageUrl = CoverOf(open.StoryId),
                     Note = open.Note,
                     ExpectedBy = open.ExpectedCompletionAt > now ? open.ExpectedCompletionAt : null
                 },
@@ -66,7 +71,7 @@ public class MyRoadmapService : IMyRoadmapService
                 Order = index + 1,
                 StoryId = item.StoryId,
                 Title = byId[item.StoryId].Title,
-                CoverImageUrl = byId[item.StoryId].CoverImageUrl,
+                CoverImageUrl = CoverOf(item.StoryId),
                 IsLocked = true
             }).ToList(),
             Done = completed
@@ -77,7 +82,7 @@ public class MyRoadmapService : IMyRoadmapService
                 {
                     StoryId = item.StoryId,
                     Title = byId[item.StoryId].Title,
-                    CoverImageUrl = byId[item.StoryId].CoverImageUrl,
+                    CoverImageUrl = CoverOf(item.StoryId),
                     CompletedAt = item.CompletedAt
                 }).ToList(),
             CompletedCount = completed.Count,

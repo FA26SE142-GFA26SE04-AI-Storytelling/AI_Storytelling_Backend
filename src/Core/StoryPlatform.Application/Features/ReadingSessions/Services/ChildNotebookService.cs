@@ -12,11 +12,13 @@ public class ChildNotebookService : IChildNotebookService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IChildRewardService _rewards;
+    private readonly IChildMediaUrlSigner? _mediaUrls;
 
-    public ChildNotebookService(IUnitOfWork unitOfWork, IChildRewardService rewards)
+    public ChildNotebookService(IUnitOfWork unitOfWork, IChildRewardService rewards, IChildMediaUrlSigner? mediaUrls = null)
     {
         _unitOfWork = unitOfWork;
         _rewards = rewards;
+        _mediaUrls = mediaUrls;
     }
 
     public async Task<VocabularyDefinitionDto> GetDefinitionAsync(
@@ -26,7 +28,7 @@ public class ChildNotebookService : IChildNotebookService
         var collected = await _unitOfWork.Repository<VocabularyNotebookEntry>().ExistsAsync(
             entry => entry.ChildProfileId == childProfileId && entry.StoryVocabularyId == vocabularyId
                      && entry.RemovedAt == null, ct);
-        var audio = await VocabularyAudioLookup.FindUrlsAsync(_unitOfWork, new[] { word.Id }, ct);
+        var audio = await _mediaUrls.SignValuesAsync(await VocabularyAudioLookup.FindUrlsAsync(_unitOfWork, new[] { word.Id }, ct), ct);
 
         await _unitOfWork.Repository<TelemetryLog>().AddAsync(NewLog(session.Id, TelemetryEventType.VocabularyOpened, word.Id), ct);
         await _unitOfWork.SaveChangesAsync(ct);
@@ -142,7 +144,7 @@ public class ChildNotebookService : IChildNotebookService
         var wordIds = entries.Select(entry => entry.StoryVocabularyId).Distinct().ToList();
         var words = (await _unitOfWork.Repository<StoryVocabulary>().FindAsync(
             word => wordIds.Contains(word.Id), cancellationToken: ct)).ToDictionary(word => word.Id);
-        var audio = await VocabularyAudioLookup.FindUrlsAsync(_unitOfWork, wordIds, ct);
+        var audio = await _mediaUrls.SignValuesAsync(await VocabularyAudioLookup.FindUrlsAsync(_unitOfWork, wordIds, ct), ct);
         var versionIds = words.Values.Select(word => word.StoryVersionId).Distinct().ToList();
         var versions = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
             version => versionIds.Contains(version.Id), cancellationToken: ct)).ToDictionary(version => version.Id);

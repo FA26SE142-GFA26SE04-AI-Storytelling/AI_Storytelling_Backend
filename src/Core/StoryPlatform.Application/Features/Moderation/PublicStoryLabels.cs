@@ -7,6 +7,23 @@ namespace StoryPlatform.Application.Features.Moderation;
 
 public static class PublicStoryLabels
 {
+    public static bool HasOnlyMetadataFeedback(string? feedback)
+    {
+        if (string.IsNullOrWhiteSpace(feedback)) return false;
+        try
+        {
+            using var document = JsonDocument.Parse(feedback);
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty("parts", out var parts) || parts.ValueKind != JsonValueKind.Array)
+                return false;
+            var entries = parts.EnumerateArray().ToList();
+            return entries.Count > 0 && entries.All(part => part.ValueKind == JsonValueKind.Object
+                && part.TryGetProperty("partType", out var type)
+                && type.ValueKind == JsonValueKind.String && type.GetString() == PublicReviewRequirements.MetadataPart);
+        }
+        catch (JsonException) { return false; }
+    }
+
     public static async Task<List<int>> NormalizeAsync(IUnitOfWork unitOfWork, IEnumerable<int>? ids, CancellationToken ct)
     {
         var wanted = (ids ?? []).Distinct().OrderBy(id => id).ToList();

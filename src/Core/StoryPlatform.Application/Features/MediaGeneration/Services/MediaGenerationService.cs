@@ -136,6 +136,26 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         CancellationToken cancellationToken = default)
     {
         var story = await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
+        return await BuildPackageAsync(story, storyId, cancellationToken);
+    }
+
+    /// <summary>
+    /// Đọc gói media của truyện Creator đã công khai cho mọi vai trò đăng nhập (thư viện chung).
+    /// Chỉ đọc: không trả thông tin quy trình tạo của Creator.
+    /// </summary>
+    public async Task<StoryMediaPackage> GetPublishedCreatorPackageAsync(int storyId,
+        CancellationToken cancellationToken = default)
+    {
+        var story = await FreshAsync<Story>(storyId, cancellationToken);
+        if (story is null || story.IsDeleted || story.Scope != StoryScope.Creator || !story.IsPublished
+            || story.Status != StoryStatus.Ready || story.ArchivedAt != null)
+            throw new NotFoundException("Story", storyId);
+        var package = await BuildPackageAsync(story, storyId, cancellationToken);
+        return package with { Replacements = [], ConfirmedByUserId = null };
+    }
+
+    private async Task<StoryMediaPackage> BuildPackageAsync(Story story, int storyId, CancellationToken cancellationToken)
+    {
         var version = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
             x => x.StoryId == storyId && x.IsCurrent, cancellationToken: cancellationToken)).FirstOrDefault()
             ?? throw new NotFoundException("Current story version", storyId);
@@ -1108,16 +1128,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
     {
         var story = await FreshAsync<Story>(storyId, cancellationToken)
                     ?? throw new NotFoundException("Story", storyId);
-        MediaStoryAccess.EnsureSupported(story);
-        if (await MediaStoryAccess.AuthorizeCreatorAsync(_unitOfWork, story, userId, cancellationToken)) return story;
-        if (ParentStoryContext.IsEditorStory(story))
-        {
-            if (_supervision is null) throw new ForbiddenException();
-            await new ParentManualAuthoringPolicy(_unitOfWork, _supervision).AuthorizeAsync(userId, story, cancellationToken);
-            return story;
-        }
-        if (!await ChildOwnership.IsOwnerAsync(_unitOfWork, story.ChildProfileId, userId, cancellationToken))
-            throw new ForbiddenException();
+        await MediaStoryAccess.AuthorizeAuthorAsync(_unitOfWork, _supervision, story, userId, cancellationToken);
         return story;
     }
 

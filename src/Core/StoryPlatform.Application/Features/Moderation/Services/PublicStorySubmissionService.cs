@@ -6,7 +6,6 @@ using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.Moderation.DTOs;
 using StoryPlatform.Application.Features.Moderation.Interfaces;
 using StoryPlatform.Application.Features.Moderation;
-using System.Text.Json;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -60,6 +59,12 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
                 "Truyện chưa sẵn sàng (chưa tạo xong media) nên chưa thể gửi duyệt.");
         }
 
+        // Ảnh bìa là một phần của bài đăng công khai: Creator phải chọn bìa (từ tranh trong truyện) trước khi gửi duyệt.
+        if (string.IsNullOrWhiteSpace(story.CoverImageUrl))
+        {
+            throw new BadRequestException("Truyện cần có ảnh bìa trước khi gửi duyệt. Hãy chọn một tranh làm ảnh bìa rồi gửi lại.");
+        }
+
         var version = await _unitOfWork.Repository<StoryVersion>()
                           .FirstOrDefaultAsync(x => x.Id == request.StoryVersionId, cancellationToken: cancellationToken)
                       ?? throw new NotFoundException("Phiên bản truyện", request.StoryVersionId);
@@ -81,7 +86,7 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
         var returned = await FindReturnedItemAsync(story.Id, cancellationToken);
         var labelsOnly = returned != null && returned.StoryVersionId == version.Id
             && returned.Status == ModerationItemStatus.ChangesRequested
-            && HasOnlyMetadataFeedback(returned.Feedback);
+            && PublicStoryLabels.HasOnlyMetadataFeedback(returned.Feedback);
         if (labelsOnly && labels.SequenceEqual(PublicStoryLabels.Parse(returned!.ProposedContentCategoryIds)))
             throw new BadRequestException("Bộ nhãn chưa thay đổi so với lần bị trả về.");
         switch (version.Moderation.ReviewStatus)
@@ -284,23 +289,6 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
                && latest.Status is ModerationItemStatus.ChangesRequested or ModerationItemStatus.Rejected
             ? latest
             : null;
-    }
-
-    private static bool HasOnlyMetadataFeedback(string? feedback)
-    {
-        if (string.IsNullOrWhiteSpace(feedback)) return false;
-        try
-        {
-            using var document = JsonDocument.Parse(feedback);
-            if (!document.RootElement.TryGetProperty("parts", out var parts) || parts.ValueKind != JsonValueKind.Array)
-                return false;
-            var entries = parts.EnumerateArray().ToList();
-            return entries.Count > 0 && entries.All(part => part.ValueKind == JsonValueKind.Object
-                && part.TryGetProperty("partType", out var type)
-                && type.ValueKind == JsonValueKind.String
-                && type.GetString() == PublicReviewRequirements.MetadataPart);
-        }
-        catch (JsonException) { return false; }
     }
 
     private async Task EnsureNotIdenticalToReturnedAsync(

@@ -98,7 +98,8 @@ public sealed class PublicStoryReviewHarness
             Language = "vi",
             AuthorUserId = CreatorId,
             Status = StoryStatus.Ready,
-            Scope = StoryScope.Creator
+            Scope = StoryScope.Creator,
+            CoverImageUrl = "scene:1"
         });
         Versions.Add(new StoryVersion
         {

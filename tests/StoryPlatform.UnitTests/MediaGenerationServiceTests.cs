@@ -40,6 +40,7 @@ public sealed partial class MediaGenerationServiceTests
         var submission = new StoryPlatform.Application.Features.Moderation.Services.PublicStorySubmissionService(store, queue.Object,
             new MediaReadinessService(store), new Moq.Mock<StoryPlatform.Application.Features.AuditLogs.Interfaces.IAuditLogWriter>().Object, evaluator.Object);
         store.Seed(new ContentCategory { Id = 5, Code = "friendship", DisplayName = "Tình bạn", IsActive = true });
+        store.Items<Story>().Single().CoverImageUrl = "scene:1";
         await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.BadRequestException>(() =>
             submission.SubmitAsync(1, new() { StoryId = 1, StoryVersionId = 10, ContentCategoryIds = [5] }));
         await Create(store).ConfirmAsync(1, 1, new(10, store.Items<StoryVersion>().Single().MediaState.MediaPackageRevision));

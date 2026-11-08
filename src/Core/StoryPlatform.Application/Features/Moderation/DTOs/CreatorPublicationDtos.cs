@@ -22,5 +22,6 @@ public sealed record CreatorPublicationStatus(int StoryId, int VersionId, bool I
     public bool CanResubmitWithdrawn { get; init; }
     public List<PublicReviewLabelDto> Labels { get; init; } = new();
     public List<PublicReviewLabelDto> LastProposedLabels { get; init; } = new();
+    public bool CanResubmitLabels { get; init; }
 }
 public sealed record CreatorSafetyCheckDto(bool Required, string State, string? Zone);

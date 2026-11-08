@@ -6,6 +6,8 @@ using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 using StoryPlatform.Application.Features.MediaStorage.Models;
+using StoryPlatform.Application.Common;
+using StoryPlatform.Application.Features.Stories.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.Infrastructure.AI;
@@ -104,6 +106,93 @@ public sealed class CreatorMediaUploadTests
         Assert.Equal(StoryStatus.MediaProcessing,f.Store.Items<Story>().Single().Status);
         Assert.All(f.Store.Items<MediaAsset>(),x => Assert.Equal(MediaAssetSource.Unspecified,x.Source));
         await Assert.ThrowsAsync<ConflictException>(()=>f.Media.ConfirmAsync(1,1,new(10,1)));
+    }
+
+    [Fact]
+    public async Task SetCover_StoresSceneReference_ValidatesAssetAndCrop_AndBlocksPublishedStory()
+    {
+        var f=new Fixture(); await f.Initialize(); await f.Fill();
+        var package=await f.Media.GetPackageAsync(1,1);
+        var assetId=package.Scenes.SelectMany(x=>x.Illustrations).First(x=>x.AssetId.HasValue && x.Status=="Ready").AssetId!.Value;
+        var story=f.Store.Items<Story>().Single();
+        var cover=new StoryCoverService(f.Store);
+
+        await cover.SetCoverAsync(1,1,new(assetId,0.1,0.2,0.5,0.5));
+        Assert.Equal($"scene:{assetId}#crop=0.1,0.2,0.5,0.5",story.CoverImageUrl);
+        await cover.SetCoverAsync(1,1,new(assetId));
+        Assert.Equal($"scene:{assetId}",story.CoverImageUrl);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => cover.SetCoverAsync(1,1,new(assetId,0.8,0.2,0.5,0.5)));
+        await Assert.ThrowsAsync<BadRequestException>(() => cover.SetCoverAsync(1,1,new(assetId,0.1,null,null,null)));
+        await Assert.ThrowsAsync<BadRequestException>(() => cover.SetCoverAsync(1,1,new(999999)));
+
+        await cover.SetCoverAsync(1,1,new(null));
+        Assert.Null(story.CoverImageUrl);
+
+        story.IsPublished=true;
+        await Assert.ThrowsAsync<ConflictException>(() => cover.SetCoverAsync(1,1,new(assetId)));
+        story.IsPublished=false; story.ArchivedAt=DateTime.UtcNow;
+        await Assert.ThrowsAsync<ConflictException>(() => cover.SetCoverAsync(1,1,new(assetId)));
+        story.ArchivedAt=null; story.Status=StoryStatus.Rejected;
+        await Assert.ThrowsAsync<ConflictException>(() => cover.SetCoverAsync(1,1,new(assetId)));
+    }
+
+    [Fact]
+    public async Task SetCover_IsAllowedOnARemovedStoryWithoutANewRevision()
+    {
+        var f=new Fixture(); await f.Initialize(); await f.Fill();
+        var package=await f.Media.GetPackageAsync(1,1);
+        var assetId=package.Scenes.SelectMany(x=>x.Illustrations).First(x=>x.AssetId.HasValue && x.Status=="Ready").AssetId!.Value;
+        var cover=new StoryCoverService(f.Store);
+        var story=f.Store.Items<Story>().Single();
+        var version=f.Store.Items<StoryVersion>().Single(x=>x.IsCurrent);
+        // Đã từng nộp duyệt, được duyệt, rồi Moderator đồng ý gỡ: không công khai, không có mục nào đang mở.
+        version.Moderation.ReviewStatus=VersionReviewStatus.Approved;
+        f.Store.Seed(new ModerationItem { Id=1, StoryId=1, StoryVersionId=version.Id, ItemType=ModerationItemType.PublicStoryReview, Status=ModerationItemStatus.Approved });
+        f.Store.Seed(new ModerationItem { Id=2, StoryId=1, StoryVersionId=version.Id, ItemType=ModerationItemType.PublicStoryRemoval, Status=ModerationItemStatus.Approved, RemovedAt=DateTime.UtcNow });
+        story.IsPublished=false;
+
+        await cover.SetCoverAsync(1,1,new(assetId));
+        Assert.Equal($"scene:{assetId}",story.CoverImageUrl);
+
+        story.IsPublished=true;
+        await Assert.ThrowsAsync<ConflictException>(() => cover.SetCoverAsync(1,1,new(assetId)));
+    }
+
+    [Fact]
+    public async Task SetCover_IsBlockedWhileACreatorReviewIsOpen()
+    {
+        var f=new Fixture(); await f.Initialize(); await f.Fill();
+        var package=await f.Media.GetPackageAsync(1,1);
+        var assetId=package.Scenes.SelectMany(x=>x.Illustrations).First(x=>x.AssetId.HasValue && x.Status=="Ready").AssetId!.Value;
+        var cover=new StoryCoverService(f.Store);
+        f.Store.Seed(new ModerationItem { Id=1, StoryId=1, ItemType=ModerationItemType.PublicStoryReview, Status=ModerationItemStatus.Pending });
+        await Assert.ThrowsAsync<ConflictException>(() => cover.SetCoverAsync(1,1,new(assetId)));
+    }
+
+    [Fact]
+    public async Task CoverReference_ParsesAndRejectsMalformedValues()
+    {
+        Assert.True(StoryCover.TryParse("scene:12#crop=0.1,0.2,0.5,0.5", out var id, out var tail));
+        Assert.Equal(12,id); Assert.Equal("#crop=0.1,0.2,0.5,0.5",tail);
+        Assert.True(StoryCover.TryParse("scene:7", out id, out tail)); Assert.Equal(7,id); Assert.Equal("",tail);
+        Assert.False(StoryCover.TryParse("scene:abc", out _, out _));
+        Assert.False(StoryCover.TryParse("scene:0", out _, out _));
+        Assert.False(StoryCover.TryParse("https://x/y.png", out _, out _));
+        await Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task PublishedCreatorPackage_IsReadableOnlyAfterPublish_AndHidesWorkflowFields()
+    {
+        var f=new Fixture(); await f.Initialize();
+        await Assert.ThrowsAsync<NotFoundException>(() => f.Media.GetPublishedCreatorPackageAsync(1));
+        var story=f.Store.Items<Story>().Single(); story.IsPublished=true; story.Status=StoryStatus.Ready;
+        var package=await f.Media.GetPublishedCreatorPackageAsync(1);
+        Assert.Equal(f.Package.Scenes.Count, package.Scenes.Count);
+        Assert.Empty(package.Replacements); Assert.Null(package.ConfirmedByUserId);
+        story.ArchivedAt=DateTime.UtcNow;
+        await Assert.ThrowsAsync<NotFoundException>(() => f.Media.GetPublishedCreatorPackageAsync(1));
     }
 
     [Theory]

@@ -68,6 +68,21 @@ public class PublicStorySubmissionServiceTests
         return _h.CloneVersion(V1, 51);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task SubmitAsync_WithoutACover_IsRejectedAndNothingIsQueued(string? cover)
+    {
+        _h.Stories.Single().CoverImageUrl = cover;
+
+        var error = await Assert.ThrowsAsync<BadRequestException>(() => SubmitAsync());
+
+        Assert.Contains("ảnh bìa", error.Message);
+        Assert.Empty(_h.Items);
+        Assert.Equal(VersionReviewStatus.None, _h.Versions[0].Moderation.ReviewStatus);
+    }
+
     [Fact]
     public async Task SubmitAsync_FirstTime_CreatesPendingItemAndMarksVersionPending()
     {

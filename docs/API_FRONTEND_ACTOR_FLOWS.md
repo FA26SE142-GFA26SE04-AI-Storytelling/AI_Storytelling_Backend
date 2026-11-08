@@ -388,7 +388,7 @@ Creator chỉ xác nhận quyết định sáng tác. Approve outline cũng là 
 
 ### CR3. Gửi Public Library
 
-Chỉ khi version đủ Ready/media/tác giả: POST /PublicStorySubmission/submit với storyId/storyVersionId/contentCategoryIds → giữ itemId/status. Không dùng /community-submissions giả định của Parent.
+Chỉ khi version đủ Ready/media/tác giả **và truyện đã có ảnh bìa** (chọn bằng `PUT /stories/{storyId}/cover`; thiếu bìa → 400 "Truyện cần có ảnh bìa trước khi gửi duyệt"): POST /PublicStorySubmission/submit với storyId/storyVersionId/contentCategoryIds → giữ itemId/status. Không dùng /community-submissions giả định của Parent.
 
 POST /{itemId}/withdraw chỉ khi Pending và do mình gửi; Claimed không rút được. Sau withdraw, ChangesRequested hoặc Rejected, gọi API revisions để tạo phiên mới trước khi sửa rồi gửi lại. Phiên đã nộp vẫn bất biến. Có submission API không chứng minh manual Creator đã có bước Ready.
 
@@ -2921,13 +2921,16 @@ Adult theo người nhận, SignalR mục 12. Frontend USE_MOCK/notificationLoca
 - Frontend: **API_CÓ_MOCK_LOCAL** — [guardianService.deleteNotification](../../AI_Storytelling_Frontend/src/app/services/guardianService.ts#L132); nơi dùng: [NotificationBell.tsx](../../AI_Storytelling_Frontend/src/app/components/shell/NotificationBell.tsx#L61)
 
 <a id="controller-story"></a>
-### Story — 6 route
+### Story — 9 route
 
-GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PUT/DELETE/PATCH publish là CRUD cũ Parent, không thay review/manual.
+GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PUT/DELETE/PATCH publish là CRUD cũ Parent, không thay review/manual. `GET /Story` và `GET /Story/{id}` chỉ trả truyện Parent (có test chặn Creator); truyện Creator đã duyệt đi qua `GET /Story/community`.
 
 | Method + route | Mapping |
 |---|---|
 | [GET /api/v1/Story](#ep-story-getstories-get) | GỌI_API |
+| [GET /api/v1/Story/community](#ep-story-getcommunitystories-get) | GỌI_API |
+| [GET /api/v1/Story/community/{id}/media](#ep-story-getcommunitystorymedia-get) | GỌI_API |
+| [PUT /api/v1/stories/{storyId}/cover](#ep-storycover-setcover-put) | GỌI_API |
 | [GET /api/v1/Story/{id}](#ep-story-getstorybyid-get) | GỌI_API |
 | [POST /api/v1/Story](#ep-story-createstory-post) | CHƯA_MAP |
 | [PUT /api/v1/Story/{id}](#ep-story-updatestory-put) | CHƯA_MAP |
@@ -2942,6 +2945,35 @@ GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PU
 - Request: **query** filter: [StoryFilterRequestDto](#dto-storyfilterrequestdto).
 - Response: ApiResponse.data: [PagedResult&lt;StoryDto&gt;](#dto-pagedresult). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [storyService.getStories](../../AI_Storytelling_Frontend/src/app/services/storyService.ts#L15); nơi dùng: [WorkspaceDataContext.tsx](../../AI_Storytelling_Frontend/src/app/context/WorkspaceDataContext.tsx#L58); [readingService.ts](../../AI_Storytelling_Frontend/src/app/services/readingService.ts#L68)
+
+<a id="ep-story-getcommunitystories-get"></a>
+#### GET /api/v1/Story/community
+
+- Action/chức năng: **GetCommunityStories** — Thư viện chung: danh sách truyện của Creator đã duyệt và công khai (Scope=Creator, IsPublished, Status=Ready, chưa lưu trữ, chưa xóa). Không trả bản nháp. Không thay `GET /CommunityLibrary` của phiên bé (đã lọc theo tuổi và chính sách an toàn của bé). [StoryCommunityController](../src/Core/StoryPlatform.Api/Controllers/StoryCommunityController.cs).
+- Quyền: Roles User, ContentCreator, Moderator, Administrator (chưa đăng nhập: 401)
+- Request: **query** filter: [StoryFilterRequestDto](#dto-storyfilterrequestdto); dùng searchTerm, genre, ageBand, authorUserId, isDescending, pageIndex, pageSize (status và isPublished không có tác dụng, luôn lọc cố định).
+- Response: ApiResponse.data: [PagedResult&lt;StoryDto&gt;](#dto-pagedresult). HTTP nhánh controller: 200.
+- Frontend: **GỌI_API** — [storyService.getCommunityStories](../../AI_Storytelling_Frontend/src/app/services/storyService.ts); nơi dùng: [LibraryWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/library/LibraryWorkspace.tsx) (nhãn nguồn "Của creator").
+
+<a id="ep-story-getcommunitystorymedia-get"></a>
+#### GET /api/v1/Story/community/{id}/media
+
+- Action/chức năng: **GetCommunityStoryMedia** — Ảnh minh họa và giọng đọc (chỉ đọc) của một truyện Creator đã công khai, để mọi vai trò xem thử trong thư viện chung. `GET /stories/{id}/media/package` chỉ cho đúng tác giả Creator hoặc chủ hồ sơ bé nên không dùng được cho việc này. Truyện chưa công khai, chưa Ready, đã lưu trữ hoặc đã xóa trả 404. Không trả `replacements` và `confirmedByUserId`.
+- Quyền: Roles User, ContentCreator, Moderator, Administrator
+- Request: **path** id: `int`; bắt buộc.
+- Response: ApiResponse.data: StoryMediaPackage (cùng cấu trúc `GET /stories/{storyId}/media/package`). HTTP nhánh controller: 200.
+- Frontend: **GỌI_API** — [storyService.getCommunityStoryMedia](../../AI_Storytelling_Frontend/src/app/services/storyService.ts); nơi dùng: [LibraryWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/library/LibraryWorkspace.tsx) (khung Đọc thử, thẻ "Của creator").
+
+<a id="ep-storycover-setcover-put"></a>
+#### PUT /api/v1/stories/{storyId}/cover
+
+- Action/chức năng: **SetCover** — chọn một ảnh minh họa của chính truyện làm ảnh bìa kèm vùng hiển thị (như chọn ảnh đại diện). `mediaAssetId = null` gỡ ảnh bìa. Dùng cho Content Creator (tác giả) và phụ huynh (chủ truyện). [StoryCoverController](../src/Core/StoryPlatform.Api/Controllers/StoryCoverController.cs); logic ở `Features/Stories/Services/StoryCoverService`, dùng chung guard tác giả `MediaStoryAccess.AuthorizeAuthorAsync` với `GET .../media/package`.
+- Quyền: Roles User, ContentCreator.
+- Request: **path** storyId; **body** `{ mediaAssetId: int|null, x, y, w, h }` (x,y,w,h là vùng 0–1 so với cả tấm ảnh, hoặc bỏ cả bốn để hiển thị mặc định; thiếu một số trong bốn → 400).
+- Lưu trữ: `Story.CoverImageUrl = "scene:{mediaAssetId}#crop=x,y,w,h"` (tham chiếu, không lưu URL ký vì link hết hạn; xem `Application/Common/StoryCover`). Ảnh phải là tranh Ready, đang current, thuộc phiên bản hiện tại của truyện, nếu không → 400. Truyện Creator theo khóa chung `CreatorPublicationGuard`: đã công khai, đang có mục duyệt/gỡ mở, bị từ chối, đã lưu trữ → 409 `CREATOR_PUBLICATION_LOCKED`; đang công khai thì gửi `POST /creator/stories/{id}/removal-requests`. Ảnh bìa chỉ nằm trên Story nên không xét "phiên bản đã nộp bất biến": truyện đã được gỡ đổi bìa được mà không cần tạo phiên bản mới. Lưu phiên bản nội dung mới sẽ xóa ảnh bìa (tranh của phiên bản cũ không còn dùng).
+- Khi đọc: `StoryDto.coverImageUrl`, `CreatorDraftDto.coverImageUrl`, ảnh bìa trong danh sách truyện và lộ trình của bé được đổi thành link ảnh đã ký (hiệu lực 2 giờ) kèm `#crop=...` qua `IStoryCoverResolver`; tham chiếu hỏng → null. Màn duyệt của Moderator và gợi ý ước nguyện chưa đổi tham chiếu này.
+- Response: HTTP 204.
+- Frontend: **GỌI_API** — [storyService.setCover](../../AI_Storytelling_Frontend/src/app/services/storyService.ts); nơi dùng: [CoverPickerDialog.tsx](../../AI_Storytelling_Frontend/src/app/features/created/CoverPickerDialog.tsx) (Truyện đã tạo của phụ huynh, Truyện của tôi của Creator).
 
 <a id="ep-story-getstorybyid-get"></a>
 #### GET /api/v1/Story/{id}
@@ -6009,6 +6041,7 @@ Nguồn: [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features
 | `slaDueAt` | `DateTime?` | Có | — |
 | `isOverdue` | `bool` | Không | — |
 | `claimedByUserId` | `int?` | Có | — |
+| `claimedByName` | `string?` | Có | Họ tên người đang giữ/đã xử lý mục (tên đăng nhập nếu chưa có họ tên); `null` khi chưa có người nhận. |
 | `claimedAt` | `DateTime?` | Có | — |
 | `claimExpiresAt` | `DateTime?` | Có | Lúc mục tự trả về hàng đợi nếu chưa quyết định (ClaimedAt + 2 giờ). |
 | `createdAt` | `DateTime` | Không | — |
@@ -6060,6 +6093,7 @@ Nguồn: [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features
 | `slaDueAt` | `DateTime?` | Có | — |
 | `isOverdue` | `bool` | Không | — |
 | `claimedByUserId` | `int?` | Có | — |
+| `claimedByName` | `string?` | Có | Họ tên người đang giữ/đã xử lý mục (tên đăng nhập nếu chưa có họ tên); `null` khi chưa có người nhận. |
 | `claimedAt` | `DateTime?` | Có | — |
 | `claimExpiresAt` | `DateTime?` | Có | Lúc mục tự trả về hàng đợi nếu chưa quyết định (ClaimedAt + 2 giờ). |
 | `createdAt` | `DateTime` | Không | — |

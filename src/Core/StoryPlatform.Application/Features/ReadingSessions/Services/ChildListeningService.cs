@@ -18,8 +18,13 @@ public class ChildListeningService : IChildListeningService
     public const int MaxAnswerLength = 100;
 
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IChildMediaUrlSigner? _mediaUrls;
 
-    public ChildListeningService(IUnitOfWork unitOfWork) => _unitOfWork = unitOfWork;
+    public ChildListeningService(IUnitOfWork unitOfWork, IChildMediaUrlSigner? mediaUrls = null)
+    {
+        _unitOfWork = unitOfWork;
+        _mediaUrls = mediaUrls;
+    }
 
     public async Task<ListeningAttemptResultDto> SubmitAttemptAsync(int childProfileId, int sessionId, int interactionId,
         SubmitListeningAttemptRequestDto request, CancellationToken ct = default)
@@ -94,9 +99,11 @@ public class ChildListeningService : IChildListeningService
         }
 
         await _unitOfWork.Repository<ListeningInteractionAttempt>().AddAsync(attempt, ct);
-        return interaction.Type == ListeningInteractionType.EventOrdering
+        var result = interaction.Type == ListeningInteractionType.EventOrdering
             ? OrderingResult(context, attempt, context.Attempts.Append(attempt).ToList())
             : Result(context, attempt);
+        result.FeedbackAudioUrl = await _mediaUrls.SignAsync(result.FeedbackAudioUrl, ct);
+        return result;
     }
 
     private static ListeningAttemptResultDto Result(ListeningContext context, ListeningInteractionAttempt attempt)

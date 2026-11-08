@@ -40,6 +40,43 @@ public sealed class CreatorPublicationServiceTests
         Assert.Equal(5, Assert.Single(status.LastProposedLabels).ContentCategoryId);
     }
 
+    [Theory]
+    [InlineData("{\"parts\":[{\"partType\":\"metadata\"}]}", true)]
+    [InlineData("{\"parts\":[{\"partType\":\"metadata\"},{\"partType\":\"scene_text\"}]}", false)]
+    [InlineData("{\"parts\":[]}", false)]
+    [InlineData("invalid", false)]
+    [InlineData("[]", false)]
+    [InlineData("null", false)]
+    public async Task PublicationStatus_OnlyMetadataReturnAllowsSameVersionLabelResubmission(string feedback, bool expected)
+    {
+        h.Stories[0].IsPublished = false;
+        h.Stories[0].Status = StoryStatus.Ready;
+        h.Versions[0].Moderation.ReviewStatus = VersionReviewStatus.ChangesRequested;
+        h.Items.Add(new ModerationItem { Id = 110, StoryId = StoryId, StoryVersionId = VersionId,
+            ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.ChangesRequested,
+            DecidedAt = DateTime.UtcNow, Feedback = feedback });
+
+        Assert.Equal(expected, (await service.GetStatusAsync(Creator, StoryId)).CanResubmitLabels);
+    }
+
+    [Theory]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, true)]
+    public async Task PublicationStatus_DoesNotAllowLabelResubmissionWhenPublishedPendingOrWrongVersion(bool published, bool pending, bool wrongVersion)
+    {
+        h.Stories[0].IsPublished = published;
+        h.Stories[0].Status = StoryStatus.Ready;
+        h.Versions[0].Moderation.ReviewStatus = VersionReviewStatus.ChangesRequested;
+        h.Items.Add(new ModerationItem { Id = 110, StoryId = StoryId, StoryVersionId = wrongVersion ? VersionId + 1 : VersionId,
+            ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.ChangesRequested,
+            DecidedAt = DateTime.UtcNow, Feedback = "{\"parts\":[{\"partType\":\"metadata\"}]}" });
+        if (pending) h.Items.Add(new ModerationItem { Id = 111, StoryId = StoryId, StoryVersionId = VersionId,
+            ItemType = ModerationItemType.PublicStoryReview, Status = ModerationItemStatus.Pending });
+
+        Assert.False((await service.GetStatusAsync(Creator, StoryId)).CanResubmitLabels);
+    }
+
     [Fact]
     public async Task RemovalRequest_DoesNotUnlockUntilClaimedModeratorApproves_ThenClonesVersion()
     {

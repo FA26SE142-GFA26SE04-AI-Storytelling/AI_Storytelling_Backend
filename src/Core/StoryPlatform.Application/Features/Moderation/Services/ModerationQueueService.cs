@@ -81,6 +81,7 @@ public class ModerationQueueService : IModerationQueueService
                     : item.Priority == ModerationPriority.Medium ? 1 : 2)
                 .ThenBy(item => item.SlaDueAt)
                 .ThenBy(item => item.Id),
+            includeProperties: $"{nameof(ModerationItem.Story)},{nameof(ModerationItem.ClaimedByUser)}",
             cancellationToken: cancellationToken);
 
         return new PagedResult<ModerationItemSummaryDto>(
@@ -125,7 +126,9 @@ public class ModerationQueueService : IModerationQueueService
             afterState: new { status = ModerationItemStatus.Claimed.ToString(), claimedBy = actor.Id },
             cancellationToken: cancellationToken);
 
-        return MapDetail(item, now);
+        var claimed = MapDetail(item, now);
+        claimed.ClaimedByName = DisplayName(actor);
+        return claimed;
     }
 
     public async Task<ModerationItemDetailDto> OpenAsync(
@@ -152,7 +155,9 @@ public class ModerationQueueService : IModerationQueueService
             beforeState: null, afterState: new { itemType = item.ItemType.ToString() },
             cancellationToken: cancellationToken);
 
-        return MapDetail(item, now);
+        var opened = MapDetail(item, now);
+        opened.ClaimedByName = DisplayName(actor);
+        return opened;
     }
 
     private async Task<UserAccount> RequireStaffAsync(int actorUserId, CancellationToken cancellationToken)
@@ -186,6 +191,9 @@ public class ModerationQueueService : IModerationQueueService
         }
     }
 
+    private static string? DisplayName(UserAccount? user) =>
+        user == null ? null : string.IsNullOrWhiteSpace(user.FullName) ? user.Username : user.FullName;
+
     private static ModerationItemSummaryDto MapSummary(ModerationItem item, DateTime now) =>
         FillSummary(new ModerationItemSummaryDto(), item, now);
 
@@ -206,6 +214,7 @@ public class ModerationQueueService : IModerationQueueService
         dto.Status = item.Status.ToString();
         dto.Priority = item.Priority.ToString();
         dto.StoryId = item.StoryId;
+        dto.StoryTitle = item.Story?.Title;
         dto.StoryVersionId = item.StoryVersionId;
         dto.ContentReportId = item.ContentReportId;
         dto.ReadingRoadmapId = item.ReadingRoadmapId;
@@ -214,6 +223,7 @@ public class ModerationQueueService : IModerationQueueService
         dto.IsOverdue = item.SlaDueAt != null && item.SlaDueAt < now
                         && item.Status is ModerationItemStatus.Pending or ModerationItemStatus.Claimed;
         dto.ClaimedByUserId = item.ClaimedByUserId;
+        dto.ClaimedByName = DisplayName(item.ClaimedByUser);
         dto.ClaimedAt = item.ClaimedAt;
         dto.ClaimExpiresAt = item.Status == ModerationItemStatus.Claimed && item.ClaimedAt != null
             ? item.ClaimedAt.Value.Add(ModerationQueuePolicy.ClaimTimeout)

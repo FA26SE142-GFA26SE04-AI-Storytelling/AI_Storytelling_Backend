@@ -42,6 +42,8 @@ public class ModerationItemSummaryDto
     public string Status { get; set; } = string.Empty;
     public string Priority { get; set; } = string.Empty;
     public int? StoryId { get; set; }
+    /// <summary>Tên truyện để nhận diện mục trong hàng đợi; không chứa nội dung bản thảo.</summary>
+    public string? StoryTitle { get; set; }
     public int? StoryVersionId { get; set; }
     public int? ContentReportId { get; set; }
     public int? ReadingRoadmapId { get; set; }
@@ -49,6 +51,9 @@ public class ModerationItemSummaryDto
     public DateTime? SlaDueAt { get; set; }
     public bool IsOverdue { get; set; }
     public int? ClaimedByUserId { get; set; }
+
+    /// <summary>Họ tên người đang giữ hoặc đã xử lý mục (tên đăng nhập nếu chưa có họ tên); null khi chưa có người nhận.</summary>
+    public string? ClaimedByName { get; set; }
     public DateTime? ClaimedAt { get; set; }
 
     /// <summary>Lúc mục tự trả về hàng đợi nếu chưa quyết định (ClaimedAt + 2 giờ).</summary>

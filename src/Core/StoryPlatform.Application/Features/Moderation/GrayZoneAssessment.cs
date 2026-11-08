@@ -79,6 +79,7 @@ public sealed partial class GrayZoneEvaluator : IGrayZoneEvaluator
     private string Key(RubricSnapshot rubric) => PolicyKey + ":" + rubric.Id + ":" + rubric.ContentHash;
     public async Task<bool> CanReuseAsync(GrayZoneAssessment assessment, CancellationToken ct)
     {
+        if (assessment.Provider == "rule-based") return assessment.PolicyVersion == PolicyKey;
         var rubric = await _rubrics.GetActiveAsync(ct);
         return assessment.PolicyVersion == Key(rubric);
     }

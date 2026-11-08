@@ -7,6 +7,7 @@ using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.Moderation.DTOs;
 using StoryPlatform.Application.Features.Moderation.Services;
+using StoryPlatform.Application.Features.Moderation;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using Xunit;
@@ -84,6 +85,43 @@ public class PublicStorySubmissionServiceTests
         _h.UnitOfWork.Verify(unit => unit.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
         _h.Audit.Verify(audit => audit.LogAsync(Creator, "PublicStorySubmitted", nameof(ModerationItem), item.Id,
             It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(ModerationZone.Safe, false, true)]
+    [InlineData(ModerationZone.GrayZone, false, true)]
+    [InlineData(ModerationZone.HardBlock, false, false)]
+    [InlineData(ModerationZone.Safe, true, false)]
+    public async Task SubmitAsync_RequiresCurrentAssessmentAndPreservesEvidence(ModerationZone zone, bool changeSource, bool allowed)
+    {
+        var story = _h.Stories[0]; var version = _h.Versions[0];
+        var evaluator = new Mock<IGrayZoneEvaluator>();
+        evaluator.SetupGet(x => x.IsConfigured).Returns(true);
+        evaluator.Setup(x => x.CanReuseAsync(It.IsAny<GrayZoneAssessment>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var scan = await new CreatorSafetyCheckService(_h.UnitOfWork.Object, evaluator.Object).BuildScanAsync(story, version, default);
+        var assessment = new GrayZoneAssessment(zone, GrayZoneEvaluator.Fingerprint(scan), scan.Phase, "policy", "fixture", "model", 40,
+            [new("paragraph", "paragraph:0", "context", "Review context", 0, version.Content!.Length)
+                { EvidenceQuote = "Giữa truyện.", ContextNote = "Evidence for submitted version" }])
+            { AgeBand = story.AgeBand, Language = story.Language, AudienceRevision = story.AudienceRevision };
+        await new GrayZoneWorkflowService(_h.UnitOfWork.Object, _h.Audit.Object).RecordAsync(story.Id, version.Id, null, assessment, true, default);
+        var snapshot = version.Moderation.GrayZoneFlags;
+        if (changeSource) version.Content += " Changed.";
+        var queue = new ModerationQueueService(_h.UnitOfWork.Object, _h.Audit.Object);
+        var submission = new PublicStorySubmissionService(_h.UnitOfWork.Object, queue, _readiness.Object, _h.Audit.Object, evaluator.Object);
+        if (!allowed)
+        {
+            await Assert.ThrowsAsync<ConflictException>(() => submission.SubmitAsync(Creator, new() { StoryId = StoryId, StoryVersionId = V1, ContentCategoryIds = [5] }));
+            Assert.Empty(_h.Items);
+            return;
+        }
+        var result = await submission.SubmitAsync(Creator, new() { StoryId = StoryId, StoryVersionId = V1, ContentCategoryIds = [5] });
+        Assert.Equal(ModerationItemType.PublicStoryReview, Assert.Single(_h.Items).ItemType);
+        await queue.ClaimAsync(PublicStoryReviewHarness.ModeratorId, result.ItemId);
+        var package = await _h.Sut.GetPackageAsync(PublicStoryReviewHarness.ModeratorId, result.ItemId);
+        Assert.Equal(V1, package.StoryVersionId);
+        if (zone == ModerationZone.GrayZone) Assert.Equal("Giữa truyện.", Assert.Single(package.Flags).EvidenceQuote);
+        Assert.Equal(snapshot, version.Moderation.GrayZoneFlags);
+        evaluator.Verify(x => x.EvaluateAsync(It.IsAny<GrayZoneScan>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -266,5 +304,68 @@ public class PublicStorySubmissionServiceTests
         Assert.NotNull(authorize);
         Assert.Equal("ContentCreator", authorize!.Roles);
         Assert.Equal(new[] { "Submit", "Withdraw" }, methods);
+    }
+
+    [Fact]
+    public async Task PendingWithdrawalAndResubmissionPreserveVersionContentAndMedia()
+    {
+        var first = await SubmitAsync();
+        var version = _h.Versions[0];
+        var content = version.Content;
+        var media = System.Text.Json.JsonSerializer.Serialize(version.MediaState);
+        var assets = System.Text.Json.JsonSerializer.Serialize(_h.Assets);
+        var versions = _h.Versions.Count;
+        await _sut.WithdrawAsync(Creator, first.ItemId);
+        var publication = new CreatorPublicationService(_h.UnitOfWork.Object,
+            new ModerationQueueService(_h.UnitOfWork.Object, _h.Audit.Object), _h.Audit.Object);
+        Assert.True((await publication.GetStatusAsync(Creator, StoryId)).CanResubmitWithdrawn);
+        await Assert.ThrowsAsync<ConflictException>(() => StoryPlatform.Application.Common.CreatorPublicationGuard.EnsureWritableAsync(
+            _h.UnitOfWork.Object, StoryId, V1, default));
+        var second = await SubmitAsync();
+        Assert.NotEqual(first.ItemId, second.ItemId);
+        Assert.Equal(V1, second.StoryVersionId);
+        Assert.True(second.IsResubmission);
+        Assert.Equal(first.ItemId, second.PreviousItemId);
+        Assert.Equal(ModerationItemStatus.Withdrawn, _h.Items.Single(x => x.Id == first.ItemId).Status);
+        Assert.Equal(ModerationItemStatus.Pending, _h.Items.Single(x => x.Id == second.ItemId).Status);
+        Assert.False((await publication.GetStatusAsync(Creator, StoryId)).CanResubmitWithdrawn);
+        await Assert.ThrowsAsync<ConflictException>(() => SubmitAsync());
+        // Repeated withdrawals must not force version/media regeneration either.
+        await _sut.WithdrawAsync(Creator, second.ItemId);
+        var third = await SubmitAsync();
+        Assert.Equal(second.ItemId, third.PreviousItemId);
+        Assert.Equal(V1, third.StoryVersionId);
+        Assert.Equal(content, version.Content);
+        Assert.Equal(media, System.Text.Json.JsonSerializer.Serialize(version.MediaState));
+        Assert.Equal(assets, System.Text.Json.JsonSerializer.Serialize(_h.Assets));
+        Assert.Equal(versions, _h.Versions.Count);
+        Assert.Empty(_h.Jobs);
+    }
+
+    [Theory]
+    [InlineData(ModerationItemStatus.Rejected)]
+    [InlineData(ModerationItemStatus.Approved)]
+    [InlineData(ModerationItemStatus.ChangesRequested)]
+    public async Task WithdrawalCannotBypassAnExistingDecision(ModerationItemStatus decision)
+    {
+        AddItem(80, decision, decidedAt: DateTime.UtcNow.AddHours(-1));
+        var withdrawn = AddItem(81, ModerationItemStatus.Withdrawn);
+        withdrawn.WithdrawnAt = DateTime.UtcNow;
+        Assert.Null(await WithdrawnPublicStorySubmission.FindReusableAsync(_h.UnitOfWork.Object, _h.Stories[0], _h.Versions[0], default));
+        await Assert.ThrowsAsync<ConflictException>(() => SubmitAsync());
+    }
+
+    [Fact]
+    public async Task WithdrawalRechecksPendingAfterModeratorClaims()
+    {
+        var first = await SubmitAsync();
+        var item = _h.Items.Single();
+        Mock.Get(_h.UnitOfWork.Object.Repository<ModerationItem>())
+            .Setup(x => x.GetByIdAsync(item.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => { item.Status = ModerationItemStatus.Claimed; item.ClaimedByUserId = PublicStoryReviewHarness.ModeratorId; return item; });
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.WithdrawAsync(Creator, first.ItemId));
+        Assert.Null(item.WithdrawnAt);
+        Assert.Equal(ModerationItemStatus.Claimed, item.Status);
+        Assert.Equal(VersionReviewStatus.Pending, _h.Versions[0].Moderation.ReviewStatus);
     }
 }

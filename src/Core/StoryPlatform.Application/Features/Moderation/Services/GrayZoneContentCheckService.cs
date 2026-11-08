@@ -22,6 +22,10 @@ public sealed class GrayZoneContentCheckService(IUnitOfWork uow, IGrayZoneEvalua
         if (user is null || user.IsDeleted || user.Status != AccountStatus.Active || user.LockedUntil > DateTime.UtcNow
             || story.Scope == StoryScope.Creator && (user.Role != UserRole.ContentCreator || story.AuthorUserId != userId))
             throw new ForbiddenException("AUTHORING_ACCESS_REQUIRED");
+        if (story.Scope == StoryScope.Creator && (story.IsPublished || story.ArchivedAt != null
+            || await uow.Repository<ModerationItem>().ExistsAsync(x => x.StoryId == storyId && !x.IsDeleted
+                && (x.Status == ModerationItemStatus.Pending || x.Status == ModerationItemStatus.Claimed), ct)))
+            throw new ConflictException("MODERATION_SOURCE_LOCKED");
         var blocked = new List<string>();
         if (story.Scope == StoryScope.Parent)
         {
@@ -41,23 +45,26 @@ public sealed class GrayZoneContentCheckService(IUnitOfWork uow, IGrayZoneEvalua
             var categories = await uow.Repository<ContentCategory>().FindAsync(x => x.IsActive && ids.Contains(x.Id), cancellationToken: ct);
             blocked.AddRange(categories.SelectMany(x => new[] { x.Code, x.DisplayName }));
         }
-        else
-        {
-            var categories = await uow.Repository<ContentCategory>().FindAsync(x => x.IsActive, cancellationToken: ct);
-            var age = story.AgeBand == "9-10" ? "Age_9_10" : "Age_6_8";
-            blocked.AddRange(categories.Where(x => x.DefaultBlockedAgeBands.Contains(age)).SelectMany(x => new[] { x.Code, x.DisplayName }));
-        }
         var version = await uow.Repository<StoryVersion>().FirstOrDefaultAsync(x => x.Id == versionId && x.StoryId == storyId && x.IsCurrent, cancellationToken: ct)
             ?? throw new ConflictException("CURRENT_SAVED_VERSION_REQUIRED");
         if (!evaluator.IsConfigured) throw new ConflictException("MODERATION_NOT_CONFIGURED");
-        var prior = GrayZoneWorkflowService.ReadAssessment(version);
+        if (story.Scope == StoryScope.Creator && version.Moderation.ReviewStatus != VersionReviewStatus.None)
+            throw new ConflictException("MODERATION_SOURCE_LOCKED");
+        var validity = new CreatorSafetyCheckService(uow, evaluator);
+        var prior = CreatorSafetyCheckService.Read(version);
         var phase = prior?.Phase == "phase3" ? "phase3" : "phase1";
         var parts = GrayZoneEvaluator.TextParts(version.Title ?? "", version.Content ?? "");
         if (phase == "phase3") parts = parts.Concat([new ModerationText("section", "lesson", version.Lesson ?? "")]).ToArray();
-        var scan = new GrayZoneScan(phase, story.AgeBand, story.Language, parts, blocked) { ReadingLevel = story.ReadingLevel };
-        var assessment = prior is not null && prior.Fingerprint == GrayZoneEvaluator.Fingerprint(scan) && await evaluator.CanReuseAsync(prior, ct)
+        var scan = story.Scope == StoryScope.Creator ? await validity.BuildScanAsync(story, version, ct)
+            : new GrayZoneScan(phase, story.AgeBand, story.Language, parts, blocked) { ReadingLevel = story.ReadingLevel };
+        var current = prior is not null && (story.Scope == StoryScope.Creator
+            ? await validity.IsCurrentAsync(story, version, scan, prior, ct)
+            : prior.Fingerprint == GrayZoneEvaluator.Fingerprint(scan) && await evaluator.CanReuseAsync(prior, ct));
+        if (current && story.Scope == StoryScope.Creator)
+            return new(versionId, prior!.Zone.ToString(), false);
+        var assessment = current
             ? prior : await evaluator.EvaluateAsync(scan, ct);
-        assessment = assessment with { AudienceRevision = story.AudienceRevision };
+        assessment = assessment! with { AudienceRevision = story.AudienceRevision };
         var waiting = await workflow.RecordAsync(storyId, versionId, null, assessment, true, ct);
         return new(versionId, assessment.Zone.ToString(), waiting);
     }

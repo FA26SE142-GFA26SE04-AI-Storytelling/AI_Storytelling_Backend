@@ -99,7 +99,8 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
                     "Phiên bản này đã bị trả về. Hãy sửa thành phiên bản mới rồi gửi lại.");
         }
 
-        if (!labelsOnly)
+        var withdrawn = await WithdrawnPublicStorySubmission.FindReusableAsync(_unitOfWork, story, version, cancellationToken);
+        if (!labelsOnly && withdrawn == null)
             await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, story.Id, version.Id, cancellationToken);
         var itemRepository = _unitOfWork.Repository<ModerationItem>();
         var openItems = await itemRepository.CountAsync(
@@ -115,8 +116,9 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
 
         if (_moderation?.IsConfigured == true)
         {
-            var assessment = GrayZoneWorkflowService.ReadAssessment(version);
-            if (assessment is null || !await _moderation.CanReuseAsync(assessment, cancellationToken)) throw new ConflictException("CONTENT_MODERATION_CHECK_REQUIRED");
+            var safety = await new CreatorSafetyCheckService(_unitOfWork, _moderation).GetAsync(story, version, cancellationToken);
+            if (safety.State != "Current") throw new ConflictException("CONTENT_MODERATION_CHECK_REQUIRED");
+            if (safety.Zone == "HardBlock") throw new ConflictException("SAFETY_MODERATION_REQUIRED");
         }
         GrayZoneGate.EnsureCanContinue(story, version);
         var readiness = await _mediaReadinessService.CheckAsync(version.Id, null, cancellationToken);
@@ -138,8 +140,8 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
             StoryId = story.Id,
             StoryVersionId = version.Id,
             CreatedByUserId = actor.Id,
-            IsResubmission = returned != null,
-            PreviousItemId = returned?.Id
+            IsResubmission = returned != null || withdrawn != null,
+            PreviousItemId = returned?.Id ?? withdrawn?.Id
         }, cancellationToken);
         item.ProposedContentCategoryIds = PublicStoryLabels.Serialize(labels);
         _unitOfWork.Repository<ModerationItem>().Update(item);
@@ -159,8 +161,8 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
             {
                 storyId = story.Id,
                 storyVersionId = version.Id,
-                isResubmission = returned != null,
-                previousItemId = returned?.Id,
+                isResubmission = item.IsResubmission,
+                previousItemId = item.PreviousItemId,
                 contentCategoryIds = labels
             },
             cancellationToken);

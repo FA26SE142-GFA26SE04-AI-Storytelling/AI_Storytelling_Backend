@@ -66,6 +66,11 @@ public class ReadingSceneDto
     public int SceneIndex { get; set; }
     public string Text { get; set; } = string.Empty;
     public string? IllustrationUrl { get; set; }
+    /// <summary>
+    /// Mọi tranh của scene (1–3), theo thứ tự beat. Mỗi tranh minh hoạ đoạn chữ [StartOffset, EndOffset) của Text,
+    /// để app đổi tranh khi giọng đọc tới đoạn đó. IllustrationUrl giữ nguyên cho app cũ.
+    /// </summary>
+    public List<ReadingIllustrationDto> Illustrations { get; set; } = new();
     public List<ReadingSegmentDto> Segments { get; set; } = new();
     /// <summary>Tương tác hiện khi nghe hết scene này; null nếu không có.</summary>
     public ReadingInteractionDto? Interaction { get; set; }
@@ -118,9 +123,21 @@ public class ReadingInteractionOptionDto
     public string? FeedbackAudioUrl { get; set; }
 }
 
+/// <summary>Một tranh của scene, gắn với đoạn chữ [StartOffset, EndOffset) trong Text của scene.</summary>
+public class ReadingIllustrationDto
+{
+    public int BeatOrder { get; set; }
+    public int StartOffset { get; set; }
+    public int EndOffset { get; set; }
+    public string? Url { get; set; }
+}
+
 public class ReadingSegmentDto
 {
     public int SegmentOrder { get; set; }
+    /// <summary>Vị trí đoạn trong Text của scene: [StartOffset, EndOffset), dùng để biết tranh nào ứng với đoạn đang đọc.</summary>
+    public int StartOffset { get; set; }
+    public int EndOffset { get; set; }
     public string Text { get; set; } = string.Empty;
     public string? AudioUrl { get; set; }
     /// <summary>JSON mốc thời gian từng từ, dùng cho karaoke.</summary>

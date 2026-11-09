@@ -62,6 +62,7 @@ public static class ChildMediaUrlSigning
         if (signer is null) return;
         var interactions = content.Scenes.Select(scene => scene.Interaction).OfType<ReadingInteractionDto>().ToList();
         var paths = content.Scenes.Select(scene => scene.IllustrationUrl)
+            .Concat(content.Scenes.SelectMany(scene => scene.Illustrations).Select(picture => picture.Url))
             .Concat(content.Scenes.SelectMany(scene => scene.Segments).Select(segment => segment.AudioUrl))
             .Concat(content.Vocabulary.Select(word => word.AudioUrl))
             .Concat(interactions.Select(interaction => interaction.ModelAudioUrl))
@@ -73,6 +74,7 @@ public static class ChildMediaUrlSigning
         foreach (var scene in content.Scenes)
         {
             scene.IllustrationUrl = url(scene.IllustrationUrl);
+            foreach (var picture in scene.Illustrations) picture.Url = url(picture.Url);
             foreach (var segment in scene.Segments) segment.AudioUrl = url(segment.AudioUrl);
         }
         foreach (var word in content.Vocabulary) word.AudioUrl = url(word.AudioUrl);

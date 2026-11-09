@@ -217,6 +217,31 @@ public class ChildReadingService : IChildReadingService
         return session;
     }
 
+    /// <summary>
+    /// Tranh của một scene theo thứ tự beat: mỗi beat lấy tranh đang dùng (IsCurrent) mới nhất.
+    /// assets đã xếp mới nhất trước nên OrderByDescending(IsCurrent) (sắp xếp ổn định) vẫn giữ thứ tự mới nhất.
+    /// </summary>
+    private static List<ReadingIllustrationDto> SceneIllustrations(
+        int sceneId, IEnumerable<IllustrationBeat> beats, IReadOnlyList<MediaAsset> assets) =>
+        beats.Where(beat => beat.StorySceneId == sceneId)
+            .OrderBy(beat => beat.BeatOrder)
+            .Select(beat => new
+            {
+                Beat = beat,
+                Asset = assets
+                    .Where(asset => asset.Type == MediaType.Illustration && asset.IllustrationBeatId == beat.Id && asset.Url != null)
+                    .OrderByDescending(asset => asset.IsCurrent)
+                    .FirstOrDefault()
+            })
+            .Where(pair => pair.Asset is not null)
+            .Select(pair => new ReadingIllustrationDto
+            {
+                BeatOrder = pair.Beat.BeatOrder,
+                StartOffset = pair.Beat.StartOffset,
+                EndOffset = pair.Beat.EndOffset,
+                Url = pair.Asset!.Url
+            }).ToList();
+
     public async Task<ReadingContentDto> GetContentAsync(int childProfileId, int sessionId, CancellationToken ct = default)
     {
         var session = await RequireSessionAsync(childProfileId, sessionId, ct);
@@ -239,6 +264,8 @@ public class ChildReadingService : IChildReadingService
         var sceneIds = scenes.Select(scene => scene.Id).ToList();
         var segments = await _unitOfWork.Repository<StorySegment>().FindAsync(
             segment => sceneIds.Contains(segment.StorySceneId) && !segment.IsDeleted, cancellationToken: ct);
+        var beats = await _unitOfWork.Repository<IllustrationBeat>().FindAsync(
+            beat => sceneIds.Contains(beat.StorySceneId) && !beat.IsDeleted, cancellationToken: ct);
         var assets = (await _unitOfWork.Repository<MediaAsset>().FindAsync(
             asset => asset.StoryVersionId == versionId && (parentPackage == null ? asset.ParentStoryPackageId == null : allowedAssets.Contains(asset.Id)) && asset.Status == MediaStatus.Ready && !asset.IsDeleted,
             cancellationToken: ct))
@@ -276,6 +303,7 @@ public class ChildReadingService : IChildReadingService
                 Text = scene.SceneText,
                 IllustrationUrl = assets.FirstOrDefault(asset =>
                     asset.Type == MediaType.Illustration && asset.StorySceneId == scene.Id)?.Url,
+                Illustrations = SceneIllustrations(scene.Id, beats, assets),
                 Segments = segments.Where(segment => segment.StorySceneId == scene.Id)
                     .OrderBy(segment => segment.SegmentOrder)
                     .Select(segment =>
@@ -285,6 +313,8 @@ public class ChildReadingService : IChildReadingService
                         return new ReadingSegmentDto
                         {
                             SegmentOrder = segment.SegmentOrder,
+                            StartOffset = segment.StartOffset,
+                            EndOffset = segment.EndOffset,
                             Text = segment.TextContent,
                             AudioUrl = audio?.Url,
                             WordTimingsJson = audio?.WordTimings

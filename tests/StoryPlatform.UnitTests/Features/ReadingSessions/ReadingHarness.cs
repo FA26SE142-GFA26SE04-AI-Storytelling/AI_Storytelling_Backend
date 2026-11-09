@@ -27,6 +27,7 @@ public sealed class ReadingHarness
     public readonly List<StoryScene> Scenes = new();
     public readonly List<StorySegment> Segments = new();
     public readonly List<MediaAsset> Assets = new();
+    public readonly List<IllustrationBeat> Beats = new();
     public readonly List<ReadingSession> Sessions = new();
     public readonly List<ReadingProgress> Progress = new();
     public readonly List<StoryVocabulary> Vocabulary = new();
@@ -80,7 +81,7 @@ public sealed class ReadingHarness
     {
         Back(CardMatches); Back(Suggestions); Back(LearningProfiles);
         Back(Children); Back(ChildSessions); Back(Stories); Back(Versions); Back(Scenes); Back(Segments);
-        Back(Assets); Back(Sessions); Back(Progress); Back(Vocabulary); Back(Notebook); Back(Telemetry);
+        Back(Assets); Back(Beats); Back(Sessions); Back(Progress); Back(Vocabulary); Back(Notebook); Back(Telemetry);
         Back(ModerationItems); Back(Quizzes); Back(Attempts); Back(Achievements); Back(Badges); Back(KnowledgeTrees);
         Back(Policies); Back(PolicyCategories); Back(StoryCategories); Back(RoadmapItems);
         Back(WishCards); Back(Categories);
@@ -161,6 +162,21 @@ public sealed class ReadingHarness
                 ListeningInteractionOptionId = option.Id, Type = MediaType.ListeningImage, Status = MediaStatus.Ready,
                 ValidationStatus = ValidationStatus.Passed, Url = $"picture-{option.Id}.png"
             });
+    }
+
+    /// <summary>Một tranh của scene gắn với đoạn chữ [start, end); current = false là bản cũ đã bị thay.</summary>
+    public MediaAsset AddBeatIllustration(StoryScene scene, int beatOrder, int start, int end, string url, bool current = true)
+    {
+        var beat = Beats.FirstOrDefault(b => b.StorySceneId == scene.Id && b.BeatOrder == beatOrder);
+        if (beat is null)
+        {
+            beat = new IllustrationBeat { Id = Beats.Count + 1, StorySceneId = scene.Id, BeatOrder = beatOrder, StartOffset = start, EndOffset = end, VisualFocus = "test" };
+            Beats.Add(beat);
+        }
+        var asset = AddIllustration(scene, url);
+        asset.IllustrationBeatId = beat.Id;
+        asset.IsCurrent = current;
+        return asset;
     }
 
     public MediaAsset AddIllustration(StoryScene scene, string url)

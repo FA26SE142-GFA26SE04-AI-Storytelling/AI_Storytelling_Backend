@@ -22,8 +22,12 @@ public sealed class GrayZoneWorkflowService(IUnitOfWork uow, IAuditLogWriter aud
 
     public static GrayZoneAssessment? ReadAssessment(StoryVersion version)
     {
-        var root = PublicReviewState.ParseOrNew(version.Moderation.GrayZoneFlags);
-        return root["assessment"]?.Deserialize<GrayZoneAssessment>(Json);
+        try
+        {
+            var root = PublicReviewState.ParseOrNew(version.Moderation.GrayZoneFlags);
+            return root["assessment"]?.Deserialize<GrayZoneAssessment>(Json);
+        }
+        catch (Exception e) when (e is JsonException or InvalidOperationException or NotSupportedException) { return null; }
     }
 
     public async Task<bool> RecordAsync(int storyId, int versionId, int? jobId, GrayZoneAssessment assessment,
@@ -76,6 +80,7 @@ public sealed class GrayZoneWorkflowService(IUnitOfWork uow, IAuditLogWriter aud
                 version.Moderation.GrayZoneClearedAt = null;
                 version.Moderation.GrayZoneClearedByUserId = null;
             }
+            assessment = assessment with { AudienceRevision = story.AudienceRevision };
             version.Moderation.GrayZoneFlags = JsonSerializer.Serialize(new
             {
                 assessment,

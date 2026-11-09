@@ -88,6 +88,21 @@ public sealed class GrayZoneTests
     }
 
     [Fact]
+    public async Task HardRuleResultCanBeReusedOnlyWhileItsPolicyIsUnchanged()
+    {
+        var options = Options();
+        var provider = new Provider(0);
+        var evaluator = new GrayZoneEvaluator(options, [provider], RubricTestData.Source());
+        var scan = Scan with { Parts = [new ModerationText("section", "content", "Gọi 0912345678")] };
+        var result = await evaluator.EvaluateAsync(scan, default);
+        Assert.Equal("rule-based", result.Provider);
+        Assert.True(await evaluator.CanReuseAsync(result, default));
+        options.PolicyVersion = "next";
+        Assert.False(await evaluator.CanReuseAsync(result, default));
+        Assert.Equal(0, provider.Calls);
+    }
+
+    [Fact]
     public void StructuredAndLegacyFlagsBothRemainReadable()
     {
         Assert.Single(PublicReviewState.ParseVersionFlags("{\"sections\":[\"ending\"],\"reason\":\"r\"}"));

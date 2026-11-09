@@ -10,7 +10,8 @@ using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.Moderation.Services;
 
-public sealed class CreatorPublicationService(IUnitOfWork uow, IModerationQueueService queue, IAuditLogWriter audit) : ICreatorPublicationService
+public sealed class CreatorPublicationService(IUnitOfWork uow, IModerationQueueService queue, IAuditLogWriter audit,
+    IGrayZoneEvaluator? moderation = null) : ICreatorPublicationService
 {
     public async Task<CreatorPublicationStatus> GetStatusAsync(int userId, int storyId, CancellationToken ct = default)
     {
@@ -31,6 +32,8 @@ public sealed class CreatorPublicationService(IUnitOfWork uow, IModerationQueueS
         var categories = await uow.Repository<ContentCategory>().FindAsync(x => categoryIds.Contains(x.Id), cancellationToken: ct);
         return new(storyId, version.Id, story.IsPublished, version.Moderation.ReviewStatus.ToString(), open?.Id, open?.ItemType.ToString(), open?.Status.ToString())
         {
+            SafetyCheck = await new CreatorSafetyCheckService(uow, moderation).GetAsync(story, version, ct),
+            CanResubmitWithdrawn = open == null && await WithdrawnPublicStorySubmission.FindReusableAsync(uow, story, version, ct) != null,
             CanResubmitLabels = !story.IsPublished && story.Status == StoryStatus.Ready && open == null
                 && version.Moderation.ReviewStatus == VersionReviewStatus.ChangesRequested
                 && decided?.Status == ModerationItemStatus.ChangesRequested && decided.StoryVersionId == version.Id

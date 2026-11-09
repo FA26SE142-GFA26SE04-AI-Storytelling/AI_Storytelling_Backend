@@ -18,7 +18,10 @@ public sealed record CreatorPublicationResult(int StoryId, int VersionId, int? I
 
 public sealed record CreatorPublicationStatus(int StoryId, int VersionId, bool IsPublished, string ReviewStatus, int? OpenItemId, string? OpenItemType, string? OpenItemStatus)
 {
+    public CreatorSafetyCheckDto SafetyCheck { get; init; } = new(false, "Unavailable", null);
+    public bool CanResubmitWithdrawn { get; init; }
     public List<PublicReviewLabelDto> Labels { get; init; } = new();
     public List<PublicReviewLabelDto> LastProposedLabels { get; init; } = new();
     public bool CanResubmitLabels { get; init; }
 }
+public sealed record CreatorSafetyCheckDto(bool Required, string State, string? Zone);

@@ -1,3 +1,4 @@
+using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.Moderation;
@@ -8,6 +9,10 @@ namespace StoryPlatform.Application.Features.Moderation;
 /// </summary>
 public static class ModerationQueuePolicy
 {
+    internal static string? DisplayName(UserAccount? user) =>
+        user == null ? null : string.IsNullOrWhiteSpace(user.FullName)
+            ? (string.IsNullOrWhiteSpace(user.Username) ? null : user.Username)
+            : user.FullName;
     /// <summary>Quá thời gian này kể từ lúc nhận mà chưa quyết định thì mục tự trả về hàng đợi.</summary>
     public static readonly TimeSpan ClaimTimeout = TimeSpan.FromHours(2);
 

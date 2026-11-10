@@ -1,4 +1,4 @@
-﻿using StoryPlatform.Domain.Enums;
+using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.Moderation.DTOs;
 
@@ -47,6 +47,10 @@ public class ModerationItemSummaryDto
     public int? StoryVersionId { get; set; }
     public int? ContentReportId { get; set; }
     public int? ReadingRoadmapId { get; set; }
+    /// <summary>Mã tài khoản gửi duyệt; chỉ trả cho mục duyệt truyện công khai của Creator.</summary>
+    public int? CreatedByUserId { get; set; }
+    /// <summary>Tên hiển thị của Creator gửi duyệt (họ tên, dự phòng tên đăng nhập); null với các loại mục khác.</summary>
+    public string? CreatedByName { get; set; }
     public bool IsResubmission { get; set; }
     public DateTime? SlaDueAt { get; set; }
     public bool IsOverdue { get; set; }

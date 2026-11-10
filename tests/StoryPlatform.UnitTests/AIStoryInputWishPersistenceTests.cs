@@ -32,11 +32,7 @@ public sealed partial class AIStoryInputServiceTests
         Seed<UserAccount>(); Seed<ChildProfile>(); Seed<LearningProfile>(); Seed<SafetyPolicy>();
 
         db.Set<StoryWish>().Add(PendingWish());
-        db.Set<TokenQuotaConfig>().Add(new()
-        {
-            Scope = TokenQuotaScope.Personal, UserId = 1, QuotaLimit = 10,
-            PeriodStart = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1)), PeriodEnd = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30))
-        });
+        db.Set<CreditLot>().Add(new() { UserId = 1, Source = CreditSource.Legacy, Total = 10, Remaining = 10 });
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
         await using var uow = new WishTestUnitOfWork(db);
@@ -46,7 +42,7 @@ public sealed partial class AIStoryInputServiceTests
                     It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new InvalidOperationException("simulated wish audit failure"));
         var service = new AIStoryInputService(uow, new RuleBasedInputGuardrail(),
-            new TokenQuotaService(uow, new NoopAuditLogWriter()), wishAudit: audit.Object);
+            new TokenQuotaService(uow), wishAudit: audit.Object);
         if (failAudit)
         {
             var error = await Assert.ThrowsAsync<InvalidOperationException>(() => service.SubmitAsync(1, WishInput()));
@@ -55,7 +51,7 @@ public sealed partial class AIStoryInputServiceTests
             Assert.Empty(await db.Set<Story>().ToListAsync());
             Assert.Empty(await db.Set<StoryGenerationRequest>().ToListAsync());
             Assert.Empty(await db.Set<StoryGenerationJob>().ToListAsync());
-            Assert.Equal(0, (await db.Set<TokenQuotaConfig>().SingleAsync()).QuotaUsed);
+            Assert.Equal(10, (await db.Set<CreditLot>().SingleAsync(x => x.Source == CreditSource.Legacy)).Remaining);
             var wish = await db.Set<StoryWish>().SingleAsync();
             Assert.Equal(StoryWishStatus.Pending, wish.Status);
             Assert.Null(wish.GeneratedStoryId);
@@ -74,7 +70,7 @@ public sealed partial class AIStoryInputServiceTests
             Assert.Single(await db.Set<Story>().ToListAsync());
             Assert.Single(await db.Set<StoryGenerationRequest>().ToListAsync());
             Assert.Single(await db.Set<StoryGenerationJob>().ToListAsync());
-            Assert.Equal(1, (await db.Set<TokenQuotaConfig>().SingleAsync()).QuotaUsed);
+            Assert.Equal(9, (await db.Set<CreditLot>().SingleAsync(x => x.Source == CreditSource.Legacy)).Remaining);
         }
         Assert.Contains(-1, uow.Locks);
     }
@@ -101,7 +97,7 @@ public sealed partial class AIStoryInputServiceTests
         {
             Type[] types = [typeof(UserAccount), typeof(ChildProfile), typeof(LearningProfile), typeof(SafetyPolicy),
                 typeof(SafetyPolicyCategory), typeof(ContentCategory), typeof(LearningProfileTopic),
-                typeof(StoryWish), typeof(Story), typeof(StoryGenerationRequest), typeof(StoryGenerationJob), typeof(TokenQuotaConfig)];
+                typeof(StoryWish), typeof(Story), typeof(StoryGenerationRequest), typeof(StoryGenerationJob), typeof(CreditLot)];
             foreach (var type in types)
                 foreach (var property in type.GetProperties().Where(p => typeof(BaseEntity).IsAssignableFrom(p.PropertyType) ||
                     p.PropertyType.IsGenericType && p.PropertyType.GetGenericArguments().Any(t => typeof(BaseEntity).IsAssignableFrom(t))))

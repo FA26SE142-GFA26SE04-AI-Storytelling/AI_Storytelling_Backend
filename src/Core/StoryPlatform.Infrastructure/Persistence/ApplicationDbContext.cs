@@ -87,6 +87,10 @@ public class ApplicationDbContext : DbContext
     public DbSet<TokenQuotaConfig> TokenQuotaConfigs => Set<TokenQuotaConfig>();
     public DbSet<SubscriptionPlan> SubscriptionPlans => Set<SubscriptionPlan>();
     public DbSet<PaymentTransaction> PaymentTransactions => Set<PaymentTransaction>();
+    public DbSet<UserSubscription> UserSubscriptions => Set<UserSubscription>();
+    public DbSet<CreditLot> CreditLots => Set<CreditLot>();
+    public DbSet<CreditAdjustment> CreditAdjustments => Set<CreditAdjustment>();
+    public DbSet<PaymentReconciliationException> PaymentReconciliationExceptions => Set<PaymentReconciliationException>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

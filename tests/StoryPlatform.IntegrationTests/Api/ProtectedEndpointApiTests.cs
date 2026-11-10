@@ -440,7 +440,7 @@ public sealed class PaymentWebhookApiTests(ApiFactory factory) : IClassFixture<A
         var payer = await factory.AddUserAsync(UserRole.User);
         return await factory.WithDbAsync(async db =>
         {
-            var plan = new SubscriptionPlan { Name = "Gói 50k", PriceVnd = 50000, QuotaAmount = 10 };
+            var plan = new SubscriptionPlan { Name = "Gói 50k", PriceVnd = 50000, AiCredits = 10 };
             db.SubscriptionPlans.Add(plan);
             var transaction = new PaymentTransaction
             {

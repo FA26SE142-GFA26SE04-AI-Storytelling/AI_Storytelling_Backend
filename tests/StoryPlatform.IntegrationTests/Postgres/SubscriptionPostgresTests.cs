@@ -1,0 +1,262 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
+using StoryPlatform.Application.Common.Exceptions;
+using StoryPlatform.Application.Features.Notifications.DTOs;
+using StoryPlatform.Application.Features.Notifications.Interfaces;
+using StoryPlatform.Application.Features.Payments.Services;
+using StoryPlatform.Application.Features.TokenQuota.DTOs;
+using StoryPlatform.Application.Features.TokenQuota.Services;
+using StoryPlatform.Domain.Entities;
+using StoryPlatform.Domain.Enums;
+using StoryPlatform.Infrastructure.Persistence;
+using StoryPlatform.Infrastructure.Persistence.Repositories;
+using Xunit;
+
+namespace StoryPlatform.IntegrationTests.Postgres;
+
+// Opt-in only (STORYPLATFORM_TEST_PG). Chạy trên database tạm: migration AddSubscriptionCyclesAndCreditLots và
+// khoá advisory theo tài khoản là hai thứ SQLite không kiểm được.
+public sealed class SubscriptionPostgresTests(AuthoringGuidePostgresFixture fixture) : IClassFixture<AuthoringGuidePostgresFixture>
+{
+    private const string Migration = "AddSubscriptionCyclesAndCreditLots";
+    private const int CreativePlanId = 3;
+
+    [PostgresFact]
+    public async Task Migration_ConvertsLeftoverPersonalQuotaToLegacyLots_AndSeedsNewPlans()
+    {
+        var admin = new NpgsqlConnectionStringBuilder(Environment.GetEnvironmentVariable(PostgresFactAttribute.EnvironmentVariable))
+        {
+            Pooling = false
+        };
+        var name = "storyplatform_it_sub_" + Guid.NewGuid().ToString("N")[..12];
+        await ExecuteAsync(admin.ConnectionString, $"CREATE DATABASE \"{name}\"");
+        try
+        {
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseNpgsql(new NpgsqlConnectionStringBuilder(admin.ConnectionString) { Database = name }.ConnectionString)
+                .Options;
+            int withLeftover, usedUp;
+            await using (var before = new ApplicationDbContext(options))
+            {
+                var migrations = before.Database.GetMigrations().ToList();
+                var previous = migrations[migrations.FindIndex(id => id.EndsWith("_" + Migration)) - 1];
+                await before.GetService<IMigrator>().MigrateAsync(previous);
+
+                var parentA = NewParent("legacy_a");
+                var parentB = NewParent("legacy_b");
+                before.Users.AddRange(parentA, parentB);
+                await before.SaveChangesAsync();
+                (withLeftover, usedUp) = (parentA.Id, parentB.Id);
+                var today = DateOnly.FromDateTime(DateTime.UtcNow);
+                before.TokenQuotaConfigs.AddRange(
+                    new TokenQuotaConfig { Scope = TokenQuotaScope.System, QuotaLimit = 1000, QuotaUsed = 10, PeriodStart = today, PeriodEnd = today.AddMonths(1) },
+                    new TokenQuotaConfig { Scope = TokenQuotaScope.Personal, UserId = withLeftover, QuotaLimit = 50, QuotaUsed = 18, PeriodStart = today, PeriodEnd = today.AddMonths(1) },
+                    new TokenQuotaConfig { Scope = TokenQuotaScope.Personal, UserId = usedUp, QuotaLimit = 50, QuotaUsed = 50, PeriodStart = today, PeriodEnd = today.AddMonths(1) });
+                await before.SaveChangesAsync();
+            }
+
+            await using var db = new ApplicationDbContext(options);
+            await db.Database.MigrateAsync();
+
+            var lot = await db.CreditLots.SingleAsync();
+            Assert.Equal(
+                (withLeftover, CreditType.AI, CreditSource.Legacy, 32, 32, (DateTime?)null, (int?)null),
+                (lot.UserId, lot.CreditType, lot.Source, lot.Total, lot.Remaining, lot.ExpiresAt, lot.PaymentId));
+            Assert.Equal(3, await db.TokenQuotaConfigs.CountAsync()); // bảng cũ giữ nguyên dữ liệu
+            Assert.Equal(
+                ["1:Legacy:49000:50:False", "2:Reading:49000:0:True", "3:Creative:99000:4:True", "4:AddOn:29000:2:True"],
+                (await db.SubscriptionPlans.OrderBy(plan => plan.Id).ToListAsync())
+                    .Select(plan => $"{plan.Id}:{plan.PlanType}:{plan.PriceVnd}:{plan.AiCredits}:{plan.IsActive}"));
+
+            // Sequence đã được đẩy qua các Id chèn cố định: gói tạo sau này không trùng khoá.
+            var added = new SubscriptionPlan { Name = "Gói thử", PlanType = PlanType.Reading, PriceVnd = 1000 };
+            db.SubscriptionPlans.Add(added);
+            await db.SaveChangesAsync();
+            Assert.Equal(5, added.Id);
+        }
+        finally
+        {
+            await ExecuteAsync(admin.ConnectionString, $"DROP DATABASE IF EXISTS \"{name}\" WITH (FORCE)");
+        }
+    }
+
+    [PostgresFact]
+    public async Task WebhookAndMarkPaidRacingOnOneTransaction_ApplyThePlanOnce()
+    {
+        await using var database = await fixture.CreateDatabaseAsync();
+        PaymentTransaction transaction;
+        await using (var seed = new ApplicationDbContext(database.Options))
+        {
+            transaction = new PaymentTransaction
+            {
+                PlanId = CreativePlanId, PayerUserId = database.ParentUserId, TransactionCode = "SEPAYRACE000001",
+                Amount = 99000, Status = PaymentStatus.Paid, PaidAt = DateTime.UtcNow, ExpiresAt = DateTime.UtcNow.AddMinutes(15)
+            };
+            seed.PaymentTransactions.Add(transaction);
+            await seed.SaveChangesAsync();
+        }
+
+        var now = DateTime.UtcNow;
+        await Task.WhenAll(Enumerable.Range(0, 4).Select(async _ =>
+        {
+            await using var context = new ApplicationDbContext(database.Options);
+            await using var uow = new UnitOfWork(context);
+            var plan = await context.SubscriptionPlans.SingleAsync(item => item.Id == CreativePlanId);
+            await NewSubscriptionService(uow).ApplyPaidTransactionAsync(transaction, plan, now);
+        }));
+
+        await using var db = new ApplicationDbContext(database.Options);
+        var subscription = await db.UserSubscriptions.SingleAsync();
+        Assert.Equal((SubscriptionStatus.Active, transaction.Id), (subscription.Status, subscription.PaymentId));
+        var lot = await db.CreditLots.SingleAsync();
+        Assert.Equal((CreditSource.Cycle, 4, (int?)transaction.Id), (lot.Source, lot.Remaining, lot.PaymentId));
+    }
+
+    [PostgresFact]
+    public async Task TwoStoryRequestsRacingForTheLastCredit_OnlyOneConsumesIt()
+    {
+        await using var database = await fixture.CreateDatabaseAsync();
+        int childId;
+        await using (var seed = new ApplicationDbContext(database.Options))
+        {
+            var child = new ChildProfile
+            {
+                OwnerUserId = database.ParentUserId, Nickname = "Mây", AgeBand = AgeBand.Age_6_8, Language = "vi",
+                Status = ChildProfileStatus.Active
+            };
+            seed.ChildProfiles.Add(child);
+            seed.CreditLots.Add(new CreditLot
+            {
+                UserId = database.ParentUserId, Source = CreditSource.Trial, Total = 1, Remaining = 1
+            });
+            await seed.SaveChangesAsync();
+            childId = child.Id;
+        }
+
+        var outcomes = await Task.WhenAll(Enumerable.Range(0, 4).Select(async _ =>
+        {
+            await using var context = new ApplicationDbContext(database.Options);
+            await using var uow = new UnitOfWork(context);
+            await uow.BeginTransactionAsync();
+            try
+            {
+                await new TokenQuotaService(uow).IncrementUsageAsync(childId);
+                await uow.CommitTransactionAsync();
+                return "consumed";
+            }
+            catch (ConflictException)
+            {
+                await uow.RollbackTransactionAsync();
+                return "rejected";
+            }
+        }));
+
+        Assert.Equal(1, outcomes.Count(outcome => outcome == "consumed"));
+        Assert.Equal(3, outcomes.Count(outcome => outcome == "rejected"));
+        await using var db = new ApplicationDbContext(database.Options);
+        Assert.Equal(0, (await db.CreditLots.SingleAsync()).Remaining);
+    }
+
+    [PostgresFact]
+    public async Task AdminDeductRacingWithStoryRequests_NeverGoesNegative()
+    {
+        await using var database = await fixture.CreateDatabaseAsync();
+        int childId;
+        await using (var seed = new ApplicationDbContext(database.Options))
+        {
+            var child = new ChildProfile
+            {
+                OwnerUserId = database.ParentUserId, Nickname = "Mây", AgeBand = AgeBand.Age_6_8, Language = "vi",
+                Status = ChildProfileStatus.Active
+            };
+            seed.ChildProfiles.Add(child);
+            seed.CreditLots.Add(new CreditLot
+            {
+                UserId = database.ParentUserId, Source = CreditSource.Legacy, Total = 3, Remaining = 3
+            });
+            await seed.SaveChangesAsync();
+            childId = child.Id;
+        }
+
+        // 3 lượt; Admin trừ 2 lượt hai lần và phụ huynh gửi 2 yêu cầu cùng lúc: tổng muốn lấy là 6.
+        async Task<int> AdminDeductAsync()
+        {
+            await using var context = new ApplicationDbContext(database.Options);
+            await using var uow = new UnitOfWork(context);
+            try
+            {
+                await new TokenQuotaService(uow).AdjustAsync(database.AdministratorId, new AdjustCreditsRequestDto
+                {
+                    UserId = database.ParentUserId, Amount = -2, Reason = "Thu hồi lượt cấp nhầm"
+                });
+                return 2;
+            }
+            catch (BadRequestException)
+            {
+                return 0;
+            }
+        }
+
+        async Task<int> StoryRequestAsync()
+        {
+            await using var context = new ApplicationDbContext(database.Options);
+            await using var uow = new UnitOfWork(context);
+            await uow.BeginTransactionAsync();
+            try
+            {
+                await new TokenQuotaService(uow).IncrementUsageAsync(childId);
+                await uow.CommitTransactionAsync();
+                return 1;
+            }
+            catch (ConflictException)
+            {
+                await uow.RollbackTransactionAsync();
+                return 0;
+            }
+        }
+
+        var taken = await Task.WhenAll(AdminDeductAsync(), StoryRequestAsync(), AdminDeductAsync(), StoryRequestAsync());
+
+        await using var db = new ApplicationDbContext(database.Options);
+        var remaining = (await db.CreditLots.SingleAsync()).Remaining;
+        Assert.InRange(remaining, 0, 3);
+        Assert.Equal(3 - taken.Sum(), remaining);
+        Assert.Equal(taken.Count(amount => amount == 2), await db.CreditAdjustments.CountAsync());
+    }
+
+    private static SubscriptionService NewSubscriptionService(UnitOfWork uow) =>
+        new(uow, new TokenQuotaService(uow), new NoNotifications(), NullLogger<SubscriptionService>.Instance);
+
+    private static UserAccount NewParent(string username) => new()
+    {
+        Username = username, Email = username + "@example.test", PasswordHash = "not-a-real-hash", FullName = username,
+        Role = UserRole.User, Status = AccountStatus.Active
+    };
+
+    private static async Task ExecuteAsync(string connectionString, string sql)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private sealed class NoNotifications : INotificationService
+    {
+        public Task<NotificationDto> CreateAsync(int recipientUserId, NotificationType type, string? payload, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new NotificationDto());
+        public Task<NotificationDto> CreateStoredAsync(int recipientUserId, NotificationType type, string? payload, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new NotificationDto());
+        public Task<List<NotificationDto>> ListAsync(int currentUserId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new List<NotificationDto>());
+        public Task<List<NotificationDto>> ListAsync(int currentUserId, string? group, CancellationToken cancellationToken) =>
+            Task.FromResult(new List<NotificationDto>());
+        public Task<int> GetUnreadCountAsync(int currentUserId, CancellationToken cancellationToken = default) => Task.FromResult(0);
+        public Task MarkAsReadAsync(int notificationId, int currentUserId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task MarkAllAsReadAsync(int currentUserId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task DeleteAsync(int notificationId, int currentUserId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+}

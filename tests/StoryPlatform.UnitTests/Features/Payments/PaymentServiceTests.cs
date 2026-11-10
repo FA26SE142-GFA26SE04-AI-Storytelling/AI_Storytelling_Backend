@@ -1,38 +1,48 @@
-using System.Linq.Expressions;
 using Moq;
 using StoryPlatform.Application.Abstractions.Payments;
-using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.Notifications.DTOs;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Application.Features.Payments.DTOs;
+using StoryPlatform.Application.Features.Payments.Interfaces;
 using StoryPlatform.Application.Features.Payments.Services;
-using StoryPlatform.Application.Features.TokenQuota.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.UnitTests.Features.TokenQuota;
 using Xunit;
 
 namespace StoryPlatform.UnitTests.Features.Payments;
 
 public class PaymentServiceTests
 {
-    private readonly Mock<IGenericRepository<SubscriptionPlan>> _planRepository = new();
-    private readonly Mock<IGenericRepository<PaymentTransaction>> _transactionRepository = new();
-    private readonly Mock<IGenericRepository<UserAccount>> _userRepository = new();
-    private readonly Mock<IUnitOfWork> _unitOfWork = new();
+    private const int ParentId = 1;
+    private const int OtherParentId = 2;
+    private const int AdminId = 9;
+    private const int LegacyPlanId = 1;
+    private const int ReadingPlanId = 2;
+    private const int CreativePlanId = 3;
+    private const int AddOnPlanId = 4;
+    private const string AddOnLockedReason = "Hãy đăng ký Gói Đọc hoặc Gói Sáng tạo trước khi mua Add-on.";
+
+    private readonly InMemoryUnitOfWork _store = new();
     private readonly Mock<IAuditLogWriter> _auditLogWriter = new();
     private readonly Mock<INotificationService> _notificationService = new();
     private readonly Mock<ISePayQrUrlBuilder> _qrUrlBuilder = new();
     private readonly Mock<ISePayWebhookAuthenticator> _webhookAuthenticator = new();
-    private readonly Mock<ITokenQuotaService> _tokenQuotaService = new();
+    private readonly Mock<ISubscriptionService> _subscriptionService = new();
     private readonly PaymentService _sut;
+    private int _nextTransactionId = 1;
 
     public PaymentServiceTests()
     {
-        _unitOfWork.Setup(work => work.Repository<SubscriptionPlan>()).Returns(_planRepository.Object);
-        _unitOfWork.Setup(work => work.Repository<PaymentTransaction>()).Returns(_transactionRepository.Object);
-        _unitOfWork.Setup(work => work.Repository<UserAccount>()).Returns(_userRepository.Object);
+        _store.Seed(new UserAccount { Id = ParentId, Role = UserRole.User, Email = "p1@x.com", Username = "parent_one", FullName = "Phụ huynh Một" });
+        _store.Seed(new UserAccount { Id = OtherParentId, Role = UserRole.User, Email = "p2@x.com", Username = "parent_two", FullName = "Phụ huynh Hai" });
+        _store.Seed(new UserAccount { Id = AdminId, Role = UserRole.Administrator, Email = "admin@x.com", Username = "admin", FullName = "Quản trị" });
+        _store.Seed(new SubscriptionPlan { Id = LegacyPlanId, Name = "Personal", PlanType = PlanType.Legacy, PriceVnd = 49000, AiCredits = 50, IsActive = false });
+        _store.Seed(new SubscriptionPlan { Id = ReadingPlanId, Name = "Gói Đọc", PlanType = PlanType.Reading, PriceVnd = 49000, AiCredits = 0 });
+        _store.Seed(new SubscriptionPlan { Id = CreativePlanId, Name = "Gói Sáng tạo", PlanType = PlanType.Creative, PriceVnd = 99000, AiCredits = 4 });
+        _store.Seed(new SubscriptionPlan { Id = AddOnPlanId, Name = "Add-on", PlanType = PlanType.AddOn, PriceVnd = 29000, AiCredits = 2 });
 
         _notificationService
             .Setup(service => service.CreateAsync(
@@ -43,36 +53,97 @@ public class PaymentServiceTests
         _webhookAuthenticator.Setup(auth => auth.IsValid(It.IsAny<string?>())).Returns(true);
 
         _sut = new PaymentService(
-            _unitOfWork.Object, _auditLogWriter.Object, _notificationService.Object,
-            _qrUrlBuilder.Object, _webhookAuthenticator.Object, _tokenQuotaService.Object);
+            _store, _auditLogWriter.Object, _notificationService.Object,
+            _qrUrlBuilder.Object, _webhookAuthenticator.Object, _subscriptionService.Object);
     }
 
-    private static SubscriptionPlan MakePlan(int id, int price, bool isActive = true) => new()
-    {
-        Id = id,
-        Name = "Personal",
-        PriceVnd = price,
-        QuotaAmount = 50,
-        IsActive = isActive
-    };
+    private SubscriptionPlan Plan(int id) => _store.Items<SubscriptionPlan>().Single(plan => plan.Id == id);
 
-    private static UserAccount MakeUser(int id, UserRole role) => new() { Id = id, Role = role, Email = $"u{id}@x.com" };
+    private void HasActivePlan(int userId = ParentId) =>
+        _subscriptionService
+            .Setup(service => service.GetActiveAsync(userId, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserSubscription
+            {
+                UserId = userId, PlanId = ReadingPlanId, Status = SubscriptionStatus.Active,
+                StartAt = DateTime.UtcNow.AddDays(-5), EndAt = DateTime.UtcNow.AddDays(25)
+            });
+
+    private PaymentTransaction SeedTransaction(
+        int planId, PaymentStatus status = PaymentStatus.Pending, int payerUserId = ParentId,
+        DateTime? expiresAt = null, DateTime? createdAt = null, string? code = null)
+    {
+        var id = _nextTransactionId++;
+        return _store.Seed(new PaymentTransaction
+        {
+            Id = id,
+            PlanId = planId,
+            PayerUserId = payerUserId,
+            PayerUser = _store.Items<UserAccount>().Single(user => user.Id == payerUserId),
+            TransactionCode = code ?? $"SEPAYTEST{id:D6}",
+            Amount = Plan(planId).PriceVnd,
+            Status = status,
+            QrCodeUrl = "https://qr.sepay.vn/img?seed=1",
+            ExpiresAt = expiresAt ?? DateTime.UtcNow.AddMinutes(10),
+            CreatedAt = createdAt ?? DateTime.UtcNow
+        });
+    }
+
+    private void VerifyPlanApplied(PaymentTransaction transaction, Times times) =>
+        _subscriptionService.Verify(
+            service => service.ApplyPaidTransactionAsync(
+                transaction, It.Is<SubscriptionPlan>(plan => plan.Id == transaction.PlanId),
+                It.IsAny<DateTime>(), It.IsAny<CancellationToken>()),
+            times);
+
+    private void VerifyNoPlanApplied() =>
+        _subscriptionService.Verify(
+            service => service.ApplyPaidTransactionAsync(
+                It.IsAny<PaymentTransaction>(), It.IsAny<SubscriptionPlan>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+    private void VerifyAudit(string action, Times times) =>
+        _auditLogWriter.Verify(
+            writer => writer.LogAsync(
+                It.IsAny<int?>(), action, nameof(PaymentTransaction), It.IsAny<int>(),
+                It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()),
+            times);
 
     // ---------- ListActivePlansAsync ----------
 
     [Fact]
-    public async Task ListActivePlansAsync_ReturnsOnlyActivePlans()
+    public async Task ListActivePlansAsync_ExcludesLegacyAndInactive()
     {
-        var plans = new[] { MakePlan(1, 49000), MakePlan(2, 99000, isActive: false) };
-        _planRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<SubscriptionPlan, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((Expression<Func<SubscriptionPlan, bool>> predicate, string? _, CancellationToken _) =>
-                plans.Where(predicate.Compile()).ToList());
+        _store.Seed(new SubscriptionPlan { Id = 5, Name = "Gói thử", PlanType = PlanType.Creative, PriceVnd = 1, AiCredits = 1, IsActive = false });
+        _store.Seed(new SubscriptionPlan { Id = 6, Name = "Personal 2", PlanType = PlanType.Legacy, PriceVnd = 1, AiCredits = 1, IsActive = true });
 
-        var result = await _sut.ListActivePlansAsync();
+        var result = await _sut.ListActivePlansAsync(ParentId);
 
-        Assert.Single(result);
-        Assert.Equal(1, result[0].Id);
+        Assert.Equal(
+            [(ReadingPlanId, "Reading", 49000, 0), (CreativePlanId, "Creative", 99000, 4), (AddOnPlanId, "AddOn", 29000, 2)],
+            result.Select(plan => (plan.Id, plan.PlanType, plan.PriceVnd, plan.AiCredits)));
+    }
+
+    [Fact]
+    public async Task ListActivePlansAsync_FreeAccount_AddOnIsLocked()
+    {
+        var result = await _sut.ListActivePlansAsync(ParentId);
+
+        var addOn = result.Single(plan => plan.PlanType == "AddOn");
+        Assert.Equal((false, AddOnLockedReason), (addOn.IsPurchasable, addOn.LockedReason));
+        Assert.All(
+            result.Where(plan => plan.PlanType != "AddOn"),
+            plan => Assert.Equal((true, (string?)null), (plan.IsPurchasable, plan.LockedReason)));
+    }
+
+    [Fact]
+    public async Task ListActivePlansAsync_WithActivePlan_AddOnIsPurchasable()
+    {
+        HasActivePlan();
+
+        var result = await _sut.ListActivePlansAsync(ParentId);
+
+        var addOn = result.Single(plan => plan.PlanType == "AddOn");
+        Assert.Equal((true, (string?)null), (addOn.IsPurchasable, addOn.LockedReason));
     }
 
     // ---------- CreateTransactionAsync ----------
@@ -80,78 +151,139 @@ public class PaymentServiceTests
     [Fact]
     public async Task CreateTransactionAsync_PlanNotFound_ThrowsNotFound()
     {
-        _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync((SubscriptionPlan?)null);
-
-        await Assert.ThrowsAsync<NotFoundException>(() => _sut.CreateTransactionAsync(
-            1, new CreatePaymentTransactionRequestDto { PlanId = 1 }));
+        await Assert.ThrowsAsync<NotFoundException>(
+            () => _sut.CreateTransactionAsync(ParentId, new CreatePaymentTransactionRequestDto { PlanId = 999 }));
     }
 
     [Fact]
     public async Task CreateTransactionAsync_PlanInactive_ThrowsBadRequest()
     {
-        _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakePlan(1, 49000, isActive: false));
+        Plan(CreativePlanId).IsActive = false;
 
-        await Assert.ThrowsAsync<BadRequestException>(() => _sut.CreateTransactionAsync(
-            1, new CreatePaymentTransactionRequestDto { PlanId = 1 }));
+        await Assert.ThrowsAsync<BadRequestException>(
+            () => _sut.CreateTransactionAsync(ParentId, new CreatePaymentTransactionRequestDto { PlanId = CreativePlanId }));
     }
 
     [Fact]
-    public async Task CreateTransactionAsync_PersonalScope_NonParentPayer_ThrowsForbidden()
+    public async Task CreateTransactionAsync_LegacyPlan_ThrowsBadRequest()
     {
-        _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakePlan(1, 49000));
-        _userRepository.Setup(repo => repo.GetByIdAsync(10, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakeUser(10, UserRole.Administrator));
+        Plan(LegacyPlanId).IsActive = true;
 
-        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.CreateTransactionAsync(
-            10, new CreatePaymentTransactionRequestDto { PlanId = 1 }));
+        await Assert.ThrowsAsync<BadRequestException>(
+            () => _sut.CreateTransactionAsync(ParentId, new CreatePaymentTransactionRequestDto { PlanId = LegacyPlanId }));
+
+        Assert.Empty(_store.Items<PaymentTransaction>());
+    }
+
+    [Theory]
+    [InlineData(UserRole.Administrator)]
+    [InlineData(UserRole.ContentCreator)]
+    [InlineData(UserRole.Moderator)]
+    public async Task CreateTransactionAsync_NonParentPayer_ThrowsForbidden(UserRole role)
+    {
+        _store.Seed(new UserAccount { Id = 50, Role = role, Email = "staff@x.com" });
+
+        await Assert.ThrowsAsync<ForbiddenException>(
+            () => _sut.CreateTransactionAsync(50, new CreatePaymentTransactionRequestDto { PlanId = ReadingPlanId }));
     }
 
     [Fact]
-    public async Task CreateTransactionAsync_DuplicatePending_ThrowsConflict()
+    public async Task CreateTransactionAsync_ValidCreative_CreatesPendingTransactionWithQr()
     {
-        _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakePlan(1, 49000));
-        _userRepository.Setup(repo => repo.GetByIdAsync(10, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakeUser(10, UserRole.User));
-        _transactionRepository.Setup(repo => repo.ExistsAsync(
-                It.IsAny<Expression<Func<PaymentTransaction, bool>>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-
-        await Assert.ThrowsAsync<ConflictException>(() => _sut.CreateTransactionAsync(
-            10, new CreatePaymentTransactionRequestDto { PlanId = 1 }));
-    }
-
-    [Fact]
-    public async Task CreateTransactionAsync_ValidPersonal_CreatesPendingTransactionWithQr()
-    {
-        _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakePlan(1, 49000));
-        _userRepository.Setup(repo => repo.GetByIdAsync(10, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakeUser(10, UserRole.User));
-        _transactionRepository.Setup(repo => repo.ExistsAsync(
-                It.IsAny<Expression<Func<PaymentTransaction, bool>>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
-
-        PaymentTransaction? added = null;
-        _transactionRepository.Setup(repo => repo.AddAsync(It.IsAny<PaymentTransaction>(), It.IsAny<CancellationToken>()))
-            .Callback<PaymentTransaction, CancellationToken>((entity, _) => added = entity)
-            .ReturnsAsync((PaymentTransaction entity, CancellationToken _) => entity);
-
         var before = DateTime.UtcNow;
-        var result = await _sut.CreateTransactionAsync(10, new CreatePaymentTransactionRequestDto { PlanId = 1 });
 
-        Assert.NotNull(added);
-        Assert.Equal(1, added!.PlanId);
-        Assert.Equal(10, added.PayerUserId);
-        Assert.Equal(49000, added.Amount);
-        Assert.Equal(PaymentStatus.Pending, added.Status);
-        Assert.NotEmpty(added.TransactionCode);
-        Assert.True(added.ExpiresAt >= before.AddMinutes(15) && added.ExpiresAt <= DateTime.UtcNow.AddMinutes(15).AddSeconds(5));
-        Assert.Equal("https://qr.sepay.vn/img?fake=1", added.QrCodeUrl);
-        Assert.Equal("https://qr.sepay.vn/img?fake=1", result.QrCodeUrl);
+        var result = await _sut.CreateTransactionAsync(ParentId, new CreatePaymentTransactionRequestDto { PlanId = CreativePlanId });
+
+        var stored = Assert.Single(_store.Items<PaymentTransaction>());
+        Assert.Equal((ParentId, CreativePlanId, 99000, PaymentStatus.Pending), (stored.PayerUserId, stored.PlanId, stored.Amount, stored.Status));
+        Assert.StartsWith("SEPAY", stored.TransactionCode);
+        Assert.Equal(15, stored.TransactionCode.Length);
+        Assert.InRange(stored.ExpiresAt, before.AddMinutes(15), DateTime.UtcNow.AddMinutes(15));
+        Assert.Equal(
+            ("Gói Sáng tạo", "Creative", "Pending", "https://qr.sepay.vn/img?fake=1"),
+            (result.PlanName, result.PlanType, result.Status, result.QrCodeUrl));
+        _qrUrlBuilder.Verify(builder => builder.BuildQrCodeUrl(99000, stored.TransactionCode), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateTransactionAsync_SnapshotsPlanCredits()
+    {
+        await _sut.CreateTransactionAsync(ParentId, new CreatePaymentTransactionRequestDto { PlanId = CreativePlanId });
+
+        Assert.Equal(4, Assert.Single(_store.Items<PaymentTransaction>()).AiCredits);
+    }
+
+    [Fact]
+    public async Task CreateTransactionAsync_PendingCreativeExists_BuyingReading_ThrowsConflict()
+    {
+        SeedTransaction(CreativePlanId);
+
+        await Assert.ThrowsAsync<ConflictException>(
+            () => _sut.CreateTransactionAsync(ParentId, new CreatePaymentTransactionRequestDto { PlanId = ReadingPlanId }));
+
+        Assert.Single(_store.Items<PaymentTransaction>());
+    }
+
+    [Fact]
+    public async Task CreateTransactionAsync_PendingAddOnExists_BuyingReading_Succeeds()
+    {
+        SeedTransaction(AddOnPlanId);
+
+        var result = await _sut.CreateTransactionAsync(ParentId, new CreatePaymentTransactionRequestDto { PlanId = ReadingPlanId });
+
+        Assert.Equal("Reading", result.PlanType);
+    }
+
+    [Fact]
+    public async Task CreateTransactionAsync_AnotherParentsPendingPlan_DoesNotBlock()
+    {
+        SeedTransaction(CreativePlanId, payerUserId: OtherParentId);
+
+        var result = await _sut.CreateTransactionAsync(ParentId, new CreatePaymentTransactionRequestDto { PlanId = CreativePlanId });
+
         Assert.Equal("Pending", result.Status);
+    }
+
+    [Fact]
+    public async Task CreateTransactionAsync_StalePendingPastExpiry_DoesNotBlock()
+    {
+        SeedTransaction(ReadingPlanId, expiresAt: DateTime.UtcNow.AddMinutes(-1));
+
+        var result = await _sut.CreateTransactionAsync(ParentId, new CreatePaymentTransactionRequestDto { PlanId = ReadingPlanId });
+
+        Assert.Equal("Pending", result.Status);
+        Assert.Equal(2, _store.Items<PaymentTransaction>().Count);
+    }
+
+    [Fact]
+    public async Task CreateTransactionAsync_AddOn_NoActivePlan_ThrowsConflict()
+    {
+        var error = await Assert.ThrowsAsync<ConflictException>(
+            () => _sut.CreateTransactionAsync(ParentId, new CreatePaymentTransactionRequestDto { PlanId = AddOnPlanId }));
+
+        Assert.Equal(AddOnLockedReason, error.Message);
+        Assert.Empty(_store.Items<PaymentTransaction>());
+    }
+
+    [Fact]
+    public async Task CreateTransactionAsync_AddOn_PendingAddOnExists_ThrowsConflict()
+    {
+        HasActivePlan();
+        SeedTransaction(AddOnPlanId);
+
+        await Assert.ThrowsAsync<ConflictException>(
+            () => _sut.CreateTransactionAsync(ParentId, new CreatePaymentTransactionRequestDto { PlanId = AddOnPlanId }));
+    }
+
+    [Fact]
+    public async Task CreateTransactionAsync_AddOn_WithActivePlanAndPendingPlanPurchase_CreatesPending29000()
+    {
+        HasActivePlan();
+        SeedTransaction(CreativePlanId);
+
+        var result = await _sut.CreateTransactionAsync(ParentId, new CreatePaymentTransactionRequestDto { PlanId = AddOnPlanId });
+
+        Assert.Equal((29000, "Pending", "AddOn"), (result.Amount, result.Status, result.PlanType));
     }
 
     // ---------- HandleWebhookAsync ----------
@@ -159,295 +291,417 @@ public class PaymentServiceTests
     [Fact]
     public async Task HandleWebhookAsync_InvalidAuth_ThrowsUnauthorized()
     {
+        var transaction = SeedTransaction(CreativePlanId);
         _webhookAuthenticator.Setup(auth => auth.IsValid(It.IsAny<string?>())).Returns(false);
 
         await Assert.ThrowsAsync<UnauthorizedException>(() => _sut.HandleWebhookAsync(
-            "bad", new SePayWebhookPayloadDto { Content = "x", TransferAmount = 1000 }));
+            "bad", new SePayWebhookPayloadDto { Content = transaction.TransactionCode, TransferAmount = 99000 }));
 
-        _transactionRepository.Verify(repo => repo.Update(It.IsAny<PaymentTransaction>()), Times.Never);
+        Assert.Equal(PaymentStatus.Pending, transaction.Status);
+        VerifyNoPlanApplied();
     }
-
-    private static PaymentTransaction MakeTransaction(
-        int id, string code, int amount, PaymentStatus status = PaymentStatus.Pending) => new()
-    {
-        Id = id,
-        PlanId = 1,
-        Plan = new SubscriptionPlan { Id = 1, PriceVnd = amount },
-        PayerUserId = 10,
-        TransactionCode = code,
-        Amount = amount,
-        Status = status,
-        ExpiresAt = DateTime.UtcNow.AddMinutes(10)
-    };
 
     [Fact]
     public async Task HandleWebhookAsync_NoMatchingTransactionCode_NoOp()
     {
-        _transactionRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<PaymentTransaction, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Array.Empty<PaymentTransaction>());
+        var transaction = SeedTransaction(CreativePlanId);
 
-        await _sut.HandleWebhookAsync("valid", new SePayWebhookPayloadDto
-        {
-            Content = "chuyen khoan noi dung khong khop", TransferAmount = 49000
-        });
+        await _sut.HandleWebhookAsync("ok", new SePayWebhookPayloadDto { Content = "chuyen khoan khac", TransferAmount = 99000 });
 
-        _transactionRepository.Verify(repo => repo.Update(It.IsAny<PaymentTransaction>()), Times.Never);
+        Assert.Equal(PaymentStatus.Pending, transaction.Status);
+        VerifyNoPlanApplied();
     }
 
     [Fact]
-    public async Task HandleWebhookAsync_AmountMatches_MarksPaidAndNotifies()
+    public async Task HandleWebhookAsync_AmountMatches_MarksPaidNotifiesAndAppliesPlan()
     {
-        var transaction = MakeTransaction(1, "SEPAYABC123", 49000);
-        _transactionRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<PaymentTransaction, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { transaction });
-        _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakePlan(1, 49000));
+        var transaction = SeedTransaction(CreativePlanId, code: "SEPAYABCDEF0123");
 
-        await _sut.HandleWebhookAsync("valid", new SePayWebhookPayloadDto
+        await _sut.HandleWebhookAsync("ok", new SePayWebhookPayloadDto
         {
-            Content = $"chuyen tien {transaction.TransactionCode} thanh toan",
-            TransferAmount = 49000,
-            ReferenceCode = "FT2600123456"
+            Content = "MBVCB 123 sepayabcdef0123 chuyen tien", TransferAmount = 99000, ReferenceCode = "FT-001"
         });
 
-        Assert.Equal(PaymentStatus.Paid, transaction.Status);
+        Assert.Equal((PaymentStatus.Paid, "FT-001"), (transaction.Status, transaction.SepayTransactionId));
         Assert.NotNull(transaction.PaidAt);
-        Assert.Equal("FT2600123456", transaction.SepayTransactionId);
-        _notificationService.Verify(service => service.CreateAsync(
-            transaction.PayerUserId, NotificationType.PaymentConfirmed, It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+        _notificationService.Verify(
+            service => service.CreateAsync(
+                ParentId, NotificationType.PaymentConfirmed, It.IsAny<string?>(), It.IsAny<CancellationToken>()),
             Times.Once);
-        _tokenQuotaService.Verify(q => q.CreditAsync(
-            transaction.PayerUserId, 50, It.IsAny<CancellationToken>()),
-            Times.Once);
+        VerifyAudit("PaymentPaidViaWebhook", Times.Once());
+        VerifyPlanApplied(transaction, Times.Once());
     }
 
     [Fact]
-    public async Task HandleWebhookAsync_AmountMismatch_SetsMismatchStatusWithoutNotification()
+    public async Task HandleWebhookAsync_AmountMismatch_SetsMismatchWithoutNotificationOrPlan()
     {
-        var transaction = MakeTransaction(1, "SEPAYXYZ999", 49000);
-        _transactionRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<PaymentTransaction, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { transaction });
+        var transaction = SeedTransaction(CreativePlanId);
 
-        await _sut.HandleWebhookAsync("valid", new SePayWebhookPayloadDto
-        {
-            Content = $"chuyen tien {transaction.TransactionCode}",
-            TransferAmount = 40000
-        });
+        await _sut.HandleWebhookAsync("ok", new SePayWebhookPayloadDto { Content = transaction.TransactionCode, TransferAmount = 90000 });
 
         Assert.Equal(PaymentStatus.MismatchAmount, transaction.Status);
         Assert.Null(transaction.PaidAt);
-        _notificationService.Verify(service => service.CreateAsync(
-            It.IsAny<int>(), It.IsAny<NotificationType>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
-            Times.Never);
+        _notificationService.VerifyNoOtherCalls();
+        VerifyAudit("PaymentMismatchAmount", Times.Once());
+        VerifyNoPlanApplied();
     }
 
     [Fact]
     public async Task HandleWebhookAsync_TransactionAlreadyPaid_IsIdempotentNoOp()
     {
-        var transaction = MakeTransaction(1, "SEPAYDONE1", 49000, PaymentStatus.Paid);
-        _transactionRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<PaymentTransaction, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { transaction });
+        var transaction = SeedTransaction(CreativePlanId, PaymentStatus.Paid);
 
-        await _sut.HandleWebhookAsync("valid", new SePayWebhookPayloadDto
-        {
-            Content = $"chuyen tien {transaction.TransactionCode}", TransferAmount = 49000
-        });
+        await _sut.HandleWebhookAsync("ok", new SePayWebhookPayloadDto { Content = transaction.TransactionCode, TransferAmount = 99000 });
 
-        _transactionRepository.Verify(repo => repo.Update(It.IsAny<PaymentTransaction>()), Times.Never);
+        _notificationService.VerifyNoOtherCalls();
+        VerifyNoPlanApplied();
     }
 
-    // ---------- ListMismatchedAsync ----------
+    [Fact]
+    public async Task HandleWebhookAsync_ApplyThrows_StaysPaidAndWritesCreditFailedAudit()
+    {
+        var transaction = SeedTransaction(CreativePlanId);
+        _subscriptionService
+            .Setup(service => service.ApplyPaidTransactionAsync(
+                It.IsAny<PaymentTransaction>(), It.IsAny<SubscriptionPlan>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("db down"));
+        object? auditState = null;
+        _auditLogWriter
+            .Setup(writer => writer.LogAsync(
+                It.IsAny<int?>(), "PaymentCreditFailed", nameof(PaymentTransaction), transaction.Id,
+                It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
+            .Callback((int? _, string _, string _, int _, object? _, object? after, CancellationToken _) => auditState = after);
+
+        await _sut.HandleWebhookAsync("ok", new SePayWebhookPayloadDto { Content = transaction.TransactionCode, TransferAmount = 99000 });
+
+        Assert.Equal(PaymentStatus.Paid, transaction.Status);
+        Assert.Contains("ApplyPlanThrew", System.Text.Json.JsonSerializer.Serialize(auditState));
+        Assert.Contains("db down", System.Text.Json.JsonSerializer.Serialize(auditState));
+    }
+
+    [Fact]
+    public async Task HandleWebhookAsync_PlanMissing_StaysPaidAndWritesCreditFailedAudit()
+    {
+        var transaction = SeedTransaction(CreativePlanId);
+        Plan(CreativePlanId).IsDeleted = true;
+
+        await _sut.HandleWebhookAsync("ok", new SePayWebhookPayloadDto { Content = transaction.TransactionCode, TransferAmount = 99000 });
+
+        Assert.Equal(PaymentStatus.Paid, transaction.Status);
+        VerifyAudit("PaymentCreditFailed", Times.Once());
+        VerifyNoPlanApplied();
+    }
+
+    // ---------- ListMismatchedAsync / MarkPaidManuallyAsync ----------
 
     [Fact]
     public async Task ListMismatchedAsync_ReturnsOnlyMismatchedTransactions()
     {
-        var mismatched = MakeTransaction(1, "M1", 49000, PaymentStatus.MismatchAmount);
-        var paid = MakeTransaction(2, "P1", 49000, PaymentStatus.Paid);
-        _transactionRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<PaymentTransaction, bool>>>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((Expression<Func<PaymentTransaction, bool>> predicate, string? _, CancellationToken _) =>
-                new[] { mismatched, paid }.Where(predicate.Compile()).ToList());
+        SeedTransaction(ReadingPlanId);
+        var mismatched = SeedTransaction(CreativePlanId, PaymentStatus.MismatchAmount);
+        SeedTransaction(AddOnPlanId, PaymentStatus.Paid);
 
         var result = await _sut.ListMismatchedAsync();
 
-        Assert.Single(result);
-        Assert.Equal(1, result[0].Id);
+        var only = Assert.Single(result);
+        Assert.Equal((mismatched.Id, "Gói Sáng tạo", "MismatchAmount"), (only.Id, only.PlanName, only.Status));
     }
-
-    // ---------- MarkPaidManuallyAsync ----------
 
     [Fact]
     public async Task MarkPaidManuallyAsync_NotFound_ThrowsNotFound()
     {
-        _transactionRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((PaymentTransaction?)null);
-
-        await Assert.ThrowsAsync<NotFoundException>(() => _sut.MarkPaidManuallyAsync(99, 1));
+        await Assert.ThrowsAsync<NotFoundException>(() => _sut.MarkPaidManuallyAsync(AdminId, 999));
     }
 
     [Fact]
     public async Task MarkPaidManuallyAsync_AlreadyPaid_ThrowsConflict()
     {
-        var transaction = MakeTransaction(1, "M2", 49000, PaymentStatus.Paid);
-        _transactionRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(transaction);
+        var transaction = SeedTransaction(CreativePlanId, PaymentStatus.Paid);
 
-        await Assert.ThrowsAsync<ConflictException>(() => _sut.MarkPaidManuallyAsync(99, 1));
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.MarkPaidManuallyAsync(AdminId, transaction.Id));
+
+        VerifyNoPlanApplied();
     }
 
-    [Fact]
-    public async Task MarkPaidManuallyAsync_Valid_SetsPaidWritesAuditAndNotifies()
+    [Theory]
+    [InlineData(PaymentStatus.MismatchAmount)]
+    [InlineData(PaymentStatus.Expired)]
+    [InlineData(PaymentStatus.Pending)]
+    public async Task MarkPaidManuallyAsync_NotYetPaid_SetsPaidWritesAuditNotifiesAndAppliesPlan(PaymentStatus status)
     {
-        var transaction = MakeTransaction(1, "M3", 49000, PaymentStatus.MismatchAmount);
-        _transactionRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(transaction);
-        _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakePlan(1, 49000));
+        var transaction = SeedTransaction(CreativePlanId, status);
 
-        var result = await _sut.MarkPaidManuallyAsync(99, 1);
+        var result = await _sut.MarkPaidManuallyAsync(AdminId, transaction.Id);
 
         Assert.Equal(PaymentStatus.Paid, transaction.Status);
         Assert.NotNull(transaction.PaidAt);
-        Assert.Equal("Paid", result.Status);
-        _auditLogWriter.Verify(writer => writer.LogAsync(
-            99, "PaymentMarkedPaidManually", nameof(PaymentTransaction), 1,
-            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
-        _notificationService.Verify(service => service.CreateAsync(
-            transaction.PayerUserId, NotificationType.PaymentConfirmed, It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+        Assert.Equal(("Paid", "Gói Sáng tạo"), (result.Status, result.PlanName));
+        _auditLogWriter.Verify(
+            writer => writer.LogAsync(
+                AdminId, "PaymentMarkedPaidManually", nameof(PaymentTransaction), transaction.Id,
+                It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()),
             Times.Once);
-        _tokenQuotaService.Verify(q => q.CreditAsync(
-            transaction.PayerUserId, 50, It.IsAny<CancellationToken>()),
+        _notificationService.Verify(
+            service => service.CreateAsync(
+                ParentId, NotificationType.PaymentConfirmed, It.IsAny<string?>(), It.IsAny<CancellationToken>()),
             Times.Once);
+        VerifyPlanApplied(transaction, Times.Once());
     }
 
     [Fact]
-    public async Task HandleWebhookAsync_AmountMatches_CreditAsyncThrows_StaysPaidAndWritesAuditLog()
+    public async Task MarkPaidManuallyAsync_ApplyThrows_StaysPaidReturnsDtoAndWritesAuditLog()
     {
-        // Regression test: a CreditAsync failure (e.g. a transient error)
-        // must not be silently lost. The transaction is
-        // already committed as Paid before CreditAsync runs (SePay will not retry a transaction it
-        // already saw succeed), so the failure must be recorded via audit log instead of thrown.
-        var transaction = MakeTransaction(1, "SEPAYFAIL01", 49000);
-        _transactionRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<PaymentTransaction, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { transaction });
-        _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakePlan(1, 49000));
-        _tokenQuotaService
-            .Setup(q => q.CreditAsync(
-                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new BadRequestException("Lỗi cộng quota."));
+        var transaction = SeedTransaction(AddOnPlanId, PaymentStatus.MismatchAmount);
+        _subscriptionService
+            .Setup(service => service.ApplyPaidTransactionAsync(
+                It.IsAny<PaymentTransaction>(), It.IsAny<SubscriptionPlan>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("db down"));
 
-        await _sut.HandleWebhookAsync("valid", new SePayWebhookPayloadDto
+        var result = await _sut.MarkPaidManuallyAsync(AdminId, transaction.Id);
+
+        Assert.Equal(("Paid", "Add-on"), (result.Status, result.PlanName));
+        VerifyAudit("PaymentCreditFailed", Times.Once());
+    }
+
+    // ---------- Admin: ListAllTransactionsAsync ----------
+
+    [Fact]
+    public async Task ListAllTransactionsAsync_ReturnsEveryPayersNewestFirstWithPayerInfo()
+    {
+        var now = DateTime.UtcNow;
+        var older = SeedTransaction(ReadingPlanId, PaymentStatus.Paid, createdAt: now.AddDays(-3));
+        var newer = SeedTransaction(CreativePlanId, payerUserId: OtherParentId, createdAt: now.AddDays(-1));
+
+        var result = await _sut.ListAllTransactionsAsync(new AdminTransactionQueryDto());
+
+        Assert.Equal([newer.Id, older.Id], result.Items.Select(item => item.Id));
+        Assert.Equal(2, result.TotalCount);
+        Assert.Equal(
+            (OtherParentId, "p2@x.com", "Phụ huynh Hai", "Gói Sáng tạo", "Creative"),
+            (result.Items[0].PayerUserId, result.Items[0].PayerEmail, result.Items[0].PayerName, result.Items[0].PlanName, result.Items[0].PlanType));
+    }
+
+    [Fact]
+    public async Task ListAllTransactionsAsync_FiltersByStatus()
+    {
+        var pending = SeedTransaction(CreativePlanId);
+        SeedTransaction(ReadingPlanId, PaymentStatus.Paid);
+        SeedTransaction(AddOnPlanId, PaymentStatus.Expired);
+
+        var result = await _sut.ListAllTransactionsAsync(new AdminTransactionQueryDto { Status = "pending" });
+
+        Assert.Equal(pending.Id, Assert.Single(result.Items).Id);
+    }
+
+    [Fact]
+    public async Task ListAllTransactionsAsync_InvalidStatus_ThrowsBadRequest()
+    {
+        await Assert.ThrowsAsync<BadRequestException>(
+            () => _sut.ListAllTransactionsAsync(new AdminTransactionQueryDto { Status = "Done" }));
+    }
+
+    [Fact]
+    public async Task ListAllTransactionsAsync_StalePendingKeepsStoredStatusAndQr()
+    {
+        SeedTransaction(CreativePlanId, expiresAt: DateTime.UtcNow.AddMinutes(-30));
+
+        var result = await _sut.ListAllTransactionsAsync(new AdminTransactionQueryDto());
+
+        var only = Assert.Single(result.Items);
+        Assert.Equal("Pending", only.Status);
+        Assert.NotNull(only.QrCodeUrl);
+    }
+
+    [Theory]
+    [InlineData("abcdef")]
+    [InlineData("  SEPAYABC  ")]
+    [InlineData("P2@X")]
+    [InlineData("parent_TWO")]
+    public async Task ListAllTransactionsAsync_SearchMatchesCodeOrPayerCaseInsensitive(string search)
+    {
+        var match = SeedTransaction(CreativePlanId, payerUserId: OtherParentId, code: "SEPAYABCDEF0123");
+        SeedTransaction(ReadingPlanId, code: "SEPAYZZZZZZ9999");
+
+        var result = await _sut.ListAllTransactionsAsync(new AdminTransactionQueryDto { Search = search });
+
+        Assert.Equal(match.Id, Assert.Single(result.Items).Id);
+    }
+
+    [Theory]
+    [InlineData("%", 0)]
+    [InlineData("pa_ent", 0)]
+    [InlineData("   ", 2)]
+    [InlineData("", 2)]
+    public async Task ListAllTransactionsAsync_SearchWithWildcardsOrBlank_IsLiteral(string search, int expected)
+    {
+        SeedTransaction(CreativePlanId, payerUserId: OtherParentId, code: "SEPAYABCDEF0123");
+        SeedTransaction(ReadingPlanId, code: "SEPAYZZZZZZ9999");
+
+        var result = await _sut.ListAllTransactionsAsync(new AdminTransactionQueryDto { Search = search });
+
+        Assert.Equal(expected, result.TotalCount);
+    }
+
+    [Fact]
+    public async Task ListAllTransactionsAsync_ClampsPaging()
+    {
+        for (var index = 0; index < 3; index++) SeedTransaction(ReadingPlanId, PaymentStatus.Expired);
+
+        var result = await _sut.ListAllTransactionsAsync(new AdminTransactionQueryDto { PageIndex = 0, PageSize = 100000 });
+
+        Assert.Equal((1, 100, 3), (result.PageIndex, result.PageSize, result.Items.Count));
+    }
+
+    // ---------- Admin: gói ----------
+
+    [Fact]
+    public async Task ListAllPlansAsync_IncludesInactiveAndLegacy()
+    {
+        var result = await _sut.ListAllPlansAsync();
+
+        Assert.Equal(
+            ["1:Legacy:False", "2:Reading:True", "3:Creative:True", "4:AddOn:True"],
+            result.Select(plan => $"{plan.Id}:{plan.PlanType}:{plan.IsActive}"));
+    }
+
+    [Fact]
+    public async Task UpdatePlanAsync_ChangesFieldsAndWritesAudit()
+    {
+        var result = await _sut.UpdatePlanAsync(AdminId, CreativePlanId, new UpdateSubscriptionPlanRequestDto
         {
-            Content = $"chuyen tien {transaction.TransactionCode} thanh toan",
-            TransferAmount = 49000,
-            ReferenceCode = "FT2600999999"
+            Name = "  Gói Sáng tạo Plus ", PriceVnd = 109000, AiCredits = 5, IsActive = true
         });
 
-        Assert.Equal(PaymentStatus.Paid, transaction.Status);
-        _notificationService.Verify(service => service.CreateAsync(
-            transaction.PayerUserId, NotificationType.PaymentConfirmed, It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+        var plan = Plan(CreativePlanId);
+        Assert.Equal(("Gói Sáng tạo Plus", 109000, 5, true, PlanType.Creative), (plan.Name, plan.PriceVnd, plan.AiCredits, plan.IsActive, plan.PlanType));
+        Assert.NotNull(plan.UpdatedAt);
+        Assert.Equal(("Gói Sáng tạo Plus", 109000, 5, "Creative"), (result.Name, result.PriceVnd, result.AiCredits, result.PlanType));
+        _auditLogWriter.Verify(
+            writer => writer.LogAsync(
+                AdminId, "SubscriptionPlanUpdated", nameof(SubscriptionPlan), CreativePlanId,
+                It.IsNotNull<object?>(), It.IsNotNull<object?>(), It.IsAny<CancellationToken>()),
             Times.Once);
-        _auditLogWriter.Verify(writer => writer.LogAsync(
-            null, "PaymentCreditFailed", nameof(PaymentTransaction), transaction.Id,
-            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData("", 99000, 4)]
+    [InlineData("   ", 99000, 4)]
+    [InlineData("Gói", 0, 4)]
+    [InlineData("Gói", -1, 4)]
+    [InlineData("Gói", 99000, -1)]
+    public async Task UpdatePlanAsync_InvalidInput_ThrowsBadRequestAndChangesNothing(string name, int price, int credits)
+    {
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.UpdatePlanAsync(
+            AdminId, CreativePlanId,
+            new UpdateSubscriptionPlanRequestDto { Name = name, PriceVnd = price, AiCredits = credits, IsActive = true }));
+
+        Assert.Equal(("Gói Sáng tạo", 99000, 4), (Plan(CreativePlanId).Name, Plan(CreativePlanId).PriceVnd, Plan(CreativePlanId).AiCredits));
     }
 
     [Fact]
-    public async Task HandleWebhookAsync_AmountMatches_PlanNotFound_StaysPaidAndWritesAuditLog()
+    public async Task UpdatePlanAsync_NameLongerThan150_ThrowsBadRequest()
     {
-        // A missing SubscriptionPlan must not silently skip crediting: it is treated the same as
-        // a credit failure for audit purposes.
-        var transaction = MakeTransaction(1, "SEPAYNOPLAN1", 49000);
-        _transactionRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<PaymentTransaction, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { transaction });
-        _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((SubscriptionPlan?)null);
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.UpdatePlanAsync(
+            AdminId, CreativePlanId,
+            new UpdateSubscriptionPlanRequestDto { Name = new string('a', 151), PriceVnd = 99000, AiCredits = 4, IsActive = true }));
+    }
 
-        await _sut.HandleWebhookAsync("valid", new SePayWebhookPayloadDto
+    [Fact]
+    public async Task UpdatePlanAsync_ActivatingLegacyPlan_ThrowsBadRequest()
+    {
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.UpdatePlanAsync(
+            AdminId, LegacyPlanId,
+            new UpdateSubscriptionPlanRequestDto { Name = "Personal", PriceVnd = 49000, AiCredits = 50, IsActive = true }));
+
+        Assert.False(Plan(LegacyPlanId).IsActive);
+    }
+
+    [Fact]
+    public async Task UpdatePlanAsync_PlanNotFound_ThrowsNotFound()
+    {
+        await Assert.ThrowsAsync<NotFoundException>(() => _sut.UpdatePlanAsync(
+            AdminId, 999, new UpdateSubscriptionPlanRequestDto { Name = "x", PriceVnd = 1, AiCredits = 0, IsActive = true }));
+    }
+
+    [Fact]
+    public async Task UpdatePlanAsync_DeactivatedPlan_DisappearsFromBuyerList()
+    {
+        await _sut.UpdatePlanAsync(AdminId, ReadingPlanId, new UpdateSubscriptionPlanRequestDto
         {
-            Content = $"chuyen tien {transaction.TransactionCode} thanh toan",
-            TransferAmount = 49000
+            Name = "Gói Đọc", PriceVnd = 49000, AiCredits = 0, IsActive = false
         });
 
-        Assert.Equal(PaymentStatus.Paid, transaction.Status);
-        _tokenQuotaService.Verify(q => q.CreditAsync(
-            It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
-            Times.Never);
-        _auditLogWriter.Verify(writer => writer.LogAsync(
-            null, "PaymentCreditFailed", nameof(PaymentTransaction), transaction.Id,
-            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
+        var forBuyers = await _sut.ListActivePlansAsync(ParentId);
+
+        Assert.DoesNotContain(forBuyers, plan => plan.Id == ReadingPlanId);
+        await Assert.ThrowsAsync<BadRequestException>(
+            () => _sut.CreateTransactionAsync(ParentId, new CreatePaymentTransactionRequestDto { PlanId = ReadingPlanId }));
     }
 
     [Fact]
-    public async Task MarkPaidManuallyAsync_CreditAsyncThrows_StaysPaidReturnsDtoAndWritesAuditLog()
+    public async Task UpdatePlanAsync_DoesNotTouchExistingPendingTransaction_NewPurchaseUsesNewValues()
     {
-        // Same "payment confirmed but nothing credited" bug as the webhook path, via the manual
-        // mark-paid admin action. The transaction is already Paid and cannot be retried (Paid
-        // transactions are refused), so a CreditAsync failure must be recorded via audit log, and
-        // MarkPaidManuallyAsync must still return a valid DTO (using the plan that was found).
-        var transaction = MakeTransaction(1, "M4", 49000, PaymentStatus.MismatchAmount);
-        _transactionRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(transaction);
-        _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakePlan(1, 49000));
-        _tokenQuotaService
-            .Setup(q => q.CreditAsync(
-                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new BadRequestException("boom"));
+        var before = await _sut.CreateTransactionAsync(ParentId, new CreatePaymentTransactionRequestDto { PlanId = CreativePlanId });
 
-        var result = await _sut.MarkPaidManuallyAsync(99, 1);
-
-        Assert.Equal(PaymentStatus.Paid, transaction.Status);
-        Assert.Equal("Paid", result.Status);
-        Assert.Equal("Personal", result.PlanName);
-        _auditLogWriter.Verify(writer => writer.LogAsync(
-            99, "PaymentCreditFailed", nameof(PaymentTransaction), transaction.Id,
-            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task MarkPaidManuallyAsync_PlanNotFound_StaysPaidReturnsEmptyPlanNameAndWritesAuditLog()
-    {
-        var transaction = MakeTransaction(1, "M5", 49000, PaymentStatus.Pending);
-        _transactionRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(transaction);
-        _planRepository.Setup(repo => repo.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((SubscriptionPlan?)null);
-
-        var result = await _sut.MarkPaidManuallyAsync(99, 1);
-
-        Assert.Equal(PaymentStatus.Paid, transaction.Status);
-        Assert.Equal(string.Empty, result.PlanName);
-        _tokenQuotaService.Verify(q => q.CreditAsync(
-            It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
-            Times.Never);
-        _auditLogWriter.Verify(writer => writer.LogAsync(
-            99, "PaymentCreditFailed", nameof(PaymentTransaction), transaction.Id,
-            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task HandleWebhookAsync_AmountMismatch_DoesNotCreditQuota()
-    {
-        var transaction = MakeTransaction(1, "SEPAYXYZ999", 49000);
-        _transactionRepository.Setup(repo => repo.FindAsync(
-                It.IsAny<Expression<Func<PaymentTransaction, bool>>>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { transaction });
-
-        await _sut.HandleWebhookAsync("valid", new SePayWebhookPayloadDto
+        await _sut.UpdatePlanAsync(AdminId, CreativePlanId, new UpdateSubscriptionPlanRequestDto
         {
-            Content = $"chuyen tien {transaction.TransactionCode}", TransferAmount = 40000
+            Name = "Gói Sáng tạo", PriceVnd = 120000, AiCredits = 6, IsActive = true
         });
+        var after = await _sut.CreateTransactionAsync(OtherParentId, new CreatePaymentTransactionRequestDto { PlanId = CreativePlanId });
 
-        _tokenQuotaService.Verify(q => q.CreditAsync(
-            It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
-            Times.Never);
+        var stored = _store.Items<PaymentTransaction>();
+        var oldTransaction = stored.Single(item => item.Id == before.Id);
+        var newTransaction = stored.Single(item => item.Id == after.Id);
+        Assert.Equal((99000, (int?)4), (oldTransaction.Amount, oldTransaction.AiCredits));
+        Assert.Equal((120000, (int?)6), (newTransaction.Amount, newTransaction.AiCredits));
+    }
+
+    // ---------- ListMyTransactionsAsync ----------
+
+    [Fact]
+    public async Task ListMyTransactionsAsync_ReturnsOnlyOwnNewestFirst()
+    {
+        var now = DateTime.UtcNow;
+        var oldest = SeedTransaction(ReadingPlanId, PaymentStatus.Expired, createdAt: now.AddDays(-30));
+        SeedTransaction(CreativePlanId, PaymentStatus.Paid, payerUserId: OtherParentId, createdAt: now.AddDays(-2));
+        var newest = SeedTransaction(AddOnPlanId, PaymentStatus.Paid, createdAt: now.AddDays(-1));
+        var middle = SeedTransaction(CreativePlanId, PaymentStatus.Paid, createdAt: now.AddDays(-9));
+
+        var result = await _sut.ListMyTransactionsAsync(ParentId, pageIndex: 1, pageSize: 20);
+
+        Assert.Equal([newest.Id, middle.Id, oldest.Id], result.Items.Select(item => item.Id));
+        Assert.Equal(3, result.TotalCount);
+        Assert.Equal(("Add-on", "AddOn", newest.CreatedAt), (result.Items[0].PlanName, result.Items[0].PlanType, result.Items[0].CreatedAt));
+    }
+
+    [Fact]
+    public async Task ListMyTransactionsAsync_Pages()
+    {
+        var now = DateTime.UtcNow;
+        for (var day = 1; day <= 5; day++)
+        {
+            SeedTransaction(ReadingPlanId, PaymentStatus.Expired, createdAt: now.AddDays(-day));
+        }
+
+        var result = await _sut.ListMyTransactionsAsync(ParentId, pageIndex: 2, pageSize: 2);
+
+        Assert.Equal((5, 2, 2), (result.TotalCount, result.PageIndex, result.Items.Count));
+        Assert.Equal(now.AddDays(-3), result.Items[0].CreatedAt);
+    }
+
+    [Fact]
+    public async Task ListMyTransactionsAsync_QrOnlyForUnexpiredPending()
+    {
+        var now = DateTime.UtcNow;
+        var live = SeedTransaction(CreativePlanId, expiresAt: now.AddMinutes(5), createdAt: now.AddMinutes(-10));
+        var stale = SeedTransaction(ReadingPlanId, expiresAt: now.AddMinutes(-1), createdAt: now.AddMinutes(-16));
+        var paid = SeedTransaction(AddOnPlanId, PaymentStatus.Paid, createdAt: now.AddDays(-1));
+
+        var result = await _sut.ListMyTransactionsAsync(ParentId, pageIndex: 1, pageSize: 20);
+
+        var byId = result.Items.ToDictionary(item => item.Id);
+        Assert.Equal(("Pending", "https://qr.sepay.vn/img?seed=1"), (byId[live.Id].Status, byId[live.Id].QrCodeUrl));
+        Assert.Equal(("Expired", (string?)null), (byId[stale.Id].Status, byId[stale.Id].QrCodeUrl));
+        Assert.Equal(("Paid", (string?)null), (byId[paid.Id].Status, byId[paid.Id].QrCodeUrl));
     }
 }

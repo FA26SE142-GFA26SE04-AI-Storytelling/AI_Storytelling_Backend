@@ -7,27 +7,42 @@ using StoryPlatform.Application.Features.Payments.Interfaces;
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>
-/// Mua gói top-up Token Quota qua SePay (Bước 5.6).
+/// Mua Gói Đọc, Gói Sáng tạo và Add-on qua SePay (Luồng 2).
 /// </summary>
 public class PaymentController : BaseApiController
 {
     private readonly IPaymentService _paymentService;
+    private readonly IPaymentReconciliationService _reconciliationService;
 
-    public PaymentController(IPaymentService paymentService)
+    public PaymentController(IPaymentService paymentService, IPaymentReconciliationService reconciliationService)
     {
         _paymentService = paymentService;
+        _reconciliationService = reconciliationService;
     }
 
     /// <summary>
-    /// Danh sách gói Subscription đang active để chọn mua.
+    /// Danh sách gói đang bán: Gói Đọc, Gói Sáng tạo và Add-on (Add-on bị khoá khi người gọi chưa có gói còn hiệu lực).
     /// </summary>
     [HttpGet("plans")]
     [Authorize]
     public async Task<ActionResult<ApiResponse<List<SubscriptionPlanDto>>>> ListActivePlans(
         CancellationToken cancellationToken)
     {
-        var result = await _paymentService.ListActivePlansAsync(cancellationToken);
+        var result = await _paymentService.ListActivePlansAsync(GetCurrentUserId(), cancellationToken);
         return HandleResult(result, "Lấy danh sách gói Subscription thành công.");
+    }
+
+    /// <summary>
+    /// Lịch sử giao dịch của chính người gọi, mới nhất trước. Giao dịch Pending còn hạn trả lại mã QR.
+    /// </summary>
+    [HttpGet("transactions/me")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<PagedResult<PaymentTransactionDto>>>> ListMyTransactions(
+        [FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
+    {
+        var result = await _paymentService.ListMyTransactionsAsync(
+            GetCurrentUserId(), Math.Max(pageIndex, 1), Math.Clamp(pageSize, 1, 50), cancellationToken);
+        return HandleResult(result, "Lấy lịch sử giao dịch thành công.");
     }
 
     /// <summary>
@@ -77,5 +92,66 @@ public class PaymentController : BaseApiController
     {
         var result = await _paymentService.MarkPaidManuallyAsync(GetCurrentUserId(), transactionId, cancellationToken);
         return HandleResult(result, "Xác nhận thanh toán thủ công thành công.");
+    }
+
+    /// <summary>
+    /// Administrator xem mọi giao dịch (lọc trạng thái, tìm theo mã hoặc người mua) để xác nhận tay giao dịch đang chờ.
+    /// </summary>
+    [HttpGet("admin/transactions")]
+    [Authorize(Roles = "Administrator")]
+    public async Task<ActionResult<ApiResponse<PagedResult<AdminPaymentTransactionDto>>>> ListAllTransactions(
+        [FromQuery] AdminTransactionQueryDto query, CancellationToken cancellationToken)
+    {
+        var result = await _paymentService.ListAllTransactionsAsync(query, cancellationToken);
+        return HandleResult(result, "Lấy danh sách giao dịch thành công.");
+    }
+
+    /// <summary>
+    /// Administrator xem mọi gói, gồm gói đã tắt bán.
+    /// </summary>
+    [HttpGet("admin/plans")]
+    [Authorize(Roles = "Administrator")]
+    public async Task<ActionResult<ApiResponse<List<AdminSubscriptionPlanDto>>>> ListAllPlans(
+        CancellationToken cancellationToken)
+    {
+        var result = await _paymentService.ListAllPlansAsync(cancellationToken);
+        return HandleResult(result, "Lấy danh sách gói thành công.");
+    }
+
+    /// <summary>
+    /// Administrator sửa tên, giá, số lượt AI và bật hoặc tắt bán một gói (có audit log). Giao dịch đã tạo không đổi.
+    /// </summary>
+    [HttpPut("admin/plans/{planId:int}")]
+    [Authorize(Roles = "Administrator")]
+    public async Task<ActionResult<ApiResponse<AdminSubscriptionPlanDto>>> UpdatePlan(
+        int planId, [FromBody] UpdateSubscriptionPlanRequestDto request, CancellationToken cancellationToken)
+    {
+        var result = await _paymentService.UpdatePlanAsync(GetCurrentUserId(), planId, request, cancellationToken);
+        return HandleResult(result, "Cập nhật gói thành công.");
+    }
+
+    /// <summary>
+    /// Administrator xem giao dịch đã Paid nhưng chưa được áp gói (mặc định các ngoại lệ đang Open).
+    /// </summary>
+    [HttpGet("admin/reconciliation")]
+    [Authorize(Roles = "Administrator")]
+    public async Task<ActionResult<ApiResponse<PagedResult<ReconciliationExceptionDto>>>> ListReconciliationExceptions(
+        [FromQuery] string? status, [FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _reconciliationService.ListAsync(status, pageIndex, pageSize, cancellationToken);
+        return HandleResult(result, "Lấy danh sách ngoại lệ đối soát thành công.");
+    }
+
+    /// <summary>
+    /// Administrator xử lý một ngoại lệ: áp lại gói cho giao dịch (không cộng hai lần) và đóng ngoại lệ.
+    /// </summary>
+    [HttpPost("admin/reconciliation/{exceptionId:int}/resolve")]
+    [Authorize(Roles = "Administrator")]
+    public async Task<ActionResult<ApiResponse<ReconciliationExceptionDto>>> ResolveReconciliationException(
+        int exceptionId, CancellationToken cancellationToken)
+    {
+        var result = await _reconciliationService.ResolveAsync(GetCurrentUserId(), exceptionId, cancellationToken);
+        return HandleResult(result, "Đã áp lại gói và đóng ngoại lệ.");
     }
 }

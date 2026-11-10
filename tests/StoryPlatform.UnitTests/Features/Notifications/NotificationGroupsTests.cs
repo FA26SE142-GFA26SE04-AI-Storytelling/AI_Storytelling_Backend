@@ -22,6 +22,7 @@ public class NotificationGroupsTests
     [InlineData(NotificationType.StorySummarySent, "children")]
     [InlineData(NotificationType.AccountSecurityChanged, "account")]
     [InlineData(NotificationType.PaymentConfirmed, "account")]
+    [InlineData(NotificationType.SubscriptionExpiring, "account")]
     [InlineData(NotificationType.AdminRoleChanged, "account")]
     [InlineData(NotificationType.ContentReported, "moderation")]
     [InlineData(NotificationType.ModerationSlaWarning, "moderation")]

@@ -373,7 +373,7 @@ public sealed class Phase1To4SequentialWorkflowTests
     };
 
     private static ITokenQuotaService CreateTokenQuotaService(WorkflowUnitOfWork store) =>
-        new TokenQuotaService(store, new NoopAuditLogWriter());
+        new TokenQuotaService(store);
 
     private sealed class NoopAuditLogWriter : IAuditLogWriter
     {

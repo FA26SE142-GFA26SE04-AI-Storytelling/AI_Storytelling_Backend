@@ -23,6 +23,10 @@ public class AccountDeletionServiceTests
     private readonly Mock<IGenericRepository<ChildProfile>> _profileRepo = new();
     private readonly Mock<IGenericRepository<PaymentTransaction>> _paymentRepo = new();
     private readonly Mock<IGenericRepository<RefreshToken>> _refreshRepo = new();
+    private readonly Mock<IGenericRepository<UserSubscription>> _subscriptionRepo = new();
+    private readonly Mock<IGenericRepository<CreditLot>> _creditLotRepo = new();
+    private readonly List<UserSubscription> _subscriptions = [];
+    private readonly List<CreditLot> _creditLots = [];
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IPasswordHasher> _passwordHasher = new();
     private readonly Mock<IChildProfileEraser> _eraser = new();
@@ -43,6 +47,16 @@ public class AccountDeletionServiceTests
             It.IsAny<CancellationToken>())).ReturnsAsync(new List<PaymentTransaction>());
         _refreshRepo.Setup(r => r.FindAsync(It.IsAny<Expression<Func<RefreshToken, bool>>>(), null,
             It.IsAny<CancellationToken>())).ReturnsAsync(new List<RefreshToken>());
+        _unitOfWork.Setup(u => u.Repository<UserSubscription>()).Returns(_subscriptionRepo.Object);
+        _unitOfWork.Setup(u => u.Repository<CreditLot>()).Returns(_creditLotRepo.Object);
+        _subscriptionRepo.Setup(r => r.FindAsync(It.IsAny<Expression<Func<UserSubscription, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Expression<Func<UserSubscription, bool>> predicate, string? _, CancellationToken _) =>
+                _subscriptions.Where(predicate.Compile()).ToList());
+        _creditLotRepo.Setup(r => r.FindAsync(It.IsAny<Expression<Func<CreditLot, bool>>>(), null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Expression<Func<CreditLot, bool>> predicate, string? _, CancellationToken _) =>
+                _creditLots.Where(predicate.Compile()).ToList());
         _passwordHasher.Setup(p => p.VerifyPassword("Pass@123", "stored-hash")).Returns(true);
         _passwordHasher.Setup(p => p.HashPassword(It.IsAny<string>())).Returns("random-hash");
         _sut = new AccountDeletionService(_unitOfWork.Object, _passwordHasher.Object, _eraser.Object,
@@ -172,6 +186,41 @@ public class AccountDeletionServiceTests
         _unitOfWork.Verify(u => u.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
         _emailSender.Verify(e => e.SendAccountSecurityChangedEmailAsync("parent@example.com", "Nguyen Van A",
             AccountSecurityChange.AccountDeleted, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteAccountAsync_CancelsSubscriptionsAndCreditLots()
+    {
+        SetupUser();
+        var now = DateTime.UtcNow;
+        UserSubscription Subscription(int id, int userId, SubscriptionStatus status) => new()
+        {
+            Id = id, UserId = userId, PlanId = 3, Status = status, StartAt = now.AddDays(-5), EndAt = now.AddDays(25), PaymentId = id
+        };
+        var active = Subscription(1, 1, SubscriptionStatus.Active);
+        var scheduled = Subscription(2, 1, SubscriptionStatus.Scheduled);
+        var oldExpired = Subscription(3, 1, SubscriptionStatus.Expired);
+        var otherUsers = Subscription(4, 2, SubscriptionStatus.Active);
+        _subscriptions.AddRange([active, scheduled, oldExpired, otherUsers]);
+        var cycleLot = new CreditLot { Id = 1, UserId = 1, Source = CreditSource.Cycle, Total = 4, Remaining = 3 };
+        var trialLot = new CreditLot { Id = 2, UserId = 1, Source = CreditSource.Trial, Total = 1, Remaining = 0 };
+        var otherUsersLot = new CreditLot { Id = 3, UserId = 2, Source = CreditSource.Legacy, Total = 5, Remaining = 5 };
+        _creditLots.AddRange([cycleLot, trialLot, otherUsersLot]);
+
+        await _sut.DeleteAccountAsync(1, new DeleteAccountRequestDto { CurrentPassword = "Pass@123" });
+
+        Assert.All(new[] { active, scheduled }, item =>
+        {
+            Assert.Equal(SubscriptionStatus.Expired, item.Status);
+            Assert.True(item.IsDeleted);
+            Assert.NotNull(item.UpdatedAt);
+        });
+        Assert.False(oldExpired.IsDeleted);
+        Assert.Null(oldExpired.UpdatedAt);
+        Assert.Equal((SubscriptionStatus.Active, false), (otherUsers.Status, otherUsers.IsDeleted));
+        Assert.True(cycleLot.IsDeleted);
+        Assert.True(trialLot.IsDeleted);
+        Assert.False(otherUsersLot.IsDeleted);
     }
 
     [Fact]

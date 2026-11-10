@@ -97,6 +97,30 @@ public class AccountDeletionService : IAccountDeletionService
                 paymentRepo.Update(payment);
             }
 
+            // Luong 2 (2g): xoa tai khoan thi huy chu ky goi va lo luot con lai; giao dich da tra giu nguyen.
+            var subscriptionRepo = _unitOfWork.Repository<UserSubscription>();
+            var openSubscriptions = await subscriptionRepo.FindAsync(
+                value => value.UserId == userId
+                         && (value.Status == SubscriptionStatus.Active || value.Status == SubscriptionStatus.Scheduled),
+                cancellationToken: cancellationToken);
+            foreach (var subscription in openSubscriptions)
+            {
+                subscription.Status = SubscriptionStatus.Expired;
+                subscription.IsDeleted = true;
+                subscription.UpdatedAt = now;
+                subscriptionRepo.Update(subscription);
+            }
+
+            var creditLotRepo = _unitOfWork.Repository<CreditLot>();
+            var creditLots = await creditLotRepo.FindAsync(
+                value => value.UserId == userId, cancellationToken: cancellationToken);
+            foreach (var lot in creditLots)
+            {
+                lot.IsDeleted = true;
+                lot.UpdatedAt = now;
+                creditLotRepo.Update(lot);
+            }
+
             var refreshRepo = _unitOfWork.Repository<RefreshToken>();
             var tokens = await refreshRepo.FindAsync(
                 value => value.UserAccountId == userId && value.RevokedAt == null,

@@ -17,6 +17,7 @@ public class PaymentControllerAuthorizationTests
         foreach (var actionName in new[]
                  {
                      nameof(PaymentController.ListActivePlans),
+                     nameof(PaymentController.ListMyTransactions),
                      nameof(PaymentController.CreateTransaction)
                  })
         {
@@ -30,6 +31,7 @@ public class PaymentControllerAuthorizationTests
         foreach (var actionName in new[]
                  {
                      nameof(PaymentController.ListActivePlans),
+                     nameof(PaymentController.ListMyTransactions),
                      nameof(PaymentController.CreateTransaction)
                  })
         {
@@ -44,6 +46,11 @@ public class PaymentControllerAuthorizationTests
     {
         foreach (var actionName in new[]
                  {
+                     nameof(PaymentController.ListAllTransactions),
+                     nameof(PaymentController.ListAllPlans),
+                     nameof(PaymentController.UpdatePlan),
+                     nameof(PaymentController.ListReconciliationExceptions),
+                     nameof(PaymentController.ResolveReconciliationException),
                      nameof(PaymentController.ListMismatched),
                      nameof(PaymentController.MarkPaidManually)
                  })

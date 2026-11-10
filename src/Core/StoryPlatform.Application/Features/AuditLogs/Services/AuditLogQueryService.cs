@@ -9,7 +9,7 @@ namespace StoryPlatform.Application.Features.AuditLogs.Services;
 
 public class AuditLogQueryService : IAuditLogQueryService
 {
-    private static readonly string[] ChildProfileRelatedEntityTypes = { nameof(ChildProfile) };
+    private const string ChildProfileEntityType = nameof(ChildProfile);
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IChildProfileAccessGuard _accessGuard;
@@ -44,8 +44,9 @@ public class AuditLogQueryService : IAuditLogQueryService
         var (items, totalCount) = await _unitOfWork.Repository<AuditLog>().GetPagedAsync(
             pageRequest.PageIndex,
             pageRequest.PageSize,
+            // .NET 10 dịch string[].Contains thành MemoryExtensions.Contains(ReadOnlySpan), EF Core không dịch được (lỗi 500).
             filter: log => log.EntityId == childProfileId
-                           && ChildProfileRelatedEntityTypes.Contains(log.EntityType),
+                           && log.EntityType == ChildProfileEntityType,
             orderBy: query => query.OrderByDescending(log => log.OccurredAt),
             cancellationToken: cancellationToken);
 

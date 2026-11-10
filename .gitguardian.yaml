@@ -17,3 +17,5 @@ secret:
       match: e910c03316c7d90b9f79a262c8505d3d6dee9132aaf741e92bfc5e42a6d5dc4a
     - name: "Test@12345 - password of accounts created by tests/StoryPlatform.IntegrationTests/Api/ApiFactory.cs"
       match: 6d987a391d90fc2451751b2bb85890fc6e452bc057f39a85d8d1fd552f965fb2
+    - name: "Pass@123 - dummy current password checked against a mocked IPasswordHasher in tests/StoryPlatform.UnitTests/Features/Auth/AccountDeletionServiceTests.cs"
+      match: b6bc7b58510319a151d168ba3d5aecb3ac0a9708d06dd930f37fbc89b6cdc697

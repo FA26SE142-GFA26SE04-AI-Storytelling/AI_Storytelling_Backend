@@ -169,6 +169,8 @@ public static class DependencyInjection
         services.AddScoped<IPaymentService, PaymentService>();
         services.AddScoped<ITokenQuotaService, TokenQuotaService>();
         services.AddScoped<IPaymentExpirySweepService, PaymentExpirySweepService>();
+        services.AddScoped<ISubscriptionService, SubscriptionService>();
+        services.AddScoped<IPaymentReconciliationService, PaymentReconciliationService>();
         services.AddSingleton<IInputGuardrail, RuleBasedInputGuardrail>();
         services.AddScoped<OutlineService>();
         services.AddScoped<IOutlineService>(provider => provider.GetRequiredService<OutlineService>());

@@ -10,18 +10,37 @@ namespace StoryPlatform.UnitTests.Features.TokenQuota;
 public class TokenQuotaControllerAuthorizationTests
 {
     [Theory]
+    [InlineData(UserRole.User, true)]
+    [InlineData(UserRole.Administrator, false)]
+    [InlineData(UserRole.ContentCreator, false)]
+    public async Task GetMyQuota_RequiresParentRole(UserRole role, bool expected)
+    {
+        Assert.Equal(expected, await IsAuthorizedAsync(nameof(TokenQuotaController.GetMyQuota), role));
+    }
+
+    [Theory]
     [InlineData(UserRole.Administrator, true)]
     [InlineData(UserRole.User, false)]
-    public async Task ConfigActions_RequireAdministratorOnly(UserRole role, bool expected)
+    [InlineData(UserRole.Moderator, false)]
+    public async Task AdminActions_OnlyAdministrator(UserRole role, bool expected)
     {
         foreach (var actionName in new[]
                  {
-                     nameof(TokenQuotaController.SetConfig),
-                     nameof(TokenQuotaController.ListConfigs)
+                     nameof(TokenQuotaController.Adjust),
+                     nameof(TokenQuotaController.ListAdjustments),
+                     nameof(TokenQuotaController.GetUserQuota)
                  })
         {
             Assert.Equal(expected, await IsAuthorizedAsync(actionName, role));
         }
+    }
+
+    [Theory]
+    [InlineData("SetConfig")]
+    [InlineData("ListConfigs")]
+    public void ConfigActions_AreRemoved(string actionName)
+    {
+        Assert.Null(typeof(TokenQuotaController).GetMethod(actionName));
     }
 
     [Theory]

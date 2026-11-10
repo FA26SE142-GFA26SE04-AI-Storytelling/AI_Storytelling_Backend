@@ -901,6 +901,104 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("content_reports", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.CreditAdjustment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AdminId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Amount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AdminId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("credit_adjustments", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.CreditLot", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreditType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("PaymentId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Remaining")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("Total")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PaymentId")
+                        .IsUnique()
+                        .HasFilter("\"PaymentId\" IS NOT NULL");
+
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_credit_lots_UserId_Trial")
+                        .HasFilter("\"Source\" = 'Trial' AND NOT \"IsDeleted\"");
+
+                    b.HasIndex("UserId", "CreditType");
+
+                    b.ToTable("credit_lots", (string)null);
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.IllustrationBeat", b =>
                 {
                     b.Property<int>("Id")
@@ -2304,6 +2402,54 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("parent_story_packages", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.PaymentReconciliationException", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("PaymentId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ResolvedBy")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PaymentId")
+                        .IsUnique();
+
+                    b.HasIndex("ResolvedBy");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("payment_reconciliation_exceptions", (string)null);
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.PaymentTransaction", b =>
                 {
                     b.Property<int>("Id")
@@ -2311,6 +2457,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasColumnType("integer");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("AiCredits")
+                        .HasColumnType("integer");
 
                     b.Property<int>("Amount")
                         .HasColumnType("integer");
@@ -4272,6 +4421,9 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<int>("AiCredits")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -4286,10 +4438,14 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)");
 
-                    b.Property<int>("PriceVnd")
-                        .HasColumnType("integer");
+                    b.Property<string>("PlanType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Legacy");
 
-                    b.Property<int>("QuotaAmount")
+                    b.Property<int>("PriceVnd")
                         .HasColumnType("integer");
 
                     b.Property<DateTime?>("UpdatedAt")
@@ -4303,12 +4459,46 @@ namespace StoryPlatform.Infrastructure.Migrations
                         new
                         {
                             Id = 1,
+                            AiCredits = 50,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = false,
+                            IsDeleted = false,
+                            Name = "Personal",
+                            PlanType = "Legacy",
+                            PriceVnd = 49000
+                        },
+                        new
+                        {
+                            Id = 2,
+                            AiCredits = 0,
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
                             IsDeleted = false,
-                            Name = "Personal",
-                            PriceVnd = 49000,
-                            QuotaAmount = 50
+                            Name = "Gói Đọc",
+                            PlanType = "Reading",
+                            PriceVnd = 49000
+                        },
+                        new
+                        {
+                            Id = 3,
+                            AiCredits = 4,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            IsDeleted = false,
+                            Name = "Gói Sáng tạo",
+                            PlanType = "Creative",
+                            PriceVnd = 99000
+                        },
+                        new
+                        {
+                            Id = 4,
+                            AiCredits = 2,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            IsDeleted = false,
+                            Name = "Add-on",
+                            PlanType = "AddOn",
+                            PriceVnd = 29000
                         });
                 });
 
@@ -4525,6 +4715,58 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("user_accounts", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.UserSubscription", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("EndAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("PaymentId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("PlanId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("RenewalReminderSentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("StartAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PaymentId")
+                        .IsUnique();
+
+                    b.HasIndex("PlanId");
+
+                    b.HasIndex("UserId", "Status");
+
+                    b.ToTable("user_subscriptions", (string)null);
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.VocabularyNotebookEntry", b =>
@@ -4863,6 +5105,43 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("Story");
 
                     b.Navigation("StoryVersion");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.CreditAdjustment", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "Admin")
+                        .WithMany()
+                        .HasForeignKey("AdminId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Admin");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.CreditLot", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.PaymentTransaction", "Payment")
+                        .WithMany()
+                        .HasForeignKey("PaymentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Payment");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.IllustrationBeat", b =>
@@ -5343,6 +5622,24 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasForeignKey("StoryVersionId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.PaymentReconciliationException", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.PaymentTransaction", "Payment")
+                        .WithMany()
+                        .HasForeignKey("PaymentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "ResolvedByUser")
+                        .WithMany()
+                        .HasForeignKey("ResolvedBy")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Payment");
+
+                    b.Navigation("ResolvedByUser");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.PaymentTransaction", b =>
@@ -6172,6 +6469,33 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.UserSubscription", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.PaymentTransaction", "Payment")
+                        .WithMany()
+                        .HasForeignKey("PaymentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.SubscriptionPlan", "Plan")
+                        .WithMany()
+                        .HasForeignKey("PlanId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Payment");
+
+                    b.Navigation("Plan");
 
                     b.Navigation("User");
                 });

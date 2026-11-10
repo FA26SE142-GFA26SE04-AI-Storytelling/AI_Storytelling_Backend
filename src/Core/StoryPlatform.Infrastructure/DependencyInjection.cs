@@ -255,6 +255,9 @@ public static class DependencyInjection
         services.Configure<PaymentExpirySweepWorkerOptions>(
             configuration.GetSection(PaymentExpirySweepWorkerOptions.SectionName));
         services.AddHostedService<PaymentExpirySweepWorker>();
+        services.Configure<SubscriptionCycleWorkerOptions>(
+            configuration.GetSection(SubscriptionCycleWorkerOptions.SectionName));
+        services.AddHostedService<SubscriptionCycleWorker>();
         services.Configure<NotificationRetentionWorkerOptions>(
             configuration.GetSection(NotificationRetentionWorkerOptions.SectionName));
         services.AddHostedService<NotificationRetentionWorker>();

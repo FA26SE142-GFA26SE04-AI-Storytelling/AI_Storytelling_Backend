@@ -292,6 +292,25 @@ Enum PaymentStatus {
   MismatchAmount
 }
 
+Enum CreditSource {
+  Trial
+  Cycle
+  AddOn
+  Legacy
+  AdminAdjust
+}
+
+Enum CreditType {
+  AI
+}
+
+Enum PlanType {
+  Legacy
+  Reading
+  Creative
+  AddOn
+}
+
 Enum PolicyRule {
   Allowed
   Restricted
@@ -394,6 +413,18 @@ Enum TagSource {
   Ai
   Moderator
   Parent
+}
+
+Enum ReconciliationStatus {
+  Open
+  Resolved
+}
+
+Enum SubscriptionStatus {
+  Scheduled
+  Active
+  Superseded
+  Expired
 }
 
 Enum TelemetryEventType {
@@ -784,6 +815,40 @@ Table content_reports {
     ReviewedByUserId
     StoryId
     StoryVersionId
+  }
+}
+
+Table credit_adjustments {
+  AdminId int [not null]
+  Amount int [not null]
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  Reason varchar(500) [not null]
+  UpdatedAt timestamptz
+  UserId int [not null]
+  Indexes {
+    AdminId
+    UserId
+  }
+}
+
+Table credit_lots {
+  CreatedAt timestamptz [not null]
+  CreditType CreditType [not null, note: 'EF PostgreSQL type: character varying(20)']
+  ExpiresAt timestamptz
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  PaymentId int
+  Remaining int [not null]
+  Source CreditSource [not null, note: 'EF PostgreSQL type: character varying(20)']
+  Total int [not null]
+  UpdatedAt timestamptz
+  UserId int [not null]
+  Indexes {
+    PaymentId [unique, note: 'filtered: PaymentId IS NOT NULL']
+    UserId [unique, note: 'filtered: Source = Trial AND NOT IsDeleted']
+    (UserId, CreditType)
   }
 }
 
@@ -1181,7 +1246,25 @@ Table parent_story_operations {
   }
 }
 
+Table payment_reconciliation_exceptions {
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  PaymentId int [not null]
+  Reason varchar(500) [not null]
+  ResolvedAt timestamptz
+  ResolvedBy int
+  Status ReconciliationStatus [not null, note: 'EF PostgreSQL type: character varying(20)']
+  UpdatedAt timestamptz
+  Indexes {
+    PaymentId [unique]
+    ResolvedBy
+    Status
+  }
+}
+
 Table payment_transactions {
+  AiCredits int
   Amount int [not null]
   CreatedAt timestamptz [not null]
   ExpiresAt timestamptz [not null]
@@ -1869,13 +1952,14 @@ Table story_wishes {
 }
 
 Table subscription_plans {
+  AiCredits int [not null]
   CreatedAt timestamptz [not null]
   Id int [pk, not null, increment]
   IsActive boolean [not null]
   IsDeleted boolean [not null]
   Name varchar(150) [not null]
   PriceVnd int [not null]
-  QuotaAmount int [not null]
+  PlanType PlanType [not null, note: 'EF PostgreSQL type: character varying(20)']
   UpdatedAt timestamptz
 }
 
@@ -1948,6 +2032,25 @@ Table user_accounts {
   }
 }
 
+Table user_subscriptions {
+  CreatedAt timestamptz [not null]
+  EndAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  PaymentId int [not null]
+  PlanId int [not null]
+  RenewalReminderSentAt timestamptz
+  StartAt timestamptz [not null]
+  Status SubscriptionStatus [not null, note: 'EF PostgreSQL type: character varying(20)']
+  UpdatedAt timestamptz
+  UserId int [not null]
+  Indexes {
+    PaymentId [unique]
+    PlanId
+    (UserId, Status)
+  }
+}
+
 Table vocabulary_notebook_entries {
   ChildProfileId int [not null]
   CollectedAt timestamptz [not null]
@@ -2011,6 +2114,10 @@ Ref: content_reports.ReporterUserId > user_accounts.Id
 Ref: content_reports.ReviewedByUserId > user_accounts.Id
 Ref: content_reports.StoryId > stories.Id
 Ref: content_reports.StoryVersionId > story_versions.Id
+Ref: credit_adjustments.AdminId > user_accounts.Id
+Ref: credit_adjustments.UserId > user_accounts.Id
+Ref: credit_lots.PaymentId > payment_transactions.Id
+Ref: credit_lots.UserId > user_accounts.Id
 Ref: illustration_beats.StorySceneId > story_scenes.Id
 Ref: learning_artifact_generation_batches.RequestedByUserId > user_accounts.Id
 Ref: learning_artifact_generation_batches.RootJobId > story_generation_jobs.Id
@@ -2063,6 +2170,8 @@ Ref: parent_story_operations.ActorUserId > user_accounts.Id
 Ref: parent_story_operations.ChildProfileId > child_profiles.Id
 Ref: parent_story_operations.StoryId > stories.Id
 Ref: parent_story_operations.StoryVersionId > story_versions.Id
+Ref: payment_reconciliation_exceptions.PaymentId > payment_transactions.Id
+Ref: payment_reconciliation_exceptions.ResolvedBy > user_accounts.Id
 Ref: payment_transactions.PayerUserId > user_accounts.Id
 Ref: payment_transactions.PlanId > subscription_plans.Id
 Ref: prompt_catalog_versions.CreatedByAdminId > user_accounts.Id
@@ -2146,6 +2255,9 @@ Ref: story_wishes.LessonCardId > wish_cards.Id
 Ref: story_wishes.PlaceCardId > wish_cards.Id
 Ref: telemetry_logs.ReadingSessionId > reading_sessions.Id
 Ref: token_quota_configs.UserId > user_accounts.Id
+Ref: user_subscriptions.PaymentId > payment_transactions.Id
+Ref: user_subscriptions.PlanId > subscription_plans.Id
+Ref: user_subscriptions.UserId > user_accounts.Id
 Ref: vocabulary_notebook_entries.ChildProfileId > child_profiles.Id
 Ref: vocabulary_notebook_entries.StoryVocabularyId > story_vocabulary.Id
 Ref: wish_cards.ContentCategoryId > content_categories.Id

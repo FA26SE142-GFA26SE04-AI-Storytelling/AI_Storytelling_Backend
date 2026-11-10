@@ -1,6 +1,4 @@
-using System.Linq.Expressions;
 using Moq;
-using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.TokenQuota.DTOs;
@@ -13,399 +11,544 @@ namespace StoryPlatform.UnitTests.Features.TokenQuota;
 
 public class TokenQuotaServiceTests
 {
-    private readonly Mock<IGenericRepository<ChildProfile>> _childRepository = new();
-    private readonly Mock<IGenericRepository<StoryPlatform.Domain.Entities.TokenQuotaConfig>> _configRepository = new();
-    private readonly Mock<IGenericRepository<UserAccount>> _userRepository = new();
-    private readonly Mock<IUnitOfWork> _unitOfWork = new();
-    private readonly Mock<IAuditLogWriter> _auditLogWriter = new();
+    private const int OwnerId = 1;
+    private const int ChildId = 10;
+
+    private readonly InMemoryUnitOfWork _store = new();
     private readonly TokenQuotaService _sut;
 
     public TokenQuotaServiceTests()
     {
-        _unitOfWork.Setup(u => u.Repository<ChildProfile>()).Returns(_childRepository.Object);
-        _unitOfWork.Setup(u => u.Repository<StoryPlatform.Domain.Entities.TokenQuotaConfig>()).Returns(_configRepository.Object);
-        _unitOfWork.Setup(u => u.Repository<UserAccount>()).Returns(_userRepository.Object);
-
-        _sut = new TokenQuotaService(_unitOfWork.Object, _auditLogWriter.Object);
+        _store.Seed(new UserAccount { Id = OwnerId, Role = UserRole.User, Status = AccountStatus.Active });
+        _sut = new TokenQuotaService(_store);
     }
 
-    private static ChildProfile MakePersonalChild(int id = 1, int ownerUserId = 1) => new()
-    {
-        Id = id,
-        OwnerUserId = ownerUserId
-    };
+    private ChildProfile SeedChild(
+        int id = ChildId, int ownerUserId = OwnerId, ChildProfileStatus status = ChildProfileStatus.Active) =>
+        _store.Seed(new ChildProfile { Id = id, OwnerUserId = ownerUserId, Status = status });
 
-    private static StoryPlatform.Domain.Entities.TokenQuotaConfig MakeConfig(
-        TokenQuotaScope scope, int quotaLimit, int quotaUsed,
-        int? userId = null,
-        DateOnly? periodStart = null, DateOnly? periodEnd = null)
-    {
-        var start = periodStart ?? DateOnly.FromDateTime(DateTime.UtcNow);
-        var end = periodEnd ?? start.AddMonths(1);
-        return new StoryPlatform.Domain.Entities.TokenQuotaConfig
+    private CreditLot SeedLot(CreditSource source, int remaining, DateTime? expiresAt = null, int userId = OwnerId) =>
+        _store.Seed(new CreditLot
         {
-            Id = 1,
-            Scope = scope,
             UserId = userId,
-            QuotaLimit = quotaLimit,
-            QuotaUsed = quotaUsed,
-            PeriodStart = start,
-            PeriodEnd = end
-        };
-    }
+            CreditType = CreditType.AI,
+            Source = source,
+            Total = Math.Max(remaining, 1),
+            Remaining = remaining,
+            ExpiresAt = expiresAt
+        });
 
-    private void SetupChild(ChildProfile child) =>
-        _childRepository.Setup(r => r.GetByIdAsync(child.Id, It.IsAny<CancellationToken>())).ReturnsAsync(child);
+    private UserSubscription SeedSubscription(
+        PlanType planType, string planName, SubscriptionStatus status, DateTime startAt, DateTime endAt) =>
+        _store.Seed(new UserSubscription
+        {
+            UserId = OwnerId,
+            PlanId = (int)planType + 1,
+            Plan = new SubscriptionPlan { Id = (int)planType + 1, Name = planName, PlanType = planType },
+            Status = status,
+            StartAt = startAt,
+            EndAt = endAt,
+            PaymentId = _store.Items<UserSubscription>().Count + 1
+        });
 
-    private void SetupConfigLookup(params StoryPlatform.Domain.Entities.TokenQuotaConfig[] configs)
-    {
-        _configRepository
-            .Setup(r => r.FirstOrDefaultAsync(
-                It.IsAny<Expression<Func<StoryPlatform.Domain.Entities.TokenQuotaConfig, bool>>>(),
-                null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((Expression<Func<StoryPlatform.Domain.Entities.TokenQuotaConfig, bool>> predicate, string? _, CancellationToken _) =>
-                configs.FirstOrDefault(predicate.Compile()));
-    }
-
-    // ---------- EnsureWithinQuotaAsync: hierarchy + fail-open ----------
-
-    [Fact]
-    public async Task EnsureWithinQuotaAsync_NoConfigAnywhere_DoesNotThrow()
-    {
-        SetupChild(MakePersonalChild());
-        SetupConfigLookup();
-
-        await _sut.EnsureWithinQuotaAsync(1);
-    }
+    // ---------- EnsureWithinQuotaAsync ----------
 
     [Fact]
-    public async Task EnsureWithinQuotaAsync_PersonalConfigAtLimit_ThrowsConflict()
+    public async Task EnsureWithinQuotaAsync_NoLotsAndNoActiveChild_ThrowsConflict()
     {
-        SetupChild(MakePersonalChild());
-        SetupConfigLookup(MakeConfig(TokenQuotaScope.Personal, quotaLimit: 5, quotaUsed: 5, userId: 1));
+        SeedChild(status: ChildProfileStatus.Draft);
 
-        await Assert.ThrowsAsync<ConflictException>(() => _sut.EnsureWithinQuotaAsync(1));
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.EnsureWithinQuotaAsync(ChildId));
+
+        Assert.Empty(_store.Items<CreditLot>());
     }
 
     [Fact]
-    public async Task EnsureWithinQuotaAsync_PersonalConfigUnderLimit_DoesNotThrow()
+    public async Task EnsureWithinQuotaAsync_FirstCallWithActiveChild_GrantsOneTrialCredit()
     {
-        SetupChild(MakePersonalChild());
-        SetupConfigLookup(MakeConfig(TokenQuotaScope.Personal, quotaLimit: 5, quotaUsed: 4, userId: 1));
+        SeedChild();
 
-        await _sut.EnsureWithinQuotaAsync(1);
+        await _sut.EnsureWithinQuotaAsync(ChildId);
+
+        var lot = Assert.Single(_store.Items<CreditLot>());
+        Assert.Equal((OwnerId, CreditSource.Trial, 1, 1), (lot.UserId, lot.Source, lot.Total, lot.Remaining));
+        Assert.Null(lot.ExpiresAt);
     }
 
     [Fact]
-    public async Task EnsureWithinQuotaAsync_PersonalConfigTakesPriorityOverSystemConfig()
+    public async Task EnsureWithinQuotaAsync_TrialAlreadyUsed_DoesNotGrantAgain()
     {
-        SetupChild(MakePersonalChild(ownerUserId: 7));
-        SetupConfigLookup(
-            MakeConfig(TokenQuotaScope.Personal, quotaLimit: 5, quotaUsed: 1, userId: 7),
-            MakeConfig(TokenQuotaScope.System, quotaLimit: 1, quotaUsed: 1));
+        SeedChild();
+        SeedLot(CreditSource.Trial, remaining: 0);
 
-        await _sut.EnsureWithinQuotaAsync(1);
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.EnsureWithinQuotaAsync(ChildId));
+
+        Assert.Single(_store.Items<CreditLot>());
     }
 
     [Fact]
-    public async Task EnsureWithinQuotaAsync_PersonalChild_FallsBackToOwnerPersonalConfig()
+    public async Task EnsureWithinQuotaAsync_OnlyExpiredLots_ThrowsConflict()
     {
-        SetupChild(MakePersonalChild(ownerUserId: 7));
-        SetupConfigLookup(MakeConfig(TokenQuotaScope.Personal, quotaLimit: 1, quotaUsed: 1, userId: 7));
+        SeedChild();
+        SeedLot(CreditSource.Trial, remaining: 0);
+        SeedLot(CreditSource.Cycle, remaining: 4, expiresAt: DateTime.UtcNow.AddDays(-1));
 
-        await Assert.ThrowsAsync<ConflictException>(() => _sut.EnsureWithinQuotaAsync(1));
+        var exception = await Assert.ThrowsAsync<ConflictException>(() => _sut.EnsureWithinQuotaAsync(ChildId));
+
+        Assert.Contains("Add-on", exception.Message);
     }
 
     [Fact]
-    public async Task PersonalQuota_IsSharedByTwoChildrenOfTheSameOwner()
+    public async Task EnsureWithinQuotaAsync_NonParentOwner_GetsNoTrialCredit()
     {
-        SetupChild(MakePersonalChild(id: 1, ownerUserId: 7));
-        SetupChild(MakePersonalChild(id: 2, ownerUserId: 7));
-        var config = MakeConfig(TokenQuotaScope.Personal, quotaLimit: 1, quotaUsed: 0, userId: 7);
-        SetupConfigLookup(config);
+        _store.Seed(new UserAccount { Id = 2, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
+        SeedChild(id: 20, ownerUserId: 2);
 
-        await _sut.EnsureWithinQuotaAsync(1);
-        await _sut.IncrementUsageAsync(1);
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.EnsureWithinQuotaAsync(20));
 
-        Assert.Equal(1, config.QuotaUsed);
-        await Assert.ThrowsAsync<ConflictException>(() => _sut.EnsureWithinQuotaAsync(2));
+        Assert.Empty(_store.Items<CreditLot>());
     }
 
     [Fact]
-    public async Task EnsureWithinQuotaAsync_FallsBackToSystemConfig()
+    public async Task EnsureWithinQuotaAsync_ChildNotFound_ThrowsNotFound()
     {
-        SetupChild(MakePersonalChild(ownerUserId: 7));
-        SetupConfigLookup(MakeConfig(TokenQuotaScope.System, quotaLimit: 1, quotaUsed: 1));
-
-        await Assert.ThrowsAsync<ConflictException>(() => _sut.EnsureWithinQuotaAsync(1));
-    }
-
-    [Fact]
-    public async Task EnsureWithinQuotaAsync_ExpiredPeriod_TreatedAsNotExceeded_WithoutPersistingRollover()
-    {
-        // EnsureWithinQuotaAsync must be a pure read: an expired period can never be "exceeded"
-        // (the effective QuotaUsed after an as-if rollover is always 0), and no rollover is
-        // attached/saved here — that is IncrementUsageAsync's job, and doing it in both places is
-        // what caused the EF identity-map double-attach bug.
-        SetupChild(MakePersonalChild());
-        var yesterday = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1);
-        var config = MakeConfig(
-            TokenQuotaScope.Personal, quotaLimit: 5, quotaUsed: 5, userId: 1,
-            periodStart: yesterday.AddDays(-30), periodEnd: yesterday);
-        SetupConfigLookup(config);
-
-        await _sut.EnsureWithinQuotaAsync(1);
-
-        Assert.Equal(5, config.QuotaUsed);
-        Assert.Equal(yesterday, config.PeriodEnd);
-        _configRepository.Verify(r => r.Update(It.IsAny<StoryPlatform.Domain.Entities.TokenQuotaConfig>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task EnsureThenIncrement_ExpiredPeriod_DoesNotThrow_AndEndsWithQuotaUsedOne()
-    {
-        // Regression test for the EF identity-map "instance already tracked" conflict: with a real
-        // DbContext, EnsureWithinQuotaAsync attaching a rolled-over config and IncrementUsageAsync
-        // then re-resolving and attaching a second, distinct untracked instance for the same row
-        // throws InvalidOperationException. Moq's mocked IGenericRepository has no identity map, so
-        // it cannot reproduce that exception directly — instead this pins the corrected behavior and
-        // call-count contract: Ensure performs zero attaches, and Increment performs exactly one
-        // (rollover + increment collapsed into a single Update), for a total of one Update call
-        // across the whole Ensure -> Increment flow.
-        SetupChild(MakePersonalChild());
-        var yesterday = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1);
-        var config = MakeConfig(
-            TokenQuotaScope.Personal, quotaLimit: 5, quotaUsed: 5, userId: 1,
-            periodStart: yesterday.AddDays(-30), periodEnd: yesterday);
-        SetupConfigLookup(config);
-
-        await _sut.EnsureWithinQuotaAsync(1);
-        await _sut.IncrementUsageAsync(1);
-
-        Assert.Equal(1, config.QuotaUsed);
-        Assert.True(config.PeriodEnd >= DateOnly.FromDateTime(DateTime.UtcNow));
-        _configRepository.Verify(r => r.Update(config), Times.Once);
+        await Assert.ThrowsAsync<NotFoundException>(() => _sut.EnsureWithinQuotaAsync(999));
     }
 
     // ---------- IncrementUsageAsync ----------
 
     [Fact]
-    public async Task IncrementUsageAsync_NoApplicableConfig_NoOp()
+    public async Task IncrementUsageAsync_ConsumesLotExpiringSoonestFirst()
     {
-        SetupChild(MakePersonalChild());
-        SetupConfigLookup();
+        SeedChild();
+        var trial = SeedLot(CreditSource.Trial, remaining: 1);
+        var cycle = SeedLot(CreditSource.Cycle, remaining: 4, expiresAt: DateTime.UtcNow.AddDays(10));
+        var addOn = SeedLot(CreditSource.AddOn, remaining: 2, expiresAt: DateTime.UtcNow.AddDays(3));
 
-        await _sut.IncrementUsageAsync(1);
+        await _sut.IncrementUsageAsync(ChildId);
 
-        _configRepository.Verify(r => r.Update(It.IsAny<StoryPlatform.Domain.Entities.TokenQuotaConfig>()), Times.Never);
+        Assert.Equal((1, 4, 1), (trial.Remaining, cycle.Remaining, addOn.Remaining));
     }
 
     [Fact]
-    public async Task IncrementUsageAsync_WithApplicableConfig_IncrementsQuotaUsedByOne()
+    public async Task IncrementUsageAsync_NonExpiringLotsAreUsedLast()
     {
-        SetupChild(MakePersonalChild());
-        var config = MakeConfig(TokenQuotaScope.Personal, quotaLimit: 5, quotaUsed: 2, userId: 1);
-        SetupConfigLookup(config);
+        SeedChild();
+        var legacy = SeedLot(CreditSource.Legacy, remaining: 5);
+        var cycle = SeedLot(CreditSource.Cycle, remaining: 1, expiresAt: DateTime.UtcNow.AddDays(20));
 
-        await _sut.IncrementUsageAsync(1);
+        await _sut.IncrementUsageAsync(ChildId);
+        await _sut.IncrementUsageAsync(ChildId);
 
-        Assert.Equal(3, config.QuotaUsed);
-        _configRepository.Verify(r => r.Update(config), Times.Once);
-    }
-
-    // ---------- CreditAsync ----------
-
-    [Fact]
-    public async Task CreditAsync_PersonalScope_NoExistingConfig_CreatesNewConfigWithFullAmount()
-    {
-        SetupConfigLookup();
-        StoryPlatform.Domain.Entities.TokenQuotaConfig? added = null;
-        _configRepository
-            .Setup(r => r.AddAsync(It.IsAny<StoryPlatform.Domain.Entities.TokenQuotaConfig>(), It.IsAny<CancellationToken>()))
-            .Callback<StoryPlatform.Domain.Entities.TokenQuotaConfig, CancellationToken>((entity, _) => added = entity)
-            .ReturnsAsync((StoryPlatform.Domain.Entities.TokenQuotaConfig entity, CancellationToken _) => entity);
-
-        await _sut.CreditAsync(payerUserId: 7, quotaAmount: 50);
-
-        Assert.NotNull(added);
-        Assert.Equal(TokenQuotaScope.Personal, added!.Scope);
-        Assert.Equal(7, added.UserId);
-        Assert.Equal(50, added.QuotaLimit);
-        Assert.Equal(0, added.QuotaUsed);
+        Assert.Equal((4, 0), (legacy.Remaining, cycle.Remaining));
     }
 
     [Fact]
-    public async Task CreditAsync_PersonalScope_ExistingConfig_TopsUpWithoutResettingUsage()
+    public async Task IncrementUsageAsync_NoUsableLot_ThrowsConflict()
     {
-        var existing = MakeConfig(TokenQuotaScope.Personal, quotaLimit: 50, quotaUsed: 30, userId: 7);
-        SetupConfigLookup(existing);
+        SeedChild();
+        var spent = SeedLot(CreditSource.Trial, remaining: 0);
+        var expired = SeedLot(CreditSource.AddOn, remaining: 2, expiresAt: DateTime.UtcNow.AddMinutes(-1));
 
-        await _sut.CreditAsync(payerUserId: 7, quotaAmount: 50);
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.IncrementUsageAsync(ChildId));
 
-        Assert.Equal(100, existing.QuotaLimit);
-        Assert.Equal(30, existing.QuotaUsed);
-        _configRepository.Verify(r => r.Update(existing), Times.Once);
+        Assert.Equal((0, 2), (spent.Remaining, expired.Remaining));
     }
 
     [Fact]
-    public async Task CreditAsync_RollsOverExpiredPeriodBeforeTopUp()
+    public async Task IncrementUsageAsync_AcquiresAccountLock()
     {
-        var yesterday = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1);
-        var existing = MakeConfig(
-            TokenQuotaScope.Personal, quotaLimit: 100, quotaUsed: 50, userId: 7,
-            periodStart: yesterday.AddDays(-30), periodEnd: yesterday);
-        SetupConfigLookup(existing);
+        SeedChild();
+        SeedLot(CreditSource.Legacy, remaining: 1);
 
-        await _sut.CreditAsync(payerUserId: 7, quotaAmount: 150);
+        await _sut.IncrementUsageAsync(ChildId);
 
-        Assert.Equal(0, existing.QuotaUsed);
-        Assert.Equal(250, existing.QuotaLimit);
-        Assert.True(existing.PeriodEnd >= DateOnly.FromDateTime(DateTime.UtcNow));
-        _configRepository.Verify(r => r.Update(existing), Times.AtLeast(2));
+        Assert.Equal([$"lock:{OwnerId}"], _store.Calls);
     }
 
-    // ---------- SetConfigAsync ----------
+    [Fact]
+    public async Task TwoRequestsWithOneCreditLeft_SecondIsRejected()
+    {
+        SeedChild();
+        SeedLot(CreditSource.Legacy, remaining: 1);
+
+        await _sut.IncrementUsageAsync(ChildId);
+
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.IncrementUsageAsync(ChildId));
+    }
+
+    [Fact]
+    public async Task TwoChildrenOfSameOwner_ShareOneBalance()
+    {
+        SeedChild();
+        SeedChild(id: 11);
+        SeedLot(CreditSource.Trial, remaining: 1);
+
+        await _sut.EnsureWithinQuotaAsync(ChildId);
+        await _sut.IncrementUsageAsync(ChildId);
+
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.EnsureWithinQuotaAsync(11));
+    }
+
+    // ---------- GrantAsync ----------
+
+    [Fact]
+    public async Task GrantAsync_CreatesLotWithGivenSourceAndExpiry()
+    {
+        var expiresAt = DateTime.UtcNow.AddMonths(1);
+
+        var granted = await _sut.GrantAsync(OwnerId, CreditSource.Cycle, 4, expiresAt, paymentId: 7);
+
+        Assert.True(granted);
+        var lot = Assert.Single(_store.Items<CreditLot>());
+        Assert.Equal(
+            (OwnerId, CreditType.AI, CreditSource.Cycle, 4, 4, (DateTime?)expiresAt, (int?)7),
+            (lot.UserId, lot.CreditType, lot.Source, lot.Total, lot.Remaining, lot.ExpiresAt, lot.PaymentId));
+    }
+
+    [Fact]
+    public async Task GrantAsync_SamePaymentIdTwice_GrantsOnce()
+    {
+        var first = await _sut.GrantAsync(OwnerId, CreditSource.AddOn, 2, DateTime.UtcNow.AddDays(5), paymentId: 7);
+        var second = await _sut.GrantAsync(OwnerId, CreditSource.AddOn, 2, DateTime.UtcNow.AddDays(5), paymentId: 7);
+
+        Assert.True(first);
+        Assert.False(second);
+        Assert.Single(_store.Items<CreditLot>());
+    }
 
     [Theory]
-    [InlineData("not-a-scope")]
-    [InlineData("Child")]
-    [InlineData("3")]
-    public async Task SetConfigAsync_InvalidScopeString_ThrowsBadRequest(string scope)
+    [InlineData(0)]
+    [InlineData(-3)]
+    public async Task GrantAsync_NonPositiveAmount_GrantsNothing(int amount)
     {
-        await Assert.ThrowsAsync<BadRequestException>(() => _sut.SetConfigAsync(1, new SetTokenQuotaConfigRequestDto
-        {
-            Scope = scope, QuotaLimit = 10,
-            PeriodStart = DateOnly.FromDateTime(DateTime.UtcNow),
-            PeriodEnd = DateOnly.FromDateTime(DateTime.UtcNow).AddMonths(1)
-        }));
+        var granted = await _sut.GrantAsync(OwnerId, CreditSource.Cycle, amount, null, paymentId: 7);
+
+        Assert.False(granted);
+        Assert.Empty(_store.Items<CreditLot>());
+    }
+
+    // ---------- GetMyQuotaAsync ----------
+
+    [Fact]
+    public async Task GetMyQuotaAsync_SplitsCreditsBySource()
+    {
+        var now = DateTime.UtcNow;
+        SeedLot(CreditSource.Trial, remaining: 1);
+        SeedLot(CreditSource.Cycle, remaining: 3, expiresAt: now.AddDays(12));
+        SeedLot(CreditSource.AddOn, remaining: 2, expiresAt: now.AddDays(12));
+        SeedLot(CreditSource.Legacy, remaining: 5);
+        SeedLot(CreditSource.Cycle, remaining: 4, expiresAt: now.AddDays(-2));
+        SeedSubscription(PlanType.Creative, "Gói Sáng tạo", SubscriptionStatus.Active, now.AddDays(-18), now.AddDays(12));
+        SeedSubscription(PlanType.Reading, "Gói Đọc", SubscriptionStatus.Scheduled, now.AddDays(12), now.AddDays(42));
+
+        var result = await _sut.GetMyQuotaAsync(OwnerId);
+
+        Assert.Equal(
+            (1, 3, 2, 5, 11),
+            (result.TrialCredits, result.CycleCredits, result.AddOnCredits, result.OtherCredits, result.TotalRemaining));
+        Assert.Equal(("Creative", "Gói Sáng tạo"), (result.Plan!.PlanType, result.Plan.PlanName));
+        Assert.Equal(now.AddDays(12), result.Plan.EndAt);
+        Assert.Equal(("Reading", "Gói Đọc"), (result.NextPlan!.PlanType, result.NextPlan.PlanName));
     }
 
     [Fact]
-    public async Task SetConfigAsync_OrganizationScope_IsNoLongerSupported_ThrowsBadRequest()
+    public async Task GetMyQuotaAsync_FreeAccount_PlanIsNull()
     {
-        await Assert.ThrowsAsync<BadRequestException>(() => _sut.SetConfigAsync(1, new SetTokenQuotaConfigRequestDto
-        {
-            Scope = "Organization", QuotaLimit = 10,
-            PeriodStart = DateOnly.FromDateTime(DateTime.UtcNow),
-            PeriodEnd = DateOnly.FromDateTime(DateTime.UtcNow).AddMonths(1)
-        }));
+        var result = await _sut.GetMyQuotaAsync(OwnerId);
+
+        Assert.Null(result.Plan);
+        Assert.Null(result.NextPlan);
+        Assert.Equal(0, result.TotalRemaining);
     }
 
     [Fact]
-    public async Task SetConfigAsync_PeriodEndBeforeStart_ThrowsBadRequest()
+    public async Task GetMyQuotaAsync_ActiveRowPastItsEnd_IsNotTheCurrentPlan()
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        await Assert.ThrowsAsync<BadRequestException>(() => _sut.SetConfigAsync(1, new SetTokenQuotaConfigRequestDto
-        {
-            Scope = "System", QuotaLimit = 10, PeriodStart = today, PeriodEnd = today.AddDays(-1)
-        }));
+        var now = DateTime.UtcNow;
+        SeedSubscription(PlanType.Reading, "Gói Đọc", SubscriptionStatus.Active, now.AddMonths(-1), now.AddMinutes(-1));
+
+        var result = await _sut.GetMyQuotaAsync(OwnerId);
+
+        Assert.Null(result.Plan);
     }
 
     [Fact]
-    public async Task SetConfigAsync_NoExistingConfig_CreatesNewAndWritesAudit()
+    public async Task GetMyQuotaAsync_ParentWithActiveChild_SeesTrialCredit()
     {
-        SetupConfigLookup();
-        StoryPlatform.Domain.Entities.TokenQuotaConfig? added = null;
-        _configRepository
-            .Setup(r => r.AddAsync(It.IsAny<StoryPlatform.Domain.Entities.TokenQuotaConfig>(), It.IsAny<CancellationToken>()))
-            .Callback<StoryPlatform.Domain.Entities.TokenQuotaConfig, CancellationToken>((entity, _) =>
-            {
-                entity.Id = 42;
-                added = entity;
-            })
-            .ReturnsAsync((StoryPlatform.Domain.Entities.TokenQuotaConfig entity, CancellationToken _) => entity);
+        SeedChild();
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var result = await _sut.SetConfigAsync(99, new SetTokenQuotaConfigRequestDto
-        {
-            Scope = "System", QuotaLimit = 1000, PeriodStart = today, PeriodEnd = today.AddMonths(1)
-        });
+        var result = await _sut.GetMyQuotaAsync(OwnerId);
 
-        Assert.NotNull(added);
-        Assert.Equal("System", result.Scope);
-        Assert.Equal(1000, result.QuotaLimit);
-        _auditLogWriter.Verify(w => w.LogAsync(
-            99, "TokenQuotaConfigSet", nameof(StoryPlatform.Domain.Entities.TokenQuotaConfig), 42,
-            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task SetConfigAsync_ExistingConfigForSameTarget_UpdatesInPlace()
-    {
-        var existing = MakeConfig(TokenQuotaScope.Personal, quotaLimit: 5, quotaUsed: 2, userId: 3);
-        SetupConfigLookup(existing);
-
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var result = await _sut.SetConfigAsync(99, new SetTokenQuotaConfigRequestDto
-        {
-            Scope = "Personal", UserId = 3, QuotaLimit = 20, PeriodStart = today, PeriodEnd = today.AddMonths(1)
-        });
-
-        Assert.Equal(20, existing.QuotaLimit);
-        Assert.Equal(20, result.QuotaLimit);
-        _configRepository.Verify(r => r.Update(existing), Times.Once);
-    }
-
-    // ---------- ListConfigsAsync ----------
-
-    [Fact]
-    public async Task ListConfigsAsync_ReturnsAllConfigsMapped()
-    {
-        var configs = new[]
-        {
-            MakeConfig(TokenQuotaScope.System, quotaLimit: 1000, quotaUsed: 1),
-            MakeConfig(TokenQuotaScope.Personal, quotaLimit: 5, quotaUsed: 0, userId: 3)
-        };
-        _configRepository
-            .Setup(r => r.FindAsync(
-                It.IsAny<Expression<Func<StoryPlatform.Domain.Entities.TokenQuotaConfig, bool>>>(),
-                null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((Expression<Func<StoryPlatform.Domain.Entities.TokenQuotaConfig, bool>> predicate, string? _, CancellationToken _) =>
-                configs.Where(predicate.Compile()).ToList());
-
-        var result = await _sut.ListConfigsAsync();
-
-        Assert.Equal(2, result.Count);
+        Assert.Equal((1, 1), (result.TrialCredits, result.TotalRemaining));
     }
 
     // ---------- GetStatusForChildAsync ----------
 
     [Fact]
+    public async Task GetStatusForChildAsync_Owner_ReturnsAccountBalance()
+    {
+        var now = DateTime.UtcNow;
+        SeedChild();
+        SeedLot(CreditSource.Trial, remaining: 0);
+        SeedLot(CreditSource.Cycle, remaining: 4, expiresAt: now.AddDays(9));
+        SeedLot(CreditSource.AddOn, remaining: 2, expiresAt: now.AddDays(9));
+        SeedSubscription(PlanType.Creative, "Gói Sáng tạo", SubscriptionStatus.Active, now.AddDays(-21), now.AddDays(9));
+
+        var result = await _sut.GetStatusForChildAsync(OwnerId, ChildId);
+
+        Assert.False(result.IsUnlimited);
+        Assert.Equal((6, 6, 0), (result.Remaining, result.QuotaLimit, result.QuotaUsed));
+        Assert.Equal(DateOnly.FromDateTime(now.AddDays(9)), result.PeriodEnd);
+    }
+
+    [Fact]
     public async Task GetStatusForChildAsync_NonOwnerNonAdmin_ThrowsForbidden()
     {
-        SetupChild(MakePersonalChild(ownerUserId: 1));
-        _userRepository.Setup(r => r.GetByIdAsync(2, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new UserAccount { Id = 2, Role = UserRole.User });
+        SeedChild();
+        _store.Seed(new UserAccount { Id = 2, Role = UserRole.User, Status = AccountStatus.Active });
 
-        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.GetStatusForChildAsync(2, 1));
+        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.GetStatusForChildAsync(2, ChildId));
     }
 
     [Fact]
     public async Task GetStatusForChildAsync_Administrator_Allowed()
     {
-        SetupChild(MakePersonalChild(ownerUserId: 1));
-        _userRepository.Setup(r => r.GetByIdAsync(99, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new UserAccount { Id = 99, Role = UserRole.Administrator });
-        SetupConfigLookup();
+        SeedChild();
+        SeedLot(CreditSource.Legacy, remaining: 3);
+        _store.Seed(new UserAccount { Id = 2, Role = UserRole.Administrator, Status = AccountStatus.Active });
 
-        var result = await _sut.GetStatusForChildAsync(99, 1);
+        var result = await _sut.GetStatusForChildAsync(2, ChildId);
 
-        Assert.True(result.IsUnlimited);
+        Assert.Equal(4, result.Remaining);
+    }
+
+    // ---------- Admin: AdjustAsync (UC-L2-08) ----------
+
+    private const int AdminId = 90;
+
+    private void SeedAdmin() =>
+        _store.Seed(new UserAccount { Id = AdminId, Role = UserRole.Administrator, Status = AccountStatus.Active, FullName = "Quản trị" });
+
+    private static AdjustCreditsRequestDto Adjust(int amount, string? reason = "Bù lỗi sinh truyện", int userId = OwnerId) =>
+        new() { UserId = userId, Amount = amount, Reason = reason! };
+
+    [Fact]
+    public async Task AdjustAsync_Grant_CreatesNonExpiringAdminLot_AndRecordsAdjustment()
+    {
+        SeedAdmin();
+        _store.Seed(new UserAccount { Id = 2, Role = UserRole.User, Status = AccountStatus.Active });
+        SeedLot(CreditSource.Legacy, remaining: 5, userId: 2);
+
+        var result = await _sut.AdjustAsync(AdminId, Adjust(3));
+
+        var lot = Assert.Single(_store.Items<CreditLot>(), item => item.UserId == OwnerId);
+        Assert.Equal((CreditSource.AdminAdjust, 3, 3, (DateTime?)null), (lot.Source, lot.Total, lot.Remaining, lot.ExpiresAt));
+        var adjustment = Assert.Single(_store.Items<CreditAdjustment>());
+        Assert.Equal((OwnerId, 3, "Bù lỗi sinh truyện", AdminId), (adjustment.UserId, adjustment.Amount, adjustment.Reason, adjustment.AdminId));
+        Assert.Equal(
+            (adjustment.Id, 3, (int?)3, "Quản trị"),
+            (result.Id, result.Amount, result.TotalRemainingAfter, result.AdminName));
+        Assert.Equal(5, _store.Items<CreditLot>().Single(item => item.UserId == 2).Remaining);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public async Task AdjustAsync_MissingReason_ThrowsBadRequest(string? reason)
+    {
+        SeedAdmin();
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.AdjustAsync(AdminId, Adjust(3, reason)));
+
+        Assert.Empty(_store.Items<CreditLot>());
+        Assert.Empty(_store.Items<CreditAdjustment>());
     }
 
     [Fact]
-    public async Task GetStatusForChildAsync_Owner_ReturnsStatus()
+    public async Task AdjustAsync_ReasonLongerThan500_ThrowsBadRequest()
     {
-        SetupChild(MakePersonalChild(ownerUserId: 1));
-        _userRepository.Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new UserAccount { Id = 1, Role = UserRole.User });
-        SetupConfigLookup(MakeConfig(TokenQuotaScope.Personal, quotaLimit: 10, quotaUsed: 4, userId: 1));
+        SeedAdmin();
 
-        var result = await _sut.GetStatusForChildAsync(1, 1);
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.AdjustAsync(AdminId, Adjust(3, new string('a', 501))));
+    }
 
-        Assert.False(result.IsUnlimited);
-        Assert.Equal(10, result.QuotaLimit);
-        Assert.Equal(4, result.QuotaUsed);
-        Assert.Equal(6, result.Remaining);
+    [Fact]
+    public async Task AdjustAsync_ZeroAmount_ThrowsBadRequest()
+    {
+        SeedAdmin();
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.AdjustAsync(AdminId, Adjust(0)));
+    }
+
+    [Fact]
+    public async Task AdjustAsync_UserNotFound_ThrowsNotFound()
+    {
+        SeedAdmin();
+
+        await Assert.ThrowsAsync<NotFoundException>(() => _sut.AdjustAsync(AdminId, Adjust(3, userId: 999)));
+    }
+
+    [Theory]
+    [InlineData(UserRole.ContentCreator)]
+    [InlineData(UserRole.Administrator)]
+    [InlineData(UserRole.Moderator)]
+    public async Task AdjustAsync_NonParentAccount_ThrowsBadRequest(UserRole role)
+    {
+        SeedAdmin();
+        _store.Seed(new UserAccount { Id = 2, Role = role, Status = AccountStatus.Active });
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.AdjustAsync(AdminId, Adjust(3, userId: 2)));
+
+        Assert.Empty(_store.Items<CreditLot>());
+    }
+
+    [Fact]
+    public async Task AdjustAsync_Deduct_TakesFromSoonestExpiringLotsFirst()
+    {
+        SeedAdmin();
+        var legacy = SeedLot(CreditSource.Legacy, remaining: 5);
+        var cycle = SeedLot(CreditSource.Cycle, remaining: 4, expiresAt: DateTime.UtcNow.AddDays(10));
+        var addOn = SeedLot(CreditSource.AddOn, remaining: 2, expiresAt: DateTime.UtcNow.AddDays(3));
+
+        var result = await _sut.AdjustAsync(AdminId, Adjust(-3, "Thu hồi lượt cấp nhầm"));
+
+        Assert.Equal((0, 3, 5), (addOn.Remaining, cycle.Remaining, legacy.Remaining));
+        Assert.Equal(8, result.TotalRemainingAfter);
+        Assert.Equal(-3, Assert.Single(_store.Items<CreditAdjustment>()).Amount);
+        Assert.Equal(3, _store.Items<CreditLot>().Count);
+    }
+
+    [Fact]
+    public async Task AdjustAsync_DeductMoreThanRemaining_ThrowsBadRequestAndChangesNothing()
+    {
+        SeedAdmin();
+        var lot = SeedLot(CreditSource.Legacy, remaining: 2);
+
+        var error = await Assert.ThrowsAsync<BadRequestException>(() => _sut.AdjustAsync(AdminId, Adjust(-3)));
+
+        Assert.Contains("chỉ còn 2 lượt", error.Message);
+        Assert.Equal(2, lot.Remaining);
+        Assert.Empty(_store.Items<CreditAdjustment>());
+        Assert.Equal("rollback", _store.Calls.Last());
+    }
+
+    [Fact]
+    public async Task AdjustAsync_DeductIgnoresExpiredLots()
+    {
+        SeedAdmin();
+        var expired = SeedLot(CreditSource.Cycle, remaining: 4, expiresAt: DateTime.UtcNow.AddDays(-1));
+        var live = SeedLot(CreditSource.Legacy, remaining: 1);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.AdjustAsync(AdminId, Adjust(-2)));
+
+        Assert.Equal((4, 1), (expired.Remaining, live.Remaining));
+    }
+
+    [Fact]
+    public async Task AdjustAsync_DeductExactlyAllRemaining_LeavesZero()
+    {
+        SeedAdmin();
+        SeedLot(CreditSource.Legacy, remaining: 2);
+
+        var result = await _sut.AdjustAsync(AdminId, Adjust(-2));
+
+        Assert.Equal(0, result.TotalRemainingAfter);
+    }
+
+    [Fact]
+    public async Task AdjustAsync_RunsInTransactionWithAccountLock()
+    {
+        SeedAdmin();
+
+        await _sut.AdjustAsync(AdminId, Adjust(1));
+
+        Assert.Equal(["begin", $"lock:{OwnerId}", "commit"], _store.Calls);
+    }
+
+    [Fact]
+    public async Task AdjustAsync_WritesAuditWithBeforeAndAfterTotals()
+    {
+        SeedAdmin();
+        SeedLot(CreditSource.Legacy, remaining: 2);
+        var audit = new Mock<IAuditLogWriter>();
+        object? before = null, after = null;
+        audit.Setup(writer => writer.LogAsync(
+                AdminId, "CreditAdjusted", nameof(CreditAdjustment), It.IsAny<int>(),
+                It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
+            .Callback((int? _, string _, string _, int _, object? b, object? a, CancellationToken _) => (before, after) = (b, a));
+        var sut = new TokenQuotaService(_store, audit.Object);
+
+        await sut.AdjustAsync(AdminId, Adjust(3));
+
+        Assert.Contains("\"totalRemaining\":2", System.Text.Json.JsonSerializer.Serialize(before));
+        var afterJson = System.Text.Json.JsonSerializer.Serialize(after);
+        Assert.Contains("\"totalRemaining\":5", afterJson);
+        Assert.Contains("\"amount\":3", afterJson);
+    }
+
+    [Fact]
+    public async Task GetMyQuotaAsync_AdminLotsCountAsOtherCredits()
+    {
+        SeedAdmin();
+        SeedLot(CreditSource.Legacy, remaining: 2);
+        await _sut.AdjustAsync(AdminId, Adjust(3));
+
+        var result = await _sut.GetMyQuotaAsync(OwnerId);
+
+        Assert.Equal((5, 5), (result.OtherCredits, result.TotalRemaining));
+    }
+
+    [Fact]
+    public async Task AdminGrantedCredit_CanBeUsedToCreateAStory()
+    {
+        SeedAdmin();
+        SeedChild();
+        SeedLot(CreditSource.Trial, remaining: 0);
+        await _sut.AdjustAsync(AdminId, Adjust(1));
+
+        await _sut.EnsureWithinQuotaAsync(ChildId);
+        await _sut.IncrementUsageAsync(ChildId);
+
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.EnsureWithinQuotaAsync(ChildId));
+    }
+
+    // ---------- Admin: ListAdjustmentsAsync / GetQuotaForUserAsync ----------
+
+    [Fact]
+    public async Task ListAdjustmentsAsync_FiltersByUserNewestFirst()
+    {
+        SeedAdmin();
+        _store.Seed(new UserAccount { Id = 2, Role = UserRole.User, Status = AccountStatus.Active });
+        var now = DateTime.UtcNow;
+        _store.Seed(new CreditAdjustment { UserId = OwnerId, Amount = 2, Reason = "cũ", AdminId = AdminId, CreatedAt = now.AddDays(-2) });
+        _store.Seed(new CreditAdjustment { UserId = 2, Amount = 9, Reason = "người khác", AdminId = AdminId, CreatedAt = now.AddDays(-1) });
+        _store.Seed(new CreditAdjustment { UserId = OwnerId, Amount = -1, Reason = "mới", AdminId = AdminId, CreatedAt = now });
+
+        var mine = await _sut.ListAdjustmentsAsync(OwnerId, pageIndex: 1, pageSize: 20);
+        var all = await _sut.ListAdjustmentsAsync(null, pageIndex: 1, pageSize: 20);
+
+        Assert.Equal(["mới", "cũ"], mine.Items.Select(item => item.Reason));
+        Assert.Equal("Quản trị", mine.Items[0].AdminName);
+        Assert.Null(mine.Items[0].TotalRemainingAfter);
+        Assert.Equal(3, all.TotalCount);
+    }
+
+    [Fact]
+    public async Task GetQuotaForUserAsync_ReturnsBalanceWithoutGrantingTrial()
+    {
+        SeedChild();
+
+        var result = await _sut.GetQuotaForUserAsync(OwnerId);
+
+        Assert.Equal(0, result.TotalRemaining);
+        Assert.Empty(_store.Items<CreditLot>());
+    }
+
+    [Fact]
+    public async Task GetQuotaForUserAsync_UserNotFound_ThrowsNotFound()
+    {
+        await Assert.ThrowsAsync<NotFoundException>(() => _sut.GetQuotaForUserAsync(999));
     }
 }

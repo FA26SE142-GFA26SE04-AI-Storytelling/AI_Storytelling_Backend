@@ -1,5 +1,7 @@
 # API backend theo actor và luồng tích hợp frontend
 
+> Gói và thanh toán cho phụ huynh (10/11/2026): [PARENT_PLANS_PAYMENT_API_GUIDE.md](PARENT_PLANS_PAYMENT_API_GUIDE.md). Thay cho mô tả `Payment` và `TokenQuota` bên dưới: gói có `planType`, thêm `GET /Payment/transactions/me` và `GET /TokenQuota/me`, gỡ `POST/GET /TokenQuota/config`. Cần migration `AddSubscriptionCyclesAndCreditLots`.
+
 > Parent Manual nhiều bé (04/11/2026): [Hướng dẫn tích hợp Frontend và contract package](PARENT_MULTI_CHILD_PACKAGES_API_GUIDE.md). Bao gồm request/response, token, polling, retry/revise, media có Authorization và Child Reader. Các mô tả Parent một bé bên dưới là baseline legacy khi khác với hướng dẫn package.
 
 > Phase 5 Image/TTS: [MEDIA_PHASE5_IMAGE_TTS_API_GUIDE.md](MEDIA_PHASE5_IMAGE_TTS_API_GUIDE.md)

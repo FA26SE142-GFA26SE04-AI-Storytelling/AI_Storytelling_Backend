@@ -380,17 +380,8 @@ public sealed partial class AIStoryInputServiceTests
     public async Task Quota_exceeded_blocks_submission_and_creates_nothing()
     {
         var unitOfWork = CreateEligibleUnitOfWork();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        unitOfWork.Seed(new StoryPlatform.Domain.Entities.TokenQuotaConfig
-        {
-            Id = 1,
-            Scope = StoryPlatform.Domain.Enums.TokenQuotaScope.Personal,
-            UserId = 1,
-            QuotaLimit = 1,
-            QuotaUsed = 1,
-            PeriodStart = today,
-            PeriodEnd = today.AddMonths(1)
-        });
+        unitOfWork.Items<CreditLot>().Single().Remaining = 0;
+        unitOfWork.Seed(new CreditLot { Id = 2, UserId = 1, Source = CreditSource.Trial, Total = 1, Remaining = 0 });
         var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
 
         await Assert.ThrowsAsync<ConflictException>(() => service.SubmitAsync(1, ValidRequest()));
@@ -403,25 +394,14 @@ public sealed partial class AIStoryInputServiceTests
     public async Task Successful_submission_increments_quota_once_and_idempotent_retry_does_not_double_count()
     {
         var unitOfWork = CreateEligibleUnitOfWork();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var config = new StoryPlatform.Domain.Entities.TokenQuotaConfig
-        {
-            Id = 1,
-            Scope = StoryPlatform.Domain.Enums.TokenQuotaScope.Personal,
-            UserId = 1,
-            QuotaLimit = 5,
-            QuotaUsed = 0,
-            PeriodStart = today,
-            PeriodEnd = today.AddMonths(1)
-        };
-        unitOfWork.Seed(config);
+        var lot = unitOfWork.Items<CreditLot>().Single();
         var service = new AIStoryInputService(unitOfWork, new RuleBasedInputGuardrail(), CreateTokenQuotaService(unitOfWork));
         var input = ValidRequest();
 
         await service.SubmitAsync(1, input);
         await service.SubmitAsync(1, input); // same idempotency key -> must not consume a second lượt
 
-        Assert.Equal(1, config.QuotaUsed);
+        Assert.Equal(EligibleCredits - 1, lot.Remaining);
     }
 
     private static SubmitAIStoryInputRequestDto ValidRequest(string topic = "Tình bạn", int targetLength = 500) => new()
@@ -447,10 +427,17 @@ public sealed partial class AIStoryInputServiceTests
         TargetLength = 500
     };
 
+    private const int EligibleCredits = 10;
+
     private static FakeUnitOfWork CreateEligibleUnitOfWork(bool includePermission = true, string? blockedTerm = null)
     {
         var unitOfWork = new FakeUnitOfWork();
         unitOfWork.Seed(new UserAccount { Id = 1, Role = UserRole.User, Status = AccountStatus.Active });
+        // Tests here are not about quota: give the parent enough AI credits for repeated submissions.
+        unitOfWork.Seed(new CreditLot
+        {
+            Id = 1, UserId = 1, Source = CreditSource.Legacy, Total = EligibleCredits, Remaining = EligibleCredits
+        });
         unitOfWork.Seed(new ChildProfile
         {
             Id = 1,
@@ -490,7 +477,7 @@ public sealed partial class AIStoryInputServiceTests
     }
 
     private static ITokenQuotaService CreateTokenQuotaService(FakeUnitOfWork unitOfWork) =>
-        new TokenQuotaService(unitOfWork, new NoopAuditLogWriter());
+        new TokenQuotaService(unitOfWork);
 
     private sealed class NoopAuditLogWriter : IAuditLogWriter
     {

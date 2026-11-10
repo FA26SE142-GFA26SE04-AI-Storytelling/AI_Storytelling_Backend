@@ -1,6 +1,6 @@
-using System.Linq.Expressions;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
+using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.TokenQuota.DTOs;
 using StoryPlatform.Application.Features.TokenQuota.Interfaces;
@@ -9,12 +9,20 @@ using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.TokenQuota.Services;
 
+/// <summary>
+/// Sổ lượt AI (Luồng 2, 2d): mỗi lần cấp lượt là một lô trong credit_lots, lượt tính theo tài khoản phụ huynh.
+/// Lô còn hạn = Remaining > 0 và (ExpiresAt null hoặc ExpiresAt > now); lô sắp hết hạn được dùng trước.
+/// </summary>
 public class TokenQuotaService : ITokenQuotaService
 {
-    private readonly IUnitOfWork _unitOfWork;
-    private readonly IAuditLogWriter _auditLogWriter;
+    private const string OutOfCreditsMessage =
+        "Bạn đã hết lượt tạo truyện AI. Hãy nâng lên Gói Sáng tạo hoặc mua Add-on để tạo thêm.";
 
-    public TokenQuotaService(IUnitOfWork unitOfWork, IAuditLogWriter auditLogWriter)
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly IAuditLogWriter? _auditLogWriter;
+
+    /// <param name="auditLogWriter">Chỉ cần cho thao tác của Admin (<see cref="AdjustAsync"/>).</param>
+    public TokenQuotaService(IUnitOfWork unitOfWork, IAuditLogWriter? auditLogWriter = null)
     {
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
@@ -22,127 +30,41 @@ public class TokenQuotaService : ITokenQuotaService
 
     public async Task EnsureWithinQuotaAsync(int childProfileId, CancellationToken cancellationToken = default)
     {
-        // Pure read: never attach/persist a rollover here. If a rollover is actually due it is
-        // performed exactly once, later, by IncrementUsageAsync — attaching the same config row
-        // from both this method and IncrementUsageAsync within one SubmitAsync flow is what
-        // caused the EF identity-map "instance already tracked" conflict.
-        var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(childProfileId, cancellationToken)
-                    ?? throw new NotFoundException("Hồ sơ trẻ", childProfileId);
-        var config = await ResolveApplicableConfigRawAsync(child, cancellationToken);
-        if (config == null)
-        {
-            return;
-        }
+        // Ngoài lô dùng thử (cấp một lần), phương thức này không ghi gì: việc trừ lượt chỉ diễn ra ở
+        // IncrementUsageAsync, trong transaction của nơi gọi.
+        var child = await GetChildAsync(childProfileId, cancellationToken);
+        await EnsureTrialGrantedAsync(child.OwnerUserId, cancellationToken);
 
-        var effective = ComputeEffectiveView(config, DateOnly.FromDateTime(DateTime.UtcNow));
-        if (effective.QuotaUsed >= effective.QuotaLimit)
+        var lots = await GetUsableLotsAsync(child.OwnerUserId, DateTime.UtcNow, cancellationToken);
+        if (lots.Sum(lot => lot.Remaining) <= 0)
         {
-            throw new ConflictException(
-                "Đã hết lượt sinh truyện AI trong chu kỳ hiện tại. Vui lòng mua thêm quota hoặc chờ tới kỳ reset tiếp theo.");
+            throw new ConflictException(OutOfCreditsMessage);
         }
     }
 
     public async Task IncrementUsageAsync(int childProfileId, CancellationToken cancellationToken = default)
     {
-        // The only place in the Ensure->Increment flow that actually persists a rollover. Rollover
-        // (if due) and the usage increment are applied in-memory together, then attached/saved in a
-        // single Update/SaveChanges call — at most one attach per config row.
-        var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(childProfileId, cancellationToken)
-                    ?? throw new NotFoundException("Hồ sơ trẻ", childProfileId);
-        var config = await ResolveApplicableConfigRawAsync(child, cancellationToken);
-        if (config == null)
-        {
-            return;
-        }
+        var child = await GetChildAsync(childProfileId, cancellationToken);
 
-        ApplyRolloverIfExpired(config, DateOnly.FromDateTime(DateTime.UtcNow));
-        config.QuotaUsed += 1;
-        _unitOfWork.Repository<TokenQuotaConfig>().Update(config);
+        // Khoá theo tài khoản trước khi đọc lô để hai yêu cầu đồng thời không cùng tiêu một lượt.
+        // Dùng chung không gian khoá với khoá truyện; trùng số chỉ gây chờ thừa.
+        await _unitOfWork.AcquireTransactionLockAsync(child.OwnerUserId, cancellationToken);
+
+        var lots = await GetUsableLotsAsync(child.OwnerUserId, DateTime.UtcNow, cancellationToken);
+        var lot = OrderForUse(lots)
+            .FirstOrDefault()
+            ?? throw new ConflictException(OutOfCreditsMessage);
+
+        lot.Remaining -= 1;
+        lot.UpdatedAt = DateTime.UtcNow;
+        _unitOfWork.Repository<CreditLot>().Update(lot);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-    }
-
-    public async Task<TokenQuotaConfigDto> SetConfigAsync(
-        int adminUserId, SetTokenQuotaConfigRequestDto request, CancellationToken cancellationToken = default)
-    {
-        if (!Enum.TryParse<TokenQuotaScope>(request.Scope, ignoreCase: true, out var scope)
-            || scope is not (TokenQuotaScope.System or TokenQuotaScope.Personal))
-        {
-            throw new BadRequestException("Scope phải là 'System' hoặc 'Personal'.");
-        }
-
-        if (request.PeriodEnd <= request.PeriodStart)
-        {
-            throw new BadRequestException("PeriodEnd phải sau PeriodStart.");
-        }
-
-        if (request.QuotaLimit < 0)
-        {
-            throw new BadRequestException("QuotaLimit không được âm.");
-        }
-
-        if (scope == TokenQuotaScope.Personal && !request.UserId.HasValue)
-        {
-            throw new BadRequestException("UserId là bắt buộc cho scope Personal.");
-        }
-
-        Expression<Func<TokenQuotaConfig, bool>> matchPredicate = scope switch
-        {
-            TokenQuotaScope.System => c => c.Scope == TokenQuotaScope.System,
-            TokenQuotaScope.Personal => c => c.Scope == TokenQuotaScope.Personal && c.UserId == request.UserId,
-            _ => throw new BadRequestException("Scope không hợp lệ.")
-        };
-
-        var repo = _unitOfWork.Repository<TokenQuotaConfig>();
-        var existing = await repo.FirstOrDefaultAsync(matchPredicate, cancellationToken: cancellationToken);
-
-        object beforeState = existing == null
-            ? new { existed = false }
-            : new { existing.QuotaLimit, PeriodStart = existing.PeriodStart.ToString(), PeriodEnd = existing.PeriodEnd.ToString() };
-
-        if (existing == null)
-        {
-            existing = new TokenQuotaConfig
-            {
-                Scope = scope,
-                UserId = request.UserId,
-                QuotaLimit = request.QuotaLimit,
-                QuotaUsed = 0,
-                PeriodStart = request.PeriodStart,
-                PeriodEnd = request.PeriodEnd
-            };
-            await repo.AddAsync(existing, cancellationToken);
-        }
-        else
-        {
-            existing.QuotaLimit = request.QuotaLimit;
-            existing.PeriodStart = request.PeriodStart;
-            existing.PeriodEnd = request.PeriodEnd;
-            repo.Update(existing);
-        }
-
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        await _auditLogWriter.LogAsync(
-            adminUserId, "TokenQuotaConfigSet", nameof(TokenQuotaConfig), existing.Id,
-            beforeState,
-            new { existing.QuotaLimit, PeriodStart = existing.PeriodStart.ToString(), PeriodEnd = existing.PeriodEnd.ToString() },
-            cancellationToken);
-
-        return MapToDto(existing);
-    }
-
-    public async Task<List<TokenQuotaConfigDto>> ListConfigsAsync(CancellationToken cancellationToken = default)
-    {
-        var configs = await _unitOfWork.Repository<TokenQuotaConfig>().FindAsync(
-            c => true, cancellationToken: cancellationToken);
-        return configs.Select(MapToDto).ToList();
     }
 
     public async Task<TokenQuotaStatusDto> GetStatusForChildAsync(
         int requestingUserId, int childProfileId, CancellationToken cancellationToken = default)
     {
-        var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(childProfileId, cancellationToken)
-                    ?? throw new NotFoundException("Hồ sơ trẻ", childProfileId);
+        var child = await GetChildAsync(childProfileId, cancellationToken);
 
         var requester = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(requestingUserId, cancellationToken);
         var isAdministrator = requester?.Role == UserRole.Administrator;
@@ -151,160 +73,295 @@ public class TokenQuotaService : ITokenQuotaService
             throw new ForbiddenException("Bạn không có quyền xem quota của hồ sơ trẻ này.");
         }
 
-        // GET-style read: no persisted rollover side effect. Show what the status would be
-        // as-if a rollover happened, without attaching/saving anything.
-        var config = await ResolveApplicableConfigRawAsync(child, cancellationToken);
-        if (config == null)
-        {
-            return new TokenQuotaStatusDto { IsUnlimited = true };
-        }
-
-        var effective = ComputeEffectiveView(config, DateOnly.FromDateTime(DateTime.UtcNow));
+        // Lượt tính theo tài khoản chủ hồ sơ; giữ dạng DTO cũ cho màn Trang chủ và Studio.
+        var quota = await GetMyQuotaAsync(child.OwnerUserId, cancellationToken);
         return new TokenQuotaStatusDto
         {
             IsUnlimited = false,
-            Scope = config.Scope.ToString(),
-            QuotaLimit = effective.QuotaLimit,
-            QuotaUsed = effective.QuotaUsed,
-            Remaining = Math.Max(effective.QuotaLimit - effective.QuotaUsed, 0),
-            PeriodStart = effective.PeriodStart,
-            PeriodEnd = effective.PeriodEnd
+            Scope = "Personal",
+            QuotaLimit = quota.TotalRemaining,
+            QuotaUsed = 0,
+            Remaining = quota.TotalRemaining,
+            PeriodStart = quota.Plan == null ? null : DateOnly.FromDateTime(quota.Plan.StartAt),
+            PeriodEnd = quota.Plan == null ? null : DateOnly.FromDateTime(quota.Plan.EndAt)
         };
     }
 
-    public async Task CreditAsync(
-        int payerUserId, int quotaAmount, CancellationToken cancellationToken = default)
+    public async Task<MyQuotaDto> GetMyQuotaAsync(int userId, CancellationToken cancellationToken = default)
     {
-        var repo = _unitOfWork.Repository<TokenQuotaConfig>();
+        await EnsureTrialGrantedAsync(userId, cancellationToken);
+        return await BuildQuotaAsync(userId, cancellationToken);
+    }
 
-        var config = await repo.FirstOrDefaultAsync(
-            c => c.Scope == TokenQuotaScope.Personal && c.UserId == payerUserId,
-            cancellationToken: cancellationToken);
+    public async Task<MyQuotaDto> GetQuotaForUserAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        // Admin chỉ xem: không cấp lượt dùng thử thay cho phụ huynh.
+        _ = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken)
+            ?? throw new NotFoundException("Tài khoản", userId);
+        return await BuildQuotaAsync(userId, cancellationToken);
+    }
 
-        if (config == null)
+    public async Task<CreditAdjustmentDto> AdjustAsync(
+        int adminUserId, AdjustCreditsRequestDto request, CancellationToken cancellationToken = default)
+    {
+        var reason = request.Reason?.Trim() ?? string.Empty;
+        if (reason.Length == 0)
         {
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
-            config = new TokenQuotaConfig
+            throw new BadRequestException("Cần ghi lý do điều chỉnh lượt.");
+        }
+
+        if (reason.Length > 500)
+        {
+            throw new BadRequestException("Lý do điều chỉnh không được quá 500 ký tự.");
+        }
+
+        if (request.Amount == 0)
+        {
+            throw new BadRequestException("Số lượt điều chỉnh phải khác 0.");
+        }
+
+        var users = _unitOfWork.Repository<UserAccount>();
+        var user = await users.GetByIdAsync(request.UserId, cancellationToken)
+                   ?? throw new NotFoundException("Tài khoản", request.UserId);
+        if (user.Role != UserRole.User)
+        {
+            throw new BadRequestException("Chỉ điều chỉnh được lượt của tài khoản phụ huynh.");
+        }
+
+        var now = DateTime.UtcNow;
+        var lotRepo = _unitOfWork.Repository<CreditLot>();
+        CreditAdjustment adjustment;
+        int before, after;
+
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            // Cùng khoá với IncrementUsageAsync: trừ lượt và yêu cầu tạo truyện không cùng tiêu một lượt.
+            await _unitOfWork.AcquireTransactionLockAsync(user.Id, cancellationToken);
+
+            var lots = await GetUsableLotsAsync(user.Id, now, cancellationToken);
+            before = lots.Sum(lot => lot.Remaining);
+
+            if (request.Amount > 0)
             {
-                Scope = TokenQuotaScope.Personal,
-                UserId = payerUserId,
-                QuotaLimit = quotaAmount,
-                QuotaUsed = 0,
-                PeriodStart = today,
-                PeriodEnd = today.AddMonths(1)
+                await lotRepo.AddAsync(
+                    new CreditLot
+                    {
+                        UserId = user.Id,
+                        CreditType = CreditType.AI,
+                        Source = CreditSource.AdminAdjust,
+                        Total = request.Amount,
+                        Remaining = request.Amount
+                    },
+                    cancellationToken);
+            }
+            else
+            {
+                var toDeduct = -request.Amount;
+                if (toDeduct > before)
+                {
+                    throw new BadRequestException(
+                        $"Không thể trừ {toDeduct} lượt: tài khoản chỉ còn {before} lượt.");
+                }
+
+                foreach (var lot in OrderForUse(lots))
+                {
+                    if (toDeduct == 0)
+                    {
+                        break;
+                    }
+
+                    var taken = Math.Min(lot.Remaining, toDeduct);
+                    lot.Remaining -= taken;
+                    lot.UpdatedAt = now;
+                    lotRepo.Update(lot);
+                    toDeduct -= taken;
+                }
+            }
+
+            after = before + request.Amount;
+            adjustment = new CreditAdjustment
+            {
+                UserId = user.Id,
+                Amount = request.Amount,
+                Reason = reason,
+                AdminId = adminUserId
             };
-            await repo.AddAsync(config, cancellationToken);
+            await _unitOfWork.Repository<CreditAdjustment>().AddAsync(adjustment, cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
         }
-        else
+        catch
         {
-            config = await RolloverIfExpiredAsync(config, cancellationToken);
-            config.QuotaLimit += quotaAmount;
-            repo.Update(config);
+            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            _unitOfWork.DiscardTrackedChanges();
+            throw;
         }
 
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        if (_auditLogWriter != null)
+        {
+            await _auditLogWriter.LogAsync(
+                adminUserId, "CreditAdjusted", nameof(CreditAdjustment), adjustment.Id,
+                new { totalRemaining = before },
+                new { totalRemaining = after, amount = request.Amount, reason, userId = user.Id },
+                cancellationToken);
+        }
+
+        var admin = await users.GetByIdAsync(adminUserId, cancellationToken);
+        var dto = MapToDto(adjustment, admin);
+        dto.TotalRemainingAfter = after;
+        return dto;
     }
 
-    /// <summary>
-    /// Resolves the applicable config for a child by scope hierarchy (Personal -> System)
-    /// as a pure read — never rolls over or persists anything. Callers decide whether they
-    /// need a real (persisted) rollover (<see cref="IncrementUsageAsync"/>) or just an as-if-rolled-over
-    /// view (<see cref="EnsureWithinQuotaAsync"/>, <see cref="GetStatusForChildAsync"/>).
-    /// </summary>
-    private async Task<TokenQuotaConfig?> ResolveApplicableConfigRawAsync(ChildProfile child, CancellationToken cancellationToken)
+    public async Task<PagedResult<CreditAdjustmentDto>> ListAdjustmentsAsync(
+        int? userId, int pageIndex, int pageSize, CancellationToken cancellationToken = default)
     {
-        var repo = _unitOfWork.Repository<TokenQuotaConfig>();
-
-        var personalConfig = await repo.FirstOrDefaultAsync(
-            c => c.Scope == TokenQuotaScope.Personal && c.UserId == child.OwnerUserId,
+        pageIndex = Math.Max(pageIndex, 1);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var (items, totalCount) = await _unitOfWork.Repository<CreditAdjustment>().GetPagedAsync(
+            pageIndex, pageSize,
+            filter: item => userId == null || item.UserId == userId,
+            orderBy: source => source.OrderByDescending(item => item.CreatedAt).ThenByDescending(item => item.Id),
+            includeProperties: "Admin",
             cancellationToken: cancellationToken);
-        if (personalConfig != null)
+
+        var users = _unitOfWork.Repository<UserAccount>();
+        var result = new List<CreditAdjustmentDto>(items.Count);
+        foreach (var item in items)
         {
-            return personalConfig;
+            result.Add(MapToDto(item, item.Admin ?? await users.GetByIdAsync(item.AdminId, cancellationToken)));
         }
 
-        return await repo.FirstOrDefaultAsync(
-            c => c.Scope == TokenQuotaScope.System, cancellationToken: cancellationToken);
+        return new PagedResult<CreditAdjustmentDto>(result, totalCount, pageIndex, pageSize);
     }
 
-    /// <summary>
-    /// Computes what a config's period/usage would look like if a rollover happened right now,
-    /// without mutating <paramref name="config"/> or persisting anything.
-    /// </summary>
-    private static (int QuotaLimit, int QuotaUsed, DateOnly PeriodStart, DateOnly PeriodEnd) ComputeEffectiveView(
-        TokenQuotaConfig config, DateOnly today)
+    private async Task<MyQuotaDto> BuildQuotaAsync(int userId, CancellationToken cancellationToken)
     {
-        if (!TryComputeRolledOverPeriod(config.PeriodStart, config.PeriodEnd, today, out var newStart, out var newEnd))
+        var now = DateTime.UtcNow;
+        var lots = await GetUsableLotsAsync(userId, now, cancellationToken);
+        int Remaining(CreditSource source) => lots.Where(lot => lot.Source == source).Sum(lot => lot.Remaining);
+
+        var subscriptions = await _unitOfWork.Repository<UserSubscription>().FindAsync(
+            item => item.UserId == userId
+                    && (item.Status == SubscriptionStatus.Active || item.Status == SubscriptionStatus.Scheduled),
+            includeProperties: "Plan", cancellationToken: cancellationToken);
+        var current = subscriptions.FirstOrDefault(
+            item => item.Status == SubscriptionStatus.Active && item.EndAt > now);
+        var next = subscriptions
+            .Where(item => item.Status == SubscriptionStatus.Scheduled && item.EndAt > now)
+            .OrderBy(item => item.StartAt)
+            .FirstOrDefault();
+
+        return new MyQuotaDto
         {
-            return (config.QuotaLimit, config.QuotaUsed, config.PeriodStart, config.PeriodEnd);
-        }
-
-        return (config.QuotaLimit, 0, newStart, newEnd);
+            Plan = MapPlan(current),
+            NextPlan = MapPlan(next),
+            TrialCredits = Remaining(CreditSource.Trial),
+            CycleCredits = Remaining(CreditSource.Cycle),
+            AddOnCredits = Remaining(CreditSource.AddOn),
+            OtherCredits = Remaining(CreditSource.Legacy) + Remaining(CreditSource.AdminAdjust),
+            TotalRemaining = lots.Sum(lot => lot.Remaining)
+        };
     }
 
-    /// <summary>
-    /// In-memory-only mutation: if the config's period has expired, advances it to the current
-    /// period and resets QuotaUsed to 0. Does not attach or save — callers are responsible for
-    /// persisting (or not) alongside whatever else they mutate in the same call.
-    /// </summary>
-    private static bool ApplyRolloverIfExpired(TokenQuotaConfig config, DateOnly today)
+    public async Task<bool> GrantAsync(
+        int userId, CreditSource source, int amount, DateTime? expiresAt, int? paymentId,
+        CancellationToken cancellationToken = default)
     {
-        if (!TryComputeRolledOverPeriod(config.PeriodStart, config.PeriodEnd, today, out var newStart, out var newEnd))
+        if (amount <= 0)
         {
             return false;
         }
 
-        config.PeriodStart = newStart;
-        config.PeriodEnd = newEnd;
-        config.QuotaUsed = 0;
-        return true;
-    }
-
-    private static bool TryComputeRolledOverPeriod(
-        DateOnly periodStart, DateOnly periodEnd, DateOnly today, out DateOnly newPeriodStart, out DateOnly newPeriodEnd)
-    {
-        newPeriodStart = periodStart;
-        newPeriodEnd = periodEnd;
-        if (periodEnd >= today)
+        var repo = _unitOfWork.Repository<CreditLot>();
+        if (paymentId.HasValue
+            && await repo.ExistsAsync(lot => lot.PaymentId == paymentId, cancellationToken))
         {
             return false;
         }
 
-        while (newPeriodEnd < today)
-        {
-            var spanDays = Math.Max(newPeriodEnd.DayNumber - newPeriodStart.DayNumber, 1);
-            newPeriodStart = newPeriodEnd.AddDays(1);
-            newPeriodEnd = newPeriodStart.AddDays(spanDays);
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// The persisted rollover used only by <see cref="CreditAsync"/>'s top-up-existing-config branch,
-    /// which is not paired with any other attach of the same row in that method.
-    /// </summary>
-    private async Task<TokenQuotaConfig> RolloverIfExpiredAsync(TokenQuotaConfig config, CancellationToken cancellationToken)
-    {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        if (!ApplyRolloverIfExpired(config, today))
-        {
-            return config;
-        }
-
-        _unitOfWork.Repository<TokenQuotaConfig>().Update(config);
+        await repo.AddAsync(
+            new CreditLot
+            {
+                UserId = userId,
+                CreditType = CreditType.AI,
+                Source = source,
+                Total = amount,
+                Remaining = amount,
+                ExpiresAt = expiresAt,
+                PaymentId = paymentId
+            },
+            cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-        return config;
+        return true;
     }
 
-    private static TokenQuotaConfigDto MapToDto(TokenQuotaConfig config) => new()
+    private async Task<ChildProfile> GetChildAsync(int childProfileId, CancellationToken cancellationToken) =>
+        await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(childProfileId, cancellationToken)
+        ?? throw new NotFoundException("Hồ sơ trẻ", childProfileId);
+
+    private async Task<IReadOnlyList<CreditLot>> GetUsableLotsAsync(
+        int userId, DateTime now, CancellationToken cancellationToken) =>
+        await _unitOfWork.Repository<CreditLot>().FindAsync(
+            lot => lot.UserId == userId
+                   && lot.CreditType == CreditType.AI
+                   && lot.Remaining > 0
+                   && (lot.ExpiresAt == null || lot.ExpiresAt > now),
+            cancellationToken: cancellationToken);
+
+    /// <summary>
+    /// Lượt dùng thử (2h): cấp 1 lượt, một lần duy nhất, không hết hạn, khi tài khoản phụ huynh có hồ sơ trẻ
+    /// Active đầu tiên. Cấp kiểu lười ở lần đầu hệ thống tính lượt cho tài khoản.
+    /// </summary>
+    private async Task EnsureTrialGrantedAsync(int userId, CancellationToken cancellationToken)
     {
-        Id = config.Id,
-        Scope = config.Scope.ToString(),
-        UserId = config.UserId,
-        QuotaLimit = config.QuotaLimit,
-        QuotaUsed = config.QuotaUsed,
-        PeriodStart = config.PeriodStart,
-        PeriodEnd = config.PeriodEnd
+        var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken);
+        if (user?.Role != UserRole.User)
+        {
+            return;
+        }
+
+        var alreadyGranted = await _unitOfWork.Repository<CreditLot>().ExistsAsync(
+            lot => lot.UserId == userId && lot.Source == CreditSource.Trial, cancellationToken);
+        if (alreadyGranted)
+        {
+            return;
+        }
+
+        var hasActiveChild = await _unitOfWork.Repository<ChildProfile>().ExistsAsync(
+            child => child.OwnerUserId == userId && child.Status == ChildProfileStatus.Active && !child.IsDeleted,
+            cancellationToken);
+        if (!hasActiveChild)
+        {
+            return;
+        }
+
+        await GrantAsync(userId, CreditSource.Trial, 1, expiresAt: null, paymentId: null, cancellationToken);
+    }
+
+    /// <summary>Lô sắp hết hạn dùng trước; lô không hết hạn xếp cuối.</summary>
+    private static IEnumerable<CreditLot> OrderForUse(IEnumerable<CreditLot> lots) =>
+        lots.OrderBy(item => item.ExpiresAt ?? DateTime.MaxValue).ThenBy(item => item.Id);
+
+    private static CreditAdjustmentDto MapToDto(CreditAdjustment adjustment, UserAccount? admin) => new()
+    {
+        Id = adjustment.Id,
+        UserId = adjustment.UserId,
+        Amount = adjustment.Amount,
+        Reason = adjustment.Reason,
+        AdminId = adjustment.AdminId,
+        AdminName = string.IsNullOrWhiteSpace(admin?.FullName) ? admin?.Username ?? string.Empty : admin.FullName,
+        CreatedAt = adjustment.CreatedAt
     };
+
+    private static QuotaPlanDto? MapPlan(UserSubscription? subscription) =>
+        subscription == null
+            ? null
+            : new QuotaPlanDto
+            {
+                PlanType = subscription.Plan?.PlanType.ToString() ?? string.Empty,
+                PlanName = subscription.Plan?.Name ?? string.Empty,
+                StartAt = subscription.StartAt,
+                EndAt = subscription.EndAt
+            };
 }

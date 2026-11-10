@@ -53,6 +53,7 @@ public class ChildMediaUrlSignerTests
                 new ReadingSceneDto
                 {
                     IllustrationUrl = "908/scene.png",
+                    Illustrations = [new ReadingIllustrationDto { BeatOrder = 1, Url = "908/beat1.png" }],
                     Segments = [new ReadingSegmentDto { AudioUrl = "908/seg.wav" }],
                     Interaction = new ReadingInteractionDto
                     {
@@ -69,6 +70,7 @@ public class ChildMediaUrlSignerTests
 
         var scene = content.Scenes[0];
         Assert.Equal("https://signed/908/scene.png", scene.IllustrationUrl);
+        Assert.Equal("https://signed/908/beat1.png", scene.Illustrations[0].Url);
         Assert.Equal("https://signed/908/seg.wav", scene.Segments[0].AudioUrl);
         Assert.Equal("https://signed/908/model.wav", scene.Interaction!.ModelAudioUrl);
         Assert.Equal("https://signed/908/prompt.wav", scene.Interaction.AudioUrls["prompt"]);

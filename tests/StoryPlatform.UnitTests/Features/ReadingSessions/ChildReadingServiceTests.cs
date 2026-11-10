@@ -402,6 +402,30 @@ public class ChildReadingServiceTests
     }
 
     [Fact]
+    public async Task GetContentAsync_ReturnsEveryIllustrationOfASceneInBeatOrderWithTextRanges()
+    {
+        var session = _h.AddSession();
+        var scene = _h.AddScene(0, "Thỏ ra vườn. Thỏ thấy cà rốt. Thỏ chia cho bạn.");
+        var first = _h.AddSegment(scene, 1, "Thỏ ra vườn.");
+        var second = _h.AddSegment(scene, 2, "Thỏ thấy cà rốt.");
+        second.StartOffset = 13; second.EndOffset = 29;
+        _h.AddBeatIllustration(scene, 2, 13, 29, "https://cdn.test/b2-old.png", current: false);
+        _h.AddBeatIllustration(scene, 3, 30, 48, "https://cdn.test/b3.png");
+        _h.AddBeatIllustration(scene, 1, 0, 12, "https://cdn.test/b1.png");
+        _h.AddBeatIllustration(scene, 2, 13, 29, "https://cdn.test/b2.png");
+
+        var content = await _sut.GetContentAsync(ReadingHarness.Child, session.Id);
+
+        var pictures = content.Scenes.Single().Illustrations;
+        Assert.Equal(new[] { 1, 2, 3 }, pictures.Select(p => p.BeatOrder));
+        Assert.Equal(new[] { "https://cdn.test/b1.png", "https://cdn.test/b2.png", "https://cdn.test/b3.png" }, pictures.Select(p => p.Url));
+        Assert.Equal((13, 29), (pictures[1].StartOffset, pictures[1].EndOffset));
+        Assert.Equal((0, 12), (content.Scenes[0].Segments[0].StartOffset, content.Scenes[0].Segments[0].EndOffset));
+        Assert.Equal((13, 29), (content.Scenes[0].Segments[1].StartOffset, content.Scenes[0].Segments[1].EndOffset));
+        Assert.Equal(first.SegmentOrder, content.Scenes[0].Segments[0].SegmentOrder);
+    }
+
+    [Fact]
     public async Task GetContentAsync_VocabularyCarriesReadyPronunciationAudio()
     {
         var session = _h.AddSession();

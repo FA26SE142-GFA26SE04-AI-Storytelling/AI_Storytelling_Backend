@@ -437,6 +437,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("ReadingSessionsCompleted")
                         .HasColumnType("integer");
 
+                    b.Property<string>("RevenueSnapshotJson")
+                        .HasColumnType("text");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(30)
@@ -997,6 +1000,48 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasIndex("UserId", "CreditType");
 
                     b.ToTable("credit_lots", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.CreditUsage", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Amount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("LotId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("LotId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("credit_usages", (string)null);
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.IllustrationBeat", b =>
@@ -5140,6 +5185,25 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Payment");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.CreditUsage", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.CreditLot", "Lot")
+                        .WithMany()
+                        .HasForeignKey("LotId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Lot");
 
                     b.Navigation("User");
                 });

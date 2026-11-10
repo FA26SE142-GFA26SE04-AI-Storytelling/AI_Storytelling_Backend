@@ -4,6 +4,9 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using StoryPlatform.Application.Common.Exceptions;
+using StoryPlatform.Application.Features.AuditLogs.Services;
+using StoryPlatform.Application.Features.BusinessReports.DTOs;
+using StoryPlatform.Application.Features.BusinessReports.Services;
 using StoryPlatform.Application.Features.Notifications.DTOs;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Application.Features.Payments.Services;
@@ -225,6 +228,54 @@ public sealed class SubscriptionPostgresTests(AuthoringGuidePostgresFixture fixt
         Assert.InRange(remaining, 0, 3);
         Assert.Equal(3 - taken.Sum(), remaining);
         Assert.Equal(taken.Count(amount => amount == 2), await db.CreditAdjustments.CountAsync());
+    }
+
+    [PostgresFact]
+    public async Task RevenueStatisticsAndPeriodReport_RunAgainstPostgres()
+    {
+        await using var database = await fixture.CreateDatabaseAsync();
+        var today = DateTime.UtcNow.Date;
+        await using (var seed = new ApplicationDbContext(database.Options))
+        {
+            PaymentTransaction Paid(int planId, int amount, string code, DateTime paidAt) => new()
+            {
+                PlanId = planId, PayerUserId = database.ParentUserId, TransactionCode = code, Amount = amount,
+                Status = PaymentStatus.Paid, PaidAt = paidAt, ExpiresAt = paidAt.AddMinutes(15)
+            };
+            seed.PaymentTransactions.AddRange(
+                Paid(2, 49000, "SEPAYPGREV00001", today.AddHours(1)),
+                Paid(CreativePlanId, 99000, "SEPAYPGREV00002", today.AddHours(23)),
+                Paid(CreativePlanId, 99000, "SEPAYPGREV00003", today.AddDays(1)),   // ngày sau: ngoài kỳ
+                new PaymentTransaction
+                {
+                    PlanId = CreativePlanId, PayerUserId = database.ParentUserId, TransactionCode = "SEPAYPGREV00004",
+                    Amount = 99000, Status = PaymentStatus.MismatchAmount, ExpiresAt = DateTime.UtcNow.AddMinutes(15)
+                });
+            var lot = new CreditLot { UserId = database.ParentUserId, Source = CreditSource.Cycle, Total = 4, Remaining = 3 };
+            seed.CreditLots.Add(lot);
+            await seed.SaveChangesAsync();
+            seed.CreditUsages.Add(new CreditUsage { UserId = database.ParentUserId, LotId = lot.Id, Amount = 1, Reason = CreditUsageReason.StoryRequest });
+            await seed.SaveChangesAsync();
+        }
+
+        await using var context = new ApplicationDbContext(database.Options);
+        await using var uow = new UnitOfWork(context);
+        var revenueService = new RevenueStatisticsService(uow);
+
+        var revenue = await revenueService.GetAsync(today, today);
+
+        Assert.Equal((148000L, 2, 1, 1), (revenue.TotalRevenueVnd, revenue.PaidTransactionCount, revenue.BuyingParents, revenue.RepeatBuyingParents));
+        Assert.Equal((1, 4, 1), (revenue.TransactionsByStatus.MismatchAmount, revenue.CreditsGranted, revenue.CreditsUsed));
+        Assert.Equal(24600L, revenue.CreatorFundVnd);
+
+        var reports = new BusinessReportService(uow, new AuditLogWriter(uow), revenueService);
+        var generated = await reports.GenerateAsync(database.AdministratorId, new GenerateBusinessReportRequestDto { PeriodStart = today, PeriodEnd = today });
+        Assert.Equal(148000L, generated.Revenue!.TotalRevenueVnd);
+        await Assert.ThrowsAsync<ConflictException>(() => reports.GenerateAsync(
+            database.AdministratorId, new GenerateBusinessReportRequestDto { PeriodStart = today.AddDays(-3), PeriodEnd = today }));
+        await reports.GenerateAsync(
+            database.AdministratorId, new GenerateBusinessReportRequestDto { PeriodStart = today.AddDays(1), PeriodEnd = today.AddDays(1) });
+        Assert.Equal(148000L, (await reports.GetByIdAsync(generated.Id)).Revenue!.TotalRevenueVnd);
     }
 
     private static SubscriptionService NewSubscriptionService(UnitOfWork uow) =>

@@ -58,6 +58,7 @@ public class TokenQuotaService : ITokenQuotaService
         lot.Remaining -= 1;
         lot.UpdatedAt = DateTime.UtcNow;
         _unitOfWork.Repository<CreditLot>().Update(lot);
+        await RecordUsageAsync(lot, 1, CreditUsageReason.StoryRequest, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
@@ -175,6 +176,7 @@ public class TokenQuotaService : ITokenQuotaService
                     lot.Remaining -= taken;
                     lot.UpdatedAt = now;
                     lotRepo.Update(lot);
+                    await RecordUsageAsync(lot, taken, CreditUsageReason.AdminDeduction, cancellationToken);
                     toDeduct -= taken;
                 }
             }
@@ -338,6 +340,13 @@ public class TokenQuotaService : ITokenQuotaService
 
         await GrantAsync(userId, CreditSource.Trial, 1, expiresAt: null, paymentId: null, cancellationToken);
     }
+
+    /// <summary>Ghi một dòng lịch sử trừ lượt; nơi gọi lưu cùng lúc với thay đổi của lô.</summary>
+    private async Task RecordUsageAsync(
+        CreditLot lot, int amount, CreditUsageReason reason, CancellationToken cancellationToken) =>
+        await _unitOfWork.Repository<CreditUsage>().AddAsync(
+            new CreditUsage { UserId = lot.UserId, LotId = lot.Id, Amount = amount, Reason = reason },
+            cancellationToken);
 
     /// <summary>Lô sắp hết hạn dùng trước; lô không hết hạn xếp cuối.</summary>
     private static IEnumerable<CreditLot> OrderForUse(IEnumerable<CreditLot> lots) =>

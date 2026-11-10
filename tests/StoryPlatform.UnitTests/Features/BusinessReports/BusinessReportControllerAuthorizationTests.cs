@@ -17,6 +17,9 @@ public class BusinessReportControllerAuthorizationTests
         foreach (var actionName in new[]
                  {
                      nameof(BusinessReportController.Generate),
+                     nameof(BusinessReportController.GetRevenue),
+                     nameof(BusinessReportController.List),
+                     nameof(BusinessReportController.GetById),
                      nameof(BusinessReportController.Publish)
                  })
         {

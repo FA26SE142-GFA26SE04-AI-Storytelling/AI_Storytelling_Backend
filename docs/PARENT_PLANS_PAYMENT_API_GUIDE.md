@@ -198,7 +198,49 @@ Worker (mỗi 15 phút) tìm giao dịch `Paid` đã quá 5 phút mà chưa có 
 - Thay đổi chỉ áp dụng cho giao dịch tạo sau đó: mỗi giao dịch chốt số tiền và số lượt lúc tạo.
 - Gói tắt bán biến mất khỏi `GET Payment/plans` và không mua được nữa. Ghi audit `SubscriptionPlanUpdated`.
 
-## 6. Ngoài phạm vi
+## 6. Thống kê doanh thu cho Admin (F-15, bổ sung 10/11/2026)
+
+Cần thêm migration `AddCreditUsagesAndRevenueSnapshot`. Các endpoint `admin/...` chỉ cho role `Administrator`.
+
+**Kỳ báo cáo** tính trọn ngày theo UTC và gồm cả ngày `periodEnd`: gửi `2026-11-01` và `2026-11-30` là từ 00:00 ngày 01
+đến hết ngày 30. `periodEnd` trước `periodStart` → 400.
+
+### 6.1 Xem doanh thu của một kỳ bất kỳ
+
+`GET /api/v1/BusinessReport/admin/revenue?periodStart=2026-11-01&periodEnd=2026-11-30` — tính trực tiếp, không cần tạo báo cáo.
+
+| Trường | Ý nghĩa |
+|---|---|
+| `totalRevenueVnd`, `paidTransactionCount` | Chỉ giao dịch `Paid`, theo `paidAt`, dùng số tiền lưu trên giao dịch (đổi giá gói về sau không ảnh hưởng) |
+| `transactionsByStatus` | `paid` đếm theo `paidAt`; `pending`, `expired`, `mismatchAmount` đếm theo thời điểm tạo giao dịch |
+| `revenueByPlan[]` | Mỗi gói có giao dịch Paid trong kỳ: `planId`, `planName`, `planType`, `transactionCount`, `revenueVnd` |
+| `revenueByPlanType[]` | Luôn có `Reading`, `Creative`, `AddOn` (kể cả khi bằng 0); thêm `Legacy` nếu có |
+| `buyingParents` | Số phụ huynh có ít nhất một giao dịch Paid trong kỳ |
+| `repeatBuyingParents` | Trong số đó, người tính đến cuối kỳ đã có từ 2 giao dịch Paid |
+| `manuallyMarkedPaidCount`, `manuallyMarkedPaidRevenueVnd` | Giao dịch do Admin xác nhận tay: đã nằm trong doanh thu, đếm riêng |
+| `creditsGranted`, `creditsGrantedBySource[]` | Tổng lượt của các lô được cấp trong kỳ, tách theo nguồn (`Trial`, `Cycle`, `AddOn`, `AdminAdjust`, `Legacy`) |
+| `creditsUsed` | Tổng lượt bị trừ trong kỳ (tạo truyện AI và Admin trừ), theo bảng `credit_usages` |
+| `readingFundRate`, `creativeFundRate`, `creatorFundVnd` | Quỹ Creator = 30% doanh thu Gói Đọc + 10% doanh thu Gói Sáng tạo, làm tròn xuống. Add-on không tính |
+
+Lưu ý: `creditsUsed` chỉ có dữ liệu từ khi migration này được áp; các lần trừ lượt trước đó không được ghi lại.
+Chưa có dòng Gói Creator vì gói này chưa tồn tại. Tỷ lệ quỹ đang cố định, chưa cấu hình được.
+
+### 6.2 Báo cáo kỳ
+
+- `POST /api/v1/BusinessReport/generate` — body `{ "periodStart": "2026-11-01", "periodEnd": "2026-11-30" }`. Tạo báo cáo
+  `Compiling` và chụp số liệu doanh thu của kỳ vào trường `revenue` (cùng dạng mục 6.1). Kỳ trùng hoặc chồng lên một
+  báo cáo đã có → 409; kỳ kế tiếp phải bắt đầu vào ngày sau ngày kết thúc của kỳ trước.
+- `POST /api/v1/BusinessReport/{id}/publish` — `Compiling` → `Published`; publish lại → 409.
+- `GET /api/v1/BusinessReport/admin?pageIndex=1&pageSize=20` — mọi báo cáo, kỳ mới nhất trước.
+- `GET /api/v1/BusinessReport/admin/{id}` — chi tiết một báo cáo.
+
+Số liệu đã chụp không đổi khi có giao dịch đến sau; muốn số mới nhất thì gọi mục 6.1. Báo cáo tạo trước đợt này có
+`revenue = null`.
+
+`GET /api/v1/BusinessReport/latest-published` vẫn mở cho mọi tài khoản đã đăng nhập và **không** trả `revenue`.
+
+## 7. Ngoài phạm vi
 
 Gói Creator và lượt gửi duyệt; giữ – trừ – trả lượt; giới hạn theo gói (số hồ sơ trẻ, 3 truyện mỗi tuần, đọc to);
-cảnh báo khi xoá tài khoản còn gói; tạo gói mới và cấu hình quỹ Creator; thống kê doanh thu; giao diện Admin trên web.
+cảnh báo khi xoá tài khoản còn gói; tạo gói mới và cấu hình quỹ Creator; báo cáo tài khoản người dùng (F-16) và thống kê của Creator (F-20, F-21);
+giao diện Admin trên web.

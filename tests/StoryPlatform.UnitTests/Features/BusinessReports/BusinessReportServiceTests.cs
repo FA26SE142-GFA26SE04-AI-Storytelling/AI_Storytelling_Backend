@@ -4,6 +4,7 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.BusinessReports.DTOs;
+using StoryPlatform.Application.Features.BusinessReports.Interfaces;
 using StoryPlatform.Application.Features.BusinessReports.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -18,6 +19,7 @@ public class BusinessReportServiceTests
     private readonly Mock<IGenericRepository<ReadingSession>> _readingSessionRepository = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IAuditLogWriter> _auditLogWriter = new();
+    private readonly Mock<IRevenueStatisticsService> _revenueStatistics = new();
     private readonly BusinessReportService _sut;
 
     private static readonly DateTime PeriodStart = new(2026, 1, 1);
@@ -33,7 +35,11 @@ public class BusinessReportServiceTests
                 It.IsAny<Expression<Func<BusinessReport, bool>>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
-        _sut = new BusinessReportService(_unitOfWork.Object, _auditLogWriter.Object);
+        _revenueStatistics
+            .Setup(service => service.GetAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RevenueStatisticsDto());
+
+        _sut = new BusinessReportService(_unitOfWork.Object, _auditLogWriter.Object, _revenueStatistics.Object);
     }
 
     private static Story MakeStory(int id, StorySource source, StoryStatus status, DateTime createdAt) => new()

@@ -300,6 +300,11 @@ Enum CreditSource {
   AdminAdjust
 }
 
+Enum CreditUsageReason {
+  StoryRequest
+  AdminDeduction
+}
+
 Enum CreditType {
   AI
 }
@@ -665,6 +670,7 @@ Table business_reports {
   PeriodStart timestamptz [not null]
   PublishedAt timestamptz
   ReadingSessionsCompleted int [not null]
+  RevenueSnapshotJson text
   Status ReportStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
   StoriesApproved int [not null]
   StoriesGenerated int [not null]
@@ -849,6 +855,22 @@ Table credit_lots {
     PaymentId [unique, note: 'filtered: PaymentId IS NOT NULL']
     UserId [unique, note: 'filtered: Source = Trial AND NOT IsDeleted']
     (UserId, CreditType)
+  }
+}
+
+Table credit_usages {
+  Amount int [not null]
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  LotId int [not null]
+  Reason CreditUsageReason [not null, note: 'EF PostgreSQL type: character varying(20)']
+  UpdatedAt timestamptz
+  UserId int [not null]
+  Indexes {
+    CreatedAt
+    LotId
+    UserId
   }
 }
 
@@ -2118,6 +2140,8 @@ Ref: credit_adjustments.AdminId > user_accounts.Id
 Ref: credit_adjustments.UserId > user_accounts.Id
 Ref: credit_lots.PaymentId > payment_transactions.Id
 Ref: credit_lots.UserId > user_accounts.Id
+Ref: credit_usages.LotId > credit_lots.Id
+Ref: credit_usages.UserId > user_accounts.Id
 Ref: illustration_beats.StorySceneId > story_scenes.Id
 Ref: learning_artifact_generation_batches.RequestedByUserId > user_accounts.Id
 Ref: learning_artifact_generation_batches.RootJobId > story_generation_jobs.Id

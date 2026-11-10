@@ -166,6 +166,7 @@ public static class DependencyInjection
         services.AddScoped<IRoadmapReviewService, RoadmapReviewService>();
         services.AddScoped<IStaffAccountService, StaffAccountService>();
         services.AddScoped<IBusinessReportService, BusinessReportService>();
+        services.AddScoped<IRevenueStatisticsService, RevenueStatisticsService>();
         services.AddScoped<IPaymentService, PaymentService>();
         services.AddScoped<ITokenQuotaService, TokenQuotaService>();
         services.AddScoped<IPaymentExpirySweepService, PaymentExpirySweepService>();

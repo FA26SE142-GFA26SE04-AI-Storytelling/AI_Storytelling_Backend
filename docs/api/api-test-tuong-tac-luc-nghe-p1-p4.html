@@ -1308,7 +1308,6 @@ WHERE "ChildProfileId" = 1;</pre> Truyện 900 đã duyệt; muốn chạy lại
       <tr><td><code>POST /api/v1/PublicStoryReview/{itemId}/request-changes</code></td><td><code>partType = "listening"</code></td><td><code>partId</code> là Id tương tác thuộc phiên bản đang duyệt</td></tr>
       <tr><td><code>GET /api/v1/PublishedContentReview/stories/{storyId}</code></td><td><code>listening</code></td><td>Không có Id; chữ đã che số điện thoại, email</td></tr>
       <tr><td><code>GET /api/v1/ContentReportReview/{itemId}</code></td><td><code>listening</code></td><td>Như trên, che thêm biệt danh của bé. Phải claim mục trước</td></tr>
-      <tr><td><code>GET /api/v1/CommunityReview/{itemId}</code></td><td><code>listening</code></td><td>Như trên. Seed chưa có bài Community có tương tác, chỉ có test tự động</td></tr>
     </table></div>
   </div>
 
@@ -1350,7 +1349,7 @@ WHERE "ChildProfileId" = 1;</pre> Truyện 900 đã duyệt; muốn chạy lại
 <div class="req"><span class="method POST">POST</span><code class="url">http://localhost:5259/api/v1/ModerationQueue/21/claim</code></div>
 <div class="case-sec"><b>Header:</b> <code>Authorization: Bearer {{tokenMod1}}</code></div>
 <div class="case-sec"><b>Body:</b> không có</div>
-<div class="case-sec"><b>Mong đợi:</b><ul><li><span class='s200'>200</span>; mục <code>Claimed</code>, người nhận là <code>moderator_demo1</code></li><li>Lượt nhận có hạn 2 giờ. Quá hạn thì các API của mục 21 trả 409 và phải nhận lại</li></ul></div>
+<div class="case-sec"><b>Mong đợi:</b><ul><li><span class='s200'>200</span>; mục <code>Claimed</code>, người nhận là <code>moderator_demo1</code></li><li>Lượt nhận có hạn 2 giờ. Quá hạn thì các API của mục 21 trả 409 và phải nhận lại</li><li>Phản hồi có thêm <code>data.storyImpact</code> (mục <code>PublicStoryReview</code>): trên DB mới seed truyện 14 chưa gắn thẻ ước nên <code>wishCards = []</code>, <code>wishCardsNeedReview = false</code>. Không ảnh hưởng các bước P4b bên dưới; ý nghĩa và nội dung hiển thị xem <code>api-test-guide-buoc-1-7.html</code>, Bước 1, API claim</li></ul></div>
 </div>
 <div class="case" data-case="P4b-02">
 <div class="case-head"><span class="chk"></span><span class="cid">P4b-02</span><span class="ctitle">Gói duyệt có tương tác và audio theo từng thẻ</span></div>
@@ -2040,7 +2039,7 @@ POST http://localhost:5259/api/v1/child/reading/sessions/{sessionId}/interaction
       <li>Tách mã lỗi sửa chữ: phần sau <code>LISTENING_TEXT_INVALID:</code> là danh sách <code>CODE@field</code> cách nhau bằng <code>;</code>.</li>
       <li>Trường discussion đã bị gỡ khỏi mọi DTO.</li>
       <li>Màn duyệt Public Library: hiện audio cạnh đúng thẻ bằng <code>listeningInteractions[].audio[].optionId</code> so với <code>options[].id</code>; <code>optionId = null</code> là audio của cả tương tác. Danh sách đã sắp sẵn theo thứ tự thẻ.</li>
-      <li>Màn nội dung đã công khai, báo cáo, Community: <code>listening</code> không có Id và chữ đã được che; chỉ dùng để xem.</li>
+      <li>Màn nội dung đã công khai, báo cáo: <code>listening</code> không có Id và chữ đã được che; chỉ dùng để xem.</li>
       <li><b>App của trẻ (P6):</b> mở truyện bằng <code>GET content</code>. Hết mỗi scene, nếu scene có <code>interaction</code>, <code>attemptedInSession = false</code> và <code>listenOnly = false</code> thì dừng hỏi. Bỏ qua thì không gọi API và truyện chạy tiếp.</li>
       <li><b>Sắp xếp sự kiện:</b> hiện sau scene cuối, <b>trước</b> khi gọi <code>complete</code> (phiên đã hoàn thành trả 409 <code>LISTENING_SESSION_CLOSED</code>). Chưa khớp thì phát lại các scene trong <code>replaySceneIndexes</code> rồi cho xếp lại; khi <code>revealed = true</code> thì hiện <code>correctOrderOptionIds</code> rồi đi tiếp.</li>
       <li><b>Đoán tranh:</b> phát <code>waitFeedback</code> ngay khi trẻ chọn; phát <code>feedback</code> của hình đã chọn sau khi nghe hết scene <code>revealSceneIndex</code>. Kết quả của <code>attempts</code> trả về ngay, FE tự hoãn việc phát.</li>

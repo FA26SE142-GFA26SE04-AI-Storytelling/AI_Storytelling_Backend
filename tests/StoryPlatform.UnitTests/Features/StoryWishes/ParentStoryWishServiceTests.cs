@@ -238,7 +238,7 @@ public class ParentStoryWishServiceTests
     }
 
     [Fact]
-    public async Task UseExisting_ACommunitySuggestion_IsRefusedWithGuidance()
+    public async Task UseExisting_ALegacyCommunitySuggestion_IsTreatedAsNotSuggested()
     {
         var wish = Wish();
         Suggest(wish, 1, 80, communityId: 900);
@@ -246,7 +246,7 @@ public class ParentStoryWishServiceTests
         var error = await Assert.ThrowsAsync<BadRequestException>(() =>
             _sut.UseExistingAsync(Parent, wish.Id, new UseExistingStoryRequestDto { SuggestionRank = 1 }));
 
-        Assert.Equal(StoryWishDecisionPolicy.CommunityNotSupportedMessage, error.Message);
+        Assert.Equal(StoryWishDecisionPolicy.OnlySuggestedMessage, error.Message);
         _roadmap.VerifyNoOtherCalls();
     }
 

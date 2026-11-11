@@ -161,12 +161,9 @@ public class ParentStoryWishService : IParentStoryWishService
         EnsurePending(wish);
         var rank = request.SuggestionRank;
         var suggestion = await _unitOfWork.Repository<StoryWishSuggestion>().FirstOrDefaultAsync(
-            row => row.StoryWishId == wishId && row.Rank == rank && !row.IsDeleted, cancellationToken: ct)
+            row => row.StoryWishId == wishId && row.Rank == rank && !row.IsDeleted
+                   && row.CommunitySubmissionId == null, cancellationToken: ct)
             ?? throw new BadRequestException(StoryWishDecisionPolicy.OnlySuggestedMessage);
-        if (suggestion.CommunitySubmissionId.HasValue)
-        {
-            throw new BadRequestException(StoryWishDecisionPolicy.CommunityNotSupportedMessage);
-        }
 
         // Lộ trình tự kiểm ApproveStory, kiểm truyện hợp với bé, chèn "Đọc tiếp theo" (WF-L4A UC-04).
         await _roadmap.AddForWishAsync(parentUserId, wish.ChildProfileId, suggestion.StoryId, wish.Id, ct);

@@ -67,15 +67,6 @@ public class StoryWishSuggestionService : IStoryWishSuggestionService
         var childId = child.Id;
         var stories = await _unitOfWork.Repository<Story>().FindAsync(
             story => candidateIds.Contains(story.Id) && !story.IsDeleted, cancellationToken: ct);
-        var community = (await _unitOfWork.Repository<ModerationItem>().FindAsync(
-                item => item.ItemType == ModerationItemType.CommunitySubmission
-                        && item.Status == ModerationItemStatus.Approved
-                        && !item.IsDeleted
-                        && item.StoryId.HasValue
-                        && candidateIds.Contains(item.StoryId.Value),
-                cancellationToken: ct))
-            .GroupBy(item => item.StoryId!.Value)
-            .ToDictionary(group => group.Key, group => group.Max(item => item.Id));
         var finished = (await _unitOfWork.Repository<ReadingSession>().FindAsync(
                 session => session.ChildProfileId == childId
                            && session.Status == SessionStatus.Completed
@@ -86,19 +77,12 @@ public class StoryWishSuggestionService : IStoryWishSuggestionService
         var learning = await _unitOfWork.Repository<LearningProfile>().FirstOrDefaultAsync(
             profile => profile.ChildProfileId == childId && !profile.IsDeleted, cancellationToken: ct);
 
-        var scored = new List<(Story Story, int Score, int? SubmissionId, List<int> Matched)>();
+        var scored = new List<(Story Story, int Score, List<int> Matched)>();
         foreach (var story in stories)
         {
-            int? submissionId = null;
             if (story.Scope == StoryScope.Parent && story.ChildProfileId != childId)
             {
-                // Truyện riêng của bé khác chỉ mở được khi đã thành truyện Cộng đồng.
-                if (!community.TryGetValue(story.Id, out var itemId))
-                {
-                    continue;
-                }
-
-                submissionId = itemId;
+                continue;
             }
 
             if (await _eligibility.EvaluateAsync(child, story, ct) != null)
@@ -122,7 +106,7 @@ public class StoryWishSuggestionService : IStoryWishSuggestionService
 
             if (score >= StoryWishSuggestionPolicy.MinScore)
             {
-                scored.Add((story, score, submissionId, matched));
+                scored.Add((story, score, matched));
             }
         }
 
@@ -138,7 +122,6 @@ public class StoryWishSuggestionService : IStoryWishSuggestionService
             {
                 StoryWishId = wishId,
                 StoryId = top[index].Story.Id,
-                CommunitySubmissionId = top[index].SubmissionId,
                 Rank = index + 1,
                 Score = top[index].Score,
                 MatchedCardIds = string.Join(',', top[index].Matched)
@@ -228,7 +211,8 @@ public class StoryWishSuggestionService : IStoryWishSuggestionService
 
         var wishId = wish.Id;
         var suggestions = (await _unitOfWork.Repository<StoryWishSuggestion>().FindAsync(
-                row => row.StoryWishId == wishId && !row.IsDeleted, cancellationToken: ct))
+                row => row.StoryWishId == wishId && !row.IsDeleted && row.CommunitySubmissionId == null,
+                cancellationToken: ct))
             .OrderBy(row => row.Rank).ToList();
         if (suggestions.Count == 0)
         {
@@ -266,8 +250,7 @@ public class StoryWishSuggestionService : IStoryWishSuggestionService
     private static T Fill<T>(T dto, Row row) where T : WishSuggestionDto
     {
         dto.Rank = row.Suggestion.Rank;
-        dto.StoryId = row.Suggestion.CommunitySubmissionId == null ? row.Suggestion.StoryId : null;
-        dto.CommunitySubmissionId = row.Suggestion.CommunitySubmissionId;
+        dto.StoryId = row.Suggestion.StoryId;
         dto.Title = row.Story.Title ?? string.Empty;
         dto.CoverImageUrl = row.Story.CoverImageUrl;
         dto.MatchedCards = row.Cards.Select(card => new ChildWishCardDto

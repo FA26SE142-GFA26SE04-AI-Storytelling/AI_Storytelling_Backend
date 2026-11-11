@@ -14,11 +14,14 @@ public class ModerationQueueService : IModerationQueueService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogWriter _auditLogWriter;
+    private readonly IStoryUsageImpactReader? _storyImpactReader;
 
-    public ModerationQueueService(IUnitOfWork unitOfWork, IAuditLogWriter auditLogWriter)
+    public ModerationQueueService(
+        IUnitOfWork unitOfWork, IAuditLogWriter auditLogWriter, IStoryUsageImpactReader? storyImpactReader = null)
     {
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
+        _storyImpactReader = storyImpactReader;
     }
 
     public async Task<ModerationItem> EnqueueAsync(
@@ -129,6 +132,7 @@ public class ModerationQueueService : IModerationQueueService
         await HydrateSummaryRelationsAsync(item, cancellationToken);
         var claimed = MapDetail(item, now);
         claimed.ClaimedByName = DisplayName(actor);
+        claimed.StoryImpact = await ReadStoryImpactAsync(item, cancellationToken);
         return claimed;
     }
 
@@ -159,6 +163,7 @@ public class ModerationQueueService : IModerationQueueService
         await HydrateSummaryRelationsAsync(item, cancellationToken);
         var opened = MapDetail(item, now);
         opened.ClaimedByName = DisplayName(actor);
+        opened.StoryImpact = await ReadStoryImpactAsync(item, cancellationToken);
         return opened;
     }
 
@@ -222,6 +227,19 @@ public class ModerationQueueService : IModerationQueueService
             if (userRepo != null)
                 item.CreatedByUser = await userRepo.GetByIdAsync(item.CreatedByUserId!.Value, cancellationToken);
         }
+    }
+
+    /// <summary>Chỉ mục gỡ / duyệt công khai truyện Creator mới có thông tin ảnh hưởng.</summary>
+    private async Task<StoryImpactDto?> ReadStoryImpactAsync(ModerationItem item, CancellationToken cancellationToken)
+    {
+        if (_storyImpactReader == null || !item.StoryId.HasValue
+            || item.ItemType is not (ModerationItemType.PublicStoryRemoval or ModerationItemType.PublicStoryReview))
+        {
+            return null;
+        }
+
+        return await _storyImpactReader.ReadAsync(
+            item.StoryId.Value, item.ItemType == ModerationItemType.PublicStoryReview, cancellationToken);
     }
 
     private static ModerationItemSummaryDto MapSummary(ModerationItem item, DateTime now) =>

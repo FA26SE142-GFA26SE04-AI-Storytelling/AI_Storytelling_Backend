@@ -46,7 +46,7 @@ public class ChildReadingService : IChildReadingService
     public async Task<ReadingSessionStartedDto> StartAsync(
         int childProfileId, string sessionKey, StartReadingRequestDto request, CancellationToken ct = default)
     {
-        if ((request.StoryId.HasValue ? 1 : 0) + (request.CommunitySubmissionId.HasValue ? 1 : 0) + (request.FamilyConfirmationId.HasValue ? 1 : 0) != 1)
+        if ((request.StoryId.HasValue ? 1 : 0) + (request.FamilyConfirmationId.HasValue ? 1 : 0) != 1)
         {
             throw new BadRequestException("Hãy chọn đúng một truyện để đọc.");
         }
@@ -75,20 +75,7 @@ public class ChildReadingService : IChildReadingService
         var (story, version) = await ResolveTargetAsync(childProfileId, request, ct);
         var versionId = version.Id;
 
-        // Community approval pins a version. Check its content without mutating the tracked source story.
-        var eligibilityStory = request.CommunitySubmissionId.HasValue
-            ? new Story
-            {
-                Id = story.Id,
-                Scope = story.Scope,
-                Status = story.Status,
-                IsPublished = story.IsPublished,
-                ArchivedAt = story.ArchivedAt,
-                AgeBand = story.AgeBand,
-                Content = version.Content
-            }
-            : story;
-        if (!request.FamilyConfirmationId.HasValue && await _eligibility.EvaluateAsync(child, eligibilityStory, ct) != null)
+        if (!request.FamilyConfirmationId.HasValue && await _eligibility.EvaluateAsync(child, story, ct) != null)
         {
             throw new ForbiddenException(ChildReadingPolicy.StoryUnavailableMessage);
         }
@@ -200,31 +187,9 @@ public class ChildReadingService : IChildReadingService
             var family = await new ParentStoryPackageReader(_unitOfWork, new StoryPlatform.Application.Features.ChildProfiles.Profiles.Services.ChildProfileAccessGuard(_unitOfWork)).AuthorizeAsync(childProfileId, familyId, ct);
             return (family.Story, family.Version);
         }
-        if (request.CommunitySubmissionId.HasValue)
-        {
-            var submissionId = request.CommunitySubmissionId.Value;
-            var item = await _unitOfWork.Repository<ModerationItem>().FirstOrDefaultAsync(
-                value => value.Id == submissionId
-                         && value.ItemType == ModerationItemType.CommunitySubmission
-                         && value.Status == ModerationItemStatus.Approved
-                         && !value.IsDeleted
-                         && value.StoryId.HasValue
-                         && value.StoryVersionId.HasValue,
-                cancellationToken: ct);
-            if (item == null)
-            {
-                throw new ForbiddenException(ChildReadingPolicy.StoryUnavailableMessage);
-            }
-
-            story = await _unitOfWork.Repository<Story>().GetByIdAsync(item.StoryId!.Value, ct);
-            version = await _unitOfWork.Repository<StoryVersion>().GetByIdAsync(item.StoryVersionId!.Value, ct);
-        }
-        else
-        {
-            var found = await ChildStoryLookup.FindAsync(_unitOfWork, childProfileId, request.StoryId!.Value, ct);
-            story = found?.Story;
-            version = found?.Version;
-        }
+        var found = await ChildStoryLookup.FindAsync(_unitOfWork, childProfileId, request.StoryId!.Value, ct);
+        story = found?.Story;
+        version = found?.Version;
 
         if (story == null || story.IsDeleted || version == null || version.IsDeleted || version.StoryId != story.Id)
         {

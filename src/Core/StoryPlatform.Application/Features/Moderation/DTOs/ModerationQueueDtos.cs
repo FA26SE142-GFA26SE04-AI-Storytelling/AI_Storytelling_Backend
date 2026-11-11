@@ -72,6 +72,8 @@ public class ModerationItemDetailDto : ModerationItemSummaryDto
     public string? Flags { get; set; }
     public string? Checklist { get; set; }
     public string? ReviewProgress { get; set; }
+    /// <summary>Truyện đang được dùng ở đâu; chỉ có ở PublicStoryRemoval / PublicStoryReview, null với loại khác.</summary>
+    public StoryImpactDto? StoryImpact { get; set; }
 }
 
 public class GrantReviewViewRequestDto
@@ -92,4 +94,29 @@ public class ModerationReviewViewDto
     public int? ReadingRoadmapId { get; set; }
     public DateTime GrantedAt { get; set; }
     public DateTime ExpiresAt { get; set; }
+}
+
+/// <summary>Truyện đang được dùng ở đâu; chỉ có ở mục PublicStoryRemoval / PublicStoryReview.</summary>
+public class StoryImpactDto
+{
+    /// <summary>Thẻ ước đang gắn với truyện, theo nhóm rồi thứ tự hiển thị.</summary>
+    public List<StoryImpactWishCardDto> WishCards { get; set; } = new();
+    /// <summary>Số điều ước Pending/Accepted có truyện này trong danh sách gợi ý.</summary>
+    public int PendingWishCount { get; set; }
+    /// <summary>Số mục lộ trình của bé đang Waiting/Open chứa truyện này.</summary>
+    public int ActiveRoadmapItemCount { get; set; }
+    /// <summary>true khi truyện xin công khai lại (từng công khai) và đang có thẻ ước: nên rà lại thẻ.</summary>
+    public bool WishCardsNeedReview { get; set; }
+}
+
+public class StoryImpactWishCardDto
+{
+    public int WishCardId { get; set; }
+    public string Group { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    /// <summary>Moderator hoặc Ai.</summary>
+    public string Source { get; set; } = string.Empty;
+    public bool IsActive { get; set; }
+    /// <summary>Số truyện Creator khác đang công khai, cùng nhóm tuổi, còn mang thẻ này. 0 = gỡ truyện này thì thẻ hết truyện để gợi ý.</summary>
+    public int OtherPublishedStoryCount { get; set; }
 }

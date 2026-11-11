@@ -186,80 +186,6 @@ public class ChildReadingServiceTests
         Assert.Equal(first.SessionId, Assert.Single(_h.Telemetry).ReadingSessionId);
     }
 
-    [Theory]
-    [InlineData("missing")]
-    [InlineData("deleted")]
-    [InlineData("another-story")]
-    public async Task StartAsync_InvalidPinnedVersion_IsForbidden(string state)
-    {
-        _h.ModerationItems.Add(new ModerationItem
-        {
-            Id = 5, ItemType = ModerationItemType.CommunitySubmission, Status = ModerationItemStatus.Approved,
-            StoryId = ReadingHarness.Story, StoryVersionId = ReadingHarness.Version
-        });
-        if (state == "missing") _h.Versions.Clear();
-        if (state == "deleted") _h.Versions.Single().IsDeleted = true;
-        if (state == "another-story") _h.Versions.Single().StoryId = 999;
-
-        var error = await Assert.ThrowsAsync<ForbiddenException>(() => _sut.StartAsync(
-            ReadingHarness.Child, ReadingHarness.SessionKey, new StartReadingRequestDto { CommunitySubmissionId = 5 }));
-
-        Assert.Equal(ChildReadingPolicy.StoryUnavailableMessage, error.Message);
-        Assert.Empty(_h.Sessions);
-    }
-
-    [Theory]
-    [InlineData(ModerationItemStatus.Pending)]
-    [InlineData(ModerationItemStatus.Rejected)]
-    [InlineData(ModerationItemStatus.Removed)]
-    public async Task StartAsync_UnapprovedCommunitySubmission_IsForbidden(ModerationItemStatus status)
-    {
-        _h.ModerationItems.Add(new ModerationItem
-        {
-            Id = 5, ItemType = ModerationItemType.CommunitySubmission, Status = status,
-            StoryId = ReadingHarness.Story, StoryVersionId = ReadingHarness.Version
-        });
-
-        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.StartAsync(
-            ReadingHarness.Child, ReadingHarness.SessionKey, new StartReadingRequestDto { CommunitySubmissionId = 5 }));
-        Assert.Empty(_h.Sessions);
-    }
-
-    [Theory]
-    [InlineData(20, 2, true)]
-    [InlineData(2, 20, false)]
-    public async Task StartAsync_CommunitySafetyChecksPinnedContent(int pinnedLength, int currentLength, bool denied)
-    {
-        var story = _h.Stories.Single();
-        story.ChildProfileId = ReadingHarness.OtherChild;
-        story.Content = string.Join(' ', Enumerable.Repeat("a", currentLength));
-        _h.Versions.Single().Content = string.Join(' ', Enumerable.Repeat("b", pinnedLength));
-        _h.Policies.Add(new SafetyPolicy { Id = 1, ChildProfileId = ReadingHarness.Child, MaxStoryLength = 10 });
-        _h.ModerationItems.Add(new ModerationItem
-        {
-            Id = 5, ItemType = ModerationItemType.CommunitySubmission, Status = ModerationItemStatus.Approved,
-            StoryId = ReadingHarness.Story, StoryVersionId = ReadingHarness.Version
-        });
-        var service = new ChildReadingService(_h.UnitOfWork.Object,
-            new ChildRoadmapEligibility(_h.UnitOfWork.Object), _recorder.Object, _rewards.Object);
-        var request = new StartReadingRequestDto { CommunitySubmissionId = 5 };
-
-        if (denied)
-        {
-            var error = await Assert.ThrowsAsync<ForbiddenException>(() =>
-                service.StartAsync(ReadingHarness.Child, ReadingHarness.SessionKey, request));
-            Assert.Equal(ChildReadingPolicy.StoryUnavailableMessage, error.Message);
-            Assert.Empty(_h.Sessions);
-        }
-        else
-        {
-            var result = await service.StartAsync(ReadingHarness.Child, ReadingHarness.SessionKey, request);
-            Assert.Equal(ReadingHarness.Story, result.StoryId);
-        }
-
-        Assert.Equal(currentLength, StoryPlatform.Contracts.AI.Models.StoryWordCounter.Count(story.Content));
-    }
-
     [Fact]
     public async Task StartAsync_TelemetrySaveFails_RollsBackSessionAndProgressTransaction()
     {
@@ -340,32 +266,19 @@ public class ChildReadingServiceTests
     }
 
     [Fact]
-    public async Task StartAsync_CommunitySubmission_UsesPinnedVersionAndHidesNothingElse()
-    {
-        _h.Stories.Single().Scope = StoryScope.Creator;
-        _h.Stories.Single().ChildProfileId = null;
-        _h.Versions.Add(new StoryVersion { Id = 60, StoryId = 10, VersionNo = 2, IsCurrent = false });
-        _h.ModerationItems.Add(new ModerationItem
-        {
-            Id = 5, ItemType = ModerationItemType.CommunitySubmission, Status = ModerationItemStatus.Approved,
-            StoryId = 10, StoryVersionId = 60
-        });
-
-        var result = await _sut.StartAsync(ReadingHarness.Child, ReadingHarness.SessionKey,
-            new StartReadingRequestDto { CommunitySubmissionId = 5 });
-
-        Assert.Equal(60, _h.Sessions.Single().StoryVersionId);
-        Assert.Equal(10, result.StoryId);
-    }
-
-    [Fact]
     public async Task StartAsync_RequestNeedsExactlyOneTarget()
     {
         await Assert.ThrowsAsync<BadRequestException>(() =>
             _sut.StartAsync(ReadingHarness.Child, ReadingHarness.SessionKey, new StartReadingRequestDto()));
         await Assert.ThrowsAsync<BadRequestException>(() =>
             _sut.StartAsync(ReadingHarness.Child, ReadingHarness.SessionKey,
-                new StartReadingRequestDto { StoryId = 10, CommunitySubmissionId = 5 }));
+                new StartReadingRequestDto { StoryId = 10, FamilyConfirmationId = 5 }));
+    }
+
+    [Fact]
+    public void StartReadingRequest_HasNoCommunityTarget()
+    {
+        Assert.Null(typeof(StartReadingRequestDto).GetProperty("CommunitySubmissionId"));
     }
 
     // ---- GetContentAsync ----

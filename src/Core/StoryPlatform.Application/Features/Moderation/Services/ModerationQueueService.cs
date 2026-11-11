@@ -201,31 +201,20 @@ public class ModerationQueueService : IModerationQueueService
         if (!item.StoryId.HasValue && !item.StoryVersionId.HasValue && !includeCreatedBy)
             return;
 
-        // Giữ item tracked từ GetByIdAsync để bảo toàn RowVersion concurrency, chỉ nạp thêm quan hệ phục vụ hiển thị.
-        var include = includeCreatedBy
-            ? $"{nameof(ModerationItem.Story)},{nameof(ModerationItem.StoryVersion)},{nameof(ModerationItem.CreatedByUser)}"
-            : $"{nameof(ModerationItem.Story)},{nameof(ModerationItem.StoryVersion)}";
-
-        var hydrated = await _unitOfWork.Repository<ModerationItem>()
-            .FirstOrDefaultAsync(x => x.Id == item.Id, includeProperties: include, cancellationToken: cancellationToken);
-        if (hydrated != null)
-        {
-            item.Story ??= hydrated.Story;
-            item.StoryVersion ??= hydrated.StoryVersion;
-            if (includeCreatedBy) item.CreatedByUser ??= hydrated.CreatedByUser;
-        }
-
+        // These navigations belong to a tracked queue item. Load tracked entities as well:
+        // attaching an AsNoTracking version makes its separately stored owned metadata Added,
+        // causing duplicate-key INSERTs when a later decision/audit saves this unit of work.
         if (item.Story == null && item.StoryId.HasValue)
         {
             var storyRepo = _unitOfWork.Repository<Story>();
             if (storyRepo != null)
-                item.Story = await storyRepo.FirstOrDefaultAsync(x => x.Id == item.StoryId.Value, cancellationToken: cancellationToken);
+                item.Story = await storyRepo.GetByIdAsync(item.StoryId.Value, cancellationToken);
         }
         if (item.StoryVersion == null && item.StoryVersionId.HasValue)
         {
             var versionRepo = _unitOfWork.Repository<StoryVersion>();
             if (versionRepo != null)
-                item.StoryVersion = await versionRepo.FirstOrDefaultAsync(x => x.Id == item.StoryVersionId.Value, cancellationToken: cancellationToken);
+                item.StoryVersion = await versionRepo.GetByIdAsync(item.StoryVersionId.Value, cancellationToken);
         }
         if (includeCreatedBy && item.CreatedByUser == null)
         {

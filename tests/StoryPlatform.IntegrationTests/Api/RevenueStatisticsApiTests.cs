@@ -47,7 +47,7 @@ public sealed class RevenueStatisticsApiTests(ApiFactory factory) : IClassFixtur
             (byStatus.GetProperty("paid").GetInt32(), byStatus.GetProperty("pending").GetInt32(),
                 byStatus.GetProperty("expired").GetInt32(), byStatus.GetProperty("mismatchAmount").GetInt32()));
         Assert.Equal(
-            ["Reading:1:49000", "Creative:1:99000", "AddOn:1:29000"],
+            ["Reading:1:49000", "Creative:1:99000", "AddOn:1:29000", "CreatorPack:0:0"],
             revenue.GetProperty("revenueByPlanType").EnumerateArray().Select(row =>
                 $"{row.GetProperty("planType").GetString()}:{row.GetProperty("transactionCount").GetInt32()}:{row.GetProperty("revenueVnd").GetInt64()}"));
         Assert.Equal((2, 1), (revenue.GetProperty("buyingParents").GetInt32(), revenue.GetProperty("repeatBuyingParents").GetInt32()));

@@ -1,4 +1,5 @@
 using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Features.TokenQuota.Interfaces;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.Moderation.DTOs;
@@ -18,6 +19,7 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly INotificationService _notificationService;
     private readonly IMediaStorage? _mediaStorage;
+    private readonly ITokenQuotaService? _tokenQuotaService;
 
     /// <summary>Đường dẫn media trong gói duyệt sống 1 giờ; mỗi lần mở lại gói hoặc sau mỗi thao tác sẽ được ký lại.</summary>
     private static readonly TimeSpan ReviewMediaUrlLifetime = TimeSpan.FromHours(1);
@@ -26,12 +28,14 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
         IUnitOfWork unitOfWork,
         IAuditLogWriter auditLogWriter,
         INotificationService notificationService,
-        IMediaStorage? mediaStorage = null)
+        IMediaStorage? mediaStorage = null,
+        ITokenQuotaService? tokenQuotaService = null)
     {
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
         _notificationService = notificationService;
         _mediaStorage = mediaStorage;
+        _tokenQuotaService = tokenQuotaService;
     }
 
     private sealed record ReviewContext(UserAccount Actor, ModerationItem Item, Story Story, StoryVersion Version);

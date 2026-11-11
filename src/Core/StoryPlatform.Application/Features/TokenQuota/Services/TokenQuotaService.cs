@@ -13,7 +13,7 @@ namespace StoryPlatform.Application.Features.TokenQuota.Services;
 /// Sổ lượt AI (Luồng 2, 2d): mỗi lần cấp lượt là một lô trong credit_lots, lượt tính theo tài khoản phụ huynh.
 /// Lô còn hạn = Remaining > 0 và (ExpiresAt null hoặc ExpiresAt > now); lô sắp hết hạn được dùng trước.
 /// </summary>
-public class TokenQuotaService : ITokenQuotaService
+public partial class TokenQuotaService : ITokenQuotaService
 {
     private const string OutOfCreditsMessage =
         "Bạn đã hết lượt tạo truyện AI. Hãy nâng lên Gói Sáng tạo hoặc mua Add-on để tạo thêm.";
@@ -268,16 +268,17 @@ public class TokenQuotaService : ITokenQuotaService
 
     public async Task<bool> GrantAsync(
         int userId, CreditSource source, int amount, DateTime? expiresAt, int? paymentId,
-        CancellationToken cancellationToken = default)
+        CreditType creditType = CreditType.AI, CancellationToken cancellationToken = default)
     {
         if (amount <= 0)
         {
             return false;
         }
 
+        // Một giao dịch cấp tối đa một lô cho mỗi loại lượt (Gói Creator cấp cả lượt AI lẫn lượt gửi duyệt).
         var repo = _unitOfWork.Repository<CreditLot>();
         if (paymentId.HasValue
-            && await repo.ExistsAsync(lot => lot.PaymentId == paymentId, cancellationToken))
+            && await repo.ExistsAsync(lot => lot.PaymentId == paymentId && lot.CreditType == creditType, cancellationToken))
         {
             return false;
         }
@@ -286,7 +287,7 @@ public class TokenQuotaService : ITokenQuotaService
             new CreditLot
             {
                 UserId = userId,
-                CreditType = CreditType.AI,
+                CreditType = creditType,
                 Source = source,
                 Total = amount,
                 Remaining = amount,
@@ -303,10 +304,10 @@ public class TokenQuotaService : ITokenQuotaService
         ?? throw new NotFoundException("Hồ sơ trẻ", childProfileId);
 
     private async Task<IReadOnlyList<CreditLot>> GetUsableLotsAsync(
-        int userId, DateTime now, CancellationToken cancellationToken) =>
+        int userId, DateTime now, CancellationToken cancellationToken, CreditType creditType = CreditType.AI) =>
         await _unitOfWork.Repository<CreditLot>().FindAsync(
             lot => lot.UserId == userId
-                   && lot.CreditType == CreditType.AI
+                   && lot.CreditType == creditType
                    && lot.Remaining > 0
                    && (lot.ExpiresAt == null || lot.ExpiresAt > now),
             cancellationToken: cancellationToken);
@@ -338,7 +339,7 @@ public class TokenQuotaService : ITokenQuotaService
             return;
         }
 
-        await GrantAsync(userId, CreditSource.Trial, 1, expiresAt: null, paymentId: null, cancellationToken);
+        await GrantAsync(userId, CreditSource.Trial, 1, expiresAt: null, paymentId: null, cancellationToken: cancellationToken);
     }
 
     /// <summary>Ghi một dòng lịch sử trừ lượt; nơi gọi lưu cùng lúc với thay đổi của lô.</summary>

@@ -26,10 +26,16 @@ public class SubscriptionPlanConfiguration : IEntityTypeConfiguration<Subscripti
             .HasDefaultValue(PlanType.Legacy)
             .IsRequired();
 
+        builder.Property(x => x.Audience)
+            .HasConversion<string>()
+            .HasMaxLength(20)
+            .HasDefaultValue(PlanAudience.User)
+            .IsRequired();
+
         builder.HasQueryFilter(x => !x.IsDeleted);
 
         // Luong 2 — goi Personal cu (49.000d/+50 luot) ngung ban, giu lai de giao dich cu hien dung ten.
-        // Mo hinh moi: Goi Doc, Goi Sang tao theo chu ky thang va Add-on.
+        // Mo hinh moi: Goi Doc, Goi Sang tao theo chu ky thang, Add-on va Goi Creator.
         builder.HasData(
             new SubscriptionPlan
             {
@@ -71,6 +77,20 @@ public class SubscriptionPlanConfiguration : IEntityTypeConfiguration<Subscripti
                 PlanType = PlanType.AddOn,
                 PriceVnd = 29000,
                 AiCredits = 2,
+                IsActive = true,
+                CreatedAt = SeedCreatedAt,
+                IsDeleted = false
+            },
+            // Goi Creator (Luong 2, 2f): chi Content Creator thay va mua duoc.
+            new SubscriptionPlan
+            {
+                Id = 5,
+                Name = "Gói Creator",
+                PlanType = PlanType.CreatorPack,
+                Audience = PlanAudience.Creator,
+                PriceVnd = 99000,
+                AiCredits = 6,
+                SubmitCredits = 20,
                 IsActive = true,
                 CreatedAt = SeedCreatedAt,
                 IsDeleted = false

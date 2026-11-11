@@ -71,15 +71,16 @@ public sealed class SubscriptionPostgresTests(AuthoringGuidePostgresFixture fixt
                 (lot.UserId, lot.CreditType, lot.Source, lot.Total, lot.Remaining, lot.ExpiresAt, lot.PaymentId));
             Assert.Equal(3, await db.TokenQuotaConfigs.CountAsync()); // bảng cũ giữ nguyên dữ liệu
             Assert.Equal(
-                ["1:Legacy:49000:50:False", "2:Reading:49000:0:True", "3:Creative:99000:4:True", "4:AddOn:29000:2:True"],
+                ["1:Legacy:User:49000:50:0:False", "2:Reading:User:49000:0:0:True", "3:Creative:User:99000:4:0:True",
+                    "4:AddOn:User:29000:2:0:True", "5:CreatorPack:Creator:99000:6:20:True"],
                 (await db.SubscriptionPlans.OrderBy(plan => plan.Id).ToListAsync())
-                    .Select(plan => $"{plan.Id}:{plan.PlanType}:{plan.PriceVnd}:{plan.AiCredits}:{plan.IsActive}"));
+                    .Select(plan => $"{plan.Id}:{plan.PlanType}:{plan.Audience}:{plan.PriceVnd}:{plan.AiCredits}:{plan.SubmitCredits}:{plan.IsActive}"));
 
             // Sequence đã được đẩy qua các Id chèn cố định: gói tạo sau này không trùng khoá.
             var added = new SubscriptionPlan { Name = "Gói thử", PlanType = PlanType.Reading, PriceVnd = 1000 };
             db.SubscriptionPlans.Add(added);
             await db.SaveChangesAsync();
-            Assert.Equal(5, added.Id);
+            Assert.Equal(6, added.Id);
         }
         finally
         {
@@ -341,6 +342,48 @@ public sealed class SubscriptionPostgresTests(AuthoringGuidePostgresFixture fixt
         var row = Assert.Single(reading.Stories);
         Assert.Equal((1, 1, 1, 1, 1m), (row.Views, row.Favorites, row.CompletedReadings, row.ValidReads, row.CompletionRate));
         Assert.Equal((10000L, 1, 1, 10000L), (revenue.CreatorFundVnd, revenue.TotalValidReadsAllCreators, revenue.MyValidReads, revenue.EstimatedEarningsVnd));
+    }
+
+    [PostgresFact]
+    public async Task CreatorPackRacingWebhookAndMarkPaid_GrantsOneAiAndOneSubmitLot()
+    {
+        await using var database = await fixture.CreateDatabaseAsync();
+        PaymentTransaction transaction;
+        int creatorId;
+        await using (var seed = new ApplicationDbContext(database.Options))
+        {
+            var creator = NewParent("pg_pack_creator");
+            creator.Role = UserRole.ContentCreator;
+            seed.Users.Add(creator);
+            await seed.SaveChangesAsync();
+            creatorId = creator.Id;
+            transaction = new PaymentTransaction
+            {
+                PlanId = 5, PayerUserId = creatorId, TransactionCode = "SEPAYPACK000001", Amount = 99000,
+                AiCredits = 6, SubmitCredits = 20, Status = PaymentStatus.Paid, PaidAt = DateTime.UtcNow,
+                ExpiresAt = DateTime.UtcNow.AddMinutes(15)
+            };
+            seed.PaymentTransactions.Add(transaction);
+            await seed.SaveChangesAsync();
+        }
+
+        await Task.WhenAll(Enumerable.Range(0, 3).Select(async _ =>
+        {
+            await using var context = new ApplicationDbContext(database.Options);
+            await using var uow = new UnitOfWork(context);
+            var plan = await context.SubscriptionPlans.SingleAsync(item => item.Id == 5);
+            await NewSubscriptionService(uow).ApplyPaidTransactionAsync(transaction, plan, DateTime.UtcNow);
+        }));
+
+        await using var db = new ApplicationDbContext(database.Options);
+        Assert.Equal(
+            ["AI:CreatorPack:6", "Submit:CreatorPack:20"],
+            (await db.CreditLots.Where(lot => lot.UserId == creatorId).OrderBy(lot => lot.CreditType).ToListAsync())
+                .Select(lot => $"{lot.CreditType}:{lot.Source}:{lot.Remaining}"));
+        await using var context2 = new ApplicationDbContext(database.Options);
+        await using var uow2 = new UnitOfWork(context2);
+        var quota = await new TokenQuotaService(uow2).GetCreatorQuotaAsync(creatorId);
+        Assert.Equal((8, 25), (quota.AiCredits.TotalRemaining, quota.SubmitCredits.TotalRemaining));
     }
 
     private static SubscriptionService NewSubscriptionService(UnitOfWork uow) =>

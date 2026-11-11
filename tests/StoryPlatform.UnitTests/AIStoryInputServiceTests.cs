@@ -22,11 +22,15 @@ public sealed partial class AIStoryInputServiceTests
     {
         var store = new FakeUnitOfWork();
         store.Seed(new UserAccount { Id = 13, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
+        // Strict: Creator dùng lượt của chính mình, không bao giờ chạm lượt của hồ sơ trẻ.
         var quota = new Moq.Mock<ITokenQuotaService>(Moq.MockBehavior.Strict);
+        quota.Setup(q => q.EnsureCreatorWithinQuotaAsync(13, Moq.It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        quota.Setup(q => q.IncrementCreatorUsageAsync(13, Moq.It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), quota.Object);
         var result = await service.SubmitCreatorAsync(13, CreatorRequest());
         var replay = await service.SubmitCreatorAsync(13, CreatorRequest());
         Assert.Equal(result.RequestId, replay.RequestId);
+        quota.Verify(q => q.IncrementCreatorUsageAsync(13, Moq.It.IsAny<CancellationToken>()), Moq.Times.Once);
         Assert.Equal("input_accepted", result.InputStatus);
         var story = Assert.Single(store.Items<Story>());
         Assert.Equal(StoryScope.Creator, story.Scope);
@@ -67,7 +71,7 @@ public sealed partial class AIStoryInputServiceTests
     {
         var store = new FakeUnitOfWork();
         store.Seed(new UserAccount { Id = 13, Role = role, Status = status });
-        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), new Moq.Mock<ITokenQuotaService>(Moq.MockBehavior.Strict).Object);
+        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), CreatorOnlyQuota());
         await Assert.ThrowsAsync<ForbiddenException>(() => service.SubmitCreatorAsync(13, CreatorRequest()));
         Assert.Empty(store.Items<Story>());
     }
@@ -78,16 +82,47 @@ public sealed partial class AIStoryInputServiceTests
         var store = new FakeUnitOfWork();
         store.Seed(new UserAccount { Id = 13, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
         store.Seed(new ContentCategory { Id = 1, Code = "friendship", DisplayName = "Tình bạn", DefaultBlockedAgeBands = ["Age_6_8"] });
-        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), new Moq.Mock<ITokenQuotaService>(Moq.MockBehavior.Strict).Object);
+        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), CreatorOnlyQuota());
         var result = await service.SubmitCreatorAsync(13, CreatorRequest());
         Assert.Equal("input_blocked", result.InputStatus);
         Assert.Empty(store.Items<StoryGenerationJob>());
         Assert.Null(Assert.Single(store.Items<StoryGenerationRequest>()).AcceptedInputJson);
     }
 
-    private static SubmitCreatorAIStoryInputRequestDto CreatorRequest(string ageBand = "6-8", int? existingStoryId = null, int targetLength = 500) => new()
+    [Fact]
+    public async Task Creator_MonthlyAllowanceOfTwoAiStories_ThenRefusedWith409AndNothingCreated()
     {
-        AgeBand = ageBand, ReadingLevel = 2, ExistingStoryId = existingStoryId, IdempotencyKey = "creator-generation-001",
+        var store = new FakeUnitOfWork();
+        store.Seed(new UserAccount { Id = 13, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
+        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), CreateTokenQuotaService(store));
+
+        await service.SubmitCreatorAsync(13, CreatorRequest(idempotencyKey: "creator-generation-001"));
+        await service.SubmitCreatorAsync(13, CreatorRequest(idempotencyKey: "creator-generation-002"));
+        await Assert.ThrowsAsync<ConflictException>(
+            () => service.SubmitCreatorAsync(13, CreatorRequest(idempotencyKey: "creator-generation-003")));
+
+        Assert.Equal(2, store.Items<Story>().Count);
+        Assert.Equal(2, store.Items<StoryGenerationRequest>().Count);
+        var monthly = Assert.Single(store.Items<CreditLot>(), lot => lot.CreditType == CreditType.AI);
+        Assert.Equal((CreditSource.CreatorMonthly, 0), (monthly.Source, monthly.Remaining));
+    }
+
+    /// <summary>
+    /// Quota cho test Creator: Creator dùng lượt của chính mình (luôn còn lượt ở đây); mọi lời gọi tới lượt của hồ sơ trẻ
+    /// đều làm test lỗi (Strict).
+    /// </summary>
+    private static ITokenQuotaService CreatorOnlyQuota()
+    {
+        var quota = new Moq.Mock<ITokenQuotaService>(Moq.MockBehavior.Strict);
+        quota.Setup(q => q.EnsureCreatorWithinQuotaAsync(Moq.It.IsAny<int>(), Moq.It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        quota.Setup(q => q.IncrementCreatorUsageAsync(Moq.It.IsAny<int>(), Moq.It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        return quota.Object;
+    }
+
+    private static SubmitCreatorAIStoryInputRequestDto CreatorRequest(
+        string ageBand = "6-8", int? existingStoryId = null, int targetLength = 500, string idempotencyKey = "creator-generation-001") => new()
+    {
+        AgeBand = ageBand, ReadingLevel = 2, ExistingStoryId = existingStoryId, IdempotencyKey = idempotencyKey,
         Topic = "Tình bạn", Lesson = "Biết giúp đỡ bạn bè", VocabularyLevel = "level_2", Language = "vi", TargetLength = targetLength
     };
 
@@ -98,7 +133,7 @@ public sealed partial class AIStoryInputServiceTests
     {
         var store = new FakeUnitOfWork();
         store.Seed(new UserAccount { Id = 13, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
-        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), new Moq.Mock<ITokenQuotaService>(Moq.MockBehavior.Strict).Object);
+        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), CreatorOnlyQuota());
         var request = CreatorRequest(ageBand: age, targetLength: 0);
         var first = await service.SubmitCreatorAsync(13, request);
         var replay = await service.SubmitCreatorAsync(13, request);

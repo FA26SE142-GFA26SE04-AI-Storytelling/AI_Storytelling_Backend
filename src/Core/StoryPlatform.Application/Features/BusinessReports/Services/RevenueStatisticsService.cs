@@ -13,8 +13,9 @@ public class RevenueStatisticsService : IRevenueStatisticsService
     private const int ReadingFundPercent = 30;
     private const int CreativeFundPercent = 10;
 
-    // Luôn hiện đủ ba loại gói đang bán, kể cả khi kỳ không có giao dịch.
-    private static readonly PlanType[] ReportedPlanTypes = [PlanType.Reading, PlanType.Creative, PlanType.AddOn];
+    // Luôn hiện đủ các loại gói đang bán, kể cả khi kỳ không có giao dịch.
+    private static readonly PlanType[] ReportedPlanTypes =
+        [PlanType.Reading, PlanType.Creative, PlanType.AddOn, PlanType.CreatorPack];
 
     private readonly IUnitOfWork _unitOfWork;
 
@@ -68,13 +69,16 @@ public class RevenueStatisticsService : IRevenueStatisticsService
             .ToList();
         long RevenueOf(PlanType type) => byPlanType.Single(row => row.PlanType == type.ToString()).RevenueVnd;
 
-        // Mua lại: người mua trong kỳ mà tính đến cuối kỳ đã có từ 2 giao dịch Paid.
-        var buyers = paid.Select(item => item.PayerUserId).ToHashSet();
+        // Người mua là phụ huynh: giao dịch của gói dành cho phụ huynh (Gói Creator do Creator mua nên không tính).
+        // Mua lại: người mua trong kỳ mà tính đến cuối kỳ đã có từ 2 giao dịch Paid như vậy.
+        bool BoughtByParent(PaymentTransaction item) =>
+            !plans.TryGetValue(item.PlanId, out var plan) || plan.Audience == PlanAudience.User;
+        var buyers = paid.Where(BoughtByParent).Select(item => item.PayerUserId).ToHashSet();
         var paidUntilPeriodEnd = await transactions.FindAsync(
             item => item.Status == PaymentStatus.Paid && item.PaidAt < toExclusive,
             cancellationToken: cancellationToken);
         var repeatBuyers = paidUntilPeriodEnd
-            .Where(item => buyers.Contains(item.PayerUserId))
+            .Where(item => buyers.Contains(item.PayerUserId) && BoughtByParent(item))
             .GroupBy(item => item.PayerUserId)
             .Count(group => group.Count() >= 2);
 
@@ -85,10 +89,14 @@ public class RevenueStatisticsService : IRevenueStatisticsService
             .ToHashSet();
         var manuallyPaid = paid.Where(item => manualMarks.Contains(item.Id)).ToList();
 
+        // Lượt cấp và lượt dùng chỉ tính lượt AI; lượt gửi duyệt của Creator là đơn vị khác.
         var lotsGranted = await _unitOfWork.Repository<CreditLot>().FindAsync(
-            lot => lot.CreatedAt >= from && lot.CreatedAt < toExclusive, cancellationToken: cancellationToken);
+            lot => lot.CreditType == CreditType.AI && lot.CreatedAt >= from && lot.CreatedAt < toExclusive,
+            cancellationToken: cancellationToken);
         var usages = await _unitOfWork.Repository<CreditUsage>().FindAsync(
-            usage => usage.CreatedAt >= from && usage.CreatedAt < toExclusive, cancellationToken: cancellationToken);
+            usage => usage.Reason != CreditUsageReason.PublicSubmission
+                     && usage.CreatedAt >= from && usage.CreatedAt < toExclusive,
+            cancellationToken: cancellationToken);
 
         return new RevenueStatisticsDto
         {

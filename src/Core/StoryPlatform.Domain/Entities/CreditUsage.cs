@@ -16,4 +16,11 @@ public class CreditUsage : BaseEntity
 
     public int Amount { get; set; }
     public CreditUsageReason Reason { get; set; }
+
+    /// <summary>Mục kiểm duyệt đang giữ lượt gửi duyệt này; chuyển sang lần gửi lại sau khi bị yêu cầu sửa.</summary>
+    public int? ModerationItemId { get; set; }
+    public virtual ModerationItem? ModerationItem { get; set; }
+
+    /// <summary>Thời điểm lượt được hoàn lại (bị từ chối hoặc rút khi còn chờ); null nếu chưa hoàn.</summary>
+    public DateTime? RefundedAt { get; set; }
 }

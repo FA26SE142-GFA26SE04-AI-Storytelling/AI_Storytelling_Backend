@@ -31,7 +31,7 @@ public class PublicStorySubmissionServiceTests
         _h.AddScene(1, 1);
         SetMediaReady(true);
         var queue = new ModerationQueueService(_h.UnitOfWork.Object, _h.Audit.Object);
-        _sut = new PublicStorySubmissionService(_h.UnitOfWork.Object, queue, _readiness.Object, _h.Audit.Object);
+        _sut = new PublicStorySubmissionService(_h.UnitOfWork.Object, queue, _readiness.Object, _h.Audit.Object, tokenQuotaService: _h.Quota);
     }
 
     private void SetMediaReady(bool ready) =>
@@ -278,6 +278,70 @@ public class PublicStorySubmissionServiceTests
 
         _h.UnitOfWork.Verify(unit => unit.RollbackTransactionAsync(CancellationToken.None), Times.Once);
         _h.UnitOfWork.Verify(unit => unit.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // ---------- Lượt gửi duyệt của Creator (Luồng 2, 2f) ----------
+
+    [Fact]
+    public async Task SubmitAsync_TakesOneSubmissionCredit_FromTheMonthlyAllowance()
+    {
+        var result = await SubmitAsync();
+
+        var monthly = Assert.Single(_h.CreditLots, lot => lot.CreditType == CreditType.Submit);
+        Assert.Equal((CreditSource.CreatorMonthly, 4), (monthly.Source, monthly.Remaining));
+        var usage = Assert.Single(_h.CreditUsages);
+        Assert.Equal(((int?)result.ItemId, CreditUsageReason.PublicSubmission), (usage.ModerationItemId, usage.Reason));
+    }
+
+    [Fact]
+    public async Task SubmitAsync_OutOfSubmissionCredits_Is409AndNothingIsCommitted()
+    {
+        await _h.Quota.GetCreatorQuotaAsync(Creator);
+        _h.CreditLots.Single(lot => lot.CreditType == CreditType.Submit).Remaining = 0;
+
+        var error = await Assert.ThrowsAsync<ConflictException>(() => SubmitAsync());
+
+        Assert.Contains("Gói Creator", error.Message);
+        Assert.Empty(_h.CreditUsages);
+        _h.UnitOfWork.Verify(unit => unit.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _h.UnitOfWork.Verify(unit => unit.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SubmitAsync_AfterChangesRequested_DoesNotTakeAnotherCredit()
+    {
+        var version = GivenReturnedV1AndIdenticalV2(ModerationItemStatus.ChangesRequested);
+        version.Content += " Một câu mới.";
+        var lot = _h.GivenSubmissionCreditPaidBy(90);
+
+        var result = await SubmitAsync(version.Id);
+
+        Assert.Equal(4, lot.Remaining);
+        Assert.DoesNotContain(_h.CreditLots, item => item.Source == CreditSource.CreatorMonthly && item.CreditType == CreditType.Submit && item.Remaining < 5);
+        Assert.Equal((int?)result.ItemId, Assert.Single(_h.CreditUsages).ModerationItemId);
+    }
+
+    [Fact]
+    public async Task SubmitAsync_AfterRejection_TakesANewCredit()
+    {
+        var version = GivenReturnedV1AndIdenticalV2(ModerationItemStatus.Rejected);
+        version.Content += " Một câu mới.";
+
+        await SubmitAsync(version.Id);
+
+        Assert.Equal(4, Assert.Single(_h.CreditLots, lot => lot.CreditType == CreditType.Submit).Remaining);
+    }
+
+    [Fact]
+    public async Task WithdrawAsync_PendingItem_RefundsItsSubmissionCredit()
+    {
+        var item = AddItem(70, ModerationItemStatus.Pending);
+        var lot = _h.GivenSubmissionCreditPaidBy(70);
+
+        await _sut.WithdrawAsync(Creator, item.Id);
+
+        Assert.Equal(5, lot.Remaining);
+        Assert.NotNull(Assert.Single(_h.CreditUsages).RefundedAt);
     }
 
     [Fact]

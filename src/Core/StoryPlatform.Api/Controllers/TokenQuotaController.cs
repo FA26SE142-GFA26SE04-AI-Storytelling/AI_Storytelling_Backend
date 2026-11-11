@@ -30,6 +30,17 @@ public class TokenQuotaController : BaseApiController
     }
 
     /// <summary>
+    /// Content Creator xem lượt AI và lượt gửi duyệt còn lại: hạn mức tháng (dùng trước) và lượt mua từ Gói Creator.
+    /// </summary>
+    [HttpGet("creator/me")]
+    [Authorize(Roles = "ContentCreator")]
+    public async Task<ActionResult<ApiResponse<CreatorQuotaDto>>> GetCreatorQuota(CancellationToken cancellationToken)
+    {
+        var result = await _tokenQuotaService.GetCreatorQuotaAsync(GetCurrentUserId(), cancellationToken);
+        return HandleResult(result, "Lấy thông tin lượt của Creator thành công.");
+    }
+
+    /// <summary>
     /// Xem lượt AI còn lại áp dụng cho 1 trẻ — lượt tính theo tài khoản chủ hồ sơ (Owner/Administrator).
     /// </summary>
     [HttpGet("child/{childProfileId:int}")]

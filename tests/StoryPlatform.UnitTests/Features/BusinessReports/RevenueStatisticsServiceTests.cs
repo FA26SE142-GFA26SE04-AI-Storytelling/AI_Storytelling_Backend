@@ -137,7 +137,7 @@ public class RevenueStatisticsServiceTests
             ["2:Gói Đọc:Reading:1:49000", "3:Gói Sáng tạo:Creative:2:219000", "4:Add-on:AddOn:1:29000", "5:Gói Sáng tạo Tết:Creative:1:79000"],
             result.RevenueByPlan.Select(row => $"{row.PlanId}:{row.PlanName}:{row.PlanType}:{row.TransactionCount}:{row.RevenueVnd}"));
         Assert.Equal(
-            ["Reading:1:49000", "Creative:3:298000", "AddOn:1:29000"],
+            ["Reading:1:49000", "Creative:3:298000", "AddOn:1:29000", "CreatorPack:0:0"],
             result.RevenueByPlanType.Select(row => $"{row.PlanType}:{row.TransactionCount}:{row.RevenueVnd}"));
     }
 
@@ -227,6 +227,35 @@ public class RevenueStatisticsServiceTests
     }
 
     [Fact]
+    public async Task GetAsync_CreatorPackRevenue_IsReportedButNotCountedAsParentsBuyingOrInTheCreatorFund()
+    {
+        _store.Seed(new SubscriptionPlan { Id = 5, Name = "Gói Creator", PlanType = PlanType.CreatorPack, Audience = PlanAudience.Creator, PriceVnd = 99000, AiCredits = 6, SubmitCredits = 20 });
+        Paid(ReadingPlanId, 1, MidPeriod);
+        Paid(5, 50, MidPeriod);
+        Paid(5, 50, MidPeriod.AddDays(1));
+
+        var result = await _sut.GetAsync(PeriodStart, PeriodEnd);
+
+        Assert.Equal((247000L, 3), (result.TotalRevenueVnd, result.PaidTransactionCount));
+        Assert.Contains(result.RevenueByPlanType, row => row.PlanType == "CreatorPack" && row.TransactionCount == 2 && row.RevenueVnd == 198000);
+        Assert.Equal((1, 0), (result.BuyingParents, result.RepeatBuyingParents));
+        Assert.Equal(14700L, result.CreatorFundVnd);
+    }
+
+    [Fact]
+    public async Task GetAsync_CreditsGrantedAndUsed_CountAiCreditsOnly()
+    {
+        Lot(CreditSource.CreatorMonthly, 2, MidPeriod);
+        _store.Seed(new CreditLot { UserId = 50, CreditType = CreditType.Submit, Source = CreditSource.CreatorMonthly, Total = 5, Remaining = 5, CreatedAt = MidPeriod });
+        Usage(1, CreditUsageReason.StoryRequest, MidPeriod);
+        Usage(1, CreditUsageReason.PublicSubmission, MidPeriod);
+
+        var result = await _sut.GetAsync(PeriodStart, PeriodEnd);
+
+        Assert.Equal((2, 1), (result.CreditsGranted, result.CreditsUsed));
+    }
+
+    [Fact]
     public async Task GetAsync_EmptyPeriod_ReturnsZeroesWithEveryPlanTypeListed()
     {
         var result = await _sut.GetAsync(PeriodStart, PeriodEnd);
@@ -236,7 +265,7 @@ public class RevenueStatisticsServiceTests
             result.CreditsGranted, result.CreditsUsed, result.CreatorFundVnd));
         Assert.Empty(result.RevenueByPlan);
         Assert.Equal(
-            ["Reading:0:0", "Creative:0:0", "AddOn:0:0"],
+            ["Reading:0:0", "Creative:0:0", "AddOn:0:0", "CreatorPack:0:0"],
             result.RevenueByPlanType.Select(row => $"{row.PlanType}:{row.TransactionCount}:{row.RevenueVnd}"));
     }
 

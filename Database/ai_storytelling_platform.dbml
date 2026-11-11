@@ -298,15 +298,24 @@ Enum CreditSource {
   AddOn
   Legacy
   AdminAdjust
+  CreatorMonthly
+  CreatorPack
 }
 
 Enum CreditUsageReason {
   StoryRequest
   AdminDeduction
+  PublicSubmission
 }
 
 Enum CreditType {
   AI
+  Submit
+}
+
+Enum PlanAudience {
+  User
+  Creator
 }
 
 Enum PlanType {
@@ -314,6 +323,7 @@ Enum PlanType {
   Reading
   Creative
   AddOn
+  CreatorPack
 }
 
 Enum PolicyRule {
@@ -853,7 +863,8 @@ Table credit_lots {
   UpdatedAt timestamptz
   UserId int [not null]
   Indexes {
-    PaymentId [unique, note: 'filtered: PaymentId IS NOT NULL']
+    (PaymentId, CreditType) [unique, note: 'filtered: PaymentId IS NOT NULL']
+    (UserId, CreditType, ExpiresAt) [unique, note: 'filtered: Source = CreatorMonthly AND NOT IsDeleted']
     UserId [unique, note: 'filtered: Source = Trial AND NOT IsDeleted']
     (UserId, CreditType)
   }
@@ -865,12 +876,15 @@ Table credit_usages {
   Id int [pk, not null, increment]
   IsDeleted boolean [not null]
   LotId int [not null]
+  ModerationItemId int
   Reason CreditUsageReason [not null, note: 'EF PostgreSQL type: character varying(20)']
+  RefundedAt timestamptz
   UpdatedAt timestamptz
   UserId int [not null]
   Indexes {
     CreatedAt
     LotId
+    ModerationItemId
     UserId
   }
 }
@@ -1299,6 +1313,7 @@ Table payment_transactions {
   QrCodeUrl text
   SepayTransactionId text
   Status PaymentStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  SubmitCredits int
   TransactionCode varchar(100) [not null]
   UpdatedAt timestamptz
   Indexes {
@@ -1976,6 +1991,7 @@ Table story_wishes {
 
 Table subscription_plans {
   AiCredits int [not null]
+  Audience PlanAudience [not null, note: 'EF PostgreSQL type: character varying(20)']
   CreatedAt timestamptz [not null]
   Id int [pk, not null, increment]
   IsActive boolean [not null]
@@ -1983,6 +1999,7 @@ Table subscription_plans {
   Name varchar(150) [not null]
   PriceVnd int [not null]
   PlanType PlanType [not null, note: 'EF PostgreSQL type: character varying(20)']
+  SubmitCredits int [not null]
   UpdatedAt timestamptz
 }
 
@@ -2142,6 +2159,7 @@ Ref: credit_adjustments.UserId > user_accounts.Id
 Ref: credit_lots.PaymentId > payment_transactions.Id
 Ref: credit_lots.UserId > user_accounts.Id
 Ref: credit_usages.LotId > credit_lots.Id
+Ref: credit_usages.ModerationItemId > moderation_items.Id
 Ref: credit_usages.UserId > user_accounts.Id
 Ref: illustration_beats.StorySceneId > story_scenes.Id
 Ref: learning_artifact_generation_batches.RequestedByUserId > user_accounts.Id

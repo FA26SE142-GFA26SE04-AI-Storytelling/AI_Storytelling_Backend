@@ -309,8 +309,83 @@ Một phiên đọc được tính là lượt đọc hợp lệ khi thoả tấ
    giờ Việt Nam.
 7. Truyện bị gỡ vì vi phạm trong kỳ mất toàn bộ lượt đọc hợp lệ của kỳ đó; truyện bị gỡ sau kỳ vẫn giữ lượt của kỳ.
 
-## 8. Ngoài phạm vi
+## 8. Gói Creator, hạn mức tháng và lượt gửi duyệt của Content Creator (Luồng 2, 2f, bổ sung 11/11/2026)
 
-Gói Creator và lượt gửi duyệt; giữ – trừ – trả lượt; giới hạn theo gói (số hồ sơ trẻ, 3 truyện mỗi tuần, đọc to);
+Cần thêm migration `AddCreatorPackAndSubmissionCredits`.
+
+### 8.1 Gói theo đối tượng
+
+- Mỗi gói có `audience`: `User` (phụ huynh) hoặc `Creator`. `GET /Payment/plans` chỉ trả gói đang bán của đối tượng người
+  gọi; Admin và Moderator nhận danh sách rỗng.
+- Gói mới: **Gói Creator** (Id 5, `planType = CreatorPack`, `audience = Creator`): 99.000 đ, +6 lượt AI, +20 lượt gửi
+  duyệt, mua một lần, không hết hạn. Trường mới `submitCredits` có trên `SubscriptionPlanDto` và DTO gói của Admin.
+- `POST /Payment/transactions`:
+  - Mua gói khác đối tượng (phụ huynh mua Gói Creator hoặc ngược lại) → 403.
+  - Tài khoản chưa Active → 403: phụ huynh chưa xác thực email, hoặc Creator chưa được Admin duyệt. Thực tế tài khoản
+    chưa Active thường bị chặn ngay ở bước xác thực (401).
+  - Mỗi Creator chỉ có một giao dịch Gói Creator đang chờ thanh toán.
+  - Giao dịch chốt số lượt AI và số lượt gửi duyệt lúc tạo.
+- Khi giao dịch Gói Creator `Paid` (webhook hoặc Admin xác nhận tay): cộng 6 lượt AI và 20 lượt gửi duyệt, không hết hạn,
+  không cộng hai lần.
+- `PUT /Payment/admin/plans/{id}` nhận thêm `submitCredits` (tuỳ chọn; bỏ trống thì giữ nguyên).
+
+### 8.2 Hạn mức tháng
+
+- Mỗi Creator đang Active có **2 lượt AI và 5 lượt gửi duyệt** mỗi tháng, không cộng dồn. Tháng tính theo giờ Việt Nam;
+  hạn mức hết hạn lúc 00:00 ngày 1 tháng sau.
+- Hạn mức được cấp ở lần đầu Creator cần dùng trong tháng (khi xem lượt, gửi yêu cầu AI hoặc gửi duyệt).
+- Hạn mức tháng được dùng trước, lượt mua từ Gói Creator dùng sau.
+
+### 8.3 Lượt AI của Creator
+
+`POST /creator/ai-story-input/requests`: hết lượt → **409**; còn lượt thì trừ 1 lượt ngay khi gửi (như phụ huynh).
+Gửi lại cùng `idempotencyKey` không trừ thêm.
+
+### 8.4 Lượt gửi duyệt
+
+| Việc | Lượt |
+|---|---|
+| `POST /PublicStorySubmission/submit` | Trừ 1 lượt; hết lượt → **409** kèm gợi ý mua Gói Creator, không tạo yêu cầu duyệt |
+| Gửi lại sau khi bị yêu cầu sửa (`ChangesRequested`) | Không trừ thêm |
+| Gửi lại sau khi bị từ chối | Trừ 1 lượt (lượt cũ đã được hoàn) |
+| Moderator từ chối (`Rejected`) | Hoàn 1 lượt |
+| Creator rút yêu cầu khi còn chờ (`withdraw`) | Hoàn 1 lượt |
+| Hệ thống rút yêu cầu đang chờ khi truyện bị lưu trữ | Hoàn 1 lượt |
+| Yêu cầu đã có Moderator nhận rồi bị đóng vì truyện bị lưu trữ | Không hoàn |
+| Moderator duyệt (`Approved`) | Không đổi |
+
+Lượt được hoàn về đúng lô đã trừ. Nếu đó là lô hạn mức của tháng đã qua thì lượt hoàn cũng đã hết hạn.
+
+### 8.5 Creator xem lượt — `GET /api/v1/TokenQuota/creator/me` (role `ContentCreator`)
+
+```json
+{
+  "aiCredits":     { "monthlyAllowance": 2, "monthlyRemaining": 2, "purchasedRemaining": 6,  "otherRemaining": 0, "totalRemaining": 8 },
+  "submitCredits": { "monthlyAllowance": 5, "monthlyRemaining": 5, "purchasedRemaining": 20, "otherRemaining": 0, "totalRemaining": 25 },
+  "monthlyAllowanceResetsAt": "2026-11-30T17:00:00Z"
+}
+```
+
+Lịch sử mua của Creator dùng chung `GET /Payment/transactions/me`.
+
+### 8.6 Thống kê doanh thu
+
+`revenueByPlanType` có thêm dòng `CreatorPack`. Gói Creator tính vào doanh thu nhưng không vào quỹ Creator, và người mua
+Gói Creator không được đếm vào `buyingParents`. `creditsGranted` và `creditsUsed` chỉ tính lượt AI.
+
+### 8.7 Lệch so với tài liệu Luồng 2 (để đợt sau)
+
+1. Tài liệu muốn **giữ – trừ – trả** lượt AI của Creator: trừ khi AI sinh xong, trả lại khi lỗi hoặc bị chặn. Hiện vẫn
+   trừ ngay khi gửi, giống phụ huynh, và không trả lại khi lỗi.
+2. Tài liệu muốn **worker cấp hạn mức tháng vào ngày 1**. Hiện cấp ở lần dùng đầu trong tháng.
+3. Tài liệu tính 1 lượt AI khi **sinh ảnh và audio bằng AI cho truyện tự viết**. Hiện chưa tính.
+4. **Hệ thống rút yêu cầu đang chờ** (khi truyện bị lưu trữ) cũng được hoàn lượt. Tài liệu chỉ nói tới việc Creator tự rút.
+
+Chưa có Creator đối tác (6 lượt AI và 10 lượt gửi duyệt): mọi Creator dùng mức 2 và 5. Admin chưa cấp hoặc điều chỉnh
+được lượt cho Creator, và chưa cấu hình được con số hạn mức.
+
+## 9. Ngoài phạm vi
+
+Giữ – trừ – trả lượt; Creator đối tác; Admin điều chỉnh lượt cho Creator; giới hạn theo gói (số hồ sơ trẻ, 3 truyện mỗi tuần, đọc to);
 cảnh báo khi xoá tài khoản còn gói; tạo gói mới; cấu hình tỷ lệ quỹ Creator và thời gian đọc tối thiểu;
 giao diện Admin trên web.

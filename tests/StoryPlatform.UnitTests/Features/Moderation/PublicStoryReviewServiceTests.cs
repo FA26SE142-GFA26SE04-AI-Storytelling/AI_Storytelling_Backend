@@ -735,6 +735,30 @@ public class PublicStoryReviewServiceTests
     }
 
     [Fact]
+    public async Task RejectAsync_RefundsTheCreatorsSubmissionCredit()
+    {
+        _h.AddScene(1, 1);
+        var lot = _h.GivenSubmissionCreditPaidBy(PublicStoryReviewHarness.ItemId);
+
+        await RejectDecisionAsync("Nội dung chưa phù hợp với độ tuổi.");
+
+        Assert.Equal(5, lot.Remaining);
+        Assert.NotNull(Assert.Single(_h.CreditUsages).RefundedAt);
+    }
+
+    [Fact]
+    public async Task RequestChangesAsync_KeepsTheSubmissionCreditSpent()
+    {
+        _h.AddScene(1, 1);
+        var lot = _h.GivenSubmissionCreditPaidBy(PublicStoryReviewHarness.ItemId);
+
+        await RequestChangesDecisionAsync(ValidChanges());
+
+        Assert.Equal(4, lot.Remaining);
+        Assert.Null(Assert.Single(_h.CreditUsages).RefundedAt);
+    }
+
+    [Fact]
     public async Task RejectAsync_WithReason_RecordsDecisionWithoutUnpublishingStory()
     {
         _h.AddScene(1, 1);

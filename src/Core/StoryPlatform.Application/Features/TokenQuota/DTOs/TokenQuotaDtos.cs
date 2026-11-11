@@ -53,3 +53,25 @@ public class CreditAdjustmentDto
     /// <summary>Tổng lượt còn lại ngay sau lần điều chỉnh; chỉ có ở response của thao tác điều chỉnh.</summary>
     public int? TotalRemainingAfter { get; set; }
 }
+
+/// <summary>Lượt còn lại của Content Creator (Luồng 2, 2f): lượt AI và lượt gửi duyệt, tách hạn mức tháng và lượt đã mua.</summary>
+public class CreatorQuotaDto
+{
+    public CreatorCreditBalanceDto AiCredits { get; set; } = new();
+    public CreatorCreditBalanceDto SubmitCredits { get; set; } = new();
+    /// <summary>Thời điểm hạn mức tháng hết hạn và được cấp lại (00:00 ngày 1 tháng sau, giờ Việt Nam, lưu UTC).</summary>
+    public DateTime MonthlyAllowanceResetsAt { get; set; }
+}
+
+public class CreatorCreditBalanceDto
+{
+    /// <summary>Số lượt hạn mức mỗi tháng.</summary>
+    public int MonthlyAllowance { get; set; }
+    /// <summary>Lượt hạn mức tháng còn lại (dùng trước).</summary>
+    public int MonthlyRemaining { get; set; }
+    /// <summary>Lượt mua từ Gói Creator còn lại (không hết hạn).</summary>
+    public int PurchasedRemaining { get; set; }
+    /// <summary>Lượt từ nguồn khác (ví dụ Admin cấp).</summary>
+    public int OtherRemaining { get; set; }
+    public int TotalRemaining { get; set; }
+}

@@ -384,10 +384,14 @@ public sealed class ParentManualApiFlowTests
                 new StoryPlatform.Application.Features.Moderation.Services.CreatorPublicationService(store.Uow.Object, queue, audit.Object));
             builder.Services.AddSingleton(store.Service);
             builder.Services.AddSingleton<StoryPlatform.Application.Features.CreatorAuthoring.Interfaces.ICreatorAuthoringService>(store.Creator);
+            // Strict: chỉ luồng Creator chạy qua host này; Creator dùng lượt của chính mình, không chạm lượt của hồ sơ trẻ.
+            var creatorQuota = new Mock<StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService>(MockBehavior.Strict);
+            creatorQuota.Setup(q => q.EnsureCreatorWithinQuotaAsync(It.IsAny<int>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+            creatorQuota.Setup(q => q.IncrementCreatorUsageAsync(It.IsAny<int>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
             builder.Services.AddSingleton<StoryPlatform.Application.Features.AIStoryInput.Interfaces.IAIStoryInputService>(
                 new StoryPlatform.Application.Features.AIStoryInput.Services.AIStoryInputService(store.Uow.Object,
                     new StoryPlatform.Application.Features.AIStoryInput.Guardrails.RuleBasedInputGuardrail(),
-                    new Mock<StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService>(MockBehavior.Strict).Object));
+                    creatorQuota.Object));
             var ai = new Mock<ICreatorAssistanceAiClient>();
             ai.Setup(x => x.GenerateAsync(It.IsAny<AssistanceAiRequest>(), It.IsAny<CancellationToken>()))
                 .Returns<AssistanceAiRequest, CancellationToken>((r, _) => Task.FromResult(

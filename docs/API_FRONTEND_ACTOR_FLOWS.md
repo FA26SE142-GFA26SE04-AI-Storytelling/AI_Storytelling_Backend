@@ -1,5 +1,7 @@
 # API backend theo actor và luồng tích hợp frontend
 
+> 2026-11-11: gỡ luồng phụ huynh nộp truyện Community; chỉ Content Creator đăng truyện công khai qua PublicStorySubmission.
+
 > Gói và thanh toán cho phụ huynh (10/11/2026): [PARENT_PLANS_PAYMENT_API_GUIDE.md](PARENT_PLANS_PAYMENT_API_GUIDE.md). Thay cho mô tả `Payment` và `TokenQuota` bên dưới: gói có `planType`, thêm `GET /Payment/transactions/me` và `GET /TokenQuota/me`, gỡ `POST/GET /TokenQuota/config`. Cần migration `AddSubscriptionCyclesAndCreditLots`.
 
 > Parent Manual nhiều bé (04/11/2026): [Hướng dẫn tích hợp Frontend và contract package](PARENT_MULTI_CHILD_PACKAGES_API_GUIDE.md). Bao gồm request/response, token, polling, retry/revise, media có Authorization và Child Reader. Các mô tả Parent một bé bên dưới là baseline legacy khi khác với hướng dẫn package.
@@ -60,8 +62,8 @@
 
 ### Thay đổi đáng chú ý so với bản trước
 
-- Bổ sung luồng Parent giao/sắp xếp lộ trình, sao chép bộ mẫu và gửi truyện cộng đồng; ChildSession có MyRoadmap/CommunityLibrary.
-- Moderator có soạn/duyệt bộ mẫu, duyệt cộng đồng, quyết định vùng xám, xử lý yêu cầu gỡ Creator và rà soát nội dung đang public; report có bước escalate sang Administrator.
+- Bổ sung luồng Parent giao/sắp xếp lộ trình và sao chép bộ mẫu; ChildSession có MyRoadmap.
+- Moderator có soạn/duyệt bộ mẫu, quyết định vùng xám, xử lý yêu cầu gỡ Creator và rà soát nội dung đang public; report có bước escalate sang Administrator.
 - Rubric có Draft/Active/Retired, revision, clone, validate, thử AI và audit; chỉ Administrator activate.
 - Sửa kết luận Creator approve/reject: đây là route Parent; Creator đã có confirm-content riêng. Chênh lệch role ở manual/assistance vẫn được ghi riêng tại CR1.
 - Cập nhật waitingForModeration, bằng chứng/offset của public-review flags, field escalation và enum moderation; ghi rõ các ngoại lệ response để frontend không ép cùng một parser.
@@ -201,16 +203,6 @@ Gợi ý adapter roadmap: skipCode có thể là no_permission, profile_inactive
 
 Giao từng truyện khác tuổi dùng bản ghi lộ trình Source=Manual làm bằng chứng lựa chọn của chủ hồ sơ: Waiting/Open/Completed còn hiệu lực cho việc mở/đọc lại, Removed/Skipped hoặc bản ghi bị xóa không cấp quyền ngoại lệ. Advancer và phía trẻ tôn trọng lựa chọn này; thư viện vẫn lọc theo tuổi cho truyện chưa được phụ huynh chọn. Truyện riêng của anh/chị/em chỉ hiện và mở cho trẻ được giao đúng storyId qua quyền giao hiện có. Sao chép bộ mẫu/tự chọn truyện chưa có lựa chọn thủ công vẫn áp dụng kiểm tra tuổi hiện hành. Không cần migration. Kiểm tra MaxStoryLength nay dùng StoryWordCounter chung với generation, không dùng số ký tự. Kiểm thử 335 ca ChildRoadmaps/ReadingSessions đạt với harness; chưa thay đổi dữ liệu hoặc triển khai backend đang chạy.
 
-### P7. Chia sẻ truyện gia đình lên thư viện cộng đồng
-
-1. POST /api/v1/CommunitySubmission/check với storyId, confirmNoPersonalInfo, copyrightDeclaration → canSubmit, storyVersionId, requiredDeclaration, blockers và piiFindings. Check không tự nộp hoặc sửa truyện. Excerpt chỉ để người nộp sửa, không lưu lại vào log/client analytics.
-2. User cần là chủ hồ sơ nguồn. Truyện phải đủ điều kiện private/Ready, có phiên bản hiện hành, không bị archive/report mở/nộp trùng. Truyện tự viết/nhập phải khai OwnWork; FamilyUse không được nộp. Field copyrightDeclaration không có JsonStringEnumConverter: dùng số enum trong JSON, xem schema.
-3. POST /api/v1/CommunitySubmission với confirmNoPersonalInfo=true; nhận itemId/storyVersionId/status=Pending. Backend ghim phiên bản cho kiểm duyệt; không lấy version hiện hành khác để thay nội dung đã nộp.
-4. GET /mine dùng canWithdraw/canRemove để bật nút. POST /{itemId}/withdraw khi Pending chưa có người nhận; POST /{itemId}/remove với bản đã Approved. Sau khi có Moderator claim, không tự rút bằng cách đổi trạng thái ở frontend.
-5. Sau kiểm duyệt, trẻ xem metadata qua CommunityLibrary theo submissionId; nguồn trẻ/người nộp/người duyệt không được công khai.
-
-Nguồn: [CommunitySubmissionService](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/Services/CommunitySubmissionService.cs), [Submit](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/Services/CommunitySubmissionService.Submit.cs), [Manage](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/Services/CommunitySubmissionService.Manage.cs).
-
 <a id="pipeline"></a>
 ## 6. Pipeline truyện AI và truyện nhập dùng chung
 
@@ -335,17 +327,11 @@ Grant thu hồi hoặc quyền/policy/context đổi có thể làm mất quyề
 
 POST /ParentalGate/verify email/password kiểm người lớn, **không cấp token mới**. FE khôi phục/đăng nhập phiên đúng luồng; gate có lockout, không bypass sau lỗi.
 
-Core đã có MyRoadmap và CommunityLibrary cho ChildSession (C4–C5). Chưa có controller cho /reading/sessions, /children/{id}/reading/home, API ghi hoàn thành truyện/quiz trẻ, notebook, achievements hay telemetry như frontend đề xuất. Roadmap progress recorder nội bộ không tạo thêm HTTP endpoint. Hai GET /Story công khai không thay gói cấp quyền child manual.
+Core đã có MyRoadmap cho ChildSession (C4). Chưa có controller cho /reading/sessions, /children/{id}/reading/home, API ghi hoàn thành truyện/quiz trẻ, notebook, achievements hay telemetry như frontend đề xuất. Roadmap progress recorder nội bộ không tạo thêm HTTP endpoint. Hai GET /Story công khai không thay gói cấp quyền child manual.
 
 ### C4. Xem lộ trình của chính trẻ
 
 GET /api/v1/MyRoadmap bằng ChildSession, không truyền childProfileId. Response phân open/upcoming/done, completedCount/totalCount/isFinished. Tôn trọng isLocked; expectedBy chỉ có trên bước mở khi còn thời hạn, danh sách done có giới hạn 50. API này không ghi việc đọc xong; không mô phỏng POST completion rồi coi đã lưu backend.
-
-### C5. Khám phá thư viện cộng đồng
-
-GET /api/v1/CommunityLibrary?pageIndex=1&pageSize=20 → GET /{submissionId}. Backend lọc theo hồ sơ/chính sách của trẻ, chỉ hiện bản Approved còn khả dụng và che ID nguồn. Response hiện tại chỉ là CommunityStoryDto (metadata/labels/author), chưa có text/audio/media package riêng cho reader cộng đồng. UI cần xử lý 404 khi truyện bị gỡ hoặc không còn hợp lệ.
-
-Nguồn: [MyRoadmapService](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/Services/MyRoadmapService.cs), [CommunityLibraryService](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/Services/CommunityLibraryService.cs).
 
 ### C6. Thành tích, Cây tri thức và Sổ tay (sau khi đọc)
 
@@ -390,7 +376,7 @@ Creator chỉ xác nhận quyết định sáng tác. Approve outline cũng là 
 
 ### CR3. Gửi Public Library
 
-Chỉ khi version đủ Ready/media/tác giả **và truyện đã có ảnh bìa** (chọn bằng `PUT /stories/{storyId}/cover`; thiếu bìa → 400 "Truyện cần có ảnh bìa trước khi gửi duyệt"): POST /PublicStorySubmission/submit với storyId/storyVersionId/contentCategoryIds → giữ itemId/status. Không dùng /community-submissions giả định của Parent.
+Chỉ khi version đủ Ready/media/tác giả **và truyện đã có ảnh bìa** (chọn bằng `PUT /stories/{storyId}/cover`; thiếu bìa → 400 "Truyện cần có ảnh bìa trước khi gửi duyệt"): POST /PublicStorySubmission/submit với storyId/storyVersionId/contentCategoryIds → giữ itemId/status.
 
 POST /{itemId}/withdraw chỉ khi Pending và do mình gửi; Claimed không rút được. Sau withdraw, ChangesRequested hoặc Rejected, gọi API revisions để tạo phiên mới trước khi sửa rồi gửi lại. Phiên đã nộp vẫn bất biến. Có submission API không chứng minh manual Creator đã có bước Ready.
 
@@ -451,7 +437,7 @@ GET /ModerationQueue theo itemType/status/priority/onlyOverdue/page → POST /{i
 
 Queue detail không chứa đầy đủ truyện, dùng package chuyên biệt theo itemType. Không GET /Story thay review package. /ModerationQueue/review-views cấp xem tạm nội dung công khai, không thay claim/quyền quyết định.
 
-Phân nhánh đầy đủ 6 itemType: PublicStoryReview → MO2; ContentReport → MO3/MO9; RoadmapTemplateReview → MO4; CommunitySubmission → MO5; GrayZoneStory → MO6; PublicStoryRemoval → MO7. Enum là định danh loại, không suy mọi loại dùng cùng request/decision endpoint.
+Phân nhánh đầy đủ 6 itemType: PublicStoryReview → MO2; ContentReport → MO3/MO9; RoadmapTemplateReview → MO4; CommunitySubmission → (đã gỡ, chỉ còn dữ liệu cũ); GrayZoneStory → MO6; PublicStoryRemoval → MO7. Enum là định danh loại, không suy mọi loại dùng cùng request/decision endpoint.
 
 ### MO2. PublicStoryReview
 
@@ -478,12 +464,6 @@ Nguồn: [PublicStoryReviewService](../src/Core/StoryPlatform.Application/Featur
 5. Request-changes gồm generalNote và parts (tối đa 20), theo schema; reject cần reason. Approve clone có thể thay thế/archive bộ Published nguồn, kiểm replacedRoadmapId và tải lại danh sách. Archive riêng cần reason 3–500 ký tự. Parent chỉ sao chép bộ còn public qua RoadmapLibrary.
 
 Nguồn: [RoadmapTemplateService](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/Services/RoadmapTemplateService.cs), [RoadmapReviewService](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/Services/RoadmapReviewService.cs), [review policy](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/RoadmapReviewPolicy.cs).
-
-### MO5. Kiểm duyệt truyện cộng đồng do Parent nộp
-
-Claim itemType=CommunitySubmission → GET /api/v1/CommunityReview/{itemId}. Duyệt đúng bản ghim đã mask; PUT /checklist (safety_baseline/no_personal_info/metadata_labels), PUT /labels với danh mục hợp lệ → đọc canApprove/blockers → POST /approve hoặc /reject với reason. Claim phải còn hiệu lực và không tự duyệt mục mình nộp. Không dùng PublicStoryReview cho loại item này; giữ riêng moderation itemId và submissionId mà trẻ dùng ở CommunityLibrary.
-
-Nguồn: [CommunityReviewService](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/Services/CommunityReviewService.cs), [quyết định](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/Services/CommunityReviewService.Decision.cs).
 
 ### MO6. Quyết định vùng xám và tiếp tục job đang chờ
 
@@ -587,7 +567,7 @@ Trạng thái ở mức **method + route**, không bảo đảm mọi actor/nhá
 2. Moderation.tsx còn khóa quyết định và GET /Story. Nối PublicStoryReview/ContentReportReview theo itemType, gồm view/checklist/flags trước approve.
 3. Parent manual/assistance/child manual reader/guides chưa map; không gộp vào studio generation.
 4. Creator assistance/AI input và confirm-content chưa map ở frontend. Cần nối nút xác nhận nội dung với API Creator riêng; route dùng chung Parent đã gọi không tính Creator hoàn tất.
-5. Nối Parent bằng CommunitySubmission/check → submit → mine/withdraw/remove; PublicStorySubmission vẫn dành riêng cho ContentCreator. Child dùng CommunityLibrary, không dùng itemId của moderation.
+5. PublicStorySubmission dành riêng cho ContentCreator; phụ huynh không còn nộp truyện công khai.
 6. History outline/regenerate illustration cần UI nếu sản phẩm sử dụng; service tồn tại chưa là đã tích hợp.
 7. Bỏ giao diện mời người giám sát, xin/cấp quyền và chuyển Owner; các API Supervision/Permission không còn tồn tại.
 8. readingService/guardianService/adaptiveService dùng backendReady toàn module; lỗi đầu có thể chuyển cả module sang local. LocalStorage không chứng minh backend ghi tiến độ.
@@ -612,7 +592,7 @@ HTTP là nhánh response controller; kết hợp lỗi chung mục 2 và guard n
 
 ### Tra nhanh controller
 
-[AIStoryInput](#controller-aistoryinput) · [Auth](#controller-auth) · [AuthoringGuides](#controller-authoringguides) · [BusinessReport](#controller-businessreport) · [ChildAccessCredential](#controller-childaccesscredential) · [ChildManualStories](#controller-childmanualstories) · [ChildProfile](#controller-childprofile) · [ChildRoadmap](#controller-childroadmap) · [CommunityLibrary](#controller-communitylibrary) · [CommunityReview](#controller-communityreview) · [CommunitySubmission](#controller-communitysubmission) · [ContentCategory](#controller-contentcategory) · [ContentGeneration](#controller-contentgeneration) · [ContentReport](#controller-contentreport) · [ContentReportReview](#controller-contentreportreview) · [CreatorAIStoryInput](#controller-creatoraistoryinput) · [CreatorAssistance](#controller-creatorassistance) · [CreatorAuthoring](#controller-creatorauthoring) · [CreatorModerationCheck](#controller-creatormoderationcheck) · [CreatorPublication](#controller-creatorpublication) · [ExistingStories](#controller-existingstories) · [GrayZoneReview](#controller-grayzonereview) · [LearningProfile](#controller-learningprofile) · [MediaGeneration](#controller-mediageneration) · [ModerationQueue](#controller-moderationqueue) · [ModerationRubrics](#controller-moderationrubrics) · [StaffAccount](#controller-staffaccount) · [MyRoadmap](#controller-myroadmap) · [Notification](#controller-notification) · [Outline](#controller-outline) · [ParentAssistance](#controller-parentassistance) · [ParentAuthoring](#controller-parentauthoring) · [ParentalGate](#controller-parentalgate) · [Payment](#controller-payment) · [PublicStoryReview](#controller-publicstoryreview) · [PublicStorySubmission](#controller-publicstorysubmission) · [PublishedContentReview](#controller-publishedcontentreview) · [Review](#controller-review) · [RoadmapLibrary](#controller-roadmaplibrary) · [RoadmapReview](#controller-roadmapreview) · [RoadmapTemplate](#controller-roadmaptemplate) · [SafetyPolicy](#controller-safetypolicy) · [Story](#controller-story) · [TokenQuota](#controller-tokenquota)
+[AIStoryInput](#controller-aistoryinput) · [Auth](#controller-auth) · [AuthoringGuides](#controller-authoringguides) · [BusinessReport](#controller-businessreport) · [ChildAccessCredential](#controller-childaccesscredential) · [ChildManualStories](#controller-childmanualstories) · [ChildProfile](#controller-childprofile) · [ChildRoadmap](#controller-childroadmap) · [ContentCategory](#controller-contentcategory) · [ContentGeneration](#controller-contentgeneration) · [ContentReport](#controller-contentreport) · [ContentReportReview](#controller-contentreportreview) · [CreatorAIStoryInput](#controller-creatoraistoryinput) · [CreatorAssistance](#controller-creatorassistance) · [CreatorAuthoring](#controller-creatorauthoring) · [CreatorModerationCheck](#controller-creatormoderationcheck) · [CreatorPublication](#controller-creatorpublication) · [ExistingStories](#controller-existingstories) · [GrayZoneReview](#controller-grayzonereview) · [LearningProfile](#controller-learningprofile) · [MediaGeneration](#controller-mediageneration) · [ModerationQueue](#controller-moderationqueue) · [ModerationRubrics](#controller-moderationrubrics) · [StaffAccount](#controller-staffaccount) · [MyRoadmap](#controller-myroadmap) · [Notification](#controller-notification) · [Outline](#controller-outline) · [ParentAssistance](#controller-parentassistance) · [ParentAuthoring](#controller-parentauthoring) · [ParentalGate](#controller-parentalgate) · [Payment](#controller-payment) · [PublicStoryReview](#controller-publicstoryreview) · [PublicStorySubmission](#controller-publicstorysubmission) · [PublishedContentReview](#controller-publishedcontentreview) · [Review](#controller-review) · [RoadmapLibrary](#controller-roadmaplibrary) · [RoadmapReview](#controller-roadmapreview) · [RoadmapTemplate](#controller-roadmaptemplate) · [SafetyPolicy](#controller-safetypolicy) · [Story](#controller-story) · [TokenQuota](#controller-tokenquota)
 
 <a id="controller-auth"></a>
 ### Auth — 20 route
@@ -2359,7 +2339,7 @@ Guard/nghiệp vụ: [AIStoryInputService.cs](../src/Core/StoryPlatform.Applicat
 <a id="controller-publicstorysubmission"></a>
 ### PublicStorySubmission — 2 route
 
-CR3. ContentCreator đúng tác giả/version Ready/media; chỉ Pending mới withdraw. Không phải community submission của Parent.
+CR3. ContentCreator đúng tác giả/version Ready/media; chỉ Pending mới withdraw.
 
 Guard/nghiệp vụ: [PublicStorySubmissionService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Services/PublicStorySubmissionService.cs).
 
@@ -2951,7 +2931,7 @@ GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PU
 <a id="ep-story-getcommunitystories-get"></a>
 #### GET /api/v1/Story/community
 
-- Action/chức năng: **GetCommunityStories** — Thư viện chung: danh sách truyện của Creator đã duyệt và công khai (Scope=Creator, IsPublished, Status=Ready, chưa lưu trữ, chưa xóa). Không trả bản nháp. Không thay `GET /CommunityLibrary` của phiên bé (đã lọc theo tuổi và chính sách an toàn của bé). [StoryCommunityController](../src/Core/StoryPlatform.Api/Controllers/StoryCommunityController.cs).
+- Action/chức năng: **GetCommunityStories** — Thư viện chung: danh sách truyện của Creator đã duyệt và công khai (Scope=Creator, IsPublished, Status=Ready, chưa lưu trữ, chưa xóa). Không trả bản nháp. [StoryCommunityController](../src/Core/StoryPlatform.Api/Controllers/StoryCommunityController.cs).
 - Quyền: Roles User, ContentCreator, Moderator, Administrator (chưa đăng nhập: 401)
 - Request: **query** filter: [StoryFilterRequestDto](#dto-storyfilterrequestdto); dùng searchTerm, genre, ageBand, authorUserId, isDescending, pageIndex, pageSize (status và isPublished không có tác dụng, luôn lọc cố định).
 - Response: ApiResponse.data: [PagedResult&lt;StoryDto&gt;](#dto-pagedresult). HTTP nhánh controller: 200.
@@ -3080,156 +3060,6 @@ P6. Parent đọc theo giám sát hiện hành; thay đổi cần AssignActivity
 - Quyền: (User); kèm guard nghiệp vụ của nhóm.
 - Request: **path** `childProfileId`: `int`.
 - Response: ApiResponse.data: [ChildRoadmapDto](#dto-childroadmapdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
-- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
-
-<a id="controller-communitylibrary"></a>
-### CommunityLibrary — 2 route
-
-Guard/nghiệp vụ: [CommunityLibraryService.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/Services/CommunityLibraryService.cs).
-
-C5. ChildSession; lọc tuổi/chính sách, tác giả luôn Cộng đồng. Hai GET trả metadata CommunityStoryDto, không trả toàn bộ văn bản/media để tự triển khai reader. Detail dùng submissionId, không phải storyId/itemId.
-
-| Method + route | Mapping |
-|---|---|
-| [GET /api/v1/CommunityLibrary](#ep-communitylibrary-list-get) | CHƯA_RÀ_FRONTEND |
-| [GET /api/v1/CommunityLibrary/{submissionId}](#ep-communitylibrary-get-get) | CHƯA_RÀ_FRONTEND |
-
-<a id="ep-communitylibrary-list-get"></a>
-#### GET /api/v1/CommunityLibrary
-
-- Action: **List**. [CommunityLibraryController](../src/Core/StoryPlatform.Api/Controllers/CommunityLibraryController.cs#L26).
-- Quyền: Policy ChildSession; kèm guard nghiệp vụ của nhóm.
-- Request: **query** `query`: [CommunityLibraryQueryDto](#dto-communitylibraryquerydto).
-- Response: ApiResponse.data: [PagedResult&lt;CommunityStoryDto&gt;](#dto-communitystorydto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
-- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
-
-<a id="ep-communitylibrary-get-get"></a>
-#### GET /api/v1/CommunityLibrary/{submissionId}
-
-- Action: **Get**. [CommunityLibraryController](../src/Core/StoryPlatform.Api/Controllers/CommunityLibraryController.cs#L35).
-- Quyền: Policy ChildSession; kèm guard nghiệp vụ của nhóm.
-- Request: **path** `submissionId`: `int`.
-- Response: ApiResponse.data: [CommunityStoryDto](#dto-communitystorydto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
-- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
-
-<a id="controller-communityreview"></a>
-### CommunityReview — 5 route
-
-Guard/nghiệp vụ: [CommunityReviewService.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/Services/CommunityReviewService.cs).
-
-MO5. Claim đúng CommunitySubmission còn hiệu lực, cấm tự duyệt. Checklist safety_baseline/no_personal_info/metadata_labels, nhãn hợp lệ và PII sạch trước approve. Nội dung duyệt là bản ghim và đã che thông tin cá nhân.
-
-| Method + route | Mapping |
-|---|---|
-| [GET /api/v1/CommunityReview/{itemId}](#ep-communityreview-getpackage-get) | CHƯA_RÀ_FRONTEND |
-| [PUT /api/v1/CommunityReview/{itemId}/checklist](#ep-communityreview-savechecklist-put) | CHƯA_RÀ_FRONTEND |
-| [PUT /api/v1/CommunityReview/{itemId}/labels](#ep-communityreview-setlabels-put) | CHƯA_RÀ_FRONTEND |
-| [POST /api/v1/CommunityReview/{itemId}/approve](#ep-communityreview-approve-post) | CHƯA_RÀ_FRONTEND |
-| [POST /api/v1/CommunityReview/{itemId}/reject](#ep-communityreview-reject-post) | CHƯA_RÀ_FRONTEND |
-
-<a id="ep-communityreview-getpackage-get"></a>
-#### GET /api/v1/CommunityReview/{itemId}
-
-- Action: **GetPackage**. [CommunityReviewController](../src/Core/StoryPlatform.Api/Controllers/CommunityReviewController.cs#L26).
-- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
-- Request: **path** `itemId`: `int`.
-- Response: ApiResponse.data: [CommunityReviewPackageDto](#dto-communityreviewpackagedto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
-- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
-
-<a id="ep-communityreview-savechecklist-put"></a>
-#### PUT /api/v1/CommunityReview/{itemId}/checklist
-
-- Action: **SaveChecklist**. [CommunityReviewController](../src/Core/StoryPlatform.Api/Controllers/CommunityReviewController.cs#L35).
-- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
-- Request: **path** `itemId`: `int`; **body** `request`: [SaveCommunityChecklistRequestDto](#dto-savecommunitychecklistrequestdto).
-- Response: ApiResponse.data: [List&lt;CommunityChecklistEntryDto&gt;](#dto-communitychecklistentrydto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
-- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
-
-<a id="ep-communityreview-setlabels-put"></a>
-#### PUT /api/v1/CommunityReview/{itemId}/labels
-
-- Action: **SetLabels**. [CommunityReviewController](../src/Core/StoryPlatform.Api/Controllers/CommunityReviewController.cs#L44).
-- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
-- Request: **path** `itemId`: `int`; **body** `request`: [SetCommunityLabelsRequestDto](#dto-setcommunitylabelsrequestdto).
-- Response: ApiResponse.data: [List&lt;CommunityLabelDto&gt;](#dto-communitylabeldto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
-- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
-
-<a id="ep-communityreview-approve-post"></a>
-#### POST /api/v1/CommunityReview/{itemId}/approve
-
-- Action: **Approve**. [CommunityReviewController](../src/Core/StoryPlatform.Api/Controllers/CommunityReviewController.cs#L57).
-- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
-- Request: **path** `itemId`: `int`.
-- Response: ApiResponse.data: [CommunityReviewDecisionResultDto](#dto-communityreviewdecisionresultdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
-- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
-
-<a id="ep-communityreview-reject-post"></a>
-#### POST /api/v1/CommunityReview/{itemId}/reject
-
-- Action: **Reject**. [CommunityReviewController](../src/Core/StoryPlatform.Api/Controllers/CommunityReviewController.cs#L66).
-- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
-- Request: **path** `itemId`: `int`; **body** `request`: [RejectCommunityRequestDto](#dto-rejectcommunityrequestdto).
-- Response: ApiResponse.data: [CommunityReviewDecisionResultDto](#dto-communityreviewdecisionresultdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
-- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
-
-<a id="controller-communitysubmission"></a>
-### CommunitySubmission — 5 route
-
-Guard/nghiệp vụ: [CommunitySubmissionService.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/Services/CommunitySubmissionService.cs).
-
-P7. Parent + ApproveStory trên hồ sơ nguồn, kiểm eligibility/PII. Check không nộp; Submit ghim phiên bản hiện hành. Dùng itemId cho withdraw/remove; tôn trọng canWithdraw/canRemove.
-
-| Method + route | Mapping |
-|---|---|
-| [POST /api/v1/CommunitySubmission/check](#ep-communitysubmission-check-post) | CHƯA_RÀ_FRONTEND |
-| [POST /api/v1/CommunitySubmission](#ep-communitysubmission-submit-post) | CHƯA_RÀ_FRONTEND |
-| [POST /api/v1/CommunitySubmission/{itemId}/withdraw](#ep-communitysubmission-withdraw-post) | CHƯA_RÀ_FRONTEND |
-| [POST /api/v1/CommunitySubmission/{itemId}/remove](#ep-communitysubmission-remove-post) | CHƯA_RÀ_FRONTEND |
-| [GET /api/v1/CommunitySubmission/mine](#ep-communitysubmission-listmine-get) | CHƯA_RÀ_FRONTEND |
-
-<a id="ep-communitysubmission-check-post"></a>
-#### POST /api/v1/CommunitySubmission/check
-
-- Action: **Check**. [CommunitySubmissionController](../src/Core/StoryPlatform.Api/Controllers/CommunitySubmissionController.cs#L26).
-- Quyền: (User); kèm guard nghiệp vụ của nhóm.
-- Request: **body** `request`: [CommunitySubmitRequestDto](#dto-communitysubmitrequestdto).
-- Response: ApiResponse.data: [CommunityEligibilityDto](#dto-communityeligibilitydto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
-- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
-
-<a id="ep-communitysubmission-submit-post"></a>
-#### POST /api/v1/CommunitySubmission
-
-- Action: **Submit**. [CommunitySubmissionController](../src/Core/StoryPlatform.Api/Controllers/CommunitySubmissionController.cs#L39).
-- Quyền: (User); kèm guard nghiệp vụ của nhóm.
-- Request: **body** `request`: [CommunitySubmitRequestDto](#dto-communitysubmitrequestdto).
-- Response: ApiResponse.data: [CommunitySubmitResultDto](#dto-communitysubmitresultdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
-- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
-
-<a id="ep-communitysubmission-withdraw-post"></a>
-#### POST /api/v1/CommunitySubmission/{itemId}/withdraw
-
-- Action: **Withdraw**. [CommunitySubmissionController](../src/Core/StoryPlatform.Api/Controllers/CommunitySubmissionController.cs#L48).
-- Quyền: (User); kèm guard nghiệp vụ của nhóm.
-- Request: **path** `itemId`: `int`.
-- Response: ApiResponse.data: [CommunitySubmissionDto](#dto-communitysubmissiondto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
-- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
-
-<a id="ep-communitysubmission-remove-post"></a>
-#### POST /api/v1/CommunitySubmission/{itemId}/remove
-
-- Action: **Remove**. [CommunitySubmissionController](../src/Core/StoryPlatform.Api/Controllers/CommunitySubmissionController.cs#L57).
-- Quyền: (User); kèm guard nghiệp vụ của nhóm.
-- Request: **path** `itemId`: `int`.
-- Response: ApiResponse.data: [CommunitySubmissionDto](#dto-communitysubmissiondto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
-- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
-
-<a id="ep-communitysubmission-listmine-get"></a>
-#### GET /api/v1/CommunitySubmission/mine
-
-- Action: **ListMine**. [CommunitySubmissionController](../src/Core/StoryPlatform.Api/Controllers/CommunitySubmissionController.cs#L66).
-- Quyền: (User); kèm guard nghiệp vụ của nhóm.
-- Request: không có body/query/path ngoài ngữ cảnh xác thực..
-- Response: ApiResponse.data: [List&lt;CommunitySubmissionDto&gt;](#dto-communitysubmissiondto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
 - Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
 
 <a id="controller-creatormoderationcheck"></a>
@@ -3998,19 +3828,6 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [ChildAddResultDto](#dto-childaddresultdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L45) |
 | [ChildRoadmapDto](#dto-childroadmapdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L89) |
 | [ChildRoadmapItemDto](#dto-childroadmapitemdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L71) |
-| [CommunityBlockerDto](#dto-communityblockerdto) | [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L33) |
-| [CommunityChecklistEntryDto](#dto-communitychecklistentrydto) | [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L5) |
-| [CommunityEligibilityDto](#dto-communityeligibilitydto) | [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L51) |
-| [CommunityLabelDto](#dto-communitylabeldto) | [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L24) |
-| [CommunityLibraryQueryDto](#dto-communitylibraryquerydto) | [CommunityLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityLibraryDtos.cs#L9) |
-| [CommunityPiiLocationDto](#dto-communitypiilocationdto) | [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L44) |
-| [CommunityReviewBlockerDto](#dto-communityreviewblockerdto) | [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L37) |
-| [CommunityReviewDecisionResultDto](#dto-communityreviewdecisionresultdto) | [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L86) |
-| [CommunityReviewPackageDto](#dto-communityreviewpackagedto) | [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L50) |
-| [CommunityStoryDto](#dto-communitystorydto) | [CommunityLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityLibraryDtos.cs#L16) |
-| [CommunitySubmissionDto](#dto-communitysubmissiondto) | [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L77) |
-| [CommunitySubmitRequestDto](#dto-communitysubmitrequestdto) | [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L19) |
-| [CommunitySubmitResultDto](#dto-communitysubmitresultdto) | [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L65) |
 | [CopyrightDeclaration](#dto-copyrightdeclaration) | [CopyrightDeclaration.cs](../src/Core/StoryPlatform.Domain/Enums/CopyrightDeclaration.cs#L3) |
 | [CreateReviewItemRequestDto](#dto-createreviewitemrequestdto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L146) |
 | [CreatorPublicationResult](#dto-creatorpublicationresult) | [CreatorPublicationDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/CreatorPublicationDtos.cs#L17) |
@@ -4027,14 +3844,12 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [MyRoadmapDto](#dto-myroadmapdto) | [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/MyRoadmapDtos.cs#L42) |
 | [MyRoadmapOpenStoryDto](#dto-myroadmapopenstorydto) | [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/MyRoadmapDtos.cs#L10) |
 | [MyRoadmapUpcomingDto](#dto-myroadmapupcomingdto) | [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/MyRoadmapDtos.cs#L25) |
-| [PiiFindingDto](#dto-piifindingdto) | [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L39) |
 | [PublishedContentItemDto](#dto-publishedcontentitemdto) | [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L25) |
 | [PublishedContentQueryDto](#dto-publishedcontentquerydto) | [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L11) |
 | [PublishedContentSource](#dto-publishedcontentsource) | [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L5) |
 | [PublishedRoadmapDto](#dto-publishedroadmapdto) | [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L48) |
 | [PublishedRoadmapStoryDto](#dto-publishedroadmapstorydto) | [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L63) |
 | [PublishedStoryContentDto](#dto-publishedstorycontentdto) | [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L38) |
-| [RejectCommunityRequestDto](#dto-rejectcommunityrequestdto) | [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L80) |
 | [RejectRoadmapRequestDto](#dto-rejectroadmaprequestdto) | [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L65) |
 | [RemovalDecisionRequest](#dto-removaldecisionrequest) | [CreatorPublicationDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/CreatorPublicationDtos.cs#L11) |
 | [ReorderRoadmapRequestDto](#dto-reorderroadmaprequestdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L66) |
@@ -4074,10 +3889,8 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [RubricRevisionRequest](#dto-rubricrevisionrequest) | [ModerationRubricService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Rubrics/ModerationRubricService.cs#L16) |
 | [RubricSnapshot](#dto-rubricsnapshot) | [RubricSnapshot.cs](../src/Shared/StoryPlatform.Contracts/AI/Moderation/RubricSnapshot.cs#L11) |
 | [RubricWriteRequest](#dto-rubricwriterequest) | [ModerationRubricService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Rubrics/ModerationRubricService.cs#L15) |
-| [SaveCommunityChecklistRequestDto](#dto-savecommunitychecklistrequestdto) | [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L18) |
 | [SaveRoadmapChecklistRequestDto](#dto-saveroadmapchecklistrequestdto) | [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L11) |
 | [SaveRoadmapRequestDto](#dto-saveroadmaprequestdto) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L5) |
-| [SetCommunityLabelsRequestDto](#dto-setcommunitylabelsrequestdto) | [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L31) |
 | [SetRoadmapItemsRequestDto](#dto-setroadmapitemsrequestdto) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L93) |
 
 <a id="dto-aiproposaldto"></a>
@@ -8439,185 +8252,6 @@ Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/Ch
 | `addedByUserId` | `int` | Không | — |
 | `isStoryAvailable` | `bool` | Không | — |
 
-<a id="dto-communityblockerdto"></a>
-### CommunityBlockerDto
-
-Nguồn: [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L33).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `code` | `string` | Không | default `string.Empty` |
-| `message` | `string` | Không | default `string.Empty` |
-
-<a id="dto-communitychecklistentrydto"></a>
-### CommunityChecklistEntryDto
-
-Nguồn: [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L5).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `code` | `string` | Không | default `string.Empty`; safety_baseline, no_personal_info hoặc metadata_labels. |
-| `label` | `string` | Không | default `string.Empty` |
-| `passed` | `bool` | Không | — |
-| `note` | `string?` | Có | Ghi chú tùy chọn, tối đa 500 ký tự. |
-
-<a id="dto-communityeligibilitydto"></a>
-### CommunityEligibilityDto
-
-Nguồn: [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L51).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `storyId` | `int` | Không | — |
-| `canSubmit` | `bool` | Không | — |
-| `storyVersionId` | `int?` | Có | — |
-| `requiredDeclaration` | `string` | Không | default `"none"`; "none" (truyện AI) hoặc "own_work" (truyện tự viết / nhập). |
-| `blockers` | [List&lt;CommunityBlockerDto&gt;](#dto-communityblockerdto) | Không | default `new()` |
-| `piiFindings` | [List&lt;PiiFindingDto&gt;](#dto-piifindingdto) | Không | default `new()` |
-
-<a id="dto-communitylabeldto"></a>
-### CommunityLabelDto
-
-Nguồn: [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L24).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `id` | `int` | Không | — |
-| `code` | `string` | Không | default `string.Empty` |
-| `displayName` | `string` | Không | default `string.Empty` |
-
-<a id="dto-communitylibraryquerydto"></a>
-### CommunityLibraryQueryDto
-
-Nguồn: [CommunityLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityLibraryDtos.cs#L9).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `pageIndex` | `int` | Không | default `1` |
-| `pageSize` | `int` | Không | default `20` |
-
-<a id="dto-communitypiilocationdto"></a>
-### CommunityPiiLocationDto
-
-Nguồn: [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L44).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `kind` | `string` | Không | default `string.Empty` |
-| `location` | `string` | Không | default `string.Empty` |
-
-<a id="dto-communityreviewblockerdto"></a>
-### CommunityReviewBlockerDto
-
-Nguồn: [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L37).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `code` | `string` | Không | default `string.Empty`; own_submission, checklist_incomplete, story_archived, pii_found hoặc no_labels. |
-| `message` | `string` | Không | default `string.Empty` |
-
-<a id="dto-communityreviewdecisionresultdto"></a>
-### CommunityReviewDecisionResultDto
-
-Nguồn: [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L86).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `itemId` | `int` | Không | — |
-| `decision` | `string` | Không | default `string.Empty`; "Approved" hoặc "Rejected". |
-| `storyId` | `int` | Không | — |
-| `decidedAt` | `DateTime` | Không | — |
-
-<a id="dto-communityreviewpackagedto"></a>
-### CommunityReviewPackageDto
-
-Nguồn: [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L50).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `itemId` | `int` | Không | — |
-| `story` | [ReportedStoryDto](#dto-reportedstorydto) | Không | default `new()` |
-| `version` | [ReportedVersionDto](#dto-reportedversiondto) | Không | default `new()`; Đúng phiên bản đã ghim lúc nộp (không phải phiên bản hiện hành). |
-| `scenes` | [List&lt;ReportedSceneDto&gt;](#dto-reportedscenedto) | Không | default `new()` |
-| `vocabulary` | [List&lt;ReportedVocabularyDto&gt;](#dto-reportedvocabularydto) | Không | default `new()` |
-| `quizzes` | [List&lt;ReportedQuizDto&gt;](#dto-reportedquizdto) | Không | default `new()` |
-| `labels` | [List&lt;CommunityLabelDto&gt;](#dto-communitylabeldto) | Không | default `new()` |
-| `copyrightDeclaration` | `string?` | Có | AiGenerated hoặc OwnWork (người nộp khai). |
-| `piiCheckSummary` | `string?` | Có | JSON kết quả dò PII lúc nộp (chỉ loại và vị trí). |
-| `piiRescan` | [List&lt;CommunityPiiLocationDto&gt;](#dto-communitypiilocationdto) | Không | default `new()`; Kết quả dò PII lại trên bản ghim ngay bây giờ (chỉ loại và vị trí). |
-| `isResubmission` | `bool` | Không | — |
-| `checklist` | [List&lt;CommunityChecklistEntryDto&gt;](#dto-communitychecklistentrydto) | Không | default `new()` |
-| `blockers` | [List&lt;CommunityReviewBlockerDto&gt;](#dto-communityreviewblockerdto) | Không | default `new()` |
-| `canApprove` | `bool` | Không | True khi không còn khóa nào (mở nút Approve). |
-| `claimExpiresAt` | `DateTime` | Không | — |
-
-<a id="dto-communitystorydto"></a>
-### CommunityStoryDto
-
-Nguồn: [CommunityLibraryDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityLibraryDtos.cs#L16).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `submissionId` | `int` | Không | Mã dùng để mở truyện (không phải Id truyện gốc). |
-| `title` | `string` | Không | default `string.Empty` |
-| `description` | `string?` | Có | — |
-| `ageBand` | `string` | Không | default `string.Empty` |
-| `readingLevel` | `int?` | Có | — |
-| `labels` | [List&lt;CommunityLabelDto&gt;](#dto-communitylabeldto) | Không | default `new()` |
-| `author` | `string` | Không | default `CommunityLibraryPolicy.AuthorName`; Luôn là "Cộng đồng". |
-| `approvedAt` | `DateTime?` | Có | — |
-
-<a id="dto-communitysubmissiondto"></a>
-### CommunitySubmissionDto
-
-Nguồn: [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L77).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `itemId` | `int` | Không | — |
-| `storyId` | `int` | Không | — |
-| `storyTitle` | `string?` | Có | — |
-| `status` | `string` | Không | default `string.Empty`; "Pending" (kể cả đã có người nhận), "Approved", "Rejected", "Withdrawn" hoặc "Removed". |
-| `submittedAt` | `DateTime` | Không | — |
-| `decidedAt` | `DateTime?` | Có | — |
-| `rejectReason` | `string?` | Có | — |
-| `canWithdraw` | `bool` | Không | — |
-| `canRemove` | `bool` | Không | — |
-
-<a id="dto-communitysubmitrequestdto"></a>
-### CommunitySubmitRequestDto
-
-Nguồn: [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L19).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `storyId` | `int` | Không | — |
-| `confirmNoPersonalInfo` | `bool` | Không | Xác nhận truyện không chứa thông tin định danh của bé / gia đình (bắt buộc khi nộp). |
-| `copyrightDeclaration` | [CopyrightDeclaration?](#dto-copyrightdeclaration) | Có | cần khai. FamilyUse (chỉ dùng trong gia đình) không nộp được. |
-
-Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
-
-~~~json
-{
-  "storyId": 123,
-  "confirmNoPersonalInfo": true,
-  "copyrightDeclaration": 2
-}
-~~~
-
-
-<a id="dto-communitysubmitresultdto"></a>
-### CommunitySubmitResultDto
-
-Nguồn: [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L65).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `itemId` | `int` | Không | — |
-| `storyId` | `int` | Không | — |
-| `storyVersionId` | `int` | Không | Phiên bản đã được ghim cho thư viện. |
-| `status` | `string` | Không | default `string.Empty`; "Pending" sau khi nộp. |
-
 <a id="dto-copyrightdeclaration"></a>
 ### CopyrightDeclaration
 
@@ -8868,16 +8502,6 @@ Nguồn: [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/Child
 | `coverImageUrl` | `string?` | Có | — |
 | `isLocked` | `bool` | Không | default `true` |
 
-<a id="dto-piifindingdto"></a>
-### PiiFindingDto
-
-Nguồn: [CommunitySubmissionDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunitySubmissionDtos.cs#L39).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `kind` | `string` | Không | default `string.Empty`; phone, email, url, social_handle, address, school, class hoặc child_nickname. |
-| `excerpt` | `string` | Không | default `string.Empty`; Đoạn ngắn quanh chỗ nghi để tự tìm và sửa (chỉ trả cho người nộp, không được lưu). |
-
 <a id="dto-publishedcontentitemdto"></a>
 ### PublishedContentItemDto
 
@@ -8966,24 +8590,6 @@ Nguồn: [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Feature
 | `scenes` | [List&lt;ReportedSceneDto&gt;](#dto-reportedscenedto) | Không | default `new()` |
 | `vocabulary` | [List&lt;ReportedVocabularyDto&gt;](#dto-reportedvocabularydto) | Không | default `new()` |
 | `quizzes` | [List&lt;ReportedQuizDto&gt;](#dto-reportedquizdto) | Không | default `new()` |
-
-<a id="dto-rejectcommunityrequestdto"></a>
-### RejectCommunityRequestDto
-
-Nguồn: [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L80).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `reason` | `string` | Không | default `string.Empty`; Lý do từ chối (bắt buộc, 1–1000 ký tự). |
-
-Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
-
-~~~json
-{
-  "reason": "Nội dung cần chỉnh sửa trước khi chia sẻ."
-}
-~~~
-
 
 <a id="dto-rejectroadmaprequestdto"></a>
 ### RejectRoadmapRequestDto
@@ -9697,40 +9303,6 @@ Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response 
 ~~~
 
 
-<a id="dto-savecommunitychecklistrequestdto"></a>
-### SaveCommunityChecklistRequestDto
-
-Nguồn: [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L18).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `entries` | [List&lt;CommunityChecklistEntryDto&gt;](#dto-communitychecklistentrydto) | Không | default `new()` |
-
-Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
-
-~~~json
-{
-  "entries": [
-    {
-      "code": "safety_baseline",
-      "passed": true,
-      "note": null
-    },
-    {
-      "code": "no_personal_info",
-      "passed": true,
-      "note": null
-    },
-    {
-      "code": "metadata_labels",
-      "passed": true,
-      "note": null
-    }
-  ]
-}
-~~~
-
-
 <a id="dto-saveroadmapchecklistrequestdto"></a>
 ### SaveRoadmapChecklistRequestDto
 
@@ -9800,26 +9372,6 @@ Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response 
 ~~~
 
 
-<a id="dto-setcommunitylabelsrequestdto"></a>
-### SetCommunityLabelsRequestDto
-
-Nguồn: [CommunityReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/CommunityLibrary/DTOs/CommunityReviewDtos.cs#L31).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `contentCategoryIds` | `List&lt;int&gt;` | Không | default `new()`; Tập nhãn mới của truyện (ít nhất một nhãn, nhãn còn hoạt động). |
-
-Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
-
-~~~json
-{
-  "contentCategoryIds": [
-    1
-  ]
-}
-~~~
-
-
 <a id="dto-setroadmapitemsrequestdto"></a>
 ### SetRoadmapItemsRequestDto
 
@@ -9877,7 +9429,7 @@ Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response 
 10. Webhook xác thực server, không gọi từ browser.
 11. Notification REST + SignalR reconnect; mock/local không bị ghi nhận như dữ liệu đã lưu server.
 12. Roadmap multi-child partial results, reorder Waiting, gỡ Open, preview/copy khi eligibility đổi, clone thay thế bộ Published.
-13. Community PII/copyright/blockers, pinned version, withdraw bị claim, remove và child visibility/404; metadata chưa phải reader package.
+13. PublicStorySubmission của Creator: duyệt bản Ready, phát hành và mở truyện công khai qua Story/community.
 14. GrayZone Clear/Block, stale rowVersion/fingerprint, job chờ duyệt; rubric revision/clone/validate/evaluate/activate và response object riêng.
 15. Published review-item → report claim → escalate → Admin dismiss/archive; Creator removal/revision và publication lock.
 

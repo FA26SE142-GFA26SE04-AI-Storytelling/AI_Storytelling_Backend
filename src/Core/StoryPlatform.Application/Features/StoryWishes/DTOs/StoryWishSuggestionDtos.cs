@@ -2,12 +2,11 @@ using StoryPlatform.Application.Features.WishCards;
 
 namespace StoryPlatform.Application.Features.StoryWishes;
 
-/// <summary>Một truyện gợi ý như trẻ thấy. Mở bằng StoryId, hoặc CommunitySubmissionId nếu là truyện Cộng đồng.</summary>
+/// <summary>Một truyện gợi ý như trẻ thấy. Mở bằng StoryId.</summary>
 public class WishSuggestionDto
 {
     public int Rank { get; set; }
     public int? StoryId { get; set; }
-    public int? CommunitySubmissionId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string? CoverImageUrl { get; set; }
     /// <summary>Các thẻ trùng khớp, để app vẽ biểu tượng.</summary>

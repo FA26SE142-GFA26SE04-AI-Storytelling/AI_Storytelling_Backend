@@ -62,8 +62,6 @@ using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
 using StoryPlatform.Application.Features.ChildRoadmaps.Services;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 using StoryPlatform.Application.Features.ReadingSessions.Services;
-using StoryPlatform.Application.Features.CommunityLibrary.Interfaces;
-using StoryPlatform.Application.Features.CommunityLibrary.Services;
 using StoryPlatform.Application.Features.WishCards.Interfaces;
 using StoryPlatform.Application.Features.WishCards.Services;
 using StoryPlatform.Application.Features.StoryWishes.Interfaces;
@@ -125,7 +123,6 @@ public static class DependencyInjection
         services.AddScoped<IContentReportReviewService, ContentReportReviewService>();
         // Hệ quả của Archive: thứ tự đăng ký = thứ tự chạy.
         services.AddScoped<IStoryArchiveHandler, PendingSubmissionArchiveHandler>();
-        services.AddScoped<IStoryArchiveHandler, CommunitySubmissionArchiveHandler>();
         services.AddScoped<IStoryArchiveHandler, ReadingSessionArchiveHandler>();
         services.AddScoped<IStoryArchiveHandler, ChildRoadmapArchiveHandler>();
         services.AddScoped<IStoryArchiveConsequences, StoryArchiveConsequences>();
@@ -160,9 +157,6 @@ public static class DependencyInjection
         services.AddScoped<IChildStorySummaryService, ChildStorySummaryService>();
         services.AddScoped<IRoadmapLibraryService, RoadmapLibraryService>();
         services.AddScoped<IPublishedContentReviewService, PublishedContentReviewService>();
-        services.AddScoped<ICommunitySubmissionService, CommunitySubmissionService>();
-        services.AddScoped<ICommunityReviewService, CommunityReviewService>();
-        services.AddScoped<ICommunityLibraryService, CommunityLibraryService>();
         services.AddScoped<IRoadmapSubmissionChecker, RoadmapSubmissionChecker>();
         services.AddScoped<IRoadmapTemplateService, RoadmapTemplateService>();
         services.AddScoped<IRoadmapReviewService, RoadmapReviewService>();

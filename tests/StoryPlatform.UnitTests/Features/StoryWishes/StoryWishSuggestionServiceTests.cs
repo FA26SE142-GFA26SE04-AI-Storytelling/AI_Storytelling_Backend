@@ -133,11 +133,11 @@ public class StoryWishSuggestionServiceTests
     }
 
     [Fact]
-    public async Task Compute_ApprovedCommunityStory_IsSuggestedWithItsSubmissionCode()
+    public async Task Compute_AnotherChildsStoryApprovedForCommunity_IsNotSuggested()
     {
         _h.Stories.Add(new Story
         {
-            Id = 80, Title = "Truyện Cộng đồng", Scope = StoryScope.Parent, AgeBand = "6-8", Status = StoryStatus.Ready,
+            Id = 80, Title = "Truyện Cộng đồng cũ", Scope = StoryScope.Parent, AgeBand = "6-8", Status = StoryStatus.Ready,
             AuthorUserId = 7, ChildProfileId = ReadingHarness.OtherChild
         });
         _h.Match(80, _cat.Id, _sea.Id);
@@ -147,9 +147,8 @@ public class StoryWishSuggestionServiceTests
             StoryId = 80, StoryVersionId = 81
         });
 
-        await _sut.ComputeAsync(Wish());
-
-        Assert.Equal(900, _h.Suggestions.Single().CommunitySubmissionId);
+        Assert.Equal(0, await _sut.ComputeAsync(Wish()));
+        Assert.Empty(_h.Suggestions);
     }
 
     [Fact]
@@ -259,7 +258,7 @@ public class StoryWishSuggestionServiceTests
     }
 
     [Fact]
-    public async Task ForChild_CommunityStory_OpensBySubmissionCode_WithoutTheOriginalId()
+    public async Task ForChild_LegacyCommunitySuggestion_IsLeftOut()
     {
         _h.Suggestions.Add(new StoryWishSuggestion
         {
@@ -268,10 +267,7 @@ public class StoryWishSuggestionServiceTests
         });
         var wish = Wish();
 
-        var item = (await _sut.ForChildAsync(wish)).Single();
-
-        Assert.Null(item.StoryId);
-        Assert.Equal(900, item.CommunitySubmissionId);
+        Assert.Empty(await _sut.ForChildAsync(wish));
     }
 
     // ---- ForParentAsync ----

@@ -22,8 +22,6 @@ public static class StoryWishDecisionPolicy
 
     public const string AlreadyHandledMessage = "Điều ước này đã được xử lý.";
     public const string OnlySuggestedMessage = "Chỉ chọn được truyện trong danh sách gợi ý của điều ước.";
-    public const string CommunityNotSupportedMessage =
-        "Truyện Cộng đồng chưa thêm được vào lộ trình. Hãy chọn truyện khác hoặc tạo truyện mới.";
     public const string WishOnlyMessage = "Truyện bé sáng tác không dùng truyện có sẵn.";
     public const string ChildMismatchMessage = "Yêu cầu sinh truyện phải dành cho đúng bé đã ước.";
     public const string ReasonTooLongMessage = "Lý do từ chối tối đa 500 ký tự.";

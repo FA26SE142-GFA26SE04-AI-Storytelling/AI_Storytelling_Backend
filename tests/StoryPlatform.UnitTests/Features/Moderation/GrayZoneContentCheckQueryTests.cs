@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.Moderation;
 using StoryPlatform.Application.Features.Moderation.Services;
@@ -14,6 +15,58 @@ namespace StoryPlatform.UnitTests.Features.Moderation;
 
 public sealed class GrayZoneContentCheckQueryTests
 {
+    [Theory]
+    [InlineData(ModerationItemStatus.Pending)]
+    [InlineData(ModerationItemStatus.Claimed)]
+    public async Task Creator_revision_can_be_checked_while_reports_on_previous_version_remain_open(ModerationItemStatus status)
+    {
+        var h = new PublicStoryReviewHarness();
+        h.Items.Clear();
+        var story = h.Stories.Single();
+        var version = h.Versions.Single();
+        story.Status = StoryStatus.ContentReview;
+        version.BaseVersionId = version.Id - 1;
+        h.Items.Add(new() { Id = 21, StoryId = story.Id, StoryVersionId = version.BaseVersionId,
+            ItemType = ModerationItemType.ContentReport, Status = status });
+        var evaluator = new Mock<IGrayZoneEvaluator>();
+        evaluator.SetupGet(x => x.IsConfigured).Returns(true);
+        var reachedProvider = new ApplicationException("fixture-provider-reached");
+        evaluator.Setup(x => x.EvaluateAsync(It.IsAny<GrayZoneScan>(), It.IsAny<CancellationToken>())).ThrowsAsync(reachedProvider);
+        var checks = new GrayZoneContentCheckService(h.UnitOfWork.Object, evaluator.Object, null!, new Mock<IChildProfileAccessGuard>().Object);
+
+        var error = await Record.ExceptionAsync(() => checks.CheckAsync(story.AuthorUserId, story.Id, version.Id, default));
+
+        Assert.Same(reachedProvider, error);
+        Assert.Equal(status, h.Items.Single().Status);
+        Assert.Equal(version.BaseVersionId, h.Items.Single().StoryVersionId);
+    }
+
+    [Theory]
+    [InlineData(ModerationItemType.ContentReport, false, ModerationItemStatus.Pending)]
+    [InlineData(ModerationItemType.ContentReport, false, ModerationItemStatus.Claimed)]
+    [InlineData(ModerationItemType.ContentReport, true, ModerationItemStatus.Pending)]
+    [InlineData(ModerationItemType.PublicStoryReview, true, ModerationItemStatus.Pending)]
+    [InlineData(ModerationItemType.PublicStoryRemoval, true, ModerationItemStatus.Claimed)]
+    public async Task Creator_current_report_or_publication_work_still_locks_safety_check(
+        ModerationItemType type, bool unspecifiedVersion, ModerationItemStatus status)
+    {
+        var h = new PublicStoryReviewHarness();
+        h.Items.Clear();
+        var story = h.Stories.Single();
+        var version = h.Versions.Single();
+        story.Status = StoryStatus.ContentReview;
+        h.Items.Add(new() { Id = 21, StoryId = story.Id, StoryVersionId = unspecifiedVersion ? null : version.Id,
+            ItemType = type, Status = status });
+        var evaluator = new Mock<IGrayZoneEvaluator>();
+        evaluator.SetupGet(x => x.IsConfigured).Returns(true);
+        var checks = new GrayZoneContentCheckService(h.UnitOfWork.Object, evaluator.Object, null!, new Mock<IChildProfileAccessGuard>().Object);
+
+        var error = await Assert.ThrowsAsync<ConflictException>(() => checks.CheckAsync(story.AuthorUserId, story.Id, version.Id, default));
+
+        Assert.Equal("MODERATION_SOURCE_LOCKED", error.Message);
+        evaluator.Verify(x => x.EvaluateAsync(It.IsAny<GrayZoneScan>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

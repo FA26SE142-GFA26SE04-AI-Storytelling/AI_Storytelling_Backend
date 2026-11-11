@@ -4,6 +4,10 @@ using System.Text.Json;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.StoryReview.DTOs;
 using StoryPlatform.Application.Features.StoryReview.Services;
+using StoryPlatform.Application.Features.Moderation;
+using StoryPlatform.Application.Features.Moderation.Services;
+using StoryPlatform.Application.Features.AuditLogs.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.UnitTests.Features.ListeningInteractions;
@@ -13,6 +17,45 @@ namespace StoryPlatform.UnitTests;
 
 public sealed class StoryReviewListeningTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Creator_package_confirmation_only_ignores_reports_pinned_to_a_previous_version(bool currentReport)
+    {
+        var uow = ListeningTestStory.SeedReviewStory();
+        await ListeningTestStory.SeedPackageAsync(uow);
+        uow.Items<UserAccount>().Single().Role = UserRole.ContentCreator;
+        var story = uow.Items<Story>().Single();
+        CreatorGenerationTestContext.Configure(story, uow.Items<StoryGenerationRequest>().Single());
+        uow.Seed(new ModerationItem { Id = 21, StoryId = story.Id,
+            StoryVersionId = currentReport ? 1 : 99, ItemType = ModerationItemType.ContentReport, Status = ModerationItemStatus.Pending });
+        var evaluator = new Mock<IGrayZoneEvaluator>();
+        evaluator.SetupGet(x => x.IsConfigured).Returns(true);
+        evaluator.Setup(x => x.EvaluateAsync(It.IsAny<GrayZoneScan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((GrayZoneScan scan, CancellationToken _) => new GrayZoneAssessment(ModerationZone.Safe,
+                GrayZoneEvaluator.Fingerprint(scan), scan.Phase, "policy", "fixture", "fixture", 0, []));
+        var workflow = new GrayZoneWorkflowService(uow, new Mock<IAuditLogWriter>().Object);
+        var check = new GrayZoneContentCheckService(uow, evaluator.Object, workflow, new Mock<IChildProfileAccessGuard>().Object);
+        var service = new StoryReviewService(uow, ListeningTestStory.AiClient().Object,
+            new InMemoryProposalCache(), new InMemoryReviewCompletionStore(), moderation: check);
+        var input = new ConfirmStoryPackageRequestDto { VersionId = 1, OperationId = "confirm-revised-package-01" };
+
+        if (currentReport)
+        {
+            var error = await Assert.ThrowsAsync<ConflictException>(() => service.ConfirmPackageAsync(1, story.Id, input));
+            Assert.Equal("MODERATION_SOURCE_LOCKED", error.Message);
+            Assert.Empty(uow.Items<StoryGenerationJob>());
+        }
+        else
+        {
+            await service.ConfirmPackageAsync(1, story.Id, input);
+            Assert.Equal(StoryStatus.MediaProcessing, story.Status);
+            Assert.Single(uow.Items<StoryGenerationJob>(), j => j.Operation == GenerationJobOperation.GenerateMediaPackage);
+            Assert.Single(uow.Items<StoryAuthoringOperation>());
+        }
+        Assert.Equal(ModerationItemStatus.Pending, uow.Items<ModerationItem>().Single().Status);
+    }
+
     [Fact]
     public async Task Cached_story_proposal_cannot_mutate_a_confirmed_package()
     {

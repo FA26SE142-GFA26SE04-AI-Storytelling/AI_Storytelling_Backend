@@ -312,6 +312,11 @@ public partial class PublicStoryReviewService
             }
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            // Bị từ chối thì Creator được hoàn lượt gửi duyệt; yêu cầu sửa thì không (Luồng 2, 2f).
+            if (itemStatus == ModerationItemStatus.Rejected && _tokenQuotaService != null)
+            {
+                await _tokenQuotaService.RefundSubmissionAsync(item.Id, cancellationToken);
+            }
             await _auditLogWriter.LogAsync(
                 context.Actor.Id,
                 auditAction,

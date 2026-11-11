@@ -32,10 +32,16 @@ public class CreditLotConfiguration : IEntityTypeConfiguration<CreditLot>
             .HasForeignKey(x => x.PaymentId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // Lo gan giao dich chi cap mot lan.
-        builder.HasIndex(x => x.PaymentId)
+        // Lo gan giao dich chi cap mot lan cho moi loai luot (Goi Creator cap ca luot AI lan luot gui duyet).
+        builder.HasIndex(x => new { x.PaymentId, x.CreditType })
             .IsUnique()
             .HasFilter("\"PaymentId\" IS NOT NULL");
+
+        // Han muc thang cua Creator: moi loai luot chi mot lo cho moi thang.
+        builder.HasIndex(x => new { x.UserId, x.CreditType, x.ExpiresAt })
+            .IsUnique()
+            .HasDatabaseName("IX_credit_lots_CreatorMonthly")
+            .HasFilter("\"Source\" = 'CreatorMonthly' AND NOT \"IsDeleted\"");
 
         // Moi tai khoan chi co mot lo dung thu.
         builder.HasIndex(x => x.UserId)

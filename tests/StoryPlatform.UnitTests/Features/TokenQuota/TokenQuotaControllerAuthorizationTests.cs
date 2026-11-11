@@ -36,6 +36,15 @@ public class TokenQuotaControllerAuthorizationTests
     }
 
     [Theory]
+    [InlineData(UserRole.ContentCreator, true)]
+    [InlineData(UserRole.User, false)]
+    [InlineData(UserRole.Administrator, false)]
+    public async Task GetCreatorQuota_RequiresContentCreatorRole(UserRole role, bool expected)
+    {
+        Assert.Equal(expected, await IsAuthorizedAsync(nameof(TokenQuotaController.GetCreatorQuota), role));
+    }
+
+    [Theory]
     [InlineData("SetConfig")]
     [InlineData("ListConfigs")]
     public void ConfigActions_AreRemoved(string actionName)

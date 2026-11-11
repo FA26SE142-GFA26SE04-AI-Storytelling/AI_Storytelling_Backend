@@ -611,7 +611,7 @@ public sealed partial class AIStoryInputServiceTests
 
     private static AIStoryInputService CreatorService(FakeUnitOfWork store, CreatorAuthoringOptions? options = null,
         IInputGuardrail? guardrail = null) =>
-        new(store, guardrail ?? new RuleBasedInputGuardrail(), new Moq.Mock<ITokenQuotaService>(Moq.MockBehavior.Strict).Object, options);
+        new(store, guardrail ?? new RuleBasedInputGuardrail(), CreatorOnlyQuota(), options);
 
     private static FakeUnitOfWork CreatorStore()
     {

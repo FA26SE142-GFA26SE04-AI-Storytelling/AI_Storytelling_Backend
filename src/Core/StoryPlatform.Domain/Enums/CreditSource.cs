@@ -10,5 +10,9 @@ public enum CreditSource
     AddOn = 3,
     Legacy = 4,
     /// <summary>Admin cấp cho một tài khoản (UC-L2-08); không hết hạn.</summary>
-    AdminAdjust = 5
+    AdminAdjust = 5,
+    /// <summary>Hạn mức tháng miễn phí của Content Creator; hết hạn cuối tháng (giờ Việt Nam).</summary>
+    CreatorMonthly = 6,
+    /// <summary>Lượt mua từ Gói Creator; không hết hạn.</summary>
+    CreatorPack = 7
 }

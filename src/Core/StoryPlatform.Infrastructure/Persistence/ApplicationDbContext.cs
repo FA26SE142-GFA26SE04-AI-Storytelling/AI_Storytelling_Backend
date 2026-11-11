@@ -91,6 +91,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<CreditLot> CreditLots => Set<CreditLot>();
     public DbSet<CreditAdjustment> CreditAdjustments => Set<CreditAdjustment>();
     public DbSet<PaymentReconciliationException> PaymentReconciliationExceptions => Set<PaymentReconciliationException>();
+    public DbSet<CreditUsage> CreditUsages => Set<CreditUsage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

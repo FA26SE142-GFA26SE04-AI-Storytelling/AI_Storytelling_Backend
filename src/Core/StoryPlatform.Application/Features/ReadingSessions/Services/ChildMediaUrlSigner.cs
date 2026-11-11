@@ -38,6 +38,9 @@ public sealed class ChildMediaUrlSigner : IChildMediaUrlSigner
 
     private async Task<string?> SignOneAsync(string path, CancellationToken cancellationToken)
     {
+        // URL proxy nội bộ của phụ huynh/bé (/api/...) đã dùng được trực tiếp, không ký như đường dẫn kho.
+        if (path.StartsWith("/api/", StringComparison.Ordinal)) return path;
+
         // Dữ liệu seed cũ có thể lưu sẵn link https đầy đủ thay vì đường dẫn trong kho.
         if (Uri.TryCreate(path, UriKind.Absolute, out var uri))
             return uri.Scheme == Uri.UriSchemeHttps ? path : null;

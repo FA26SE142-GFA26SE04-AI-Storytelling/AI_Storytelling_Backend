@@ -44,6 +44,7 @@ public sealed partial class ParentStoryPackageService(IUnitOfWork uow, IChildPro
             var jobs = await uow.Repository<StoryGenerationJob>().FindAsync(x => x.StoryId == storyId && x.ParentStoryPackageId != null &&
                 (x.Status == GenerationJobStatus.Pending || x.Status == GenerationJobStatus.Processing), cancellationToken: ct);
             foreach (var job in jobs) { job.Status = GenerationJobStatus.Cancelled; job.ConcurrencyToken = Guid.NewGuid().ToString("N"); uow.Repository<StoryGenerationJob>().Update(job); }
+            uow.Repository<Story>().Update(story); // Attach the observed token before changing it.
             story.AuthoringRevisionToken = Guid.NewGuid().ToString("N"); uow.Repository<Story>().Update(story);
             return new ParentContentFinalizationDto(storyId, version.Id, ParentPackageContext.Source(story, version), false);
         }, ct);

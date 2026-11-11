@@ -810,4 +810,149 @@ public class PaymentServiceTests
         Assert.Equal(("Expired", (string?)null), (byId[stale.Id].Status, byId[stale.Id].QrCodeUrl));
         Assert.Equal(("Paid", (string?)null), (byId[paid.Id].Status, byId[paid.Id].QrCodeUrl));
     }
+
+    // ---------- F-17: tạo gói và quyền lợi ----------
+
+    private static PlanBenefitsInputDto ReadingBenefits() => new()
+    {
+        MaxChildProfiles = 3, WeeklyNewLibraryStories = null, CanCopyRoadmapTemplates = true, ReadAloudPerMonth = 30, WritingAssistPerDay = 8
+    };
+
+    private static CreateSubscriptionPlanRequestDto NewPlan(
+        string audience = "User", string type = "Reading", int price = 59000, int credits = 0,
+        PlanBenefitsInputDto? benefits = null, string name = "Gói Đọc Năm") => new()
+    {
+        Name = name, Audience = audience, PlanType = type, PriceVnd = price, AiCredits = credits,
+        IsActive = true, Benefits = benefits ?? ReadingBenefits()
+    };
+
+    [Fact]
+    public async Task CreatePlan_ValidReading_SavesWithBenefitsAndAudits()
+    {
+        var result = await _sut.CreatePlanAsync(AdminId, NewPlan());
+
+        var plan = Plan(result.Id);
+        Assert.Equal(("Gói Đọc Năm", PlanType.Reading, PlanAudience.User, 59000, true),
+            (plan.Name, plan.PlanType, plan.Audience, plan.PriceVnd, plan.IsActive));
+        Assert.Equal((3, (int?)null, true, (int?)30, 8),
+            (plan.MaxChildProfiles, plan.WeeklyNewLibraryStories, plan.CanCopyRoadmapTemplates, plan.ReadAloudPerMonth, plan.WritingAssistPerDay));
+        Assert.Equal(3, result.Benefits!.MaxChildProfiles);
+        _auditLogWriter.Verify(
+            writer => writer.LogAsync(
+                AdminId, "SubscriptionPlanCreated", nameof(SubscriptionPlan), result.Id,
+                null, It.IsNotNull<object?>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    public static TheoryData<CreateSubscriptionPlanRequestDto> InvalidNewPlans => new()
+    {
+        NewPlan(audience: "User", type: "CreatorPack"),
+        NewPlan(audience: "Creator", type: "Reading"),
+        NewPlan(type: "Legacy"),
+        NewPlan(type: "Unknown"),
+        NewPlan(audience: "Moderator"),
+        NewPlan(price: 0),
+        NewPlan(credits: -1),
+        NewPlan(benefits: new PlanBenefitsInputDto { MaxChildProfiles = 0, WritingAssistPerDay = 5 }),
+        NewPlan(benefits: new PlanBenefitsInputDto { MaxChildProfiles = 2, WritingAssistPerDay = -1 }),
+        NewPlan(benefits: new PlanBenefitsInputDto { MaxChildProfiles = 2, WeeklyNewLibraryStories = -1 }),
+        NewPlan(name: " "),
+        NewPlan(name: new string('a', 151))
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidNewPlans))]
+    public async Task CreatePlan_Rejects(CreateSubscriptionPlanRequestDto request)
+    {
+        var count = _store.Items<SubscriptionPlan>().Count;
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.CreatePlanAsync(AdminId, request));
+
+        Assert.Equal(count, _store.Items<SubscriptionPlan>().Count);
+    }
+
+    [Fact]
+    public async Task CreatePlan_CyclePlanWithoutBenefits_ThrowsBadRequest()
+    {
+        var request = NewPlan();
+        request.Benefits = null;
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.CreatePlanAsync(AdminId, request));
+    }
+
+    [Fact]
+    public async Task CreatePlan_AddOn_IgnoresBenefits()
+    {
+        var result = await _sut.CreatePlanAsync(AdminId, NewPlan(type: "AddOn", price: 19000, credits: 1));
+
+        var plan = Plan(result.Id);
+        Assert.Equal((0, (int?)null, false, (int?)null, 0),
+            (plan.MaxChildProfiles, plan.WeeklyNewLibraryStories, plan.CanCopyRoadmapTemplates, plan.ReadAloudPerMonth, plan.WritingAssistPerDay));
+        Assert.Null(result.Benefits);
+    }
+
+    [Fact]
+    public async Task CreatePlan_CreatorPack_KeepsSubmitCredits()
+    {
+        var request = NewPlan(audience: "Creator", type: "CreatorPack", price: 149000, credits: 10);
+        request.SubmitCredits = 30;
+
+        var result = await _sut.CreatePlanAsync(AdminId, request);
+
+        Assert.Equal((PlanAudience.Creator, 30), (Plan(result.Id).Audience, Plan(result.Id).SubmitCredits));
+    }
+
+    [Fact]
+    public async Task UpdatePlan_WithBenefits_UpdatesAndAuditsBenefitFields()
+    {
+        object? after = null;
+        _auditLogWriter.Setup(writer => writer.LogAsync(AdminId, "SubscriptionPlanUpdated", nameof(SubscriptionPlan), ReadingPlanId,
+                It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
+            .Callback<int?, string, string, int, object?, object?, CancellationToken>((_, _, _, _, _, a, _) => after = a)
+            .Returns(Task.CompletedTask);
+
+        await _sut.UpdatePlanAsync(AdminId, ReadingPlanId, new UpdateSubscriptionPlanRequestDto
+        {
+            Name = "Gói Đọc", PriceVnd = 49000, AiCredits = 0, IsActive = true, Benefits = ReadingBenefits()
+        });
+
+        Assert.Equal((3, 8), (Plan(ReadingPlanId).MaxChildProfiles, Plan(ReadingPlanId).WritingAssistPerDay));
+        Assert.Contains("MaxChildProfiles", System.Text.Json.JsonSerializer.Serialize(after));
+    }
+
+    [Fact]
+    public async Task UpdatePlan_WithoutBenefits_KeepsExistingBenefits()
+    {
+        var plan = Plan(ReadingPlanId);
+        plan.MaxChildProfiles = 4;
+        plan.CanCopyRoadmapTemplates = true;
+
+        await _sut.UpdatePlanAsync(AdminId, ReadingPlanId, new UpdateSubscriptionPlanRequestDto
+        {
+            Name = "Gói Đọc", PriceVnd = 55000, AiCredits = 0, IsActive = true
+        });
+
+        Assert.Equal((4, true, 55000), (plan.MaxChildProfiles, plan.CanCopyRoadmapTemplates, plan.PriceVnd));
+    }
+
+    [Fact]
+    public async Task UpdatePlan_InvalidBenefits_ThrowsBadRequest()
+    {
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.UpdatePlanAsync(AdminId, ReadingPlanId, new UpdateSubscriptionPlanRequestDto
+        {
+            Name = "Gói Đọc", PriceVnd = 49000, AiCredits = 0, IsActive = true,
+            Benefits = new PlanBenefitsInputDto { MaxChildProfiles = 0, WritingAssistPerDay = 5 }
+        }));
+    }
+
+    [Fact]
+    public async Task ListActivePlans_IncludesBenefitsForCyclePlans()
+    {
+        Plan(ReadingPlanId).MaxChildProfiles = 4;
+
+        var plans = await _sut.ListActivePlansAsync(ParentId);
+
+        Assert.Equal(4, plans.Single(plan => plan.Id == ReadingPlanId).Benefits!.MaxChildProfiles);
+        Assert.Null(plans.Single(plan => plan.Id == AddOnPlanId).Benefits);
+    }
 }

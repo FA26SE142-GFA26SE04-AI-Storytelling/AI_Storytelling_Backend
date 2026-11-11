@@ -6,6 +6,8 @@ using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.ChildProfiles.ReadingSlots;
+using StoryPlatform.Application.Features.PlanBenefits.Interfaces;
 
 namespace StoryPlatform.Application.Features.ReadingSessions.Services;
 
@@ -16,14 +18,24 @@ public class ChildReadingService : IChildReadingService
     private readonly IChildRoadmapProgressRecorder _recorder;
     private readonly IChildMediaUrlSigner? _mediaUrls;
     private readonly IChildRewardService _rewards;
+    private readonly IReadingSlotService? _readingSlots;
+    private readonly IPlanBenefitService? _planBenefits;
+    private readonly IPlanUsageService? _planUsage;
 
+    /// <param name="readingSlots">Hồ sơ đang chỉ xem (vượt số hồ sơ của gói) không mở được phiên đọc; null thì không chặn.</param>
     public ChildReadingService(
         IUnitOfWork unitOfWork,
         IChildRoadmapEligibility eligibility,
         IChildRoadmapProgressRecorder recorder,
         IChildRewardService rewards,
-        IChildMediaUrlSigner? mediaUrls = null)
+        IChildMediaUrlSigner? mediaUrls = null,
+        IReadingSlotService? readingSlots = null,
+        IPlanBenefitService? planBenefits = null,
+        IPlanUsageService? planUsage = null)
     {
+        _readingSlots = readingSlots;
+        _planBenefits = planBenefits;
+        _planUsage = planUsage;
         _mediaUrls = mediaUrls;
         _unitOfWork = unitOfWork;
         _eligibility = eligibility;
@@ -41,6 +53,13 @@ public class ChildReadingService : IChildReadingService
 
         var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(childProfileId, ct);
         if (child == null || child.IsDeleted || child.Status != ChildProfileStatus.Active)
+        {
+            throw new ForbiddenException(ChildReadingPolicy.ProfileUnavailableMessage);
+        }
+
+        // Hồ sơ chỉ xem: trẻ thấy thông điệp chung, không lộ lý do gói (Bước 3.0).
+        if (_readingSlots != null
+            && !(await _readingSlots.GetReadableProfileIdsAsync(child.OwnerUserId, ct)).Contains(child.Id))
         {
             throw new ForbiddenException(ChildReadingPolicy.ProfileUnavailableMessage);
         }
@@ -78,6 +97,13 @@ public class ChildReadingService : IChildReadingService
         await _unitOfWork.BeginTransactionAsync(ct);
         try
         {
+            // Mức Miễn phí: tối đa N truyện thư viện mới mỗi tuần, tính chung cả tài khoản. Khoá theo tài khoản
+            // (trước khoá truyện) để hai trẻ mở cùng lúc không vượt giới hạn.
+            if (request.StoryId.HasValue && story.Scope == StoryScope.Creator)
+            {
+                await EnsureWeeklyLibraryAllowanceAsync(child.OwnerUserId, storyId, ct);
+            }
+
             // Serialize starts for this story before checking sessions and the unique progress row.
             await _unitOfWork.AcquireTransactionLockAsync(storyId, ct);
             if (request.FamilyConfirmationId is int lockedGrant)
@@ -133,6 +159,34 @@ public class ChildReadingService : IChildReadingService
         {
             await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
             throw;
+        }
+    }
+
+    public const string WeeklyLibraryLimitMessageFormat =
+        "Đã mở đủ {0} truyện thư viện mới trong tuần. Truyện mới mở lại vào thứ Hai.";
+
+    private async Task EnsureWeeklyLibraryAllowanceAsync(int ownerUserId, int storyId, CancellationToken ct)
+    {
+        if (_planBenefits == null || _planUsage == null)
+        {
+            return;
+        }
+
+        var limit = (await _planBenefits.GetForUserAsync(ownerUserId, ct)).WeeklyNewLibraryStories;
+        if (limit == null)
+        {
+            return;
+        }
+
+        await _unitOfWork.AcquireTransactionLockAsync(-(1_000_000_000 + ownerUserId), ct);
+        if (await _planUsage.HasOpenedLibraryStoryAsync(ownerUserId, storyId, ct))
+        {
+            return;
+        }
+
+        if (await _planUsage.CountNewLibraryStoriesThisWeekAsync(ownerUserId, DateTime.UtcNow, ct) >= limit)
+        {
+            throw new ForbiddenException(string.Format(WeeklyLibraryLimitMessageFormat, limit));
         }
     }
 

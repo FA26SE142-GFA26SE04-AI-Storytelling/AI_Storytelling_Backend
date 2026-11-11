@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Features.PlanBenefits.Interfaces;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Common.Models;
@@ -20,13 +21,26 @@ public partial class TokenQuotaService : ITokenQuotaService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogWriter? _auditLogWriter;
+    private readonly IPlanSettingsProvider? _planSettings;
+    private readonly IPlanBenefitService? _planBenefits;
+    private readonly IPlanUsageService? _planUsage;
 
     /// <param name="auditLogWriter">Chỉ cần cho thao tác của Admin (<see cref="AdjustAsync"/>).</param>
-    public TokenQuotaService(IUnitOfWork unitOfWork, IAuditLogWriter? auditLogWriter = null)
+    /// <param name="planSettings">Lượt dùng thử và hạn mức tháng Creator do Admin cấu hình; null thì dùng mặc định.</param>
+    /// <param name="planBenefits">Quyền lợi hiển thị kèm lượt; null thì không trả quyền lợi.</param>
+    public TokenQuotaService(
+        IUnitOfWork unitOfWork, IAuditLogWriter? auditLogWriter = null, IPlanSettingsProvider? planSettings = null,
+        IPlanBenefitService? planBenefits = null, IPlanUsageService? planUsage = null)
     {
+        _planBenefits = planBenefits;
+        _planUsage = planUsage;
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
+        _planSettings = planSettings;
     }
+
+    private async Task<PlanSettings> SettingsAsync(CancellationToken cancellationToken) =>
+        _planSettings == null ? new PlanSettings() : await _planSettings.GetAsync(cancellationToken);
 
     public async Task EnsureWithinQuotaAsync(int childProfileId, CancellationToken cancellationToken = default)
     {
@@ -239,6 +253,24 @@ public partial class TokenQuotaService : ITokenQuotaService
 
     private async Task<MyQuotaDto> BuildQuotaAsync(int userId, CancellationToken cancellationToken)
     {
+        var quota = await BuildCreditsAsync(userId, cancellationToken);
+        if (_planBenefits != null)
+        {
+            quota.Benefits = await _planBenefits.GetForUserAsync(userId, cancellationToken);
+        }
+
+        if (_planUsage != null)
+        {
+            var now = DateTime.UtcNow;
+            quota.NewLibraryStoriesThisWeek = await _planUsage.CountNewLibraryStoriesThisWeekAsync(userId, now, cancellationToken);
+            quota.WritingAssistsToday = await _planUsage.CountWritingAssistsTodayAsync(userId, now, cancellationToken);
+        }
+
+        return quota;
+    }
+
+    private async Task<MyQuotaDto> BuildCreditsAsync(int userId, CancellationToken cancellationToken)
+    {
         var now = DateTime.UtcNow;
         var lots = await GetUsableLotsAsync(userId, now, cancellationToken);
         int Remaining(CreditSource source) => lots.Where(lot => lot.Source == source).Sum(lot => lot.Remaining);
@@ -339,7 +371,7 @@ public partial class TokenQuotaService : ITokenQuotaService
             return;
         }
 
-        await GrantAsync(userId, CreditSource.Trial, 1, expiresAt: null, paymentId: null, cancellationToken: cancellationToken);
+        await GrantAsync(userId, CreditSource.Trial, (await SettingsAsync(cancellationToken)).TrialAiCredits, expiresAt: null, paymentId: null, cancellationToken: cancellationToken);
     }
 
     /// <summary>Ghi một dòng lịch sử trừ lượt; nơi gọi lưu cùng lúc với thay đổi của lô.</summary>

@@ -10,12 +10,14 @@ using StoryPlatform.Application.Features.CreatorAssistance.Interfaces;
 using StoryPlatform.Contracts.AI.CreatorAssistance;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.PlanBenefits.Interfaces;
 
 namespace StoryPlatform.Application.Features.CreatorAssistance.Services;
 
 public partial class StoryAssistanceService(IUnitOfWork uow, ICreatorAssistanceAiClient ai,
     CreatorAssistanceOptions options, TimeProvider clock, AssistanceCancellationRegistry? cancellations = null,
-    ILogger? logger = null, IAssistanceAccessPolicy? accessPolicy = null)
+    ILogger? logger = null, IAssistanceAccessPolicy? accessPolicy = null,
+    IPlanBenefitService? planBenefits = null, IPlanUsageService? planUsage = null)
 {
     private readonly IAssistanceAccessPolicy _access = accessPolicy ?? new CreatorAssistanceAccessPolicy(uow);
     private readonly AssistanceCancellationRegistry _cancellations = cancellations ?? new();
@@ -76,6 +78,11 @@ public partial class StoryAssistanceService(IUnitOfWork uow, ICreatorAssistanceA
             var since = Now.AddMinutes(-1);
             if (await uow.Repository<StoryAssistanceTask>().CountAsync(x => x.OwnerUserId == userId && x.CreatedAt >= since, ct) >= options.MaximumRequestsPerMinute)
                 throw Fail("ASSISTANCE_RATE_LIMIT", 429);
+            // Trợ lý viết không tốn lượt nhưng giới hạn số lần mỗi ngày (giờ Việt Nam) theo gói (Luồng 2).
+            if (planBenefits != null && planUsage != null
+                && await planUsage.CountWritingAssistsTodayAsync(userId, Now, ct)
+                    >= (await planBenefits.GetForUserAsync(userId, ct)).WritingAssistPerDay)
+                throw Fail("ASSISTANCE_DAILY_LIMIT", 429);
             var context = await ResolveParentContext(userId, story, request, ct);
             ValidateContext(context);
             var task = new StoryAssistanceTask

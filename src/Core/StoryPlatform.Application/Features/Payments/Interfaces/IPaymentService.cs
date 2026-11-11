@@ -30,6 +30,10 @@ public interface IPaymentService
     Task<List<AdminSubscriptionPlanDto>> ListAllPlansAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Sửa tên, giá, số lượt và trạng thái bán; chỉ áp dụng cho giao dịch tạo sau đó.</summary>
+    /// <summary>Admin tạo gói mới kèm quyền lợi; ghi audit SubscriptionPlanCreated.</summary>
+    Task<AdminSubscriptionPlanDto> CreatePlanAsync(
+        int adminUserId, CreateSubscriptionPlanRequestDto request, CancellationToken cancellationToken = default);
+
     Task<AdminSubscriptionPlanDto> UpdatePlanAsync(
         int adminUserId, int planId, UpdateSubscriptionPlanRequestDto request, CancellationToken cancellationToken = default);
 

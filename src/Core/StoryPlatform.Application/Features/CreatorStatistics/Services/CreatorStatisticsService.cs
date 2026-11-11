@@ -1,3 +1,5 @@
+using StoryPlatform.Application.Features.PlanBenefits.Interfaces;
+using StoryPlatform.Application.Common.Time;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.BusinessReports.Interfaces;
@@ -16,18 +18,20 @@ namespace StoryPlatform.Application.Features.CreatorStatistics.Services;
 public class CreatorStatisticsService : ICreatorStatisticsService
 {
     // Thời gian đọc tối thiểu của một lượt đọc hợp lệ; Admin cấu hình được ở F-17 (chưa làm).
-    public const int MinimumReadSeconds = 60;
     private const int MaxValidReadsPerChildPerDay = 10;
     // "Mỗi ngày" của trẻ tính theo giờ Việt Nam.
-    private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(7);
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IRevenueStatisticsService _revenueStatisticsService;
+    private readonly IPlanSettingsProvider? _planSettings;
 
-    public CreatorStatisticsService(IUnitOfWork unitOfWork, IRevenueStatisticsService revenueStatisticsService)
+    /// <param name="planSettings">Thời gian đọc tối thiểu do Admin cấu hình; null thì dùng mặc định 60 giây.</param>
+    public CreatorStatisticsService(
+        IUnitOfWork unitOfWork, IRevenueStatisticsService revenueStatisticsService, IPlanSettingsProvider? planSettings = null)
     {
         _unitOfWork = unitOfWork;
         _revenueStatisticsService = revenueStatisticsService;
+        _planSettings = planSettings;
     }
 
     public async Task<CreatorReadingStatisticsDto> GetReadingAsync(
@@ -128,13 +132,17 @@ public class CreatorStatisticsService : ICreatorStatisticsService
             CreatorFundVnd = fund,
             ReadingFundRate = revenue.ReadingFundRate,
             CreativeFundRate = revenue.CreativeFundRate,
-            MinimumReadSeconds = MinimumReadSeconds,
+            MinimumReadSeconds = await MinimumReadSecondsAsync(cancellationToken),
             TotalValidReadsAllCreators = allValidReads,
             MyValidReads = myValidReads,
             EstimatedEarningsVnd = Share(myValidReads, fund, allValidReads),
             Stories = rows
         };
     }
+
+    private async Task<int> MinimumReadSecondsAsync(CancellationToken cancellationToken) =>
+        _planSettings == null ? new PlanSettings().MinimumReadSeconds
+            : (await _planSettings.GetAsync(cancellationToken)).MinimumReadSeconds;
 
     private async Task<IReadOnlyList<Story>> GetCreatorStoriesAsync(CancellationToken cancellationToken) =>
         await _unitOfWork.Repository<Story>().FindAsync(
@@ -182,11 +190,12 @@ public class CreatorStatisticsService : ICreatorStatisticsService
         var plansByUser = (await _unitOfWork.Repository<UserSubscription>().GetAllAsync(cancellationToken))
             .ToLookup(subscription => subscription.UserId);
 
+        var minimumReadSeconds = await MinimumReadSecondsAsync(cancellationToken);
         var eligible = new List<ValidRead>();
         foreach (var session in completed)
         {
             var completedAt = session.CompletedAt!.Value;
-            if (session.TimeSpentSeconds < MinimumReadSeconds
+            if (session.TimeSpentSeconds < minimumReadSeconds
                 || !storyById.TryGetValue(session.StoryId, out var story)
                 || !WasPublishedAt(story, completedAt, from, toExclusive)
                 || !ownerByChild.TryGetValue(session.ChildProfileId, out var ownerUserId)
@@ -197,7 +206,7 @@ public class CreatorStatisticsService : ICreatorStatisticsService
             }
 
             eligible.Add(new ValidRead(
-                session.StoryId, session.ChildProfileId, completedAt, (completedAt + VietnamOffset).Date));
+                session.StoryId, session.ChildProfileId, completedAt, VietnamTime.LocalDate(completedAt)));
         }
 
         return eligible

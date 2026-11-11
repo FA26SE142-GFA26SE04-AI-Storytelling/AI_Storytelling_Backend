@@ -730,14 +730,15 @@ Table child_profiles {
   AvatarId varchar(100) [not null]
   CreatedAt timestamptz [not null]
   Id int [pk, not null, increment]
+  Indexes {
   IsDeleted boolean [not null]
   Language varchar(10) [not null]
   Nickname varchar(150) [not null]
   OwnerUserId int [not null]
+    OwnerUserId
+  ReadingSlotSelectedAt timestamptz
   Status ChildProfileStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
   UpdatedAt timestamptz
-  Indexes {
-    OwnerUserId
   }
 }
 
@@ -1321,6 +1322,28 @@ Table payment_transactions {
     PlanId
     TransactionCode [unique]
   }
+}
+
+Table plan_settings {
+  CreatedAt timestamptz [not null]
+  CreativeFundPercent int [not null]
+  CreatorMonthlyAiCredits int [not null]
+  CreatorMonthlySubmitCredits int [not null]
+  CreatorWritingAssistPerDay int [not null]
+  FreeCanCopyRoadmapTemplates boolean [not null]
+  FreeMaxChildProfiles int [not null]
+  FreeReadAloudPerMonth int
+  FreeWeeklyNewLibraryStories int
+  FreeWritingAssistPerDay int [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  MinimumReadSeconds int [not null]
+  PartnerMonthlyAiCredits int [not null]
+  PartnerMonthlySubmitCredits int [not null]
+  PartnerWritingAssistPerDay int [not null]
+  ReadingFundPercent int [not null]
+  TrialAiCredits int [not null]
+  UpdatedAt timestamptz
 }
 
 Table prompt_catalog_versions {
@@ -1992,15 +2015,20 @@ Table story_wishes {
 Table subscription_plans {
   AiCredits int [not null]
   Audience PlanAudience [not null, note: 'EF PostgreSQL type: character varying(20)']
+  CanCopyRoadmapTemplates boolean [not null]
   CreatedAt timestamptz [not null]
   Id int [pk, not null, increment]
   IsActive boolean [not null]
   IsDeleted boolean [not null]
+  MaxChildProfiles int [not null]
   Name varchar(150) [not null]
-  PriceVnd int [not null]
   PlanType PlanType [not null, note: 'EF PostgreSQL type: character varying(20)']
+  PriceVnd int [not null]
+  ReadAloudPerMonth int
   SubmitCredits int [not null]
   UpdatedAt timestamptz
+  WeeklyNewLibraryStories int
+  WritingAssistPerDay int [not null]
 }
 
 Table telemetry_logs {
@@ -2038,6 +2066,7 @@ Table user_accounts {
   CommitmentAcceptedAt timestamptz
   CreatedAt timestamptz [not null]
   Email varchar(150) [not null]
+    Email [unique]
   EmailVerificationFailedAttempts int [not null]
   EmailVerificationTokenExpiresAt timestamptz
   EmailVerificationTokenHash varchar(64)
@@ -2046,6 +2075,7 @@ Table user_accounts {
   FailedLoginAttempts int [not null]
   FullName varchar(100) [not null]
   Id int [pk, not null, increment]
+  Indexes {
   IsDeleted boolean [not null]
   LastLoginAt timestamptz
   LockedUntil timestamptz
@@ -2066,8 +2096,6 @@ Table user_accounts {
   TokenVersion int [not null]
   UpdatedAt timestamptz
   Username varchar(50) [not null]
-  Indexes {
-    Email [unique]
     Username [unique]
   }
 }

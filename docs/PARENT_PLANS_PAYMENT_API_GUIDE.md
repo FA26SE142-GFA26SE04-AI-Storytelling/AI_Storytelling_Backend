@@ -194,7 +194,7 @@ Worker (mỗi 15 phút) tìm giao dịch `Paid` đã quá 5 phút mà chưa có 
 `PUT /api/v1/Payment/admin/plans/{id}` — body `{ "name": "Gói Sáng tạo", "priceVnd": 109000, "aiCredits": 5, "isActive": true }`
 
 - 400 khi: tên rỗng hoặc quá 150 ký tự; `priceVnd <= 0`; `aiCredits < 0`; bật bán gói `Legacy`.
-- Không đổi được loại gói. Chưa có API tạo gói mới.
+- Không đổi được loại gói. Tạo gói mới và quyền lợi của gói: xem mục 10.
 - Thay đổi chỉ áp dụng cho giao dịch tạo sau đó: mỗi giao dịch chốt số tiền và số lượt lúc tạo.
 - Gói tắt bán biến mất khỏi `GET Payment/plans` và không mua được nữa. Ghi audit `SubscriptionPlanUpdated`.
 
@@ -303,7 +303,7 @@ Một phiên đọc được tính là lượt đọc hợp lệ khi thoả tấ
 1. Phiên đã `Completed`, thời điểm hoàn thành nằm trong kỳ.
 2. Truyện là truyện Creator và đang Published lúc đọc.
 3. Tài khoản của trẻ có gói trả phí đang hiệu lực lúc đọc.
-4. Thời gian đọc từ 60 giây trở lên.
+4. Thời gian đọc từ 60 giây trở lên (Admin đổi được, mục 10.2).
 5. Trẻ không phải con của chính Creator.
 6. Mỗi trẻ tối đa 1 lượt cho mỗi truyện mỗi ngày, và tối đa 10 lượt mỗi ngày trên mọi truyện. "Ngày" ở đây tính theo
    giờ Việt Nam.
@@ -381,11 +381,97 @@ Gói Creator không được đếm vào `buyingParents`. `creditsGranted` và `
 3. Tài liệu tính 1 lượt AI khi **sinh ảnh và audio bằng AI cho truyện tự viết**. Hiện chưa tính.
 4. **Hệ thống rút yêu cầu đang chờ** (khi truyện bị lưu trữ) cũng được hoàn lượt. Tài liệu chỉ nói tới việc Creator tự rút.
 
-Chưa có Creator đối tác (6 lượt AI và 10 lượt gửi duyệt): mọi Creator dùng mức 2 và 5. Admin chưa cấp hoặc điều chỉnh
-được lượt cho Creator, và chưa cấu hình được con số hạn mức.
+Chưa có Creator đối tác: mọi Creator dùng hạn mức thường. Hạn mức đối tác (6 lượt AI, 10 lượt gửi duyệt, trợ lý viết
+40 lần/ngày) đã lưu trong cấu hình (mục 10.2) nhưng chưa dùng. Admin chưa cấp hoặc điều chỉnh được lượt cho Creator.
+Hạn mức tháng của Creator (2 và 5) nay Admin cấu hình được (mục 10.2).
 
 ## 9. Ngoài phạm vi
 
-Giữ – trừ – trả lượt; Creator đối tác; Admin điều chỉnh lượt cho Creator; giới hạn theo gói (số hồ sơ trẻ, 3 truyện mỗi tuần, đọc to);
-cảnh báo khi xoá tài khoản còn gói; tạo gói mới; cấu hình tỷ lệ quỹ Creator và thời gian đọc tối thiểu;
-giao diện Admin trên web.
+Giữ – trừ – trả lượt; Creator đối tác; Admin điều chỉnh lượt cho Creator; chặn số lần đọc to (chỉ lưu theo gói) và
+giới hạn xem tiến độ 7 ngày của mức Miễn phí (để sau Defense 1.1); giới hạn sinh lại trong một truyện (dàn ý, nội dung,
+ảnh, audio) chưa do Admin cấu hình; cảnh báo khi xoá tài khoản còn gói; giao diện Admin trên web.
+
+## 10. Quản lý gói, quyền lợi theo gói và cấu hình chung (F-17, bổ sung 11/11/2026)
+
+Cần thêm migration `AddPlanBenefitsAndSettings` (cột quyền lợi trên `subscription_plans`, bảng `plan_settings` một dòng,
+cột `child_profiles.ReadingSlotSelectedAt`). Seed: `37_subscription_plans.sql`, `72_plan_settings.sql`.
+
+**Giờ Việt Nam:** "ngày" bắt đầu 00:00, "tuần" bắt đầu 00:00 thứ Hai (UTC+7).
+
+### 10.1 Gói và quyền lợi (Admin)
+
+`POST /api/v1/Payment/admin/plans` (role `Administrator`) → **201**
+
+```json
+{
+  "name": "Gói Đọc Gia đình", "audience": "User", "planType": "Reading",
+  "priceVnd": 69000, "aiCredits": 0, "submitCredits": 0, "isActive": true,
+  "benefits": { "maxChildProfiles": 6, "weeklyNewLibraryStories": null, "canCopyRoadmapTemplates": true,
+                "readAloudPerMonth": 90, "writingAssistPerDay": 10 }
+}
+```
+
+- Cặp hợp lệ: `audience = User` với `Reading` / `Creative` / `AddOn`; `audience = Creator` với `CreatorPack`. Không tạo
+  được `Legacy`. Sai cặp, giá `<= 0`, số lượt âm, tên rỗng hoặc dài hơn 150 ký tự → 400.
+- `Reading` / `Creative` bắt buộc có `benefits` với `maxChildProfiles >= 1`; các số lần không âm. `weeklyNewLibraryStories
+  = null` nghĩa là không giới hạn. Add-on và Gói Creator bỏ qua `benefits`.
+- `submitCredits` chỉ dùng cho `CreatorPack`. Ghi audit `SubscriptionPlanCreated`.
+
+`PUT /api/v1/Payment/admin/plans/{id}` nhận thêm `benefits` (tuỳ chọn; bỏ trống thì giữ nguyên). Giá và số lượt vẫn chốt
+theo từng giao dịch, nhưng **quyền lợi đọc thẳng từ gói**: người đang dùng gói nhận quyền lợi mới ngay.
+
+`GET /Payment/plans` và `GET /Payment/admin/plans` trả thêm `benefits` cho gói `Reading` / `Creative` (null với gói khác).
+
+Seed: Gói Đọc 4 hồ sơ, thư viện không giới hạn, sao chép bộ truyện mẫu, đọc to 60 lần/tháng, trợ lý viết 5 lần/ngày;
+Gói Sáng tạo như Gói Đọc nhưng trợ lý viết 20 lần/ngày.
+
+### 10.2 Cấu hình chung (Admin)
+
+`GET /api/v1/Payment/admin/settings` và `PUT /api/v1/Payment/admin/settings` (role `Administrator`, PUT gửi đủ mọi trường):
+
+| Trường | Mặc định | Ý nghĩa |
+|---|---|---|
+| `readingFundPercent`, `creativeFundPercent` | 30, 10 | Tỷ lệ quỹ Creator (0–100) |
+| `creatorMonthlyAiCredits`, `creatorMonthlySubmitCredits` | 2, 5 | Hạn mức tháng của Creator |
+| `partnerMonthlyAiCredits`, `partnerMonthlySubmitCredits` | 6, 10 | Hạn mức Creator đối tác (chỉ lưu) |
+| `minimumReadSeconds` | 60 | Thời gian đọc tối thiểu của lượt đọc hợp lệ (1–3600) |
+| `trialAiCredits` | 1 | Lượt AI dùng thử |
+| `freeMaxChildProfiles` | 1 | Mức Miễn phí: số hồ sơ trẻ (≥ 1) |
+| `freeWeeklyNewLibraryStories` | 3 | Mức Miễn phí: truyện thư viện mới mỗi tuần (null = không giới hạn) |
+| `freeCanCopyRoadmapTemplates` | false | Mức Miễn phí: sao chép bộ truyện mẫu |
+| `freeReadAloudPerMonth` | 5 | Mức Miễn phí: đọc to mỗi tháng (chỉ lưu) |
+| `freeWritingAssistPerDay` | 5 | Mức Miễn phí: trợ lý viết mỗi ngày |
+| `creatorWritingAssistPerDay`, `partnerWritingAssistPerDay` | 20, 40 | Trợ lý viết của Creator / Creator đối tác |
+
+Sai giới hạn → 400. Ghi audit `PlanSettingsUpdated` trước/sau. Báo cáo kỳ đã Published giữ tỷ lệ cũ; lô hạn mức tháng của
+Creator đã cấp giữ số cũ, số mới áp dụng từ lần cấp sau.
+
+### 10.3 Chặn theo quyền lợi
+
+Quyền lợi hiệu lực = gói `Reading` / `Creative` có chu kỳ `Active` còn hạn; không có thì là mức Miễn phí.
+
+| Việc | Điều kiện chặn | Lỗi |
+|---|---|---|
+| Tạo hồ sơ trẻ, khôi phục hồ sơ đã lưu trữ | Số hồ sơ Draft / Active / Suspended đã bằng `maxChildProfiles` | 409 |
+| Trẻ mở truyện thư viện công khai (truyện Creator) | Mức có giới hạn tuần, truyện chưa từng được hồ sơ nào trong tài khoản mở, và đã mở đủ số truyện mới của tuần | 403 "…mở lại vào thứ Hai" |
+| `POST /RoadmapLibrary/{id}/copy` | `canCopyRoadmapTemplates = false` (xem trước vẫn được) | 403 |
+| Tạo yêu cầu trợ lý viết (`.../assistance-tasks`, phụ huynh và Creator) | Đã tạo đủ `writingAssistPerDay` task trong ngày; gửi lại cùng `operationId` không tính | 429, mã `ASSISTANCE_DAILY_LIMIT` |
+| Trẻ vào đọc bằng QR, phiên giám sát, "Cho bé đọc truyện này", mở phiên đọc | Hồ sơ đang chỉ xem (mục 10.4) | 403 |
+
+Đọc lại truyện đã mở, truyện phụ huynh tạo và gói truyện đã xác nhận cho gia đình không bị giới hạn tuần. Với trẻ (quét QR,
+mở phiên đọc) thông điệp là thông điệp chung, không nêu lý do gói.
+
+`GET /api/v1/TokenQuota/me` trả thêm `benefits` (`tier` = `Free` hoặc tên gói), `newLibraryStoriesThisWeek` và
+`writingAssistsToday`.
+
+### 10.4 Hồ sơ được đọc khi về Miễn phí (Luồng 1, 1e)
+
+Khi số hồ sơ Active nhiều hơn `maxChildProfiles` (thường là lúc gói hết hạn), chỉ một số hồ sơ được vào đọc: hồ sơ phụ
+huynh đã chọn, nếu chưa chọn thì hồ sơ có phiên đọc gần nhất, rồi đến hồ sơ tạo sớm nhất. Hồ sơ còn lại **chỉ xem**:
+không bị xoá, không đổi trạng thái; gia hạn gói thì đọc lại bình thường.
+
+- `GET /api/v1/ChildProfile/reading-slots` (role `User`): `slots`, `isOverLimit`, `nextChangeAllowedAt` (null = đổi được
+  ngay), `profiles[]` gồm `childProfileId`, `nickname`, `canRead`, `isSelected`.
+- `PUT /api/v1/ChildProfile/reading-slots` với `{ "childProfileIds": [12] }`: chọn 1 đến `slots` hồ sơ Active của chính
+  tài khoản (sai → 400). Đổi tối đa **1 lần mỗi tuần**: lần thứ hai trong tuần → 409 kèm ngày được đổi tiếp. Trẻ của hồ sơ
+  chuyển sang chỉ xem bị đăng xuất. Ghi audit `ReadingSlotsChanged`.

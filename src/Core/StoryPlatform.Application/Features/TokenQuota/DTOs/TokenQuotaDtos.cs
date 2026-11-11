@@ -1,3 +1,5 @@
+using StoryPlatform.Application.Features.PlanBenefits.DTOs;
+
 namespace StoryPlatform.Application.Features.TokenQuota.DTOs;
 
 public class TokenQuotaStatusDto
@@ -31,6 +33,12 @@ public class MyQuotaDto
     public int AddOnCredits { get; set; }
     public int OtherCredits { get; set; }
     public int TotalRemaining { get; set; }
+    /// <summary>Quyền lợi đang áp dụng: gói chu kỳ đang hiệu lực hoặc mức Miễn phí (Luồng 2, 2h).</summary>
+    public PlanBenefitsDto? Benefits { get; set; }
+    /// <summary>Số truyện thư viện mới đã mở trong tuần (tính từ 00:00 thứ Hai giờ Việt Nam).</summary>
+    public int NewLibraryStoriesThisWeek { get; set; }
+    /// <summary>Số lần dùng trợ lý viết hôm nay (giờ Việt Nam).</summary>
+    public int WritingAssistsToday { get; set; }
 }
 
 /// <summary>Admin cấp (Amount dương) hoặc trừ (Amount âm) lượt cho một tài khoản phụ huynh; Reason bắt buộc.</summary>

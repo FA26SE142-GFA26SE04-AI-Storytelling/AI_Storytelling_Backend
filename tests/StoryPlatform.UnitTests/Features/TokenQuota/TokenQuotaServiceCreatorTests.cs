@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Features.PlanBenefits.Services;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.TokenQuota.Services;
 using StoryPlatform.Domain.Entities;
@@ -259,5 +260,18 @@ public class TokenQuotaServiceCreatorTests
         await _sut.ChargeSubmissionAsync(CreatorId, 1, null);
 
         Assert.Equal([$"lock:{CreatorId}"], _store.Calls);
+    }
+
+    [Fact]
+    public async Task GetCreatorQuotaAsync_UsesConfiguredMonthlyAllowance()
+    {
+        _store.Seed(new PlanSettings { Id = PlanSettings.SingletonId, CreatorMonthlyAiCredits = 3, CreatorMonthlySubmitCredits = 7 });
+        var sut = new TokenQuotaService(_store, planSettings: new PlanSettingsProvider(_store));
+
+        var quota = await sut.GetCreatorQuotaAsync(CreatorId);
+
+        Assert.Equal((3, 7), (Assert.Single(Lots(CreditType.AI, CreditSource.CreatorMonthly)).Total,
+            Assert.Single(Lots(CreditType.Submit, CreditSource.CreatorMonthly)).Total));
+        Assert.Equal((3, 7), (quota.AiCredits.MonthlyAllowance, quota.SubmitCredits.MonthlyAllowance));
     }
 }

@@ -9,6 +9,7 @@ using StoryPlatform.Application.Features.RoadmapTemplates;
 using StoryPlatform.Application.Features.RoadmapTemplates.DTOs;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.PlanBenefits.Interfaces;
 
 namespace StoryPlatform.Application.Features.ChildRoadmaps.Services;
 
@@ -21,7 +22,9 @@ public partial class RoadmapLibraryService : IRoadmapLibraryService
     private readonly IChildRoadmapAdvancer _advancer;
     private readonly IChildRoadmapNotifier _notifier;
     private readonly IAuditLogWriter _auditLogWriter;
+    private readonly IPlanBenefitService? _planBenefits;
 
+    /// <param name="planBenefits">Mức Miễn phí không sao chép được bộ truyện mẫu (Luồng 2, 2h); null thì không chặn.</param>
     public RoadmapLibraryService(
         IUnitOfWork unitOfWork,
         IChildProfileAccessGuard guard,
@@ -29,8 +32,10 @@ public partial class RoadmapLibraryService : IRoadmapLibraryService
         IChildRoadmapInserter inserter,
         IChildRoadmapAdvancer advancer,
         IChildRoadmapNotifier notifier,
-        IAuditLogWriter auditLogWriter)
+        IAuditLogWriter auditLogWriter,
+        IPlanBenefitService? planBenefits = null)
     {
+        _planBenefits = planBenefits;
         _unitOfWork = unitOfWork;
         _guard = guard;
         _eligibility = eligibility;

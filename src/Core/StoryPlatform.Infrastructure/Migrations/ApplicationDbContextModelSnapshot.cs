@@ -557,6 +557,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("OwnerUserId")
                         .HasColumnType("integer");
 
+                    b.Property<DateTime?>("ReadingSlotSelectedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(30)
@@ -2577,6 +2580,101 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("payment_transactions", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.PlanSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CreativeFundPercent")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CreatorMonthlyAiCredits")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CreatorMonthlySubmitCredits")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CreatorWritingAssistPerDay")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("FreeCanCopyRoadmapTemplates")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("FreeMaxChildProfiles")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("FreeReadAloudPerMonth")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("FreeWeeklyNewLibraryStories")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("FreeWritingAssistPerDay")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("MinimumReadSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("PartnerMonthlyAiCredits")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("PartnerMonthlySubmitCredits")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("PartnerWritingAssistPerDay")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ReadingFundPercent")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TrialAiCredits")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("plan_settings", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_plan_settings_fund_percent", "\"ReadingFundPercent\" BETWEEN 0 AND 100 AND \"CreativeFundPercent\" BETWEEN 0 AND 100");
+
+                            t.HasCheckConstraint("CK_plan_settings_min_read_seconds", "\"MinimumReadSeconds\" BETWEEN 1 AND 3600");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            CreativeFundPercent = 10,
+                            CreatorMonthlyAiCredits = 2,
+                            CreatorMonthlySubmitCredits = 5,
+                            CreatorWritingAssistPerDay = 20,
+                            FreeCanCopyRoadmapTemplates = false,
+                            FreeMaxChildProfiles = 1,
+                            FreeReadAloudPerMonth = 5,
+                            FreeWeeklyNewLibraryStories = 3,
+                            FreeWritingAssistPerDay = 5,
+                            IsDeleted = false,
+                            MinimumReadSeconds = 60,
+                            PartnerMonthlyAiCredits = 6,
+                            PartnerMonthlySubmitCredits = 10,
+                            PartnerWritingAssistPerDay = 40,
+                            ReadingFundPercent = 30,
+                            TrialAiCredits = 1
+                        });
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.PromptCatalogVersion", b =>
                 {
                     b.Property<int>("Id")
@@ -4495,6 +4593,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasColumnType("character varying(20)")
                         .HasDefaultValue("User");
 
+                    b.Property<bool>("CanCopyRoadmapTemplates")
+                        .HasColumnType("boolean");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -4503,6 +4604,9 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
+
+                    b.Property<int>("MaxChildProfiles")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -4519,11 +4623,20 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("PriceVnd")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("ReadAloudPerMonth")
+                        .HasColumnType("integer");
+
                     b.Property<int>("SubmitCredits")
                         .HasColumnType("integer");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("WeeklyNewLibraryStories")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("WritingAssistPerDay")
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
@@ -4535,65 +4648,82 @@ namespace StoryPlatform.Infrastructure.Migrations
                             Id = 1,
                             AiCredits = 50,
                             Audience = "User",
+                            CanCopyRoadmapTemplates = false,
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = false,
                             IsDeleted = false,
+                            MaxChildProfiles = 0,
                             Name = "Personal",
                             PlanType = "Legacy",
                             PriceVnd = 49000,
-                            SubmitCredits = 0
+                            SubmitCredits = 0,
+                            WritingAssistPerDay = 0
                         },
                         new
                         {
                             Id = 2,
                             AiCredits = 0,
                             Audience = "User",
+                            CanCopyRoadmapTemplates = true,
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
                             IsDeleted = false,
+                            MaxChildProfiles = 4,
                             Name = "Gói Đọc",
                             PlanType = "Reading",
                             PriceVnd = 49000,
-                            SubmitCredits = 0
+                            ReadAloudPerMonth = 60,
+                            SubmitCredits = 0,
+                            WritingAssistPerDay = 5
                         },
                         new
                         {
                             Id = 3,
                             AiCredits = 4,
                             Audience = "User",
+                            CanCopyRoadmapTemplates = true,
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
                             IsDeleted = false,
+                            MaxChildProfiles = 4,
                             Name = "Gói Sáng tạo",
                             PlanType = "Creative",
                             PriceVnd = 99000,
-                            SubmitCredits = 0
+                            ReadAloudPerMonth = 60,
+                            SubmitCredits = 0,
+                            WritingAssistPerDay = 20
                         },
                         new
                         {
                             Id = 4,
                             AiCredits = 2,
                             Audience = "User",
+                            CanCopyRoadmapTemplates = false,
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
                             IsDeleted = false,
+                            MaxChildProfiles = 0,
                             Name = "Add-on",
                             PlanType = "AddOn",
                             PriceVnd = 29000,
-                            SubmitCredits = 0
+                            SubmitCredits = 0,
+                            WritingAssistPerDay = 0
                         },
                         new
                         {
                             Id = 5,
                             AiCredits = 6,
                             Audience = "Creator",
+                            CanCopyRoadmapTemplates = false,
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
                             IsDeleted = false,
+                            MaxChildProfiles = 0,
                             Name = "Gói Creator",
                             PlanType = "CreatorPack",
                             PriceVnd = 99000,
-                            SubmitCredits = 20
+                            SubmitCredits = 20,
+                            WritingAssistPerDay = 0
                         });
                 });
 

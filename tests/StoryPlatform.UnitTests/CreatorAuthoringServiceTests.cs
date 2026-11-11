@@ -125,6 +125,37 @@ public sealed class CreatorAuthoringServiceTests
         Assert.Equal(draft.StoryId, Assert.Single(list.Items).StoryId);
     }
 
+    [Fact]
+    public async Task GetMineAsync_ReturnsIsPublishedAndCurrentVersionReviewStatus()
+    {
+        var store = new Store();
+        var s0 = await store.Service.CreateDraftAsync(1, NewDraft("none-version"));
+        var s1 = await store.Service.CreateDraftAsync(1, NewDraft("rejected"));
+        var saved1 = await store.Service.SaveContentAsync(1, s1.StoryId, Save(s1, "save-rejected", "Nội dung bị từ chối."));
+        store.Items<Story>().Single(x => x.Id == s1.StoryId).Status = StoryStatus.Ready;
+        store.Items<StoryVersion>().Single(x => x.Id == saved1.Version.VersionId).Moderation.ReviewStatus = VersionReviewStatus.Rejected;
+
+        var s2 = await store.Service.CreateDraftAsync(1, NewDraft("published"));
+        var saved2 = await store.Service.SaveContentAsync(1, s2.StoryId, Save(s2, "save-published", "Nội dung đã công khai."));
+        store.Items<Story>().Single(x => x.Id == s2.StoryId).Status = StoryStatus.Ready;
+        store.Items<Story>().Single(x => x.Id == s2.StoryId).IsPublished = true;
+        store.Items<StoryVersion>().Single(x => x.Id == saved2.Version.VersionId).Moderation.ReviewStatus = VersionReviewStatus.Approved;
+
+        var page = await store.Service.GetMineAsync(1, 1, 20);
+        var byId = page.Items.ToDictionary(x => x.StoryId);
+
+        Assert.False(byId[s0.StoryId].IsPublished);
+        Assert.Null(byId[s0.StoryId].ReviewStatus);
+
+        Assert.Equal("Ready", byId[s1.StoryId].Status);
+        Assert.False(byId[s1.StoryId].IsPublished);
+        Assert.Equal("Rejected", byId[s1.StoryId].ReviewStatus);
+
+        Assert.Equal("Ready", byId[s2.StoryId].Status);
+        Assert.True(byId[s2.StoryId].IsPublished);
+        Assert.Equal("Approved", byId[s2.StoryId].ReviewStatus);
+    }
+
     [Theory]
     [InlineData(AccountStatus.Registered)]
     [InlineData(AccountStatus.Suspended)]

@@ -134,6 +134,9 @@ public class ReadingIllustrationDto
 
 public class ReadingSegmentDto
 {
+    /// <summary>Mã đoạn (StorySegment.Id), dùng làm segmentId khi gửi đọc to.</summary>
+    public int SegmentId { get; set; }
+
     public int SegmentOrder { get; set; }
     /// <summary>Vị trí đoạn trong Text của scene: [StartOffset, EndOffset), dùng để biết tranh nào ứng với đoạn đang đọc.</summary>
     public int StartOffset { get; set; }

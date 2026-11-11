@@ -69,7 +69,7 @@
         <ol>
           <li>Hai tài khoản active role <code>User</code>: A là chủ hồ sơ trẻ, B là người khác. Lấy access token và refresh token từ <code>POST /api/v1/Auth/login</code>.</li>
           <li>Một hồ sơ Draft của A và một hồ sơ Active của A đã có Learning Profile, Safety Policy và consent. Ghi lại <code>childProfileId</code>.</li>
-          <li>Một truyện riêng của hồ sơ Active đủ trạng thái để thử các API truyện. Các API AI, review, roadmap, cộng đồng còn phụ thuộc trạng thái truyện, chính sách, quota và consent.</li>
+          <li>Một truyện riêng của hồ sơ Active đủ trạng thái để thử các API truyện. Các API AI, review, roadmap còn phụ thuộc trạng thái truyện, chính sách, quota và consent.</li>
           <li>Một tài khoản test riêng C cho ca xóa tài khoản; đừng dùng A/B hoặc dữ liệu muốn giữ.</li>
         </ol>
       </div>
@@ -169,9 +169,7 @@ const steps = [
     { m:"GET", p:"/api/v1/authoring-guides", role:"User", what:"Không đổi audience Parent của bộ hướng dẫn; chỉ role JWT đổi thành User.", tests:[
       ["A gọi bằng token User", "Được truy cập bộ hướng dẫn đã phát hành."], ["Không token", "401."] ]}
   ]},
-  { id:"requests", title:"6. Dữ liệu, cộng đồng và báo cáo", desc:"Các ca ghi dữ liệu dưới đây chỉ nên chạy trên môi trường test và với truyện/hồ sơ phù hợp.", apis:[
-    { m:"POST", p:"/api/v1/CommunitySubmission/check", role:"User", what:"Kiểm tra khả năng nộp truyện riêng của trẻ lên thư viện cộng đồng; check không nộp thật.", body:{storyId:"<STORY_ID_A>",confirmNoPersonalInfo:false,copyrightDeclaration:"OwnWork"}, tests:[
-      ["A check truyện của hồ sơ A", "200; đọc canSubmit/blockers, không tạo submission."], ["B check cùng storyId", "Không được nộp truyện của A."] ]},
+  { id:"requests", title:"6. Dữ liệu và báo cáo", desc:"Các ca ghi dữ liệu dưới đây chỉ nên chạy trên môi trường test và với truyện/hồ sơ phù hợp. Phụ huynh không còn nộp truyện lên thư viện cộng đồng (luồng CommunitySubmission đã gỡ).", apis:[
     { m:"POST", p:"/api/v1/ContentReport", role:"User", what:"Báo cáo truyện công khai hoặc truyện riêng mà ít nhất một hồ sơ Active của người gọi được phép truy cập.", body:{storyId:"<PUBLISHED_STORY_ID>",reason:"SafetyConcern",description:"Nội dung cần kiểm tra"}, tests:[
       ["A có hồ sơ Active đủ điều kiện và gửi báo cáo", "200; nhận reportId nếu truyện chưa có báo cáo xung đột."], ["User không có hồ sơ Active phù hợp", "403; không tạo report."] ]}
   ]},
@@ -183,8 +181,7 @@ const steps = [
     { m:"DELETE", p:"/api/v1/Auth/me", role:"User", what:"Xóa và ẩn danh tài khoản C; xóa mềm/ẩn danh mọi hồ sơ do C sở hữu; thu hồi phiên trẻ. Chỉ dùng tài khoản test có thể bỏ.", body:{currentPassword:"<PASSWORD_C>",deleteChildProfiles:true}, tests:[
       ["C gửi sai currentPassword", "400; tài khoản và hồ sơ không đổi."],
       ["C gửi đúng mật khẩu, deleteChildProfiles=false khi còn hồ sơ", "400; phải xác nhận xóa mọi hồ sơ."],
-      ["C gửi đúng mật khẩu, deleteChildProfiles=true", "200; tài khoản và toàn bộ hồ sơ C bị ẩn danh/xóa mềm; child token cũ không còn dùng được."],
-      ["Truyện cộng đồng liên quan", "Không bị xóa theo tài khoản; tên tác giả hiển thị ẩn danh."] ]}
+      ["C gửi đúng mật khẩu, deleteChildProfiles=true", "200; tài khoản và toàn bộ hồ sơ C bị ẩn danh/xóa mềm; child token cũ không còn dùng được."] ]}
   ]}
 ];
 const storageKey="luong1-user-owner-manual-tests-v1";

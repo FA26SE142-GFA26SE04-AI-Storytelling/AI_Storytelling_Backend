@@ -2,6 +2,8 @@
 
 > 2026-11-11: gỡ luồng phụ huynh nộp truyện Community; chỉ Content Creator đăng truyện công khai qua PublicStorySubmission.
 
+> 2026-11-11: chi tiết mục duyệt `PublicStoryRemoval` / `PublicStoryReview` có thêm `storyImpact` (thẻ ước, điều ước đang chờ, lộ trình, nhắc rà thẻ khi công khai lại).
+
 > Gói và thanh toán cho phụ huynh (10/11/2026): [PARENT_PLANS_PAYMENT_API_GUIDE.md](PARENT_PLANS_PAYMENT_API_GUIDE.md). Thay cho mô tả `Payment` và `TokenQuota` bên dưới: gói có `planType`, thêm `GET /Payment/transactions/me` và `GET /TokenQuota/me`, gỡ `POST/GET /TokenQuota/config`. Cần migration `AddSubscriptionCyclesAndCreditLots`.
 
 > Parent Manual nhiều bé (04/11/2026): [Hướng dẫn tích hợp Frontend và contract package](PARENT_MULTI_CHILD_PACKAGES_API_GUIDE.md). Bao gồm request/response, token, polling, retry/revise, media có Authorization và Child Reader. Các mô tả Parent một bé bên dưới là baseline legacy khi khác với hướng dẫn package.
@@ -2371,6 +2373,8 @@ Guard/nghiệp vụ: [PublicStorySubmissionService.cs](../src/Core/StoryPlatform
 
 MO1. Moderator/Admin theo eligibility, không tự duyệt. Claim 2 giờ; Open đúng người nhận. Review-views không thay claim.
 
+Với `PublicStoryRemoval` / `PublicStoryReview`, claim/open trả thêm `storyImpact`. Màn duyệt gỡ nên hiện danh sách thẻ ước, đánh dấu thẻ có `otherPublishedStoryCount = 0` ("gỡ xong thẻ này hết truyện để gợi ý — nên gắn thẻ cho truyện khác"), cùng `pendingWishCount` / `activeRoadmapItemCount`. Màn duyệt công khai hiện nhắc rà thẻ khi `wishCardsNeedReview = true` (rà bằng `api/v1/moderation/stories/{storyId}/wish-cards`). Không chặn quyết định.
+
 Guard/nghiệp vụ: [ModerationQueueService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Services/ModerationQueueService.cs).
 
 | Method + route | Mapping |
@@ -3791,6 +3795,8 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [Stories.UpdateStoryRequestDto](#dto-stories-updatestoryrequestdto) | [StoryDtos.cs](../src/Core/StoryPlatform.Application/Features/Stories/DTOs/StoryDtos.cs#L44) |
 | [StoryDto](#dto-storydto) | [StoryDtos.cs](../src/Core/StoryPlatform.Application/Features/Stories/DTOs/StoryDtos.cs#L7) |
 | [StoryFilterRequestDto](#dto-storyfilterrequestdto) | [StoryDtos.cs](../src/Core/StoryPlatform.Application/Features/Stories/DTOs/StoryDtos.cs#L59) |
+| [StoryImpactDto](#dto-storyimpactdto) | [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs) |
+| [StoryImpactWishCardDto](#dto-storyimpactwishcarddto) | [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs) |
 | [StoryMediaPackage](#dto-storymediapackage) | [MediaGenerationModels.cs](../src/Core/StoryPlatform.Application/Features/MediaGeneration/Models/MediaGenerationModels.cs#L94) |
 | [StoryReview.UpdateStoryRequestDto](#dto-storyreview-updatestoryrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L53) |
 | [StoryReviewDto](#dto-storyreviewdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L40) |
@@ -5864,6 +5870,33 @@ Nguồn: [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features
 | `flags` | `string?` | Có | — |
 | `checklist` | `string?` | Có | — |
 | `reviewProgress` | `string?` | Có | — |
+| `storyImpact` | [StoryImpactDto](#dto-storyimpactdto) | Có | Chỉ có ở `PublicStoryRemoval` / `PublicStoryReview`; `null` với loại khác. Tính lúc claim/open. |
+
+<a id="dto-storyimpactdto"></a>
+### StoryImpactDto
+
+Nguồn: [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `wishCards` | [List&lt;StoryImpactWishCardDto&gt;](#dto-storyimpactwishcarddto) | Không | default `new()`; theo nhóm rồi thứ tự hiển thị |
+| `pendingWishCount` | `int` | Không | Số điều ước Pending/Accepted có truyện trong gợi ý; chỉ con số |
+| `activeRoadmapItemCount` | `int` | Không | Số mục lộ trình Waiting/Open chứa truyện; chỉ con số |
+| `wishCardsNeedReview` | `bool` | Không | `true` ở mục `PublicStoryReview` khi truyện từng công khai và đang có thẻ: nhắc rà lại thẻ |
+
+<a id="dto-storyimpactwishcarddto"></a>
+### StoryImpactWishCardDto
+
+Nguồn: [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `wishCardId` | `int` | Không | — |
+| `group` | `string` | Không | `Character` / `Place` / `Challenge` / `Lesson` |
+| `label` | `string` | Không | — |
+| `source` | `string` | Không | `Moderator` / `Ai` |
+| `isActive` | `bool` | Không | `false` = thẻ đã ẩn |
+| `otherPublishedStoryCount` | `int` | Không | Số truyện Creator khác đang công khai, cùng nhóm tuổi, còn mang thẻ. `0` = gỡ truyện này thì thẻ hết truyện để gợi ý cho nhóm tuổi đó |
 
 <a id="dto-moderationitemstatus"></a>
 ### ModerationItemStatus

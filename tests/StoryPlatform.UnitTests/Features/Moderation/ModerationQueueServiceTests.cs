@@ -10,6 +10,7 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.Moderation;
 using StoryPlatform.Application.Features.Moderation.DTOs;
+using StoryPlatform.Application.Features.Moderation.Interfaces;
 using StoryPlatform.Application.Features.Moderation.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -533,5 +534,65 @@ public class ModerationQueueServiceTests
 
         Assert.NotNull(authorize);
         Assert.Equal("Moderator,Administrator", authorize!.Roles);
+    }
+
+    // ---- storyImpact ----
+
+    private ModerationQueueService WithImpact(Mock<IStoryUsageImpactReader> reader) =>
+        new(_unitOfWorkMock.Object, _auditLogWriterMock.Object, reader.Object);
+
+    [Theory]
+    [InlineData(ModerationItemType.PublicStoryRemoval, false)]
+    [InlineData(ModerationItemType.PublicStoryReview, true)]
+    public async Task ClaimAsync_StoryItem_ReturnsStoryImpact(ModerationItemType type, bool checkRepublish)
+    {
+        var item = PendingItem(); item.ItemType = type;
+        ReturnItem(item);
+        var impact = new StoryImpactDto { PendingWishCount = 2 };
+        var reader = new Mock<IStoryUsageImpactReader>();
+        reader.Setup(r => r.ReadAsync(2, checkRepublish, It.IsAny<CancellationToken>())).ReturnsAsync(impact);
+
+        var result = await WithImpact(reader).ClaimAsync(_moderatorA.Id, item.Id);
+
+        Assert.Same(impact, result.StoryImpact);
+    }
+
+    [Fact]
+    public async Task OpenAsync_RemovalItem_ReturnsStoryImpact()
+    {
+        var item = PendingItem(); item.ItemType = ModerationItemType.PublicStoryRemoval;
+        item.Status = ModerationItemStatus.Claimed; item.ClaimedByUserId = _moderatorA.Id; item.ClaimedAt = DateTime.UtcNow;
+        ReturnItem(item);
+        var impact = new StoryImpactDto { ActiveRoadmapItemCount = 1 };
+        var reader = new Mock<IStoryUsageImpactReader>();
+        reader.Setup(r => r.ReadAsync(2, false, It.IsAny<CancellationToken>())).ReturnsAsync(impact);
+
+        var result = await WithImpact(reader).OpenAsync(_moderatorA.Id, item.Id);
+
+        Assert.Same(impact, result.StoryImpact);
+    }
+
+    [Fact]
+    public async Task ClaimAsync_OtherItemTypes_HaveNoStoryImpact_AndDoNotQueryTheReader()
+    {
+        var item = PendingItem();   // ContentReport
+        ReturnItem(item);
+        var reader = new Mock<IStoryUsageImpactReader>();
+
+        var result = await WithImpact(reader).ClaimAsync(_moderatorA.Id, item.Id);
+
+        Assert.Null(result.StoryImpact);
+        reader.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task ClaimAsync_WithoutReader_StillWorks_WithNullImpact()
+    {
+        var item = PendingItem(); item.ItemType = ModerationItemType.PublicStoryRemoval;
+        ReturnItem(item);
+
+        var result = await _sut.ClaimAsync(_moderatorA.Id, item.Id);
+
+        Assert.Null(result.StoryImpact);
     }
 }

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Features.TokenQuota.Interfaces;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.ContentReports.Interfaces;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
@@ -15,15 +16,18 @@ public class PendingSubmissionArchiveHandler : IStoryArchiveHandler
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly INotificationService _notificationService;
+    private readonly ITokenQuotaService? _tokenQuotaService;
 
     public PendingSubmissionArchiveHandler(
         IUnitOfWork unitOfWork,
         IAuditLogWriter auditLogWriter,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        ITokenQuotaService? tokenQuotaService = null)
     {
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
         _notificationService = notificationService;
+        _tokenQuotaService = tokenQuotaService;
     }
 
     public async Task HandleAsync(
@@ -90,6 +94,15 @@ public class PendingSubmissionArchiveHandler : IStoryArchiveHandler
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        // Yêu cầu đang chờ bị rút theo truyện thì Creator được hoàn lượt gửi duyệt; mục đã có người nhận rồi bị đóng thì không.
+        if (_tokenQuotaService != null)
+        {
+            foreach (var (item, _, _) in closed.Where(entry => entry.Item.Status == ModerationItemStatus.Withdrawn))
+            {
+                await _tokenQuotaService.RefundSubmissionAsync(item.Id, cancellationToken);
+            }
+        }
+
         foreach (var (item, before, claimedBy) in closed)
         {
             await _auditLogWriter.LogAsync(

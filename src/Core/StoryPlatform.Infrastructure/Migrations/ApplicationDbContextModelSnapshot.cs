@@ -419,6 +419,9 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("AccountSnapshotJson")
+                        .HasColumnType("text");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -436,6 +439,9 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.Property<int>("ReadingSessionsCompleted")
                         .HasColumnType("integer");
+
+                    b.Property<string>("RevenueSnapshotJson")
+                        .HasColumnType("text");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -985,18 +991,73 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("PaymentId")
-                        .IsUnique()
-                        .HasFilter("\"PaymentId\" IS NOT NULL");
-
                     b.HasIndex("UserId")
                         .IsUnique()
                         .HasDatabaseName("IX_credit_lots_UserId_Trial")
                         .HasFilter("\"Source\" = 'Trial' AND NOT \"IsDeleted\"");
 
+                    b.HasIndex("PaymentId", "CreditType")
+                        .IsUnique()
+                        .HasFilter("\"PaymentId\" IS NOT NULL");
+
                     b.HasIndex("UserId", "CreditType");
 
+                    b.HasIndex("UserId", "CreditType", "ExpiresAt")
+                        .IsUnique()
+                        .HasDatabaseName("IX_credit_lots_CreatorMonthly")
+                        .HasFilter("\"Source\" = 'CreatorMonthly' AND NOT \"IsDeleted\"");
+
                     b.ToTable("credit_lots", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.CreditUsage", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Amount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("LotId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ModerationItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("RefundedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("LotId");
+
+                    b.HasIndex("ModerationItemId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("credit_usages", (string)null);
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.IllustrationBeat", b =>
@@ -2492,6 +2553,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
+
+                    b.Property<int?>("SubmitCredits")
+                        .HasColumnType("integer");
 
                     b.Property<string>("TransactionCode")
                         .IsRequired()
@@ -4424,6 +4488,13 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("AiCredits")
                         .HasColumnType("integer");
 
+                    b.Property<string>("Audience")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("User");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -4448,6 +4519,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("PriceVnd")
                         .HasColumnType("integer");
 
+                    b.Property<int>("SubmitCredits")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -4460,45 +4534,66 @@ namespace StoryPlatform.Infrastructure.Migrations
                         {
                             Id = 1,
                             AiCredits = 50,
+                            Audience = "User",
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = false,
                             IsDeleted = false,
                             Name = "Personal",
                             PlanType = "Legacy",
-                            PriceVnd = 49000
+                            PriceVnd = 49000,
+                            SubmitCredits = 0
                         },
                         new
                         {
                             Id = 2,
                             AiCredits = 0,
+                            Audience = "User",
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
                             IsDeleted = false,
                             Name = "Gói Đọc",
                             PlanType = "Reading",
-                            PriceVnd = 49000
+                            PriceVnd = 49000,
+                            SubmitCredits = 0
                         },
                         new
                         {
                             Id = 3,
                             AiCredits = 4,
+                            Audience = "User",
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
                             IsDeleted = false,
                             Name = "Gói Sáng tạo",
                             PlanType = "Creative",
-                            PriceVnd = 99000
+                            PriceVnd = 99000,
+                            SubmitCredits = 0
                         },
                         new
                         {
                             Id = 4,
                             AiCredits = 2,
+                            Audience = "User",
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsActive = true,
                             IsDeleted = false,
                             Name = "Add-on",
                             PlanType = "AddOn",
-                            PriceVnd = 29000
+                            PriceVnd = 29000,
+                            SubmitCredits = 0
+                        },
+                        new
+                        {
+                            Id = 5,
+                            AiCredits = 6,
+                            Audience = "Creator",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            IsDeleted = false,
+                            Name = "Gói Creator",
+                            PlanType = "CreatorPack",
+                            PriceVnd = 99000,
+                            SubmitCredits = 20
                         });
                 });
 
@@ -5140,6 +5235,32 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Payment");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.CreditUsage", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.CreditLot", "Lot")
+                        .WithMany()
+                        .HasForeignKey("LotId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.ModerationItem", "ModerationItem")
+                        .WithMany()
+                        .HasForeignKey("ModerationItemId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Lot");
+
+                    b.Navigation("ModerationItem");
 
                     b.Navigation("User");
                 });

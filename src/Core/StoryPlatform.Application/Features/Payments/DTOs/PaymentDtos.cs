@@ -6,10 +6,14 @@ public class SubscriptionPlanDto
 {
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
-    /// <summary>Reading | Creative | AddOn.</summary>
+    /// <summary>Reading | Creative | AddOn | CreatorPack.</summary>
     public string PlanType { get; set; } = string.Empty;
+    /// <summary>User (phụ huynh) | Creator.</summary>
+    public string Audience { get; set; } = string.Empty;
     public int PriceVnd { get; set; }
     public int AiCredits { get; set; }
+    /// <summary>Số lượt gửi duyệt (chỉ Gói Creator).</summary>
+    public int SubmitCredits { get; set; }
     /// <summary>False khi người gọi chưa đủ điều kiện mua (Add-on cần đang có gói còn hiệu lực).</summary>
     public bool IsPurchasable { get; set; } = true;
     public string? LockedReason { get; set; }
@@ -74,8 +78,10 @@ public class AdminSubscriptionPlanDto
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string PlanType { get; set; } = string.Empty;
+    public string Audience { get; set; } = string.Empty;
     public int PriceVnd { get; set; }
     public int AiCredits { get; set; }
+    public int SubmitCredits { get; set; }
     public bool IsActive { get; set; }
 }
 
@@ -84,6 +90,8 @@ public class UpdateSubscriptionPlanRequestDto
     public string Name { get; set; } = string.Empty;
     public int PriceVnd { get; set; }
     public int AiCredits { get; set; }
+    /// <summary>Số lượt gửi duyệt (Gói Creator); bỏ trống thì giữ nguyên.</summary>
+    public int? SubmitCredits { get; set; }
     public bool IsActive { get; set; }
 }
 

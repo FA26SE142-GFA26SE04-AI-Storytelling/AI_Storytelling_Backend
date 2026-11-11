@@ -131,7 +131,9 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
             return await RecoverIfStaleAsync(existing, cancellationToken);
         }
 
-        if (!creator) await _tokenQuotaService.EnsureWithinQuotaAsync(request.ChildProfileId, cancellationToken);
+        // Lượt AI: phụ huynh dùng lượt của tài khoản chủ hồ sơ trẻ, Creator dùng hạn mức tháng rồi lượt Gói Creator (Luồng 2, 2f).
+        if (creator) await _tokenQuotaService.EnsureCreatorWithinQuotaAsync(userId, cancellationToken);
+        else await _tokenQuotaService.EnsureWithinQuotaAsync(request.ChildProfileId, cancellationToken);
 
         Story story;
         if (request.ExistingStoryId.HasValue)
@@ -213,7 +215,8 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
 
             generationRequest.StoryId = story.Id;
             await requestRepository.AddAsync(generationRequest, cancellationToken);
-            if (!creator) await _tokenQuotaService.IncrementUsageAsync(request.ChildProfileId, cancellationToken);
+            if (creator) await _tokenQuotaService.IncrementCreatorUsageAsync(userId, cancellationToken);
+            else await _tokenQuotaService.IncrementUsageAsync(request.ChildProfileId, cancellationToken);
             if (sourceWish is not null)
                 await AcceptWishAsync(userId, sourceWish, story, generationRequest, cancellationToken);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);

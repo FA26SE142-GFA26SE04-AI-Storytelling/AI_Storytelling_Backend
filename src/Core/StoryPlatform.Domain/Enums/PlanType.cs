@@ -8,5 +8,7 @@ public enum PlanType
     Legacy = 0,
     Reading = 1,
     Creative = 2,
-    AddOn = 3
+    AddOn = 3,
+    /// <summary>Gói Creator: +lượt AI và +lượt gửi duyệt, mua một lần, không hết hạn.</summary>
+    CreatorPack = 4
 }

@@ -4,6 +4,7 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.Moderation.Services;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
+using StoryPlatform.Application.Features.TokenQuota.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -38,8 +39,30 @@ public sealed class PublicStoryReviewHarness
     public readonly List<ListeningInteractionOption> ListeningOptions = new();
     public readonly List<StoryCategory> StoryCategories = new();
     public readonly List<ContentCategory> ContentCategories = new();
+    public readonly List<CreditLot> CreditLots = new();
+    public readonly List<CreditUsage> CreditUsages = new();
 
     public PublicStoryReviewService Sut { get; }
+
+    /// <summary>Sổ lượt thật trên cùng các list, để test trừ và hoàn lượt gửi duyệt của Creator.</summary>
+    public TokenQuotaService Quota { get; }
+
+    /// <summary>Lượt gửi duyệt đã trừ cho một mục kiểm duyệt (lô Gói Creator còn <paramref name="remaining"/> lượt sau khi trừ).</summary>
+    public CreditLot GivenSubmissionCreditPaidBy(int itemId, int remaining = 4)
+    {
+        var lot = new CreditLot
+        {
+            Id = CreditLots.Count + 1, UserId = CreatorId, CreditType = CreditType.Submit, Source = CreditSource.CreatorPack,
+            Total = remaining + 1, Remaining = remaining
+        };
+        CreditLots.Add(lot);
+        CreditUsages.Add(new CreditUsage
+        {
+            Id = CreditUsages.Count + 1, UserId = CreatorId, LotId = lot.Id, Amount = 1,
+            Reason = CreditUsageReason.PublicSubmission, ModerationItemId = itemId
+        });
+        return lot;
+    }
 
     public PublicStoryReviewHarness()
     {
@@ -58,6 +81,8 @@ public sealed class PublicStoryReviewHarness
         Back(ListeningOptions);
         Back(StoryCategories);
         Back(ContentCategories);
+        Back(CreditLots);
+        Back(CreditUsages);
 
         Users.Add(new UserAccount
         {
@@ -128,7 +153,8 @@ public sealed class PublicStoryReviewHarness
         });
         ContentCategories.Add(new ContentCategory { Id = 5, Code = "friendship", DisplayName = "Tình bạn", IsActive = true });
 
-        Sut = new PublicStoryReviewService(UnitOfWork.Object, Audit.Object, Notifications.Object);
+        Quota = new TokenQuotaService(UnitOfWork.Object);
+        Sut = new PublicStoryReviewService(UnitOfWork.Object, Audit.Object, Notifications.Object, tokenQuotaService: Quota);
     }
 
     public int AddScene(int sceneId, int index, bool withAudio = true, bool withWordTimings = true)

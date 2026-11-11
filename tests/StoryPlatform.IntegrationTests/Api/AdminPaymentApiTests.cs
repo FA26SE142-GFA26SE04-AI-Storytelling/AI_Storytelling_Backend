@@ -167,7 +167,7 @@ public sealed class AdminPlanApiTests(ApiFactory factory) : IClassFixture<ApiFac
 
         var plans = await AdminApi.GetDataAsync(admin, "/api/v1/Payment/admin/plans");
         Assert.Equal(
-            ["1:Legacy:False", "2:Reading:True", "3:Creative:True", "4:AddOn:True"],
+            ["1:Legacy:False", "2:Reading:True", "3:Creative:True", "4:AddOn:True", "5:CreatorPack:True"],
             plans.EnumerateArray().Select(plan =>
                 $"{plan.GetProperty("id").GetInt32()}:{plan.GetProperty("planType").GetString()}:{plan.GetProperty("isActive").GetBoolean()}"));
 

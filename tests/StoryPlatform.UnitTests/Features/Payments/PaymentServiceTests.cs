@@ -23,6 +23,8 @@ public class PaymentServiceTests
     private const int ReadingPlanId = 2;
     private const int CreativePlanId = 3;
     private const int AddOnPlanId = 4;
+    private const int CreatorPackPlanId = 5;
+    private const int CreatorId = 7;
     private const string AddOnLockedReason = "Hãy đăng ký Gói Đọc hoặc Gói Sáng tạo trước khi mua Add-on.";
 
     private readonly InMemoryUnitOfWork _store = new();
@@ -36,13 +38,15 @@ public class PaymentServiceTests
 
     public PaymentServiceTests()
     {
-        _store.Seed(new UserAccount { Id = ParentId, Role = UserRole.User, Email = "p1@x.com", Username = "parent_one", FullName = "Phụ huynh Một" });
-        _store.Seed(new UserAccount { Id = OtherParentId, Role = UserRole.User, Email = "p2@x.com", Username = "parent_two", FullName = "Phụ huynh Hai" });
+        _store.Seed(new UserAccount { Id = ParentId, Role = UserRole.User, Status = AccountStatus.Active, Email = "p1@x.com", Username = "parent_one", FullName = "Phụ huynh Một" });
+        _store.Seed(new UserAccount { Id = OtherParentId, Role = UserRole.User, Status = AccountStatus.Active, Email = "p2@x.com", Username = "parent_two", FullName = "Phụ huynh Hai" });
         _store.Seed(new UserAccount { Id = AdminId, Role = UserRole.Administrator, Email = "admin@x.com", Username = "admin", FullName = "Quản trị" });
+        _store.Seed(new UserAccount { Id = CreatorId, Role = UserRole.ContentCreator, Status = AccountStatus.Active, Email = "c@x.com", Username = "creator", FullName = "Tác giả" });
         _store.Seed(new SubscriptionPlan { Id = LegacyPlanId, Name = "Personal", PlanType = PlanType.Legacy, PriceVnd = 49000, AiCredits = 50, IsActive = false });
         _store.Seed(new SubscriptionPlan { Id = ReadingPlanId, Name = "Gói Đọc", PlanType = PlanType.Reading, PriceVnd = 49000, AiCredits = 0 });
         _store.Seed(new SubscriptionPlan { Id = CreativePlanId, Name = "Gói Sáng tạo", PlanType = PlanType.Creative, PriceVnd = 99000, AiCredits = 4 });
         _store.Seed(new SubscriptionPlan { Id = AddOnPlanId, Name = "Add-on", PlanType = PlanType.AddOn, PriceVnd = 29000, AiCredits = 2 });
+        _store.Seed(new SubscriptionPlan { Id = CreatorPackPlanId, Name = "Gói Creator", PlanType = PlanType.CreatorPack, Audience = PlanAudience.Creator, PriceVnd = 99000, AiCredits = 6, SubmitCredits = 20 });
 
         _notificationService
             .Setup(service => service.CreateAsync(
@@ -177,7 +181,6 @@ public class PaymentServiceTests
 
     [Theory]
     [InlineData(UserRole.Administrator)]
-    [InlineData(UserRole.ContentCreator)]
     [InlineData(UserRole.Moderator)]
     public async Task CreateTransactionAsync_NonParentPayer_ThrowsForbidden(UserRole role)
     {
@@ -284,6 +287,109 @@ public class PaymentServiceTests
         var result = await _sut.CreateTransactionAsync(ParentId, new CreatePaymentTransactionRequestDto { PlanId = AddOnPlanId });
 
         Assert.Equal((29000, "Pending", "AddOn"), (result.Amount, result.Status, result.PlanType));
+    }
+
+    // ---------- Đối tượng của gói: phụ huynh / Creator (2f) ----------
+
+    [Fact]
+    public async Task ListActivePlansAsync_Parent_DoesNotSeeTheCreatorPack()
+    {
+        var result = await _sut.ListActivePlansAsync(ParentId);
+
+        Assert.Equal(["Reading", "Creative", "AddOn"], result.Select(plan => plan.PlanType));
+        Assert.All(result, plan => Assert.Equal("User", plan.Audience));
+    }
+
+    [Fact]
+    public async Task ListActivePlansAsync_Creator_SeesOnlyTheCreatorPack()
+    {
+        var result = await _sut.ListActivePlansAsync(CreatorId);
+
+        var pack = Assert.Single(result);
+        Assert.Equal(
+            ("CreatorPack", "Creator", 99000, 6, 20, true, (string?)null),
+            (pack.PlanType, pack.Audience, pack.PriceVnd, pack.AiCredits, pack.SubmitCredits, pack.IsPurchasable, pack.LockedReason));
+    }
+
+    [Theory]
+    [InlineData(UserRole.Administrator)]
+    [InlineData(UserRole.Moderator)]
+    public async Task ListActivePlansAsync_StaffSeeNoPlansForSale(UserRole role)
+    {
+        _store.Seed(new UserAccount { Id = 60, Role = role, Status = AccountStatus.Active, Email = "s@x.com" });
+
+        Assert.Empty(await _sut.ListActivePlansAsync(60));
+    }
+
+    [Fact]
+    public async Task CreateTransactionAsync_Creator_BuysTheCreatorPack_WithCreditsSnapshotted()
+    {
+        var result = await _sut.CreateTransactionAsync(CreatorId, new CreatePaymentTransactionRequestDto { PlanId = CreatorPackPlanId });
+
+        var stored = Assert.Single(_store.Items<PaymentTransaction>());
+        Assert.Equal((CreatorId, 99000, (int?)6, (int?)20, PaymentStatus.Pending),
+            (stored.PayerUserId, stored.Amount, stored.AiCredits, stored.SubmitCredits, stored.Status));
+        Assert.Equal(("Gói Creator", "CreatorPack"), (result.PlanName, result.PlanType));
+    }
+
+    [Fact]
+    public async Task CreateTransactionAsync_ParentBuyingTheCreatorPack_ThrowsForbidden()
+    {
+        await Assert.ThrowsAsync<ForbiddenException>(
+            () => _sut.CreateTransactionAsync(ParentId, new CreatePaymentTransactionRequestDto { PlanId = CreatorPackPlanId }));
+
+        Assert.Empty(_store.Items<PaymentTransaction>());
+    }
+
+    [Theory]
+    [InlineData(ReadingPlanId)]
+    [InlineData(CreativePlanId)]
+    [InlineData(AddOnPlanId)]
+    public async Task CreateTransactionAsync_CreatorBuyingAParentPlan_ThrowsForbidden(int planId)
+    {
+        HasActivePlan(CreatorId);
+
+        await Assert.ThrowsAsync<ForbiddenException>(
+            () => _sut.CreateTransactionAsync(CreatorId, new CreatePaymentTransactionRequestDto { PlanId = planId }));
+    }
+
+    [Theory]
+    [InlineData(UserRole.ContentCreator, AccountStatus.Registered, CreatorPackPlanId)]
+    [InlineData(UserRole.ContentCreator, AccountStatus.Suspended, CreatorPackPlanId)]
+    [InlineData(UserRole.User, AccountStatus.Registered, ReadingPlanId)]
+    [InlineData(UserRole.User, AccountStatus.Suspended, ReadingPlanId)]
+    public async Task CreateTransactionAsync_AccountNotActive_ThrowsForbidden(UserRole role, AccountStatus status, int planId)
+    {
+        _store.Seed(new UserAccount { Id = 61, Role = role, Status = status, Email = "n@x.com" });
+
+        await Assert.ThrowsAsync<ForbiddenException>(
+            () => _sut.CreateTransactionAsync(61, new CreatePaymentTransactionRequestDto { PlanId = planId }));
+    }
+
+    [Fact]
+    public async Task CreateTransactionAsync_SecondPendingCreatorPack_ThrowsConflict()
+    {
+        await _sut.CreateTransactionAsync(CreatorId, new CreatePaymentTransactionRequestDto { PlanId = CreatorPackPlanId });
+
+        await Assert.ThrowsAsync<ConflictException>(
+            () => _sut.CreateTransactionAsync(CreatorId, new CreatePaymentTransactionRequestDto { PlanId = CreatorPackPlanId }));
+    }
+
+    [Fact]
+    public async Task UpdatePlanAsync_CanChangeSubmitCredits_AndKeepsThemWhenOmitted()
+    {
+        await _sut.UpdatePlanAsync(AdminId, CreatorPackPlanId, new UpdateSubscriptionPlanRequestDto
+        {
+            Name = "Gói Creator", PriceVnd = 109000, AiCredits = 8, IsActive = true, SubmitCredits = 25
+        });
+        var kept = await _sut.UpdatePlanAsync(AdminId, CreatorPackPlanId, new UpdateSubscriptionPlanRequestDto
+        {
+            Name = "Gói Creator", PriceVnd = 109000, AiCredits = 8, IsActive = true
+        });
+
+        Assert.Equal((25, 25), (Plan(CreatorPackPlanId).SubmitCredits, kept.SubmitCredits));
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.UpdatePlanAsync(AdminId, CreatorPackPlanId,
+            new UpdateSubscriptionPlanRequestDto { Name = "Gói Creator", PriceVnd = 109000, AiCredits = 8, IsActive = true, SubmitCredits = -1 }));
     }
 
     // ---------- HandleWebhookAsync ----------
@@ -560,8 +666,8 @@ public class PaymentServiceTests
         var result = await _sut.ListAllPlansAsync();
 
         Assert.Equal(
-            ["1:Legacy:False", "2:Reading:True", "3:Creative:True", "4:AddOn:True"],
-            result.Select(plan => $"{plan.Id}:{plan.PlanType}:{plan.IsActive}"));
+            ["1:Legacy:User:False", "2:Reading:User:True", "3:Creative:User:True", "4:AddOn:User:True", "5:CreatorPack:Creator:True"],
+            result.Select(plan => $"{plan.Id}:{plan.PlanType}:{plan.Audience}:{plan.IsActive}"));
     }
 
     [Fact]

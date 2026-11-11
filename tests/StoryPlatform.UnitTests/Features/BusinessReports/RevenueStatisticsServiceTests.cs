@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Features.PlanBenefits.Services;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.BusinessReports.Services;
 using StoryPlatform.Domain.Entities;
@@ -284,5 +285,17 @@ public class RevenueStatisticsServiceTests
     public async Task GetAsync_PeriodEndBeforeStart_ThrowsBadRequest()
     {
         await Assert.ThrowsAsync<BadRequestException>(() => _sut.GetAsync(PeriodEnd, PeriodStart));
+    }
+
+    [Fact]
+    public async Task GetAsync_UsesConfiguredFundRates()
+    {
+        _store.Seed(new PlanSettings { Id = PlanSettings.SingletonId, ReadingFundPercent = 20, CreativeFundPercent = 5 });
+        Paid(ReadingPlanId, 1, MidPeriod, 100000);
+        Paid(CreativePlanId, 2, MidPeriod, 100000);
+
+        var result = await new RevenueStatisticsService(_store, new PlanSettingsProvider(_store)).GetAsync(PeriodStart, PeriodEnd);
+
+        Assert.Equal((25000L, 0.20m, 0.05m), (result.CreatorFundVnd, result.ReadingFundRate, result.CreativeFundRate));
     }
 }

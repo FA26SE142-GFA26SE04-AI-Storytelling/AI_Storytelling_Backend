@@ -56,6 +56,10 @@ public class SubscriptionPlanConfiguration : IEntityTypeConfiguration<Subscripti
                 PriceVnd = 49000,
                 AiCredits = 0,
                 IsActive = true,
+                MaxChildProfiles = 4,
+                CanCopyRoadmapTemplates = true,
+                ReadAloudPerMonth = 60,
+                WritingAssistPerDay = 5,
                 CreatedAt = SeedCreatedAt,
                 IsDeleted = false
             },
@@ -67,6 +71,10 @@ public class SubscriptionPlanConfiguration : IEntityTypeConfiguration<Subscripti
                 PriceVnd = 99000,
                 AiCredits = 4,
                 IsActive = true,
+                MaxChildProfiles = 4,
+                CanCopyRoadmapTemplates = true,
+                ReadAloudPerMonth = 60,
+                WritingAssistPerDay = 20,
                 CreatedAt = SeedCreatedAt,
                 IsDeleted = false
             },

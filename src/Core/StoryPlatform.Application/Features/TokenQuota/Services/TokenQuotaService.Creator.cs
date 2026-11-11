@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Common.Time;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.TokenQuota.DTOs;
 using StoryPlatform.Domain.Entities;
@@ -12,9 +13,6 @@ namespace StoryPlatform.Application.Features.TokenQuota.Services;
 public partial class TokenQuotaService
 {
     // Hạn mức tháng theo bản chốt; Admin cấu hình được ở F-17 (chưa làm). Creator đối tác (6 và 10) để sau Defense 1.1.
-    public const int CreatorMonthlyAiCredits = 2;
-    public const int CreatorMonthlySubmitCredits = 5;
-    private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(7);
 
     private const string CreatorOutOfAiCreditsMessage =
         "Bạn đã hết lượt tạo truyện AI. Hãy chờ hạn mức tháng sau hoặc mua Gói Creator để tạo thêm.";
@@ -126,11 +124,12 @@ public partial class TokenQuotaService
         await EnsureCreatorMonthlyGrantedAsync(creatorUserId, now, cancellationToken);
         var ai = await GetUsableLotsAsync(creatorUserId, now, cancellationToken);
         var submit = await GetUsableLotsAsync(creatorUserId, now, cancellationToken, CreditType.Submit);
+        var settings = await SettingsAsync(cancellationToken);
 
         return new CreatorQuotaDto
         {
-            AiCredits = Balance(ai, CreatorMonthlyAiCredits),
-            SubmitCredits = Balance(submit, CreatorMonthlySubmitCredits),
+            AiCredits = Balance(ai, settings.CreatorMonthlyAiCredits),
+            SubmitCredits = Balance(submit, settings.CreatorMonthlySubmitCredits),
             MonthlyAllowanceResetsAt = CurrentCreatorMonthEnd(now)
         };
     }
@@ -150,9 +149,11 @@ public partial class TokenQuotaService
         var monthEnd = CurrentCreatorMonthEnd(now);
         var repo = _unitOfWork.Repository<CreditLot>();
         var granted = false;
+        // Lô đã cấp trong tháng giữ số cũ; cấu hình mới áp dụng từ lần cấp sau.
+        var settings = await SettingsAsync(cancellationToken);
         foreach (var (type, amount) in new[]
                  {
-                     (CreditType.AI, CreatorMonthlyAiCredits), (CreditType.Submit, CreatorMonthlySubmitCredits)
+                     (CreditType.AI, settings.CreatorMonthlyAiCredits), (CreditType.Submit, settings.CreatorMonthlySubmitCredits)
                  })
         {
             var exists = await repo.ExistsAsync(
@@ -208,9 +209,7 @@ public partial class TokenQuotaService
     /// <summary>00:00 ngày 1 tháng sau theo giờ Việt Nam, tính ra UTC.</summary>
     private static DateTime CurrentCreatorMonthEnd(DateTime nowUtc)
     {
-        var vietnamNow = nowUtc + VietnamOffset;
-        var nextMonth = new DateTime(vietnamNow.Year, vietnamNow.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(1);
-        return nextMonth - VietnamOffset;
+        return VietnamTime.StartOfNextMonthUtc(nowUtc);
     }
 
     private static CreatorCreditBalanceDto Balance(IReadOnlyList<CreditLot> lots, int monthlyAllowance)

@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Features.PlanBenefits.Interfaces;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.BusinessReports.DTOs;
@@ -10,24 +11,26 @@ namespace StoryPlatform.Application.Features.BusinessReports.Services;
 public class RevenueStatisticsService : IRevenueStatisticsService
 {
     // Tỷ lệ quỹ Creator theo bản chốt gói dịch vụ; Admin cấu hình được ở F-17 (chưa làm).
-    private const int ReadingFundPercent = 30;
-    private const int CreativeFundPercent = 10;
 
     // Luôn hiện đủ các loại gói đang bán, kể cả khi kỳ không có giao dịch.
     private static readonly PlanType[] ReportedPlanTypes =
         [PlanType.Reading, PlanType.Creative, PlanType.AddOn, PlanType.CreatorPack];
 
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IPlanSettingsProvider? _planSettings;
 
-    public RevenueStatisticsService(IUnitOfWork unitOfWork)
+    /// <param name="planSettings">Tỷ lệ quỹ Creator do Admin cấu hình; null thì dùng mặc định 30% / 10%.</param>
+    public RevenueStatisticsService(IUnitOfWork unitOfWork, IPlanSettingsProvider? planSettings = null)
     {
         _unitOfWork = unitOfWork;
+        _planSettings = planSettings;
     }
 
     public async Task<RevenueStatisticsDto> GetAsync(
         DateTime periodStart, DateTime periodEnd, CancellationToken cancellationToken = default)
     {
         var (from, toExclusive) = ReportPeriod.Resolve(periodStart, periodEnd);
+        var settings = _planSettings == null ? new PlanSettings() : await _planSettings.GetAsync(cancellationToken);
 
         var transactions = _unitOfWork.Repository<PaymentTransaction>();
         // Doanh thu: chỉ giao dịch Paid, theo PaidAt, dùng số tiền lưu trên giao dịch.
@@ -124,11 +127,11 @@ public class RevenueStatisticsService : IRevenueStatisticsService
                 .Select(group => new CreditSourceCountDto { Source = group.Key.ToString(), Credits = group.Sum(lot => lot.Total) })
                 .ToList(),
             CreditsUsed = usages.Sum(usage => usage.Amount),
-            ReadingFundRate = ReadingFundPercent / 100m,
-            CreativeFundRate = CreativeFundPercent / 100m,
+            ReadingFundRate = settings.ReadingFundPercent / 100m,
+            CreativeFundRate = settings.CreativeFundPercent / 100m,
             // Add-on và gói khác không vào quỹ. Làm tròn xuống đến đồng.
             CreatorFundVnd =
-                (RevenueOf(PlanType.Reading) * ReadingFundPercent + RevenueOf(PlanType.Creative) * CreativeFundPercent) / 100
+                (RevenueOf(PlanType.Reading) * settings.ReadingFundPercent + RevenueOf(PlanType.Creative) * settings.CreativeFundPercent) / 100
         };
     }
 }

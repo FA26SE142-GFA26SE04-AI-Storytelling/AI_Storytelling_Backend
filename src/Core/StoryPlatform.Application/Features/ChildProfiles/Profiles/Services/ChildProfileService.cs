@@ -10,6 +10,7 @@ using StoryPlatform.Application.Features.ChildProfiles.Profiles.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Safety;
 using StoryPlatform.Application.Features.ChildProfiles.Sessions.Interfaces;
+using StoryPlatform.Application.Features.PlanBenefits.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -20,15 +21,43 @@ public class ChildProfileService : IChildProfileService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IChildProfileAccessGuard _accessGuard;
     private readonly IChildSessionRevoker _childSessionRevoker;
+    private readonly IPlanBenefitService? _planBenefits;
 
+    /// <param name="planBenefits">Số hồ sơ trẻ tối đa theo gói (Luồng 2, 2h); null thì không giới hạn.</param>
     public ChildProfileService(
         IUnitOfWork unitOfWork,
         IChildProfileAccessGuard accessGuard,
-        IChildSessionRevoker childSessionRevoker)
+        IChildSessionRevoker childSessionRevoker,
+        IPlanBenefitService? planBenefits = null)
     {
         _unitOfWork = unitOfWork;
         _accessGuard = accessGuard;
         _childSessionRevoker = childSessionRevoker;
+        _planBenefits = planBenefits;
+    }
+
+    /// <summary>
+    /// Hồ sơ chưa lưu trữ / xoá (Draft, Active, Suspended) chiếm chỗ trong số hồ sơ tối đa của gói.
+    /// Hồ sơ có sẵn vượt số sau khi về Miễn phí không bị chặn ở đây mà chuyển sang chỉ xem.
+    /// </summary>
+    private async Task EnsureProfileSlotAvailableAsync(int ownerUserId, CancellationToken cancellationToken)
+    {
+        if (_planBenefits == null)
+        {
+            return;
+        }
+
+        var benefits = await _planBenefits.GetForUserAsync(ownerUserId, cancellationToken);
+        var occupied = await _unitOfWork.Repository<ChildProfile>().CountAsync(
+            profile => profile.OwnerUserId == ownerUserId && !profile.IsDeleted
+                       && (profile.Status == ChildProfileStatus.Draft || profile.Status == ChildProfileStatus.Active
+                           || profile.Status == ChildProfileStatus.Suspended),
+            cancellationToken);
+        if (occupied >= benefits.MaxChildProfiles)
+        {
+            throw new ConflictException(
+                $"Gói hiện tại cho phép tối đa {benefits.MaxChildProfiles} hồ sơ trẻ. Nâng cấp gói để thêm hồ sơ.");
+        }
     }
 
     public async Task<ChildProfileDto> CreateChildProfileAsync(
@@ -44,6 +73,7 @@ public class ChildProfileService : IChildProfileService
         }
 
         ValidateRequest(request);
+        await EnsureProfileSlotAvailableAsync(ownerUserId, cancellationToken);
 
         var childProfile = new ChildProfile
         {
@@ -284,6 +314,11 @@ public class ChildProfileService : IChildProfileService
         if (profile.Status != requiredStatus)
         {
             throw new BadRequestException(wrongStatusMessage);
+        }
+
+        if (requiredStatus == ChildProfileStatus.Archived)
+        {
+            await EnsureProfileSlotAvailableAsync(profile.OwnerUserId, cancellationToken);
         }
 
         // Easy Login đã bị thu hồi hẳn khi tạm dừng / lưu trữ — Owner phải tạo QR mới (Bước 1.10).

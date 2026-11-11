@@ -74,7 +74,8 @@ public class PaymentService : IPaymentService
                     AiCredits = plan.AiCredits,
                     SubmitCredits = plan.SubmitCredits,
                     IsPurchasable = !locked,
-                    LockedReason = locked ? AddOnLockedReason : null
+                    LockedReason = locked ? AddOnLockedReason : null,
+                    Benefits = BenefitsOf(plan)
                 };
             })
             .ToList();
@@ -281,6 +282,118 @@ public class PaymentService : IPaymentService
         .Select(MapToAdminDto)
         .ToList();
 
+    public async Task<AdminSubscriptionPlanDto> CreatePlanAsync(
+        int adminUserId, CreateSubscriptionPlanRequestDto request, CancellationToken cancellationToken = default)
+    {
+        var name = ValidatePlanName(request.Name);
+        if (!Enum.TryParse<PlanAudience>(request.Audience?.Trim(), ignoreCase: true, out var audience) || !Enum.IsDefined(audience)
+            || !Enum.TryParse<PlanType>(request.PlanType?.Trim(), ignoreCase: true, out var planType) || !Enum.IsDefined(planType))
+        {
+            throw new BadRequestException("Đối tượng hoặc loại gói không hợp lệ.");
+        }
+
+        // Phụ huynh: Gói Đọc, Gói Sáng tạo, Add-on; Creator: Gói Creator. Gói Personal cũ không tạo mới.
+        var allowed = audience == PlanAudience.User
+            ? planType is PlanType.Reading or PlanType.Creative or PlanType.AddOn
+            : planType == PlanType.CreatorPack;
+        if (!allowed)
+        {
+            throw new BadRequestException("Loại gói không phù hợp với đối tượng của gói.");
+        }
+
+        ValidatePriceAndCredits(request.PriceVnd, request.AiCredits, request.SubmitCredits);
+        var isCyclePlan = IsCyclePlan(planType);
+        if (isCyclePlan && request.Benefits == null)
+        {
+            throw new BadRequestException("Gói Đọc và Gói Sáng tạo phải có quyền lợi.");
+        }
+
+        var plan = new SubscriptionPlan
+        {
+            Name = name,
+            Audience = audience,
+            PlanType = planType,
+            PriceVnd = request.PriceVnd,
+            AiCredits = request.AiCredits,
+            SubmitCredits = planType == PlanType.CreatorPack ? request.SubmitCredits : 0,
+            IsActive = request.IsActive
+        };
+        if (isCyclePlan)
+        {
+            ApplyBenefits(plan, request.Benefits!);
+        }
+
+        await _unitOfWork.Repository<SubscriptionPlan>().AddAsync(plan, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _auditLogWriter.LogAsync(
+            adminUserId, "SubscriptionPlanCreated", nameof(SubscriptionPlan), plan.Id, null, AuditState(plan), cancellationToken);
+
+        return MapToAdminDto(plan);
+    }
+
+    private static bool IsCyclePlan(PlanType planType) => planType is PlanType.Reading or PlanType.Creative;
+
+    private static string ValidatePlanName(string? value)
+    {
+        var name = value?.Trim() ?? string.Empty;
+        if (name.Length == 0 || name.Length > 150)
+        {
+            throw new BadRequestException("Tên gói phải có từ 1 đến 150 ký tự.");
+        }
+
+        return name;
+    }
+
+    private static void ValidatePriceAndCredits(int priceVnd, int aiCredits, int? submitCredits)
+    {
+        if (priceVnd <= 0)
+        {
+            throw new BadRequestException("Giá gói phải lớn hơn 0.");
+        }
+
+        if (aiCredits < 0 || submitCredits < 0)
+        {
+            throw new BadRequestException("Số lượt không được âm.");
+        }
+    }
+
+    private static void ApplyBenefits(SubscriptionPlan plan, PlanBenefitsInputDto benefits)
+    {
+        if (benefits.MaxChildProfiles < 1)
+        {
+            throw new BadRequestException("Gói phải cho phép ít nhất 1 hồ sơ trẻ.");
+        }
+
+        if (benefits.WeeklyNewLibraryStories < 0 || benefits.ReadAloudPerMonth < 0 || benefits.WritingAssistPerDay < 0)
+        {
+            throw new BadRequestException("Số lần trong quyền lợi không được âm.");
+        }
+
+        plan.MaxChildProfiles = benefits.MaxChildProfiles;
+        plan.WeeklyNewLibraryStories = benefits.WeeklyNewLibraryStories;
+        plan.CanCopyRoadmapTemplates = benefits.CanCopyRoadmapTemplates;
+        plan.ReadAloudPerMonth = benefits.ReadAloudPerMonth;
+        plan.WritingAssistPerDay = benefits.WritingAssistPerDay;
+    }
+
+    private static PlanBenefitsInputDto? BenefitsOf(SubscriptionPlan plan) => IsCyclePlan(plan.PlanType)
+        ? new PlanBenefitsInputDto
+        {
+            MaxChildProfiles = plan.MaxChildProfiles,
+            WeeklyNewLibraryStories = plan.WeeklyNewLibraryStories,
+            CanCopyRoadmapTemplates = plan.CanCopyRoadmapTemplates,
+            ReadAloudPerMonth = plan.ReadAloudPerMonth,
+            WritingAssistPerDay = plan.WritingAssistPerDay
+        }
+        : null;
+
+    private static object AuditState(SubscriptionPlan plan) => new
+    {
+        plan.Name, Audience = plan.Audience.ToString(), PlanType = plan.PlanType.ToString(), plan.PriceVnd, plan.AiCredits,
+        plan.SubmitCredits, plan.IsActive, plan.MaxChildProfiles, plan.WeeklyNewLibraryStories,
+        plan.CanCopyRoadmapTemplates, plan.ReadAloudPerMonth, plan.WritingAssistPerDay
+    };
+
     public async Task<AdminSubscriptionPlanDto> UpdatePlanAsync(
         int adminUserId, int planId, UpdateSubscriptionPlanRequestDto request, CancellationToken cancellationToken = default)
     {
@@ -288,21 +401,8 @@ public class PaymentService : IPaymentService
         var plan = await repo.FirstOrDefaultAsync(item => item.Id == planId, cancellationToken: cancellationToken)
                    ?? throw new NotFoundException("Gói Subscription", planId);
 
-        var name = request.Name?.Trim() ?? string.Empty;
-        if (name.Length == 0 || name.Length > 150)
-        {
-            throw new BadRequestException("Tên gói phải có từ 1 đến 150 ký tự.");
-        }
-
-        if (request.PriceVnd <= 0)
-        {
-            throw new BadRequestException("Giá gói phải lớn hơn 0.");
-        }
-
-        if (request.AiCredits < 0 || request.SubmitCredits < 0)
-        {
-            throw new BadRequestException("Số lượt không được âm.");
-        }
+        var name = ValidatePlanName(request.Name);
+        ValidatePriceAndCredits(request.PriceVnd, request.AiCredits, request.SubmitCredits);
 
         if (plan.PlanType == PlanType.Legacy && request.IsActive)
         {
@@ -310,7 +410,14 @@ public class PaymentService : IPaymentService
         }
 
         // Giao dịch đã tạo giữ Amount và số lượt chốt lúc tạo, nên thay đổi chỉ áp dụng cho giao dịch tạo sau đó.
-        var beforeState = new { plan.Name, plan.PriceVnd, plan.AiCredits, plan.SubmitCredits, plan.IsActive };
+        var beforeState = AuditState(plan);
+        if (request.Benefits != null && IsCyclePlan(plan.PlanType))
+        {
+            // Kiểm tra trên bản nháp để quyền lợi sai không làm thay đổi gói.
+            ApplyBenefits(new SubscriptionPlan(), request.Benefits);
+            ApplyBenefits(plan, request.Benefits);
+        }
+
         plan.Name = name;
         plan.PriceVnd = request.PriceVnd;
         plan.AiCredits = request.AiCredits;
@@ -322,7 +429,7 @@ public class PaymentService : IPaymentService
 
         await _auditLogWriter.LogAsync(
             adminUserId, "SubscriptionPlanUpdated", nameof(SubscriptionPlan), plan.Id,
-            beforeState, new { plan.Name, plan.PriceVnd, plan.AiCredits, plan.SubmitCredits, plan.IsActive }, cancellationToken);
+            beforeState, AuditState(plan), cancellationToken);
 
         return MapToAdminDto(plan);
     }
@@ -415,7 +522,8 @@ public class PaymentService : IPaymentService
         PriceVnd = plan.PriceVnd,
         AiCredits = plan.AiCredits,
         SubmitCredits = plan.SubmitCredits,
-        IsActive = plan.IsActive
+        IsActive = plan.IsActive,
+        Benefits = BenefitsOf(plan)
     };
 
     /// <summary>Phụ huynh mua gói phụ huynh, Content Creator mua Gói Creator; vai trò khác không mua gói.</summary>

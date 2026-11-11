@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Features.PlanBenefits.Services;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.BusinessReports.Services;
 using StoryPlatform.Application.Features.CreatorStatistics.Services;
@@ -392,5 +393,18 @@ public class CreatorStatisticsServiceTests
 
         Assert.Equal([SecondStoryId], result.Stories.Select(story => story.StoryId));
         Assert.Equal((1, 2, 5000L), (result.MyValidReads, result.TotalValidReadsAllCreators, result.EstimatedEarningsVnd));
+    }
+
+    [Fact]
+    public async Task ValidRead_UsesConfiguredMinimumReadSeconds()
+    {
+        _store.Seed(new PlanSettings { Id = PlanSettings.SingletonId, MinimumReadSeconds = 30 });
+        var settings = new PlanSettingsProvider(_store);
+        var sut = new CreatorStatisticsService(_store, new RevenueStatisticsService(_store, settings), settings);
+        Completed(StoryId, PaidChildId, Morning, 45);
+
+        var reading = await sut.GetReadingAsync(CreatorId, PeriodStart, PeriodEnd, StoryId);
+
+        Assert.Equal(1, reading.Stories.Single().ValidReads);
     }
 }

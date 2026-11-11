@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Features.PlanBenefits.Services;
 using Moq;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
@@ -613,5 +614,34 @@ public class TokenQuotaServiceTests
         await Assert.ThrowsAsync<BadRequestException>(() => _sut.AdjustAsync(AdminId, Adjust(-2)));
 
         Assert.Empty(_store.Items<CreditUsage>());
+    }
+
+    [Fact]
+    public async Task EnsureWithinQuotaAsync_UsesConfiguredTrialCredits()
+    {
+        SeedChild();
+        _store.Seed(new PlanSettings { Id = PlanSettings.SingletonId, TrialAiCredits = 2 });
+
+        await new TokenQuotaService(_store, planSettings: new PlanSettingsProvider(_store)).EnsureWithinQuotaAsync(ChildId);
+
+        Assert.Equal(2, Assert.Single(_store.Items<CreditLot>()).Total);
+    }
+
+    [Fact]
+    public async Task GetMyQuota_IncludesBenefitsAndUsage()
+    {
+        SeedChild();
+        _store.Seed(new Story { Id = 70, Scope = StoryScope.Creator, IsPublished = true, Status = StoryStatus.Ready });
+        _store.Seed(new ReadingSession { Id = 1, ChildProfileId = ChildId, StoryId = 70, StartedAt = DateTime.UtcNow });
+        _store.Seed(new StoryAssistanceTask { Id = 1, OwnerUserId = OwnerId, CreatedAt = DateTime.UtcNow });
+        var settings = new PlanSettingsProvider(_store);
+        var sut = new TokenQuotaService(_store, planSettings: settings,
+            planBenefits: new PlanBenefitService(_store, settings), planUsage: new PlanUsageService(_store));
+
+        var quota = await sut.GetMyQuotaAsync(OwnerId);
+
+        Assert.Equal(("Free", 1, (int?)3, 1, 1),
+            (quota.Benefits!.Tier, quota.Benefits.MaxChildProfiles, quota.Benefits.WeeklyNewLibraryStories,
+                quota.NewLibraryStoriesThisWeek, quota.WritingAssistsToday));
     }
 }

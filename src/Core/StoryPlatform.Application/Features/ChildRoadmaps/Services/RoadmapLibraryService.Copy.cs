@@ -12,6 +12,9 @@ public static class RoadmapLibrarySkipCodes
 
 public partial class RoadmapLibraryService
 {
+    public const string CopyNotIncludedMessage =
+        "Gói hiện tại không hỗ trợ sao chép bộ truyện mẫu. Nâng cấp gói để sao chép.";
+
     private sealed record CopyContext(
         ReadingRoadmap Roadmap,
         IReadOnlyList<ReadingRoadmapItem> Items,
@@ -47,6 +50,12 @@ public partial class RoadmapLibraryService
         CancellationToken cancellationToken = default)
     {
         await RequireParentAsync(actorUserId, cancellationToken);
+        if (_planBenefits != null
+            && !(await _planBenefits.GetForUserAsync(actorUserId, cancellationToken)).CanCopyRoadmapTemplates)
+        {
+            throw new ForbiddenException(CopyNotIncludedMessage);
+        }
+
         var roadmap = await _unitOfWork.Repository<ReadingRoadmap>().GetByIdAsync(roadmapId, cancellationToken);
         if (roadmap == null || roadmap.IsDeleted)
         {

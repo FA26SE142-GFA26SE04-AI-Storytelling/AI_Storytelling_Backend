@@ -1,4 +1,4 @@
-﻿using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Abstractions.Persistence;
 using System.Linq.Expressions;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Common.Exceptions;
@@ -81,7 +81,7 @@ public class ModerationQueueService : IModerationQueueService
                     : item.Priority == ModerationPriority.Medium ? 1 : 2)
                 .ThenBy(item => item.SlaDueAt)
                 .ThenBy(item => item.Id),
-            includeProperties: $"{nameof(ModerationItem.Story)},{nameof(ModerationItem.ClaimedByUser)}",
+            includeProperties: $"{nameof(ModerationItem.Story)},{nameof(ModerationItem.StoryVersion)},{nameof(ModerationItem.CreatedByUser)},{nameof(ModerationItem.ClaimedByUser)}",
             cancellationToken: cancellationToken);
 
         return new PagedResult<ModerationItemSummaryDto>(
@@ -126,6 +126,7 @@ public class ModerationQueueService : IModerationQueueService
             afterState: new { status = ModerationItemStatus.Claimed.ToString(), claimedBy = actor.Id },
             cancellationToken: cancellationToken);
 
+        await HydrateSummaryRelationsAsync(item, cancellationToken);
         var claimed = MapDetail(item, now);
         claimed.ClaimedByName = DisplayName(actor);
         return claimed;
@@ -155,6 +156,7 @@ public class ModerationQueueService : IModerationQueueService
             beforeState: null, afterState: new { itemType = item.ItemType.ToString() },
             cancellationToken: cancellationToken);
 
+        await HydrateSummaryRelationsAsync(item, cancellationToken);
         var opened = MapDetail(item, now);
         opened.ClaimedByName = DisplayName(actor);
         return opened;
@@ -191,8 +193,47 @@ public class ModerationQueueService : IModerationQueueService
         }
     }
 
-    private static string? DisplayName(UserAccount? user) =>
-        user == null ? null : string.IsNullOrWhiteSpace(user.FullName) ? user.Username : user.FullName;
+    private static string? DisplayName(UserAccount? user) => ModerationQueuePolicy.DisplayName(user);
+
+    private async Task HydrateSummaryRelationsAsync(ModerationItem item, CancellationToken cancellationToken)
+    {
+        var includeCreatedBy = item.ItemType == ModerationItemType.PublicStoryReview && item.CreatedByUserId.HasValue;
+        if (!item.StoryId.HasValue && !item.StoryVersionId.HasValue && !includeCreatedBy)
+            return;
+
+        // Giữ item tracked từ GetByIdAsync để bảo toàn RowVersion concurrency, chỉ nạp thêm quan hệ phục vụ hiển thị.
+        var include = includeCreatedBy
+            ? $"{nameof(ModerationItem.Story)},{nameof(ModerationItem.StoryVersion)},{nameof(ModerationItem.CreatedByUser)}"
+            : $"{nameof(ModerationItem.Story)},{nameof(ModerationItem.StoryVersion)}";
+
+        var hydrated = await _unitOfWork.Repository<ModerationItem>()
+            .FirstOrDefaultAsync(x => x.Id == item.Id, includeProperties: include, cancellationToken: cancellationToken);
+        if (hydrated != null)
+        {
+            item.Story ??= hydrated.Story;
+            item.StoryVersion ??= hydrated.StoryVersion;
+            if (includeCreatedBy) item.CreatedByUser ??= hydrated.CreatedByUser;
+        }
+
+        if (item.Story == null && item.StoryId.HasValue)
+        {
+            var storyRepo = _unitOfWork.Repository<Story>();
+            if (storyRepo != null)
+                item.Story = await storyRepo.FirstOrDefaultAsync(x => x.Id == item.StoryId.Value, cancellationToken: cancellationToken);
+        }
+        if (item.StoryVersion == null && item.StoryVersionId.HasValue)
+        {
+            var versionRepo = _unitOfWork.Repository<StoryVersion>();
+            if (versionRepo != null)
+                item.StoryVersion = await versionRepo.FirstOrDefaultAsync(x => x.Id == item.StoryVersionId.Value, cancellationToken: cancellationToken);
+        }
+        if (includeCreatedBy && item.CreatedByUser == null)
+        {
+            var userRepo = _unitOfWork.Repository<UserAccount>();
+            if (userRepo != null)
+                item.CreatedByUser = await userRepo.GetByIdAsync(item.CreatedByUserId!.Value, cancellationToken);
+        }
+    }
 
     private static ModerationItemSummaryDto MapSummary(ModerationItem item, DateTime now) =>
         FillSummary(new ModerationItemSummaryDto(), item, now);
@@ -213,11 +254,16 @@ public class ModerationQueueService : IModerationQueueService
         dto.ItemType = item.ItemType.ToString();
         dto.Status = item.Status.ToString();
         dto.Priority = item.Priority.ToString();
+        var isPublicStoryReview = item.ItemType == ModerationItemType.PublicStoryReview;
         dto.StoryId = item.StoryId;
-        dto.StoryTitle = item.Story?.Title;
+        dto.StoryTitle = !string.IsNullOrWhiteSpace(item.StoryVersion?.Title)
+            ? item.StoryVersion.Title
+            : item.Story?.Title;
         dto.StoryVersionId = item.StoryVersionId;
         dto.ContentReportId = item.ContentReportId;
         dto.ReadingRoadmapId = item.ReadingRoadmapId;
+        dto.CreatedByUserId = isPublicStoryReview ? item.CreatedByUserId : null;
+        dto.CreatedByName = isPublicStoryReview ? DisplayName(item.CreatedByUser) : null;
         dto.IsResubmission = item.IsResubmission;
         dto.SlaDueAt = item.SlaDueAt;
         dto.IsOverdue = item.SlaDueAt != null && item.SlaDueAt < now

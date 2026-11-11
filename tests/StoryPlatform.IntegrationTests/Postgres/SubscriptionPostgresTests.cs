@@ -7,6 +7,7 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Services;
 using StoryPlatform.Application.Features.BusinessReports.DTOs;
 using StoryPlatform.Application.Features.BusinessReports.Services;
+using StoryPlatform.Application.Features.CreatorStatistics.Services;
 using StoryPlatform.Application.Features.Notifications.DTOs;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Application.Features.Payments.Services;
@@ -276,6 +277,70 @@ public sealed class SubscriptionPostgresTests(AuthoringGuidePostgresFixture fixt
         await reports.GenerateAsync(
             database.AdministratorId, new GenerateBusinessReportRequestDto { PeriodStart = today.AddDays(1), PeriodEnd = today.AddDays(1) });
         Assert.Equal(148000L, (await reports.GetByIdAsync(generated.Id)).Revenue!.TotalRevenueVnd);
+    }
+
+    [PostgresFact]
+    public async Task CreatorStatistics_RunAgainstPostgres()
+    {
+        await using var database = await fixture.CreateDatabaseAsync();
+        var now = DateTime.UtcNow;
+        int creatorId, storyId;
+        await using (var seed = new ApplicationDbContext(database.Options))
+        {
+            var creator = NewParent("pg_creator");
+            creator.Role = UserRole.ContentCreator;
+            seed.Users.Add(creator);
+            var child = new ChildProfile
+            {
+                OwnerUserId = database.ParentUserId, Nickname = "Mây", AgeBand = AgeBand.Age_6_8, Language = "vi",
+                Status = ChildProfileStatus.Active
+            };
+            var payment = new PaymentTransaction
+            {
+                PlanId = CreativePlanId, PayerUserId = database.ParentUserId, TransactionCode = "SEPAYPGCRS00001",
+                Amount = 100000, Status = PaymentStatus.Paid, PaidAt = now.AddMinutes(-30), ExpiresAt = now
+            };
+            var handover = new RefreshToken
+            {
+                UserAccountId = database.ParentUserId, TokenHash = "pg-creator-stats", SessionScope = SessionScope.Supervisor,
+                IssuedAt = now.AddHours(-1), ExpiresAt = now.AddDays(7)
+            };
+            seed.AddRange(child, payment, handover);
+            await seed.SaveChangesAsync();
+            var story = new Story
+            {
+                AuthorUserId = creator.Id, Title = "Chú ếch nhỏ", Scope = StoryScope.Creator, Source = StorySource.Manual,
+                Status = StoryStatus.Ready, IsPublished = true, PublishedAt = now.AddDays(-30), Language = "vi", AgeBand = "6-8"
+            };
+            seed.AddRange(
+                story,
+                new UserSubscription
+                {
+                    UserId = database.ParentUserId, PlanId = CreativePlanId, Status = SubscriptionStatus.Active,
+                    StartAt = now.AddDays(-1), EndAt = now.AddDays(29), PaymentId = payment.Id
+                });
+            await seed.SaveChangesAsync();
+            seed.AddRange(
+                new ReadingSession
+                {
+                    StoryId = story.Id, ChildProfileId = child.Id, Status = SessionStatus.Completed, SupervisorSessionId = handover.Id,
+                    StartedAt = now.AddMinutes(-20), CompletedAt = now.AddMinutes(-10), TimeSpentSeconds = 600
+                },
+                new ReadingProgress { StoryId = story.Id, ChildProfileId = child.Id, IsFavorited = true });
+            await seed.SaveChangesAsync();
+            (creatorId, storyId) = (creator.Id, story.Id);
+        }
+
+        await using var context = new ApplicationDbContext(database.Options);
+        await using var uow = new UnitOfWork(context);
+        var statistics = new CreatorStatisticsService(uow, new RevenueStatisticsService(uow));
+
+        var reading = await statistics.GetReadingAsync(creatorId, now.AddDays(-1), now, null);
+        var revenue = await statistics.GetRevenueAsync(creatorId, now.AddDays(-1), now, storyId);
+
+        var row = Assert.Single(reading.Stories);
+        Assert.Equal((1, 1, 1, 1, 1m), (row.Views, row.Favorites, row.CompletedReadings, row.ValidReads, row.CompletionRate));
+        Assert.Equal((10000L, 1, 1, 10000L), (revenue.CreatorFundVnd, revenue.TotalValidReadsAllCreators, revenue.MyValidReads, revenue.EstimatedEarningsVnd));
     }
 
     private static SubscriptionService NewSubscriptionService(UnitOfWork uow) =>

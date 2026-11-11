@@ -260,8 +260,57 @@ Khi tạo báo cáo kỳ (`POST BusinessReport/generate`), các số này đư�
 Lưu ý: tài khoản đã xoá không còn được đếm, kể cả cho các kỳ trước khi nó bị xoá. `lockedOrDisabledAccounts` là trạng
 thái lúc tính, không phải trạng thái ở cuối kỳ; khoá tạm 15 phút do nhập sai mật khẩu không được tính.
 
-## 7. Ngoài phạm vi
+## 7. Thống kê của Content Creator (F-20, F-21, bổ sung 11/11/2026)
+
+Chỉ role `ContentCreator`. Mã Creator luôn lấy từ token đăng nhập, không nhận từ request. Kết quả chỉ là số tổng hợp theo
+truyện, không có dữ liệu của trẻ. Không cần migration mới.
+
+Tham số chung: `periodStart`, `periodEnd` (kỳ tính trọn ngày theo UTC, gồm cả ngày cuối, như mục 6) và `storyId` (tuỳ chọn).
+Không truyền `storyId` thì trả các truyện đang Published của Creator. Truyền `storyId` của Creator khác → 403; truyện
+không tồn tại → 404; `periodEnd` trước `periodStart` → 400.
+
+### 7.1 Lượt đọc — `GET /api/v1/CreatorStatistics/reading`
+
+Trả tổng của kỳ và `stories[]`, mỗi truyện gồm:
+
+| Trường | Ý nghĩa |
+|---|---|
+| `views` | Số phiên đọc được mở trong kỳ |
+| `favorites` | Số trẻ đang đánh dấu yêu thích truyện (số hiện tại, không theo kỳ) |
+| `completedReadings` | Trong các phiên mở trong kỳ, số phiên đã đọc hết |
+| `validReads` | Lượt đọc hợp lệ của kỳ (định nghĩa bên dưới) |
+| `completionRate` | `completedReadings ÷ views`, từ 0 đến 1; bằng 0 khi chưa có lượt xem |
+
+### 7.2 Thu nhập dự kiến — `GET /api/v1/CreatorStatistics/revenue`
+
+| Trường | Ý nghĩa |
+|---|---|
+| `creatorFundVnd` | Quỹ Creator của kỳ, đúng bằng số ở thống kê doanh thu của Admin (mục 6.1) |
+| `readingFundRate`, `creativeFundRate` | 0.30 và 0.10 |
+| `minimumReadSeconds` | Thời gian đọc tối thiểu của một lượt hợp lệ, hiện là 60 giây |
+| `totalValidReadsAllCreators` | Tổng lượt đọc hợp lệ của mọi Creator trong kỳ |
+| `myValidReads` | Lượt đọc hợp lệ của Creator đang gọi |
+| `estimatedEarningsVnd` | `myValidReads × creatorFundVnd ÷ totalValidReadsAllCreators`, làm tròn xuống đến đồng |
+| `stories[]` | Mỗi truyện: `storyId`, `title`, `validReads`, `estimatedEarningsVnd` (cùng công thức) |
+
+Đây là số dự kiến; việc chi trả thực hiện ngoài hệ thống. Vì làm tròn xuống, tổng phần chia của các Creator có thể nhỏ
+hơn quỹ vài đồng.
+
+### 7.3 Lượt đọc hợp lệ
+
+Một phiên đọc được tính là lượt đọc hợp lệ khi thoả tất cả:
+
+1. Phiên đã `Completed`, thời điểm hoàn thành nằm trong kỳ.
+2. Truyện là truyện Creator và đang Published lúc đọc.
+3. Tài khoản của trẻ có gói trả phí đang hiệu lực lúc đọc.
+4. Thời gian đọc từ 60 giây trở lên.
+5. Trẻ không phải con của chính Creator.
+6. Mỗi trẻ tối đa 1 lượt cho mỗi truyện mỗi ngày, và tối đa 10 lượt mỗi ngày trên mọi truyện. "Ngày" ở đây tính theo
+   giờ Việt Nam.
+7. Truyện bị gỡ vì vi phạm trong kỳ mất toàn bộ lượt đọc hợp lệ của kỳ đó; truyện bị gỡ sau kỳ vẫn giữ lượt của kỳ.
+
+## 8. Ngoài phạm vi
 
 Gói Creator và lượt gửi duyệt; giữ – trừ – trả lượt; giới hạn theo gói (số hồ sơ trẻ, 3 truyện mỗi tuần, đọc to);
-cảnh báo khi xoá tài khoản còn gói; tạo gói mới và cấu hình quỹ Creator; thống kê của Creator (F-20, F-21);
+cảnh báo khi xoá tài khoản còn gói; tạo gói mới; cấu hình tỷ lệ quỹ Creator và thời gian đọc tối thiểu;
 giao diện Admin trên web.

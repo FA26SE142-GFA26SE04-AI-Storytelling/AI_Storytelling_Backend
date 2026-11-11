@@ -44,6 +44,15 @@ public class ChildMediaUrlSignerTests
     }
 
     [Fact]
+    public async Task Keeps_internal_api_proxy_urls_without_signing_them()
+    {
+        var url = await _sut.SignAsync(new[] { "/api/v1/child/manual-stories/12/assets/34" });
+
+        Assert.Equal("/api/v1/child/manual-stories/12/assets/34", url("/api/v1/child/manual-stories/12/assets/34"));
+        _storage.Verify(s => s.GetSignedUrlAsync(It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task Signs_every_media_link_in_reading_content()
     {
         var content = new ReadingContentDto

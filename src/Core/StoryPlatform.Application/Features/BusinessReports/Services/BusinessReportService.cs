@@ -20,13 +20,16 @@ public class BusinessReportService : IBusinessReportService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly IRevenueStatisticsService _revenueStatisticsService;
+    private readonly IUserAccountStatisticsService _userAccountStatisticsService;
 
     public BusinessReportService(
-        IUnitOfWork unitOfWork, IAuditLogWriter auditLogWriter, IRevenueStatisticsService revenueStatisticsService)
+        IUnitOfWork unitOfWork, IAuditLogWriter auditLogWriter, IRevenueStatisticsService revenueStatisticsService,
+        IUserAccountStatisticsService userAccountStatisticsService)
     {
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
         _revenueStatisticsService = revenueStatisticsService;
+        _userAccountStatisticsService = userAccountStatisticsService;
     }
 
     public async Task<AdminBusinessReportDto> GenerateAsync(
@@ -57,8 +60,9 @@ public class BusinessReportService : IBusinessReportService
                     && item.CompletedAt < toExclusive,
             cancellationToken: cancellationToken);
 
-        // Chụp số liệu doanh thu tại thời điểm tạo: báo cáo đã có không đổi khi dữ liệu về sau thay đổi.
+        // Chụp số liệu doanh thu và tài khoản tại thời điểm tạo: báo cáo đã có không đổi khi dữ liệu về sau thay đổi.
         var revenue = await _revenueStatisticsService.GetAsync(from, lastDay, cancellationToken);
+        var accounts = await _userAccountStatisticsService.GetAsync(from, lastDay, cancellationToken);
 
         var report = new BusinessReport
         {
@@ -69,6 +73,7 @@ public class BusinessReportService : IBusinessReportService
             StoriesRejected = storiesInPeriod.Count(item => item.Status == StoryStatus.Rejected),
             ReadingSessionsCompleted = completedSessions.Count,
             RevenueSnapshotJson = JsonSerializer.Serialize(revenue, SnapshotJsonOptions),
+            AccountSnapshotJson = JsonSerializer.Serialize(accounts, SnapshotJsonOptions),
             Status = ReportStatus.Compiling
         };
 
@@ -148,6 +153,9 @@ public class BusinessReportService : IBusinessReportService
         dto.Revenue = string.IsNullOrWhiteSpace(report.RevenueSnapshotJson)
             ? null
             : JsonSerializer.Deserialize<RevenueStatisticsDto>(report.RevenueSnapshotJson, SnapshotJsonOptions);
+        dto.Accounts = string.IsNullOrWhiteSpace(report.AccountSnapshotJson)
+            ? null
+            : JsonSerializer.Deserialize<UserAccountStatisticsDto>(report.AccountSnapshotJson, SnapshotJsonOptions);
         return dto;
     }
 

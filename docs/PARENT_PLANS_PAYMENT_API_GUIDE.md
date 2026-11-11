@@ -198,7 +198,7 @@ Worker (mỗi 15 phút) tìm giao dịch `Paid` đã quá 5 phút mà chưa có 
 - Thay đổi chỉ áp dụng cho giao dịch tạo sau đó: mỗi giao dịch chốt số tiền và số lượt lúc tạo.
 - Gói tắt bán biến mất khỏi `GET Payment/plans` và không mua được nữa. Ghi audit `SubscriptionPlanUpdated`.
 
-## 6. Thống kê doanh thu cho Admin (F-15, bổ sung 10/11/2026)
+## 6. Thống kê doanh thu và tài khoản cho Admin (F-15, F-16, bổ sung 10/11/2026)
 
 Cần thêm migration `AddCreditUsagesAndRevenueSnapshot`. Các endpoint `admin/...` chỉ cho role `Administrator`.
 
@@ -239,8 +239,29 @@ Số liệu đã chụp không đổi khi có giao dịch đến sau; muốn s�
 
 `GET /api/v1/BusinessReport/latest-published` vẫn mở cho mọi tài khoản đã đăng nhập và **không** trả `revenue`.
 
+### 6.3 Thống kê tài khoản người dùng (F-16)
+
+Cần thêm migration `AddBusinessReportAccountSnapshot`.
+
+`GET /api/v1/BusinessReport/admin/accounts?periodStart=2026-11-01&periodEnd=2026-11-30` — tính trực tiếp, cùng quy tắc kỳ
+như mục 6. Chỉ tính tài khoản phụ huynh (role `User`) chưa bị xoá.
+
+| Trường | Ý nghĩa |
+|---|---|
+| `totalParentAccounts` | Số tài khoản phụ huynh đã đăng ký tính đến cuối kỳ |
+| `newAccounts` | Số tài khoản đăng ký trong kỳ |
+| `activeAccounts` | Số tài khoản có đăng nhập trong kỳ, hoặc có phiên đọc của một hồ sơ trẻ thuộc tài khoản trong kỳ |
+| `lockedOrDisabledAccounts` | Số tài khoản đang ở trạng thái `Suspended` tại thời điểm tính |
+| `childProfiles` | Số hồ sơ trẻ đã tạo tính đến cuối kỳ, không gồm hồ sơ đã xoá |
+
+Khi tạo báo cáo kỳ (`POST BusinessReport/generate`), các số này được chụp vào trường `accounts` của báo cáo, bên cạnh
+`revenue`. `latest-published` không trả `accounts`.
+
+Lưu ý: tài khoản đã xoá không còn được đếm, kể cả cho các kỳ trước khi nó bị xoá. `lockedOrDisabledAccounts` là trạng
+thái lúc tính, không phải trạng thái ở cuối kỳ; khoá tạm 15 phút do nhập sai mật khẩu không được tính.
+
 ## 7. Ngoài phạm vi
 
 Gói Creator và lượt gửi duyệt; giữ – trừ – trả lượt; giới hạn theo gói (số hồ sơ trẻ, 3 truyện mỗi tuần, đọc to);
-cảnh báo khi xoá tài khoản còn gói; tạo gói mới và cấu hình quỹ Creator; báo cáo tài khoản người dùng (F-16) và thống kê của Creator (F-20, F-21);
+cảnh báo khi xoá tài khoản còn gói; tạo gói mới và cấu hình quỹ Creator; thống kê của Creator (F-20, F-21);
 giao diện Admin trên web.

@@ -663,6 +663,7 @@ Table badges {
 }
 
 Table business_reports {
+  AccountSnapshotJson text
   CreatedAt timestamptz [not null]
   Id int [pk, not null, increment]
   IsDeleted boolean [not null]

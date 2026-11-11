@@ -18,6 +18,7 @@ public class BusinessReportControllerAuthorizationTests
                  {
                      nameof(BusinessReportController.Generate),
                      nameof(BusinessReportController.GetRevenue),
+                     nameof(BusinessReportController.GetAccounts),
                      nameof(BusinessReportController.List),
                      nameof(BusinessReportController.GetById),
                      nameof(BusinessReportController.Publish)

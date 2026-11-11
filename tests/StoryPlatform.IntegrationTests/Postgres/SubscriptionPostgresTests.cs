@@ -268,7 +268,7 @@ public sealed class SubscriptionPostgresTests(AuthoringGuidePostgresFixture fixt
         Assert.Equal((1, 4, 1), (revenue.TransactionsByStatus.MismatchAmount, revenue.CreditsGranted, revenue.CreditsUsed));
         Assert.Equal(24600L, revenue.CreatorFundVnd);
 
-        var reports = new BusinessReportService(uow, new AuditLogWriter(uow), revenueService);
+        var reports = new BusinessReportService(uow, new AuditLogWriter(uow), revenueService, new UserAccountStatisticsService(uow));
         var generated = await reports.GenerateAsync(database.AdministratorId, new GenerateBusinessReportRequestDto { PeriodStart = today, PeriodEnd = today });
         Assert.Equal(148000L, generated.Revenue!.TotalRevenueVnd);
         await Assert.ThrowsAsync<ConflictException>(() => reports.GenerateAsync(

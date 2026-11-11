@@ -27,7 +27,8 @@ public class BusinessReportRevenueSnapshotTests
     {
         _store.Seed(new SubscriptionPlan { Id = 2, Name = "Gói Đọc", PlanType = PlanType.Reading, PriceVnd = 49000 });
         _store.Seed(new SubscriptionPlan { Id = CreativePlanId, Name = "Gói Sáng tạo", PlanType = PlanType.Creative, PriceVnd = 99000, AiCredits = 4 });
-        _sut = new BusinessReportService(_store, _auditLogWriter.Object, new RevenueStatisticsService(_store));
+        _sut = new BusinessReportService(
+            _store, _auditLogWriter.Object, new RevenueStatisticsService(_store), new UserAccountStatisticsService(_store));
     }
 
     private static GenerateBusinessReportRequestDto Period(DateTime start, DateTime end) =>
@@ -130,6 +131,36 @@ public class BusinessReportRevenueSnapshotTests
     }
 
     [Fact]
+    public async Task GenerateAsync_SnapshotsAccountStatisticsOfThePeriod()
+    {
+        _store.Seed(new UserAccount { Id = 1, Role = UserRole.User, Status = AccountStatus.Active, CreatedAt = November1.AddDays(-30) });
+        _store.Seed(new UserAccount { Id = 2, Role = UserRole.User, Status = AccountStatus.Suspended, CreatedAt = November1.AddDays(4) });
+        _store.Seed(new RefreshToken { UserAccountId = 1, TokenHash = "h1", IssuedAt = November1.AddDays(2), ExpiresAt = November30 });
+        _store.Seed(new ChildProfile { Id = 10, OwnerUserId = 1, CreatedAt = November1.AddDays(-20), Status = ChildProfileStatus.Active });
+
+        var generated = await _sut.GenerateAsync(AdminId, Period(November1, November30));
+        // Tài khoản đăng ký sau khi báo cáo đã tạo không làm đổi số liệu đã chụp.
+        _store.Seed(new UserAccount { Id = 3, Role = UserRole.User, Status = AccountStatus.Active, CreatedAt = November1.AddDays(6) });
+
+        var stored = await _sut.GetByIdAsync(generated.Id);
+        Assert.Equal(
+            (2, 1, 1, 1, 1),
+            (stored.Accounts!.TotalParentAccounts, stored.Accounts.NewAccounts, stored.Accounts.ActiveAccounts,
+                stored.Accounts.LockedOrDisabledAccounts, stored.Accounts.ChildProfiles));
+    }
+
+    [Fact]
+    public async Task GetLatestPublishedAsync_DoesNotExposeAccountStatistics()
+    {
+        var generated = await _sut.GenerateAsync(AdminId, Period(November1, November30));
+        await _sut.PublishAsync(AdminId, generated.Id);
+
+        var result = await _sut.GetLatestPublishedAsync();
+
+        Assert.DoesNotContain("accounts", System.Text.Json.JsonSerializer.Serialize<object>(result), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ListAsync_ReturnsNewestPeriodFirst_AndLegacyReportsWithoutRevenue()
     {
         _store.Seed(new BusinessReport
@@ -146,6 +177,7 @@ public class BusinessReportRevenueSnapshotTests
             result.Items.Select(item => item.PeriodStart));
         Assert.NotNull(result.Items[0].Revenue);
         Assert.Null(result.Items[2].Revenue);
+        Assert.Null(result.Items[2].Accounts);
         Assert.Equal(7, result.Items[2].StoriesGenerated);
     }
 

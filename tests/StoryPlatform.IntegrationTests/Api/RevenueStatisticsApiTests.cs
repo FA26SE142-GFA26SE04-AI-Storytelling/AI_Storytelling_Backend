@@ -88,8 +88,44 @@ public sealed class RevenueStatisticsApiTests(ApiFactory factory) : IClassFixtur
         Assert.False(forParents.TryGetProperty("revenue", out _));
     }
 
+    [Fact]
+    public async Task Admin_SeesAccountStatisticsForThePeriod_AndTheyAreSnapshottedIntoTheReport()
+    {
+        // Host riêng của lớp test: mọi tài khoản phụ huynh ở đây đều được tạo hôm nay.
+        var admin = await factory.ClientForNewUserAsync(UserRole.Administrator);
+        await factory.AddUserAsync(UserRole.User);
+        await factory.AddUserAsync(UserRole.User, status: AccountStatus.Suspended);
+        await factory.AddUserAsync(UserRole.ContentCreator);
+        var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        var url = $"/api/v1/BusinessReport/admin/accounts?periodStart={today}&periodEnd={today}";
+
+        var before = await AdminApi.GetDataAsync(admin, url);
+        // Một phụ huynh đăng nhập thật (được cấp refresh token) → tính là hoạt động trong kỳ.
+        var signedInParent = await factory.AddUserAsync(UserRole.User);
+        var login = await factory.CreateClient().PostAsJsonAsync("/api/v1/Auth/login", new { identifier = signedInParent.Username, password = ApiFactory.Password });
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        var after = await AdminApi.GetDataAsync(admin, url);
+
+        var total = before.GetProperty("totalParentAccounts").GetInt32();
+        Assert.Equal(total, before.GetProperty("newAccounts").GetInt32());
+        Assert.True(before.GetProperty("lockedOrDisabledAccounts").GetInt32() >= 1);
+        Assert.Equal(total + 1, after.GetProperty("totalParentAccounts").GetInt32());
+        Assert.Equal(before.GetProperty("activeAccounts").GetInt32() + 1, after.GetProperty("activeAccounts").GetInt32());
+
+        var tomorrow = DateTime.UtcNow.AddDays(1).ToString("yyyy-MM-dd");
+        var none = await AdminApi.GetDataAsync(admin, $"/api/v1/BusinessReport/admin/accounts?periodStart={tomorrow}&periodEnd={tomorrow}");
+        Assert.Equal((0, 0), (none.GetProperty("newAccounts").GetInt32(), none.GetProperty("activeAccounts").GetInt32()));
+
+        // Kỳ "ngày mai" chưa có báo cáo nào trong host này nên không chồng lên báo cáo của test khác.
+        var generated = await AdminApi.PostDataAsync(admin, "/api/v1/BusinessReport/generate", new { periodStart = tomorrow, periodEnd = tomorrow }, HttpStatusCode.Created);
+        Assert.Equal(
+            after.GetProperty("totalParentAccounts").GetInt32(),
+            generated.GetProperty("accounts").GetProperty("totalParentAccounts").GetInt32());
+    }
+
     [Theory]
     [InlineData("/api/v1/BusinessReport/admin/revenue?periodStart=2026-11-01&periodEnd=2026-11-30")]
+    [InlineData("/api/v1/BusinessReport/admin/accounts?periodStart=2026-11-01&periodEnd=2026-11-30")]
     [InlineData("/api/v1/BusinessReport/admin")]
     [InlineData("/api/v1/BusinessReport/admin/1")]
     public async Task RevenueEndpoints_AreAdministratorOnly(string url)

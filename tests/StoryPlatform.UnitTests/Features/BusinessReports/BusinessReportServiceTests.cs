@@ -20,6 +20,7 @@ public class BusinessReportServiceTests
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IAuditLogWriter> _auditLogWriter = new();
     private readonly Mock<IRevenueStatisticsService> _revenueStatistics = new();
+    private readonly Mock<IUserAccountStatisticsService> _accountStatistics = new();
     private readonly BusinessReportService _sut;
 
     private static readonly DateTime PeriodStart = new(2026, 1, 1);
@@ -38,8 +39,12 @@ public class BusinessReportServiceTests
         _revenueStatistics
             .Setup(service => service.GetAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RevenueStatisticsDto());
+        _accountStatistics
+            .Setup(service => service.GetAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserAccountStatisticsDto());
 
-        _sut = new BusinessReportService(_unitOfWork.Object, _auditLogWriter.Object, _revenueStatistics.Object);
+        _sut = new BusinessReportService(
+            _unitOfWork.Object, _auditLogWriter.Object, _revenueStatistics.Object, _accountStatistics.Object);
     }
 
     private static Story MakeStory(int id, StorySource source, StoryStatus status, DateTime createdAt) => new()

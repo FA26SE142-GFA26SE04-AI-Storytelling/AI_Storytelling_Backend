@@ -7,22 +7,25 @@ using StoryPlatform.Application.Features.BusinessReports.Interfaces;
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>
-/// Tổng hợp và publish Business Report định kỳ (Bước 5.5) và thống kê doanh thu theo kỳ (F-15).
+/// Tổng hợp và publish Business Report định kỳ (Bước 5.5) và thống kê doanh thu (F-15) và tài khoản người dùng (F-16) theo kỳ.
 /// </summary>
 public class BusinessReportController : BaseApiController
 {
     private readonly IBusinessReportService _businessReportService;
     private readonly IRevenueStatisticsService _revenueStatisticsService;
+    private readonly IUserAccountStatisticsService _userAccountStatisticsService;
 
     public BusinessReportController(
-        IBusinessReportService businessReportService, IRevenueStatisticsService revenueStatisticsService)
+        IBusinessReportService businessReportService, IRevenueStatisticsService revenueStatisticsService,
+        IUserAccountStatisticsService userAccountStatisticsService)
     {
         _businessReportService = businessReportService;
         _revenueStatisticsService = revenueStatisticsService;
+        _userAccountStatisticsService = userAccountStatisticsService;
     }
 
     /// <summary>
-    /// Tổng hợp một Business Report mới cho một kỳ (trạng thái Compiling), kèm số liệu doanh thu chụp tại thời điểm tạo.
+    /// Tổng hợp một Business Report mới cho một kỳ (trạng thái Compiling), kèm số liệu doanh thu và tài khoản chụp tại thời điểm tạo.
     /// Kỳ tính trọn ngày theo UTC, gồm cả ngày PeriodEnd, và không được chồng lên báo cáo đã có.
     /// </summary>
     [HttpPost("generate")]
@@ -69,6 +72,18 @@ public class BusinessReportController : BaseApiController
     {
         var result = await _revenueStatisticsService.GetAsync(periodStart, periodEnd, cancellationToken);
         return HandleResult(result, "Lấy thống kê doanh thu thành công.");
+    }
+
+    /// <summary>
+    /// Administrator xem thống kê tài khoản phụ huynh của một kỳ bất kỳ: tổng số, mới đăng ký, đang hoạt động, bị vô hiệu, số hồ sơ trẻ.
+    /// </summary>
+    [HttpGet("admin/accounts")]
+    [Authorize(Roles = "Administrator")]
+    public async Task<ActionResult<ApiResponse<UserAccountStatisticsDto>>> GetAccounts(
+        [FromQuery] DateTime periodStart, [FromQuery] DateTime periodEnd, CancellationToken cancellationToken)
+    {
+        var result = await _userAccountStatisticsService.GetAsync(periodStart, periodEnd, cancellationToken);
+        return HandleResult(result, "Lấy thống kê tài khoản thành công.");
     }
 
     /// <summary>

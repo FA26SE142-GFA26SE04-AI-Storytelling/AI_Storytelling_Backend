@@ -19,10 +19,11 @@ public class BusinessReportDto
     public DateTime? PublishedAt { get; set; }
 }
 
-/// <summary>Báo cáo kỳ dành cho Administrator: thêm số liệu doanh thu đã chụp lúc tạo báo cáo (null với báo cáo cũ).</summary>
+/// <summary>Báo cáo kỳ dành cho Administrator: thêm số liệu doanh thu và tài khoản đã chụp lúc tạo báo cáo (null với báo cáo cũ).</summary>
 public class AdminBusinessReportDto : BusinessReportDto
 {
     public RevenueStatisticsDto? Revenue { get; set; }
+    public UserAccountStatisticsDto? Accounts { get; set; }
 }
 
 /// <summary>
@@ -91,4 +92,24 @@ public class CreditSourceCountDto
 {
     public string Source { get; set; } = string.Empty;
     public int Credits { get; set; }
+}
+
+/// <summary>
+/// Thống kê tài khoản người dùng của một kỳ (F-16). Chỉ tính tài khoản phụ huynh (role User) chưa bị xoá.
+/// </summary>
+public class UserAccountStatisticsDto
+{
+    public DateTime PeriodStart { get; set; }
+    public DateTime PeriodEnd { get; set; }
+
+    /// <summary>Số tài khoản phụ huynh đã đăng ký tính đến cuối kỳ.</summary>
+    public int TotalParentAccounts { get; set; }
+    /// <summary>Số tài khoản đăng ký trong kỳ.</summary>
+    public int NewAccounts { get; set; }
+    /// <summary>Số tài khoản có đăng nhập hoặc có phiên đọc của trẻ trong kỳ.</summary>
+    public int ActiveAccounts { get; set; }
+    /// <summary>Số tài khoản đang bị vô hiệu (Suspended) tại thời điểm tính.</summary>
+    public int LockedOrDisabledAccounts { get; set; }
+    /// <summary>Số hồ sơ trẻ đã tạo tính đến cuối kỳ, không gồm hồ sơ đã xoá.</summary>
+    public int ChildProfiles { get; set; }
 }

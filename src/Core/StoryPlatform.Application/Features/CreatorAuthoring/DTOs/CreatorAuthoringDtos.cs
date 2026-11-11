@@ -58,7 +58,12 @@ public sealed record CreatorDraftDto(int StoryId, int AuthorUserId, string Title
     string Language, string AgeBand, string Genre, string ExperienceMode, int AudienceRevision,
     string RevisionToken, int? SelectedVersionId, int LastVersionNo, DateTime CreatedAt, DateTime? UpdatedAt,
     string Source = "Manual", string Status = "Draft", string? CoverImageUrl = null,
-    bool IsPublished = false, string? ReviewStatus = null);
+    bool IsPublished = false, string? ReviewStatus = null)
+{
+    public int? OpenItemId { get; init; }
+    public string? OpenItemType { get; init; }
+    public string? OpenItemStatus { get; init; }
+}
 
 public sealed record CreatorVersionDto(int VersionId, int StoryId, int VersionNo, int? BaseVersionId,
     int? RestoredFromVersionId, int EditorUserId, string Title, string Content, string Origin,

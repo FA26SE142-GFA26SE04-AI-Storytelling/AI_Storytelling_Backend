@@ -229,6 +229,40 @@ public class PublicStorySubmissionServiceTests
         Assert.DoesNotContain(_h.Items, item => item.StoryVersionId == version.Id);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SubmitAfterRemoval_LinksApprovedAncestorOnlyWhenRemovalWasApproved(bool removed)
+    {
+        var source = _h.Versions[0];
+        source.Moderation.ReviewStatus = VersionReviewStatus.Approved;
+        AddItem(90, ModerationItemStatus.Approved, V1, DateTime.UtcNow.AddDays(-1));
+        _h.Items.Add(new() { Id = 91, StoryId = StoryId, StoryVersionId = V1,
+            ItemType = ModerationItemType.PublicStoryRemoval,
+            Status = removed ? ModerationItemStatus.Approved : ModerationItemStatus.Rejected,
+            RemovedAt = removed ? DateTime.UtcNow : null });
+        var revision = _h.CloneVersion(V1, 51);
+        revision.BaseVersionId = V1;
+        // Manual saves may add intermediate versions before the resubmission.
+        var saved = _h.CloneVersion(51, 52);
+        saved.BaseVersionId = 51;
+        var result = await SubmitAsync(saved.Id);
+        Assert.Equal(removed, result.IsResubmission);
+        Assert.Equal(removed ? 90 : (int?)null, result.PreviousItemId);
+        if (removed)
+        {
+            var queue = new ModerationQueueService(_h.UnitOfWork.Object, _h.Audit.Object);
+            await queue.ClaimAsync(PublicStoryReviewHarness.ModeratorId, result.ItemId);
+            var package = await _h.Sut.GetPackageAsync(PublicStoryReviewHarness.ModeratorId, result.ItemId);
+            var history = Assert.Single(package.ReviewHistory);
+            Assert.Equal(90, history.ItemId);
+            Assert.Equal("Approved", history.Decision);
+            Assert.Equal("Nguyen Thi Lan", package.PreviousModeratorName);
+            var comparison = await _h.Sut.CompareAsync(PublicStoryReviewHarness.ModeratorId, result.ItemId, "previous");
+            Assert.Equal("previous", comparison.Against);
+        }
+    }
+
     [Fact]
     public async Task SubmitAsync_MediaOnlyChange_IsAccepted()
     {

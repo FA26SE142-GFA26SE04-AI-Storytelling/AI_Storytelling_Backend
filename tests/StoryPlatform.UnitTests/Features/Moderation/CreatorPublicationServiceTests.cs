@@ -8,6 +8,9 @@ using StoryPlatform.Application.Features.StoryReview.DTOs;
 using StoryPlatform.Application.Features.StoryReview.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.Notifications.DTOs;
+using StoryPlatform.Application.Features.Notifications.Interfaces;
+using System.Text.Json;
 using Xunit;
 namespace StoryPlatform.UnitTests.Features.Moderation;
 
@@ -119,6 +122,53 @@ public sealed class CreatorPublicationServiceTests
         Assert.True(h.Stories[0].IsPublished);
         Assert.Null(h.Items[0].RemovedAt);
         await Assert.ThrowsAsync<ConflictException>(() => service.CreateRevisionAsync(Creator, StoryId, new() { SourceVersionId = VersionId }));
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task RemovalDecision_StoresNotificationBeforeCommit_AndPushesOnlyAfterCommit(bool approve, bool failRealtime)
+    {
+        var result = await Request();
+        var claim = await queue.ClaimAsync(Moderator, result.ItemId!.Value);
+        var committed = false;
+        h.UnitOfWork.Setup(x => x.CommitTransactionAsync(It.IsAny<CancellationToken>()))
+            .Callback(() => committed = true).Returns(Task.CompletedTask);
+        string? payload = null;
+        h.Notifications.Setup(x => x.CreateStoredAsync(Creator, NotificationType.ContentModerationResult,
+            It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback<int, NotificationType, string?, CancellationToken>((_, _, p, _) => { Assert.False(committed); payload = p; })
+            .ReturnsAsync(new NotificationDto { Id = 77 });
+        var publisher = new Mock<INotificationRealtimePublisher>();
+        publisher.Setup(x => x.PublishAsync(Creator, It.IsAny<NotificationDto>(), It.IsAny<CancellationToken>()))
+            .Returns(() => { Assert.True(committed); return failRealtime ? Task.FromException(new Exception("offline")) : Task.CompletedTask; });
+        var sut = new CreatorPublicationService(h.UnitOfWork.Object, queue, h.Audit.Object,
+            notifications: h.Notifications.Object, publisher: publisher.Object);
+        await sut.DecideRemovalAsync(Moderator, result.ItemId.Value, new() { Approve = approve, Reason = "decision", RowVersion = claim.RowVersion });
+        using var json = JsonDocument.Parse(payload!);
+        Assert.Equal("PublicStoryRemoval", json.RootElement.GetProperty("itemType").GetString());
+        Assert.Equal(StoryId, json.RootElement.GetProperty("storyId").GetInt32());
+        Assert.Equal(approve ? "approved" : "rejected", json.RootElement.GetProperty("decision").GetString());
+        publisher.Verify(x => x.PublishAsync(Creator, It.IsAny<NotificationDto>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RemovalNotificationStorageFailureRollsBack_AndDoesNotPushRealtime()
+    {
+        var result = await Request();
+        var claim = await queue.ClaimAsync(Moderator, result.ItemId!.Value);
+        h.UnitOfWork.Invocations.Clear();
+        h.Notifications.Setup(x => x.CreateStoredAsync(Creator, NotificationType.ContentModerationResult,
+            It.IsAny<string?>(), It.IsAny<CancellationToken>())).ThrowsAsync(new InvalidOperationException("store unavailable"));
+        var publisher = new Mock<INotificationRealtimePublisher>();
+        var sut = new CreatorPublicationService(h.UnitOfWork.Object, queue, h.Audit.Object,
+            notifications: h.Notifications.Object, publisher: publisher.Object);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => sut.DecideRemovalAsync(Moderator, result.ItemId.Value,
+            new() { Approve = true, Reason = "decision", RowVersion = claim.RowVersion }));
+        h.UnitOfWork.Verify(x => x.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+        h.UnitOfWork.Verify(x => x.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+        publisher.Verify(x => x.PublishAsync(It.IsAny<int>(), It.IsAny<NotificationDto>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Theory]

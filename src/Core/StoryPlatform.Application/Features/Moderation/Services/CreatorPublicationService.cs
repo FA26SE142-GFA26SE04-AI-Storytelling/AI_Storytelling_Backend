@@ -1,4 +1,7 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using StoryPlatform.Application.Features.Notifications.DTOs;
+using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
@@ -11,7 +14,8 @@ using StoryPlatform.Domain.Enums;
 namespace StoryPlatform.Application.Features.Moderation.Services;
 
 public sealed class CreatorPublicationService(IUnitOfWork uow, IModerationQueueService queue, IAuditLogWriter audit,
-    IGrayZoneEvaluator? moderation = null) : ICreatorPublicationService
+    IGrayZoneEvaluator? moderation = null, INotificationService? notifications = null,
+    INotificationRealtimePublisher? publisher = null, ILogger<CreatorPublicationService>? logger = null) : ICreatorPublicationService
 {
     public async Task<CreatorPublicationStatus> GetStatusAsync(int userId, int storyId, CancellationToken ct = default)
     {
@@ -73,7 +77,9 @@ public sealed class CreatorPublicationService(IUnitOfWork uow, IModerationQueueS
             throw new BadRequestException("NOT_A_REMOVAL_REQUEST");
         // Enforce staff access, claimed ownership and the queue's claim expiry/administrator fallback rules.
         await queue.OpenAsync(userId, itemId, ct);
-        return await Locked(initial.StoryId.Value, async () =>
+        NotificationDto? notice = null;
+        int recipientId = 0;
+        var result = await Locked(initial.StoryId.Value, async () =>
         {
             var item = await uow.Repository<ModerationItem>().FirstOrDefaultAsync(x => x.Id == itemId, cancellationToken: ct)
                 ?? throw new NotFoundException("ModerationItem", itemId);
@@ -103,8 +109,25 @@ public sealed class CreatorPublicationService(IUnitOfWork uow, IModerationQueueS
             uow.Repository<ModerationItem>().Update(item);
             await audit.LogAsync(userId, input.Approve ? "CreatorRemovalApproved" : "CreatorRemovalRejected", nameof(ModerationItem), item.Id,
                 null, new { storyId = story.Id, versionId = version.Id, reason = item.DecisionReason }, ct);
+            var recipient = await uow.Repository<UserAccount>().GetByIdAsync(story.AuthorUserId, ct);
+            if (notifications != null && recipient is { IsDeleted: false, Status: AccountStatus.Active })
+            {
+                recipientId = recipient.Id;
+                notice = await notifications.CreateStoredAsync(recipient.Id, NotificationType.ContentModerationResult,
+                    JsonSerializer.Serialize(new { itemId = item.Id, itemType = ModerationItemType.PublicStoryRemoval.ToString(),
+                        storyId = story.Id, storyVersionId = version.Id, storyTitle = story.Title,
+                        decision = input.Approve ? "approved" : "rejected", reason = item.DecisionReason }), ct);
+            }
             return Result(story, version.Id, item.Id, item.Status.ToString());
         }, ct);
+        if (notice != null && publisher != null)
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(5));
+            try { await publisher.PublishAsync(recipientId, notice, timeout.Token); }
+            catch (Exception ex) { logger?.LogWarning(ex, "Removal decision notification stored but realtime failed for item {ItemId}", itemId); }
+        }
+        return result;
     }
 
     public Task<CreatorPublicationResult> CreateRevisionAsync(int userId, int storyId, CreatorRevisionRequest input, CancellationToken ct = default) =>

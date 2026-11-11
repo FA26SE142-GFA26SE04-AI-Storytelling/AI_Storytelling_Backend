@@ -138,6 +138,7 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
         }
 
         var now = DateTime.UtcNow;
+        var previous = returned ?? withdrawn ?? await FindRemovedApprovedReviewAsync(story.Id, version, cancellationToken);
         ModerationItem item;
         item = await _queueService.EnqueueAsync(new EnqueueModerationItemCommand
         {
@@ -145,8 +146,8 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
             StoryId = story.Id,
             StoryVersionId = version.Id,
             CreatedByUserId = actor.Id,
-            IsResubmission = returned != null || withdrawn != null,
-            PreviousItemId = returned?.Id ?? withdrawn?.Id
+            IsResubmission = previous != null,
+            PreviousItemId = previous?.Id
         }, cancellationToken);
         item.ProposedContentCategoryIds = PublicStoryLabels.Serialize(labels);
         _unitOfWork.Repository<ModerationItem>().Update(item);
@@ -289,6 +290,25 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
                && latest.Status is ModerationItemStatus.ChangesRequested or ModerationItemStatus.Rejected
             ? latest
             : null;
+    }
+
+    private async Task<ModerationItem?> FindRemovedApprovedReviewAsync(int storyId, StoryVersion version, CancellationToken ct)
+    {
+        if (!version.BaseVersionId.HasValue) return null;
+        var versions = await _unitOfWork.Repository<StoryVersion>().FindAsync(v => v.StoryId == storyId && !v.IsDeleted, cancellationToken: ct);
+        var byId = versions.ToDictionary(v => v.Id);
+        var ancestors = new HashSet<int>();
+        var parent = version.BaseVersionId;
+        while (parent.HasValue && parent != version.Id && ancestors.Add(parent.Value))
+            parent = byId.TryGetValue(parent.Value, out var source) ? source.BaseVersionId : null;
+        var reviews = await _unitOfWork.Repository<ModerationItem>().FindAsync(m => m.StoryId == storyId && !m.IsDeleted
+            && m.ItemType == ModerationItemType.PublicStoryReview && m.Status == ModerationItemStatus.Approved
+            && m.StoryVersionId.HasValue && ancestors.Contains(m.StoryVersionId.Value), cancellationToken: ct);
+        foreach (var review in reviews.OrderByDescending(m => m.DecidedAt).ThenByDescending(m => m.Id))
+            if (await _unitOfWork.Repository<ModerationItem>().ExistsAsync(m => m.StoryId == storyId && !m.IsDeleted
+                && m.ItemType == ModerationItemType.PublicStoryRemoval && m.Status == ModerationItemStatus.Approved
+                && m.RemovedAt != null && m.StoryVersionId == review.StoryVersionId, ct)) return review;
+        return null;
     }
 
     private async Task EnsureNotIdenticalToReturnedAsync(

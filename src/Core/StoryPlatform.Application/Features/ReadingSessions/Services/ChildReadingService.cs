@@ -312,6 +312,7 @@ public class ChildReadingService : IChildReadingService
                             asset.Type == MediaType.TtsAudio && asset.StorySegmentId == segment.Id);
                         return new ReadingSegmentDto
                         {
+                            SegmentId = segment.Id,
                             SegmentOrder = segment.SegmentOrder,
                             StartOffset = segment.StartOffset,
                             EndOffset = segment.EndOffset,

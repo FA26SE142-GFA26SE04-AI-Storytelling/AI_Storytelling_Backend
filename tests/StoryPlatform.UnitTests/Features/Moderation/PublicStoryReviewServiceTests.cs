@@ -153,6 +153,47 @@ public class PublicStoryReviewServiceTests
     }
 
     [Fact]
+    public async Task GetPackageAsync_IncludesSubmitterIdentityWithoutEmail_SubmittedAt_AndSubmittedVersionTitle()
+    {
+        var creator = _h.Users.Single(x => x.Id == PublicStoryReviewHarness.CreatorId);
+        creator.FullName = "Nguyễn Văn A";
+        creator.Email = "creator.private@test.local";
+        var submittedAt = new DateTime(2026, 11, 10, 7, 15, 0, DateTimeKind.Utc);
+        _h.Items[0].CreatedByUserId = PublicStoryReviewHarness.CreatorId;
+        _h.Items[0].CreatedAt = submittedAt;
+        _h.Stories[0].Title = "Tên truyện mới sau đó";
+        _h.Versions[0].Title = "Mái Nhà Ấm Áp Sau Cơn Mưa";
+
+        var package = await _h.Sut.GetPackageAsync(
+            PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId);
+
+        Assert.Equal(PublicStoryReviewHarness.CreatorId, package.CreatedByUserId);
+        Assert.Equal("Nguyễn Văn A", package.CreatedByName);
+        Assert.DoesNotContain("@", package.CreatedByName ?? string.Empty);
+        Assert.Equal(submittedAt, package.SubmittedAt);
+        Assert.Equal("Mái Nhà Ấm Áp Sau Cơn Mưa", package.Version.Title);
+    }
+
+    [Fact]
+    public async Task GetPackageAsync_SubmitterFallsBackToUsername_AndHandlesMissingSubmitter()
+    {
+        var creator = _h.Users.Single(x => x.Id == PublicStoryReviewHarness.CreatorId);
+        creator.FullName = "  ";
+        creator.Username = "creator_handle";
+
+        var package = await _h.Sut.GetPackageAsync(
+            PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId);
+        Assert.Equal(PublicStoryReviewHarness.CreatorId, package.CreatedByUserId);
+        Assert.Equal("creator_handle", package.CreatedByName);
+
+        _h.Items[0].CreatedByUserId = 99999;
+        var missingPackage = await _h.Sut.GetPackageAsync(
+            PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId);
+        Assert.Equal(99999, missingPackage.CreatedByUserId);
+        Assert.Null(missingPackage.CreatedByName);
+    }
+
+    [Fact]
     public async Task GetPackageAsync_Opened_WritesAudit()
     {
         await _h.Sut.GetPackageAsync(PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId);
@@ -234,6 +275,120 @@ public class PublicStoryReviewServiceTests
             package.Flags.Select(x => x.FlagId));
         Assert.All(package.Flags, flag => Assert.False(flag.Resolved));
         Assert.False(package.AllFlagsResolved);
+        Assert.Equal("GrayZone", package.SafetyScan.Status);
+    }
+
+    [Fact]
+    public async Task GetPackageAsync_SafeAssessment_ExposesSafetyScanStatusAndLowRiskAdvisoryFindingsWithoutBlockingApprove()
+    {
+        _h.MakeApprovable();
+        _h.Versions[0].Content = "Mở đầu. Cậu mang cháo lên bàn và thắp sáng ngọn đèn dầu nhỏ. Kết thúc.";
+        _h.Versions[0].Moderation.ModerationZone = ModerationZone.Safe;
+        _h.Versions[0].Moderation.GrayZoneFlags = """
+            {
+              "flags": [],
+              "assessment": {
+                "zone": 1,
+                "phase": "phase3",
+                "provider": "Vertex",
+                "model": "gemini-3.8-flash",
+                "riskScore": 25,
+                "findings": [
+                  {
+                    "kind": "paragraph",
+                    "name": "paragraph:5",
+                    "category": "GZ02",
+                    "reason": "Nhân vật tự thắp đèn dầu trong nhà.",
+                    "evidenceQuote": "Cậu mang cháo lên bàn và thắp sáng ngọn đèn dầu nhỏ.",
+                    "contextNote": "Bà nội đang ngồi ngay gần đó.",
+                    "startOffset": 8,
+                    "endOffset": 61
+                  }
+                ]
+              }
+            }
+            """;
+
+        var package = await _h.Sut.GetPackageAsync(
+            PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId);
+
+        Assert.Empty(package.Flags);
+        Assert.True(package.AllFlagsResolved);
+        Assert.True(package.CanApprove);
+        Assert.Equal("Safe", package.SafetyScan.Status);
+        Assert.Equal("Safe", package.SafetyScan.Zone);
+        Assert.Equal(25m, package.SafetyScan.RiskScore);
+        Assert.Equal("phase3", package.SafetyScan.Phase);
+        Assert.Equal("Vertex", package.SafetyScan.Provider);
+        Assert.Equal("gemini-3.8-flash", package.SafetyScan.Model);
+        var advisory = Assert.Single(package.SafetyScan.AdvisoryFindings);
+        Assert.Equal("GZ02", advisory.CriterionCode);
+        Assert.Equal("Cậu mang cháo lên bàn và thắp sáng ngọn đèn dầu nhỏ.", advisory.EvidenceQuote);
+        Assert.Equal("Bà nội đang ngồi ngay gần đó.", advisory.ContextNote);
+        Assert.Equal(8, advisory.StartOffset);
+        Assert.Equal(61, advisory.EndOffset);
+        Assert.True(advisory.Resolved);
+    }
+
+    [Fact]
+    public async Task GetPackageAsync_WithoutAiAssessment_ReportsNotChecked_AndGrayZoneDoesNotDuplicateAdvisoryFindings()
+    {
+        _h.Versions[0].Moderation.ModerationZone = null;
+        _h.Versions[0].Moderation.GrayZoneFlags = null;
+
+        var uncheckedPackage = await _h.Sut.GetPackageAsync(
+            PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId);
+
+        Assert.Equal("NotChecked", uncheckedPackage.SafetyScan.Status);
+        Assert.Null(uncheckedPackage.SafetyScan.Zone);
+        Assert.Null(uncheckedPackage.SafetyScan.RiskScore);
+        Assert.Empty(uncheckedPackage.SafetyScan.AdvisoryFindings);
+
+        _h.Versions[0].Moderation.ModerationZone = ModerationZone.GrayZone;
+        _h.Versions[0].Moderation.GrayZoneFlags = """
+            {
+              "flags": [
+                {
+                  "id": "abc:0",
+                  "kind": "paragraph",
+                  "name": "paragraph:1",
+                  "reason": "Cần kiểm tra ngữ cảnh",
+                  "category": "GZ02",
+                  "evidenceQuote": "Đoạn A",
+                  "contextNote": "Ngữ cảnh A",
+                  "startOffset": 0,
+                  "endOffset": 6
+                }
+              ],
+              "assessment": {
+                "zone": 2,
+                "phase": "phase3",
+                "provider": "Vertex",
+                "model": "gemini-3.8-flash",
+                "riskScore": 55,
+                "findings": [
+                  {
+                    "kind": "paragraph",
+                    "name": "paragraph:1",
+                    "category": "GZ02",
+                    "reason": "Cần kiểm tra ngữ cảnh",
+                    "evidenceQuote": "Đoạn A",
+                    "contextNote": "Ngữ cảnh A",
+                    "startOffset": 0,
+                    "endOffset": 6
+                  }
+                ]
+              }
+            }
+            """;
+
+        var grayPackage = await _h.Sut.GetPackageAsync(
+            PublicStoryReviewHarness.ModeratorId, PublicStoryReviewHarness.ItemId);
+
+        Assert.Equal("GrayZone", grayPackage.SafetyScan.Status);
+        Assert.Equal(55m, grayPackage.SafetyScan.RiskScore);
+        Assert.Single(grayPackage.Flags);
+        Assert.Empty(grayPackage.SafetyScan.AdvisoryFindings);
     }
 
     [Fact]

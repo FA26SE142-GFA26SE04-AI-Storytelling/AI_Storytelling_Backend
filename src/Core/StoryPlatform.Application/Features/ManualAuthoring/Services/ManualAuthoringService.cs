@@ -77,12 +77,11 @@ public partial class ManualAuthoringService
         var rows = await _uow.Repository<Story>().GetPagedAsync(pageIndex, pageSize,
             _policy.VisibleStories(userId),
             q => q.OrderByDescending(x => x.UpdatedAt ?? x.CreatedAt), cancellationToken: ct);
-        var drafts = new List<CreatorDraftDto>();
         foreach (var row in rows.Items)
         {
             await _policy.AuthorizeAsync(userId, row, ct);
-            drafts.Add(await ToDraftAsync(row, ct));
         }
+        var drafts = await ToDraftsAsync(rows.Items, ct);
         return new PagedResult<CreatorDraftDto>(drafts, rows.TotalCount, pageIndex, pageSize);
     }
 
@@ -340,19 +339,43 @@ public partial class ManualAuthoringService
         }, ct);
 
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
-    private async Task<CreatorDraftDto> ToDraftAsync(Story x, CancellationToken ct)
+    private async Task<CreatorDraftDto> ToDraftAsync(Story x, CancellationToken ct) =>
+        (await ToDraftsAsync([x], ct))[0];
+
+    private async Task<List<CreatorDraftDto>> ToDraftsAsync(IReadOnlyList<Story> stories, CancellationToken ct)
     {
-        var lastVersionNo = x.AuthoringLastVersionNo;
-        if (x.Scope == StoryScope.Creator && x.Source == StorySource.Ai)
-            lastVersionNo = (await _uow.Repository<StoryVersion>().FindAsync(v => v.StoryId == x.Id && !v.IsDeleted,
-                cancellationToken: ct)).Select(v => v.VersionNo).DefaultIfEmpty().Max();
-        var cover = x.CoverImageUrl;
-        if (_covers is not null && StoryCover.IsSceneRef(cover))
-            cover = (await _covers.ResolveAsync([cover], ct))(cover);
-        return new(x.Id, x.AuthorUserId, x.Title ?? string.Empty, x.Description ?? string.Empty,
-            x.Language, x.AgeBand, x.Genre ?? string.Empty, x.ExperienceMode, x.AudienceRevision,
-            x.AuthoringRevisionToken, (await CurrentVersionAsync(x.Id, ct))?.Id, lastVersionNo,
-            x.CreatedAt, x.UpdatedAt, x.Source.ToString(), x.Status.ToString(), cover);
+        if (stories.Count == 0) return [];
+        var storyIds = stories.Select(s => s.Id).Distinct().ToList();
+        var versions = await _uow.Repository<StoryVersion>().FindAsync(
+            v => storyIds.Contains(v.StoryId) && !v.IsDeleted,
+            cancellationToken: ct);
+        var byStory = versions.GroupBy(v => v.StoryId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+        var sceneCovers = stories.Select(s => s.CoverImageUrl).Where(StoryCover.IsSceneRef).ToList();
+        var resolveCover = _covers is not null && sceneCovers.Count > 0
+            ? await _covers.ResolveAsync(sceneCovers, ct)
+            : null;
+
+        return stories.Select(x =>
+        {
+            byStory.TryGetValue(x.Id, out var storyVersions);
+            var current = storyVersions?
+                .Where(v => v.IsCurrent)
+                .OrderByDescending(v => v.VersionNo)
+                .FirstOrDefault();
+            var lastVersionNo = x.Scope == StoryScope.Creator && x.Source == StorySource.Ai
+                ? (storyVersions?.Select(v => v.VersionNo).DefaultIfEmpty().Max() ?? 0)
+                : x.AuthoringLastVersionNo;
+            var cover = resolveCover is not null && StoryCover.IsSceneRef(x.CoverImageUrl)
+                ? resolveCover(x.CoverImageUrl)
+                : x.CoverImageUrl;
+            return new CreatorDraftDto(
+                x.Id, x.AuthorUserId, x.Title ?? string.Empty, x.Description ?? string.Empty,
+                x.Language, x.AgeBand, x.Genre ?? string.Empty, x.ExperienceMode, x.AudienceRevision,
+                x.AuthoringRevisionToken, current?.Id, lastVersionNo,
+                x.CreatedAt, x.UpdatedAt, x.Source.ToString(), x.Status.ToString(), cover,
+                x.IsPublished, current?.Moderation.ReviewStatus.ToString());
+        }).ToList();
     }
     private static CreatorVersionDto ToVersion(StoryVersion x) => new(x.Id, x.StoryId, x.VersionNo,
         x.BaseVersionId, x.RestoredFromVersionId, x.EditorUserId ?? 0, x.Title, x.Content ?? string.Empty,

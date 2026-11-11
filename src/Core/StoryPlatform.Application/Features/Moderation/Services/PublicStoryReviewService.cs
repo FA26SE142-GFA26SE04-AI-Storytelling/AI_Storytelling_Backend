@@ -157,6 +157,10 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
         var flags = BuildFlags(context.Version, item);
         var blockers = EvaluateApproveBlockers(context, content);
         var history = await LoadReviewHistoryAsync(item, cancellationToken);
+        var submitter = item.CreatedByUser
+            ?? (item.CreatedByUserId.HasValue
+                ? await _unitOfWork.Repository<UserAccount>().GetByIdAsync(item.CreatedByUserId.Value, cancellationToken)
+                : null);
 
         var package = new PublicReviewPackageDto
         {
@@ -165,6 +169,9 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
             StoryVersionId = context.Version.Id,
             VersionNo = context.Version.VersionNo,
             IsResubmission = item.IsResubmission,
+            CreatedByUserId = item.CreatedByUserId,
+            CreatedByName = ModerationQueuePolicy.DisplayName(submitter),
+            SubmittedAt = item.CreatedAt,
             ProposedLabels = content.ProposedCategories.OrderBy(x => x.Id).Select(category => new PublicReviewLabelDto
             {
                 ContentCategoryId = category.Id, Code = category.Code,
@@ -313,6 +320,7 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
             Checklist = BuildChecklist(item),
             ApproveBlockers = blockers,
             CanApprove = blockers.Count == 0,
+            SafetyScan = BuildSafetyScan(context.Version, flags),
             PreviousModeratorName = history.FirstOrDefault()?.DecidedByName,
             ReviewHistory = history
         };
@@ -398,6 +406,51 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
             MissingWarningSegmentIds = missingWarnings,
             NeedsAtLeastOneAudio = needsOne,
             RequiredViewsComplete = missingScenes.Count == 0 && missingWarnings.Count == 0 && !needsOne
+        };
+    }
+
+    private static PublicReviewSafetyScanDto BuildSafetyScan(
+        StoryVersion version, IReadOnlyList<PublicReviewFlagDto> flags)
+    {
+        var assessment = GrayZoneWorkflowService.ReadAssessment(version);
+        var zone = assessment?.Zone ?? version.Moderation.ModerationZone;
+        if (assessment == null && zone == null)
+        {
+            return flags.Count > 0
+                ? new PublicReviewSafetyScanDto
+                {
+                    Status = ModerationZone.GrayZone.ToString(),
+                    Zone = ModerationZone.GrayZone.ToString()
+                }
+                : new PublicReviewSafetyScanDto { Status = "NotChecked" };
+        }
+
+        var resolvedZone = zone ?? ModerationZone.Safe;
+        var advisory = resolvedZone == ModerationZone.Safe && assessment?.Findings.Count > 0
+            ? assessment.Findings.Select((f, index) => new PublicReviewFlagDto
+            {
+                FlagId = $"advisory:{index}",
+                Kind = f.Kind,
+                Name = f.Name,
+                CriterionCode = f.Category,
+                Reason = f.Reason,
+                EvidenceQuote = f.EvidenceQuote,
+                ContextNote = f.ContextNote,
+                StartOffset = f.StartOffset,
+                EndOffset = f.EndOffset,
+                Resolved = true
+            }).ToList()
+            : new List<PublicReviewFlagDto>();
+
+        return new PublicReviewSafetyScanDto
+        {
+            Status = resolvedZone.ToString(),
+            Zone = resolvedZone.ToString(),
+            RiskScore = assessment?.RiskScore,
+            Phase = assessment?.Phase,
+            Provider = assessment?.Provider,
+            Model = assessment?.Model,
+            AdvisoryFindings = advisory
         };
     }
 

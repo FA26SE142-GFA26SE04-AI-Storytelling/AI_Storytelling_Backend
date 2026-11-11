@@ -7,6 +7,12 @@ public class PublicReviewPackageDto
     public int StoryVersionId { get; set; }
     public int VersionNo { get; set; }
     public bool IsResubmission { get; set; }
+    /// <summary>Mã tài khoản Creator gửi duyệt phiên bản này.</summary>
+    public int? CreatedByUserId { get; set; }
+    /// <summary>Tên hiển thị của Creator gửi duyệt (họ tên, dự phòng tên đăng nhập); không trả email.</summary>
+    public string? CreatedByName { get; set; }
+    /// <summary>Thời điểm gửi yêu cầu duyệt lên hàng đợi.</summary>
+    public DateTime SubmittedAt { get; set; }
     public PublicReviewStoryDto Story { get; set; } = new();
     public List<PublicReviewLabelDto> ProposedLabels { get; set; } = new();
     public PublicReviewVersionDto Version { get; set; } = new();
@@ -20,8 +26,22 @@ public class PublicReviewPackageDto
     public PublicReviewChecklistDto Checklist { get; set; } = new();
     public List<ApproveBlockerDto> ApproveBlockers { get; set; } = new();
     public bool CanApprove { get; set; }
+    /// <summary>Trạng thái quét an toàn AI của phiên bản đang duyệt (Safe, GrayZone, HardBlock hoặc NotChecked).</summary>
+    public PublicReviewSafetyScanDto SafetyScan { get; set; } = new();
     public string? PreviousModeratorName { get; set; }
     public List<PublicReviewHistoryEntryDto> ReviewHistory { get; set; } = new();
+}
+
+public class PublicReviewSafetyScanDto
+{
+    public string Status { get; set; } = "NotChecked";
+    public string? Zone { get; set; }
+    public decimal? RiskScore { get; set; }
+    public string? Phase { get; set; }
+    public string? Provider { get; set; }
+    public string? Model { get; set; }
+    /// <summary>Các lưu ý mức nhẹ AI ghi nhận khi kết luận vẫn là Safe; chỉ để tham khảo, không chặn duyệt.</summary>
+    public List<PublicReviewFlagDto> AdvisoryFindings { get; set; } = new();
 }
 
 public class PublicReviewStoryDto

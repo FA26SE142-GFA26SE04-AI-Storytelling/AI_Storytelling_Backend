@@ -7,6 +7,9 @@
     bang trong EF Core model snapshot deu co dung mot file seed, ghep tat ca
     lenh vao mot transaction va thuc thi bang psql.
 
+    Database dich phai duoc cap nhat bang cac EF Core migration hien co truoc
+    khi chay seed; script chi nap du lieu va khong tao bang.
+
     Moi lan chay, script TRUNCATE toan bo cac bang co file seed (RESTART IDENTITY)
     truoc khi INSERT, nen database duoc dua ve dung du lieu mau ban dau. Moi du lieu
     tao them trong luc test se bi xoa. Bang __EFMigrationsHistory va cac bang do
@@ -313,7 +316,7 @@ BEGIN
     END LOOP;
 
     IF cardinality(missing_tables) > 0 THEN
-        RAISE EXCEPTION 'Database schema is missing seeded tables: %', array_to_string(missing_tables, ', ');
+        RAISE EXCEPTION 'Database schema is missing seeded tables: %. Apply pending EF Core migrations to this database, then rerun seed.', array_to_string(missing_tables, ', ');
     END IF;
 END
 $seed_preflight$;

@@ -16,4 +16,8 @@ public interface ICreatorStatisticsService
     Task<CreatorRevenueStatisticsDto> GetRevenueAsync(
         int creatorUserId, DateTime periodStart, DateTime periodEnd, int? storyId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Số truyện theo trạng thái, kết quả gửi duyệt trong kỳ, lượt còn lại và tiến độ Creator đối tác (90 ngày). Chỉ của chính Creator.</summary>
+    Task<CreatorContentStatisticsDto> GetContentAsync(
+        int creatorUserId, DateTime periodStart, DateTime periodEnd, CancellationToken cancellationToken = default);
 }

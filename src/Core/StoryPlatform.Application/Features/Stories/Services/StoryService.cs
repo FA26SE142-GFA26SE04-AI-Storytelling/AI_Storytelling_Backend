@@ -17,6 +17,9 @@ namespace StoryPlatform.Application.Features.Stories.Services;
 
 public class StoryService : IStoryService
 {
+    public const string OrderByViews = "views";
+    public const string OrderByFavorites = "favorites";
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly IStoryCoverResolver? _covers;
 
@@ -60,7 +63,7 @@ public class StoryService : IStoryService
         return new PagedResult<StoryDto>(dtos, totalCount, filter.PageIndex, filter.PageSize);
     }
 
-    public async Task<PagedResult<StoryDto>> GetPublishedCreatorStoriesAsync(StoryFilterRequestDto filter, CancellationToken cancellationToken = default)
+    public async Task<PagedResult<CommunityStoryDto>> GetPublishedCreatorStoriesAsync(StoryFilterRequestDto filter, CancellationToken cancellationToken = default)
     {
         // Thư viện cộng đồng: chỉ truyện Creator đã được duyệt và công khai. Không bao giờ trả bản nháp hay truyện đã lưu trữ.
         Expression<Func<DomainStory, bool>> predicate = s =>
@@ -70,20 +73,65 @@ public class StoryService : IStoryService
             (string.IsNullOrEmpty(filter.AgeBand) || s.AgeBand == filter.AgeBand) &&
             (string.IsNullOrEmpty(filter.SearchTerm) || (s.Title != null && s.Title.Contains(filter.SearchTerm)) || (s.Description != null && s.Description.Contains(filter.SearchTerm)));
 
-        Func<IQueryable<DomainStory>, IOrderedQueryable<DomainStory>> orderBy = query =>
-            filter.IsDescending ? query.OrderByDescending(s => s.CreatedAt) : query.OrderBy(s => s.CreatedAt);
-
         var (items, totalCount) = await _unitOfWork.Repository<DomainStory>().GetPagedAsync(
             pageIndex: filter.PageIndex,
             pageSize: filter.PageSize,
             filter: predicate,
-            orderBy: orderBy,
+            orderBy: CommunityOrder(filter),
             includeProperties: "Author",
             cancellationToken: cancellationToken);
 
+        var storyIds = items.Select(story => story.Id).ToList();
+        var views = (await _unitOfWork.Repository<ReadingSession>().FindAsync(
+                session => storyIds.Contains(session.StoryId), cancellationToken: cancellationToken))
+            .GroupBy(session => session.StoryId).ToDictionary(group => group.Key, group => group.Count());
+        var favorites = (await _unitOfWork.Repository<ReadingProgress>().FindAsync(
+                progress => progress.IsFavorited && storyIds.Contains(progress.StoryId), cancellationToken: cancellationToken))
+            .GroupBy(progress => progress.StoryId).ToDictionary(group => group.Key, group => group.Count());
+
         var cover = await CoverResolverAsync(items, cancellationToken);
-        return new PagedResult<StoryDto>(items.Select(story => MapToStoryDto(story, cover)).ToList(), totalCount, filter.PageIndex, filter.PageSize);
+        var dtos = items.Select(story =>
+        {
+            var dto = Fill(new CommunityStoryDto(), story, cover);
+            dto.ViewCount = views.GetValueOrDefault(story.Id);
+            dto.FavoriteCount = favorites.GetValueOrDefault(story.Id);
+            return dto;
+        }).ToList();
+        return new PagedResult<CommunityStoryDto>(dtos, totalCount, filter.PageIndex, filter.PageSize);
     }
+
+    /// <summary>Truyện công khai của người gọi; bỏ qua tác giả trong query string.</summary>
+    public Task<PagedResult<CommunityStoryDto>> GetMyPublishedCreatorStoriesAsync(
+        int creatorUserId, StoryFilterRequestDto filter, CancellationToken cancellationToken = default)
+    {
+        filter.AuthorUserId = creatorUserId;
+        return GetPublishedCreatorStoriesAsync(filter, cancellationToken);
+    }
+
+    private Func<IQueryable<DomainStory>, IOrderedQueryable<DomainStory>> CommunityOrder(StoryFilterRequestDto filter)
+    {
+        var sessions = _unitOfWork.Repository<ReadingSession>().Query();
+        var favorites = _unitOfWork.Repository<ReadingProgress>().Query();
+        var descending = filter.IsDescending;
+        switch ((filter.OrderBy ?? string.Empty).Trim().ToLowerInvariant())
+        {
+            case OrderByViews:
+                return query => ThenByCreatedAtAndId(descending
+                    ? query.OrderByDescending(s => sessions.Count(session => session.StoryId == s.Id))
+                    : query.OrderBy(s => sessions.Count(session => session.StoryId == s.Id)), descending);
+            case OrderByFavorites:
+                return query => ThenByCreatedAtAndId(descending
+                    ? query.OrderByDescending(s => favorites.Count(progress => progress.IsFavorited && progress.StoryId == s.Id))
+                    : query.OrderBy(s => favorites.Count(progress => progress.IsFavorited && progress.StoryId == s.Id)), descending);
+            default:
+                return query => descending ? query.OrderByDescending(s => s.CreatedAt) : query.OrderBy(s => s.CreatedAt);
+        }
+    }
+
+    private static IOrderedQueryable<DomainStory> ThenByCreatedAtAndId(IOrderedQueryable<DomainStory> ordered, bool descending) =>
+        descending
+            ? ordered.ThenByDescending(s => s.CreatedAt).ThenByDescending(s => s.Id)
+            : ordered.ThenBy(s => s.CreatedAt).ThenBy(s => s.Id);
 
     public async Task<StoryDto> GetStoryByIdAsync(int id, CancellationToken cancellationToken = default)
     {
@@ -232,27 +280,28 @@ public class StoryService : IStoryService
         return true;
     }
 
-    private static StoryDto MapToStoryDto(DomainStory story, Func<string?, string?>? cover = null)
+    private static StoryDto MapToStoryDto(DomainStory story, Func<string?, string?>? cover = null) =>
+        Fill(new StoryDto(), story, cover);
+
+    private static T Fill<T>(T dto, DomainStory story, Func<string?, string?>? cover) where T : StoryDto
     {
-        return new StoryDto
-        {
-            Id = story.Id,
-            Title = story.Title ?? string.Empty,
-            Description = story.Description,
-            Content = story.Content,
-            CoverImageUrl = cover is null ? story.CoverImageUrl : cover(story.CoverImageUrl),
-            Genre = story.Genre,
-            MoralLesson = story.MoralLesson,
-            AgeBand = story.AgeBand,
-            Language = story.Language,
-            Source = story.Source.ToString(),
-            OutputMode = StoryPlatform.Application.Common.StoryOutputModeContract.Format(story.OutputMode),
-            Status = story.Status.ToString(),
-            IsPublished = story.IsPublished,
-            AuthorUserId = story.AuthorUserId,
-            AuthorName = story.Author?.FullName ?? story.Author?.Username,
-            CreatedAt = story.CreatedAt,
-            UpdatedAt = story.UpdatedAt
-        };
+        dto.Id = story.Id;
+        dto.Title = story.Title ?? string.Empty;
+        dto.Description = story.Description;
+        dto.Content = story.Content;
+        dto.CoverImageUrl = cover is null ? story.CoverImageUrl : cover(story.CoverImageUrl);
+        dto.Genre = story.Genre;
+        dto.MoralLesson = story.MoralLesson;
+        dto.AgeBand = story.AgeBand;
+        dto.Language = story.Language;
+        dto.Source = story.Source.ToString();
+        dto.OutputMode = StoryPlatform.Application.Common.StoryOutputModeContract.Format(story.OutputMode);
+        dto.Status = story.Status.ToString();
+        dto.IsPublished = story.IsPublished;
+        dto.AuthorUserId = story.AuthorUserId;
+        dto.AuthorName = story.Author?.FullName ?? story.Author?.Username;
+        dto.CreatedAt = story.CreatedAt;
+        dto.UpdatedAt = story.UpdatedAt;
+        return dto;
     }
 }

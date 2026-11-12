@@ -25,6 +25,51 @@ def gcloud(*args):
     return subprocess.check_output([GCLOUD, *args], text=True).strip()
 
 
+def resolve_image_digest(manifest, build_digest):
+    """Select the runnable platform digest from a pinned BuildKit index.
+
+    Cloud Run resolves indexes to linux/amd64 manifests. Deploy that exact child
+    so revision verification can keep its strict immutable-image comparison.
+    """
+    digest_pattern = r'sha256:[a-f0-9]{64}'
+    if not isinstance(build_digest, str) or not re.fullmatch(digest_pattern, build_digest):
+        raise RuntimeError('Image resolution requires an immutable SHA-256 build digest.')
+    if not isinstance(manifest, dict) or manifest.get('schemaVersion') != 2:
+        raise RuntimeError('Image resolution requires an OCI or Docker schema-2 manifest.')
+    image_types = ('application/vnd.oci.image.manifest.v1+json',
+                   'application/vnd.docker.distribution.manifest.v2+json')
+    if manifest.get('mediaType') in image_types:
+        return build_digest
+    if manifest.get('mediaType') not in ('application/vnd.oci.image.index.v1+json',
+                                       'application/vnd.docker.distribution.manifest.list.v2+json'):
+        raise RuntimeError('Unsupported image manifest media type.')
+    manifests = manifest.get('manifests')
+    if not isinstance(manifests, list):
+        raise RuntimeError('Image index is missing its manifest descriptors.')
+    candidates = []
+    for entry in manifests:
+        if not isinstance(entry, dict):
+            continue
+        platform = entry.get('platform') or {}
+        annotations = entry.get('annotations') or {}
+        if (not isinstance(platform, dict) or not isinstance(annotations, dict)
+                or platform.get('os') != 'linux' or platform.get('architecture') != 'amd64'
+                or annotations.get('vnd.docker.reference.type') == 'attestation-manifest'):
+            continue
+        digest = entry.get('digest')
+        if entry.get('mediaType') not in image_types or not isinstance(digest, str) or not re.fullmatch(digest_pattern, digest):
+            raise RuntimeError('The linux/amd64 descriptor must contain an immutable image-manifest digest.')
+        candidates.append(digest)
+    if len(candidates) != 1:
+        raise RuntimeError('Image index must contain exactly one runnable linux/amd64 image manifest.')
+    return candidates[0]
+
+
+def image_digest(args):
+    manifest = json.loads(Path(args.manifest).read_text(encoding='utf-8'))
+    print(resolve_image_digest(manifest, args.build_digest))
+
+
 def request(url, token=None, key=None, body=None):
     headers = {}
     if token:
@@ -140,7 +185,10 @@ def service_description(args, allow_missing=False):
                '--region=' + args.region, '--format=json']
     result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode:
-        if allow_missing and 'NOT_FOUND' in result.stderr:
+        missing_service = 'NOT_FOUND' in result.stderr or re.search(
+            r'^ERROR: \(gcloud\.run\.services\.describe\) Cannot find service \['
+            + re.escape(args.service) + r'\]\s*$', result.stderr, re.MULTILINE)
+        if allow_missing and missing_service:
             return None
         raise RuntimeError('Cannot read Cloud Run service; check its existence and deployment permissions.')
     return json.loads(result.stdout)
@@ -308,6 +356,10 @@ def deploy_candidate(args, values):
 def main():
     parser = argparse.ArgumentParser()
     commands = parser.add_subparsers(dest="command", required=True)
+    p = commands.add_parser('image-digest')
+    p.add_argument('--manifest', required=True, help='Raw registry manifest fetched by its immutable build digest.')
+    p.add_argument('--build-digest', required=True)
+    p.set_defaults(func=image_digest)
     p = commands.add_parser("package")
     p.add_argument("--output", required=True)
     p.set_defaults(func=package)

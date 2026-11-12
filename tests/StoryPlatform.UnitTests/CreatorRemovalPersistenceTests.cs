@@ -4,6 +4,9 @@ using Moq;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.Moderation.Services;
+using StoryPlatform.Application.Features.Notifications.DTOs;
+using StoryPlatform.Application.Features.Notifications.Interfaces;
+using StoryPlatform.Application.Features.Notifications.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.Infrastructure.Persistence;
@@ -18,7 +21,7 @@ public sealed class CreatorRemovalPersistenceTests
     {
         protected override void OnModelCreating(ModelBuilder b)
         {
-            Type[] types = [typeof(UserAccount), typeof(Story), typeof(StoryVersion), typeof(ModerationItem)];
+            Type[] types = [typeof(UserAccount), typeof(Story), typeof(StoryVersion), typeof(ModerationItem), typeof(Notification)];
             foreach (var type in types)
                 foreach (var p in type.GetProperties().Where(p => typeof(BaseEntity).IsAssignableFrom(p.PropertyType) ||
                     p.PropertyType.IsGenericType && p.PropertyType.GetGenericArguments().Any(t => typeof(BaseEntity).IsAssignableFrom(t))))
@@ -42,15 +45,17 @@ public sealed class CreatorRemovalPersistenceTests
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task Decision_after_opening_claim_persists_with_real_tracking(bool approve)
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task Decision_after_opening_claim_persists_with_real_tracking(bool approve, bool failNotification)
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         await using var db = new Db(new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options);
         await db.Database.EnsureCreatedAsync();
         db.Users.Add(new() { Id = 2, Role = UserRole.Moderator, Status = AccountStatus.Active });
+        db.Users.Add(new() { Id = 1, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
         db.Stories.Add(new() { Id = 44, Scope = StoryScope.Creator, AuthorUserId = 1,
             IsPublished = true, AuthoringRevisionToken = "original", ChildVisibleAt = DateTime.UtcNow });
         db.StoryVersions.Add(new() { Id = 90, StoryId = 44, IsCurrent = true, Title = "Story", Content = "Content" });
@@ -65,6 +70,7 @@ public sealed class CreatorRemovalPersistenceTests
         uow.Setup(x => x.Repository<Story>()).Returns(real.Repository<Story>());
         uow.Setup(x => x.Repository<StoryVersion>()).Returns(real.Repository<StoryVersion>());
         uow.Setup(x => x.Repository<ModerationItem>()).Returns(real.Repository<ModerationItem>());
+        uow.Setup(x => x.Repository<Notification>()).Returns(real.Repository<Notification>());
         uow.Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.BeginTransactionAsync(ct));
         // PostgreSQL advisory lock alone is replaced; queries, tracking and transactions are real.
         uow.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.SaveChangesAsync(ct));
@@ -72,7 +78,29 @@ public sealed class CreatorRemovalPersistenceTests
         uow.Setup(x => x.RollbackTransactionAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.RollbackTransactionAsync(ct));
         var audit = new Mock<IAuditLogWriter>();
         var queue = new ModerationQueueService(uow.Object, audit.Object);
-        var service = new CreatorPublicationService(uow.Object, queue, audit.Object);
+        var publisher = new Mock<INotificationRealtimePublisher>();
+        var storage = new NotificationService(uow.Object, publisher.Object);
+        var notifications = new Mock<INotificationService>();
+        notifications.Setup(x => x.CreateStoredAsync(It.IsAny<int>(), It.IsAny<NotificationType>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns(async (int recipient, NotificationType type, string? payload, CancellationToken ct) =>
+            {
+                var dto = await storage.CreateStoredAsync(recipient, type, payload, ct);
+                if (failNotification) throw new InvalidOperationException("Notification storage failed after save");
+                return dto;
+            });
+        var service = new CreatorPublicationService(uow.Object, queue, audit.Object, notifications: notifications.Object, publisher: publisher.Object);
+
+        if (failNotification)
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.DecideRemovalAsync(2, 23,
+                new() { Approve = approve, Reason = "Decision", RowVersion = 1 }));
+            db.ChangeTracker.Clear();
+            Assert.True((await db.Stories.SingleAsync()).IsPublished);
+            Assert.Equal(ModerationItemStatus.Claimed, (await db.Set<ModerationItem>().SingleAsync()).Status);
+            Assert.Empty(await db.Set<Notification>().ToListAsync());
+            publisher.Verify(x => x.PublishAsync(It.IsAny<int>(), It.IsAny<NotificationDto>(), It.IsAny<CancellationToken>()), Times.Never);
+            return;
+        }
 
         var result = await service.DecideRemovalAsync(2, 23, new() { Approve = approve, Reason = "Decision", RowVersion = 1 });
 
@@ -89,5 +117,7 @@ public sealed class CreatorRemovalPersistenceTests
         if (!approve) Assert.Equal("original", story.AuthoringRevisionToken);
         if (approve) { Assert.Null(story.ChildVisibleAt); Assert.NotEqual("original", story.AuthoringRevisionToken); }
         Assert.Equal("Content", (await db.StoryVersions.SingleAsync()).Content);
+        Assert.Equal(1, (await db.Set<Notification>().SingleAsync()).RecipientUserId);
+        publisher.Verify(x => x.PublishAsync(1, It.IsAny<NotificationDto>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 }

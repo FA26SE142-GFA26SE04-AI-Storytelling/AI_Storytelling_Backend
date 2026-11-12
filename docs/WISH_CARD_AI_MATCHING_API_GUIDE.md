@@ -186,9 +186,11 @@ Không thêm cột/bảng, không cần migration hoặc backfill audit. Các Co
 
 ## Dữ liệu seed để bắt đầu kiểm thử
 
-Các file `61_wish_cards.sql` đến `64_story_wish_suggestions.sql` chứa 26 thẻ, 5 điều ước,
-5 mapping Moderator và 1 gợi ý mẫu. Wish **4** thuộc child **1**: Mèo Mun, ngôi nhà,
-giúp bạn và biết lắng nghe. Wish **5** thuộc child **3**, để Parent tự điền bài học.
+Các file `56_wish_cards.sql` đến `59_story_wish_suggestions.sql` chứa 26 thẻ, 5 điều ước,
+16 mapping Moderator và 2 gợi ý mẫu. Mapping gồm 5 dòng cho truyện riêng 1, 3 và 11 dòng cho
+truyện Creator 13, 14, 16, 17 (dùng để xem `storyImpact` khi Moderator duyệt gỡ / công khai lại).
+Wish **4** thuộc child **1**: Mèo Mun, ngôi nhà, giúp bạn và biết lắng nghe; đã có sẵn gợi ý
+truyện Creator 16. Wish **5** thuộc child **3**, để Parent tự điền bài học.
 Hai wish này bắt đầu `Pending`, chưa có request/job AI; gọi generation-form rồi create-story
 bằng Parent có quyền trên hồ sơ tương ứng. Mapping `Source=Ai` chỉ được tạo khi gọi ai-match thật.
 

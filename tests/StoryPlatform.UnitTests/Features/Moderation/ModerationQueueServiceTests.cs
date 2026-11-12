@@ -168,6 +168,7 @@ public class ModerationQueueServiceTests
     public async Task ClaimAsync_AdminFallback_ExcludesCreatorAndInactiveModerators()
     {
         var item = PendingItem(createdBy: _moderatorA.Id);
+        item.ItemType = ModerationItemType.RoadmapTemplateReview;
         ReturnItem(item);
         _moderatorB.Status = AccountStatus.Suspended;
         var users = new[] { _admin, _moderatorA, _moderatorB, _parent };
@@ -325,6 +326,7 @@ public class ModerationQueueServiceTests
     public async Task ClaimAsync_AdministratorWhenNoEligibleModerator_Succeeds()
     {
         var item = PendingItem(createdBy: _moderatorA.Id);
+        item.ItemType = ModerationItemType.RoadmapTemplateReview;
         ReturnItem(item);
         SetEligibleModeratorCount(0);
 
@@ -332,6 +334,20 @@ public class ModerationQueueServiceTests
 
         Assert.Equal(_admin.Id, result.ClaimedByUserId);
         Assert.Equal(ModerationItemStatus.Claimed, item.Status);
+    }
+
+    [Fact]
+    public async Task ClaimAsync_AdministratorCannotClaimContentReport_EvenWithoutModerators()
+    {
+        var item = PendingItem(createdBy: _moderatorA.Id);
+        ReturnItem(item);
+        SetEligibleModeratorCount(0);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.ClaimAsync(_admin.Id, item.Id));
+
+        Assert.Equal(ModerationItemStatus.Pending, item.Status);
+        Assert.Null(item.ClaimedByUserId);
+        _itemRepoMock.Verify(r => r.Update(It.IsAny<ModerationItem>()), Times.Never);
     }
 
     [Fact]

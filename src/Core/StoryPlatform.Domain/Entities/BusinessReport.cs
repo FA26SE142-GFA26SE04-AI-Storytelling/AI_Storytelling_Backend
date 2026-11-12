@@ -13,4 +13,10 @@ public class BusinessReport : BaseEntity
     public int ReadingSessionsCompleted { get; set; } = 0;
     public ReportStatus Status { get; set; } = ReportStatus.Compiling;
     public DateTime? PublishedAt { get; set; }
+
+    /// <summary>Số liệu doanh thu của kỳ, chụp lại lúc tạo báo cáo (JSON của RevenueStatisticsDto); null với báo cáo cũ.</summary>
+    public string? RevenueSnapshotJson { get; set; }
+
+    /// <summary>Số liệu tài khoản người dùng của kỳ, chụp lại lúc tạo báo cáo (JSON của UserAccountStatisticsDto); null với báo cáo cũ.</summary>
+    public string? AccountSnapshotJson { get; set; }
 }

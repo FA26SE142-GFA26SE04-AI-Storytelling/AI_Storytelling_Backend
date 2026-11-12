@@ -63,11 +63,21 @@ public class SubscriptionService : ISubscriptionService
                         var active = await GetActiveAsync(userId, now, cancellationToken);
                         await _tokenQuotaService.GrantAsync(
                             userId, CreditSource.AddOn, CreditsFor(transaction, plan), active?.EndAt ?? paidAt.AddMonths(1),
-                            transaction.Id, cancellationToken);
+                            transaction.Id, cancellationToken: cancellationToken);
+                        break;
+                    case PlanType.CreatorPack:
+                        // Gói Creator (2f): cộng lượt AI và lượt gửi duyệt vào quota Creator, không hết hạn.
+                        await _tokenQuotaService.GrantAsync(
+                            userId, CreditSource.CreatorPack, CreditsFor(transaction, plan), expiresAt: null, transaction.Id,
+                            CreditType.AI, cancellationToken);
+                        await _tokenQuotaService.GrantAsync(
+                            userId, CreditSource.CreatorPack, transaction.SubmitCredits ?? plan.SubmitCredits, expiresAt: null,
+                            transaction.Id, CreditType.Submit, cancellationToken);
                         break;
                     default:
                         await _tokenQuotaService.GrantAsync(
-                            userId, CreditSource.Legacy, CreditsFor(transaction, plan), expiresAt: null, transaction.Id, cancellationToken);
+                            userId, CreditSource.Legacy, CreditsFor(transaction, plan), expiresAt: null, transaction.Id,
+                            cancellationToken: cancellationToken);
                         break;
                 }
 
@@ -131,7 +141,7 @@ public class SubscriptionService : ISubscriptionService
                 var plan = await _unitOfWork.Repository<SubscriptionPlan>().GetByIdAsync(next.PlanId, cancellationToken);
                 await _tokenQuotaService.GrantAsync(
                     userId, CreditSource.Cycle, payment?.AiCredits ?? plan?.AiCredits ?? 0, next.EndAt, next.PaymentId,
-                    cancellationToken);
+                    cancellationToken: cancellationToken);
             }
         }
 
@@ -213,7 +223,8 @@ public class SubscriptionService : ISubscriptionService
         var started = NewSubscription(transaction, plan, SubscriptionStatus.Active, paidAt);
         await repo.AddAsync(started, cancellationToken);
         await _tokenQuotaService.GrantAsync(
-            userId, CreditSource.Cycle, CreditsFor(transaction, plan), started.EndAt, transaction.Id, cancellationToken);
+            userId, CreditSource.Cycle, CreditsFor(transaction, plan), started.EndAt, transaction.Id,
+            cancellationToken: cancellationToken);
 
         if (!isUpgrade)
         {

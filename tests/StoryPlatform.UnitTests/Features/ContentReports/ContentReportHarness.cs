@@ -44,6 +44,8 @@ public sealed class ContentReportHarness
     public readonly List<ReadingRoadmapItem> RoadmapItems = new();
     public readonly List<SafetyPolicy> Policies = new();
     public readonly List<SafetyPolicyCategory> PolicyCategories = new();
+    public readonly List<CreditLot> CreditLots = new();
+    public readonly List<CreditUsage> CreditUsages = new();
 
     public SafetyPolicy AddPolicy(int childId, int maxLength = 0)
     {
@@ -68,6 +70,8 @@ public sealed class ContentReportHarness
     {
         Back(Policies);
         Back(PolicyCategories);
+        Back(CreditLots);
+        Back(CreditUsages);
         Back(Users);
         Back(Stories);
         Back(Versions);

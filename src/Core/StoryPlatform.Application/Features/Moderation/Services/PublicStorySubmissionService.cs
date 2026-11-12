@@ -1,4 +1,5 @@
 using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Features.TokenQuota.Interfaces;
 using StoryPlatform.Application.Common;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
@@ -18,17 +19,20 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
     private readonly IMediaReadinessService _mediaReadinessService;
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly IGrayZoneEvaluator? _moderation;
+    private readonly ITokenQuotaService? _tokenQuotaService;
 
     public PublicStorySubmissionService(
         IUnitOfWork unitOfWork,
         IModerationQueueService queueService,
         IMediaReadinessService mediaReadinessService,
-        IAuditLogWriter auditLogWriter, IGrayZoneEvaluator? moderation = null)
+        IAuditLogWriter auditLogWriter, IGrayZoneEvaluator? moderation = null,
+        ITokenQuotaService? tokenQuotaService = null)
     {
         _unitOfWork = unitOfWork;
         _queueService = queueService;
         _mediaReadinessService = mediaReadinessService;
         _auditLogWriter = auditLogWriter; _moderation = moderation;
+        _tokenQuotaService = tokenQuotaService;
     }
 
     public Task<PublicStorySubmissionResultDto> SubmitAsync(int actorUserId, SubmitPublicStoryRequestDto request, CancellationToken cancellationToken = default) =>
@@ -157,6 +161,16 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
         _unitOfWork.Repository<StoryVersion>().Update(version);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+        // Lượt gửi duyệt (Luồng 2, 2f): trừ 1 lượt, hết lượt thì 409 và cả yêu cầu bị huỷ cùng transaction.
+        // Gửi lại sau khi bị yêu cầu sửa không trừ thêm.
+        if (_tokenQuotaService != null)
+        {
+            await _tokenQuotaService.ChargeSubmissionAsync(
+                actor.Id, item.Id,
+                returned?.Status == ModerationItemStatus.ChangesRequested ? returned.Id : null,
+                cancellationToken);
+        }
+
         await _auditLogWriter.LogAsync(
             actor.Id,
             "PublicStorySubmitted",
@@ -226,6 +240,12 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        // Creator rút yêu cầu khi còn chờ duyệt thì được hoàn lượt gửi duyệt (Luồng 2, 2f).
+        if (_tokenQuotaService != null)
+        {
+            await _tokenQuotaService.RefundSubmissionAsync(item.Id, cancellationToken);
+        }
+
         await _auditLogWriter.LogAsync(
             actor.Id,
             "PublicStoryWithdrawn",

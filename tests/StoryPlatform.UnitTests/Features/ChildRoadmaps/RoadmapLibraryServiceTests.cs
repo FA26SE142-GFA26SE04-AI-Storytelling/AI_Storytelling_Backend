@@ -295,4 +295,49 @@ public class RoadmapLibraryServiceTests
         await Assert.ThrowsAsync<ConflictException>(() =>
             _sut.CopyAsync(Owner, 1, Copy(new[] { Child })));
     }
+
+    // ---------- F-17: sao chép bộ truyện mẫu theo gói ----------
+
+    private RoadmapLibraryService WithBenefits(bool canCopy)
+    {
+        var benefits = new Mock<StoryPlatform.Application.Features.PlanBenefits.Interfaces.IPlanBenefitService>();
+        benefits.Setup(service => service.GetForUserAsync(Owner, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StoryPlatform.Application.Features.PlanBenefits.DTOs.PlanBenefitsDto { MaxChildProfiles = 4, CanCopyRoadmapTemplates = canCopy });
+        var eligibility = new ChildRoadmapEligibility(_h.UnitOfWork.Object);
+        return new RoadmapLibraryService(
+            _h.UnitOfWork.Object, new ChildProfileAccessGuard(_h.UnitOfWork.Object), eligibility,
+            new ChildRoadmapInserter(_h.UnitOfWork.Object), new ChildRoadmapAdvancer(_h.UnitOfWork.Object, eligibility),
+            new ChildRoadmapNotifier(_h.UnitOfWork.Object, _h.Notifications.Object), _h.Audit.Object, benefits.Object);
+    }
+
+    [Fact]
+    public async Task Copy_FreeAccount_ThrowsForbidden()
+    {
+        Published();
+
+        var error = await Assert.ThrowsAsync<ForbiddenException>(() => WithBenefits(canCopy: false).CopyAsync(Owner, 1, Copy(new[] { Child })));
+
+        Assert.Contains("sao chép bộ truyện mẫu", error.Message);
+        Assert.Empty(WaitingStories());
+    }
+
+    [Fact]
+    public async Task Copy_ReadingPlan_Proceeds()
+    {
+        Published();
+
+        await WithBenefits(canCopy: true).CopyAsync(Owner, 1, Copy(new[] { Child }));
+
+        Assert.NotEmpty(_h.Items);
+    }
+
+    [Fact]
+    public async Task Preview_FreeAccount_Allowed()
+    {
+        Published();
+
+        var plan = await WithBenefits(canCopy: false).PreviewAsync(Owner, 1, Copy(new[] { Child }));
+
+        Assert.Single(plan.Children);
+    }
 }

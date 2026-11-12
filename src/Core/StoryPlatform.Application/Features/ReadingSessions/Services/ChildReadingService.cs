@@ -6,6 +6,8 @@ using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Application.Features.ChildProfiles.ReadingSlots;
+using StoryPlatform.Application.Features.PlanBenefits.Interfaces;
 
 namespace StoryPlatform.Application.Features.ReadingSessions.Services;
 
@@ -16,14 +18,24 @@ public class ChildReadingService : IChildReadingService
     private readonly IChildRoadmapProgressRecorder _recorder;
     private readonly IChildMediaUrlSigner? _mediaUrls;
     private readonly IChildRewardService _rewards;
+    private readonly IReadingSlotService? _readingSlots;
+    private readonly IPlanBenefitService? _planBenefits;
+    private readonly IPlanUsageService? _planUsage;
 
+    /// <param name="readingSlots">Hồ sơ đang chỉ xem (vượt số hồ sơ của gói) không mở được phiên đọc; null thì không chặn.</param>
     public ChildReadingService(
         IUnitOfWork unitOfWork,
         IChildRoadmapEligibility eligibility,
         IChildRoadmapProgressRecorder recorder,
         IChildRewardService rewards,
-        IChildMediaUrlSigner? mediaUrls = null)
+        IChildMediaUrlSigner? mediaUrls = null,
+        IReadingSlotService? readingSlots = null,
+        IPlanBenefitService? planBenefits = null,
+        IPlanUsageService? planUsage = null)
     {
+        _readingSlots = readingSlots;
+        _planBenefits = planBenefits;
+        _planUsage = planUsage;
         _mediaUrls = mediaUrls;
         _unitOfWork = unitOfWork;
         _eligibility = eligibility;
@@ -34,13 +46,20 @@ public class ChildReadingService : IChildReadingService
     public async Task<ReadingSessionStartedDto> StartAsync(
         int childProfileId, string sessionKey, StartReadingRequestDto request, CancellationToken ct = default)
     {
-        if ((request.StoryId.HasValue ? 1 : 0) + (request.CommunitySubmissionId.HasValue ? 1 : 0) + (request.FamilyConfirmationId.HasValue ? 1 : 0) != 1)
+        if ((request.StoryId.HasValue ? 1 : 0) + (request.FamilyConfirmationId.HasValue ? 1 : 0) != 1)
         {
             throw new BadRequestException("Hãy chọn đúng một truyện để đọc.");
         }
 
         var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(childProfileId, ct);
         if (child == null || child.IsDeleted || child.Status != ChildProfileStatus.Active)
+        {
+            throw new ForbiddenException(ChildReadingPolicy.ProfileUnavailableMessage);
+        }
+
+        // Hồ sơ chỉ xem: trẻ thấy thông điệp chung, không lộ lý do gói (Bước 3.0).
+        if (_readingSlots != null
+            && !(await _readingSlots.GetReadableProfileIdsAsync(child.OwnerUserId, ct)).Contains(child.Id))
         {
             throw new ForbiddenException(ChildReadingPolicy.ProfileUnavailableMessage);
         }
@@ -56,20 +75,7 @@ public class ChildReadingService : IChildReadingService
         var (story, version) = await ResolveTargetAsync(childProfileId, request, ct);
         var versionId = version.Id;
 
-        // Community approval pins a version. Check its content without mutating the tracked source story.
-        var eligibilityStory = request.CommunitySubmissionId.HasValue
-            ? new Story
-            {
-                Id = story.Id,
-                Scope = story.Scope,
-                Status = story.Status,
-                IsPublished = story.IsPublished,
-                ArchivedAt = story.ArchivedAt,
-                AgeBand = story.AgeBand,
-                Content = version.Content
-            }
-            : story;
-        if (!request.FamilyConfirmationId.HasValue && await _eligibility.EvaluateAsync(child, eligibilityStory, ct) != null)
+        if (!request.FamilyConfirmationId.HasValue && await _eligibility.EvaluateAsync(child, story, ct) != null)
         {
             throw new ForbiddenException(ChildReadingPolicy.StoryUnavailableMessage);
         }
@@ -78,6 +84,13 @@ public class ChildReadingService : IChildReadingService
         await _unitOfWork.BeginTransactionAsync(ct);
         try
         {
+            // Mức Miễn phí: tối đa N truyện thư viện mới mỗi tuần, tính chung cả tài khoản. Khoá theo tài khoản
+            // (trước khoá truyện) để hai trẻ mở cùng lúc không vượt giới hạn.
+            if (request.StoryId.HasValue && story.Scope == StoryScope.Creator)
+            {
+                await EnsureWeeklyLibraryAllowanceAsync(child.OwnerUserId, storyId, ct);
+            }
+
             // Serialize starts for this story before checking sessions and the unique progress row.
             await _unitOfWork.AcquireTransactionLockAsync(storyId, ct);
             if (request.FamilyConfirmationId is int lockedGrant)
@@ -136,6 +149,34 @@ public class ChildReadingService : IChildReadingService
         }
     }
 
+    public const string WeeklyLibraryLimitMessageFormat =
+        "Đã mở đủ {0} truyện thư viện mới trong tuần. Truyện mới mở lại vào thứ Hai.";
+
+    private async Task EnsureWeeklyLibraryAllowanceAsync(int ownerUserId, int storyId, CancellationToken ct)
+    {
+        if (_planBenefits == null || _planUsage == null)
+        {
+            return;
+        }
+
+        var limit = (await _planBenefits.GetForUserAsync(ownerUserId, ct)).WeeklyNewLibraryStories;
+        if (limit == null)
+        {
+            return;
+        }
+
+        await _unitOfWork.AcquireTransactionLockAsync(-(1_000_000_000 + ownerUserId), ct);
+        if (await _planUsage.HasOpenedLibraryStoryAsync(ownerUserId, storyId, ct))
+        {
+            return;
+        }
+
+        if (await _planUsage.CountNewLibraryStoriesThisWeekAsync(ownerUserId, DateTime.UtcNow, ct) >= limit)
+        {
+            throw new ForbiddenException(string.Format(WeeklyLibraryLimitMessageFormat, limit));
+        }
+    }
+
     private async Task<(Story Story, StoryVersion Version)> ResolveTargetAsync(
         int childProfileId, StartReadingRequestDto request, CancellationToken ct)
     {
@@ -146,31 +187,9 @@ public class ChildReadingService : IChildReadingService
             var family = await new ParentStoryPackageReader(_unitOfWork, new StoryPlatform.Application.Features.ChildProfiles.Profiles.Services.ChildProfileAccessGuard(_unitOfWork)).AuthorizeAsync(childProfileId, familyId, ct);
             return (family.Story, family.Version);
         }
-        if (request.CommunitySubmissionId.HasValue)
-        {
-            var submissionId = request.CommunitySubmissionId.Value;
-            var item = await _unitOfWork.Repository<ModerationItem>().FirstOrDefaultAsync(
-                value => value.Id == submissionId
-                         && value.ItemType == ModerationItemType.CommunitySubmission
-                         && value.Status == ModerationItemStatus.Approved
-                         && !value.IsDeleted
-                         && value.StoryId.HasValue
-                         && value.StoryVersionId.HasValue,
-                cancellationToken: ct);
-            if (item == null)
-            {
-                throw new ForbiddenException(ChildReadingPolicy.StoryUnavailableMessage);
-            }
-
-            story = await _unitOfWork.Repository<Story>().GetByIdAsync(item.StoryId!.Value, ct);
-            version = await _unitOfWork.Repository<StoryVersion>().GetByIdAsync(item.StoryVersionId!.Value, ct);
-        }
-        else
-        {
-            var found = await ChildStoryLookup.FindAsync(_unitOfWork, childProfileId, request.StoryId!.Value, ct);
-            story = found?.Story;
-            version = found?.Version;
-        }
+        var found = await ChildStoryLookup.FindAsync(_unitOfWork, childProfileId, request.StoryId!.Value, ct);
+        story = found?.Story;
+        version = found?.Version;
 
         if (story == null || story.IsDeleted || version == null || version.IsDeleted || version.StoryId != story.Id)
         {

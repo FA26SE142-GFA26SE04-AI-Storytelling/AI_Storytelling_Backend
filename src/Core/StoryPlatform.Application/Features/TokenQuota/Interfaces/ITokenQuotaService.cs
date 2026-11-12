@@ -30,5 +30,23 @@ public interface ITokenQuotaService
     /// </summary>
     Task<bool> GrantAsync(
         int userId, CreditSource source, int amount, DateTime? expiresAt, int? paymentId,
-        CancellationToken cancellationToken = default);
+        CreditType creditType = CreditType.AI, CancellationToken cancellationToken = default);
+
+    /// <summary>Creator gửi yêu cầu tạo truyện AI: 409 nếu hết lượt (hạn mức tháng và lượt Gói Creator).</summary>
+    Task EnsureCreatorWithinQuotaAsync(int creatorUserId, CancellationToken cancellationToken = default);
+
+    /// <summary>Trừ 1 lượt AI của Creator, hạn mức tháng trước; chạy trong transaction của nơi gọi.</summary>
+    Task IncrementCreatorUsageAsync(int creatorUserId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Trừ 1 lượt gửi duyệt cho mục kiểm duyệt vừa tạo (409 nếu hết). Gửi lại sau khi bị yêu cầu sửa
+    /// (<paramref name="changesRequestedItemId"/>) thì không trừ thêm. Chạy trong transaction của nơi gọi.
+    /// </summary>
+    Task ChargeSubmissionAsync(
+        int creatorUserId, int moderationItemId, int? changesRequestedItemId, CancellationToken cancellationToken = default);
+
+    /// <summary>Hoàn lượt gửi duyệt của mục bị từ chối hoặc rút khi còn chờ; gọi lại không hoàn hai lần.</summary>
+    Task RefundSubmissionAsync(int moderationItemId, CancellationToken cancellationToken = default);
+
+    Task<CreatorQuotaDto> GetCreatorQuotaAsync(int creatorUserId, CancellationToken cancellationToken = default);
 }

@@ -87,7 +87,7 @@ public class StoryArchiveConsequencesTests
         Assert.Equal(
             new[]
             {
-                typeof(PendingSubmissionArchiveHandler), typeof(CommunitySubmissionArchiveHandler),
+                typeof(PendingSubmissionArchiveHandler),
                 typeof(ReadingSessionArchiveHandler), typeof(ChildRoadmapArchiveHandler)
             },
             handlers);

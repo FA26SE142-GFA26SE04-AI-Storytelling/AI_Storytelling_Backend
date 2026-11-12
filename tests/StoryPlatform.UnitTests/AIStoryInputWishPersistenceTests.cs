@@ -97,7 +97,7 @@ public sealed partial class AIStoryInputServiceTests
         {
             Type[] types = [typeof(UserAccount), typeof(ChildProfile), typeof(LearningProfile), typeof(SafetyPolicy),
                 typeof(SafetyPolicyCategory), typeof(ContentCategory), typeof(LearningProfileTopic),
-                typeof(StoryWish), typeof(Story), typeof(StoryGenerationRequest), typeof(StoryGenerationJob), typeof(CreditLot)];
+                typeof(StoryWish), typeof(Story), typeof(StoryGenerationRequest), typeof(StoryGenerationJob), typeof(CreditLot), typeof(CreditUsage)];
             foreach (var type in types)
                 foreach (var property in type.GetProperties().Where(p => typeof(BaseEntity).IsAssignableFrom(p.PropertyType) ||
                     p.PropertyType.IsGenericType && p.PropertyType.GetGenericArguments().Any(t => typeof(BaseEntity).IsAssignableFrom(t))))

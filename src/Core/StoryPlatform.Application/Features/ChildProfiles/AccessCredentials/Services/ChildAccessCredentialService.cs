@@ -14,6 +14,8 @@ using StoryPlatform.Application.Features.ReadingSessions;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
+using StoryPlatform.Application.Features.ChildProfiles.ReadingSlots;
+
 namespace StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Services;
 
 public class ChildAccessCredentialService : IChildAccessCredentialService
@@ -36,15 +38,19 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
     private readonly IClientAttemptLimiter _attemptLimiter;
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly IChildRoadmapEligibility _eligibility;
+    private readonly IReadingSlotService? _readingSlots;
 
+    /// <param name="readingSlots">Chặn hồ sơ đang chỉ xem khi vượt số hồ sơ của gói; null thì không chặn.</param>
     public ChildAccessCredentialService(
         IUnitOfWork unitOfWork,
         IChildProfileAccessGuard accessGuard,
         IJwtTokenGenerator jwtTokenGenerator,
         IClientAttemptLimiter attemptLimiter,
         IAuditLogWriter auditLogWriter,
-        IChildRoadmapEligibility eligibility)
+        IChildRoadmapEligibility eligibility,
+        IReadingSlotService? readingSlots = null)
     {
+        _readingSlots = readingSlots;
         _unitOfWork = unitOfWork;
         _accessGuard = accessGuard;
         _jwtTokenGenerator = jwtTokenGenerator;
@@ -186,8 +192,8 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
             throw new BadRequestException("Mã EasyLogin không hợp lệ hoặc đã bị thu hồi.");
         }
 
-        // Hồ sơ không Active chặn bằng thông điệp chung, KHÔNG tính là quét sai.
-        await EnsureChildCanEnterAsync(credential.ChildProfileId, cancellationToken);
+        // Hồ sơ không Active hoặc đang chỉ xem chặn bằng thông điệp chung, KHÔNG tính là quét sai.
+        await EnsureChildCanEnterAsync(credential.ChildProfileId, cancellationToken, childFacing: true);
         _attemptLimiter.Reset(clientKey);
 
         return await StartChildSessionAsync(
@@ -224,9 +230,16 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
 
         var options = new List<StoryHandoverChildDto>();
         int? storyOwnerChildId = null;
+        var readable = _readingSlots == null
+            ? null
+            : await _readingSlots.GetReadableProfileIdsAsync(currentUserId, cancellationToken);
         foreach (var child in children.OrderBy(value => value.Id))
         {
             var (skipCode, story) = await EvaluateStoryForChildAsync(child, storyId, cancellationToken);
+            if (skipCode == null && readable != null && !readable.Contains(child.Id))
+            {
+                skipCode = ReadingSlotService.ViewOnlySkipCode;
+            }
             if (story is { Scope: StoryScope.Parent })
             {
                 storyOwnerChildId = story.ChildProfileId;
@@ -242,10 +255,10 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
             });
         }
 
-        var readable = options.Where(option => option.CanRead).ToList();
-        int? suggested = readable.Any(option => option.ChildProfileId == storyOwnerChildId)
+        var readableOptions = options.Where(option => option.CanRead).ToList();
+        int? suggested = readableOptions.Any(option => option.ChildProfileId == storyOwnerChildId)
             ? storyOwnerChildId
-            : readable.Count == 1 ? readable[0].ChildProfileId : null;
+            : readableOptions.Count == 1 ? readableOptions[0].ChildProfileId : null;
 
         return new StoryHandoverOptionsDto
         {
@@ -305,14 +318,21 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
     }
 
     // Hold Mode (Luồng 4) cố ý không chặn ở đây — trẻ cần vào đọc để được tự mở khoá khi cải thiện.
+    /// <param name="childFacing">Trẻ tự quét QR: dùng thông điệp chung, không lộ lý do nghiệp vụ (Bước 3.0).</param>
     private async Task<ChildProfile> EnsureChildCanEnterAsync(
-        int childProfileId, CancellationToken cancellationToken)
+        int childProfileId, CancellationToken cancellationToken, bool childFacing = false)
     {
         var profile = await _unitOfWork.Repository<ChildProfile>()
             .GetByIdAsync(childProfileId, cancellationToken);
         if (profile == null || profile.IsDeleted || profile.Status != ChildProfileStatus.Active)
         {
             throw new ForbiddenException(ChildEntryBlockedMessage);
+        }
+
+        if (_readingSlots != null
+            && !(await _readingSlots.GetReadableProfileIdsAsync(profile.OwnerUserId, cancellationToken)).Contains(profile.Id))
+        {
+            throw new ForbiddenException(childFacing ? ChildEntryBlockedMessage : ReadingSlotService.ViewOnlyMessage);
         }
 
         return profile;
@@ -348,6 +368,7 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
     private static string HandoverMessageFor(string skipCode) => skipCode switch
     {
         ChildRoadmapSkipCodes.ProfileInactive => "Hồ sơ của bé đang không hoạt động.",
+        ReadingSlotService.ViewOnlySkipCode => ReadingSlotService.ViewOnlyMessage,
         ChildRoadmapSkipCodes.BlockedTopic => "Truyện thuộc chủ đề đã bị chặn với bé này.",
         ChildRoadmapSkipCodes.WrongAge => "Truyện không đúng độ tuổi của bé này.",
         ChildRoadmapSkipCodes.TooLong => "Truyện dài hơn mức cho phép của bé này.",

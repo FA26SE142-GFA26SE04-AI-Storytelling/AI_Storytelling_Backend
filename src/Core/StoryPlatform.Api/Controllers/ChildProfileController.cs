@@ -8,6 +8,7 @@ using StoryPlatform.Application.Features.ChildProfiles.Profiles.DTOs;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.AuditLogs.DTOs;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.ReadingSlots;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -15,13 +16,40 @@ public class ChildProfileController : BaseApiController
 {
     private readonly IChildProfileService _childProfileService;
     private readonly IAuditLogQueryService _auditLogQueryService;
+    private readonly IReadingSlotService _readingSlotService;
 
     public ChildProfileController(
         IChildProfileService childProfileService,
-        IAuditLogQueryService auditLogQueryService)
+        IAuditLogQueryService auditLogQueryService,
+        IReadingSlotService readingSlotService)
     {
         _childProfileService = childProfileService;
         _auditLogQueryService = auditLogQueryService;
+        _readingSlotService = readingSlotService;
+    }
+
+    /// <summary>
+    /// Hồ sơ được đọc / chỉ xem khi số hồ sơ Active vượt số hồ sơ của gói (thường là sau khi về Miễn phí, Luồng 1, 1e).
+    /// </summary>
+    [HttpGet("reading-slots")]
+    [Authorize(Roles = "User")]
+    public async Task<ActionResult<ApiResponse<ReadingSlotsDto>>> GetReadingSlots(CancellationToken cancellationToken)
+    {
+        var result = await _readingSlotService.GetAsync(GetCurrentUserId(), cancellationToken);
+        return HandleResult(result, "Lấy danh sách hồ sơ được đọc thành công.");
+    }
+
+    /// <summary>
+    /// Phụ huynh chọn hồ sơ được tiếp tục đọc; đổi tối đa 1 lần mỗi tuần (giờ Việt Nam), lần sau trả 409.
+    /// Trẻ của hồ sơ chuyển sang chỉ xem bị đăng xuất.
+    /// </summary>
+    [HttpPut("reading-slots")]
+    [Authorize(Roles = "User")]
+    public async Task<ActionResult<ApiResponse<ReadingSlotsDto>>> SelectReadingSlots(
+        [FromBody] SelectReadingSlotsRequestDto request, CancellationToken cancellationToken)
+    {
+        var result = await _readingSlotService.SelectAsync(GetCurrentUserId(), request.ChildProfileIds, cancellationToken);
+        return HandleResult(result, "Cập nhật hồ sơ được đọc thành công.");
     }
 
     /// <summary>

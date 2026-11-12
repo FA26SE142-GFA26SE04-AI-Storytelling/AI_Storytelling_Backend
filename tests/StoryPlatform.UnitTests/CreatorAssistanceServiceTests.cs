@@ -455,6 +455,57 @@ public sealed class CreatorAssistanceServiceTests
     }
 }
 
+public sealed class AssistanceDailyLimitTests
+{
+    private static AssistanceStore Store(int perDay) => new(new CreatorAssistanceOptions { MaximumRequestsPerMinute = 100 }, perDay);
+
+    [Fact]
+    public async Task Create_ParentFreeSixthTaskToday_Throws429DailyLimit()
+    {
+        var s = Store(5);
+        for (var i = 0; i < 5; i++) await s.Create(s.Request with { OperationId = "daily-" + i });
+
+        var error = await Assert.ThrowsAsync<AssistanceException>(() => s.Create(s.Request with { OperationId = "daily-excess" }));
+
+        Assert.Equal(("ASSISTANCE_DAILY_LIMIT", 429), (error.Code, error.StatusCode));
+        Assert.Equal(5, s.Items<StoryAssistanceTask>().Count);
+    }
+
+    [Fact]
+    public async Task Create_CreatorTwentyFirstTaskToday_Throws429()
+    {
+        var s = Store(20);
+        for (var i = 0; i < 20; i++) await s.Create(s.Request with { OperationId = "c-" + i });
+
+        var error = await Assert.ThrowsAsync<AssistanceException>(() => s.Create(s.Request with { OperationId = "c-excess" }));
+
+        Assert.Equal(429, error.StatusCode);
+    }
+
+    [Fact]
+    public async Task Create_ReplaySameOperationId_NotCounted()
+    {
+        var s = Store(1);
+        var first = await s.Create(s.Request with { OperationId = "same" });
+
+        var replay = await s.Create(s.Request with { OperationId = "same" });
+
+        Assert.Equal(first.TaskId, replay.TaskId);
+    }
+
+    [Fact]
+    public async Task Create_TasksFromYesterdayVietnam_NotCounted()
+    {
+        var s = Store(1);
+        var todayStartUtc = StoryPlatform.Application.Common.Time.VietnamTime.StartOfDayUtc(s.Clock.Value.UtcDateTime);
+        s.Items<StoryAssistanceTask>().Add(new StoryAssistanceTask { Id = 900, StoryId = 1, OwnerUserId = 1, CreatedAt = todayStartUtc.AddMinutes(-1) });
+
+        await s.Create(s.Request with { OperationId = "today" });
+
+        Assert.Equal(2, s.Items<StoryAssistanceTask>().Count);
+    }
+}
+
 internal sealed class AssistanceStore
 {
     private readonly Dictionary<Type, object> _data = [];
@@ -473,7 +524,7 @@ internal sealed class AssistanceStore
     public SuggestAssistanceRequest Suggest(int revision) => new() { OperationId = "suggest", ExpectedTaskRevision = revision };
     public Task<AssistanceTaskDto> Create(CreateAssistanceTaskRequest? request = null) => Service.CreateAsync(1, 1, request ?? Request);
     public static AssistanceAiResult Options() => new() { ResultType = "Options", Options = [new("a", "Cooperation", "Friends work together"), new("b", "Persistence", "Try again")], Provider = "fake", Model = "test" };
-    public AssistanceStore(CreatorAssistanceOptions? limits = null)
+    public AssistanceStore(CreatorAssistanceOptions? limits = null, int? writingAssistPerDay = null)
     {
         Register<UserAccount>(); Register<Story>(); Register<StoryVersion>(); Register<StoryAuthoringOperation>(); Register<AuditLog>(); Register<ModerationItem>(); Register<StoryAssistanceTask>(); Register<StoryAssistanceStep>();
         Register<StoryGenerationJob>(); Register<MediaContext>(); Register<ContentCategory>();
@@ -493,7 +544,15 @@ internal sealed class AssistanceStore
         Generate = request => Task.FromResult(request.Mode == "Trial" ? new AssistanceAiResult { ResultType = "Trial", Patch = new("malicious-position", 10000, 50, "Hai bạn cùng sửa xe.", "wrong quote"), Provider = "fake" } : Options());
         var ai = new Mock<ICreatorAssistanceAiClient>();
         ai.Setup(x => x.GenerateAsync(It.IsAny<AssistanceAiRequest>(), It.IsAny<CancellationToken>())).Returns<AssistanceAiRequest, CancellationToken>((r, _) => { Calls++; LastInput = r; return Generate(r); });
-        Service = new(Uow.Object, ai.Object, limits ?? new CreatorAssistanceOptions(), Clock);
+        Mock<StoryPlatform.Application.Features.PlanBenefits.Interfaces.IPlanBenefitService>? benefits = null;
+        if (writingAssistPerDay is int perDay)
+        {
+            benefits = new();
+            benefits.Setup(x => x.GetForUserAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new StoryPlatform.Application.Features.PlanBenefits.DTOs.PlanBenefitsDto { WritingAssistPerDay = perDay });
+        }
+        Service = new(Uow.Object, ai.Object, limits ?? new CreatorAssistanceOptions(), Clock, planBenefits: benefits?.Object,
+            planUsage: benefits == null ? null : new StoryPlatform.Application.Features.PlanBenefits.Services.PlanUsageService(Uow.Object));
         Authoring = new(Uow.Object, new CreatorAuthoringOptions(), new ImportPreviewProtector(new EphemeralDataProtectionProvider()));
     }
     public async Task<(AssistanceTaskDto Task, AssistanceCommandResult Direction, AssistanceCommandResult Trial)> Trial()

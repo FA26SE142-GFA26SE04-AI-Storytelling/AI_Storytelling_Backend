@@ -50,6 +50,53 @@ public class PendingSubmissionArchiveHandlerTests
         return item;
     }
 
+    // ---------- Lượt gửi duyệt của Creator (Luồng 2, 2f) ----------
+
+    private PendingSubmissionArchiveHandler HandlerWithCredits() => new(
+        _h.UnitOfWork.Object, _h.Audit.Object, _h.Notifications.Object,
+        tokenQuotaService: new StoryPlatform.Application.Features.TokenQuota.Services.TokenQuotaService(_h.UnitOfWork.Object));
+
+    private CreditLot PaidFor(ModerationItem item)
+    {
+        var lot = new CreditLot
+        {
+            Id = 1, UserId = ContentReportHarness.CreatorId, CreditType = CreditType.Submit, Source = CreditSource.CreatorPack,
+            Total = 5, Remaining = 4
+        };
+        _h.CreditLots.Add(lot);
+        _h.CreditUsages.Add(new CreditUsage
+        {
+            Id = 1, UserId = ContentReportHarness.CreatorId, LotId = lot.Id, Amount = 1,
+            Reason = CreditUsageReason.PublicSubmission, ModerationItemId = item.Id
+        });
+        return lot;
+    }
+
+    [Fact]
+    public async Task PendingSubmissionWithdrawnByArchive_RefundsItsSubmissionCredit()
+    {
+        var item = Submitted(ModerationItemStatus.Pending);
+        var lot = PaidFor(item);
+
+        await HandlerWithCredits().HandleAsync(Context());
+
+        Assert.Equal(ModerationItemStatus.Withdrawn, item.Status);
+        Assert.Equal(5, lot.Remaining);
+        Assert.NotNull(Assert.Single(_h.CreditUsages).RefundedAt);
+    }
+
+    [Fact]
+    public async Task ClaimedSubmissionClosedByArchive_KeepsItsSubmissionCreditSpent()
+    {
+        var item = Submitted(ModerationItemStatus.Claimed);
+        var lot = PaidFor(item);
+
+        await HandlerWithCredits().HandleAsync(Context());
+
+        Assert.Equal(ModerationItemStatus.Closed, item.Status);
+        Assert.Equal(4, lot.Remaining);
+    }
+
     [Theory]
     [InlineData(ArchivedReason.SafetyConcern)]
     [InlineData(ArchivedReason.Copyright)]

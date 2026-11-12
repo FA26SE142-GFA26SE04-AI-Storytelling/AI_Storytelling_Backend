@@ -44,10 +44,19 @@ public class PaymentService : IPaymentService
     public async Task<List<SubscriptionPlanDto>> ListActivePlansAsync(
         int userId, CancellationToken cancellationToken = default)
     {
+        // Mỗi vai trò chỉ thấy gói đang bán của đối tượng mình; vai trò vận hành không mua gói.
+        var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken);
+        var audience = AudienceOf(user);
+        if (audience == null)
+        {
+            return [];
+        }
+
         var plans = await _unitOfWork.Repository<SubscriptionPlan>().FindAsync(
-            item => item.IsActive && item.PlanType != PlanType.Legacy, cancellationToken: cancellationToken);
-        var hasActivePlan =
-            await _subscriptionService.GetActiveAsync(userId, DateTime.UtcNow, cancellationToken) != null;
+            item => item.IsActive && item.PlanType != PlanType.Legacy && item.Audience == audience,
+            cancellationToken: cancellationToken);
+        var hasActivePlan = audience == PlanAudience.User
+                            && await _subscriptionService.GetActiveAsync(userId, DateTime.UtcNow, cancellationToken) != null;
 
         return plans
             .OrderBy(plan => plan.Id)
@@ -60,10 +69,13 @@ public class PaymentService : IPaymentService
                     Id = plan.Id,
                     Name = plan.Name,
                     PlanType = plan.PlanType.ToString(),
+                    Audience = plan.Audience.ToString(),
                     PriceVnd = plan.PriceVnd,
                     AiCredits = plan.AiCredits,
+                    SubmitCredits = plan.SubmitCredits,
                     IsPurchasable = !locked,
-                    LockedReason = locked ? AddOnLockedReason : null
+                    LockedReason = locked ? AddOnLockedReason : null,
+                    Benefits = BenefitsOf(plan)
                 };
             })
             .ToList();
@@ -81,9 +93,25 @@ public class PaymentService : IPaymentService
 
         var payer = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(payerUserId, cancellationToken)
                     ?? throw new ForbiddenException();
-        if (payer.Role != UserRole.User)
+        var audience = AudienceOf(payer);
+        if (audience == null)
         {
-            throw new ForbiddenException("Chỉ tài khoản phụ huynh mới được mua gói này.");
+            throw new ForbiddenException("Chỉ tài khoản phụ huynh hoặc Content Creator mới được mua gói.");
+        }
+
+        if (plan.Audience != audience)
+        {
+            throw new ForbiddenException(audience == PlanAudience.Creator
+                ? "Content Creator chỉ mua được Gói Creator."
+                : "Gói này chỉ dành cho Content Creator.");
+        }
+
+        // Phụ huynh phải đã xác thực email (tài khoản Active); Creator phải đã được Admin duyệt (Active).
+        if (payer.Status != AccountStatus.Active)
+        {
+            throw new ForbiddenException(audience == PlanAudience.Creator
+                ? "Chỉ Content Creator đã được duyệt mới mua được Gói Creator."
+                : "Hãy xác thực email để kích hoạt tài khoản trước khi mua gói.");
         }
 
         var now = DateTime.UtcNow;
@@ -93,21 +121,25 @@ public class PaymentService : IPaymentService
             throw new ConflictException(AddOnLockedReason);
         }
 
-        // Mỗi tài khoản chỉ có 1 giao dịch gói (Gói Đọc / Gói Sáng tạo) chờ thanh toán; Add-on tính riêng.
-        // Giao dịch Pending đã quá hạn mà worker chưa quét không được chặn giao dịch mới.
+        // Mỗi tài khoản chỉ có 1 giao dịch chờ thanh toán cho mỗi nhóm: gói tháng (Gói Đọc / Gói Sáng tạo), Add-on,
+        // Gói Creator. Giao dịch Pending đã quá hạn mà worker chưa quét không được chặn giao dịch mới.
         var planTypes = await GetPlanTypesAsync(cancellationToken);
         var livePending = await _unitOfWork.Repository<PaymentTransaction>().FindAsync(
             item => item.PayerUserId == payerUserId
                     && item.Status == PaymentStatus.Pending
                     && item.ExpiresAt > now,
             cancellationToken: cancellationToken);
+        var group = PendingGroupOf(plan.PlanType);
         var duplicatePending = livePending.Any(item =>
-            planTypes.TryGetValue(item.PlanId, out var pendingType) && (pendingType == PlanType.AddOn) == isAddOn);
+            planTypes.TryGetValue(item.PlanId, out var pendingType) && PendingGroupOf(pendingType) == group);
         if (duplicatePending)
         {
-            throw new ConflictException(isAddOn
-                ? "Bạn đang có một giao dịch Add-on chờ thanh toán. Hãy hoàn tất hoặc chờ giao dịch đó hết hạn."
-                : "Bạn đang có một giao dịch gói chờ thanh toán. Hãy hoàn tất hoặc chờ giao dịch đó hết hạn.");
+            throw new ConflictException(plan.PlanType switch
+            {
+                PlanType.AddOn => "Bạn đang có một giao dịch Add-on chờ thanh toán. Hãy hoàn tất hoặc chờ giao dịch đó hết hạn.",
+                PlanType.CreatorPack => "Bạn đang có một giao dịch Gói Creator chờ thanh toán. Hãy hoàn tất hoặc chờ giao dịch đó hết hạn.",
+                _ => "Bạn đang có một giao dịch gói chờ thanh toán. Hãy hoàn tất hoặc chờ giao dịch đó hết hạn."
+            });
         }
 
         var transactionCode = GenerateTransactionCode();
@@ -119,6 +151,7 @@ public class PaymentService : IPaymentService
             TransactionCode = transactionCode,
             Amount = plan.PriceVnd,
             AiCredits = plan.AiCredits,
+            SubmitCredits = plan.PlanType == PlanType.CreatorPack ? plan.SubmitCredits : null,
             Status = PaymentStatus.Pending,
             QrCodeUrl = qrCodeUrl,
             ExpiresAt = now.Add(TransactionTtl)
@@ -249,6 +282,118 @@ public class PaymentService : IPaymentService
         .Select(MapToAdminDto)
         .ToList();
 
+    public async Task<AdminSubscriptionPlanDto> CreatePlanAsync(
+        int adminUserId, CreateSubscriptionPlanRequestDto request, CancellationToken cancellationToken = default)
+    {
+        var name = ValidatePlanName(request.Name);
+        if (!Enum.TryParse<PlanAudience>(request.Audience?.Trim(), ignoreCase: true, out var audience) || !Enum.IsDefined(audience)
+            || !Enum.TryParse<PlanType>(request.PlanType?.Trim(), ignoreCase: true, out var planType) || !Enum.IsDefined(planType))
+        {
+            throw new BadRequestException("Đối tượng hoặc loại gói không hợp lệ.");
+        }
+
+        // Phụ huynh: Gói Đọc, Gói Sáng tạo, Add-on; Creator: Gói Creator. Gói Personal cũ không tạo mới.
+        var allowed = audience == PlanAudience.User
+            ? planType is PlanType.Reading or PlanType.Creative or PlanType.AddOn
+            : planType == PlanType.CreatorPack;
+        if (!allowed)
+        {
+            throw new BadRequestException("Loại gói không phù hợp với đối tượng của gói.");
+        }
+
+        ValidatePriceAndCredits(request.PriceVnd, request.AiCredits, request.SubmitCredits);
+        var isCyclePlan = IsCyclePlan(planType);
+        if (isCyclePlan && request.Benefits == null)
+        {
+            throw new BadRequestException("Gói Đọc và Gói Sáng tạo phải có quyền lợi.");
+        }
+
+        var plan = new SubscriptionPlan
+        {
+            Name = name,
+            Audience = audience,
+            PlanType = planType,
+            PriceVnd = request.PriceVnd,
+            AiCredits = request.AiCredits,
+            SubmitCredits = planType == PlanType.CreatorPack ? request.SubmitCredits : 0,
+            IsActive = request.IsActive
+        };
+        if (isCyclePlan)
+        {
+            ApplyBenefits(plan, request.Benefits!);
+        }
+
+        await _unitOfWork.Repository<SubscriptionPlan>().AddAsync(plan, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _auditLogWriter.LogAsync(
+            adminUserId, "SubscriptionPlanCreated", nameof(SubscriptionPlan), plan.Id, null, AuditState(plan), cancellationToken);
+
+        return MapToAdminDto(plan);
+    }
+
+    private static bool IsCyclePlan(PlanType planType) => planType is PlanType.Reading or PlanType.Creative;
+
+    private static string ValidatePlanName(string? value)
+    {
+        var name = value?.Trim() ?? string.Empty;
+        if (name.Length == 0 || name.Length > 150)
+        {
+            throw new BadRequestException("Tên gói phải có từ 1 đến 150 ký tự.");
+        }
+
+        return name;
+    }
+
+    private static void ValidatePriceAndCredits(int priceVnd, int aiCredits, int? submitCredits)
+    {
+        if (priceVnd <= 0)
+        {
+            throw new BadRequestException("Giá gói phải lớn hơn 0.");
+        }
+
+        if (aiCredits < 0 || submitCredits < 0)
+        {
+            throw new BadRequestException("Số lượt không được âm.");
+        }
+    }
+
+    private static void ApplyBenefits(SubscriptionPlan plan, PlanBenefitsInputDto benefits)
+    {
+        if (benefits.MaxChildProfiles < 1)
+        {
+            throw new BadRequestException("Gói phải cho phép ít nhất 1 hồ sơ trẻ.");
+        }
+
+        if (benefits.WeeklyNewLibraryStories < 0 || benefits.ReadAloudPerMonth < 0 || benefits.WritingAssistPerDay < 0)
+        {
+            throw new BadRequestException("Số lần trong quyền lợi không được âm.");
+        }
+
+        plan.MaxChildProfiles = benefits.MaxChildProfiles;
+        plan.WeeklyNewLibraryStories = benefits.WeeklyNewLibraryStories;
+        plan.CanCopyRoadmapTemplates = benefits.CanCopyRoadmapTemplates;
+        plan.ReadAloudPerMonth = benefits.ReadAloudPerMonth;
+        plan.WritingAssistPerDay = benefits.WritingAssistPerDay;
+    }
+
+    private static PlanBenefitsInputDto? BenefitsOf(SubscriptionPlan plan) => IsCyclePlan(plan.PlanType)
+        ? new PlanBenefitsInputDto
+        {
+            MaxChildProfiles = plan.MaxChildProfiles,
+            WeeklyNewLibraryStories = plan.WeeklyNewLibraryStories,
+            CanCopyRoadmapTemplates = plan.CanCopyRoadmapTemplates,
+            ReadAloudPerMonth = plan.ReadAloudPerMonth,
+            WritingAssistPerDay = plan.WritingAssistPerDay
+        }
+        : null;
+
+    private static object AuditState(SubscriptionPlan plan) => new
+    {
+        plan.Name, Audience = plan.Audience.ToString(), PlanType = plan.PlanType.ToString(), plan.PriceVnd, plan.AiCredits,
+        plan.SubmitCredits, plan.IsActive, plan.MaxChildProfiles, plan.WeeklyNewLibraryStories,
+        plan.CanCopyRoadmapTemplates, plan.ReadAloudPerMonth, plan.WritingAssistPerDay
+    };
+
     public async Task<AdminSubscriptionPlanDto> UpdatePlanAsync(
         int adminUserId, int planId, UpdateSubscriptionPlanRequestDto request, CancellationToken cancellationToken = default)
     {
@@ -256,32 +401,27 @@ public class PaymentService : IPaymentService
         var plan = await repo.FirstOrDefaultAsync(item => item.Id == planId, cancellationToken: cancellationToken)
                    ?? throw new NotFoundException("Gói Subscription", planId);
 
-        var name = request.Name?.Trim() ?? string.Empty;
-        if (name.Length == 0 || name.Length > 150)
-        {
-            throw new BadRequestException("Tên gói phải có từ 1 đến 150 ký tự.");
-        }
-
-        if (request.PriceVnd <= 0)
-        {
-            throw new BadRequestException("Giá gói phải lớn hơn 0.");
-        }
-
-        if (request.AiCredits < 0)
-        {
-            throw new BadRequestException("Số lượt AI không được âm.");
-        }
+        var name = ValidatePlanName(request.Name);
+        ValidatePriceAndCredits(request.PriceVnd, request.AiCredits, request.SubmitCredits);
 
         if (plan.PlanType == PlanType.Legacy && request.IsActive)
         {
             throw new BadRequestException("Gói Personal cũ đã ngừng bán và không thể mở bán lại.");
         }
 
-        // Giao dịch đã tạo giữ Amount và AiCredits chốt lúc tạo, nên thay đổi chỉ áp dụng cho giao dịch tạo sau đó.
-        var beforeState = new { plan.Name, plan.PriceVnd, plan.AiCredits, plan.IsActive };
+        // Giao dịch đã tạo giữ Amount và số lượt chốt lúc tạo, nên thay đổi chỉ áp dụng cho giao dịch tạo sau đó.
+        var beforeState = AuditState(plan);
+        if (request.Benefits != null && IsCyclePlan(plan.PlanType))
+        {
+            // Kiểm tra trên bản nháp để quyền lợi sai không làm thay đổi gói.
+            ApplyBenefits(new SubscriptionPlan(), request.Benefits);
+            ApplyBenefits(plan, request.Benefits);
+        }
+
         plan.Name = name;
         plan.PriceVnd = request.PriceVnd;
         plan.AiCredits = request.AiCredits;
+        plan.SubmitCredits = request.SubmitCredits ?? plan.SubmitCredits;
         plan.IsActive = request.IsActive;
         plan.UpdatedAt = DateTime.UtcNow;
         repo.Update(plan);
@@ -289,7 +429,7 @@ public class PaymentService : IPaymentService
 
         await _auditLogWriter.LogAsync(
             adminUserId, "SubscriptionPlanUpdated", nameof(SubscriptionPlan), plan.Id,
-            beforeState, new { plan.Name, plan.PriceVnd, plan.AiCredits, plan.IsActive }, cancellationToken);
+            beforeState, AuditState(plan), cancellationToken);
 
         return MapToAdminDto(plan);
     }
@@ -378,10 +518,25 @@ public class PaymentService : IPaymentService
         Id = plan.Id,
         Name = plan.Name,
         PlanType = plan.PlanType.ToString(),
+        Audience = plan.Audience.ToString(),
         PriceVnd = plan.PriceVnd,
         AiCredits = plan.AiCredits,
-        IsActive = plan.IsActive
+        SubmitCredits = plan.SubmitCredits,
+        IsActive = plan.IsActive,
+        Benefits = BenefitsOf(plan)
     };
+
+    /// <summary>Phụ huynh mua gói phụ huynh, Content Creator mua Gói Creator; vai trò khác không mua gói.</summary>
+    private static PlanAudience? AudienceOf(UserAccount? user) => user?.Role switch
+    {
+        UserRole.User => PlanAudience.User,
+        UserRole.ContentCreator => PlanAudience.Creator,
+        _ => null
+    };
+
+    /// <summary>Nhóm giao dịch chờ: mỗi nhóm chỉ có một giao dịch Pending còn hạn cho mỗi tài khoản.</summary>
+    private static PlanType PendingGroupOf(PlanType planType) =>
+        planType is PlanType.Reading or PlanType.Creative ? PlanType.Reading : planType;
 
     /// <summary>
     /// Dạng Admin của một giao dịch: giữ đúng trạng thái và QR đang lưu (không tự đổi Pending quá hạn thành

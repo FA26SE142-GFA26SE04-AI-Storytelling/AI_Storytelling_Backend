@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Features.PlanBenefits.Services;
 using Moq;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
@@ -550,5 +551,97 @@ public class TokenQuotaServiceTests
     public async Task GetQuotaForUserAsync_UserNotFound_ThrowsNotFound()
     {
         await Assert.ThrowsAsync<NotFoundException>(() => _sut.GetQuotaForUserAsync(999));
+    }
+    // ---------- Lịch sử trừ lượt (credit_usages) ----------
+
+    [Fact]
+    public async Task IncrementUsageAsync_RecordsOneUsageAgainstTheConsumedLot()
+    {
+        SeedChild();
+        SeedLot(CreditSource.Legacy, remaining: 5);
+        var addOn = SeedLot(CreditSource.AddOn, remaining: 2, expiresAt: DateTime.UtcNow.AddDays(3));
+
+        await _sut.IncrementUsageAsync(ChildId);
+
+        var usage = Assert.Single(_store.Items<CreditUsage>());
+        Assert.Equal(
+            (OwnerId, addOn.Id, 1, CreditUsageReason.StoryRequest),
+            (usage.UserId, usage.LotId, usage.Amount, usage.Reason));
+    }
+
+    [Fact]
+    public async Task IncrementUsageAsync_NoUsableLot_RecordsNothing()
+    {
+        SeedChild();
+        SeedLot(CreditSource.Trial, remaining: 0);
+
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.IncrementUsageAsync(ChildId));
+
+        Assert.Empty(_store.Items<CreditUsage>());
+    }
+
+    [Fact]
+    public async Task AdjustAsync_Deduct_RecordsUsagePerLotTouched()
+    {
+        SeedAdmin();
+        var legacy = SeedLot(CreditSource.Legacy, remaining: 5);
+        var addOn = SeedLot(CreditSource.AddOn, remaining: 2, expiresAt: DateTime.UtcNow.AddDays(3));
+
+        await _sut.AdjustAsync(AdminId, Adjust(-3, "Thu hồi lượt cấp nhầm"));
+
+        Assert.Equal(
+            [(addOn.Id, 2), (legacy.Id, 1)],
+            _store.Items<CreditUsage>().Select(usage => (usage.LotId, usage.Amount)));
+        Assert.All(_store.Items<CreditUsage>(), usage => Assert.Equal(CreditUsageReason.AdminDeduction, usage.Reason));
+    }
+
+    [Fact]
+    public async Task AdjustAsync_Grant_RecordsNoUsage()
+    {
+        SeedAdmin();
+
+        await _sut.AdjustAsync(AdminId, Adjust(3));
+
+        Assert.Empty(_store.Items<CreditUsage>());
+    }
+
+    [Fact]
+    public async Task AdjustAsync_RejectedDeduction_RecordsNoUsage()
+    {
+        SeedAdmin();
+        SeedLot(CreditSource.Legacy, remaining: 1);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.AdjustAsync(AdminId, Adjust(-2)));
+
+        Assert.Empty(_store.Items<CreditUsage>());
+    }
+
+    [Fact]
+    public async Task EnsureWithinQuotaAsync_UsesConfiguredTrialCredits()
+    {
+        SeedChild();
+        _store.Seed(new PlanSettings { Id = PlanSettings.SingletonId, TrialAiCredits = 2 });
+
+        await new TokenQuotaService(_store, planSettings: new PlanSettingsProvider(_store)).EnsureWithinQuotaAsync(ChildId);
+
+        Assert.Equal(2, Assert.Single(_store.Items<CreditLot>()).Total);
+    }
+
+    [Fact]
+    public async Task GetMyQuota_IncludesBenefitsAndUsage()
+    {
+        SeedChild();
+        _store.Seed(new Story { Id = 70, Scope = StoryScope.Creator, IsPublished = true, Status = StoryStatus.Ready });
+        _store.Seed(new ReadingSession { Id = 1, ChildProfileId = ChildId, StoryId = 70, StartedAt = DateTime.UtcNow });
+        _store.Seed(new StoryAssistanceTask { Id = 1, OwnerUserId = OwnerId, CreatedAt = DateTime.UtcNow });
+        var settings = new PlanSettingsProvider(_store);
+        var sut = new TokenQuotaService(_store, planSettings: settings,
+            planBenefits: new PlanBenefitService(_store, settings), planUsage: new PlanUsageService(_store));
+
+        var quota = await sut.GetMyQuotaAsync(OwnerId);
+
+        Assert.Equal(("Free", 1, (int?)3, 1, 1),
+            (quota.Benefits!.Tier, quota.Benefits.MaxChildProfiles, quota.Benefits.WeeklyNewLibraryStories,
+                quota.NewLibraryStoriesThisWeek, quota.WritingAssistsToday));
     }
 }

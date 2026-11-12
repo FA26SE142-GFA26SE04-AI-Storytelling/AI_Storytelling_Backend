@@ -1,3 +1,5 @@
+using StoryPlatform.Application.Features.PlanBenefits.DTOs;
+
 namespace StoryPlatform.Application.Features.TokenQuota.DTOs;
 
 public class TokenQuotaStatusDto
@@ -31,6 +33,12 @@ public class MyQuotaDto
     public int AddOnCredits { get; set; }
     public int OtherCredits { get; set; }
     public int TotalRemaining { get; set; }
+    /// <summary>Quyền lợi đang áp dụng: gói chu kỳ đang hiệu lực hoặc mức Miễn phí (Luồng 2, 2h).</summary>
+    public PlanBenefitsDto? Benefits { get; set; }
+    /// <summary>Số truyện thư viện mới đã mở trong tuần (tính từ 00:00 thứ Hai giờ Việt Nam).</summary>
+    public int NewLibraryStoriesThisWeek { get; set; }
+    /// <summary>Số lần dùng trợ lý viết hôm nay (giờ Việt Nam).</summary>
+    public int WritingAssistsToday { get; set; }
 }
 
 /// <summary>Admin cấp (Amount dương) hoặc trừ (Amount âm) lượt cho một tài khoản phụ huynh; Reason bắt buộc.</summary>
@@ -52,4 +60,26 @@ public class CreditAdjustmentDto
     public DateTime CreatedAt { get; set; }
     /// <summary>Tổng lượt còn lại ngay sau lần điều chỉnh; chỉ có ở response của thao tác điều chỉnh.</summary>
     public int? TotalRemainingAfter { get; set; }
+}
+
+/// <summary>Lượt còn lại của Content Creator (Luồng 2, 2f): lượt AI và lượt gửi duyệt, tách hạn mức tháng và lượt đã mua.</summary>
+public class CreatorQuotaDto
+{
+    public CreatorCreditBalanceDto AiCredits { get; set; } = new();
+    public CreatorCreditBalanceDto SubmitCredits { get; set; } = new();
+    /// <summary>Thời điểm hạn mức tháng hết hạn và được cấp lại (00:00 ngày 1 tháng sau, giờ Việt Nam, lưu UTC).</summary>
+    public DateTime MonthlyAllowanceResetsAt { get; set; }
+}
+
+public class CreatorCreditBalanceDto
+{
+    /// <summary>Số lượt hạn mức mỗi tháng.</summary>
+    public int MonthlyAllowance { get; set; }
+    /// <summary>Lượt hạn mức tháng còn lại (dùng trước).</summary>
+    public int MonthlyRemaining { get; set; }
+    /// <summary>Lượt mua từ Gói Creator còn lại (không hết hạn).</summary>
+    public int PurchasedRemaining { get; set; }
+    /// <summary>Lượt từ nguồn khác (ví dụ Admin cấp).</summary>
+    public int OtherRemaining { get; set; }
+    public int TotalRemaining { get; set; }
 }

@@ -298,10 +298,24 @@ Enum CreditSource {
   AddOn
   Legacy
   AdminAdjust
+  CreatorMonthly
+  CreatorPack
+}
+
+Enum CreditUsageReason {
+  StoryRequest
+  AdminDeduction
+  PublicSubmission
 }
 
 Enum CreditType {
   AI
+  Submit
+}
+
+Enum PlanAudience {
+  User
+  Creator
 }
 
 Enum PlanType {
@@ -309,6 +323,7 @@ Enum PlanType {
   Reading
   Creative
   AddOn
+  CreatorPack
 }
 
 Enum PolicyRule {
@@ -658,6 +673,7 @@ Table badges {
 }
 
 Table business_reports {
+  AccountSnapshotJson text
   CreatedAt timestamptz [not null]
   Id int [pk, not null, increment]
   IsDeleted boolean [not null]
@@ -665,6 +681,7 @@ Table business_reports {
   PeriodStart timestamptz [not null]
   PublishedAt timestamptz
   ReadingSessionsCompleted int [not null]
+  RevenueSnapshotJson text
   Status ReportStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
   StoriesApproved int [not null]
   StoriesGenerated int [not null]
@@ -713,14 +730,15 @@ Table child_profiles {
   AvatarId varchar(100) [not null]
   CreatedAt timestamptz [not null]
   Id int [pk, not null, increment]
+  Indexes {
   IsDeleted boolean [not null]
   Language varchar(10) [not null]
   Nickname varchar(150) [not null]
   OwnerUserId int [not null]
+    OwnerUserId
+  ReadingSlotSelectedAt timestamptz
   Status ChildProfileStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
   UpdatedAt timestamptz
-  Indexes {
-    OwnerUserId
   }
 }
 
@@ -846,9 +864,29 @@ Table credit_lots {
   UpdatedAt timestamptz
   UserId int [not null]
   Indexes {
-    PaymentId [unique, note: 'filtered: PaymentId IS NOT NULL']
+    (PaymentId, CreditType) [unique, note: 'filtered: PaymentId IS NOT NULL']
+    (UserId, CreditType, ExpiresAt) [unique, note: 'filtered: Source = CreatorMonthly AND NOT IsDeleted']
     UserId [unique, note: 'filtered: Source = Trial AND NOT IsDeleted']
     (UserId, CreditType)
+  }
+}
+
+Table credit_usages {
+  Amount int [not null]
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  LotId int [not null]
+  ModerationItemId int
+  Reason CreditUsageReason [not null, note: 'EF PostgreSQL type: character varying(20)']
+  RefundedAt timestamptz
+  UpdatedAt timestamptz
+  UserId int [not null]
+  Indexes {
+    CreatedAt
+    LotId
+    ModerationItemId
+    UserId
   }
 }
 
@@ -1276,6 +1314,7 @@ Table payment_transactions {
   QrCodeUrl text
   SepayTransactionId text
   Status PaymentStatus [not null, note: 'EF PostgreSQL type: character varying(30)']
+  SubmitCredits int
   TransactionCode varchar(100) [not null]
   UpdatedAt timestamptz
   Indexes {
@@ -1283,6 +1322,28 @@ Table payment_transactions {
     PlanId
     TransactionCode [unique]
   }
+}
+
+Table plan_settings {
+  CreatedAt timestamptz [not null]
+  CreativeFundPercent int [not null]
+  CreatorMonthlyAiCredits int [not null]
+  CreatorMonthlySubmitCredits int [not null]
+  CreatorWritingAssistPerDay int [not null]
+  FreeCanCopyRoadmapTemplates boolean [not null]
+  FreeMaxChildProfiles int [not null]
+  FreeReadAloudPerMonth int
+  FreeWeeklyNewLibraryStories int
+  FreeWritingAssistPerDay int [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  MinimumReadSeconds int [not null]
+  PartnerMonthlyAiCredits int [not null]
+  PartnerMonthlySubmitCredits int [not null]
+  PartnerWritingAssistPerDay int [not null]
+  ReadingFundPercent int [not null]
+  TrialAiCredits int [not null]
+  UpdatedAt timestamptz
 }
 
 Table prompt_catalog_versions {
@@ -1953,14 +2014,21 @@ Table story_wishes {
 
 Table subscription_plans {
   AiCredits int [not null]
+  Audience PlanAudience [not null, note: 'EF PostgreSQL type: character varying(20)']
+  CanCopyRoadmapTemplates boolean [not null]
   CreatedAt timestamptz [not null]
   Id int [pk, not null, increment]
   IsActive boolean [not null]
   IsDeleted boolean [not null]
+  MaxChildProfiles int [not null]
   Name varchar(150) [not null]
-  PriceVnd int [not null]
   PlanType PlanType [not null, note: 'EF PostgreSQL type: character varying(20)']
+  PriceVnd int [not null]
+  ReadAloudPerMonth int
+  SubmitCredits int [not null]
   UpdatedAt timestamptz
+  WeeklyNewLibraryStories int
+  WritingAssistPerDay int [not null]
 }
 
 Table telemetry_logs {
@@ -1998,6 +2066,7 @@ Table user_accounts {
   CommitmentAcceptedAt timestamptz
   CreatedAt timestamptz [not null]
   Email varchar(150) [not null]
+    Email [unique]
   EmailVerificationFailedAttempts int [not null]
   EmailVerificationTokenExpiresAt timestamptz
   EmailVerificationTokenHash varchar(64)
@@ -2006,6 +2075,7 @@ Table user_accounts {
   FailedLoginAttempts int [not null]
   FullName varchar(100) [not null]
   Id int [pk, not null, increment]
+  Indexes {
   IsDeleted boolean [not null]
   LastLoginAt timestamptz
   LockedUntil timestamptz
@@ -2026,8 +2096,6 @@ Table user_accounts {
   TokenVersion int [not null]
   UpdatedAt timestamptz
   Username varchar(50) [not null]
-  Indexes {
-    Email [unique]
     Username [unique]
   }
 }
@@ -2118,6 +2186,9 @@ Ref: credit_adjustments.AdminId > user_accounts.Id
 Ref: credit_adjustments.UserId > user_accounts.Id
 Ref: credit_lots.PaymentId > payment_transactions.Id
 Ref: credit_lots.UserId > user_accounts.Id
+Ref: credit_usages.LotId > credit_lots.Id
+Ref: credit_usages.ModerationItemId > moderation_items.Id
+Ref: credit_usages.UserId > user_accounts.Id
 Ref: illustration_beats.StorySceneId > story_scenes.Id
 Ref: learning_artifact_generation_batches.RequestedByUserId > user_accounts.Id
 Ref: learning_artifact_generation_batches.RootJobId > story_generation_jobs.Id

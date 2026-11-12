@@ -327,6 +327,32 @@ public class SubscriptionServiceTests
         Assert.Equal(4, Lots.Single(lot => lot.PaymentId == renewal.Id).Remaining);
     }
 
+    // ---------- ApplyPaidTransactionAsync: Gói Creator ----------
+
+    [Fact]
+    public async Task Apply_CreatorPack_GrantsAiAndSubmissionCreditsThatNeverExpire_Once()
+    {
+        _store.Seed(new SubscriptionPlan
+        {
+            Id = 5, Name = "Gói Creator", PlanType = PlanType.CreatorPack, Audience = PlanAudience.Creator,
+            PriceVnd = 99000, AiCredits = 6, SubmitCredits = 20
+        });
+        var transaction = PaidTransaction(5);
+        transaction.AiCredits = 6;
+        transaction.SubmitCredits = 20;
+        Plan(5).SubmitCredits = 30;   // sửa gói sau khi tạo giao dịch: giao dịch giữ số đã chốt
+
+        await _sut.ApplyPaidTransactionAsync(transaction, Plan(5), Now);
+        await _sut.ApplyPaidTransactionAsync(transaction, Plan(5), Now.AddMinutes(1));
+
+        Assert.Equal(
+            ["AI:CreatorPack:6:-", "Submit:CreatorPack:20:-"],
+            Lots.OrderBy(lot => lot.CreditType).Select(lot =>
+                $"{lot.CreditType}:{lot.Source}:{lot.Remaining}:{(lot.ExpiresAt == null ? "-" : "x")}"));
+        Assert.All(Lots, lot => Assert.Equal(transaction.Id, lot.PaymentId));
+        Assert.Empty(Subscriptions);
+    }
+
     // ---------- ApplyPaidTransactionAsync: idempotent, transaction ----------
 
     [Theory]
@@ -360,7 +386,7 @@ public class SubscriptionServiceTests
         var quota = new Mock<ITokenQuotaService>();
         quota.Setup(service => service.GrantAsync(
                 It.IsAny<int>(), It.IsAny<CreditSource>(), It.IsAny<int>(), It.IsAny<DateTime?>(), It.IsAny<int?>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<CreditType>(),                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("simulated grant failure"));
         var sut = CreateSut(quota.Object);
 

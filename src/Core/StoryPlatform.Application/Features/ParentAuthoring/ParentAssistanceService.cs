@@ -4,10 +4,12 @@ using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.CreatorAssistance;
 using StoryPlatform.Application.Features.CreatorAssistance.Interfaces;
 using StoryPlatform.Application.Features.CreatorAssistance.Services;
+using StoryPlatform.Application.Features.PlanBenefits.Interfaces;
 
 namespace StoryPlatform.Application.Features.ParentAuthoring;
 
 public sealed class ParentAssistanceService(IUnitOfWork uow, ICreatorAssistanceAiClient ai,
     CreatorAssistanceOptions options, TimeProvider clock, IChildProfileAccessGuard guard,
-    AssistanceCancellationRegistry cancellations, ILogger<ParentAssistanceService> logger)
-    : StoryAssistanceService(uow, ai, options, clock, cancellations, logger, new ParentAssistanceAccessPolicy(uow, guard));
+    AssistanceCancellationRegistry cancellations, ILogger<ParentAssistanceService> logger,
+    IPlanBenefitService? planBenefits = null, IPlanUsageService? planUsage = null)
+    : StoryAssistanceService(uow, ai, options, clock, cancellations, logger, new ParentAssistanceAccessPolicy(uow, guard), planBenefits, planUsage);

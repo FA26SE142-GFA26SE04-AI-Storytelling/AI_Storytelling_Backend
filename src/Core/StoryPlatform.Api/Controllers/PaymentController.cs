@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.Payments.DTOs;
 using StoryPlatform.Application.Features.Payments.Interfaces;
+using StoryPlatform.Application.Features.PlanBenefits.DTOs;
+using StoryPlatform.Application.Features.PlanBenefits.Interfaces;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -13,11 +15,14 @@ public class PaymentController : BaseApiController
 {
     private readonly IPaymentService _paymentService;
     private readonly IPaymentReconciliationService _reconciliationService;
+    private readonly IPlanSettingsService _planSettingsService;
 
-    public PaymentController(IPaymentService paymentService, IPaymentReconciliationService reconciliationService)
+    public PaymentController(
+        IPaymentService paymentService, IPaymentReconciliationService reconciliationService, IPlanSettingsService planSettingsService)
     {
         _paymentService = paymentService;
         _reconciliationService = reconciliationService;
+        _planSettingsService = planSettingsService;
     }
 
     /// <summary>
@@ -119,7 +124,22 @@ public class PaymentController : BaseApiController
     }
 
     /// <summary>
-    /// Administrator sửa tên, giá, số lượt AI và bật hoặc tắt bán một gói (có audit log). Giao dịch đã tạo không đổi.
+    /// Administrator tạo gói mới: đối tượng (User/Creator), loại, giá, số lượt và quyền lợi (bắt buộc với Gói Đọc,
+    /// Gói Sáng tạo). Gói không bao giờ bị xoá, chỉ tắt bán. Có audit log.
+    /// </summary>
+    [HttpPost("admin/plans")]
+    [Authorize(Roles = "Administrator")]
+    public async Task<ActionResult<ApiResponse<AdminSubscriptionPlanDto>>> CreatePlan(
+        [FromBody] CreateSubscriptionPlanRequestDto request, CancellationToken cancellationToken)
+    {
+        var result = await _paymentService.CreatePlanAsync(GetCurrentUserId(), request, cancellationToken);
+        return StatusCode(StatusCodes.Status201Created,
+            ApiResponse<AdminSubscriptionPlanDto>.Ok(result, "Tạo gói thành công."));
+    }
+
+    /// <summary>
+    /// Administrator sửa tên, giá, số lượt AI, quyền lợi và bật hoặc tắt bán một gói (có audit log).
+    /// Giao dịch đã tạo không đổi; quyền lợi mới áp dụng ngay cho người đang dùng gói.
     /// </summary>
     [HttpPut("admin/plans/{planId:int}")]
     [Authorize(Roles = "Administrator")]
@@ -128,6 +148,30 @@ public class PaymentController : BaseApiController
     {
         var result = await _paymentService.UpdatePlanAsync(GetCurrentUserId(), planId, request, cancellationToken);
         return HandleResult(result, "Cập nhật gói thành công.");
+    }
+
+    /// <summary>
+    /// Administrator xem cấu hình chung: tỷ lệ quỹ Creator, hạn mức tháng Creator, lượt dùng thử,
+    /// thời gian đọc tối thiểu và quyền lợi mức Miễn phí (Luồng 5, 5a).
+    /// </summary>
+    [HttpGet("admin/settings")]
+    [Authorize(Roles = "Administrator")]
+    public async Task<ActionResult<ApiResponse<PlanSettingsDto>>> GetSettings(CancellationToken cancellationToken)
+    {
+        var result = await _planSettingsService.GetAsync(cancellationToken);
+        return HandleResult(result, "Lấy cấu hình gói thành công.");
+    }
+
+    /// <summary>
+    /// Administrator sửa cấu hình chung (có audit log trước/sau). Báo cáo đã Published và lô hạn mức đã cấp giữ số cũ.
+    /// </summary>
+    [HttpPut("admin/settings")]
+    [Authorize(Roles = "Administrator")]
+    public async Task<ActionResult<ApiResponse<PlanSettingsDto>>> UpdateSettings(
+        [FromBody] UpdatePlanSettingsRequestDto request, CancellationToken cancellationToken)
+    {
+        var result = await _planSettingsService.UpdateAsync(GetCurrentUserId(), request, cancellationToken);
+        return HandleResult(result, "Cập nhật cấu hình gói thành công.");
     }
 
     /// <summary>

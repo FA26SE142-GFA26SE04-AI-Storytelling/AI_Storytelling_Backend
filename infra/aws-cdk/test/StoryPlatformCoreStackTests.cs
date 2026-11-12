@@ -494,10 +494,9 @@ public class StoryPlatformCoreStackTests
         // URL canonical (bỏ dấu / cuối) vừa là BaseUrl vừa là audience của ID token Cloud Run.
         Assert.Contains("\"Name\":\"AIService__BaseUrl\",\"Value\":\"https://taletale-ai-production-example.a.run.app\"", json);
         Assert.Contains("\"Name\":\"AIService__IdTokenAudience\",\"Value\":\"https://taletale-ai-production-example.a.run.app\"", json);
-        Assert.Contains("\"Name\":\"AIService__InternalApiKey\"", json);
-        Assert.Contains(":AiInternalApiKey::", json);
-        Assert.Contains("\"Name\":\"AIService__GoogleCredentialsJson\"", json);
-        Assert.Contains(":AiGoogleCredentialsJson::", json);
+        // Mỗi biến phải trỏ đúng khoá của nó trong secret: đổi chéo hai khoá thì test phải đỏ.
+        Assert.Matches("\"Name\":\"AIService__InternalApiKey\",\"ValueFrom\":(?:(?!\"Name\":).)*:AiInternalApiKey::", json);
+        Assert.Matches("\"Name\":\"AIService__GoogleCredentialsJson\",\"ValueFrom\":(?:(?!\"Name\":).)*:AiGoogleCredentialsJson::", json);
     }
 
     [Fact]

@@ -14,7 +14,8 @@ public sealed class AIServiceOptions
     public string IdTokenAudience { get; set; } = string.Empty;
 
     /// <summary>
-    /// Nội dung JSON credential Google (service account hoặc workload identity) dùng để xin ID token.
+    /// Nội dung JSON khoá service account Google dùng để xin ID token. Chỉ hỗ trợ loại này: cấu hình
+    /// workload identity federation không xin được ID token với thư viện Google hiện dùng.
     /// Để trống thì dùng Application Default Credentials. Là secret: chỉ nạp qua Secrets Manager / biến môi trường.
     /// </summary>
     public string GoogleCredentialsJson { get; set; } = string.Empty;

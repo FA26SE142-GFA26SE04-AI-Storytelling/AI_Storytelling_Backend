@@ -242,9 +242,9 @@ Core sends the ID token automatically when `AIService:IdTokenAudience` is set
      `gcloud run services describe taletale-ai-production --region asia-southeast1 --format='value(status.url)'`.
    - Create a dedicated identity for Core (for example service account `taletale-core-invoker`) and
      grant it only `roles/run.invoker` on that one service. Do not add `allUsers`.
-   - Produce the credential JSON for that identity (a service-account key, or a workload identity
-     federation config that trusts the ECS task role). Handle it as a secret; never commit it or
-     paste it into chat.
+   - Produce a service-account key JSON for that identity. Core supports only this credential
+     type: a workload identity federation config cannot mint the ID token Cloud Run needs with the
+     current Google auth library. Handle the key as a secret; never commit it or paste it into chat.
 2. **AWS secret**: add two keys to `storyplatform/core/app-secrets` with the read-edit-write
    procedure above (`put-secret-value` replaces the whole JSON):
    - `AiInternalApiKey`: must equal the value of the Secret Manager secret the AI API reads.
@@ -257,4 +257,7 @@ Core sends the ID token automatically when `AIService:IdTokenAudience` is set
    a 200 from the AI API. A 401/403 from Cloud Run means the ID token or Invoker grant is wrong; a
    401 from the AI API itself means the internal key does not match.
 
-To roll back, deploy without the `aiServiceBaseUrl` context.
+To roll back, remove `aiServiceBaseUrl` from `cdk.json` (and any other persisted context, such as
+`cdk.context.json` or `~/.cdk.json`) if it was saved there, then deploy without the
+`--context aiServiceBaseUrl=...` argument. A persisted value is still applied when the argument is
+omitted, so check `cdk diff` shows the four `AIService__*` settings being removed.

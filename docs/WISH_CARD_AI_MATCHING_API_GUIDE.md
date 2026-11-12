@@ -67,6 +67,32 @@ không tự xóa mapping cũ; Moderator xem bằng `GET .../wish-cards` và gỡ
 bằng `DELETE .../wish-cards/{wishCardId}`. Audit chỉ lưu ID, fingerprint và model;
 bằng chứng trả trong response, không có cột mới để lưu bằng chứng.
 
+## Cảnh báo gắn thiếu thẻ
+
+```text
+GET /api/v1/moderation/stories/{storyId}/wish-cards/coverage
+```
+
+Role `Moderator,Administrator`. Gợi ý điều ước chỉ xét truyện khớp thẻ Nhân vật hoặc Nơi chốn,
+nên truyện thiếu cả hai sẽ không bao giờ được gợi ý. Chỉ tính thẻ đang dùng (`IsActive`, chưa xóa).
+Không xét trạng thái duyệt/công khai của truyện và không chặn thao tác gắn/gỡ.
+
+```json
+{
+  "success": true,
+  "data": {
+    "storyId": 16,
+    "canBeSuggested": false,
+    "hasCharacterCard": false,
+    "hasPlaceCard": false,
+    "warning": "Truyện chưa có thẻ Nhân vật hoặc Nơi chốn nên sẽ không xuất hiện trong gợi ý điều ước."
+  }
+}
+```
+
+Khi đã đủ thẻ: `canBeSuggested = true`, `warning = null`. Frontend gọi lại sau mỗi lần gắn, gỡ
+hoặc `ai-match` và hiện `warning` thành banner vàng trên màn gắn thẻ. `404` nếu truyện không tồn tại.
+
 ## Thời điểm gợi ý cho trẻ
 
 Đây là thao tác Moderator **chủ động gọi**; chưa tự quét toàn bộ thư viện hoặc chạy khi phát hành.

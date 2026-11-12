@@ -2375,6 +2375,8 @@ MO1. Moderator/Admin theo eligibility, không tự duyệt. Claim 2 giờ; Open 
 
 Với `PublicStoryRemoval` / `PublicStoryReview`, claim/open trả thêm `storyImpact`. Màn duyệt gỡ nên hiện danh sách thẻ ước, đánh dấu thẻ có `otherPublishedStoryCount = 0` ("gỡ xong thẻ này hết truyện để gợi ý — nên gắn thẻ cho truyện khác"), cùng `pendingWishCount` / `activeRoadmapItemCount`. Màn duyệt công khai hiện nhắc rà thẻ khi `wishCardsNeedReview = true` (rà bằng `api/v1/moderation/stories/{storyId}/wish-cards`). Không chặn quyết định.
 
+Màn gắn thẻ ước gọi `GET api/v1/moderation/stories/{storyId}/wish-cards/coverage` sau mỗi lần gắn/gỡ/`ai-match`: khi `canBeSuggested = false`, hiện `warning` ("Truyện chưa có thẻ Nhân vật hoặc Nơi chốn nên sẽ không xuất hiện trong gợi ý điều ước."). Chỉ cảnh báo, không chặn.
+
 Guard/nghiệp vụ: [ModerationQueueService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Services/ModerationQueueService.cs).
 
 | Method + route | Mapping |

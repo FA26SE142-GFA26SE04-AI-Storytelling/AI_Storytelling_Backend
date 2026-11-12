@@ -482,4 +482,39 @@ public class StoryPlatformCoreStackTests
         template.ResourceCountIs("AWS::SNS::Topic", 0);
     }
 
+    [Fact]
+    public void Stack_WithAiServiceBaseUrl_WiresCoreToTheCloudRunAiApi()
+    {
+        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["aiServiceBaseUrl"] = "https://taletale-ai-production-example.a.run.app/"
+        });
+        var json = System.Text.Json.JsonSerializer.Serialize(template.ToJSON());
+
+        // URL canonical (bỏ dấu / cuối) vừa là BaseUrl vừa là audience của ID token Cloud Run.
+        Assert.Contains("\"Name\":\"AIService__BaseUrl\",\"Value\":\"https://taletale-ai-production-example.a.run.app\"", json);
+        Assert.Contains("\"Name\":\"AIService__IdTokenAudience\",\"Value\":\"https://taletale-ai-production-example.a.run.app\"", json);
+        Assert.Contains("\"Name\":\"AIService__InternalApiKey\"", json);
+        Assert.Contains(":AiInternalApiKey::", json);
+        Assert.Contains("\"Name\":\"AIService__GoogleCredentialsJson\"", json);
+        Assert.Contains(":AiGoogleCredentialsJson::", json);
+    }
+
+    [Fact]
+    public void Stack_WithoutAiServiceBaseUrl_AddsNoAiServiceSettings()
+    {
+        // Secret key chưa có trong app-secrets thì task không khởi động được, nên mặc định không tham chiếu.
+        var json = System.Text.Json.JsonSerializer.Serialize(SynthTemplate().ToJSON());
+
+        Assert.DoesNotContain("AIService__", json);
+    }
+
+    [Fact]
+    public void Stack_AiServiceBaseUrlMustBeHttps()
+    {
+        Assert.ThrowsAny<System.Exception>(() => SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["aiServiceBaseUrl"] = "http://insecure.example.test"
+        }));
+    }
 }

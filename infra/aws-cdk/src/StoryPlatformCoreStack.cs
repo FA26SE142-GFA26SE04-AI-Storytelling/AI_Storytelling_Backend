@@ -207,19 +207,40 @@ public sealed class StoryPlatformCoreStack : Stack
             ["ForwardedHeaders__ForwardedForHeaderName"] = "CF-Connecting-IP"
         };
 
+        var apiSecrets = new System.Collections.Generic.Dictionary<string, Amazon.CDK.AWS.ECS.Secret>
+        {
+            ["ConnectionStrings__DefaultConnection"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "DbConnectionString"),
+            ["JwtSettings__SecretKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "JwtSecretKey"),
+            ["ResendSettings__ApiKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "ResendApiKey"),
+            ["SePaySettings__ApiKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "SePayApiKey"),
+            ["RedisSettings__ConnectionString"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "RedisConnectionString")
+        };
+
+        // Core -> AI API trên Cloud Run (infra/google-cloud/README.md): cần URL canonical, khoá nội bộ và ID token
+        // Google (Cloud Run IAM). Chỉ bật khi truyền --context aiServiceBaseUrl=https://... (lưu trong cdk.json sau
+        // khi đã kiểm chứng). Trước đó phải thêm hai key AiInternalApiKey và AiGoogleCredentialsJson vào
+        // storyplatform/core/app-secrets bằng put-secret-value (RUNBOOK); thiếu key thì task không khởi động được.
+        // Như CloudflareTunnelToken, hai key này cố ý không nằm trong template sinh secret.
+        var aiServiceBaseUrl = (Node.TryGetContext("aiServiceBaseUrl") as string)?.Trim().TrimEnd('/');
+        if (!string.IsNullOrEmpty(aiServiceBaseUrl))
+        {
+            if (!aiServiceBaseUrl.StartsWith("https://", System.StringComparison.OrdinalIgnoreCase))
+            {
+                throw new System.ArgumentException("aiServiceBaseUrl must be an https:// URL.");
+            }
+
+            apiEnvironment["AIService__BaseUrl"] = aiServiceBaseUrl;
+            apiEnvironment["AIService__IdTokenAudience"] = aiServiceBaseUrl;
+            apiSecrets["AIService__InternalApiKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "AiInternalApiKey");
+            apiSecrets["AIService__GoogleCredentialsJson"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "AiGoogleCredentialsJson");
+        }
+
         var apiContainer = ApiTaskDefinition.AddContainer("ApiContainer", new ContainerDefinitionOptions
         {
             Image = ContainerImage.FromEcrRepository(EcrRepository, "latest"),
             Logging = LogDriver.AwsLogs(new AwsLogDriverProps { StreamPrefix = "api", LogGroup = ApiLogGroup }),
             Environment = apiEnvironment,
-            Secrets = new System.Collections.Generic.Dictionary<string, Amazon.CDK.AWS.ECS.Secret>
-            {
-                ["ConnectionStrings__DefaultConnection"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "DbConnectionString"),
-                ["JwtSettings__SecretKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "JwtSecretKey"),
-                ["ResendSettings__ApiKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "ResendApiKey"),
-                ["SePaySettings__ApiKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "SePayApiKey"),
-                ["RedisSettings__ConnectionString"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "RedisConnectionString")
-            },
+            Secrets = apiSecrets,
             // Root Dockerfile's runtime stage already installs curl (confirmed by inspection),
             // so this works without any Dockerfile change.
             HealthCheck = new Amazon.CDK.AWS.ECS.HealthCheck

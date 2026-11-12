@@ -35,6 +35,32 @@ public class WishCardMatchService : IWishCardMatchService
             .ToList();
     }
 
+    public const string MissingRequiredCardWarning =
+        "Truyện chưa có thẻ Nhân vật hoặc Nơi chốn nên sẽ không xuất hiện trong gợi ý điều ước.";
+
+    public async Task<StoryWishCardCoverageDto> GetCoverageAsync(int storyId, CancellationToken ct = default)
+    {
+        await RequireStoryAsync(storyId, ct);
+        var cardIds = (await _unitOfWork.Repository<StoryWishCardMatch>().FindAsync(
+                match => match.StoryId == storyId && !match.IsDeleted, cancellationToken: ct))
+            .Select(match => match.WishCardId).ToList();
+        // Bé chỉ chọn được thẻ đang dùng, nên thẻ đã ngưng không giúp truyện vào gợi ý.
+        var groups = (await _unitOfWork.Repository<WishCard>().FindAsync(
+                card => cardIds.Contains(card.Id) && card.IsActive && !card.IsDeleted, cancellationToken: ct))
+            .Select(card => card.Group).ToHashSet();
+        var hasCharacter = groups.Contains(WishCardGroup.Character);
+        var hasPlace = groups.Contains(WishCardGroup.Place);
+        var canBeSuggested = hasCharacter || hasPlace;
+        return new StoryWishCardCoverageDto
+        {
+            StoryId = storyId,
+            CanBeSuggested = canBeSuggested,
+            HasCharacterCard = hasCharacter,
+            HasPlaceCard = hasPlace,
+            Warning = canBeSuggested ? null : MissingRequiredCardWarning
+        };
+    }
+
     public Task<WishCardMatchDto> AddAsync(int actorUserId, int storyId, int wishCardId, CancellationToken ct = default) =>
         WithStoryLockAsync(storyId, () => AddLockedAsync(actorUserId, storyId, wishCardId, ct), ct);
 

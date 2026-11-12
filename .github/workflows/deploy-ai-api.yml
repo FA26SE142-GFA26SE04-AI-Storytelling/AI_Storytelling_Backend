@@ -82,9 +82,20 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: asia-southeast1-docker.pkg.dev/gen-lang-client-0675088605/taletale-ai/ai-api:${{ github.sha }}
+      - name: Resolve immutable linux/amd64 image digest
+        id: image
+        env:
+          BUILD_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          repository="$REGION-docker.pkg.dev/$PROJECT_ID/taletale-ai/ai-api"
+          manifest="$RUNNER_TEMP/ai-image-manifest.json"
+          docker buildx imagetools inspect "$repository@$BUILD_DIGEST" --raw > "$manifest"
+          resolved=$(python infra/google-cloud/cloudrun.py image-digest --manifest "$manifest" --build-digest "$BUILD_DIGEST")
+          echo "Build digest: $BUILD_DIGEST; linux/amd64 deployment digest: $resolved"
+          echo "digest=$resolved" >> "$GITHUB_OUTPUT"
       - name: Deploy production candidate without serving traffic
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
+          DIGEST: ${{ steps.image.outputs.digest }}
         run: >-
           python infra/google-cloud/cloudrun.py deploy
           --project "$PROJECT_ID" --region "$REGION" --service "$SERVICE"

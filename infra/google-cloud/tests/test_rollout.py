@@ -16,6 +16,21 @@ spec.loader.exec_module(cloudrun)
 
 
 class ProductionRolloutTests(unittest.TestCase):
+    def test_bootstrap_accepts_missing_service_messages_but_not_permission_failures(self):
+        args = argparse.Namespace(project='test-project', region='asia-southeast1', service='test-production')
+        for message in ('ERROR: (gcloud.run.services.describe) Cannot find service [test-production]\n',
+                        'ERROR: (gcloud.run.services.describe) NOT_FOUND: service test-production'):
+            with self.subTest(message=message), patch.object(cloudrun.subprocess, 'run',
+                    return_value=argparse.Namespace(returncode=1, stderr=message)):
+                self.assertIsNone(cloudrun.service_description(args, allow_missing=True))
+                with self.assertRaises(RuntimeError):
+                    cloudrun.service_description(args)
+        for message in ('PERMISSION_DENIED: service may not exist',
+                        'ERROR: (gcloud.run.services.describe) Cannot find service [another-service]'):
+            with self.subTest(message=message), patch.object(cloudrun.subprocess, 'run',
+                    return_value=argparse.Namespace(returncode=1, stderr=message)), self.assertRaises(RuntimeError):
+                cloudrun.service_description(args, allow_missing=True)
+
     def args(self, path):
         return argparse.Namespace(project='test-project', region='asia-southeast1', service='test-production',
             image='asia-docker.pkg.dev/test-project/repo/api@sha256:' + 'a' * 64,

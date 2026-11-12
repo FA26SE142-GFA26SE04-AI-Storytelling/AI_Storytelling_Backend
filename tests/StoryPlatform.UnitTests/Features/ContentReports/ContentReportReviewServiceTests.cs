@@ -97,21 +97,6 @@ public class ContentReportReviewServiceTests
             Reason = reason
         });
 
-    private Task<ContentReportDecisionResultDto> EscalateAsync(
-        int itemId, string reason = "Nghi Content Creator cố ý", int actorId = Moderator) =>
-        _sut.EscalateAsync(actorId, itemId, new EscalateReportRequestDto { Reason = reason });
-
-    private ModerationItem EscalatedItem(ContentReportReason reason = ContentReportReason.Cultural)
-    {
-        var item = _h.AddReportItem(reason);
-        item.Status = ModerationItemStatus.Escalated;
-        item.ClaimedAt = DateTime.UtcNow.AddDays(-5);
-        item.EscalationReason = "Nghi Content Creator cố ý đưa nội dung xấu";
-        item.EscalatedAt = DateTime.UtcNow.AddDays(-5);
-        _h.Reports.Single().Status = ContentReportStatus.Escalated;
-        return item;
-    }
-
     private void CaptureNotifications(
         List<(int Recipient, NotificationType Type, string? Payload)> sent) =>
         _h.Notifications
@@ -301,6 +286,51 @@ public class ContentReportReviewServiceTests
         var detail = await GetDetailAsync(item.Id);
 
         Assert.True(detail.IsReviewItem);
+    }
+
+    [Fact]
+    public async Task GetDetailAsync_ReviewItem_ShowsRequestingModerator()
+    {
+        var item = _h.AddReportItem(reporterId: ContentReportHarness.OtherModeratorId);
+        _h.Reports.Single().IsReviewItem = true;
+
+        var detail = await GetDetailAsync(item.Id);
+
+        Assert.Equal(ContentReportHarness.OtherModeratorId, detail.RequestedByUserId);
+        Assert.Equal("moderator_demo2", detail.RequestedByName);
+    }
+
+    [Fact]
+    public async Task GetDetailAsync_ParentReport_DoesNotShowRequester()
+    {
+        var item = _h.AddReportItem();
+
+        var detail = await GetDetailAsync(item.Id);
+
+        Assert.Null(detail.RequestedByUserId);
+        Assert.Null(detail.RequestedByName);
+    }
+
+    [Fact]
+    public async Task GetDetailAsync_CreatorStory_ShowsStoryAuthor()
+    {
+        var item = _h.AddReportItem();
+
+        var detail = await GetDetailAsync(item.Id);
+
+        Assert.Equal(ContentReportHarness.CreatorId, detail.Story.AuthorUserId);
+        Assert.Equal("creator_demo", detail.Story.AuthorName);
+    }
+
+    [Fact]
+    public async Task GetDetailAsync_FamilyStory_DoesNotShowParentAuthor()
+    {
+        var item = _h.AddReportItem(storyId: ContentReportHarness.PrivateStoryId, versionId: 60);
+
+        var detail = await GetDetailAsync(item.Id);
+
+        Assert.Null(detail.Story.AuthorUserId);
+        Assert.Null(detail.Story.AuthorName);
     }
 
     [Fact]
@@ -499,14 +529,21 @@ public class ContentReportReviewServiceTests
     }
 
     [Fact]
-    public async Task DismissAsync_AdministratorHoldingItem_CanDismiss()
+    public async Task Administrator_HoldingItem_CannotReadOrDecideReport()
     {
         var item = _h.AddReportItem();
         item.ClaimedByUserId = ContentReportHarness.AdminId;
 
-        await DismissAsync(item.Id, actorId: ContentReportHarness.AdminId);
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            GetDetailAsync(item.Id, ContentReportHarness.AdminId));
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            DismissAsync(item.Id, actorId: ContentReportHarness.AdminId));
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            ArchiveAsync(item.Id, actorId: ContentReportHarness.AdminId));
 
-        Assert.Equal(ContentReportHarness.AdminId, item.DecidedByUserId);
+        Assert.Equal(ModerationItemStatus.Claimed, item.Status);
+        Assert.Null(item.DecidedByUserId);
+        Assert.Equal(ContentReportStatus.Pending, _h.Reports.Single().Status);
     }
 
     [Fact]
@@ -845,94 +882,6 @@ public class ContentReportReviewServiceTests
     }
 
     [Fact]
-    public async Task EscalateAsync_MovesCaseAndNotifiesOnlyActiveAdministrators()
-    {
-        var item = _h.AddReportItem(ContentReportReason.Copyright);
-        _h.AddUser(2, "admin_demo2", UserRole.Administrator);
-        var sent = new List<(int Recipient, NotificationType Type, string? Payload)>();
-        CaptureNotifications(sent);
-
-        var result = await EscalateAsync(item.Id, "Report nhắm vào nội dung tôi từng duyệt");
-
-        Assert.Equal("Escalated", result.Decision);
-        Assert.Equal(ModerationItemStatus.Escalated, item.Status);
-        Assert.Equal("Report nhắm vào nội dung tôi từng duyệt", item.EscalationReason);
-        Assert.Null(item.DecidedByUserId);
-        Assert.Null(item.DecidedAt);
-        Assert.Equal(ContentReportStatus.Escalated, _h.Reports.Single().Status);
-        Assert.Null(_h.Reports.Single().ResolvedAt);
-        Assert.Equal(new[] { ContentReportHarness.AdminId, 2 },
-            sent.Select(notification => notification.Recipient).OrderBy(id => id));
-        Assert.All(sent, notification => Assert.Equal(NotificationType.ContentReportEscalated, notification.Type));
-        Assert.DoesNotContain("Report nhắm", sent[0].Payload);
-        Assert.DoesNotContain(sent, notification => notification.Recipient == ContentReportHarness.ReporterId);
-    }
-
-    [Fact]
-    public async Task EscalateAsync_NoActiveAdministrator_IsConflictWithoutTransaction()
-    {
-        var item = _h.AddReportItem();
-        _h.Users.Single(user => user.Id == ContentReportHarness.AdminId).Status = AccountStatus.Suspended;
-
-        await Assert.ThrowsAsync<ConflictException>(() => EscalateAsync(item.Id));
-
-        Assert.Equal(ModerationItemStatus.Claimed, item.Status);
-        Assert.Equal(ContentReportStatus.Pending, _h.Reports.Single().Status);
-        _h.UnitOfWork.Verify(unit => unit.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task EscalateAsync_RequiresModeratorAndBoundedReason()
-    {
-        var item = _h.AddReportItem();
-
-        await Assert.ThrowsAsync<ForbiddenException>(() =>
-            EscalateAsync(item.Id, actorId: ContentReportHarness.AdminId));
-        await Assert.ThrowsAsync<BadRequestException>(() => EscalateAsync(item.Id, " "));
-        await Assert.ThrowsAsync<BadRequestException>(() => EscalateAsync(item.Id, new string('a', 1001)));
-    }
-
-    [Fact]
-    public async Task EscalateAsync_NotificationFailure_RollsBack()
-    {
-        var item = _h.AddReportItem();
-        _h.Notifications.Setup(notification => notification.CreateAsync(
-                It.IsAny<int>(), It.IsAny<NotificationType>(), It.IsAny<string?>(),
-                It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("boom"));
-
-        await Assert.ThrowsAsync<InvalidOperationException>(() => EscalateAsync(item.Id));
-
-        _h.UnitOfWork.Verify(unit => unit.RollbackTransactionAsync(CancellationToken.None), Times.Once);
-        _h.UnitOfWork.Verify(unit => unit.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task Administrator_CanReadAndDismissEscalatedCaseWithoutClaimTimeout()
-    {
-        var item = EscalatedItem();
-
-        var detail = await GetDetailAsync(item.Id, ContentReportHarness.AdminId);
-        await DismissAsync(item.Id, "Đã đối chiếu, không vi phạm", ContentReportHarness.AdminId);
-
-        Assert.Equal("Escalated", detail.ItemStatus);
-        Assert.Equal("Nghi Content Creator cố ý đưa nội dung xấu", detail.EscalationReason);
-        Assert.Equal(ModerationItemStatus.Dismissed, item.Status);
-        Assert.Equal(ContentReportHarness.AdminId, item.DecidedByUserId);
-        Assert.Equal(ContentReportStatus.ReviewedDismissed, _h.Reports.Single().Status);
-    }
-
-    [Fact]
-    public async Task Moderator_CannotReadOrDecideEscalatedCase()
-    {
-        var item = EscalatedItem();
-
-        await Assert.ThrowsAsync<ForbiddenException>(() => GetDetailAsync(item.Id));
-        await Assert.ThrowsAsync<ForbiddenException>(() => DismissAsync(item.Id));
-        await Assert.ThrowsAsync<ForbiddenException>(() => ArchiveAsync(item.Id));
-    }
-
-    [Fact]
     public async Task Administrator_CannotReadOrdinaryModeratorClaim()
     {
         var item = _h.AddReportItem();
@@ -941,7 +890,7 @@ public class ContentReportReviewServiceTests
     }
 
     [Fact]
-    public void Controller_IsRestrictedToStaffAndExposesFourEndpoints()
+    public void Controller_IsModeratorOnlyAndExposesThreeEndpoints()
     {
         var authorize = typeof(ContentReportReviewController).GetCustomAttribute<AuthorizeAttribute>();
         var methods = typeof(ContentReportReviewController)
@@ -951,7 +900,7 @@ public class ContentReportReviewServiceTests
             .ToArray();
 
         Assert.NotNull(authorize);
-        Assert.Equal("Moderator,Administrator", authorize!.Roles);
-        Assert.Equal(["Archive", "Dismiss", "Escalate", "GetDetail"], methods);
+        Assert.Equal("Moderator", authorize!.Roles);
+        Assert.Equal(["Archive", "Dismiss", "GetDetail"], methods);
     }
 }

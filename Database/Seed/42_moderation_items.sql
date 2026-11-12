@@ -1,4 +1,4 @@
--- 42. moderation_items (27): queue examples including the WF-L5A PublicStoryReview chain.
+-- 42. moderation_items (29): queue examples including the WF-L5A PublicStoryReview chain.
 INSERT INTO moderation_items (
     "Id", "ItemType", "Status", "Priority", "StoryId", "StoryVersionId",
     "CreatedByUserId", "SourceChildProfileId", "ClaimedByUserId", "ClaimedAt",
@@ -116,12 +116,11 @@ VALUES
      NOW() - INTERVAL '12 days', NOW() - INTERVAL '12 days', NULL, NULL, NULL,
      NULL, NULL, NULL, NULL,
      0, false, NOW() - INTERVAL '13 days', false),
-    (4, 'ContentReport', 'Escalated', 'High', 6, 6,
-     6, 8, 11, NOW() - INTERVAL '5 hours',
-     NOW() + INTERVAL '18 hours', NULL, '{"copyright":true}'::jsonb, NULL,
-     'Cần đối chiếu nguồn bản quyền', 11, NOW() - INTERVAL '4 hours',
-     NOW() - INTERVAL '4 hours', NULL,
-     2, false, NOW() - INTERVAL '6 hours', false),
+    (4, 'ContentReport', 'Pending', 'High', 6, 6,
+     6, 8, NULL, NULL,
+     NOW() + INTERVAL '42 hours', NULL, NULL, NULL, NULL,
+     NULL, NULL, NULL, NULL,
+     0, false, NOW() - INTERVAL '6 hours', false),
     (8, 'ContentReport', 'Closed', 'Low', 10, 10,
      7, 12, 11, NOW() - INTERVAL '4 hours',
      NOW() + INTERVAL '19 hours', NULL, '{"cultural":true}'::jsonb,
@@ -232,4 +231,21 @@ VALUES
      12, NOW() - INTERVAL '2 days' - INTERVAL '30 minutes', NOW() - INTERVAL '1 day',
      '{"decision":"approved"}'::jsonb,
      12, NOW() - INTERVAL '2 days', 2, false, NOW() - INTERVAL '3 days', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- Fixture xem người gửi trong hàng đợi:
+-- Mục 28: yêu cầu rà soát Pending của moderator_demo2 (Id 12) cho truyện Creator 21; moderator_demo1 nhận được, moderator_demo2 thì không.
+-- Mục 29: yêu cầu gỡ Pending của creator_demo (Id 13) cho truyện 20; Moderator nhận rồi quyết định.
+INSERT INTO moderation_items (
+    "Id", "ItemType", "Status", "Priority", "StoryId", "StoryVersionId",
+    "ContentReportId", "CreatedByUserId", "SlaDueAt", "Flags",
+    "RowVersion", "IsResubmission", "CreatedAt", "IsDeleted"
+)
+VALUES
+    (28, 'ContentReport', 'Pending', 'Medium', 21, 26,
+     8, 12, NOW() + INTERVAL '46 hours', NULL,
+     0, false, NOW() - INTERVAL '2 hours', false),
+    (29, 'PublicStoryRemoval', 'Pending', 'Low', 20, 25,
+     NULL, 13, NOW() + INTERVAL '71 hours', '{"requestReason":"Tôi muốn viết lại phần kết của truyện"}'::jsonb,
+     0, false, NOW() - INTERVAL '1 hour', false)
 ON CONFLICT ("Id") DO NOTHING;

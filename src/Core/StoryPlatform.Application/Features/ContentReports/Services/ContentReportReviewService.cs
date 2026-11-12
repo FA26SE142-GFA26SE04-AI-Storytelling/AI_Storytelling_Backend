@@ -74,14 +74,14 @@ public partial class ContentReportReviewService : IContentReportReviewService
             AttachmentUrl = report.AttachmentUrl,
             IsReviewItem = report.IsReviewItem,
             ItemStatus = context.Item.Status.ToString(),
-            EscalationReason = Mask(context.Item.EscalationReason),
-            EscalatedAt = context.Item.EscalatedAt,
             CreatedAt = report.CreatedAt,
             Story = ReportedContentBuilder.BuildStory(
                 story,
                 await ReportedContentBuilder.LoadLabelsAsync(_unitOfWork, story.Id, cancellationToken),
                 Mask)
         };
+
+        await FillSubmitterIdentitiesAsync(detail, report, story, cancellationToken);
 
         if (version != null && snapshot != null)
         {
@@ -104,7 +104,30 @@ public partial class ContentReportReviewService : IContentReportReviewService
         return detail;
     }
 
-    /// <summary>Cổng chung cho mục đang do chính mình nhận hoặc ca Escalated do Administrator xử lý.</summary>
+    /// <summary>
+    /// Chỉ lộ danh tính không phải phụ huynh: Moderator tạo yêu cầu rà soát và Creator tác giả truyện công khai.
+    /// Phụ huynh báo cáo và tác giả truyện riêng của gia đình luôn ẩn.
+    /// </summary>
+    private async Task FillSubmitterIdentitiesAsync(
+        ContentReportDetailDto detail, ContentReport report, Story story, CancellationToken cancellationToken)
+    {
+        var users = _unitOfWork.Repository<UserAccount>();
+        if (report.IsReviewItem)
+        {
+            var requester = await users.GetByIdAsync(report.ReporterUserId, cancellationToken);
+            detail.RequestedByUserId = report.ReporterUserId;
+            detail.RequestedByName = ModerationQueuePolicy.DisplayName(requester);
+        }
+
+        if (story.Scope == StoryScope.Creator)
+        {
+            var author = await users.GetByIdAsync(story.AuthorUserId, cancellationToken);
+            detail.Story.AuthorUserId = story.AuthorUserId;
+            detail.Story.AuthorName = ModerationQueuePolicy.DisplayName(author);
+        }
+    }
+
+    /// <summary>Cổng chung: chỉ Moderator đang hoạt động, với mục đang do chính mình nhận và còn hạn.</summary>
     private async Task<ReportContext> LoadClaimedContextAsync(
         int actorUserId, int itemId, CancellationToken cancellationToken)
     {
@@ -113,10 +136,9 @@ public partial class ContentReportReviewService : IContentReportReviewService
         if (actor == null
             || actor.IsDeleted
             || actor.Status != AccountStatus.Active
-            || actor.Role is not (UserRole.Moderator or UserRole.Administrator))
+            || actor.Role != UserRole.Moderator)
         {
-            throw new ForbiddenException(
-                "Chỉ Moderator hoặc Administrator đang hoạt động mới xử lý được report.");
+            throw new ForbiddenException("Chỉ Moderator đang hoạt động mới xử lý được report.");
         }
 
         var item = await _unitOfWork.Repository<ModerationItem>()
@@ -129,16 +151,6 @@ public partial class ContentReportReviewService : IContentReportReviewService
         if (item.ItemType != ModerationItemType.ContentReport)
         {
             throw new BadRequestException("Mục này không phải mục xử lý report.");
-        }
-
-        if (item.Status == ModerationItemStatus.Escalated)
-        {
-            if (actor.Role != UserRole.Administrator)
-            {
-                throw new ForbiddenException("Ca đã chuyển cho Administrator quyết định.");
-            }
-
-            return await BuildContextAsync(actor, item, ContentReportStatus.Escalated, cancellationToken);
         }
 
         if (item.Status != ModerationItemStatus.Claimed || item.ClaimedByUserId != actor.Id)

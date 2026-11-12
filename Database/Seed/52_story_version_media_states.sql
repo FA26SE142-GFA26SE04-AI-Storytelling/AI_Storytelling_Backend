@@ -29,3 +29,11 @@ VALUES
     (24, 0, NULL, NULL, NULL),
     (900, 0, NULL, NULL, NULL)
 ON CONFLICT ("StoryVersionId") DO NOTHING;
+
+INSERT INTO story_version_media_states (
+    "StoryVersionId", "MediaPackageRevision", "ConfirmedMediaPackageRevision", "MediaConfirmedByUserId", "MediaConfirmedAt"
+)
+VALUES
+    (25, 0, NULL, NULL, NULL),
+    (26, 0, NULL, NULL, NULL)
+ON CONFLICT ("StoryVersionId") DO NOTHING;

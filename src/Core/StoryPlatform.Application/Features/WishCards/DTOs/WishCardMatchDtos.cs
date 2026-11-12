@@ -23,3 +23,18 @@ public class WishCardMatchDto
     /// <summary>"Moderator" hoặc "Ai".</summary>
     public string Source { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// Kiểm tra truyện đã gắn đủ thẻ để có thể vào gợi ý điều ước chưa.
+/// Chỉ xét thẻ đang dùng; không xét trạng thái duyệt/công khai của truyện.
+/// </summary>
+public class StoryWishCardCoverageDto
+{
+    public int StoryId { get; set; }
+    /// <summary>Có ít nhất một thẻ Nhân vật hoặc Nơi chốn đang dùng.</summary>
+    public bool CanBeSuggested { get; set; }
+    public bool HasCharacterCard { get; set; }
+    public bool HasPlaceCard { get; set; }
+    /// <summary>Câu cảnh báo cho Moderator; null khi đã gắn đủ.</summary>
+    public string? Warning { get; set; }
+}

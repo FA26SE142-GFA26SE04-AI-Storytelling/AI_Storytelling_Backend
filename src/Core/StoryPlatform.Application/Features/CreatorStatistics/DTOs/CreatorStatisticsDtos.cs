@@ -61,3 +61,55 @@ public class CreatorStoryRevenueDto
     public int ValidReads { get; set; }
     public long EstimatedEarningsVnd { get; set; }
 }
+
+/// <summary>
+/// Thống kê nội dung của một Creator (F-22): số truyện theo trạng thái, kết quả gửi duyệt trong kỳ, lượt còn lại và
+/// tiến độ tới hạng Creator đối tác. Chỉ có số tổng hợp của chính Creator, không có nội dung truyện hay dữ liệu của trẻ.
+/// </summary>
+public class CreatorContentStatisticsDto
+{
+    public DateTime PeriodStart { get; set; }
+    public DateTime PeriodEnd { get; set; }
+
+    /// <summary>Truyện chưa archive của Creator: Published, chờ duyệt, Ready (chưa gửi) và Nháp; mỗi truyện chỉ vào một nhóm.</summary>
+    public int Draft { get; set; }
+    public int Ready { get; set; }
+    public int PendingReview { get; set; }
+    public int Published { get; set; }
+
+    /// <summary>Lượt gửi duyệt trong kỳ theo kết quả (Approved / Rejected / ChangesRequested tính theo ngày quyết định).</summary>
+    public int SubmissionsApproved { get; set; }
+    public int SubmissionsRejected { get; set; }
+    public int SubmissionsChangesRequested { get; set; }
+    /// <summary>Số lượt Creator tự rút trong kỳ (theo ngày rút).</summary>
+    public int SubmissionsWithdrawn { get; set; }
+
+    /// <summary>Tổng lượt AI còn lại theo hạn mức Creator.</summary>
+    public int RemainingAiCredits { get; set; }
+    /// <summary>Tổng lượt gửi duyệt còn lại theo hạn mức Creator.</summary>
+    public int RemainingSubmitCredits { get; set; }
+
+    /// <summary>Hạng hiện tại (hiện luôn là "Creator"; chưa có việc nâng hạng đối tác).</summary>
+    public string Tier { get; set; } = string.Empty;
+    public PartnerProgressDto PartnerProgress { get; set; } = new();
+}
+
+/// <summary>Tiến độ tới hạng Creator đối tác trong cửa sổ 90 ngày gần nhất, độc lập với kỳ người dùng chọn.</summary>
+public class PartnerProgressDto
+{
+    public DateTime WindowStart { get; set; }
+    public DateTime WindowEnd { get; set; }
+    /// <summary>True khi mọi tiêu chí đều đạt.</summary>
+    public bool IsEligible { get; set; }
+    public List<PartnerCriterionDto> Criteria { get; set; } = [];
+}
+
+public class PartnerCriterionDto
+{
+    /// <summary>published_stories, completion_rate, valid_reads hoặc no_violation_removals.</summary>
+    public string Key { get; set; } = string.Empty;
+    public decimal Current { get; set; }
+    /// <summary>Ngưỡng cần đạt (tối thiểu); riêng no_violation_removals là mức tối đa cho phép.</summary>
+    public decimal Target { get; set; }
+    public bool Met { get; set; }
+}

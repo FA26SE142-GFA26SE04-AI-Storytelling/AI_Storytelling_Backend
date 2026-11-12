@@ -8,8 +8,9 @@ namespace StoryPlatform.Api.Controllers;
 
 /// <summary>
 /// Moderator xử lý report truyện (WF-L4E, UC-L4E-02). itemId là mục ContentReport mà người gọi đang nhận.
+/// Chỉ Moderator; Administrator không xử lý report.
 /// </summary>
-[Authorize(Roles = "Moderator,Administrator")]
+[Authorize(Roles = "Moderator")]
 public class ContentReportReviewController : BaseApiController
 {
     private readonly IContentReportReviewService _reviewService;
@@ -51,15 +52,5 @@ public class ContentReportReviewController : BaseApiController
         var result = await _reviewService.ArchiveAsync(
             GetCurrentUserId(), itemId, request, cancellationToken);
         return HandleResult(result, "Đã gỡ truyện.");
-    }
-
-    /// <summary>Chuyển ca cho Administrator quyết định cuối. Chỉ Moderator đang giữ mục.</summary>
-    [HttpPost("{itemId:int}/escalate")]
-    public async Task<ActionResult<ApiResponse<ContentReportDecisionResultDto>>> Escalate(
-        int itemId, [FromBody] EscalateReportRequestDto request, CancellationToken cancellationToken)
-    {
-        var result = await _reviewService.EscalateAsync(
-            GetCurrentUserId(), itemId, request, cancellationToken);
-        return HandleResult(result, "Đã chuyển ca cho Administrator.");
     }
 }

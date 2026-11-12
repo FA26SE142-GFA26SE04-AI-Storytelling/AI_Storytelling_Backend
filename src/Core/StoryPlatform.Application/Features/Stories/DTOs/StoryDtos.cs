@@ -25,6 +25,13 @@ public class StoryDto
     public DateTime? UpdatedAt { get; set; }
 }
 
+/// <summary>Một truyện trong thư viện cộng đồng, kèm số tổng hợp.</summary>
+public class CommunityStoryDto : StoryDto
+{
+    public int ViewCount { get; set; }
+    public int FavoriteCount { get; set; }
+}
+
 public class CreateStoryRequestDto
 {
     [Required(ErrorMessage = "Tiêu đề truyện không được để trống.")]

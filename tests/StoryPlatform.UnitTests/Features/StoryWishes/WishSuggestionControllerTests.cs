@@ -30,7 +30,8 @@ public class WishSuggestionControllerTests
 
         Assert.Equal("Moderator,Administrator", type.GetCustomAttribute<AuthorizeAttribute>()!.Roles);
         Assert.Equal("api/v1/moderation/stories/{storyId:int}/wish-cards", type.GetCustomAttribute<RouteAttribute>(inherit: false)!.Template);
-        Assert.Equal(new[] { "Add", "List", "MatchWithAi", "Remove" }, methods);
+        Assert.Equal(new[] { "Add", "Coverage", "List", "MatchWithAi", "Remove" }, methods);
+        Assert.Equal("coverage", type.GetMethod("Coverage")!.GetCustomAttribute<HttpGetAttribute>()!.Template);
         Assert.Equal("ai-match", type.GetMethod("MatchWithAi")!.GetCustomAttribute<HttpPostAttribute>()!.Template);
         Assert.Equal("{wishCardId:int}", type.GetMethod("Remove")!.GetCustomAttribute<HttpDeleteAttribute>()!.Template);
     }

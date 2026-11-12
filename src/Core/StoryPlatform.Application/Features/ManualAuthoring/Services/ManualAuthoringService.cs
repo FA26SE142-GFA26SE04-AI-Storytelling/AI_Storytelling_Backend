@@ -351,6 +351,11 @@ public partial class ManualAuthoringService
             cancellationToken: ct);
         var byStory = versions.GroupBy(v => v.StoryId)
             .ToDictionary(g => g.Key, g => g.ToList());
+        var creatorIds = stories.Where(s => s.Scope == StoryScope.Creator).Select(s => s.Id).ToList();
+        var openItems = creatorIds.Count == 0 ? new List<ModerationItem>() :
+            (await _uow.Repository<ModerationItem>().FindAsync(m => m.StoryId.HasValue && creatorIds.Contains(m.StoryId.Value)
+                && !m.IsDeleted && (m.ItemType == ModerationItemType.PublicStoryReview || m.ItemType == ModerationItemType.PublicStoryRemoval)
+                && (m.Status == ModerationItemStatus.Pending || m.Status == ModerationItemStatus.Claimed), cancellationToken: ct)).ToList();
         var sceneCovers = stories.Select(s => s.CoverImageUrl).Where(StoryCover.IsSceneRef).ToList();
         var resolveCover = _covers is not null && sceneCovers.Count > 0
             ? await _covers.ResolveAsync(sceneCovers, ct)
@@ -369,12 +374,16 @@ public partial class ManualAuthoringService
             var cover = resolveCover is not null && StoryCover.IsSceneRef(x.CoverImageUrl)
                 ? resolveCover(x.CoverImageUrl)
                 : x.CoverImageUrl;
+            var open = openItems.Where(m => m.StoryId == x.Id).OrderByDescending(m => m.Id).FirstOrDefault();
             return new CreatorDraftDto(
                 x.Id, x.AuthorUserId, x.Title ?? string.Empty, x.Description ?? string.Empty,
                 x.Language, x.AgeBand, x.Genre ?? string.Empty, x.ExperienceMode, x.AudienceRevision,
                 x.AuthoringRevisionToken, current?.Id, lastVersionNo,
                 x.CreatedAt, x.UpdatedAt, x.Source.ToString(), x.Status.ToString(), cover,
-                x.IsPublished, current?.Moderation.ReviewStatus.ToString());
+                x.IsPublished, current?.Moderation.ReviewStatus.ToString())
+            {
+                OpenItemId = open?.Id, OpenItemType = open?.ItemType.ToString(), OpenItemStatus = open?.Status.ToString()
+            };
         }).ToList();
     }
     private static CreatorVersionDto ToVersion(StoryVersion x) => new(x.Id, x.StoryId, x.VersionNo,

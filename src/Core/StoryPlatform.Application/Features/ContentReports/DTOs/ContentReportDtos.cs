@@ -28,7 +28,7 @@ public class ContentReportResultDto
 }
 
 /// <summary>
-/// Chi tiết một mục report cho Moderator. Cố ý không có danh tính người báo cáo, hồ sơ trẻ hay dữ liệu học tập;
+/// Chi tiết một mục report cho Moderator. Cố ý không có danh tính phụ huynh báo cáo, hồ sơ trẻ hay dữ liệu học tập;
 /// mọi văn bản đã che số điện thoại, email và biệt danh bé.
 /// </summary>
 public class ContentReportDetailDto
@@ -39,12 +39,12 @@ public class ContentReportDetailDto
     public string? Description { get; set; }
     public string? AttachmentUrl { get; set; }
     public bool IsReviewItem { get; set; }
-    /// <summary>"Claimed" (đang do Moderator giữ) hoặc "Escalated" (đã chuyển Administrator).</summary>
+    /// <summary>Moderator tạo yêu cầu rà soát; chỉ có khi IsReviewItem = true, report của phụ huynh luôn null.</summary>
+    public int? RequestedByUserId { get; set; }
+    /// <summary>Tên hiển thị của Moderator đó (họ tên, dự phòng tên đăng nhập); không trả email.</summary>
+    public string? RequestedByName { get; set; }
+    /// <summary>"Claimed": mục đang do chính Moderator gọi API giữ.</summary>
     public string ItemStatus { get; set; } = string.Empty;
-
-    /// <summary>Lý do Moderator chuyển ca lên (đã che thông tin cá nhân); null nếu chưa Escalate.</summary>
-    public string? EscalationReason { get; set; }
-    public DateTime? EscalatedAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public ReportedStoryDto Story { get; set; } = new();
     public ReportedVersionDto? Version { get; set; }
@@ -65,6 +65,13 @@ public class ReportedStoryDto
     public string Language { get; set; } = string.Empty;
     public string Scope { get; set; } = string.Empty;
     public bool IsArchived { get; set; }
+    /// <summary>
+    /// Creator tác giả truyện; chỉ trả ở chi tiết report và chỉ khi Scope = "Creator".
+    /// Truyện riêng của gia đình luôn null để không lộ phụ huynh.
+    /// </summary>
+    public int? AuthorUserId { get; set; }
+    /// <summary>Tên hiển thị của Creator tác giả (họ tên, dự phòng tên đăng nhập); không trả email.</summary>
+    public string? AuthorName { get; set; }
     public List<ReportedLabelDto> Labels { get; set; } = new();
 }
 
@@ -155,12 +162,6 @@ public class ContentReportDecisionResultDto
     public string Decision { get; set; } = string.Empty;
     public bool StoryArchived { get; set; }
     public DateTime DecidedAt { get; set; }
-}
-
-public class EscalateReportRequestDto
-{
-    /// <summary>Lý do chuyển Administrator (bắt buộc, tối đa 1000 ký tự). Chỉ Administrator đọc được.</summary>
-    public string Reason { get; set; } = string.Empty;
 }
 
 public class CreateReviewItemRequestDto

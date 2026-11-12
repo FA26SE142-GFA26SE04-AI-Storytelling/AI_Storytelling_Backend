@@ -1,4 +1,4 @@
--- 35. notifications (20)
+-- 35. notifications (21)
 INSERT INTO notifications ("Id", "RecipientUserId", "Type", "Payload", "Status", "ReadAt", "CreatedAt", "IsDeleted")
 VALUES
     (1, 2, 'SupervisionInvite', '{"childProfileId":1}', 'Read', NOW() - INTERVAL '39 days', NOW() - INTERVAL '40 days', false),
@@ -16,9 +16,15 @@ VALUES
     (20, 8, 'OwnershipTransferResult', '{"ownershipTransferRequestId":6,"childProfileId":12,"newOwnerUserId":8,"result":"accepted"}', 'Unread', NULL, NOW() - INTERVAL '3 hours', false),
     (21, 1, 'ModerationSlaWarning', '{"contentReportId":2,"storyId":2}', 'Unread', NULL, NOW() - INTERVAL '2 hours', false),
     (22, 7, 'ContentReportResolved', '{"contentReportId":1,"storyId":9,"resolution":"ReviewedArchived"}', 'Read', NOW() - INTERVAL '13 days', NOW() - INTERVAL '14 days', false),
-    (23, 1, 'ContentReportEscalated', '{"contentReportId":6,"storyId":6}', 'Unread', NULL, NOW() - INTERVAL '4 hours', false),
+    (23, 11, 'ContentReported', '{"contentReportId":6,"moderationItemId":4,"storyId":6,"reason":"Copyright"}', 'Unread', NULL, NOW() - INTERVAL '6 hours', false),
     (24, 7, 'ContentModerationResult', '{"contentReportId":1,"result":"ReviewedArchived"}', 'Read', NOW() - INTERVAL '13 days', NOW() - INTERVAL '14 days', false),
     (25, 9, 'StoryModerationResult', '{"storyId":6,"storyVersionId":6,"result":"Cleared"}', 'Read', NOW() - INTERVAL '19 days', NOW() - INTERVAL '20 days' + INTERVAL '90 minutes', false),
     (26, 6, 'StoryArchivedByModeration', '{"storyId":9,"reason":"SafetyConcern"}', 'Read', NOW() - INTERVAL '13 days', NOW() - INTERVAL '14 days', false),
     (27, 13, 'StaffInvite', '{"userId":13,"role":"ContentCreator"}', 'Read', NOW() - INTERVAL '34 days', NOW() - INTERVAL '35 days', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- moderator_demo1 duoc bao co yeu cau ra soat moi (report 8, muc 28); nguoi gui moderator_demo2 khong nhan.
+INSERT INTO notifications ("Id", "RecipientUserId", "Type", "Payload", "Status", "ReadAt", "CreatedAt", "IsDeleted")
+VALUES
+    (28, 11, 'ContentReported', '{"contentReportId":8,"moderationItemId":28,"storyId":21,"reason":"Inappropriate"}', 'Unread', NULL, NOW() - INTERVAL '2 hours', false)
 ON CONFLICT ("Id") DO NOTHING;

@@ -35,6 +35,19 @@ public class CreatorStatisticsController : BaseApiController
     }
 
     /// <summary>
+    /// Số truyện theo trạng thái, kết quả gửi duyệt trong kỳ, lượt AI / lượt gửi còn lại và tiến độ Creator đối tác (F-22).
+    /// Chỉ số của chính Creator đăng nhập; không nhận mã Creator hay truyện từ request.
+    /// </summary>
+    [HttpGet("content")]
+    public async Task<ActionResult<ApiResponse<CreatorContentStatisticsDto>>> GetContent(
+        [FromQuery] DateTime periodStart, [FromQuery] DateTime periodEnd, CancellationToken cancellationToken)
+    {
+        var result = await _creatorStatisticsService.GetContentAsync(
+            GetCurrentUserId(), periodStart, periodEnd, cancellationToken);
+        return HandleResult(result, "Lấy thống kê nội dung thành công.");
+    }
+
+    /// <summary>
     /// Quỹ Creator của kỳ và thu nhập dự kiến của Creator: lượt đọc hợp lệ của mình × quỹ ÷ tổng lượt đọc hợp lệ,
     /// làm tròn xuống đến đồng, theo kỳ và theo từng truyện. Truyện của Creator khác trả 403.
     /// </summary>

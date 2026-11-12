@@ -1,4 +1,4 @@
--- 11. stories (20: 13 Parent, 7 Creator)
+-- 11. stories (22: 13 Parent, 9 Creator)
 -- Creator: Id 11 = manual V2, Id 12 = imported text V1; author is creator_demo (Id 13).
 -- WF-L5A fixtures: Id 11 = first submit/withdraw; Id 13 = creator resubmit;
 -- Id 14 = recent pending resubmission for moderator queue/history/compare;
@@ -84,4 +84,15 @@ INSERT INTO stories (
 )
 VALUES
     (900, 'Thỏ con đi lạc', 'Mẫu tương tác lúc nghe của bé 1, đang chờ duyệt', E'Thỏ con đi lạc vào rừng. Trời bắt đầu tối.\n\nThỏ nghe tiếng sột soạt sau bụi cây. Thỏ hỏi: "Có ai ở đó không?"\n\nHóa ra đó là bác Gấu đến giúp Thỏ tìm đường về.\n\nBác Gấu dẫn Thỏ về tới cửa hang.\n\nMẹ Thỏ ôm Thỏ vào lòng.\n\nTừ đó Thỏ luôn nhờ người lớn khi bị lạc.', NULL, 'Ngụ ngôn', 'Nhờ người lớn giúp khi bị lạc', 'vi', '6-8', 2, 'level_2', 'ContentReview', 'Ai', false, NULL, NULL, 2, 1, NOW() - INTERVAL '1 day', false, 'Parent', 'Learning', 1, 1, md5('seed-parent-story-900'), 'reading')
+ON CONFLICT ("Id") DO NOTHING;
+
+-- Fixture xem người gửi trong hàng đợi (2026-11-12), không dùng chung với các truyện WF-L5A ở trên:
+-- Id 20 = công khai, đã có yêu cầu gỡ Pending của creator_demo (mục 29);
+-- Id 21 = công khai, đã có yêu cầu rà soát Pending của moderator_demo2 (report 8, mục 28).
+INSERT INTO stories (
+    "Id", "Title", "Description", "Content", "CoverImageUrl", "Genre", "MoralLesson", "Language", "AgeBand", "ReadingLevel", "VocabularyLevel", "Status", "Source", "IsPublished", "ChildVisibleAt", "ArchivedReason", "AuthorUserId", "ChildProfileId", "CreatedAt", "IsDeleted", "Scope", "OutputMode", "AudienceRevision", "AuthoringLastVersionNo", "AuthoringRevisionToken", "ExperienceMode"
+)
+VALUES
+    (20, 'Voi con biết xin lỗi', 'Mẫu Creator đang chờ Moderator duyệt yêu cầu gỡ', 'Voi con lỡ làm đổ lâu đài cát của Thỏ. Voi con xin lỗi và cùng Thỏ xây lại. Hai bạn xây được một lâu đài còn đẹp hơn.', NULL, 'Tình bạn', 'Biết nhận lỗi và sửa sai', 'vi', '6-8', 2, 'level_2', 'Ready', 'Manual', true, NOW() - INTERVAL '4 days', NULL, 13, NULL, NOW() - INTERVAL '6 days', false, 'Creator', 'ReadingMediaOnly', 1, 1, md5('seed-creator-story-20'), 'reading'),
+    (21, 'Cá heo tốt bụng', 'Mẫu Creator đang có yêu cầu rà soát của Moderator', 'Cá heo thấy bạn rùa bị mắc vào lưới. Cá heo gọi các bạn cá đến giúp. Mọi người cùng gỡ lưới và rùa được tự do.', NULL, 'Động vật', 'Biết giúp đỡ người gặp khó khăn', 'vi', '6-8', 2, 'level_2', 'Ready', 'Manual', true, NOW() - INTERVAL '3 days', NULL, 13, NULL, NOW() - INTERVAL '5 days', false, 'Creator', 'ReadingMediaOnly', 1, 1, md5('seed-creator-story-21'), 'reading')
 ON CONFLICT ("Id") DO NOTHING;

@@ -300,7 +300,7 @@ public class ContentReportServiceTests
     }
 
     [Fact]
-    public async Task CreateAsync_NoActiveModerator_FallsBackToActiveAdministrators()
+    public async Task CreateAsync_NoActiveModerator_DoesNotNotifyAdministrators()
     {
         _h.Users.Single(user => user.Id == ContentReportHarness.ModeratorId).Status = AccountStatus.Suspended;
         _h.Users.Single(user => user.Id == ContentReportHarness.OtherModeratorId).IsDeleted = true;
@@ -310,8 +310,10 @@ public class ContentReportServiceTests
 
         await CreateAsync(Request());
 
-        Assert.Equal(new[] { ContentReportHarness.AdminId, 2 },
-            sent.Select(notification => notification.Recipient).OrderBy(id => id));
+        // Báo cáo nội dung chỉ do Moderator xử lý: không còn chuyển thông báo sang Administrator.
+        Assert.Single(_h.Reports);
+        Assert.Single(_h.Items);
+        Assert.Empty(sent);
     }
 
     [Fact]
@@ -386,7 +388,7 @@ public class ContentReportServiceTests
     }
 
     [Fact]
-    public async Task CreateReviewItemAsync_NoOtherModerator_FallsBackToAdministrators()
+    public async Task CreateReviewItemAsync_NoOtherModerator_DoesNotNotifyAdministrators()
     {
         _h.Users.Single(user => user.Id == ContentReportHarness.OtherModeratorId).Status = AccountStatus.Suspended;
         var sent = new List<(int Recipient, NotificationType Type, string? Payload)>();
@@ -394,7 +396,8 @@ public class ContentReportServiceTests
 
         await CreateReviewAsync(ReviewRequest());
 
-        Assert.Equal(ContentReportHarness.AdminId, Assert.Single(sent).Recipient);
+        Assert.Single(_h.Items);
+        Assert.Empty(sent);
     }
 
     [Fact]

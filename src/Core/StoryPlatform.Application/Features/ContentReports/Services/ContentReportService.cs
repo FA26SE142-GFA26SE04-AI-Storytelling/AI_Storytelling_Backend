@@ -277,22 +277,13 @@ public class ContentReportService : IContentReportService
         ContentReport report, ModerationItem item, int? excludeUserId, CancellationToken cancellationToken)
     {
         var excluded = excludeUserId ?? 0;
-        var userRepository = _unitOfWork.Repository<UserAccount>();
-        var recipients = await userRepository.FindAsync(
+        // Report chỉ do Moderator xử lý: không có Moderator nào khác thì không báo cho ai (không chuyển Administrator).
+        var recipients = await _unitOfWork.Repository<UserAccount>().FindAsync(
             user => user.Role == UserRole.Moderator
                     && user.Status == AccountStatus.Active
                     && !user.IsDeleted
                     && user.Id != excluded,
             cancellationToken: cancellationToken);
-        if (recipients.Count == 0)
-        {
-            recipients = await userRepository.FindAsync(
-                user => user.Role == UserRole.Administrator
-                        && user.Status == AccountStatus.Active
-                        && !user.IsDeleted,
-                cancellationToken: cancellationToken);
-        }
-
         if (recipients.Count == 0)
         {
             return;

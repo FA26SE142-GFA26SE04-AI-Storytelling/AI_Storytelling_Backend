@@ -1,5 +1,9 @@
 # API backend theo actor và luồng tích hợp frontend
 
+> 2026-11-12 (bổ sung người gửi): hàng đợi `ModerationQueue` (list / claim / detail) nay trả `createdByUserId` / `createdByName` cho mục `PublicStoryRemoval` (Creator xin gỡ) và mục `ContentReport` là yêu cầu rà soát của Moderator; report của phụ huynh vẫn `null`. `ContentReportDetailDto` thêm `requestedByUserId` / `requestedByName` (chỉ khi `isReviewItem = true`); `ReportedStoryDto` thêm `authorUserId` / `authorName` (chỉ ở chi tiết report và chỉ khi `scope = "Creator"`; truyện riêng gia đình và `PublishedContentReview` luôn `null`).
+
+> 2026-11-12: bỏ bước escalate report lên Administrator; xử lý report nội dung chỉ còn **Moderator**. Bỏ `POST /api/v1/ContentReportReview/{itemId}/escalate`, `EscalateReportRequestDto` và field `escalationReason` / `escalatedAt` của `ContentReportDetailDto`. Administrator gọi `ContentReportReview` nhận 403, không claim được mục `ContentReport` (kể cả khi không còn Moderator), và không còn nhận thông báo `ContentReported` dự phòng khi không có Moderator. Enum `Escalated` / `ContentReportEscalated` và cột `EscalationReason` / `EscalatedAt` giữ lại cho dữ liệu cũ, không có migration. Frontend cần bỏ nút escalate và màn Admin xử lý report.
+
 > 2026-11-11: gỡ luồng phụ huynh nộp truyện Community; chỉ Content Creator đăng truyện công khai qua PublicStorySubmission.
 
 > 2026-11-11: chi tiết mục duyệt `PublicStoryRemoval` / `PublicStoryReview` có thêm `storyImpact` (thẻ ước, điều ước đang chờ, lộ trình, nhắc rà thẻ khi công khai lại).
@@ -453,7 +457,7 @@ canApprove phản ánh gates view/audio/checklist/flags. Hết claim phải nh�
 
 ### MO3. ContentReport
 
-GET /ContentReportReview/{itemId} → xem báo cáo/nội dung đã mask → POST dismiss reason hoặc archive archiveReason/reason. Report archive có thể làm StoryArchived, không nhầm archive draft của tác giả.
+GET /ContentReportReview/{itemId} → xem báo cáo/nội dung đã mask → POST dismiss reason hoặc archive archiveReason/reason. Report archive có thể làm StoryArchived, không nhầm archive draft của tác giả. Chỉ Moderator đang giữ claim còn hạn mới xử lý report; Administrator không xử lý report và không có bước escalate.
 
 Nguồn: [PublicStoryReviewService](../src/Core/StoryPlatform.Application/Features/Moderation/Services/PublicStoryReviewService.cs), [ModerationQueueService](../src/Core/StoryPlatform.Application/Features/Moderation/Services/ModerationQueueService.cs), [ContentReportReviewService](../src/Core/StoryPlatform.Application/Features/ContentReports/Services/ContentReportReviewService.cs).
 
@@ -489,13 +493,13 @@ POST /{id}/validate với revision kiểm cấu trúc/hash; POST /{id}/evaluatio
 
 Nguồn: [ModerationRubricService](../src/Core/StoryPlatform.Application/Features/Moderation/Rubrics/ModerationRubricService.cs).
 
-### MO9. Rà soát lại nội dung đang công khai và chuyển cấp report
+### MO9. Rà soát lại nội dung đang công khai
 
 GET /api/v1/PublishedContentReview theo query → GET /stories/{storyId} hoặc /roadmaps/{roadmapId}. Moderator tạo POST /review-items với storyId, reason, description/attachmentUrl và readingRoadmapId tùy chọn; bộ phải công khai và chứa truyện. Tạo item cần xử lý qua queue, không trực tiếp gỡ nội dung. Administrator đọc nhưng action tạo review-item chỉ cho Moderator.
 
-Report đang Claimed: Moderator có thể POST /api/v1/ContentReportReview/{itemId}/escalate với reason bắt buộc ≤1000. Ca chuyển Escalated không còn do Moderator quyết định; Administrator GET package rồi POST dismiss/archive. Theo itemStatus/escalatedAt/escalationReason từ package và tải lại sau quyết định. Phân biệt archive report với archive draft, archive bộ mẫu và yêu cầu gỡ Creator.
+Review-item tạo ra là mục ContentReport: Moderator khác (không phải người tạo) claim rồi dismiss/archive theo MO3. Không có bước escalate sang Administrator. Tải lại sau quyết định. Phân biệt archive report với archive draft, archive bộ mẫu và yêu cầu gỡ Creator.
 
-Nguồn: [PublishedContentReviewService](../src/Core/StoryPlatform.Application/Features/ContentReports/Services/PublishedContentReviewService.cs), [ContentReportReviewService escalation](../src/Core/StoryPlatform.Application/Features/ContentReports/Services/ContentReportReviewService.Escalation.cs).
+Nguồn: [PublishedContentReviewService](../src/Core/StoryPlatform.Application/Features/ContentReports/Services/PublishedContentReviewService.cs), [ContentReportReviewService](../src/Core/StoryPlatform.Application/Features/ContentReports/Services/ContentReportReviewService.cs).
 
 ### MO10. Quản lý hướng dẫn sáng tác (Moderator hoặc Administrator)
 
@@ -509,16 +513,16 @@ Tiền tố `/api/v1/moderation/authoring-guides`. Luồng: GET `/` (bộ đang 
 - **Quota:** GET/POST /TokenQuota/config, scope System/Personal/Child; không gửi User tự chế. Quota trẻ GET /TokenQuota/child/{id} theo quyền.
 - **Báo cáo:** POST /BusinessReport/generate → /{reportId}/publish → GET latest-published. Generate/publish chỉ Admin; latest cho người lớn xác thực.
 - **Đối soát:** GET /Payment/mismatched → xác minh → POST /transactions/{id}/mark-paid. Local badge không chứng minh đã đối soát.
-- **Kiểm duyệt:** MO1–MO10 theo guard từng luồng; không bỏ cấm tự duyệt/eligibility. Admin không được suy có quyền tạo/sửa RoadmapTemplate hoặc tạo PublishedContentReview review-item khi action chỉ cho Moderator.
+- **Kiểm duyệt:** MO1–MO10 theo guard từng luồng; không bỏ cấm tự duyệt/eligibility. Admin không được suy có quyền tạo/sửa RoadmapTemplate hoặc tạo PublishedContentReview review-item khi action chỉ cho Moderator. Admin không xử lý report nội dung (ContentReportReview 403) và không claim mục ContentReport.
 - **Hướng dẫn sáng tác:** MO10; Administrator và Moderator cùng quản lý bản nháp và phát hành bộ hướng dẫn cho Parent.
 
 Rubric phiên bản đã có controller thật (AD1), cần nối frontend đúng contract; không còn xếp chung với chức năng chưa có backend. Chỉ số AI tổng hợp, catalog prompt, ứng tuyển Creator và quản lý Parent tổng quát vẫn cần đối chiếu riêng, không suy từ rubric rằng các module đó đã tích hợp.
 
-### AD1. Kích hoạt rubric và xử lý report chuyển cấp
+### AD1. Kích hoạt rubric
 
 Chỉ Administrator gọi POST /api/v1/moderation/rubrics/{id}/activate với revision hiện hành của Draft. Backend validate snapshot, chuyển Active trước sang Retired rồi kích hoạt bản mới trong transaction; không sửa trực tiếp bộ đang Active. Tải lại /active sau phản hồi; RUBRIC_ACTIVE_REQUIRED nghĩa không có đúng một bộ active hợp lệ, không tự chọn bộ mới nhất ở frontend.
 
-Ca ContentReport đã Escalated được Administrator xử lý theo MO9. Quyền Administrator không tự thay thế yêu cầu claim/noself-review trong các loại moderation khác.
+Administrator không xử lý report nội dung: ContentReportReview chỉ cho Moderator, và Admin không claim được mục ContentReport kể cả khi không còn Moderator. Quyền Administrator không tự thay thế yêu cầu claim/noself-review trong các loại moderation khác.
 
 <a id="he-thong"></a>
 ## 12. API dùng chung và hệ thống
@@ -548,11 +552,11 @@ Nguồn: [hub](../src/Core/StoryPlatform.Api/Hubs/NotificationHub.cs), [publishe
 | SERVICE_CHƯA_DÙNG | 3 |
 | LỆCH_CONTRACT | 1 |
 | CHƯA_MAP (baseline) | 84 |
-| CHƯA_RÀ_FRONTEND (contract bổ sung) | 60 |
+| CHƯA_RÀ_FRONTEND (contract bổ sung) | 59 |
 | ALIAS | 1 |
 | WEBHOOK | 1 |
 
-Tổng **305**. Mapping cũ có **158** route gọi đúng qua service (150 + 5 + 3); 1 route lệch contract tính riêng. 60 mục endpoint bổ sung ghi CHƯA_RÀ_FRONTEND, không suy thiếu mapping từ việc tài liệu cũ chưa có endpoint card; cần đối chiếu frontend trước khi phân loại. Đây không phải kết quả audit frontend mới hoặc tỷ lệ kiểm thử end-to-end.
+Tổng **304** (đã trừ route escalate bị gỡ ngày 12/11/2026). Mapping cũ có **158** route gọi đúng qua service (150 + 5 + 3); 1 route lệch contract tính riêng. 59 mục endpoint bổ sung ghi CHƯA_RÀ_FRONTEND, không suy thiếu mapping từ việc tài liệu cũ chưa có endpoint card; cần đối chiếu frontend trước khi phân loại. Đây không phải kết quả audit frontend mới hoặc tỷ lệ kiểm thử end-to-end.
 
 Trạng thái ở mức **method + route**, không bảo đảm mọi actor/nhánh UI:
 - **GỌI_API:** có service và nơi tham chiếu trong app, gồm callback polling; xem source hook/màn hình/chuỗi service.
@@ -576,7 +580,7 @@ Trạng thái ở mức **method + route**, không bảo đảm mọi actor/nhá
 9. USE_MOCK mặc định true nếu NEXT_PUBLIC_USE_MOCK không bằng "false"; không kết luận giá trị môi trường đang chạy.
 10. API client cần xử lý null/bool/binary/202 body rỗng và progress trong lỗi; giữ draft khi conflict, tách child/adult token.
 11. Nối các luồng roadmap P6/MO4/C4; copy trả kết quả theo từng trẻ, không giả định mọi bước đều được thêm.
-12. Moderation dispatch đủ 6 itemType; GrayZone decision không có data, ContentReport Escalated chỉ Administrator quyết định. Rubric activate chỉ Administrator.
+12. Moderation dispatch đủ 6 itemType; GrayZone decision không có data, ContentReport chỉ Moderator quyết định (bỏ nút escalate và màn Admin xử lý report). Rubric activate chỉ Administrator.
 
 ### 13.2 Có thể giữ endpoint chưa nối khi chủ động chọn phương án khác
 
@@ -2369,11 +2373,13 @@ Guard/nghiệp vụ: [PublicStorySubmissionService.cs](../src/Core/StoryPlatform
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
 
 <a id="controller-moderationqueue"></a>
-### ModerationQueue — 4 route
+### ModerationQueue — 5 route
 
-MO1. Moderator/Admin theo eligibility, không tự duyệt. Claim 2 giờ; Open đúng người nhận. Review-views không thay claim.
+MO1. Moderator/Admin theo eligibility, không tự duyệt. Claim 2 giờ; Open đúng người nhận. Review-views không thay claim. Riêng mục `ContentReport` chỉ Moderator claim: Administrator nhận 403, kể cả khi không còn Moderator (không có cơ chế dự phòng như các loại mục khác).
 
 Với `PublicStoryRemoval` / `PublicStoryReview`, claim/open trả thêm `storyImpact`. Màn duyệt gỡ nên hiện danh sách thẻ ước, đánh dấu thẻ có `otherPublishedStoryCount = 0` ("gỡ xong thẻ này hết truyện để gợi ý — nên gắn thẻ cho truyện khác"), cùng `pendingWishCount` / `activeRoadmapItemCount`. Màn duyệt công khai hiện nhắc rà thẻ khi `wishCardsNeedReview = true` (rà bằng `api/v1/moderation/stories/{storyId}/wish-cards`). Không chặn quyết định.
+
+Màn gắn thẻ ước gọi `GET api/v1/moderation/stories/{storyId}/wish-cards/coverage` sau mỗi lần gắn/gỡ/`ai-match`: khi `canBeSuggested = false`, hiện `warning` ("Truyện chưa có thẻ Nhân vật hoặc Nơi chốn nên sẽ không xuất hiện trong gợi ý điều ước."). Chỉ cảnh báo, không chặn.
 
 Guard/nghiệp vụ: [ModerationQueueService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Services/ModerationQueueService.cs).
 
@@ -2383,6 +2389,7 @@ Guard/nghiệp vụ: [ModerationQueueService.cs](../src/Core/StoryPlatform.Appli
 | [GET /api/v1/ModerationQueue](#ep-moderationqueue-list-get) | GỌI_API |
 | [POST /api/v1/ModerationQueue/{itemId}/claim](#ep-moderationqueue-claim-post) | GỌI_API |
 | [GET /api/v1/ModerationQueue/{itemId}](#ep-moderationqueue-open-get) | GỌI_API |
+| [GET /api/v1/ModerationQueue/statistics](#ep-moderationqueue-getstatistics-get) | CHƯA_MAP |
 
 <a id="ep-moderationqueue-grantreviewview-post"></a>
 #### POST /api/v1/ModerationQueue/review-views
@@ -2419,6 +2426,26 @@ Guard/nghiệp vụ: [ModerationQueueService.cs](../src/Core/StoryPlatform.Appli
 - Request: **path** itemId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ModerationItemDetailDto](#dto-moderationitemdetaildto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.openItem](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L104); nơi dùng: [Moderation.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/Moderation.tsx#L76)
+
+<a id="ep-moderationqueue-getstatistics-get"></a>
+#### GET /api/v1/ModerationQueue/statistics
+
+- Action/chức năng: **GetStatistics** — F-19 thống kê hàng đợi và SLA cho Moderator. [ModerationQueueController](../src/Core/StoryPlatform.Api/Controllers/ModerationQueueController.cs).
+- Quyền: **chỉ Moderator** (Administrator, ContentCreator, User đều 403).
+- Request: **query** `periodStart`, `periodEnd` (ngày; kỳ tính trọn ngày theo UTC, gồm cả ngày cuối; `periodEnd` trước `periodStart` → 400).
+- Response: ApiResponse.data = `ModerationStatisticsDto`: `periodStart`, `periodEnd`, `asOfUtc`, `pending`, `claimed`, `overdue` (cả hàng đợi tại `asOfUtc`), `queueByType[]` (`itemType`, `pending`, `claimed`, `overdue`), `myApproved`, `myRejected`, `myChangesRequested` (mục chính Moderator đang đăng nhập đã quyết định trong kỳ), `myDecisionsByType[]` (`itemType`, `approved`, `rejected`, `changesRequested`), `resubmissionCount`, `grayZoneCount` (mục tạo trong kỳ). Chỉ số tổng hợp, không có nội dung truyện, feedback hay dữ liệu trẻ. HTTP: 200.
+- Frontend: **CHƯA_MAP** — chưa có màn hình.
+
+<a id="controller-creatorstatistics"></a>
+### CreatorStatistics — F-22 (`GET /api/v1/CreatorStatistics/content`)
+
+Chỉ `ContentCreator`; mã Creator luôn lấy từ token (tham số `creatorId`/`storyId` gửi lên bị bỏ qua). Moderator, Administrator, User → 403.
+
+#### GET /api/v1/CreatorStatistics/content
+
+- Request: **query** `periodStart`, `periodEnd` (như trên; sai thứ tự → 400).
+- Response: ApiResponse.data = `CreatorContentStatisticsDto`: `periodStart`, `periodEnd`; số truyện chưa archive `published`, `pendingReview`, `ready`, `draft` (mỗi truyện một nhóm); lượt gửi duyệt trong kỳ `submissionsApproved`, `submissionsRejected`, `submissionsChangesRequested` (theo ngày quyết định), `submissionsWithdrawn` (theo ngày rút); `remainingAiCredits`, `remainingSubmitCredits` (từ `ITokenQuotaService.GetCreatorQuotaAsync`); `tier` (hiện luôn `"Creator"`); `partnerProgress`: `windowStart`, `windowEnd` (90 ngày gần nhất theo UTC, độc lập với kỳ), `isEligible`, `criteria[]` (`key` ∈ `published_stories` ≥10, `completion_rate` ≥0.6, `valid_reads` ≥200, `no_violation_removals` = 0; kèm `current`, `target`, `met`). Chỉ tính tiến độ, chưa nâng hạng hay cấp hạn mức đối tác. HTTP: 200.
+- Frontend: **CHƯA_MAP** — chưa có màn hình.
 
 <a id="controller-publicstoryreview"></a>
 ### PublicStoryReview — 9 route
@@ -2533,9 +2560,9 @@ Guard/nghiệp vụ: [ContentReportService.cs](../src/Core/StoryPlatform.Applica
 - Frontend: **LỆCH_CONTRACT** — [guardianService.reportStory](../../AI_Storytelling_Frontend/src/app/services/guardianService.ts#L98) gọi /content-reports, enum/model local. [UI](../../AI_Storytelling_Frontend/src/app/features/library/ModerationDialogs.tsx#L40)
 
 <a id="controller-contentreportreview"></a>
-### ContentReportReview — 4 route
+### ContentReportReview — 3 route
 
-MO3. Moderator/Admin claim report. Dismiss/archive cần lý do, ArchiveReason enum; đọc package mask, không thay bằng Story public.
+MO3. Chỉ Moderator claim và xử lý report; Administrator gọi nhận 403. Dismiss/archive cần lý do, ArchiveReason enum; đọc package mask, không thay bằng Story public.
 
 Guard/nghiệp vụ: [ContentReportReviewService.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/Services/ContentReportReviewService.cs).
 
@@ -2544,14 +2571,13 @@ Guard/nghiệp vụ: [ContentReportReviewService.cs](../src/Core/StoryPlatform.A
 | [GET /api/v1/ContentReportReview/{itemId}](#ep-contentreportreview-getdetail-get) | CHƯA_MAP |
 | [POST /api/v1/ContentReportReview/{itemId}/dismiss](#ep-contentreportreview-dismiss-post) | CHƯA_MAP |
 | [POST /api/v1/ContentReportReview/{itemId}/archive](#ep-contentreportreview-archive-post) | CHƯA_MAP |
-| [POST /api/v1/ContentReportReview/{itemId}/escalate](#ep-contentreportreview-escalate-post) | CHƯA_RÀ_FRONTEND |
 
 
 <a id="ep-contentreportreview-getdetail-get"></a>
 #### GET /api/v1/ContentReportReview/{itemId}
 
-- Action/chức năng: **GetDetail** — Chi tiết report và truyện bị báo cáo; nội dung đã che thông tin cá nhân.. [ContentReportReviewController](../src/Core/StoryPlatform.Api/Controllers/ContentReportReviewController.cs#L24).
-- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Action/chức năng: **GetDetail** — Chi tiết report và truyện bị báo cáo; nội dung đã che thông tin cá nhân.. [ContentReportReviewController](../src/Core/StoryPlatform.Api/Controllers/ContentReportReviewController.cs#L25).
+- Quyền: (Moderator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** itemId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ContentReportDetailDto](#dto-contentreportdetaildto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2559,8 +2585,8 @@ Guard/nghiệp vụ: [ContentReportReviewService.cs](../src/Core/StoryPlatform.A
 <a id="ep-contentreportreview-dismiss-post"></a>
 #### POST /api/v1/ContentReportReview/{itemId}/dismiss
 
-- Action/chức năng: **Dismiss** — Bỏ qua report vì không vi phạm; lý do là bắt buộc.. [ContentReportReviewController](../src/Core/StoryPlatform.Api/Controllers/ContentReportReviewController.cs#L34).
-- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Action/chức năng: **Dismiss** — Bỏ qua report vì không vi phạm; lý do là bắt buộc.. [ContentReportReviewController](../src/Core/StoryPlatform.Api/Controllers/ContentReportReviewController.cs#L35).
+- Quyền: (Moderator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** itemId: `int`; bắt buộc<br>**body** request: [DismissReportRequestDto](#dto-dismissreportrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ContentReportDecisionResultDto](#dto-contentreportdecisionresultdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
@@ -2568,24 +2594,13 @@ Guard/nghiệp vụ: [ContentReportReviewService.cs](../src/Core/StoryPlatform.A
 <a id="ep-contentreportreview-archive-post"></a>
 #### POST /api/v1/ContentReportReview/{itemId}/archive
 
-- Action/chức năng: **Archive** — Gỡ truyện (Archive), không xóa cứng; lý do gỡ và lý do chi tiết là bắt buộc.. [ContentReportReviewController](../src/Core/StoryPlatform.Api/Controllers/ContentReportReviewController.cs#L46).
-- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
+- Action/chức năng: **Archive** — Gỡ truyện (Archive), không xóa cứng; lý do gỡ và lý do chi tiết là bắt buộc.. [ContentReportReviewController](../src/Core/StoryPlatform.Api/Controllers/ContentReportReviewController.cs#L47).
+- Quyền: (Moderator); kèm guard nghiệp vụ của nhóm.
 - Request: **path** itemId: `int`; bắt buộc<br>**body** request: [ArchiveReportRequestDto](#dto-archivereportrequestdto); field/validation/ví dụ tại schema.
 - Response: ApiResponse.data: [ContentReportDecisionResultDto](#dto-contentreportdecisionresultdto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
 
-MO3. Mục Claimed thuộc người nhận còn hạn; ca Escalated do Administrator xử lý. Escalate chuyển trách nhiệm, không phải gỡ truyện. Đọc lại itemStatus trước quyết định.
-
-<a id="ep-contentreportreview-escalate-post"></a>
-#### POST /api/v1/ContentReportReview/{itemId}/escalate
-
-Service chỉ cho Moderator đang giữ claim chuyển cấp; Administrator không gọi escalate.
-
-- Action: **Escalate**. [ContentReportReviewController](../src/Core/StoryPlatform.Api/Controllers/ContentReportReviewController.cs#L58).
-- Quyền: (Moderator hoặc Administrator); kèm guard nghiệp vụ của nhóm.
-- Request: **path** `itemId`: `int`; **body** `request`: [EscalateReportRequestDto](#dto-escalatereportrequestdto).
-- Response: ApiResponse.data: [ContentReportDecisionResultDto](#dto-contentreportdecisionresultdto). HTTP thành công: **200**; lỗi chung mục 2 và guard nhóm.
-- Frontend: **CHƯA_RÀ_FRONTEND** — mục contract bổ sung trong lần khảo sát backend; cần đối chiếu service và màn hình/hook frontend trước khi kết luận đã map hay chưa.
+MO3. Mục Claimed thuộc chính Moderator nhận và còn hạn; Administrator không xử lý report. Đọc lại itemStatus trước quyết định.
 
 
 <a id="controller-staffaccount"></a>
@@ -3840,7 +3855,6 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [CreatorPublicationStatus](#dto-creatorpublicationstatus) | [CreatorPublicationDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/CreatorPublicationDtos.cs#L19) |
 | [CreatorRemovalRequest](#dto-creatorremovalrequest) | [CreatorPublicationDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/CreatorPublicationDtos.cs#L3) |
 | [CreatorRevisionRequest](#dto-creatorrevisionrequest) | [CreatorPublicationDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/CreatorPublicationDtos.cs#L7) |
-| [EscalateReportRequestDto](#dto-escalatereportrequestdto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L140) |
 | [GrayZoneContentCheckDto](#dto-grayzonecontentcheckdto) | [GrayZoneContentCheckService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Services/GrayZoneContentCheckService.cs#L10) |
 | [GrayZoneCriterionScore](#dto-grayzonecriterionscore) | [GrayZoneContracts.cs](../src/Shared/StoryPlatform.Contracts/AI/Moderation/GrayZoneContracts.cs#L4) |
 | [GrayZoneDecisionRequest](#dto-grayzonedecisionrequest) | [GrayZoneWorkflowService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Services/GrayZoneWorkflowService.cs#L13) |
@@ -4891,9 +4905,9 @@ Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/C
 | `description` | `string?` | Có | — |
 | `attachmentUrl` | `string?` | Có | — |
 | `isReviewItem` | `bool` | Không | — |
-| `itemStatus` | `string` | Không | default `string.Empty`; "Claimed" (đang do Moderator giữ) hoặc "Escalated" (đã chuyển Administrator). |
-| `escalationReason` | `string?` | Có | — |
-| `escalatedAt` | `DateTime?` | Có | — |
+| `requestedByUserId` | `int?` | Có | Moderator tạo yêu cầu rà soát; chỉ có khi `isReviewItem = true`, report của phụ huynh luôn `null`. |
+| `requestedByName` | `string?` | Có | Họ tên Moderator đó (tên đăng nhập nếu chưa có họ tên); không trả email. |
+| `itemStatus` | `string` | Không | default `string.Empty`; "Claimed": mục đang do chính Moderator gọi API giữ. |
 | `createdAt` | `DateTime` | Không | — |
 | `story` | [ReportedStoryDto](#dto-reportedstorydto) | Không | default `new()` |
 | `version` | [ReportedVersionDto?](#dto-reportedversiondto) | Có | — |
@@ -5858,6 +5872,8 @@ Nguồn: [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features
 | `storyVersionId` | `int?` | Có | — |
 | `contentReportId` | `int?` | Có | — |
 | `readingRoadmapId` | `int?` | Có | — |
+| `createdByUserId` | `int?` | Có | Người gửi mục: Creator với `PublicStoryReview` / `PublicStoryRemoval`, Moderator với `ContentReport` là yêu cầu rà soát; `null` với report của phụ huynh và loại mục khác. |
+| `createdByName` | `string?` | Có | Họ tên người gửi ở trên (tên đăng nhập nếu chưa có họ tên); không trả email. |
 | `isResubmission` | `bool` | Không | — |
 | `slaDueAt` | `DateTime?` | Có | — |
 | `isOverdue` | `bool` | Không | — |
@@ -5937,6 +5953,8 @@ Nguồn: [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features
 | `storyVersionId` | `int?` | Có | — |
 | `contentReportId` | `int?` | Có | — |
 | `readingRoadmapId` | `int?` | Có | — |
+| `createdByUserId` | `int?` | Có | Người gửi mục: Creator với `PublicStoryReview` / `PublicStoryRemoval`, Moderator với `ContentReport` là yêu cầu rà soát; `null` với report của phụ huynh và loại mục khác. |
+| `createdByName` | `string?` | Có | Họ tên người gửi ở trên (tên đăng nhập nếu chưa có họ tên); không trả email. |
 | `isResubmission` | `bool` | Không | — |
 | `slaDueAt` | `DateTime?` | Có | — |
 | `isOverdue` | `bool` | Không | — |
@@ -6963,6 +6981,8 @@ Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/C
 | `language` | `string` | Không | default `string.Empty` |
 | `scope` | `string` | Không | default `string.Empty` |
 | `isArchived` | `bool` | Không | True khi truyện có `ArchivedAt` (Moderator đã gỡ). |
+| `authorUserId` | `int?` | Có | Creator tác giả; chỉ có ở chi tiết report (`ContentReportReview`) và chỉ khi `scope = "Creator"`. Truyện riêng gia đình và `PublishedContentReview` luôn `null`. |
+| `authorName` | `string?` | Có | Họ tên Creator tác giả (tên đăng nhập nếu chưa có họ tên); không trả email. |
 | `labels` | [List&lt;ReportedLabelDto&gt;](#dto-reportedlabeldto) | Không | default `new()` |
 
 <a id="dto-reportedversiondto"></a>
@@ -8390,24 +8410,6 @@ Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response 
 ~~~
 
 
-<a id="dto-escalatereportrequestdto"></a>
-### EscalateReportRequestDto
-
-Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L140).
-
-| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
-|---|---|---|---|
-| `reason` | `string` | Không | default `string.Empty`; Lý do chuyển Administrator (bắt buộc, tối đa 1000 ký tự). Chỉ Administrator đọc được. |
-
-Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
-
-~~~json
-{
-  "reason": "Cần Administrator đánh giá trường hợp này."
-}
-~~~
-
-
 <a id="dto-grayzonecontentcheckdto"></a>
 ### GrayZoneContentCheckDto
 
@@ -9464,7 +9466,7 @@ Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response 
 12. Roadmap multi-child partial results, reorder Waiting, gỡ Open, preview/copy khi eligibility đổi, clone thay thế bộ Published.
 13. PublicStorySubmission của Creator: duyệt bản Ready, phát hành và mở truyện công khai qua Story/community.
 14. GrayZone Clear/Block, stale rowVersion/fingerprint, job chờ duyệt; rubric revision/clone/validate/evaluate/activate và response object riêng.
-15. Published review-item → report claim → escalate → Admin dismiss/archive; Creator removal/revision và publication lock.
+15. Published review-item → Moderator claim report → dismiss/archive; Administrator gọi ContentReportReview/claim mục ContentReport nhận 403; Creator removal/revision và publication lock.
 
 ### 16.3 Kiểm tra tài liệu và giới hạn
 
@@ -9476,7 +9478,7 @@ Kết quả kiểm tra tĩnh của lần cập nhật 21/10/2026:
 - Mapping trong endpoint card cộng đúng 305: 245 mục giữ baseline, 60 mục CHƯA_RÀ_FRONTEND cần đối chiếu frontend riêng.
 
 
-Inventory lấy trực tiếp mọi HttpGet/Post/Put/Patch/Delete; đếm method+route, phân biệt action/alias/webhook. Kiểm link source/schema/anchor, tổng mapping, JSON mẫu, DTO kế thừa. Đọc lại form/file/body rỗng và quyền theo source; phân biệt thiết kế actor riêng với chênh lệch role gate của manual/assistance. Bản này có 305 endpoint card, 48 nhóm controller; đối chiếu độc lập với attribute route, kể cả route tuyệt đối trong CreatorPublicationController.
+Inventory lấy trực tiếp mọi HttpGet/Post/Put/Patch/Delete; đếm method+route, phân biệt action/alias/webhook. Kiểm link source/schema/anchor, tổng mapping, JSON mẫu, DTO kế thừa. Đọc lại form/file/body rỗng và quyền theo source; phân biệt thiết kế actor riêng với chênh lệch role gate của manual/assistance. Bản này có 304 endpoint card (đã gỡ escalate ngày 12/11/2026), 48 nhóm controller; đối chiếu độc lập với attribute route, kể cả route tuyệt đối trong CreatorPublicationController.
 
 Không chạy API host/startup migration/seed/provider AI hay thao tác ghi DB. Không tạo/apply migration. Snapshot backend HEAD e808851; các tính năng mới có dependency schema theo tài liệu chuyên đề, sự tồn tại của source không xác nhận DB triển khai đã có schema tương ứng. Chưa xác nhận server triển khai, chất lượng AI, concurrency DB thật hoặc UI hoạt động.
 

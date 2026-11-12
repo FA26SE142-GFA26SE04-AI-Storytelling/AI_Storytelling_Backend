@@ -25,6 +25,8 @@ public class ModerationQueueServiceTests
     private readonly Mock<IUnitOfWork> _unitOfWorkMock = new();
     private readonly Mock<IAuditLogWriter> _auditLogWriterMock = new();
     private readonly ModerationQueueService _sut;
+    private const string QueueIncludes =
+        $"{nameof(ModerationItem.Story)},{nameof(ModerationItem.StoryVersion)},{nameof(ModerationItem.CreatedByUser)},{nameof(ModerationItem.ClaimedByUser)},{nameof(ModerationItem.ContentReport)}";
 
     private readonly UserAccount _admin = new()
     {
@@ -192,7 +194,7 @@ public class ModerationQueueServiceTests
         _itemRepoMock.Setup(r => r.GetPagedAsync(
                 1, 100, It.IsAny<Expression<Func<ModerationItem, bool>>>(),
                 It.IsAny<Func<IQueryable<ModerationItem>, IOrderedQueryable<ModerationItem>>>(),
-                $"{nameof(ModerationItem.Story)},{nameof(ModerationItem.StoryVersion)},{nameof(ModerationItem.CreatedByUser)},{nameof(ModerationItem.ClaimedByUser)}", It.IsAny<CancellationToken>()))
+                QueueIncludes, It.IsAny<CancellationToken>()))
             .ReturnsAsync(((IReadOnlyList<ModerationItem>)new[] { item }, 120));
 
         var result = await _sut.ListAsync(11, new ModerationQueueQueryDto
@@ -217,7 +219,7 @@ public class ModerationQueueServiceTests
         _itemRepoMock.Setup(r => r.GetPagedAsync(
                 It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Expression<Func<ModerationItem, bool>>>(),
                 It.IsAny<Func<IQueryable<ModerationItem>, IOrderedQueryable<ModerationItem>>>(),
-                $"{nameof(ModerationItem.Story)},{nameof(ModerationItem.StoryVersion)},{nameof(ModerationItem.CreatedByUser)},{nameof(ModerationItem.ClaimedByUser)}", It.IsAny<CancellationToken>()))
+                QueueIncludes, It.IsAny<CancellationToken>()))
             .Callback<int, int, Expression<Func<ModerationItem, bool>>?,
                 Func<IQueryable<ModerationItem>, IOrderedQueryable<ModerationItem>>?, string?, CancellationToken>(
                 (_, _, f, o, _, _) => { filter = f; order = o; })
@@ -490,7 +492,7 @@ public class ModerationQueueServiceTests
         _itemRepoMock.Setup(r => r.GetPagedAsync(2, 6,
                 It.IsAny<Expression<Func<ModerationItem, bool>>?>(),
                 It.IsAny<Func<IQueryable<ModerationItem>, IOrderedQueryable<ModerationItem>>?>(),
-                $"{nameof(ModerationItem.Story)},{nameof(ModerationItem.StoryVersion)},{nameof(ModerationItem.CreatedByUser)},{nameof(ModerationItem.ClaimedByUser)}", It.IsAny<CancellationToken>()))
+                QueueIncludes, It.IsAny<CancellationToken>()))
             .ReturnsAsync((Items: (IReadOnlyList<ModerationItem>)new[] { item }, TotalCount: 7));
 
         var result = await _sut.ListAsync(_moderatorB.Id, new ModerationQueueQueryDto { PageIndex = 2, PageSize = 6 });
@@ -610,5 +612,96 @@ public class ModerationQueueServiceTests
         var result = await _sut.ClaimAsync(_moderatorA.Id, item.Id);
 
         Assert.Null(result.StoryImpact);
+    }
+
+    // ---- người gửi (createdBy) ----
+
+    private readonly UserAccount _creator = new()
+    {
+        Id = 20, Username = "creator_demo", Email = "creator@example.com", FullName = "Le Van Tac Gia",
+        Role = UserRole.ContentCreator, Status = AccountStatus.Active
+    };
+
+    private void ReturnReport(ContentReport report)
+    {
+        var reportRepo = new Mock<IGenericRepository<ContentReport>>();
+        reportRepo.Setup(r => r.GetByIdAsync(report.Id, It.IsAny<CancellationToken>())).ReturnsAsync(report);
+        _unitOfWorkMock.Setup(u => u.Repository<ContentReport>()).Returns(reportRepo.Object);
+    }
+
+    [Fact]
+    public async Task ListAsync_ShowsSubmitterForCreatorRemovalAndModeratorReviewRequest_ButNotParentReport()
+    {
+        var removal = PendingItem(30, createdBy: _creator.Id);
+        removal.ItemType = ModerationItemType.PublicStoryRemoval;
+        removal.CreatedByUser = _creator;
+        var reviewRequest = PendingItem(31, createdBy: _moderatorA.Id);
+        reviewRequest.ContentReportId = 5;
+        reviewRequest.ContentReport = new ContentReport { Id = 5, IsReviewItem = true };
+        reviewRequest.CreatedByUser = _moderatorA;
+        var parentReport = PendingItem(32, createdBy: _parent.Id);
+        parentReport.ContentReportId = 6;
+        parentReport.ContentReport = new ContentReport { Id = 6, IsReviewItem = false };
+        parentReport.CreatedByUser = _parent;
+        _itemRepoMock.Setup(r => r.GetPagedAsync(
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<Expression<Func<ModerationItem, bool>>?>(),
+                It.IsAny<Func<IQueryable<ModerationItem>, IOrderedQueryable<ModerationItem>>?>(),
+                QueueIncludes, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(((IReadOnlyList<ModerationItem>)new[] { removal, reviewRequest, parentReport }, 3));
+
+        var result = await _sut.ListAsync(_moderatorB.Id, new ModerationQueueQueryDto());
+
+        var removalDto = result.Items.Single(x => x.Id == 30);
+        Assert.Equal(_creator.Id, removalDto.CreatedByUserId);
+        Assert.Equal("Le Van Tac Gia", removalDto.CreatedByName);
+        var reviewDto = result.Items.Single(x => x.Id == 31);
+        Assert.Equal(_moderatorA.Id, reviewDto.CreatedByUserId);
+        Assert.Equal("Nguyen Thi Lan", reviewDto.CreatedByName);
+        var parentDto = result.Items.Single(x => x.Id == 32);
+        Assert.Null(parentDto.CreatedByUserId);
+        Assert.Null(parentDto.CreatedByName);
+    }
+
+    [Fact]
+    public async Task ClaimAsync_ModeratorReviewRequest_ReturnsRequestingModerator()
+    {
+        var item = PendingItem(createdBy: _moderatorB.Id);
+        item.ContentReportId = 5;
+        ReturnItem(item);
+        ReturnReport(new ContentReport { Id = 5, IsReviewItem = true });
+
+        var result = await _sut.ClaimAsync(_moderatorA.Id, item.Id);
+
+        Assert.Equal(_moderatorB.Id, result.CreatedByUserId);
+        Assert.Equal("Tran Van Minh", result.CreatedByName);
+    }
+
+    [Fact]
+    public async Task ClaimAsync_ParentReport_KeepsReporterHidden()
+    {
+        var item = PendingItem(createdBy: _parent.Id);
+        item.ContentReportId = 6;
+        ReturnItem(item);
+        ReturnReport(new ContentReport { Id = 6, IsReviewItem = false });
+
+        var result = await _sut.ClaimAsync(_moderatorA.Id, item.Id);
+
+        Assert.Null(result.CreatedByUserId);
+        Assert.Null(result.CreatedByName);
+    }
+
+    [Fact]
+    public async Task OpenAsync_CreatorRemovalRequest_ReturnsRequestingCreator()
+    {
+        var item = PendingItem(createdBy: _creator.Id);
+        item.ItemType = ModerationItemType.PublicStoryRemoval;
+        item.Status = ModerationItemStatus.Claimed; item.ClaimedByUserId = _moderatorA.Id; item.ClaimedAt = DateTime.UtcNow;
+        ReturnItem(item);
+        _userRepoMock.Setup(r => r.GetByIdAsync(_creator.Id, It.IsAny<CancellationToken>())).ReturnsAsync(_creator);
+
+        var result = await _sut.OpenAsync(_moderatorA.Id, item.Id);
+
+        Assert.Equal(_creator.Id, result.CreatedByUserId);
+        Assert.Equal("Le Van Tac Gia", result.CreatedByName);
     }
 }

@@ -81,6 +81,8 @@ public partial class ContentReportReviewService : IContentReportReviewService
                 Mask)
         };
 
+        await FillSubmitterIdentitiesAsync(detail, report, story, cancellationToken);
+
         if (version != null && snapshot != null)
         {
             detail.Version = ReportedContentBuilder.BuildVersion(version, Mask);
@@ -100,6 +102,29 @@ public partial class ContentReportReviewService : IContentReportReviewService
             cancellationToken: cancellationToken);
 
         return detail;
+    }
+
+    /// <summary>
+    /// Chỉ lộ danh tính không phải phụ huynh: Moderator tạo yêu cầu rà soát và Creator tác giả truyện công khai.
+    /// Phụ huynh báo cáo và tác giả truyện riêng của gia đình luôn ẩn.
+    /// </summary>
+    private async Task FillSubmitterIdentitiesAsync(
+        ContentReportDetailDto detail, ContentReport report, Story story, CancellationToken cancellationToken)
+    {
+        var users = _unitOfWork.Repository<UserAccount>();
+        if (report.IsReviewItem)
+        {
+            var requester = await users.GetByIdAsync(report.ReporterUserId, cancellationToken);
+            detail.RequestedByUserId = report.ReporterUserId;
+            detail.RequestedByName = ModerationQueuePolicy.DisplayName(requester);
+        }
+
+        if (story.Scope == StoryScope.Creator)
+        {
+            var author = await users.GetByIdAsync(story.AuthorUserId, cancellationToken);
+            detail.Story.AuthorUserId = story.AuthorUserId;
+            detail.Story.AuthorName = ModerationQueuePolicy.DisplayName(author);
+        }
     }
 
     /// <summary>Cổng chung: chỉ Moderator đang hoạt động, với mục đang do chính mình nhận và còn hạn.</summary>

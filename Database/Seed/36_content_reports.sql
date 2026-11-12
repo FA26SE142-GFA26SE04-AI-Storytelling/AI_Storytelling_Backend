@@ -1,4 +1,4 @@
--- 36. content_reports (7)
+-- 36. content_reports (8)
 INSERT INTO content_reports (
     "Id", "StoryId", "StoryVersionId", "ReporterUserId", "Reason", "Description",
     "Status", "IsReviewItem", "AttachmentUrl", "ReviewedByUserId", "ReviewedAt",
@@ -20,4 +20,15 @@ VALUES
      NOW() - INTERVAL '6 hours', false),
     (7, 10, 10, 12, 'Cultural', 'Rà soat cach dung tu trong bo truyen mau', 'Closed', true, NULL,
      11, NOW() - INTERVAL '3 hours', NOW() - INTERVAL '3 hours', NOW() - INTERVAL '5 hours', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- Yêu cầu rà soát Pending do moderator_demo2 (Id 12) gửi cho truyện Creator 21; moderator_demo1 nhận xử lý (mục 28).
+INSERT INTO content_reports (
+    "Id", "StoryId", "StoryVersionId", "ReporterUserId", "Reason", "Description",
+    "Status", "IsReviewItem", "AttachmentUrl", "ReviewedByUserId", "ReviewedAt",
+    "ResolvedAt", "CreatedAt", "IsDeleted"
+)
+VALUES
+    (8, 21, 26, 12, 'Inappropriate', 'Rà soát lại cách cá heo gỡ lưới, tránh gợi ý trẻ tự làm', 'Pending', true, NULL,
+     NULL, NULL, NULL, NOW() - INTERVAL '2 hours', false)
 ON CONFLICT ("Id") DO NOTHING;

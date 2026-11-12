@@ -250,7 +250,6 @@ public class ModerationQueueAuthorWorkTests
     [InlineData(ModerationItemType.GrayZoneStory)]
     [InlineData(ModerationItemType.RoadmapTemplateReview)]
     [InlineData(ModerationItemType.CommunitySubmission)]
-    [InlineData(ModerationItemType.PublicStoryRemoval)]
     public async Task ListAsync_ClaimAsync_OpenAsync_NonPublicStoryTypes_DoNotExposeSubmitterIdentity(ModerationItemType itemType)
     {
         const int ReporterOrChildAccountId = 55;

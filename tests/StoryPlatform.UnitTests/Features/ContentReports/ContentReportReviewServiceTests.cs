@@ -289,6 +289,51 @@ public class ContentReportReviewServiceTests
     }
 
     [Fact]
+    public async Task GetDetailAsync_ReviewItem_ShowsRequestingModerator()
+    {
+        var item = _h.AddReportItem(reporterId: ContentReportHarness.OtherModeratorId);
+        _h.Reports.Single().IsReviewItem = true;
+
+        var detail = await GetDetailAsync(item.Id);
+
+        Assert.Equal(ContentReportHarness.OtherModeratorId, detail.RequestedByUserId);
+        Assert.Equal("moderator_demo2", detail.RequestedByName);
+    }
+
+    [Fact]
+    public async Task GetDetailAsync_ParentReport_DoesNotShowRequester()
+    {
+        var item = _h.AddReportItem();
+
+        var detail = await GetDetailAsync(item.Id);
+
+        Assert.Null(detail.RequestedByUserId);
+        Assert.Null(detail.RequestedByName);
+    }
+
+    [Fact]
+    public async Task GetDetailAsync_CreatorStory_ShowsStoryAuthor()
+    {
+        var item = _h.AddReportItem();
+
+        var detail = await GetDetailAsync(item.Id);
+
+        Assert.Equal(ContentReportHarness.CreatorId, detail.Story.AuthorUserId);
+        Assert.Equal("creator_demo", detail.Story.AuthorName);
+    }
+
+    [Fact]
+    public async Task GetDetailAsync_FamilyStory_DoesNotShowParentAuthor()
+    {
+        var item = _h.AddReportItem(storyId: ContentReportHarness.PrivateStoryId, versionId: 60);
+
+        var detail = await GetDetailAsync(item.Id);
+
+        Assert.Null(detail.Story.AuthorUserId);
+        Assert.Null(detail.Story.AuthorName);
+    }
+
+    [Fact]
     public async Task GetDetailAsync_ClaimedBySomeoneElse_IsForbidden()
     {
         var item = _h.AddReportItem();

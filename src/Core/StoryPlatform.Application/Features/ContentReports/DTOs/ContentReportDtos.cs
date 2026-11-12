@@ -28,7 +28,7 @@ public class ContentReportResultDto
 }
 
 /// <summary>
-/// Chi tiết một mục report cho Moderator. Cố ý không có danh tính người báo cáo, hồ sơ trẻ hay dữ liệu học tập;
+/// Chi tiết một mục report cho Moderator. Cố ý không có danh tính phụ huynh báo cáo, hồ sơ trẻ hay dữ liệu học tập;
 /// mọi văn bản đã che số điện thoại, email và biệt danh bé.
 /// </summary>
 public class ContentReportDetailDto
@@ -39,6 +39,10 @@ public class ContentReportDetailDto
     public string? Description { get; set; }
     public string? AttachmentUrl { get; set; }
     public bool IsReviewItem { get; set; }
+    /// <summary>Moderator tạo yêu cầu rà soát; chỉ có khi IsReviewItem = true, report của phụ huynh luôn null.</summary>
+    public int? RequestedByUserId { get; set; }
+    /// <summary>Tên hiển thị của Moderator đó (họ tên, dự phòng tên đăng nhập); không trả email.</summary>
+    public string? RequestedByName { get; set; }
     /// <summary>"Claimed": mục đang do chính Moderator gọi API giữ.</summary>
     public string ItemStatus { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
@@ -61,6 +65,13 @@ public class ReportedStoryDto
     public string Language { get; set; } = string.Empty;
     public string Scope { get; set; } = string.Empty;
     public bool IsArchived { get; set; }
+    /// <summary>
+    /// Creator tác giả truyện; chỉ trả ở chi tiết report và chỉ khi Scope = "Creator".
+    /// Truyện riêng của gia đình luôn null để không lộ phụ huynh.
+    /// </summary>
+    public int? AuthorUserId { get; set; }
+    /// <summary>Tên hiển thị của Creator tác giả (họ tên, dự phòng tên đăng nhập); không trả email.</summary>
+    public string? AuthorName { get; set; }
     public List<ReportedLabelDto> Labels { get; set; } = new();
 }
 

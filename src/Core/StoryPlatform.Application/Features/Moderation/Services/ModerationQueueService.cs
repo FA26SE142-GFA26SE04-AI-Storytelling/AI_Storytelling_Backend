@@ -84,7 +84,7 @@ public class ModerationQueueService : IModerationQueueService
                     : item.Priority == ModerationPriority.Medium ? 1 : 2)
                 .ThenBy(item => item.SlaDueAt)
                 .ThenBy(item => item.Id),
-            includeProperties: $"{nameof(ModerationItem.Story)},{nameof(ModerationItem.StoryVersion)},{nameof(ModerationItem.CreatedByUser)},{nameof(ModerationItem.ClaimedByUser)}",
+            includeProperties: $"{nameof(ModerationItem.Story)},{nameof(ModerationItem.StoryVersion)},{nameof(ModerationItem.CreatedByUser)},{nameof(ModerationItem.ClaimedByUser)},{nameof(ModerationItem.ContentReport)}",
             cancellationToken: cancellationToken);
 
         return new PagedResult<ModerationItemSummaryDto>(
@@ -206,9 +206,28 @@ public class ModerationQueueService : IModerationQueueService
 
     private static string? DisplayName(UserAccount? user) => ModerationQueuePolicy.DisplayName(user);
 
+    /// <summary>
+    /// Chỉ trả người gửi khi đó là Creator (gửi duyệt / xin gỡ truyện công khai) hoặc Moderator
+    /// (yêu cầu rà soát nội dung đang công khai). Report của phụ huynh luôn ẩn danh.
+    /// </summary>
+    private static bool ExposesCreatedBy(ModerationItem item) =>
+        item.ItemType is ModerationItemType.PublicStoryReview or ModerationItemType.PublicStoryRemoval
+        || (item.ItemType == ModerationItemType.ContentReport
+            && item.ContentReport is { IsDeleted: false, IsReviewItem: true });
+
     private async Task HydrateSummaryRelationsAsync(ModerationItem item, CancellationToken cancellationToken)
     {
-        var includeCreatedBy = item.ItemType == ModerationItemType.PublicStoryReview && item.CreatedByUserId.HasValue;
+        // Cần đọc report để phân biệt yêu cầu rà soát của Moderator với report của phụ huynh.
+        if (item.ItemType == ModerationItemType.ContentReport
+            && item.ContentReport == null
+            && item.ContentReportId.HasValue)
+        {
+            var reportRepo = _unitOfWork.Repository<ContentReport>();
+            if (reportRepo != null)
+                item.ContentReport = await reportRepo.GetByIdAsync(item.ContentReportId.Value, cancellationToken);
+        }
+
+        var includeCreatedBy = ExposesCreatedBy(item) && item.CreatedByUserId.HasValue;
         if (!item.StoryId.HasValue && !item.StoryVersionId.HasValue && !includeCreatedBy)
             return;
 
@@ -267,7 +286,7 @@ public class ModerationQueueService : IModerationQueueService
         dto.ItemType = item.ItemType.ToString();
         dto.Status = item.Status.ToString();
         dto.Priority = item.Priority.ToString();
-        var isPublicStoryReview = item.ItemType == ModerationItemType.PublicStoryReview;
+        var exposesCreatedBy = ExposesCreatedBy(item);
         dto.StoryId = item.StoryId;
         dto.StoryTitle = !string.IsNullOrWhiteSpace(item.StoryVersion?.Title)
             ? item.StoryVersion.Title
@@ -275,8 +294,8 @@ public class ModerationQueueService : IModerationQueueService
         dto.StoryVersionId = item.StoryVersionId;
         dto.ContentReportId = item.ContentReportId;
         dto.ReadingRoadmapId = item.ReadingRoadmapId;
-        dto.CreatedByUserId = isPublicStoryReview ? item.CreatedByUserId : null;
-        dto.CreatedByName = isPublicStoryReview ? DisplayName(item.CreatedByUser) : null;
+        dto.CreatedByUserId = exposesCreatedBy ? item.CreatedByUserId : null;
+        dto.CreatedByName = exposesCreatedBy ? DisplayName(item.CreatedByUser) : null;
         dto.IsResubmission = item.IsResubmission;
         dto.SlaDueAt = item.SlaDueAt;
         dto.IsOverdue = item.SlaDueAt != null && item.SlaDueAt < now

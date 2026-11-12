@@ -1,6 +1,7 @@
 {
   "app": "dotnet run --project src/StoryPlatform.Infra.csproj",
   "context": {
-    "includeEcsService": true
+    "includeEcsService": true,
+    "aiServiceBaseUrl": "https://taletale-ai-production-m63yiaft7q-as.a.run.app"
   }
 }

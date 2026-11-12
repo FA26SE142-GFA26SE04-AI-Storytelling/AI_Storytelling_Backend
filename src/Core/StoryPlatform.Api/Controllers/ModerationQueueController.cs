@@ -16,11 +16,28 @@ public class ModerationQueueController : BaseApiController
 
     private readonly IModerationReviewViewService _reviewViewService;
 
+    private readonly IModerationStatisticsService _statisticsService;
+
     public ModerationQueueController(
-        IModerationQueueService queueService, IModerationReviewViewService reviewViewService)
+        IModerationQueueService queueService, IModerationReviewViewService reviewViewService,
+        IModerationStatisticsService statisticsService)
     {
         _queueService = queueService;
         _reviewViewService = reviewViewService;
+        _statisticsService = statisticsService;
+    }
+
+    /// <summary>
+    /// Thống kê hàng đợi và SLA (F-19): số mục chờ / đang nhận / quá hạn và số mục Moderator này đã quyết định trong kỳ.
+    /// Chỉ Moderator; Administrator không dùng được endpoint này.
+    /// </summary>
+    [HttpGet("statistics")]
+    [Authorize(Roles = "Moderator")]
+    public async Task<ActionResult<ApiResponse<ModerationStatisticsDto>>> GetStatistics(
+        [FromQuery] DateTime periodStart, [FromQuery] DateTime periodEnd, CancellationToken cancellationToken)
+    {
+        var result = await _statisticsService.GetAsync(GetCurrentUserId(), periodStart, periodEnd, cancellationToken);
+        return HandleResult(result, "Lấy thống kê hàng đợi kiểm duyệt thành công.");
     }
 
     /// <summary>"Xem để rà soát": cấp quyền đọc tạm 2 giờ cho nội dung đã công khai (ghi audit).</summary>

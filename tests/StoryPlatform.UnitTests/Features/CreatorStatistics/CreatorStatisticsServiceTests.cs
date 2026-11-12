@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Features.TokenQuota.Services;
 using StoryPlatform.Application.Features.PlanBenefits.Services;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.BusinessReports.Services;
@@ -406,5 +407,143 @@ public class CreatorStatisticsServiceTests
         var reading = await sut.GetReadingAsync(CreatorId, PeriodStart, PeriodEnd, StoryId);
 
         Assert.Equal(1, reading.Stories.Single().ValidReads);
+    }
+
+    // ---------- F-22: thống kê nội dung ----------
+
+    private static readonly DateTime ContentNow = new(2026, 11, 30, 12, 0, 0, DateTimeKind.Utc);
+
+    private sealed class FixedClock(DateTime utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => new(utcNow, TimeSpan.Zero);
+    }
+
+    private TokenQuotaService Quota() => new(_store);
+
+    private CreatorStatisticsService ContentSut() =>
+        new(_store, new RevenueStatisticsService(_store), null, Quota(), new FixedClock(ContentNow));
+
+    private Story OwnStory(int id, int authorId, StoryStatus status, bool published = false) => _store.Seed(new Story
+    {
+        Id = id, AuthorUserId = authorId, Title = $"Truyện {id}", Scope = StoryScope.Creator, Status = status,
+        IsPublished = published, PublishedAt = published ? BeforePeriod : null, CreatedAt = BeforePeriod
+    });
+
+    private int _nextItemId = 1;
+
+    private ModerationItem Review(
+        int storyId, int creatorId, ModerationItemStatus status, DateTime? decidedAt = null, DateTime? withdrawnAt = null) =>
+        _store.Seed(new ModerationItem
+        {
+            Id = _nextItemId++, ItemType = ModerationItemType.PublicStoryReview, StoryId = storyId, CreatedByUserId = creatorId,
+            Status = status, DecidedAt = decidedAt, WithdrawnAt = withdrawnAt, CreatedAt = BeforePeriod
+        });
+
+    [Fact]
+    public async Task Content_CountsStoriesByStateAndSubmissionsInPeriod_OnlyForTheCaller()
+    {
+        // StoryId và SecondStoryId đang Published (từ constructor).
+        OwnStory(300, CreatorId, StoryStatus.Draft);
+        OwnStory(301, CreatorId, StoryStatus.Ready);
+        OwnStory(302, CreatorId, StoryStatus.ContentReview);
+        OwnStory(303, CreatorId, StoryStatus.Ready).ArchivedAt = BeforePeriod;
+        OwnStory(310, OtherCreatorId, StoryStatus.Draft);
+        Review(302, CreatorId, ModerationItemStatus.Pending);
+        var inPeriod = Morning;
+        Review(StoryId, CreatorId, ModerationItemStatus.Approved, inPeriod);
+        Review(SecondStoryId, CreatorId, ModerationItemStatus.Approved, inPeriod);
+        Review(300, CreatorId, ModerationItemStatus.Rejected, inPeriod);
+        Review(301, CreatorId, ModerationItemStatus.ChangesRequested, inPeriod);
+        Review(301, CreatorId, ModerationItemStatus.Withdrawn, withdrawnAt: inPeriod);
+        Review(StoryId, CreatorId, ModerationItemStatus.Approved, PeriodStart.AddDays(-1));
+        Review(OtherCreatorStoryId, OtherCreatorId, ModerationItemStatus.Approved, inPeriod);
+
+        var mine = await ContentSut().GetContentAsync(CreatorId, PeriodStart, PeriodEnd);
+        var theirs = await ContentSut().GetContentAsync(OtherCreatorId, PeriodStart, PeriodEnd);
+
+        Assert.Equal((1, 1, 1, 2), (mine.Draft, mine.Ready, mine.PendingReview, mine.Published));
+        Assert.Equal((2, 1, 1, 1), (
+            mine.SubmissionsApproved, mine.SubmissionsRejected, mine.SubmissionsChangesRequested, mine.SubmissionsWithdrawn));
+        Assert.Equal("Creator", mine.Tier);
+        Assert.Equal((1, 0, 0, 1), (theirs.Draft, theirs.Ready, theirs.PendingReview, theirs.Published));
+        Assert.Equal((1, 0, 0, 0), (
+            theirs.SubmissionsApproved, theirs.SubmissionsRejected, theirs.SubmissionsChangesRequested, theirs.SubmissionsWithdrawn));
+    }
+
+    [Fact]
+    public async Task Content_ReturnsRemainingCreditsMatchingTheQuotaService()
+    {
+        var result = await ContentSut().GetContentAsync(CreatorId, PeriodStart, PeriodEnd);
+        var quota = await Quota().GetCreatorQuotaAsync(CreatorId);
+
+        Assert.True(quota.AiCredits.TotalRemaining > 0);
+        Assert.Equal((quota.AiCredits.TotalRemaining, quota.SubmitCredits.TotalRemaining),
+            (result.RemainingAiCredits, result.RemainingSubmitCredits));
+    }
+
+    [Fact]
+    public async Task Content_PartnerProgress_ReportsEachCriterion_AndViolationRemovalBreaksEligibility()
+    {
+        // Thiếu hết: 2 truyện Published, 0 lượt đọc.
+        var starting = await ContentSut().GetContentAsync(CreatorId, PeriodStart, PeriodEnd);
+        var progress = starting.PartnerProgress;
+        Assert.False(progress.IsEligible);
+        Assert.Equal(new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc), progress.WindowStart);
+        Assert.Equal(new DateTime(2026, 11, 30, 0, 0, 0, DateTimeKind.Utc), progress.WindowEnd);
+        Assert.Equal(
+            ["published_stories", "completion_rate", "valid_reads", "no_violation_removals"],
+            progress.Criteria.Select(criterion => criterion.Key));
+        Assert.Equal((2m, false), (progress.Criteria[0].Current, progress.Criteria[0].Met));
+        Assert.Equal((0m, false), (progress.Criteria[2].Current, progress.Criteria[2].Met));
+        Assert.True(progress.Criteria[3].Met);
+
+        // Đủ 10 truyện Published và 200 lượt đọc hợp lệ (1 trẻ × 10 truyện × 20 ngày, tối đa 10 lượt mỗi ngày).
+        var storyIds = new List<int> { StoryId, SecondStoryId };
+        for (var id = 400; id < 408; id++)
+        {
+            OwnStory(id, CreatorId, StoryStatus.Ready, published: true);
+            storyIds.Add(id);
+        }
+
+        for (var day = 0; day < 20; day++)
+        {
+            foreach (var storyId in storyIds)
+            {
+                Completed(storyId, PaidChildId, Morning.AddDays(day - 14).AddMinutes(storyIds.IndexOf(storyId)));
+            }
+        }
+
+        var eligible = (await ContentSut().GetContentAsync(CreatorId, PeriodStart, PeriodEnd)).PartnerProgress;
+        Assert.True(eligible.IsEligible);
+        Assert.Equal((10m, 1m, 200m, 0m), (
+            eligible.Criteria[0].Current, eligible.Criteria[1].Current, eligible.Criteria[2].Current, eligible.Criteria[3].Current));
+
+        // Một truyện bị gỡ vì vi phạm trong cửa sổ: mất điều kiện, số truyện Published giảm còn 9.
+        var removed = StoryOf(400);
+        removed.ArchivedAt = Morning;
+        removed.ArchivedReason = ArchivedReason.Copyright;
+        var afterRemoval = (await ContentSut().GetContentAsync(CreatorId, PeriodStart, PeriodEnd)).PartnerProgress;
+        Assert.False(afterRemoval.IsEligible);
+        Assert.Equal((9m, 1m), (afterRemoval.Criteria[0].Current, afterRemoval.Criteria[3].Current));
+        Assert.False(afterRemoval.Criteria[3].Met);
+    }
+
+    [Fact]
+    public async Task Content_PartnerProgress_IgnoresRemovalByParentPreference()
+    {
+        var story = StoryOf(StoryId);
+        story.ArchivedAt = Morning;
+        story.ArchivedReason = ArchivedReason.SupervisorPreference;
+
+        var progress = (await ContentSut().GetContentAsync(CreatorId, PeriodStart, PeriodEnd)).PartnerProgress;
+
+        Assert.True(progress.Criteria[3].Met);
+    }
+
+    [Fact]
+    public async Task Content_WithInvalidPeriod_Throws()
+    {
+        await Assert.ThrowsAsync<BadRequestException>(
+            () => ContentSut().GetContentAsync(CreatorId, PeriodEnd, PeriodStart));
     }
 }

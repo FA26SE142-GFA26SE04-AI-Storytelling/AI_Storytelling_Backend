@@ -100,6 +100,7 @@ public sealed class CreatorStatisticsApiTests(ApiFactory factory) : IClassFixtur
     [Theory]
     [InlineData("/api/v1/CreatorStatistics/reading?periodStart=2026-11-01&periodEnd=2026-11-30")]
     [InlineData("/api/v1/CreatorStatistics/revenue?periodStart=2026-11-01&periodEnd=2026-11-30")]
+    [InlineData("/api/v1/CreatorStatistics/content?periodStart=2026-11-01&periodEnd=2026-11-30")]
     public async Task CreatorStatistics_AreContentCreatorOnly(string url)
     {
         foreach (var role in new[] { UserRole.User, UserRole.Moderator, UserRole.Administrator })
@@ -109,6 +110,60 @@ public sealed class CreatorStatisticsApiTests(ApiFactory factory) : IClassFixtur
         }
 
         Assert.Equal(HttpStatusCode.Unauthorized, (await factory.CreateClient().GetAsync(url)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Creator_SeesOwnContentStatistics_AndQueryParametersCannotReachAnotherCreator()
+    {
+        var creator = await factory.AddUserAsync(UserRole.ContentCreator);
+        var otherCreator = await factory.AddUserAsync(UserRole.ContentCreator);
+        var now = DateTime.UtcNow;
+        var otherStoryId = await factory.WithDbAsync(async db =>
+        {
+            Story New(UserAccount author, StoryStatus status, bool published) => new()
+            {
+                AuthorUserId = author.Id, Title = "Truyện", Scope = StoryScope.Creator, Source = StorySource.Manual,
+                Status = status, IsPublished = published, PublishedAt = published ? now.AddDays(-30) : null,
+                Language = "vi", AgeBand = "6-8"
+            };
+            var published = New(creator, StoryStatus.Ready, true);
+            var draft = New(creator, StoryStatus.Draft, false);
+            var theirs = New(otherCreator, StoryStatus.Ready, true);
+            db.AddRange(published, draft, theirs);
+            await db.SaveChangesAsync();
+            db.Add(new ModerationItem
+            {
+                ItemType = ModerationItemType.PublicStoryReview, StoryId = published.Id, CreatedByUserId = creator.Id,
+                Status = ModerationItemStatus.Approved, DecidedAt = now.AddHours(-1)
+            });
+            await db.SaveChangesAsync();
+            return theirs.Id;
+        });
+        var client = factory.ClientFor(creator);
+        var period = $"periodStart={now.AddDays(-1):yyyy-MM-dd}&periodEnd={now:yyyy-MM-dd}";
+
+        // creatorId / storyId trong query không có tác dụng: kết quả vẫn là của người đăng nhập.
+        var content = await AdminApi.GetDataAsync(
+            client, $"/api/v1/CreatorStatistics/content?{period}&creatorId={otherCreator.Id}&storyId={otherStoryId}");
+
+        Assert.Equal(
+            (1, 1, 0, 0, 1),
+            (content.GetProperty("published").GetInt32(), content.GetProperty("draft").GetInt32(),
+                content.GetProperty("pendingReview").GetInt32(), content.GetProperty("ready").GetInt32(),
+                content.GetProperty("submissionsApproved").GetInt32()));
+        Assert.Equal("Creator", content.GetProperty("tier").GetString());
+        Assert.True(content.GetProperty("remainingAiCredits").GetInt32() >= 0);
+        Assert.Equal(4, content.GetProperty("partnerProgress").GetProperty("criteria").GetArrayLength());
+        Assert.False(content.GetProperty("partnerProgress").GetProperty("isEligible").GetBoolean());
+        // Chỉ có số tổng hợp: không lộ nội dung truyện, feedback hay dữ liệu của trẻ.
+        var raw = content.GetRawText();
+        foreach (var forbidden in new[] { "childProfile", "feedback", "title" })
+        {
+            Assert.DoesNotContain(forbidden, raw, StringComparison.OrdinalIgnoreCase);
+        }
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync(
+            $"/api/v1/CreatorStatistics/content?periodStart={now:yyyy-MM-dd}&periodEnd={now.AddDays(-5):yyyy-MM-dd}")).StatusCode);
     }
 
     [Theory]

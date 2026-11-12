@@ -250,9 +250,10 @@ Core sends the ID token automatically when `AIService:IdTokenAudience` is set
    - `AiInternalApiKey`: must equal the value of the Secret Manager secret the AI API reads.
    - `AiGoogleCredentialsJson`: the credential JSON from step 1, as one string.
    Like `CloudflareTunnelToken`, these keys are deliberately not in the CDK secret template.
-3. **Deploy**: `cdk deploy --context aiServiceBaseUrl=https://<canonical-url> --profile storyplatform`
-   (persist the context in `cdk.json` once verified, otherwise the next plain deploy removes the
-   settings). The task fails to start if either secret key is missing, so do step 2 first.
+3. **Deploy**: `cdk deploy --profile storyplatform`. The canonical URL is persisted in `cdk.json`
+   as `aiServiceBaseUrl`, so a plain deploy keeps the settings; pass
+   `--context aiServiceBaseUrl=https://<canonical-url>` only to override it. The task fails to start if
+   either secret key is missing, so do step 2 first.
 4. **Verify**: Core `/health` is healthy, then run one AI story request and check the Core logs for
    a 200 from the AI API. A 401/403 from Cloud Run means the ID token or Invoker grant is wrong; a
    401 from the AI API itself means the internal key does not match.

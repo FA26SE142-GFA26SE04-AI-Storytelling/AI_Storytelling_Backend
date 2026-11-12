@@ -29,3 +29,11 @@ VALUES
     (24, 19, NULL, NULL, '', '', NULL, NULL, NULL),
     (900, 900, NULL, NULL, '', '', NULL, NULL, NULL)
 ON CONFLICT ("StoryVersionId") DO NOTHING;
+
+INSERT INTO story_version_authoring_metadata (
+    "StoryVersionId", "StoryId", "AuthoringOrigin", "AssistanceProvenanceJson", "SourceDeclaration", "RightsDeclaration", "ImportFileName", "ImportSourceHash", "ImportPreviewHash"
+)
+VALUES
+    (25, 20, 'Write', NULL, 'Nội dung mẫu tự sáng tác để kiểm thử', 'Người kiểm thử có quyền sử dụng nội dung mẫu', NULL, NULL, NULL),
+    (26, 21, 'Write', NULL, 'Nội dung mẫu tự sáng tác để kiểm thử', 'Người kiểm thử có quyền sử dụng nội dung mẫu', NULL, NULL, NULL)
+ON CONFLICT ("StoryVersionId") DO NOTHING;

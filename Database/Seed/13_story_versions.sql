@@ -1,4 +1,4 @@
--- 13. story_versions (25: 13 Parent versions, 12 Creator versions)
+-- 13. story_versions (27: 13 Parent versions, 14 Creator versions)
 -- Creator Story 11: versions 11 -> 12 (current); Creator Story 12: version 13 (Import/current).
 -- Command receipts and protected preview tokens are created by the API, not fabricated in seed data.
 INSERT INTO story_versions (
@@ -74,4 +74,14 @@ INSERT INTO story_versions (
 )
 VALUES
     (900, 900, 1, 'Thỏ con đi lạc', E'Thỏ con đi lạc vào rừng. Trời bắt đầu tối.\n\nThỏ nghe tiếng sột soạt sau bụi cây. Thỏ hỏi: "Có ai ở đó không?"\n\nHóa ra đó là bác Gấu đến giúp Thỏ tìm đường về.\n\nBác Gấu dẫn Thỏ về tới cửa hang.\n\nMẹ Thỏ ôm Thỏ vào lòng.\n\nTừ đó Thỏ luôn nhờ người lớn khi bị lạc.', 'Thỏ đi lạc', 'Bác Gấu giúp Thỏ', 'Thỏ về nhà', 'Nhờ người lớn giúp khi bị lạc', NULL, NULL, 95.000, 'Initial', NULL, 2, NOW() - INTERVAL '1 day', true, NOW() - INTERVAL '1 day', false, 1, NULL)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- Story 20: v1 (Id 25) công khai, đang chờ duyệt yêu cầu gỡ (mục 29).
+-- Story 21: v1 (Id 26) công khai, đang có yêu cầu rà soát của Moderator (report 8, mục 28).
+INSERT INTO story_versions (
+    "Id", "StoryId", "VersionNo", "Title", "Content", "OutlineOpening", "OutlineDevelopment", "OutlineEnding", "Lesson", "ReadabilityFkgl", "ReadabilityFre", "SafetyScore", "EditType", "EditorUserId", "OutlineApprovedByUserId", "OutlineApprovedAt", "IsCurrent", "CreatedAt", "IsDeleted", "AudienceRevision", "BaseVersionId"
+)
+VALUES
+    (25, 20, 1, 'Voi con biết xin lỗi', 'Voi con lỡ làm đổ lâu đài cát của Thỏ. Voi con xin lỗi và cùng Thỏ xây lại. Hai bạn xây được một lâu đài còn đẹp hơn.', 'Voi con làm đổ lâu đài cát', 'Voi con xin lỗi Thỏ', 'Hai bạn cùng xây lại', 'Biết nhận lỗi và sửa sai', 2.700, 83.000, 98.000, 'Initial', 13, NULL, NULL, true, NOW() - INTERVAL '6 days', false, 1, NULL),
+    (26, 21, 1, 'Cá heo tốt bụng', 'Cá heo thấy bạn rùa bị mắc vào lưới. Cá heo gọi các bạn cá đến giúp. Mọi người cùng gỡ lưới và rùa được tự do.', 'Rùa bị mắc lưới', 'Cá heo gọi bạn đến giúp', 'Rùa được tự do', 'Biết giúp đỡ người gặp khó khăn', 2.700, 83.000, 98.000, 'Initial', 13, NULL, NULL, true, NOW() - INTERVAL '5 days', false, 1, NULL)
 ON CONFLICT ("Id") DO NOTHING;

@@ -67,3 +67,11 @@ SET "ReviewStatus" = 'Rejected', "ReviewedByUserId" = 11,
     "ReviewedAt" = NOW() - INTERVAL '14 days',
     "ReviewFeedback" = '{"development":"Safety concern in this section"}'::jsonb
 WHERE "StoryVersionId" = 9 AND "ReviewStatus" = 'None';
+
+INSERT INTO story_version_moderation_states (
+    "StoryVersionId", "ModerationZone", "GrayZoneFlags", "GrayZoneCleared", "GrayZoneClearedByUserId", "GrayZoneClearedAt", "ReviewStatus", "ReviewSubmittedAt", "ReviewedByUserId", "ReviewedAt", "ReviewFeedback"
+)
+VALUES
+    (25, NULL, NULL, false, NULL, NULL, 'Approved', NOW() - INTERVAL '5 days', 12, NOW() - INTERVAL '4 days', '{"general":"Đạt yêu cầu công khai"}'::jsonb),
+    (26, NULL, NULL, false, NULL, NULL, 'Approved', NOW() - INTERVAL '4 days', 11, NOW() - INTERVAL '3 days', '{"general":"Đạt yêu cầu công khai"}'::jsonb)
+ON CONFLICT ("StoryVersionId") DO NOTHING;

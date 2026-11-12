@@ -1,5 +1,7 @@
 # API backend theo actor và luồng tích hợp frontend
 
+> 2026-11-12 (bổ sung người gửi): hàng đợi `ModerationQueue` (list / claim / detail) nay trả `createdByUserId` / `createdByName` cho mục `PublicStoryRemoval` (Creator xin gỡ) và mục `ContentReport` là yêu cầu rà soát của Moderator; report của phụ huynh vẫn `null`. `ContentReportDetailDto` thêm `requestedByUserId` / `requestedByName` (chỉ khi `isReviewItem = true`); `ReportedStoryDto` thêm `authorUserId` / `authorName` (chỉ ở chi tiết report và chỉ khi `scope = "Creator"`; truyện riêng gia đình và `PublishedContentReview` luôn `null`).
+
 > 2026-11-12: bỏ bước escalate report lên Administrator; xử lý report nội dung chỉ còn **Moderator**. Bỏ `POST /api/v1/ContentReportReview/{itemId}/escalate`, `EscalateReportRequestDto` và field `escalationReason` / `escalatedAt` của `ContentReportDetailDto`. Administrator gọi `ContentReportReview` nhận 403, không claim được mục `ContentReport` (kể cả khi không còn Moderator), và không còn nhận thông báo `ContentReported` dự phòng khi không có Moderator. Enum `Escalated` / `ContentReportEscalated` và cột `EscalationReason` / `EscalatedAt` giữ lại cho dữ liệu cũ, không có migration. Frontend cần bỏ nút escalate và màn Admin xử lý report.
 
 > 2026-11-11: gỡ luồng phụ huynh nộp truyện Community; chỉ Content Creator đăng truyện công khai qua PublicStorySubmission.
@@ -4903,6 +4905,8 @@ Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/C
 | `description` | `string?` | Có | — |
 | `attachmentUrl` | `string?` | Có | — |
 | `isReviewItem` | `bool` | Không | — |
+| `requestedByUserId` | `int?` | Có | Moderator tạo yêu cầu rà soát; chỉ có khi `isReviewItem = true`, report của phụ huynh luôn `null`. |
+| `requestedByName` | `string?` | Có | Họ tên Moderator đó (tên đăng nhập nếu chưa có họ tên); không trả email. |
 | `itemStatus` | `string` | Không | default `string.Empty`; "Claimed": mục đang do chính Moderator gọi API giữ. |
 | `createdAt` | `DateTime` | Không | — |
 | `story` | [ReportedStoryDto](#dto-reportedstorydto) | Không | default `new()` |
@@ -5868,6 +5872,8 @@ Nguồn: [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features
 | `storyVersionId` | `int?` | Có | — |
 | `contentReportId` | `int?` | Có | — |
 | `readingRoadmapId` | `int?` | Có | — |
+| `createdByUserId` | `int?` | Có | Người gửi mục: Creator với `PublicStoryReview` / `PublicStoryRemoval`, Moderator với `ContentReport` là yêu cầu rà soát; `null` với report của phụ huynh và loại mục khác. |
+| `createdByName` | `string?` | Có | Họ tên người gửi ở trên (tên đăng nhập nếu chưa có họ tên); không trả email. |
 | `isResubmission` | `bool` | Không | — |
 | `slaDueAt` | `DateTime?` | Có | — |
 | `isOverdue` | `bool` | Không | — |
@@ -5947,6 +5953,8 @@ Nguồn: [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features
 | `storyVersionId` | `int?` | Có | — |
 | `contentReportId` | `int?` | Có | — |
 | `readingRoadmapId` | `int?` | Có | — |
+| `createdByUserId` | `int?` | Có | Người gửi mục: Creator với `PublicStoryReview` / `PublicStoryRemoval`, Moderator với `ContentReport` là yêu cầu rà soát; `null` với report của phụ huynh và loại mục khác. |
+| `createdByName` | `string?` | Có | Họ tên người gửi ở trên (tên đăng nhập nếu chưa có họ tên); không trả email. |
 | `isResubmission` | `bool` | Không | — |
 | `slaDueAt` | `DateTime?` | Có | — |
 | `isOverdue` | `bool` | Không | — |
@@ -6973,6 +6981,8 @@ Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/C
 | `language` | `string` | Không | default `string.Empty` |
 | `scope` | `string` | Không | default `string.Empty` |
 | `isArchived` | `bool` | Không | True khi truyện có `ArchivedAt` (Moderator đã gỡ). |
+| `authorUserId` | `int?` | Có | Creator tác giả; chỉ có ở chi tiết report (`ContentReportReview`) và chỉ khi `scope = "Creator"`. Truyện riêng gia đình và `PublishedContentReview` luôn `null`. |
+| `authorName` | `string?` | Có | Họ tên Creator tác giả (tên đăng nhập nếu chưa có họ tên); không trả email. |
 | `labels` | [List&lt;ReportedLabelDto&gt;](#dto-reportedlabeldto) | Không | default `new()` |
 
 <a id="dto-reportedversiondto"></a>

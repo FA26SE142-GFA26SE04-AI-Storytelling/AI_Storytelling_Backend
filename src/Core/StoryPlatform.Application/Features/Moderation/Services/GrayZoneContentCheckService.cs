@@ -24,6 +24,9 @@ public sealed class GrayZoneContentCheckService(IUnitOfWork uow, IGrayZoneEvalua
             throw new ForbiddenException("AUTHORING_ACCESS_REQUIRED");
         if (story.Scope == StoryScope.Creator && (story.IsPublished || story.ArchivedAt != null
             || await uow.Repository<ModerationItem>().ExistsAsync(x => x.StoryId == storyId && !x.IsDeleted
+                // Reports retain the snapshot they were filed against. A report on an older
+                // version must not freeze safety checks for a new editable revision.
+                && (x.ItemType != ModerationItemType.ContentReport || x.StoryVersionId == null || x.StoryVersionId == versionId)
                 && (x.Status == ModerationItemStatus.Pending || x.Status == ModerationItemStatus.Claimed), ct)))
             throw new ConflictException("MODERATION_SOURCE_LOCKED");
         var blocked = new List<string>();

@@ -157,6 +157,29 @@ public sealed class CreatorAuthoringServiceTests
     }
 
     [Theory]
+    [InlineData(ModerationItemType.PublicStoryReview, ModerationItemStatus.Pending)]
+    [InlineData(ModerationItemType.PublicStoryReview, ModerationItemStatus.Claimed)]
+    [InlineData(ModerationItemType.PublicStoryRemoval, ModerationItemStatus.Pending)]
+    [InlineData(ModerationItemType.PublicStoryRemoval, ModerationItemStatus.Claimed)]
+    public async Task ListAndDetailExposeCurrentOpenPublicationItem(ModerationItemType type, ModerationItemStatus status)
+    {
+        var store = new Store();
+        var draft = await store.Service.CreateDraftAsync(1, NewDraft("open-item"));
+        store.Items<ModerationItem>().Add(new() { Id = 20, StoryId = draft.StoryId, ItemType = type, Status = status });
+        store.Items<ModerationItem>().Add(new() { Id = 21, StoryId = draft.StoryId, ItemType = type, Status = ModerationItemStatus.Approved });
+        store.Items<ModerationItem>().Add(new() { Id = 22, StoryId = draft.StoryId, ItemType = type, Status = status, IsDeleted = true });
+        store.Items<ModerationItem>().Add(new() { Id = 23, StoryId = draft.StoryId + 99, ItemType = type, Status = status });
+        var listed = Assert.Single((await store.Service.GetMineAsync(1, 1, 20)).Items);
+        var detail = await store.Service.GetDraftAsync(1, draft.StoryId);
+        foreach (var row in new[] { listed, detail })
+        {
+            Assert.Equal(20, row.OpenItemId);
+            Assert.Equal(type.ToString(), row.OpenItemType);
+            Assert.Equal(status.ToString(), row.OpenItemStatus);
+        }
+    }
+
+    [Theory]
     [InlineData(AccountStatus.Registered)]
     [InlineData(AccountStatus.Suspended)]
     [InlineData(AccountStatus.PasswordResetPending)]

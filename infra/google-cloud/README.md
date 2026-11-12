@@ -2,6 +2,16 @@
 
 Chỉ áp dụng AI API. Core trên AWS, database, migration/seed và provider media trong Core không được thay đổi.
 
+## Trạng thái triển khai đã xác minh ngày 2026-11-12
+
+Đã bootstrap service private `taletale-ai-production` trong project hiện tại bằng đúng image staging
+`sha256:5c25c0e3ad9be9ef84ab9e17cc45115c12e94a66fdb16cc3503ce1dc2f0a9a25`.
+Revision `taletale-ai-production-00001-wxw` nhận 100% traffic của service production.
+URL canonical và audience: `https://taletale-ai-production-m63yiaft7q-as.a.run.app`.
+Health, Swagger/OpenAPI, IAM, internal key và sinh outline Vertex thật đã đạt.
+Chi tiết, bằng chứng và các identifier cho GitHub nằm trong [biên bản triển khai](production-deployment-20261112.md).
+Chưa thay cấu hình/kết nối Core AWS; không xóa service staging. Secret staging version 1 hiện disabled.
+
 ## Đích triển khai
 
 - Google Cloud project: `gen-lang-client-0675088605`, project number `679679810390`.
@@ -22,6 +32,10 @@ Service staging cũ không bị xóa hoặc chuyển traffic. Không thay URL Co
 - Chạy thủ công: chọn `main` và bật `promote_production`.
 - Environment `ai-production` nên có required reviewers và deployment branch rule chỉ cho `main`.
 - Không build lại giữa smoke và promotion. Image dùng digest; revision theo run ID/attempt, tag cố định `candidate`.
+- Sau build, workflow đọc manifest bằng đúng digest mà BuildKit trả về và resolve image manifest `linux/amd64`.
+  BuildKit có thể trả digest của OCI index chứa cả image chạy và provenance/attestation; Cloud Run dùng digest
+  của image con. Workflow deploy digest con đã resolve để kiểm tra revision vẫn so sánh chính xác, không nới lỏng
+  kiểm tra image hoặc tắt provenance. Index không có hoặc có nhiều image `linux/amd64` sẽ bị từ chối.
 - Candidate được gọi qua URL tag, nhưng ID token dùng audience là URL canonical của service.
 - Không tắt IAM. Bài `verify-vertex` kiểm tra anonymous bị chặn, health, Swagger/OpenAPI, internal key và một lượt tạo outline Vertex thật.
 - Bài test yêu cầu `modelProvider=VertexAI`, model đúng cấu hình deploy, modelVersion/generationId không rỗng, requestId khớp lượt gọi duy nhất và input/output tokens cùng latency đều dương. Chỉ HTTP 200 chưa được tính đạt.

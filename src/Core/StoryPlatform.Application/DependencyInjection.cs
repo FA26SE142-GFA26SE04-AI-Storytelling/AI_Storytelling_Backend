@@ -114,6 +114,7 @@ public static class DependencyInjection
         services.AddScoped<GrayZoneContentCheckService>();
         services.AddScoped<IModerationQueueService, ModerationQueueService>();
         services.AddScoped<IStoryUsageImpactReader, StoryUsageImpactReader>();
+        services.AddScoped<IModerationStatisticsService, ModerationStatisticsService>();
         services.AddScoped<IModerationReviewViewService, ModerationReviewViewService>();
         services.AddScoped<IModerationSweepService, ModerationSweepService>();
         services.AddScoped<IPublicStoryReviewService, PublicStoryReviewService>();

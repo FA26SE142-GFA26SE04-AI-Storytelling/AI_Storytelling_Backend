@@ -2369,7 +2369,7 @@ Guard/nghiệp vụ: [PublicStorySubmissionService.cs](../src/Core/StoryPlatform
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
 
 <a id="controller-moderationqueue"></a>
-### ModerationQueue — 4 route
+### ModerationQueue — 5 route
 
 MO1. Moderator/Admin theo eligibility, không tự duyệt. Claim 2 giờ; Open đúng người nhận. Review-views không thay claim.
 
@@ -2385,6 +2385,7 @@ Guard/nghiệp vụ: [ModerationQueueService.cs](../src/Core/StoryPlatform.Appli
 | [GET /api/v1/ModerationQueue](#ep-moderationqueue-list-get) | GỌI_API |
 | [POST /api/v1/ModerationQueue/{itemId}/claim](#ep-moderationqueue-claim-post) | GỌI_API |
 | [GET /api/v1/ModerationQueue/{itemId}](#ep-moderationqueue-open-get) | GỌI_API |
+| [GET /api/v1/ModerationQueue/statistics](#ep-moderationqueue-getstatistics-get) | CHƯA_MAP |
 
 <a id="ep-moderationqueue-grantreviewview-post"></a>
 #### POST /api/v1/ModerationQueue/review-views
@@ -2421,6 +2422,26 @@ Guard/nghiệp vụ: [ModerationQueueService.cs](../src/Core/StoryPlatform.Appli
 - Request: **path** itemId: `int`; bắt buộc.
 - Response: ApiResponse.data: [ModerationItemDetailDto](#dto-moderationitemdetaildto). Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [staffService.openItem](../../AI_Storytelling_Frontend/src/app/services/staffService.ts#L104); nơi dùng: [Moderation.tsx](../../AI_Storytelling_Frontend/src/app/features/staff/Moderation.tsx#L76)
+
+<a id="ep-moderationqueue-getstatistics-get"></a>
+#### GET /api/v1/ModerationQueue/statistics
+
+- Action/chức năng: **GetStatistics** — F-19 thống kê hàng đợi và SLA cho Moderator. [ModerationQueueController](../src/Core/StoryPlatform.Api/Controllers/ModerationQueueController.cs).
+- Quyền: **chỉ Moderator** (Administrator, ContentCreator, User đều 403).
+- Request: **query** `periodStart`, `periodEnd` (ngày; kỳ tính trọn ngày theo UTC, gồm cả ngày cuối; `periodEnd` trước `periodStart` → 400).
+- Response: ApiResponse.data = `ModerationStatisticsDto`: `periodStart`, `periodEnd`, `asOfUtc`, `pending`, `claimed`, `overdue` (cả hàng đợi tại `asOfUtc`), `queueByType[]` (`itemType`, `pending`, `claimed`, `overdue`), `myApproved`, `myRejected`, `myChangesRequested` (mục chính Moderator đang đăng nhập đã quyết định trong kỳ), `myDecisionsByType[]` (`itemType`, `approved`, `rejected`, `changesRequested`), `resubmissionCount`, `grayZoneCount` (mục tạo trong kỳ). Chỉ số tổng hợp, không có nội dung truyện, feedback hay dữ liệu trẻ. HTTP: 200.
+- Frontend: **CHƯA_MAP** — chưa có màn hình.
+
+<a id="controller-creatorstatistics"></a>
+### CreatorStatistics — F-22 (`GET /api/v1/CreatorStatistics/content`)
+
+Chỉ `ContentCreator`; mã Creator luôn lấy từ token (tham số `creatorId`/`storyId` gửi lên bị bỏ qua). Moderator, Administrator, User → 403.
+
+#### GET /api/v1/CreatorStatistics/content
+
+- Request: **query** `periodStart`, `periodEnd` (như trên; sai thứ tự → 400).
+- Response: ApiResponse.data = `CreatorContentStatisticsDto`: `periodStart`, `periodEnd`; số truyện chưa archive `published`, `pendingReview`, `ready`, `draft` (mỗi truyện một nhóm); lượt gửi duyệt trong kỳ `submissionsApproved`, `submissionsRejected`, `submissionsChangesRequested` (theo ngày quyết định), `submissionsWithdrawn` (theo ngày rút); `remainingAiCredits`, `remainingSubmitCredits` (từ `ITokenQuotaService.GetCreatorQuotaAsync`); `tier` (hiện luôn `"Creator"`); `partnerProgress`: `windowStart`, `windowEnd` (90 ngày gần nhất theo UTC, độc lập với kỳ), `isEligible`, `criteria[]` (`key` ∈ `published_stories` ≥10, `completion_rate` ≥0.6, `valid_reads` ≥200, `no_violation_removals` = 0; kèm `current`, `target`, `met`). Chỉ tính tiến độ, chưa nâng hạng hay cấp hạn mức đối tác. HTTP: 200.
+- Frontend: **CHƯA_MAP** — chưa có màn hình.
 
 <a id="controller-publicstoryreview"></a>
 ### PublicStoryReview — 9 route

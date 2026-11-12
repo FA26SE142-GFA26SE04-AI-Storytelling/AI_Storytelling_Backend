@@ -120,3 +120,46 @@ public class StoryImpactWishCardDto
     /// <summary>Số truyện Creator khác đang công khai, cùng nhóm tuổi, còn mang thẻ này. 0 = gỡ truyện này thì thẻ hết truyện để gợi ý.</summary>
     public int OtherPublishedStoryCount { get; set; }
 }
+
+/// <summary>
+/// Thống kê hàng đợi và SLA cho Moderator (F-19). Chỉ có số tổng hợp, không có nội dung truyện, feedback hay dữ liệu của trẻ.
+/// </summary>
+public class ModerationStatisticsDto
+{
+    public DateTime PeriodStart { get; set; }
+    public DateTime PeriodEnd { get; set; }
+    /// <summary>Thời điểm tính các số của hàng đợi (Pending, Claimed, Overdue).</summary>
+    public DateTime AsOfUtc { get; set; }
+    public int Pending { get; set; }
+    public int Claimed { get; set; }
+    /// <summary>Mục còn Pending / Claimed và đã quá SlaDueAt tại AsOfUtc.</summary>
+    public int Overdue { get; set; }
+    public List<ModerationQueueCountDto> QueueByType { get; set; } = [];
+
+    /// <summary>Số mục chính Moderator đang gọi đã quyết định trong kỳ (theo DecidedAt).</summary>
+    public int MyApproved { get; set; }
+    public int MyRejected { get; set; }
+    public int MyChangesRequested { get; set; }
+    public List<ModerationDecisionCountDto> MyDecisionsByType { get; set; } = [];
+
+    /// <summary>Mục gửi lại (IsResubmission) được tạo trong kỳ.</summary>
+    public int ResubmissionCount { get; set; }
+    /// <summary>Mục vùng xám (GrayZoneStory) được tạo trong kỳ.</summary>
+    public int GrayZoneCount { get; set; }
+}
+
+public class ModerationQueueCountDto
+{
+    public string ItemType { get; set; } = string.Empty;
+    public int Pending { get; set; }
+    public int Claimed { get; set; }
+    public int Overdue { get; set; }
+}
+
+public class ModerationDecisionCountDto
+{
+    public string ItemType { get; set; } = string.Empty;
+    public int Approved { get; set; }
+    public int Rejected { get; set; }
+    public int ChangesRequested { get; set; }
+}

@@ -22,13 +22,23 @@ public class StoryCommunityController : BaseApiController
         _mediaService = mediaService;
     }
 
-    /// <summary>Danh sách truyện Creator đã công khai (Ready, chưa lưu trữ), có lọc và phân trang.</summary>
+    /// <summary>Danh sách truyện Creator đã công khai, có lọc, phân trang và lượt xem/yêu thích; orderBy = views | favorites.</summary>
     [HttpGet]
-    public async Task<ActionResult<ApiResponse<PagedResult<StoryDto>>>> GetStories(
+    public async Task<ActionResult<ApiResponse<PagedResult<CommunityStoryDto>>>> GetStories(
         [FromQuery] StoryFilterRequestDto filter, CancellationToken cancellationToken)
     {
         var result = await _storyService.GetPublishedCreatorStoriesAsync(filter, cancellationToken);
         return HandleResult(result, "Lấy thư viện cộng đồng thành công.");
+    }
+
+    /// <summary>Truyện đang công khai của chính Creator, kèm lượt xem/yêu thích.</summary>
+    [Authorize(Roles = "ContentCreator")]
+    [HttpGet("/api/v1/creator/stories/published")]
+    public async Task<ActionResult<ApiResponse<PagedResult<CommunityStoryDto>>>> GetMyPublishedStories(
+        [FromQuery] StoryFilterRequestDto filter, CancellationToken cancellationToken)
+    {
+        var result = await _storyService.GetMyPublishedCreatorStoriesAsync(GetCurrentUserId(), filter, cancellationToken);
+        return HandleResult(result, "Lấy danh sách truyện đã đăng thành công.");
     }
 
     /// <summary>Ảnh minh họa và giọng đọc (chỉ đọc) của một truyện Creator đã công khai.</summary>

@@ -8,7 +8,8 @@ namespace StoryPlatform.Application.Features.Stories.Interfaces;
 public interface IStoryService
 {
     Task<PagedResult<StoryDto>> GetStoriesAsync(StoryFilterRequestDto filter, CancellationToken cancellationToken = default);
-    Task<PagedResult<StoryDto>> GetPublishedCreatorStoriesAsync(StoryFilterRequestDto filter, CancellationToken cancellationToken = default);
+    Task<PagedResult<CommunityStoryDto>> GetPublishedCreatorStoriesAsync(StoryFilterRequestDto filter, CancellationToken cancellationToken = default);
+    Task<PagedResult<CommunityStoryDto>> GetMyPublishedCreatorStoriesAsync(int creatorUserId, StoryFilterRequestDto filter, CancellationToken cancellationToken = default);
     Task<StoryDto> GetStoryByIdAsync(int id, CancellationToken cancellationToken = default);
     Task<StoryDto> CreateStoryAsync(int authorUserId, CreateStoryRequestDto request, CancellationToken cancellationToken = default);
     Task<StoryDto> UpdateStoryAsync(int id, int currentUserId, UpdateStoryRequestDto request, CancellationToken cancellationToken = default);

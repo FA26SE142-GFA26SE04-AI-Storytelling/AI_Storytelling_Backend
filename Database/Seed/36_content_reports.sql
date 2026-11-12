@@ -15,8 +15,8 @@ VALUES
      12, NOW() - INTERVAL '20 days', NOW() - INTERVAL '20 days', NOW() - INTERVAL '22 days', false),
     (5, 8, 8, 7, 'SafetyConcern', 'Cảnh báo về hành vi bạo lực nhẹ', 'Pending', false, NULL,
      NULL, NULL, NULL, NOW() - INTERVAL '5 days', false),
-    (6, 6, 6, 8, 'Copyright', 'Cần đối chiếu nguồn minh họa', 'Escalated', false,
-     'https://example.com/evidence/story6-source', 11, NOW() - INTERVAL '4 hours', NULL,
+    (6, 6, 6, 8, 'Copyright', 'Cần đối chiếu nguồn minh họa', 'Pending', false,
+     'https://example.com/evidence/story6-source', NULL, NULL, NULL,
      NOW() - INTERVAL '6 hours', false),
     (7, 10, 10, 12, 'Cultural', 'Rà soat cach dung tu trong bo truyen mau', 'Closed', true, NULL,
      11, NOW() - INTERVAL '3 hours', NOW() - INTERVAL '3 hours', NOW() - INTERVAL '5 hours', false)

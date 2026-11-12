@@ -229,3 +229,35 @@ task start, not live):
 aws ecs update-service --cluster storyplatform-core-api-cluster --service storyplatform-core-api-svc \
   --force-new-deployment --region ap-southeast-1 --profile storyplatform
 ```
+
+## Connecting Core to the AI API on Cloud Run
+
+The AI API (`taletale-ai-production`, see `infra/google-cloud/README.md`) keeps Cloud Run IAM on, so
+Core needs three things: the canonical service URL, the shared internal key, and a Google ID token.
+Core sends the ID token automatically when `AIService:IdTokenAudience` is set
+(`AiServiceIdTokenHandler`); local and Docker Compose runs leave it empty and are unchanged.
+
+1. **Google Cloud** (needs `gcloud` with access to project `gen-lang-client-0675088605`):
+   - Read the canonical URL:
+     `gcloud run services describe taletale-ai-production --region asia-southeast1 --format='value(status.url)'`.
+   - Create a dedicated identity for Core (for example service account `taletale-core-invoker`) and
+     grant it only `roles/run.invoker` on that one service. Do not add `allUsers`.
+   - Produce a service-account key JSON for that identity. Core supports only this credential
+     type: a workload identity federation config cannot mint the ID token Cloud Run needs with the
+     current Google auth library. Handle the key as a secret; never commit it or paste it into chat.
+2. **AWS secret**: add two keys to `storyplatform/core/app-secrets` with the read-edit-write
+   procedure above (`put-secret-value` replaces the whole JSON):
+   - `AiInternalApiKey`: must equal the value of the Secret Manager secret the AI API reads.
+   - `AiGoogleCredentialsJson`: the credential JSON from step 1, as one string.
+   Like `CloudflareTunnelToken`, these keys are deliberately not in the CDK secret template.
+3. **Deploy**: `cdk deploy --context aiServiceBaseUrl=https://<canonical-url> --profile storyplatform`
+   (persist the context in `cdk.json` once verified, otherwise the next plain deploy removes the
+   settings). The task fails to start if either secret key is missing, so do step 2 first.
+4. **Verify**: Core `/health` is healthy, then run one AI story request and check the Core logs for
+   a 200 from the AI API. A 401/403 from Cloud Run means the ID token or Invoker grant is wrong; a
+   401 from the AI API itself means the internal key does not match.
+
+To roll back, remove `aiServiceBaseUrl` from `cdk.json` (and any other persisted context, such as
+`cdk.context.json` or `~/.cdk.json`) if it was saved there, then deploy without the
+`--context aiServiceBaseUrl=...` argument. A persisted value is still applied when the argument is
+omitted, so check `cdk diff` shows the four `AIService__*` settings being removed.

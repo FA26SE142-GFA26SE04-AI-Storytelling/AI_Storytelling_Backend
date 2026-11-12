@@ -100,11 +100,14 @@ public static class DependencyInjection
             options.InternalApiKey = options.InternalApiKey.Trim();
         });
         services.AddHttpClient<GeminiDirectClient>();
-        services.AddHttpClient<IAIStoryGenerationClient, AIStoryGenerationClient>();
-        services.AddHttpClient<StoryPlatform.Application.Features.WishCards.Interfaces.IWishCardMatchingAiClient, WishCardMatchingAiClient>();
+        // AI API trên Cloud Run bật IAM: mọi client gọi AI API gửi kèm ID token Google (bỏ qua khi không cấu hình audience).
+        services.AddSingleton<IAiServiceIdTokenProvider, GoogleAiServiceIdTokenProvider>();
+        services.AddTransient<AiServiceIdTokenHandler>();
+        services.AddHttpClient<IAIStoryGenerationClient, AIStoryGenerationClient>().AddHttpMessageHandler<AiServiceIdTokenHandler>();
+        services.AddHttpClient<StoryPlatform.Application.Features.WishCards.Interfaces.IWishCardMatchingAiClient, WishCardMatchingAiClient>().AddHttpMessageHandler<AiServiceIdTokenHandler>();
         services.AddScoped<StoryPlatform.Application.Features.WishCards.Interfaces.IWishCardMappingChangeReader, WishCardMappingChangeReader>();
-        services.AddHttpClient<IModelModerationProvider, VertexGrayZoneModerationProvider>();
-        services.AddHttpClient<StoryPlatform.Application.Features.CreatorAssistance.Interfaces.ICreatorAssistanceAiClient, CreatorAssistanceAiClient>();
+        services.AddHttpClient<IModelModerationProvider, VertexGrayZoneModerationProvider>().AddHttpMessageHandler<AiServiceIdTokenHandler>();
+        services.AddHttpClient<StoryPlatform.Application.Features.CreatorAssistance.Interfaces.ICreatorAssistanceAiClient, CreatorAssistanceAiClient>().AddHttpMessageHandler<AiServiceIdTokenHandler>();
         services.Configure<OutlineWorkerOptions>(configuration.GetSection(OutlineWorkerOptions.SectionName));
         services.AddSingleton<IOutlineJobFailureFinalizer, OutlineJobFailureFinalizer>();
         services.AddHostedService<OutlineGenerationWorker>();

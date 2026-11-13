@@ -96,6 +96,86 @@ public sealed class StoryScopeBoundaryTests
         Assert.Equal(2, Assert.Single(result.Items).Id);
     }
 
+    [Fact]
+    public async Task CommunityList_ReturnsViewAndFavoriteCountsPerStory()
+    {
+        var older = PublishedCreatorStory(10, 7, new DateTime(2026, 11, 1));
+        var newer = PublishedCreatorStory(11, 8, new DateTime(2026, 11, 2));
+        var sessions = new[]
+        {
+            new ReadingSession { StoryId = 10, ChildProfileId = 1, Status = SessionStatus.Completed },
+            new ReadingSession { StoryId = 10, ChildProfileId = 1, Status = SessionStatus.Abandoned },
+            new ReadingSession { StoryId = 10, ChildProfileId = 2, Status = SessionStatus.Started },
+            new ReadingSession { StoryId = 11, ChildProfileId = 2, Status = SessionStatus.Completed },
+            new ReadingSession { StoryId = 99, ChildProfileId = 2, Status = SessionStatus.Completed },
+        };
+        var progress = new[]
+        {
+            new ReadingProgress { StoryId = 10, ChildProfileId = 1, IsFavorited = true },
+            new ReadingProgress { StoryId = 10, ChildProfileId = 2, IsFavorited = false },
+            new ReadingProgress { StoryId = 11, ChildProfileId = 1, IsFavorited = true },
+            new ReadingProgress { StoryId = 11, ChildProfileId = 2, IsFavorited = true },
+        };
+
+        var result = await Service(PagedStoryRepo(older, newer), sessions, progress)
+            .GetPublishedCreatorStoriesAsync(new StoryFilterRequestDto());
+
+        Assert.Equal(new[] { (10, 3, 1), (11, 1, 2) },
+            result.Items.Select(item => (item.Id, item.ViewCount, item.FavoriteCount)));
+    }
+
+    [Theory]
+    [InlineData(null, false, new[] { 10, 11, 12 })]
+    [InlineData("views", true, new[] { 11, 12, 10 })]
+    [InlineData("Views", false, new[] { 10, 12, 11 })]
+    [InlineData("favorites", true, new[] { 10, 12, 11 })]
+    [InlineData("favorites", false, new[] { 11, 12, 10 })]
+    [InlineData("unknown", true, new[] { 12, 11, 10 })]
+    public async Task CommunityList_SortsByViewsOrFavorites(string? orderBy, bool descending, int[] expected)
+    {
+        var stories = new[]
+        {
+            PublishedCreatorStory(10, 7, new DateTime(2026, 11, 1)),
+            PublishedCreatorStory(11, 7, new DateTime(2026, 11, 2)),
+            PublishedCreatorStory(12, 7, new DateTime(2026, 11, 3)),
+        };
+        var sessions = new[]
+        {
+            new ReadingSession { StoryId = 10, ChildProfileId = 1 },
+            new ReadingSession { StoryId = 11, ChildProfileId = 1 },
+            new ReadingSession { StoryId = 11, ChildProfileId = 2 },
+            new ReadingSession { StoryId = 11, ChildProfileId = 3 },
+            new ReadingSession { StoryId = 12, ChildProfileId = 1 },
+        };
+        var progress = new[]
+        {
+            new ReadingProgress { StoryId = 10, ChildProfileId = 1, IsFavorited = true },
+            new ReadingProgress { StoryId = 10, ChildProfileId = 2, IsFavorited = true },
+            new ReadingProgress { StoryId = 12, ChildProfileId = 1, IsFavorited = true },
+            new ReadingProgress { StoryId = 11, ChildProfileId = 1, IsFavorited = false },
+        };
+
+        var result = await Service(PagedStoryRepo(stories), sessions, progress)
+            .GetPublishedCreatorStoriesAsync(new StoryFilterRequestDto { OrderBy = orderBy, IsDescending = descending });
+
+        Assert.Equal(expected, result.Items.Select(item => item.Id));
+    }
+
+    [Fact]
+    public async Task MyPublishedList_UsesCallerAsAuthor_IgnoringRequestedAuthor()
+    {
+        var mine = PublishedCreatorStory(20, 7, new DateTime(2026, 11, 1));
+        var theirs = PublishedCreatorStory(21, 8, new DateTime(2026, 11, 2));
+        var myDraft = new Story { Id = 22, AuthorUserId = 7, Scope = StoryScope.Creator, Status = StoryStatus.Draft };
+        var sessions = new[] { new ReadingSession { StoryId = 20, ChildProfileId = 1 } };
+
+        var result = await Service(PagedStoryRepo(mine, theirs, myDraft), sessions)
+            .GetMyPublishedCreatorStoriesAsync(7, new StoryFilterRequestDto { AuthorUserId = 8 });
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal((20, 1, 0), (item.Id, item.ViewCount, item.FavoriteCount));
+    }
+
     [Theory]
     [InlineData("read")]
     [InlineData("update")]
@@ -157,10 +237,47 @@ public sealed class StoryScopeBoundaryTests
         Assert.True(context.Model.FindEntityType(typeof(Story))!.FindProperty(nameof(Story.ChildProfileId))!.IsNullable);
     }
 
-    private static StoryService Service(Mock<IGenericRepository<Story>> repo)
+    private static StoryService Service(Mock<IGenericRepository<Story>> repo,
+        ReadingSession[]? sessions = null, ReadingProgress[]? progress = null)
     {
         var uow = new Mock<IUnitOfWork>();
         uow.Setup(x => x.Repository<Story>()).Returns(repo.Object);
+        uow.Setup(x => x.Repository<ReadingSession>()).Returns(ReadOnlyRepo(sessions ?? []).Object);
+        uow.Setup(x => x.Repository<ReadingProgress>()).Returns(ReadOnlyRepo(progress ?? []).Object);
         return new StoryService(uow.Object);
     }
+
+    private static Mock<IGenericRepository<T>> ReadOnlyRepo<T>(T[] rows) where T : class
+    {
+        var repo = new Mock<IGenericRepository<T>>();
+        repo.Setup(x => x.Query()).Returns(rows.AsQueryable());
+        repo.Setup(x => x.FindAsync(It.IsAny<Expression<Func<T, bool>>>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns((Expression<Func<T, bool>> filter, string? _, CancellationToken _) =>
+                Task.FromResult<IReadOnlyList<T>>(rows.Where(filter.Compile()).ToArray()));
+        return repo;
+    }
+
+    private static Mock<IGenericRepository<Story>> PagedStoryRepo(params Story[] stories)
+    {
+        var repo = new Mock<IGenericRepository<Story>>();
+        repo.Setup(x => x.GetPagedAsync(It.IsAny<int>(), It.IsAny<int>(),
+                It.IsAny<Expression<Func<Story, bool>>>(), It.IsAny<Func<IQueryable<Story>, IOrderedQueryable<Story>>>(),
+                It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns((int page, int size, Expression<Func<Story, bool>> filter,
+                Func<IQueryable<Story>, IOrderedQueryable<Story>>? orderBy, string? _, CancellationToken _) =>
+            {
+                var query = stories.AsQueryable().Where(filter);
+                var total = query.Count();
+                IReadOnlyList<Story> rows = (orderBy is null ? query : orderBy(query))
+                    .Skip((page - 1) * size).Take(size).ToArray();
+                return Task.FromResult((rows, total));
+            });
+        return repo;
+    }
+
+    private static Story PublishedCreatorStory(int id, int authorUserId, DateTime createdAt) => new()
+    {
+        Id = id, AuthorUserId = authorUserId, Scope = StoryScope.Creator, IsPublished = true,
+        Status = StoryStatus.Ready, CreatedAt = createdAt
+    };
 }

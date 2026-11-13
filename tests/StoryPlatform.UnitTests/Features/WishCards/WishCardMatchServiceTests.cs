@@ -98,4 +98,77 @@ public class WishCardMatchServiceTests
             It.IsAny<object?>(), null, It.IsAny<CancellationToken>()), Times.Once);
         await Assert.ThrowsAsync<NotFoundException>(() => _sut.RemoveAsync(Moderator, 20, _cat.Id));
     }
+
+    [Fact]
+    public async Task Coverage_NoCards_WarnsStoryCannotBeSuggested()
+    {
+        var coverage = await _sut.GetCoverageAsync(20);
+
+        Assert.Equal(20, coverage.StoryId);
+        Assert.False(coverage.CanBeSuggested);
+        Assert.False(coverage.HasCharacterCard);
+        Assert.False(coverage.HasPlaceCard);
+        Assert.False(string.IsNullOrWhiteSpace(coverage.Warning));
+    }
+
+    [Fact]
+    public async Task Coverage_OnlyChallengeAndLessonCards_StillWarns()
+    {
+        var lost = _h.AddCard(WishCardGroup.Challenge, "Bị lạc đường");
+        var share = _h.AddCard(WishCardGroup.Lesson, "Chia sẻ");
+        _h.CardMatches.Add(new StoryWishCardMatch { Id = 1, StoryId = 20, WishCardId = lost.Id });
+        _h.CardMatches.Add(new StoryWishCardMatch { Id = 2, StoryId = 20, WishCardId = share.Id });
+
+        var coverage = await _sut.GetCoverageAsync(20);
+
+        Assert.False(coverage.CanBeSuggested);
+        Assert.NotNull(coverage.Warning);
+    }
+
+    [Fact]
+    public async Task Coverage_CharacterCard_IsEnough()
+    {
+        _h.CardMatches.Add(new StoryWishCardMatch { Id = 1, StoryId = 20, WishCardId = _cat.Id });
+
+        var coverage = await _sut.GetCoverageAsync(20);
+
+        Assert.True(coverage.CanBeSuggested);
+        Assert.True(coverage.HasCharacterCard);
+        Assert.False(coverage.HasPlaceCard);
+        Assert.Null(coverage.Warning);
+    }
+
+    [Fact]
+    public async Task Coverage_PlaceCard_IsEnough()
+    {
+        _h.CardMatches.Add(new StoryWishCardMatch { Id = 1, StoryId = 20, WishCardId = _forest.Id });
+
+        var coverage = await _sut.GetCoverageAsync(20);
+
+        Assert.True(coverage.CanBeSuggested);
+        Assert.True(coverage.HasPlaceCard);
+        Assert.Null(coverage.Warning);
+    }
+
+    [Fact]
+    public async Task Coverage_IgnoresInactiveOrDeletedCardsAndDeletedMatches()
+    {
+        var retired = _h.AddCard(WishCardGroup.Character, "Khủng long", isActive: false);
+        var removed = _h.AddCard(WishCardGroup.Place, "Bãi biển");
+        removed.IsDeleted = true;
+        _h.CardMatches.Add(new StoryWishCardMatch { Id = 1, StoryId = 20, WishCardId = retired.Id });
+        _h.CardMatches.Add(new StoryWishCardMatch { Id = 2, StoryId = 20, WishCardId = removed.Id });
+        _h.CardMatches.Add(new StoryWishCardMatch { Id = 3, StoryId = 20, WishCardId = _cat.Id, IsDeleted = true });
+
+        var coverage = await _sut.GetCoverageAsync(20);
+
+        Assert.False(coverage.CanBeSuggested);
+        Assert.NotNull(coverage.Warning);
+    }
+
+    [Fact]
+    public async Task Coverage_UnknownStory_IsNotFound()
+    {
+        await Assert.ThrowsAsync<NotFoundException>(() => _sut.GetCoverageAsync(404));
+    }
 }

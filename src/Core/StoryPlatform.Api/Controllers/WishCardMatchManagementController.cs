@@ -22,6 +22,11 @@ public sealed class WishCardMatchManagementController(IWishCardMatchService serv
     public async Task<ActionResult<ApiResponse<IReadOnlyList<WishCardMatchDto>>>> List(int storyId, CancellationToken ct) =>
         Ok(ApiResponse<IReadOnlyList<WishCardMatchDto>>.Ok(await service.ListAsync(storyId, ct)));
 
+    /// <summary>Cảnh báo khi truyện chưa có thẻ Nhân vật/Nơi chốn nên không thể vào gợi ý điều ước.</summary>
+    [HttpGet("coverage")]
+    public async Task<ActionResult<ApiResponse<StoryWishCardCoverageDto>>> Coverage(int storyId, CancellationToken ct) =>
+        Ok(ApiResponse<StoryWishCardCoverageDto>.Ok(await service.GetCoverageAsync(storyId, ct)));
+
     [HttpPost]
     public async Task<ActionResult<ApiResponse<WishCardMatchDto>>> Add(
         int storyId, [FromBody] AddWishCardMatchRequestDto request, CancellationToken ct) =>

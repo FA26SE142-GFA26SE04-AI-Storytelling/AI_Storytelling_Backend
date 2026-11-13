@@ -380,6 +380,7 @@ public sealed class ParentManualApiFlowTests
             var queue = new StoryPlatform.Application.Features.Moderation.Services.ModerationQueueService(store.Uow.Object, audit.Object);
             builder.Services.AddSingleton<StoryPlatform.Application.Features.Moderation.Interfaces.IModerationQueueService>(queue);
             builder.Services.AddSingleton(new Mock<StoryPlatform.Application.Features.Moderation.Interfaces.IModerationReviewViewService>().Object);
+            builder.Services.AddSingleton(new Mock<StoryPlatform.Application.Features.Moderation.Interfaces.IModerationStatisticsService>().Object);
             builder.Services.AddSingleton<StoryPlatform.Application.Features.Moderation.Interfaces.ICreatorPublicationService>(
                 new StoryPlatform.Application.Features.Moderation.Services.CreatorPublicationService(store.Uow.Object, queue, audit.Object));
             builder.Services.AddSingleton(store.Service);

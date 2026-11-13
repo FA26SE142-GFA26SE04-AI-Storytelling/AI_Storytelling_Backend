@@ -509,6 +509,76 @@ public class StoryPlatformCoreStackTests
     }
 
     [Fact]
+    public void Stack_WithSupabaseUrl_WiresMediaStorage()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["supabaseUrl"] = "https://example-project.supabase.co/"
+        }).ToJSON());
+
+        Assert.Contains("\"Name\":\"SUPABASE_URL\",\"Value\":\"https://example-project.supabase.co\"", json);
+        Assert.Contains("\"Name\":\"SUPABASE_MEDIA_BUCKET\",\"Value\":\"story-media\"", json);
+        Assert.Matches("\"Name\":\"SUPABASE_SECRET_KEY\",\"ValueFrom\":(?:(?!\"Name\":).)*:SupabaseSecretKey::", json);
+        // Kho media không tự bật worker: worker cần thêm khoá Gemini.
+        Assert.DoesNotContain("AI__MediaGeneration__WorkerEnabled", json);
+        Assert.DoesNotContain("AI__Gemini__ApiKey", json);
+    }
+
+    [Fact]
+    public void Stack_SupabaseMediaBucketCanBeOverridden()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["supabaseUrl"] = "https://example-project.supabase.co",
+            ["supabaseMediaBucket"] = "prod-media"
+        }).ToJSON());
+
+        Assert.Contains("\"Name\":\"SUPABASE_MEDIA_BUCKET\",\"Value\":\"prod-media\"", json);
+    }
+
+    [Fact]
+    public void Stack_WithMediaWorkerEnabled_TurnsOnTheWorkerWithItsGeminiKey()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["supabaseUrl"] = "https://example-project.supabase.co",
+            ["mediaWorkerEnabled"] = "true"
+        }).ToJSON());
+
+        Assert.Contains("\"Name\":\"AI__MediaGeneration__WorkerEnabled\",\"Value\":\"true\"", json);
+        Assert.Matches("\"Name\":\"AI__Gemini__ApiKey\",\"ValueFrom\":(?:(?!\"Name\":).)*:GeminiApiKey::", json);
+    }
+
+    [Fact]
+    public void Stack_WithoutMediaContext_AddsNoMediaSettings()
+    {
+        // Secret key chưa có trong app-secrets thì task không khởi động được, nên mặc định không tham chiếu.
+        var json = System.Text.Json.JsonSerializer.Serialize(SynthTemplate().ToJSON());
+
+        Assert.DoesNotContain("SUPABASE_", json);
+        Assert.DoesNotContain("AI__MediaGeneration__", json);
+        Assert.DoesNotContain("AI__Gemini__", json);
+    }
+
+    [Fact]
+    public void Stack_SupabaseUrlMustBeHttps()
+    {
+        Assert.ThrowsAny<System.Exception>(() => SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["supabaseUrl"] = "http://insecure.example.test"
+        }));
+    }
+
+    [Fact]
+    public void Stack_MediaWorkerRequiresMediaStorage()
+    {
+        Assert.ThrowsAny<System.Exception>(() => SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["mediaWorkerEnabled"] = "true"
+        }));
+    }
+
+    [Fact]
     public void Stack_AiServiceBaseUrlMustBeHttps()
     {
         Assert.ThrowsAny<System.Exception>(() => SynthTemplate(new System.Collections.Generic.Dictionary<string, object>

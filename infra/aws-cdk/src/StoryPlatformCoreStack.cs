@@ -235,6 +235,43 @@ public sealed class StoryPlatformCoreStack : Stack
             apiSecrets["AIService__GoogleCredentialsJson"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "AiGoogleCredentialsJson");
         }
 
+        // Kho media (ảnh, âm thanh) trên Supabase Storage. Chỉ bật khi truyền --context supabaseUrl=https://...;
+        // trước đó phải thêm key SupabaseSecretKey vào storyplatform/core/app-secrets (RUNBOOK). Không có context
+        // thì Core không tham chiếu key nào và mọi thao tác media trả SUPABASE_STORAGE_NOT_CONFIGURED như cũ.
+        var supabaseUrl = (Node.TryGetContext("supabaseUrl") as string)?.Trim().TrimEnd('/');
+        if (!string.IsNullOrEmpty(supabaseUrl))
+        {
+            if (!supabaseUrl.StartsWith("https://", System.StringComparison.OrdinalIgnoreCase))
+            {
+                throw new System.ArgumentException("supabaseUrl must be an https:// URL.");
+            }
+
+            var bucket = (Node.TryGetContext("supabaseMediaBucket") as string)?.Trim();
+            apiEnvironment["SUPABASE_URL"] = supabaseUrl;
+            apiEnvironment["SUPABASE_MEDIA_BUCKET"] = string.IsNullOrEmpty(bucket) ? "story-media" : bucket;
+            apiSecrets["SUPABASE_SECRET_KEY"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "SupabaseSecretKey");
+        }
+
+        // Worker sinh ảnh và âm thanh gọi thẳng Gemini bằng API key (AI:Vertex:UseVertex mặc định false). Bật bằng
+        // --context mediaWorkerEnabled=true sau khi đã thêm key GeminiApiKey vào app-secrets. Worker cần kho media
+        // để lưu kết quả, nên bắt buộc phải có supabaseUrl.
+        var mediaWorkerEnabled = Node.TryGetContext("mediaWorkerEnabled") switch
+        {
+            bool b => b,
+            string text => bool.Parse(text),
+            _ => false
+        };
+        if (mediaWorkerEnabled)
+        {
+            if (string.IsNullOrEmpty(supabaseUrl))
+            {
+                throw new System.ArgumentException("mediaWorkerEnabled requires supabaseUrl.");
+            }
+
+            apiEnvironment["AI__MediaGeneration__WorkerEnabled"] = "true";
+            apiSecrets["AI__Gemini__ApiKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "GeminiApiKey");
+        }
+
         var apiContainer = ApiTaskDefinition.AddContainer("ApiContainer", new ContainerDefinitionOptions
         {
             Image = ContainerImage.FromEcrRepository(EcrRepository, "latest"),

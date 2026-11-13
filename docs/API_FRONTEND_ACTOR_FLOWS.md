@@ -1,5 +1,7 @@
 # API backend theo actor và luồng tích hợp frontend
 
+> 2026-11-12 (đánh giá truyện Creator): thêm controller `StoryRating` (5 route) và `StoryRatingModeration` (3 route); loại mục hàng đợi `StoryRating` (7, chỉ Moderator, `createdByName` luôn null); `CommunityStoryDto` thêm `averageRating`, `ratingCount` và `orderBy=rating`; thông báo `StoryRatingPublished` (33, gửi Creator) và `StoryRatingModerated` (34, gửi người viết), nhóm `stories`. Migration `AddStoryRatings`, bảng `story_ratings`, `story_rating_reports`, cột `moderation_items.StoryRatingId`.
+
 > 2026-11-12 (bổ sung người gửi): hàng đợi `ModerationQueue` (list / claim / detail) nay trả `createdByUserId` / `createdByName` cho mục `PublicStoryRemoval` (Creator xin gỡ) và mục `ContentReport` là yêu cầu rà soát của Moderator; report của phụ huynh vẫn `null`. `ContentReportDetailDto` thêm `requestedByUserId` / `requestedByName` (chỉ khi `isReviewItem = true`); `ReportedStoryDto` thêm `authorUserId` / `authorName` (chỉ ở chi tiết report và chỉ khi `scope = "Creator"`; truyện riêng gia đình và `PublishedContentReview` luôn `null`).
 
 > 2026-11-12: bỏ bước escalate report lên Administrator; xử lý report nội dung chỉ còn **Moderator**. Bỏ `POST /api/v1/ContentReportReview/{itemId}/escalate`, `EscalateReportRequestDto` và field `escalationReason` / `escalatedAt` của `ContentReportDetailDto`. Administrator gọi `ContentReportReview` nhận 403, không claim được mục `ContentReport` (kể cả khi không còn Moderator), và không còn nhận thông báo `ContentReported` dự phòng khi không có Moderator. Enum `Escalated` / `ContentReportEscalated` và cột `EscalationReason` / `EscalatedAt` giữ lại cho dữ liệu cũ, không có migration. Frontend cần bỏ nút escalate và màn Admin xử lý report.
@@ -210,6 +212,12 @@ Gợi ý adapter roadmap: skipCode có thể là no_permission, profile_inactive
 Giao từng truyện khác tuổi dùng bản ghi lộ trình Source=Manual làm bằng chứng lựa chọn của chủ hồ sơ: Waiting/Open/Completed còn hiệu lực cho việc mở/đọc lại, Removed/Skipped hoặc bản ghi bị xóa không cấp quyền ngoại lệ. Advancer và phía trẻ tôn trọng lựa chọn này; thư viện vẫn lọc theo tuổi cho truyện chưa được phụ huynh chọn. Truyện riêng của anh/chị/em chỉ hiện và mở cho trẻ được giao đúng storyId qua quyền giao hiện có. Sao chép bộ mẫu/tự chọn truyện chưa có lựa chọn thủ công vẫn áp dụng kiểm tra tuổi hiện hành. Không cần migration. Kiểm tra MaxStoryLength nay dùng StoryWordCounter chung với generation, không dùng số ký tự. Kiểm thử 335 ca ChildRoadmaps/ReadingSessions đạt với harness; chưa thay đổi dữ liệu hoặc triển khai backend đang chạy.
 
 <a id="pipeline"></a>
+### P7. Đánh giá truyện Creator trong thư viện
+
+GET /StoryRating/story/{storyId} → `summary` (điểm trung bình, số lượt, phân bố 1–5 sao), `ratings` (chỉ đánh giá đang hiện, tên người viết dạng "Phụ huynh H***"), `myRating` (mọi trạng thái, kèm `hiddenReason` khi bị ẩn) và `canRate` → PUT /StoryRating/story/{storyId}/me `{ rating, comment? }` → `status` là `Published` hoặc `PendingModeration` → DELETE …/me để xóa. Chỉ phụ huynh có bé đang hoạt động đã mở đọc truyện mới được đánh giá (403 `RATING_REQUIRES_READING`). Nhận xét có link, từ cấm hoặc ≤ 2 sao kèm chữ chờ Moderator; số điện thoại / email bị che; sửa đánh giá đang chờ hoặc bị ẩn luôn quay về chờ. Báo cáo đánh giá của người khác: POST /StoryRating/{ratingId}/reports `{ reason, note? }` (409 đã báo cáo, 400 tự báo cáo hoặc đánh giá không hiện). Thông báo `StoryRatingModerated` khi Moderator duyệt / ẩn. `GET /Story/community` trả `averageRating`, `ratingCount`, sắp `orderBy=rating`. Trẻ em không gọi được nhóm API này.
+
+Nguồn: [StoryRatingService](../src/Core/StoryPlatform.Application/Features/StoryRatings/Services/StoryRatingService.cs).
+
 ## 6. Pipeline truyện AI và truyện nhập dùng chung
 
 ### G1. Input và snapshot
@@ -435,6 +443,10 @@ GrayZoneWorkflow chỉ tạo mục chờ GrayZoneStory cho Parent khi điều ki
 Nguồn: [GrayZoneContentCheckService](../src/Core/StoryPlatform.Application/Features/Moderation/Services/GrayZoneContentCheckService.cs), [GrayZoneWorkflowService](../src/Core/StoryPlatform.Application/Features/Moderation/Services/GrayZoneWorkflowService.cs).
 
 <a id="moderator"></a>
+### CR6. Xem đánh giá của phụ huynh
+
+GET /api/v1/creator/stories/{storyId}/ratings → `summary` và đánh giá đang hiện của truyện mình (kể cả khi truyện đã thôi công khai; không thấy đánh giá đang chờ / bị ẩn; không có `myRating`). Creator không trả lời đánh giá; báo cáo nhận xét sai phạm qua POST /StoryRating/{ratingId}/reports. Thông báo `StoryRatingPublished` khi truyện có đánh giá mới được hiện. `GET /creator/stories/published` cũng có `averageRating`, `ratingCount`.
+
 ## 10. Moderator — nhận và xử lý kiểm duyệt
 
 ### MO1. Queue và claim
@@ -506,6 +518,12 @@ Nguồn: [PublishedContentReviewService](../src/Core/StoryPlatform.Application/F
 Tiền tố `/api/v1/moderation/authoring-guides`. Luồng: GET `/` (bộ đang phát hành + bản nháp + `revisionToken`) → POST `/draft` → PUT/DELETE `/draft/items/{guideId}` → POST `/draft/preview` → POST `/draft/publish`; DELETE `/draft` hủy bản nháp (xóa mềm); GET `/versions`, `/versions/{versionId}` xem lịch sử. Các thao tác sửa, loại mục, hủy và phát hành cần `revisionToken` mới nhất và trả token mới; 409 `GUIDE_REVISION_CONFLICT` nghĩa là tải lại `GET /`. Phiên bản đã phát hành không sửa được; khôi phục = tạo nháp từ `sourceVersionId` rồi phát hành. Chi tiết, payload mẫu và bảng mã lỗi: `docs/AUTHORING_GUIDE_MANAGEMENT_API_GUIDE.md`.
 
 <a id="admin"></a>
+### MO11. Kiểm duyệt đánh giá truyện
+
+Queue `itemType=StoryRating` (`createdByName` luôn null để không lộ phụ huynh) → claim → GET /StoryRatingModeration/{itemId} (`holdSource` Screening / Report, `screeningReasonCode`, `reports` chỉ gồm lý do và ghi chú, không có người báo cáo) → POST approve (đánh giá đang chờ được hiện, đánh giá đang hiện được giữ; báo cáo thành `Approved`) hoặc POST hide `{ reason }` (đánh giá `Hidden`, báo cáo `Hidden`, người viết nhận `StoryRatingModerated` kèm lý do). Chỉ Moderator giữ claim còn hạn; Administrator không claim được loại mục này.
+
+Nguồn: [StoryRatingModerationService](../src/Core/StoryPlatform.Application/Features/StoryRatings/Services/StoryRatingModerationService.cs).
+
 ## 11. Administrator — vận hành
 
 - **Tài khoản:** một controller /StaffAccount cho cả Moderator và Administrator: GET list (?role= để lọc) → POST invite (body có role; expertise bắt buộc với Moderator) → resend-invite/cancel-invite (chỉ khi chưa kích hoạt) → deactivate/reactivate (sau khi kích hoạt). Thao tác theo userId tự đọc vai trò; response có field role. Deactivate cần reason; không tự vô hiệu hóa, không vô hiệu hóa Admin Active cuối cùng.
@@ -552,11 +570,11 @@ Nguồn: [hub](../src/Core/StoryPlatform.Api/Hubs/NotificationHub.cs), [publishe
 | SERVICE_CHƯA_DÙNG | 3 |
 | LỆCH_CONTRACT | 1 |
 | CHƯA_MAP (baseline) | 84 |
-| CHƯA_RÀ_FRONTEND (contract bổ sung) | 59 |
+| CHƯA_RÀ_FRONTEND (contract bổ sung) | 67 |
 | ALIAS | 1 |
 | WEBHOOK | 1 |
 
-Tổng **304** (đã trừ route escalate bị gỡ ngày 12/11/2026). Mapping cũ có **158** route gọi đúng qua service (150 + 5 + 3); 1 route lệch contract tính riêng. 59 mục endpoint bổ sung ghi CHƯA_RÀ_FRONTEND, không suy thiếu mapping từ việc tài liệu cũ chưa có endpoint card; cần đối chiếu frontend trước khi phân loại. Đây không phải kết quả audit frontend mới hoặc tỷ lệ kiểm thử end-to-end.
+Tổng **312** (đã trừ route escalate bị gỡ và thêm 8 route đánh giá truyện ngày 12/11/2026). Mapping cũ có **158** route gọi đúng qua service (150 + 5 + 3); 1 route lệch contract tính riêng. 67 mục endpoint bổ sung ghi CHƯA_RÀ_FRONTEND, không suy thiếu mapping từ việc tài liệu cũ chưa có endpoint card; cần đối chiếu frontend trước khi phân loại. Đây không phải kết quả audit frontend mới hoặc tỷ lệ kiểm thử end-to-end.
 
 Trạng thái ở mức **method + route**, không bảo đảm mọi actor/nhánh UI:
 - **GỌI_API:** có service và nơi tham chiếu trong app, gồm callback polling; xem source hook/màn hình/chuỗi service.
@@ -598,7 +616,7 @@ HTTP là nhánh response controller; kết hợp lỗi chung mục 2 và guard n
 
 ### Tra nhanh controller
 
-[AIStoryInput](#controller-aistoryinput) · [Auth](#controller-auth) · [AuthoringGuides](#controller-authoringguides) · [BusinessReport](#controller-businessreport) · [ChildAccessCredential](#controller-childaccesscredential) · [ChildManualStories](#controller-childmanualstories) · [ChildProfile](#controller-childprofile) · [ChildRoadmap](#controller-childroadmap) · [ContentCategory](#controller-contentcategory) · [ContentGeneration](#controller-contentgeneration) · [ContentReport](#controller-contentreport) · [ContentReportReview](#controller-contentreportreview) · [CreatorAIStoryInput](#controller-creatoraistoryinput) · [CreatorAssistance](#controller-creatorassistance) · [CreatorAuthoring](#controller-creatorauthoring) · [CreatorModerationCheck](#controller-creatormoderationcheck) · [CreatorPublication](#controller-creatorpublication) · [ExistingStories](#controller-existingstories) · [GrayZoneReview](#controller-grayzonereview) · [LearningProfile](#controller-learningprofile) · [MediaGeneration](#controller-mediageneration) · [ModerationQueue](#controller-moderationqueue) · [ModerationRubrics](#controller-moderationrubrics) · [StaffAccount](#controller-staffaccount) · [MyRoadmap](#controller-myroadmap) · [Notification](#controller-notification) · [Outline](#controller-outline) · [ParentAssistance](#controller-parentassistance) · [ParentAuthoring](#controller-parentauthoring) · [ParentalGate](#controller-parentalgate) · [Payment](#controller-payment) · [PublicStoryReview](#controller-publicstoryreview) · [PublicStorySubmission](#controller-publicstorysubmission) · [PublishedContentReview](#controller-publishedcontentreview) · [Review](#controller-review) · [RoadmapLibrary](#controller-roadmaplibrary) · [RoadmapReview](#controller-roadmapreview) · [RoadmapTemplate](#controller-roadmaptemplate) · [SafetyPolicy](#controller-safetypolicy) · [Story](#controller-story) · [TokenQuota](#controller-tokenquota)
+[AIStoryInput](#controller-aistoryinput) · [Auth](#controller-auth) · [AuthoringGuides](#controller-authoringguides) · [BusinessReport](#controller-businessreport) · [ChildAccessCredential](#controller-childaccesscredential) · [ChildManualStories](#controller-childmanualstories) · [ChildProfile](#controller-childprofile) · [ChildRoadmap](#controller-childroadmap) · [ContentCategory](#controller-contentcategory) · [ContentGeneration](#controller-contentgeneration) · [ContentReport](#controller-contentreport) · [ContentReportReview](#controller-contentreportreview) · [CreatorAIStoryInput](#controller-creatoraistoryinput) · [CreatorAssistance](#controller-creatorassistance) · [CreatorAuthoring](#controller-creatorauthoring) · [CreatorModerationCheck](#controller-creatormoderationcheck) · [CreatorPublication](#controller-creatorpublication) · [ExistingStories](#controller-existingstories) · [GrayZoneReview](#controller-grayzonereview) · [LearningProfile](#controller-learningprofile) · [MediaGeneration](#controller-mediageneration) · [ModerationQueue](#controller-moderationqueue) · [ModerationRubrics](#controller-moderationrubrics) · [StaffAccount](#controller-staffaccount) · [MyRoadmap](#controller-myroadmap) · [Notification](#controller-notification) · [Outline](#controller-outline) · [ParentAssistance](#controller-parentassistance) · [ParentAuthoring](#controller-parentauthoring) · [ParentalGate](#controller-parentalgate) · [Payment](#controller-payment) · [PublicStoryReview](#controller-publicstoryreview) · [PublicStorySubmission](#controller-publicstorysubmission) · [PublishedContentReview](#controller-publishedcontentreview) · [Review](#controller-review) · [RoadmapLibrary](#controller-roadmaplibrary) · [RoadmapReview](#controller-roadmapreview) · [RoadmapTemplate](#controller-roadmaptemplate) · [SafetyPolicy](#controller-safetypolicy) · [Story](#controller-story) · [StoryRating](#controller-storyrating) · [StoryRatingModeration](#controller-storyratingmoderation) · [TokenQuota](#controller-tokenquota)
 
 <a id="controller-auth"></a>
 ### Auth — 20 route
@@ -2952,8 +2970,8 @@ GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PU
 
 - Action/chức năng: **GetCommunityStories** — Thư viện chung: danh sách truyện của Creator đã duyệt và công khai (Scope=Creator, IsPublished, Status=Ready, chưa lưu trữ, chưa xóa). Không trả bản nháp. [StoryCommunityController](../src/Core/StoryPlatform.Api/Controllers/StoryCommunityController.cs).
 - Quyền: Roles User, ContentCreator, Moderator, Administrator (chưa đăng nhập: 401)
-- Request: **query** filter: [StoryFilterRequestDto](#dto-storyfilterrequestdto); dùng searchTerm, genre, ageBand, authorUserId, isDescending, pageIndex, pageSize (status và isPublished không có tác dụng, luôn lọc cố định).
-- Response: ApiResponse.data: [PagedResult&lt;StoryDto&gt;](#dto-pagedresult). HTTP nhánh controller: 200.
+- Request: **query** filter: [StoryFilterRequestDto](#dto-storyfilterrequestdto); dùng searchTerm, genre, ageBand, authorUserId, isDescending, pageIndex, pageSize, orderBy (`views`, `favorites`, `rating`; giá trị khác sắp theo ngày tạo) — status và isPublished không có tác dụng, luôn lọc cố định.
+- Response: ApiResponse.data: [PagedResult&lt;CommunityStoryDto&gt;](#dto-communitystorydto) — thêm `viewCount`, `favoriteCount`, `averageRating`, `ratingCount`. HTTP nhánh controller: 200.
 - Frontend: **GỌI_API** — [storyService.getCommunityStories](../../AI_Storytelling_Frontend/src/app/services/storyService.ts); nơi dùng: [LibraryWorkspace.tsx](../../AI_Storytelling_Frontend/src/app/features/library/LibraryWorkspace.tsx) (nhãn nguồn "Của creator").
 
 <a id="ep-story-getcommunitystorymedia-get"></a>
@@ -3020,6 +3038,106 @@ GET list/detail AllowAnonymous; không bảo đảm policy child manual. POST/PU
 - Request: **path** id: `int`; bắt buộc.
 - Response: ApiResponse.data: `bool`. Field đầy đủ tại schema; envelope mục 2. HTTP nhánh controller: 200.
 - Frontend: **CHƯA_MAP** — chưa thấy service gọi đúng method/route.
+
+<a id="controller-storyrating"></a>
+### StoryRating — 5 route
+
+P7, CR6. Phụ huynh (role User) đánh giá truyện Creator công khai; Creator xem đánh giá truyện mình; phụ huynh / Creator báo cáo đánh giá. Role đặt theo từng action. Trẻ em không gọi được.
+
+Guard/nghiệp vụ: [StoryRatingService.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/Services/StoryRatingService.cs).
+
+| Method + route | Mapping |
+|---|---|
+| [GET /api/v1/StoryRating/story/{storyId}](#ep-storyrating-getforstory-get) | CHƯA_RÀ_FRONTEND |
+| [PUT /api/v1/StoryRating/story/{storyId}/me](#ep-storyrating-upsertmine-put) | CHƯA_RÀ_FRONTEND |
+| [DELETE /api/v1/StoryRating/story/{storyId}/me](#ep-storyrating-deletemine-delete) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/StoryRating/{ratingId}/reports](#ep-storyrating-report-post) | CHƯA_RÀ_FRONTEND |
+| [GET /api/v1/creator/stories/{storyId}/ratings](#ep-storyrating-getformystory-get) | CHƯA_RÀ_FRONTEND |
+
+<a id="ep-storyrating-getforstory-get"></a>
+#### GET /api/v1/StoryRating/story/{storyId}
+
+- Action/chức năng: **GetForStory** — Đánh giá đang hiện, điểm tổng hợp, đánh giá của chính mình và quyền đánh giá. [StoryRatingController](../src/Core/StoryPlatform.Api/Controllers/StoryRatingController.cs).
+- Quyền: (User); truyện phải là truyện Creator đang công khai, không thì 404.
+- Request: **path** storyId: `int`; bắt buộc<br>**query** query: [StoryRatingQueryDto](#dto-storyratingquerydto).
+- Response: ApiResponse.data: [StoryRatingListDto](#dto-storyratinglistdto). HTTP nhánh controller: 200.
+- Frontend: **CHƯA_RÀ_FRONTEND** — contract mới 12/11/2026.
+
+<a id="ep-storyrating-upsertmine-put"></a>
+#### PUT /api/v1/StoryRating/story/{storyId}/me
+
+- Action/chức năng: **UpsertMine** — Tạo hoặc sửa đánh giá của mình. [StoryRatingController](../src/Core/StoryPlatform.Api/Controllers/StoryRatingController.cs).
+- Quyền: (User); bé đang hoạt động phải đã mở đọc truyện (403 `RATING_REQUIRES_READING`).
+- Request: **path** storyId: `int`; bắt buộc<br>**body** request: [UpsertStoryRatingRequestDto](#dto-upsertstoryratingrequestdto).
+- Response: ApiResponse.data: [MyStoryRatingDto](#dto-mystoryratingdto); `status` = `Published` hoặc `PendingModeration`. HTTP nhánh controller: 200; 400 sao ngoài 1–5 hoặc nhận xét quá 1000 ký tự; 404 truyện không hợp lệ.
+- Frontend: **CHƯA_RÀ_FRONTEND** — contract mới 12/11/2026.
+
+<a id="ep-storyrating-deletemine-delete"></a>
+#### DELETE /api/v1/StoryRating/story/{storyId}/me
+
+- Action/chức năng: **DeleteMine** — Xóa mềm đánh giá của mình; mục kiểm duyệt đang mở được đóng. [StoryRatingController](../src/Core/StoryPlatform.Api/Controllers/StoryRatingController.cs).
+- Quyền: (User).
+- Request: **path** storyId: `int`; bắt buộc.
+- Response: ApiResponse.data: `bool`. HTTP nhánh controller: 200; 404 khi chưa có đánh giá.
+- Frontend: **CHƯA_RÀ_FRONTEND** — contract mới 12/11/2026.
+
+<a id="ep-storyrating-report-post"></a>
+#### POST /api/v1/StoryRating/{ratingId}/reports
+
+- Action/chức năng: **Report** — Báo cáo một đánh giá đang hiện; mỗi người một lần; gộp vào mục hàng đợi đang mở. [StoryRatingController](../src/Core/StoryPlatform.Api/Controllers/StoryRatingController.cs).
+- Quyền: (User, ContentCreator); Creator chỉ báo cáo đánh giá truyện của mình (403).
+- Request: **path** ratingId: `int`; bắt buộc<br>**body** request: [ReportStoryRatingRequestDto](#dto-reportstoryratingrequestdto).
+- Response: ApiResponse.data: [StoryRatingReportResultDto](#dto-storyratingreportresultdto). HTTP nhánh controller: 200; 400 tự báo cáo / đánh giá không hiện / lý do sai / ghi chú quá 500 ký tự; 404; 409 đã báo cáo.
+- Frontend: **CHƯA_RÀ_FRONTEND** — contract mới 12/11/2026.
+
+<a id="ep-storyrating-getformystory-get"></a>
+#### GET /api/v1/creator/stories/{storyId}/ratings
+
+- Action/chức năng: **GetForMyStory** — Creator xem đánh giá đang hiện của truyện mình. [StoryRatingController](../src/Core/StoryPlatform.Api/Controllers/StoryRatingController.cs).
+- Quyền: (ContentCreator); truyện phải của chính mình, không thì 404.
+- Request: **path** storyId: `int`; bắt buộc<br>**query** query: [StoryRatingQueryDto](#dto-storyratingquerydto).
+- Response: ApiResponse.data: [StoryRatingListDto](#dto-storyratinglistdto) (`myRating` null, `canRate` false). HTTP nhánh controller: 200.
+- Frontend: **CHƯA_RÀ_FRONTEND** — contract mới 12/11/2026.
+
+<a id="controller-storyratingmoderation"></a>
+### StoryRatingModeration — 3 route
+
+MO11. Chỉ Moderator đang giữ claim còn hạn của mục `StoryRating`; Administrator nhận 403.
+
+Guard/nghiệp vụ: [StoryRatingModerationService.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/Services/StoryRatingModerationService.cs).
+
+| Method + route | Mapping |
+|---|---|
+| [GET /api/v1/StoryRatingModeration/{itemId}](#ep-storyratingmoderation-getdetail-get) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/StoryRatingModeration/{itemId}/approve](#ep-storyratingmoderation-approve-post) | CHƯA_RÀ_FRONTEND |
+| [POST /api/v1/StoryRatingModeration/{itemId}/hide](#ep-storyratingmoderation-hide-post) | CHƯA_RÀ_FRONTEND |
+
+<a id="ep-storyratingmoderation-getdetail-get"></a>
+#### GET /api/v1/StoryRatingModeration/{itemId}
+
+- Action/chức năng: **GetDetail** — Chi tiết đánh giá, lý do bị giữ và lý do báo cáo (không kèm người báo cáo); ghi audit `StoryRatingOpened`. [StoryRatingModerationController](../src/Core/StoryPlatform.Api/Controllers/StoryRatingModerationController.cs).
+- Quyền: (Moderator); 403 khi không giữ claim, 409 khi claim quá 2 giờ hoặc đánh giá đã bị xóa.
+- Request: **path** itemId: `int`; bắt buộc.
+- Response: ApiResponse.data: [StoryRatingModerationDetailDto](#dto-storyratingmoderationdetaildto). HTTP nhánh controller: 200.
+- Frontend: **CHƯA_RÀ_FRONTEND** — contract mới 12/11/2026.
+
+<a id="ep-storyratingmoderation-approve-post"></a>
+#### POST /api/v1/StoryRatingModeration/{itemId}/approve
+
+- Action/chức năng: **Approve** — Đánh giá đang chờ được hiện (báo người viết + Creator); đánh giá đang hiện được giữ; báo cáo `Approved`; mục `Approved`. [StoryRatingModerationController](../src/Core/StoryPlatform.Api/Controllers/StoryRatingModerationController.cs).
+- Quyền: (Moderator); cùng cổng với GetDetail.
+- Request: **path** itemId: `int`; bắt buộc.
+- Response: ApiResponse.data: [StoryRatingDecisionResultDto](#dto-storyratingdecisionresultdto). HTTP nhánh controller: 200.
+- Frontend: **CHƯA_RÀ_FRONTEND** — contract mới 12/11/2026.
+
+<a id="ep-storyratingmoderation-hide-post"></a>
+#### POST /api/v1/StoryRatingModeration/{itemId}/hide
+
+- Action/chức năng: **Hide** — Ẩn đánh giá; lý do gửi cho người viết; báo cáo `Hidden`; mục `Rejected`. [StoryRatingModerationController](../src/Core/StoryPlatform.Api/Controllers/StoryRatingModerationController.cs).
+- Quyền: (Moderator); cùng cổng với GetDetail.
+- Request: **path** itemId: `int`; bắt buộc<br>**body** request: [HideStoryRatingRequestDto](#dto-hidestoryratingrequestdto).
+- Response: ApiResponse.data: [StoryRatingDecisionResultDto](#dto-storyratingdecisionresultdto). HTTP nhánh controller: 200; 400 thiếu lý do hoặc quá 1000 ký tự.
+- Frontend: **CHƯA_RÀ_FRONTEND** — contract mới 12/11/2026.
 
 <a id="controller-childroadmap"></a>
 ### ChildRoadmap — 5 route
@@ -3654,6 +3772,7 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [ChildProfileDto](#dto-childprofiledto) | [ChildProfileDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/Profiles/DTOs/ChildProfileDtos.cs#L8) |
 | [ChildSessionDto](#dto-childsessiondto) | [ChildAccessCredentialDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/AccessCredentials/DTOs/ChildAccessCredentialDtos.cs#L5) |
 | [ChildSessionProfileDto](#dto-childsessionprofiledto) | [ChildAccessCredentialDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildProfiles/AccessCredentials/DTOs/ChildAccessCredentialDtos.cs#L23) |
+| [CommunityStoryDto](#dto-communitystorydto) | [StoryDtos.cs](../src/Core/StoryPlatform.Application/Features/Stories/DTOs/StoryDtos.cs) |
 | [ConfirmAssistanceDirectionRequest](#dto-confirmassistancedirectionrequest) | [CreatorAssistanceDtos.cs](../src/Core/StoryPlatform.Application/Features/CreatorAssistance/DTOs/CreatorAssistanceDtos.cs#L34) |
 | [ConfirmCreatorContentRequestDto](#dto-confirmcreatorcontentrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L172) |
 | [ConfirmCreatorContentResponseDto](#dto-confirmcreatorcontentresponsedto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L178) |
@@ -3700,6 +3819,7 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [GenerateBusinessReportRequestDto](#dto-generatebusinessreportrequestdto) | [BusinessReportDtos.cs](../src/Core/StoryPlatform.Application/Features/BusinessReports/DTOs/BusinessReportDtos.cs#L3) |
 | [GrantReviewViewRequestDto](#dto-grantreviewviewrequestdto) | [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs#L68) |
 | [GuidePage](#dto-guidepage) | [AuthoringGuideService.cs](../src/Core/StoryPlatform.Application/Features/ParentAuthoring/AuthoringGuideService.cs#L10) |
+| [HideStoryRatingRequestDto](#dto-hidestoryratingrequestdto) | [StoryRatingModerationDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingModerationDtos.cs) |
 | [IllustrationBeatMediaItem](#dto-illustrationbeatmediaitem) | [MediaGenerationModels.cs](../src/Core/StoryPlatform.Application/Features/MediaGeneration/Models/MediaGenerationModels.cs#L88) |
 | [ImportExistingStoryFileForm](#dto-importexistingstoryfileform) | [ExistingStoriesController.cs](../src/Core/StoryPlatform.Api/Controllers/ExistingStoriesController.cs#L192) |
 | [ImportStoryRequestDto](#dto-importstoryrequestdto) | [ExistingStoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ExistingStories/DTOs/ExistingStoryDtos.cs#L12) |
@@ -3721,6 +3841,7 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [ModerationPriority](#dto-moderationpriority) | [ModerationPriority.cs](../src/Core/StoryPlatform.Domain/Enums/ModerationPriority.cs#L3) |
 | [ModerationQueueQueryDto](#dto-moderationqueuequerydto) | [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs#L24) |
 | [ModerationReviewViewDto](#dto-moderationreviewviewdto) | [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs#L77) |
+| [MyStoryRatingDto](#dto-mystoryratingdto) | [StoryRatingDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingDtos.cs) |
 | [NotificationDto](#dto-notificationdto) | [NotificationDtos.cs](../src/Core/StoryPlatform.Application/Features/Notifications/DTOs/NotificationDtos.cs#L3) |
 | [OutlineProgressDto](#dto-outlineprogressdto) | [OutlineDtos.cs](../src/Core/StoryPlatform.Application/Features/Outline/DTOs/OutlineDtos.cs#L5) |
 | [OutlineVersionDto](#dto-outlineversiondto) | [OutlineDtos.cs](../src/Core/StoryPlatform.Application/Features/Outline/DTOs/OutlineDtos.cs#L15) |
@@ -3781,6 +3902,7 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [ReportedStoryDto](#dto-reportedstorydto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L57) |
 | [ReportedVersionDto](#dto-reportedversiondto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L77) |
 | [ReportedVocabularyDto](#dto-reportedvocabularydto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L94) |
+| [ReportStoryRatingRequestDto](#dto-reportstoryratingrequestdto) | [StoryRatingDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingDtos.cs) |
 | [RequestChangesDto](#dto-requestchangesdto) | [PublicStoryReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/PublicStoryReviewDtos.cs#L199) |
 | [RequestEmailChangeRequestDto](#dto-requestemailchangerequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L154) |
 | [ResendVerificationEmailRequestDto](#dto-resendverificationemailrequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L203) |
@@ -3813,6 +3935,15 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [StoryImpactDto](#dto-storyimpactdto) | [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs) |
 | [StoryImpactWishCardDto](#dto-storyimpactwishcarddto) | [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/ModerationQueueDtos.cs) |
 | [StoryMediaPackage](#dto-storymediapackage) | [MediaGenerationModels.cs](../src/Core/StoryPlatform.Application/Features/MediaGeneration/Models/MediaGenerationModels.cs#L94) |
+| [StoryRatingDecisionResultDto](#dto-storyratingdecisionresultdto) | [StoryRatingModerationDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingModerationDtos.cs) |
+| [StoryRatingDto](#dto-storyratingdto) | [StoryRatingDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingDtos.cs) |
+| [StoryRatingListDto](#dto-storyratinglistdto) | [StoryRatingDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingDtos.cs) |
+| [StoryRatingModerationDetailDto](#dto-storyratingmoderationdetaildto) | [StoryRatingModerationDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingModerationDtos.cs) |
+| [StoryRatingQueryDto](#dto-storyratingquerydto) | [StoryRatingDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingDtos.cs) |
+| [StoryRatingReportItemDto](#dto-storyratingreportitemdto) | [StoryRatingModerationDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingModerationDtos.cs) |
+| [StoryRatingReportReason](#dto-storyratingreportreason) | [StoryRatingReportReason.cs](../src/Core/StoryPlatform.Domain/Enums/StoryRatingReportReason.cs) |
+| [StoryRatingReportResultDto](#dto-storyratingreportresultdto) | [StoryRatingDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingDtos.cs) |
+| [StoryRatingSummaryDto](#dto-storyratingsummarydto) | [StoryRatingDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingDtos.cs) |
 | [StoryReview.UpdateStoryRequestDto](#dto-storyreview-updatestoryrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L53) |
 | [StoryReviewDto](#dto-storyreviewdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L40) |
 | [StoryStatus](#dto-storystatus) | [StoryStatus.cs](../src/Core/StoryPlatform.Domain/Enums/StoryStatus.cs#L3) |
@@ -3831,6 +3962,7 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [UpdateProfileRequestDto](#dto-updateprofilerequestdto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L171) |
 | [UpdateQuizRequestDto](#dto-updatequizrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L119) |
 | [UpdateVocabularyRequestDto](#dto-updatevocabularyrequestdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L93) |
+| [UpsertStoryRatingRequestDto](#dto-upsertstoryratingrequestdto) | [StoryRatingDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingDtos.cs) |
 | [UserProfileDto](#dto-userprofiledto) | [AuthDtos.cs](../src/Core/StoryPlatform.Application/Features/Auth/DTOs/AuthDtos.cs#L49) |
 | [UserRole](#dto-userrole) | [UserRole.cs](../src/Core/StoryPlatform.Domain/Enums/UserRole.cs#L3) |
 | [ValidationCheckDto](#dto-validationcheckdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L161) |
@@ -4744,6 +4876,19 @@ Nguồn: [ChildAccessCredentialDtos.cs](../src/Core/StoryPlatform.Application/Fe
 | `nickname` | `string` | Không | default `string.Empty` |
 | `ageBand` | `string` | Không | default `string.Empty` |
 
+<a id="dto-communitystorydto"></a>
+### CommunityStoryDto
+
+Nguồn: [StoryDtos.cs](../src/Core/StoryPlatform.Application/Features/Stories/DTOs/StoryDtos.cs). Kế thừa [StoryDto](#dto-storydto).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| (mọi field của StoryDto) | — | — | Xem [StoryDto](#dto-storydto). |
+| `viewCount` | `int` | Không | Tổng số phiên đọc đã mở. |
+| `favoriteCount` | `int` | Không | Số trẻ đang yêu thích. |
+| `averageRating` | `double?` | Có | Trung bình sao của đánh giá đang hiện, làm tròn 1 chữ số; null khi chưa có. |
+| `ratingCount` | `int` | Không | Số đánh giá đang hiện. |
+
 <a id="dto-confirmassistancedirectionrequest"></a>
 ### ConfirmAssistanceDirectionRequest
 
@@ -5568,6 +5713,15 @@ Nguồn: [AuthoringGuideService.cs](../src/Core/StoryPlatform.Application/Featur
 | `totalCount` | `int` | Không | — |
 | `items` | [AuthoringGuide[]](#dto-authoringguide) | Không | — |
 
+<a id="dto-hidestoryratingrequestdto"></a>
+### HideStoryRatingRequestDto
+
+Nguồn: [StoryRatingModerationDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingModerationDtos.cs).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `reason` | `string` | Không | Bắt buộc, tối đa 1000 ký tự; người viết đánh giá đọc được. |
+
 <a id="dto-illustrationbeatmediaitem"></a>
 ### IllustrationBeatMediaItem
 
@@ -5977,6 +6131,7 @@ Nguồn: [ModerationItemType.cs](../src/Core/StoryPlatform.Domain/Enums/Moderati
 | `RoadmapTemplateReview` | 4 |
 | `CommunitySubmission` | 5 |
 | `PublicStoryRemoval` | 6 |
+| `StoryRating` | 7 |
 
 Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
 
@@ -6023,6 +6178,17 @@ Nguồn: [ModerationQueueDtos.cs](../src/Core/StoryPlatform.Application/Features
 | `readingRoadmapId` | `int?` | Có | — |
 | `grantedAt` | `DateTime` | Không | — |
 | `expiresAt` | `DateTime` | Không | — |
+
+<a id="dto-mystoryratingdto"></a>
+### MyStoryRatingDto
+
+Nguồn: [StoryRatingDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingDtos.cs). Kế thừa [StoryRatingDto](#dto-storyratingdto).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `ratingId`, `reviewerName`, `rating`, `comment`, `createdAt`, `updatedAt` | — | — | Như [StoryRatingDto](#dto-storyratingdto). |
+| `status` | `string` | Không | `Published`, `PendingModeration` hoặc `Hidden`. |
+| `hiddenReason` | `string?` | Có | Lý do Moderator ẩn; chỉ có khi `status = Hidden`. |
 
 <a id="dto-notificationdto"></a>
 ### NotificationDto
@@ -7008,6 +7174,16 @@ Nguồn: [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/C
 | `term` | `string` | Không | default `string.Empty` |
 | `definition` | `string` | Không | default `string.Empty` |
 
+<a id="dto-reportstoryratingrequestdto"></a>
+### ReportStoryRatingRequestDto
+
+Nguồn: [StoryRatingDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingDtos.cs).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `reason` | [StoryRatingReportReason](#dto-storyratingreportreason) (chuỗi) | Không | JsonStringEnumConverter. |
+| `note` | `string?` | Có | Tối đa 500 ký tự; số điện thoại / email bị che. |
+
 <a id="dto-requestchangesdto"></a>
 ### RequestChangesDto
 
@@ -7638,6 +7814,123 @@ Nguồn: [MediaGenerationModels.cs](../src/Core/StoryPlatform.Application/Featur
 | `storyVersionId` | `int` | Không | — |
 | `scenes` | [IReadOnlyList&lt;SceneMediaItem&gt;](#dto-scenemediaitem) | Không | — |
 
+<a id="dto-storyratingdecisionresultdto"></a>
+### StoryRatingDecisionResultDto
+
+Nguồn: [StoryRatingModerationDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingModerationDtos.cs).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `itemId` | `int` | Không | — |
+| `ratingId` | `int` | Không | — |
+| `decision` | `string` | Không | `Approved` hoặc `Hidden`. |
+| `ratingStatus` | `string` | Không | Trạng thái đánh giá sau quyết định. |
+| `decidedAt` | `DateTime` | Không | — |
+
+<a id="dto-storyratingdto"></a>
+### StoryRatingDto
+
+Nguồn: [StoryRatingDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingDtos.cs).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `ratingId` | `int` | Không | — |
+| `reviewerName` | `string` | Không | "Phụ huynh H***"; không có id, email hay tên bé. |
+| `rating` | `int` | Không | 1–5. |
+| `comment` | `string?` | Có | Đã che số điện thoại / email; null khi chỉ chấm sao. |
+| `createdAt` | `DateTime` | Không | — |
+| `updatedAt` | `DateTime?` | Có | — |
+
+<a id="dto-storyratinglistdto"></a>
+### StoryRatingListDto
+
+Nguồn: [StoryRatingDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingDtos.cs).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `storyId` | `int` | Không | — |
+| `summary` | [StoryRatingSummaryDto](#dto-storyratingsummarydto) | Không | Chỉ tính đánh giá đang hiện. |
+| `myRating` | [MyStoryRatingDto?](#dto-mystoryratingdto) | Có | Chỉ API phụ huynh; null khi chưa đánh giá. |
+| `canRate` | `bool` | Không | True khi có bé đang hoạt động đã mở đọc truyện; luôn false ở API Creator. |
+| `ratings` | [PagedResult&lt;StoryRatingDto&gt;](#dto-pagedresult) | Không | Chỉ đánh giá đang hiện. |
+
+<a id="dto-storyratingmoderationdetaildto"></a>
+### StoryRatingModerationDetailDto
+
+Nguồn: [StoryRatingModerationDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingModerationDtos.cs).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `itemId` | `int` | Không | — |
+| `ratingId` | `int` | Không | — |
+| `storyId` | `int` | Không | — |
+| `storyTitle` | `string?` | Có | — |
+| `reviewerName` | `string` | Không | "Phụ huynh H***". |
+| `rating` | `int` | Không | 1–5. |
+| `comment` | `string?` | Có | Đã che số điện thoại / email. |
+| `ratingStatus` | `string` | Không | `Published` (bị báo cáo) hoặc `PendingModeration`. |
+| `holdSource` | `string` | Không | `Screening` hoặc `Report`. |
+| `screeningReasonCode` | `string?` | Có | `LINK`, `BLOCKED_TERM`, `LOW_RATING_WITH_TEXT` khi `holdSource = Screening`. |
+| `reports` | [List&lt;StoryRatingReportItemDto&gt;](#dto-storyratingreportitemdto) | Không | Không có người báo cáo. |
+| `createdAt` | `DateTime` | Không | — |
+| `updatedAt` | `DateTime?` | Có | — |
+
+<a id="dto-storyratingquerydto"></a>
+### StoryRatingQueryDto
+
+Nguồn: [StoryRatingDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingDtos.cs).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `pageIndex` | `int` | Không | default 1; nhỏ hơn 1 tính là 1. |
+| `pageSize` | `int` | Không | default 10; nhỏ hơn 1 → 10; lớn hơn 50 → 50. |
+| `orderBy` | `string?` | Có | `newest` (mặc định), `highest`, `lowest`; không phân biệt hoa thường. |
+
+<a id="dto-storyratingreportitemdto"></a>
+### StoryRatingReportItemDto
+
+Nguồn: [StoryRatingModerationDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingModerationDtos.cs).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `reason` | `string` | Không | Tên [StoryRatingReportReason](#dto-storyratingreportreason). |
+| `note` | `string?` | Có | Đã che số điện thoại / email. |
+| `createdAt` | `DateTime` | Không | — |
+
+<a id="dto-storyratingreportreason"></a>
+### StoryRatingReportReason
+
+Nguồn: [StoryRatingReportReason.cs](../src/Core/StoryPlatform.Domain/Enums/StoryRatingReportReason.cs).
+
+| Tên | Giá trị |
+|---|---|
+| `Offensive` | 1 |
+| `Spam` | 2 |
+| `PersonalInfo` | 3 |
+| `Irrelevant` | 4 |
+| `Other` | 5 |
+
+<a id="dto-storyratingreportresultdto"></a>
+### StoryRatingReportResultDto
+
+Nguồn: [StoryRatingDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingDtos.cs).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `ratingId` | `int` | Không | — |
+| `status` | `string` | Không | Luôn `Received`; đánh giá vẫn hiện đến khi Moderator quyết định. |
+
+<a id="dto-storyratingsummarydto"></a>
+### StoryRatingSummaryDto
+
+Nguồn: [StoryRatingDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingDtos.cs).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `averageRating` | `double?` | Có | Làm tròn 1 chữ số; null khi chưa có đánh giá hiện. |
+| `ratingCount` | `int` | Không | — |
+| `distribution` | `Dictionary<int, int>` | Không | Khóa `"1"`..`"5"` → số đánh giá đang hiện ở mức sao đó. |
+
 <a id="dto-storyreview-updatestoryrequestdto"></a>
 ### StoryReview.UpdateStoryRequestDto
 
@@ -8023,6 +8316,16 @@ Ví dụ JSON minh họa shape request:
   ]
 }
 ~~~
+
+<a id="dto-upsertstoryratingrequestdto"></a>
+### UpsertStoryRatingRequestDto
+
+Nguồn: [StoryRatingDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRatings/DTOs/StoryRatingDtos.cs).
+
+| JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
+|---|---|---|---|
+| `rating` | `int` | Không | 1–5. |
+| `comment` | `string?` | Có | Tối đa 1000 ký tự; số điện thoại / email bị che. |
 
 <a id="dto-userprofiledto"></a>
 ### UserProfileDto

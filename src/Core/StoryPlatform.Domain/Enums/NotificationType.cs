@@ -36,5 +36,9 @@ public enum NotificationType
     /// <summary>Trẻ gửi tóm tắt cuối truyện (ghi âm hoặc đánh cờ) cho chủ hồ sơ.</summary>
     StorySummarySent = 31,
     /// <summary>Gói tháng còn không quá 3 ngày và chưa gia hạn (Luồng 2, 2g).</summary>
-    SubscriptionExpiring = 32
+    SubscriptionExpiring = 32,
+    /// <summary>Truyện của Creator vừa có một đánh giá được hiện công khai.</summary>
+    StoryRatingPublished = 33,
+    /// <summary>Moderator đã duyệt hoặc ẩn đánh giá của phụ huynh.</summary>
+    StoryRatingModerated = 34
 }

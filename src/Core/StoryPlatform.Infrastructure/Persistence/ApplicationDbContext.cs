@@ -64,6 +64,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<ModerationRubricAuditLog> ModerationRubricAuditLogs => Set<ModerationRubricAuditLog>();
     public DbSet<ContentReport> ContentReports => Set<ContentReport>();
     public DbSet<ModerationItem> ModerationItems => Set<ModerationItem>();
+    public DbSet<StoryRating> StoryRatings => Set<StoryRating>();
+    public DbSet<StoryRatingReport> StoryRatingReports => Set<StoryRatingReport>();
     public DbSet<ModerationReviewView> ModerationReviewViews => Set<ModerationReviewView>();
     public DbSet<ReadingRoadmap> ReadingRoadmaps => Set<ReadingRoadmap>();
     public DbSet<ReadingRoadmapItem> ReadingRoadmapItems => Set<ReadingRoadmapItem>();

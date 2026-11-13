@@ -30,6 +30,12 @@ public class CommunityStoryDto : StoryDto
 {
     public int ViewCount { get; set; }
     public int FavoriteCount { get; set; }
+
+    /// <summary>Trung bình sao của các đánh giá đang hiện, làm tròn 1 chữ số; null khi chưa có.</summary>
+    public double? AverageRating { get; set; }
+
+    /// <summary>Số đánh giá đang hiện.</summary>
+    public int RatingCount { get; set; }
 }
 
 public class CreateStoryRequestDto

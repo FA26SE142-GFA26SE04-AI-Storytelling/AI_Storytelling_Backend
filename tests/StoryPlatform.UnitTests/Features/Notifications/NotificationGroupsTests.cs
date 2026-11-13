@@ -28,6 +28,8 @@ public class NotificationGroupsTests
     [InlineData(NotificationType.ModerationSlaWarning, "moderation")]
     [InlineData(NotificationType.ContentModerationResult, "moderation")]
     [InlineData(NotificationType.ContentReportResolved, "stories")]
+    [InlineData(NotificationType.StoryRatingPublished, "stories")]
+    [InlineData(NotificationType.StoryRatingModerated, "stories")]
     public void For_ReturnsSpecGroup(NotificationType type, string expected) =>
         Assert.Equal(expected, NotificationGroups.For(type));
 

@@ -1,4 +1,4 @@
--- 35. notifications (21)
+-- 35. notifications (23)
 INSERT INTO notifications ("Id", "RecipientUserId", "Type", "Payload", "Status", "ReadAt", "CreatedAt", "IsDeleted")
 VALUES
     (1, 2, 'SupervisionInvite', '{"childProfileId":1}', 'Read', NOW() - INTERVAL '39 days', NOW() - INTERVAL '40 days', false),
@@ -27,4 +27,11 @@ ON CONFLICT ("Id") DO NOTHING;
 INSERT INTO notifications ("Id", "RecipientUserId", "Type", "Payload", "Status", "ReadAt", "CreatedAt", "IsDeleted")
 VALUES
     (28, 11, 'ContentReported', '{"contentReportId":8,"moderationItemId":28,"storyId":21,"reason":"Inappropriate"}', 'Unread', NULL, NOW() - INTERVAL '2 hours', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- Danh gia truyen: creator_demo (Id 13) duoc bao co danh gia moi; parent_demo3 (Id 4) duoc bao danh gia bi an.
+INSERT INTO notifications ("Id", "RecipientUserId", "Type", "Payload", "Status", "ReadAt", "CreatedAt", "IsDeleted")
+VALUES
+    (29, 13, 'StoryRatingPublished', '{"storyId":21,"ratingId":1,"rating":5}', 'Unread', NULL, NOW() - INTERVAL '40 hours', false),
+    (30, 4, 'StoryRatingModerated', '{"storyId":16,"ratingId":4,"decision":"Hidden","reason":"Nhận xét công kích, không góp ý cụ thể cho truyện"}', 'Unread', NULL, NOW() - INTERVAL '1 day', false)
 ON CONFLICT ("Id") DO NOTHING;

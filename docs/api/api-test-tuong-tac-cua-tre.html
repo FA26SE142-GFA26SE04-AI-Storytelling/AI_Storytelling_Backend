@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API và test case — Tương tác của trẻ</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5d6679; --line: #dfe3ea;
+    --accent: #2f5fd0; --ok: #1b8a4b; --warn: #b26a00; --bad: #c0392b;
+    --get: #1b8a4b; --post: #2f5fd0; --put: #b26a00; --delete: #c0392b;
+    --code: #eef1f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171e; --panel: #1c212b; --text: #e6e9ef; --muted: #9aa3b5; --line: #2d3442;
+      --accent: #7aa2ff; --ok: #4cc58a; --warn: #e5a23c; --bad: #ff7b6b;
+      --get: #4cc58a; --post: #7aa2ff; --put: #e5a23c; --delete: #ff7b6b;
+      --code: #232a37;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 system-ui, "Segoe UI", sans-serif; }
+  header { padding: 24px 16px 8px; max-width: 1100px; margin: 0 auto; }
+  h1 { margin: 0 0 6px; font-size: 24px; }
+  .sub { color: var(--muted); margin: 0; }
+  .layout { display: grid; grid-template-columns: 230px 1fr; gap: 24px; max-width: 1100px; margin: 0 auto; padding: 16px; }
+  nav { position: sticky; top: 12px; align-self: start; max-height: calc(100vh - 24px); overflow: auto; }
+  nav a { display: block; padding: 7px 10px; border-radius: 8px; color: var(--text); text-decoration: none; font-size: 14px; }
+  nav a:hover { background: var(--panel); }
+  nav .progress { color: var(--muted); font-size: 12px; margin: 10px 10px 0; }
+  main { min-width: 0; }
+  section.step { margin-bottom: 36px; }
+  section.step > h2 { font-size: 20px; margin: 0 0 4px; }
+  .step-desc { color: var(--muted); margin: 0 0 12px; }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+  .box h3 { margin: 0 0 6px; font-size: 15px; }
+  .box ul { margin: 6px 0 0; padding-left: 20px; }
+  .note { border-left: 3px solid var(--warn); padding: 8px 12px; background: var(--panel); border-radius: 0 8px 8px 0; margin: 10px 0; font-size: 14px; }
+  .detail { border-left: 3px solid var(--accent); padding: 8px 12px; background: var(--panel); border-radius: 0 8px 8px 0; margin: 10px 0; font-size: 14px; }
+  .detail-sec + .detail-sec { margin-top: 8px; }
+  .detail ul { margin: 4px 0 0; padding-left: 20px; }
+  details.api { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; }
+  details.api > summary { cursor: pointer; padding: 11px 14px; list-style: none; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  details.api > summary::-webkit-details-marker { display: none; }
+  .m { font-weight: 700; font-size: 12px; padding: 2px 8px; border-radius: 6px; color: #fff; min-width: 58px; text-align: center; }
+  .m.GET { background: var(--get); } .m.POST { background: var(--post); } .m.PUT { background: var(--put); } .m.DELETE { background: var(--delete); }
+  @media (prefers-color-scheme: dark) { .m { color: #10131a; } }
+  .path { font-family: ui-monospace, Consolas, monospace; font-size: 13.5px; word-break: break-all; }
+  .role { margin-left: auto; font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; }
+  .ctl { font: 600 12px ui-monospace, Consolas, monospace; color: var(--accent); background: var(--code); border-radius: 6px; padding: 1px 7px; }
+  .ctl-line { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+  .ctl-line b { color: var(--text); }
+  nav .search { width: 100%; margin: 0 0 8px; font: 13px system-ui, "Segoe UI", sans-serif; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); }
+  nav .found { color: var(--muted); font-size: 12px; margin: -4px 10px 6px; flex-basis: 100%; }
+  nav .found:empty { display: none; }
+  nav .search { flex-basis: 100%; }
+  .hidden-by-search { display: none !important; }
+  .api-body { padding: 0 16px 14px; border-top: 1px solid var(--line); }
+  .api-body p { margin: 10px 0 6px; }
+  pre { background: var(--code); border-radius: 8px; padding: 10px 12px; overflow: auto; font: 12.5px/1.5 ui-monospace, Consolas, monospace; margin: 6px 0 10px; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 14px; }
+  table.tests { table-layout: fixed; }
+  table.tests th.chk { width: 34px; }
+  table.tests th.exp { width: 38%; }
+  th, td { text-align: left; padding: 7px 8px; border-top: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+  td.chk { width: 34px; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; margin-right: 6px; }
+  .tag.ok { color: var(--ok); border: 1px solid var(--ok); }
+  .tag.neg { color: var(--bad); border: 1px solid var(--bad); }
+  .tag.edge { color: var(--warn); border: 1px solid var(--warn); }
+  .tid { font: 700 12px ui-monospace, Consolas, monospace; color: var(--muted); margin-right: 6px; }
+  .code { font-family: ui-monospace, Consolas, monospace; background: var(--code); border-radius: 5px; padding: 0 5px; font-size: 13px; }
+  .flow li { margin-bottom: 4px; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 14px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.copy { font-size: 12px; padding: 1px 8px; margin-left: 6px; border-radius: 6px; }
+  .data { margin-top: 4px; padding: 6px 8px; background: var(--code); border-radius: 6px; font-size: 12.5px; color: var(--muted); }
+  .data b { color: var(--text); }
+  .data > b { display: block; margin-bottom: 2px; }
+  .data ul { margin: 0; padding-left: 18px; }
+  .data li { margin: 1px 0; }
+  .data .kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 10px; align-items: start; }
+  .data .kv > span:nth-child(odd) { color: var(--muted); white-space: nowrap; }
+  .data .kv > span:nth-child(even), .data .kv > ul { color: var(--text); min-width: 0; word-break: break-word; }
+  @media (max-width: 760px) { .data .kv { grid-template-columns: 1fr; } }
+  .reqbar { margin-top: 6px; font-size: 12px; color: var(--muted); }
+  pre.req, pre.out { margin: 3px 0 2px; max-height: 320px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .auto { display: block; margin-top: 6px; font: 11.5px ui-monospace, Consolas, monospace; color: var(--muted); }
+  .vars-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px 12px; }
+  .vars-grid label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 3px; }
+  .vars-grid input { font: 13px ui-monospace, Consolas, monospace; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--code); color: var(--text); min-width: 0; }
+  @media (max-width: 760px) {
+    .layout { grid-template-columns: 1fr; }
+    nav { position: static; max-height: none; display: flex; flex-wrap: wrap; gap: 4px; }
+    .role { margin-left: 0; }
+    table.tests th.exp { width: 45%; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>API và test case — Tương tác của trẻ</h1>
+  <p class="sub">AI Storytelling Backend · Tương tác lúc nghe (P6): trẻ nhận tương tác theo scene, bật "Chỉ nghe", gửi câu trả lời; phụ huynh xem câu trả lời cảm xúc/cảm nhận. Mỗi API có giải thích, body ví dụ và test case kèm đầu vào / đầu ra. Tích vào ô để đánh dấu đã chạy (lưu trong trình duyệt).</p>
+</header>
+
+<div class="layout">
+  <nav id="nav"></nav>
+  <main id="main">
+
+    <section class="step" id="chung">
+      <h2>Quy ước chung</h2>
+      <div class="box">
+        <h3>Cách gọi</h3>
+        <ul>
+          <li>Địa chỉ gốc: <span class="code">http://localhost:5259/api/v1/...</span>. Mọi phản hồi bọc trong <span class="code">ApiResponse</span>: <span class="code">{ "success", "message", "data", "errors" }</span>.</li>
+          <li>Đính kèm <span class="code">Authorization: Bearer {accessToken}</span>. API dưới <span class="code">/api/v1/child/reading</span> chỉ nhận token trẻ (policy <b>ChildSession</b>); token phụ huynh bị từ chối.</li>
+          <li>Lỗi nghiệp vụ trả qua <span class="code">ExceptionHandlingMiddleware</span>: <span class="code">{ "success": false, "message": "&lt;mã hoặc thông báo&gt;", "data": null, "errors": null }</span>.</li>
+          <li>Mã lỗi thường gặp: <b>400</b> <span class="code">LISTENING_ANSWER_INVALID</span>, <b>401</b> chưa đăng nhập, <b>403</b> sai loại token / phiên bị ngắt / truyện chưa mở, <b>404</b> phiên hoặc tương tác không có, <b>409</b> <span class="code">LISTENING_SESSION_CLOSED</span>.</li>
+          <li>Đầu ra trong bảng test chỉ ghi phần <span class="code">data</span>, trừ khi ghi rõ là toàn bộ response. URL audio / ảnh rút gọn bằng <span class="code">…</span>; khi chạy thật có thể là URL đã ký.</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h3>Dữ liệu thật trong Database/Seed (nạp bằng Seed-Database.ps1)</h3>
+        <ul>
+          <li><b>Mật khẩu mọi tài khoản demo: Demo@123.</b> Phụ huynh đăng nhập bằng <span class="code">POST /api/v1/Auth/login</span> với <span class="code">{ "identifier": "parent_demo1", "password": "Demo@123" }</span>.</li>
+          <li><b>parent_demo1</b> (id 2) là Owner bé 1 (6-8 tuổi). <b>parent_demo2</b> (id 3) không phải Owner bé 1 (dùng cho test quyền).</li>
+          <li>Bé 1 đăng nhập bằng <span class="code">POST /api/v1/ChildAccessCredential/easylogin/login</span> với <span class="code">{ "secret": "demo-qr-child-01" }</span>.</li>
+          <li><b>Truyện 900 "Thỏ con đi lạc"</b>: truyện AI của parent_demo1 cho bé 1, 6 đoạn, version 900, có đủ 5 tương tác (seed <span class="code">11_stories</span>, <span class="code">13_story_versions</span>, <span class="code">60_listening_interactions</span>, <span class="code">61_listening_interaction_options</span>).</li>
+          <li>Tương tác và scene:
+            <ul>
+              <li>Scene 0 · <b>900</b> Checkpoint (Emotion) · thẻ 900 Thỏ đang sợ, 901 Thỏ đang vui, 902 Thỏ đang buồn ngủ, 903 Thỏ đang tò mò.</li>
+              <li>Scene 1 · <b>902</b> RolePlay · nhân vật Thỏ, câu mẫu "Có ai ở đó không?".</li>
+              <li>Scene 2 · <b>901</b> Checkpoint (Prediction) · thẻ 904 Bác Gấu tốt bụng, 905 Một cơn gió mạnh.</li>
+              <li>Scene 3 · <b>903</b> PicturePrediction · thẻ 906 Mẹ Thỏ, 907 Một bạn sóc nhỏ · đáp án lộ ở scene 4.</li>
+              <li>Scene 4 · không có tương tác.</li>
+              <li>Scene 5 (cuối) · <b>904</b> EventOrdering · thẻ 908 Thỏ đi lạc vào rừng (câu ở scene 0), 909 Bác Gấu đến giúp Thỏ (scene 2), 910 Thỏ biết nhờ người lớn giúp (scene 5). Thứ tự đúng 908 → 909 → 910.</li>
+            </ul></li>
+          <li><b>Điều kiện trước:</b> seed để truyện 900 ở trạng thái chờ duyệt. Trẻ chỉ đọc được khi truyện đã duyệt (P4-31) và có media (Phase 5 thật, hoặc media giả ở mục 0b Bước 7) — xem <a href="api-test-tuong-tac-luc-nghe-p1-p4.html">hướng dẫn P1–P6</a>.</li>
+          <li><b>Lưu ý:</b> nhiều test đổi trạng thái (lưu attempt, đóng phiên). Chạy theo thứ tự trong trang; muốn chạy lại từ đầu thì mở phiên mới hoặc nạp lại seed.</li>
+        </ul>
+      </div>
+      <div class="box" id="vars">
+        <h3>Giá trị động (tự thay khi copy)</h3>
+        <p class="sub" style="margin:0 0 8px">Các giá trị chỉ có sau khi gọi API được viết dạng <span class="code">&lt;TÊN&gt;</span> trong request. Nhập giá trị thật vào ô dưới đây; khung JSON và nút Copy sẽ tự thay. Lưu trong trình duyệt.</p>
+        <div class="vars-grid"></div>
+      </div>
+      <div class="toolbar">
+        <button id="expand">Mở tất cả API</button>
+        <button id="collapse">Đóng tất cả</button>
+        <button id="reset">Xóa các dấu đã tích</button>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+// ---------- DỮ LIỆU ----------
+// Mỗi test: [kind, id, tình huống, kết quả mong đợi, { as, call, body, data, out, auto }]
+//   kind = ok | neg | edge ; as = tài khoản ; call = "METHOD url" ; body = body gửi ; data = ghi chú dữ liệu
+//   out = đầu ra mong đợi (JSON) ; auto = tên test tự động tương ứng
+const J = o => JSON.stringify(o, null, 2);
+const CHILD = "bé 1 (secret demo-qr-child-01)";
+const P1 = "parent_demo1";
+const R = "/api/v1/child/reading/sessions";
+const ATT = id => `POST ${R}/<SESSION_ID>/interactions/${id}/attempts`;
+const result = o => Object.assign({ interactionId: 0, type: "", matched: null, feedback: null, feedbackAudioUrl: null,
+  suggestedAnswer: null, replaySceneIndexes: [], revealed: false, correctOrderOptionIds: null }, o);
+const FAIL = msg => J({ success: false, message: msg, data: null, errors: null });
+const ORDER_RETRY = "Mình cùng nghe lại mấy đoạn này rồi xếp lại nhé.";
+
+const STEPS = [
+{
+  id: "b1", title: "Bước 1 — Chuẩn bị: token trẻ và phiên đọc",
+  desc: "Bé đăng nhập để có token trẻ, rồi mở phiên đọc truyện 900. sessionId của phiên dùng cho mọi API ở các bước sau.",
+  flow: ["Bé 1 đăng nhập bằng EasyLogin (hoặc phụ huynh bàn giao thiết bị qua handover) → token trẻ.", "Bé mở truyện 900 → hệ thống tạo phiên đọc, trả sessionId.", "Nhập sessionId vào ô <SESSION_ID> ở mục Giá trị động."],
+  apis: [
+  { m: "POST", p: "/api/v1/ChildAccessCredential/easylogin/login", role: "Không cần token", ctl: "ChildAccessCredentialController",
+    what: "Bé đăng nhập bằng mã QR EasyLogin. Kết quả là token trẻ (token_type=child) dùng cho mọi API /api/v1/child/reading.",
+    detail: [
+      ["Dùng khi", ["Bước đầu tiên của mọi test trong trang này."]],
+      ["Cách khác", ["Phụ huynh bàn giao thiết bị: POST /api/v1/ChildAccessCredential/1/handover với { \"supervisorRefreshToken\": \"<refreshToken của parent_demo1>\" }, token phụ huynh trong header."]]
+    ],
+    body: J({ secret: "demo-qr-child-01" }),
+    tests: [
+      ["ok", "T01", "Bé 1 đăng nhập bằng EasyLogin", "200, có data.accessToken. Lưu làm token trẻ cho các bước sau.",
+        { as: "(không gửi token)", call: "POST /api/v1/ChildAccessCredential/easylogin/login", body: { secret: "demo-qr-child-01" } }],
+      ["neg", "T02", "Dùng token phụ huynh gọi API của trẻ", "403 (policy ChildSession). Token phụ huynh không dùng thay token trẻ được.",
+        { as: P1, call: `POST ${R}`, body: { storyId: 900 }, data: "Đăng nhập parent_demo1 (Demo@123), gọi API mở phiên đọc bằng token phụ huynh." }]
+    ] },
+  { m: "POST", p: "/api/v1/child/reading/sessions", role: "Trẻ (ChildSession)", ctl: "ChildReadingController",
+    what: "Bé mở một truyện để đọc. Hệ thống tạo phiên đọc mới, hoặc trả lại phiên đang mở của truyện đó.",
+    detail: [
+      ["Điều kiện", ["Truyện đã duyệt, đủ media và hợp chính sách an toàn của bé. Nếu không: 403 \"Truyện này chưa mở cho em, mình đọc truyện khác nhé!\""]],
+      ["Kết quả", ["sessionId, resumed (false khi là phiên mới) và các thông tin phiên."]]
+    ],
+    body: J({ storyId: 900 }),
+    resp: J({ success: true, message: "Thao tác thành công.", data: { sessionId: 31, storyId: 900, resumed: false }, errors: null }),
+    tests: [
+      ["ok", "T03", "Mở phiên đọc truyện 900", "200, có data.sessionId, resumed = false. Nhập sessionId vào ô <SESSION_ID>.",
+        { as: CHILD, call: `POST ${R}`, body: { storyId: 900 }, out: { sessionId: 31, storyId: 900, resumed: false, "...": "…" } }],
+      ["neg", "T04", "Truyện 900 chưa duyệt hoặc chưa có media", "403 \"Truyện này chưa mở cho em, mình đọc truyện khác nhé!\"",
+        { as: CHILD, call: `POST ${R}`, body: { storyId: 900 }, data: "DB vừa nạp seed, chưa chạy P4-31 và chưa có media (mục 0b Bước 7 của hướng dẫn P1–P6).",
+          out: JSON.parse(FAIL("Truyện này chưa mở cho em, mình đọc truyện khác nhé!")) }],
+      ["neg", "T05", "Không gửi token", "401", { as: "(không gửi token)", call: `POST ${R}`, body: { storyId: 900 } }]
+    ] }
+  ]
+},
+{
+  id: "b2", title: "Bước 2 — Nội dung truyện có tương tác",
+  desc: "App lấy toàn bộ scene của phiên. Scene có tương tác thì kèm interaction; app phát hết scene rồi dừng hỏi.",
+  flow: ["Gọi GET content sau khi mở phiên.", "Với mỗi scene: phát audio scene; nếu interaction khác null và attemptedInSession = false và listenOnly = false → dừng hỏi.", "EventOrdering gắn vào scene cuối: hiện sau khi nghe hết scene cuối và trước Quiz."],
+  apis: [
+  { m: "GET", p: "/api/v1/child/reading/sessions/{sessionId}/content", role: "Trẻ (ChildSession)", ctl: "ChildReadingController",
+    what: "Trả nội dung phiên đọc theo scene. P6 thêm listenOnly ở gốc, interaction và attemptedInSession ở mỗi scene.",
+    detail: [
+      ["Chỉ trả tương tác khi", ["Đã gắn scene (StorySceneId có giá trị) và đủ media Ready (cùng luật với readiness của gói media). Thiếu một thứ thì interaction = null."]],
+      ["Trường dùng theo loại", [
+        "Checkpoint: kind, prompt, options[] (có feedback, feedbackAudioUrl), audioUrls.prompt / noMatch.",
+        "RolePlay: characterName, modelSentence, modelAudioUrl (audio của segment chứa câu thoại), audioUrls.match; options rỗng.",
+        "FillBlank: maskedSentence (chỗ trống là ____), hint, audioUrls.hint / match / noMatch; options rỗng.",
+        "EventOrdering: options[] (3 thẻ đã xáo, có audioUrl, không có feedback), audioUrls.match / noMatch.",
+        "PicturePrediction: prompt, waitFeedback, revealSceneIndex, options[] (có imageUrl, feedback), audioUrls.prompt / wait."]],
+      ["Không bao giờ trả", ["isMatch, correctOrder, explanation, hiddenWord, sourceQuote, đáp án chấp nhận của FillBlank."]],
+      ["attemptedInSession", ["true khi trẻ đã thử tương tác trong phiên hiện tại. Riêng EventOrdering chỉ true khi đã xếp đúng hoặc đã sai đủ 3 lần. Phiên mới thì hỏi lại từ đầu."]]
+    ],
+    resp: J({ success: true, message: "Thao tác thành công.", data: {
+      sessionId: 31, storyId: 900, title: "Thỏ con đi lạc", listenOnly: false,
+      scenes: [{ sceneIndex: 0, text: "Thỏ con đi lạc vào rừng. Trời bắt đầu tối.\n\n", attemptedInSession: false,
+        interaction: { id: 900, type: "Checkpoint", kind: "Emotion", prompt: "Trong rừng tối, con nghĩ gì về Thỏ?",
+          characterName: null, modelSentence: null, modelAudioUrl: null, maskedSentence: null, hint: null,
+          waitFeedback: null, revealSceneIndex: null,
+          audioUrls: { prompt: "…listen-900-i-prompt.mp3", noMatch: "…listen-900-i-noMatch.mp3" },
+          options: [{ id: 900, text: "Thỏ đang sợ", imageUrl: null, audioUrl: "…listen-900-o900-text.mp3",
+            feedback: "Ừ, trời tối Thỏ thấy sợ.", feedbackAudioUrl: "…listen-900-o900-feedback.mp3" }, "… 3 thẻ còn lại"] } },
+        "… scene 1 → 5"] }, errors: null }),
+    tests: [
+      ["ok", "T06", "Nội dung truyện có tương tác theo scene", "200, listenOnly = false, 6 scene (0 → 5), mọi attemptedInSession = false. Scene 0: 900 Checkpoint Emotion, 4 thẻ, audioUrls có prompt và noMatch · Scene 1: 902 RolePlay, characterName = \"Thỏ\", modelSentence = \"Có ai ở đó không?\", options = [] · Scene 2: 901 Checkpoint Prediction, 2 thẻ · Scene 3: 903 PicturePrediction, revealSceneIndex = 4, 2 thẻ đều có imageUrl · Scene 4: interaction = null · Scene 5: 904 EventOrdering, 3 thẻ có audioUrl, không có feedback.",
+        { as: CHILD, call: `GET ${R}/<SESSION_ID>/content`,
+          out: { listenOnly: false, scenes: [
+            { sceneIndex: 1, attemptedInSession: false, interaction: { id: 902, type: "RolePlay", characterName: "Thỏ", modelSentence: "Có ai ở đó không?", modelAudioUrl: "…segment-901.mp3", audioUrls: { match: "…listen-902-i-match.mp3" }, options: [] } },
+            { sceneIndex: 3, attemptedInSession: false, interaction: { id: 903, type: "PicturePrediction", prompt: "Ai đang chờ Thỏ ở cửa hang?", waitFeedback: "Con chọn rồi! Mình cùng nghe tiếp xem nhé.", revealSceneIndex: 4, options: [{ id: 906, text: "Mẹ Thỏ", imageUrl: "…", feedback: "Đúng là mẹ Thỏ đang chờ đó!" }, { id: 907, text: "Một bạn sóc nhỏ", imageUrl: "…", feedback: "Ý hay đó!" }] } },
+            { sceneIndex: 4, attemptedInSession: false, interaction: null },
+            { sceneIndex: 5, attemptedInSession: false, interaction: { id: 904, type: "EventOrdering", options: [{ id: 909, text: "Bác Gấu đến giúp Thỏ", audioUrl: "…" }, { id: 910, text: "Thỏ biết nhờ người lớn giúp", audioUrl: "…" }, { id: 908, text: "Thỏ đi lạc vào rừng", audioUrl: "…" }] } }] },
+          auto: "Checkpoint_IsOnItsSceneWithAudioAndCards_ButNoAnswers · RolePlay_UsesAudioOfTheSegmentHoldingTheLine · PicturePrediction_HasImagesAndRevealScene" }],
+      ["ok", "T07", "Không lộ đáp án", "Response không có khoá isMatch, correctOrder, explanation, hiddenWord, sourceQuote. Câu \"Trời tối nên Thỏ thấy sợ.\" (explanation của 900) không xuất hiện. Feedback của thẻ Checkpoint có sẵn là bình thường (lời đáp, không chấm đúng sai).",
+        { as: CHILD, call: `GET ${R}/<SESSION_ID>/content`, data: "Dùng response của T06, tìm chuỗi (Ctrl+F) trong JSON.",
+          auto: "Checkpoint_IsOnItsSceneWithAudioAndCards_ButNoAnswers" }],
+      ["edge", "T08", "Thẻ Sắp xếp được xáo cố định theo phiên", "Thứ tự thẻ ở scene 5 không bao giờ là 908, 909, 910. Gọi lại nhiều lần trong cùng phiên vẫn ra cùng thứ tự. Phiên khác có thể ra thứ tự khác.",
+        { as: CHILD, call: `GET ${R}/<SESSION_ID>/content`, data: "Gọi GET content 3 lần, so mảng scenes[5].interaction.options[].id.",
+          auto: "EventOrdering_CardsAreShuffledStablyAndNeverInTheRightOrder" }],
+      ["edge", "T09", "Tương tác thiếu media hoặc chưa gắn scene", "interaction = null ở scene đó. Không có lỗi.",
+        { as: CHILD, call: `GET ${R}/<SESSION_ID>/content`, data: "Đổi một MediaAsset của tương tác 900 sang ManualReview (hoặc đặt StorySceneId của 900 = NULL) rồi gọi lại. Nhớ trả dữ liệu về như cũ.",
+          auto: "InteractionWithMissingMediaOrWithoutScene_IsNotReturned · RolePlayWithoutSegmentAudio_IsNotReturned" }],
+      ["neg", "T10", "Phiên không tồn tại hoặc của bé khác", "404",
+        { as: CHILD, call: `GET ${R}/999999/content` }]
+    ] }
+  ]
+},
+{
+  id: "b3", title: "Bước 3 — Chỉ nghe truyện",
+  desc: "Bé bật \"Chỉ nghe truyện\" thì app phát liền mạch, không dừng hỏi. Giá trị lưu theo truyện, không theo phiên.",
+  flow: ["Bé bật / tắt công tắc \"Chỉ nghe truyện\" → PUT listen-only.", "GET content trả listenOnly mới; scene vẫn có interaction, app tự quyết không dừng hỏi.", "Phiên sau của cùng truyện vẫn giữ giá trị. Truyện mới mặc định false."],
+  apis: [
+  { m: "PUT", p: "/api/v1/child/reading/sessions/{sessionId}/listen-only", role: "Trẻ (ChildSession)", ctl: "ChildReadingController",
+    what: "Lưu ReadingProgress.ListenOnly của truyện, làm giống bookmark và favorite. Trả về cả 3 cờ hiện tại.",
+    detail: [
+      ["Body", ["SetFlagRequestDto: { \"value\": true | false }"]],
+      ["Kết quả", ["ReadingFlagsDto: isBookmarked, isFavorited, listenOnly. Bookmark và yêu thích giữ nguyên."]],
+      ["Lỗi", ["Phiên không tồn tại hoặc của bé khác: 404. Phiên bị ngắt (ForceExit): 403."]]
+    ],
+    body: J({ value: true }),
+    resp: J({ success: true, message: "Thao tác thành công.", data: { isBookmarked: false, isFavorited: false, listenOnly: true }, errors: null }),
+    tests: [
+      ["ok", "T11", "Bật \"Chỉ nghe truyện\"", "200, listenOnly = true, isBookmarked và isFavorited giữ nguyên. GET content lại: listenOnly = true, scene vẫn có interaction. SQL: SELECT \"ListenOnly\" FROM reading_progress WHERE \"ChildProfileId\" = 1 AND \"StoryId\" = 900; → true.",
+        { as: CHILD, call: `PUT ${R}/<SESSION_ID>/listen-only`, body: { value: true }, out: { isBookmarked: false, isFavorited: false, listenOnly: true },
+          auto: "SetListenOnly_SavesPerStory_KeepsOtherFlags_AndShowsInContent · ListenOnly_ComesFromTheStoryProgress" }],
+      ["ok", "T12", "Tắt \"Chỉ nghe truyện\"", "200, listenOnly = false.",
+        { as: CHILD, call: `PUT ${R}/<SESSION_ID>/listen-only`, body: { value: false }, out: { isBookmarked: false, isFavorited: false, listenOnly: false } }],
+      ["edge", "T13", "Truyện chưa có tiến độ đọc", "200, tạo mới dòng reading_progress với ListenOnly = true.",
+        { as: CHILD, call: `PUT ${R}/<SESSION_ID>/listen-only`, body: { value: true }, data: "Xoá dòng reading_progress của bé 1, truyện 900 trước khi gọi (hoặc dùng truyện bé chưa đọc).",
+          auto: "SetListenOnly_CreatesProgressForANewStory" }],
+      ["neg", "T14", "Phiên không tồn tại hoặc của bé khác", "404",
+        { as: CHILD, call: `PUT ${R}/999999/listen-only`, body: { value: true } }],
+      ["neg", "T15", "Phiên bị ngắt (ForceExit)", "403 \"Truyện này đang nghỉ một chút, mình đọc truyện khác nhé!\"",
+        { as: CHILD, call: `PUT ${R}/<SESSION_ID>/listen-only`, body: { value: true }, data: "Phụ huynh ngắt phiên đang đọc (hoặc đặt ForceExitRequestedAt của phiên trong DB) rồi gọi." }]
+    ] }
+  ]
+},
+{
+  id: "b4", title: "Bước 4 — Trẻ trả lời tương tác",
+  desc: "Hết scene có tương tác, app dừng hỏi. Bé trả lời thì gọi attempts và phát phản hồi; bỏ qua thì không gọi API. Không cộng hay trừ EXP, không có chữ \"sai\" trong phản hồi.",
+  flow: ["App hiện tương tác của scene vừa nghe xong.", "Bé trả lời → POST attempts với body đúng loại tương tác.", "App phát feedback / feedbackAudioUrl.", "EventOrdering chưa khớp: phát lại các scene trong replaySceneIndexes rồi cho xếp lại. Sai lần 3: revealed = true, hiện thứ tự đúng rồi sang Quiz."],
+  apis: [
+  { m: "POST", p: "/api/v1/child/reading/sessions/{sessionId}/interactions/{interactionId}/attempts", role: "Trẻ (ChildSession)", ctl: "ChildReadingController",
+    what: "Ghi câu trả lời của bé cho một tương tác và trả phản hồi. Chỉ gửi trường của đúng loại tương tác.",
+    detail: [
+      ["Body theo loại", [
+        "Checkpoint, PicturePrediction: { \"optionId\": <id thẻ> }",
+        "RolePlay: {}",
+        "FillBlank: { \"answer\": \"<chữ bé điền>\" } (trống hoặc > 100 ký tự: 400)",
+        "EventOrdering: { \"orderedOptionIds\": [<id>, <id>, <id>] } (đủ mọi thẻ, mỗi thẻ một lần)"]],
+      ["Hệ thống kiểm lần lượt", [
+        "Phiên tồn tại và thuộc bé hiện tại → nếu không: 404.",
+        "Phiên không bị ngắt → nếu bị: 403.",
+        "Phiên còn mở (chưa complete) → nếu đã đóng: 409 LISTENING_SESSION_CLOSED.",
+        "Tương tác thuộc version của phiên, chưa xoá, đã gắn scene và đủ media → nếu không: 404.",
+        "Body hợp lệ với loại tương tác → nếu không: 400 LISTENING_ANSWER_INVALID."]],
+      ["Gửi lại trong cùng phiên", [
+        "Loại khác EventOrdering: đã có attempt thì trả lại kết quả cũ, không ghi thêm.",
+        "EventOrdering: mỗi lần xếp ghi một dòng listening_interaction_attempts. Số lần sai = số dòng IsMatch = false của cặp (phiên, tương tác)."]],
+      ["EventOrdering", [
+        "Thẻ ở vị trí i (tính từ 1) bị coi là đặt sai khi CorrectOrder của nó khác i.",
+        "Sai lần 1–2: replaySceneIndexes = scene chứa câu của các thẻ đặt sai, theo thứ tự truyện, bỏ trùng; revealed = false.",
+        "Từ lần sai thứ 3 trong phiên: revealed = true, correctOrderOptionIds = Id theo thứ tự đúng, replaySceneIndexes = []. Gửi thêm sau đó vẫn lưu dòng mới và vẫn revealed = true.",
+        "Phiên mới đếm lại từ 0."]],
+      ["Kết quả", ["interactionId, type, matched (chỉ FillBlank / EventOrdering, loại khác null), feedback, feedbackAudioUrl, suggestedAnswer (FillBlank chưa khớp), replaySceneIndexes, revealed, correctOrderOptionIds."]]
+    ],
+    warn: "Chạy các test theo thứ tự: T16 → T27 đều dùng cùng một phiên (<SESSION_ID>), và kết quả của test sau phụ thuộc test trước (idempotent, đếm số lần sai).",
+    body: J({ optionId: 900 }),
+    resp: J({ success: true, message: "Thao tác thành công.", data: result({ interactionId: 900, type: "Checkpoint", feedback: "Ừ, trời tối Thỏ thấy sợ.", feedbackAudioUrl: "…listen-900-o900-feedback.mp3" }), errors: null }),
+    tests: [
+      ["ok", "T16", "Checkpoint cảm xúc: chọn thẻ 900", "200, feedback của thẻ đã chọn, matched = null. SQL: SELECT \"SelectedOptionId\", \"IsMatch\" FROM listening_interaction_attempts WHERE \"ListeningInteractionId\" = 900; → 1 dòng, option 900, IsMatch = true.",
+        { as: CHILD, call: ATT(900), body: { optionId: 900 },
+          out: result({ interactionId: 900, type: "Checkpoint", feedback: "Ừ, trời tối Thỏ thấy sợ.", feedbackAudioUrl: "…listen-900-o900-feedback.mp3" }),
+          auto: "Checkpoint_ReturnsCardFeedback_SavesOnce_AndRepeatsTheSameResult · Answering_DoesNotTouchRewards" }],
+      ["edge", "T17", "Gửi lại Checkpoint 900 với thẻ khác", "200, vẫn là kết quả lần đầu (thẻ 900), không phải của thẻ 901. SQL ở T16 vẫn 1 dòng.",
+        { as: CHILD, call: ATT(900), body: { optionId: 901 },
+          out: result({ interactionId: 900, type: "Checkpoint", feedback: "Ừ, trời tối Thỏ thấy sợ.", feedbackAudioUrl: "…listen-900-o900-feedback.mp3" }) }],
+      ["neg", "T18", "Gửi thẻ của tương tác khác", "400 LISTENING_ANSWER_INVALID (thẻ 900 thuộc tương tác 900, không thuộc 901). Không có dòng mới cho 901.",
+        { as: CHILD, call: ATT(901), body: { optionId: 900 }, out: JSON.parse(FAIL("LISTENING_ANSWER_INVALID")),
+          auto: "Checkpoint_WithCardOfAnotherInteractionOrNoCard_IsBadRequest" }],
+      ["neg", "T19", "Checkpoint không gửi thẻ", "400 LISTENING_ANSWER_INVALID",
+        { as: CHILD, call: ATT(901), body: {}, out: JSON.parse(FAIL("LISTENING_ANSWER_INVALID")) }],
+      ["ok", "T20", "Checkpoint đoán tiếp: chọn thẻ 904", "200, feedback của thẻ 904. Câu trả lời loại Prediction không hiện ở màn phụ huynh (T37).",
+        { as: CHILD, call: ATT(901), body: { optionId: 904 },
+          out: result({ interactionId: 901, type: "Checkpoint", feedback: "Ý hay đó! Mình cùng nghe tiếp nhé.", feedbackAudioUrl: "…listen-901-o904-feedback.mp3" }) }],
+      ["ok", "T21", "Nói theo nhân vật (RolePlay 902)", "200, lời khen (MatchFeedback) và audio match. SQL: dòng của 902 có IsMatch NULL.",
+        { as: CHILD, call: ATT(902), body: {},
+          out: result({ interactionId: 902, type: "RolePlay", feedback: "Con đã thử nói giống Thỏ rồi, giỏi lắm!", feedbackAudioUrl: "…listen-902-i-match.mp3" }),
+          auto: "RolePlay_ReturnsPraise" }],
+      ["ok", "T22", "Đoán tiếp bằng tranh (903): chọn hình 906", "200, feedback của hình đã chọn. App phát waitFeedback ngay khi chọn; phản hồi này phát sau khi nghe hết scene 4 (revealSceneIndex).",
+        { as: CHILD, call: ATT(903), body: { optionId: 906 },
+          out: result({ interactionId: 903, type: "PicturePrediction", feedback: "Đúng là mẹ Thỏ đang chờ đó!", feedbackAudioUrl: "…listen-903-o906-feedback.mp3" }) }],
+      ["neg", "T23", "Sắp xếp sai lần 1: đổi chỗ hai thẻ đầu", "200, matched = false, replaySceneIndexes = [0, 2] (thẻ 908 ở scene 0 và 909 ở scene 2 bị đặt sai; 910 đúng chỗ nên không nghe lại scene 5), revealed = false.",
+        { as: CHILD, call: ATT(904), body: { orderedOptionIds: [909, 908, 910] },
+          out: result({ interactionId: 904, type: "EventOrdering", matched: false, feedback: ORDER_RETRY, feedbackAudioUrl: "…listen-904-i-noMatch.mp3", replaySceneIndexes: [0, 2] }),
+          auto: "EventOrdering_Wrong_ReplaysOnlyScenesOfMisplacedCards_InStoryOrder" }],
+      ["neg", "T24", "Sắp xếp sai lần 2", "200, matched = false, replaySceneIndexes = [2, 5], revealed = false. SQL: SELECT \"OrderedOptionIdsJson\", \"IsMatch\" FROM listening_interaction_attempts WHERE \"ListeningInteractionId\" = 904 ORDER BY \"Id\"; → 2 dòng IsMatch = false.",
+        { as: CHILD, call: ATT(904), body: { orderedOptionIds: [908, 910, 909] },
+          out: result({ interactionId: 904, type: "EventOrdering", matched: false, feedback: ORDER_RETRY, feedbackAudioUrl: "…listen-904-i-noMatch.mp3", replaySceneIndexes: [2, 5] }) }],
+      ["edge", "T25", "Sắp xếp sai lần 3: lộ thứ tự đúng", "200, matched = false, revealed = true, correctOrderOptionIds = [908, 909, 910], replaySceneIndexes = []. GET content: scene 5 có attemptedInSession = true.",
+        { as: CHILD, call: ATT(904), body: { orderedOptionIds: [910, 909, 908] },
+          out: result({ interactionId: 904, type: "EventOrdering", matched: false, feedback: ORDER_RETRY, feedbackAudioUrl: "…listen-904-i-noMatch.mp3", revealed: true, correctOrderOptionIds: [908, 909, 910] }),
+          auto: "EventOrdering_ThirdWrongInSession_RevealsTheCorrectOrder_AndLaterAttemptsStayRevealed · AttemptedInSession_CountsOnlyThisSession_AndEventOrderingNeedsMatchOrThreeWrong" }],
+      ["ok", "T26", "Sắp xếp đúng sau khi đã lộ đáp án", "200, matched = true, revealed vẫn true. SQL ở T24: 4 dòng, dòng cuối IsMatch = true. (Xếp đúng ngay lần đầu thì revealed = false, correctOrderOptionIds = null.)",
+        { as: CHILD, call: ATT(904), body: { orderedOptionIds: [908, 909, 910] },
+          out: result({ interactionId: 904, type: "EventOrdering", matched: true, feedback: "Con nhớ giỏi quá, đúng thứ tự rồi!", feedbackAudioUrl: "…listen-904-i-match.mp3", revealed: true, correctOrderOptionIds: [908, 909, 910] }),
+          auto: "EventOrdering_Correct_IsMatchedWithoutReplay" }],
+      ["neg", "T27", "Sắp xếp thiếu thẻ", "400 LISTENING_ANSWER_INVALID. SQL ở T24 vẫn 4 dòng.",
+        { as: CHILD, call: ATT(904), body: { orderedOptionIds: [908, 909] }, out: JSON.parse(FAIL("LISTENING_ANSWER_INVALID")),
+          auto: "EventOrdering_MustSendEachCardOnce" }],
+      ["neg", "T28", "Sắp xếp trùng thẻ", "400 LISTENING_ANSWER_INVALID",
+        { as: CHILD, call: ATT(904), body: { orderedOptionIds: [908, 908, 910] }, out: JSON.parse(FAIL("LISTENING_ANSWER_INVALID")) }],
+      ["neg", "T29", "Sắp xếp có thẻ của tương tác khác", "400 LISTENING_ANSWER_INVALID (thẻ 900 thuộc tương tác 900)",
+        { as: CHILD, call: ATT(904), body: { orderedOptionIds: [908, 909, 900] }, out: JSON.parse(FAIL("LISTENING_ANSWER_INVALID")) }],
+      ["neg", "T30", "Phiên không tồn tại hoặc của bé khác", "404 \"Không tìm thấy Phiên đọc với mã định danh [999999].\"",
+        { as: CHILD, call: `POST ${R}/999999/interactions/900/attempts`, body: { optionId: 900 },
+          out: JSON.parse(FAIL("Không tìm thấy Phiên đọc với mã định danh [999999].")),
+          auto: "SessionOfAnotherChild_IsNotFound" }],
+      ["neg", "T31", "Tương tác không tồn tại / không thuộc truyện / thiếu media", "404 \"Không tìm thấy Tương tác với mã định danh [999999].\"",
+        { as: CHILD, call: ATT(999999), body: { optionId: 900 },
+          out: JSON.parse(FAIL("Không tìm thấy Tương tác với mã định danh [999999].")),
+          auto: "InteractionOfAnotherVersion_OrWithoutMedia_OrUnbound_IsNotFound" }],
+      ["neg", "T32", "Phiên bị ngắt (ForceExit)", "403 \"Truyện này đang nghỉ một chút, mình đọc truyện khác nhé!\"",
+        { as: CHILD, call: ATT(900), body: { optionId: 900 }, data: "Phụ huynh ngắt phiên (hoặc đặt ForceExitRequestedAt của phiên trong DB) rồi gọi.",
+          out: JSON.parse(FAIL("Truyện này đang nghỉ một chút, mình đọc truyện khác nhé!")),
+          auto: "InterruptedSession_IsForbidden" }],
+      ["ok", "TA1", "Điền từ (FillBlank) khớp, không phân biệt hoa thường và khoảng trắng thừa", "200, matched = true, feedback là lời khen, suggestedAnswer = null. Chỉ có test tự động (seed chưa có truyện 9–10 tuổi có FillBlank).",
+        { as: CHILD, call: ATT("<FILLBLANK_ID>"), body: { answer: "  BÁC   gấu " }, data: "Truyện 9–10 tuổi có FillBlank với HiddenWord = \"bác Gấu\". GET content trả maskedSentence có ____, options = [], không trả đáp án.",
+          out: result({ interactionId: "<FILLBLANK_ID>", type: "FillBlank", matched: true, feedback: "<MatchFeedback>", feedbackAudioUrl: "…listen-<id>-i-match.mp3" }),
+          auto: "FillBlank_ShowsMaskedSentenceAndHint_WithoutAcceptedAnswers · FillBlank_MatchesAnyAcceptedAnswerIgnoringCaseAndSpaces" }],
+      ["neg", "TA2", "Điền từ chưa khớp", "200, matched = false, feedback là gợi ý (NoMatchFeedback), suggestedAnswer = HiddenWord. Chỉ có test tự động.",
+        { as: CHILD, call: ATT("<FILLBLANK_ID>"), body: { answer: "chú Cáo" },
+          out: result({ interactionId: "<FILLBLANK_ID>", type: "FillBlank", matched: false, feedback: "<NoMatchFeedback>", feedbackAudioUrl: "…listen-<id>-i-noMatch.mp3", suggestedAnswer: "bác Gấu" }),
+          auto: "FillBlank_NotMatched_GivesHintFeedbackAndSuggestedAnswer" }],
+      ["neg", "TA3", "Điền từ trống hoặc dài quá 100 ký tự", "400 LISTENING_ANSWER_INVALID. Chỉ có test tự động.",
+        { as: CHILD, call: ATT("<FILLBLANK_ID>"), body: { answer: "" }, out: JSON.parse(FAIL("LISTENING_ANSWER_INVALID")),
+          auto: "FillBlank_BlankOrTooLongAnswer_IsBadRequest" }]
+    ] }
+  ]
+},
+{
+  id: "b5", title: "Bước 5 — Hoàn thành phiên và phiên mới",
+  desc: "Hết truyện thì gọi complete; phiên đóng và không nhận câu trả lời nữa. Mở phiên mới thì mọi tương tác được hỏi lại từ đầu.",
+  flow: ["EventOrdering phải gửi trước complete (hiện sau scene cuối, trước Quiz).", "POST complete → phiên đóng.", "Gửi attempts vào phiên đã đóng → 409.", "Mở phiên mới cùng truyện → attemptedInSession và số lần sai của EventOrdering đếm lại từ 0."],
+  apis: [
+  { m: "POST", p: "/api/v1/child/reading/sessions/{sessionId}/complete", role: "Trẻ (ChildSession)", ctl: "ChildReadingController",
+    what: "Bé đọc xong truyện. API đã có từ trước; P6 chỉ kiểm rằng tương tác không làm thay đổi EXP và phiên đã đóng thì không nhận câu trả lời.",
+    detail: [
+      ["Liên quan tới tương tác", ["expGained chỉ là EXP của việc đọc xong truyện; không có EXP, huy hiệu hay lượt quiz nào từ tương tác.", "Sau complete, POST attempts trả 409 LISTENING_SESSION_CLOSED."]]
+    ],
+    body: null,
+    tests: [
+      ["ok", "T33", "Hoàn thành phiên", "200. expGained không có phần nào từ tương tác.",
+        { as: CHILD, call: `POST ${R}/<SESSION_ID>/complete`, auto: "Answering_DoesNotTouchRewards" }],
+      ["neg", "T34", "Gửi câu trả lời sau khi phiên đã hoàn thành", "409 LISTENING_SESSION_CLOSED",
+        { as: CHILD, call: ATT(900), body: { optionId: 900 }, data: "Chạy ngay sau T33, cùng <SESSION_ID>.",
+          out: JSON.parse(FAIL("LISTENING_SESSION_CLOSED")), auto: "CompletedSession_IsClosed" }]
+    ] },
+  { m: "POST", p: "/api/v1/child/reading/sessions", role: "Trẻ (ChildSession)", ctl: "ChildReadingController",
+    what: "Mở phiên mới của truyện 900 sau khi phiên cũ đã hoàn thành, để kiểm tra tương tác được hỏi lại từ đầu.",
+    body: J({ storyId: 900 }),
+    tests: [
+      ["ok", "T35", "Phiên mới: hỏi lại từ đầu", "200, sessionId mới, resumed = false. Nhập vào ô <NEW_SESSION_ID>. GET …/<NEW_SESSION_ID>/content: mọi attemptedInSession = false.",
+        { as: CHILD, call: `POST ${R}`, body: { storyId: 900 }, out: { sessionId: "<NEW_SESSION_ID>", storyId: 900, resumed: false, "...": "…" } }],
+      ["edge", "T36", "Phiên mới: số lần sai Sắp xếp đếm lại từ 0", "200, matched = false, revealed = false, replaySceneIndexes = [0, 2].",
+        { as: CHILD, call: `POST ${R}/<NEW_SESSION_ID>/interactions/904/attempts`, body: { orderedOptionIds: [909, 908, 910] },
+          out: result({ interactionId: 904, type: "EventOrdering", matched: false, feedback: ORDER_RETRY, feedbackAudioUrl: "…listen-904-i-noMatch.mp3", replaySceneIndexes: [0, 2] }),
+          auto: "EventOrdering_WrongCountStartsAgainInANewSession" }]
+    ] }
+  ]
+},
+{
+  id: "b6", title: "Bước 6 — Phụ huynh xem câu trả lời",
+  desc: "Phụ huynh xem phản hồi đọc truyện của con. Mỗi phiên đã hoàn thành có thêm conversationAnswers: câu trả lời cảm xúc / cảm nhận của bé.",
+  flow: ["Phụ huynh mở màn phản hồi đọc truyện của bé.", "Mỗi phiên đã hoàn thành hiện câu hỏi, loại (Emotion / Opinion), chữ trên thẻ bé chọn, scene và thời gian trả lời."],
+  apis: [
+  { m: "GET", p: "/api/v1/ParentReadingFeedback/{childProfileId}?pageIndex=1&pageSize=20", role: "Phụ huynh (Owner của bé)", ctl: "ParentReadingFeedbackController",
+    what: "API đã có. P6 thêm conversationAnswers vào mỗi phiên đã hoàn thành, sắp theo thời gian trả lời.",
+    detail: [
+      ["Chỉ lấy", ["Attempt của Checkpoint loại Emotion hoặc Opinion. Prediction, PicturePrediction, EventOrdering, FillBlank, RolePlay không hiện, để phụ huynh không dùng chúng như bài kiểm tra."]],
+      ["Trường", ["question (Prompt), kind, answerText (chữ của thẻ bé chọn), sceneIndex, answeredAt."]],
+      ["Quyền", ["Chủ hồ sơ của bé. Phụ huynh khác: 403."]]
+    ],
+    body: null,
+    resp: J({ success: true, message: "Thao tác thành công.", data: { items: [{
+      sessionId: 31, storyId: 900, title: "Thỏ con đi lạc", feeling: "Like", quizTotalQuestions: 3, quizBestPercent: null,
+      conversationAnswers: [{ question: "Trong rừng tối, con nghĩ gì về Thỏ?", kind: "Emotion", answerText: "Thỏ đang sợ", sceneIndex: 0, answeredAt: "2026-11-02T08:30:00Z" }] }],
+      totalCount: 1, pageIndex: 1, pageSize: 20 }, errors: null }),
+    tests: [
+      ["ok", "T37", "Phụ huynh xem câu trả lời cảm xúc / cảm nhận", "200. Có phiên đã hoàn thành của truyện 900 (title = \"Thỏ con đi lạc\"); phiên còn mở của T35 không có trong danh sách. conversationAnswers có đúng 1 phần tử của tương tác 900; không có câu trả lời của 901 (Prediction), 902, 903, 904.",
+        { as: P1, call: "GET /api/v1/ParentReadingFeedback/1?pageIndex=1&pageSize=20",
+          out: { sessionId: "<SESSION_ID>", storyId: 900, title: "Thỏ con đi lạc", "...": "…",
+            conversationAnswers: [{ question: "Trong rừng tối, con nghĩ gì về Thỏ?", kind: "Emotion", answerText: "Thỏ đang sợ", sceneIndex: 0, answeredAt: "…" }] },
+          auto: "ListAsync_ShowsEmotionAndOpinionAnswersInOrder_WithSceneIndex · ListAsync_HidesPredictionPictureAndOtherTypes_AndKeepsSessionsApart" }],
+      ["edge", "T38", "Phiên đã hoàn thành nhưng bé không trả lời Emotion / Opinion", "200, conversationAnswers = [] (không phải null).",
+        { as: P1, call: "GET /api/v1/ParentReadingFeedback/1?pageIndex=1&pageSize=20", data: "Phiên bé bỏ qua tương tác 900 rồi complete.",
+          auto: "ListAsync_WithoutAnswers_ReturnsEmptyList" }],
+      ["neg", "T39", "Phụ huynh không phải chủ hồ sơ bé 1", "403",
+        { as: "parent_demo2", call: "GET /api/v1/ParentReadingFeedback/1?pageIndex=1&pageSize=20" }],
+      ["neg", "T40", "Không gửi token", "401",
+        { as: "(không gửi token)", call: "GET /api/v1/ParentReadingFeedback/1?pageIndex=1&pageSize=20" }]
+    ] }
+  ]
+}
+];
+
+// ---------- GIÁ TRỊ ĐỘNG ----------
+const VAR_DEFS = [
+  ["SESSION_ID", "", "Bước 1 (T03): data.sessionId của phiên đọc truyện 900"],
+  ["NEW_SESSION_ID", "", "Bước 5 (T35): data.sessionId của phiên mới"],
+  ["FILLBLANK_ID", "", "Id tương tác FillBlank (chỉ khi có truyện 9–10 tuổi)"]
+];
+let VARS = {};
+try { VARS = JSON.parse(localStorage.getItem("tuong-tac-tre-vars") || "{}"); } catch (e) { VARS = {}; }
+VAR_DEFS.forEach(([k, d]) => { if (VARS[k] === undefined) VARS[k] = d; });
+function subst(text) {
+  if (text == null) return text;
+  return String(text)
+    .replace(/"<([A-Z_]+)>"/g, (m, k) => { const v = VARS[k]; if (v === undefined || v === "") return m; return /^-?\d+$/.test(v) ? v : JSON.stringify(v); })
+    .replace(/<([A-Z_]+)>/g, (m, k) => { const v = VARS[k]; return v === undefined || v === "" ? m : v; });
+}
+
+// ---------- DỰNG TRANG ----------
+const COPY = [];
+const main = document.getElementById("main");
+const nav = document.getElementById("nav");
+let store = {};
+try { store = JSON.parse(localStorage.getItem("tuong-tac-tre-checks") || "{}"); } catch (e) { store = {}; }
+function save() { try { localStorage.setItem("tuong-tac-tre-checks", JSON.stringify(store)); } catch (e) {} }
+function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function noteList(text) {
+  const parts = String(text).split(/(?<=\.)\s+(?=[\p{Lu}\d(])|;\s+|\s+·\s+/u).map(x => x.trim()).filter(Boolean);
+  return `<ul>${parts.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`;
+}
+const KIND = { ok: ["ok", "Đúng"], neg: ["neg", "Lỗi"], edge: ["edge", "Biên"] };
+function copyBtn(text, label) { return ` <button class="copy" data-copy="${COPY.push(text) - 1}">${label}</button>`; }
+
+let total = 0;
+nav.innerHTML = '<a href="#chung">Quy ước chung</a>';
+STEPS.forEach(step => {
+  nav.insertAdjacentHTML("beforeend", `<a href="#${step.id}">${esc(step.title.split(" — ")[0])}: ${esc(step.title.split(" — ")[1] || "")}</a>`);
+  const sec = document.createElement("section");
+  sec.className = "step"; sec.id = step.id;
+  let html = `<h2>${esc(step.title)}</h2><p class="step-desc">${esc(step.desc)}</p>`;
+  html += `<div class="box"><h3>Luồng chạy</h3><ol class="flow">${step.flow.map(f => `<li>${esc(f)}</li>`).join("")}</ol></div>`;
+  step.apis.forEach((api, ai) => {
+    const rows = api.tests.map(([kind, tid, name, expect, x], ti) => {
+      total++;
+      const key = `${step.id}.${ai}.${tid}`;
+      const k = KIND[kind];
+      const [method, ...urlParts] = x.call.split(" ");
+      const request = { login: x.as, method, url: urlParts.join(" ") };
+      if (x.body !== undefined) request.body = x.body;
+      const reqText = J(request);
+      const bodyText = x.body !== undefined ? J(x.body) : null;
+      const reqIdx = COPY.push(reqText) - 1;
+      const reqHtml = `<div class="reqbar">Đầu vào (JSON) <button class="copy" data-copy="${reqIdx}">Copy request JSON</button>` +
+        (bodyText ? copyBtn(bodyText, "Copy body") : "") + `</div><pre class="req" data-ci="${reqIdx}">${esc(subst(reqText))}</pre>`;
+      const dataHtml = x.data ? `<div class="data"><b>Dữ liệu</b>${noteList(x.data)}</div>` : "";
+      let outHtml = "";
+      if (x.out !== undefined) {
+        const outText = J(x.out);
+        const outIdx = COPY.push(outText) - 1;
+        outHtml = `<div class="reqbar">Đầu ra (data) <button class="copy" data-copy="${outIdx}">Copy</button></div><pre class="out" data-ci="${outIdx}">${esc(subst(outText))}</pre>`;
+      }
+      const autoHtml = x.auto ? `<span class="auto">Test tự động: ${esc(x.auto)}</span>` : "";
+      return `<tr><td class="chk"><input type="checkbox" data-key="${key}" ${store[key] ? "checked" : ""}></td>` +
+             `<td><span class="tag ${k[0]}">${k[1]}</span><span class="tid">${esc(tid)}</span>${esc(name)}${dataHtml}${reqHtml}</td>` +
+             `<td>${esc(expect)}${outHtml}${autoHtml}</td></tr>`;
+    }).join("");
+    const pathText = `${api.m} ${api.p}`;
+    const ctlLine = `<p class="ctl-line">Controller: <b>${esc(api.ctl)}</b> · nhóm Swagger: <b>${esc(api.ctl.replace(/Controller$/, ""))}</b> · file <span class="code">src/Core/StoryPlatform.Api/Controllers/${esc(api.ctl)}.cs</span></p>`;
+    const bodyIdx = api.body ? COPY.push(api.body) - 1 : -1;
+    html += `<details class="api" data-search="${esc((pathText + " " + api.ctl + " " + api.role).toLowerCase())}"><summary><span class="m ${api.m}">${api.m}</span><span class="path">${esc(api.p)}</span><span class="ctl" title="Controller">${esc(api.ctl)}</span><span class="role">${esc(api.role)}</span></summary>` +
+      `<div class="api-body">${ctlLine}<p>${esc(api.what)}${copyBtn(pathText, "Copy đường dẫn")}</p>` +
+      (api.detail ? `<div class="detail">` + api.detail.map(([h, items]) =>
+        `<div class="detail-sec"><b>${esc(h)}</b><ul>${items.map(s => `<li>${esc(s)}</li>`).join("")}</ul></div>`).join("") + `</div>` : "") +
+      (api.warn ? `<div class="note"><b>⚠ Lưu ý:</b> ${esc(api.warn)}</div>` : "") +
+      (api.resp ? `<p><b>Phản hồi mẫu</b>${copyBtn(api.resp, "Copy")}</p><pre data-ci="${COPY.length - 1}">${esc(subst(api.resp))}</pre>` : "") +
+      (api.body ? `<p><b>Body ví dụ (trường hợp đúng)</b> <button class="copy" data-copy="${bodyIdx}">Copy body</button></p><pre data-ci="${bodyIdx}">${esc(subst(api.body))}</pre>` : "") +
+      `<p><b>Test case</b></p><table class="tests"><thead><tr><th class="chk"></th><th>Tình huống và đầu vào</th><th class="exp">Kết quả mong đợi và đầu ra</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
+  });
+  sec.innerHTML = html;
+  main.appendChild(sec);
+});
+
+const varsGrid = document.querySelector("#vars .vars-grid");
+VAR_DEFS.forEach(([k, d, label]) => {
+  const lab = document.createElement("label");
+  lab.innerHTML = `<span><b>&lt;${k}&gt;</b> · ${esc(label)}</span>`;
+  const input = document.createElement("input");
+  input.value = VARS[k]; input.placeholder = d || "(chưa có)"; input.spellcheck = false;
+  input.addEventListener("input", () => {
+    VARS[k] = input.value.trim();
+    try { localStorage.setItem("tuong-tac-tre-vars", JSON.stringify(VARS)); } catch (e) {}
+    document.querySelectorAll("pre[data-ci]").forEach(pre => { pre.textContent = subst(COPY[Number(pre.dataset.ci)]); });
+  });
+  lab.appendChild(input);
+  varsGrid.appendChild(lab);
+});
+
+const progress = document.createElement("div");
+progress.className = "progress";
+nav.appendChild(progress);
+function updateProgress() {
+  const done = Object.values(store).filter(Boolean).length;
+  progress.textContent = `Đã chạy ${done}/${total} test case`;
+}
+updateProgress();
+
+main.addEventListener("click", e => {
+  const btn = e.target.closest && e.target.closest("button.copy");
+  if (!btn) return;
+  e.preventDefault();
+  const text = subst(COPY[Number(btn.dataset.copy)]);
+  const done = () => { const old = btn.textContent; btn.textContent = "Đã copy"; setTimeout(() => { btn.textContent = old; }, 1200); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
+  } else { fallbackCopy(text, done); }
+});
+function fallbackCopy(text, done) {
+  const ta = document.createElement("textarea");
+  ta.value = text; document.body.appendChild(ta); ta.select();
+  try { document.execCommand("copy"); done(); } catch (err) {}
+  document.body.removeChild(ta);
+}
+main.addEventListener("change", e => {
+  const key = e.target.dataset && e.target.dataset.key;
+  if (!key) return;
+  store[key] = e.target.checked; save(); updateProgress();
+});
+const search = document.createElement("input");
+search.className = "search"; search.type = "search"; search.placeholder = "Tìm API: đường dẫn, Controller…";
+const found = document.createElement("div");
+found.className = "found";
+nav.prepend(found); nav.prepend(search);
+search.addEventListener("input", () => {
+  const q = search.value.trim().toLowerCase();
+  let shown = 0;
+  document.querySelectorAll("section.step").forEach(sec => {
+    if (sec.id === "chung") return;
+    let any = false;
+    sec.querySelectorAll("details.api").forEach(d => {
+      const hit = !q || d.dataset.search.includes(q);
+      d.classList.toggle("hidden-by-search", !hit);
+      if (hit) { any = true; shown++; if (q) d.open = true; }
+    });
+    sec.classList.toggle("hidden-by-search", !any);
+  });
+  found.textContent = q ? `${shown} API khớp` : "";
+});
+document.getElementById("expand").onclick = () => document.querySelectorAll("details.api").forEach(d => d.open = true);
+document.getElementById("collapse").onclick = () => document.querySelectorAll("details.api").forEach(d => d.open = false);
+document.getElementById("reset").onclick = () => {
+  store = {}; save();
+  document.querySelectorAll("input[data-key]").forEach(c => c.checked = false);
+  updateProgress();
+};
+</script>
+</body>
+</html>

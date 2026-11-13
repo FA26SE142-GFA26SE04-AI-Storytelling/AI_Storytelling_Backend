@@ -1,4 +1,4 @@
--- 24. reading_sessions (10)
+-- 24. reading_sessions (13)
 -- Moi dong thoa CK_reading_sessions_exactly_one_entry_source:
 -- ChildAccessCredentialId XOR SupervisorSessionId (refresh_tokens.Id).
 INSERT INTO reading_sessions (
@@ -17,4 +17,17 @@ VALUES
     (8, 8, 8, 8, 8, NULL, NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days' + INTERVAL '12 minutes', 'Completed', 12, 720, NULL, NOW() - INTERVAL '3 days', false),
     (9, 9, 9, 9, 9, NULL, NOW() - INTERVAL '2 days', NULL, 'Reading', 4, 240, NULL, NOW() - INTERVAL '2 days', false),
     (10, 10, 10, 10, 10, NULL, NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day' + INTERVAL '9 minutes', 'Completed', 9, 540, NULL, NOW() - INTERVAL '1 day', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- Phiên đọc truyện Creator làm căn cứ được đánh giá (73_story_ratings.sql):
+-- bé 1 (parent_demo1) đọc truyện 21 và 16; bé 3 (parent_demo2) đọc truyện 21.
+INSERT INTO reading_sessions (
+    "Id", "ChildProfileId", "StoryId", "StoryVersionId",
+    "ChildAccessCredentialId", "SupervisorSessionId", "StartedAt", "CompletedAt",
+    "Status", "PagesCompleted", "TimeSpentSeconds", "ForceExitRequestedAt", "CreatedAt", "IsDeleted"
+)
+VALUES
+    (11, 1, 21, 26, NULL, 2, NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days' + INTERVAL '6 minutes', 'Completed', 3, 360, NULL, NOW() - INTERVAL '2 days', false),
+    (12, 3, 21, 26, NULL, 3, NOW() - INTERVAL '1 day', NULL, 'Reading', 1, 90, NULL, NOW() - INTERVAL '1 day', false),
+    (13, 1, 16, 21, NULL, 2, NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days' + INTERVAL '5 minutes', 'Completed', 1, 300, NULL, NOW() - INTERVAL '3 days', false)
 ON CONFLICT ("Id") DO NOTHING;

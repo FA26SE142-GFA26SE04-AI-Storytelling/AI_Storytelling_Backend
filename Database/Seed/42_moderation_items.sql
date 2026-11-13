@@ -1,4 +1,4 @@
--- 42. moderation_items (29): queue examples including the WF-L5A PublicStoryReview chain.
+-- 42. moderation_items (32): queue examples including the WF-L5A PublicStoryReview chain.
 INSERT INTO moderation_items (
     "Id", "ItemType", "Status", "Priority", "StoryId", "StoryVersionId",
     "CreatedByUserId", "SourceChildProfileId", "ClaimedByUserId", "ClaimedAt",
@@ -248,4 +248,25 @@ VALUES
     (29, 'PublicStoryRemoval', 'Pending', 'Low', 20, 25,
      NULL, 13, NOW() + INTERVAL '71 hours', '{"requestReason":"Tôi muốn viết lại phần kết của truyện"}'::jsonb,
      0, false, NOW() - INTERVAL '1 hour', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- Đánh giá truyện (73_story_ratings.sql gắn StoryRatingId sau khi chèn đánh giá, vì khóa ngoại được kiểm theo thứ tự file):
+-- Mục 30: đánh giá 2 sao kèm chữ của parent_demo2 (Id 3) cho truyện 21, bị lọc tự động giữ lại, đang chờ.
+-- Mục 31: đánh giá 5 sao của parent_demo1 (Id 2) cho truyện 21, bị parent_demo2 báo cáo, đang chờ.
+-- Mục 32: đánh giá 1 sao của parent_demo3 (Id 4) cho truyện 16, moderator_demo1 đã ẩn.
+INSERT INTO moderation_items (
+    "Id", "ItemType", "Status", "Priority", "StoryId", "CreatedByUserId",
+    "ClaimedByUserId", "ClaimedAt", "SlaDueAt", "Flags", "DecisionReason",
+    "DecidedByUserId", "DecidedAt", "RowVersion", "IsResubmission", "CreatedAt", "IsDeleted"
+)
+VALUES
+    (30, 'StoryRating', 'Pending', 'Low', 21, 3,
+     NULL, NULL, NOW() + INTERVAL '52 hours', '{"source":"Screening","reasonCode":"LOW_RATING_WITH_TEXT"}'::jsonb, NULL,
+     NULL, NULL, 0, false, NOW() - INTERVAL '20 hours', false),
+    (31, 'StoryRating', 'Pending', 'Low', 21, 2,
+     NULL, NULL, NOW() + INTERVAL '62 hours', '{"source":"Report","reasonCode":null}'::jsonb, NULL,
+     NULL, NULL, 0, false, NOW() - INTERVAL '10 hours', false),
+    (32, 'StoryRating', 'Rejected', 'Low', 16, 4,
+     11, NOW() - INTERVAL '25 hours', NOW() + INTERVAL '22 hours', '{"source":"Screening","reasonCode":"LOW_RATING_WITH_TEXT"}'::jsonb, 'Nhận xét công kích, không góp ý cụ thể cho truyện',
+     11, NOW() - INTERVAL '1 day', 2, false, NOW() - INTERVAL '2 days', false)
 ON CONFLICT ("Id") DO NOTHING;

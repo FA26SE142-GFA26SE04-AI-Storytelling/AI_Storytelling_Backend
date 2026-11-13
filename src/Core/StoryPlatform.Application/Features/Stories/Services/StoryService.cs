@@ -19,6 +19,7 @@ public class StoryService : IStoryService
 {
     public const string OrderByViews = "views";
     public const string OrderByFavorites = "favorites";
+    public const string OrderByRating = "rating";
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IStoryCoverResolver? _covers;
@@ -88,6 +89,13 @@ public class StoryService : IStoryService
         var favorites = (await _unitOfWork.Repository<ReadingProgress>().FindAsync(
                 progress => progress.IsFavorited && storyIds.Contains(progress.StoryId), cancellationToken: cancellationToken))
             .GroupBy(progress => progress.StoryId).ToDictionary(group => group.Key, group => group.Count());
+        var ratings = (await _unitOfWork.Repository<StoryRating>().FindAsync(
+                rating => rating.Status == StoryRatingStatus.Published && !rating.IsDeleted && storyIds.Contains(rating.StoryId),
+                cancellationToken: cancellationToken))
+            .GroupBy(rating => rating.StoryId)
+            .ToDictionary(group => group.Key, group => (
+                Average: Math.Round(group.Average(rating => rating.Rating), 1, MidpointRounding.AwayFromZero),
+                Count: group.Count()));
 
         var cover = await CoverResolverAsync(items, cancellationToken);
         var dtos = items.Select(story =>
@@ -95,6 +103,12 @@ public class StoryService : IStoryService
             var dto = Fill(new CommunityStoryDto(), story, cover);
             dto.ViewCount = views.GetValueOrDefault(story.Id);
             dto.FavoriteCount = favorites.GetValueOrDefault(story.Id);
+            if (ratings.TryGetValue(story.Id, out var rated))
+            {
+                dto.AverageRating = rated.Average;
+                dto.RatingCount = rated.Count;
+            }
+
             return dto;
         }).ToList();
         return new PagedResult<CommunityStoryDto>(dtos, totalCount, filter.PageIndex, filter.PageSize);
@@ -112,6 +126,7 @@ public class StoryService : IStoryService
     {
         var sessions = _unitOfWork.Repository<ReadingSession>().Query();
         var favorites = _unitOfWork.Repository<ReadingProgress>().Query();
+        var ratings = _unitOfWork.Repository<StoryRating>().Query();
         var descending = filter.IsDescending;
         switch ((filter.OrderBy ?? string.Empty).Trim().ToLowerInvariant())
         {
@@ -123,6 +138,22 @@ public class StoryService : IStoryService
                 return query => ThenByCreatedAtAndId(descending
                     ? query.OrderByDescending(s => favorites.Count(progress => progress.IsFavorited && progress.StoryId == s.Id))
                     : query.OrderBy(s => favorites.Count(progress => progress.IsFavorited && progress.StoryId == s.Id)), descending);
+            case OrderByRating:
+                // Truyện chưa có đánh giá hiện tính là 0; bằng điểm thì xét số lượt.
+                return query => ThenByCreatedAtAndId(descending
+                    ? query
+                        .OrderByDescending(s => ratings
+                            .Where(r => r.StoryId == s.Id && r.Status == StoryRatingStatus.Published && !r.IsDeleted)
+                            .Average(r => (double?)r.Rating) ?? 0)
+                        .ThenByDescending(s => ratings
+                            .Count(r => r.StoryId == s.Id && r.Status == StoryRatingStatus.Published && !r.IsDeleted))
+                    : query
+                        .OrderBy(s => ratings
+                            .Where(r => r.StoryId == s.Id && r.Status == StoryRatingStatus.Published && !r.IsDeleted)
+                            .Average(r => (double?)r.Rating) ?? 0)
+                        .ThenBy(s => ratings
+                            .Count(r => r.StoryId == s.Id && r.Status == StoryRatingStatus.Published && !r.IsDeleted)),
+                    descending);
             default:
                 return query => descending ? query.OrderByDescending(s => s.CreatedAt) : query.OrderBy(s => s.CreatedAt);
         }

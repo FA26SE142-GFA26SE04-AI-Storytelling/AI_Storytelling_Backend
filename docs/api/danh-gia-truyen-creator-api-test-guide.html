@@ -1,0 +1,787 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test API đánh giá truyện</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5d6679; --line: #dfe3ea;
+    --accent: #2f5fd0; --ok: #1b8a4b; --warn: #b26a00; --bad: #c0392b;
+    --get: #1b8a4b; --post: #2f5fd0; --put: #b26a00; --delete: #c0392b;
+    --code: #eef1f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171e; --panel: #1c212b; --text: #e6e9ef; --muted: #9aa3b5; --line: #2d3442;
+      --accent: #7aa2ff; --ok: #4cc58a; --warn: #e5a23c; --bad: #ff7b6b;
+      --get: #4cc58a; --post: #7aa2ff; --put: #e5a23c; --delete: #ff7b6b;
+      --code: #232a37;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 system-ui, "Segoe UI", sans-serif; }
+  header { padding: 24px 16px 8px; max-width: 1100px; margin: 0 auto; }
+  h1 { margin: 0 0 6px; font-size: 24px; }
+  .sub { color: var(--muted); margin: 0; }
+  .layout { display: grid; grid-template-columns: 230px 1fr; gap: 24px; max-width: 1100px; margin: 0 auto; padding: 16px; }
+  nav { position: sticky; top: 12px; align-self: start; max-height: calc(100vh - 24px); overflow: auto; }
+  nav a { display: block; padding: 7px 10px; border-radius: 8px; color: var(--text); text-decoration: none; font-size: 14px; }
+  nav a:hover { background: var(--panel); }
+  nav .progress { color: var(--muted); font-size: 12px; margin: 10px 10px 0; }
+  main { min-width: 0; }
+  section.step { margin-bottom: 36px; }
+  section.step > h2 { font-size: 20px; margin: 0 0 4px; }
+  .step-desc { color: var(--muted); margin: 0 0 12px; }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+  .box h3 { margin: 0 0 6px; font-size: 15px; }
+  .box ul { margin: 6px 0 0; padding-left: 20px; }
+  .note { border-left: 3px solid var(--warn); padding: 8px 12px; background: var(--panel); border-radius: 0 8px 8px 0; margin: 10px 0; font-size: 14px; }
+  .detail { border-left: 3px solid var(--accent); padding: 8px 12px; background: var(--panel); border-radius: 0 8px 8px 0; margin: 10px 0; font-size: 14px; }
+  .detail-sec + .detail-sec { margin-top: 8px; }
+  .detail ul { margin: 4px 0 0; padding-left: 20px; }
+  details.api { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; }
+  details.api > summary { cursor: pointer; padding: 11px 14px; list-style: none; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  details.api > summary::-webkit-details-marker { display: none; }
+  .m { font-weight: 700; font-size: 12px; padding: 2px 8px; border-radius: 6px; color: #fff; min-width: 58px; text-align: center; }
+  .m.GET { background: var(--get); } .m.POST { background: var(--post); } .m.PUT { background: var(--put); } .m.DELETE { background: var(--delete); }
+  @media (prefers-color-scheme: dark) { .m { color: #10131a; } }
+  .path { font-family: ui-monospace, Consolas, monospace; font-size: 13.5px; word-break: break-all; }
+  .role { margin-left: auto; font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; }
+  .ctl { font: 600 12px ui-monospace, Consolas, monospace; color: var(--accent); background: var(--code); border-radius: 6px; padding: 1px 7px; }
+  .ctl-line { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+  .ctl-line b { color: var(--text); }
+  nav .search { width: 100%; margin: 0 0 8px; font: 13px system-ui, "Segoe UI", sans-serif; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); }
+  nav .found { color: var(--muted); font-size: 12px; margin: -4px 10px 6px; flex-basis: 100%; }
+  nav .found:empty { display: none; }
+  nav .search { flex-basis: 100%; }
+  .hidden-by-search { display: none !important; }
+  .api-body { padding: 0 16px 14px; border-top: 1px solid var(--line); }
+  .api-body p { margin: 10px 0 6px; }
+  pre { background: var(--code); border-radius: 8px; padding: 10px 12px; overflow: auto; font: 12.5px/1.5 ui-monospace, Consolas, monospace; margin: 6px 0 10px; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 14px; }
+  table.tests { table-layout: fixed; }
+  table.tests th.chk { width: 34px; }
+  table.tests th.exp { width: 28%; }
+  th, td { text-align: left; padding: 7px 8px; border-top: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+  td.chk { width: 34px; }
+  td.exp { white-space: nowrap; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; margin-right: 6px; }
+  .tag.ok { color: var(--ok); border: 1px solid var(--ok); }
+  .tag.neg { color: var(--bad); border: 1px solid var(--bad); }
+  .tag.edge { color: var(--warn); border: 1px solid var(--warn); }
+  .code { font-family: ui-monospace, Consolas, monospace; background: var(--code); border-radius: 5px; padding: 0 5px; font-size: 13px; }
+  .flow li { margin-bottom: 4px; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 14px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.copy { font-size: 12px; padding: 1px 8px; margin-left: 6px; border-radius: 6px; }
+  .data { margin-top: 4px; padding: 6px 8px; background: var(--code); border-radius: 6px; font-size: 12.5px; color: var(--muted); }
+  .data b { color: var(--text); }
+  .data > b { display: block; margin-bottom: 2px; }
+  .data ul { margin: 0; padding-left: 18px; }
+  .data li { margin: 1px 0; }
+  .data .kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 10px; align-items: start; }
+  .data .kv > span:nth-child(odd) { color: var(--muted); white-space: nowrap; }
+  .data .kv > span:nth-child(even), .data .kv > ul { color: var(--text); min-width: 0; word-break: break-word; }
+  @media (max-width: 760px) { .data .kv { grid-template-columns: 1fr; } }
+  .reqbar { margin-top: 6px; font-size: 12px; color: var(--muted); }
+  pre.req { margin: 3px 0 2px; max-height: 260px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .vars-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px 12px; }
+  .vars-grid label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 3px; }
+  .vars-grid input { font: 13px ui-monospace, Consolas, monospace; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--code); color: var(--text); min-width: 0; }
+  @media (max-width: 760px) {
+    .layout { grid-template-columns: 1fr; }
+    nav { position: static; max-height: none; display: flex; flex-wrap: wrap; gap: 4px; }
+    .role { margin-left: 0; }
+  }
+  .m.SQL { background: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>API và test case — Đánh giá truyện Creator (Task 1 đến 8)</h1>
+  <p class="sub">AI Storytelling Backend · tính năng StoryRating (phụ huynh chấm sao + nhận xét, báo cáo, Moderator kiểm duyệt, điểm trên thư viện) · mỗi API có giải thích, body mẫu và test case kèm đầu vào / kết quả mong đợi. Tích vào ô để đánh dấu đã chạy (lưu trong trình duyệt).</p>
+</header>
+
+<div class="layout">
+  <nav id="nav"></nav>
+  <main id="main">
+
+    <section class="step" id="chung">
+      <h2>Quy ước chung</h2>
+      <div class="box">
+        <h3>Cách gọi</h3>
+        <ul>
+          <li>Địa chỉ gốc: <span class="code">{host}/api/v1/{Controller}</span>. Phản hồi bọc trong <span class="code">ApiResponse</span>: <span class="code">{ "success", "message", "data", "errors" }</span>.</li>
+          <li>Đính kèm <span class="code">Authorization: Bearer {accessToken}</span>. Token trẻ bị mọi API ở trang này từ chối.</li>
+          <li>Lỗi nghiệp vụ: <span class="code">{ "success": false, "message": "…", "data": null, "errors": null }</span>. Sai kiểu dữ liệu (ví dụ enum lạ, rating là chữ): 400 <span class="code">"Dữ liệu đầu vào không hợp lệ."</span> kèm <span class="code">errors</span>. Sai vai trò: <b>403 body rỗng</b>; không có token: <b>401</b>.</li>
+          <li>Mã lỗi: <b>400</b> sai dữ liệu / sai trạng thái, <b>401</b> chưa đăng nhập, <b>403</b> sai vai trò, chưa đủ điều kiện (RATING_REQUIRES_READING) hoặc không giữ mục, <b>404</b> không có, <b>409</b> đã báo cáo / mục đã có người nhận / claim quá 2 giờ.</li>
+          <li>Enum gửi dạng chuỗi: <span class="code">reason</span> của báo cáo là <span class="code">Offensive</span>, <span class="code">Spam</span>, <span class="code">PersonalInfo</span>, <span class="code">Irrelevant</span>, <span class="code">Other</span>.</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h3>Dữ liệu thật trong Database/Seed (nạp bằng Seed-Database.ps1)</h3>
+        <ul>
+          <li><b>Trước hết:</b> áp migration <span class="code">AddStoryRatings</span>, rồi chạy <span class="code">Database/Seed-Database.ps1</span>.</li>
+          <li><b>Mật khẩu mọi tài khoản demo: Demo@123.</b> Đăng nhập bằng <span class="code">POST /api/v1/Auth/login</span> với <span class="code">{ "identifier": "tên-đăng-nhập", "password": "Demo@123" }</span>.</li>
+          <li>Tài khoản: <b>parent_demo1</b> (id 2, Trần Thị Hoa → "Phụ huynh H***", bé 1 đã đọc truyện 21 và 16) · <b>parent_demo2</b> (id 3, Nguyễn Văn Bình → "Phụ huynh B***", bé 3 đã đọc truyện 21) · <b>parent_demo3</b> (id 4, Lê Thị Cúc → "Phụ huynh C***", không có bé đọc 16 / 21) · <b>creator_demo</b> (id 13, tác giả truyện 13, 14, 16, 18, 20, 21) · <b>moderator_demo1</b> (id 11) · <b>moderator_demo2</b> (id 12) · <b>admin_demo</b> (id 1).</li>
+          <li>Truyện Creator công khai: 13, 14, 16 "Chú mèo biết lắng nghe", 20, 21 "Cá heo tốt bụng". Truyện 18 của creator_demo chưa công khai. Truyện 1 là truyện riêng của gia đình.</li>
+          <li>Đánh giá: <b>1</b> parent_demo1 → truyện 21, 5 sao, Published, đã bị parent_demo2 báo cáo · <b>2</b> parent_demo2 → truyện 21, 2 sao "Kết truyện hơi vội…", PendingModeration · <b>3</b> parent_demo1 → truyện 16, 4 sao không chữ, Published · <b>4</b> parent_demo3 → truyện 16, 1 sao, Hidden (lý do "Nhận xét công kích, không góp ý cụ thể cho truyện").</li>
+          <li>Hàng đợi: mục <b>30</b> (rating 2, bị lọc giữ, LOW_RATING_WITH_TEXT, Pending) · <b>31</b> (rating 1, bị báo cáo, Pending) · 32 (rating 4, đã Rejected). Báo cáo 1: parent_demo2 → rating 1, Irrelevant, Open. Thông báo 29 (creator_demo, StoryRatingPublished), 30 (parent_demo3, StoryRatingModerated).</li>
+          <li>Id kế tiếp trên DB mới seed: mục hàng đợi <b>33</b>, đánh giá <b>5</b>, báo cáo <b>2</b>.</li>
+          <li><b>Lưu ý:</b> test làm đổi dữ liệu. <b>Mỗi Task bắt đầu từ DB vừa nạp seed</b> và chạy các test trong Task theo đúng thứ tự trên trang; kết quả mong đợi tính theo cách chạy đó.</li>
+        </ul>
+      </div>
+      <div class="note">8 Task theo plan <span class="code">docs/superpowers/plans/2026-11-12-danh-gia-truyen-creator.md</span>: <b>1</b> bảng và migration · <b>2</b> bộ lọc tự động · <b>3</b> phụ huynh xem / tạo / sửa / xóa · <b>4</b> báo cáo + API Creator · <b>5</b> Moderator kiểm duyệt · <b>6</b> điểm trên thư viện · <b>7</b> kịch bản toàn luồng, thông báo, seed · <b>8</b> Swagger và tài liệu. Mục có nhãn SQL là kiểm tra trực tiếp trên database / tài liệu, không gọi API.</div>
+      <div class="box" id="vars">
+        <h3>Giá trị động (tự thay khi copy)</h3>
+        <p class="sub" style="margin:0 0 8px">Giá trị chỉ có sau khi gọi API (id mục vừa tạo…) được viết dạng <span class="code">&lt;TÊN&gt;</span>. Nhập giá trị thật vào ô dưới đây; khung JSON và nút Copy tự thay. Mặc định đúng cho DB vừa nạp seed.</p>
+        <div class="vars-grid"></div>
+      </div>
+      <div class="toolbar">
+        <button id="expand">Mở tất cả API</button>
+        <button id="collapse">Đóng tất cả</button>
+        <button id="reset">Xóa các dấu đã tích</button>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+const COPY = [];
+const J = o => JSON.stringify(o, null, 2);
+const A = (n, c = "a") => c.repeat(n);
+const P1 = "parent_demo1", P2 = "parent_demo2", P3 = "parent_demo3", MOD1 = "moderator_demo1", MOD2 = "moderator_demo2", CR = "creator_demo";
+
+// Test case: [loại, tình huống, kết quả mong đợi, dữ liệu (tùy chọn: "Đăng nhập x. METHOD /api/... với {json}"), body (tùy chọn)]
+const STEPS = [
+{
+  id: "t1", title: "Task 1 — Bảng dữ liệu, enum và migration",
+  desc: "Hai bảng mới story_ratings (đánh giá) và story_rating_reports (báo cáo đánh giá), cột moderation_items.StoryRatingId, loại mục hàng đợi StoryRating = 7, thông báo StoryRatingPublished = 33 và StoryRatingModerated = 34. Kiểm tra bằng SQL chỉ đọc (psql / DBeaver).",
+  flow: [
+    "Áp migration AddStoryRatings vào database (dotnet ef database update hoặc script của nhóm).",
+    "Chạy Database/Seed-Database.ps1: seed có 4 đánh giá, 1 báo cáo, 3 mục hàng đợi StoryRating (30, 31, 32).",
+    "Chạy các câu SELECT dưới đây; không sửa dữ liệu."
+  ],
+  apis: [
+  { m: "SQL", p: "(SQL) migration, ràng buộc và index", role: "Người test (DB)",
+    what: "Xác nhận cấu trúc database đúng thiết kế: mỗi phụ huynh 1 đánh giá chưa xóa cho mỗi truyện, mỗi người báo cáo 1 lần cho mỗi đánh giá, mỗi đánh giá tối đa 1 mục kiểm duyệt đang mở.",
+    detail: [
+      ["Bảng story_ratings", ["StoryId, ReviewerUserId, Rating (1–5, check constraint ck_story_ratings_rating_range), Comment (≤ 1000, đã che số điện thoại / email), Status (Published / PendingModeration / Hidden), HiddenReason, ModeratedByUserId, ModeratedAt, CreatedAt, UpdatedAt, IsDeleted.", "Unique (StoryId, ReviewerUserId) chỉ áp cho dòng chưa xóa: xóa rồi đánh giá lại tạo dòng mới."]],
+      ["Bảng story_rating_reports", ["StoryRatingId, ReporterUserId, Reason (Offensive / Spam / PersonalInfo / Irrelevant / Other), Note (≤ 500), ModerationItemId, Status (Open / Approved / Hidden), ResolvedAt.", "Unique (StoryRatingId, ReporterUserId)."]],
+      ["moderation_items", ["Thêm cột StoryRatingId (FK story_ratings).", "Unique StoryRatingId khi ItemType = 'StoryRating' và Status Pending / Claimed."]]
+    ],
+    tests: [
+      ["ok", "Migration đã áp", "1 dòng: 20261113054717_AddStoryRatings", `Chạy: SELECT "MigrationId" FROM "__EFMigrationsHistory" WHERE "MigrationId" LIKE '%AddStoryRatings'`],
+      ["ok", "Check constraint số sao", "1 dòng ck_story_ratings_rating_range: CHECK (Rating >= 1 AND Rating <= 5)", `Chạy: SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'ck_story_ratings_rating_range'`],
+      ["ok", "Unique một đánh giá chưa xóa cho mỗi phụ huynh và truyện", "indexdef có UNIQUE (StoryId, ReviewerUserId) WHERE (NOT IsDeleted)", `Chạy: SELECT indexdef FROM pg_indexes WHERE indexname = 'IX_story_ratings_StoryId_ReviewerUserId'`],
+      ["ok", "Unique một báo cáo cho mỗi người và đánh giá", "indexdef có UNIQUE (StoryRatingId, ReporterUserId), không có WHERE", `Chạy: SELECT indexdef FROM pg_indexes WHERE indexname = 'IX_story_rating_reports_StoryRatingId_ReporterUserId'`],
+      ["ok", "Unique một mục mở cho mỗi đánh giá", "indexdef có UNIQUE (StoryRatingId) WHERE ItemType = 'StoryRating' AND Status IN ('Pending','Claimed') AND NOT IsDeleted", `Chạy: SELECT indexdef FROM pg_indexes WHERE indexname = 'IX_moderation_items_StoryRatingId'`],
+      ["ok", "Seed: mục hàng đợi đã gắn đánh giá", "30 Pending Low StoryRatingId 2 (Screening, LOW_RATING_WITH_TEXT) · 31 Pending Low StoryRatingId 1 (Report) · 32 Rejected Low StoryRatingId 4", `Chạy: SELECT "Id", "Status", "Priority", "StoryRatingId", "Flags" FROM moderation_items WHERE "ItemType" = 'StoryRating' ORDER BY "Id"`],
+      ["ok", "Seed: 4 đánh giá", "1 (P1, truyện 21, 5 sao, Published) · 2 (P2, truyện 21, 2 sao, PendingModeration) · 3 (P1, truyện 16, 4 sao, không chữ, Published) · 4 (P3, truyện 16, 1 sao, Hidden)", `Chạy: SELECT "Id", "StoryId", "ReviewerUserId", "Rating", "Status" FROM story_ratings ORDER BY "Id"`],
+      ["neg", "Database không cho số sao ngoài 1–5", "Lỗi vi phạm ck_story_ratings_rating_range (chạy trong transaction rồi ROLLBACK)", `Chạy: BEGIN; UPDATE story_ratings SET "Rating" = 6 WHERE "Id" = 1; ROLLBACK`]
+    ] }
+  ]
+},
+{
+  id: "t2", title: "Task 2 — Bộ lọc tự động nhận xét",
+  desc: "Mọi nhận xét có chữ được lọc bằng quy tắc (không gọi AI, version story-rating-rules-v1). Số điện thoại / email bị che nhưng vẫn hiện. Có link, có từ cấm hoặc ≤ 2 sao kèm chữ thì phải chờ Moderator (PendingModeration), không bị từ chối. Chỉ chấm sao luôn hiện ngay.",
+  flow: [
+    "Bắt đầu từ DB vừa seed. Dùng parent_demo1 trên truyện 16 (bé 1 đã đọc truyện 16).",
+    "Trước MỖI test: gọi DELETE /api/v1/StoryRating/story/16/me (bỏ qua 404) để test là đánh giá mới; đánh giá đang chờ khi sửa vẫn bị giữ.",
+    "Gọi PUT, đọc data.status và data.comment.",
+    "Muốn xem mã lý do bị giữ: moderator_demo1 lấy mục Pending mới nhất của truyện 16 trong hàng đợi, claim rồi xem chi tiết (API thứ hai của Task này)."
+  ],
+  apis: [
+  { m: "PUT", p: "/api/v1/StoryRating/story/{storyId}/me", role: "User (phụ huynh)",
+    what: "Tạo hoặc sửa đánh giá của mình; ở Task này dùng để kiểm bộ lọc.",
+    detail: [
+      ["Thứ tự lọc (dừng ở điều kiện đầu tiên khớp)", [
+        "1. Cắt khoảng trắng, chuẩn hóa Unicode NFC; rỗng → coi như chỉ chấm sao.",
+        "2. Che số điện thoại VN (0 / 84 / +84 + 8–10 chữ số, cho phép cách / chấm / gạch) và email → [số điện thoại], [email]. Không giữ lại.",
+        "3. Link: http(s)://, www., hoặc tên miền .com .vn .net .org .info .io .me .xyz .link .ly → LINK.",
+        "4. Từ cấm (so khớp nguyên từ, không phân biệt hoa thường) → BLOCKED_TERM.",
+        "5. Rating ≤ 2 và có chữ → LOW_RATING_WITH_TEXT.",
+        "Không khớp gì → Published."]],
+      ["Danh sách từ cấm", ["địt, đụ, lồn, cặc, buồi, đéo, đm, đcm, dm, dcm, vcl, vkl, clgt, óc chó, mẹ mày, con chó, súc vật, khốn nạn, thằng ngu, con ngu, ngu học, fuck, shit, bitch."]],
+      ["Không bắt được (dựa vào báo cáo)", ["Chửi không dấu / lách luật (dit, đ.m), xúc phạm khéo không dùng từ cấm, tên trường / địa chỉ, quảng cáo không link."]]
+    ],
+    body: J({ rating: 5, comment: "Bé rất thích Mèo Mun" }),
+    tests: [
+      ["ok", "Chỉ chấm sao", "200; status Published; comment null", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 1 } (trước đó DELETE cùng URL)`],
+      ["ok", "Nhận xét toàn khoảng trắng", "200; status Published; comment null", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 1, "comment": "   " } (trước đó DELETE cùng URL)`],
+      ["ok", "Nhận xét sạch có khoảng trắng hai đầu", "200; status Published; comment \"Bé rất thích\"", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 5, "comment": "  Bé rất thích  " } (trước đó DELETE cùng URL)`],
+      ["ok", "Số điện thoại và email bị che, vẫn hiện", "200; status Published; comment \"Gọi [số điện thoại] hoặc mail [email]\"", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 5, "comment": "Gọi 0912345678 hoặc mail me@x.com" } (trước đó DELETE cùng URL)`],
+      ["edge", "Link https", "200; status PendingModeration; Moderator xem: screeningReasonCode LINK", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 5, "comment": "Xem thêm https://x.io/a" } (trước đó DELETE cùng URL)`],
+      ["edge", "Link www.", "200; status PendingModeration; LINK", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 5, "comment": "vào www.truyen.vn mà đọc" } (trước đó DELETE cùng URL)`],
+      ["edge", "Tên miền không có http", "200; status PendingModeration; LINK", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 4, "comment": "truyenhay.com có bản hay hơn" } (trước đó DELETE cùng URL)`],
+      ["edge", "Từ cấm có dấu", "200; status PendingModeration; BLOCKED_TERM", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 5, "comment": "Đồ ngu học" } (trước đó DELETE cùng URL)`],
+      ["edge", "Từ cấm viết hoa", "200; status PendingModeration; BLOCKED_TERM (không phân biệt hoa thường)", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 5, "comment": "VCL truyện gì vậy" } (trước đó DELETE cùng URL)`],
+      ["ok", "Từ cấm nằm trong từ khác không bị bắt", "200; status Published (\"dm\" trong \"admin\")", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 5, "comment": "Bé thích đoạn cuối, admin xem nhé" } (trước đó DELETE cùng URL)`],
+      ["edge", "2 sao kèm chữ", "200; status PendingModeration; LOW_RATING_WITH_TEXT", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 2, "comment": "Kết hơi vội" } (trước đó DELETE cùng URL)`],
+      ["ok", "3 sao kèm chữ", "200; status Published", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 3, "comment": "Tạm được" } (trước đó DELETE cùng URL)`],
+      ["edge", "1 sao kèm link: link xét trước số sao", "200; status PendingModeration; LINK", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 1, "comment": "www.a.vn" } (trước đó DELETE cùng URL)`],
+      ["edge", "Sửa đánh giá đang chờ thành nội dung sạch: vẫn chờ, không tạo mục thứ hai", "200; status vẫn PendingModeration; SQL đếm mục Pending / Claimed có StoryRatingId của đánh giá này = 1", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 5, "comment": "Đọc lại thấy hay" } ngay sau test "1 sao kèm link" (KHÔNG xóa trước)`]
+    ] },
+  { m: "GET", p: "/api/v1/StoryRatingModeration/{itemId}", role: "Moderator",
+    what: "Xem vì sao nhận xét bị giữ (screeningReasonCode). Cần claim mục trước.",
+    tests: [
+      ["ok", "Xem mã lý do của đánh giá vừa bị giữ", "200; holdSource Screening; screeningReasonCode đúng cột kết quả của test PUT tương ứng; ratingStatus PendingModeration; reports []", `Đăng nhập ${MOD1}. GET /api/v1/StoryRatingModeration/<NEW_ITEM_ID> sau khi POST /api/v1/ModerationQueue/<NEW_ITEM_ID>/claim; NEW_ITEM_ID = id mục Pending mới nhất có storyId 16 trong GET /api/v1/ModerationQueue?itemType=StoryRating`],
+      ["ok", "Xóa đánh giá đang chờ đóng mục", "Lần DELETE kế tiếp của parent_demo1: mục NEW_ITEM_ID chuyển Closed, ClosedReason RatingDeleted, không còn trong hàng đợi", `Đăng nhập ${MOD1}. GET /api/v1/ModerationQueue?itemType=StoryRating sau khi parent_demo1 DELETE /api/v1/StoryRating/story/16/me`]
+    ] }
+  ]
+},
+{
+  id: "t3", title: "Task 3 — Phụ huynh xem, tạo, sửa, xóa đánh giá",
+  desc: "Ba API cho phụ huynh (role User). Truyện phải là truyện Creator đang công khai. Chỉ phụ huynh có bé đang hoạt động đã mở đọc truyện mới tạo / sửa được. Nhận xét sạch hiện ngay và báo Creator; nhận xét nghi ngờ chờ Moderator.",
+  flow: [
+    "Bắt đầu từ DB vừa seed. Chạy theo thứ tự: GET → PUT → DELETE.",
+    "GET: xem danh sách đánh giá đang hiện, điểm tổng hợp, đánh giá của chính mình (mọi trạng thái) và canRate.",
+    "PUT /me: tạo hoặc sửa (mỗi phụ huynh 1 đánh giá / truyện).",
+    "DELETE /me: xóa mềm; mục kiểm duyệt đang mở được đóng."
+  ],
+  apis: [
+  { m: "GET", p: "/api/v1/StoryRating/story/{storyId}?orderBy=&pageIndex=1&pageSize=10", role: "User (phụ huynh)",
+    what: "Danh sách đánh giá đang hiện (Published) của một truyện Creator công khai, kèm điểm trung bình, số lượt, phân bố sao, đánh giá của chính mình và quyền đánh giá.",
+    detail: [
+      ["Điều kiện gọi", ["Token User đang Active; role khác → 403 (body rỗng); không token → 401.", "Truyện: Scope Creator, IsPublished, Status Ready, chưa lưu trữ, chưa xóa; nếu không → 404."]],
+      ["Query", ["orderBy: newest (mặc định) / highest / lowest, không phân biệt hoa thường, giá trị lạ = newest.", "pageIndex < 1 → 1; pageSize < 1 → 10; pageSize > 50 → 50."]],
+      ["Kết quả", ["summary: averageRating (làm tròn 1 chữ số, null khi chưa có), ratingCount, distribution (khóa 1..5).", "myRating: đánh giá của chính mình ở mọi trạng thái, hiddenReason khi Hidden; null khi chưa đánh giá.", "canRate: có bé đang hoạt động đã đọc truyện.", "ratings: PagedResult các đánh giá Published; reviewerName dạng \"Phụ huynh H***\"; không có id tài khoản, email, tên bé."]]
+    ],
+    resp: J({ success: true, message: "Lấy đánh giá truyện thành công.", data: { storyId: 21,
+      summary: { averageRating: 5, ratingCount: 1, distribution: { "1": 0, "2": 0, "3": 0, "4": 0, "5": 1 } },
+      myRating: { status: "Published", hiddenReason: null, ratingId: 1, reviewerName: "Phụ huynh H***", rating: 5, comment: "Bé nhà mình rất thích cá heo, đọc xong còn kể lại cho cả nhà.", createdAt: "2026-11-11T13:00:00Z", updatedAt: null },
+      canRate: true,
+      ratings: { items: [{ ratingId: 1, reviewerName: "Phụ huynh H***", rating: 5, comment: "Bé nhà mình rất thích cá heo, đọc xong còn kể lại cho cả nhà.", createdAt: "2026-11-11T13:00:00Z", updatedAt: null }], pageIndex: 1, pageSize: 10, totalCount: 1, totalPages: 1, hasPreviousPage: false, hasNextPage: false } }, errors: null }),
+    tests: [
+      ["ok", "Phụ huynh có đánh giá đang hiện xem truyện 21", "200; summary averageRating 5, ratingCount 1, distribution 5:1; myRating ratingId 1 status Published; canRate true; ratings.items chỉ có rating 1 (rating 2 đang chờ không hiện)", `Đăng nhập ${P1}. GET /api/v1/StoryRating/story/21`],
+      ["ok", "Phụ huynh thấy đánh giá đang chờ của chính mình", "200; myRating ratingId 2, status PendingModeration, rating 2, reviewerName Phụ huynh B***; ratings.items chỉ có rating 1; canRate true", `Đăng nhập ${P2}. GET /api/v1/StoryRating/story/21`],
+      ["ok", "Phụ huynh thấy đánh giá bị ẩn và lý do", "200; myRating ratingId 4, status Hidden, hiddenReason \"Nhận xét công kích, không góp ý cụ thể cho truyện\"; canRate false; summary averageRating 4, ratingCount 1; ratings.items = [rating 3, Phụ huynh H***, comment null]", `Đăng nhập ${P3}. GET /api/v1/StoryRating/story/16`],
+      ["edge", "pageSize=100", "200; ratings.pageSize = 50", `Đăng nhập ${P1}. GET /api/v1/StoryRating/story/21?pageSize=100`],
+      ["edge", "pageSize=0 và pageIndex=-3", "200; ratings.pageSize = 10, ratings.pageIndex = 1", `Đăng nhập ${P1}. GET /api/v1/StoryRating/story/21?pageSize=0&pageIndex=-3`],
+      ["edge", "orderBy viết hoa hoặc giá trị lạ", "200 cho HIGHEST / lowest / abc; abc xếp như newest", `Đăng nhập ${P1}. GET /api/v1/StoryRating/story/21?orderBy=HIGHEST`],
+      ["neg", "Truyện riêng của gia đình", "404 \"Không tìm thấy Truyện với mã định danh [1].\"", `Đăng nhập ${P1}. GET /api/v1/StoryRating/story/1`],
+      ["neg", "Truyện Creator chưa công khai", "404 \"Không tìm thấy Truyện với mã định danh [18].\"", `Đăng nhập ${P1}. GET /api/v1/StoryRating/story/18`],
+      ["neg", "Truyện không tồn tại", "404 \"Không tìm thấy Truyện với mã định danh [99999].\"", `Đăng nhập ${P1}. GET /api/v1/StoryRating/story/99999`],
+      ["neg", "Gọi bằng token ContentCreator", "403 (body rỗng)"],
+      ["neg", "Gọi bằng token Moderator", "403 (body rỗng)"],
+      ["neg", "Gọi bằng token bé", "401 hoặc 403: token trẻ bị từ chối"],
+      ["neg", "Không gửi token", "401"]
+    ] },
+  { m: "PUT", p: "/api/v1/StoryRating/story/{storyId}/me", role: "User (phụ huynh)",
+    what: "Tạo mới hoặc sửa đánh giá của chính mình (1–5 sao, nhận xét tùy chọn ≤ 1000 ký tự).",
+    detail: [
+      ["Hệ thống kiểm lần lượt", ["Token User đang Active → nếu không: 403.", "Truyện Creator đang công khai → nếu không: 404.", "rating 1–5 → nếu không: 400 \"Số sao phải từ 1 đến 5.\"", "comment ≤ 1000 ký tự (cả trước và sau khi che) → nếu không: 400 \"Nhận xét tối đa 1000 ký tự.\"", "Có bé đang hoạt động đã đọc truyện → nếu không: 403 \"RATING_REQUIRES_READING\"."]],
+      ["Trạng thái sau khi lưu", ["PendingModeration nếu bộ lọc giữ lại, HOẶC đánh giá đang PendingModeration / Hidden trước khi sửa; ngược lại Published.", "Khi PendingModeration mà chưa có mục mở → tạo mục StoryRating (Priority Low, SLA 72 giờ, Flags source Screening).", "Chuyển sang Published từ trạng thái khác (tạo mới sạch) → Creator nhận StoryRatingPublished. Sửa đánh giá đang Published thì không báo lại.", "Ghi audit StoryRatingCreated / StoryRatingUpdated."]]
+    ],
+    body: J({ rating: 5, comment: "Bé rất thích Mèo Mun" }),
+    resp: J({ success: true, message: "Đã lưu đánh giá.", data: { status: "Published", hiddenReason: null, ratingId: 3, reviewerName: "Phụ huynh H***", rating: 5, comment: "Bé rất thích Mèo Mun, gọi mình [số điện thoại]", createdAt: "2026-11-11T09:00:00Z", updatedAt: "2026-11-13T09:00:00Z" }, errors: null }),
+    tests: [
+      ["neg", "rating = 0", "400 \"Số sao phải từ 1 đến 5.\"", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me`, J({ rating: 0 })],
+      ["neg", "rating = 6", "400 \"Số sao phải từ 1 đến 5.\"", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me`, J({ rating: 6, comment: "Hay" })],
+      ["neg", "comment 1001 ký tự", "400 \"Nhận xét tối đa 1000 ký tự.\"", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me`, J({ rating: 5, comment: A(1001) })],
+      ["neg", "rating không phải số", "400 \"Dữ liệu đầu vào không hợp lệ.\" (errors có lỗi parse)", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me`, '{ "rating": "năm" }'],
+      ["neg", "Phụ huynh không có bé đã đọc truyện", "403 \"RATING_REQUIRES_READING\"", `Đăng nhập ${P3}. PUT /api/v1/StoryRating/story/16/me với { "rating": 5 }`],
+      ["neg", "Truyện riêng của gia đình", "404 \"Không tìm thấy Truyện với mã định danh [1].\"", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/1/me với { "rating": 5 }`],
+      ["neg", "Gọi bằng token ContentCreator", "403 (body rỗng)"],
+      ["ok", "Sửa đánh giá đang hiện, nội dung sạch", "200 \"Đã lưu đánh giá.\"; ratingId 3 (sửa, không tạo mới); status Published; comment \"Bé rất thích Mèo Mun, gọi mình [số điện thoại]\" (đã cắt khoảng trắng); creator_demo KHÔNG nhận thông báo mới", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 5, "comment": "  Bé rất thích Mèo Mun, gọi mình 0912 345 678  " }`],
+      ["edge", "Sửa thành 1 sao kèm chữ → chờ Moderator", "200; ratingId 3, status PendingModeration; GET /api/v1/ModerationQueue?itemType=StoryRating (moderator_demo1) có mục mới Pending, storyId 16 (id 33 trên DB mới seed); GET của phụ huynh khác không còn thấy rating 3", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 1, "comment": "Kết hơi vội" }`],
+      ["edge", "Sửa tiếp thành 5 sao sạch: vẫn chờ, không tạo mục thứ hai", "200; status vẫn PendingModeration; vẫn chỉ 1 mục mở cho rating 3", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 5, "comment": "Đọc lại thấy hay" }`]
+    ] },
+  { m: "DELETE", p: "/api/v1/StoryRating/story/{storyId}/me", role: "User (phụ huynh)",
+    what: "Xóa mềm đánh giá của chính mình. Mục kiểm duyệt đang mở của đánh giá chuyển Closed (ClosedReason RatingDeleted). Đánh giá lại sau đó tạo dòng mới.",
+    tests: [
+      ["ok", "Xóa đánh giá đang chờ", "200 \"Đã xóa đánh giá.\", data true; SQL: rating 3 IsDeleted = true, mục 33 Status Closed, ClosedReason RatingDeleted; GET truyện 16 (parent_demo1): myRating null, canRate true, summary ratingCount 0, averageRating null", `Đăng nhập ${P1}. DELETE /api/v1/StoryRating/story/16/me`],
+      ["neg", "Xóa lần hai", "404 \"Không tìm thấy Đánh giá của bạn cho truyện với mã định danh [16].\"", `Đăng nhập ${P1}. DELETE /api/v1/StoryRating/story/16/me`],
+      ["ok", "Đánh giá lại sau khi xóa", "200; ratingId mới (5 trên DB mới seed), status Published; creator_demo nhận thông báo StoryRatingPublished payload {\"storyId\":16,\"ratingId\":5,\"rating\":4}", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/16/me với { "rating": 4, "comment": "Đọc lại vẫn thấy hay" }`],
+      ["neg", "Gọi bằng token Moderator", "403 (body rỗng)"]
+    ] }
+  ]
+},
+{
+  id: "t4", title: "Task 4 — Báo cáo đánh giá và API Creator",
+  desc: "Phụ huynh và Creator báo cáo một nhận xét đang hiện (mỗi người một lần). Báo cáo đầu tiên đưa đánh giá vào hàng đợi; báo cáo sau gộp vào mục đang mở; đánh giá vẫn hiện tới khi Moderator quyết định. Creator có API riêng xem đánh giá đang hiện của truyện mình.",
+  flow: [
+    "Bắt đầu từ DB vừa seed (rating 1 đã có 1 báo cáo của parent_demo2, mục 31 đang mở).",
+    "Phụ huynh / Creator gọi POST reports → data.status = Received.",
+    "Kiểm SQL story_rating_reports và hàng đợi.",
+    "Creator gọi GET /api/v1/creator/stories/{storyId}/ratings."
+  ],
+  apis: [
+  { m: "POST", p: "/api/v1/StoryRating/{ratingId}/reports", role: "User, ContentCreator",
+    what: "Báo cáo một đánh giá đang hiện. Danh tính người báo cáo không trả cho người viết hay Creator.",
+    detail: [
+      ["Hệ thống kiểm lần lượt", ["Token User / ContentCreator đang Active → nếu không: 403.", "reason hợp lệ → nếu không: 400 \"Lý do báo cáo không hợp lệ.\" (chữ lạ: 400 \"Dữ liệu đầu vào không hợp lệ.\").", "note ≤ 500 ký tự → nếu không: 400 \"Ghi chú báo cáo tối đa 500 ký tự.\"", "Đánh giá tồn tại, chưa xóa → nếu không: 404.", "Creator chỉ báo cáo đánh giá truyện của mình → 403.", "Không tự báo cáo → 400 \"Không thể báo cáo đánh giá của chính mình.\"", "Đánh giá đang Published → nếu không: 400 \"Chỉ báo cáo được đánh giá đang hiển thị.\"", "Chưa báo cáo đánh giá này → nếu rồi: 409 \"Bạn đã báo cáo đánh giá này.\""]],
+      ["Xử lý", ["Gộp vào mục StoryRating đang mở của đánh giá; chưa có thì tạo mục (Flags source Report, CreatedByUserId = người viết đánh giá).", "Lưu báo cáo Open, note đã che số điện thoại / email; audit StoryRatingReported."]],
+      ["Body", ["reason: Offensive / Spam / PersonalInfo / Irrelevant / Other (chuỗi).", "note: tùy chọn, ≤ 500 ký tự."]]
+    ],
+    body: J({ reason: "Offensive", note: "Nhận xét không phù hợp" }),
+    resp: J({ success: true, message: "Đã gửi báo cáo đánh giá.", data: { ratingId: 1, status: "Received" }, errors: null }),
+    tests: [
+      ["neg", "Báo cáo lần hai cùng người", "409 \"Bạn đã báo cáo đánh giá này.\" (seed đã có báo cáo của parent_demo2)", `Đăng nhập ${P2}. POST /api/v1/StoryRating/1/reports với { "reason": "Spam" }`],
+      ["ok", "Người khác báo cáo: gộp vào mục đang mở", "200 {\"ratingId\":1,\"status\":\"Received\"}; SQL: rating 1 có 2 báo cáo Open, cùng ModerationItemId 31, note mới chứa [số điện thoại]; vẫn chỉ 1 mục mở cho rating 1; rating 1 vẫn Published", `Đăng nhập ${P3}. POST /api/v1/StoryRating/1/reports với { "reason": "Offensive", "note": "Nhận xét không phù hợp, liên hệ 0912345678" }`],
+      ["ok", "Creator báo cáo đánh giá truyện của mình: tạo mục mới", "200 {\"ratingId\":3,\"status\":\"Received\"}; hàng đợi có mục StoryRating mới Pending, storyId 16, Flags source Report (id 33 trên DB mới seed)", `Đăng nhập ${CR}. POST /api/v1/StoryRating/3/reports với { "reason": "Irrelevant" }`],
+      ["neg", "Tự báo cáo đánh giá của mình", "400 \"Không thể báo cáo đánh giá của chính mình.\"", `Đăng nhập ${P1}. POST /api/v1/StoryRating/1/reports với { "reason": "Spam" }`],
+      ["neg", "Đánh giá đang chờ duyệt", "400 \"Chỉ báo cáo được đánh giá đang hiển thị.\"", `Đăng nhập ${P1}. POST /api/v1/StoryRating/2/reports với { "reason": "Spam" }`],
+      ["neg", "Đánh giá đã bị ẩn", "400 \"Chỉ báo cáo được đánh giá đang hiển thị.\"", `Đăng nhập ${P1}. POST /api/v1/StoryRating/4/reports với { "reason": "Spam" }`],
+      ["neg", "Đánh giá không tồn tại", "404 \"Không tìm thấy Đánh giá với mã định danh [99999].\"", `Đăng nhập ${P1}. POST /api/v1/StoryRating/99999/reports với { "reason": "Spam" }`],
+      ["neg", "reason là số không có trong enum", "400 \"Lý do báo cáo không hợp lệ.\"", `Đăng nhập ${P2}. POST /api/v1/StoryRating/3/reports với { "reason": 99 }`],
+      ["neg", "reason là chữ lạ", "400 \"Dữ liệu đầu vào không hợp lệ.\"", `Đăng nhập ${P2}. POST /api/v1/StoryRating/3/reports với { "reason": "Abc" }`],
+      ["neg", "note 501 ký tự", "400 \"Ghi chú báo cáo tối đa 500 ký tự.\"", `Đăng nhập ${P2}. POST /api/v1/StoryRating/3/reports`, J({ reason: "Other", note: A(501) })],
+      ["neg", "Gọi bằng token Moderator", "403 (body rỗng)"],
+      ["neg", "Gọi bằng token Administrator", "403 (body rỗng)"],
+      ["neg", "Creator báo cáo đánh giá truyện của Creator khác", "403 \"Creator chỉ báo cáo được đánh giá của truyện mình.\"", `Cần một tài khoản ContentCreator khác (seed chỉ có creator_demo; đã có unit test). Tài khoản đó gọi POST /api/v1/StoryRating/1/reports với { "reason": "Spam" }`]
+    ] },
+  { m: "GET", p: "/api/v1/creator/stories/{storyId}/ratings?orderBy=&pageIndex=1&pageSize=10", role: "ContentCreator",
+    what: "Creator xem đánh giá đang hiện của truyện mình (kể cả khi truyện đã thôi công khai). Không thấy đánh giá đang chờ / bị ẩn, không có myRating, canRate luôn false.",
+    resp: J({ success: true, message: "Lấy đánh giá truyện thành công.", data: { storyId: 21, summary: { averageRating: 5, ratingCount: 1, distribution: { "1": 0, "2": 0, "3": 0, "4": 0, "5": 1 } }, myRating: null, canRate: false, ratings: { items: [{ ratingId: 1, reviewerName: "Phụ huynh H***", rating: 5, comment: "Bé nhà mình rất thích cá heo, đọc xong còn kể lại cho cả nhà.", createdAt: "2026-11-11T13:00:00Z", updatedAt: null }], pageIndex: 1, pageSize: 10, totalCount: 1, totalPages: 1, hasPreviousPage: false, hasNextPage: false } }, errors: null }),
+    tests: [
+      ["ok", "Creator xem truyện 21", "200; ratings.items chỉ có rating 1 (không thấy rating 2 đang chờ); summary averageRating 5, ratingCount 1; myRating null; canRate false", `Đăng nhập ${CR}. GET /api/v1/creator/stories/21/ratings`],
+      ["ok", "Creator xem truyện 16", "200; ratings.items = [rating 3]; summary averageRating 4 (rating 4 bị ẩn không tính)", `Đăng nhập ${CR}. GET /api/v1/creator/stories/16/ratings`],
+      ["edge", "Truyện của mình nhưng chưa công khai", "200; ratings.items rỗng; averageRating null", `Đăng nhập ${CR}. GET /api/v1/creator/stories/18/ratings`],
+      ["neg", "Truyện không phải của mình", "404 \"Không tìm thấy Truyện với mã định danh [1].\"", `Đăng nhập ${CR}. GET /api/v1/creator/stories/1/ratings`],
+      ["neg", "Gọi bằng token User", "403 (body rỗng)"],
+      ["neg", "Không gửi token", "401"]
+    ] }
+  ]
+},
+{
+  id: "t5", title: "Task 5 — Moderator kiểm duyệt đánh giá",
+  desc: "Mục StoryRating vào hàng đợi chung. Moderator claim (giữ 2 giờ), xem chi tiết rồi duyệt hoặc ẩn. Chỉ role Moderator; Administrator không claim được loại mục này. Hàng đợi không lộ phụ huynh (createdByName luôn null).",
+  flow: [
+    "Bắt đầu từ DB vừa seed: mục 30 (rating 2 bị lọc giữ), mục 31 (rating 1 bị báo cáo).",
+    "GET /api/v1/ModerationQueue?itemType=StoryRating → chọn mục.",
+    "POST /api/v1/ModerationQueue/{itemId}/claim bằng chính tài khoản sẽ xử lý.",
+    "GET /api/v1/StoryRatingModeration/{itemId} → approve hoặc hide (kèm lý do)."
+  ],
+  apis: [
+  { m: "GET", p: "/api/v1/ModerationQueue?itemType=StoryRating&pageIndex=1&pageSize=20", role: "Moderator, Administrator",
+    what: "Hàng đợi lọc theo loại StoryRating. Ưu tiên Low, SLA 72 giờ.",
+    tests: [
+      ["ok", "Moderator lấy mục đánh giá", "200; có mục 30 (storyId 21, Pending, Low) và 31 (storyId 21, Pending, Low); storyTitle \"Cá heo tốt bụng\"; createdByUserId và createdByName = null", `Đăng nhập ${MOD1}. GET /api/v1/ModerationQueue?itemType=StoryRating&pageIndex=1&pageSize=20`],
+      ["ok", "Administrator xem được danh sách", "200; cùng danh sách (chỉ bị chặn ở bước claim)", `Đăng nhập admin_demo. GET /api/v1/ModerationQueue?itemType=StoryRating`]
+    ] },
+  { m: "POST", p: "/api/v1/ModerationQueue/{itemId}/claim", role: "Moderator",
+    what: "Nhận mục để xử lý trong 2 giờ. Bắt buộc trước mọi API StoryRatingModeration.",
+    tests: [
+      ["neg", "Administrator claim mục đánh giá", "403 \"Report nội dung và đánh giá truyện chỉ do Moderator xử lý.\" (kể cả khi không còn Moderator)", `Đăng nhập admin_demo. POST /api/v1/ModerationQueue/30/claim`],
+      ["ok", "Moderator claim mục 30", "200; data.status Claimed, claimedByUserId 11, claimExpiresAt = lúc nhận + 2 giờ, createdByName null", `Đăng nhập ${MOD1}. POST /api/v1/ModerationQueue/30/claim`],
+      ["neg", "Moderator khác claim mục đã có người nhận", "409 \"Mục này đã có người nhận hoặc đã xử lý xong.\"", `Đăng nhập ${MOD2}. POST /api/v1/ModerationQueue/30/claim`]
+    ] },
+  { m: "GET", p: "/api/v1/StoryRatingModeration/{itemId}", role: "Moderator",
+    what: "Chi tiết đánh giá: số sao, nhận xét, lý do bị giữ (Screening / Report), mã lọc, danh sách lý do báo cáo (không có người báo cáo). Ghi audit StoryRatingOpened.",
+    resp: J({ success: true, message: "Lấy chi tiết đánh giá thành công.", data: { itemId: 31, ratingId: 1, storyId: 21, storyTitle: "Cá heo tốt bụng", reviewerName: "Phụ huynh H***", rating: 5, comment: "Bé nhà mình rất thích cá heo, đọc xong còn kể lại cho cả nhà.", ratingStatus: "Published", holdSource: "Report", screeningReasonCode: null, reports: [{ reason: "Irrelevant", note: "Nhận xét kể chuyện gia đình, không nói về nội dung truyện", createdAt: "2026-11-13T02:00:00Z" }], createdAt: "2026-11-11T13:00:00Z", updatedAt: null }, errors: null }),
+    tests: [
+      ["neg", "Chưa claim", "403 \"Bạn chỉ được xử lý mục đang do chính mình nhận.\"", `Đăng nhập ${MOD1}. GET /api/v1/StoryRatingModeration/31`],
+      ["neg", "Moderator khác xem mục người khác giữ", "403 \"Bạn chỉ được xử lý mục đang do chính mình nhận.\" (sau khi moderator_demo1 đã claim mục 30)", `Đăng nhập ${MOD2}. GET /api/v1/StoryRatingModeration/30`],
+      ["ok", "Chi tiết mục bị lọc giữ", "200; ratingId 2, reviewerName Phụ huynh B***, rating 2, ratingStatus PendingModeration, holdSource Screening, screeningReasonCode LOW_RATING_WITH_TEXT, reports []", `Đăng nhập ${MOD1}. GET /api/v1/StoryRatingModeration/30`],
+      ["ok", "Chi tiết mục bị báo cáo", "200; ratingId 1, ratingStatus Published, holdSource Report, screeningReasonCode null, reports [{reason Irrelevant, note ...}]; JSON không có tên / id người báo cáo", `Đăng nhập ${MOD1}. GET /api/v1/StoryRatingModeration/31 (claim mục 31 trước: POST /api/v1/ModerationQueue/31/claim)`],
+      ["neg", "Mục loại khác", "400 \"Mục này không phải mục kiểm duyệt đánh giá.\" (mục 5 RoadmapTemplateReview do moderator_demo1 giữ)", `Đăng nhập ${MOD1}. GET /api/v1/StoryRatingModeration/5`],
+      ["neg", "Mục không tồn tại", "404 \"Không tìm thấy Mục kiểm duyệt với mã định danh [99999].\"", `Đăng nhập ${MOD1}. GET /api/v1/StoryRatingModeration/99999`],
+      ["edge", "Claim quá 2 giờ", "409 \"Mục đã quá 2 giờ kể từ lúc nhận và sẽ được trả về hàng đợi. Vui lòng nhận lại.\" (đợi quá 2 giờ, hoặc trên DB test đặt ClaimedAt lùi 3 giờ)", `Đăng nhập ${MOD1}. GET /api/v1/StoryRatingModeration/30`],
+      ["neg", "Gọi bằng token Administrator", "403 (body rỗng)"],
+      ["neg", "Gọi bằng token User", "403 (body rỗng)"]
+    ] },
+  { m: "POST", p: "/api/v1/StoryRatingModeration/{itemId}/approve", role: "Moderator",
+    what: "Duyệt: đánh giá đang chờ → Published (báo người viết StoryRatingModerated + Creator StoryRatingPublished); đánh giá đang hiện bị báo cáo → giữ nguyên, không báo ai. Báo cáo Open → Approved. Mục → Approved.",
+    resp: J({ success: true, message: "Đã duyệt đánh giá.", data: { itemId: 30, ratingId: 2, decision: "Approved", ratingStatus: "Published", decidedAt: "2026-11-13T09:00:00Z" }, errors: null }),
+    tests: [
+      ["ok", "Duyệt đánh giá đang chờ (mục 30)", "200; decision Approved, ratingStatus Published; parent_demo2 GET truyện 21: myRating Published, summary averageRating 3.5, ratingCount 2; parent_demo2 có thông báo StoryRatingModerated {\"storyId\":21,\"ratingId\":2,\"decision\":\"Approved\",\"reason\":null}; creator_demo có StoryRatingPublished {\"storyId\":21,\"ratingId\":2,\"rating\":2}", `Đăng nhập ${MOD1}. POST /api/v1/StoryRatingModeration/30/approve (đã claim mục 30)`],
+      ["neg", "Duyệt lại mục đã xử lý", "403 \"Bạn chỉ được xử lý mục đang do chính mình nhận.\"", `Đăng nhập ${MOD1}. POST /api/v1/StoryRatingModeration/30/approve`],
+      ["ok", "Duyệt đánh giá đang hiện bị báo cáo: giữ nguyên", "200; decision Approved, ratingStatus Published; báo cáo của creator_demo → Approved (ResolvedAt có giá trị); không ai nhận thông báo mới", `Đăng nhập ${MOD1}. POST /api/v1/StoryRatingModeration/<NEW_ITEM_ID>/approve. Trước đó: creator_demo báo cáo rating 3 (reason Irrelevant) tạo mục <NEW_ITEM_ID>, rồi moderator_demo1 claim mục này`]
+    ] },
+  { m: "POST", p: "/api/v1/StoryRatingModeration/{itemId}/hide", role: "Moderator",
+    what: "Ẩn đánh giá kèm lý do (bắt buộc, ≤ 1000 ký tự, người viết đọc được). Báo cáo Open → Hidden. Mục → Rejected. Người viết nhận StoryRatingModerated; Creator không nhận.",
+    body: J({ reason: "Nhận xét không liên quan đến nội dung truyện" }),
+    resp: J({ success: true, message: "Đã ẩn đánh giá.", data: { itemId: 31, ratingId: 1, decision: "Hidden", ratingStatus: "Hidden", decidedAt: "2026-11-13T09:05:00Z" }, errors: null }),
+    tests: [
+      ["neg", "Lý do rỗng", "400 \"Lý do ẩn đánh giá là bắt buộc.\"", `Đăng nhập ${MOD1}. POST /api/v1/StoryRatingModeration/31/hide với { "reason": "" } (đã claim mục 31)`],
+      ["neg", "Lý do toàn khoảng trắng", "400 \"Lý do ẩn đánh giá là bắt buộc.\"", `Đăng nhập ${MOD1}. POST /api/v1/StoryRatingModeration/31/hide với { "reason": "   " }`],
+      ["neg", "Lý do 1001 ký tự", "400 \"Lý do ẩn đánh giá tối đa 1000 ký tự.\"", `Đăng nhập ${MOD1}. POST /api/v1/StoryRatingModeration/31/hide`, J({ reason: A(1001) })],
+      ["ok", "Ẩn đánh giá đang hiện (mục 31)", "200; decision Hidden, ratingStatus Hidden; parent_demo1 GET truyện 21: myRating Hidden, hiddenReason như body; summary chỉ còn đánh giá Published khác; SQL: báo cáo của rating 1 → Hidden, mục 31 → Rejected, DecisionReason = lý do; parent_demo1 có thông báo StoryRatingModerated (decision Hidden, reason)", `Đăng nhập ${MOD1}. POST /api/v1/StoryRatingModeration/31/hide với { "reason": "Nhận xét không liên quan đến nội dung truyện" }`]
+    ] },
+  { m: "PUT", p: "/api/v1/StoryRating/story/{storyId}/me", role: "User (phụ huynh)",
+    what: "Sau khi bị ẩn, phụ huynh sửa đánh giá: luôn quay về chờ Moderator, không tự hiện lại.",
+    tests: [
+      ["edge", "Sửa đánh giá đã bị ẩn bằng nội dung sạch", "200; status PendingModeration, hiddenReason null; hàng đợi có mục mới, chi tiết holdSource Screening, screeningReasonCode CLEAN", `Đăng nhập ${P1}. PUT /api/v1/StoryRating/story/21/me với { "rating": 5, "comment": "Xin lỗi tác giả, truyện rất hay" } (sau test ẩn mục 31)`]
+    ] }
+  ]
+},
+{
+  id: "t6", title: "Task 6 — Điểm đánh giá trên thư viện cộng đồng",
+  desc: "Mỗi truyện trong thư viện có thêm averageRating (null khi chưa có) và ratingCount, chỉ tính đánh giá đang hiện. Sắp xếp orderBy=rating: theo điểm trung bình (chưa có = 0), bằng điểm thì nhiều lượt hơn trước, rồi ngày tạo, Id.",
+  flow: [
+    "Bắt đầu từ DB vừa seed: truyện 21 = 5.0 (1 lượt), truyện 16 = 4.0 (1 lượt), truyện 13, 14, 20 chưa có đánh giá.",
+    "Gọi thư viện với authorUserId=13 để chỉ thấy truyện của creator_demo."
+  ],
+  apis: [
+  { m: "GET", p: "/api/v1/Story/community?authorUserId=&orderBy=&isDescending=&pageIndex=1&pageSize=20", role: "User, ContentCreator, Moderator, Administrator",
+    what: "Thư viện cộng đồng (truyện Creator đã công khai) kèm viewCount, favoriteCount, averageRating, ratingCount.",
+    resp: J({ success: true, message: "…", data: { items: [{ id: 21, title: "Cá heo tốt bụng", viewCount: 2, favoriteCount: 0, averageRating: 5, ratingCount: 1 }, { id: 16, title: "Chú mèo biết lắng nghe", viewCount: 1, favoriteCount: 0, averageRating: 4, ratingCount: 1 }, { id: 20, title: "Voi con biết xin lỗi", viewCount: 0, favoriteCount: 0, averageRating: null, ratingCount: 0 }], pageIndex: 1, pageSize: 20, totalCount: 5 }, errors: null }),
+    tests: [
+      ["ok", "Thư viện có điểm", "200; truyện 21: averageRating 5, ratingCount 1; truyện 16: averageRating 4, ratingCount 1 (rating 4 bị ẩn không tính); truyện 13 / 14 / 20: averageRating null, ratingCount 0", `Đăng nhập ${P1}. GET /api/v1/Story/community?authorUserId=13`],
+      ["ok", "Điểm cao trước", "200; thứ tự id: 21, 16, rồi các truyện chưa có đánh giá (mới tạo trước)", `Đăng nhập ${P1}. GET /api/v1/Story/community?authorUserId=13&orderBy=rating&isDescending=true`],
+      ["ok", "Điểm thấp trước", "200; các truyện chưa có đánh giá đứng đầu, rồi 16, cuối cùng 21", `Đăng nhập ${P1}. GET /api/v1/Story/community?authorUserId=13&orderBy=rating&isDescending=false`],
+      ["edge", "orderBy viết hoa", "200; kết quả giống \"Điểm cao trước\"", `Đăng nhập ${P1}. GET /api/v1/Story/community?authorUserId=13&orderBy=RATING&isDescending=true`],
+      ["edge", "Đánh giá đang chờ không làm đổi điểm", "Truyện 21 vẫn averageRating 5 dù có rating 2 (2 sao, PendingModeration); sau khi Moderator duyệt mục 30 → averageRating 3.5, ratingCount 2", `Đăng nhập ${P1}. GET /api/v1/Story/community?authorUserId=13`],
+      ["ok", "Các orderBy cũ vẫn chạy", "200 cho orderBy=views và orderBy=favorites", `Đăng nhập ${P1}. GET /api/v1/Story/community?authorUserId=13&orderBy=views&isDescending=true`]
+    ] },
+  { m: "GET", p: "/api/v1/creator/stories/published?orderBy=&isDescending=&pageIndex=1&pageSize=20", role: "ContentCreator",
+    what: "Truyện đã đăng của chính Creator, cùng các trường điểm như thư viện.",
+    tests: [
+      ["ok", "Creator xem truyện đã đăng theo điểm", "200; cùng thứ tự và cùng averageRating / ratingCount như \"Điểm cao trước\" ở API trên", `Đăng nhập ${CR}. GET /api/v1/creator/stories/published?orderBy=rating&isDescending=true`],
+      ["neg", "Gọi bằng token User", "403 (body rỗng)"]
+    ] }
+  ]
+},
+{
+  id: "t7", title: "Task 7 — Kịch bản toàn luồng, thông báo và seed",
+  desc: "Chạy nối các API như người dùng thật: phụ huynh sửa → Moderator duyệt → phụ huynh khác báo cáo → Moderator khác ẩn → thư viện và Creator chỉ còn thấy đánh giá đang hiện. Kiểm thông báo nhóm stories và test tự động.",
+  flow: [
+    "Bắt đầu từ DB vừa seed.",
+    "Làm lần lượt các API dưới đây (mỗi API là một bước).",
+    "Cuối cùng chạy test tự động bằng dotnet test."
+  ],
+  apis: [
+  { m: "PUT", p: "/api/v1/StoryRating/story/21/me", role: "User (parent_demo2)",
+    what: "Bước 1: parent_demo2 sửa đánh giá đang chờ.",
+    tests: [["ok", "Sửa đánh giá đang chờ", "200; rating 2 vẫn PendingModeration, rating = 4", `Đăng nhập ${P2}. PUT /api/v1/StoryRating/story/21/me với { "rating": 4, "comment": "Bé thích lắm" }`]] },
+  { m: "POST", p: "/api/v1/StoryRatingModeration/30/approve", role: "Moderator (moderator_demo1)",
+    what: "Bước 2: claim mục 30 rồi duyệt.",
+    tests: [["ok", "Duyệt đánh giá đã sửa", "200; rating 2 Published, 4 sao; truyện 21 averageRating 4.5, ratingCount 2", `Đăng nhập ${MOD1}. POST /api/v1/StoryRatingModeration/30/approve (claim trước: POST /api/v1/ModerationQueue/30/claim)`]] },
+  { m: "POST", p: "/api/v1/StoryRating/2/reports", role: "User (parent_demo3)",
+    what: "Bước 3: phụ huynh khác báo cáo đánh giá vừa hiện.",
+    tests: [["ok", "Báo cáo đánh giá vừa hiện", "200 {\"ratingId\":2,\"status\":\"Received\"}; hàng đợi có mục mới source Report (<NEW_ITEM_ID>, 33 trên DB mới seed)", `Đăng nhập ${P3}. POST /api/v1/StoryRating/2/reports với { "reason": "Spam" }`]] },
+  { m: "POST", p: "/api/v1/StoryRatingModeration/{itemId}/hide", role: "Moderator (moderator_demo2)",
+    what: "Bước 4: Moderator khác claim mục mới rồi ẩn.",
+    tests: [["ok", "Ẩn đánh giá bị báo cáo", "200; rating 2 Hidden; parent_demo2 nhận StoryRatingModerated (Hidden, reason Spam)", `Đăng nhập ${MOD2}. POST /api/v1/StoryRatingModeration/<NEW_ITEM_ID>/hide với { "reason": "Spam" } (claim trước: POST /api/v1/ModerationQueue/<NEW_ITEM_ID>/claim)`]] },
+  { m: "GET", p: "/api/v1/Story/community?authorUserId=13&orderBy=rating&isDescending=true", role: "User",
+    what: "Bước 5: thư viện chỉ tính đánh giá đang hiện.",
+    tests: [["ok", "Thư viện sau khi ẩn", "200; truyện 21 averageRating 5, ratingCount 1 (chỉ còn rating 1)", `Đăng nhập ${P1}. GET /api/v1/Story/community?authorUserId=13&orderBy=rating&isDescending=true`]] },
+  { m: "GET", p: "/api/v1/creator/stories/21/ratings", role: "ContentCreator",
+    what: "Bước 6: Creator chỉ thấy đánh giá đang hiện.",
+    tests: [["ok", "Creator xem lại", "200; ratings.items chỉ có rating 1", `Đăng nhập ${CR}. GET /api/v1/creator/stories/21/ratings`]] },
+  { m: "GET", p: "/api/v1/Notification?group=stories", role: "Mọi người dùng",
+    what: "Thông báo đánh giá thuộc nhóm stories.",
+    tests: [
+      ["ok", "Creator thấy thông báo đánh giá mới", "200; có StoryRatingPublished (seed sẵn id 29 + thông báo của bước 2)", `Đăng nhập ${CR}. GET /api/v1/Notification?group=stories`],
+      ["ok", "Phụ huynh thấy kết quả kiểm duyệt", "200; parent_demo2 có StoryRatingModerated Approved (bước 2) và Hidden (bước 4)", `Đăng nhập ${P2}. GET /api/v1/Notification?group=stories`],
+      ["edge", "Không lẫn vào nhóm moderation", "200; không có StoryRatingPublished / StoryRatingModerated", `Đăng nhập ${CR}. GET /api/v1/Notification?group=moderation`]
+    ] },
+  { m: "SQL", p: "(seed) Database/Seed-Database.ps1", role: "Người test",
+    what: "Seed có file cho 2 bảng mới và chạy lại được nhiều lần.",
+    tests: [
+      ["ok", "Seed chạy không báo thiếu bảng", "Script hoàn tất; có 73_story_ratings.sql, 74_story_rating_reports.sql", `Chạy: Database/Seed-Database.ps1 sau khi áp migration AddStoryRatings`],
+      ["ok", "Test tự động", "Tất cả PASS", `Chạy: dotnet test tests/StoryPlatform.UnitTests --filter "FullyQualifiedName~StoryRating|FullyQualifiedName~SeedDataAlignment" và dotnet test tests/StoryPlatform.IntegrationTests --filter "FullyQualifiedName~StoryRatingApiTests|FullyQualifiedName~StoryCommunityApiTests"`]
+    ] }
+  ]
+},
+{
+  id: "t8", title: "Task 8 — Swagger và tài liệu API",
+  desc: "8 route mới hiện trong Swagger và trong docs/API_FRONTEND_ACTOR_FLOWS.md.",
+  flow: ["Mở {host}/swagger.", "Mở docs/API_FRONTEND_ACTOR_FLOWS.md."],
+  apis: [
+  { m: "SQL", p: "(tài liệu) Swagger và API_FRONTEND_ACTOR_FLOWS.md", role: "Người test",
+    what: "Kiểm bằng mắt, không gọi API.",
+    tests: [
+      ["ok", "Swagger có 2 nhóm mới", "Nhóm StoryRating (5 route: GET story/{storyId}, PUT story/{storyId}/me, DELETE story/{storyId}/me, POST {ratingId}/reports, GET /api/v1/creator/stories/{storyId}/ratings) và StoryRatingModeration (3 route)", "Mở {host}/swagger"],
+      ["ok", "Schema report dùng chuỗi enum", "ReportStoryRatingRequestDto.reason là chuỗi Offensive / Spam / PersonalInfo / Irrelevant / Other", "Mở {host}/swagger, xem schema ReportStoryRatingRequestDto"],
+      ["ok", "Tài liệu frontend", "Có luồng P7, CR6, MO11; tổng route 312; 8 thẻ endpoint mới; schema StoryRatingListDto, CommunityStoryDto…; bảng ModerationItemType có StoryRating = 7", "Mở docs/API_FRONTEND_ACTOR_FLOWS.md"]
+    ] }
+  ]
+}
+];
+
+const OVERRIDES = [];
+
+// ---------- DỮ LIỆU THẬT TỪ SEED (Database/Seed) ----------
+// Mỗi mục: [khóa khớp "METHOD đường-dẫn", { as, url, body?, note }]
+const SEEDAPI = [
+  ["GET /api/v1/StoryRating/story/", { as: P1, url: "GET /api/v1/StoryRating/story/21", note: "Truyện 21 Cá heo tốt bụng: rating 1 (parent_demo1, 5 sao, Published, bị báo cáo), rating 2 (parent_demo2, 2 sao, PendingModeration). Truyện 16: rating 3 (parent_demo1, 4 sao, Published), rating 4 (parent_demo3, 1 sao, Hidden)." }],
+  ["PUT /api/v1/StoryRating/story/{storyId}/me", { as: P1, url: "PUT /api/v1/StoryRating/story/16/me", body: J({ rating: 5, comment: "Bé rất thích Mèo Mun" }), note: "Bé 1 của parent_demo1 đã đọc truyện 16 và 21 (reading_sessions 13, 11). Bé 3 của parent_demo2 đã đọc truyện 21. parent_demo3 không có bé nào đọc 16 / 21." }],
+  ["DELETE /api/v1/StoryRating/story/{storyId}/me", { as: P1, url: "DELETE /api/v1/StoryRating/story/16/me", note: "Xóa rating 3 của parent_demo1 trên truyện 16." }],
+  ["/reports", { as: P3, url: "POST /api/v1/StoryRating/1/reports", body: J({ reason: "Offensive", note: "Nhận xét không phù hợp" }), note: "Rating 1 đã có báo cáo của parent_demo2 (mục 31 đang mở). parent_demo3 chưa báo cáo." }],
+  ["/ratings", { as: CR, url: "GET /api/v1/creator/stories/21/ratings", note: "creator_demo (id 13) là tác giả truyện 13, 14, 16, 18, 20, 21." }],
+  ["ModerationQueue?itemType=StoryRating", { as: MOD1, url: "GET /api/v1/ModerationQueue?itemType=StoryRating&pageIndex=1&pageSize=20", note: "Mục 30 (rating 2, Screening) và 31 (rating 1, Report) đang Pending; mục 32 đã Rejected." }],
+  ["ModerationQueue/{itemId}/claim", { as: MOD1, url: "POST /api/v1/ModerationQueue/30/claim", note: "Mục 30 = rating 2 bị lọc giữ (LOW_RATING_WITH_TEXT)." }],
+  ["GET /api/v1/StoryRatingModeration/", { as: MOD1, url: "GET /api/v1/StoryRatingModeration/30", note: "Claim mục trước bằng chính tài khoản này." }],
+  ["/approve", { as: MOD1, url: "POST /api/v1/StoryRatingModeration/30/approve", note: "Claim mục 30 trước." }],
+  ["/hide", { as: MOD1, url: "POST /api/v1/StoryRatingModeration/31/hide", body: J({ reason: "Nhận xét không liên quan đến nội dung truyện" }), note: "Claim mục 31 trước." }],
+  ["GET /api/v1/Story/community", { as: P1, url: "GET /api/v1/Story/community?authorUserId=13&orderBy=rating&isDescending=true", note: "Truyện công khai của creator_demo: 13, 14, 16, 20, 21. Điểm seed: 21 = 5.0 (1 lượt), 16 = 4.0 (1 lượt)." }],
+  ["creator/stories/published", { as: CR, url: "GET /api/v1/creator/stories/published?orderBy=rating&isDescending=true", note: "Cùng dữ liệu với thư viện, chỉ truyện của creator_demo." }],
+  ["/api/v1/Notification", { as: CR, url: "GET /api/v1/Notification?group=stories", note: "Seed: thông báo 29 (creator_demo, StoryRatingPublished), 30 (parent_demo3, StoryRatingModerated Hidden)." }]
+];
+const TESTDATA = [];
+const GENERIC = [
+  ["Gọi bằng token User", "Đăng nhập parent_demo1 (Demo@123), gọi cùng URL."],
+  ["Gọi bằng token Moderator", "Đăng nhập moderator_demo1 (Demo@123), gọi cùng URL."],
+  ["Gọi bằng token ContentCreator", "Đăng nhập creator_demo (Demo@123), gọi cùng URL."],
+  ["Gọi bằng token Administrator", "Đăng nhập admin_demo (Demo@123), gọi cùng URL."],
+  ["Gọi bằng token bé", "Token bé 1: lấy bằng ChildAccessCredential/easylogin/login với { \"secret\": \"demo-qr-child-01\" }, rồi gọi cùng URL."],
+  ["Không gửi token", "Bỏ header Authorization khi gọi."]
+];
+
+// ---------- GIÁ TRỊ ĐỘNG ----------
+const VAR_DEFS = [
+  ["NEW_ITEM_ID", "33", "Id mục hàng đợi StoryRating vừa tạo (mục mới đầu tiên trên DB mới seed là 33)"],
+  ["NEW_RATING_ID", "5", "Id đánh giá vừa tạo (đánh giá mới đầu tiên trên DB mới seed là 5)"]
+];
+
+// ---------- CONTROLLER ----------
+const BASE_CONTROLLERS = ["Auth", "ModerationQueue", "StoryRating", "StoryRatingModeration", "Notification"];
+const CONTROLLER_ROUTES = BASE_CONTROLLERS.map(n => ["/api/v1/" + n, n + "Controller"]).concat([
+  ["/api/v1/creator/stories/{}/ratings", "StoryRatingController"],
+  ["/api/v1/creator/stories/published", "StoryCommunityController"],
+  ["/api/v1/Story/community", "StoryCommunityController"]
+]);
+
+function overrideBody(api, t) {
+  for (const [pathPart, namePart, body] of OVERRIDES) {
+    const pathOk = pathPart.startsWith("=") ? api.p === pathPart.slice(1) : api.p.includes(pathPart);
+    if (pathOk && t[1].includes(namePart)) return body;
+  }
+  return null;
+}
+function findBody(stepId, api, t) {
+  const ov = overrideBody(api, t);
+  if (ov) return ov;
+  const sa = seedFor(api);
+  return (sa && sa.body) || api.body || null;
+}
+// Tìm đối tượng JSON đầu tiên (cân ngoặc) trong một đoạn chữ.
+function firstJson(text) {
+  if (!text) return null;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== "{") continue;
+    let depth = 0, inStr = false;
+    for (let j = i; j < text.length; j++) {
+      const c = text[j];
+      if (inStr) { if (c === "\\") j++; else if (c === '"') inStr = false; continue; }
+      if (c === '"') inStr = true;
+      else if (c === "{") depth++;
+      else if (c === "}") { depth--; if (depth === 0) { try { const obj = JSON.parse(text.slice(i, j + 1)); return obj; } catch (e) { break; } } }
+    }
+  }
+  return null;
+}
+// Dựng "request" đầy đủ cho một test case: tài khoản, method, url, body (nếu có).
+function buildRequest(api, t, data) {
+  const sa = seedFor(api);
+  let method = api.m, url = null;
+  const mm = data && data.match(/\b(GET|POST|PUT|DELETE) (\/api\/v1\/[^\s"`,;]+)/);
+  if (mm) { method = mm[1]; url = mm[2].replace(/[.)]+$/, ""); }
+  else if (sa && sa.url) { const u = sa.url.match(/^(GET|POST|PUT|DELETE) (.+)$/); if (u) { method = u[1]; url = u[2]; } }
+  if (!url) url = api.p;
+  const am = data && data.match(/[Đđ]ăng nhập ([A-Za-z0-9_]+)/);
+  let login = am ? am[1] : (sa ? sa.as : "");
+  if (/token bé/.test(t[1]) && !t[3]) login = "bé 1 (secret demo-qr-child-01)";
+  else if (/Không gửi token|Không cần token/.test(t[1] + " " + (data || ""))) login = "(không gửi token)";
+  let bodyText = t[4] || overrideBody(api, t);
+  if (!bodyText) {
+    const fromText = data && !mm ? null : null; // body trong chữ chỉ lấy khi test có dữ liệu riêng
+    const obj = firstJson(t[3] ? data : null);
+    if (obj) bodyText = JSON.stringify(obj, null, 2);
+  }
+  if (!bodyText) bodyText = (sa && sa.body) || api.body || null;
+  const noBodyMethod = method === "GET" || method === "DELETE";
+  let body;
+  if (bodyText && !noBodyMethod) { try { body = JSON.parse(bodyText); } catch (e) { body = bodyText; } }
+  const request = { login, method, url };
+  if (body !== undefined) request.body = body;
+  return { request, bodyText: body !== undefined ? (typeof body === "string" ? body : JSON.stringify(body, null, 2)) : null, hasRequest: !t[2].startsWith("CHƯA CÓ") && !api.p.startsWith("(") };
+}
+
+function seedFor(api) {
+  const key = api.m + " " + api.p;
+  let best = null, bestLen = -1;
+  for (const [k, v] of SEEDAPI) {
+    if (k.startsWith("=")) { if (key === k.slice(1)) return v; continue; }
+    if (key.includes(k) && k.length > bestLen) { best = v; bestLen = k.length; }
+  }
+  return best;
+}
+function dataFor(api, t) {
+  const name = t[1];
+  if (t[3]) return t[3];
+  for (const [pathPart, namePart, text] of TESTDATA) {
+    const pathOk = pathPart.startsWith("=") ? api.p === pathPart.slice(1) : (api.m + " " + api.p).includes(pathPart);
+    if (pathOk && name.includes(namePart)) return text;
+  }
+  for (const [namePart, text] of GENERIC) if (name.includes(namePart)) return text + ((seedFor(api) || {}).url ? " URL: " + seedFor(api).url : "");
+  const sa = seedFor(api);
+  if (!sa) return null;
+  return `Đăng nhập ${sa.as} (mật khẩu Demo@123). ${sa.url}. ${sa.note}`;
+}
+
+let VARS = {};
+try { VARS = JSON.parse(localStorage.getItem("rating-guide-vars") || "{}"); } catch (e) { VARS = {}; }
+VAR_DEFS.forEach(([k, d]) => { if (VARS[k] === undefined) VARS[k] = d; });
+function subst(text) {
+  if (text == null) return text;
+  return String(text)
+    .replace(/"<([A-Z_]+)>"/g, (m, k) => { const v = VARS[k]; if (v === undefined || v === "") return m; return /^-?\d+$/.test(v) ? v : JSON.stringify(v); })
+    .replace(/<([A-Z_]+)>/g, (m, k) => { const v = VARS[k]; return v === undefined || v === "" ? m : v; });
+}
+
+function controllerFor(api) {
+  const m = api.p.match(/\/api\/v1\/[^\s?]*/);
+  if (!m) return null;
+  const segs = m[0].toLowerCase().split("/").filter(Boolean);
+  let best = null, bestLen = -1;
+  for (const [tpl, name] of CONTROLLER_ROUTES) {
+    const t = tpl.toLowerCase().split("/").filter(Boolean);
+    if (t.length > segs.length || t.length <= bestLen) continue;
+    if (t.every((x, i) => x === "{}" || x === segs[i])) { best = name; bestLen = t.length; }
+  }
+  return best;
+}
+
+// ---------- DỰNG TRANG ----------
+const main = document.getElementById("main");
+const nav = document.getElementById("nav");
+let store = {};
+try { store = JSON.parse(localStorage.getItem("rating-guide-checks") || "{}"); } catch (e) { store = {}; }
+function save() { try { localStorage.setItem("rating-guide-checks", JSON.stringify(store)); } catch (e) {} }
+function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+// Tách đoạn ghi chú thành từng ý (theo câu, dấu chấm phẩy, dấu ·) để hiển thị hàng dọc.
+function noteList(text) {
+  const parts = String(text).split(/(?<=\.)\s+(?=[\p{Lu}\d(])|;\s+|\s+·\s+/u).map(x => x.trim()).filter(Boolean);
+  return `<ul>${parts.map(x => {
+    const call = x.match(/^(GET|POST|PUT|DELETE) (\/\S+?)\.?$/);
+    return `<li>${call ? `<span class="code">${esc(call[1] + " " + call[2])}</span>` : esc(x)}</li>`;
+  }).join("")}</ul>`;
+}
+const KIND = { ok: ["ok", "Đúng"], neg: ["neg", "Lỗi"], edge: ["edge", "Biên"], todo: ["neg", "Chưa có"] };
+
+let total = 0;
+nav.innerHTML = '<a href="#chung">Quy ước chung</a>';
+STEPS.forEach(step => {
+  nav.insertAdjacentHTML("beforeend", `<a href="#${step.id}">${esc(step.title.split(" — ")[0])}: ${esc(step.title.split(" — ")[1] || "")}</a>`);
+  const sec = document.createElement("section");
+  sec.className = "step"; sec.id = step.id;
+  let html = `<h2>${esc(step.title)}</h2><p class="step-desc">${esc(step.desc)}</p>`;
+  html += `<div class="box"><h3>Luồng chạy</h3><ol class="flow">${step.flow.map(f => `<li>${esc(f)}</li>`).join("")}</ol></div>`;
+  step.apis.forEach((api, ai) => {
+    const rows = api.tests.map((t, ti) => {
+      total++;
+      const key = `${step.id}.${ai}.${ti}`;
+      const k = KIND[t[0]];
+      const data = dataFor(api, t);
+      const req = buildRequest(api, t, data);
+      const reqText = JSON.stringify(req.request, null, 2);
+      const reqBtn = ` <button class="copy" data-copy="${COPY.push(reqText) - 1}">Copy request JSON</button>`;
+      const bodyBtnT = req.bodyText ? ` <button class="copy" data-copy="${COPY.push(req.bodyText) - 1}">Copy body</button>` : "";
+      const dataHtml = data ? `<div class="data"><b>Dữ liệu</b>${noteList(data)}</div>` : "";
+      const preHtml = req.hasRequest ? `<div class="reqbar">Đầu vào (JSON)${reqBtn}${bodyBtnT}</div><pre class="req" data-ci="${COPY.length - (req.bodyText ? 2 : 1)}">${esc(subst(reqText))}</pre>` : "";
+      return `<tr><td class="chk"><input type="checkbox" data-key="${key}" ${store[key] ? "checked" : ""}></td>` +
+             `<td><span class="tag ${k[0]}">${k[1]}</span>${esc(t[1])}${dataHtml}${preHtml}</td><td>${esc(t[2])}</td></tr>`;
+    }).join("");
+    const sa = seedFor(api);
+    const shownBody = (sa && sa.body) || api.body;
+    const bodyIdx = shownBody ? COPY.push(shownBody) - 1 : -1;
+    const bodyBtn = shownBody ? ` <button class="copy" data-copy="${bodyIdx}">Copy body</button>` : "";
+    const seedNote = sa ? `<div class="data"><b>Dữ liệu seed</b><div class="kv">` +
+      `<span>Đăng nhập</span><span><b>${esc(sa.as)}</b> · mật khẩu Demo@123</span>` +
+      `<span>Gọi</span><span><span class="code">${esc(sa.url)}</span></span>` +
+      `<span>Ghi chú</span>${noteList(sa.note)}</div></div>` : "";
+    const pathText = api.p.startsWith("(") ? "" : `${api.m} ${api.p}`;
+    const pathBtn = pathText ? ` <button class="copy" data-copy="${COPY.push(pathText) - 1}">Copy đường dẫn</button>` : "";
+    const ctl = controllerFor(api);
+    const ctlChip = ctl ? `<span class="ctl" title="Controller">${esc(ctl)}</span>` : `<span class="ctl" title="Controller">chưa có Controller</span>`;
+    const ctlLine = ctl ? `<p class="ctl-line">Controller: <b>${esc(ctl)}</b> · nhóm Swagger: <b>${esc(ctl.replace(/Controller$/, ""))}</b> · file <span class="code">src/Core/StoryPlatform.Api/Controllers/${esc(ctl)}.cs</span></p>` : "";
+    html += `<details class="api" data-search="${esc((api.m + " " + api.p + " " + (ctl || "") + " " + api.role).toLowerCase())}"><summary><span class="m ${api.m}">${api.m}</span><span class="path">${esc(api.p)}</span>${ctlChip}<span class="role">${esc(api.role)}</span></summary>` +
+      `<div class="api-body">${ctlLine}<p>${esc(api.what)}${pathBtn}</p>` +
+      (api.detail ? `<div class="detail">` + api.detail.map(([h, items]) =>
+        `<div class="detail-sec"><b>${esc(h)}</b><ul>${items.map(s => `<li>${esc(s)}</li>`).join("")}</ul></div>`).join("") + `</div>` : "") +
+      (api.warn ? `<div class="note"><b>⚠ Lưu ý:</b> ` + (Array.isArray(api.warn)
+        ? `${esc(api.warn[0])}<ol>${api.warn.slice(1).map(s => `<li>${esc(s)}</li>`).join("")}</ol>`
+        : esc(api.warn)) + `</div>` : "") +
+      seedNote +
+      (api.ui ? `<div class="detail"><div class="detail-sec"><b>Nội dung hiển thị trên màn hình (gợi ý cho frontend)</b><ul>${api.ui.map(s => `<li>${esc(s)}</li>`).join("")}</ul></div></div>` : "") +
+      (api.resp ? `<p><b>Phản hồi mẫu</b> <button class="copy" data-copy="${COPY.push(api.resp) - 1}">Copy</button></p><pre data-ci="${COPY.length - 1}">${esc(subst(api.resp))}</pre>` : "") +
+      (shownBody ? `<p><b>Body ví dụ (trường hợp đúng)</b>${bodyBtn}</p><pre data-ci="${bodyIdx}">${esc(subst(shownBody))}</pre>` : "") +
+      `<p><b>Test case</b></p><table class="tests"><thead><tr><th class="chk"></th><th>Tình huống</th><th class="exp">Kết quả mong đợi</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
+  });
+  sec.innerHTML = html;
+  main.appendChild(sec);
+});
+
+const varsGrid = document.querySelector("#vars .vars-grid");
+VAR_DEFS.forEach(([k, d, label]) => {
+  const lab = document.createElement("label");
+  lab.innerHTML = `<span><b>&lt;${k}&gt;</b> · ${esc(label)}</span>`;
+  const input = document.createElement("input");
+  input.value = VARS[k]; input.placeholder = d || "(chưa có)"; input.spellcheck = false;
+  input.addEventListener("input", () => {
+    VARS[k] = input.value.trim();
+    try { localStorage.setItem("rating-guide-vars", JSON.stringify(VARS)); } catch (e) {}
+    document.querySelectorAll("pre[data-ci]").forEach(pre => { pre.textContent = subst(COPY[Number(pre.dataset.ci)]); });
+  });
+  lab.appendChild(input);
+  varsGrid.appendChild(lab);
+});
+
+const progress = document.createElement("div");
+progress.className = "progress";
+nav.appendChild(progress);
+function updateProgress() {
+  const done = Object.values(store).filter(Boolean).length;
+  progress.textContent = `Đã chạy ${done}/${total} test case`;
+}
+updateProgress();
+
+main.addEventListener("click", e => {
+  const btn = e.target.closest && e.target.closest("button.copy");
+  if (!btn) return;
+  e.preventDefault();
+  const text = subst(COPY[Number(btn.dataset.copy)]);
+  const done = () => { const old = btn.textContent; btn.textContent = "Đã copy"; setTimeout(() => { btn.textContent = old; }, 1200); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
+  } else { fallbackCopy(text, done); }
+});
+function fallbackCopy(text, done) {
+  const ta = document.createElement("textarea");
+  ta.value = text; document.body.appendChild(ta); ta.select();
+  try { document.execCommand("copy"); done(); } catch (err) {}
+  document.body.removeChild(ta);
+}
+main.addEventListener("change", e => {
+  const key = e.target.dataset && e.target.dataset.key;
+  if (!key) return;
+  store[key] = e.target.checked; save(); updateProgress();
+});
+// Ô tìm API theo đường dẫn, method, Controller hoặc vai trò (đặt đầu thanh điều hướng, luôn nhìn thấy).
+const search = document.createElement("input");
+search.className = "search"; search.type = "search"; search.placeholder = "Tìm API: đường dẫn, Controller…";
+const found = document.createElement("div");
+found.className = "found";
+nav.prepend(found); nav.prepend(search);
+search.addEventListener("input", () => {
+  const q = search.value.trim().toLowerCase();
+  let shown = 0;
+  document.querySelectorAll("section.step").forEach(sec => {
+    if (sec.id === "chung") return;
+    let any = false;
+    sec.querySelectorAll("details.api").forEach(d => {
+      const hit = !q || d.dataset.search.includes(q);
+      d.classList.toggle("hidden-by-search", !hit);
+      if (hit) { any = true; shown++; if (q) d.open = true; }
+    });
+    sec.classList.toggle("hidden-by-search", !any);
+  });
+  found.textContent = q ? `${shown} API khớp` : "";
+});
+document.getElementById("expand").onclick = () => document.querySelectorAll("details.api").forEach(d => d.open = true);
+document.getElementById("collapse").onclick = () => document.querySelectorAll("details.api").forEach(d => d.open = false);
+document.getElementById("reset").onclick = () => {
+  store = {}; save();
+  document.querySelectorAll("input[data-key]").forEach(c => c.checked = false);
+  updateProgress();
+};
+</script>
+</body>
+</html>

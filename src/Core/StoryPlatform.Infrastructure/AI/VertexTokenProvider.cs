@@ -75,7 +75,13 @@ public sealed class VertexTokenProvider : IDisposable
 
         const string scope = "https://www.googleapis.com/auth/cloud-platform";
 
-        if (!string.IsNullOrWhiteSpace(_options.CredentialsPath) &&
+        if (!string.IsNullOrWhiteSpace(_options.CredentialsJson))
+        {
+            // Never log the JSON: it contains the private key.
+            _credential = GoogleCredential.FromJson(_options.CredentialsJson).CreateScoped(scope);
+            _logger.LogInformation("Loaded Vertex service account credentials from configuration");
+        }
+        else if (!string.IsNullOrWhiteSpace(_options.CredentialsPath) &&
             File.Exists(_options.CredentialsPath))
         {
             using var stream = File.OpenRead(_options.CredentialsPath);

@@ -30,4 +30,10 @@ public sealed class VertexOptions
     /// If empty, falls back to Application Default Credentials (ADC).
     /// </summary>
     public string CredentialsPath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Service account JSON key content, for hosts that inject secrets as environment variables and have
+    /// no key file or ADC (ECS). Takes precedence over <see cref="CredentialsPath"/>. Treat as a secret.
+    /// </summary>
+    public string CredentialsJson { get; set; } = string.Empty;
 }

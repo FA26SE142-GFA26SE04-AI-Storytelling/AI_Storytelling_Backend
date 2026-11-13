@@ -175,6 +175,8 @@ public static class DependencyInjection
 
             if (credPath is not null)
                 builder.CredentialsPath = credPath;
+            else if (!string.IsNullOrWhiteSpace(vertexOpts.CredentialsJson))
+                builder.JsonCredentials = vertexOpts.CredentialsJson;
             if (!string.IsNullOrWhiteSpace(vertexOpts.ProjectId))
                 builder.QuotaProject = vertexOpts.ProjectId;
             return builder.Build();

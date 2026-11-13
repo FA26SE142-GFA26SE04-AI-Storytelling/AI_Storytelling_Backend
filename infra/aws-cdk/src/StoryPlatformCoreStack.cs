@@ -252,9 +252,10 @@ public sealed class StoryPlatformCoreStack : Stack
             apiSecrets["SUPABASE_SECRET_KEY"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "SupabaseSecretKey");
         }
 
-        // Worker sinh ảnh và âm thanh gọi thẳng Gemini bằng API key (AI:Vertex:UseVertex mặc định false). Bật bằng
-        // --context mediaWorkerEnabled=true sau khi đã thêm key GeminiApiKey vào app-secrets. Worker cần kho media
-        // để lưu kết quả, nên bắt buộc phải có supabaseUrl.
+        // Worker sinh ảnh và âm thanh gọi thẳng Vertex AI (không qua AI API trên Cloud Run). Bật bằng
+        // --context mediaWorkerEnabled=true kèm vertexProjectId. Credential là service account trong key
+        // AiGoogleCredentialsJson của app-secrets (cùng danh tính Core dùng để gọi AI API), nên service account đó
+        // phải có roles/aiplatform.user. Worker cần kho media để lưu kết quả, nên bắt buộc phải có supabaseUrl.
         var mediaWorkerEnabled = Node.TryGetContext("mediaWorkerEnabled") switch
         {
             bool b => b,
@@ -268,8 +269,18 @@ public sealed class StoryPlatformCoreStack : Stack
                 throw new System.ArgumentException("mediaWorkerEnabled requires supabaseUrl.");
             }
 
+            var vertexProjectId = (Node.TryGetContext("vertexProjectId") as string)?.Trim();
+            if (string.IsNullOrEmpty(vertexProjectId))
+            {
+                throw new System.ArgumentException("mediaWorkerEnabled requires vertexProjectId.");
+            }
+
+            var vertexLocation = (Node.TryGetContext("vertexLocation") as string)?.Trim();
             apiEnvironment["AI__MediaGeneration__WorkerEnabled"] = "true";
-            apiSecrets["AI__Gemini__ApiKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "GeminiApiKey");
+            apiEnvironment["AI__Vertex__UseVertex"] = "true";
+            apiEnvironment["AI__Vertex__ProjectId"] = vertexProjectId;
+            apiEnvironment["AI__Vertex__Location"] = string.IsNullOrEmpty(vertexLocation) ? "us-central1" : vertexLocation;
+            apiSecrets["AI__Vertex__CredentialsJson"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "AiGoogleCredentialsJson");
         }
 
         var apiContainer = ApiTaskDefinition.AddContainer("ApiContainer", new ContainerDefinitionOptions

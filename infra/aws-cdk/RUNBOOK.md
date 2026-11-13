@@ -265,8 +265,8 @@ omitted, so check `cdk diff` shows the four `AIService__*` settings being remove
 
 ## Media storage (Supabase) and the media worker
 
-Core stores generated images and audio in Supabase Storage and generates them itself with a Gemini
-API key (`AI:Vertex:UseVertex` stays false); this does not go through the AI API on Cloud Run.
+Core stores generated images and audio in Supabase Storage and generates them itself on Vertex AI;
+this does not go through the AI API on Cloud Run.
 Both are off until the context below is set, and a media call then fails with
 `SUPABASE_STORAGE_NOT_CONFIGURED`.
 
@@ -274,14 +274,19 @@ Both are off until the context below is set, and a media call then fails with
    (service-role) key, and an existing private bucket (default name `story-media`).
 2. **AWS secret**: add to `storyplatform/core/app-secrets` with the read-edit-write procedure above:
    - `SupabaseSecretKey`: the Supabase secret key.
-   - `GeminiApiKey`: only when enabling the media worker.
-   The task fails to start if a referenced key is missing, so add the keys before deploying.
+   The task fails to start if a referenced key is missing, so add it before deploying.
+   The media worker reuses `AiGoogleCredentialsJson` (the service account Core already uses to call
+   the AI API), so grant that service account `roles/aiplatform.user` on the Google Cloud project:
+   `gcloud projects add-iam-policy-binding <project> --member serviceAccount:<core-sa-email> --role roles/aiplatform.user`.
 3. **Deploy storage**: `cdk deploy --context supabaseUrl=https://<project>.supabase.co --profile storyplatform`
    (add `--context supabaseMediaBucket=<name>` for a bucket other than `story-media`).
-4. **Enable the worker** (optional, needs storage): add `--context mediaWorkerEnabled=true`.
+4. **Enable the worker** (optional, needs storage): add
+   `--context mediaWorkerEnabled=true --context vertexProjectId=<project>`
+   (`--context vertexLocation=<region>` for a region other than `us-central1`).
 5. **Verify**: Core `/health` is healthy; upload or generate one media asset and check it appears in
    the bucket. Persist the context values in `cdk.json` once verified, otherwise the next plain deploy
    removes the settings.
 
-To roll back, remove `supabaseUrl`, `supabaseMediaBucket` and `mediaWorkerEnabled` from `cdk.json` if
+To roll back, remove `supabaseUrl`, `supabaseMediaBucket`, `mediaWorkerEnabled` and the `vertex*` values from
+`cdk.json` if
 they were saved there, then deploy without those `--context` arguments.

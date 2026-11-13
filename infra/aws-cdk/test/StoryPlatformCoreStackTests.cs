@@ -519,9 +519,9 @@ public class StoryPlatformCoreStackTests
         Assert.Contains("\"Name\":\"SUPABASE_URL\",\"Value\":\"https://example-project.supabase.co\"", json);
         Assert.Contains("\"Name\":\"SUPABASE_MEDIA_BUCKET\",\"Value\":\"story-media\"", json);
         Assert.Matches("\"Name\":\"SUPABASE_SECRET_KEY\",\"ValueFrom\":(?:(?!\"Name\":).)*:SupabaseSecretKey::", json);
-        // Kho media không tự bật worker: worker cần thêm khoá Gemini.
+        // Kho media không tự bật worker: worker cần thêm cấu hình Vertex.
         Assert.DoesNotContain("AI__MediaGeneration__WorkerEnabled", json);
-        Assert.DoesNotContain("AI__Gemini__ApiKey", json);
+        Assert.DoesNotContain("AI__Vertex__", json);
     }
 
     [Fact]
@@ -537,16 +537,46 @@ public class StoryPlatformCoreStackTests
     }
 
     [Fact]
-    public void Stack_WithMediaWorkerEnabled_TurnsOnTheWorkerWithItsGeminiKey()
+    public void Stack_WithMediaWorkerEnabled_TurnsOnTheWorkerOnVertex()
     {
         var json = System.Text.Json.JsonSerializer.Serialize(SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
         {
             ["supabaseUrl"] = "https://example-project.supabase.co",
-            ["mediaWorkerEnabled"] = "true"
+            ["mediaWorkerEnabled"] = "true",
+            ["vertexProjectId"] = "example-gcp-project"
         }).ToJSON());
 
         Assert.Contains("\"Name\":\"AI__MediaGeneration__WorkerEnabled\",\"Value\":\"true\"", json);
-        Assert.Matches("\"Name\":\"AI__Gemini__ApiKey\",\"ValueFrom\":(?:(?!\"Name\":).)*:GeminiApiKey::", json);
+        Assert.Contains("\"Name\":\"AI__Vertex__UseVertex\",\"Value\":\"true\"", json);
+        Assert.Contains("\"Name\":\"AI__Vertex__ProjectId\",\"Value\":\"example-gcp-project\"", json);
+        Assert.Contains("\"Name\":\"AI__Vertex__Location\",\"Value\":\"us-central1\"", json);
+        // Dùng lại service account Core đã có để gọi AI API, không cần thêm khoá mới vào secret.
+        Assert.Matches("\"Name\":\"AI__Vertex__CredentialsJson\",\"ValueFrom\":(?:(?!\"Name\":).)*:AiGoogleCredentialsJson::", json);
+        Assert.DoesNotContain("AI__Gemini__", json);
+    }
+
+    [Fact]
+    public void Stack_VertexLocationCanBeOverridden()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["supabaseUrl"] = "https://example-project.supabase.co",
+            ["mediaWorkerEnabled"] = "true",
+            ["vertexProjectId"] = "example-gcp-project",
+            ["vertexLocation"] = "global"
+        }).ToJSON());
+
+        Assert.Contains("\"Name\":\"AI__Vertex__Location\",\"Value\":\"global\"", json);
+    }
+
+    [Fact]
+    public void Stack_MediaWorkerRequiresVertexProject()
+    {
+        Assert.ThrowsAny<System.Exception>(() => SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["supabaseUrl"] = "https://example-project.supabase.co",
+            ["mediaWorkerEnabled"] = "true"
+        }));
     }
 
     [Fact]
@@ -557,7 +587,7 @@ public class StoryPlatformCoreStackTests
 
         Assert.DoesNotContain("SUPABASE_", json);
         Assert.DoesNotContain("AI__MediaGeneration__", json);
-        Assert.DoesNotContain("AI__Gemini__", json);
+        Assert.DoesNotContain("AI__Vertex__", json);
     }
 
     [Fact]
@@ -574,7 +604,8 @@ public class StoryPlatformCoreStackTests
     {
         Assert.ThrowsAny<System.Exception>(() => SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
         {
-            ["mediaWorkerEnabled"] = "true"
+            ["mediaWorkerEnabled"] = "true",
+            ["vertexProjectId"] = "example-gcp-project"
         }));
     }
 

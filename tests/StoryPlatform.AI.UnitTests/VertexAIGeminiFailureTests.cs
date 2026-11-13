@@ -176,9 +176,23 @@ public sealed class VertexAIGeminiFailureTests
         AuthMode = "Adc", ProjectId = "offline-test-project", Location = "global", Model = "test-model"
     }), NullLogger<VertexAIGeminiClient>.Instance, sdk);
 
-    private static Client CreateSdk(Transport transport) => new(vertexAI: true,
+    [Theory]
+    [InlineData("learning_quiz")]
+    [InlineData("learning_vocabulary")]
+    public async Task Learning_batch_disables_sdk_retries_even_when_client_default_allows_them(string schemaName)
+    {
+        using var transport = new Transport(HttpStatusCode.TooManyRequests,
+            """{"error":{"code":429,"message":"quota exhausted","status":"RESOURCE_EXHAUSTED"}}""");
+        using var sdk = CreateSdk(transport, attempts: 3);
+        var error = await Assert.ThrowsAsync<HttpRequestException>(() =>
+            CreateClient(sdk).GenerateStructuredAsync("test story", schemaName, Schema));
+        Assert.Equal(HttpStatusCode.TooManyRequests, error.StatusCode);
+        Assert.Equal(1, transport.Calls);
+    }
+
+    private static Client CreateSdk(Transport transport, int attempts = 1) => new(vertexAI: true,
         project: "offline-test-project", location: "global", credential: GoogleCredential.FromAccessToken("offline-test-token"),
-        httpOptions: new HttpOptions { RetryOptions = new HttpRetryOptions { Attempts = 1 } },
+        httpOptions: new HttpOptions { RetryOptions = new HttpRetryOptions { Attempts = attempts } },
         clientOptions: new ClientOptions { HttpClientFactory = () => new HttpClient(transport, disposeHandler: false) });
 
     private sealed class Transport(HttpStatusCode status, string body) : HttpMessageHandler

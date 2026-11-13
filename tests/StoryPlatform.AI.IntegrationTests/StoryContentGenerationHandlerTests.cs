@@ -372,6 +372,86 @@ public sealed class StoryContentGenerationHandlerTests
     }
 
     [Fact]
+    public async Task Grounded_quiz_resolves_provider_reference_to_verbatim_story_evidence()
+    {
+        var llm = new StubLlmClient("""{"items":[{"type":"short_answer","question":"Who repaired the toy?","correctAnswer":"Na","explanation":"Na repaired the toy.","hint":"Look at the first sentence.","learningGoal":"recall","sourceEvidenceId":"E1"}],"shortfallReason":""}""");
+        var handler = new GenerateQuizHandler(new StoryContentGenerationExecutor(llm,
+            Options.Create(new StoryContentGenerationOptions { BaseRetryDelaySeconds = 0 })), new StubPromptProvider());
+        var result = await handler.HandleAsync(new GenerateQuizRequest
+        {
+            RequestId = "evidence-reference", Story = GroundedStory(), AgeBand = "6-8", Language = "vi",
+            Batch = new LearningBatchSpec { Kind = "quiz_facts", TargetCount = 1 }
+        });
+        Assert.Equal("Na repaired the toy.", Assert.Single(result.Items).SourceQuote);
+        Assert.Equal(1, llm.CallCount);
+        Assert.Contains("sourceEvidenceId instead of sourceQuote", llm.LastPrompt);
+    }
+
+    [Theory]
+    [InlineData("E999")]
+    [InlineData("")]
+    public async Task Grounded_quiz_rejects_unknown_reference_with_item_index_without_provider_retry(string reference)
+    {
+        var payload = JsonSerializer.Serialize(new { items = new[]
+        {
+            new { type = "short_answer", question = "Who repaired the toy?", correctAnswer = "Na", explanation = "Na repaired it.", hint = "Read the story.", learningGoal = "recall", sourceEvidenceId = "E1" },
+            new { type = "short_answer", question = "What did Na repair?", correctAnswer = "toy", explanation = "It was a toy.", hint = "Read the story.", learningGoal = "recall", sourceEvidenceId = reference }
+        }, shortfallReason = "" });
+        var llm = new StubLlmClient(payload);
+        var handler = new GenerateQuizHandler(new StoryContentGenerationExecutor(llm,
+            Options.Create(new StoryContentGenerationOptions { BaseRetryDelaySeconds = 0 })), new StubPromptProvider());
+        var error = await Assert.ThrowsAsync<JsonException>(() => handler.HandleAsync(new GenerateQuizRequest
+        {
+            RequestId = "invalid-reference", Story = GroundedStory(), AgeBand = "6-8", Language = "vi",
+            Batch = new LearningBatchSpec { Kind = "quiz_facts", TargetCount = 2 }
+        }));
+        Assert.Equal("LEARNING_EVIDENCE_NOT_IN_STORY", error.Message);
+        Assert.Equal(1, error.Data["LearningItemIndex"]);
+        Assert.Equal(1, llm.CallCount);
+    }
+
+    [Fact]
+    public async Task Grounded_quiz_catalog_is_bounded_and_excludes_heading_title_and_lesson()
+    {
+        var body = string.Join("\n", Enumerable.Range(1, 100).Select(i => $"Na sửa món đồ số {i}."));
+        var story = GroundedStory() with { Title = "Title only", Lesson = "Lesson only",
+            StorySections = [new StorySectionDto(1, "Heading only", body)] };
+        var llm = new StubLlmClient("""{"items":[],"shortfallReason":"No further distinct questions."}""");
+        var handler = new GenerateQuizHandler(new StoryContentGenerationExecutor(llm,
+            Options.Create(new StoryContentGenerationOptions { BaseRetryDelaySeconds = 0 })), new StubPromptProvider());
+        await handler.HandleAsync(new GenerateQuizRequest
+        {
+            RequestId = "bounded-evidence", Story = story, AgeBand = "6-8", Language = "vi",
+            Batch = new LearningBatchSpec { Kind = "quiz_facts", TargetCount = 1 }
+        });
+        var catalog = JsonSerializer.Deserialize<Dictionary<string, string>>(llm.LastPrompt.Split("EVIDENCE CATALOG:\n")[1])!;
+        Assert.Equal(64, catalog.Count);
+        Assert.Equal("Na sửa món đồ số 1.", catalog["E1"]);
+        Assert.Equal("Na sửa món đồ số 100.", catalog["E64"]);
+        Assert.All(catalog.Values, quote => { Assert.InRange(quote.Length, 1, 200); Assert.Contains(quote, body); });
+        Assert.DoesNotContain("Title only", catalog.Values);
+        Assert.DoesNotContain("Heading only", catalog.Values);
+        Assert.DoesNotContain("Lesson only", catalog.Values);
+    }
+
+    [Fact]
+    public async Task Grounded_quiz_catalog_splits_long_passages_without_changing_text()
+    {
+        var body = "Na " + new string('x', 450) + " sửa đồ.";
+        var llm = new StubLlmClient("""{"items":[],"shortfallReason":"No further distinct questions."}""");
+        var handler = new GenerateQuizHandler(new StoryContentGenerationExecutor(llm,
+            Options.Create(new StoryContentGenerationOptions { BaseRetryDelaySeconds = 0 })), new StubPromptProvider());
+        await handler.HandleAsync(new GenerateQuizRequest
+        {
+            RequestId = "long-evidence", Story = GroundedStory() with { StorySections = [new StorySectionDto(1, "", body)] },
+            AgeBand = "6-8", Language = "vi", Batch = new LearningBatchSpec { Kind = "quiz_facts", TargetCount = 1 }
+        });
+        var catalog = JsonSerializer.Deserialize<Dictionary<string, string>>(llm.LastPrompt.Split("EVIDENCE CATALOG:\n")[1])!;
+        Assert.True(catalog.Count > 1);
+        Assert.All(catalog.Values, quote => { Assert.InRange(quote.Length, 1, 200); Assert.Contains(quote, body); });
+    }
+
+    [Fact]
     public async Task Grounded_batch_preserves_429_for_core_retry_owner()
     {
         var llm = new StubLlmClient(new HttpRequestException("Throttled", null, HttpStatusCode.TooManyRequests));
@@ -403,8 +483,10 @@ public sealed class StoryContentGenerationHandlerTests
         var itemSchema = llm.LastSchema.GetProperty("properties").GetProperty("items").GetProperty("items");
         Assert.Equal(new[] { "recall", "sequence", "cause", "inference", "vocabulary" },
             itemSchema.GetProperty("properties").GetProperty("learningGoal").GetProperty("enum").EnumerateArray().Select(x => x.GetString()));
-        foreach (var field in new[] { "question", "explanation", "hint", "sourceQuote" })
+        foreach (var field in new[] { "question", "explanation", "hint" })
             Assert.Equal(1, itemSchema.GetProperty("properties").GetProperty(field).GetProperty("minLength").GetInt32());
+        Assert.Equal("E1", Assert.Single(itemSchema.GetProperty("properties").GetProperty("sourceEvidenceId").GetProperty("enum").EnumerateArray()).GetString());
+        Assert.False(itemSchema.GetProperty("properties").TryGetProperty("sourceQuote", out _));
         Assert.NotNull(JsonSerializer.Deserialize<Google.GenAI.Types.Schema>(llm.LastSchema.GetRawText(),
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true }));
     }

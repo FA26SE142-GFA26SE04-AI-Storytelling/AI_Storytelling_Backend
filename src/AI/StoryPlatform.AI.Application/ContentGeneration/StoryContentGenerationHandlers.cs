@@ -225,13 +225,14 @@ public sealed class GenerateQuizHandler
         if (request.Batch is not null && request.Snapshot is not null && maxItems > request.Snapshot.Config.MaxQuizItems)
             throw new ArgumentException("Quiz batch exceeds pinned limit.");
         var prompt = PromptComposer.Compose(template, request);
-        if (request.Batch is not null) prompt += LearningBatchPrompt.Build(request.Batch);
+        var evidence = request.Batch is null ? null : new QuizEvidenceCatalog(request.Story);
+        if (request.Batch is not null) prompt += LearningBatchPrompt.Build(request.Batch) + evidence!.Instruction;
         if (request.Snapshot is not null) prompt += $"\nReturn at most {maxItems} quiz items.";
         var generated = await _executor.ExecuteAsync(
-            prompt, request.Batch is null ? "story_quiz" : "learning_quiz", request.Batch is null ? GenerationSchemas.Quiz : GenerationSchemas.GroundedQuiz,
+            prompt, request.Batch is null ? "story_quiz" : "learning_quiz", evidence?.Schema() ?? GenerationSchemas.Quiz,
             json =>
             {
-                var result = DeserializeQuiz(json, maxItems);
+                var result = DeserializeQuiz(evidence?.Resolve(json) ?? json, maxItems);
                 return request.Batch is null ? result : result with
                 {
                     Items = LearningArtifactGrounding.Quiz(request.Story, result.Items, request.Batch, result.ShortfallReason, request.Vocabulary)

@@ -19,6 +19,9 @@ public class ChildAccessCredentialConfiguration : IEntityTypeConfiguration<Child
         builder.Property(x => x.EasyLoginSecretHash)
             .HasMaxLength(64);
 
+        builder.Property(x => x.EasyLoginSecretProtected)
+            .HasMaxLength(512);
+
         builder.HasOne(x => x.ChildProfile)
             .WithMany()
             .HasForeignKey(x => x.ChildProfileId)

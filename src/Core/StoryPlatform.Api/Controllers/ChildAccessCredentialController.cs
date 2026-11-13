@@ -18,7 +18,8 @@ public class ChildAccessCredentialController : BaseApiController
     }
 
     /// <summary>
-    /// Trạng thái Easy Login của hồ sơ (đã có chưa, tạo lúc nào) — KHÔNG bao giờ trả secret hay hash.
+    /// Trạng thái Easy Login của hồ sơ (đã có chưa, tạo lúc nào) kèm secret QR đang dùng để chủ hồ sơ xem lại
+    /// và dựng QR. Secret null với mã tạo trước khi lưu bản mã hóa; không bao giờ trả hash.
     /// </summary>
     [HttpGet("{childProfileId:int}")]
     [Authorize(Roles = "User")]
@@ -44,7 +45,7 @@ public class ChildAccessCredentialController : BaseApiController
 
     /// <summary>
     /// Tạo Easy Login lâu dài (lần đầu) hoặc TẠO LẠI secret mới (secret cũ vô hiệu ngay, mọi phiên của trẻ từ secret cũ bị kết thúc).
-    /// Secret chỉ trả đúng một lần — client dựng QR từ giá trị này. Cần quyền manage_safety_settings (Owner luôn có).
+    /// Client dựng QR từ secret trả về; xem lại sau qua GET. Cần quyền manage_safety_settings (Owner luôn có).
     /// </summary>
     [HttpPost("{childProfileId:int}/easylogin")]
     [Authorize(Roles = "User")]

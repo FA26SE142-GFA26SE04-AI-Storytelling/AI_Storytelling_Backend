@@ -14,10 +14,16 @@ public class ChildAccessCredentialDto
 {
     public int ChildProfileId { get; set; }
 
-    /// <summary>Hồ sơ đã có Easy Login đang hiệu lực chưa. KHÔNG BAO GIỜ trả secret hay hash.</summary>
+    /// <summary>Hồ sơ đã có Easy Login đang hiệu lực chưa. Không bao giờ trả hash.</summary>
     public bool HasEasyLogin { get; set; }
 
     public DateTime? EasyLoginCreatedAt { get; set; }
+
+    /// <summary>
+    /// Secret QR đang dùng để phụ huynh (chủ hồ sơ) xem lại và dựng QR. Null khi chưa có mã, mã tạo trước khi
+    /// lưu bản mã hóa, hoặc không giải mã được — khi đó phụ huynh tạo mã mới để hiện QR.
+    /// </summary>
+    public string? Secret { get; set; }
 }
 
 public class ChildSessionProfileDto
@@ -27,7 +33,7 @@ public class ChildSessionProfileDto
     public string AgeBand { get; set; } = string.Empty;
 }
 
-/// <summary>Secret QR lâu dài — chỉ trả đúng một lần lúc tạo/tạo lại; client dựng QR từ giá trị này.</summary>
+/// <summary>Secret QR lâu dài trả về lúc tạo/tạo lại; client dựng QR từ giá trị này (xem lại qua GET credential).</summary>
 public class EasyLoginSecretDto
 {
     public string Secret { get; set; } = string.Empty;

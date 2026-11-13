@@ -1,5 +1,6 @@
 using StoryPlatform.Application.Features.Moderation;
 using System.IO;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,7 +35,13 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddDataProtection();
+        // Khóa lưu DB (không lưu trong container): secret QR Easy Login đã mã hóa phải giải được ở mọi instance
+        // và sau mỗi lần deploy. Tên ứng dụng cố định để các instance dùng chung một key ring.
+        services.AddDataProtection()
+            .SetApplicationName("StoryPlatform.Core")
+            .PersistKeysToDbContext<ApplicationDbContext>();
+        services.AddScoped<StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Interfaces.IEasyLoginSecretProtector,
+            StoryPlatform.Infrastructure.Security.EasyLoginSecretProtector>();
         services.AddOptions<StoryPlatform.Application.Features.CreatorAssistance.CreatorAssistanceOptions>()
             .Bind(configuration.GetSection(StoryPlatform.Application.Features.CreatorAssistance.CreatorAssistanceOptions.SectionName))
             .Validate(x => x.HasValidLimits(),

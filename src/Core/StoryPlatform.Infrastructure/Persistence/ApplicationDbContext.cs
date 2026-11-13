@@ -1,12 +1,13 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using StoryPlatform.Domain.Entities;
 
 namespace StoryPlatform.Infrastructure.Persistence;
 
-public class ApplicationDbContext : DbContext
+public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
 {
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options)
     {
@@ -96,11 +97,15 @@ public class ApplicationDbContext : DbContext
     public DbSet<PaymentReconciliationException> PaymentReconciliationExceptions => Set<PaymentReconciliationException>();
     public DbSet<CreditUsage> CreditUsages => Set<CreditUsage>();
 
+    // Khóa ASP.NET Data Protection: lưu DB để mọi instance Cloud Run dùng chung và còn sau mỗi lần deploy.
+    public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
         // Tự động áp dụng tất cả các cấu hình IEntityTypeConfiguration trong assembly hiện tại
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+        modelBuilder.Entity<DataProtectionKey>().ToTable("data_protection_keys");
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)

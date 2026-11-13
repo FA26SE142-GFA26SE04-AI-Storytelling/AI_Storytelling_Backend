@@ -10,6 +10,8 @@ using StoryPlatform.Application.Features.RoadmapTemplates.Interfaces;
 using StoryPlatform.Application.Features.RoadmapTemplates.Services;
 using StoryPlatform.Application.Features.ContentReports.Interfaces;
 using StoryPlatform.Application.Features.ContentReports.Services;
+using StoryPlatform.Application.Features.StoryRatings.Interfaces;
+using StoryPlatform.Application.Features.StoryRatings.Services;
 using StoryPlatform.Application.Features.Auth.Services;
 using StoryPlatform.Application.Features.AIStoryInput.Guardrails;
 using StoryPlatform.Application.Features.AIStoryInput.Interfaces;
@@ -123,6 +125,8 @@ public static class DependencyInjection
         services.AddScoped<IReportableStoryResolver, ReportableStoryResolver>();
         services.AddScoped<IContentReportService, ContentReportService>();
         services.AddScoped<IContentReportReviewService, ContentReportReviewService>();
+        services.AddScoped<IStoryRatingService, StoryRatingService>();
+        services.AddScoped<IStoryRatingModerationService, StoryRatingModerationService>();
         // Hệ quả của Archive: thứ tự đăng ký = thứ tự chạy.
         services.AddScoped<IStoryArchiveHandler, PendingSubmissionArchiveHandler>();
         services.AddScoped<IStoryArchiveHandler, ReadingSessionArchiveHandler>();

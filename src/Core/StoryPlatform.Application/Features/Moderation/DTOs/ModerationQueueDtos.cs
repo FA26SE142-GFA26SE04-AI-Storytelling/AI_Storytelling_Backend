@@ -9,6 +9,9 @@ public class EnqueueModerationItemCommand
     public int? StoryId { get; set; }
     public int? StoryVersionId { get; set; }
     public int? ContentReportId { get; set; }
+
+    /// <summary>Đánh giá truyện cần Moderator xem (ItemType = StoryRating).</summary>
+    public int? StoryRatingId { get; set; }
     public int? ReadingRoadmapId { get; set; }
 
     /// <summary>Người tạo / nộp nội dung — không ai được duyệt mục có người tạo là chính mình.</summary>

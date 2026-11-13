@@ -24,7 +24,7 @@ public sealed class Luong5ModeratorSchemaModelTests
     public void Moderation_enums_match_workflow_documents()
     {
         Assert.Equal(
-            new[] { "PublicStoryReview", "GrayZoneStory", "ContentReport", "RoadmapTemplateReview", "CommunitySubmission", "PublicStoryRemoval" },
+            new[] { "PublicStoryReview", "GrayZoneStory", "ContentReport", "RoadmapTemplateReview", "CommunitySubmission", "PublicStoryRemoval", "StoryRating" },
             Enum.GetNames<ModerationItemType>());
         Assert.Equal(
             new[] { "Pending", "Claimed", "Approved", "ChangesRequested", "Rejected", "Cleared", "Blocked",

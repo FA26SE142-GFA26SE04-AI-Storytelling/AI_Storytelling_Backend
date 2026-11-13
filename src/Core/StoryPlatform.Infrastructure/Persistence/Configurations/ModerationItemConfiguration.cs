@@ -43,6 +43,7 @@ public class ModerationItemConfiguration : IEntityTypeConfiguration<ModerationIt
         builder.HasOne(x => x.Story).WithMany().HasForeignKey(x => x.StoryId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.StoryVersion).WithMany().HasForeignKey(x => x.StoryVersionId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.ContentReport).WithMany().HasForeignKey(x => x.ContentReportId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(x => x.StoryRating).WithMany().HasForeignKey(x => x.StoryRatingId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.ReadingRoadmap).WithMany().HasForeignKey(x => x.ReadingRoadmapId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.CreatedByUser).WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.SourceChildProfile).WithMany().HasForeignKey(x => x.SourceChildProfileId).OnDelete(DeleteBehavior.Restrict);
@@ -60,6 +61,11 @@ public class ModerationItemConfiguration : IEntityTypeConfiguration<ModerationIt
         builder.HasIndex(x => x.ReadingRoadmapId)
             .IsUnique()
             .HasFilter("\"ItemType\" = 'RoadmapTemplateReview' AND \"Status\" IN ('Pending', 'Claimed') AND NOT \"IsDeleted\"");
+
+        // Mỗi đánh giá truyện tối đa một mục kiểm duyệt đang mở.
+        builder.HasIndex(x => x.StoryRatingId)
+            .IsUnique()
+            .HasFilter("\"ItemType\" = 'StoryRating' AND \"Status\" IN ('Pending', 'Claimed') AND NOT \"IsDeleted\"");
 
         builder.HasQueryFilter(x => !x.IsDeleted);
     }

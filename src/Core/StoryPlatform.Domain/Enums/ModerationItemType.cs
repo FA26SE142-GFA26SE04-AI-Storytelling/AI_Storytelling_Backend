@@ -7,5 +7,7 @@ public enum ModerationItemType
     ContentReport = 3,
     RoadmapTemplateReview = 4,
     CommunitySubmission = 5,
-    PublicStoryRemoval = 6
+    PublicStoryRemoval = 6,
+    /// <summary>Đánh giá truyện của phụ huynh bị lọc tự động giữ lại hoặc bị báo cáo.</summary>
+    StoryRating = 7
 }

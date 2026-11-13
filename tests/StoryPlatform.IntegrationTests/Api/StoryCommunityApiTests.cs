@@ -77,6 +77,44 @@ public sealed class StoryCommunityApiTests(ApiFactory factory) : IClassFixture<A
         Assert.Equal(HttpStatusCode.Unauthorized, (await factory.CreateClient().GetAsync(url)).StatusCode);
     }
 
+    [Fact]
+    public async Task Library_ShowsAverageRating_AndSortsByIt()
+    {
+        var creator = await factory.AddUserAsync(UserRole.ContentCreator);
+        var first = await factory.AddUserAsync(UserRole.User);
+        var second = await factory.AddUserAsync(UserRole.User);
+        var (twoRatingsId, oneRatingId) = await factory.WithDbAsync(async db =>
+        {
+            Story Published(string title) => new()
+            {
+                AuthorUserId = creator.Id, Title = title, Scope = StoryScope.Creator, Source = StorySource.Manual,
+                Status = StoryStatus.Ready, IsPublished = true, Language = "vi", AgeBand = "6-8"
+            };
+            var twoRatings = Published("Hai đánh giá");
+            db.Add(twoRatings);
+            await db.SaveChangesAsync();
+            var oneRating = Published("Một đánh giá");
+            db.Add(oneRating);
+            await db.SaveChangesAsync();
+            db.AddRange(
+                new StoryRating { StoryId = twoRatings.Id, ReviewerUserId = first.Id, Rating = 5, Status = StoryRatingStatus.Published },
+                new StoryRating { StoryId = twoRatings.Id, ReviewerUserId = second.Id, Rating = 3, Status = StoryRatingStatus.Published },
+                new StoryRating { StoryId = oneRating.Id, ReviewerUserId = first.Id, Rating = 5, Status = StoryRatingStatus.Published },
+                new StoryRating { StoryId = oneRating.Id, ReviewerUserId = second.Id, Rating = 1, Status = StoryRatingStatus.Hidden });
+            await db.SaveChangesAsync();
+            return (twoRatings.Id, oneRating.Id);
+        });
+
+        var data = await AdminApi.GetDataAsync(factory.ClientFor(first),
+            $"/api/v1/Story/community?authorUserId={creator.Id}&orderBy=rating&isDescending=true");
+
+        var rows = data.GetProperty("items").EnumerateArray()
+            .Select(item => (item.GetProperty("id").GetInt32(), item.GetProperty("averageRating").GetDouble(),
+                item.GetProperty("ratingCount").GetInt32()))
+            .ToArray();
+        Assert.Equal(new[] { (oneRatingId, 5.0, 1), (twoRatingsId, 4.0, 2) }, rows);
+    }
+
     /// <summary>
     /// Hai truyện công khai của <paramref name="author"/>: "popular" có 2 phiên đọc, 0 yêu thích;
     /// "loved" (tạo sau) có 1 phiên đọc, 2 trẻ yêu thích.

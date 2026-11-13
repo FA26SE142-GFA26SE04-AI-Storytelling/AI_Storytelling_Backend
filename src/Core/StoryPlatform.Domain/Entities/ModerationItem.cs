@@ -22,6 +22,9 @@ public class ModerationItem : BaseEntity
     public int? ContentReportId { get; set; }
     public virtual ContentReport? ContentReport { get; set; }
 
+    public int? StoryRatingId { get; set; }
+    public virtual StoryRating? StoryRating { get; set; }
+
     public int? ReadingRoadmapId { get; set; }
     public virtual ReadingRoadmap? ReadingRoadmap { get; set; }
 

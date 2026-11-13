@@ -1998,6 +1998,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int?>("StoryId")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("StoryRatingId")
+                        .HasColumnType("integer");
+
                     b.Property<int?>("StoryVersionId")
                         .HasColumnType("integer");
 
@@ -2028,6 +2031,10 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasIndex("StoryId")
                         .IsUnique()
                         .HasFilter("\"ItemType\" = 'CommunitySubmission' AND \"Status\" IN ('Pending', 'Approved') AND NOT \"IsDeleted\"");
+
+                    b.HasIndex("StoryRatingId")
+                        .IsUnique()
+                        .HasFilter("\"ItemType\" = 'StoryRating' AND \"Status\" IN ('Pending', 'Claimed') AND NOT \"IsDeleted\"");
 
                     b.HasIndex("StoryVersionId");
 
@@ -4035,6 +4042,124 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("story_generation_requests", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryRating", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("HiddenReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("ModeratedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ModeratedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Rating")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ReviewerUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<int>("StoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ModeratedByUserId");
+
+                    b.HasIndex("ReviewerUserId");
+
+                    b.HasIndex("StoryId", "ReviewerUserId")
+                        .IsUnique()
+                        .HasFilter("NOT \"IsDeleted\"");
+
+                    b.HasIndex("StoryId", "Status");
+
+                    b.ToTable("story_ratings", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_story_ratings_rating_range", "\"Rating\" BETWEEN 1 AND 5");
+                        });
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryRatingReport", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("ModerationItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<int>("ReporterUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<int>("StoryRatingId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReporterUserId");
+
+                    b.HasIndex("ModerationItemId", "Status");
+
+                    b.HasIndex("StoryRatingId", "ReporterUserId")
+                        .IsUnique();
+
+                    b.ToTable("story_rating_reports", (string)null);
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryScene", b =>
                 {
                     b.Property<int>("Id")
@@ -5703,6 +5828,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasForeignKey("StoryId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryRating", "StoryRating")
+                        .WithMany()
+                        .HasForeignKey("StoryRatingId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("StoryPlatform.Domain.Entities.StoryVersion", "StoryVersion")
                         .WithMany()
                         .HasForeignKey("StoryVersionId")
@@ -5723,6 +5853,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("SourceChildProfile");
 
                     b.Navigation("Story");
+
+                    b.Navigation("StoryRating");
 
                     b.Navigation("StoryVersion");
                 });
@@ -6325,6 +6457,58 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("Story");
 
                     b.Navigation("SubmittedByUser");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryRating", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "ModeratedByUser")
+                        .WithMany()
+                        .HasForeignKey("ModeratedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "ReviewerUser")
+                        .WithMany()
+                        .HasForeignKey("ReviewerUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.Story", "Story")
+                        .WithMany()
+                        .HasForeignKey("StoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ModeratedByUser");
+
+                    b.Navigation("ReviewerUser");
+
+                    b.Navigation("Story");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryRatingReport", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.ModerationItem", "ModerationItem")
+                        .WithMany()
+                        .HasForeignKey("ModerationItemId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "ReporterUser")
+                        .WithMany()
+                        .HasForeignKey("ReporterUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryRating", "StoryRating")
+                        .WithMany()
+                        .HasForeignKey("StoryRatingId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ModerationItem");
+
+                    b.Navigation("ReporterUser");
+
+                    b.Navigation("StoryRating");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryScene", b =>

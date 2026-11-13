@@ -162,6 +162,52 @@ public sealed class StoryScopeBoundaryTests
     }
 
     [Fact]
+    public async Task CommunityList_ReturnsAverageRatingFromPublishedRatingsOnly()
+    {
+        var rated = PublishedCreatorStory(10, 7, new DateTime(2026, 11, 1));
+        var unrated = PublishedCreatorStory(11, 7, new DateTime(2026, 11, 2));
+        var ratings = new[]
+        {
+            new StoryRating { StoryId = 10, ReviewerUserId = 1, Rating = 5, Status = StoryRatingStatus.Published },
+            new StoryRating { StoryId = 10, ReviewerUserId = 2, Rating = 4, Status = StoryRatingStatus.Published },
+            new StoryRating { StoryId = 10, ReviewerUserId = 3, Rating = 1, Status = StoryRatingStatus.PendingModeration },
+            new StoryRating { StoryId = 10, ReviewerUserId = 4, Rating = 1, Status = StoryRatingStatus.Hidden },
+        };
+
+        var result = await Service(PagedStoryRepo(rated, unrated), ratings: ratings)
+            .GetPublishedCreatorStoriesAsync(new StoryFilterRequestDto());
+
+        Assert.Equal(new (int, double?, int)[] { (10, 4.5, 2), (11, null, 0) },
+            result.Items.Select(item => (item.Id, item.AverageRating, item.RatingCount)));
+    }
+
+    [Theory]
+    [InlineData(true, new[] { 11, 10, 12 })]
+    [InlineData(false, new[] { 12, 10, 11 })]
+    public async Task CommunityList_SortsByAverageRatingThenCount(bool descending, int[] expected)
+    {
+        var stories = new[]
+        {
+            PublishedCreatorStory(10, 7, new DateTime(2026, 11, 1)),
+            PublishedCreatorStory(11, 7, new DateTime(2026, 11, 2)),
+            PublishedCreatorStory(12, 7, new DateTime(2026, 11, 3)),
+        };
+        // 10: trung bình 4 (1 lượt); 11: trung bình 4 (2 lượt); 12: chưa có đánh giá hiện (= 0).
+        var ratings = new[]
+        {
+            new StoryRating { StoryId = 10, ReviewerUserId = 1, Rating = 4, Status = StoryRatingStatus.Published },
+            new StoryRating { StoryId = 11, ReviewerUserId = 1, Rating = 5, Status = StoryRatingStatus.Published },
+            new StoryRating { StoryId = 11, ReviewerUserId = 2, Rating = 3, Status = StoryRatingStatus.Published },
+            new StoryRating { StoryId = 12, ReviewerUserId = 1, Rating = 5, Status = StoryRatingStatus.Hidden },
+        };
+
+        var result = await Service(PagedStoryRepo(stories), ratings: ratings)
+            .GetPublishedCreatorStoriesAsync(new StoryFilterRequestDto { OrderBy = "Rating", IsDescending = descending });
+
+        Assert.Equal(expected, result.Items.Select(item => item.Id));
+    }
+
+    [Fact]
     public async Task MyPublishedList_UsesCallerAsAuthor_IgnoringRequestedAuthor()
     {
         var mine = PublishedCreatorStory(20, 7, new DateTime(2026, 11, 1));
@@ -238,12 +284,13 @@ public sealed class StoryScopeBoundaryTests
     }
 
     private static StoryService Service(Mock<IGenericRepository<Story>> repo,
-        ReadingSession[]? sessions = null, ReadingProgress[]? progress = null)
+        ReadingSession[]? sessions = null, ReadingProgress[]? progress = null, StoryRating[]? ratings = null)
     {
         var uow = new Mock<IUnitOfWork>();
         uow.Setup(x => x.Repository<Story>()).Returns(repo.Object);
         uow.Setup(x => x.Repository<ReadingSession>()).Returns(ReadOnlyRepo(sessions ?? []).Object);
         uow.Setup(x => x.Repository<ReadingProgress>()).Returns(ReadOnlyRepo(progress ?? []).Object);
+        uow.Setup(x => x.Repository<StoryRating>()).Returns(ReadOnlyRepo(ratings ?? []).Object);
         return new StoryService(uow.Object);
     }
 

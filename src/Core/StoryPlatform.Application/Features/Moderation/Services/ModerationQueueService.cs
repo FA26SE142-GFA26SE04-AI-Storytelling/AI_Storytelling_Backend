@@ -35,6 +35,7 @@ public class ModerationQueueService : IModerationQueueService
             StoryId = command.StoryId,
             StoryVersionId = command.StoryVersionId,
             ContentReportId = command.ContentReportId,
+            StoryRatingId = command.StoryRatingId,
             ReadingRoadmapId = command.ReadingRoadmapId,
             CreatedByUserId = command.CreatedByUserId,
             SourceChildProfileId = command.SourceChildProfileId,
@@ -111,10 +112,10 @@ public class ModerationQueueService : IModerationQueueService
 
         if (actor.Role == UserRole.Administrator)
         {
-            // Report nội dung chỉ do Moderator xử lý, kể cả khi không còn Moderator (không có cơ chế dự phòng).
-            if (item.ItemType == ModerationItemType.ContentReport)
+            // Report nội dung và đánh giá truyện chỉ do Moderator xử lý, kể cả khi không còn Moderator.
+            if (item.ItemType is ModerationItemType.ContentReport or ModerationItemType.StoryRating)
             {
-                throw new ForbiddenException("Report nội dung chỉ do Moderator xử lý.");
+                throw new ForbiddenException("Report nội dung và đánh giá truyện chỉ do Moderator xử lý.");
             }
 
             await EnsureAdministratorMayClaimAsync(item, cancellationToken);

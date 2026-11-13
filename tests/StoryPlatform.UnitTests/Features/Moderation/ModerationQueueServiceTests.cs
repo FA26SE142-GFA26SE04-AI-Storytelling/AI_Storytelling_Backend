@@ -353,6 +353,20 @@ public class ModerationQueueServiceTests
     }
 
     [Fact]
+    public async Task ClaimAsync_AdministratorCannotClaimStoryRating_EvenWithoutModerators()
+    {
+        var item = PendingItem(createdBy: _parent.Id);
+        item.ItemType = ModerationItemType.StoryRating;
+        ReturnItem(item);
+        SetEligibleModeratorCount(0);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.ClaimAsync(_admin.Id, item.Id));
+
+        Assert.Equal(ModerationItemStatus.Pending, item.Status);
+        Assert.Null(item.ClaimedByUserId);
+    }
+
+    [Fact]
     public async Task OpenAsync_ClaimedByActor_ReturnsDetailAndWritesAudit()
     {
         var item = PendingItem();

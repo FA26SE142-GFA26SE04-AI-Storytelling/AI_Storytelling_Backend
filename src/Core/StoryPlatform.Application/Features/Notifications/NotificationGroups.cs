@@ -35,7 +35,9 @@ public static class NotificationGroups
             or NotificationType.ModerationSlaWarning
             or NotificationType.ContentModerationResult => Moderation,
 
-        NotificationType.ContentReportResolved => Stories,
+        NotificationType.ContentReportResolved
+            or NotificationType.StoryRatingPublished
+            or NotificationType.StoryRatingModerated => Stories,
 
         _ => Account
     };

@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TÊN CHỨC NĂNG — test API</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5d6679; --line: #dfe3ea;
+    --accent: #2f5fd0; --ok: #1b8a4b; --warn: #b26a00; --bad: #c0392b;
+    --get: #1b8a4b; --post: #2f5fd0; --put: #b26a00; --delete: #c0392b;
+    --code: #eef1f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171e; --panel: #1c212b; --text: #e6e9ef; --muted: #9aa3b5; --line: #2d3442;
+      --accent: #7aa2ff; --ok: #4cc58a; --warn: #e5a23c; --bad: #ff7b6b;
+      --get: #4cc58a; --post: #7aa2ff; --put: #e5a23c; --delete: #ff7b6b;
+      --code: #232a37;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 system-ui, "Segoe UI", sans-serif; }
+  header { padding: 24px 16px 8px; max-width: 1100px; margin: 0 auto; }
+  h1 { margin: 0 0 6px; font-size: 24px; }
+  .sub { color: var(--muted); margin: 0; }
+  .layout { display: grid; grid-template-columns: 230px 1fr; gap: 24px; max-width: 1100px; margin: 0 auto; padding: 16px; }
+  nav { position: sticky; top: 12px; align-self: start; max-height: calc(100vh - 24px); overflow: auto; }
+  nav a { display: block; padding: 7px 10px; border-radius: 8px; color: var(--text); text-decoration: none; font-size: 14px; }
+  nav a:hover { background: var(--panel); }
+  nav .progress { color: var(--muted); font-size: 12px; margin: 10px 10px 0; }
+  main { min-width: 0; }
+  section.step { margin-bottom: 36px; }
+  section.step > h2 { font-size: 20px; margin: 0 0 4px; }
+  .step-desc { color: var(--muted); margin: 0 0 12px; }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+  .box h3 { margin: 0 0 6px; font-size: 15px; }
+  .box ul { margin: 6px 0 0; padding-left: 20px; }
+  .note { border-left: 3px solid var(--warn); padding: 8px 12px; background: var(--panel); border-radius: 0 8px 8px 0; margin: 10px 0; font-size: 14px; }
+  .detail { border-left: 3px solid var(--accent); padding: 8px 12px; background: var(--panel); border-radius: 0 8px 8px 0; margin: 10px 0; font-size: 14px; }
+  .detail-sec + .detail-sec { margin-top: 8px; }
+  .detail ul { margin: 4px 0 0; padding-left: 20px; }
+  details.api { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; }
+  details.api > summary { cursor: pointer; padding: 11px 14px; list-style: none; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  details.api > summary::-webkit-details-marker { display: none; }
+  .m { font-weight: 700; font-size: 12px; padding: 2px 8px; border-radius: 6px; color: #fff; min-width: 58px; text-align: center; }
+  .m.GET { background: var(--get); } .m.POST { background: var(--post); } .m.PUT { background: var(--put); } .m.DELETE { background: var(--delete); }
+  @media (prefers-color-scheme: dark) { .m { color: #10131a; } }
+  .path { font-family: ui-monospace, Consolas, monospace; font-size: 13.5px; word-break: break-all; }
+  .role { margin-left: auto; font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; }
+  .ctl { font: 600 12px ui-monospace, Consolas, monospace; color: var(--accent); background: var(--code); border-radius: 6px; padding: 1px 7px; }
+  .ctl-line { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+  .ctl-line b { color: var(--text); }
+  nav .search { width: 100%; margin: 0 0 8px; font: 13px system-ui, "Segoe UI", sans-serif; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); }
+  nav .found { color: var(--muted); font-size: 12px; margin: -4px 10px 6px; flex-basis: 100%; }
+  nav .found:empty { display: none; }
+  nav .search { flex-basis: 100%; }
+  .hidden-by-search { display: none !important; }
+  .api-body { padding: 0 16px 14px; border-top: 1px solid var(--line); }
+  .api-body p { margin: 10px 0 6px; }
+  pre { background: var(--code); border-radius: 8px; padding: 10px 12px; overflow: auto; font: 12.5px/1.5 ui-monospace, Consolas, monospace; margin: 6px 0 10px; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 14px; }
+  table.tests { table-layout: fixed; }
+  table.tests th.chk { width: 34px; }
+  table.tests th.exp { width: 28%; }
+  th, td { text-align: left; padding: 7px 8px; border-top: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+  td.chk { width: 34px; }
+  td.exp { white-space: nowrap; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; margin-right: 6px; }
+  .tag.ok { color: var(--ok); border: 1px solid var(--ok); }
+  .tag.neg { color: var(--bad); border: 1px solid var(--bad); }
+  .tag.edge { color: var(--warn); border: 1px solid var(--warn); }
+  .code { font-family: ui-monospace, Consolas, monospace; background: var(--code); border-radius: 5px; padding: 0 5px; font-size: 13px; }
+  .flow li { margin-bottom: 4px; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 14px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.copy { font-size: 12px; padding: 1px 8px; margin-left: 6px; border-radius: 6px; }
+  .data { margin-top: 4px; padding: 6px 8px; background: var(--code); border-radius: 6px; font-size: 12.5px; color: var(--muted); }
+  .data b { color: var(--text); }
+  .data > b { display: block; margin-bottom: 2px; }
+  .data ul { margin: 0; padding-left: 18px; }
+  .data li { margin: 1px 0; }
+  .data .kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 10px; align-items: start; }
+  .data .kv > span:nth-child(odd) { color: var(--muted); white-space: nowrap; }
+  .data .kv > span:nth-child(even), .data .kv > ul { color: var(--text); min-width: 0; word-break: break-word; }
+  @media (max-width: 760px) { .data .kv { grid-template-columns: 1fr; } }
+  .reqbar { margin-top: 6px; font-size: 12px; color: var(--muted); }
+  pre.req { margin: 3px 0 2px; max-height: 260px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .vars-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px 12px; }
+  .vars-grid label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 3px; }
+  .vars-grid input { font: 13px ui-monospace, Consolas, monospace; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--code); color: var(--text); min-width: 0; }
+  @media (max-width: 760px) {
+    .layout { grid-template-columns: 1fr; }
+    nav { position: static; max-height: none; display: flex; flex-wrap: wrap; gap: 4px; }
+    .role { margin-left: 0; }
+  }
+  .m.SQL { background: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>API và test case — TÊN CHỨC NĂNG</h1>
+  <p class="sub">AI Storytelling Backend · mô tả ngắn phạm vi · mỗi API có giải thích, body mẫu và test case kèm đầu vào / kết quả mong đợi. Tích vào ô để đánh dấu đã chạy (lưu trong trình duyệt).</p>
+</header>
+
+<div class="layout">
+  <nav id="nav"></nav>
+  <main id="main">
+
+    <section class="step" id="chung">
+      <h2>Quy ước chung</h2>
+      <div class="box">
+        <h3>Cách gọi</h3>
+        <ul>
+          <li>Địa chỉ gốc: <span class="code">{host}/api/v1/{Controller}</span>. Phản hồi bọc trong <span class="code">ApiResponse</span>: <span class="code">{ "success", "message", "data", "errors" }</span>.</li>
+          <li>Đính kèm <span class="code">Authorization: Bearer {accessToken}</span>. Token trẻ chỉ dùng được cho API đánh dấu <b>ChildSession</b>.</li>
+          <li>Lỗi nghiệp vụ: <span class="code">{ "success": false, "message": "…", "data": null }</span>. Sai kiểu dữ liệu: 400 <span class="code">"Dữ liệu đầu vào không hợp lệ."</span> kèm <span class="code">errors</span>. Sai vai trò: <b>403 body rỗng</b>; không có token: <b>401</b>.</li>
+          <li>Mã lỗi: <b>400</b> sai dữ liệu, <b>401</b> chưa đăng nhập, <b>403</b> sai vai trò / không có quyền, <b>404</b> không có, <b>409</b> xung đột trạng thái.</li>
+          <li>Enum gửi dạng chuỗi (ghi rõ các giá trị hợp lệ ở đây).</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h3>Dữ liệu thật trong Database/Seed (nạp bằng Seed-Database.ps1)</h3>
+        <ul>
+          <li><b>Trước hết:</b> áp migration cần thiết (nếu có), rồi chạy <span class="code">Database/Seed-Database.ps1</span>.</li>
+          <li><b>Mật khẩu mọi tài khoản demo: Demo@123.</b> Đăng nhập bằng <span class="code">POST /api/v1/Auth/login</span> với <span class="code">{ "identifier": "tên-đăng-nhập", "password": "Demo@123" }</span>.</li>
+          <li>Tài khoản dùng trong trang: (liệt kê username, id, role, dữ liệu liên quan).</li>
+          <li>Dữ liệu seed liên quan: (liệt kê bảng / id / trạng thái ban đầu mà kết quả mong đợi dựa vào).</li>
+          <li>Id kế tiếp trên DB mới seed: (để điền mặc định cho giá trị động).</li>
+          <li><b>Lưu ý:</b> test làm đổi dữ liệu. Ghi rõ: mỗi Task bắt đầu từ DB vừa seed, chạy theo thứ tự trên trang.</li>
+        </ul>
+      </div>
+      <div class="note">Danh sách các bước / Task và nguồn (spec, plan). Mục có nhãn SQL là kiểm tra trực tiếp trên database / tài liệu, không gọi API.</div>
+      <div class="box" id="vars">
+        <h3>Giá trị động (tự thay khi copy)</h3>
+        <p class="sub" style="margin:0 0 8px">Giá trị chỉ có sau khi gọi API được viết dạng <span class="code">&lt;TÊN&gt;</span>. Nhập giá trị thật vào ô dưới đây; khung JSON và nút Copy tự thay. Mặc định đúng cho DB vừa nạp seed.</p>
+        <div class="vars-grid"></div>
+      </div>
+      <div class="toolbar">
+        <button id="expand">Mở tất cả API</button>
+        <button id="collapse">Đóng tất cả</button>
+        <button id="reset">Xóa các dấu đã tích</button>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+// =====================================================================
+// FILE MẪU HƯỚNG DẪN TEST API (khung lấy từ api-test-guide-buoc-1-7.html)
+// Chỉ sửa phần DỮ LIỆU từ đây tới "HẾT PHẦN DỮ LIỆU"; không sửa phần engine bên dưới.
+// =====================================================================
+const COPY = [];
+const J = o => JSON.stringify(o, null, 2);   // object → JSON đẹp (dùng cho body / resp)
+const A = (n, c = "a") => c.repeat(n);        // chuỗi dài n ký tự (test giới hạn độ dài)
+
+// Mỗi bước (Task) = một section. Mỗi API = một khối gập/mở.
+// Test case: [loại, tình huống, kết quả mong đợi, dữ liệu?, body?]
+//   loại: "ok" (Đúng) · "neg" (Lỗi) · "edge" (Biên) · "todo" (Chưa có)
+//   dữ liệu (tùy chọn): câu dạng "Đăng nhập <username>. <METHOD> /api/v1/... với { json }".
+//     Trang tự lấy tài khoản sau "Đăng nhập", METHOD + URL đầu tiên và JSON đầu tiên làm request.
+//   body (tùy chọn): chuỗi JSON dùng làm body khi không muốn đặt JSON trong câu dữ liệu (ví dụ chuỗi rất dài).
+//   Không có dữ liệu → dùng câu trong GENERIC (theo tên tình huống) hoặc dữ liệu seed của API (SEEDAPI).
+// API có p bắt đầu bằng "(" (ví dụ "(SQL) …", "(tài liệu) …") là kiểm tra thủ công: không dựng request JSON.
+const STEPS = [
+{
+  id: "t1", title: "Task 1 — Tên chức năng",
+  desc: "Mô tả ngắn chức năng của bước này: ai dùng, để làm gì, quy tắc chính.",
+  flow: [
+    "Bắt đầu từ DB vừa nạp seed.",
+    "Gọi API A để …",
+    "Gọi API B để …"
+  ],
+  apis: [
+  { m: "POST", p: "/api/v1/Example/{id}/action", role: "User (phụ huynh)",
+    what: "Giải thích API làm gì, khi nào dùng.",
+    detail: [
+      ["Hệ thống kiểm lần lượt", ["Điều kiện 1 → nếu không: 403.", "Điều kiện 2 → nếu không: 400 \"Thông báo lỗi.\""]],
+      ["Xử lý", ["Ghi gì vào bảng nào, gửi thông báo gì, ghi audit gì."]],
+      ["Kết quả", ["Các trường trong data."]]
+    ],
+    warn: null, // hoặc chuỗi / mảng [tiêu đề, bước 1, bước 2…] khi cần cảnh báo (ví dụ phải claim trước)
+    body: J({ field: "giá trị mẫu" }),
+    resp: J({ success: true, message: "Thông báo thành công.", data: { id: 1 }, errors: null }),
+    tests: [
+      ["ok", "Trường hợp đúng", "200; data.id = 1", `Đăng nhập parent_demo1. POST /api/v1/Example/1/action với { "field": "giá trị mẫu" }`],
+      ["edge", "Giá trị biên", "200; …", `Đăng nhập parent_demo1. POST /api/v1/Example/1/action với { "field": "" }`],
+      ["neg", "Chuỗi quá dài", "400 \"Thông báo lỗi.\"", `Đăng nhập parent_demo1. POST /api/v1/Example/1/action`, J({ field: A(1001) })],
+      ["neg", "Gọi bằng token Moderator", "403 (body rỗng)"],
+      ["neg", "Không gửi token", "401"]
+    ] },
+  { m: "SQL", p: "(SQL) kiểm tra dữ liệu", role: "Người test (DB)",
+    what: "Kiểm tra trực tiếp trên database (chỉ đọc).",
+    tests: [
+      ["ok", "Bảng có dữ liệu seed", "N dòng …", `Chạy: SELECT … FROM … WHERE …`]
+    ] }
+  ]
+}
+];
+
+// Body thay thế theo [phần đường dẫn, phần tên tình huống, body]; thường để trống vì đã có cột body trong test.
+const OVERRIDES = [];
+
+// ---------- DỮ LIỆU THẬT TỪ SEED (Database/Seed) ----------
+// [khóa khớp "METHOD đường-dẫn" (bắt đầu bằng "=" để khớp chính xác), { as: tài khoản, url: URL có id thật, body?: body có id thật, note: mô tả dữ liệu seed }]
+const SEEDAPI = [
+  ["POST /api/v1/Example/{id}/action", { as: "parent_demo1", url: "POST /api/v1/Example/1/action", body: J({ field: "giá trị mẫu" }), note: "Bản ghi 1 là … trong seed." }]
+];
+// Dữ liệu riêng theo [phần đường dẫn, phần tên tình huống, câu dữ liệu]; chỉ dùng khi không đặt dữ liệu ở cột thứ 4 của test.
+const TESTDATA = [];
+// Câu dữ liệu chung theo tên tình huống.
+const GENERIC = [
+  ["Gọi bằng token User", "Đăng nhập parent_demo1 (Demo@123), gọi cùng URL."],
+  ["Gọi bằng token Moderator", "Đăng nhập moderator_demo1 (Demo@123), gọi cùng URL."],
+  ["Gọi bằng token ContentCreator", "Đăng nhập creator_demo (Demo@123), gọi cùng URL."],
+  ["Gọi bằng token Administrator", "Đăng nhập admin_demo (Demo@123), gọi cùng URL."],
+  ["Gọi bằng token bé", "Token bé 1: lấy bằng ChildAccessCredential/easylogin/login với { \"secret\": \"demo-qr-child-01\" }, rồi gọi cùng URL."],
+  ["Không gửi token", "Bỏ header Authorization khi gọi."]
+];
+
+// ---------- GIÁ TRỊ ĐỘNG ----------
+// [khóa, mặc định trên DB vừa seed, mô tả]. Viết <KHÓA> trong URL / body / dữ liệu; trang tự thay khi người test nhập.
+const VAR_DEFS = [
+  ["NEW_ID", "1", "Id bản ghi vừa tạo (data.id trong phản hồi)"]
+];
+
+// ---------- CONTROLLER ----------
+// Controller dùng route mặc định api/v1/[controller]:
+const BASE_CONTROLLERS = ["Auth", "Example"];
+// Controller có [Route] riêng / route tuyệt đối ({} = một đoạn bất kỳ):
+const CONTROLLER_ROUTES = BASE_CONTROLLERS.map(n => ["/api/v1/" + n, n + "Controller"]).concat([
+  // ["/api/v1/creator/stories/{}/ratings", "StoryRatingController"],
+]);
+// ======================= HẾT PHẦN DỮ LIỆU =======================
+
+function overrideBody(api, t) {
+  for (const [pathPart, namePart, body] of OVERRIDES) {
+    const pathOk = pathPart.startsWith("=") ? api.p === pathPart.slice(1) : api.p.includes(pathPart);
+    if (pathOk && t[1].includes(namePart)) return body;
+  }
+  return null;
+}
+function findBody(stepId, api, t) {
+  const ov = overrideBody(api, t);
+  if (ov) return ov;
+  const sa = seedFor(api);
+  return (sa && sa.body) || api.body || null;
+}
+// Tìm đối tượng JSON đầu tiên (cân ngoặc) trong một đoạn chữ.
+function firstJson(text) {
+  if (!text) return null;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== "{") continue;
+    let depth = 0, inStr = false;
+    for (let j = i; j < text.length; j++) {
+      const c = text[j];
+      if (inStr) { if (c === "\\") j++; else if (c === '"') inStr = false; continue; }
+      if (c === '"') inStr = true;
+      else if (c === "{") depth++;
+      else if (c === "}") { depth--; if (depth === 0) { try { const obj = JSON.parse(text.slice(i, j + 1)); return obj; } catch (e) { break; } } }
+    }
+  }
+  return null;
+}
+// Dựng "request" đầy đủ cho một test case: tài khoản, method, url, body (nếu có).
+function buildRequest(api, t, data) {
+  const sa = seedFor(api);
+  let method = api.m, url = null;
+  const mm = data && data.match(/\b(GET|POST|PUT|DELETE) (\/api\/v1\/[^\s"`,;]+)/);
+  if (mm) { method = mm[1]; url = mm[2].replace(/[.)]+$/, ""); }
+  else if (sa && sa.url) { const u = sa.url.match(/^(GET|POST|PUT|DELETE) (.+)$/); if (u) { method = u[1]; url = u[2]; } }
+  if (!url) url = api.p;
+  const am = data && data.match(/[Đđ]ăng nhập ([A-Za-z0-9_]+)/);
+  let login = am ? am[1] : (sa ? sa.as : "");
+  if (/token bé/.test(t[1]) && !t[3]) login = "bé 1 (secret demo-qr-child-01)";
+  else if (/Không gửi token|Không cần token/.test(t[1] + " " + (data || ""))) login = "(không gửi token)";
+  let bodyText = t[4] || overrideBody(api, t);
+  if (!bodyText) {
+    const fromText = data && !mm ? null : null; // body trong chữ chỉ lấy khi test có dữ liệu riêng
+    const obj = firstJson(t[3] ? data : null);
+    if (obj) bodyText = JSON.stringify(obj, null, 2);
+  }
+  if (!bodyText) bodyText = (sa && sa.body) || api.body || null;
+  const noBodyMethod = method === "GET" || method === "DELETE";
+  let body;
+  if (bodyText && !noBodyMethod) { try { body = JSON.parse(bodyText); } catch (e) { body = bodyText; } }
+  const request = { login, method, url };
+  if (body !== undefined) request.body = body;
+  return { request, bodyText: body !== undefined ? (typeof body === "string" ? body : JSON.stringify(body, null, 2)) : null, hasRequest: !t[2].startsWith("CHƯA CÓ") && !api.p.startsWith("(") };
+}
+
+function seedFor(api) {
+  const key = api.m + " " + api.p;
+  let best = null, bestLen = -1;
+  for (const [k, v] of SEEDAPI) {
+    if (k.startsWith("=")) { if (key === k.slice(1)) return v; continue; }
+    if (key.includes(k) && k.length > bestLen) { best = v; bestLen = k.length; }
+  }
+  return best;
+}
+function dataFor(api, t) {
+  const name = t[1];
+  if (t[3]) return t[3];
+  for (const [pathPart, namePart, text] of TESTDATA) {
+    const pathOk = pathPart.startsWith("=") ? api.p === pathPart.slice(1) : (api.m + " " + api.p).includes(pathPart);
+    if (pathOk && name.includes(namePart)) return text;
+  }
+  for (const [namePart, text] of GENERIC) if (name.includes(namePart)) return text + ((seedFor(api) || {}).url ? " URL: " + seedFor(api).url : "");
+  const sa = seedFor(api);
+  if (!sa) return null;
+  return `Đăng nhập ${sa.as} (mật khẩu Demo@123). ${sa.url}. ${sa.note}`;
+}
+
+let VARS = {};
+try { VARS = JSON.parse(localStorage.getItem("TEMPLATE-guide-vars") || "{}"); } catch (e) { VARS = {}; }
+VAR_DEFS.forEach(([k, d]) => { if (VARS[k] === undefined) VARS[k] = d; });
+function subst(text) {
+  if (text == null) return text;
+  return String(text)
+    .replace(/"<([A-Z_]+)>"/g, (m, k) => { const v = VARS[k]; if (v === undefined || v === "") return m; return /^-?\d+$/.test(v) ? v : JSON.stringify(v); })
+    .replace(/<([A-Z_]+)>/g, (m, k) => { const v = VARS[k]; return v === undefined || v === "" ? m : v; });
+}
+
+function controllerFor(api) {
+  const m = api.p.match(/\/api\/v1\/[^\s?]*/);
+  if (!m) return null;
+  const segs = m[0].toLowerCase().split("/").filter(Boolean);
+  let best = null, bestLen = -1;
+  for (const [tpl, name] of CONTROLLER_ROUTES) {
+    const t = tpl.toLowerCase().split("/").filter(Boolean);
+    if (t.length > segs.length || t.length <= bestLen) continue;
+    if (t.every((x, i) => x === "{}" || x === segs[i])) { best = name; bestLen = t.length; }
+  }
+  return best;
+}
+
+// ---------- DỰNG TRANG ----------
+const main = document.getElementById("main");
+const nav = document.getElementById("nav");
+let store = {};
+try { store = JSON.parse(localStorage.getItem("TEMPLATE-guide-checks") || "{}"); } catch (e) { store = {}; }
+function save() { try { localStorage.setItem("TEMPLATE-guide-checks", JSON.stringify(store)); } catch (e) {} }
+function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+// Tách đoạn ghi chú thành từng ý (theo câu, dấu chấm phẩy, dấu ·) để hiển thị hàng dọc.
+function noteList(text) {
+  const parts = String(text).split(/(?<=\.)\s+(?=[\p{Lu}\d(])|;\s+|\s+·\s+/u).map(x => x.trim()).filter(Boolean);
+  return `<ul>${parts.map(x => {
+    const call = x.match(/^(GET|POST|PUT|DELETE) (\/\S+?)\.?$/);
+    return `<li>${call ? `<span class="code">${esc(call[1] + " " + call[2])}</span>` : esc(x)}</li>`;
+  }).join("")}</ul>`;
+}
+const KIND = { ok: ["ok", "Đúng"], neg: ["neg", "Lỗi"], edge: ["edge", "Biên"], todo: ["neg", "Chưa có"] };
+
+let total = 0;
+nav.innerHTML = '<a href="#chung">Quy ước chung</a>';
+STEPS.forEach(step => {
+  nav.insertAdjacentHTML("beforeend", `<a href="#${step.id}">${esc(step.title.split(" — ")[0])}: ${esc(step.title.split(" — ")[1] || "")}</a>`);
+  const sec = document.createElement("section");
+  sec.className = "step"; sec.id = step.id;
+  let html = `<h2>${esc(step.title)}</h2><p class="step-desc">${esc(step.desc)}</p>`;
+  html += `<div class="box"><h3>Luồng chạy</h3><ol class="flow">${step.flow.map(f => `<li>${esc(f)}</li>`).join("")}</ol></div>`;
+  step.apis.forEach((api, ai) => {
+    const rows = api.tests.map((t, ti) => {
+      total++;
+      const key = `${step.id}.${ai}.${ti}`;
+      const k = KIND[t[0]];
+      const data = dataFor(api, t);
+      const req = buildRequest(api, t, data);
+      const reqText = JSON.stringify(req.request, null, 2);
+      const reqBtn = ` <button class="copy" data-copy="${COPY.push(reqText) - 1}">Copy request JSON</button>`;
+      const bodyBtnT = req.bodyText ? ` <button class="copy" data-copy="${COPY.push(req.bodyText) - 1}">Copy body</button>` : "";
+      const dataHtml = data ? `<div class="data"><b>Dữ liệu</b>${noteList(data)}</div>` : "";
+      const preHtml = req.hasRequest ? `<div class="reqbar">Đầu vào (JSON)${reqBtn}${bodyBtnT}</div><pre class="req" data-ci="${COPY.length - (req.bodyText ? 2 : 1)}">${esc(subst(reqText))}</pre>` : "";
+      return `<tr><td class="chk"><input type="checkbox" data-key="${key}" ${store[key] ? "checked" : ""}></td>` +
+             `<td><span class="tag ${k[0]}">${k[1]}</span>${esc(t[1])}${dataHtml}${preHtml}</td><td>${esc(t[2])}</td></tr>`;
+    }).join("");
+    const sa = seedFor(api);
+    const shownBody = (sa && sa.body) || api.body;
+    const bodyIdx = shownBody ? COPY.push(shownBody) - 1 : -1;
+    const bodyBtn = shownBody ? ` <button class="copy" data-copy="${bodyIdx}">Copy body</button>` : "";
+    const seedNote = sa ? `<div class="data"><b>Dữ liệu seed</b><div class="kv">` +
+      `<span>Đăng nhập</span><span><b>${esc(sa.as)}</b> · mật khẩu Demo@123</span>` +
+      `<span>Gọi</span><span><span class="code">${esc(sa.url)}</span></span>` +
+      `<span>Ghi chú</span>${noteList(sa.note)}</div></div>` : "";
+    const pathText = api.p.startsWith("(") ? "" : `${api.m} ${api.p}`;
+    const pathBtn = pathText ? ` <button class="copy" data-copy="${COPY.push(pathText) - 1}">Copy đường dẫn</button>` : "";
+    const ctl = controllerFor(api);
+    const ctlChip = ctl ? `<span class="ctl" title="Controller">${esc(ctl)}</span>` : `<span class="ctl" title="Controller">chưa có Controller</span>`;
+    const ctlLine = ctl ? `<p class="ctl-line">Controller: <b>${esc(ctl)}</b> · nhóm Swagger: <b>${esc(ctl.replace(/Controller$/, ""))}</b> · file <span class="code">src/Core/StoryPlatform.Api/Controllers/${esc(ctl)}.cs</span></p>` : "";
+    html += `<details class="api" data-search="${esc((api.m + " " + api.p + " " + (ctl || "") + " " + api.role).toLowerCase())}"><summary><span class="m ${api.m}">${api.m}</span><span class="path">${esc(api.p)}</span>${ctlChip}<span class="role">${esc(api.role)}</span></summary>` +
+      `<div class="api-body">${ctlLine}<p>${esc(api.what)}${pathBtn}</p>` +
+      (api.detail ? `<div class="detail">` + api.detail.map(([h, items]) =>
+        `<div class="detail-sec"><b>${esc(h)}</b><ul>${items.map(s => `<li>${esc(s)}</li>`).join("")}</ul></div>`).join("") + `</div>` : "") +
+      (api.warn ? `<div class="note"><b>⚠ Lưu ý:</b> ` + (Array.isArray(api.warn)
+        ? `${esc(api.warn[0])}<ol>${api.warn.slice(1).map(s => `<li>${esc(s)}</li>`).join("")}</ol>`
+        : esc(api.warn)) + `</div>` : "") +
+      seedNote +
+      (api.ui ? `<div class="detail"><div class="detail-sec"><b>Nội dung hiển thị trên màn hình (gợi ý cho frontend)</b><ul>${api.ui.map(s => `<li>${esc(s)}</li>`).join("")}</ul></div></div>` : "") +
+      (api.resp ? `<p><b>Phản hồi mẫu</b> <button class="copy" data-copy="${COPY.push(api.resp) - 1}">Copy</button></p><pre data-ci="${COPY.length - 1}">${esc(subst(api.resp))}</pre>` : "") +
+      (shownBody ? `<p><b>Body ví dụ (trường hợp đúng)</b>${bodyBtn}</p><pre data-ci="${bodyIdx}">${esc(subst(shownBody))}</pre>` : "") +
+      `<p><b>Test case</b></p><table class="tests"><thead><tr><th class="chk"></th><th>Tình huống</th><th class="exp">Kết quả mong đợi</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
+  });
+  sec.innerHTML = html;
+  main.appendChild(sec);
+});
+
+const varsGrid = document.querySelector("#vars .vars-grid");
+VAR_DEFS.forEach(([k, d, label]) => {
+  const lab = document.createElement("label");
+  lab.innerHTML = `<span><b>&lt;${k}&gt;</b> · ${esc(label)}</span>`;
+  const input = document.createElement("input");
+  input.value = VARS[k]; input.placeholder = d || "(chưa có)"; input.spellcheck = false;
+  input.addEventListener("input", () => {
+    VARS[k] = input.value.trim();
+    try { localStorage.setItem("TEMPLATE-guide-vars", JSON.stringify(VARS)); } catch (e) {}
+    document.querySelectorAll("pre[data-ci]").forEach(pre => { pre.textContent = subst(COPY[Number(pre.dataset.ci)]); });
+  });
+  lab.appendChild(input);
+  varsGrid.appendChild(lab);
+});
+
+const progress = document.createElement("div");
+progress.className = "progress";
+nav.appendChild(progress);
+function updateProgress() {
+  const done = Object.values(store).filter(Boolean).length;
+  progress.textContent = `Đã chạy ${done}/${total} test case`;
+}
+updateProgress();
+
+main.addEventListener("click", e => {
+  const btn = e.target.closest && e.target.closest("button.copy");
+  if (!btn) return;
+  e.preventDefault();
+  const text = subst(COPY[Number(btn.dataset.copy)]);
+  const done = () => { const old = btn.textContent; btn.textContent = "Đã copy"; setTimeout(() => { btn.textContent = old; }, 1200); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
+  } else { fallbackCopy(text, done); }
+});
+function fallbackCopy(text, done) {
+  const ta = document.createElement("textarea");
+  ta.value = text; document.body.appendChild(ta); ta.select();
+  try { document.execCommand("copy"); done(); } catch (err) {}
+  document.body.removeChild(ta);
+}
+main.addEventListener("change", e => {
+  const key = e.target.dataset && e.target.dataset.key;
+  if (!key) return;
+  store[key] = e.target.checked; save(); updateProgress();
+});
+// Ô tìm API theo đường dẫn, method, Controller hoặc vai trò (đặt đầu thanh điều hướng, luôn nhìn thấy).
+const search = document.createElement("input");
+search.className = "search"; search.type = "search"; search.placeholder = "Tìm API: đường dẫn, Controller…";
+const found = document.createElement("div");
+found.className = "found";
+nav.prepend(found); nav.prepend(search);
+search.addEventListener("input", () => {
+  const q = search.value.trim().toLowerCase();
+  let shown = 0;
+  document.querySelectorAll("section.step").forEach(sec => {
+    if (sec.id === "chung") return;
+    let any = false;
+    sec.querySelectorAll("details.api").forEach(d => {
+      const hit = !q || d.dataset.search.includes(q);
+      d.classList.toggle("hidden-by-search", !hit);
+      if (hit) { any = true; shown++; if (q) d.open = true; }
+    });
+    sec.classList.toggle("hidden-by-search", !any);
+  });
+  found.textContent = q ? `${shown} API khớp` : "";
+});
+document.getElementById("expand").onclick = () => document.querySelectorAll("details.api").forEach(d => d.open = true);
+document.getElementById("collapse").onclick = () => document.querySelectorAll("details.api").forEach(d => d.open = false);
+document.getElementById("reset").onclick = () => {
+  store = {}; save();
+  document.querySelectorAll("input[data-key]").forEach(c => c.checked = false);
+  updateProgress();
+};
+</script>
+</body>
+</html>

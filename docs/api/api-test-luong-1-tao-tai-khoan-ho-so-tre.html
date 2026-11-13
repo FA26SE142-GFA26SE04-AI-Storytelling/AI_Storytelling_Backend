@@ -1,0 +1,4405 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Luồng 1 — Tài khoản và hồ sơ trẻ</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5d6679; --line: #dfe3ea;
+    --accent: #2f5fd0; --ok: #1b8a4b; --warn: #b26a00; --bad: #c0392b;
+    --get: #1b8a4b; --post: #2f5fd0; --put: #b26a00; --delete: #c0392b;
+    --code: #eef1f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171e; --panel: #1c212b; --text: #e6e9ef; --muted: #9aa3b5; --line: #2d3442;
+      --accent: #7aa2ff; --ok: #4cc58a; --warn: #e5a23c; --bad: #ff7b6b;
+      --get: #4cc58a; --post: #7aa2ff; --put: #e5a23c; --delete: #ff7b6b;
+      --code: #232a37;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 system-ui, "Segoe UI", sans-serif; }
+  header { padding: 24px 16px 8px; max-width: 1100px; margin: 0 auto; }
+  h1 { margin: 0 0 6px; font-size: 24px; }
+  .sub { color: var(--muted); margin: 0; }
+  .layout { display: grid; grid-template-columns: 230px 1fr; gap: 24px; max-width: 1100px; margin: 0 auto; padding: 16px; }
+  nav { position: sticky; top: 12px; align-self: start; max-height: calc(100vh - 24px); overflow: auto; }
+  nav a { display: block; padding: 7px 10px; border-radius: 8px; color: var(--text); text-decoration: none; font-size: 14px; }
+  nav a:hover { background: var(--panel); }
+  nav .progress { color: var(--muted); font-size: 12px; margin: 10px 10px 0; }
+  main { min-width: 0; }
+  section.step { margin-bottom: 36px; }
+  section.step > h2 { font-size: 20px; margin: 0 0 4px; }
+  .step-desc { color: var(--muted); margin: 0 0 12px; }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+  .box h3 { margin: 0 0 6px; font-size: 15px; }
+  .box ul { margin: 6px 0 0; padding-left: 20px; }
+  .note { border-left: 3px solid var(--warn); padding: 8px 12px; background: var(--panel); border-radius: 0 8px 8px 0; margin: 10px 0; font-size: 14px; }
+  .detail { border-left: 3px solid var(--accent); padding: 8px 12px; background: var(--panel); border-radius: 0 8px 8px 0; margin: 10px 0; font-size: 14px; }
+  .detail-sec + .detail-sec { margin-top: 8px; }
+  .detail ul { margin: 4px 0 0; padding-left: 20px; }
+  details.api { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; }
+  details.api > summary { cursor: pointer; padding: 11px 14px; list-style: none; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  details.api > summary::-webkit-details-marker { display: none; }
+  .m { font-weight: 700; font-size: 12px; padding: 2px 8px; border-radius: 6px; color: #fff; min-width: 58px; text-align: center; }
+  .m.GET { background: var(--get); } .m.POST { background: var(--post); } .m.PUT { background: var(--put); } .m.DELETE { background: var(--delete); } .m.PATCH { background: var(--put); }
+  @media (prefers-color-scheme: dark) { .m { color: #10131a; } }
+  .path { font-family: ui-monospace, Consolas, monospace; font-size: 13.5px; word-break: break-all; }
+  .role { margin-left: auto; font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; }
+  .ctl { font: 600 12px ui-monospace, Consolas, monospace; color: var(--accent); background: var(--code); border-radius: 6px; padding: 1px 7px; }
+  .ctl-line { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+  .ctl-line b { color: var(--text); }
+  nav .search { width: 100%; margin: 0 0 8px; font: 13px system-ui, "Segoe UI", sans-serif; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); }
+  nav .found { color: var(--muted); font-size: 12px; margin: -4px 10px 6px; flex-basis: 100%; }
+  nav .found:empty { display: none; }
+  nav .search { flex-basis: 100%; }
+  .hidden-by-search { display: none !important; }
+  .api-body { padding: 0 16px 14px; border-top: 1px solid var(--line); }
+  .api-body p { margin: 10px 0 6px; }
+  pre { background: var(--code); border-radius: 8px; padding: 10px 12px; overflow: auto; font: 12.5px/1.5 ui-monospace, Consolas, monospace; margin: 6px 0 10px; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 14px; }
+  table.tests { table-layout: fixed; }
+  table.tests th.chk { width: 34px; }
+  table.tests th.exp { width: 28%; }
+  th, td { text-align: left; padding: 7px 8px; border-top: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+  td.chk { width: 34px; }
+  td.exp { white-space: nowrap; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; margin-right: 6px; }
+  .tag.ok { color: var(--ok); border: 1px solid var(--ok); }
+  .tag.neg { color: var(--bad); border: 1px solid var(--bad); }
+  .tag.edge { color: var(--warn); border: 1px solid var(--warn); }
+  .code { font-family: ui-monospace, Consolas, monospace; background: var(--code); border-radius: 5px; padding: 0 5px; font-size: 13px; }
+  .flow li { margin-bottom: 4px; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 14px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.copy { font-size: 12px; padding: 1px 8px; margin-left: 6px; border-radius: 6px; }
+  .data { margin-top: 4px; padding: 6px 8px; background: var(--code); border-radius: 6px; font-size: 12.5px; color: var(--muted); }
+  .data b { color: var(--text); }
+  .data > b { display: block; margin-bottom: 2px; }
+  .data ul { margin: 0; padding-left: 18px; }
+  .data li { margin: 1px 0; }
+  .data .kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 10px; align-items: start; }
+  .data .kv > span:nth-child(odd) { color: var(--muted); white-space: nowrap; }
+  .data .kv > span:nth-child(even), .data .kv > ul { color: var(--text); min-width: 0; word-break: break-word; }
+  @media (max-width: 760px) { .data .kv { grid-template-columns: 1fr; } }
+  .reqbar { margin-top: 6px; font-size: 12px; color: var(--muted); }
+  pre.req { margin: 3px 0 2px; max-height: 260px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .vars-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px 12px; }
+  .vars-grid label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 3px; }
+  .vars-grid input { font: 13px ui-monospace, Consolas, monospace; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--code); color: var(--text); min-width: 0; }
+  @media (max-width: 760px) {
+    .layout { grid-template-columns: 1fr; }
+    nav { position: static; max-height: none; display: flex; flex-wrap: wrap; gap: 4px; }
+    .role { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Luồng 1 — Tạo tài khoản và cấu hình hồ sơ cho trẻ: API và test case</h1>
+  <p class="sub">AI Storytelling Backend · Bước 1 đến 8 theo luồng 1.1 → 1.6 (bỏ Supervisor, mỗi User tự quản lý trẻ). Mỗi API có giải thích, dữ liệu seed, ví dụ body và các test case để tự kiểm. Tích vào ô để đánh dấu đã chạy (lưu trong trình duyệt).</p>
+</header>
+
+<div class="layout">
+  <nav id="nav"></nav>
+  <main id="main">
+
+    <section class="step" id="chung">
+      <h2>Quy ước chung</h2>
+      <div class="box">
+        <h3>Cách gọi</h3>
+        <ul>
+          <li>Địa chỉ gốc: <span class="code">{host}/api/v1/{Controller}</span>. Mọi phản hồi bọc trong <span class="code">ApiResponse</span> (success, message tiếng Việt, data, errors).</li>
+          <li>Đính kèm <span class="code">Authorization: Bearer {accessToken}</span>. Token của trẻ (<span class="code">token_type=child</span>) chỉ dùng được cho API đánh dấu <b>ChildSession</b>; mọi API khác từ chối token trẻ (403).</li>
+          <li>Mã lỗi: <b>400</b> sai dữ liệu hoặc bị chặn nghiệp vụ · <b>401</b> chưa đăng nhập / token bị thu hồi / phiên trẻ hết hạn · <b>403</b> sai vai trò, không phải chủ hồ sơ, tài khoản bị khóa · <b>404</b> không có · <b>409</b> vượt số hồ sơ của gói, đổi chỗ đọc quá 1 lần / tuần · <b>429</b> gọi quá nhanh.</li>
+          <li>Lỗi kiểm tra dữ liệu đầu vào trả 400 <span class="code">"Dữ liệu đầu vào không hợp lệ."</span> và danh sách câu lỗi trong <span class="code">errors</span>.</li>
+          <li>Enum gửi dạng chuỗi: <span class="code">"Age_6_8"</span>, <span class="code">"ListenFirst"</span>, <span class="code">"AlwaysManual"</span>, <span class="code">"Blocked"</span>…</li>
+          <li>Chủ hồ sơ: mỗi hồ sơ trẻ thuộc đúng một User. Người khác gọi API của hồ sơ → 403 <span class="code">"Bạn không có quyền với hồ sơ trẻ này."</span></li>
+        </ul>
+      </div>
+      <div class="box">
+        <h3>Dữ liệu thật trong Database/Seed (nạp bằng Seed-Database.ps1)</h3>
+        <ul>
+          <li><b>Mật khẩu mọi tài khoản demo: Demo@123.</b> Đăng nhập bằng <span class="code">POST /api/v1/Auth/login</span> với <span class="code">{ "identifier": "tên-đăng-nhập", "password": "Demo@123" }</span>.</li>
+          <li><b>parent_demo1</b> (id 2, parent1@example.com) — Gói Sáng tạo (tối đa 4 hồ sơ), chủ bé 1 (Bé An, 6-8) và bé 2 (Bé Bình, 9-10). Dùng làm tài khoản chính.</li>
+          <li><b>parent_demo2</b> (id 3) — Miễn phí (1 hồ sơ) nhưng có 3 bé Active: 3, 4, 11 → chỉ bé 3 được đọc, bé 4 và 11 đang <i>chỉ xem</i>. Dùng cho ca vượt gói và ca "người khác".</li>
+          <li><b>parent_demo3</b> (id 4) — Miễn phí, chủ bé 5 (Draft, đã có Learning Profile và Safety Policy nhưng <b>chưa có consent</b>) và bé 6 (Active).</li>
+          <li><b>parent_demo4</b> (id 5) bị khóa (Suspended) · <b>parent_demo5</b> (id 6) chưa xác thực email (Registered) · <b>moderator_demo1</b>, <b>admin_demo</b> dùng cho ca sai vai trò.</li>
+          <li>Bé vào bằng QR: <span class="code">POST /api/v1/ChildAccessCredential/easylogin/login</span> với <span class="code">{ "secret": "demo-qr-child-01" }</span> (01 … 12 theo id bé). Bé 5, 9, 10 là Draft.</li>
+          <li>Danh mục nội dung: 1 ANIMALS · 2 FANTASY · 3 ADVENTURE · 4 SCIENCE · 5 FRIENDSHIP · 6 FAMILY · 7 VIOLENCE (chặn mặc định 6-8 và 9-10) · 8 SCARY_CONTENT (chặn mặc định 6-8).</li>
+          <li>Gói Miễn phí cho tối đa 1 hồ sơ (plan_settings.FreeMaxChildProfiles = 1). Gói Đọc / Gói Sáng tạo: 4 hồ sơ.</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h3>Tài khoản test riêng và thứ tự chạy</h3>
+        <ul>
+          <li>Bước 1 và 3 cần email thật đọc được hộp thư (email gửi qua Resend). Tạo <b>user_test_a</b> (mật khẩu <span class="code">Test1234</span>) với email của bạn và nhập email đó vào ô <span class="code">&lt;EMAIL_A&gt;</span> bên dưới.</li>
+          <li>Các ca làm khóa tài khoản (sai mật khẩu 5 lần, Parental Gate sai 5 lần) chạy bằng user_test_a, không dùng parent_demo1. Mở khóa: đặt <span class="code">"LockedUntil" = NULL</span> trong user_accounts hoặc chờ 15 phút.</li>
+          <li>Chạy theo thứ tự trang: Bước 4 tạo hồ sơ test <span class="code">&lt;CHILD_ID&gt;</span> → Bước 5, 6 cấu hình → Bước 7 kích hoạt → Bước 8 cho bé vào. Ca hủy (xóa Learning / Safety, lưu trữ) làm trên hồ sơ test, không làm trên bé seed.</li>
+          <li>Ca "hồ sơ mới" / "tạo hồ sơ" dùng thêm chỗ trong gói: parent_demo1 chỉ tạo thêm được 2 hồ sơ; hồ sơ thừa lưu trữ đi hoặc nạp lại seed.</li>
+          <li>Tài khoản đã xóa không còn trong luồng này; xem trang <span class="code">api-test-luong-1-user-owner.html</span> (bước 7) cho ca xóa tài khoản.</li>
+        </ul>
+      </div>
+      <div class="note">Đối chiếu với tài liệu "Luồng 1 – Thay đổi thiết kế bỏ Supervisor" (26/10/2026): <b>1.1</b> Register / Log in → Bước 1–3 · <b>1.2</b> Create Child Profile (Draft) → Bước 4 · <b>1.3</b> Learning Profile → Bước 5 · <b>1.4</b> Safety Policy → Bước 6 · <b>1.5</b> Set status Active → Bước 7 · <b>1.6</b> Child PIN Access Credential → Bước 8 (code dùng QR Easy Login và bàn giao máy thay cho PIN). Bước 7 có thêm vòng đời hồ sơ (tạm dừng, lưu trữ, khôi phục) và chọn bé được đọc khi vượt gói; Bước 8 có thêm Parental Gate.</div>
+      <div class="box" id="vars">
+        <h3>Giá trị động (tự thay khi copy)</h3>
+        <p class="sub" style="margin:0 0 8px">Các giá trị chỉ có sau khi gọi API (OTP, refresh token, id hồ sơ vừa tạo…) được viết dạng <span class="code">&lt;TÊN&gt;</span> trong request. Nhập giá trị thật vào ô dưới đây; khung JSON và nút Copy sẽ tự thay. Lưu trong trình duyệt.</p>
+        <div class="vars-grid"></div>
+      </div>
+      <div class="toolbar">
+        <button id="expand">Mở tất cả API</button>
+        <button id="collapse">Đóng tất cả</button>
+        <button id="reset">Xóa các dấu đã tích</button>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+// ---------- DỮ LIỆU ----------
+// t: kind = ok | neg | edge ; e = kết quả mong đợi
+const STEPS = [
+ {
+  "id": "b1",
+  "title": "Bước 1 — Đăng ký và xác thực email (1.1)",
+  "desc": "Người dùng tự tạo tài khoản. Mọi tài khoản tự đăng ký là role User (chủ hồ sơ trẻ), trạng thái Registered; phải nhập mã OTP gửi qua email thì mới Active và đăng nhập được.",
+  "flow": [
+   "Người dùng nhập username, email, họ tên, mật khẩu → POST /Auth/register.",
+   "Hệ thống tạo tài khoản Registered, role User, gửi OTP 6 số (hạn 10 phút) tới email.",
+   "Người dùng nhập OTP → POST /Auth/verify-email → tài khoản chuyển Active.",
+   "Không nhận được mã hoặc mã hết hạn / nhập sai quá 5 lần → POST /Auth/resend-verification-email để lấy mã mới."
+  ],
+  "apis": [
+   {
+    "m": "POST",
+    "p": "/api/v1/Auth/register",
+    "role": "Không cần đăng nhập",
+    "what": "Đăng ký tài khoản User mới. Server luôn đặt role = User và trạng thái Registered; client không chọn được role.",
+    "detail": [
+     [
+      "Dùng khi",
+      [
+       "Màn hình Đăng ký. Thành công chỉ trả thông báo, chưa cấp token: phải xác thực email rồi mới đăng nhập."
+      ]
+     ],
+     [
+      "Kiểm tra dữ liệu (sai → 400 \"Dữ liệu đầu vào không hợp lệ.\" kèm danh sách lỗi)",
+      [
+       "username: bắt buộc, 3 đến 50 ký tự.",
+       "email: bắt buộc, đúng định dạng.",
+       "fullName: bắt buộc, tối đa 100 ký tự.",
+       "password: 8 đến 100 ký tự, có ít nhất 1 chữ cái và 1 chữ số.",
+       "confirmPassword: phải trùng password.",
+       "phoneNumber: không bắt buộc."
+      ]
+     ],
+     [
+      "Kiểm tra trùng",
+      [
+       "Email so không phân biệt hoa thường → 400 \"Email '...' đã được sử dụng trong hệ thống.\"",
+       "Username so không phân biệt hoa thường → 400 \"Tên đăng nhập '...' đã tồn tại.\""
+      ]
+     ],
+     [
+      "Xử lý",
+      [
+       "Lưu email dạng chữ thường, username và họ tên đã cắt khoảng trắng.",
+       "Role = User, Status = Registered, sinh OTP 6 số hạn 10 phút (chỉ lưu hash), gửi email qua Resend."
+      ]
+     ],
+     [
+      "Kết quả",
+      [
+       "200, data = null, thông báo \"Đăng ký thành công. Vui lòng kiểm tra email để lấy mã xác thực trước khi đăng nhập.\""
+      ]
+     ],
+     [
+      "Lưu ý",
+      [
+       "Cần email thật đọc được hộp thư để lấy OTP. Tài khoản mới ở gói Miễn phí: tối đa 1 hồ sơ trẻ (plan_settings.FreeMaxChildProfiles = 1)."
+      ]
+     ]
+    ],
+    "body": "{\n  \"username\": \"user_test_a\",\n  \"email\": \"<EMAIL_A>\",\n  \"fullName\": \"Người dùng Test A\",\n  \"password\": \"Test1234\",\n  \"confirmPassword\": \"Test1234\",\n  \"phoneNumber\": \"0900000099\"\n}",
+    "tests": [
+     [
+      "ok",
+      "Đăng ký user_test_a với email chưa dùng",
+      "200; message nhắc kiểm tra email. Bảng user_accounts: Role = User, Status = Registered"
+     ],
+     [
+      "ok",
+      "Gửi thêm \"role\": \"Administrator\" trong body",
+      "200; tài khoản vẫn Role = User (trường lạ bị bỏ qua)"
+     ],
+     [
+      "ok",
+      "Email viết hoa (ví dụ Test.B@Example.com)",
+      "200; email được lưu chữ thường"
+     ],
+     [
+      "neg",
+      "Email đã có trong seed (parent1@example.com)",
+      "400 \"Email 'parent1@example.com' đã được sử dụng trong hệ thống.\""
+     ],
+     [
+      "neg",
+      "Email trùng nhưng khác hoa thường (PARENT1@EXAMPLE.COM)",
+      "400 email đã được sử dụng"
+     ],
+     [
+      "neg",
+      "Username đã có (parent_demo1)",
+      "400 \"Tên đăng nhập 'parent_demo1' đã tồn tại.\""
+     ],
+     [
+      "neg",
+      "Mật khẩu 7 ký tự",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Mật khẩu phải từ 8 đến 100 ký tự.\""
+     ],
+     [
+      "neg",
+      "Mật khẩu chỉ có chữ",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Mật khẩu phải chứa ít nhất 1 chữ cái và 1 chữ số.\""
+     ],
+     [
+      "neg",
+      "Mật khẩu chỉ có số",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Mật khẩu phải chứa ít nhất 1 chữ cái và 1 chữ số.\""
+     ],
+     [
+      "neg",
+      "confirmPassword khác password",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Mật khẩu xác nhận không khớp.\""
+     ],
+     [
+      "neg",
+      "Email sai định dạng",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Email không đúng định dạng.\""
+     ],
+     [
+      "neg",
+      "Username 2 ký tự",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Tên đăng nhập từ 3 đến 50 ký tự.\""
+     ],
+     [
+      "neg",
+      "Thiếu fullName",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Họ và tên không được để trống.\""
+     ],
+     [
+      "edge",
+      "fullName 101 ký tự",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Họ và tên tối đa 100 ký tự.\""
+     ]
+    ]
+   },
+   {
+    "m": "POST",
+    "p": "/api/v1/Auth/verify-email",
+    "role": "Không cần đăng nhập",
+    "what": "Nhập OTP 6 số trong email để kích hoạt tài khoản (Registered → Active).",
+    "detail": [
+     [
+      "Hệ thống kiểm lần lượt",
+      [
+       "otp đúng dạng 6 chữ số (cho phép khoảng trắng hai đầu) → nếu không: 400, errors \"Mã xác thực gồm 6 chữ số.\"",
+       "Email có tài khoản và đang có OTP chờ → nếu không: 400 \"Mã xác thực email không hợp lệ.\" (không lộ email có tồn tại hay không).",
+       "Chưa sai đủ 5 lần → nếu đã sai 5 lần: 400 \"Bạn đã nhập sai quá nhiều lần. Vui lòng yêu cầu gửi lại mã xác thực.\"",
+       "OTP còn hạn 10 phút → nếu hết: 400 \"Mã xác thực email đã hết hạn. Vui lòng yêu cầu gửi lại mã.\"",
+       "OTP khớp → nếu sai: 400 \"Mã xác thực email không hợp lệ.\" và tăng số lần sai."
+      ]
+     ],
+     [
+      "Xử lý",
+      [
+       "Xóa OTP, ghi EmailVerifiedAt, đặt Status = Active nếu đang Registered (tài khoản Suspended không được mở khóa qua đường này)."
+      ]
+     ],
+     [
+      "Kết quả",
+      [
+       "200 \"Xác thực email thành công. Bạn có thể đăng nhập ngay bây giờ.\""
+      ]
+     ],
+     [
+      "Giới hạn tần suất",
+      [
+       "Tối đa 10 request / 60 giây cho mỗi IP trên đường dẫn này (cấu hình RateLimiting:Auth) → 429 \"Bạn thao tác quá nhanh. Vui lòng thử lại sau ít phút.\" Áp dụng cho login, verify-email, resend-verification-email, forgot-password, reset-password."
+      ]
+     ]
+    ],
+    "body": "{\n  \"email\": \"<EMAIL_A>\",\n  \"otp\": \"<OTP>\"\n}",
+    "tests": [
+     [
+      "ok",
+      "OTP đúng, còn hạn",
+      "200; Status = Active; đăng nhập user_test_a được"
+     ],
+     [
+      "edge",
+      "OTP có khoảng trắng hai đầu (\" 123456 \")",
+      "200 nếu mã đúng (server cắt khoảng trắng)"
+     ],
+     [
+      "neg",
+      "OTP sai",
+      "400 \"Mã xác thực email không hợp lệ.\"; EmailVerificationFailedAttempts tăng 1"
+     ],
+     [
+      "neg",
+      "Sai 5 lần rồi nhập mã đúng",
+      "400 \"Bạn đã nhập sai quá nhiều lần. Vui lòng yêu cầu gửi lại mã xác thực.\""
+     ],
+     [
+      "neg",
+      "OTP quá 10 phút",
+      "400 \"Mã xác thực email đã hết hạn. Vui lòng yêu cầu gửi lại mã.\""
+     ],
+     [
+      "neg",
+      "OTP 5 chữ số",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Mã xác thực gồm 6 chữ số.\""
+     ],
+     [
+      "neg",
+      "Email không có tài khoản",
+      "400 \"Mã xác thực email không hợp lệ.\""
+     ],
+     [
+      "neg",
+      "Xác thực lại lần 2 bằng đúng mã cũ",
+      "400 \"Mã xác thực email không hợp lệ.\" (mã đã bị xóa sau lần đầu)"
+     ],
+     [
+      "edge",
+      "Gửi hơn 10 request trong 60 giây",
+      "429 \"Bạn thao tác quá nhanh. Vui lòng thử lại sau ít phút.\""
+     ]
+    ]
+   },
+   {
+    "m": "POST",
+    "p": "/api/v1/Auth/resend-verification-email",
+    "role": "Không cần đăng nhập",
+    "what": "Gửi lại OTP xác thực email. Luôn trả 200 để không lộ email có tồn tại hay đã xác thực chưa.",
+    "detail": [
+     [
+      "Xử lý",
+      [
+       "Chỉ gửi khi tài khoản đang Registered. Email không có / đã Active / bị khóa → vẫn 200 nhưng không gửi gì.",
+       "Chờ 60 giây giữa hai lần gửi (dựa vào audit RESEND_VERIFICATION_EMAIL). Trong 60 giây → 200 nhưng không gửi.",
+       "Sinh OTP mới (hạn 10 phút), đặt lại số lần sai về 0; OTP cũ hết hiệu lực."
+      ]
+     ],
+     [
+      "Kết quả",
+      [
+       "200, data = null."
+      ]
+     ]
+    ],
+    "body": "{\n  \"email\": \"<EMAIL_A>\"\n}",
+    "tests": [
+     [
+      "ok",
+      "Tài khoản Registered xin gửi lại",
+      "200; nhận email OTP mới; OTP cũ verify → 400"
+     ],
+     [
+      "ok",
+      "Sau khi sai 5 lần, gửi lại rồi nhập OTP mới",
+      "verify-email 200"
+     ],
+     [
+      "edge",
+      "Gửi lại lần 2 trong vòng 60 giây",
+      "200 nhưng không có email mới; OTP lần trước vẫn dùng được"
+     ],
+     [
+      "edge",
+      "Email không có tài khoản",
+      "200, không gửi email"
+     ],
+     [
+      "edge",
+      "Email đã Active (parent1@example.com)",
+      "200, không gửi email"
+     ],
+     [
+      "neg",
+      "Email sai định dạng",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Email không đúng định dạng.\""
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "id": "b2",
+  "title": "Bước 2 — Đăng nhập và phiên đăng nhập (1.1)",
+  "desc": "Đăng nhập bằng username hoặc email, nhận access token và refresh token. Refresh token là \"phiên\" của người lớn: dùng để làm mới token, bàn giao máy cho bé (Bước 8) và quản lý thiết bị.",
+  "flow": [
+   "POST /Auth/login → accessToken (gắn header) + refreshToken (lưu lại).",
+   "Access token hết hạn → POST /Auth/refresh-token để lấy cặp mới (refresh token cũ bị thu hồi).",
+   "Xem / sửa thông tin cá nhân bằng GET, PUT /Auth/me.",
+   "Quản lý thiết bị: GET /Auth/sessions, DELETE /Auth/sessions/{id}, đăng xuất một phiên hoặc mọi thiết bị."
+  ],
+  "apis": [
+   {
+    "m": "POST",
+    "p": "/api/v1/Auth/login",
+    "role": "Không cần đăng nhập",
+    "what": "Đăng nhập bằng username hoặc email (không phân biệt hoa thường) và mật khẩu.",
+    "detail": [
+     [
+      "Hệ thống kiểm lần lượt",
+      [
+       "Có tài khoản theo identifier → nếu không: 400 \"Tên đăng nhập hoặc mật khẩu không chính xác.\"",
+       "Không đang bị khóa tạm → nếu đang khóa: 403 \"Tài khoản tạm thời bị khoá do đăng nhập sai quá 5 lần. Vui lòng thử lại sau 15 phút.\"",
+       "Mật khẩu đúng → nếu sai: 400 (cùng câu trên), tăng số lần sai; đủ 5 lần thì khóa 15 phút.",
+       "Status không phải Suspended → 403 \"Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.\"",
+       "Status không phải Registered → 403 \"Vui lòng xác thực email trước khi đăng nhập. Kiểm tra hộp thư của bạn để lấy mã xác thực.\"",
+       "Status không phải PasswordResetPending → 403 \"Vui lòng thiết lập mật khẩu bằng mã đã được gửi qua email trước khi đăng nhập.\""
+      ]
+     ],
+     [
+      "Xử lý",
+      [
+       "Đặt lại số lần sai, ghi LastLoginAt, tạo một dòng refresh_tokens (SessionScope = Supervisor với role User)."
+      ]
+     ],
+     [
+      "Kết quả",
+      [
+       "accessToken, refreshToken, tokenType = Bearer, expiresInSeconds, user (id, username, email, fullName, phoneNumber, avatarUrl, role, status)."
+      ]
+     ],
+     [
+      "Lưu ý",
+      [
+       "Mật khẩu được kiểm trước trạng thái: tài khoản Suspended mà nhập sai mật khẩu vẫn nhận 400, nhập đúng mới thấy 403.",
+       "Ca \"sai 5 lần\" làm khóa tài khoản 15 phút: chạy bằng user_test_a, không dùng parent_demo1."
+      ]
+     ]
+    ],
+    "body": "{\n  \"identifier\": \"parent_demo1\",\n  \"password\": \"Demo@123\"\n}",
+    "tests": [
+     [
+      "ok",
+      "parent_demo1 + Demo@123",
+      "200; có accessToken, refreshToken, user.role = User, user.status = Active. Chép refreshToken vào <REFRESH_TOKEN>"
+     ],
+     [
+      "ok",
+      "Đăng nhập bằng email parent1@example.com",
+      "200"
+     ],
+     [
+      "ok",
+      "identifier viết hoa PARENT_DEMO1",
+      "200"
+     ],
+     [
+      "ok",
+      "user_test_a sau khi verify-email",
+      "200; user.role = User"
+     ],
+     [
+      "neg",
+      "Sai mật khẩu",
+      "400 \"Tên đăng nhập hoặc mật khẩu không chính xác.\""
+     ],
+     [
+      "neg",
+      "Username không tồn tại",
+      "400 \"Tên đăng nhập hoặc mật khẩu không chính xác.\""
+     ],
+     [
+      "neg",
+      "user_test_a sai mật khẩu 5 lần liên tiếp, lần 6 nhập đúng",
+      "Lần 1–5: 400; lần 6: 403 khóa 15 phút"
+     ],
+     [
+      "neg",
+      "parent_demo4 (Suspended) đúng mật khẩu",
+      "403 \"Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.\""
+     ],
+     [
+      "neg",
+      "parent_demo5 (Registered) đúng mật khẩu",
+      "403 \"Vui lòng xác thực email trước khi đăng nhập...\""
+     ],
+     [
+      "neg",
+      "user_test_a chưa verify-email",
+      "403 \"Vui lòng xác thực email trước khi đăng nhập...\""
+     ],
+     [
+      "neg",
+      "Thiếu password",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Mật khẩu không được để trống.\""
+     ],
+     [
+      "edge",
+      "Gửi hơn 10 request trong 60 giây",
+      "429 \"Bạn thao tác quá nhanh. Vui lòng thử lại sau ít phút.\""
+     ]
+    ]
+   },
+   {
+    "m": "POST",
+    "p": "/api/v1/Auth/refresh-token",
+    "role": "Không cần đăng nhập",
+    "what": "Đổi refresh token lấy cặp token mới. Xoay vòng: refresh token vừa dùng bị thu hồi ngay.",
+    "detail": [
+     [
+      "Lỗi",
+      [
+       "Token không có / đã thu hồi / hết hạn / tài khoản đã xóa / là phiên của trẻ → 401 \"Refresh token không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại.\"",
+       "Tài khoản đã bị khóa (Suspended) hoặc chưa xác thực (Registered) → 401 \"Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.\"",
+       "Thiếu refreshToken → 400, errors \"Refresh token không được để trống.\""
+      ]
+     ],
+     [
+      "Kết quả",
+      [
+       "Giống login: accessToken, refreshToken mới, user."
+      ]
+     ]
+    ],
+    "body": "{\n  \"refreshToken\": \"<REFRESH_TOKEN>\"\n}",
+    "tests": [
+     [
+      "ok",
+      "Refresh token vừa nhận khi đăng nhập",
+      "200; cặp token mới. Cập nhật <REFRESH_TOKEN> bằng refreshToken mới"
+     ],
+     [
+      "neg",
+      "Dùng lại refresh token cũ (đã xoay)",
+      "401 \"Refresh token không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại.\""
+     ],
+     [
+      "neg",
+      "Chuỗi bất kỳ",
+      "401"
+     ],
+     [
+      "neg",
+      "Refresh token đã đăng xuất (POST /Auth/logout)",
+      "401"
+     ],
+     [
+      "neg",
+      "Thiếu refreshToken",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Refresh token không được để trống.\""
+     ]
+    ]
+   },
+   {
+    "m": "GET",
+    "p": "/api/v1/Auth/me",
+    "role": "Người lớn đã đăng nhập",
+    "what": "Thông tin tài khoản đang đăng nhập.",
+    "detail": [
+     [
+      "Điều kiện gọi",
+      [
+       "Access token người lớn còn hiệu lực. Token của trẻ bị chặn ở mọi API [Authorize] thường → 403.",
+       "Mỗi request đều kiểm TokenVersion, trạng thái và role trong DB: tài khoản bị khóa, đã xóa hoặc đã đăng xuất mọi thiết bị → 401."
+      ]
+     ],
+     [
+      "Kết quả",
+      [
+       "id, username, email, fullName, phoneNumber, avatarUrl, role, status."
+      ]
+     ]
+    ],
+    "tests": [
+     [
+      "ok",
+      "Token parent_demo1",
+      "200; id = 2, role = User, status = Active"
+     ],
+     [
+      "neg",
+      "Không gửi token",
+      "401"
+     ],
+     [
+      "neg",
+      "Gọi bằng token bé",
+      "403"
+     ],
+     [
+      "neg",
+      "Access token cũ sau khi gọi logout-all-devices",
+      "401"
+     ]
+    ]
+   },
+   {
+    "m": "PUT",
+    "p": "/api/v1/Auth/me",
+    "role": "Người lớn đã đăng nhập",
+    "what": "Sửa họ tên và ảnh đại diện. Không đổi được email, username, role ở đây.",
+    "detail": [
+     [
+      "Kiểm tra",
+      [
+       "fullName bắt buộc, tối đa 100 ký tự (chỉ khoảng trắng cũng là trống).",
+       "avatarUrl tối đa 500 ký tự, phải là đường dẫn tuyệt đối http/https → nếu không: 400 \"Địa chỉ ảnh đại diện phải là đường dẫn http hoặc https.\"",
+       "avatarUrl rỗng hoặc null → xóa ảnh (lưu null)."
+      ]
+     ],
+     [
+      "Xử lý",
+      [
+       "Ghi audit UPDATE_PROFILE."
+      ]
+     ]
+    ],
+    "body": "{\n  \"fullName\": \"Trần Thị Hoa\",\n  \"avatarUrl\": \"https://ui-avatars.com/api/?name=Hoa+Tran\"\n}",
+    "tests": [
+     [
+      "ok",
+      "Đổi họ tên và avatarUrl https",
+      "200; GET /Auth/me thấy giá trị mới"
+     ],
+     [
+      "ok",
+      "avatarUrl = null",
+      "200; avatarUrl = null"
+     ],
+     [
+      "neg",
+      "fullName chỉ có khoảng trắng",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Họ và tên không được để trống.\""
+     ],
+     [
+      "neg",
+      "avatarUrl dạng ftp://",
+      "400 \"Địa chỉ ảnh đại diện phải là đường dẫn http hoặc https.\""
+     ],
+     [
+      "neg",
+      "avatarUrl không phải URL (abc)",
+      "400 \"Địa chỉ ảnh đại diện phải là đường dẫn http hoặc https.\""
+     ],
+     [
+      "neg",
+      "Không gửi token",
+      "401"
+     ]
+    ]
+   },
+   {
+    "m": "GET",
+    "p": "/api/v1/Auth/sessions",
+    "role": "Người lớn đã đăng nhập",
+    "what": "Danh sách phiên (refresh token) còn hiệu lực của chính mình, mới nhất trước.",
+    "detail": [
+     [
+      "Kết quả",
+      [
+       "Mỗi phần tử: id, issuedAt, expiresAt. Không trả token."
+      ]
+     ]
+    ],
+    "tests": [
+     [
+      "ok",
+      "Sau khi đăng nhập parent_demo1",
+      "200; có ít nhất 1 phiên. Chép id vào <SESSION_ID>"
+     ],
+     [
+      "ok",
+      "Đăng nhập thêm một lần rồi gọi lại",
+      "200; thêm 1 phiên ở đầu danh sách"
+     ],
+     [
+      "ok",
+      "Sau refresh-token",
+      "Phiên cũ biến mất, phiên mới xuất hiện"
+     ],
+     [
+      "neg",
+      "Không gửi token",
+      "401"
+     ]
+    ]
+   },
+   {
+    "m": "DELETE",
+    "p": "/api/v1/Auth/sessions/{id}",
+    "role": "Người lớn đã đăng nhập",
+    "what": "Thu hồi một phiên của chính mình (đăng xuất một thiết bị).",
+    "detail": [
+     [
+      "Xử lý",
+      [
+       "Phiên không có hoặc của người khác → 404 \"Không tìm thấy Phiên đăng nhập với mã định danh [id].\"",
+       "Phiên đã thu hồi → 200 (không lỗi).",
+       "Chỉ thu hồi refresh token: access token đã cấp cho phiên đó vẫn dùng được tới khi hết hạn."
+      ]
+     ]
+    ],
+    "tests": [
+     [
+      "ok",
+      "Thu hồi <SESSION_ID>",
+      "200; GET /Auth/sessions không còn phiên này; refresh bằng token của phiên đó → 401"
+     ],
+     [
+      "ok",
+      "Thu hồi lại phiên đã thu hồi",
+      "200"
+     ],
+     [
+      "neg",
+      "Id phiên của tài khoản khác",
+      "404"
+     ],
+     [
+      "neg",
+      "Id không tồn tại",
+      "404"
+     ]
+    ]
+   },
+   {
+    "m": "POST",
+    "p": "/api/v1/Auth/logout",
+    "role": "Người lớn đã đăng nhập",
+    "what": "Đăng xuất phiên hiện tại: thu hồi refresh token gửi lên.",
+    "detail": [
+     [
+      "Xử lý",
+      [
+       "Không cần token tồn tại: token lạ / đã thu hồi vẫn 200.",
+       "Không tăng TokenVersion: access token hiện tại vẫn dùng được tới khi hết hạn; client tự xóa."
+      ]
+     ]
+    ],
+    "body": "{\n  \"refreshToken\": \"<REFRESH_TOKEN>\"\n}",
+    "tests": [
+     [
+      "ok",
+      "Đăng xuất với refresh token hiện tại",
+      "200 \"Đăng xuất thành công.\"; refresh-token bằng token đó → 401"
+     ],
+     [
+      "ok",
+      "Đăng xuất lại lần 2",
+      "200"
+     ],
+     [
+      "neg",
+      "Thiếu refreshToken",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\""
+     ],
+     [
+      "neg",
+      "Không gửi token",
+      "401"
+     ]
+    ]
+   },
+   {
+    "m": "POST",
+    "p": "/api/v1/Auth/logout-all-devices",
+    "role": "Người lớn đã đăng nhập",
+    "what": "Đăng xuất mọi thiết bị: thu hồi mọi refresh token và vô hiệu mọi access token đã cấp.",
+    "detail": [
+     [
+      "Xử lý",
+      [
+       "Thu hồi toàn bộ refresh token, tăng TokenVersion → mọi access token cũ (kể cả token đang dùng) bị 401 ở request tiếp theo.",
+       "Thu hồi các phiên của bé được mở qua bàn giao máy (handover, \"Cho bé đọc truyện này\"). Phiên bé vào bằng QR Easy Login không bị ảnh hưởng.",
+       "Ghi audit LOGOUT_ALL_DEVICES."
+      ]
+     ]
+    ],
+    "tests": [
+     [
+      "ok",
+      "parent_demo1 gọi",
+      "200; GET /Auth/me bằng access token cũ → 401; GET /Auth/sessions sau khi đăng nhập lại chỉ còn phiên mới"
+     ],
+     [
+      "ok",
+      "Trước đó đã handover bé 1 (Bước 8)",
+      "Token bé từ handover gọi GET /ChildAccessCredential/me → 401"
+     ],
+     [
+      "edge",
+      "Bé 1 đang vào bằng QR (demo-qr-child-01)",
+      "Token bé QR vẫn dùng được"
+     ],
+     [
+      "neg",
+      "Không gửi token",
+      "401"
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "id": "b3",
+  "title": "Bước 3 — Mật khẩu và email của tài khoản",
+  "desc": "Quên mật khẩu, đổi mật khẩu, đổi email. Mọi thao tác đổi thông tin bảo mật đều thu hồi phiên phù hợp và gửi thông báo cho chủ tài khoản.",
+  "flow": [
+   "Quên mật khẩu: forgot-password → email chứa mã đặt lại (hạn 1 giờ) → reset-password.",
+   "Đổi mật khẩu khi đang đăng nhập: change-password (giữ phiên hiện tại nếu gửi currentRefreshToken).",
+   "Đổi email: change-email (gửi OTP tới email mới) → change-email/confirm."
+  ],
+  "apis": [
+   {
+    "m": "POST",
+    "p": "/api/v1/Auth/forgot-password",
+    "role": "Không cần đăng nhập",
+    "what": "Gửi email chứa mã đặt lại mật khẩu. Luôn trả 200, không lộ email có tồn tại hay không.",
+    "detail": [
+     [
+      "Xử lý",
+      [
+       "Email không có tài khoản / tài khoản Suspended / Moderator chưa kích hoạt → 200 nhưng không gửi gì.",
+       "Sinh mã đặt lại (chuỗi ngẫu nhiên), hạn 1 giờ, gửi email. Không đổi trạng thái tài khoản: người lạ nhập email của bạn không khóa được đăng nhập."
+      ]
+     ],
+     [
+      "Kết quả",
+      [
+       "200 \"Nếu email tồn tại trong hệ thống, hướng dẫn đặt lại mật khẩu đã được gửi.\""
+      ]
+     ]
+    ],
+    "body": "{\n  \"email\": \"<EMAIL_A>\"\n}",
+    "tests": [
+     [
+      "ok",
+      "Email của user_test_a",
+      "200; email chứa mã đặt lại. Chép vào <RESET_TOKEN>; vẫn đăng nhập bằng mật khẩu cũ được"
+     ],
+     [
+      "edge",
+      "Email không có tài khoản",
+      "200, không gửi email"
+     ],
+     [
+      "edge",
+      "Email parent4@example.com (Suspended)",
+      "200, không gửi email"
+     ],
+     [
+      "neg",
+      "Email sai định dạng",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\""
+     ]
+    ]
+   },
+   {
+    "m": "POST",
+    "p": "/api/v1/Auth/reset-password",
+    "role": "Không cần đăng nhập",
+    "what": "Đặt mật khẩu mới bằng mã trong email. Mã chỉ dùng được một lần.",
+    "detail": [
+     [
+      "Hệ thống kiểm lần lượt",
+      [
+       "newPassword theo quy tắc mật khẩu, confirmPassword khớp → nếu không: 400.",
+       "Email + resetToken khớp → nếu không: 400 \"Token đặt lại mật khẩu không hợp lệ.\"",
+       "Mã còn hạn 1 giờ → nếu hết: 400 \"Token đặt lại mật khẩu đã hết hạn. Vui lòng yêu cầu lại.\""
+      ]
+     ],
+     [
+      "Xử lý",
+      [
+       "Đổi mật khẩu, xóa mã, thu hồi mọi refresh token, tăng TokenVersion (mọi access token cũ → 401), Status về Active (trừ Suspended). Ghi audit RESET_PASSWORD."
+      ]
+     ],
+     [
+      "Kết quả",
+      [
+       "200 \"Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại.\""
+      ]
+     ]
+    ],
+    "body": "{\n  \"email\": \"<EMAIL_A>\",\n  \"resetToken\": \"<RESET_TOKEN>\",\n  \"newPassword\": \"Moi12345\",\n  \"confirmPassword\": \"Moi12345\"\n}",
+    "tests": [
+     [
+      "ok",
+      "Mã đúng, còn hạn",
+      "200; đăng nhập bằng mật khẩu mới được, mật khẩu cũ → 400; access token cũ → 401"
+     ],
+     [
+      "neg",
+      "Dùng lại mã vừa dùng",
+      "400 \"Token đặt lại mật khẩu không hợp lệ.\""
+     ],
+     [
+      "neg",
+      "resetToken sai",
+      "400 \"Token đặt lại mật khẩu không hợp lệ.\""
+     ],
+     [
+      "neg",
+      "Mã quá 1 giờ",
+      "400 \"Token đặt lại mật khẩu đã hết hạn. Vui lòng yêu cầu lại.\""
+     ],
+     [
+      "neg",
+      "newPassword 12345678 (không có chữ)",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Mật khẩu phải chứa ít nhất 1 chữ cái và 1 chữ số.\""
+     ],
+     [
+      "neg",
+      "confirmPassword khác",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Mật khẩu xác nhận không khớp.\""
+     ]
+    ]
+   },
+   {
+    "m": "POST",
+    "p": "/api/v1/Auth/change-password",
+    "role": "Người lớn đã đăng nhập",
+    "what": "Đổi mật khẩu khi đang đăng nhập. Gửi currentRefreshToken để giữ lại phiên đang dùng.",
+    "detail": [
+     [
+      "Hệ thống kiểm lần lượt",
+      [
+       "confirmPassword khớp; newPassword theo quy tắc mật khẩu → 400.",
+       "newPassword khác currentPassword → nếu trùng: 400 \"Mật khẩu mới không được trùng với mật khẩu hiện tại.\"",
+       "Tài khoản không Suspended → 403; không đang khóa tạm → 403.",
+       "currentPassword đúng → nếu sai: 400 \"Mật khẩu hiện tại không chính xác.\" và tăng số lần sai (đủ 5 lần → khóa 15 phút, chặn cả đăng nhập)."
+      ]
+     ],
+     [
+      "Xử lý phiên",
+      [
+       "Có currentRefreshToken hợp lệ của mình → giữ phiên đó, thu hồi mọi phiên khác và phiên bé bàn giao từ các phiên khác; access token hiện tại vẫn dùng được.",
+       "Không gửi (hoặc sai) → thu hồi mọi phiên, tăng TokenVersion: access token hiện tại cũng 401, phải đăng nhập lại."
+      ]
+     ],
+     [
+      "Sau khi đổi",
+      [
+       "Tạo thông báo AccountSecurityChanged và gửi email báo đổi mật khẩu. Ghi audit CHANGE_PASSWORD."
+      ]
+     ]
+    ],
+    "body": "{\n  \"currentPassword\": \"Test1234\",\n  \"newPassword\": \"Test5678\",\n  \"confirmPassword\": \"Test5678\",\n  \"currentRefreshToken\": \"<REFRESH_TOKEN>\"\n}",
+    "tests": [
+     [
+      "ok",
+      "Đúng mật khẩu, có currentRefreshToken của phiên đang dùng",
+      "200; access token hiện tại vẫn gọi /Auth/me được; các phiên khác trong /Auth/sessions bị thu hồi"
+     ],
+     [
+      "ok",
+      "Đúng mật khẩu, không gửi currentRefreshToken",
+      "200; access token hiện tại → 401 ở request sau"
+     ],
+     [
+      "neg",
+      "currentPassword sai",
+      "400 \"Mật khẩu hiện tại không chính xác.\""
+     ],
+     [
+      "neg",
+      "newPassword trùng currentPassword",
+      "400 \"Mật khẩu mới không được trùng với mật khẩu hiện tại.\""
+     ],
+     [
+      "neg",
+      "confirmPassword khác",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\""
+     ],
+     [
+      "neg",
+      "Không gửi token",
+      "401"
+     ]
+    ]
+   },
+   {
+    "m": "POST",
+    "p": "/api/v1/Auth/change-email",
+    "role": "User",
+    "what": "Yêu cầu đổi email: xác nhận mật khẩu rồi gửi OTP 6 số (hạn 10 phút) tới email mới. Email chưa đổi cho tới khi confirm.",
+    "detail": [
+     [
+      "Hệ thống kiểm lần lượt",
+      [
+       "Role User → Moderator / Administrator bị chặn 403 (tài khoản vận hành đổi email qua Administrator).",
+       "Không đang khóa tạm → 403.",
+       "currentPassword đúng → nếu sai: 400 \"Mật khẩu hiện tại không chính xác.\" (tăng số lần sai).",
+       "newEmail đúng định dạng, khác email hiện tại → 400 \"Email mới phải khác email hiện tại.\"",
+       "newEmail chưa có ai dùng → 400 \"Email này đã được sử dụng bởi tài khoản khác.\"",
+       "Cách lần yêu cầu trước ít nhất 60 giây → 400 \"Vui lòng đợi một chút trước khi yêu cầu gửi lại mã.\""
+      ]
+     ]
+    ],
+    "body": "{\n  \"currentPassword\": \"Test1234\",\n  \"newEmail\": \"<EMAIL_A_NEW>\"\n}",
+    "tests": [
+     [
+      "ok",
+      "Mật khẩu đúng, email mới chưa dùng",
+      "200; email mới nhận OTP. GET /Auth/me vẫn là email cũ"
+     ],
+     [
+      "neg",
+      "newEmail = email hiện tại",
+      "400 \"Email mới phải khác email hiện tại.\""
+     ],
+     [
+      "neg",
+      "newEmail đã có (parent2@example.com)",
+      "400 \"Email này đã được sử dụng bởi tài khoản khác.\""
+     ],
+     [
+      "neg",
+      "Gọi lại trong 60 giây",
+      "400 \"Vui lòng đợi một chút trước khi yêu cầu gửi lại mã.\""
+     ],
+     [
+      "neg",
+      "currentPassword sai",
+      "400 \"Mật khẩu hiện tại không chính xác.\""
+     ],
+     [
+      "neg",
+      "Gọi bằng token Moderator",
+      "403"
+     ]
+    ]
+   },
+   {
+    "m": "POST",
+    "p": "/api/v1/Auth/change-email/confirm",
+    "role": "User",
+    "what": "Nhập OTP gửi tới email mới để hoàn tất đổi email.",
+    "detail": [
+     [
+      "Hệ thống kiểm lần lượt",
+      [
+       "Có yêu cầu đang chờ → nếu không: 400 \"Không có yêu cầu đổi email nào đang chờ xác thực.\"",
+       "Chưa sai 5 lần → 400 \"Bạn đã nhập sai quá nhiều lần. Vui lòng gửi lại yêu cầu đổi email.\"",
+       "OTP còn hạn → 400 \"Mã xác thực đã hết hạn. Vui lòng gửi lại yêu cầu đổi email.\"",
+       "OTP đúng → 400 \"Mã xác thực không hợp lệ.\"",
+       "Email mới vẫn chưa bị ai chiếm → 400 \"Email này đã được sử dụng bởi tài khoản khác.\""
+      ]
+     ],
+     [
+      "Sau khi đổi",
+      [
+       "Email mới có hiệu lực ngay (đăng nhập bằng email mới); thông báo bảo mật gửi tới email CŨ."
+      ]
+     ]
+    ],
+    "body": "{\n  \"otp\": \"<CHANGE_EMAIL_OTP>\"\n}",
+    "tests": [
+     [
+      "ok",
+      "OTP đúng",
+      "200 \"Đổi email thành công.\"; GET /Auth/me trả email mới; email cũ nhận thư báo"
+     ],
+     [
+      "neg",
+      "Chưa gọi change-email",
+      "400 \"Không có yêu cầu đổi email nào đang chờ xác thực.\""
+     ],
+     [
+      "neg",
+      "OTP sai",
+      "400 \"Mã xác thực không hợp lệ.\""
+     ],
+     [
+      "neg",
+      "OTP quá 10 phút",
+      "400 \"Mã xác thực đã hết hạn. Vui lòng gửi lại yêu cầu đổi email.\""
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "id": "b4",
+  "title": "Bước 4 — Tạo hồ sơ trẻ ở trạng thái Draft (1.2)",
+  "desc": "User tạo hồ sơ cho bé. Hồ sơ thuộc đúng một chủ (ownerUserId = người tạo); chỉ chủ hồ sơ xem, sửa và giám sát bé. Hồ sơ mới luôn là Draft cho tới khi đủ cấu hình ở Bước 5, 6 và được kích hoạt ở Bước 7.",
+  "flow": [
+   "POST /ChildProfile với biệt danh, nhóm tuổi (6-8 hoặc 9-10) → hồ sơ Draft.",
+   "Số hồ sơ chưa lưu trữ (Draft, Active, Suspended) không được vượt số hồ sơ tối đa của gói.",
+   "Xem danh sách hồ sơ của mình (ProfileSwitcher), xem chi tiết, sửa, xem lịch sử thay đổi."
+  ],
+  "apis": [
+   {
+    "m": "POST",
+    "p": "/api/v1/ChildProfile",
+    "role": "User",
+    "what": "Tạo hồ sơ trẻ Draft, chủ hồ sơ là người gọi.",
+    "detail": [
+     [
+      "Kiểm tra dữ liệu",
+      [
+       "nickname: bắt buộc, 1 đến 150 ký tự (chỉ khoảng trắng = trống).",
+       "ageBand: \"Age_6_8\" hoặc \"Age_9_10\". Chuỗi khác → 400 \"Dữ liệu đầu vào không hợp lệ.\"; số không thuộc enum (3) → 400 \"Nhóm tuổi nhận thức không hợp lệ.\"",
+       "language: bỏ trống → \"vi\"; không phân biệt hoa thường; khác \"vi\" → 400 \"Nền tảng hiện chỉ hỗ trợ tiếng Việt.\""
+      ]
+     ],
+     [
+      "Giới hạn theo gói",
+      [
+       "Đếm hồ sơ Draft + Active + Suspended chưa xóa của người gọi. Đạt số tối đa → 409 \"Gói hiện tại cho phép tối đa N hồ sơ trẻ. Nâng cấp gói để thêm hồ sơ.\"",
+       "Miễn phí: 1 hồ sơ (plan_settings). Gói Đọc, Gói Sáng tạo: 4 hồ sơ. Hồ sơ Archived không tính."
+      ]
+     ],
+     [
+      "Xử lý",
+      [
+       "Status = Draft, ownerUserId = người gọi, avatarId mặc định \"avatar-default\". Ghi audit CREATE_CHILD_PROFILE."
+      ]
+     ],
+     [
+      "Kết quả",
+      [
+       "201 Created; data: id, ownerUserId, nickname, avatarId, ageBand, language, status, createdAt."
+      ]
+     ]
+    ],
+    "body": "{\n  \"nickname\": \"Bé Mai\",\n  \"ageBand\": \"Age_6_8\",\n  \"language\": \"vi\"\n}",
+    "tests": [
+     [
+      "ok",
+      "parent_demo1 tạo bé mới",
+      "201; status = Draft, ownerUserId = 2. Chép data.id vào <CHILD_ID> (13 trên DB mới seed)"
+     ],
+     [
+      "ok",
+      "language bỏ trống (tạo hồ sơ phụ Bé Na, Age_9_10)",
+      "201; language = \"vi\", status = Draft. Chép data.id vào <DRAFT_ID> (14 trên DB mới seed)"
+     ],
+     [
+      "ok",
+      "user_test_a (Miễn phí) tạo hồ sơ đầu tiên",
+      "201; status = Draft"
+     ],
+     [
+      "neg",
+      "user_test_a tạo hồ sơ thứ hai",
+      "409 \"Gói hiện tại cho phép tối đa 1 hồ sơ trẻ. Nâng cấp gói để thêm hồ sơ.\""
+     ],
+     [
+      "neg",
+      "parent_demo2 (Miễn phí, đã có 3 hồ sơ)",
+      "409 \"Gói hiện tại cho phép tối đa 1 hồ sơ trẻ...\""
+     ],
+     [
+      "neg",
+      "parent_demo1 đã có 4 hồ sơ (bé 1, 2, <CHILD_ID>, <DRAFT_ID>) tạo thêm",
+      "409 \"Gói hiện tại cho phép tối đa 4 hồ sơ trẻ. Nâng cấp gói để thêm hồ sơ.\""
+     ],
+     [
+      "neg",
+      "language \"en\"",
+      "400 \"Nền tảng hiện chỉ hỗ trợ tiếng Việt.\""
+     ],
+     [
+      "neg",
+      "ageBand \"Age_3_5\"",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\""
+     ],
+     [
+      "neg",
+      "ageBand = 3 (số)",
+      "400 \"Nhóm tuổi nhận thức không hợp lệ.\""
+     ],
+     [
+      "neg",
+      "nickname rỗng",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Biệt danh của trẻ không được để trống.\""
+     ],
+     [
+      "neg",
+      "nickname 151 ký tự",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Biệt danh từ 1 đến 150 ký tự.\""
+     ],
+     [
+      "neg",
+      "Gọi bằng token Moderator",
+      "403"
+     ],
+     [
+      "neg",
+      "Gọi bằng token bé",
+      "403"
+     ],
+     [
+      "neg",
+      "Không gửi token",
+      "401"
+     ]
+    ]
+   },
+   {
+    "m": "GET",
+    "p": "/api/v1/ChildProfile/mine",
+    "role": "User",
+    "what": "Danh sách hồ sơ do người gọi sở hữu (ProfileSwitcher). Gồm Draft, Active, Suspended; không có Archived.",
+    "detail": [
+     [
+      "Kết quả",
+      [
+       "Mảng ChildProfileDto. Không phân trang."
+      ]
+     ]
+    ],
+    "tests": [
+     [
+      "ok",
+      "parent_demo1",
+      "200; có bé 1 (Bé An), bé 2 (Bé Bình) và hồ sơ vừa tạo"
+     ],
+     [
+      "ok",
+      "parent_demo3",
+      "200; bé 5 (Draft) và bé 6 (Active)"
+     ],
+     [
+      "ok",
+      "Sau khi lưu trữ một hồ sơ (Bước 7)",
+      "Hồ sơ đó không còn trong danh sách"
+     ],
+     [
+      "ok",
+      "user_test_a vừa đăng ký, chưa tạo hồ sơ",
+      "200; mảng rỗng"
+     ],
+     [
+      "neg",
+      "Gọi bằng token Moderator",
+      "403"
+     ],
+     [
+      "neg",
+      "Không gửi token",
+      "401"
+     ]
+    ]
+   },
+   {
+    "m": "GET",
+    "p": "/api/v1/ChildProfile/{id}",
+    "role": "User — chủ hồ sơ",
+    "what": "Chi tiết một hồ sơ. Chỉ chủ hồ sơ đọc được.",
+    "detail": [
+     [
+      "Hệ thống kiểm lần lượt",
+      [
+       "Hồ sơ tồn tại → 404 \"Không tìm thấy Hồ sơ trẻ với mã định danh [id].\"",
+       "Người gọi là chủ hồ sơ → 403 \"Bạn không có quyền với hồ sơ trẻ này.\"",
+       "Hồ sơ Archived vẫn xem được."
+      ]
+     ]
+    ],
+    "tests": [
+     [
+      "ok",
+      "parent_demo1 xem bé 1",
+      "200; ownerUserId = 2, status = Active, ageBand = Age_6_8"
+     ],
+     [
+      "neg",
+      "parent_demo1 xem bé 3 (của parent_demo2)",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ],
+     [
+      "neg",
+      "Id không tồn tại",
+      "404"
+     ],
+     [
+      "edge",
+      "Hồ sơ đã lưu trữ",
+      "200; status = Archived"
+     ]
+    ]
+   },
+   {
+    "m": "PUT",
+    "p": "/api/v1/ChildProfile/{id}",
+    "role": "User — chủ hồ sơ",
+    "what": "Sửa biệt danh, nhóm tuổi, ngôn ngữ, ảnh đại diện.",
+    "detail": [
+     [
+      "Kiểm tra",
+      [
+       "Như lúc tạo; avatarId tối đa 100 ký tự, bỏ trống thì giữ ảnh cũ."
+      ]
+     ],
+     [
+      "Khi đổi nhóm tuổi",
+      [
+       "Ghi child_profile_version_history (ageBand cũ → mới).",
+       "Phản hồi có shouldReapplyBlockedPreset = true và suggestedReadingMode theo tuổi mới (Age_6_8 → ListenFirst, Age_9_10 → ReadFirst).",
+       "Server KHÔNG tự đổi Safety Policy hay Learning Profile. Frontend hỏi phụ huynh rồi gọi POST /SafetyPolicy/{id}/age-preset/apply và PUT /LearningProfile/{id}."
+      ]
+     ],
+     [
+      "Xử lý",
+      [
+       "Ghi audit UPDATE_CHILD_PROFILE."
+      ]
+     ]
+    ],
+    "body": "{\n  \"nickname\": \"Bé Mai Anh\",\n  \"ageBand\": \"Age_6_8\",\n  \"language\": \"vi\",\n  \"avatarId\": \"avatar-cat\"\n}",
+    "tests": [
+     [
+      "ok",
+      "Đổi nickname và avatarId",
+      "200; shouldReapplyBlockedPreset = false; suggestedReadingMode = null"
+     ],
+     [
+      "ok",
+      "Đổi ageBand Age_6_8 → Age_9_10",
+      "200; shouldReapplyBlockedPreset = true, suggestedReadingMode = ReadFirst; Safety Policy chưa đổi"
+     ],
+     [
+      "ok",
+      "avatarId = null",
+      "200; avatarId giữ giá trị cũ"
+     ],
+     [
+      "neg",
+      "parent_demo2 sửa bé 1",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\"; GET bằng parent_demo1 thấy dữ liệu không đổi"
+     ],
+     [
+      "neg",
+      "Id không tồn tại",
+      "404"
+     ],
+     [
+      "ok",
+      "language \"VI\"",
+      "200; language = \"vi\""
+     ],
+     [
+      "neg",
+      "language \"en\"",
+      "400 \"Nền tảng hiện chỉ hỗ trợ tiếng Việt.\""
+     ],
+     [
+      "neg",
+      "nickname chỉ có khoảng trắng",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\""
+     ]
+    ]
+   },
+   {
+    "m": "GET",
+    "p": "/api/v1/ChildProfile/{id}/audit-log?pageIndex=1&pageSize=10",
+    "role": "User — chủ hồ sơ",
+    "what": "Lịch sử thao tác trên hồ sơ (tạo, sửa, kích hoạt, tạm dừng, lưu trữ…), mới nhất trước.",
+    "detail": [
+     [
+      "Ghi chú",
+      [
+       "Chỉ gồm audit có EntityType = ChildProfile: CREATE_, UPDATE_, ACTIVATE_, SUSPEND_, RESUME_, ARCHIVE_, RESTORE_CHILD_PROFILE. Thay đổi Safety Policy ghi theo EntityType SafetyPolicy nên không có ở đây.",
+       "pageSize lớn hơn 100 → 100; nhỏ hơn 1 → 10."
+      ]
+     ]
+    ],
+    "tests": [
+     [
+      "ok",
+      "Sau khi tạo và sửa <CHILD_ID>",
+      "200; 2 dòng: UPDATE_CHILD_PROFILE rồi CREATE_CHILD_PROFILE"
+     ],
+     [
+      "edge",
+      "pageSize=1000",
+      "200; pageSize = 100"
+     ],
+     [
+      "neg",
+      "parent_demo2 xem bé 1",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "id": "b5",
+  "title": "Bước 5 — Learning Profile (1.3)",
+  "desc": "Hồ sơ học tập của bé: mức đọc, chế độ đọc (nghe là chính / tự đọc), mục tiêu đọc hiểu, chủ đề yêu thích và chủ đề cần tập trung. Bắt buộc có trước khi kích hoạt hồ sơ.",
+  "flow": [
+   "PUT (hoặc POST) /LearningProfile/{childProfileId} → tạo nếu chưa có, ghi đè nếu đã có.",
+   "readingMode bỏ trống khi tạo → server chọn theo tuổi (6-8: ListenFirst, 9-10: ReadFirst).",
+   "Hồ sơ đang Active mà đổi cấu hình → ghi lịch sử phiên bản."
+  ],
+  "apis": [
+   {
+    "m": "PUT",
+    "p": "/api/v1/LearningProfile/{childProfileId}",
+    "role": "User — chủ hồ sơ",
+    "what": "Tạo hoặc cập nhật Learning Profile (upsert).",
+    "detail": [
+     [
+      "Kiểm tra (theo thứ tự)",
+      [
+       "Chủ hồ sơ → 403 \"Bạn không có quyền với hồ sơ trẻ này.\" (id không tồn tại cũng 403).",
+       "readingLevel 1 đến 5 → 400 \"Reading level phải từ 1 đến 5.\"",
+       "readingMode: \"ListenFirst\" | \"ReadFirst\" | null.",
+       "comprehensionGoal tối đa 500 ký tự.",
+       "topics[].topic 1 đến 150 ký tự; topics[].relation: \"FavoriteTopic\" | \"PriorityFocusArea\" (mặc định FavoriteTopic)."
+      ]
+     ],
+     [
+      "Xử lý",
+      [
+       "Chưa có → tạo; readingMode null thì lấy theo tuổi.",
+       "Đã có → ghi đè readingLevel, comprehensionGoal; readingMode null thì giữ nguyên; topics bị thay TOÀN BỘ bằng danh sách mới (gửi [] = xóa hết).",
+       "Hồ sơ Active và cấu hình thật sự thay đổi → thêm child_profile_version_history (Manual).",
+       "Gọi được với hồ sơ ở mọi trạng thái."
+      ]
+     ],
+     [
+      "Kết quả",
+      [
+       "id, childProfileId, readingLevel, readingMode, comprehensionGoal, topics[{topic, relation}]."
+      ]
+     ]
+    ],
+    "body": "{\n  \"readingLevel\": 2,\n  \"readingMode\": null,\n  \"comprehensionGoal\": \"Hiểu ý chính của câu chuyện\",\n  \"topics\": [\n    {\n      \"topic\": \"Động vật\",\n      \"relation\": \"FavoriteTopic\"\n    },\n    {\n      \"topic\": \"Từ vựng về gia đình\",\n      \"relation\": \"PriorityFocusArea\"\n    }\n  ]\n}",
+    "tests": [
+     [
+      "ok",
+      "Tạo mới cho <CHILD_ID> (Age_6_8), readingMode null",
+      "200; readingMode = ListenFirst, 2 topics"
+     ],
+     [
+      "ok",
+      "Tạo mới cho hồ sơ Age_9_10, readingMode null",
+      "200; readingMode = ReadFirst"
+     ],
+     [
+      "ok",
+      "Gọi lại với topics khác",
+      "200; GET chỉ còn topics mới"
+     ],
+     [
+      "ok",
+      "Cập nhật readingMode null",
+      "200; readingMode giữ giá trị cũ"
+     ],
+     [
+      "ok",
+      "topics = []",
+      "200; topics rỗng"
+     ],
+     [
+      "ok",
+      "Bé 1 (Active) đổi readingLevel 2 → 3",
+      "200; có thêm dòng child_profile_version_history cho bé 1"
+     ],
+     [
+      "neg",
+      "readingLevel = 0",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Reading level phải từ 1 đến 5.\""
+     ],
+     [
+      "neg",
+      "readingLevel = 6",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\""
+     ],
+     [
+      "neg",
+      "readingMode \"Both\"",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\""
+     ],
+     [
+      "neg",
+      "topic rỗng",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Tên chủ đề không được để trống.\""
+     ],
+     [
+      "neg",
+      "comprehensionGoal 501 ký tự",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Mục tiêu đọc hiểu tối đa 500 ký tự.\""
+     ],
+     [
+      "neg",
+      "parent_demo2 ghi cho bé 1",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ],
+     [
+      "neg",
+      "childProfileId không tồn tại",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ],
+     [
+      "neg",
+      "Gọi bằng token bé",
+      "403"
+     ],
+     [
+      "neg",
+      "Không gửi token",
+      "401"
+     ]
+    ]
+   },
+   {
+    "m": "POST",
+    "p": "/api/v1/LearningProfile/{childProfileId}",
+    "role": "User — chủ hồ sơ",
+    "what": "Cùng logic với PUT (upsert). Đã có Learning Profile thì POST vẫn ghi đè, không báo trùng.",
+    "body": "{\n  \"readingLevel\": 1,\n  \"readingMode\": \"ListenFirst\",\n  \"comprehensionGoal\": \"Nhận biết nhân vật chính\",\n  \"topics\": []\n}",
+    "tests": [
+     [
+      "ok",
+      "POST cho hồ sơ chưa có",
+      "200 \"Tạo Learning Profile thành công.\""
+     ],
+     [
+      "ok",
+      "POST cho hồ sơ đã có",
+      "200; dữ liệu bị ghi đè"
+     ],
+     [
+      "neg",
+      "parent_demo2 ghi cho bé 1",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ]
+    ]
+   },
+   {
+    "m": "GET",
+    "p": "/api/v1/LearningProfile/{childProfileId}",
+    "role": "User — chủ hồ sơ",
+    "what": "Đọc Learning Profile của bé.",
+    "tests": [
+     [
+      "ok",
+      "parent_demo1 xem bé 1",
+      "200; readingLevel = 2, readingMode = ListenFirst"
+     ],
+     [
+      "neg",
+      "Hồ sơ chưa có Learning Profile",
+      "404 \"Không tìm thấy Learning Profile của hồ sơ trẻ với mã định danh [id].\""
+     ],
+     [
+      "neg",
+      "parent_demo2 xem bé 1",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ]
+    ]
+   },
+   {
+    "m": "DELETE",
+    "p": "/api/v1/LearningProfile/{childProfileId}",
+    "role": "User — chủ hồ sơ",
+    "what": "Xóa Learning Profile và các chủ đề.",
+    "detail": [
+     [
+      "Lưu ý",
+      [
+       "Code hiện không chặn xóa khi hồ sơ đang Active (khác với Safety Policy). Thiếu Learning Profile chỉ chặn ở bước kích hoạt.",
+       "Chỉ chạy ca xóa trên hồ sơ test."
+      ]
+     ]
+    ],
+    "tests": [
+     [
+      "ok",
+      "Xóa của <CHILD_ID> (Draft)",
+      "200; GET → 404; PATCH activate → 400 \"Hồ sơ trẻ chưa có Learning Profile không thể kích hoạt.\""
+     ],
+     [
+      "neg",
+      "Hồ sơ chưa có Learning Profile",
+      "404"
+     ],
+     [
+      "neg",
+      "parent_demo2 xóa của bé 1",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "id": "b6",
+  "title": "Bước 6 — Safety Policy và đồng thuận (1.4)",
+  "desc": "Quy tắc an toàn của bé: độ dài truyện, chế độ duyệt, chủ đề bị chặn, tính năng bé được dùng. Lần lưu đầu tiên bắt buộc chủ hồ sơ xác nhận đồng thuận (consent). Bắt buộc có trước khi kích hoạt.",
+  "flow": [
+   "Xem preset chặn theo tuổi: GET /SafetyPolicy/{id}/age-preset.",
+   "Lưu lần đầu với consentRecorded = true → server ghi consent phiên bản hiện hành (1) và tự áp preset nếu chưa khai danh mục.",
+   "Đổi nhóm tuổi ở Bước 4 → áp lại preset bằng age-preset/apply.",
+   "Điều khoản đổi phiên bản → reconsent."
+  ],
+  "apis": [
+   {
+    "m": "PUT",
+    "p": "/api/v1/SafetyPolicy/{childProfileId}",
+    "role": "User — chủ hồ sơ",
+    "what": "Tạo hoặc cập nhật Safety Policy (upsert). Danh sách categories thay toàn bộ danh sách cũ.",
+    "detail": [
+     [
+      "Kiểm tra dữ liệu",
+      [
+       "maxStoryLength 100 đến 20000 → 400, errors \"Độ dài truyện tối đa phải từ 100 đến 20000 đơn vị từ.\"",
+       "requiredApprovalMode: \"AlwaysManual\" | \"AutoPublishOnThreshold\"; childCreationMode: \"ReviewFirst\" | \"ListenNow\".",
+       "safetyScoreThreshold, readabilityScoreThreshold: 0 đến 100 hoặc null; comprehensionThresholdPercent 0 đến 100; comprehensionWindowSize 1 đến 20.",
+       "categories: contentCategoryId > 0; rule \"Allowed\" | \"Blocked\" (\"Restricted\" → 400 \"Quy tắc danh mục chỉ gồm Allowed hoặc Blocked (không có mức Restricted).\"); mỗi danh mục một lần → 400 \"Mỗi Content Category chỉ được khai báo một lần.\""
+      ]
+     ],
+     [
+      "Đồng thuận (consent)",
+      [
+       "Chưa có policy hoặc consent chưa ghi → bắt buộc consentRecorded = true, nếu không: 400 \"Phải xác nhận đồng thuận (consent) trước khi lưu quy tắc an toàn.\"",
+       "Server tự ghi consentRecordedAt, consentPolicyVersion = 1 (bản hiện hành, client không gửi được), consentedByUserId = người gọi; audit RECORD_SAFETY_CONSENT.",
+       "Đã có consent: gửi consentRecorded = false vẫn giữ consent (không thu hồi qua API này)."
+      ]
+     ],
+     [
+      "Preset chặn theo tuổi (chỉ khi TẠO MỚI)",
+      [
+       "applyAgePreset = null và categories rỗng → tự thêm Blocked theo tuổi. Seed: Age_6_8 chặn 7 VIOLENCE, 8 SCARY_CONTENT; Age_9_10 chặn 7.",
+       "applyAgePreset = true → thêm preset vào danh mục đã gửi, nhưng danh mục đã khai thì giữ rule đã khai.",
+       "applyAgePreset = false, hoặc null mà categories có phần tử → không áp.",
+       "Cập nhật (đã có policy) → không tự áp preset."
+      ]
+     ],
+     [
+      "Giọng nói",
+      [
+       "voiceAnswersEnabled = true lần đầu cần voiceConsentAccepted = true → nếu không: 400 \"Owner cần đồng ý mục (e) về nhận dạng giọng nói trước khi bật.\" Đã đồng ý trước đó (voiceConsentAt có giá trị) thì bật lại không cần."
+      ]
+     ],
+     [
+      "Ý nghĩa một số cờ",
+      [
+       "parentalGateEnabled = true buộc truyện AI luôn qua phụ huynh duyệt tay, kể cả khi requiredApprovalMode = AutoPublishOnThreshold. API ParentalGate/verify (Bước 8) không đọc cờ này.",
+       "storyWishesEnabled, allowInteractiveStories, childCreationEnabled bật / tắt tính năng tương ứng của bé."
+      ]
+     ],
+     [
+      "Kết quả",
+      [
+       "SafetyPolicyDto: các trường trên + consentRecorded, consentRecordedAt, consentPolicyVersion, consentedByUserId, consentOutdated, voiceConsentAt, effectiveVoiceAnswersEnabled, categories. Audit SET_SAFETY_POLICY (trước / sau)."
+      ]
+     ]
+    ],
+    "body": "{\n  \"maxStoryLength\": 2000,\n  \"requiredApprovalMode\": \"AlwaysManual\",\n  \"parentalGateEnabled\": true,\n  \"consentRecorded\": true,\n  \"safetyScoreThreshold\": null,\n  \"readabilityScoreThreshold\": null,\n  \"comprehensionThresholdPercent\": 70,\n  \"comprehensionWindowSize\": 3,\n  \"storyWishesEnabled\": true,\n  \"allowInteractiveStories\": true,\n  \"childCreationEnabled\": true,\n  \"childCreationMode\": \"ReviewFirst\",\n  \"voiceAnswersEnabled\": false,\n  \"voiceConsentAccepted\": false,\n  \"applyAgePreset\": null,\n  \"categories\": []\n}",
+    "tests": [
+     [
+      "ok",
+      "Lần đầu cho <CHILD_ID> (Age_6_8), categories rỗng",
+      "200; consentRecorded = true, consentPolicyVersion = 1, consentedByUserId = 2; categories = 7 Blocked, 8 Blocked"
+     ],
+     [
+      "ok",
+      "Lần đầu, applyAgePreset = false, categories rỗng",
+      "200; categories rỗng"
+     ],
+     [
+      "ok",
+      "Lần đầu, categories chỉ có 5 Allowed, applyAgePreset null",
+      "200; chỉ có 5 Allowed (không áp preset)"
+     ],
+     [
+      "ok",
+      "Lần đầu, applyAgePreset = true, categories có 8 Allowed",
+      "200; 8 giữ Allowed, thêm 7 Blocked"
+     ],
+     [
+      "ok",
+      "Cập nhật (đã có consent), gửi consentRecorded = false",
+      "200; consentRecorded vẫn true"
+     ],
+     [
+      "ok",
+      "Bật giọng nói có voiceConsentAccepted = true",
+      "200; voiceAnswersEnabled = true, voiceConsentAt có giá trị, effectiveVoiceAnswersEnabled = true"
+     ],
+     [
+      "neg",
+      "Lần đầu, consentRecorded = false",
+      "400 \"Phải xác nhận đồng thuận (consent) trước khi lưu quy tắc an toàn.\""
+     ],
+     [
+      "neg",
+      "parent_demo3 lưu cho bé 5 (seed chưa có consent), consentRecorded = false",
+      "400 \"Phải xác nhận đồng thuận (consent) trước khi lưu quy tắc an toàn.\""
+     ],
+     [
+      "neg",
+      "Bật giọng nói lần đầu, voiceConsentAccepted = false",
+      "400 \"Owner cần đồng ý mục (e) về nhận dạng giọng nói trước khi bật.\""
+     ],
+     [
+      "neg",
+      "maxStoryLength = 99",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Độ dài truyện tối đa phải từ 100 đến 20000 đơn vị từ.\""
+     ],
+     [
+      "neg",
+      "maxStoryLength = 20001",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\""
+     ],
+     [
+      "neg",
+      "Danh mục rule Restricted",
+      "400 \"Quy tắc danh mục chỉ gồm Allowed hoặc Blocked (không có mức Restricted).\""
+     ],
+     [
+      "neg",
+      "Danh mục trùng id",
+      "400 \"Mỗi Content Category chỉ được khai báo một lần.\""
+     ],
+     [
+      "neg",
+      "contentCategoryId = 0",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Content Category không hợp lệ.\""
+     ],
+     [
+      "neg",
+      "comprehensionWindowSize = 21",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Comprehension window size phải nằm trong khoảng 1 đến 20.\""
+     ],
+     [
+      "neg",
+      "safetyScoreThreshold = 101",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Ngưỡng safety phải nằm trong khoảng 0 đến 100.\""
+     ],
+     [
+      "neg",
+      "parent_demo2 sửa bé 1",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ]
+    ]
+   },
+   {
+    "m": "POST",
+    "p": "/api/v1/SafetyPolicy/{childProfileId}",
+    "role": "User — chủ hồ sơ",
+    "what": "Cùng logic với PUT (upsert).",
+    "body": "{\n  \"maxStoryLength\": 1500,\n  \"requiredApprovalMode\": \"AlwaysManual\",\n  \"parentalGateEnabled\": true,\n  \"consentRecorded\": true,\n  \"categories\": []\n}",
+    "tests": [
+     [
+      "ok",
+      "POST lần đầu kèm consentRecorded = true",
+      "200 \"Tạo Safety Policy thành công.\"; các trường không gửi lấy mặc định (comprehensionThresholdPercent 70, window 3, ReviewFirst...)"
+     ],
+     [
+      "neg",
+      "POST lần đầu thiếu consentRecorded",
+      "400 \"Phải xác nhận đồng thuận (consent) trước khi lưu quy tắc an toàn.\""
+     ]
+    ]
+   },
+   {
+    "m": "GET",
+    "p": "/api/v1/SafetyPolicy/{childProfileId}",
+    "role": "User — chủ hồ sơ",
+    "what": "Đọc Safety Policy.",
+    "tests": [
+     [
+      "ok",
+      "parent_demo1 xem bé 1",
+      "200; maxStoryLength = 1500, AlwaysManual, consentRecorded = true, consentOutdated = false"
+     ],
+     [
+      "ok",
+      "parent_demo3 xem bé 5",
+      "200; consentRecorded = false"
+     ],
+     [
+      "neg",
+      "Hồ sơ chưa có Safety Policy",
+      "404 \"Không tìm thấy Safety Policy của hồ sơ trẻ với mã định danh [id].\""
+     ],
+     [
+      "neg",
+      "parent_demo2 xem bé 1",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ]
+    ]
+   },
+   {
+    "m": "GET",
+    "p": "/api/v1/SafetyPolicy/{childProfileId}/age-preset",
+    "role": "User — chủ hồ sơ",
+    "what": "Danh mục bị chặn mặc định theo nhóm tuổi hiện tại của bé (dùng để hiển thị gợi ý trước khi lưu).",
+    "detail": [
+     [
+      "Kết quả",
+      [
+       "ageBand, blockedCategoryIds (danh mục đang hoạt động có DefaultBlockedAgeBands chứa nhóm tuổi). Không cần đã có Safety Policy."
+      ]
+     ]
+    ],
+    "tests": [
+     [
+      "ok",
+      "Bé 1 (Age_6_8)",
+      "200; blockedCategoryIds = [7, 8]"
+     ],
+     [
+      "ok",
+      "Bé 2 (Age_9_10)",
+      "200; blockedCategoryIds = [7]"
+     ],
+     [
+      "neg",
+      "parent_demo2 xem bé 1",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ]
+    ]
+   },
+   {
+    "m": "POST",
+    "p": "/api/v1/SafetyPolicy/{childProfileId}/age-preset/apply",
+    "role": "User — chủ hồ sơ",
+    "what": "Áp lại preset theo tuổi hiện tại: thay toàn bộ danh mục Blocked bằng preset, giữ các danh mục Allowed (trừ danh mục nay thuộc preset).",
+    "detail": [
+     [
+      "Dùng khi",
+      [
+       "Sau khi đổi ageBand (PUT /ChildProfile trả shouldReapplyBlockedPreset = true) và phụ huynh đồng ý. Không cần body. Ghi audit APPLY_AGE_PRESET."
+      ]
+     ],
+     [
+      "Lỗi",
+      [
+       "Chưa có Safety Policy → 404."
+      ]
+     ]
+    ],
+    "tests": [
+     [
+      "ok",
+      "<CHILD_ID> đổi sang Age_9_10 rồi áp lại",
+      "200; Blocked chỉ còn 7 (8 bị bỏ khỏi danh sách chặn)"
+     ],
+     [
+      "ok",
+      "Policy có 8 Allowed, bé Age_6_8",
+      "200; 8 chuyển thành Blocked, các Allowed khác giữ nguyên"
+     ],
+     [
+      "neg",
+      "Hồ sơ chưa có Safety Policy",
+      "404"
+     ],
+     [
+      "neg",
+      "parent_demo2 áp cho bé 1",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ]
+    ]
+   },
+   {
+    "m": "POST",
+    "p": "/api/v1/SafetyPolicy/{childProfileId}/reconsent",
+    "role": "User — chủ hồ sơ",
+    "what": "Đồng ý lại điều khoản khi phiên bản consent đã cũ hơn bản hiện hành.",
+    "detail": [
+     [
+      "Xử lý",
+      [
+       "Chưa có policy → 404; chưa có consent ban đầu → 400 \"Hồ sơ chưa có consent ban đầu — hãy lưu Safety Policy kèm xác nhận đồng thuận.\"",
+       "Consent đang là bản hiện hành → 200, không đổi gì.",
+       "Consent cũ → ghi lại consent bản hiện hành; audit RECONSENT_SAFETY_POLICY.",
+       "Khi consent cũ: consentOutdated = true, effectiveVoiceAnswersEnabled = false, hồ sơ không kích hoạt được."
+      ]
+     ],
+     [
+      "Cách tạo dữ liệu consent cũ",
+      [
+       "Bản hiện hành là 1. Sửa DB: UPDATE safety_policies SET \"ConsentPolicyVersion\" = 0 WHERE \"ChildProfileId\" = <id hồ sơ test>."
+      ]
+     ]
+    ],
+    "tests": [
+     [
+      "ok",
+      "Bé 1 (consent đang hiện hành)",
+      "200; consentPolicyVersion vẫn 1, không ghi audit"
+     ],
+     [
+      "edge",
+      "Hồ sơ test có ConsentPolicyVersion = 0 (sửa DB)",
+      "GET trước: consentOutdated = true; reconsent → 200, consentPolicyVersion = 1, consentOutdated = false"
+     ],
+     [
+      "neg",
+      "parent_demo3 cho bé 5 (chưa có consent)",
+      "400 \"Hồ sơ chưa có consent ban đầu — hãy lưu Safety Policy kèm xác nhận đồng thuận.\""
+     ],
+     [
+      "neg",
+      "parent_demo2 cho bé 1",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ]
+    ]
+   },
+   {
+    "m": "DELETE",
+    "p": "/api/v1/SafetyPolicy/{childProfileId}",
+    "role": "User — chủ hồ sơ",
+    "what": "Xóa Safety Policy. Không xóa được khi hồ sơ đang Active.",
+    "detail": [
+     [
+      "Lỗi",
+      [
+       "Hồ sơ Active → 400 \"Không thể xóa Safety Policy của hồ sơ đang Active — trẻ đang dùng quy tắc này.\"",
+       "Chưa có policy → 404."
+      ]
+     ]
+    ],
+    "tests": [
+     [
+      "ok",
+      "Xóa của <CHILD_ID> khi còn Draft",
+      "200; PATCH activate → 400 \"Hồ sơ trẻ chưa có Safety Policy — không thể kích hoạt.\""
+     ],
+     [
+      "neg",
+      "Bé 1 (Active)",
+      "400 \"Không thể xóa Safety Policy của hồ sơ đang Active — trẻ đang dùng quy tắc này.\""
+     ],
+     [
+      "neg",
+      "Hồ sơ chưa có Safety Policy",
+      "404"
+     ],
+     [
+      "neg",
+      "parent_demo2 xóa của bé 1",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "id": "b7",
+  "title": "Bước 7 — Kích hoạt và vòng đời hồ sơ (1.5)",
+  "desc": "Hồ sơ đủ Learning Profile, Safety Policy và consent hiện hành thì chuyển Active. Sau đó chủ hồ sơ có thể tạm dừng, kích hoạt lại, lưu trữ, khôi phục; và chọn bé được đọc khi số hồ sơ Active vượt gói.",
+  "flow": [
+   "PATCH /ChildProfile/{id}/activate → Active.",
+   "Tạm dừng (Active → Suspended) / lưu trữ (Active, Suspended → Archived): thu hồi ngay phiên của bé và QR Easy Login.",
+   "Kích hoạt lại (Suspended → Active) / khôi phục (Archived → Active): kiểm consent; QR cũ không tự sống lại, phải tạo QR mới.",
+   "Số hồ sơ Active nhiều hơn gói → chỉ một số bé được đọc; phụ huynh chọn qua reading-slots (đổi tối đa 1 lần / tuần)."
+  ],
+  "apis": [
+   {
+    "m": "PATCH",
+    "p": "/api/v1/ChildProfile/{id}/activate",
+    "role": "User — chủ hồ sơ",
+    "what": "Kích hoạt hồ sơ Draft khi đã đủ cấu hình. Không có body.",
+    "detail": [
+     [
+      "Hệ thống kiểm lần lượt",
+      [
+       "Hồ sơ tồn tại → 404.",
+       "Chủ hồ sơ → 403 \"Bạn không có quyền với hồ sơ trẻ này.\"",
+       "Không Suspended / Archived → 400 \"Không thể kích hoạt hồ sơ trẻ đang bị đình chỉ hoặc đã lưu trữ.\"",
+       "Có Learning Profile → 400 \"Hồ sơ trẻ chưa có Learning Profile không thể kích hoạt.\"",
+       "Có Safety Policy → 400 \"Hồ sơ trẻ chưa có Safety Policy — không thể kích hoạt.\"",
+       "consentRecorded = true → 400 \"Safety Policy chưa có consent hợp lệ theo phiên bản hiện tại — không thể kích hoạt.\"",
+       "Consent là bản hiện hành → 400 \"Điều khoản đồng thuận đã thay đổi — Owner cần đồng ý bản mới trước khi kích hoạt.\""
+      ]
+     ],
+     [
+      "Xử lý",
+      [
+       "Status = Active, audit ACTIVATE_CHILD_PROFILE. Gọi lại trên hồ sơ đã Active → 200, vẫn Active."
+      ]
+     ],
+     [
+      "Lưu ý",
+      [
+       "Kích hoạt không kiểm số chỗ đọc. Tài khoản Miễn phí kích hoạt hồ sơ thứ hai → hồ sơ vẫn Active nhưng có thể ở chế độ chỉ xem (xem reading-slots).",
+       "Kích hoạt không tạo QR: bé vào bằng QR (tạo ở Bước 8) hoặc phụ huynh bàn giao máy."
+      ]
+     ]
+    ],
+    "tests": [
+     [
+      "ok",
+      "<CHILD_ID> đã có Learning Profile, Safety Policy và consent",
+      "200; status = Active"
+     ],
+     [
+      "ok",
+      "Gọi lại lần 2",
+      "200; vẫn Active"
+     ],
+     [
+      "neg",
+      "Hồ sơ mới tạo, chưa có Learning Profile",
+      "400 \"Hồ sơ trẻ chưa có Learning Profile không thể kích hoạt.\""
+     ],
+     [
+      "neg",
+      "Có Learning Profile, chưa có Safety Policy",
+      "400 \"Hồ sơ trẻ chưa có Safety Policy — không thể kích hoạt.\""
+     ],
+     [
+      "neg",
+      "parent_demo3 kích hoạt bé 5 (consent chưa ghi)",
+      "400 \"Safety Policy chưa có consent hợp lệ theo phiên bản hiện tại — không thể kích hoạt.\""
+     ],
+     [
+      "edge",
+      "Hồ sơ test có ConsentPolicyVersion = 0 (sửa DB)",
+      "400 \"Điều khoản đồng thuận đã thay đổi — Owner cần đồng ý bản mới trước khi kích hoạt.\""
+     ],
+     [
+      "neg",
+      "Hồ sơ đang Suspended",
+      "400 \"Không thể kích hoạt hồ sơ trẻ đang bị đình chỉ hoặc đã lưu trữ.\""
+     ],
+     [
+      "neg",
+      "parent_demo2 kích hoạt <CHILD_ID>",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ],
+     [
+      "neg",
+      "Id không tồn tại",
+      "404"
+     ]
+    ]
+   },
+   {
+    "m": "PATCH",
+    "p": "/api/v1/ChildProfile/{id}/suspend",
+    "role": "User — chủ hồ sơ",
+    "what": "Tạm dừng hồ sơ đang Active. Bé bị đăng xuất ngay và QR Easy Login bị thu hồi.",
+    "detail": [
+     [
+      "Xử lý",
+      [
+       "Đã Suspended → 200 (không lỗi). Trạng thái khác Active → 400 \"Chỉ có thể tạm dừng hồ sơ đang Active.\"",
+       "Thu hồi mọi phiên của bé (token bé cũ → 401), thu hồi credential Easy Login (secret không dùng được nữa). Audit SUSPEND_CHILD_PROFILE."
+      ]
+     ]
+    ],
+    "tests": [
+     [
+      "ok",
+      "<CHILD_ID> đang Active",
+      "200; status = Suspended; GET /ChildAccessCredential/<CHILD_ID> → hasEasyLogin = false"
+     ],
+     [
+      "ok",
+      "Token bé của hồ sơ này gọi GET /ChildAccessCredential/me",
+      "401"
+     ],
+     [
+      "ok",
+      "Tạm dừng lại lần 2",
+      "200; vẫn Suspended"
+     ],
+     [
+      "neg",
+      "Hồ sơ Draft",
+      "400 \"Chỉ có thể tạm dừng hồ sơ đang Active.\""
+     ],
+     [
+      "neg",
+      "parent_demo2 tạm dừng bé 1",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ]
+    ]
+   },
+   {
+    "m": "PATCH",
+    "p": "/api/v1/ChildProfile/{id}/resume",
+    "role": "User — chủ hồ sơ",
+    "what": "Kích hoạt lại hồ sơ đang tạm dừng. Body không bắt buộc.",
+    "detail": [
+     [
+      "Hệ thống kiểm lần lượt",
+      [
+       "Status = Suspended → nếu không: 400 \"Chỉ có thể kích hoạt lại hồ sơ đang tạm dừng.\"",
+       "Có consent → 400 \"Hồ sơ trẻ chưa có consent hợp lệ — không thể kích hoạt lại.\"",
+       "Consent cũ và acceptCurrentConsent = false → 400 \"Điều khoản đồng thuận đã thay đổi — Owner cần đồng ý bản mới để tiếp tục.\"; acceptCurrentConsent = true → cập nhật consent về bản hiện hành."
+      ]
+     ],
+     [
+      "Lưu ý",
+      [
+       "Không tự khôi phục QR Easy Login: phải tạo QR mới (Bước 8)."
+      ]
+     ]
+    ],
+    "body": "{\n  \"acceptCurrentConsent\": false\n}",
+    "tests": [
+     [
+      "ok",
+      "<CHILD_ID> đang Suspended",
+      "200; status = Active; hasEasyLogin vẫn false (cần tạo QR mới)"
+     ],
+     [
+      "ok",
+      "Không gửi body",
+      "200 nếu consent đang hiện hành"
+     ],
+     [
+      "neg",
+      "Hồ sơ đang Active",
+      "400 \"Chỉ có thể kích hoạt lại hồ sơ đang tạm dừng.\""
+     ],
+     [
+      "edge",
+      "Consent cũ (sửa DB về 0), acceptCurrentConsent = false",
+      "400 \"Điều khoản đồng thuận đã thay đổi — Owner cần đồng ý bản mới để tiếp tục.\""
+     ],
+     [
+      "edge",
+      "Consent cũ, acceptCurrentConsent = true",
+      "200; GET /SafetyPolicy → consentPolicyVersion = 1"
+     ],
+     [
+      "neg",
+      "parent_demo2 kích hoạt lại hồ sơ của parent_demo1",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ]
+    ]
+   },
+   {
+    "m": "DELETE",
+    "p": "/api/v1/ChildProfile/{id}",
+    "role": "User — chủ hồ sơ",
+    "what": "Lưu trữ hồ sơ (không xóa dữ liệu). Hồ sơ biến khỏi /mine, bé bị đăng xuất, QR bị thu hồi.",
+    "detail": [
+     [
+      "Xử lý",
+      [
+       "Đã Archived → 200 (không lỗi). Chỉ lưu trữ được Active hoặc Suspended → Draft: 400 \"Chỉ có thể lưu trữ hồ sơ đang Active hoặc đã tạm dừng.\"",
+       "Thu hồi phiên bé và Easy Login như khi tạm dừng. Audit ARCHIVE_CHILD_PROFILE.",
+       "Hồ sơ Archived không tính vào số hồ sơ tối đa của gói."
+      ]
+     ]
+    ],
+    "tests": [
+     [
+      "ok",
+      "<CHILD_ID> đang Active",
+      "200; GET /mine không còn; GET /ChildProfile/<CHILD_ID> → status = Archived"
+     ],
+     [
+      "ok",
+      "Lưu trữ lại lần 2",
+      "200"
+     ],
+     [
+      "neg",
+      "Hồ sơ Draft",
+      "400 \"Chỉ có thể lưu trữ hồ sơ đang Active hoặc đã tạm dừng.\""
+     ],
+     [
+      "neg",
+      "parent_demo2 lưu trữ bé 1",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ]
+    ]
+   },
+   {
+    "m": "PATCH",
+    "p": "/api/v1/ChildProfile/{id}/restore",
+    "role": "User — chủ hồ sơ",
+    "what": "Khôi phục hồ sơ đã lưu trữ về Active. Body giống resume.",
+    "detail": [
+     [
+      "Hệ thống kiểm lần lượt",
+      [
+       "Status = Archived → nếu không: 400 \"Chỉ có thể khôi phục hồ sơ đã lưu trữ.\"",
+       "Còn chỗ trong gói (đếm Draft + Active + Suspended) → 409 \"Gói hiện tại cho phép tối đa N hồ sơ trẻ...\"",
+       "Consent như resume."
+      ]
+     ]
+    ],
+    "body": "{\n  \"acceptCurrentConsent\": false\n}",
+    "tests": [
+     [
+      "ok",
+      "<CHILD_ID> đang Archived",
+      "200; status = Active; xuất hiện lại trong /mine"
+     ],
+     [
+      "neg",
+      "Hồ sơ đang Active",
+      "400 \"Chỉ có thể khôi phục hồ sơ đã lưu trữ.\""
+     ],
+     [
+      "neg",
+      "user_test_a: lưu trữ hồ sơ 1, tạo hồ sơ 2, rồi khôi phục hồ sơ 1",
+      "409 \"Gói hiện tại cho phép tối đa 1 hồ sơ trẻ...\""
+     ],
+     [
+      "neg",
+      "parent_demo2 khôi phục hồ sơ của parent_demo1",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ]
+    ]
+   },
+   {
+    "m": "GET",
+    "p": "/api/v1/ChildProfile/reading-slots",
+    "role": "User",
+    "what": "Xem bé nào được đọc khi số hồ sơ Active vượt số hồ sơ của gói.",
+    "detail": [
+     [
+      "Quy tắc chọn bé được đọc",
+      [
+       "slots = số hồ sơ tối đa của gói. Số hồ sơ Active ≤ slots → mọi bé đọc được.",
+       "Vượt → lấy theo thứ tự: bé phụ huynh đã chọn, rồi bé có phiên đọc gần nhất, rồi bé tạo sớm nhất. Bé còn lại \"chỉ xem\": trạng thái vẫn Active nhưng không vào đọc được."
+      ]
+     ],
+     [
+      "Kết quả",
+      [
+       "slots, isOverLimit, nextChangeAllowedAt (null = đổi được ngay), profiles[{childProfileId, nickname, canRead, isSelected}]."
+      ]
+     ]
+    ],
+    "tests": [
+     [
+      "ok",
+      "parent_demo1 (Gói Sáng tạo, 4 chỗ)",
+      "200; slots = 4, isOverLimit = false, mọi bé canRead = true"
+     ],
+     [
+      "ok",
+      "parent_demo2 (Miễn phí, 3 bé Active)",
+      "200; slots = 1, isOverLimit = true; chỉ bé 3 canRead = true (có phiên đọc gần nhất); bé 4, 11 canRead = false"
+     ],
+     [
+      "neg",
+      "Gọi bằng token Moderator",
+      "403"
+     ]
+    ]
+   },
+   {
+    "m": "PUT",
+    "p": "/api/v1/ChildProfile/reading-slots",
+    "role": "User",
+    "what": "Chọn bé được đọc khi vượt gói. Đổi tối đa 1 lần mỗi tuần (giờ Việt Nam, mở lại 00:00 thứ Hai).",
+    "detail": [
+     [
+      "Hệ thống kiểm lần lượt",
+      [
+       "Số id từ 1 tới slots → 400 \"Chọn từ 1 đến N hồ sơ được đọc.\"",
+       "Mọi id là hồ sơ Active của chính mình → 400 \"Chỉ chọn được hồ sơ trẻ đang hoạt động của chính tài khoản.\"",
+       "Tuần này chưa đổi → 409 \"Chỉ được đổi hồ sơ được đọc 1 lần mỗi tuần. Lần đổi tiếp theo: dd/MM/yyyy.\""
+      ]
+     ],
+     [
+      "Xử lý",
+      [
+       "Đánh dấu bé được chọn; bé chuyển sang chỉ xem bị đăng xuất ngay. Audit ReadingSlotsChanged."
+      ]
+     ],
+     [
+      "Lưu ý",
+      [
+       "Ca thành công khóa việc đổi tới tuần sau. Muốn chạy lại: đặt \"ReadingSlotSelectedAt\" = NULL cho các hồ sơ của tài khoản trong bảng child_profiles, hoặc nạp lại seed."
+      ]
+     ]
+    ],
+    "body": "{\n  \"childProfileIds\": [\n    4\n  ]\n}",
+    "tests": [
+     [
+      "ok",
+      "parent_demo2 chọn bé 4",
+      "200; bé 4 canRead = true, isSelected = true; bé 3 canRead = false; nextChangeAllowedAt = 00:00 thứ Hai tuần sau (giờ VN)"
+     ],
+     [
+      "ok",
+      "Sau đó bé 3 quét QR (demo-qr-child-03)",
+      "403 \"Bạn chưa vào đọc truyện được lúc này. Hãy nhờ bố mẹ hoặc thầy cô giúp nhé!\""
+     ],
+     [
+      "neg",
+      "Đổi lần 2 trong cùng tuần",
+      "409 \"Chỉ được đổi hồ sơ được đọc 1 lần mỗi tuần. Lần đổi tiếp theo: ...\""
+     ],
+     [
+      "neg",
+      "childProfileIds rỗng",
+      "400 \"Chọn từ 1 đến 1 hồ sơ được đọc.\""
+     ],
+     [
+      "neg",
+      "Chọn 2 bé khi slots = 1",
+      "400 \"Chọn từ 1 đến 1 hồ sơ được đọc.\""
+     ],
+     [
+      "neg",
+      "Chọn bé 1 (không phải của parent_demo2)",
+      "400 \"Chỉ chọn được hồ sơ trẻ đang hoạt động của chính tài khoản.\""
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "id": "b8",
+  "title": "Bước 8 — Bé vào ứng dụng: QR Easy Login, bàn giao máy, Parental Gate (1.6)",
+  "desc": "Bé không có mật khẩu. Bé vào Child Session bằng QR Easy Login do chủ hồ sơ tạo (thay cho PIN trong tài liệu), hoặc phụ huynh bàn giao máy từ ProfileSwitcher. Muốn rời Child Session để vào khu quản lý thì người lớn phải qua Parental Gate.",
+  "flow": [
+   "Chủ hồ sơ tạo QR: POST /ChildAccessCredential/{id}/easylogin → secret (chỉ hiện một lần), client dựng QR.",
+   "Bé quét QR: POST /ChildAccessCredential/easylogin/login → token trẻ (token_type = child).",
+   "Hoặc phụ huynh bàn giao máy: POST /ChildAccessCredential/{id}/handover kèm refresh token của chính mình.",
+   "Bé dùng token trẻ gọi API ChildSession (GET /ChildAccessCredential/me...). Không hoạt động 20 phút → phiên hết hạn.",
+   "Rời Child Session: người lớn nhập email + mật khẩu ở POST /ParentalGate/verify."
+  ],
+  "apis": [
+   {
+    "m": "POST",
+    "p": "/api/v1/ChildAccessCredential/{childProfileId}/easylogin",
+    "role": "User — chủ hồ sơ",
+    "what": "Tạo hoặc tạo lại QR Easy Login. Secret chỉ trả đúng một lần; server chỉ lưu hash.",
+    "detail": [
+     [
+      "Xử lý",
+      [
+       "Secret ngẫu nhiên 256 bit (chuỗi base64url 43 ký tự).",
+       "Đã có QR → thu hồi QR cũ (secret cũ hết hiệu lực) và kết thúc mọi phiên bé vào bằng QR cũ; giữ avatar cũ. Audit REGENERATE_EASY_LOGIN; lần đầu CREATE_EASY_LOGIN. Audit không chứa secret.",
+       "Không kiểm trạng thái hồ sơ: hồ sơ Draft vẫn tạo được QR, nhưng bé chỉ vào được khi hồ sơ Active."
+      ]
+     ],
+     [
+      "Kết quả",
+      [
+       "secret, createdAt."
+      ]
+     ]
+    ],
+    "tests": [
+     [
+      "ok",
+      "<CHILD_ID> đang Active",
+      "200; có secret. Chép vào <EASY_SECRET>"
+     ],
+     [
+      "ok",
+      "Gọi lại (tạo lại QR)",
+      "200; secret mới. Đăng nhập bằng secret cũ → 400; token bé lấy từ secret cũ → 401"
+     ],
+     [
+      "edge",
+      "Hồ sơ Draft",
+      "200 (tạo được) nhưng bé đăng nhập bằng secret đó → 403 \"Bạn chưa vào đọc truyện được lúc này. Hãy nhờ bố mẹ hoặc thầy cô giúp nhé!\""
+     ],
+     [
+      "neg",
+      "parent_demo2 tạo QR cho bé 1",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ],
+     [
+      "neg",
+      "Gọi bằng token bé",
+      "403"
+     ]
+    ]
+   },
+   {
+    "m": "GET",
+    "p": "/api/v1/ChildAccessCredential/{childProfileId}",
+    "role": "User — chủ hồ sơ",
+    "what": "Trạng thái QR của bé. Không bao giờ trả secret hay hash.",
+    "detail": [
+     [
+      "Kết quả",
+      [
+       "childProfileId, hasEasyLogin, easyLoginCreatedAt (null khi chưa có QR)."
+      ]
+     ]
+    ],
+    "tests": [
+     [
+      "ok",
+      "parent_demo1 xem bé 1",
+      "200; hasEasyLogin = true, có easyLoginCreatedAt; không có trường secret"
+     ],
+     [
+      "ok",
+      "Sau khi thu hồi QR hoặc tạm dừng hồ sơ",
+      "200; hasEasyLogin = false, easyLoginCreatedAt = null"
+     ],
+     [
+      "neg",
+      "parent_demo2 xem bé 1",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ]
+    ]
+   },
+   {
+    "m": "DELETE",
+    "p": "/api/v1/ChildAccessCredential/{childProfileId}",
+    "role": "User — chủ hồ sơ",
+    "what": "Thu hồi QR Easy Login. Bé đang vào bằng QR này bị đăng xuất ngay.",
+    "detail": [
+     [
+      "Xử lý",
+      [
+       "Chưa có QR → 200 (không lỗi).",
+       "Chỉ kết thúc phiên vào bằng QR này; phiên bé do phụ huynh bàn giao máy không bị ảnh hưởng. Audit REVOKE_EASY_LOGIN."
+      ]
+     ]
+    ],
+    "tests": [
+     [
+      "ok",
+      "Thu hồi QR của <CHILD_ID>",
+      "200; đăng nhập bằng <EASY_SECRET> → 400; token bé vào bằng QR → 401"
+     ],
+     [
+      "ok",
+      "Thu hồi lại khi đã không còn QR",
+      "200"
+     ],
+     [
+      "edge",
+      "Bé đang trong phiên bàn giao máy (handover)",
+      "Token bé từ handover vẫn dùng được"
+     ],
+     [
+      "neg",
+      "parent_demo2 thu hồi QR bé 1",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ]
+    ]
+   },
+   {
+    "m": "POST",
+    "p": "/api/v1/ChildAccessCredential/easylogin/login",
+    "role": "Không cần đăng nhập (bé quét QR)",
+    "what": "Bé quét QR để vào Child Session, không cần người lớn.",
+    "detail": [
+     [
+      "Hệ thống kiểm lần lượt",
+      [
+       "secret không rỗng, tối đa 128 ký tự → 400.",
+       "Thiết bị (IP) không bị khóa → 403 \"Quét sai quá nhiều lần trên thiết bị này. Vui lòng thử lại sau 5 phút.\" (5 lần sai liên tiếp → khóa 5 phút).",
+       "secret khớp QR chưa thu hồi → nếu không: 400 \"Mã EasyLogin không hợp lệ hoặc đã bị thu hồi.\" và tính 1 lần sai.",
+       "Hồ sơ Active và không ở chế độ chỉ xem → nếu không: 403 \"Bạn chưa vào đọc truyện được lúc này. Hãy nhờ bố mẹ hoặc thầy cô giúp nhé!\" (câu chung, không lộ lý do, không tính là quét sai)."
+      ]
+     ],
+     [
+      "Xử lý",
+      [
+       "Xóa bộ đếm sai của thiết bị, tạo ChildSession (EntryMethod = EasyLogin)."
+      ]
+     ],
+     [
+      "Kết quả",
+      [
+       "childProfileId, avatarId, accessToken (token trẻ, token_type = child), expiresInSeconds. Token trẻ chỉ gọi được API ChildSession; không có refresh token."
+      ]
+     ],
+     [
+      "Lưu ý",
+      [
+       "Ca \"5 lần sai\" khóa cả IP máy bạn 5 phút: chạy cuối hoặc chờ hết khóa."
+      ]
+     ]
+    ],
+    "body": "{\n  \"secret\": \"demo-qr-child-01\"\n}",
+    "tests": [
+     [
+      "ok",
+      "Secret demo-qr-child-01",
+      "200; childProfileId = 1, avatarId = avatar-rabbit, có accessToken"
+     ],
+     [
+      "ok",
+      "Secret <EASY_SECRET> vừa tạo",
+      "200; childProfileId = <CHILD_ID>"
+     ],
+     [
+      "neg",
+      "Secret sai",
+      "400 \"Mã EasyLogin không hợp lệ hoặc đã bị thu hồi.\""
+     ],
+     [
+      "neg",
+      "Secret rỗng",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Mã EasyLogin không được để trống.\""
+     ],
+     [
+      "edge",
+      "Secret 129 ký tự",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Mã EasyLogin không hợp lệ.\""
+     ],
+     [
+      "neg",
+      "Bé 5 Draft (demo-qr-child-05)",
+      "403 \"Bạn chưa vào đọc truyện được lúc này. Hãy nhờ bố mẹ hoặc thầy cô giúp nhé!\""
+     ],
+     [
+      "neg",
+      "Bé 4 đang chỉ xem (demo-qr-child-04)",
+      "403 \"Bạn chưa vào đọc truyện được lúc này. Hãy nhờ bố mẹ hoặc thầy cô giúp nhé!\""
+     ],
+     [
+      "neg",
+      "Sai 5 lần liên tiếp rồi nhập đúng demo-qr-child-01",
+      "Lần 1–5: 400; lần 6: 403 \"Quét sai quá nhiều lần trên thiết bị này. Vui lòng thử lại sau 5 phút.\""
+     ]
+    ]
+   },
+   {
+    "m": "GET",
+    "p": "/api/v1/ChildAccessCredential/me",
+    "role": "ChildSession (token trẻ)",
+    "what": "Bé xem hồ sơ của chính mình bằng token trẻ.",
+    "detail": [
+     [
+      "Điều kiện token trẻ",
+      [
+       "Mỗi request kiểm: hồ sơ còn Active, phiên còn (chưa bị thu hồi), không quá 20 phút không hoạt động → nếu không: 401.",
+       "Token người lớn gọi API ChildSession → 403."
+      ]
+     ],
+     [
+      "Kết quả",
+      [
+       "childProfileId, nickname, ageBand."
+      ]
+     ]
+    ],
+    "tests": [
+     [
+      "ok",
+      "Token bé 1 (vào bằng demo-qr-child-01)",
+      "200; childProfileId = 1, nickname = Bé An, ageBand = Age_6_8"
+     ],
+     [
+      "neg",
+      "Token người lớn parent_demo1",
+      "403"
+     ],
+     [
+      "neg",
+      "Không gửi token",
+      "401"
+     ],
+     [
+      "neg",
+      "Token bé sau khi phụ huynh tạm dừng hồ sơ",
+      "401"
+     ],
+     [
+      "edge",
+      "Để yên token bé hơn 20 phút rồi gọi",
+      "401 (phiên hết hạn do không hoạt động)"
+     ]
+    ]
+   },
+   {
+    "m": "POST",
+    "p": "/api/v1/ChildAccessCredential/{childProfileId}/handover",
+    "role": "User — chủ hồ sơ",
+    "what": "Phụ huynh bàn giao máy cho bé từ ProfileSwitcher, không cần QR. supervisorRefreshToken là refresh token phiên người lớn đang dùng (tên trường còn giữ chữ Supervisor).",
+    "detail": [
+     [
+      "Hệ thống kiểm lần lượt",
+      [
+       "Chủ hồ sơ → 403 \"Bạn không có quyền với hồ sơ trẻ này.\"",
+       "supervisorRefreshToken là phiên của chính người gọi, chưa thu hồi, còn hạn → nếu không: 401 \"Phiên Supervisor không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại.\"",
+       "Hồ sơ Active → 403 \"Bạn chưa vào đọc truyện được lúc này. Hãy nhờ bố mẹ hoặc thầy cô giúp nhé!\"",
+       "Hồ sơ không ở chế độ chỉ xem → 403 \"Hồ sơ đang ở chế độ chỉ xem. Phụ huynh có thể chọn hồ sơ được đọc hoặc nâng cấp gói.\""
+      ]
+     ],
+     [
+      "Xử lý",
+      [
+       "Tạo ChildSession gắn với phiên người lớn (EntryMethod = ProfileSwitcher). Đăng xuất mọi thiết bị / đổi mật khẩu không giữ phiên này → phiên bé cũng bị thu hồi.",
+       "Bé chưa có QR vẫn vào được (avatarId rỗng)."
+      ]
+     ],
+     [
+      "Kết quả",
+      [
+       "childProfileId, avatarId, accessToken (token trẻ), expiresInSeconds."
+      ]
+     ]
+    ],
+    "body": "{\n  \"supervisorRefreshToken\": \"<REFRESH_TOKEN>\"\n}",
+    "tests": [
+     [
+      "ok",
+      "parent_demo1 bàn giao bé 1",
+      "200; có accessToken trẻ; GET /ChildAccessCredential/me → childProfileId = 1"
+     ],
+     [
+      "ok",
+      "Bé đã bị thu hồi QR vẫn được bàn giao",
+      "200; avatarId = \"\""
+     ],
+     [
+      "neg",
+      "Refresh token của tài khoản khác (parent_demo2)",
+      "401 \"Phiên Supervisor không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại.\""
+     ],
+     [
+      "neg",
+      "Refresh token đã đăng xuất / đã xoay",
+      "401"
+     ],
+     [
+      "neg",
+      "Thiếu supervisorRefreshToken",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Refresh token của phiên Supervisor không được để trống.\""
+     ],
+     [
+      "neg",
+      "parent_demo2 bàn giao bé 1",
+      "403 \"Bạn không có quyền với hồ sơ trẻ này.\""
+     ],
+     [
+      "neg",
+      "Hồ sơ phụ <DRAFT_ID> còn Draft",
+      "403 \"Bạn chưa vào đọc truyện được lúc này. Hãy nhờ bố mẹ hoặc thầy cô giúp nhé!\""
+     ],
+     [
+      "neg",
+      "parent_demo2 bàn giao bé 4 (đang chỉ xem)",
+      "403 \"Hồ sơ đang ở chế độ chỉ xem. Phụ huynh có thể chọn hồ sơ được đọc hoặc nâng cấp gói.\""
+     ],
+     [
+      "edge",
+      "Token bé từ handover sau khi parent_demo1 gọi logout-all-devices",
+      "401"
+     ]
+    ]
+   },
+   {
+    "m": "POST",
+    "p": "/api/v1/ParentalGate/verify",
+    "role": "Không cần đăng nhập",
+    "what": "Parental Gate: người lớn nhập lại email + mật khẩu trước khi app rời Child Session vào khu quản lý. Chỉ xác minh, không cấp token, không tạo phiên.",
+    "detail": [
+     [
+      "Hệ thống kiểm lần lượt",
+      [
+       "email đúng định dạng (không nhận username) → 400.",
+       "Có tài khoản với email → nếu không: 400 \"Email hoặc mật khẩu không chính xác.\"",
+       "Không đang khóa tạm → 403 \"Tài khoản tạm thời bị khoá do nhập sai quá 5 lần. Vui lòng thử lại sau 15 phút.\"",
+       "Mật khẩu đúng → nếu sai: 400 \"Email hoặc mật khẩu không chính xác.\"; dùng CHUNG bộ đếm sai với đăng nhập (5 lần → khóa cả đăng nhập 15 phút).",
+       "Tài khoản không Suspended → 403 \"Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.\""
+      ]
+     ],
+     [
+      "Lưu ý",
+      [
+       "Không kiểm tài khoản đó có phải chủ của bé đang dùng máy; không đọc cờ parentalGateEnabled. Frontend tự quyết định lúc hiện cổng.",
+       "Tài khoản Registered (chưa xác thực email) đúng mật khẩu vẫn qua cổng: code hiện chỉ chặn Suspended."
+      ]
+     ],
+     [
+      "Kết quả",
+      [
+       "200 \"Vượt qua Parental Gate thành công.\", data = null."
+      ]
+     ]
+    ],
+    "body": "{\n  \"email\": \"parent1@example.com\",\n  \"password\": \"Demo@123\"\n}",
+    "tests": [
+     [
+      "ok",
+      "Email + mật khẩu đúng của parent_demo1",
+      "200; không có token trong phản hồi; GET /Auth/sessions không thêm phiên"
+     ],
+     [
+      "neg",
+      "Sai mật khẩu",
+      "400 \"Email hoặc mật khẩu không chính xác.\""
+     ],
+     [
+      "neg",
+      "Dùng username thay email",
+      "400 \"Dữ liệu đầu vào không hợp lệ.\"; errors có \"Email không đúng định dạng.\""
+     ],
+     [
+      "neg",
+      "user_test_a sai mật khẩu 5 lần, lần 6 nhập đúng",
+      "Lần 6: 403 khóa 15 phút; POST /Auth/login của user_test_a cũng 403"
+     ],
+     [
+      "neg",
+      "parent4@example.com (Suspended) đúng mật khẩu",
+      "403 \"Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.\""
+     ],
+     [
+      "edge",
+      "parent5@example.com (Registered) đúng mật khẩu",
+      "200 (code hiện chưa chặn tài khoản chưa xác thực)"
+     ]
+    ]
+   }
+  ]
+ }
+];
+
+// ---------- BODY MẪU CHO TỪNG TEST CASE ----------
+// Khóa bắt đầu bằng "=" là khớp chính xác "METHOD đường-dẫn", còn lại là chứa chuỗi.
+const COPY = [];
+const OVERRIDES = [
+ [
+  "=PATCH /api/v1/ChildProfile/{id}/resume",
+  "Không gửi body",
+  "null"
+ ]
+];
+function overrideBody(api, t) {
+  for (const [pathPart, namePart, body] of OVERRIDES) {
+    const pathOk = pathPart.startsWith("=") ? (api.m + " " + api.p) === pathPart.slice(1) : (api.m + " " + api.p).includes(pathPart);
+    if (pathOk && t[1].includes(namePart)) return body;
+  }
+  return null;
+}
+function findBody(stepId, api, t) {
+  const ov = overrideBody(api, t);
+  if (ov) return ov;
+  const sa = seedFor(api);
+  return (sa && sa.body) || api.body || null;
+}
+// Tìm đối tượng JSON đầu tiên (cân ngoặc) trong một đoạn chữ.
+function firstJson(text) {
+  if (!text) return null;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== "{") continue;
+    let depth = 0, inStr = false;
+    for (let j = i; j < text.length; j++) {
+      const c = text[j];
+      if (inStr) { if (c === "\\") j++; else if (c === '"') inStr = false; continue; }
+      if (c === '"') inStr = true;
+      else if (c === "{") depth++;
+      else if (c === "}") { depth--; if (depth === 0) { try { const obj = JSON.parse(text.slice(i, j + 1)); return obj; } catch (e) { break; } } }
+    }
+  }
+  return null;
+}
+// Dựng "request" đầy đủ cho một test case: tài khoản, method, url, body (nếu có).
+function buildRequest(api, t, data) {
+  const sa = seedFor(api);
+  let method = api.m, url = null;
+  const mm = data && data.match(/\b(GET|POST|PUT|PATCH|DELETE) (\/api\/v1\/[^\s"`,;]+)/);
+  if (mm) { method = mm[1]; url = mm[2].replace(/[.)]+$/, ""); }
+  else if (sa && sa.url) { const u = sa.url.match(/^(GET|POST|PUT|PATCH|DELETE) (.+)$/); if (u) { method = u[1]; url = u[2]; } }
+  if (!url) url = api.p;
+  const am = data && data.match(/[Đđ]ăng nhập ([A-Za-z0-9_]+)/);
+  let login = am ? am[1] : (sa ? sa.as : "");
+  if (/token bé/i.test(t[1])) login = /bé 1\b/.test(t[1]) || /Gọi bằng token bé/.test(t[1]) ? "bé 1 (secret demo-qr-child-01)" : "token bé (xem mục Dữ liệu)";
+  else if (/Không gửi token|Không cần token/.test(t[1] + " " + (data || ""))) login = "(không gửi token)";
+  let bodyText = overrideBody(api, t);
+  if (!bodyText) {
+    const fromText = data && !mm ? null : null; // body trong chữ chỉ lấy khi test có dữ liệu riêng
+    const obj = firstJson(data && TESTDATA.some(([p, n]) => (p.startsWith("=") ? (api.m + " " + api.p) === p.slice(1) : (api.m + " " + api.p).includes(p)) && t[1].includes(n)) ? data : null);
+    if (obj) bodyText = JSON.stringify(obj, null, 2);
+  }
+  if (!bodyText) bodyText = (sa && sa.body) || api.body || null;
+  const noBodyMethod = method === "GET" || method === "DELETE";
+  let body;
+  if (bodyText && !noBodyMethod) { try { body = JSON.parse(bodyText); } catch (e) { body = bodyText; } }
+  const request = { login, method, url };
+  if (body !== undefined) request.body = body;
+  return { request, bodyText: body !== undefined ? (typeof body === "string" ? body : JSON.stringify(body, null, 2)) : null, hasRequest: !t[2].startsWith("CHƯA CÓ") && !api.p.startsWith("(chưa") };
+}
+
+// ---------- DỮ LIỆU THẬT TỪ SEED (Database/Seed) ----------
+// Mỗi mục: [khóa khớp "METHOD đường-dẫn", { as: tài khoản, url, body?, note }]
+const SEEDAPI = [
+ [
+  "=POST /api/v1/Auth/register",
+  {
+   "as": "(không gửi token)",
+   "url": "POST /api/v1/Auth/register",
+   "note": "Dùng email thật đọc được hộp thư (nhập ở ô <EMAIL_A>). Username user_test_a chưa có trong seed. Email đã có trong seed: parent1@example.com … parent5@example.com."
+  }
+ ],
+ [
+  "=POST /api/v1/Auth/verify-email",
+  {
+   "as": "(không gửi token)",
+   "url": "POST /api/v1/Auth/verify-email",
+   "note": "OTP 6 số trong email gửi sau register / resend. Hạn 10 phút."
+  }
+ ],
+ [
+  "=POST /api/v1/Auth/resend-verification-email",
+  {
+   "as": "(không gửi token)",
+   "url": "POST /api/v1/Auth/resend-verification-email",
+   "note": "Chỉ gửi khi tài khoản Registered. parent_demo5 (parent5@example.com) là Registered nhưng email không đọc được."
+  }
+ ],
+ [
+  "=POST /api/v1/Auth/login",
+  {
+   "as": "(không gửi token)",
+   "url": "POST /api/v1/Auth/login",
+   "note": "Seed: parent_demo1 (id 2, Gói Sáng tạo, bé 1 và 2), parent_demo2 (id 3, Miễn phí, bé 3, 4, 11), parent_demo3 (id 4, Miễn phí, bé 5 Draft và 6), parent_demo4 Suspended, parent_demo5 Registered. Mật khẩu Demo@123."
+  }
+ ],
+ [
+  "=POST /api/v1/Auth/refresh-token",
+  {
+   "as": "(không gửi token)",
+   "url": "POST /api/v1/Auth/refresh-token",
+   "note": "refreshToken lấy từ phản hồi login."
+  }
+ ],
+ [
+  "=GET /api/v1/Auth/me",
+  {
+   "as": "parent_demo1",
+   "url": "GET /api/v1/Auth/me",
+   "note": "parent_demo1 = Trần Thị Hoa, id 2."
+  }
+ ],
+ [
+  "=PUT /api/v1/Auth/me",
+  {
+   "as": "parent_demo1",
+   "url": "PUT /api/v1/Auth/me",
+   "note": "Chạy xong có thể đặt lại họ tên Trần Thị Hoa."
+  }
+ ],
+ [
+  "=GET /api/v1/Auth/sessions",
+  {
+   "as": "parent_demo1",
+   "url": "GET /api/v1/Auth/sessions",
+   "note": "Mỗi lần login / refresh tạo một phiên mới."
+  }
+ ],
+ [
+  "Auth/sessions/{id}",
+  {
+   "as": "parent_demo1",
+   "url": "DELETE /api/v1/Auth/sessions/<SESSION_ID>",
+   "note": "SESSION_ID lấy từ GET /api/v1/Auth/sessions."
+  }
+ ],
+ [
+  "=POST /api/v1/Auth/logout",
+  {
+   "as": "parent_demo1",
+   "url": "POST /api/v1/Auth/logout",
+   "note": "Đăng xuất xong phải đăng nhập lại để lấy <REFRESH_TOKEN> mới cho các bước sau."
+  }
+ ],
+ [
+  "Auth/logout-all-devices",
+  {
+   "as": "parent_demo1",
+   "url": "POST /api/v1/Auth/logout-all-devices",
+   "note": "Mọi access token cũ của parent_demo1 bị vô hiệu: đăng nhập lại sau khi chạy."
+  }
+ ],
+ [
+  "Auth/forgot-password",
+  {
+   "as": "(không gửi token)",
+   "url": "POST /api/v1/Auth/forgot-password",
+   "note": "Dùng email của user_test_a để nhận được thư."
+  }
+ ],
+ [
+  "Auth/reset-password",
+  {
+   "as": "(không gửi token)",
+   "url": "POST /api/v1/Auth/reset-password",
+   "note": "RESET_TOKEN là mã trong email quên mật khẩu, hạn 1 giờ."
+  }
+ ],
+ [
+  "Auth/change-password",
+  {
+   "as": "user_test_a",
+   "url": "POST /api/v1/Auth/change-password",
+   "note": "Dùng user_test_a (mật khẩu Test1234), không đổi mật khẩu tài khoản seed. REFRESH_TOKEN là refresh token của chính phiên user_test_a đang dùng."
+  }
+ ],
+ [
+  "=POST /api/v1/Auth/change-email",
+  {
+   "as": "user_test_a",
+   "url": "POST /api/v1/Auth/change-email",
+   "note": "EMAIL_A_NEW là một email thật khác, đọc được hộp thư."
+  }
+ ],
+ [
+  "Auth/change-email/confirm",
+  {
+   "as": "user_test_a",
+   "url": "POST /api/v1/Auth/change-email/confirm",
+   "note": "OTP gửi tới email mới."
+  }
+ ],
+ [
+  "=POST /api/v1/ChildProfile",
+  {
+   "as": "parent_demo1",
+   "url": "POST /api/v1/ChildProfile",
+   "note": "parent_demo1 đang Gói Sáng tạo (tối đa 4 hồ sơ), có sẵn bé 1, 2 nên tạo thêm được 2 hồ sơ. Hồ sơ mới đầu tiên trên DB mới seed có id 13."
+  }
+ ],
+ [
+  "ChildProfile/mine",
+  {
+   "as": "parent_demo1",
+   "url": "GET /api/v1/ChildProfile/mine",
+   "note": "parent_demo1 sở hữu bé 1 (Bé An, 6-8) và bé 2 (Bé Bình, 9-10)."
+  }
+ ],
+ [
+  "=GET /api/v1/ChildProfile/{id}",
+  {
+   "as": "parent_demo1",
+   "url": "GET /api/v1/ChildProfile/1",
+   "note": "Bé 1 thuộc parent_demo1. Bé 3 thuộc parent_demo2."
+  }
+ ],
+ [
+  "=PUT /api/v1/ChildProfile/{id}",
+  {
+   "as": "parent_demo1",
+   "url": "PUT /api/v1/ChildProfile/<CHILD_ID>",
+   "note": "Sửa hồ sơ test vừa tạo, không sửa bé seed."
+  }
+ ],
+ [
+  "ChildProfile/{id}/audit-log",
+  {
+   "as": "parent_demo1",
+   "url": "GET /api/v1/ChildProfile/<CHILD_ID>/audit-log?pageIndex=1&pageSize=10",
+   "note": "Audit của hồ sơ test vừa tạo."
+  }
+ ],
+ [
+  "=PUT /api/v1/LearningProfile/{childProfileId}",
+  {
+   "as": "parent_demo1",
+   "url": "PUT /api/v1/LearningProfile/<CHILD_ID>",
+   "note": "Hồ sơ test vừa tạo (Draft). Bé 1 đã có Learning Profile: level 2, ListenFirst."
+  }
+ ],
+ [
+  "=POST /api/v1/LearningProfile/{childProfileId}",
+  {
+   "as": "parent_demo1",
+   "url": "POST /api/v1/LearningProfile/<CHILD_ID>",
+   "note": "Hồ sơ test (có hoặc chưa có Learning Profile)."
+  }
+ ],
+ [
+  "=GET /api/v1/LearningProfile/{childProfileId}",
+  {
+   "as": "parent_demo1",
+   "url": "GET /api/v1/LearningProfile/<CHILD_ID>",
+   "note": "Bé 1 có sẵn Learning Profile trong seed."
+  }
+ ],
+ [
+  "=DELETE /api/v1/LearningProfile/{childProfileId}",
+  {
+   "as": "parent_demo1",
+   "url": "DELETE /api/v1/LearningProfile/<CHILD_ID>",
+   "note": "Chỉ xóa trên hồ sơ test."
+  }
+ ],
+ [
+  "=POST /api/v1/SafetyPolicy/{childProfileId}",
+  {
+   "as": "parent_demo1",
+   "url": "POST /api/v1/SafetyPolicy/<CHILD_ID>",
+   "note": "Hồ sơ test chưa có Safety Policy."
+  }
+ ],
+ [
+  "=GET /api/v1/SafetyPolicy/{childProfileId}",
+  {
+   "as": "parent_demo1",
+   "url": "GET /api/v1/SafetyPolicy/<CHILD_ID>",
+   "note": "Bé 1: maxStoryLength 1500, AlwaysManual, đã có consent."
+  }
+ ],
+ [
+  "=PUT /api/v1/SafetyPolicy/{childProfileId}",
+  {
+   "as": "parent_demo1",
+   "url": "PUT /api/v1/SafetyPolicy/<CHILD_ID>",
+   "note": "Danh mục seed: 1 ANIMALS, 2 FANTASY, 3 ADVENTURE, 4 SCIENCE, 5 FRIENDSHIP, 6 FAMILY, 7 VIOLENCE (chặn mặc định 6-8 và 9-10), 8 SCARY_CONTENT (chặn mặc định 6-8). Bé 5 (parent_demo3) có Safety Policy nhưng chưa có consent."
+  }
+ ],
+ [
+  "SafetyPolicy/{childProfileId}/age-preset",
+  {
+   "as": "parent_demo1",
+   "url": "GET /api/v1/SafetyPolicy/1/age-preset",
+   "note": "Bé 1 là 6-8, bé 2 là 9-10."
+  }
+ ],
+ [
+  "SafetyPolicy/{childProfileId}/age-preset/apply",
+  {
+   "as": "parent_demo1",
+   "url": "POST /api/v1/SafetyPolicy/<CHILD_ID>/age-preset/apply",
+   "note": "Dùng hồ sơ test; chạy sau khi đổi ageBand ở Bước 4."
+  }
+ ],
+ [
+  "SafetyPolicy/{childProfileId}/reconsent",
+  {
+   "as": "parent_demo1",
+   "url": "POST /api/v1/SafetyPolicy/1/reconsent",
+   "note": "Consent của mọi bé seed đã là bản hiện hành (1)."
+  }
+ ],
+ [
+  "=DELETE /api/v1/SafetyPolicy/{childProfileId}",
+  {
+   "as": "parent_demo1",
+   "url": "DELETE /api/v1/SafetyPolicy/<CHILD_ID>",
+   "note": "Chỉ chạy khi hồ sơ test còn Draft; chạy xong phải lưu lại Safety Policy trước khi kích hoạt."
+  }
+ ],
+ [
+  "ChildProfile/{id}/activate",
+  {
+   "as": "parent_demo1",
+   "url": "PATCH /api/v1/ChildProfile/<CHILD_ID>/activate",
+   "note": "Cần đã chạy Bước 5 (Learning Profile) và Bước 6 (Safety Policy kèm consent) cho hồ sơ test."
+  }
+ ],
+ [
+  "ChildProfile/{id}/suspend",
+  {
+   "as": "parent_demo1",
+   "url": "PATCH /api/v1/ChildProfile/<CHILD_ID>/suspend",
+   "note": "Dùng hồ sơ test đang Active, không tạm dừng bé seed."
+  }
+ ],
+ [
+  "ChildProfile/{id}/resume",
+  {
+   "as": "parent_demo1",
+   "url": "PATCH /api/v1/ChildProfile/<CHILD_ID>/resume",
+   "note": "Hồ sơ test đang Suspended."
+  }
+ ],
+ [
+  "=DELETE /api/v1/ChildProfile/{id}",
+  {
+   "as": "parent_demo1",
+   "url": "DELETE /api/v1/ChildProfile/<CHILD_ID>",
+   "note": "Hồ sơ test đang Active hoặc Suspended."
+  }
+ ],
+ [
+  "ChildProfile/{id}/restore",
+  {
+   "as": "parent_demo1",
+   "url": "PATCH /api/v1/ChildProfile/<CHILD_ID>/restore",
+   "note": "Hồ sơ test đang Archived."
+  }
+ ],
+ [
+  "=GET /api/v1/ChildProfile/reading-slots",
+  {
+   "as": "parent_demo2",
+   "url": "GET /api/v1/ChildProfile/reading-slots",
+   "note": "parent_demo2 không có gói trả phí (Miễn phí, 1 chỗ) nhưng có 3 bé Active (3, 4, 11). Bé 3 có phiên đọc gần nhất nên đang được đọc."
+  }
+ ],
+ [
+  "=PUT /api/v1/ChildProfile/reading-slots",
+  {
+   "as": "parent_demo2",
+   "url": "PUT /api/v1/ChildProfile/reading-slots",
+   "note": "Ca thành công khóa việc đổi tới 00:00 thứ Hai tuần sau."
+  }
+ ],
+ [
+  "ChildAccessCredential/{childProfileId}/easylogin",
+  {
+   "as": "parent_demo1",
+   "url": "POST /api/v1/ChildAccessCredential/<CHILD_ID>/easylogin",
+   "note": "Tạo QR cho hồ sơ test. Không tạo lại QR cho bé seed: secret demo-qr-child-NN sẽ mất hiệu lực."
+  }
+ ],
+ [
+  "=GET /api/v1/ChildAccessCredential/{childProfileId}",
+  {
+   "as": "parent_demo1",
+   "url": "GET /api/v1/ChildAccessCredential/1",
+   "note": "Mọi bé seed 1–12 đều có QR (secret demo-qr-child-NN)."
+  }
+ ],
+ [
+  "=DELETE /api/v1/ChildAccessCredential/{childProfileId}",
+  {
+   "as": "parent_demo1",
+   "url": "DELETE /api/v1/ChildAccessCredential/<CHILD_ID>",
+   "note": "Thu hồi QR của hồ sơ test, không thu hồi QR bé seed."
+  }
+ ],
+ [
+  "ChildAccessCredential/easylogin/login",
+  {
+   "as": "(không gửi token)",
+   "url": "POST /api/v1/ChildAccessCredential/easylogin/login",
+   "body": "{\n  \"secret\": \"demo-qr-child-01\"\n}",
+   "note": "Secret seed demo-qr-child-01 … demo-qr-child-12 theo id bé. Bé 5, 9, 10 Draft; bé 4 và 11 đang chỉ xem (parent_demo2 Miễn phí)."
+  }
+ ],
+ [
+  "ChildAccessCredential/me",
+  {
+   "as": "bé 1 (secret demo-qr-child-01)",
+   "url": "GET /api/v1/ChildAccessCredential/me",
+   "note": "Gắn accessToken trẻ nhận được từ easylogin/login hoặc handover."
+  }
+ ],
+ [
+  "ChildAccessCredential/{childProfileId}/handover",
+  {
+   "as": "parent_demo1",
+   "url": "POST /api/v1/ChildAccessCredential/1/handover",
+   "note": "REFRESH_TOKEN là refreshToken trong phản hồi đăng nhập parent_demo1 (còn hiệu lực, chưa xoay)."
+  }
+ ],
+ [
+  "ParentalGate/verify",
+  {
+   "as": "(không gửi token)",
+   "url": "POST /api/v1/ParentalGate/verify",
+   "note": "Chỉ nhận email. Email seed: parent1@example.com … parent5@example.com."
+  }
+ ]
+];
+function seedFor(api) {
+  const key = api.m + " " + api.p;
+  let best = null, bestLen = -1;
+  for (const [k, v] of SEEDAPI) {
+    if (k.startsWith("=")) { if (key === k.slice(1)) return v; continue; }
+    if (key.includes(k) && k.length > bestLen) { best = v; bestLen = k.length; }
+  }
+  return best;
+}
+// Dữ liệu riêng của từng test case: [pathPart, namePart, text]
+const TESTDATA = [
+ [
+  "Auth/register",
+  "role\": \"Administrator",
+  "POST /api/v1/Auth/register với { \"username\": \"user_test_b\", \"email\": \"<EMAIL_B>\", \"fullName\": \"Người dùng Test B\", \"password\": \"Test1234\", \"confirmPassword\": \"Test1234\", \"role\": \"Administrator\" }. Kiểm role bằng Auth/login sau khi xác thực, hoặc xem cột Role trong user_accounts."
+ ],
+ [
+  "Auth/register",
+  "Email viết hoa",
+  "POST /api/v1/Auth/register với { \"username\": \"user_test_c\", \"email\": \"Test.C@Example.com\", \"fullName\": \"Người dùng Test C\", \"password\": \"Test1234\", \"confirmPassword\": \"Test1234\" }. Xem cột Email trong user_accounts."
+ ],
+ [
+  "Auth/register",
+  "Email đã có trong seed",
+  "POST /api/v1/Auth/register với { \"username\": \"user_test_d\", \"email\": \"parent1@example.com\", \"fullName\": \"Test\", \"password\": \"Test1234\", \"confirmPassword\": \"Test1234\" }"
+ ],
+ [
+  "Auth/register",
+  "khác hoa thường",
+  "POST /api/v1/Auth/register với { \"username\": \"user_test_d\", \"email\": \"PARENT1@EXAMPLE.COM\", \"fullName\": \"Test\", \"password\": \"Test1234\", \"confirmPassword\": \"Test1234\" }"
+ ],
+ [
+  "Auth/register",
+  "Username đã có",
+  "POST /api/v1/Auth/register với { \"username\": \"parent_demo1\", \"email\": \"new.user.x@example.com\", \"fullName\": \"Test\", \"password\": \"Test1234\", \"confirmPassword\": \"Test1234\" }"
+ ],
+ [
+  "Auth/register",
+  "Mật khẩu 7 ký tự",
+  "POST /api/v1/Auth/register với { \"username\": \"user_test_d\", \"email\": \"new.user.x@example.com\", \"fullName\": \"Test\", \"password\": \"Test123\", \"confirmPassword\": \"Test123\" }"
+ ],
+ [
+  "Auth/register",
+  "Mật khẩu chỉ có chữ",
+  "POST /api/v1/Auth/register với { \"username\": \"user_test_d\", \"email\": \"new.user.x@example.com\", \"fullName\": \"Test\", \"password\": \"abcdefgh\", \"confirmPassword\": \"abcdefgh\" }"
+ ],
+ [
+  "Auth/register",
+  "Mật khẩu chỉ có số",
+  "POST /api/v1/Auth/register với { \"username\": \"user_test_d\", \"email\": \"new.user.x@example.com\", \"fullName\": \"Test\", \"password\": \"12345678\", \"confirmPassword\": \"12345678\" }"
+ ],
+ [
+  "Auth/register",
+  "confirmPassword khác",
+  "POST /api/v1/Auth/register với { \"username\": \"user_test_d\", \"email\": \"new.user.x@example.com\", \"fullName\": \"Test\", \"password\": \"Test1234\", \"confirmPassword\": \"Test9999\" }"
+ ],
+ [
+  "Auth/register",
+  "Email sai định dạng",
+  "POST /api/v1/Auth/register với { \"username\": \"user_test_d\", \"email\": \"abc\", \"fullName\": \"Test\", \"password\": \"Test1234\", \"confirmPassword\": \"Test1234\" }"
+ ],
+ [
+  "Auth/register",
+  "Username 2 ký tự",
+  "POST /api/v1/Auth/register với { \"username\": \"ab\", \"email\": \"new.user.x@example.com\", \"fullName\": \"Test\", \"password\": \"Test1234\", \"confirmPassword\": \"Test1234\" }"
+ ],
+ [
+  "Auth/register",
+  "Thiếu fullName",
+  "POST /api/v1/Auth/register với { \"username\": \"user_test_d\", \"email\": \"new.user.x@example.com\", \"password\": \"Test1234\", \"confirmPassword\": \"Test1234\" }"
+ ],
+ [
+  "Auth/register",
+  "fullName 101",
+  "POST /api/v1/Auth/register với { \"username\": \"user_test_d\", \"email\": \"new.user.x@example.com\", \"fullName\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"password\": \"Test1234\", \"confirmPassword\": \"Test1234\" }"
+ ],
+ [
+  "Auth/verify-email",
+  "OTP sai",
+  "POST /api/v1/Auth/verify-email với { \"email\": \"<EMAIL_A>\", \"otp\": \"000000\" } (đổi số khác nếu trùng mã thật)."
+ ],
+ [
+  "Auth/verify-email",
+  "OTP 5 chữ số",
+  "POST /api/v1/Auth/verify-email với { \"email\": \"<EMAIL_A>\", \"otp\": \"12345\" }"
+ ],
+ [
+  "Auth/verify-email",
+  "Email không có tài khoản",
+  "POST /api/v1/Auth/verify-email với { \"email\": \"khong.ton.tai@example.com\", \"otp\": \"123456\" }"
+ ],
+ [
+  "Auth/verify-email",
+  "quá 10 phút",
+  "Đăng ký hoặc resend, chờ hơn 10 phút (hoặc sửa EmailVerificationTokenExpiresAt trong user_accounts về quá khứ) rồi POST /api/v1/Auth/verify-email với mã đó."
+ ],
+ [
+  "Auth/verify-email",
+  "Sai 5 lần",
+  "Gọi POST /api/v1/Auth/verify-email với otp sai 5 lần, lần 6 gửi mã đúng."
+ ],
+ [
+  "Auth/resend-verification-email",
+  "Email không có",
+  "POST /api/v1/Auth/resend-verification-email với { \"email\": \"khong.ton.tai@example.com\" }"
+ ],
+ [
+  "Auth/resend-verification-email",
+  "Email đã Active",
+  "POST /api/v1/Auth/resend-verification-email với { \"email\": \"parent1@example.com\" }"
+ ],
+ [
+  "Auth/resend-verification-email",
+  "sai định dạng",
+  "POST /api/v1/Auth/resend-verification-email với { \"email\": \"abc\" }"
+ ],
+ [
+  "=POST /api/v1/Auth/login",
+  "Đăng nhập bằng email",
+  "POST /api/v1/Auth/login với { \"identifier\": \"parent1@example.com\", \"password\": \"Demo@123\" }"
+ ],
+ [
+  "=POST /api/v1/Auth/login",
+  "viết hoa",
+  "POST /api/v1/Auth/login với { \"identifier\": \"PARENT_DEMO1\", \"password\": \"Demo@123\" }"
+ ],
+ [
+  "=POST /api/v1/Auth/login",
+  "user_test_a sau khi",
+  "POST /api/v1/Auth/login với { \"identifier\": \"user_test_a\", \"password\": \"Test1234\" }"
+ ],
+ [
+  "=POST /api/v1/Auth/login",
+  "Sai mật khẩu",
+  "POST /api/v1/Auth/login với { \"identifier\": \"parent_demo1\", \"password\": \"SaiMatKhau1\" } (chỉ 1 lần, tránh khóa parent_demo1)."
+ ],
+ [
+  "=POST /api/v1/Auth/login",
+  "Username không tồn tại",
+  "POST /api/v1/Auth/login với { \"identifier\": \"khong_ton_tai\", \"password\": \"Demo@123\" }"
+ ],
+ [
+  "=POST /api/v1/Auth/login",
+  "5 lần liên tiếp",
+  "POST /api/v1/Auth/login với { \"identifier\": \"user_test_a\", \"password\": \"SaiMatKhau1\" } 5 lần, lần 6 dùng mật khẩu đúng. Mở khóa: đặt \"LockedUntil\" = NULL trong user_accounts hoặc chờ 15 phút."
+ ],
+ [
+  "=POST /api/v1/Auth/login",
+  "parent_demo4",
+  "POST /api/v1/Auth/login với { \"identifier\": \"parent_demo4\", \"password\": \"Demo@123\" }"
+ ],
+ [
+  "=POST /api/v1/Auth/login",
+  "parent_demo5",
+  "POST /api/v1/Auth/login với { \"identifier\": \"parent_demo5\", \"password\": \"Demo@123\" }"
+ ],
+ [
+  "=POST /api/v1/Auth/login",
+  "chưa verify",
+  "Đăng ký user_test_a nhưng chưa gọi verify-email. POST /api/v1/Auth/login với { \"identifier\": \"user_test_a\", \"password\": \"Test1234\" }"
+ ],
+ [
+  "=POST /api/v1/Auth/login",
+  "Thiếu password",
+  "POST /api/v1/Auth/login với { \"identifier\": \"parent_demo1\" }"
+ ],
+ [
+  "Auth/refresh-token",
+  "Chuỗi bất kỳ",
+  "POST /api/v1/Auth/refresh-token với { \"refreshToken\": \"abc123\" }"
+ ],
+ [
+  "Auth/refresh-token",
+  "Thiếu refreshToken",
+  "POST /api/v1/Auth/refresh-token với { }"
+ ],
+ [
+  "Auth/refresh-token",
+  "Dùng lại refresh token cũ",
+  "Gọi refresh-token một lần với <REFRESH_TOKEN>, rồi gửi lại đúng token cũ đó: POST /api/v1/Auth/refresh-token."
+ ],
+ [
+  "=PUT /api/v1/Auth/me",
+  "avatarUrl = null",
+  "Đăng nhập parent_demo1. PUT /api/v1/Auth/me với { \"fullName\": \"Trần Thị Hoa\", \"avatarUrl\": null }"
+ ],
+ [
+  "=PUT /api/v1/Auth/me",
+  "chỉ có khoảng trắng",
+  "Đăng nhập parent_demo1. PUT /api/v1/Auth/me với { \"fullName\": \"   \", \"avatarUrl\": null }"
+ ],
+ [
+  "=PUT /api/v1/Auth/me",
+  "ftp://",
+  "Đăng nhập parent_demo1. PUT /api/v1/Auth/me với { \"fullName\": \"Trần Thị Hoa\", \"avatarUrl\": \"ftp://example.com/a.png\" }"
+ ],
+ [
+  "=PUT /api/v1/Auth/me",
+  "không phải URL",
+  "Đăng nhập parent_demo1. PUT /api/v1/Auth/me với { \"fullName\": \"Trần Thị Hoa\", \"avatarUrl\": \"abc\" }"
+ ],
+ [
+  "Auth/sessions/{id}",
+  "của tài khoản khác",
+  "Đăng nhập parent_demo1. DELETE /api/v1/Auth/sessions/<SESSION_ID_2> (id một phiên của parent_demo2: đăng nhập parent_demo2 rồi GET Auth/sessions để lấy)."
+ ],
+ [
+  "Auth/sessions/{id}",
+  "Id không tồn tại",
+  "Đăng nhập parent_demo1. DELETE /api/v1/Auth/sessions/999999"
+ ],
+ [
+  "=POST /api/v1/Auth/logout",
+  "Thiếu refreshToken",
+  "Đăng nhập parent_demo1. POST /api/v1/Auth/logout với { }"
+ ],
+ [
+  "Auth/forgot-password",
+  "Email không có",
+  "POST /api/v1/Auth/forgot-password với { \"email\": \"khong.ton.tai@example.com\" }"
+ ],
+ [
+  "Auth/forgot-password",
+  "parent4",
+  "POST /api/v1/Auth/forgot-password với { \"email\": \"parent4@example.com\" }"
+ ],
+ [
+  "Auth/forgot-password",
+  "sai định dạng",
+  "POST /api/v1/Auth/forgot-password với { \"email\": \"abc\" }"
+ ],
+ [
+  "Auth/reset-password",
+  "resetToken sai",
+  "POST /api/v1/Auth/reset-password với { \"email\": \"<EMAIL_A>\", \"resetToken\": \"abc\", \"newPassword\": \"Moi12345\", \"confirmPassword\": \"Moi12345\" }"
+ ],
+ [
+  "Auth/reset-password",
+  "12345678",
+  "POST /api/v1/Auth/reset-password với { \"email\": \"<EMAIL_A>\", \"resetToken\": \"<RESET_TOKEN>\", \"newPassword\": \"12345678\", \"confirmPassword\": \"12345678\" }"
+ ],
+ [
+  "Auth/reset-password",
+  "confirmPassword khác",
+  "POST /api/v1/Auth/reset-password với { \"email\": \"<EMAIL_A>\", \"resetToken\": \"<RESET_TOKEN>\", \"newPassword\": \"Moi12345\", \"confirmPassword\": \"Moi99999\" }"
+ ],
+ [
+  "Auth/change-password",
+  "không gửi currentRefreshToken",
+  "Đăng nhập user_test_a. POST /api/v1/Auth/change-password với { \"currentPassword\": \"Test5678\", \"newPassword\": \"Test1234\", \"confirmPassword\": \"Test1234\" } (đổi về mật khẩu cũ)."
+ ],
+ [
+  "Auth/change-password",
+  "currentPassword sai",
+  "Đăng nhập user_test_a. POST /api/v1/Auth/change-password với { \"currentPassword\": \"SaiMatKhau1\", \"newPassword\": \"Test5678\", \"confirmPassword\": \"Test5678\" }"
+ ],
+ [
+  "Auth/change-password",
+  "trùng currentPassword",
+  "Đăng nhập user_test_a. POST /api/v1/Auth/change-password với { \"currentPassword\": \"Test1234\", \"newPassword\": \"Test1234\", \"confirmPassword\": \"Test1234\" }"
+ ],
+ [
+  "Auth/change-password",
+  "confirmPassword khác",
+  "Đăng nhập user_test_a. POST /api/v1/Auth/change-password với { \"currentPassword\": \"Test1234\", \"newPassword\": \"Test5678\", \"confirmPassword\": \"Test9999\" }"
+ ],
+ [
+  "=POST /api/v1/Auth/change-email",
+  "= email hiện tại",
+  "Đăng nhập user_test_a. POST /api/v1/Auth/change-email với { \"currentPassword\": \"Test1234\", \"newEmail\": \"<EMAIL_A>\" }"
+ ],
+ [
+  "=POST /api/v1/Auth/change-email",
+  "parent2@example.com",
+  "Đăng nhập user_test_a. POST /api/v1/Auth/change-email với { \"currentPassword\": \"Test1234\", \"newEmail\": \"parent2@example.com\" }"
+ ],
+ [
+  "=POST /api/v1/Auth/change-email",
+  "currentPassword sai",
+  "Đăng nhập user_test_a. POST /api/v1/Auth/change-email với { \"currentPassword\": \"SaiMatKhau1\", \"newEmail\": \"<EMAIL_A_NEW>\" }"
+ ],
+ [
+  "Auth/change-email/confirm",
+  "OTP sai",
+  "Đăng nhập user_test_a. POST /api/v1/Auth/change-email/confirm với { \"otp\": \"000000\" }"
+ ],
+ [
+  "=POST /api/v1/ChildProfile",
+  "language bỏ trống",
+  "Đăng nhập parent_demo1. POST /api/v1/ChildProfile với { \"nickname\": \"Bé Na\", \"ageBand\": \"Age_9_10\" }"
+ ],
+ [
+  "=POST /api/v1/ChildProfile",
+  "user_test_a (Miễn phí) tạo",
+  "Đăng nhập user_test_a. POST /api/v1/ChildProfile với { \"nickname\": \"Bé Test A1\", \"ageBand\": \"Age_6_8\", \"language\": \"vi\" }"
+ ],
+ [
+  "=POST /api/v1/ChildProfile",
+  "user_test_a tạo hồ sơ thứ hai",
+  "Đăng nhập user_test_a. POST /api/v1/ChildProfile với { \"nickname\": \"Bé Test A2\", \"ageBand\": \"Age_6_8\", \"language\": \"vi\" }"
+ ],
+ [
+  "=POST /api/v1/ChildProfile",
+  "parent_demo2",
+  "Đăng nhập parent_demo2. POST /api/v1/ChildProfile với { \"nickname\": \"Bé Thử\", \"ageBand\": \"Age_6_8\", \"language\": \"vi\" }"
+ ],
+ [
+  "=POST /api/v1/ChildProfile",
+  "tạo thêm",
+  "Đăng nhập parent_demo1. Sau khi đã tạo <CHILD_ID> và <DRAFT_ID>: POST /api/v1/ChildProfile với { \"nickname\": \"Bé Thử\", \"ageBand\": \"Age_6_8\", \"language\": \"vi\" }"
+ ],
+ [
+  "=POST /api/v1/ChildProfile",
+  "language \"en\"",
+  "Đăng nhập parent_demo1. POST /api/v1/ChildProfile với { \"nickname\": \"Bé Mai\", \"ageBand\": \"Age_6_8\", \"language\": \"en\" }"
+ ],
+ [
+  "=POST /api/v1/ChildProfile",
+  "Age_3_5",
+  "Đăng nhập parent_demo1. POST /api/v1/ChildProfile với { \"nickname\": \"Bé Mai\", \"ageBand\": \"Age_3_5\", \"language\": \"vi\" }"
+ ],
+ [
+  "=POST /api/v1/ChildProfile",
+  "ageBand = 3",
+  "Đăng nhập parent_demo1. POST /api/v1/ChildProfile với { \"nickname\": \"Bé Mai\", \"ageBand\": 3, \"language\": \"vi\" }"
+ ],
+ [
+  "=POST /api/v1/ChildProfile",
+  "nickname rỗng",
+  "Đăng nhập parent_demo1. POST /api/v1/ChildProfile với { \"nickname\": \"\", \"ageBand\": \"Age_6_8\", \"language\": \"vi\" }"
+ ],
+ [
+  "=POST /api/v1/ChildProfile",
+  "nickname 151",
+  "Đăng nhập parent_demo1. POST /api/v1/ChildProfile với { \"nickname\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"ageBand\": \"Age_6_8\", \"language\": \"vi\" }"
+ ],
+ [
+  "ChildProfile/mine",
+  "parent_demo3",
+  "Đăng nhập parent_demo3. GET /api/v1/ChildProfile/mine"
+ ],
+ [
+  "ChildProfile/mine",
+  "user_test_a vừa",
+  "Đăng nhập user_test_a. GET /api/v1/ChildProfile/mine"
+ ],
+ [
+  "=GET /api/v1/ChildProfile/{id}",
+  "bé 3",
+  "Đăng nhập parent_demo1. GET /api/v1/ChildProfile/3"
+ ],
+ [
+  "=GET /api/v1/ChildProfile/{id}",
+  "Id không tồn tại",
+  "Đăng nhập parent_demo1. GET /api/v1/ChildProfile/999999"
+ ],
+ [
+  "=GET /api/v1/ChildProfile/{id}",
+  "đã lưu trữ",
+  "Sau ca lưu trữ ở Bước 7. Đăng nhập parent_demo1. GET /api/v1/ChildProfile/<CHILD_ID>"
+ ],
+ [
+  "=PUT /api/v1/ChildProfile/{id}",
+  "Age_6_8 → Age_9_10",
+  "Đăng nhập parent_demo1. PUT /api/v1/ChildProfile/<CHILD_ID> với { \"nickname\": \"Bé Mai Anh\", \"ageBand\": \"Age_9_10\", \"language\": \"vi\", \"avatarId\": null }"
+ ],
+ [
+  "=PUT /api/v1/ChildProfile/{id}",
+  "avatarId = null",
+  "Đăng nhập parent_demo1. PUT /api/v1/ChildProfile/<CHILD_ID> với { \"nickname\": \"Bé Mai Anh\", \"ageBand\": \"Age_6_8\", \"language\": \"vi\", \"avatarId\": null }"
+ ],
+ [
+  "=PUT /api/v1/ChildProfile/{id}",
+  "parent_demo2 sửa bé 1",
+  "Đăng nhập parent_demo2. PUT /api/v1/ChildProfile/1 với { \"nickname\": \"Bị sửa\", \"ageBand\": \"Age_6_8\", \"language\": \"vi\" }"
+ ],
+ [
+  "=PUT /api/v1/ChildProfile/{id}",
+  "Id không tồn tại",
+  "Đăng nhập parent_demo1. PUT /api/v1/ChildProfile/999999 với { \"nickname\": \"Bé Mai\", \"ageBand\": \"Age_6_8\", \"language\": \"vi\" }"
+ ],
+ [
+  "=PUT /api/v1/ChildProfile/{id}",
+  "language \"VI\"",
+  "Đăng nhập parent_demo1. PUT /api/v1/ChildProfile/<CHILD_ID> với { \"nickname\": \"Bé Mai\", \"ageBand\": \"Age_6_8\", \"language\": \"VI\" }"
+ ],
+ [
+  "=PUT /api/v1/ChildProfile/{id}",
+  "language \"en\"",
+  "Đăng nhập parent_demo1. PUT /api/v1/ChildProfile/<CHILD_ID> với { \"nickname\": \"Bé Mai\", \"ageBand\": \"Age_6_8\", \"language\": \"en\" }"
+ ],
+ [
+  "=PUT /api/v1/ChildProfile/{id}",
+  "nickname chỉ có khoảng trắng",
+  "Đăng nhập parent_demo1. PUT /api/v1/ChildProfile/<CHILD_ID> với { \"nickname\": \"   \", \"ageBand\": \"Age_6_8\", \"language\": \"vi\" }"
+ ],
+ [
+  "ChildProfile/{id}/audit-log",
+  "pageSize=1000",
+  "Đăng nhập parent_demo1. GET /api/v1/ChildProfile/<CHILD_ID>/audit-log?pageIndex=1&pageSize=1000"
+ ],
+ [
+  "ChildProfile/{id}/audit-log",
+  "parent_demo2",
+  "Đăng nhập parent_demo2. GET /api/v1/ChildProfile/1/audit-log?pageIndex=1&pageSize=10"
+ ],
+ [
+  "=PUT /api/v1/LearningProfile/{childProfileId}",
+  "Age_9_10, readingMode null",
+  "Đăng nhập parent_demo1. Hồ sơ phụ <DRAFT_ID> (Bé Na, Age_9_10): PUT /api/v1/LearningProfile/<DRAFT_ID> với { \"readingLevel\": 3, \"readingMode\": null, \"comprehensionGoal\": null, \"topics\": [] }"
+ ],
+ [
+  "=PUT /api/v1/LearningProfile/{childProfileId}",
+  "topics khác",
+  "Đăng nhập parent_demo1. PUT /api/v1/LearningProfile/<CHILD_ID> với { \"readingLevel\": 2, \"readingMode\": null, \"comprehensionGoal\": \"Hiểu ý chính của câu chuyện\", \"topics\": [{ \"topic\": \"Khủng long\", \"relation\": \"FavoriteTopic\" }] }"
+ ],
+ [
+  "=PUT /api/v1/LearningProfile/{childProfileId}",
+  "Cập nhật readingMode null",
+  "Đăng nhập parent_demo1. PUT /api/v1/LearningProfile/<CHILD_ID> với { \"readingLevel\": 3, \"readingMode\": null, \"comprehensionGoal\": null, \"topics\": [] }"
+ ],
+ [
+  "=PUT /api/v1/LearningProfile/{childProfileId}",
+  "topics = []",
+  "Đăng nhập parent_demo1. PUT /api/v1/LearningProfile/<CHILD_ID> với { \"readingLevel\": 2, \"readingMode\": \"ListenFirst\", \"comprehensionGoal\": null, \"topics\": [] }"
+ ],
+ [
+  "=PUT /api/v1/LearningProfile/{childProfileId}",
+  "Bé 1 (Active)",
+  "Đăng nhập parent_demo1. PUT /api/v1/LearningProfile/1 với { \"readingLevel\": 3, \"readingMode\": \"ListenFirst\", \"comprehensionGoal\": \"Hiểu được ý chính của câu chuyện\", \"topics\": [] }. Chạy xong đặt lại readingLevel = 2."
+ ],
+ [
+  "=PUT /api/v1/LearningProfile/{childProfileId}",
+  "readingLevel = 0",
+  "Đăng nhập parent_demo1. PUT /api/v1/LearningProfile/<CHILD_ID> với { \"readingLevel\": 0, \"readingMode\": null, \"topics\": [] }"
+ ],
+ [
+  "=PUT /api/v1/LearningProfile/{childProfileId}",
+  "readingLevel = 6",
+  "Đăng nhập parent_demo1. PUT /api/v1/LearningProfile/<CHILD_ID> với { \"readingLevel\": 6, \"readingMode\": null, \"topics\": [] }"
+ ],
+ [
+  "=PUT /api/v1/LearningProfile/{childProfileId}",
+  "Both",
+  "Đăng nhập parent_demo1. PUT /api/v1/LearningProfile/<CHILD_ID> với { \"readingLevel\": 2, \"readingMode\": \"Both\", \"topics\": [] }"
+ ],
+ [
+  "=PUT /api/v1/LearningProfile/{childProfileId}",
+  "topic rỗng",
+  "Đăng nhập parent_demo1. PUT /api/v1/LearningProfile/<CHILD_ID> với { \"readingLevel\": 2, \"readingMode\": null, \"topics\": [{ \"topic\": \"\", \"relation\": \"FavoriteTopic\" }] }"
+ ],
+ [
+  "=PUT /api/v1/LearningProfile/{childProfileId}",
+  "501",
+  "Đăng nhập parent_demo1. PUT /api/v1/LearningProfile/<CHILD_ID> với { \"readingLevel\": 2, \"readingMode\": null, \"comprehensionGoal\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"topics\": [] }"
+ ],
+ [
+  "=PUT /api/v1/LearningProfile/{childProfileId}",
+  "parent_demo2 ghi",
+  "Đăng nhập parent_demo2. PUT /api/v1/LearningProfile/1 với { \"readingLevel\": 5, \"readingMode\": null, \"topics\": [] }"
+ ],
+ [
+  "=PUT /api/v1/LearningProfile/{childProfileId}",
+  "không tồn tại",
+  "Đăng nhập parent_demo1. PUT /api/v1/LearningProfile/999999 với { \"readingLevel\": 2, \"readingMode\": null, \"topics\": [] }"
+ ],
+ [
+  "=POST /api/v1/LearningProfile/{childProfileId}",
+  "parent_demo2",
+  "Đăng nhập parent_demo2. POST /api/v1/LearningProfile/1 với { \"readingLevel\": 5, \"readingMode\": null, \"topics\": [] }"
+ ],
+ [
+  "=GET /api/v1/LearningProfile/{childProfileId}",
+  "parent_demo1 xem bé 1",
+  "Đăng nhập parent_demo1. GET /api/v1/LearningProfile/1"
+ ],
+ [
+  "=GET /api/v1/LearningProfile/{childProfileId}",
+  "chưa có",
+  "Đăng nhập parent_demo1. GET /api/v1/LearningProfile/<DRAFT_ID> (nếu <DRAFT_ID> đã có Learning Profile thì gọi DELETE LearningProfile/<DRAFT_ID> trước)."
+ ],
+ [
+  "=GET /api/v1/LearningProfile/{childProfileId}",
+  "parent_demo2",
+  "Đăng nhập parent_demo2. GET /api/v1/LearningProfile/1"
+ ],
+ [
+  "=DELETE /api/v1/LearningProfile/{childProfileId}",
+  "Xóa của",
+  "Đăng nhập parent_demo1. DELETE /api/v1/LearningProfile/<CHILD_ID>. Sau đó kiểm GET và PATCH activate; chạy lại PUT để có lại Learning Profile."
+ ],
+ [
+  "=DELETE /api/v1/LearningProfile/{childProfileId}",
+  "chưa có",
+  "Đăng nhập parent_demo1. Gọi DELETE /api/v1/LearningProfile/<CHILD_ID> lần 2."
+ ],
+ [
+  "=DELETE /api/v1/LearningProfile/{childProfileId}",
+  "parent_demo2",
+  "Đăng nhập parent_demo2. DELETE /api/v1/LearningProfile/1"
+ ],
+ [
+  "=PUT /api/v1/SafetyPolicy/{childProfileId}",
+  "applyAgePreset = false",
+  "Đăng nhập parent_demo1. Hồ sơ <CHILD_ID> còn Draft, chưa có Safety Policy (đã có thì gọi DELETE SafetyPolicy/<CHILD_ID> trước): PUT /api/v1/SafetyPolicy/<CHILD_ID> với { \"maxStoryLength\": 2000, \"requiredApprovalMode\": \"AlwaysManual\", \"parentalGateEnabled\": true, \"consentRecorded\": true, \"applyAgePreset\": false, \"categories\": [] }"
+ ],
+ [
+  "=PUT /api/v1/SafetyPolicy/{childProfileId}",
+  "chỉ có 5 Allowed",
+  "Đăng nhập parent_demo1. Hồ sơ <CHILD_ID> còn Draft, chưa có Safety Policy (đã có thì gọi DELETE SafetyPolicy/<CHILD_ID> trước): PUT /api/v1/SafetyPolicy/<CHILD_ID> với { \"maxStoryLength\": 2000, \"requiredApprovalMode\": \"AlwaysManual\", \"parentalGateEnabled\": true, \"consentRecorded\": true, \"applyAgePreset\": null, \"categories\": [{ \"contentCategoryId\": 5, \"rule\": \"Allowed\" }] }"
+ ],
+ [
+  "=PUT /api/v1/SafetyPolicy/{childProfileId}",
+  "8 Allowed",
+  "Đăng nhập parent_demo1. Hồ sơ <CHILD_ID> (Age_6_8) còn Draft, chưa có Safety Policy (đã có thì gọi DELETE SafetyPolicy/<CHILD_ID> trước): PUT /api/v1/SafetyPolicy/<CHILD_ID> với { \"maxStoryLength\": 2000, \"requiredApprovalMode\": \"AlwaysManual\", \"parentalGateEnabled\": true, \"consentRecorded\": true, \"applyAgePreset\": true, \"categories\": [{ \"contentCategoryId\": 8, \"rule\": \"Allowed\" }] }"
+ ],
+ [
+  "=PUT /api/v1/SafetyPolicy/{childProfileId}",
+  "gửi consentRecorded = false",
+  "Đăng nhập parent_demo1. PUT /api/v1/SafetyPolicy/<CHILD_ID> (đã có consent) với { \"maxStoryLength\": 1800, \"requiredApprovalMode\": \"AlwaysManual\", \"parentalGateEnabled\": true, \"consentRecorded\": false, \"categories\": [{ \"contentCategoryId\": 7, \"rule\": \"Blocked\" }, { \"contentCategoryId\": 8, \"rule\": \"Blocked\" }] }"
+ ],
+ [
+  "=PUT /api/v1/SafetyPolicy/{childProfileId}",
+  "voiceConsentAccepted = true",
+  "Đăng nhập parent_demo1. PUT /api/v1/SafetyPolicy/<CHILD_ID> với { \"maxStoryLength\": 2000, \"requiredApprovalMode\": \"AlwaysManual\", \"parentalGateEnabled\": true, \"consentRecorded\": true, \"voiceAnswersEnabled\": true, \"voiceConsentAccepted\": true, \"categories\": [{ \"contentCategoryId\": 7, \"rule\": \"Blocked\" }, { \"contentCategoryId\": 8, \"rule\": \"Blocked\" }] }"
+ ],
+ [
+  "=PUT /api/v1/SafetyPolicy/{childProfileId}",
+  "Lần đầu, consentRecorded = false",
+  "Đăng nhập parent_demo1. Hồ sơ <CHILD_ID> còn Draft, chưa có Safety Policy (đã có thì gọi DELETE SafetyPolicy/<CHILD_ID> trước): PUT /api/v1/SafetyPolicy/<CHILD_ID> với { \"maxStoryLength\": 2000, \"requiredApprovalMode\": \"AlwaysManual\", \"parentalGateEnabled\": true, \"consentRecorded\": false, \"categories\": [] }"
+ ],
+ [
+  "=PUT /api/v1/SafetyPolicy/{childProfileId}",
+  "bé 5",
+  "Đăng nhập parent_demo3. PUT /api/v1/SafetyPolicy/5 với { \"maxStoryLength\": 1200, \"requiredApprovalMode\": \"AlwaysManual\", \"parentalGateEnabled\": true, \"consentRecorded\": false, \"categories\": [] }"
+ ],
+ [
+  "=PUT /api/v1/SafetyPolicy/{childProfileId}",
+  "voiceConsentAccepted = false",
+  "Đăng nhập parent_demo1. Hồ sơ test chưa từng bật giọng nói: PUT /api/v1/SafetyPolicy/<CHILD_ID> với { \"maxStoryLength\": 2000, \"requiredApprovalMode\": \"AlwaysManual\", \"parentalGateEnabled\": true, \"consentRecorded\": true, \"voiceAnswersEnabled\": true, \"voiceConsentAccepted\": false, \"categories\": [] }"
+ ],
+ [
+  "=PUT /api/v1/SafetyPolicy/{childProfileId}",
+  "maxStoryLength = 99",
+  "Đăng nhập parent_demo1. PUT /api/v1/SafetyPolicy/<CHILD_ID> với { \"maxStoryLength\": 99, \"requiredApprovalMode\": \"AlwaysManual\", \"consentRecorded\": true, \"categories\": [] }"
+ ],
+ [
+  "=PUT /api/v1/SafetyPolicy/{childProfileId}",
+  "maxStoryLength = 20001",
+  "Đăng nhập parent_demo1. PUT /api/v1/SafetyPolicy/<CHILD_ID> với { \"maxStoryLength\": 20001, \"requiredApprovalMode\": \"AlwaysManual\", \"consentRecorded\": true, \"categories\": [] }"
+ ],
+ [
+  "=PUT /api/v1/SafetyPolicy/{childProfileId}",
+  "Restricted",
+  "Đăng nhập parent_demo1. PUT /api/v1/SafetyPolicy/<CHILD_ID> với { \"maxStoryLength\": 2000, \"requiredApprovalMode\": \"AlwaysManual\", \"consentRecorded\": true, \"categories\": [{ \"contentCategoryId\": 7, \"rule\": \"Restricted\" }] }"
+ ],
+ [
+  "=PUT /api/v1/SafetyPolicy/{childProfileId}",
+  "trùng id",
+  "Đăng nhập parent_demo1. PUT /api/v1/SafetyPolicy/<CHILD_ID> với { \"maxStoryLength\": 2000, \"requiredApprovalMode\": \"AlwaysManual\", \"consentRecorded\": true, \"categories\": [{ \"contentCategoryId\": 7, \"rule\": \"Blocked\" }, { \"contentCategoryId\": 7, \"rule\": \"Allowed\" }] }"
+ ],
+ [
+  "=PUT /api/v1/SafetyPolicy/{childProfileId}",
+  "contentCategoryId = 0",
+  "Đăng nhập parent_demo1. PUT /api/v1/SafetyPolicy/<CHILD_ID> với { \"maxStoryLength\": 2000, \"requiredApprovalMode\": \"AlwaysManual\", \"consentRecorded\": true, \"categories\": [{ \"contentCategoryId\": 0, \"rule\": \"Blocked\" }] }"
+ ],
+ [
+  "=PUT /api/v1/SafetyPolicy/{childProfileId}",
+  "comprehensionWindowSize = 21",
+  "Đăng nhập parent_demo1. PUT /api/v1/SafetyPolicy/<CHILD_ID> với { \"maxStoryLength\": 2000, \"requiredApprovalMode\": \"AlwaysManual\", \"consentRecorded\": true, \"comprehensionWindowSize\": 21, \"categories\": [] }"
+ ],
+ [
+  "=PUT /api/v1/SafetyPolicy/{childProfileId}",
+  "safetyScoreThreshold = 101",
+  "Đăng nhập parent_demo1. PUT /api/v1/SafetyPolicy/<CHILD_ID> với { \"maxStoryLength\": 2000, \"requiredApprovalMode\": \"AlwaysManual\", \"consentRecorded\": true, \"safetyScoreThreshold\": 101, \"categories\": [] }"
+ ],
+ [
+  "=PUT /api/v1/SafetyPolicy/{childProfileId}",
+  "parent_demo2",
+  "Đăng nhập parent_demo2. PUT /api/v1/SafetyPolicy/1 với { \"maxStoryLength\": 20000, \"requiredApprovalMode\": \"AlwaysManual\", \"consentRecorded\": true, \"categories\": [] }"
+ ],
+ [
+  "=POST /api/v1/SafetyPolicy/{childProfileId}",
+  "thiếu consentRecorded",
+  "Đăng nhập parent_demo1. Hồ sơ <CHILD_ID> còn Draft, chưa có Safety Policy (đã có thì gọi DELETE SafetyPolicy/<CHILD_ID> trước): POST /api/v1/SafetyPolicy/<CHILD_ID> với { \"maxStoryLength\": 1500, \"categories\": [] }"
+ ],
+ [
+  "=GET /api/v1/SafetyPolicy/{childProfileId}",
+  "parent_demo1 xem bé 1",
+  "Đăng nhập parent_demo1. GET /api/v1/SafetyPolicy/1"
+ ],
+ [
+  "=GET /api/v1/SafetyPolicy/{childProfileId}",
+  "bé 5",
+  "Đăng nhập parent_demo3. GET /api/v1/SafetyPolicy/5"
+ ],
+ [
+  "=GET /api/v1/SafetyPolicy/{childProfileId}",
+  "chưa có",
+  "Đăng nhập parent_demo1. Hồ sơ phụ chưa lưu Safety Policy: GET /api/v1/SafetyPolicy/<DRAFT_ID>"
+ ],
+ [
+  "=GET /api/v1/SafetyPolicy/{childProfileId}",
+  "parent_demo2",
+  "Đăng nhập parent_demo2. GET /api/v1/SafetyPolicy/1"
+ ],
+ [
+  "age-preset",
+  "Bé 2",
+  "Đăng nhập parent_demo1. GET /api/v1/SafetyPolicy/2/age-preset"
+ ],
+ [
+  "=GET /api/v1/SafetyPolicy/{childProfileId}/age-preset",
+  "parent_demo2",
+  "Đăng nhập parent_demo2. GET /api/v1/SafetyPolicy/1/age-preset"
+ ],
+ [
+  "age-preset/apply",
+  "8 Allowed",
+  "Đăng nhập parent_demo1. Hồ sơ test Age_6_8: PUT SafetyPolicy/<CHILD_ID> với categories [{ 8, Allowed }, { 5, Allowed }] trước, rồi POST /api/v1/SafetyPolicy/<CHILD_ID>/age-preset/apply"
+ ],
+ [
+  "age-preset/apply",
+  "chưa có Safety Policy",
+  "Đăng nhập parent_demo1. Hồ sơ phụ chưa lưu Safety Policy: POST /api/v1/SafetyPolicy/<DRAFT_ID>/age-preset/apply"
+ ],
+ [
+  "age-preset/apply",
+  "parent_demo2",
+  "Đăng nhập parent_demo2. POST /api/v1/SafetyPolicy/1/age-preset/apply"
+ ],
+ [
+  "reconsent",
+  "ConsentPolicyVersion = 0",
+  "Đăng nhập parent_demo1. Sửa DB ConsentPolicyVersion = 0 cho hồ sơ test, rồi POST /api/v1/SafetyPolicy/<CHILD_ID>/reconsent"
+ ],
+ [
+  "reconsent",
+  "bé 5",
+  "Đăng nhập parent_demo3. POST /api/v1/SafetyPolicy/5/reconsent"
+ ],
+ [
+  "reconsent",
+  "parent_demo2",
+  "Đăng nhập parent_demo2. POST /api/v1/SafetyPolicy/1/reconsent"
+ ],
+ [
+  "=DELETE /api/v1/SafetyPolicy/{childProfileId}",
+  "Bé 1",
+  "Đăng nhập parent_demo1. DELETE /api/v1/SafetyPolicy/1"
+ ],
+ [
+  "=DELETE /api/v1/SafetyPolicy/{childProfileId}",
+  "chưa có",
+  "Đăng nhập parent_demo1. Gọi DELETE /api/v1/SafetyPolicy/<CHILD_ID> lần 2."
+ ],
+ [
+  "=DELETE /api/v1/SafetyPolicy/{childProfileId}",
+  "parent_demo2",
+  "Đăng nhập parent_demo2. DELETE /api/v1/SafetyPolicy/1"
+ ],
+ [
+  "ChildProfile/{id}/activate",
+  "chưa có Learning Profile",
+  "Đăng nhập parent_demo1. Hồ sơ phụ <DRAFT_ID> chưa có Learning Profile (đã có thì gọi DELETE LearningProfile/<DRAFT_ID> trước): PATCH /api/v1/ChildProfile/<DRAFT_ID>/activate"
+ ],
+ [
+  "ChildProfile/{id}/activate",
+  "chưa có Safety Policy",
+  "Đăng nhập parent_demo1. Gọi PUT LearningProfile/<DRAFT_ID> cho có Learning Profile, chưa có Safety Policy (đã có thì DELETE SafetyPolicy/<DRAFT_ID> trước): PATCH /api/v1/ChildProfile/<DRAFT_ID>/activate"
+ ],
+ [
+  "ChildProfile/{id}/activate",
+  "bé 5",
+  "Đăng nhập parent_demo3. PATCH /api/v1/ChildProfile/5/activate"
+ ],
+ [
+  "ChildProfile/{id}/activate",
+  "ConsentPolicyVersion = 0",
+  "Đăng nhập parent_demo1. Hồ sơ test Draft đủ cấu hình, sửa DB ConsentPolicyVersion = 0 rồi PATCH /api/v1/ChildProfile/<CHILD_ID>/activate"
+ ],
+ [
+  "ChildProfile/{id}/activate",
+  "Suspended",
+  "Đăng nhập parent_demo1. Sau khi tạm dừng hồ sơ test: PATCH /api/v1/ChildProfile/<CHILD_ID>/activate"
+ ],
+ [
+  "ChildProfile/{id}/activate",
+  "parent_demo2",
+  "Đăng nhập parent_demo2. PATCH /api/v1/ChildProfile/<CHILD_ID>/activate"
+ ],
+ [
+  "ChildProfile/{id}/activate",
+  "Id không tồn tại",
+  "Đăng nhập parent_demo1. PATCH /api/v1/ChildProfile/999999/activate"
+ ],
+ [
+  "ChildProfile/{id}/suspend",
+  "Token bé",
+  "Đăng nhập parent_demo1. Trước khi tạm dừng: tạo QR cho hồ sơ test và lấy token bé bằng ChildAccessCredential/easylogin/login. Sau khi tạm dừng: GET /api/v1/ChildAccessCredential/me bằng token bé đó."
+ ],
+ [
+  "ChildProfile/{id}/suspend",
+  "Draft",
+  "Đăng nhập parent_demo1. Hồ sơ phụ <DRAFT_ID> (Draft): PATCH /api/v1/ChildProfile/<DRAFT_ID>/suspend"
+ ],
+ [
+  "ChildProfile/{id}/suspend",
+  "parent_demo2",
+  "Đăng nhập parent_demo2. PATCH /api/v1/ChildProfile/1/suspend"
+ ],
+ [
+  "ChildProfile/{id}/resume",
+  "Không gửi body",
+  "Đăng nhập parent_demo1. PATCH /api/v1/ChildProfile/<CHILD_ID>/resume không có body."
+ ],
+ [
+  "ChildProfile/{id}/resume",
+  "đang Active",
+  "Đăng nhập parent_demo1. PATCH /api/v1/ChildProfile/1/resume với { \"acceptCurrentConsent\": false }"
+ ],
+ [
+  "ChildProfile/{id}/resume",
+  "acceptCurrentConsent = true",
+  "Đăng nhập parent_demo1. Hồ sơ test Suspended, consent cũ (sửa DB về 0): PATCH /api/v1/ChildProfile/<CHILD_ID>/resume với { \"acceptCurrentConsent\": true }"
+ ],
+ [
+  "ChildProfile/{id}/resume",
+  "parent_demo2",
+  "Đăng nhập parent_demo2. PATCH /api/v1/ChildProfile/<CHILD_ID>/resume với { \"acceptCurrentConsent\": false }"
+ ],
+ [
+  "=DELETE /api/v1/ChildProfile/{id}",
+  "Draft",
+  "Đăng nhập parent_demo1. Hồ sơ phụ <DRAFT_ID> (Draft): DELETE /api/v1/ChildProfile/<DRAFT_ID>"
+ ],
+ [
+  "=DELETE /api/v1/ChildProfile/{id}",
+  "parent_demo2",
+  "Đăng nhập parent_demo2. DELETE /api/v1/ChildProfile/1"
+ ],
+ [
+  "ChildProfile/{id}/restore",
+  "đang Active",
+  "Đăng nhập parent_demo1. PATCH /api/v1/ChildProfile/1/restore với { \"acceptCurrentConsent\": false }"
+ ],
+ [
+  "ChildProfile/{id}/restore",
+  "user_test_a",
+  "Đăng nhập user_test_a. Hồ sơ 1 của user_test_a đã kích hoạt rồi lưu trữ, đã tạo hồ sơ 2. PATCH /api/v1/ChildProfile/<A_CHILD_ID>/restore với { \"acceptCurrentConsent\": false }"
+ ],
+ [
+  "ChildProfile/{id}/restore",
+  "parent_demo2",
+  "Đăng nhập parent_demo2. PATCH /api/v1/ChildProfile/<CHILD_ID>/restore với { \"acceptCurrentConsent\": false }"
+ ],
+ [
+  "=GET /api/v1/ChildProfile/reading-slots",
+  "parent_demo1",
+  "Đăng nhập parent_demo1. GET /api/v1/ChildProfile/reading-slots"
+ ],
+ [
+  "=PUT /api/v1/ChildProfile/reading-slots",
+  "demo-qr-child-03",
+  "Không cần token. Sau ca chọn bé 4: POST /api/v1/ChildAccessCredential/easylogin/login với { \"secret\": \"demo-qr-child-03\" }"
+ ],
+ [
+  "=PUT /api/v1/ChildProfile/reading-slots",
+  "rỗng",
+  "Đăng nhập parent_demo2. PUT /api/v1/ChildProfile/reading-slots với { \"childProfileIds\": [] }"
+ ],
+ [
+  "=PUT /api/v1/ChildProfile/reading-slots",
+  "Chọn 2 bé",
+  "Đăng nhập parent_demo2. PUT /api/v1/ChildProfile/reading-slots với { \"childProfileIds\": [3, 4] }"
+ ],
+ [
+  "=PUT /api/v1/ChildProfile/reading-slots",
+  "Chọn bé 1",
+  "Đăng nhập parent_demo2. PUT /api/v1/ChildProfile/reading-slots với { \"childProfileIds\": [1] }"
+ ],
+ [
+  "ChildAccessCredential/{childProfileId}/easylogin",
+  "Hồ sơ Draft",
+  "Đăng nhập parent_demo1. Hồ sơ phụ <DRAFT_ID> (Draft): POST /api/v1/ChildAccessCredential/<DRAFT_ID>/easylogin, rồi bé đăng nhập bằng secret nhận được."
+ ],
+ [
+  "ChildAccessCredential/{childProfileId}/easylogin",
+  "parent_demo2",
+  "Đăng nhập parent_demo2. POST /api/v1/ChildAccessCredential/1/easylogin"
+ ],
+ [
+  "=GET /api/v1/ChildAccessCredential/{childProfileId}",
+  "Sau khi thu hồi",
+  "Đăng nhập parent_demo1. GET /api/v1/ChildAccessCredential/<CHILD_ID> sau DELETE QR hoặc PATCH suspend."
+ ],
+ [
+  "=GET /api/v1/ChildAccessCredential/{childProfileId}",
+  "parent_demo2",
+  "Đăng nhập parent_demo2. GET /api/v1/ChildAccessCredential/1"
+ ],
+ [
+  "=DELETE /api/v1/ChildAccessCredential/{childProfileId}",
+  "handover",
+  "Đăng nhập parent_demo1. Bàn giao máy cho hồ sơ test (ChildAccessCredential/<CHILD_ID>/handover) lấy token bé, rồi DELETE /api/v1/ChildAccessCredential/<CHILD_ID> và gọi ChildAccessCredential/me bằng token bé đó."
+ ],
+ [
+  "=DELETE /api/v1/ChildAccessCredential/{childProfileId}",
+  "parent_demo2",
+  "Đăng nhập parent_demo2. DELETE /api/v1/ChildAccessCredential/1"
+ ],
+ [
+  "easylogin/login",
+  "<EASY_SECRET>",
+  "POST /api/v1/ChildAccessCredential/easylogin/login với { \"secret\": \"<EASY_SECRET>\" }"
+ ],
+ [
+  "easylogin/login",
+  "Secret sai",
+  "POST /api/v1/ChildAccessCredential/easylogin/login với { \"secret\": \"sai-ma-qr\" }"
+ ],
+ [
+  "easylogin/login",
+  "Secret rỗng",
+  "POST /api/v1/ChildAccessCredential/easylogin/login với { \"secret\": \"\" }"
+ ],
+ [
+  "easylogin/login",
+  "129 ký tự",
+  "POST /api/v1/ChildAccessCredential/easylogin/login với { \"secret\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\" }"
+ ],
+ [
+  "easylogin/login",
+  "Bé 5",
+  "POST /api/v1/ChildAccessCredential/easylogin/login với { \"secret\": \"demo-qr-child-05\" }"
+ ],
+ [
+  "easylogin/login",
+  "Bé 4",
+  "POST /api/v1/ChildAccessCredential/easylogin/login với { \"secret\": \"demo-qr-child-04\" }"
+ ],
+ [
+  "easylogin/login",
+  "5 lần",
+  "POST /api/v1/ChildAccessCredential/easylogin/login với { \"secret\": \"sai-ma-qr\" } 5 lần, lần 6 dùng { \"secret\": \"demo-qr-child-01\" }. Khóa theo IP, tự mở sau 5 phút."
+ ],
+ [
+  "ChildAccessCredential/me",
+  "Token người lớn",
+  "Đăng nhập parent_demo1. GET /api/v1/ChildAccessCredential/me bằng access token người lớn."
+ ],
+ [
+  "ChildAccessCredential/me",
+  "sau khi phụ huynh tạm dừng",
+  "Token bé của hồ sơ test (lấy trước bằng easylogin/login hoặc handover); đăng nhập parent_demo1 gọi ChildProfile/<CHILD_ID>/suspend; rồi GET /api/v1/ChildAccessCredential/me bằng token bé."
+ ],
+ [
+  "handover",
+  "đã bị thu hồi QR",
+  "Đăng nhập parent_demo1. Sau DELETE QR của hồ sơ test: POST /api/v1/ChildAccessCredential/<CHILD_ID>/handover với { \"supervisorRefreshToken\": \"<REFRESH_TOKEN>\" }"
+ ],
+ [
+  "handover",
+  "Refresh token của tài khoản khác",
+  "Đăng nhập parent_demo1, nhưng gửi refreshToken của phiên parent_demo2: POST /api/v1/ChildAccessCredential/1/handover với { \"supervisorRefreshToken\": \"<refreshToken của parent_demo2>\" }"
+ ],
+ [
+  "handover",
+  "đã đăng xuất",
+  "Đăng nhập parent_demo1. Gọi Auth/logout với <REFRESH_TOKEN>, rồi POST /api/v1/ChildAccessCredential/1/handover với chính token đó."
+ ],
+ [
+  "handover",
+  "Thiếu supervisorRefreshToken",
+  "Đăng nhập parent_demo1. POST /api/v1/ChildAccessCredential/1/handover với { }"
+ ],
+ [
+  "handover",
+  "parent_demo2 bàn giao bé 1",
+  "Đăng nhập parent_demo2. POST /api/v1/ChildAccessCredential/1/handover với { \"supervisorRefreshToken\": \"<refreshToken của parent_demo2>\" }"
+ ],
+ [
+  "handover",
+  "còn Draft",
+  "Đăng nhập parent_demo1. Hồ sơ phụ <DRAFT_ID> (Draft): POST /api/v1/ChildAccessCredential/<DRAFT_ID>/handover với { \"supervisorRefreshToken\": \"<REFRESH_TOKEN>\" }"
+ ],
+ [
+  "handover",
+  "bé 4",
+  "Đăng nhập parent_demo2. POST /api/v1/ChildAccessCredential/4/handover với { \"supervisorRefreshToken\": \"<refreshToken của parent_demo2>\" }"
+ ],
+ [
+  "handover",
+  "logout-all-devices",
+  "Đăng nhập parent_demo1. Bàn giao bé 1 lấy token bé; gọi Auth/logout-all-devices; rồi GET /api/v1/ChildAccessCredential/me bằng token bé."
+ ],
+ [
+  "ParentalGate/verify",
+  "Sai mật khẩu",
+  "POST /api/v1/ParentalGate/verify với { \"email\": \"parent1@example.com\", \"password\": \"SaiMatKhau1\" } (chỉ 1 lần)."
+ ],
+ [
+  "ParentalGate/verify",
+  "username thay email",
+  "POST /api/v1/ParentalGate/verify với { \"email\": \"parent_demo1\", \"password\": \"Demo@123\" }"
+ ],
+ [
+  "ParentalGate/verify",
+  "user_test_a",
+  "POST /api/v1/ParentalGate/verify với { \"email\": \"<EMAIL_A>\", \"password\": \"SaiMatKhau1\" } 5 lần, lần 6 mật khẩu đúng."
+ ],
+ [
+  "ParentalGate/verify",
+  "parent4",
+  "POST /api/v1/ParentalGate/verify với { \"email\": \"parent4@example.com\", \"password\": \"Demo@123\" }"
+ ],
+ [
+  "ParentalGate/verify",
+  "parent5",
+  "POST /api/v1/ParentalGate/verify với { \"email\": \"parent5@example.com\", \"password\": \"Demo@123\" }"
+ ]
+];
+// Quy tắc chung theo tên test case (token sai vai trò, thiếu token...)
+const GENERIC = [
+ [
+  "Gọi bằng token Moderator",
+  "Đăng nhập moderator_demo1 (Demo@123), gọi cùng URL."
+ ],
+ [
+  "Gọi bằng token Administrator",
+  "Đăng nhập admin_demo (Demo@123), gọi cùng URL."
+ ],
+ [
+  "Gọi bằng token bé",
+  "Token bé 1: lấy bằng ChildAccessCredential/easylogin/login với { \"secret\": \"demo-qr-child-01\" }, rồi gọi cùng URL."
+ ],
+ [
+  "Không gửi token",
+  "Bỏ header Authorization khi gọi."
+ ]
+];
+function dataFor(api, t) {
+  const name = t[1];
+  for (const [pathPart, namePart, text] of TESTDATA) {
+    const pathOk = pathPart.startsWith("=") ? (api.m + " " + api.p) === pathPart.slice(1) : (api.m + " " + api.p).includes(pathPart);
+    if (pathOk && name.includes(namePart)) return text;
+  }
+  for (const [namePart, text] of GENERIC) if (name.includes(namePart)) return text + ((seedFor(api) || {}).url ? " URL: " + seedFor(api).url : "");
+  const sa = seedFor(api);
+  if (!sa) return null;
+  return `Đăng nhập ${sa.as} (mật khẩu Demo@123). ${sa.url}. ${sa.note}`;
+}
+
+// ---------- GIÁ TRỊ ĐỘNG ----------
+const VAR_DEFS = [
+ [
+  "EMAIL_A",
+  "",
+  "Email thật của tài khoản test user_test_a (phải đọc được hộp thư)"
+ ],
+ [
+  "EMAIL_B",
+  "",
+  "Email thật thứ hai cho ca đăng ký gửi kèm role (user_test_b)"
+ ],
+ [
+  "OTP",
+  "",
+  "Mã 6 số trong email xác thực"
+ ],
+ [
+  "RESET_TOKEN",
+  "",
+  "Mã đặt lại mật khẩu trong email quên mật khẩu"
+ ],
+ [
+  "EMAIL_A_NEW",
+  "",
+  "Email thật khác để thử đổi email của user_test_a"
+ ],
+ [
+  "CHANGE_EMAIL_OTP",
+  "",
+  "Mã 6 số gửi tới email mới khi đổi email"
+ ],
+ [
+  "REFRESH_TOKEN",
+  "",
+  "data.refreshToken mới nhất của phiên đang dùng (đổi sau mỗi lần refresh-token)"
+ ],
+ [
+  "SESSION_ID",
+  "",
+  "id một phiên trong GET /api/v1/Auth/sessions"
+ ],
+ [
+  "DRAFT_ID",
+  "14",
+  "Id hồ sơ phụ Bé Na (Age_9_10, Draft) tạo ở ca language bỏ trống, Bước 4 (14 trên DB mới seed)"
+ ],
+ [
+  "A_CHILD_ID",
+  "",
+  "Id hồ sơ đầu tiên của user_test_a"
+ ],
+ [
+  "SESSION_ID_2",
+  "",
+  "id một phiên của parent_demo2 (GET /api/v1/Auth/sessions bằng parent_demo2)"
+ ],
+ [
+  "CHILD_ID",
+  "13",
+  "Id hồ sơ trẻ test vừa tạo (data.id; 13 trên DB mới seed)"
+ ],
+ [
+  "EASY_SECRET",
+  "",
+  "data.secret khi tạo QR Easy Login (chỉ hiện một lần)"
+ ]
+];
+let VARS = {};
+try { VARS = JSON.parse(localStorage.getItem("luong1-guide-vars") || "{}"); } catch (e) { VARS = {}; }
+VAR_DEFS.forEach(([k, d]) => { if (VARS[k] === undefined) VARS[k] = d; });
+function subst(text) {
+  if (text == null) return text;
+  return String(text)
+    .replace(/"<([A-Z_]+)>"/g, (m, k) => { const v = VARS[k]; if (v === undefined || v === "") return m; return /^-?\d+$/.test(v) ? v : JSON.stringify(v); })
+    .replace(/<([A-Z_]+)>/g, (m, k) => { const v = VARS[k]; return v === undefined || v === "" ? m : v; });
+}
+
+// ---------- CONTROLLER CỦA TỪNG API ----------
+// Lấy từ [Route]/[Http...] trong src/Core/StoryPlatform.Api/Controllers (route mặc định api/v1/[controller]).
+const BASE_CONTROLLERS = [
+ "Auth",
+ "ChildProfile",
+ "LearningProfile",
+ "SafetyPolicy",
+ "ChildAccessCredential",
+ "ParentalGate"
+];
+const CONTROLLER_ROUTES = BASE_CONTROLLERS.map(n => ["/api/v1/" + n, n + "Controller"]);
+function controllerFor(api) {
+  const m = api.p.match(/\/api\/v1\/[^\s?]*/);
+  if (!m) return null;
+  const segs = m[0].toLowerCase().split("/").filter(Boolean);
+  let best = null, bestLen = -1;
+  for (const [tpl, name] of CONTROLLER_ROUTES) {
+    const t = tpl.toLowerCase().split("/").filter(Boolean);
+    if (t.length > segs.length || t.length <= bestLen) continue;
+    if (t.every((x, i) => x === "{}" || x === segs[i])) { best = name; bestLen = t.length; }
+  }
+  return best;
+}
+
+// ---------- DỰNG TRANG ----------
+const main = document.getElementById("main");
+const nav = document.getElementById("nav");
+let store = {};
+try { store = JSON.parse(localStorage.getItem("luong1-guide-checks") || "{}"); } catch (e) { store = {}; }
+function save() { try { localStorage.setItem("luong1-guide-checks", JSON.stringify(store)); } catch (e) {} }
+function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+// Tách đoạn ghi chú thành từng ý (theo câu, dấu chấm phẩy, dấu ·) để hiển thị hàng dọc.
+function noteList(text) {
+  const parts = String(text).split(/(?<=\.)\s+(?=[\p{Lu}\d(])|;\s+|\s+·\s+/u).map(x => x.trim()).filter(Boolean);
+  return `<ul>${parts.map(x => {
+    const call = x.match(/^(GET|POST|PUT|PATCH|DELETE) (\/\S+?)\.?$/);
+    return `<li>${call ? `<span class="code">${esc(call[1] + " " + call[2])}</span>` : esc(x)}</li>`;
+  }).join("")}</ul>`;
+}
+const KIND = { ok: ["ok", "Đúng"], neg: ["neg", "Lỗi"], edge: ["edge", "Biên"], todo: ["neg", "Chưa có"] };
+
+let total = 0;
+nav.innerHTML = '<a href="#chung">Quy ước chung</a>';
+STEPS.forEach(step => {
+  nav.insertAdjacentHTML("beforeend", `<a href="#${step.id}">${esc(step.title.split(" — ")[0])}: ${esc(step.title.split(" — ")[1] || "")}</a>`);
+  const sec = document.createElement("section");
+  sec.className = "step"; sec.id = step.id;
+  let html = `<h2>${esc(step.title)}</h2><p class="step-desc">${esc(step.desc)}</p>`;
+  html += `<div class="box"><h3>Luồng chạy</h3><ol class="flow">${step.flow.map(f => `<li>${esc(f)}</li>`).join("")}</ol></div>`;
+  step.apis.forEach((api, ai) => {
+    const rows = api.tests.map((t, ti) => {
+      total++;
+      const key = `${step.id}.${ai}.${ti}`;
+      const k = KIND[t[0]];
+      const data = dataFor(api, t);
+      const req = buildRequest(api, t, data);
+      const reqText = JSON.stringify(req.request, null, 2);
+      const reqBtn = ` <button class="copy" data-copy="${COPY.push(reqText) - 1}">Copy request JSON</button>`;
+      const bodyBtnT = req.bodyText ? ` <button class="copy" data-copy="${COPY.push(req.bodyText) - 1}">Copy body</button>` : "";
+      const dataHtml = data ? `<div class="data"><b>Dữ liệu</b>${noteList(data)}</div>` : "";
+      const preHtml = req.hasRequest ? `<div class="reqbar">Đầu vào (JSON)${reqBtn}${bodyBtnT}</div><pre class="req" data-ci="${COPY.length - (req.bodyText ? 2 : 1)}">${esc(subst(reqText))}</pre>` : "";
+      return `<tr><td class="chk"><input type="checkbox" data-key="${key}" ${store[key] ? "checked" : ""}></td>` +
+             `<td><span class="tag ${k[0]}">${k[1]}</span>${esc(t[1])}${dataHtml}${preHtml}</td><td>${esc(t[2])}</td></tr>`;
+    }).join("");
+    const sa = seedFor(api);
+    const shownBody = (sa && sa.body) || api.body;
+    const bodyIdx = shownBody ? COPY.push(shownBody) - 1 : -1;
+    const bodyBtn = shownBody ? ` <button class="copy" data-copy="${bodyIdx}">Copy body</button>` : "";
+    const seedNote = sa ? `<div class="data"><b>Dữ liệu seed</b><div class="kv">` +
+      `<span>Đăng nhập</span><span><b>${esc(sa.as)}</b> · mật khẩu Demo@123</span>` +
+      `<span>Gọi</span><span><span class="code">${esc(sa.url)}</span></span>` +
+      `<span>Ghi chú</span>${noteList(sa.note)}</div></div>` : "";
+    const pathText = api.p.startsWith("(") ? "" : `${api.m} ${api.p}`;
+    const pathBtn = pathText ? ` <button class="copy" data-copy="${COPY.push(pathText) - 1}">Copy đường dẫn</button>` : "";
+    const ctl = controllerFor(api);
+    const ctlChip = ctl ? `<span class="ctl" title="Controller">${esc(ctl)}</span>` : `<span class="ctl" title="Controller">chưa có Controller</span>`;
+    const ctlLine = ctl ? `<p class="ctl-line">Controller: <b>${esc(ctl)}</b> · nhóm Swagger: <b>${esc(ctl.replace(/Controller$/, ""))}</b> · file <span class="code">src/Core/StoryPlatform.Api/Controllers/${esc(ctl)}.cs</span></p>` : "";
+    html += `<details class="api" data-search="${esc((api.m + " " + api.p + " " + (ctl || "") + " " + api.role).toLowerCase())}"><summary><span class="m ${api.m}">${api.m}</span><span class="path">${esc(api.p)}</span>${ctlChip}<span class="role">${esc(api.role)}</span></summary>` +
+      `<div class="api-body">${ctlLine}<p>${esc(api.what)}${pathBtn}</p>` +
+      (api.detail ? `<div class="detail">` + api.detail.map(([h, items]) =>
+        `<div class="detail-sec"><b>${esc(h)}</b><ul>${items.map(s => `<li>${esc(s)}</li>`).join("")}</ul></div>`).join("") + `</div>` : "") +
+      (api.warn ? `<div class="note"><b>⚠ Lưu ý:</b> ` + (Array.isArray(api.warn)
+        ? `${esc(api.warn[0])}<ol>${api.warn.slice(1).map(s => `<li>${esc(s)}</li>`).join("")}</ol>`
+        : esc(api.warn)) + `</div>` : "") +
+      seedNote +
+      (api.ui ? `<div class="detail"><div class="detail-sec"><b>Nội dung hiển thị trên màn hình (gợi ý cho frontend)</b><ul>${api.ui.map(s => `<li>${esc(s)}</li>`).join("")}</ul></div></div>` : "") +
+      (api.resp ? `<p><b>Phản hồi mẫu</b> <button class="copy" data-copy="${COPY.push(api.resp) - 1}">Copy</button></p><pre data-ci="${COPY.length - 1}">${esc(subst(api.resp))}</pre>` : "") +
+      (shownBody ? `<p><b>Body ví dụ (trường hợp đúng)</b>${bodyBtn}</p><pre data-ci="${bodyIdx}">${esc(subst(shownBody))}</pre>` : "") +
+      `<p><b>Test case</b></p><table class="tests"><thead><tr><th class="chk"></th><th>Tình huống</th><th class="exp">Kết quả mong đợi</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
+  });
+  sec.innerHTML = html;
+  main.appendChild(sec);
+});
+
+const varsGrid = document.querySelector("#vars .vars-grid");
+VAR_DEFS.forEach(([k, d, label]) => {
+  const lab = document.createElement("label");
+  lab.innerHTML = `<span><b>&lt;${k}&gt;</b> · ${esc(label)}</span>`;
+  const input = document.createElement("input");
+  input.value = VARS[k]; input.placeholder = d || "(chưa có)"; input.spellcheck = false;
+  input.addEventListener("input", () => {
+    VARS[k] = input.value.trim();
+    try { localStorage.setItem("luong1-guide-vars", JSON.stringify(VARS)); } catch (e) {}
+    document.querySelectorAll("pre[data-ci]").forEach(pre => { pre.textContent = subst(COPY[Number(pre.dataset.ci)]); });
+  });
+  lab.appendChild(input);
+  varsGrid.appendChild(lab);
+});
+
+const progress = document.createElement("div");
+progress.className = "progress";
+nav.appendChild(progress);
+function updateProgress() {
+  const done = Object.values(store).filter(Boolean).length;
+  progress.textContent = `Đã chạy ${done}/${total} test case`;
+}
+updateProgress();
+
+main.addEventListener("click", e => {
+  const btn = e.target.closest && e.target.closest("button.copy");
+  if (!btn) return;
+  e.preventDefault();
+  const text = subst(COPY[Number(btn.dataset.copy)]);
+  const done = () => { const old = btn.textContent; btn.textContent = "Đã copy"; setTimeout(() => { btn.textContent = old; }, 1200); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
+  } else { fallbackCopy(text, done); }
+});
+function fallbackCopy(text, done) {
+  const ta = document.createElement("textarea");
+  ta.value = text; document.body.appendChild(ta); ta.select();
+  try { document.execCommand("copy"); done(); } catch (err) {}
+  document.body.removeChild(ta);
+}
+main.addEventListener("change", e => {
+  const key = e.target.dataset && e.target.dataset.key;
+  if (!key) return;
+  store[key] = e.target.checked; save(); updateProgress();
+});
+// Ô tìm API theo đường dẫn, method, Controller hoặc vai trò (đặt đầu thanh điều hướng, luôn nhìn thấy).
+const search = document.createElement("input");
+search.className = "search"; search.type = "search"; search.placeholder = "Tìm API: đường dẫn, Controller…";
+const found = document.createElement("div");
+found.className = "found";
+nav.prepend(found); nav.prepend(search);
+search.addEventListener("input", () => {
+  const q = search.value.trim().toLowerCase();
+  let shown = 0;
+  document.querySelectorAll("section.step").forEach(sec => {
+    if (sec.id === "chung") return;
+    let any = false;
+    sec.querySelectorAll("details.api").forEach(d => {
+      const hit = !q || d.dataset.search.includes(q);
+      d.classList.toggle("hidden-by-search", !hit);
+      if (hit) { any = true; shown++; if (q) d.open = true; }
+    });
+    sec.classList.toggle("hidden-by-search", !any);
+  });
+  found.textContent = q ? `${shown} API khớp` : "";
+});
+document.getElementById("expand").onclick = () => document.querySelectorAll("details.api").forEach(d => d.open = true);
+document.getElementById("collapse").onclick = () => document.querySelectorAll("details.api").forEach(d => d.open = false);
+document.getElementById("reset").onclick = () => {
+  store = {}; save();
+  document.querySelectorAll("input[data-key]").forEach(c => c.checked = false);
+  updateProgress();
+};
+</script>
+</body>
+</html>

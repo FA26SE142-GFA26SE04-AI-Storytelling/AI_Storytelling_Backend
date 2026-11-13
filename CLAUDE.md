@@ -202,3 +202,26 @@ If a request can be satisfied without creating a new file, prefer modifying an a
 If multiple implementation approaches are possible and one requires significantly more files or architectural changes, prefer the smaller approach unless there is a clear technical reason not to.
 
 When requirements are ambiguous and the ambiguity could change the implementation, ask a focused clarification instead of guessing.
+
+## 13. API test guide HTML (bắt buộc dùng template)
+
+Mọi file HTML hướng dẫn test API / test case (đặt trong `docs/api/`) phải dựng từ template `docs/api/_template-api-test-guide.html`. Template giữ đúng khung của `docs/api/api-test-guide-buoc-1-7.html`: thanh điều hướng có ô tìm API, mỗi API là một khối gập/mở, test case có ô tích, nút Copy request / body, ô giá trị động.
+
+Cách làm:
+
+1. Copy `docs/api/_template-api-test-guide.html` sang file mới (tên dạng `<chuc-nang>-api-test-guide.html`). Không viết HTML / CSS / JS tự do.
+2. Chỉ sửa:
+   - `<title>`, `<header>` (h1 + sub) và section `#chung` (cách gọi, tài khoản seed, dữ liệu seed liên quan, id kế tiếp, lưu ý thứ tự chạy);
+   - phần dữ liệu trong `<script>` từ đầu tới dòng `HẾT PHẦN DỮ LIỆU`: `STEPS`, `OVERRIDES`, `SEEDAPI`, `TESTDATA`, `GENERIC`, `VAR_DEFS`, `BASE_CONTROLLERS`, `CONTROLLER_ROUTES`;
+   - hai khóa localStorage `"TEMPLATE-guide-vars"` và `"TEMPLATE-guide-checks"` → đổi `TEMPLATE` thành tên chức năng để các trang không ghi đè dấu tích của nhau.
+   Không sửa phần engine bên dưới (buildRequest, dataFor, dựng trang).
+3. Mỗi bước (`STEPS[]`) có `id`, `title` dạng `"Task N — Tên"` (hoặc `"Bước N — Tên"`), `desc`, `flow`, `apis`. Mỗi API có `m`, `p`, `role`, `what`, nên có `detail` (các bước hệ thống kiểm lần lượt, xử lý, kết quả), `body` và `resp` mẫu khi có.
+4. Mỗi test case: `[loại, tình huống, kết quả mong đợi, dữ liệu, body?]`.
+   - `loại`: `ok` / `neg` / `edge` / `todo`.
+   - `kết quả mong đợi`: mã HTTP + message chính xác như code trả + các trường `data` cần kiểm.
+   - `dữ liệu`: câu dạng `Đăng nhập <username>. <METHOD> /api/v1/... với { json }` (trang tự dựng request từ câu này; METHOD + URL đầu tiên trong câu là request). Không đặt JSON của một API khác trong câu.
+   - Body dài / đặc biệt đặt ở cột `body` (dùng `J(...)`, `A(n)`).
+   - Phủ đủ: trường hợp đúng, từng nhánh lỗi validation và quyền (sai role, không token, token trẻ), các giá trị biên.
+5. Kết quả mong đợi phải tính từ dữ liệu seed thật (`Database/Seed`) và code hiện tại; ghi rõ test phụ thuộc thứ tự / cần DB vừa seed. API kiểm tra thủ công (SQL, Swagger, tài liệu) dùng `p` bắt đầu bằng `(`.
+6. Mật khẩu chỉ ghi mật khẩu demo của seed như template; không ghi mật khẩu, token, connection string thật.
+7. Trước khi báo xong: mở file trong trình duyệt, kiểm không có lỗi console, số API / test case hiển thị đúng và vài request JSON dựng ra đúng tài khoản / URL / body.

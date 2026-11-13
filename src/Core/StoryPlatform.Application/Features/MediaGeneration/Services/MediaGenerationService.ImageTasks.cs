@@ -29,6 +29,7 @@ public sealed partial class MediaGenerationService
     // Caller owns the story lock and transaction. Ready assets are never requeued.
     private async Task QueueImageTasksAsync(StoryGenerationJob branch, CancellationToken ct)
     {
+        await RetireUnrequestedListeningImageTasksAsync(branch, ct);
         var versionId = branch.StoryVersionId ?? throw new InvalidOperationException("INVALID_MEDIA_HANDOFF");
         var scenes = await _unitOfWork.Repository<StoryScene>().FindAsync(x => x.StoryVersionId == versionId, cancellationToken: ct);
         foreach (var scene in scenes)
@@ -97,8 +98,10 @@ public sealed partial class MediaGenerationService
                     await _unitOfWork.CommitTransactionAsync(ct);
                     continue;
                 }
+                await RetireUnrequestedListeningImageTasksAsync(branch, ct);
                 var tasks = await _unitOfWork.Repository<MediaAssetGenerationTask>().FindAsync(x =>
-                    x.BranchJobId == branch.Id && x.PackageRevision == branch.MediaPackageRevision, cancellationToken: ct);
+                    x.BranchJobId == branch.Id && x.PackageRevision == branch.MediaPackageRevision &&
+                    !(x.Status == GenerationJobStatus.Cancelled && x.ErrorCode == "LEARNING_ARTIFACT_NOT_ENABLED"), cancellationToken: ct);
                 if (tasks.Count == 0)
                 {
                     // Recover packages prepared by the previous worker, without duplicating files.
@@ -144,14 +147,45 @@ public sealed partial class MediaGenerationService
 
     private async Task AggregateImageBranchAsync(StoryGenerationJob branch, CancellationToken ct)
     {
+        await RetireUnrequestedListeningImageTasksAsync(branch, ct);
         var tasks = await _unitOfWork.Repository<MediaAssetGenerationTask>().FindAsync(x => x.BranchJobId == branch.Id &&
-            x.PackageRevision == branch.MediaPackageRevision, cancellationToken: ct);
+            x.PackageRevision == branch.MediaPackageRevision &&
+            !(x.Status == GenerationJobStatus.Cancelled && x.ErrorCode == "LEARNING_ARTIFACT_NOT_ENABLED"), cancellationToken: ct);
         if (tasks.Any(x => x.Status is GenerationJobStatus.Pending or GenerationJobStatus.Processing)) return;
         branch.Status = tasks.All(x => x.Status == GenerationJobStatus.Completed) ? GenerationJobStatus.Completed : GenerationJobStatus.Failed;
         branch.ErrorCode = tasks.FirstOrDefault(x => x.Status != GenerationJobStatus.Completed)?.ErrorCode;
         branch.CompletedAt = _clock.GetUtcNow().UtcDateTime;
         _unitOfWork.Repository<StoryGenerationJob>().Update(branch);
         RotateToken(branch);
+    }
+
+    // Caller owns the story lock and transaction. Keep assets/files, but revoke obsolete task leases.
+    private async Task RetireUnrequestedListeningImageTasksAsync(StoryGenerationJob branch, CancellationToken ct)
+    {
+        if (branch.ParentStoryPackageId.HasValue || branch.StoryVersionId is not int versionId ||
+            await IncludesLearningMediaAsync(versionId, ct)) return;
+        var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(x =>
+            x.StoryVersionId == versionId && x.ParentStoryPackageId == null && x.Type == MediaType.ListeningImage,
+            cancellationToken: ct);
+        var assetIds = assets.Select(x => x.Id).ToList();
+        if (assetIds.Count == 0) return;
+        var tasks = await _unitOfWork.Repository<MediaAssetGenerationTask>().FindAsync(x =>
+            x.BranchJobId == branch.Id && x.PackageRevision == branch.MediaPackageRevision &&
+            assetIds.Contains(x.MediaAssetId) && x.Status != GenerationJobStatus.Completed &&
+            !(x.Status == GenerationJobStatus.Cancelled && x.ErrorCode == "LEARNING_ARTIFACT_NOT_ENABLED"),
+            cancellationToken: ct);
+        foreach (var task in tasks)
+        {
+            _unitOfWork.Repository<MediaAssetGenerationTask>().Update(task);
+            task.Status = GenerationJobStatus.Cancelled;
+            task.ErrorCode = "LEARNING_ARTIFACT_NOT_ENABLED";
+            task.CompletedAt = _clock.GetUtcNow().UtcDateTime;
+            task.LeaseExpiresAt = task.NextAttemptAt = null;
+            task.ConcurrencyToken = Guid.NewGuid().ToString("N");
+            _unitOfWork.Repository<MediaAssetGenerationTask>().Update(task);
+        }
+        // Subsequent no-tracking reads in this transaction must see the cancellation.
+        if (tasks.Count > 0) await _unitOfWork.SaveChangesAsync(ct);
     }
 
     private async Task<MediaJobProcessResult> ProcessImageTaskNextAsync(CancellationToken ct)
@@ -192,6 +226,14 @@ public sealed partial class MediaGenerationService
                         RotateToken(branch);
                         await CancelImageTasksAsync(branch.Id, ct);
                     }
+                    await _unitOfWork.CommitTransactionAsync(ct);
+                    continue;
+                }
+                await RetireUnrequestedListeningImageTasksAsync(branch, ct);
+                var refreshedTask = await FreshAsync<MediaAssetGenerationTask>(task.Id, ct);
+                if (refreshedTask?.Status == GenerationJobStatus.Cancelled && refreshedTask.ErrorCode == "LEARNING_ARTIFACT_NOT_ENABLED")
+                {
+                    await AggregateImageBranchAsync(branch, ct);
                     await _unitOfWork.CommitTransactionAsync(ct);
                     continue;
                 }

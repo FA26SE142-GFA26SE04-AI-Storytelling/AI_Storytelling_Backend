@@ -32,6 +32,42 @@ public sealed partial class MediaGenerationServiceTests
         }
     }
 
+    [Theory]
+    [InlineData(GenerationJobStatus.Pending, true)]
+    [InlineData(GenerationJobStatus.Processing, false)]
+    [InlineData(GenerationJobStatus.Failed, false)]
+    public async Task ReadingOnlyRetiresOldListeningImageTasksWithoutCallingProviderOrBlockingPackage(
+        GenerationJobStatus status, bool claimFirst)
+    {
+        var store = Seed();
+        store.Items<Story>().Single().OutputMode = StoryOutputMode.ReadingMediaOnly;
+        var image = new SwitchableImage();
+        var service = Create(store, image: image);
+        Assert.True((await service.ProcessNextAsync()).Success);
+        var branch = store.Items<StoryGenerationJob>().Single(x => x.Operation == GenerationJobOperation.GenerateIllustration);
+        var scene = store.Items<StoryScene>()[0];
+        var beat = store.Items<IllustrationBeat>()[0];
+        store.Seed(new MediaAsset { Id = 900, StoryVersionId = 10, StorySceneId = scene.Id,
+            Type = MediaType.ListeningImage, Status = MediaStatus.Failed, IsCurrent = true, Url = "history/file.png" });
+        var obsolete = new MediaAssetGenerationTask { Id = 900, StoryId = 1, StoryVersionId = 10,
+            BranchJobId = branch.Id, MediaAssetId = 900, IllustrationBeatId = beat.Id,
+            MediaContextId = branch.MediaContextId!.Value, PackageRevision = branch.MediaPackageRevision!.Value,
+            Status = status, ConcurrencyToken = "old-claim", ErrorCode = "OLD_PROVIDER_FAILURE",
+            QueuedAt = DateTime.UtcNow.AddDays(-1), LeaseExpiresAt = DateTime.UtcNow.AddHours(1) };
+        store.Seed(obsolete);
+
+        if (claimFirst) await service.ProcessBranchNextAsync(MediaType.Illustration);
+        else await service.ProcessNextAsync();
+        Assert.Equal(GenerationJobStatus.Cancelled, obsolete.Status);
+        Assert.Equal("LEARNING_ARTIFACT_NOT_ENABLED", obsolete.ErrorCode);
+        Assert.NotEqual("old-claim", obsolete.ConcurrencyToken);
+        Assert.Null(obsolete.LeaseExpiresAt);
+        Assert.True((await service.RunPackageAsync()).Success);
+        Assert.Equal(store.Items<IllustrationBeat>().Count, image.Calls);
+        Assert.Equal(StoryStatus.MediaReview, store.Items<Story>().Single().Status);
+        Assert.Equal("history/file.png", store.Items<MediaAsset>().Single(x => x.Id == 900).Url);
+    }
+
     [Fact]
     public async Task ImageBackoffDoesNotBlockAudioAndRetainsProviderRetryAfter()
     {

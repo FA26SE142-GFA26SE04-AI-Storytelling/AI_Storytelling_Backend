@@ -7,6 +7,7 @@ using StoryPlatform.Application.Abstractions.Security;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Common.Security;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
+using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.AccessCredentials.Services;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
@@ -59,7 +60,18 @@ public class ChildAccessCredentialServiceTests
             .Returns(Task.CompletedTask);
         _sut = new ChildAccessCredentialService(
             _unitOfWork.Object, _guard.Object, _jwtTokenGenerator.Object, _limiter.Object,
-            _auditLogWriter.Object, _eligibility.Object);
+            _auditLogWriter.Object, _eligibility.Object, _protector);
+    }
+
+    private readonly FakeSecretProtector _protector = new();
+
+    /// <summary>Mã hóa giả, đảo ngược được, để kiểm service lưu / trả đúng bản mã hóa.</summary>
+    private sealed class FakeSecretProtector : IEasyLoginSecretProtector
+    {
+        public bool Broken { get; set; }
+        public string Protect(string secret) => "enc:" + secret;
+        public string? TryUnprotect(string protectedSecret) =>
+            !Broken && protectedSecret.StartsWith("enc:") ? protectedSecret[4..] : null;
     }
 
     // ---------- CreateOrRegenerateEasyLoginAsync ----------
@@ -112,6 +124,23 @@ public class ChildAccessCredentialServiceTests
     }
 
     [Fact]
+    public async Task CreateOrRegenerateEasyLoginAsync_StoresProtectedSecretForParentToViewAgain()
+    {
+        AllowManageSafety();
+        SetupCredentials();
+        ChildAccessCredential? added = null;
+        _credentialRepo.Setup(r => r.AddAsync(
+                It.IsAny<ChildAccessCredential>(), It.IsAny<CancellationToken>()))
+            .Callback<ChildAccessCredential, CancellationToken>((value, _) => added = value)
+            .ReturnsAsync((ChildAccessCredential value, CancellationToken _) => value);
+
+        var result = await _sut.CreateOrRegenerateEasyLoginAsync(1, 2);
+
+        Assert.Equal("enc:" + result.Secret, added!.EasyLoginSecretProtected);
+        Assert.DoesNotContain(added.EasyLoginSecretProtected!, Assert.Single(_audits).After);
+    }
+
+    [Fact]
     public async Task CreateOrRegenerateEasyLoginAsync_SecretIsAtLeast128BitAndDiffersEachCall()
     {
         AllowManageSafety();
@@ -150,8 +179,10 @@ public class ChildAccessCredentialServiceTests
 
         Assert.NotNull(credential.RevokedAt);
         Assert.Null(credential.EasyLoginSecretHash);
+        Assert.Null(credential.EasyLoginSecretProtected);
         Assert.False(credential.IsDeleted);
         Assert.NotNull(addedCredential);
+        Assert.Equal("enc:" + result.Secret, addedCredential!.EasyLoginSecretProtected);
         Assert.NotSame(credential, addedCredential);
         Assert.NotEqual(oldHash, addedCredential!.EasyLoginSecretHash);
         Assert.Equal(TokenHasher.Hash(result.Secret), addedCredential.EasyLoginSecretHash);
@@ -202,6 +233,7 @@ public class ChildAccessCredentialServiceTests
         Assert.NotNull(credential.RevokedAt);
         Assert.False(credential.IsDeleted);
         Assert.Null(credential.EasyLoginSecretHash);
+        Assert.Null(credential.EasyLoginSecretProtected);
         Assert.True(session.IsDeleted);
         _credentialRepo.Verify(r => r.Delete(It.IsAny<ChildAccessCredential>()), Times.Never);
         _credentialRepo.Verify(r => r.Update(credential), Times.Once);
@@ -253,6 +285,47 @@ public class ChildAccessCredentialServiceTests
 
         Assert.True(result.HasEasyLogin);
         Assert.Equal(credential.EasyLoginCreatedAt, result.EasyLoginCreatedAt);
+        Assert.Equal("qr-secret", result.Secret);
+    }
+
+    [Fact]
+    public async Task GetCredentialAsync_CodeCreatedBeforeProtectedStorage_HasEasyLoginButNoSecret()
+    {
+        AllowSupervision();
+        var credential = Credential("qr-secret");
+        credential.EasyLoginSecretProtected = null;
+        SetupCredentials(credential);
+
+        var result = await _sut.GetCredentialAsync(1, 2);
+
+        Assert.True(result.HasEasyLogin);
+        Assert.Null(result.Secret);
+    }
+
+    [Fact]
+    public async Task GetCredentialAsync_ProtectedSecretCannotBeDecrypted_HasEasyLoginButNoSecret()
+    {
+        AllowSupervision();
+        SetupCredentials(Credential("qr-secret"));
+        _protector.Broken = true;
+
+        var result = await _sut.GetCredentialAsync(1, 2);
+
+        Assert.True(result.HasEasyLogin);
+        Assert.Null(result.Secret);
+    }
+
+    [Fact]
+    public async Task GetCredentialAsync_NotOwner_StopsBeforeReadingSecret()
+    {
+        _guard.Setup(g => g.EnsureOwnerAsync(1, 3, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ForbiddenException("Không có quyền."));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => _sut.GetCredentialAsync(1, 3));
+
+        _credentialRepo.Verify(r => r.FirstOrDefaultAsync(
+            It.IsAny<Expression<Func<ChildAccessCredential, bool>>>(), null,
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -882,6 +955,7 @@ public class ChildAccessCredentialServiceTests
         ChildProfileId = 1,
         AvatarId = "avatar-fox",
         EasyLoginSecretHash = secret == null ? null : TokenHasher.Hash(secret),
+        EasyLoginSecretProtected = secret == null ? null : "enc:" + secret,
         EasyLoginCreatedAt = secret == null ? null : new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc)
     };
 }

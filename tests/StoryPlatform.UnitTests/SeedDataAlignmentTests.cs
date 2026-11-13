@@ -168,7 +168,10 @@ public sealed class SeedDataAlignmentTests
         // Seeded once at application startup by AuthoringGuideCatalogSeeder, not by SQL seed files.
         string[] seededByCode = ["authoring_guide_catalog_versions", "authoring_guide_catalogs",
             "authoring_guide_items", "authoring_guide_placeholders"];
-        var modelTables = model.Tables.Select(t => t.Name).Where(name => !seededByCode.Contains(name))
+        // Khóa Data Protection do ứng dụng tự sinh lúc chạy; seed khóa vào SQL sẽ đưa khóa vào mã nguồn.
+        string[] generatedAtRuntime = ["data_protection_keys"];
+        var modelTables = model.Tables.Select(t => t.Name)
+            .Where(name => !seededByCode.Contains(name) && !generatedAtRuntime.Contains(name))
             .OrderBy(x => x, StringComparer.Ordinal).ToArray();
         var seedTables = inserts.Select(i => i.Table).Distinct(StringComparer.Ordinal).OrderBy(x => x, StringComparer.Ordinal).ToArray();
         var missingInserts = modelTables.Except(seedTables, StringComparer.Ordinal).ToArray();

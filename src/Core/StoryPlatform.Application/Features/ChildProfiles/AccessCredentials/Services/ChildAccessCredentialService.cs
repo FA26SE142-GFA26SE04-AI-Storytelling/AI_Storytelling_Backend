@@ -38,6 +38,7 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
     private readonly IClientAttemptLimiter _attemptLimiter;
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly IChildRoadmapEligibility _eligibility;
+    private readonly IEasyLoginSecretProtector _secretProtector;
     private readonly IReadingSlotService? _readingSlots;
 
     /// <param name="readingSlots">Chặn hồ sơ đang chỉ xem khi vượt số hồ sơ của gói; null thì không chặn.</param>
@@ -48,9 +49,11 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
         IClientAttemptLimiter attemptLimiter,
         IAuditLogWriter auditLogWriter,
         IChildRoadmapEligibility eligibility,
+        IEasyLoginSecretProtector secretProtector,
         IReadingSlotService? readingSlots = null)
     {
         _readingSlots = readingSlots;
+        _secretProtector = secretProtector;
         _unitOfWork = unitOfWork;
         _accessGuard = accessGuard;
         _jwtTokenGenerator = jwtTokenGenerator;
@@ -67,11 +70,17 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
         var credential = await FindActiveCredentialAsync(childProfileId, cancellationToken);
 
         var hasEasyLogin = credential?.EasyLoginSecretHash != null;
+        // Chỉ chủ hồ sơ tới được đây (EnsureOwnerAsync). Mã cũ chưa có bản mã hóa hoặc không giải được thì
+        // Secret = null: mã vẫn đăng nhập được, phụ huynh tạo mã mới nếu muốn xem lại QR.
+        var secret = hasEasyLogin && credential!.EasyLoginSecretProtected != null
+            ? _secretProtector.TryUnprotect(credential.EasyLoginSecretProtected)
+            : null;
         return new ChildAccessCredentialDto
         {
             ChildProfileId = childProfileId,
             HasEasyLogin = hasEasyLogin,
-            EasyLoginCreatedAt = hasEasyLogin ? credential!.EasyLoginCreatedAt : null
+            EasyLoginCreatedAt = hasEasyLogin ? credential!.EasyLoginCreatedAt : null,
+            Secret = secret
         };
     }
 
@@ -114,6 +123,7 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
                 ChildProfileId = childProfileId,
                 AvatarId = avatarId,
                 EasyLoginSecretHash = TokenHasher.Hash(secret),
+                EasyLoginSecretProtected = _secretProtector.Protect(secret),
                 EasyLoginCreatedAt = now,
                 CreatedByUserId = currentUserId
             };
@@ -437,6 +447,7 @@ public class ChildAccessCredentialService : IChildAccessCredentialService
     {
         credential.RevokedAt = now;
         credential.EasyLoginSecretHash = null;
+        credential.EasyLoginSecretProtected = null;
         credential.UpdatedAt = now;
     }
 

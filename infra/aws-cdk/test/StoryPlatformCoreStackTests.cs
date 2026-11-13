@@ -549,7 +549,7 @@ public class StoryPlatformCoreStackTests
         Assert.Contains("\"Name\":\"AI__MediaGeneration__WorkerEnabled\",\"Value\":\"true\"", json);
         Assert.Contains("\"Name\":\"AI__Vertex__UseVertex\",\"Value\":\"true\"", json);
         Assert.Contains("\"Name\":\"AI__Vertex__ProjectId\",\"Value\":\"example-gcp-project\"", json);
-        Assert.Contains("\"Name\":\"AI__Vertex__Location\",\"Value\":\"us-central1\"", json);
+        Assert.Contains("\"Name\":\"AI__Vertex__Location\",\"Value\":\"global\"", json);
         // Dùng lại service account Core đã có để gọi AI API, không cần thêm khoá mới vào secret.
         Assert.Matches("\"Name\":\"AI__Vertex__CredentialsJson\",\"ValueFrom\":(?:(?!\"Name\":).)*:AiGoogleCredentialsJson::", json);
         Assert.DoesNotContain("AI__Gemini__", json);
@@ -563,10 +563,10 @@ public class StoryPlatformCoreStackTests
             ["supabaseUrl"] = "https://example-project.supabase.co",
             ["mediaWorkerEnabled"] = "true",
             ["vertexProjectId"] = "example-gcp-project",
-            ["vertexLocation"] = "global"
+            ["vertexLocation"] = "us-central1"
         }).ToJSON());
 
-        Assert.Contains("\"Name\":\"AI__Vertex__Location\",\"Value\":\"global\"", json);
+        Assert.Contains("\"Name\":\"AI__Vertex__Location\",\"Value\":\"us-central1\"", json);
     }
 
     [Fact]

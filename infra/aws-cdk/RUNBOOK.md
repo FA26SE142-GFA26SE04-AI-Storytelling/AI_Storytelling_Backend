@@ -282,7 +282,9 @@ Both are off until the context below is set, and a media call then fails with
    (add `--context supabaseMediaBucket=<name>` for a bucket other than `story-media`).
 4. **Enable the worker** (optional, needs storage): add
    `--context mediaWorkerEnabled=true --context vertexProjectId=<project>`
-   (`--context vertexLocation=<region>` for a region other than `us-central1`).
+   (`--context vertexLocation=<region>` for a location other than `global`; the current text and
+   image models, `gemini-3.8-flash` and `gemini-3.1-flash-image`, are not published in
+   `us-central1`).
 5. **Verify**: Core `/health` is healthy; upload or generate one media asset and check it appears in
    the bucket. Persist the context values in `cdk.json` once verified, otherwise the next plain deploy
    removes the settings.

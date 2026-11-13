@@ -279,7 +279,9 @@ public sealed class StoryPlatformCoreStack : Stack
             apiEnvironment["AI__MediaGeneration__WorkerEnabled"] = "true";
             apiEnvironment["AI__Vertex__UseVertex"] = "true";
             apiEnvironment["AI__Vertex__ProjectId"] = vertexProjectId;
-            apiEnvironment["AI__Vertex__Location"] = string.IsNullOrEmpty(vertexLocation) ? "us-central1" : vertexLocation;
+            // Mặc định "global": các model đang dùng (gemini-3.8-flash, gemini-3.1-flash-image) không có ở
+            // us-central1 và trả 404 tại đó.
+            apiEnvironment["AI__Vertex__Location"] = string.IsNullOrEmpty(vertexLocation) ? "global" : vertexLocation;
             apiSecrets["AI__Vertex__CredentialsJson"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "AiGoogleCredentialsJson");
         }
 

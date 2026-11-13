@@ -58,7 +58,7 @@ services:
       AI__Gemini__TimeoutSeconds: ${GEMINI_TIMEOUT_SECONDS:-150}
       AI__Vertex__UseVertex: ${VERTEX_AI_ENABLED:-false}
       AI__Vertex__ProjectId: ${VERTEX_PROJECT_ID:-}
-      AI__Vertex__Location: ${VERTEX_LOCATION:-us-central1}
+      AI__Vertex__Location: ${VERTEX_LOCATION:-global}
       AI__Vertex__CredentialsPath: ${VERTEX_CREDENTIALS_PATH:-}
       AI__MediaGeneration__WorkerEnabled: ${MEDIA_WORKER_ENABLED:-false}
       SUPABASE_URL: ${SUPABASE_URL:-}

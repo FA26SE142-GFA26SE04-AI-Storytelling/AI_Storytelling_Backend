@@ -89,12 +89,23 @@ public sealed class StableVersionArtifactHandoffService : IStableVersionArtifact
 
             if (story.OutputMode == StoryOutputMode.ReadingMediaOnly)
             {
-                if (await _unitOfWork.Repository<StoryGenerationJob>().ExistsAsync(
-                        job => job.StoryId == storyId && job.StoryVersionId == storyVersionId &&
-                               (job.Operation == GenerationJobOperation.GenerateVocabulary ||
-                                job.Operation == GenerationJobOperation.GenerateQuiz ||
-                                job.Operation == GenerationJobOperation.GenerateListeningInteraction), cancellationToken))
-                    throw new ConflictException("OUTPUT_MODE_CONFLICT: learning job đã tồn tại cho version này.");
+                var obsoleteJobs = await _unitOfWork.Repository<StoryGenerationJob>().FindAsync(
+                    job => job.StoryId == storyId && job.StoryVersionId == storyVersionId && job.ParentStoryPackageId == null &&
+                           (job.Operation == GenerationJobOperation.GenerateVocabulary ||
+                            job.Operation == GenerationJobOperation.GenerateQuiz ||
+                            job.Operation == GenerationJobOperation.GenerateListeningInteraction) &&
+                           (job.Status == GenerationJobStatus.Pending || job.Status == GenerationJobStatus.Processing),
+                    cancellationToken: cancellationToken);
+                foreach (var obsolete in obsoleteJobs)
+                {
+                    _unitOfWork.Repository<StoryGenerationJob>().Update(obsolete);
+                    obsolete.Status = GenerationJobStatus.Cancelled;
+                    obsolete.ErrorCode = "LEARNING_ARTIFACT_NOT_ENABLED";
+                    obsolete.CompletedAt = DateTime.UtcNow;
+                    obsolete.LeaseExpiresAt = null;
+                    obsolete.ConcurrencyToken = Guid.NewGuid().ToString("N");
+                    _unitOfWork.Repository<StoryGenerationJob>().Update(obsolete);
+                }
                 // Dù không tạo learning job, Phase 5 vẫn cần snapshot profile/safety đã accepted.
                 await EnsureGenerationRequestAsync(
                     story, version, requestedByUserId, generationRequestId, cancellationToken);

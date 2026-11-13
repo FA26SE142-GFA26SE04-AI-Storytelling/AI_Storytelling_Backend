@@ -210,7 +210,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
                 x.Id, x.ReplacesMediaAssetId!.Value, x.Type.ToString(), x.IllustrationBeatId ?? x.StorySegmentId!.Value,
                 x.IsCurrent ? "Applied" : x.ReplacementResolvedAt.HasValue ? "Kept" :
                 x.Status is MediaStatus.Failed or MediaStatus.ManualReview ? "Failed" : "Generating")).ToArray() };
-        var vocabulary = await _unitOfWork.Repository<StoryVocabulary>().FindAsync(
+        var vocabulary = story is { Source: StorySource.Ai, OutputMode: StoryOutputMode.ReadingMediaOnly } ? Array.Empty<StoryVocabulary>() :
+            await _unitOfWork.Repository<StoryVocabulary>().FindAsync(
             x => x.ParentStoryPackageId == null && x.StoryVersionId == version.Id && !x.IsDeleted, cancellationToken: cancellationToken);
         package = package with { Vocabulary = vocabulary.OrderBy(x => x.Id).Select(word =>
         {
@@ -613,6 +614,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         int versionId, IReadOnlyList<StoryTextBlock> blocks, IReadOnlyList<SceneSelection> selections,
         CancellationToken cancellationToken)
     {
+        if (!await IncludesLearningMediaAsync(versionId, cancellationToken)) return selections;
         var interactions = await _unitOfWork.Repository<ListeningInteraction>().FindAsync(
             x => x.ParentStoryPackageId == null && x.StoryVersionId == versionId && !x.IsDeleted, cancellationToken: cancellationToken);
         if (interactions.Count == 0) return selections;

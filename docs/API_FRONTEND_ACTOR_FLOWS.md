@@ -219,6 +219,16 @@ Giữ storyId/requestId/inputStatus/handoffStatus/canRetry. 202 chưa có truy�
 
 Output learning tạo vocabulary/quiz/tương tác lúc nghe; reading_media_only bỏ artifacts. TargetLength chịu context server, không chỉ Range DTO.
 
+### Kiểu truyện: Kèm học liệu / Chỉ đọc-nghe
+
+- Hai lựa chọn dùng `outputMode` hiện hữu: `learning` và `reading_media_only`. Chọn trước khi gửi input; retry giữ nguyên chế độ. Không đổi chế độ bằng cách chỉ ẩn tab trên FE.
+- `reading_media_only`: sau outline, sinh và kiểm tra nội dung → xác nhận nội dung → tạo tranh/giọng đọc → xác nhận media → `Ready`. Generation progress trả vocabulary/quiz/listening=`skipped`, target/count học liệu bằng 0; FE bỏ bước Học liệu, không gọi API học liệu. Audio kể chuyện không phải listening interaction.
+- `learning`: đợi generation progress `isComplete=true` cho nội dung và các học liệu được yêu cầu trước khi xác nhận. `ContentReview` riêng lẻ không chứng minh học liệu đã hoàn tất. Media vẫn chạy sau xác nhận; đợt này không chạy song song học liệu và media.
+- Parent AI xác nhận bằng `/api/v1/stories/{storyId}/review/approve`; Creator AI dùng `/api/v1/creator/stories/{storyId}/generation/confirm-content`. Safety/readability/consent/vùng xám và quyền tác giả vẫn được kiểm tra.
+- Sau handoff, poll `GET /api/v1/stories/{storyId}/media/progress`. `MediaReview` cùng `isAwaitingConfirmation=true` là chờ người dùng xác nhận, không phải lỗi. Gọi `POST /api/v1/stories/{storyId}/media/confirm` với `storyVersionId` và `packageRevision` hiện hành; chỉ sau xác nhận gói mới `Ready`.
+- Job học liệu cũ không còn phù hợp với `reading_media_only` được hủy khi handoff/worker xử lý, không gọi provider; dữ liệu lịch sử không bị xóa. Media kể chuyện không bị chặn bởi tương tác cũ ngoài yêu cầu.
+- `Ready` không đồng nghĩa công khai hoặc giao cho trẻ. Creator vẫn gửi Moderator; Parent giữ bước giao tương ứng. Parent Manual package chọn thành phần riêng, không bị quy tắc bỏ học liệu cấp Story này thay thế.
+
 ### G2. Outline → nội dung
 
 1. Poll GET /stories/{storyId}/outline đến phiên current có thể duyệt và không có operation đang chạy.

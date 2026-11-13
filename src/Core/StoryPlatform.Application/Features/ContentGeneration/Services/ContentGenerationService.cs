@@ -85,6 +85,9 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                      item.Operation == GenerationJobOperation.GenerateQuiz ||
                      item.Operation == GenerationJobOperation.GenerateListeningInteraction),
             cancellationToken: cancellationToken);
+        // Learning jobs left by an older pipeline must not block reading-only content.
+        if (story.OutputMode == StoryOutputMode.ReadingMediaOnly)
+            jobs = jobs.Where(x => x.Operation == GenerationJobOperation.GenerateContent).ToArray();
         var stable = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
                 item => item.StoryId == storyId && item.IsCurrent && item.Content != null,
                 cancellationToken: cancellationToken))
@@ -100,7 +103,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         var listeningDone = listeningJobs.All(item => item.Status == GenerationJobStatus.Completed);
         var active = jobs.Where(item => item.Status is GenerationJobStatus.Pending or GenerationJobStatus.Processing)
             .OrderByDescending(item => item.Id).FirstOrDefault();
-        var batches = _learningBatches is not null && stable is not null
+        var batches = story.OutputMode == StoryOutputMode.Learning && _learningBatches is not null && stable is not null
             ? await _unitOfWork.Repository<LearningArtifactGenerationBatch>().FindAsync(x => x.StoryVersionId == stable.Id, cancellationToken: cancellationToken)
             : Array.Empty<LearningArtifactGenerationBatch>();
         var failed = jobs.Where(item => item.Operation == GenerationJobOperation.GenerateContent ||
@@ -150,8 +153,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             MaximumWords = pinnedContext is null ? null : Constraints(pinnedContext).MaximumWords,
             VocabularyTarget = batches.Where(x => x.Kind == "vocabulary").Sum(x => x.TargetCount),
             QuizTarget = batches.Where(x => x.Kind.StartsWith("quiz_")).Sum(x => x.TargetCount),
-            VocabularyCount = stable is null ? 0 : await _unitOfWork.Repository<StoryVocabulary>().CountAsync(x => x.ParentStoryPackageId == null && x.StoryVersionId == stable.Id, cancellationToken),
-            QuizCount = stable is null ? 0 : await _unitOfWork.Repository<QuizItem>().CountAsync(x => x.ParentStoryPackageId == null && x.StoryVersionId == stable.Id, cancellationToken),
+            VocabularyCount = stable is null || readingMediaOnly ? 0 : await _unitOfWork.Repository<StoryVocabulary>().CountAsync(x => x.ParentStoryPackageId == null && x.StoryVersionId == stable.Id, cancellationToken),
+            QuizCount = stable is null || readingMediaOnly ? 0 : await _unitOfWork.Repository<QuizItem>().CountAsync(x => x.ParentStoryPackageId == null && x.StoryVersionId == stable.Id, cancellationToken),
             TotalLearningBatches = batches.Count,
             CompletedLearningBatches = batches.Count(x => x.Status == GenerationJobStatus.Completed),
             LearningWarnings = batches.Where(x => !string.IsNullOrWhiteSpace(x.ShortfallReason)).Select(x => x.ShortfallReason!).Distinct().ToArray(),
@@ -320,6 +323,19 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                 return false;
             }
             _unitOfWork.Repository<StoryGenerationJob>().Update(job);
+            var sourceStory = await _unitOfWork.Repository<Story>().FirstOrDefaultAsync(
+                x => x.Id == job.StoryId, cancellationToken: cancellationToken);
+            if (job.ParentStoryPackageId == null && job.Operation != GenerationJobOperation.GenerateContent &&
+                sourceStory?.OutputMode == StoryOutputMode.ReadingMediaOnly)
+            {
+                job.Status = GenerationJobStatus.Cancelled;
+                job.ErrorCode = "LEARNING_ARTIFACT_NOT_ENABLED";
+                job.CompletedAt = now;
+                job.LeaseExpiresAt = null;
+                RotateToken(job);
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                return true;
+            }
             job.Status = GenerationJobStatus.Processing;
             job.Stage = job.Operation == GenerationJobOperation.GenerateContent && job.Stage == JobStage.ContentStable
                 ? JobStage.ContentStable : job.Operation == GenerationJobOperation.GenerateContent

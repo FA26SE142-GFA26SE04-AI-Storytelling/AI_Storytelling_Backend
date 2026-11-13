@@ -17,6 +17,29 @@ namespace StoryPlatform.UnitTests;
 public sealed partial class MediaGenerationServiceTests
 {
     [Fact]
+    public async Task ReadingOnlyMediaIgnoresHistoricalLearningArtifactsButStillRequiresConfirmation()
+    {
+        var store = Seed();
+        store.Items<Story>().Single().OutputMode = StoryOutputMode.ReadingMediaOnly;
+        store.Seed(new StoryVocabulary { Id = 90, StoryVersionId = 10, Term = "old", Definition = "old" });
+        store.Seed(new ListeningInteraction { Id = 91, StoryVersionId = 10, Type = ListeningInteractionType.EventOrdering });
+        var service = Create(store);
+
+        var generated = await service.RunPackageAsync();
+        Assert.True(generated.Success, generated.ErrorCode);
+        Assert.Equal(StoryStatus.MediaReview, store.Items<Story>().Single().Status);
+        var progress = await service.GetProgressAsync(1, 1);
+        Assert.True(progress.IsAwaitingConfirmation);
+        Assert.False(progress.IsReady);
+        Assert.DoesNotContain(store.Items<MediaAsset>(), x => x.Type is MediaType.VocabularyAudio or MediaType.ListeningAudio or MediaType.ListeningImage);
+        Assert.Contains(store.Items<MediaAsset>(), x => x.Type == MediaType.TtsAudio);
+        Assert.Contains(store.Items<MediaAsset>(), x => x.Type == MediaType.Illustration);
+        store.Seed(new MediaAsset { Id = 999, StoryVersionId = 10, StorySceneId = store.Items<StoryScene>()[0].Id,
+            Type = MediaType.ListeningImage, Status = MediaStatus.ManualReview, IsCurrent = true });
+        Assert.True((await new MediaReadinessService(store).CheckAsync(10, null)).IsReady);
+    }
+
+    [Fact]
     public async Task ManualReadySubmitsTheSameVersionToModeratorWithoutPublishing()
     {
         var (store, confirm, _) = CreatorManualMediaTests.Setup();

@@ -17,6 +17,9 @@ public sealed class MediaReadinessService : IMediaReadinessService
     public async Task<MediaReadinessResult> CheckAsync(int storyVersionId, int? expectedSceneCount,
         CancellationToken cancellationToken = default)
     {
+        var version = await _unitOfWork.Repository<StoryVersion>().GetByIdAsync(storyVersionId, cancellationToken);
+        var story = version is null ? null : await _unitOfWork.Repository<Story>().GetByIdAsync(version.StoryId, cancellationToken);
+        var readingOnly = story is { Source: StorySource.Ai, OutputMode: StoryOutputMode.ReadingMediaOnly };
         var scenes = await _unitOfWork.Repository<StoryScene>().FindAsync(
             x => x.StoryVersionId == storyVersionId, cancellationToken: cancellationToken);
         // EF parameter extraction on .NET 10 can bind array Contains to the span overload.
@@ -45,10 +48,11 @@ public sealed class MediaReadinessService : IMediaReadinessService
         var missingAudio = segments.Where(segment => !assets.Any(asset =>
             asset.StorySegmentId == segment.Id && asset.Type == MediaType.TtsAudio &&
             asset.Status == MediaStatus.Ready)).Select(x => x.Id).ToArray();
-        var manualReview = assets.Where(x => x.Status == MediaStatus.ManualReview)
+        var manualReview = assets.Where(x => x.Status == MediaStatus.ManualReview &&
+                (!readingOnly || x.Type is MediaType.Illustration or MediaType.TtsAudio))
             .Select(x => x.Id).ToArray();
 
-        var missingListening = await MissingListeningMediaAsync(storyVersionId, cancellationToken);
+        var missingListening = readingOnly ? Array.Empty<string>() : await MissingListeningMediaAsync(storyVersionId, cancellationToken);
 
         var ready = scenes.Count > 0 && (!expectedSceneCount.HasValue || scenes.Count == expectedSceneCount.Value) &&
                     scenesWithoutValidBeats.Length == 0 && missingBeats.Length == 0 &&

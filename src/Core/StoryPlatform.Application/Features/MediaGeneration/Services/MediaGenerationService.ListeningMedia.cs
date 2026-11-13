@@ -9,9 +9,21 @@ namespace StoryPlatform.Application.Features.MediaGeneration.Services;
 // Media của tương tác lúc nghe.
 public sealed partial class MediaGenerationService
 {
-    private Task<IReadOnlyList<ListeningInteraction>> LoadListeningInteractionsAsync(int versionId, CancellationToken ct) =>
-        _unitOfWork.Repository<ListeningInteraction>().FindAsync(
+    private async Task<bool> IncludesLearningMediaAsync(int versionId, CancellationToken ct)
+    {
+        // Parent packages choose components independently of Story.OutputMode.
+        if (_parentMediaScope is not null) return true;
+        var version = await FreshAsync<StoryVersion>(versionId, ct);
+        var story = version is null ? null : await FreshAsync<Story>(version.StoryId, ct);
+        return story?.Source != StorySource.Ai || story.OutputMode != StoryOutputMode.ReadingMediaOnly;
+    }
+
+    private async Task<IReadOnlyList<ListeningInteraction>> LoadListeningInteractionsAsync(int versionId, CancellationToken ct)
+    {
+        if (!await IncludesLearningMediaAsync(versionId, ct)) return [];
+        return await _unitOfWork.Repository<ListeningInteraction>().FindAsync(
             x => x.StoryVersionId == versionId && x.ParentStoryPackageId == (_parentMediaScope == null ? null : (int?)_parentMediaScope.Id) && !x.IsDeleted, cancellationToken: ct);
+    }
 
     private async Task<IReadOnlyList<ListeningInteractionOption>> LoadListeningOptionsAsync(
         IReadOnlyList<ListeningInteraction> interactions, CancellationToken ct)

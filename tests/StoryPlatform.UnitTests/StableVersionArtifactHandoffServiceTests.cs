@@ -218,7 +218,7 @@ public sealed class StableVersionArtifactHandoffServiceTests
     [Theory]
     [InlineData(GenerationJobOperation.GenerateVocabulary)]
     [InlineData(GenerationJobOperation.GenerateListeningInteraction)]
-    public async Task ReadingMediaOnly_RejectsExistingLearningJobForCurrentVersion(GenerationJobOperation operation)
+    public async Task ReadingMediaOnly_CancelsObsoleteLearningJobWithoutBlockingContentReview(GenerationJobOperation operation)
     {
         var store = Seed();
         store.Items<Story>().Single().OutputMode = StoryOutputMode.ReadingMediaOnly;
@@ -231,8 +231,9 @@ public sealed class StableVersionArtifactHandoffServiceTests
             Status = GenerationJobStatus.Pending
         });
 
-        await Assert.ThrowsAsync<ConflictException>(() => BuildService(store).QueueArtifactsAsync(1, 1, 1, null));
-        Assert.Equal(StoryStatus.Draft, store.Items<Story>().Single().Status);
+        await BuildService(store).QueueArtifactsAsync(1, 1, 1, null);
+        Assert.Equal(StoryStatus.ContentReview, store.Items<Story>().Single().Status);
+        Assert.Equal(GenerationJobStatus.Cancelled, Assert.Single(store.Items<StoryGenerationJob>()).Status);
     }
 
     private static StableVersionArtifactHandoffService BuildService(StableHandoffFakeUnitOfWork store) =>

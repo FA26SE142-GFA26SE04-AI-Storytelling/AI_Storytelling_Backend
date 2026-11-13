@@ -14,6 +14,7 @@ public sealed partial class ContentGenerationService
         return await InStoryTransactionAsync(storyId, async () =>
         {
             var story = await LoadAuthorizedStoryAsync(userId, storyId, ct);
+            if (story.OutputMode == StoryOutputMode.ReadingMediaOnly) return false;
             var version = await _unitOfWork.Repository<StoryVersion>().FirstOrDefaultAsync(x => x.StoryId == storyId && x.IsCurrent && x.Content != null, cancellationToken: ct);
             if (version is null) return false;
             await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, storyId, version.Id, ct);

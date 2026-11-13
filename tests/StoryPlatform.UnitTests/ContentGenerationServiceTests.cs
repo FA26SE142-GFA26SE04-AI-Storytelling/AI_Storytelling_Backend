@@ -801,6 +801,29 @@ public sealed class ContentGenerationServiceTests
         Assert.Equal("skipped", progress.Listening);
     }
 
+    [Theory]
+    [InlineData(GenerationJobOperation.GenerateVocabulary)]
+    [InlineData(GenerationJobOperation.GenerateQuiz)]
+    [InlineData(GenerationJobOperation.GenerateListeningInteraction)]
+    public async Task ReadingMediaOnly_CancelsObsoleteLearningWorkWithoutCallingProvider(GenerationJobOperation operation)
+    {
+        var store = Seed();
+        var story = store.Items<Story>().Single();
+        story.OutputMode = StoryOutputMode.ReadingMediaOnly;
+        story.Status = StoryStatus.ContentReview;
+        store.Items<StoryVersion>().Single().Content = "Lan and Minh share a book.";
+        var job = store.Items<StoryGenerationJob>().Single();
+        job.Operation = operation;
+        var ai = new FakeAIClient();
+        var service = Service(store, ai);
+
+        Assert.True((await service.GetProgressAsync(1, story.Id)).IsComplete);
+        Assert.True(await service.ProcessNextAsync());
+        Assert.Equal(GenerationJobStatus.Cancelled, job.Status);
+        Assert.Empty(ai.Calls);
+        Assert.True((await service.GetProgressAsync(1, story.Id)).IsComplete);
+    }
+
     [Fact]
     public async Task Stable_content_does_not_finish_progress_while_generation_is_still_processing()
     {

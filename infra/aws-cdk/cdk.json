@@ -2,6 +2,9 @@
   "app": "dotnet run --project src/StoryPlatform.Infra.csproj",
   "context": {
     "includeEcsService": true,
-    "aiServiceBaseUrl": "https://taletale-ai-production-m63yiaft7q-as.a.run.app"
+    "aiServiceBaseUrl": "https://taletale-ai-production-m63yiaft7q-as.a.run.app",
+    "supabaseUrl": "https://kfkzwwzwxkwcpfabyhqy.supabase.co",
+    "mediaWorkerEnabled": true,
+    "vertexProjectId": "gen-lang-client-0675088605"
   }
 }

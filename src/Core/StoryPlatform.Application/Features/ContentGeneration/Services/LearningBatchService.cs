@@ -24,7 +24,7 @@ public sealed class LearningBatchService(IUnitOfWork uow, ILearningBatchRunner r
     public async Task<LearningBatchPackage> GenerateSelectedAsync(StoryGenerationJob root, string token, StoryVersion version,
         AIStoryInputContextSnapshot context, bool vocabulary, bool quiz, CancellationToken ct)
     {
-        var profile = context.LearningProfile ?? options.Profile(context.AgeBand);
+        var profile = context.LearningProfile ?? options.Profile(context.AgeBand, readingLevel: context.ReadingLevel);
         var catalogue = root.PromptCatalogVersionId is int id
             ? await uow.Repository<PromptCatalogVersion>().FirstOrDefaultAsync(x => x.Id == id, cancellationToken: ct)
             : (await uow.Repository<PromptCatalogVersion>().FindAsync(x => x.GradeBand == context.AgeBand &&

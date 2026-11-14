@@ -163,9 +163,8 @@ public sealed partial class ParentStoryPackageService(IUnitOfWork uow, IChildPro
         ParentPackageComponents components, ParentStoryPackage? previous, string[] regenerate, CancellationToken ct)
     {
         await guard.EnsureOwnerAsync(childId, actor, ct);
-        var child = await uow.Repository<ChildProfile>().GetByIdAsync(childId, ct) ?? throw new NotFoundException("ChildProfile", childId);
-        var audience = await ParentPackageContext.CaptureAsync(uow, guard, actor, childId, ct,
-            (learningOptions ?? new()).Profile(child.AgeBand == AgeBand.Age_9_10 ? "9-10" : "6-8"));
+        _ = await uow.Repository<ChildProfile>().GetByIdAsync(childId, ct) ?? throw new NotFoundException("ChildProfile", childId);
+        var audience = await ParentPackageContext.CaptureAsync(uow, guard, actor, childId, ct, learningOptions: learningOptions);
         var revisions = await uow.Repository<ParentStoryPackage>().FindAsync(x => x.StoryVersionId == version.Id && x.ChildProfileId == childId, cancellationToken: ct);
         var p = new ParentStoryPackage { StoryId = story.Id, StoryVersionId = version.Id, ChildProfileId = childId, CreatedByUserId = actor,
             Revision = revisions.Select(x => x.Revision).DefaultIfEmpty().Max() + 1, PreviousPackageId = previous?.Id,

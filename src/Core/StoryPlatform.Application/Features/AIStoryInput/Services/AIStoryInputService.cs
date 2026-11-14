@@ -61,7 +61,7 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
         return new CreatorAIStoryInputContextDto(context.AgeBand, context.ReadingLevel, context.Language, ["vi", "en"], VocabularyLevels,
             context.MaximumLength, "always_manual", context.Snapshot.SafetyScoreThreshold!.Value,
             context.Snapshot.BlockedCategoryCodes, ["reading_media_only", "learning"])
-        { RecommendedTargetLength = _learningOptions.Profile(context.AgeBand).TargetWords };
+        { RecommendedTargetLength = _learningOptions.Profile(context.AgeBand, readingLevel: context.ReadingLevel).TargetWords };
     }
 
     public Task<AIStoryInputProgressDto> SubmitCreatorAsync(int userId, SubmitCreatorAIStoryInputRequestDto request,
@@ -101,7 +101,7 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
             normalized.VocabularyLevel,
             normalized.Language,
             cancellationToken);
-        var profile = _learningOptions.Profile(context.AgeBand, normalized.TargetLength);
+        var profile = _learningOptions.Profile(context.AgeBand, normalized.TargetLength, context.ReadingLevel);
         normalized = normalized with { VocabularyLevel = context.VocabularyLevel, Language = context.Language, TargetLength = profile.TargetWords };
         var pinnedContext = context.Snapshot with { LearningProfile = profile };
         context = context with { Snapshot = pinnedContext, Fingerprint = Fingerprint(pinnedContext) };
@@ -905,7 +905,7 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
         DefaultLanguage = context.Language,
         AvailableLanguages = [context.Language],
         MaximumLength = context.MaximumLength,
-        RecommendedTargetLength = _learningOptions.Profile(context.AgeBand).TargetWords,
+        RecommendedTargetLength = _learningOptions.Profile(context.AgeBand, readingLevel: context.ReadingLevel).TargetWords,
         RequiredApprovalMode = ToApprovalModeValue(context.ApprovalMode),
         ParentalGateEnabled = context.Snapshot.ParentalGateEnabled,
         SafetyScoreThreshold = context.Snapshot.SafetyScoreThreshold,

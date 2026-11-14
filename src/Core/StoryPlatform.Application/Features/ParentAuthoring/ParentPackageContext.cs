@@ -23,7 +23,8 @@ public static class ParentPackageContext
     public static string Source(Story story, StoryVersion version) => Hash(new { version.Id, version.StoryId, version.Title,
         version.Content, version.Lesson, story.Language });
     public static async Task<ParentPackageAudience> CaptureAsync(IUnitOfWork uow, IChildProfileAccessGuard guard,
-        int actor, int childId, CancellationToken ct, StoryPlatform.Contracts.AI.Models.LearningGenerationProfile? generationProfile = null)
+        int actor, int childId, CancellationToken ct, StoryPlatform.Contracts.AI.Models.LearningGenerationProfile? generationProfile = null,
+        LearningBatchOptions? learningOptions = null)
     {
         var user = await uow.Repository<UserAccount>().FirstOrDefaultAsync(x => x.Id == actor && !x.IsDeleted, cancellationToken: ct);
         if (user?.Role != UserRole.User || user.Status != AccountStatus.Active || user.LockedUntil > DateTime.UtcNow)
@@ -46,7 +47,8 @@ public static class ParentPackageContext
             ReadabilityScoreThreshold: policy.ReadabilityScoreThreshold, SafetyScoreThreshold: policy.SafetyScoreThreshold,
             ParentalGateEnabled: policy.ParentalGateEnabled, ComprehensionGoal: learning?.ComprehensionGoal,
             ConsentPolicyVersion: policy.ConsentPolicyVersion, ConsentRecordedAt: policy.ConsentRecordedAt)
-            { LearningProfile = generationProfile ?? new LearningBatchOptions().Profile(child.AgeBand == AgeBand.Age_9_10 ? "9-10" : "6-8") };
+            { LearningProfile = generationProfile ?? (learningOptions ?? new LearningBatchOptions())
+                .Profile(child.AgeBand == AgeBand.Age_9_10 ? "9-10" : "6-8", readingLevel: learning?.ReadingLevel ?? 2) };
         var consent = policy.ConsentRecorded && policy.ConsentRecordedAt.HasValue && !ConsentPolicy.IsOutdated(policy.ConsentPolicyVersion);
         return new(profile, consent, Hash(new { profile, consent, child.OwnerUserId, child.Status, policy.AllowInteractiveStories,
             policy.ParentalGateEnabled, policy.ConsentedByUserId, rules = rules.OrderBy(x => x.ContentCategoryId).Select(x => new { x.ContentCategoryId, x.Rule }) }), policy.AllowInteractiveStories);

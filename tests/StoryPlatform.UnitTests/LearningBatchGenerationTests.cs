@@ -262,6 +262,31 @@ public sealed class LearningBatchGenerationTests
         Assert.Equal(0, new LearningBatchOptions { QuotaRetryFloorSeconds = 0 }.QuotaRetryFloorSeconds);
     }
 
+    [Theory]
+    [InlineData("6-8", null, 900, 12, 24)]
+    [InlineData("6-8", 3, 900, 12, 24)]
+    [InlineData("6-8", 4, 1500, 18, 36)]
+    [InlineData("Age_6_8", 5, 1500, 18, 36)]
+    [InlineData("9-10", 1, 1500, 18, 36)]
+    [InlineData("9-10", 5, 1500, 18, 36)]
+    public void Profile_uses_the_larger_of_age_band_and_reading_level_targets(string age, int? level, int words, int vocabulary, int quiz)
+    {
+        var profile = new LearningBatchOptions().Profile(age, readingLevel: level);
+
+        Assert.Equal(words, profile.TargetWords);
+        Assert.Equal(vocabulary, profile.VocabularyTarget);
+        Assert.Equal(quiz, profile.QuizTarget);
+    }
+
+    [Fact]
+    public void Profile_keeps_an_explicit_target_length_at_reading_level_four()
+    {
+        var profile = new LearningBatchOptions().Profile("6-8", 1000, readingLevel: 4);
+
+        Assert.Equal(1000, profile.TargetWords);
+        Assert.Equal(18, profile.VocabularyTarget);
+    }
+
     [Fact]
     public async Task Explicit_retry_retains_validation_feedback_after_automatic_attempts_are_exhausted()
     {

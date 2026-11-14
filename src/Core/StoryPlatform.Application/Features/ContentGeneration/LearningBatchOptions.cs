@@ -22,9 +22,16 @@ public sealed class LearningBatchOptions
     public int OlderVocabularyTarget { get; set; } = 18;
     public int YoungerQuizTarget { get; set; } = 24;
     public int OlderQuizTarget { get; set; } = 36;
-    public StoryPlatform.Contracts.AI.Models.LearningGenerationProfile Profile(string age, int requested = 0)
+    /// <summary>Reading level that uses the 9-10 targets regardless of age band (levels 4-5 ≈ grades 4-5).</summary>
+    public const int OlderReadingLevelThreshold = 4;
+
+    /// <summary>
+    /// Story length and learning targets: the larger of the age band and the reading level tier,
+    /// so a 6-8 child on reading level 4-5 gets the 9-10 targets and a 9-10 child never gets less.
+    /// </summary>
+    public StoryPlatform.Contracts.AI.Models.LearningGenerationProfile Profile(string age, int requested = 0, int? readingLevel = null)
     {
-        var older = age is "9-10" or "Age_9_10";
+        var older = age is "9-10" or "Age_9_10" || readingLevel >= OlderReadingLevelThreshold;
         var value = StoryPlatform.Contracts.AI.Models.LearningGenerationProfile.ForAge(age,
             requested > 0 ? requested : older ? OlderTargetWords : YoungerTargetWords) with
         { VocabularyTarget = older ? OlderVocabularyTarget : YoungerVocabularyTarget, QuizTarget = older ? OlderQuizTarget : YoungerQuizTarget };

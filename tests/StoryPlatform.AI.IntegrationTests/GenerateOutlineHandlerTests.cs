@@ -13,6 +13,24 @@ namespace StoryPlatform.AI.IntegrationTests;
 
 public sealed class GenerateOutlineHandlerTests
 {
+    [Fact]
+    public async Task Permanent_provider_denial_is_not_retried_or_wrapped_as_generation_exhaustion()
+    {
+        var client = new DeniedLlmClient();
+        var error = await Assert.ThrowsAsync<HttpRequestException>(() => CreateHandler(client).HandleAsync(ValidRequest()));
+        Assert.Equal(System.Net.HttpStatusCode.Forbidden, error.StatusCode);
+        Assert.Equal(1, client.Calls);
+    }
+
+    private sealed class DeniedLlmClient : ILlmClient
+    {
+        public int Calls { get; private set; }
+        public Task<LlmGenerationResult> GenerateStructuredAsync(string prompt, string schemaName, JsonElement schema, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            throw new HttpRequestException("Provider denied access.", null, System.Net.HttpStatusCode.Forbidden);
+        }
+    }
     private const string ValidJson = """{"title":"The Kind Fox","outline":{"opening":"A","development":"B","ending":"C"}}""";
 
     [Fact]
@@ -160,7 +178,7 @@ public sealed class GenerateOutlineHandlerTests
         Config = new AiGenerationConfigSnapshot { MaxTitleLength = 300 }
     };
 
-    private static GenerateOutlineHandler CreateHandler(StubLlmClient llmClient)
+    private static GenerateOutlineHandler CreateHandler(ILlmClient llmClient)
     {
         var options = Options.Create(new OutlineGenerationOptions { BaseRetryDelaySeconds = 0 });
         return new GenerateOutlineHandler(

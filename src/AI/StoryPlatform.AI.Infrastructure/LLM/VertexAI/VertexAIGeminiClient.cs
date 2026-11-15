@@ -241,11 +241,18 @@ public sealed class VertexAIGeminiClient : ILlmClient
             // Structured error logging
             _logger.LogError(
                 "Vertex request failed. " +
-                "Model={Model}, SchemaName={SchemaName}, LatencyMs={LatencyMs}, Status=Error, ErrorType={ErrorType}",
+                "Model={Model}, SchemaName={SchemaName}, LatencyMs={LatencyMs}, Status=Error, StatusCode={StatusCode}, ErrorType={ErrorType}, Diagnostic={Diagnostic}",
                 _options.Model,
                 schemaName,
                 stopwatch.ElapsedMilliseconds,
-                ex.GetType().Name);
+                statusCode,
+                ex.GetType().Name,
+                ClassifyProviderDiagnostic(ex.Message));
+
+            // SDK ClientError hides HttpRequestException.StatusCode. Preserve the HTTP status so
+            // outline retry policy does not mistake a permanent rejection for a transport failure.
+            if (statusCode is >= 400 and < 500)
+                throw new HttpRequestException("Vertex AI provider rejected the request.", null, (HttpStatusCode)statusCode.Value);
 
             throw;
         }
@@ -270,6 +277,7 @@ public sealed class VertexAIGeminiClient : ILlmClient
     internal static string ClassifyProviderDiagnostic(string message)
     {
         var labels = new List<string>();
+        if (message.Contains("terms of use", StringComparison.OrdinalIgnoreCase)) labels.Add("POLICY_REJECTED");
         foreach (var field in new[] { "additionalProperties", "maxItems", "responseSchema", "maxOutputTokens", "thinkingBudget", "INVALID_ARGUMENT", "PERMISSION_DENIED", "NOT_FOUND" })
             if (message.Contains(field, StringComparison.OrdinalIgnoreCase)) labels.Add(field);
         return labels.Count == 0 ? "UNCLASSIFIED" : string.Join(",", labels);

@@ -707,12 +707,14 @@ public sealed class OutlineServiceBranchTests
         Assert.Equal("OUTLINE_GENERATION_FAILED", finalizer.ErrorCode);
     }
 
-    [Fact]
-    public async Task ProcessNextAsync_AiServiceRequestException_PublishesProviderErrorCode()
+    [Theory]
+    [InlineData(503, "AI_PROVIDER_UNAVAILABLE")]
+    [InlineData(403, "AI_PROVIDER_ACCESS_DENIED")]
+    public async Task ProcessNextAsync_AiServiceRequestException_PublishesProviderErrorCode(int status, string code)
     {
-        var finalizer = await FailWithAsync(new AIServiceRequestException(503, "AI_PROVIDER_UNAVAILABLE", "provider down"));
+        var finalizer = await FailWithAsync(new AIServiceRequestException(status, code, "provider down"));
 
-        Assert.Equal("AI_PROVIDER_UNAVAILABLE", finalizer.ErrorCode);
+        Assert.Equal(code, finalizer.ErrorCode);
     }
 
     // ---- Worker: gray-zone moderation loop ----

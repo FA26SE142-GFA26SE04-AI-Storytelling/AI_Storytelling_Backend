@@ -16,6 +16,32 @@ namespace StoryPlatform.AI.UnitTests;
 
 public sealed class VertexAIGeminiFailureTests
 {
+    [Theory]
+    [InlineData("story_outline")]
+    [InlineData("story_content")]
+    [InlineData("learning_quiz")]
+    public async Task Provider_access_denial_keeps_403_and_safe_error_code(string schemaName)
+    {
+        using var transport = new Transport(HttpStatusCode.Forbidden,
+            """{"error":{"code":403,"message":"Request rejected in accordance with our terms of use and policies. private-story","status":"PERMISSION_DENIED"}}""");
+        using var sdk = CreateSdk(transport, attempts: 3);
+        var client = CreateClient(sdk);
+        var context = new DefaultHttpContext(); context.Response.Body = new MemoryStream();
+        async Task Invoke(HttpContext _)
+        {
+            var error = await Assert.ThrowsAsync<HttpRequestException>(() => client.GenerateStructuredAsync("private-story", schemaName, Schema));
+            Assert.Equal(HttpStatusCode.Forbidden, error.StatusCode);
+            throw error;
+        }
+        await new AIExceptionHandlingMiddleware(Invoke, NullLogger<AIExceptionHandlingMiddleware>.Instance).InvokeAsync(context);
+        Assert.Equal(1, transport.Calls);
+        Assert.Equal(403, context.Response.StatusCode);
+        context.Response.Body.Position = 0;
+        using var body = await JsonDocument.ParseAsync(context.Response.Body);
+        Assert.Equal("AI_PROVIDER_ACCESS_DENIED", body.RootElement.GetProperty("errorCode").GetString());
+        Assert.DoesNotContain("private-story", body.RootElement.GetRawText());
+    }
+
     [Fact]
     public async Task Wish_matching_wire_schema_avoids_large_array_bound_and_preserves_evidence_fields()
     {

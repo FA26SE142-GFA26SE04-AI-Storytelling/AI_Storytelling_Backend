@@ -46,7 +46,7 @@ public sealed class AIExceptionHandlingMiddlewareTests
 
     [Theory]
     [InlineData(400, 400, "AI_PROVIDER_CONFIGURATION_REJECTED")]
-    [InlineData(403, 400, "AI_PROVIDER_CONFIGURATION_REJECTED")]
+    [InlineData(403, 403, "AI_PROVIDER_ACCESS_DENIED")]
     [InlineData(429, 429, "AI_PROVIDER_429")]
     [InlineData(500, 502, "AI_PROVIDER_FAILED")]
     public async Task Provider_errors_keep_retryable_and_permanent_failures_distinct(int upstream, int expected, string code)

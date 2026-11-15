@@ -87,7 +87,15 @@ public sealed class AIExceptionHandlingMiddleware
         }
         catch (HttpRequestException exception)
         {
-            _logger.LogError(exception, "AI provider request failed.");
+            _logger.LogWarning("AI provider request failed. ProviderStatusCode={ProviderStatusCode} TraceId={TraceId}",
+                (int?)exception.StatusCode, System.Diagnostics.Activity.Current?.TraceId.ToString() ?? context.TraceIdentifier);
+            if (exception.StatusCode == HttpStatusCode.Forbidden)
+            {
+                await WriteErrorAsync(context, HttpStatusCode.Forbidden,
+                    "The AI provider denied access. An administrator must check provider access before retrying.",
+                    "AI_PROVIDER_ACCESS_DENIED");
+                return;
+            }
             var permanent = exception.StatusCode is not null && (int)exception.StatusCode is >= 400 and < 500
                 && exception.StatusCode is not (HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests);
             // Forward the provider's requested backoff so Core can wait instead of retrying into the same window.

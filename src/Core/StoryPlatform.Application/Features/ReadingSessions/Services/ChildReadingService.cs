@@ -395,6 +395,7 @@ public class ChildReadingService : IChildReadingService
                 }
 
                 mode = parsed.ToString();
+                session.ReadingMode = parsed;
             }
 
             var storyId = session.StoryId;

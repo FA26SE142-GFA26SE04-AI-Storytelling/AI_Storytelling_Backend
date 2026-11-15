@@ -13,10 +13,11 @@ application_default_credentials.json
 # Local database backups created before development migrations
 /Database/*.dump
 
-# Local documentation (except Superpowers plans, which need to stay tracked
-# so tools like Codex's @-mention file picker can find them)
-/docs/*
-!/docs/superpowers/
+# Local documentation: track HTML guides, Superpowers plans and selected Markdown guides.
+/docs/**
+!/docs/**/
+!/docs/**/*.html
+!/docs/superpowers/**
 !/docs/HUONG_DAN_SU_DUNG_API_LUONG_2.md
 !/docs/KE_HOACH_CREATOR_CREATIVE_SUGGESTION_ENGINE.md
 !/docs/CREATOR_ASSISTANCE_API_FRONTEND_GUIDE.md
@@ -32,15 +33,6 @@ application_default_credentials.json
 !/docs/WISH_CARD_AI_MATCHING_API_GUIDE.md
 !/docs/BE_UOC_SWAGGER_MANUAL_TEST.md
 !/docs/WISH_AI_REVIEW_STATUS.md
-# docs/api: only shared test guides; other local files there stay ignored
-!/docs/api/
-/docs/api/*
-!/docs/api/api-test-guide-buoc-1-7.html
-!/docs/api/HUONG_DAN_TEST_AUDIO_PHAT_AM_TU_VUNG.html
-!/docs/api/story-summary-api-test-guide.html
-!/docs/api/api-test-luong-1-user-owner.html
-!/docs/api/api-test-tuong-tac-luc-nghe-p1-p4.html
-!/docs/api/sau-khi-doc-cay-tri-thuc-api-test-guide.html
 
 # AppSettings
 appsettings*.json

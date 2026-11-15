@@ -3090,6 +3090,10 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int?>("ParentStoryPackageId")
                         .HasColumnType("integer");
 
+                    b.Property<string>("ReadingMode")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.Property<DateTime>("StartedAt")
                         .HasColumnType("timestamp with time zone");
 

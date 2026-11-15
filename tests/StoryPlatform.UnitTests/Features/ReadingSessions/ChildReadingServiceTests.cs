@@ -1355,4 +1355,18 @@ public class ChildReadingServiceTests
         _recorder.Verify(r => r.RecordSessionCompletedAsync(
             It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    [Fact]
+    public async Task SaveProgressAsync_RemembersReadingModeOnTheSession()
+    {
+        var session = _h.AddSession(SessionStatus.Started);
+        _h.AddScene(0, "a"); _h.AddScene(1, "b");
+
+        await _sut.SaveProgressAsync(ReadingHarness.Child, session.Id,
+            new SaveProgressRequestDto { Page = 1, ReadingMode = "ListenFirst" });
+        await _sut.SaveProgressAsync(ReadingHarness.Child, session.Id,
+            new SaveProgressRequestDto { Page = 2 });
+
+        Assert.Equal(ReadingMode.ListenFirst, session.ReadingMode);
+    }
 }

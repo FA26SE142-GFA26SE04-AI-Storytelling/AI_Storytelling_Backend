@@ -7,7 +7,7 @@ using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.ReadingSessions.Services;
 
-public class ParentReadingFeedbackService : IParentReadingFeedbackService
+public partial class ParentReadingFeedbackService : IParentReadingFeedbackService
 {
     private const int MaxPageSize = 50;
 
@@ -24,51 +24,59 @@ public class ParentReadingFeedbackService : IParentReadingFeedbackService
         int parentUserId, int childProfileId, ParentReadingFeedbackQueryDto query, CancellationToken ct = default)
     {
         await _guard.EnsureOwnerAsync(childProfileId, parentUserId, ct);
+        var unfinished = ParentReadingFeedbackFilter.IsUnfinished(query.Status);
+        ParentReadingFeedbackFilter.EnsureRange(query.From, query.To);
 
         var pageIndex = Math.Max(query.PageIndex, 1);
         var pageSize = Math.Clamp(query.PageSize, 1, MaxPageSize);
+        Func<IQueryable<ReadingSession>, IOrderedQueryable<ReadingSession>> orderBy = unfinished
+            ? rows => rows.OrderByDescending(session => session.StartedAt).ThenByDescending(session => session.Id)
+            : rows => rows.OrderByDescending(session => session.CompletedAt).ThenByDescending(session => session.Id);
         var (sessions, total) = await _unitOfWork.Repository<ReadingSession>().GetPagedAsync(
             pageIndex,
             pageSize,
-            session => session.ChildProfileId == childProfileId
-                       && session.Status == SessionStatus.Completed
-                       && !session.IsDeleted,
-            orderBy: rows => rows.OrderByDescending(session => session.CompletedAt)
-                .ThenByDescending(session => session.Id),
+            ParentReadingFeedbackFilter.Sessions(childProfileId, unfinished, query.From, query.To),
+            orderBy: orderBy,
             cancellationToken: ct);
 
         var versionIds = sessions.Where(session => session.StoryVersionId.HasValue)
             .Select(session => session.StoryVersionId!.Value).Distinct().ToList();
         var versions = (await _unitOfWork.Repository<StoryVersion>().FindAsync(
             version => versionIds.Contains(version.Id), cancellationToken: ct)).ToDictionary(version => version.Id);
-        var items = (await _unitOfWork.Repository<QuizItem>().FindAsync(
-                item => versionIds.Contains(item.StoryVersionId) && !item.IsDeleted, cancellationToken: ct))
-            .GroupBy(item => item.StoryVersionId)
-            .ToDictionary(group => group.Key, group => group.Select(item => item.Id).ToList());
+        var pageCounts = (await _unitOfWork.Repository<StoryScene>().FindAsync(
+                scene => versionIds.Contains(scene.StoryVersionId) && !scene.IsDeleted, cancellationToken: ct))
+            .GroupBy(scene => scene.StoryVersionId)
+            .ToDictionary(group => group.Key, group => group.Count());
 
         var storyIds = sessions.Select(session => session.StoryId).Distinct().ToList();
-        var childSessionIds = (await _unitOfWork.Repository<ReadingSession>().FindAsync(
+        var storySessions = (await _unitOfWork.Repository<ReadingSession>().FindAsync(
                 session => session.ChildProfileId == childProfileId
                            && storyIds.Contains(session.StoryId)
                            && !session.IsDeleted,
-                cancellationToken: ct))
-            .Select(session => session.Id).ToList();
-        var allItemIds = items.Values.SelectMany(ids => ids).ToList();
-        var attempts = (await _unitOfWork.Repository<QuizAttempt>().FindAsync(
-                attempt => childSessionIds.Contains(attempt.ReadingSessionId)
-                           && allItemIds.Contains(attempt.QuizItemId)
-                           && !attempt.IsDeleted,
-                cancellationToken: ct))
-            .OrderBy(attempt => attempt.Id).ToList();
+                cancellationToken: ct)).ToList();
+        var childSessionIds = storySessions.Select(session => session.Id).ToList();
+        var completedByStory = storySessions
+            .Where(session => session.Status == SessionStatus.Completed)
+            .GroupBy(session => session.StoryId)
+            .ToDictionary(group => group.Key, group => group
+                .OrderBy(session => session.CompletedAt).ThenBy(session => session.Id).ToList());
+        var quiz = await LoadQuizAsync(versionIds, childSessionIds, ct);
 
-        var conversation = await LoadConversationAnswersAsync(sessions.Select(session => session.Id).ToList(), ct);
+        var sessionIds = sessions.Select(session => session.Id).ToList();
+        var conversation = await LoadConversationAnswersAsync(sessionIds, ct);
+        var activity = await LoadActivityLogsAsync(sessionIds, ct);
+        var terms = await LoadTermsAsync(activity.Values
+            .SelectMany(logs => ReadingActivityTelemetry.CollectedVocabularyIds(logs))
+            .Distinct().ToList(), ct);
+        var retells = await LoadRetellsAsync(sessionIds, ct);
         var rows = sessions.Select(session =>
         {
             var versionId = session.StoryVersionId;
-            var itemIds = versionId.HasValue && items.TryGetValue(versionId.Value, out var ids)
-                ? ids
-                : new List<int>();
-            var runs = QuizRunCalculator.Split(attempts.Where(attempt => itemIds.Contains(attempt.QuizItemId)));
+            var quizCount = quiz.ItemsOf(versionId).Count;
+            var runs = quiz.RunsOf(versionId);
+            var completedOfStory = completedByStory.GetValueOrDefault(session.StoryId) ?? new List<ReadingSession>();
+            var ordinal = completedOfStory.FindIndex(done => done.Id == session.Id);
+            var logs = activity.GetValueOrDefault(session.Id) ?? new List<TelemetryLog>();
             return new ParentReadingFeedbackItemDto
             {
                 SessionId = session.Id,
@@ -77,11 +85,32 @@ public class ParentReadingFeedbackService : IParentReadingFeedbackService
                     ? version.Title
                     : string.Empty,
                 CompletedAt = session.CompletedAt,
+                Status = session.Status.ToString(),
+                StartedAt = session.StartedAt,
+                TimeSpentSeconds = session.TimeSpentSeconds,
+                PagesCompleted = session.PagesCompleted,
+                TotalPages = versionId.HasValue ? pageCounts.GetValueOrDefault(versionId.Value) : 0,
+                ReadCount = completedOfStory.Count,
+                ReadOrdinal = ordinal < 0 ? null : ordinal + 1,
+                LaterCompleted = session.Status != SessionStatus.Completed
+                                 && completedOfStory.Any(done => done.CompletedAt > session.StartedAt),
+                ReadingMode = session.ReadingMode?.ToString(),
                 Feeling = session.Feeling?.ToString(),
                 FeelingLabel = session.Feeling.HasValue ? StoryFeelingLabels.Label(session.Feeling.Value) : null,
-                QuizTotalQuestions = itemIds.Count,
-                QuizBestPercent = itemIds.Count == 0 ? null : QuizRunCalculator.BestPercent(runs, itemIds.Count),
-                ConversationAnswers = conversation.GetValueOrDefault(session.Id) ?? new()
+                QuizTotalQuestions = quizCount,
+                QuizBestPercent = quizCount == 0 ? null : QuizRunCalculator.BestPercent(runs, quizCount),
+                QuizRunCount = quizCount == 0 ? 0 : runs.Count,
+                QuizLatestPercent = quizCount == 0 || runs.Count == 0
+                    ? null
+                    : QuizRunCalculator.Percent(runs[^1].Correct, quizCount),
+                ConversationAnswers = conversation.GetValueOrDefault(session.Id) ?? new(),
+                ReadAloud = ReadingActivityTelemetry.ReadAloud(logs),
+                ExpEarned = ReadingActivityTelemetry.Exp(logs),
+                WordsCollected = ReadingActivityTelemetry.CollectedVocabularyIds(logs)
+                    .Where(terms.ContainsKey)
+                    .Select(id => new ParentCollectedWordDto { VocabularyId = id, Term = terms[id] })
+                    .ToList(),
+                Retell = retells.GetValueOrDefault(session.Id)
             };
         }).ToList();
 

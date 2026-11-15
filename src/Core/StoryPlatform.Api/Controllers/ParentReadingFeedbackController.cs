@@ -24,4 +24,22 @@ public class ParentReadingFeedbackController : BaseApiController
         var result = await _feedback.ListAsync(GetCurrentUserId(), childProfileId, query, cancellationToken);
         return HandleResult(result, "Lấy danh sách truyện con đã đọc thành công.");
     }
+
+    /// <summary>Chi tiết câu đố của truyện trong phiên đọc: các lần làm và câu trả lời gần nhất từng câu. Chỉ chủ hồ sơ.</summary>
+    [HttpGet("{childProfileId:int}/sessions/{sessionId:int}/quiz")]
+    public async Task<ActionResult<ApiResponse<ParentQuizDetailDto>>> Quiz(
+        int childProfileId, int sessionId, CancellationToken cancellationToken)
+    {
+        var result = await _feedback.GetQuizAsync(GetCurrentUserId(), childProfileId, sessionId, cancellationToken);
+        return HandleResult(result, "Lấy chi tiết câu đố của con thành công.");
+    }
+
+    /// <summary>Số liệu tổng quan việc đọc của con trong khoảng [From, To) (mặc định: mọi thời điểm). Chỉ chủ hồ sơ.</summary>
+    [HttpGet("{childProfileId:int}/overview")]
+    public async Task<ActionResult<ApiResponse<ParentReadingOverviewDto>>> Overview(
+        int childProfileId, [FromQuery] ParentReadingOverviewQueryDto query, CancellationToken cancellationToken)
+    {
+        var result = await _feedback.GetOverviewAsync(GetCurrentUserId(), childProfileId, query, cancellationToken);
+        return HandleResult(result, "Lấy tổng quan việc đọc của con thành công.");
+    }
 }

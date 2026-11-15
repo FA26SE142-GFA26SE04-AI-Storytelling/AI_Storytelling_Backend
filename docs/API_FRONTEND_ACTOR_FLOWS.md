@@ -198,11 +198,11 @@ Hồ sơ dùng enum Age_6_8/Age_9_10; API sáng tác có chuỗi 6-8/9-10. Khôn
 
 ### P6. Lộ trình riêng của trẻ và sao chép bộ mẫu
 
-1. GET /api/v1/ChildRoadmap/{childProfileId}: cần quyền chủ hồ sơ hiện hành; trả open/waiting/history và số lượng. Dùng item.id cho thao tác lộ trình, storyId để nhận diện truyện.
-2. POST /api/v1/ChildRoadmap/stories: storyId, childProfileIds (1–20 trẻ phân biệt), position ("NextUp" hoặc "End"), expectedDays (1–90 nếu có), note (tối đa 500 ký tự). Backend xét quyền chủ hồ sơ và eligibility cho từng trẻ; hiển thị results[].outcome/skipCode/message/warnings, không coi 200 là tất cả thành công. Cập nhật 26/10/2026: phụ huynh chủ động chọn giao một truyện khác nhóm tuổi vẫn được thêm; khác tuổi là cảnh báo đọc được trong warnings, không phải wrong_age. Thao tác Thêm vào lộ trình chính là lựa chọn giao của phụ huynh, không cần thêm checkbox hoặc tham số mới. Quyền, chủ đề chặn, trạng thái truyện và giới hạn độ dài vẫn được kiểm tra.
-3. PUT /{childProfileId}/order gửi đúng toàn bộ itemIds Waiting, mỗi ID một lần; không kéo thả Open. DELETE /items/{itemId} chỉ Open/Waiting; gỡ Open có thể tiến sang bước tiếp theo. DELETE /items gỡ Open/Waiting, giữ lịch sử.
+1. GET /api/v1/ChildRoadmap/{childProfileId}: cần quyền chủ hồ sơ hiện hành; trả openItems (mọi truyện đang mở của chặng hiện tại, rỗng khi không có), currentStage (số chặng đang đọc hoặc null), waiting/history và số lượng (đếm theo truyện). Lộ trình chia theo chặng: item.position là số chặng, các truyện cùng chặng có cùng số. Dùng item.id cho thao tác lộ trình, storyId để nhận diện truyện.
+2. POST /api/v1/ChildRoadmap/stories: storyId, childProfileIds (1–20 trẻ phân biệt), position ("NextUp" = chặng mới ngay sau chặng đang đọc, "End" = chặng mới ở cuối, "Stage" = gộp vào chặng đã chọn), stageNumber (bắt buộc khi position = "Stage": chặng đang đọc hoặc một chặng chờ; Stage chỉ dùng khi thêm cho đúng 1 trẻ), expectedDays (1–90 nếu có), note (tối đa 500 ký tự). position không hợp lệ, Stage cho nhiều trẻ, Stage thiếu stageNumber hoặc chặng đã xong/không tồn tại trả 400. Backend xét quyền chủ hồ sơ và eligibility cho từng trẻ; hiển thị results[].outcome (Added, MovedToNext khi NextUp đưa truyện đang chờ lên chặng kế, Moved khi Stage chuyển truyện đang chờ sang chặng đã chọn, Skipped)/skipCode/message/warnings, không coi 200 là tất cả thành công. Cập nhật 26/10/2026: phụ huynh chủ động chọn giao một truyện khác nhóm tuổi vẫn được thêm; khác tuổi là cảnh báo đọc được trong warnings, không phải wrong_age. Thao tác Thêm vào lộ trình chính là lựa chọn giao của phụ huynh, không cần thêm checkbox hoặc tham số mới. Quyền, chủ đề chặn, trạng thái truyện và giới hạn độ dài vẫn được kiểm tra.
+3. PUT /{childProfileId}/order gửi stages: danh sách chặng, mỗi chặng là danh sách itemId, gộp lại đúng toàn bộ item Waiting, mỗi ID một lần, không có chặng rỗng; không kéo thả Open (chặng thứ i nhận position = chặng hiện tại + i). DELETE /items/{itemId} chỉ Open/Waiting; gỡ Open có thể tiến sang bước tiếp theo. DELETE /items gỡ Open/Waiting, giữ lịch sử.
 4. GET /api/v1/RoadmapLibrary theo ageBand/readingLevel/contentCategoryId và phân trang → GET /{roadmapId} xem bộ cùng isAvailable.
-5. POST /{roadmapId}/preview với childProfileIds/position/daysPerStory → hiển thị children[].steps[].action và cảnh báo → POST /copy cùng hình dạng request. Preview không giữ chỗ; copy kiểm lại quyền, tuổi, policy và khả dụng. Không dùng API template của Moderator để giao trực tiếp cho trẻ.
+5. POST /{roadmapId}/preview với childProfileIds/position (chỉ "NextUp" hoặc "End"; "Stage" trả 400)/daysPerStory → hiển thị children[].steps[].action và cảnh báo → POST /copy cùng hình dạng request. Preview không giữ chỗ; copy kiểm lại quyền, tuổi, policy và khả dụng. Không dùng API template của Moderator để giao trực tiếp cho trẻ.
 
 Nguồn: [ChildRoadmapService](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/Services/ChildRoadmapService.cs), [thao tác lộ trình](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/Services/ChildRoadmapService.Manage.cs), [RoadmapLibraryService](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/Services/RoadmapLibraryService.Copy.cs).
 
@@ -345,7 +345,7 @@ Core đã có MyRoadmap cho ChildSession (C4). Chưa có controller cho /reading
 
 ### C4. Xem lộ trình của chính trẻ
 
-GET /api/v1/MyRoadmap bằng ChildSession, không truyền childProfileId. Response phân open/upcoming/done, completedCount/totalCount/isFinished. Tôn trọng isLocked; expectedBy chỉ có trên bước mở khi còn thời hạn, danh sách done có giới hạn 50. API này không ghi việc đọc xong; không mô phỏng POST completion rồi coi đã lưu backend.
+GET /api/v1/MyRoadmap bằng ChildSession, không truyền childProfileId. Response phân openStories (mọi truyện đang mở của chặng hôm nay, mỗi truyện có stage)/upcoming (order = thứ tự chặng, 1 = chặng kế; truyện cùng chặng cùng order)/done (kèm stage), completedCount/totalCount/isFinished. Tôn trọng isLocked của upcoming; expectedBy chỉ có trên bước mở khi còn thời hạn, danh sách done có giới hạn 50. API này không ghi việc đọc xong; không mô phỏng POST completion rồi coi đã lưu backend.
 
 ### C6. Thành tích, Cây tri thức và Sổ tay (sau khi đọc)
 
@@ -3972,15 +3972,15 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [VersionMutationResponseDto](#dto-versionmutationresponsedto) | [ExistingStoryDtos.cs](../src/Core/StoryPlatform.Application/Features/ExistingStories/DTOs/ExistingStoryDtos.cs#L130) |
 | [VocabularyItemDto](#dto-vocabularyitemdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L86) |
 | [VocabularyReviewDto](#dto-vocabularyreviewdto) | [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryReview/DTOs/ReviewDtos.cs#L79) |
-| [AddRoadmapStoryRequestDto](#dto-addroadmapstoryrequestdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L33) |
-| [AddRoadmapStoryResultDto](#dto-addroadmapstoryresultdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L55) |
+| [AddRoadmapStoryRequestDto](#dto-addroadmapstoryrequestdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L34) |
+| [AddRoadmapStoryResultDto](#dto-addroadmapstoryresultdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L59) |
 | [ArchiveRoadmapRequestDto](#dto-archiveroadmaprequestdto) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L161) |
 | [CandidateQueryDto](#dto-candidatequerydto) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L67) |
 | [CandidateStoryDto](#dto-candidatestorydto) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L77) |
 | [CheckRequest](#dto-checkrequest) | [CreatorModerationCheckController.cs](../src/Core/StoryPlatform.Api/Controllers/CreatorModerationCheckController.cs#L11) |
-| [ChildAddResultDto](#dto-childaddresultdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L45) |
-| [ChildRoadmapDto](#dto-childroadmapdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L89) |
-| [ChildRoadmapItemDto](#dto-childroadmapitemdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L71) |
+| [ChildAddResultDto](#dto-childaddresultdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L49) |
+| [ChildRoadmapDto](#dto-childroadmapdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L95) |
+| [ChildRoadmapItemDto](#dto-childroadmapitemdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L76) |
 | [CopyrightDeclaration](#dto-copyrightdeclaration) | [CopyrightDeclaration.cs](../src/Core/StoryPlatform.Domain/Enums/CopyrightDeclaration.cs#L3) |
 | [CreateReviewItemRequestDto](#dto-createreviewitemrequestdto) | [ContentReportDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/ContentReportDtos.cs#L146) |
 | [CreatorPublicationResult](#dto-creatorpublicationresult) | [CreatorPublicationDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/CreatorPublicationDtos.cs#L17) |
@@ -3992,10 +3992,10 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [GrayZoneDecisionRequest](#dto-grayzonedecisionrequest) | [GrayZoneWorkflowService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Services/GrayZoneWorkflowService.cs#L13) |
 | [GrayZoneFinding](#dto-grayzonefinding) | [GrayZoneContracts.cs](../src/Shared/StoryPlatform.Contracts/AI/Moderation/GrayZoneContracts.cs#L5) |
 | [GrayZoneReviewDto](#dto-grayzonereviewdto) | [GrayZoneWorkflowService.cs](../src/Core/StoryPlatform.Application/Features/Moderation/Services/GrayZoneWorkflowService.cs#L14) |
-| [MyRoadmapDoneDto](#dto-myroadmapdonedto) | [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/MyRoadmapDtos.cs#L34) |
+| [MyRoadmapDoneDto](#dto-myroadmapdonedto) | [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/MyRoadmapDtos.cs#L33) |
 | [MyRoadmapDto](#dto-myroadmapdto) | [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/MyRoadmapDtos.cs#L42) |
 | [MyRoadmapOpenStoryDto](#dto-myroadmapopenstorydto) | [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/MyRoadmapDtos.cs#L10) |
-| [MyRoadmapUpcomingDto](#dto-myroadmapupcomingdto) | [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/MyRoadmapDtos.cs#L25) |
+| [MyRoadmapUpcomingDto](#dto-myroadmapupcomingdto) | [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/MyRoadmapDtos.cs#L23) |
 | [PublishedContentItemDto](#dto-publishedcontentitemdto) | [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L25) |
 | [PublishedContentQueryDto](#dto-publishedcontentquerydto) | [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L11) |
 | [PublishedContentSource](#dto-publishedcontentsource) | [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L5) |
@@ -4004,7 +4004,7 @@ Ví dụ dưới schema request là hình dạng tham khảo; thay placeholder/I
 | [PublishedStoryContentDto](#dto-publishedstorycontentdto) | [PublishedContentDtos.cs](../src/Core/StoryPlatform.Application/Features/ContentReports/DTOs/PublishedContentDtos.cs#L38) |
 | [RejectRoadmapRequestDto](#dto-rejectroadmaprequestdto) | [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L65) |
 | [RemovalDecisionRequest](#dto-removaldecisionrequest) | [CreatorPublicationDtos.cs](../src/Core/StoryPlatform.Application/Features/Moderation/DTOs/CreatorPublicationDtos.cs#L11) |
-| [ReorderRoadmapRequestDto](#dto-reorderroadmaprequestdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L66) |
+| [ReorderRoadmapRequestDto](#dto-reorderroadmaprequestdto) | [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L70) |
 | [RequestRoadmapChangesDto](#dto-requestroadmapchangesdto) | [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L59) |
 | [RoadmapCategoryDto](#dto-roadmapcategorydto) | [RoadmapTemplateDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapTemplateDtos.cs#L16) |
 | [RoadmapChangePartDto](#dto-roadmapchangepartdto) | [RoadmapReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/RoadmapTemplates/DTOs/RoadmapReviewDtos.cs#L51) |
@@ -8457,13 +8457,14 @@ Nguồn: [ReviewDtos.cs](../src/Core/StoryPlatform.Application/Features/StoryRev
 <a id="dto-addroadmapstoryrequestdto"></a>
 ### AddRoadmapStoryRequestDto
 
-Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L33).
+Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L34).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
 | `storyId` | `int` | Không | — |
 | `childProfileIds` | `List&lt;int&gt;` | Không | default `new()` |
 | `position` | [RoadmapInsertPosition](#dto-roadmapinsertposition) | Không | default `RoadmapInsertPosition.End`; [JsonConverter(typeof(JsonStringEnumConverter))] |
+| `stageNumber` | `int?` | Có | Bắt buộc khi position = Stage: số chặng đang đọc hoặc một chặng đang chờ. |
 | `expectedDays` | `int?` | Có | — |
 | `note` | `string?` | Có | — |
 
@@ -8486,7 +8487,7 @@ Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response 
 <a id="dto-addroadmapstoryresultdto"></a>
 ### AddRoadmapStoryResultDto
 
-Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L55).
+Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L59).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -8561,7 +8562,7 @@ Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response 
 <a id="dto-childaddresultdto"></a>
 ### ChildAddResultDto
 
-Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L45).
+Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L49).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -8575,12 +8576,13 @@ Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/Ch
 <a id="dto-childroadmapdto"></a>
 ### ChildRoadmapDto
 
-Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L89).
+Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L95).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
 | `childProfileId` | `int` | Không | — |
-| `open` | [ChildRoadmapItemDto?](#dto-childroadmapitemdto) | Có | — |
+| `openItems` | [List&lt;ChildRoadmapItemDto&gt;](#dto-childroadmapitemdto) | Không | default `new()`; mọi truyện đang mở của chặng hiện tại (rỗng khi không có). |
+| `currentStage` | `int?` | Có | Số chặng đang đọc; null khi không có truyện đang mở. |
 | `waiting` | [List&lt;ChildRoadmapItemDto&gt;](#dto-childroadmapitemdto) | Không | default `new()` |
 | `history` | [List&lt;ChildRoadmapItemDto&gt;](#dto-childroadmapitemdto) | Không | default `new()` |
 | `completedCount` | `int` | Không | — |
@@ -8589,14 +8591,14 @@ Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/Ch
 <a id="dto-childroadmapitemdto"></a>
 ### ChildRoadmapItemDto
 
-Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L71).
+Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L76).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
 | `id` | `int` | Không | — |
 | `storyId` | `int` | Không | — |
 | `title` | `string?` | Có | — |
-| `position` | `int` | Không | — |
+| `position` | `int` | Không | Số chặng của truyện trong lộ trình (các truyện cùng chặng có cùng số). |
 | `status` | `string` | Không | default `string.Empty` |
 | `source` | `string` | Không | default `string.Empty` |
 | `skipReason` | `string?` | Có | — |
@@ -8790,7 +8792,7 @@ Nguồn: [GrayZoneWorkflowService.cs](../src/Core/StoryPlatform.Application/Feat
 <a id="dto-myroadmapdonedto"></a>
 ### MyRoadmapDoneDto
 
-Nguồn: [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/MyRoadmapDtos.cs#L34).
+Nguồn: [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/MyRoadmapDtos.cs#L33).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
@@ -8798,6 +8800,7 @@ Nguồn: [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/Child
 | `title` | `string?` | Có | — |
 | `coverImageUrl` | `string?` | Có | — |
 | `completedAt` | `DateTime?` | Có | — |
+| `stage` | `int` | Không | — |
 
 <a id="dto-myroadmapdto"></a>
 ### MyRoadmapDto
@@ -8806,7 +8809,7 @@ Nguồn: [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/Child
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
-| `open` | [MyRoadmapOpenStoryDto?](#dto-myroadmapopenstorydto) | Có | — |
+| `openStories` | [List&lt;MyRoadmapOpenStoryDto&gt;](#dto-myroadmapopenstorydto) | Không | default `new()`; mọi truyện đang mở của chặng hôm nay. |
 | `upcoming` | [List&lt;MyRoadmapUpcomingDto&gt;](#dto-myroadmapupcomingdto) | Không | default `new()` |
 | `done` | [List&lt;MyRoadmapDoneDto&gt;](#dto-myroadmapdonedto) | Không | default `new()` |
 | `completedCount` | `int` | Không | — |
@@ -8825,16 +8828,16 @@ Nguồn: [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/Child
 | `coverImageUrl` | `string?` | Có | — |
 | `note` | `string?` | Có | — |
 | `expectedBy` | `DateTime?` | Có | Chỉ có giá trị khi ngày mong đọc xong vẫn còn ở tương lai. |
-| `isLocked` | `bool` | Không | Khóa trung tính, không tiết lộ lý do. |
+| `stage` | `int` | Không | — |
 
 <a id="dto-myroadmapupcomingdto"></a>
 ### MyRoadmapUpcomingDto
 
-Nguồn: [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/MyRoadmapDtos.cs#L25).
+Nguồn: [MyRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/MyRoadmapDtos.cs#L23).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
-| `order` | `int` | Không | — |
+| `order` | `int` | Không | Thứ tự chặng tính từ chặng kế (1 = chặng kế tiếp); truyện cùng chặng có cùng `order`. |
 | `storyId` | `int` | Không | — |
 | `title` | `string?` | Có | — |
 | `coverImageUrl` | `string?` | Có | — |
@@ -8972,19 +8975,24 @@ Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response 
 <a id="dto-reorderroadmaprequestdto"></a>
 ### ReorderRoadmapRequestDto
 
-Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L66).
+Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/ChildRoadmaps/DTOs/ChildRoadmapDtos.cs#L70).
 
 | JSON field | Kiểu C# / schema con | Nullable | Default / validation / ghi chú |
 |---|---|---|---|
-| `itemIds` | `List&lt;int&gt;` | Không | default `new()` |
+| `stages` | `List&lt;List&lt;int&gt;&gt;` | Không | default `new()`; mỗi phần tử là một chặng (danh sách itemId), không có chặng rỗng. |
 
 Ví dụ body JSON minh họa (thay ID/revision bằng giá trị từ response thật):
 
 ~~~json
 {
-  "itemIds": [
-    101,
-    102
+  "stages": [
+    [
+      101,
+      102
+    ],
+    [
+      103
+    ]
   ]
 }
 ~~~
@@ -9162,6 +9170,9 @@ Nguồn: [ChildRoadmapDtos.cs](../src/Core/StoryPlatform.Application/Features/Ch
 |---|---|
 | `NextUp` | 1 |
 | `End` | 2 |
+| `Stage` | 3 |
+
+`Stage` chỉ dùng được với POST /api/v1/ChildRoadmap/stories (kèm `stageNumber`, đúng 1 trẻ); RoadmapLibrary preview/copy trả 400 khi position = Stage.
 
 Enum dùng số trong JSON trừ field có JsonStringEnumConverter. Query enum theo model binding.
 

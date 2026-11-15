@@ -29,11 +29,11 @@ public class MyRoadmapServiceTests
 
         var view = await _sut.GetAsync(Child);
 
-        Assert.Equal(10, view.Open!.StoryId);
-        Assert.Equal("Truyện 10", view.Open.Title);
-        Assert.Equal("https://cdn.test/10.png", view.Open.CoverImageUrl);
-        Assert.Equal("Đọc kỹ nhé", view.Open.Note);
-        Assert.Equal(open.ExpectedCompletionAt, view.Open.ExpectedBy);
+        Assert.Equal(10, view.OpenStories.Single().StoryId);
+        Assert.Equal("Truyện 10", view.OpenStories.Single().Title);
+        Assert.Equal("https://cdn.test/10.png", view.OpenStories.Single().CoverImageUrl);
+        Assert.Equal("Đọc kỹ nhé", view.OpenStories.Single().Note);
+        Assert.Equal(open.ExpectedCompletionAt, view.OpenStories.Single().ExpectedBy);
     }
 
     [Fact]
@@ -42,7 +42,7 @@ public class MyRoadmapServiceTests
         var open = _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Open);
         open.ExpectedCompletionAt = DateTime.UtcNow.AddDays(-3);
 
-        Assert.Null((await _sut.GetAsync(Child)).Open!.ExpectedBy);
+        Assert.Null((await _sut.GetAsync(Child)).OpenStories.Single().ExpectedBy);
     }
 
     [Fact]
@@ -50,7 +50,7 @@ public class MyRoadmapServiceTests
     {
         _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Open);
 
-        Assert.Null((await _sut.GetAsync(Child)).Open!.ExpectedBy);
+        Assert.Null((await _sut.GetAsync(Child)).OpenStories.Single().ExpectedBy);
     }
 
     [Fact]
@@ -66,6 +66,33 @@ public class MyRoadmapServiceTests
         Assert.Equal(new[] { 1, 2 }, view.Upcoming.Select(story => story.Order));
         Assert.All(view.Upcoming, story => Assert.True(story.IsLocked));
         Assert.Equal("Truyện 11", view.Upcoming[0].Title);
+    }
+
+    [Fact]
+    public async Task GetAsync_StageWithTwoStories_ShowsBothOpenAndGroupsUpcomingByStage()
+    {
+        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Open, position: 1);
+        _h.AddItem(2, Child, 11, ChildRoadmapItemStatus.Open, position: 1);
+        _h.AddItem(3, Child, 12, ChildRoadmapItemStatus.Waiting, position: 2);
+        _h.AddItem(4, Child, 13, ChildRoadmapItemStatus.Waiting, position: 2);
+
+        var view = await _sut.GetAsync(Child);
+
+        Assert.Equal(new[] { 10, 11 }, view.OpenStories.Select(story => story.StoryId));
+        Assert.All(view.OpenStories, story => Assert.Equal(1, story.Stage));
+        Assert.All(view.Upcoming, story => Assert.Equal(1, story.Order));
+        Assert.Equal(4, view.TotalCount);
+    }
+
+    [Fact]
+    public async Task GetAsync_DoneStoriesCarryTheirStage()
+    {
+        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Completed, position: 1).CompletedAt = DateTime.UtcNow;
+        _h.AddItem(2, Child, 11, ChildRoadmapItemStatus.Open, position: 2);
+
+        var view = await _sut.GetAsync(Child);
+
+        Assert.Equal(1, view.Done.Single().Stage);
     }
 
     [Fact]
@@ -109,7 +136,7 @@ public class MyRoadmapServiceTests
         var view = await _sut.GetAsync(Child);
 
         Assert.True(view.IsFinished);
-        Assert.Null(view.Open);
+        Assert.Empty(view.OpenStories);
         Assert.Empty(view.Upcoming);
         Assert.Equal(1, view.CompletedCount);
         Assert.Equal(1, view.TotalCount);
@@ -144,7 +171,7 @@ public class MyRoadmapServiceTests
 
         var view = await _sut.GetAsync(Child);
 
-        Assert.Equal(11, view.Open!.StoryId);
+        Assert.Equal(11, view.OpenStories.Single().StoryId);
         Assert.Empty(view.Upcoming);
         Assert.Empty(view.Done);
         Assert.Equal(1, view.TotalCount);
@@ -164,7 +191,7 @@ public class MyRoadmapServiceTests
 
         var view = await _sut.GetAsync(Child);
 
-        Assert.Null(view.Open);
+        Assert.Empty(view.OpenStories);
         Assert.Equal(new[] { 13 }, view.Upcoming.Select(story => story.StoryId));
         Assert.Empty(view.Done);
         Assert.Equal(1, view.TotalCount);
@@ -195,7 +222,7 @@ public class MyRoadmapServiceTests
 
         var view = await _sut.GetAsync(Child);
 
-        Assert.Equal(11, view.Open!.StoryId);
+        Assert.Equal(11, view.OpenStories.Single().StoryId);
         Assert.Equal(1, view.TotalCount);
     }
 

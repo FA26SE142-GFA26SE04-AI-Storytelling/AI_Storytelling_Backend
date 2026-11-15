@@ -39,6 +39,14 @@ public class ChildRoadmapServiceTests
     private ChildRoadmapItem Item(int id) => _h.Items.Single(item => item.Id == id);
 
     [Fact]
+    public async Task AddStory_TakesPerChildTransactionLock()
+    {
+        await _sut.AddStoryAsync(Owner, Add(10, Child));
+
+        _h.UnitOfWork.Verify(x => x.AcquireTransactionLockAsync(-Child, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task AddForWish_LinksFulfillmentToRoadmapInOneTransaction()
     {
         var wish = new StoryWish { Id = 55, ChildProfileId = Child, Status = StoryWishStatus.Pending, Kind = StoryWishKind.Wish };
@@ -199,7 +207,7 @@ public class ChildRoadmapServiceTests
         Assert.Equal(ChildRoadmapItemStatus.Removed, Item(1).Status);
         Assert.Equal(Owner, Item(1).RemovedByUserId);
         Assert.Equal(ChildRoadmapItemStatus.Open, Item(2).Status);
-        Assert.Equal(11, result.Open!.StoryId);
+        Assert.Equal(11, result.OpenItems.Single().StoryId);
     }
 
     [Theory]
@@ -218,12 +226,12 @@ public class ChildRoadmapServiceTests
         SeedRoadmap();
 
         await _sut.ReorderAsync(Owner, Child, new ReorderRoadmapRequestDto
-            { ItemIds = new List<int> { 4, 2, 3 } });
+            { Stages = new List<List<int>> { new() { 4 }, new() { 2 }, new() { 3 } } });
         Assert.Equal(new[] { 13, 11, 12 }, _h.Items.Where(x => x.Status == ChildRoadmapItemStatus.Waiting)
             .OrderBy(x => x.Position).Select(x => x.StoryId));
 
         await Assert.ThrowsAsync<BadRequestException>(() => _sut.ReorderAsync(
-            Owner, Child, new ReorderRoadmapRequestDto { ItemIds = new List<int> { 2, 3 } }));
+            Owner, Child, new ReorderRoadmapRequestDto { Stages = new List<List<int>> { new() { 2 }, new() { 3 } } }));
     }
 
     [Fact]
@@ -236,7 +244,7 @@ public class ChildRoadmapServiceTests
 
         Assert.All(new[] { 1, 2, 3, 4 }, id => Assert.Equal(ChildRoadmapItemStatus.Removed, Item(id).Status));
         Assert.Equal(ChildRoadmapItemStatus.Completed, Item(5).Status);
-        Assert.Null(roadmap.Open);
+        Assert.Empty(roadmap.OpenItems);
         Assert.Empty(roadmap.Waiting);
     }
 
@@ -250,7 +258,7 @@ public class ChildRoadmapServiceTests
 
         var roadmap = await _sut.GetAsync(Owner, Child);
 
-        Assert.Equal(11, roadmap.Open!.StoryId);
+        Assert.Equal(11, roadmap.OpenItems.Single().StoryId);
         Assert.Equal(new[] { 13, 12 }, roadmap.Waiting.Select(x => x.StoryId));
         Assert.Single(roadmap.History);
         Assert.Equal(1, roadmap.CompletedCount);
@@ -498,5 +506,87 @@ public class ChildRoadmapServiceTests
 
         _h.UnitOfWork.Verify(unit => unit.RollbackTransactionAsync(CancellationToken.None), Times.Once);
         _h.UnitOfWork.Verify(unit => unit.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    private static AddRoadmapStoryRequestDto ToStage(int storyId, int? stageNumber, params int[] children) => new()
+    {
+        StoryId = storyId, ChildProfileIds = children.ToList(),
+        Position = RoadmapInsertPosition.Stage, StageNumber = stageNumber
+    };
+
+    [Fact]
+    public async Task Add_StageWithSeveralChildren_IsBadRequest()
+    {
+        var error = await Assert.ThrowsAsync<BadRequestException>(
+            () => _sut.AddStoryAsync(Owner, ToStage(10, 1, Child, OtherChild)));
+        Assert.Equal("Chỉ chọn được chặng khi thêm truyện cho một bé.", error.Message);
+    }
+
+    [Fact]
+    public async Task Add_StageWithoutNumber_IsBadRequest()
+    {
+        var error = await Assert.ThrowsAsync<BadRequestException>(
+            () => _sut.AddStoryAsync(Owner, ToStage(10, null, Child)));
+        Assert.Equal("Phải chọn chặng muốn thêm vào.", error.Message);
+    }
+
+    [Fact]
+    public async Task Add_StageIntoTheOpenStage_OpensTheStoryAndShowsBothAsOpen()
+    {
+        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Open, position: 1);
+
+        var result = await _sut.AddStoryAsync(Owner, ToStage(11, 1, Child));
+        var roadmap = await _sut.GetAsync(Owner, Child);
+
+        Assert.Equal("Added", result.Results.Single().Outcome);
+        Assert.Equal(new[] { 10, 11 }, roadmap.OpenItems.Select(item => item.StoryId));
+        Assert.Equal(1, roadmap.CurrentStage);
+        Assert.Equal(2, roadmap.TotalCount);
+    }
+
+    [Fact]
+    public async Task Add_StageWithAWaitingStory_ReportsMoved()
+    {
+        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Open, position: 1);
+        _h.AddItem(2, Child, 11, ChildRoadmapItemStatus.Waiting, position: 2);
+
+        var result = await _sut.AddStoryAsync(Owner, ToStage(11, 1, Child));
+
+        Assert.Equal("Moved", result.Results.Single().Outcome);
+        Assert.Equal(ChildRoadmapItemStatus.Open, Item(2).Status);
+    }
+
+    [Fact]
+    public async Task Reorder_GroupsWaitingStoriesIntoStages()
+    {
+        SeedRoadmap();
+
+        await _sut.ReorderAsync(Owner, Child, new ReorderRoadmapRequestDto
+            { Stages = new List<List<int>> { new() { 4, 2 }, new() { 3 } } });
+
+        Assert.Equal(2, Item(4).Position);
+        Assert.Equal(2, Item(2).Position);
+        Assert.Equal(3, Item(3).Position);
+    }
+
+    [Fact]
+    public async Task Reorder_EmptyStage_IsBadRequest()
+    {
+        SeedRoadmap();
+
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.ReorderAsync(Owner, Child,
+            new ReorderRoadmapRequestDto { Stages = new List<List<int>> { new() { 2, 3, 4 }, new() } }));
+    }
+
+    [Fact]
+    public async Task Remove_LastStoryOfAStage_PullsLaterStagesUp()
+    {
+        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Open, position: 1);
+        _h.AddItem(2, Child, 11, ChildRoadmapItemStatus.Waiting, position: 2);
+        _h.AddItem(3, Child, 12, ChildRoadmapItemStatus.Waiting, position: 3);
+
+        await _sut.RemoveAsync(Owner, Child, 2);
+
+        Assert.Equal(2, Item(3).Position);
     }
 }

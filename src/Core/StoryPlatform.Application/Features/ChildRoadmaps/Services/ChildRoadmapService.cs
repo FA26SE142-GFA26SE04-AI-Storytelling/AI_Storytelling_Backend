@@ -47,7 +47,21 @@ public partial class ChildRoadmapService : IChildRoadmapService
 
         if (!Enum.IsDefined(request.Position))
         {
-            throw new BadRequestException("Vị trí phải là NextUp (đọc tiếp theo) hoặc End (thêm vào cuối).");
+            throw new BadRequestException(
+                "Vị trí phải là NextUp (đọc tiếp theo), End (thêm vào cuối) hoặc Stage (chọn chặng).");
+        }
+
+        if (request.Position == RoadmapInsertPosition.Stage)
+        {
+            if (childIds.Count != 1)
+            {
+                throw new BadRequestException("Chỉ chọn được chặng khi thêm truyện cho một bé.");
+            }
+
+            if (!request.StageNumber.HasValue)
+            {
+                throw new BadRequestException("Phải chọn chặng muốn thêm vào.");
+            }
         }
 
         var days = ValidateExpectedDays(request.ExpectedDays);
@@ -62,7 +76,7 @@ public partial class ChildRoadmapService : IChildRoadmapService
         foreach (var childId in childIds)
         {
             result.Results.Add(await AddForChildAsync(
-                actorUserId, childId, story, request.Position, days, note, cancellationToken));
+                actorUserId, childId, story, request.Position, request.StageNumber, days, note, cancellationToken));
         }
 
         return result;
@@ -76,8 +90,8 @@ public partial class ChildRoadmapService : IChildRoadmapService
     }
 
     private async Task<ChildAddResultDto> AddForChildAsync(
-        int actorUserId, int childId, Story story, RoadmapInsertPosition position, int? days, string? note,
-        CancellationToken cancellationToken)
+        int actorUserId, int childId, Story story, RoadmapInsertPosition position, int? stageNumber, int? days,
+        string? note, CancellationToken cancellationToken)
     {
         var child = await _unitOfWork.Repository<ChildProfile>().GetByIdAsync(childId, cancellationToken);
         if (child == null || child.IsDeleted || !await CanAssignAsync(childId, actorUserId, cancellationToken))
@@ -108,9 +122,11 @@ public partial class ChildRoadmapService : IChildRoadmapService
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
+            await _unitOfWork.AcquireTransactionLockAsync(-childId, cancellationToken);
             var inserted = (await _inserter.InsertAsync(new InsertRequest(
                 childId, actorUserId, new[] { new NewRoadmapStep(story.Id, days, note) }, position,
-                ChildRoadmapItemSource.Manual, null, MoveExistingToNextUp: true), cancellationToken)).Single();
+                ChildRoadmapItemSource.Manual, null, MoveExisting: true, StageNumber: stageNumber),
+                cancellationToken)).Single();
 
             if (!inserted.Created && !inserted.Moved)
             {
@@ -123,18 +139,19 @@ public partial class ChildRoadmapService : IChildRoadmapService
                 actorUserId, inserted.Moved ? "ChildRoadmapStoryMoved" : "ChildRoadmapStoryAdded",
                 nameof(ChildRoadmapItem), inserted.ItemId,
                 beforeState: null,
-                afterState: new { childProfileId = childId, storyId = story.Id, position = position.ToString() },
+                afterState: new { childProfileId = childId, storyId = story.Id, position = position.ToString(), stageNumber },
                 cancellationToken: cancellationToken);
             await _notifier.NotifyOtherSupervisorsAsync(
                 childId, actorUserId, NotificationType.RoadmapStoryAdded,
-                new { childProfileId = childId, storyId = story.Id, position = position.ToString() },
+                new { childProfileId = childId, storyId = story.Id, position = position.ToString(), stageNumber },
                 cancellationToken);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
             return new ChildAddResultDto
             {
                 ChildProfileId = childId,
-                Outcome = inserted.Moved ? "MovedToNext" : "Added",
+                Outcome = !inserted.Moved ? "Added"
+                    : position == RoadmapInsertPosition.NextUp ? "MovedToNext" : "Moved",
                 ItemId = inserted.ItemId,
                 Warnings = warnings
             };
@@ -233,14 +250,16 @@ public partial class ChildRoadmapService : IChildRoadmapService
             item.CompletedAt ?? item.SkippedAt ?? item.RemovedAt ?? item.UpdatedAt ?? item.CreatedAt;
 
         var completed = items.Count(item => item.Status == ChildRoadmapItemStatus.Completed);
-        var open = items.FirstOrDefault(item => item.Status == ChildRoadmapItemStatus.Open);
+        var open = items.Where(item => item.Status == ChildRoadmapItemStatus.Open)
+            .OrderBy(item => item.Id).ToList();
         var waiting = items.Where(item => item.Status == ChildRoadmapItemStatus.Waiting)
             .OrderBy(item => item.Position).ThenBy(item => item.Id).ToList();
 
         return new ChildRoadmapDto
         {
             ChildProfileId = childProfileId,
-            Open = open == null ? null : Map(open),
+            OpenItems = open.Select(Map).ToList(),
+            CurrentStage = open.Count > 0 ? open[0].Position : null,
             Waiting = waiting.Select(Map).ToList(),
             History = items
                 .Where(item => item.Status is ChildRoadmapItemStatus.Completed or ChildRoadmapItemStatus.Skipped
@@ -248,7 +267,7 @@ public partial class ChildRoadmapService : IChildRoadmapService
                 .OrderByDescending(EndedAt).ThenByDescending(item => item.Id)
                 .Take(ChildRoadmapPolicy.HistoryLimit).Select(Map).ToList(),
             CompletedCount = completed,
-            TotalCount = completed + waiting.Count + (open == null ? 0 : 1)
+            TotalCount = completed + waiting.Count + open.Count
         };
     }
 

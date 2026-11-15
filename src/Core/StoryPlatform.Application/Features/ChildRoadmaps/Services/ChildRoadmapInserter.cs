@@ -1,4 +1,5 @@
 using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -19,19 +20,53 @@ public class ChildRoadmapInserter : IChildRoadmapInserter
     {
         var repository = _unitOfWork.Repository<ChildRoadmapItem>();
         var childId = request.ChildProfileId;
-        var current = await repository.FindAsync(
+        var live = await repository.FindAsync(
             item => item.ChildProfileId == childId
-                    && (item.Status == ChildRoadmapItemStatus.Waiting || item.Status == ChildRoadmapItemStatus.Open),
+                    && (item.Status == ChildRoadmapItemStatus.Waiting || item.Status == ChildRoadmapItemStatus.Open
+                        || item.Status == ChildRoadmapItemStatus.Completed),
             cancellationToken: cancellationToken);
+        var current = RoadmapStages.Current(live);
+        var hasOpen = live.Any(item => item.Status == ChildRoadmapItemStatus.Open);
 
-        var waiting = new List<ChildRoadmapItem>();
-        foreach (var candidate in current.Where(item => item.Status == ChildRoadmapItemStatus.Waiting)
-                     .OrderBy(item => item.Position).ThenBy(item => item.Id))
+        // FindAsync trả bản không theo dõi: lấy bản đang theo dõi của mọi truyện chờ trước khi sửa.
+        var stages = new List<List<ChildRoadmapItem>>();
+        // Position (số chặng) của từng chặng chờ, lấy trước khi đánh số lại; song song với `stages`.
+        var stagePositions = new List<int>();
+        foreach (var group in RoadmapStages.WaitingStages(live))
         {
-            var tracked = await repository.GetByIdAsync(candidate.Id, cancellationToken);
-            if (tracked != null)
+            stagePositions.Add(group[0].Position);
+            var tracked = new List<ChildRoadmapItem>();
+            foreach (var candidate in group)
             {
-                waiting.Add(tracked);
+                var item = await repository.GetByIdAsync(candidate.Id, cancellationToken);
+                if (item != null)
+                {
+                    tracked.Add(item);
+                }
+            }
+
+            stages.Add(tracked);
+        }
+
+        var waiting = stages.SelectMany(stage => stage).ToList();
+
+        var joinsOpen = false;
+        List<ChildRoadmapItem>? target = null;
+        if (request.Position == RoadmapInsertPosition.Stage)
+        {
+            var requested = request.StageNumber ?? 0;
+            var index = stagePositions.IndexOf(requested);
+            if (hasOpen && requested == current)
+            {
+                joinsOpen = true;
+            }
+            else if (index >= 0 && index < stages.Count)
+            {
+                target = stages[index];
+            }
+            else
+            {
+                throw new BadRequestException($"Chặng {requested} không còn nhận thêm truyện.");
             }
         }
 
@@ -48,12 +83,13 @@ public class ChildRoadmapInserter : IChildRoadmapInserter
                 continue;
             }
 
-            var existing = current.FirstOrDefault(item => item.StoryId == step.StoryId);
+            var existing = live.FirstOrDefault(item =>
+                item.StoryId == step.StoryId && item.Status != ChildRoadmapItemStatus.Completed);
             if (existing != null)
             {
                 var trackedExisting = waiting.FirstOrDefault(item => item.Id == existing.Id);
-                var move = request.MoveExistingToNextUp
-                           && request.Position == RoadmapInsertPosition.NextUp
+                var move = request.MoveExisting
+                           && request.Position != RoadmapInsertPosition.End
                            && trackedExisting != null
                            && !moved.Contains(trackedExisting);
                 if (move)
@@ -82,14 +118,44 @@ public class ChildRoadmapInserter : IChildRoadmapInserter
             outcomes.Add((step.StoryId, row, true, false));
         }
 
-        var rest = waiting.Where(item => !moved.Contains(item)).ToList();
-        var ordered = request.Position == RoadmapInsertPosition.NextUp
-            ? moved.Concat(fresh).Concat(rest).ToList()
-            : rest.Concat(fresh).ToList();
-
-        for (var index = 0; index < ordered.Count; index++)
+        foreach (var stage in stages)
         {
-            ordered[index].Position = index + 1;
+            stage.RemoveAll(moved.Contains);
+        }
+
+        var incoming = moved.Concat(fresh).ToList();
+        if (joinsOpen)
+        {
+            var now = DateTime.UtcNow;
+            foreach (var item in incoming)
+            {
+                item.Status = ChildRoadmapItemStatus.Open;
+                item.Position = current;
+                item.OpenedAt = now;
+                item.ExpectedCompletionAt = item.ExpectedDays.HasValue ? now.AddDays(item.ExpectedDays.Value) : null;
+            }
+        }
+        else if (target != null)
+        {
+            target.AddRange(incoming);
+        }
+        else if (request.Position == RoadmapInsertPosition.NextUp)
+        {
+            stages.InsertRange(0, incoming.Select(item => new List<ChildRoadmapItem> { item }));
+        }
+        else
+        {
+            stages.AddRange(incoming.Select(item => new List<ChildRoadmapItem> { item }));
+        }
+
+        var stageNumber = current;
+        foreach (var stage in stages.Where(stage => stage.Count > 0))
+        {
+            stageNumber += 1;
+            foreach (var item in stage)
+            {
+                item.Position = stageNumber;
+            }
         }
 
         foreach (var item in waiting)

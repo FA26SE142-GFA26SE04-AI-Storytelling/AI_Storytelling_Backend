@@ -1,6 +1,7 @@
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
+using StoryPlatform.Application.Features.ChildRoadmaps.Services;
 using StoryPlatform.Application.Features.ContentReports.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
@@ -37,6 +38,13 @@ public class ChildRoadmapArchiveHandler : IStoryArchiveHandler
         if (affected.Count == 0)
         {
             return;
+        }
+
+        // Chạy trong giao dịch của người gọi: khoá theo từng bé (cùng khoá với các ghi lộ trình khác, theo thứ tự
+        // cố định để tránh khoá chéo) trước khi bỏ qua/đánh số lại; bản theo dõi bên dưới được đọc lại sau khoá.
+        foreach (var childProfileId in affected.Select(item => item.ChildProfileId).Distinct().OrderBy(id => id))
+        {
+            await _unitOfWork.AcquireTransactionLockAsync(-childProfileId, cancellationToken);
         }
 
         var skipped = new List<(ChildRoadmapItem Item, ChildRoadmapItemStatus Before)>();
@@ -80,15 +88,20 @@ public class ChildRoadmapArchiveHandler : IStoryArchiveHandler
                 cancellationToken: cancellationToken);
         }
 
-        // Trẻ có bước đang mở bị bỏ qua thì mở truyện kế ngay, không chờ trẻ đọc xong.
+        // Trẻ có truyện đang mở bị bỏ qua thì mở chặng kế nếu chặng hiện tại hết truyện mở; mọi trẻ bị ảnh hưởng
+        // được đánh số lại chặng chờ để không còn chặng rỗng.
         var childrenToAdvance = skipped
             .Where(entry => entry.Before == ChildRoadmapItemStatus.Open)
             .Select(entry => entry.Item.ChildProfileId)
-            .Distinct()
-            .ToList();
-        foreach (var childProfileId in childrenToAdvance)
+            .ToHashSet();
+        foreach (var childProfileId in skipped.Select(entry => entry.Item.ChildProfileId).Distinct())
         {
-            await _advancer.AdvanceAsync(childProfileId, cancellationToken);
+            if (childrenToAdvance.Contains(childProfileId))
+            {
+                await _advancer.AdvanceAsync(childProfileId, cancellationToken);
+            }
+
+            await RoadmapStages.RenumberWaitingAsync(_unitOfWork, childProfileId, cancellationToken);
         }
     }
 }

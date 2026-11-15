@@ -31,51 +31,62 @@ public class ChildRoadmapAdvancer : IChildRoadmapAdvancer
         var itemRepository = _unitOfWork.Repository<ChildRoadmapItem>();
         var steps = await itemRepository.FindAsync(
             item => item.ChildProfileId == childProfileId
-                    && (item.Status == ChildRoadmapItemStatus.Waiting || item.Status == ChildRoadmapItemStatus.Open),
+                    && (item.Status == ChildRoadmapItemStatus.Waiting || item.Status == ChildRoadmapItemStatus.Open
+                        || item.Status == ChildRoadmapItemStatus.Completed),
             cancellationToken: cancellationToken);
 
-        var open = steps.FirstOrDefault(step => step.Status == ChildRoadmapItemStatus.Open);
+        var open = steps.Where(step => step.Status == ChildRoadmapItemStatus.Open).OrderBy(step => step.Id).FirstOrDefault();
         if (open != null)
         {
             return open;
         }
 
+        var stageNumber = steps.Where(step => step.Status == ChildRoadmapItemStatus.Completed)
+            .Select(step => step.Position).DefaultIfEmpty(0).Max() + 1;
         var now = DateTime.UtcNow;
         var changed = false;
         ChildRoadmapItem? opened = null;
-        foreach (var candidate in steps.OrderBy(step => step.Position).ThenBy(step => step.Id))
+        foreach (var stage in RoadmapStages.WaitingStages(steps))
         {
-            // FindAsync trả bản không theo dõi: lấy bản đang theo dõi trước khi sửa.
-            var step = await itemRepository.GetByIdAsync(candidate.Id, cancellationToken);
-            if (step == null || step.IsDeleted || step.Status != ChildRoadmapItemStatus.Waiting)
+            foreach (var candidate in stage)
             {
-                continue;
-            }
+                // FindAsync trả bản không theo dõi: lấy bản đang theo dõi trước khi sửa.
+                var step = await itemRepository.GetByIdAsync(candidate.Id, cancellationToken);
+                if (step == null || step.IsDeleted || step.Status != ChildRoadmapItemStatus.Waiting)
+                {
+                    continue;
+                }
 
-            var story = await _unitOfWork.Repository<Story>().GetByIdAsync(step.StoryId, cancellationToken);
-            var unavailable = await _eligibility.EvaluateAsync(child, story, cancellationToken);
-            if (unavailable.HasValue)
-            {
-                step.Status = ChildRoadmapItemStatus.Skipped;
-                step.SkipReason = unavailable.Value;
-                step.SkippedAt = now;
-                itemRepository.Update(step);
+                var story = await _unitOfWork.Repository<Story>().GetByIdAsync(step.StoryId, cancellationToken);
+                var unavailable = await _eligibility.EvaluateAsync(child, story, cancellationToken);
                 changed = true;
-                continue;
+                if (unavailable.HasValue)
+                {
+                    step.Status = ChildRoadmapItemStatus.Skipped;
+                    step.SkipReason = unavailable.Value;
+                    step.SkippedAt = now;
+                    itemRepository.Update(step);
+                    continue;
+                }
+
+                step.Status = ChildRoadmapItemStatus.Open;
+                step.Position = stageNumber;
+                step.OpenedAt = now;
+                step.ExpectedCompletionAt = step.ExpectedDays.HasValue ? now.AddDays(step.ExpectedDays.Value) : null;
+                itemRepository.Update(step);
+                opened ??= step;
             }
 
-            step.Status = ChildRoadmapItemStatus.Open;
-            step.OpenedAt = now;
-            step.ExpectedCompletionAt = step.ExpectedDays.HasValue ? now.AddDays(step.ExpectedDays.Value) : null;
-            itemRepository.Update(step);
-            opened = step;
-            changed = true;
-            break;
+            if (opened != null)
+            {
+                break;
+            }
         }
 
         if (changed)
         {
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await RoadmapStages.RenumberWaitingAsync(_unitOfWork, childProfileId, cancellationToken);
         }
 
         return opened;

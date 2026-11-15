@@ -81,7 +81,7 @@ public partial class ChildRoadmapService
                 RoadmapInsertPosition.NextUp,
                 ChildRoadmapItemSource.Wish,
                 null,
-                MoveExistingToNextUp: true), cancellationToken)).Single();
+                MoveExisting: true), cancellationToken)).Single();
 
             if (!inserted.Created)
             {

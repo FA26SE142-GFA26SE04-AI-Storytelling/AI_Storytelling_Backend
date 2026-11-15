@@ -46,31 +46,53 @@ public class ChildRoadmapProgressRecorder : IChildRoadmapProgressRecorder
         var childId = session.ChildProfileId;
         var storyId = session.StoryId;
         var repository = _unitOfWork.Repository<ChildRoadmapItem>();
-        var candidates = await repository.FindAsync(
+        var hasCandidate = await repository.ExistsAsync(
             item => item.ChildProfileId == childId
                     && item.StoryId == storyId
                     && (item.Status == ChildRoadmapItemStatus.Open || item.Status == ChildRoadmapItemStatus.Waiting),
-            cancellationToken: cancellationToken);
-        var match = candidates.OrderBy(item => item.Status == ChildRoadmapItemStatus.Open ? 0 : 1)
-            .ThenBy(item => item.Position).FirstOrDefault();
-        if (match == null)
+            cancellationToken);
+        if (!hasCandidate)
         {
             return null;
         }
 
-        var step = await repository.GetByIdAsync(match.Id, cancellationToken);
-        if (step == null || step.IsDeleted)
-        {
-            return null;
-        }
-
-        var wasOpen = step.Status == ChildRoadmapItemStatus.Open;
         IReadOnlyList<string> newBadges = Array.Empty<string>();
+        ChildRoadmapItem? step;
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
+            // Khoá theo bé: các ghi lộ trình của cùng một bé phải tuần tự để giữ bất biến chặng.
+            await _unitOfWork.AcquireTransactionLockAsync(-childId, cancellationToken);
+
+            var candidates = await repository.FindAsync(
+                item => item.ChildProfileId == childId
+                        && item.StoryId == storyId
+                        && (item.Status == ChildRoadmapItemStatus.Open || item.Status == ChildRoadmapItemStatus.Waiting),
+                cancellationToken: cancellationToken);
+            var match = candidates.OrderBy(item => item.Status == ChildRoadmapItemStatus.Open ? 0 : 1)
+                .ThenBy(item => item.Position).FirstOrDefault();
+            step = match == null ? null : await repository.GetByIdAsync(match.Id, cancellationToken);
+            if (step == null || step.IsDeleted)
+            {
+                // Giao dịch thuộc về người gọi (BeginTransaction không làm gì khi đã có giao dịch): không rollback ở đây.
+                return null;
+            }
+
+            var live = await repository.FindAsync(
+                item => item.ChildProfileId == childId
+                        && (item.Status == ChildRoadmapItemStatus.Open || item.Status == ChildRoadmapItemStatus.Completed),
+                cancellationToken: cancellationToken);
+            var currentStage = Math.Max(RoadmapStages.Current(live), 1);
+            var wasOpen = step.Status == ChildRoadmapItemStatus.Open;
+
             step.Status = ChildRoadmapItemStatus.Completed;
             step.CompletedAt = DateTime.UtcNow;
+            if (!wasOpen)
+            {
+                // Đọc sớm truyện đang chờ: tính vào chặng hiện tại để không có truyện đã đọc trong chặng tương lai.
+                step.Position = currentStage;
+            }
+
             repository.Update(step);
             session.ChildRoadmapItemId = step.Id;
             _unitOfWork.Repository<ReadingSession>().Update(session);
@@ -79,6 +101,10 @@ public class ChildRoadmapProgressRecorder : IChildRoadmapProgressRecorder
             if (wasOpen)
             {
                 await _advancer.AdvanceAsync(childId, cancellationToken);
+            }
+            else
+            {
+                await RoadmapStages.RenumberWaitingAsync(_unitOfWork, childId, cancellationToken);
             }
 
             await _auditLogWriter.LogAsync(
@@ -113,6 +139,6 @@ public class ChildRoadmapProgressRecorder : IChildRoadmapProgressRecorder
             throw;
         }
 
-        return new RoadmapCompletionResult(step, newBadges);
+        return new RoadmapCompletionResult(step!, newBadges);
     }
 }

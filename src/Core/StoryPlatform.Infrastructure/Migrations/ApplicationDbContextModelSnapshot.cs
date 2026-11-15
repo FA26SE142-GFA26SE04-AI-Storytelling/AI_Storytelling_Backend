@@ -732,10 +732,6 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasIndex("AddedByUserId");
 
-                    b.HasIndex("ChildProfileId")
-                        .IsUnique()
-                        .HasFilter("\"Status\" = 'Open' AND NOT \"IsDeleted\"");
-
                     b.HasIndex("RemovedByUserId");
 
                     b.HasIndex("SourceReadingRoadmapId");

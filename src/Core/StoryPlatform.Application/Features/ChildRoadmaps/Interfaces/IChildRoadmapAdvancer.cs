@@ -6,8 +6,9 @@ namespace StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
 public interface IChildRoadmapAdvancer
 {
     /// <summary>
-    /// Trẻ có bước đang mở thì trả bước đó. Chưa có thì mở bước chờ đầu tiên còn đọc được (bước không còn đọc được
-    /// bị bỏ qua), chỉ khi hồ sơ trẻ hoạt động và trẻ không ở Hold Mode. Trả null khi không mở được bước nào.
+    /// Trẻ còn truyện đang mở thì trả truyện mở có Id nhỏ nhất. Chưa có thì mở mọi truyện còn đọc được của chặng chờ
+    /// nhỏ nhất (truyện không còn đọc được bị bỏ qua; cả chặng bị bỏ qua thì xét chặng sau), chỉ khi hồ sơ trẻ hoạt động.
+    /// Trả null khi không mở được truyện nào.
     /// </summary>
     Task<ChildRoadmapItem?> AdvanceAsync(int childProfileId, CancellationToken cancellationToken = default);
 }

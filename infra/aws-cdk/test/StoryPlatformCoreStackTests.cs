@@ -483,6 +483,32 @@ public class StoryPlatformCoreStackTests
     }
 
     [Fact]
+    public void Stack_PassesSePayWebhookKeyUnderTheNameSePayOptionsReads()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(SynthTemplate().ToJSON());
+
+        Assert.Matches("\"Name\":\"SePaySettings__WebhookApiKey\",\"ValueFrom\":(?:(?!\"Name\":).)*:SePayApiKey::", json);
+        Assert.DoesNotContain("SePaySettings__ApiKey", json);
+        // Chưa truyền context tài khoản ngân hàng thì không thêm biến nào.
+        Assert.DoesNotContain("SePaySettings__Bank", json);
+    }
+
+    [Fact]
+    public void Stack_WithSePayBankContext_PassesReceivingAccountToTheApi()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["sepayBankAccountNumber"] = "0123456789",
+            ["sepayBankCode"] = "MBBank",
+            ["sepayAccountName"] = "NGUYEN VAN A"
+        }).ToJSON());
+
+        Assert.Contains("\"Name\":\"SePaySettings__BankAccountNumber\",\"Value\":\"0123456789\"", json);
+        Assert.Contains("\"Name\":\"SePaySettings__BankCode\",\"Value\":\"MBBank\"", json);
+        Assert.Contains("\"Name\":\"SePaySettings__AccountName\",\"Value\":\"NGUYEN VAN A\"", json);
+    }
+
+    [Fact]
     public void Stack_WithAiServiceBaseUrl_WiresCoreToTheCloudRunAiApi()
     {
         var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>

@@ -72,7 +72,8 @@ public class PaymentController : BaseApiController
         [FromBody] SePayWebhookPayloadDto payload, CancellationToken cancellationToken)
     {
         await _paymentService.HandleWebhookAsync(Request.Headers.Authorization, payload, cancellationToken);
-        return Ok();
+        // SePay chỉ ghi nhận webhook thành công khi nhận HTTP 200/201 kèm body {"success": true}.
+        return Ok(new { success = true });
     }
 
     /// <summary>

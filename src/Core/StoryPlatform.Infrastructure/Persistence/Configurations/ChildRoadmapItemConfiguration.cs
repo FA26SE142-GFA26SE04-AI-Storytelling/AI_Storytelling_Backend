@@ -28,10 +28,7 @@ public class ChildRoadmapItemConfiguration : IEntityTypeConfiguration<ChildRoadm
         builder.HasOne(x => x.AddedByUser).WithMany().HasForeignKey(x => x.AddedByUserId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.RemovedByUser).WithMany().HasForeignKey(x => x.RemovedByUserId).OnDelete(DeleteBehavior.Restrict);
 
-        // BR-L4A-06: mỗi lúc tối đa một truyện đang mở cho mỗi trẻ.
-        builder.HasIndex(x => x.ChildProfileId)
-            .IsUnique()
-            .HasFilter("\"Status\" = 'Open' AND NOT \"IsDeleted\"");
+        // Lộ trình theo chặng (spec 2026-11-14): nhiều truyện cùng chặng có thể Open cùng lúc, không còn unique Open.
 
         // BR-L4A-11: không thêm trùng một truyện chưa đọc xong.
         builder.HasIndex(x => new { x.ChildProfileId, x.StoryId })

@@ -39,15 +39,15 @@ public sealed class ChildRoadmapSchemaModelTests
     }
 
     [Fact]
-    public void ChildRoadmapItem_enforces_one_open_step_per_child_and_no_duplicate_unfinished_story()
+    public void ChildRoadmapItem_allows_several_open_steps_per_child_but_no_duplicate_unfinished_story()
     {
         using var context = CreateModelOnlyContext();
         var entity = context.Model.FindEntityType(typeof(ChildRoadmapItem))!;
 
-        var openPerChild = entity.GetIndexes().Single(index =>
+        // Lộ trình theo chặng: nhiều truyện cùng chặng cùng Open, nên không còn unique Open theo bé.
+        Assert.DoesNotContain(entity.GetIndexes(), index =>
             index.IsUnique
             && index.Properties.Select(p => p.Name).SequenceEqual(new[] { nameof(ChildRoadmapItem.ChildProfileId) }));
-        Assert.Contains("'Open'", openPerChild.GetFilter());
 
         var uniqueStory = entity.GetIndexes().Single(index =>
             index.IsUnique

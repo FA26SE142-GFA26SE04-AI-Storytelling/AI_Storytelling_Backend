@@ -40,7 +40,7 @@ public class ChildRoadmapServiceBranchTests
 
         var error = await Assert.ThrowsAsync<BadRequestException>(() => _sut.AddStoryAsync(Owner, request));
 
-        Assert.Equal("Vị trí phải là NextUp (đọc tiếp theo) hoặc End (thêm vào cuối).", error.Message);
+        Assert.Equal("Vị trí phải là NextUp (đọc tiếp theo), End (thêm vào cuối) hoặc Stage (chọn chặng).", error.Message);
     }
 
     [Fact]
@@ -220,8 +220,8 @@ public class ChildRoadmapServiceBranchTests
 
         var roadmap = await _sut.RemoveAsync(Owner, Child, 3);
 
-        Assert.Equal(10, roadmap.Open!.StoryId);
-        Assert.Equal([(11, 1), (13, 2)], roadmap.Waiting.Select(item => (item.StoryId, item.Position)).ToArray());
+        Assert.Equal(10, roadmap.OpenItems.Single().StoryId);
+        Assert.Equal([(11, 2), (13, 3)], roadmap.Waiting.Select(item => (item.StoryId, item.Position)).ToArray());
         Assert.Equal(ChildRoadmapItemStatus.Removed, Item(3).Status);
     }
 
@@ -245,9 +245,9 @@ public class ChildRoadmapServiceBranchTests
         SeedRoadmap();
 
         var error = await Assert.ThrowsAsync<BadRequestException>(() =>
-            _sut.ReorderAsync(Owner, Child, new ReorderRoadmapRequestDto { ItemIds = [2, 2, 3] }));
+            _sut.ReorderAsync(Owner, Child, new ReorderRoadmapRequestDto { Stages = [[2], [2], [3]] }));
 
-        Assert.Equal("Danh sách phải gồm đúng các truyện đang chờ, mỗi truyện một lần; truyện đang mở không kéo thả được.", error.Message);
+        Assert.Equal("Danh sách phải gồm đúng các truyện đang chờ, chia theo chặng, mỗi truyện một lần; truyện đang mở không kéo thả được.", error.Message);
     }
 
     [Fact]
@@ -256,13 +256,13 @@ public class ChildRoadmapServiceBranchTests
         SeedRoadmap();
 
         await Assert.ThrowsAsync<BadRequestException>(() =>
-            _sut.ReorderAsync(Owner, Child, new ReorderRoadmapRequestDto { ItemIds = [1, 2, 3] }));
+            _sut.ReorderAsync(Owner, Child, new ReorderRoadmapRequestDto { Stages = [[1], [2], [3]] }));
     }
 
     [Fact]
     public async Task ReorderAsync_NullListOnEmptyQueue_ReturnsRoadmapUnchanged()
     {
-        var roadmap = await _sut.ReorderAsync(Owner, Child, new ReorderRoadmapRequestDto { ItemIds = null! });
+        var roadmap = await _sut.ReorderAsync(Owner, Child, new ReorderRoadmapRequestDto { Stages = null! });
 
         Assert.Empty(roadmap.Waiting);
         Assert.Equal(0, roadmap.TotalCount);
@@ -275,7 +275,7 @@ public class ChildRoadmapServiceBranchTests
         FailAudit();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            _sut.ReorderAsync(Owner, Child, new ReorderRoadmapRequestDto { ItemIds = [4, 3, 2] }));
+            _sut.ReorderAsync(Owner, Child, new ReorderRoadmapRequestDto { Stages = [[4], [3], [2]] }));
 
         _h.UnitOfWork.Verify(u => u.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
     }

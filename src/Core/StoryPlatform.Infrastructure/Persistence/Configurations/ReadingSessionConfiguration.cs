@@ -29,6 +29,10 @@ public class ReadingSessionConfiguration : IEntityTypeConfiguration<ReadingSessi
             .HasConversion<string>()
             .HasMaxLength(20);
 
+        builder.Property(x => x.ReadingMode)
+            .HasConversion<string>()
+            .HasMaxLength(20);
+
         builder.HasOne(x => x.ChildProfile)
             .WithMany()
             .HasForeignKey(x => x.ChildProfileId)

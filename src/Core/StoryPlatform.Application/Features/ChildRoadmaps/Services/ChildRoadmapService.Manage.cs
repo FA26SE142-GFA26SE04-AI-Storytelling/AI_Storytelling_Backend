@@ -27,10 +27,11 @@ public partial class ChildRoadmapService
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
+            await _unitOfWork.AcquireTransactionLockAsync(-childProfileId, cancellationToken);
             MarkRemoved(item, actorUserId, DateTime.UtcNow);
             repository.Update(item);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
-            await RenumberWaitingAsync(childProfileId, cancellationToken);
+            await RoadmapStages.RenumberWaitingAsync(_unitOfWork, childProfileId, cancellationToken);
 
             if (wasOpen)
             {
@@ -62,32 +63,42 @@ public partial class ChildRoadmapService
     {
         await _guard.EnsureOwnerAsync(childProfileId, actorUserId, cancellationToken);
         var repository = _unitOfWork.Repository<ChildRoadmapItem>();
-        var waiting = await repository.FindAsync(
-            item => item.ChildProfileId == childProfileId && item.Status == ChildRoadmapItemStatus.Waiting,
-            cancellationToken: cancellationToken);
-        var requested = request.ItemIds ?? new List<int>();
-        if (requested.Count != requested.Distinct().Count()
-            || requested.Count != waiting.Count
-            || !waiting.Select(item => item.Id).OrderBy(id => id).SequenceEqual(requested.OrderBy(id => id)))
-        {
-            throw new BadRequestException(
-                "Danh sách phải gồm đúng các truyện đang chờ, mỗi truyện một lần; truyện đang mở không kéo thả được.");
-        }
-
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
-            for (var index = 0; index < requested.Count; index++)
+            await _unitOfWork.AcquireTransactionLockAsync(-childProfileId, cancellationToken);
+            var live = await repository.FindAsync(
+                item => item.ChildProfileId == childProfileId
+                        && (item.Status == ChildRoadmapItemStatus.Waiting || item.Status == ChildRoadmapItemStatus.Open
+                            || item.Status == ChildRoadmapItemStatus.Completed),
+                cancellationToken: cancellationToken);
+            var waiting = live.Where(item => item.Status == ChildRoadmapItemStatus.Waiting).ToList();
+            var stages = request.Stages ?? new List<List<int>>();
+            var requested = stages.SelectMany(stage => stage ?? new List<int>()).ToList();
+            if (stages.Any(stage => stage == null || stage.Count == 0)
+                || requested.Count != requested.Distinct().Count()
+                || requested.Count != waiting.Count
+                || !waiting.Select(item => item.Id).OrderBy(id => id).SequenceEqual(requested.OrderBy(id => id)))
             {
-                var tracked = await repository.GetByIdAsync(requested[index], cancellationToken);
-                tracked!.Position = index + 1;
-                repository.Update(tracked);
+                throw new BadRequestException(
+                    "Danh sách phải gồm đúng các truyện đang chờ, chia theo chặng, mỗi truyện một lần; truyện đang mở không kéo thả được.");
+            }
+
+            var current = RoadmapStages.Current(live);
+            for (var index = 0; index < stages.Count; index++)
+            {
+                foreach (var id in stages[index])
+                {
+                    var tracked = await repository.GetByIdAsync(id, cancellationToken);
+                    tracked!.Position = current + index + 1;
+                    repository.Update(tracked);
+                }
             }
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _auditLogWriter.LogAsync(
                 actorUserId, "ChildRoadmapReordered", nameof(ChildProfile), childProfileId,
-                beforeState: null, afterState: new { order = requested }, cancellationToken: cancellationToken);
+                beforeState: null, afterState: new { stages }, cancellationToken: cancellationToken);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
         }
         catch
@@ -116,6 +127,7 @@ public partial class ChildRoadmapService
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
+            await _unitOfWork.AcquireTransactionLockAsync(-childProfileId, cancellationToken);
             var now = DateTime.UtcNow;
             foreach (var candidate in active)
             {
@@ -149,32 +161,5 @@ public partial class ChildRoadmapService
         item.Status = ChildRoadmapItemStatus.Removed;
         item.RemovedAt = now;
         item.RemovedByUserId = actorUserId;
-    }
-
-    private async Task RenumberWaitingAsync(int childProfileId, CancellationToken cancellationToken)
-    {
-        var repository = _unitOfWork.Repository<ChildRoadmapItem>();
-        var waiting = await repository.FindAsync(
-            item => item.ChildProfileId == childProfileId && item.Status == ChildRoadmapItemStatus.Waiting,
-            cancellationToken: cancellationToken);
-        var position = 1;
-        var changed = false;
-        foreach (var candidate in waiting.OrderBy(item => item.Position).ThenBy(item => item.Id))
-        {
-            if (candidate.Position != position)
-            {
-                var tracked = await repository.GetByIdAsync(candidate.Id, cancellationToken);
-                tracked!.Position = position;
-                repository.Update(tracked);
-                changed = true;
-            }
-
-            position += 1;
-        }
-
-        if (changed)
-        {
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
     }
 }

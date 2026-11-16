@@ -92,6 +92,11 @@ public partial class RoadmapLibraryService
             throw new BadRequestException("Vị trí phải là NextUp (đọc tiếp theo) hoặc End (thêm vào cuối).");
         }
 
+        if (request.Position == RoadmapInsertPosition.Stage)
+        {
+            throw new BadRequestException("Lộ trình mẫu chỉ thêm được vào Đọc tiếp theo hoặc Cuối lộ trình.");
+        }
+
         if (request.DaysPerStory.HasValue
             && (request.DaysPerStory.Value < ChildRoadmapPolicy.MinExpectedDays
                 || request.DaysPerStory.Value > ChildRoadmapPolicy.MaxExpectedDays))
@@ -208,6 +213,7 @@ public partial class RoadmapLibraryService
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
+            await _unitOfWork.AcquireTransactionLockAsync(-childId, cancellationToken);
             await _inserter.InsertAsync(new InsertRequest(
                 childId,
                 actorUserId,
@@ -215,7 +221,7 @@ public partial class RoadmapLibraryService
                 position,
                 ChildRoadmapItemSource.TemplateCopy,
                 context.Roadmap.Id,
-                MoveExistingToNextUp: false), cancellationToken);
+                MoveExisting: false), cancellationToken);
             await _advancer.AdvanceAsync(childId, cancellationToken);
             await _auditLogWriter.LogAsync(
                 actorUserId,

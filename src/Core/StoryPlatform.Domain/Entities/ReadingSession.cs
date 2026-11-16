@@ -39,4 +39,7 @@ public class ReadingSession : BaseEntity
 
     /// <summary>Cảm nhận trẻ chọn sau khi đọc xong; null = chưa chọn. Chỉ ghi lại, không có phản hồi.</summary>
     public StoryFeeling? Feeling { get; set; }
+
+    /// <summary>Chế độ đọc trẻ dùng trong phiên này (lần lưu tiến độ gần nhất có gửi chế độ); null với phiên cũ.</summary>
+    public ReadingMode? ReadingMode { get; set; }
 }

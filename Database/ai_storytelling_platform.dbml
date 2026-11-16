@@ -765,7 +765,6 @@ Table child_roadmap_items {
   UpdatedAt timestamptz
   Indexes {
     AddedByUserId
-    ChildProfileId [unique, note: '"Status" = \'Open\' AND NOT "IsDeleted"']
     RemovedByUserId
     SourceReadingRoadmapId
     StoryId

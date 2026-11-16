@@ -1,4 +1,4 @@
--- 47. child_roadmap_items (7): one open step per child; no duplicate unfinished story per child.
+-- 47. child_roadmap_items (7): Position = số chặng (mỗi bước ở đây là một chặng riêng); no duplicate unfinished story per child.
 -- Child 1 (Be An): one completed step, one open step, two waiting steps (one copied from roadmap template 5).
 -- Child 3 (Be Chi): one open step copied from roadmap template 5.
 -- Child 6 (Be Phuc): one skipped step (story unavailable) and one removed step.

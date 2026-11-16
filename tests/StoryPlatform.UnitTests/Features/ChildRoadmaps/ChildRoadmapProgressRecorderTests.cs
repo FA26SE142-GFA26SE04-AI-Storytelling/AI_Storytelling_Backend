@@ -64,6 +64,29 @@ public class ChildRoadmapProgressRecorderTests
     }
 
     [Fact]
+    public async Task CompletedSession_TakesPerChildTransactionLock()
+    {
+        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Open);
+        Session(10);
+
+        await _sut.RecordSessionCompletedAsync(1, false);
+
+        _h.UnitOfWork.Verify(x => x.AcquireTransactionLockAsync(-Child, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CompletedSession_StepDeletedAfterLock_ReturnsNullWithoutRollingBackCallerTransaction()
+    {
+        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Open).IsDeleted = true;
+        Session(10);
+
+        Assert.Null(await _sut.RecordSessionCompletedAsync(1, false));
+
+        _h.UnitOfWork.Verify(x => x.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _h.UnitOfWork.Verify(x => x.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task OutOfTurnStory_CompletesWaitingStepWithoutChangingOpenStep()
     {
         _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Open);
@@ -74,6 +97,33 @@ public class ChildRoadmapProgressRecorderTests
 
         Assert.Equal(ChildRoadmapItemStatus.Open, Item(1).Status);
         Assert.Equal(ChildRoadmapItemStatus.Completed, Item(2).Status);
+    }
+
+    [Fact]
+    public async Task StageWithTwoStories_NextStageOpensOnlyAfterBoth()
+    {
+        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Open, position: 1);
+        _h.AddItem(2, Child, 11, ChildRoadmapItemStatus.Open, position: 1);
+        _h.AddItem(3, Child, 12, ChildRoadmapItemStatus.Waiting, position: 2);
+        Session(10);
+
+        await _sut.RecordSessionCompletedAsync(1, false);
+
+        Assert.Equal(ChildRoadmapItemStatus.Waiting, Item(3).Status);
+    }
+
+    [Fact]
+    public async Task OutOfTurnStory_JoinsTheCurrentStageAndLaterStagesCloseUp()
+    {
+        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Open, position: 1);
+        _h.AddItem(2, Child, 12, ChildRoadmapItemStatus.Waiting, position: 2);
+        _h.AddItem(3, Child, 13, ChildRoadmapItemStatus.Waiting, position: 3);
+        Session(12);
+
+        await _sut.RecordSessionCompletedAsync(1, false);
+
+        Assert.Equal(1, Item(2).Position);
+        Assert.Equal(2, Item(3).Position);
     }
 
     [Fact]

@@ -11,7 +11,8 @@ public sealed record InsertRequest(
     RoadmapInsertPosition Position,
     ChildRoadmapItemSource Source,
     int? SourceReadingRoadmapId,
-    bool MoveExistingToNextUp);
+    bool MoveExisting,
+    int? StageNumber = null);
 
 public sealed record InsertedStep(int StoryId, int ItemId, bool Created, bool Moved);
 

@@ -42,6 +42,14 @@ public class SePayWebhookAuthenticatorTests
     }
 
     [Fact]
+    public void IsValid_ConfiguredKeyIsDeployPlaceholder_ReturnsFalse()
+    {
+        var authenticator = MakeAuthenticator("REPLACE_ME_POST_DEPLOY");
+
+        Assert.False(authenticator.IsValid("Apikey REPLACE_ME_POST_DEPLOY"));
+    }
+
+    [Fact]
     public void IsValid_HeaderWithoutApikeyPrefix_ReturnsFalse()
     {
         var authenticator = MakeAuthenticator("secret-123");

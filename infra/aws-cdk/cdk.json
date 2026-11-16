@@ -5,6 +5,9 @@
     "aiServiceBaseUrl": "https://taletale-ai-production-m63yiaft7q-as.a.run.app",
     "supabaseUrl": "https://kfkzwwzwxkwcpfabyhqy.supabase.co",
     "mediaWorkerEnabled": true,
-    "vertexProjectId": "gen-lang-client-0675088605"
+    "vertexProjectId": "gen-lang-client-0675088605",
+    "sepayBankAccountNumber": "34721112004",
+    "sepayBankCode": "TPBank",
+    "sepayAccountName": "DANG LE ANH TUAN"
   }
 }

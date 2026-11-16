@@ -212,9 +212,27 @@ public sealed class StoryPlatformCoreStack : Stack
             ["ConnectionStrings__DefaultConnection"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "DbConnectionString"),
             ["JwtSettings__SecretKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "JwtSecretKey"),
             ["ResendSettings__ApiKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "ResendApiKey"),
-            ["SePaySettings__ApiKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "SePayApiKey"),
+            // SePayOptions đọc WebhookApiKey: khoá SePay gửi kèm header Authorization của webhook.
+            ["SePaySettings__WebhookApiKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "SePayApiKey"),
             ["RedisSettings__ConnectionString"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "RedisConnectionString")
         };
+
+        // Tài khoản nhận tiền in trên mã QR SePay (không phải bí mật). Truyền bằng --context
+        // sepayBankAccountNumber / sepayBankCode / sepayAccountName (lưu trong cdk.json); thiếu thì QR không
+        // có số tài khoản.
+        foreach (var (contextKey, settingName) in new[]
+                 {
+                     ("sepayBankAccountNumber", "SePaySettings__BankAccountNumber"),
+                     ("sepayBankCode", "SePaySettings__BankCode"),
+                     ("sepayAccountName", "SePaySettings__AccountName")
+                 })
+        {
+            var value = (Node.TryGetContext(contextKey) as string)?.Trim();
+            if (!string.IsNullOrEmpty(value))
+            {
+                apiEnvironment[settingName] = value;
+            }
+        }
 
         // Core -> AI API trên Cloud Run (infra/google-cloud/README.md): cần URL canonical, khoá nội bộ và ID token
         // Google (Cloud Run IAM). Chỉ bật khi truyền --context aiServiceBaseUrl=https://... (lưu trong cdk.json sau

@@ -298,4 +298,48 @@ public sealed class ChildListeningContentTests
     public async Task SetListenOnly_OnAnotherChildsSession_IsNotFound() =>
         await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.NotFoundException>(() =>
             _sut.SetListenOnlyAsync(ReadingHarness.OtherChild, _session.Id, true));
+    private ListeningInteraction ReadAloudPractice()
+    {
+        var practice = Add(4, ListeningInteractionType.ReadAloud, 2, x =>
+        {
+            x.SourceQuote = "Bác Gấu dẫn Thỏ về tới cửa hang.";
+            x.MatchFeedback = "Con đọc to rõ lắm!";
+            x.NoMatchFeedback = null;
+        });
+        _h.AddListeningMedia(practice);
+        return practice;
+    }
+
+    [Fact]
+    public async Task ReadAloud_IsReturnedSeparately_AndDoesNotReplaceEventOrderingOnTheLastScene()
+    {
+        var ordering = Add(3, ListeningInteractionType.EventOrdering, 2);
+        Option(30, 3, 1, "Thỏ đi lạc", correctOrder: 1, sourceStart: 0);
+        Option(31, 3, 2, "Gấu giúp Thỏ", correctOrder: 2, sourceStart: 20);
+        Option(32, 3, 3, "Thỏ về nhà", correctOrder: 3, sourceStart: 40);
+        _h.AddListeningMedia(ordering);
+        ReadAloudPractice();
+
+        var content = await Content();
+
+        Assert.Equal("EventOrdering", content.Scenes[2].Interaction!.Type);
+        var practice = content.ReadAloudPractice!;
+        Assert.Equal(4, practice.InteractionId);
+        Assert.Equal("Bác Gấu dẫn Thỏ về tới cửa hang.", practice.Text);
+        Assert.Equal("listen-4-i-text.mp3", practice.AudioUrl);
+        Assert.Equal("Con đọc to rõ lắm!", practice.PraiseFeedback);
+        Assert.Equal("listen-4-i-match.mp3", practice.PraiseAudioUrl);
+    }
+
+    [Fact]
+    public async Task ReadAloud_WithoutPassageAudio_IsNotReturned()
+    {
+        ReadAloudPractice();
+        _h.Assets.Single(x => x.ListeningInteractionId == 4 && x.AudioPartKey == "text").Status = MediaStatus.ManualReview;
+
+        var content = await Content();
+
+        Assert.Null(content.ReadAloudPractice);
+        Assert.All(content.Scenes, scene => Assert.Null(scene.Interaction));
+    }
 }

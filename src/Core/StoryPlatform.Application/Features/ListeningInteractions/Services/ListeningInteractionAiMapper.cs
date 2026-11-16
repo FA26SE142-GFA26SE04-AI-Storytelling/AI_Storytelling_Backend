@@ -28,8 +28,8 @@ public static class ListeningInteractionAiMapper
         Blocks = blocks.Select(b => new ListeningBlockDto(b.BlockId, b.Text.TrimEnd())).ToArray(),
         LastBlockId = blocks.Count == 0 ? string.Empty : blocks[^1].BlockId,
         OccupiedBlockIds = blocks.Where(b => occupiedAnchorOffsets.Contains(b.EndOffset)).Select(b => b.BlockId).ToArray(),
-        // Chỉ loại cần mới gửi: từ vựng cho FillBlank, đoạn có thoại cho RolePlay.
-        VocabularyTerms = type == ListeningInteractionType.FillBlank ? vocabularyTerms.ToArray() : [],
+        // Từ vựng gợi ý chọn câu cho FillBlank và ReadAloud, đoạn có thoại cho RolePlay.
+        VocabularyTerms = type is ListeningInteractionType.FillBlank or ListeningInteractionType.ReadAloud ? vocabularyTerms.ToArray() : [],
         DialogueBlockIds = type == ListeningInteractionType.RolePlay ? dialogueBlockIds.ToArray() : [],
         AllowedBlockIds = allowedBlockIds,
         PreviousErrors = previousErrors.Select(e => new ListeningPreviousErrorDto(e.Code, e.ItemIndex, e.Field)).ToArray()
@@ -92,6 +92,13 @@ public static class ListeningInteractionAiMapper
             {
                 Text = o.Label ?? string.Empty, ImageDescription = o.ImageDescription, Feedback = o.Feedback, IsMatch = o.IsMatch
             }).ToArray()
+        }).ToArray(),
+        ListeningInteractionType.ReadAloud => (response.ReadAloudPassages ?? []).Select(x => new ListeningInteractionDraft
+        {
+            Type = type,
+            SourceBlockId = x.BlockId,
+            SourceQuote = x.PassageQuote,
+            MatchFeedback = x.PraiseFeedback
         }).ToArray(),
         _ => []
     };

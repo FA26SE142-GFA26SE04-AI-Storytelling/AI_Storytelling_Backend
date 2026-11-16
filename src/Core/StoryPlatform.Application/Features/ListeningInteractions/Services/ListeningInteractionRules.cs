@@ -15,6 +15,13 @@ public static partial class ListeningInteractionRules
     public const int RolePlayMaxWords = 12;
     public const int FillBlankMaxWords = 15;
     public const int EventMaxWords = 10;
+    public const int ReadAloudMinWords = 5;
+
+    public static int ReadAloudMaxWords(AgeBand ageBand) => ageBand == AgeBand.Age_6_8 ? 15 : 25;
+
+    /// <summary>Loại đặt sau đoạn cuối, không chiếm chỗ dừng giữa truyện.</summary>
+    public static bool IsEndOfStory(ListeningInteractionType type) =>
+        type is ListeningInteractionType.EventOrdering or ListeningInteractionType.ReadAloud;
 
     public static IReadOnlyList<ListeningValidationError> Validate(
         IReadOnlyList<ListeningInteractionDraft> items, ListeningRuleContext context)
@@ -35,6 +42,7 @@ public static partial class ListeningInteractionRules
                 case ListeningInteractionType.FillBlank: ValidateFillBlankStructure(item, i, errors); break;
                 case ListeningInteractionType.EventOrdering: ValidateOrdering(item, i, errors); break;
                 case ListeningInteractionType.PicturePrediction: ValidatePicture(item, i, errors); break;
+                case ListeningInteractionType.ReadAloud: ValidateReadAloud(item, i, context, errors); break;
             }
             errors.AddRange(ValidateText(item, i, context));
         }
@@ -128,16 +136,29 @@ public static partial class ListeningInteractionRules
         if (item.AnchorOffset is not { } anchor) return; // mapper đã báo ANCHOR_INVALID
         var isBlockEnd = context.Blocks.Any(b => b.EndOffset == anchor);
         if (!isBlockEnd || !LastBlockRuleHolds(item, anchor, context.Blocks) ||
-            context.OccupiedAnchorOffsets.Contains(anchor) || !seen.Add(anchor))
+            (!IsEndOfStory(item.Type) && context.OccupiedAnchorOffsets.Contains(anchor)) || !seen.Add(anchor))
             errors.Add(new("ANCHOR_INVALID", index, "afterBlockId"));
         // Mỗi mục một lỗi neo: chỉ xét vùng khi neo đã hợp lệ theo luật chung.
         else if (index < context.Zones.Count && !context.Zones[index].Contains(item.AnchorBlockId))
             errors.Add(new("ANCHOR_OUT_OF_ZONE", index, "afterBlockId"));
     }
 
-    // Chỉ EventOrdering được, và phải, đặt sau đoạn cuối (trẻ đã nghe hết truyện).
+    // Sắp xếp và Luyện đọc to phải đặt sau đoạn cuối (trẻ đã nghe hết truyện).
     private static bool LastBlockRuleHolds(ListeningInteractionDraft item, int anchor, IReadOnlyList<StoryTextBlock> blocks) =>
-        (anchor == blocks[^1].EndOffset) == (item.Type == ListeningInteractionType.EventOrdering);
+        (anchor == blocks[^1].EndOffset) == IsEndOfStory(item.Type);
+
+    private static void ValidateReadAloud(ListeningInteractionDraft item, int index, ListeningRuleContext context,
+        List<ListeningValidationError> errors)
+    {
+        if (string.IsNullOrWhiteSpace(item.SourceQuote))
+        {
+            errors.Add(new("SCHEMA_INVALID", index, "passageQuote"));
+            return;
+        }
+        var words = CountWords(item.SourceQuote);
+        if (words < ReadAloudMinWords || words > ReadAloudMaxWords(context.AgeBand))
+            errors.Add(new("LENGTH_LIMIT", index, "passageQuote"));
+    }
 
     private static void ValidateCheckpoint(ListeningInteractionDraft item, int index, List<ListeningValidationError> errors)
     {
@@ -229,6 +250,7 @@ public static partial class ListeningInteractionRules
                 for (var j = 0; j < item.Options.Count; j++) yield return ($"options[{j}].feedback", item.Options[j].Feedback);
                 break;
             case ListeningInteractionType.RolePlay:
+            case ListeningInteractionType.ReadAloud:
                 yield return ("praiseFeedback", item.MatchFeedback);
                 break;
             case ListeningInteractionType.FillBlank:
@@ -263,9 +285,9 @@ public static partial class ListeningInteractionRules
         Forbid(item.RevealOffset is not null && t != ListeningInteractionType.PicturePrediction, "revealBlockId");
         Forbid(item.Explanation is not null && t != ListeningInteractionType.Checkpoint, "explanation");
         Forbid(item.MatchFeedback is not null && t is ListeningInteractionType.Checkpoint or ListeningInteractionType.PicturePrediction, "matchFeedback");
-        Forbid(item.NoMatchFeedback is not null && t is ListeningInteractionType.RolePlay or ListeningInteractionType.PicturePrediction, "noMatchFeedback");
+        Forbid(item.NoMatchFeedback is not null && t is ListeningInteractionType.RolePlay or ListeningInteractionType.PicturePrediction or ListeningInteractionType.ReadAloud, "noMatchFeedback");
         Forbid(item.WaitFeedback is not null && t != ListeningInteractionType.PicturePrediction, "waitFeedback");
-        Forbid(item.Options.Count > 0 && t == ListeningInteractionType.RolePlay, "options");
+        Forbid(item.Options.Count > 0 && t is ListeningInteractionType.RolePlay or ListeningInteractionType.ReadAloud, "options");
         Forbid(t == ListeningInteractionType.Checkpoint && item.Kind is null, "kind");
         Forbid(t is ListeningInteractionType.Checkpoint or ListeningInteractionType.PicturePrediction && string.IsNullOrWhiteSpace(item.Prompt), "question");
         for (var j = 0; j < item.Options.Count; j++)

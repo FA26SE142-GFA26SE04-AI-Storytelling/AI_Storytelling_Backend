@@ -243,7 +243,7 @@ public sealed class ContentGenerationServiceTests
     [Fact]
     public async Task Last_listening_type_cannot_complete_an_incomplete_package()
     {
-        var store = SeedListening(ListeningInteractionType.EventOrdering);
+        var store = SeedListening(ListeningInteractionType.ReadAloud);
         Assert.True(await Service(store, new FakeAIClient()).ProcessNextAsync());
         Assert.Equal("LISTENING_PACKAGE_INVALID", store.Items<StoryGenerationJob>().Single().ErrorCode);
         Assert.NotEqual(StoryStatus.ContentReview, store.Items<Story>().Single().Status);
@@ -477,7 +477,14 @@ public sealed class ContentGenerationServiceTests
         var store = Seed();
         var ai = new FakeAIClient(storyText: "Lan và Minh cùng chia sẻ một quyển sách.\n\nHai bạn đọc sách dưới gốc cây.")
         {
-            Listening = _ => new GenerateListeningInteractionResponse
+            Listening = request => request.InteractionType == "ReadAloud" ? new GenerateListeningInteractionResponse
+            {
+                ReadAloudPassages = [new()
+                {
+                    BlockId = "P2", PassageQuote = "Hai bạn đọc sách dưới gốc cây.",
+                    PraiseFeedback = "Con cố gắng đọc giỏi quá!"
+                }]
+            } : new GenerateListeningInteractionResponse
             {
                 Checkpoints =
                 [
@@ -506,10 +513,13 @@ public sealed class ContentGenerationServiceTests
         Assert.NotEqual(StoryStatus.ContentReview, story.Status);
 
         Assert.True(await service.ProcessNextAsync());
+        Assert.NotEqual(StoryStatus.ContentReview, story.Status);
+        Assert.Equal(ListeningInteractionType.ReadAloud, PendingJob(store).ListeningInteractionType);
+        Assert.True(await service.ProcessNextAsync());
         Assert.False(await service.ProcessNextAsync());
         Assert.Equal(StoryStatus.ContentReview, story.Status);
-        Assert.Equal(new[] { "content", "safety", "vocabulary", "quiz", "listening:Checkpoint" }, ai.Calls);
-        Assert.Single(store.Items<ListeningInteraction>());
+        Assert.Equal(new[] { "content", "safety", "vocabulary", "quiz", "listening:Checkpoint", "listening:ReadAloud" }, ai.Calls);
+        Assert.Equal(2, store.Items<ListeningInteraction>().Count);
         Assert.Equal(4, store.Items<ListeningInteractionOption>().Count);
     }
 
@@ -520,30 +530,30 @@ public sealed class ContentGenerationServiceTests
         var ai = new FakeAIClient();
         var service = Service(store, ai);
 
-        for (var i = 0; i < 4; i++) Assert.True(await service.ProcessNextAsync());
+        for (var i = 0; i < 5; i++) Assert.True(await service.ProcessNextAsync());
         Assert.False(await service.ProcessNextAsync());
 
-        Assert.Equal(new[] { "listening:Checkpoint", "listening:RolePlay", "listening:PicturePrediction", "listening:EventOrdering" }, ai.Calls);
-        Assert.Equal(new[] { "", "P1,P3", "P1,P2,P3", "P1,P2,P3,P4" },
+        Assert.Equal(new[] { "listening:Checkpoint", "listening:RolePlay", "listening:PicturePrediction", "listening:EventOrdering", "listening:ReadAloud" }, ai.Calls);
+        Assert.Equal(new[] { "", "P1,P3", "P1,P2,P3", "P1,P2,P3,P4", "P1,P2,P3,P4,P6" },
             ai.ListeningRequests.Select(r => string.Join(",", r.OccupiedBlockIds)));
         Assert.Equal(["P2"], ai.ListeningRequests[1].DialogueBlockIds);
         Assert.Empty(ai.ListeningRequests[0].DialogueBlockIds);
         // Vùng theo spec mục 4.1 cho truyện 6 đoạn: P1 | P2 | P3 | P4-P5; RolePlay lấy vùng có thoại (P2).
-        Assert.Equal(new[] { "P1|P3", "P2", "P4,P5", "" },
+        Assert.Equal(new[] { "P1|P3", "P2", "P4,P5", "", "" },
             ai.ListeningRequests.Select(r => string.Join("|", r.AllowedBlockIds.Select(z => string.Join(",", z)))));
-        Assert.Equal(new[] { 2, 1, 1, 1 }, ai.ListeningRequests.Select(r => r.Count));
+        Assert.Equal(new[] { 2, 1, 1, 1, 1 }, ai.ListeningRequests.Select(r => r.Count));
         Assert.All(ai.ListeningRequests, r => Assert.EndsWith("-attempt-1", r.RequestId));
 
         var saved = store.Items<ListeningInteraction>();
-        Assert.Equal(5, saved.Count);
+        Assert.Equal(6, saved.Count);
         var ordering = saved.Single(x => x.Type == ListeningInteractionType.EventOrdering);
         Assert.Equal(ListeningTestStory.Content.Length, ordering.AnchorOffset); // sau đoạn cuối
         Assert.Equal(3, store.Items<ListeningInteractionOption>().Count(o => o.ListeningInteractionId == ordering.Id));
 
         var jobs = store.Items<StoryGenerationJob>().Where(x => x.Operation == GenerationJobOperation.GenerateListeningInteraction).ToArray();
-        Assert.Equal(4, jobs.Length);
+        Assert.Equal(5, jobs.Length);
         Assert.All(jobs, x => Assert.Equal(GenerationJobStatus.Completed, x.Status));
-        Assert.Equal(4, jobs.Select(x => x.OperationKey).Distinct().Count());
+        Assert.Equal(5, jobs.Select(x => x.OperationKey).Distinct().Count());
         Assert.Equal(StoryStatus.ContentReview, store.Items<Story>().Single().Status);
     }
 
@@ -669,7 +679,7 @@ public sealed class ContentGenerationServiceTests
         Assert.Equal("pending_listening", midway.CurrentStep);
         Assert.Equal("pending", midway.Listening);
 
-        for (var i = 0; i < 3; i++) Assert.True(await service.ProcessNextAsync());
+        for (var i = 0; i < 4; i++) Assert.True(await service.ProcessNextAsync());
         var done = await service.GetProgressAsync(1, 1);
         Assert.True(done.IsComplete);
         Assert.Equal("complete", done.CurrentStep);

@@ -9,7 +9,7 @@ namespace StoryPlatform.Application.Features.ListeningInteractions.Models;
 
 public sealed record ListeningPlanItem(ListeningInteractionType Type, int Count)
 {
-    /// <summary>Zones[i] = các đoạn mục thứ i được phép neo vào. EventOrdering không có vùng (luôn sau đoạn cuối).</summary>
+    /// <summary>Zones[i] = các đoạn mục thứ i được phép neo vào. EventOrdering và ReadAloud không có vùng (luôn sau đoạn cuối).</summary>
     public IReadOnlyList<IReadOnlyList<string>> Zones { get; init; } = [];
 }
 
@@ -50,6 +50,8 @@ public sealed record ListeningInteractionDraft
     public string? SourceQuote { get; init; }
     public int? SourceStart { get; init; }
     public int? SourceEnd { get; init; }
+    /// <summary>ReadAloud: block containing the passage, used to resolve its offsets.</summary>
+    public string? SourceBlockId { get; init; }
     public string? CharacterName { get; init; }
     public string? HiddenWord { get; init; }
     public string? Hint { get; init; }

@@ -48,6 +48,8 @@ public class ParentReadingFeedbackItemDto
     public decimal? QuizLatestPercent { get; set; }
     /// <summary>Kết quả luyện đọc thành tiếng trong phiên này; null nếu bé chưa đọc to.</summary>
     public ParentReadAloudSummaryDto? ReadAloud { get; set; }
+    /// <summary>Kết quả luyện đọc to sau truyện trong phiên này; null nếu bé chưa luyện.</summary>
+    public ParentReadAloudPracticeDto? ReadAloudPractice { get; set; }
     /// <summary>Tổng EXP bé nhận trong phiên này (đọc xong, câu đố, lưu từ).</summary>
     public int ExpEarned { get; set; }
     /// <summary>Từ bé lưu vào sổ lần đầu trong phiên này, theo thứ tự lưu.</summary>
@@ -120,6 +122,19 @@ public class ParentReadAloudSummaryDto
     public int TotalWords { get; set; }
     /// <summary>GoodWords / TotalWords (%).</summary>
     public decimal GoodPercent { get; set; }
+}
+
+public class ParentReadAloudPracticeDto
+{
+    /// <summary>Số lần bé đọc theo đoạn luyện trong phiên.</summary>
+    public int Attempts { get; set; }
+    /// <summary>Số chữ của đoạn luyện.</summary>
+    public int TotalWords { get; set; }
+    /// <summary>Số chữ đọc tốt ở lần gần nhất.</summary>
+    public int LatestGoodWords { get; set; }
+    public decimal LatestGoodPercent { get; set; }
+    /// <summary>Phần trăm chữ đọc tốt của lần tốt nhất.</summary>
+    public decimal BestGoodPercent { get; set; }
 }
 
 public class ParentCollectedWordDto

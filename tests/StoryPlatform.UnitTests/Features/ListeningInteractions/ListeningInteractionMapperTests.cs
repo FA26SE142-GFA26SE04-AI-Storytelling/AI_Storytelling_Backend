@@ -93,4 +93,21 @@ public sealed class ListeningInteractionMapperTests
         Assert.Equal(resolved with { Options = back.Options }, back);
         Assert.Equal(resolved.Options, back.Options);
     }
+    [Fact]
+    public void ReadAloud_IsPlacedAfterLastBlock_AndQuoteMustBeInItsSourceBlock()
+    {
+        var ok = new ListeningInteractionDraft { Type = ListeningInteractionType.ReadAloud, SourceBlockId = "P3",
+            SourceQuote = "Hóa ra đó là bác Gấu đến giúp Thỏ tìm đường về.", MatchFeedback = "Con đọc to rõ lắm!" };
+        var wrongBlock = ok with { SourceBlockId = "P4" };
+        var unknownBlock = ok with { SourceBlockId = "P9" };
+
+        var result = ListeningInteractionMapper.Resolve([ok, wrongBlock, unknownBlock], S.Content, S.Blocks);
+
+        Assert.Equal(S.Blocks[^1].BlockId, result.Items[0].AnchorBlockId);
+        Assert.Equal(S.Blocks[^1].EndOffset, result.Items[0].AnchorOffset);
+        Assert.Equal(ok.SourceQuote, S.Content[result.Items[0].SourceStart!.Value..result.Items[0].SourceEnd!.Value]);
+        Assert.Equal([new ListeningValidationError("QUOTE_NOT_FOUND", 1, "passageQuote"),
+            new ListeningValidationError("SOURCE_BLOCK_INVALID", 2, "blockId")], result.Errors);
+    }
+
 }

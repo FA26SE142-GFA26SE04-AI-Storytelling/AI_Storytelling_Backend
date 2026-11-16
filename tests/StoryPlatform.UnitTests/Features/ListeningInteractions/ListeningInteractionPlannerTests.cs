@@ -20,26 +20,28 @@ public sealed class ListeningInteractionPlannerTests
 
     [Theory]
     [InlineData(1, "")]
-    [InlineData(2, "Checkpointx1")]
-    [InlineData(3, "Checkpointx2,EventOrderingx1")]
-    [InlineData(4, "Checkpointx2,RolePlayx1,EventOrderingx1")]
-    [InlineData(5, "Checkpointx2,RolePlayx1,PicturePredictionx1,EventOrderingx1")]
-    [InlineData(9, "Checkpointx2,RolePlayx1,PicturePredictionx1,EventOrderingx1")]
+    [InlineData(2, "Checkpointx1,ReadAloudx1")]
+    [InlineData(3, "Checkpointx2,EventOrderingx1,ReadAloudx1")]
+    [InlineData(4, "Checkpointx2,RolePlayx1,EventOrderingx1,ReadAloudx1")]
+    [InlineData(5, "Checkpointx2,RolePlayx1,PicturePredictionx1,EventOrderingx1,ReadAloudx1")]
+    [InlineData(9, "Checkpointx2,RolePlayx1,PicturePredictionx1,EventOrderingx1,ReadAloudx1")]
     public void Age6To8_FollowsSpecTable(int blocks, string expected) =>
         Assert.Equal(expected, Describe(AgeBand.Age_6_8, blocks));
 
     [Theory]
-    [InlineData(3, "Checkpointx2,EventOrderingx1")]
-    [InlineData(4, "Checkpointx2,FillBlankx1,EventOrderingx1")]
-    [InlineData(5, "Checkpointx2,FillBlankx1,PicturePredictionx1,EventOrderingx1")]
-    [InlineData(6, "Checkpointx3,FillBlankx1,PicturePredictionx1,EventOrderingx1")]
-    [InlineData(12, "Checkpointx3,FillBlankx1,PicturePredictionx1,EventOrderingx1")]
+    [InlineData(1, "")]
+    [InlineData(2, "Checkpointx1,ReadAloudx1")]
+    [InlineData(3, "Checkpointx2,EventOrderingx1,ReadAloudx1")]
+    [InlineData(4, "Checkpointx2,FillBlankx1,EventOrderingx1,ReadAloudx1")]
+    [InlineData(5, "Checkpointx2,FillBlankx1,PicturePredictionx1,EventOrderingx1,ReadAloudx1")]
+    [InlineData(6, "Checkpointx3,FillBlankx1,PicturePredictionx1,EventOrderingx1,ReadAloudx1")]
+    [InlineData(12, "Checkpointx3,FillBlankx1,PicturePredictionx1,EventOrderingx1,ReadAloudx1")]
     public void Age9To10_FollowsSpecTable(int blocks, string expected) =>
         Assert.Equal(expected, Describe(AgeBand.Age_9_10, blocks));
 
     [Fact]
     public void Age6To8_WithoutDialogue_GivesRolePlaySlotToPicture() =>
-        Assert.Equal("Checkpointx2,PicturePredictionx1,EventOrderingx1", Describe(AgeBand.Age_6_8, 5, dialogue: false));
+        Assert.Equal("Checkpointx2,PicturePredictionx1,EventOrderingx1,ReadAloudx1", Describe(AgeBand.Age_6_8, 5, dialogue: false));
 
     [Fact]
     public void Plan_ReportsSlotsAndDialogueBlocks()
@@ -47,7 +49,7 @@ public sealed class ListeningInteractionPlannerTests
         var plan = ListeningInteractionPlanner.Create(AgeBand.Age_6_8, ListeningTestStory.Blocks);
         Assert.Equal(5, plan.Slots);
         Assert.Equal(["P2"], plan.DialogueBlockIds);
-        Assert.Equal([T.Checkpoint, T.RolePlay, T.PicturePrediction, T.EventOrdering], plan.Items.Select(x => x.Type));
+        Assert.Equal([T.Checkpoint, T.RolePlay, T.PicturePrediction, T.EventOrdering, T.ReadAloud], plan.Items.Select(x => x.Type));
     }
 
     private static string Zones(ListeningPlanItem item) => string.Join(" | ", item.Zones.Select(z => string.Join(",", z)));
@@ -105,7 +107,7 @@ public sealed class ListeningInteractionPlannerTests
     {
         for (var blocks = 2; blocks <= 20; blocks++)
         {
-            var middle = ListeningInteractionPlanner.Create(age, Story(blocks)).Items.Where(x => x.Type != T.EventOrdering).ToArray();
+            var middle = ListeningInteractionPlanner.Create(age, Story(blocks)).Items.Where(x => !ListeningInteractionRules.IsEndOfStory(x.Type)).ToArray();
             Assert.All(middle, x => Assert.Equal(x.Count, x.Zones.Count));
             var zones = middle.SelectMany(x => x.Zones).ToArray();
             Assert.All(zones, z => Assert.NotEmpty(z));
@@ -130,4 +132,17 @@ public sealed class ListeningInteractionPlannerTests
         var blocks = new StoryBlockParser().Parse(first + "\n\nKết thúc.");
         Assert.Equal(["P1"], ListeningInteractionPlanner.FindDialogueBlockIds(blocks));
     }
+    [Theory]
+    [InlineData(2)]
+    [InlineData(7)]
+    public void ReadAloud_HasNoZone_AndDoesNotTakeAMiddleSlot(int blocks)
+    {
+        var plan = ListeningInteractionPlanner.Create(AgeBand.Age_6_8, Story(blocks));
+        var readAloud = plan.Items[^1];
+        Assert.Equal(T.ReadAloud, readAloud.Type);
+        Assert.Empty(readAloud.Zones);
+        var middleZones = plan.Items.Where(x => !ListeningInteractionRules.IsEndOfStory(x.Type)).SelectMany(x => x.Zones).ToArray();
+        Assert.Equal(middleZones.Length, middleZones.Distinct().Count());
+    }
+
 }

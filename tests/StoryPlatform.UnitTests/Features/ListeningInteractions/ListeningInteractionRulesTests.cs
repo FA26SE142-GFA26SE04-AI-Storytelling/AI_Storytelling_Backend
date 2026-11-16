@@ -245,4 +245,66 @@ public sealed class ListeningInteractionRulesTests
         Assert.DoesNotContain(ListeningInteractionRules.Validate(Resolve(TwoCheckpoints()), S.Context(T.Checkpoint, 2)),
             e => e.Code == "NOT_GROUNDED");
     }
+    private static ListeningInteractionDraft ReadAloud(string block = "P6", string quote = "Từ đó Thỏ luôn nhờ người lớn khi bị lạc.") => new()
+    {
+        Type = T.ReadAloud, SourceBlockId = block, SourceQuote = quote, MatchFeedback = "Con đọc to rõ lắm, con cố gắng giỏi quá!"
+    };
+
+    [Fact]
+    public void ReadAloud_AfterLastBlock_PassesEvenWhenEventOrderingIsThere()
+    {
+        var context = S.Context(T.ReadAloud, 1) with { OccupiedAnchorOffsets = [S.Blocks[^1].EndOffset] };
+        Assert.Empty(ListeningInteractionRules.Validate(Resolve(ReadAloud()), context));
+    }
+
+    [Fact]
+    public void EventOrdering_IsNotBlockedByReadAloudOnTheLastBlock()
+    {
+        var drafts = ListeningInteractionMapper.Resolve(
+            ListeningInteractionAiMapper.ToDrafts(S.AiResponse(T.EventOrdering), T.EventOrdering), S.Content, S.Blocks).Items;
+        var context = S.Context(T.EventOrdering, 1) with { OccupiedAnchorOffsets = [S.Blocks[^1].EndOffset] };
+        Assert.Empty(ListeningInteractionRules.Validate(drafts, context));
+    }
+
+    [Fact]
+    public void ReadAloud_TooShortOrTooLongForAge_IsRejected()
+    {
+        Assert.Contains("LENGTH_LIMIT", Codes(Resolve(ReadAloud("P1", "Trời bắt đầu tối.")), S.Context(T.ReadAloud, 1)));
+        var sixteen = string.Join(' ', Enumerable.Repeat("Thỏ", 16)) + ".";
+        Assert.Contains("LENGTH_LIMIT", Codes(Resolve(ReadAloud("P6", sixteen)), S.Context(T.ReadAloud, 1, AgeBand.Age_6_8)));
+        Assert.DoesNotContain("LENGTH_LIMIT", Codes(Resolve(ReadAloud("P6", sixteen)), S.Context(T.ReadAloud, 1, AgeBand.Age_9_10)));
+    }
+
+    [Fact]
+    public void ReadAloud_MissingPraiseGradingWordOrForeignField_IsRejected()
+    {
+        Assert.Contains("FEEDBACK_MISSING", Codes(Resolve(ReadAloud() with { MatchFeedback = null }), S.Context(T.ReadAloud, 1)));
+        Assert.Contains("GRADING_WORD", Codes(Resolve(ReadAloud() with { MatchFeedback = "Con đọc sai rồi." }), S.Context(T.ReadAloud, 1)));
+        Assert.Contains("SCHEMA_INVALID", Codes(Resolve(ReadAloud() with { NoMatchFeedback = "Thử lại nhé." }), S.Context(T.ReadAloud, 1)));
+        Assert.Contains("SCHEMA_INVALID", Codes(Resolve(ReadAloud() with { Options = [new() { Text = "x" }] }), S.Context(T.ReadAloud, 1)));
+        Assert.Contains("SCHEMA_INVALID", Codes(Resolve(ReadAloud() with { SourceQuote = null }), S.Context(T.ReadAloud, 1)));
+    }
+
+    [Theory]
+    [InlineData(AgeBand.Age_6_8, 4, false)]
+    [InlineData(AgeBand.Age_6_8, 5, true)]
+    [InlineData(AgeBand.Age_6_8, 15, true)]
+    [InlineData(AgeBand.Age_6_8, 16, false)]
+    [InlineData(AgeBand.Age_9_10, 4, false)]
+    [InlineData(AgeBand.Age_9_10, 5, true)]
+    [InlineData(AgeBand.Age_9_10, 25, true)]
+    [InlineData(AgeBand.Age_9_10, 26, false)]
+    public void ReadAloud_AgeLimitsApplyToResolvedVerbatimPassages(AgeBand age, int words, bool valid)
+    {
+        var quote = string.Join(' ', Enumerable.Repeat("Thỏ", words)) + ".";
+        var content = quote + "\n\nThỏ về nhà.";
+        var blocks = new StoryPlatform.Application.Features.MediaGeneration.Services.StoryBlockParser().Parse(content);
+        var mapped = ListeningInteractionMapper.Resolve([ReadAloud("P1", quote)], content, blocks);
+        Assert.Empty(mapped.Errors);
+        var context = S.Context(T.ReadAloud, 1, age) with { Content = content, Blocks = blocks };
+        var errors = ListeningInteractionRules.Validate(mapped.Items, context);
+        if (valid) Assert.Empty(errors);
+        else Assert.Equal([new ListeningValidationError("LENGTH_LIMIT", 0, "passageQuote")], errors);
+    }
+
 }

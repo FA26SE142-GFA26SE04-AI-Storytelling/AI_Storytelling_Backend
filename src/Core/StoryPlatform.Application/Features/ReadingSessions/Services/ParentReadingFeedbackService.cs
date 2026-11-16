@@ -105,6 +105,7 @@ public partial class ParentReadingFeedbackService : IParentReadingFeedbackServic
                     : QuizRunCalculator.Percent(runs[^1].Correct, quizCount),
                 ConversationAnswers = conversation.GetValueOrDefault(session.Id) ?? new(),
                 ReadAloud = ReadingActivityTelemetry.ReadAloud(logs),
+                ReadAloudPractice = ReadingActivityTelemetry.ReadAloudPractice(logs),
                 ExpEarned = ReadingActivityTelemetry.Exp(logs),
                 WordsCollected = ReadingActivityTelemetry.CollectedVocabularyIds(logs)
                     .Where(terms.ContainsKey)

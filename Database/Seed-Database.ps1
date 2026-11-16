@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Script doc cac file Database/Seed/*.sql theo thu tu ten file, kiem tra moi
-    bang trong EF Core model snapshot deu co dung mot file seed, ghep tat ca
+    bang can seed trong EF Core model snapshot deu co dung mot file seed, ghep tat ca
     lenh vao mot transaction va thuc thi bang psql.
 
     Database dich phai duoc cap nhat bang cac EF Core migration hien co truoc
@@ -13,10 +13,11 @@
     Moi lan chay, script TRUNCATE toan bo cac bang co file seed (RESTART IDENTITY)
     truoc khi INSERT, nen database duoc dua ve dung du lieu mau ban dau. Moi du lieu
     tao them trong luc test se bi xoa. Bang __EFMigrationsHistory va cac bang do
-    AuthoringGuideCatalogSeeder nap khong bi dong toi.
+    AuthoringGuideCatalogSeeder nap khong bi dong toi. Bang data_protection_keys
+    chua khoa do ung dung tu sinh luc chay, khong seed va khong truncate.
 
     Moi file seed phai co ten "<thu-tu-2-chu-so>_<ten-bang>.sql" va cac so
-    phai lien tuc tu 01 den dung tong so bang trong EF Core model snapshot.
+    phai lien tuc tu 01 den dung tong so bang can seed trong EF Core model snapshot.
     Sau khi nap, identity sequence duoc reset tu chinh danh sach bang da seed,
     khong can duy tri mot danh sach bang viet tay.
 
@@ -181,15 +182,18 @@ function Assert-EfModelSeedCoverage {
         throw "Khong tim thay EF model snapshot de kiem tra coverage: $SnapshotPath"
     }
 
-    # Hai bang nay duoc AuthoringGuideCatalogSeeder nap luc ung dung khoi dong (JSON nhung),
+    # Cac bang nay duoc AuthoringGuideCatalogSeeder nap luc ung dung khoi dong (JSON nhung),
     # khong qua file seed SQL. Giu dong bo voi SeedDataAlignmentTests.seededByCode.
     $seededByCode = @('authoring_guide_catalog_versions', 'authoring_guide_catalogs',
         'authoring_guide_items', 'authoring_guide_placeholders')
+    # Khoa Data Protection do ung dung tu sinh; khong dua khoa vao file seed SQL.
+    # Giu dong bo voi SeedDataAlignmentTests.generatedAtRuntime.
+    $generatedAtRuntime = @('data_protection_keys')
 
     $snapshot = [System.IO.File]::ReadAllText($SnapshotPath)
     $mappedTables = @([regex]::Matches($snapshot, '\.ToTable\("(?<table>[a-z][a-z0-9_]*)"') |
         ForEach-Object { $_.Groups['table'].Value } |
-        Where-Object { $_ -notin $seededByCode } |
+        Where-Object { $_ -notin $seededByCode -and $_ -notin $generatedAtRuntime } |
         Sort-Object -Unique)
 
     if ($mappedTables.Count -eq 0) {

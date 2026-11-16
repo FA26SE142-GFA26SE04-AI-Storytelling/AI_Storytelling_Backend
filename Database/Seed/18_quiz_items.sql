@@ -1,4 +1,4 @@
--- 18. quiz_items (19: 16 + 3 của truyện 900 cho tương tác lúc nghe)
+-- 18. quiz_items (20: 16 + 3 của truyện 900 cho tương tác lúc nghe + 1 câu thứ hai của phiên bản 1)
 INSERT INTO quiz_items ("Id", "StoryVersionId", "Type", "Question", "Choices", "CorrectAnswer", "CreatedAt", "IsDeleted")
 VALUES
     (1, 1, 'MultipleChoice', 'Nhân vật chính trong câu chuyện là ai?', '["Chú Thỏ","Chú Ruồi","Chú Rùa"]', 'Chú Thỏ', NOW() - INTERVAL '30 days', false),
@@ -25,4 +25,11 @@ VALUES
     (900, 900, 'MultipleChoice', 'Ai giúp Thỏ tìm đường về?', '["Bác Gấu","Mẹ Thỏ"]', 'Bác Gấu', NOW() - INTERVAL '1 day', false),
     (901, 900, 'TrueFalse', 'Thỏ bị lạc trong rừng.', '["Đúng","Sai"]', 'Đúng', NOW() - INTERVAL '1 day', false),
     (902, 900, 'ShortAnswer', 'Khi bị lạc, Thỏ học được điều gì?', NULL, 'Nhờ người lớn', NOW() - INTERVAL '1 day', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- Câu thứ hai của phiên bản 1 (truyện 1) để kết quả đọc phía phụ huynh có nhiều lần làm quiz
+-- (xem 24_reading_sessions.sql, phiên 101–104 của bé 1).
+INSERT INTO quiz_items ("Id", "StoryVersionId", "Type", "Question", "Choices", "CorrectAnswer", "CreatedAt", "IsDeleted")
+VALUES
+    (101, 1, 'TrueFalse', 'Chú Thỏ sống trong khu rừng.', '["Dung","Sai"]', 'Dung', NOW(), false)
 ON CONFLICT ("Id") DO NOTHING;

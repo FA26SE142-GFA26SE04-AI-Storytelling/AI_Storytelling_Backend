@@ -22,6 +22,10 @@ public static class ListeningAudioParts
 
         switch (interaction.Type)
         {
+            case ListeningInteractionType.ReadAloud:
+                Add(null, Text, interaction.SourceQuote);
+                Add(null, Match, interaction.MatchFeedback);
+                break;
             case ListeningInteractionType.Checkpoint:
                 Add(null, Prompt, interaction.Prompt);
                 Add(null, NoMatch, interaction.NoMatchFeedback);
@@ -43,8 +47,8 @@ public static class ListeningAudioParts
                 Add(null, Wait, interaction.WaitFeedback);
                 break;
         }
-        // RolePlay dùng audio segment; đáp án FillBlank không cần đọc riêng.
-        if (interaction.Type is ListeningInteractionType.RolePlay or ListeningInteractionType.FillBlank) return parts;
+        // RolePlay dùng audio segment; đáp án FillBlank không cần đọc riêng; ReadAloud không có option.
+        if (interaction.Type is ListeningInteractionType.RolePlay or ListeningInteractionType.FillBlank or ListeningInteractionType.ReadAloud) return parts;
 
         var readsFeedback = interaction.Type is ListeningInteractionType.Checkpoint or ListeningInteractionType.PicturePrediction;
         foreach (var option in options.Where(x => x.ListeningInteractionId == interaction.Id && !x.IsDeleted)

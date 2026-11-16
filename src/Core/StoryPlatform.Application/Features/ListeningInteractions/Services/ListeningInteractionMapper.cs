@@ -22,8 +22,8 @@ public static class ListeningInteractionMapper
         for (var i = 0; i < items.Count; i++)
         {
             var item = items[i];
-            // Sắp xếp luôn đặt sau đoạn cuối: backend tự gán, AI không chọn chỗ.
-            if (item.Type == ListeningInteractionType.EventOrdering) item = item with { AnchorBlockId = blocks[^1].BlockId };
+            // Backend tự đặt tương tác cuối truyện, AI chỉ chọn đoạn chứa câu trích.
+            if (ListeningInteractionRules.IsEndOfStory(item.Type)) item = item with { AnchorBlockId = blocks[^1].BlockId };
             if (!byId.TryGetValue(item.AnchorBlockId, out var anchor))
             {
                 errors.Add(new("ANCHOR_INVALID", i, "afterBlockId"));
@@ -52,6 +52,13 @@ public static class ListeningInteractionMapper
                     break;
                 case ListeningInteractionType.EventOrdering:
                     item = item with { Options = item.Options.Select((option, j) => LocateEvent(option, i, j, byId, errors)).ToArray() };
+                    break;
+                case ListeningInteractionType.ReadAloud:
+                    if (item.SourceBlockId is null || !byId.TryGetValue(item.SourceBlockId, out var source))
+                        errors.Add(new("SOURCE_BLOCK_INVALID", i, "blockId"));
+                    else if (LocateIn(source, item.SourceQuote) is { } passage)
+                        item = item with { SourceStart = passage.Start, SourceEnd = passage.End };
+                    else errors.Add(new("QUOTE_NOT_FOUND", i, "passageQuote"));
                     break;
             }
             resolved.Add(item);

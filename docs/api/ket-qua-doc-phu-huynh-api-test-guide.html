@@ -124,13 +124,13 @@
       <div class="box">
         <h3>Dữ liệu thật trong Database/Seed (nạp bằng Seed-Database.ps1)</h3>
         <ul>
-          <li><b>Trước hết:</b> áp migration <span class="code">AddReadingSessionReadingMode</span> (thêm cột <span class="code">reading_sessions.ReadingMode</span>), rồi chạy <span class="code">Database/Seed-Database.ps1</span>, rồi chạy <b>Task 0</b> (SQL nạp dữ liệu đọc phong phú cho Bé An).</li>
+          <li><b>Trước hết:</b> áp migration <span class="code">AddReadingSessionReadingMode</span> (thêm cột <span class="code">reading_sessions.ReadingMode</span>), rồi chạy <span class="code">Database/Seed-Database.ps1</span>. Không cần nạp SQL thêm: dữ liệu đọc của Bé An đã nằm trong seed, <b>Task 0</b> chỉ kiểm tra lại.</li>
           <li><b>Mật khẩu mọi tài khoản demo: Demo@123.</b> Đăng nhập bằng <span class="code">POST /api/v1/Auth/login</span> với <span class="code">{ "identifier": "parent_demo1", "password": "Demo@123" }</span>.</li>
           <li>Tài khoản: <b>parent_demo1</b> (User, Id 2) là chủ hồ sơ <b>1 = Bé An</b> và <b>2 = Bé Bình</b>; <b>parent_demo2</b> (User, Id 3) là chủ hồ sơ 3 và 4 — dùng để thử "không phải chủ hồ sơ"; <b>moderator_demo1</b> (Moderator) dùng thử sai role; token bé 1 lấy bằng <span class="code">POST /api/v1/ChildAccessCredential/easylogin/login</span> với <span class="code">{ "secret": "demo-qr-child-01" }</span>.</li>
-          <li>Seed gốc của Bé An (hồ sơ 1): phiên <b>1</b> (truyện 1 "Chú Thỏ Thông Minh - Bản 1", phiên bản 1, Completed, 10 trang, 600 giây, quiz câu 1 đúng), phiên <b>11</b> (truyện 21 "Cá heo tốt bụng", phiên bản 26, Completed, 360 giây), phiên <b>13</b> (truyện 16 "Chú mèo biết lắng nghe", phiên bản 21, Completed, 300 giây). Bé Bình (hồ sơ 2): phiên <b>2</b> (truyện 1, Reading, 3 trang, 200 giây). Seed có sẵn bản kể lại <b>1</b> gắn phiên 1 (không ghi âm, 1 cảnh đánh dấu: cảnh 1). Phiên bản 1 có 1 scene; phiên bản 21 và 26 <b>không có scene</b> (totalPages = 0). Từ vựng 1 = "thông minh", 2 = "dũng cảm".</li>
-          <li>Task 0 thêm: câu quiz <b>101</b> (phiên bản 1, TrueFalse); phiên <b>101</b> (Completed, 5 ngày trước, 540 giây, VeryLike, ListenFirst), <b>102</b> (Completed, 30 giờ trước, 420 giây, Like, ReadFirst), <b>103</b> (Reading, mở 12 ngày trước, 30 giây), <b>104</b> (Reading, mở 1 ngày trước, truyện 16, 120 giây); các lần trả lời quiz 101–104; telemetry đọc to / EXP / từ vựng của phiên 101 và 102; bản kể lại <b>101</b> (có ghi âm, 1 cảnh).</li>
+          <li>Seed của Bé An (hồ sơ 1): phiên <b>1</b> (truyện 1 "Chú Thỏ Thông Minh - Bản 1", phiên bản 1, Completed, 10 trang, 600 giây, quiz câu 1 đúng), phiên <b>11</b> (truyện 21 "Cá heo tốt bụng", phiên bản 26, Completed, 360 giây), phiên <b>13</b> (truyện 16 "Chú mèo biết lắng nghe", phiên bản 21, Completed, 300 giây). Bé Bình (hồ sơ 2): phiên <b>2</b> (truyện 1, Reading, 3 trang, 200 giây). Seed có sẵn bản kể lại <b>1</b> gắn phiên 1 (không ghi âm, 1 cảnh đánh dấu: cảnh 1). Phiên bản 1 có 1 scene; phiên bản 21 và 26 <b>không có scene</b> (totalPages = 0). Từ vựng 1 = "thông minh", 2 = "dũng cảm".</li>
+          <li>Seed còn có cho Bé An (các dòng Id từ 101): câu quiz <b>101</b> (phiên bản 1, TrueFalse); phiên <b>101</b> (Completed, 5 ngày trước, 540 giây, VeryLike, ListenFirst), <b>102</b> (Completed, 30 giờ trước, 420 giây, Like, ReadFirst), <b>103</b> (Reading, mở 12 ngày trước, 30 giây), <b>104</b> (Reading, mở 1 ngày trước, truyện 16, 120 giây); các lần trả lời quiz 101–104; telemetry đọc to / EXP / từ vựng của phiên 101 và 102; bản kể lại <b>101</b> (không ghi âm, 1 cảnh). Bản kể lại trong seed đều không ghi âm vì API ParentStorySummary phải ký link cho file ghi âm, file không có thật sẽ làm API đó lỗi.</li>
           <li>Phần tính theo <b>ngày giờ hiện tại</b> (seed dùng <span class="code">NOW()</span>): các giá trị động <span class="code">&lt;FROM_7D&gt;</span>, <span class="code">&lt;TO_PLUS_1D&gt;</span>, <span class="code">&lt;COMPLETED_AT_101&gt;</span> ở khung dưới phải nhập lại theo ngày bạn chạy test (có câu SQL lấy sẵn ở mục mô tả từng giá trị).</li>
-          <li><b>Lưu ý:</b> test làm đổi dữ liệu (các test "SQL" sửa phiên / telemetry / bản kể lại). Mỗi Task bắt đầu từ DB vừa seed + Task 0; chạy theo thứ tự trên trang. Test có nhãn "(SQL)" cần hoàn tác bằng câu SQL kèm theo trước khi sang test kế tiếp.</li>
+          <li><b>Lưu ý:</b> test làm đổi dữ liệu (các test "SQL" sửa phiên / telemetry / bản kể lại). Mỗi Task bắt đầu từ DB vừa seed; chạy theo thứ tự trên trang. Test có nhãn "(SQL)" cần hoàn tác bằng câu SQL kèm theo trước khi sang test kế tiếp.</li>
         </ul>
       </div>
       <div class="note">Nguồn: plan <span class="code">docs/superpowers/plans/2026-11-15-parent-reading-results-gaps.md</span> (8 Task). Task 1: lọc ngày / chưa đọc xong · Task 2: đọc lại · Task 3: chi tiết câu đố · Task 4: đọc to · Task 5: EXP + từ vựng · Task 6: chế độ đọc · Task 7: gắn bản kể lại · Task 8: tổng quan. Mục có nhãn SQL là kiểm tra / nạp dữ liệu trực tiếp trên database, không gọi API.</div>
@@ -186,81 +186,45 @@ const row101 = {
   readAloud: { attempts: 3, segmentsPracticed: 2, goodWords: 16, retryWords: 3, totalWords: 20, goodPercent: 80 },
   expEarned: 25,
   wordsCollected: [{ vocabularyId: 2, term: "dũng cảm" }, { vocabularyId: 1, term: "thông minh" }],
-  retell: { summaryId: 101, createdAt: "2026-11-10T10:19:00Z", hasRecording: true, flagCount: 1 }
+  retell: { summaryId: 101, createdAt: "2026-11-10T10:19:00Z", hasRecording: false, flagCount: 1 }
 };
 const paged = (items, total, idx = 1, size = 20) => ({
   items, pageIndex: idx, pageSize: size, totalCount: total, totalPages: Math.ceil(total / size),
   hasPreviousPage: idx > 1, hasNextPage: idx < Math.ceil(total / size)
 });
 
-// ---------- SQL dùng nhiều lần ----------
-const SQL_FIXTURE_QUIZ = `INSERT INTO quiz_items ("Id","StoryVersionId","Type","Question","Choices","CorrectAnswer","CreatedAt","IsDeleted")
-VALUES (101,1,'TrueFalse','Chú Thỏ sống trong khu rừng.','["Dung","Sai"]','Dung',NOW(),false)
-ON CONFLICT ("Id") DO NOTHING;`;
-const SQL_FIXTURE_SESSIONS = `INSERT INTO reading_sessions ("Id","ChildProfileId","StoryId","StoryVersionId","ChildAccessCredentialId","SupervisorSessionId","StartedAt","CompletedAt","Status","PagesCompleted","TimeSpentSeconds","ForceExitRequestedAt","CreatedAt","IsDeleted","Feeling","ReadingMode")
-VALUES
- (101,1,1,1,1,NULL,NOW()-INTERVAL '5 days',NOW()-INTERVAL '5 days'+INTERVAL '9 minutes','Completed',1,540,NULL,NOW()-INTERVAL '5 days',false,'VeryLike','ListenFirst'),
- (102,1,1,1,1,NULL,NOW()-INTERVAL '31 hours',NOW()-INTERVAL '30 hours','Completed',1,420,NULL,NOW()-INTERVAL '31 hours',false,'Like','ReadFirst'),
- (103,1,1,1,1,NULL,NOW()-INTERVAL '12 days',NULL,'Reading',1,30,NULL,NOW()-INTERVAL '12 days',false,NULL,NULL),
- (104,1,16,21,1,NULL,NOW()-INTERVAL '1 day',NULL,'Reading',0,120,NULL,NOW()-INTERVAL '1 day',false,NULL,NULL)
-ON CONFLICT ("Id") DO NOTHING;`;
-const SQL_FIXTURE_ATTEMPTS = `INSERT INTO quiz_attempts ("Id","QuizItemId","ReadingSessionId","AnswerGiven","IsCorrect","AnsweredAt","CreatedAt","IsDeleted")
-VALUES
- (101,1,101,'Chú Rùa',false,NOW()-INTERVAL '5 days',NOW()-INTERVAL '5 days',false),
- (102,101,101,'Dung',true,NOW()-INTERVAL '5 days'+INTERVAL '1 minute',NOW()-INTERVAL '5 days',false),
- (103,1,102,'Chú Thỏ',true,NOW()-INTERVAL '30 hours',NOW()-INTERVAL '30 hours',false),
- (104,101,102,'Dung',true,NOW()-INTERVAL '30 hours'+INTERVAL '1 minute',NOW()-INTERVAL '30 hours',false)
-ON CONFLICT ("Id") DO NOTHING;`;
-const SQL_FIXTURE_TELEMETRY = `INSERT INTO telemetry_logs ("Id","ReadingSessionId","EventType","EventPayload","OccurredAt","CreatedAt","IsDeleted")
-VALUES
- (101,101,'AsrWordResult','{"segmentId":1,"total":10,"good":4,"retry":5,"skipped":1}',NOW()-INTERVAL '5 days'+INTERVAL '1 minute',NOW(),false),
- (102,101,'AsrWordResult','{"segmentId":1,"total":10,"good":9,"retry":1,"skipped":0}',NOW()-INTERVAL '5 days'+INTERVAL '2 minutes',NOW(),false),
- (103,101,'AsrWordResult','{"segmentId":2,"total":10,"good":7,"retry":2,"skipped":1}',NOW()-INTERVAL '5 days'+INTERVAL '3 minutes',NOW(),false),
- (104,101,'AsrWordResult','khong phai json',NOW()-INTERVAL '5 days'+INTERVAL '4 minutes',NOW(),false),
- (105,101,'RewardGranted','{"exp":20,"reason":"StoryCompleted"}',NOW()-INTERVAL '5 days'+INTERVAL '5 minutes',NOW(),false),
- (106,101,'RewardGranted','{"exp":5,"reason":"QuizAnswer"}',NOW()-INTERVAL '5 days'+INTERVAL '6 minutes',NOW(),false),
- (107,101,'VocabularyCollected','{"vocabularyId":2}',NOW()-INTERVAL '5 days'+INTERVAL '7 minutes',NOW(),false),
- (108,101,'VocabularyCollected','{"vocabularyId":1}',NOW()-INTERVAL '5 days'+INTERVAL '8 minutes',NOW(),false),
- (109,102,'RewardGranted','{"exp":10,"reason":"StoryCompleted"}',NOW()-INTERVAL '30 hours',NOW(),false)
-ON CONFLICT ("Id") DO NOTHING;`;
-const SQL_FIXTURE_SUMMARY = `INSERT INTO story_summaries ("Id","ReadingSessionId","ChildProfileId","StoryId","StoryVersionId","AudioStoragePath","AudioContentType","AudioBytes","RecordingSentAt","FlagsSentAt","CreatedAt","IsDeleted")
-VALUES (101,101,1,1,1,'summaries/demo-101.webm','audio/webm',1024,NOW()-INTERVAL '5 days',NOW()-INTERVAL '5 days',NOW()-INTERVAL '5 days'+INTERVAL '10 minutes',false)
-ON CONFLICT ("Id") DO NOTHING;
-INSERT INTO story_summary_flags ("Id","StorySummaryId","StorySceneId","CreatedAt","IsDeleted")
-VALUES (101,101,1,NOW(),false)
-ON CONFLICT ("Id") DO NOTHING;`;
-
 // Mỗi bước (Task) = một section. Mỗi API = một khối gập/mở.
 // Test case: [loại, tình huống, kết quả mong đợi, dữ liệu?, body?]
 const STEPS = [
 // =====================================================================
 {
-  id: "t0", title: "Task 0 — Chuẩn bị dữ liệu đọc cho Bé An",
-  desc: "Seed gốc chỉ có 3 phiên đọc xong của Bé An và 1 phiên của Bé Bình, chưa có cảm nhận, chế độ đọc, đọc to, EXP, từ vựng, bản kể lại có ghi âm. Task này nạp thêm bằng SQL để mọi Task sau có số liệu cụ thể. Chạy 1 lần trên DB vừa seed, theo đúng thứ tự.",
+  id: "t0", title: "Task 0 — Kiểm tra dữ liệu đọc của Bé An trong seed",
+  desc: "Dữ liệu đọc phong phú của Bé An (câu quiz 101, phiên 101–104, các lần trả lời quiz, telemetry đọc to / EXP / từ vựng, bản kể lại 101) đã nằm sẵn trong Database/Seed. Task này chỉ kiểm tra bằng SQL rằng DB vừa seed có đúng dữ liệu đó, rồi lấy giá trị cho các ô giá trị động.",
   flow: [
     "Áp migration AddReadingSessionReadingMode (có cột reading_sessions.ReadingMode) rồi chạy Seed-Database.ps1.",
-    "Chạy lần lượt 6 khối SQL bên dưới (các câu đều có ON CONFLICT DO NOTHING nên chạy lại không sinh trùng).",
-    "Chạy câu SQL kiểm tra cuối Task để chắc dữ liệu đúng."
+    "Chạy các câu SQL kiểm tra bên dưới. Thiếu phiên 101–104 nghĩa là DB chưa được seed lại bằng bản seed mới (API sẽ trả \"Không tìm thấy Phiên đọc với mã định danh [102].\").",
+    "Chạy câu SQL cuối Task để lấy giá trị cho các ô giá trị động."
   ],
   apis: [
-  { m: "SQL", p: "(SQL) Nạp dữ liệu đọc của Bé An", role: "Người test (DB)",
-    what: "Thêm 1 câu quiz, 4 phiên đọc, 4 lần trả lời quiz, 9 dòng telemetry, 1 bản kể lại có ghi âm. Chỉ thêm dòng Id từ 101 trở lên, không sửa dòng seed gốc.",
+  { m: "SQL", p: "(SQL) Kiểm tra dữ liệu đọc của Bé An", role: "Người test (DB)",
+    what: "Seed có cho Bé An: 1 câu quiz (101), 4 phiên đọc (101–104), 4 lần trả lời quiz (101–104), 9 dòng telemetry (101–109), 1 bản kể lại (101, không ghi âm) và 1 cảnh đánh dấu (101). Nằm ở các file 18_quiz_items, 24_reading_sessions, 26_quiz_attempts, 27_telemetry_logs, 63_story_summaries, 64_story_summary_flags.",
     detail: [
-      ["Kết quả sau khi nạp (Bé An, hồ sơ 1)", [
+      ["Dữ liệu sau khi seed (Bé An, hồ sơ 1)", [
         "Phiên xong: 102 (30 giờ trước), 11 (~2 ngày), 13 (~3 ngày), 101 (5 ngày), 1 (10 ngày) → 5 phiên; truyện 1 được đọc xong 3 lần (phiên 1, 101, 102).",
         "Phiên chưa xong: 104 (mở 1 ngày trước, truyện 16) và 103 (mở 12 ngày trước, truyện 1; truyện 1 sau đó đã đọc xong nên 103 là \"đọc xong sau đó\").",
         "Phiên bản 1 có 2 câu quiz (1 và 101). Lịch sử trả lời theo Id: 1 (phiên 1) → 101, 102 (phiên 101) → 103, 104 (phiên 102) tách thành 3 lần làm: 50% → 50% → 100%.",
-        "Phiên 101: đọc to 3 lần (đoạn 1 hai lần, đoạn 2 một lần) + 1 dòng hỏng, EXP 20 + 5, lưu 2 từ vựng, có bản kể lại 101 (có ghi âm, 1 cảnh). Phiên 102: EXP 10."
+        "Phiên 101: đọc to 3 lần (đoạn 1 hai lần, đoạn 2 một lần) + 1 dòng hỏng, EXP 20 + 5, lưu 2 từ vựng, có bản kể lại 101 (không ghi âm, 1 cảnh). Phiên 102: EXP 10."
       ]]
     ],
     tests: [
-      ["ok", "Nạp câu quiz 101", "INSERT 0 1", "Chạy SQL:\n" + SQL_FIXTURE_QUIZ],
-      ["ok", "Nạp 4 phiên đọc 101–104", "INSERT 0 4", "Chạy SQL:\n" + SQL_FIXTURE_SESSIONS],
-      ["ok", "Nạp 4 lần trả lời quiz 101–104", "INSERT 0 4", "Chạy SQL:\n" + SQL_FIXTURE_ATTEMPTS],
-      ["ok", "Nạp telemetry đọc to / EXP / từ vựng", "INSERT 0 9", "Chạy SQL:\n" + SQL_FIXTURE_TELEMETRY],
-      ["ok", "Nạp bản kể lại 101 và cảnh đánh dấu", "INSERT 0 1 (summary) và INSERT 0 1 (flag)", "Chạy SQL:\n" + SQL_FIXTURE_SUMMARY],
-      ["ok", "Kiểm tra số phiên của Bé An", "5 phiên Completed (1, 11, 13, 101, 102) và 2 phiên Reading (103, 104)",
+      ["ok", "Kiểm tra số phiên của Bé An", "5 phiên Completed (1, 11, 13, 101, 102) và 2 phiên Reading (103, 104); 101 = VeryLike / ListenFirst, 102 = Like / ReadFirst",
         "Chạy: SELECT \"Id\",\"StoryId\",\"Status\",\"TimeSpentSeconds\",\"Feeling\",\"ReadingMode\" FROM reading_sessions WHERE \"ChildProfileId\"=1 AND NOT \"IsDeleted\" ORDER BY \"Id\";"],
+      ["ok", "Kiểm tra câu quiz của phiên bản 1", "2 dòng: Id 1 (MultipleChoice, đáp án \"Chú Thỏ\") và 101 (TrueFalse, đáp án \"Dung\")",
+        "Chạy: SELECT \"Id\",\"Type\",\"CorrectAnswer\" FROM quiz_items WHERE \"StoryVersionId\"=1 AND NOT \"IsDeleted\" ORDER BY \"Id\";"],
+      ["ok", "Kiểm tra lịch sử trả lời quiz của Bé An", "5 dòng theo Id: 1 (phiên 1, câu 1, đúng), 101 (phiên 101, câu 1, sai), 102 (phiên 101, câu 101, đúng), 103 (phiên 102, câu 1, đúng), 104 (phiên 102, câu 101, đúng)",
+        "Chạy: SELECT a.\"Id\",a.\"ReadingSessionId\",a.\"QuizItemId\",a.\"IsCorrect\" FROM quiz_attempts a JOIN reading_sessions s ON s.\"Id\"=a.\"ReadingSessionId\" WHERE s.\"ChildProfileId\"=1 ORDER BY a.\"Id\";"],
+      ["ok", "Kiểm tra telemetry và bản kể lại", "telemetry: 9 dòng Id 101–109 (phiên 101 có 8, phiên 102 có 1); story_summaries của bé 1: Id 1 (phiên 1) và 101 (phiên 101), AudioStoragePath đều NULL; story_summary_flags 101: bản 101, cảnh 1",
+        "Chạy: SELECT \"Id\",\"ReadingSessionId\",\"EventType\" FROM telemetry_logs WHERE \"Id\" BETWEEN 101 AND 109 ORDER BY \"Id\"; SELECT \"Id\",\"ReadingSessionId\",\"AudioStoragePath\" FROM story_summaries WHERE \"ChildProfileId\"=1 ORDER BY \"Id\"; SELECT \"Id\",\"StorySummaryId\",\"StorySceneId\" FROM story_summary_flags WHERE \"Id\"=101;"],
       ["ok", "Lấy giá trị cho các ô giá trị động", "FROM_7D, TO_PLUS_1D, COMPLETED_AT_101 có dạng 2026-…Z",
         "Chạy: SELECT to_char((NOW()-INTERVAL '7 days') AT TIME ZONE 'utc','YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS from_7d, to_char((NOW()+INTERVAL '1 day') AT TIME ZONE 'utc','YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS to_plus_1d, to_char(\"CompletedAt\" AT TIME ZONE 'utc','YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') AS completed_at_101 FROM reading_sessions WHERE \"Id\"=101;"]
     ] }
@@ -648,7 +612,7 @@ const STEPS = [
   id: "t6", title: "Task 6 — Chế độ đọc của từng lần đọc (nghe là chính / tự đọc)",
   desc: "Cột mới reading_sessions.ReadingMode (nullable, lưu chuỗi) ghi chế độ bé dùng trong phiên, cập nhật mỗi lần bé lưu tiến độ có gửi readingMode. Danh sách phụ huynh trả readingMode (\"ListenFirst\" / \"ReadFirst\" / null với phiên cũ chưa ghi). Trước đây chế độ chỉ lưu theo truyện (ReadingProgress.LastReadingMode) nên không phân biệt được từng lần đọc.",
   flow: [
-    "Phiên 101 = ListenFirst, phiên 102 = ReadFirst (do Task 0), phiên 1 / 103 chưa có chế độ.",
+    "Phiên 101 = ListenFirst, phiên 102 = ReadFirst (theo seed), phiên 1 / 103 chưa có chế độ.",
     "Gọi danh sách để xem readingMode.",
     "Lấy token bé 1 rồi PUT /api/v1/child/reading/sessions/103/progress để ghi chế độ; gọi lại danh sách Unfinished.",
     "Thử các lỗi: chế độ lạ, trang sai, phiên đã xong, phiên của bé khác."
@@ -732,7 +696,7 @@ const STEPS = [
   id: "t7", title: "Task 7 — Gắn bản \"Bé kể lại\" vào dòng truyện đã đọc",
   desc: "Mỗi dòng danh sách có retell cho biết lần đọc đó có bản kể lại hay không: summaryId (để mở / nghe / xóa ở API ParentStorySummary), createdAt, hasRecording, flagCount (số cảnh bé đánh dấu còn thắc mắc). Null nếu không có hoặc đã xóa. Danh sách không trả link ghi âm (link ký có hạn 15 phút vẫn nằm ở ParentStorySummary).",
   flow: [
-    "Bản kể lại 1 (seed) gắn phiên 1: không ghi âm, 1 cảnh. Bản 101 (Task 0) gắn phiên 101: có ghi âm, 1 cảnh.",
+    "Bản kể lại 1 (seed) gắn phiên 1: không ghi âm, 1 cảnh. Bản 101 (seed) gắn phiên 101: không ghi âm, 1 cảnh.",
     "Gọi danh sách để xem retell từng dòng; đối chiếu với GET /ParentStorySummary/1.",
     "Thử xóa mềm bản kể lại / cảnh đánh dấu bằng SQL, rồi thử có 2 bản cho 1 phiên."
   ],
@@ -745,9 +709,12 @@ const STEPS = [
     ]]],
     resp: J({ success: true, message: "Lấy danh sách truyện con đã đọc thành công.", data: paged([{ sessionId: 101, retell: row101.retell }], 5), errors: null }),
     tests: [
-      ["ok", "Phiên 101: bản kể lại có ghi âm, 1 cảnh",
-        "200; item 101: retell = { summaryId 101, createdAt (10 phút sau giờ xong), hasRecording true, flagCount 1 }",
+      ["ok", "Phiên 101: bản kể lại không ghi âm, 1 cảnh",
+        "200; item 101: retell = { summaryId 101, createdAt (10 phút sau giờ xong), hasRecording false, flagCount 1 }",
         "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1"],
+      ["edge", "(SQL) Bản kể lại có ghi âm thì hasRecording = true",
+        "Sau khi chạy SQL: item 101: retell.hasRecording = true, flagCount 1. Đừng gọi GET /api/v1/ParentStorySummary/1 trước khi hoàn tác (file ghi âm không có thật nên ký link sẽ lỗi)",
+        "Chạy SQL: UPDATE story_summaries SET \"AudioStoragePath\"='summaries/demo-101.webm',\"AudioContentType\"='audio/webm',\"AudioBytes\"=1024,\"RecordingSentAt\"=NOW() WHERE \"Id\"=101; rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: UPDATE story_summaries SET \"AudioStoragePath\"=NULL,\"AudioContentType\"=NULL,\"AudioBytes\"=NULL,\"RecordingSentAt\"=NULL WHERE \"Id\"=101;"],
       ["ok", "Phiên 1: bản kể lại seed không ghi âm",
         "200; item 1: retell = { summaryId 1, hasRecording false, flagCount 1 }",
         "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1"],
@@ -761,7 +728,7 @@ const STEPS = [
         "Sau khi chạy SQL: item 101: retell = null",
         "Chạy SQL: UPDATE story_summaries SET \"IsDeleted\"=true WHERE \"Id\"=101; rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: UPDATE story_summaries SET \"IsDeleted\"=false WHERE \"Id\"=101;"],
       ["edge", "(SQL) Cảnh đánh dấu đã xóa mềm không được đếm",
-        "Sau khi chạy SQL: item 101: retell.flagCount = 0 (vẫn hasRecording true)",
+        "Sau khi chạy SQL: item 101: retell.flagCount = 0 (hasRecording vẫn false)",
         "Chạy SQL: UPDATE story_summary_flags SET \"IsDeleted\"=true WHERE \"Id\"=101; rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: UPDATE story_summary_flags SET \"IsDeleted\"=false WHERE \"Id\"=101;"],
       ["edge", "(SQL) Một phiên có 2 bản kể lại: lấy bản mới nhất",
         "Sau khi chạy SQL: item 101: retell.summaryId = 102, hasRecording false, flagCount 0 (bản 102 tạo sau, không ghi âm, không cảnh)",
@@ -870,8 +837,8 @@ const OVERRIDES = [];
 
 // ---------- DỮ LIỆU THẬT TỪ SEED (Database/Seed) ----------
 const SEEDAPI = [
-  ["=GET /api/v1/ParentReadingFeedback/{childProfileId}", { as: "parent_demo1", url: "GET /api/v1/ParentReadingFeedback/1", note: "Hồ sơ 1 = Bé An của parent_demo1; sau Task 0 có 5 phiên xong và 2 phiên chưa xong." }],
-  ["GET /api/v1/ParentReadingFeedback/{childProfileId}/sessions/{sessionId}/quiz", { as: "parent_demo1", url: "GET /api/v1/ParentReadingFeedback/1/sessions/102/quiz", note: "Phiên 102 của Bé An, truyện 1 (phiên bản 1 có 2 câu quiz sau Task 0)." }],
+  ["=GET /api/v1/ParentReadingFeedback/{childProfileId}", { as: "parent_demo1", url: "GET /api/v1/ParentReadingFeedback/1", note: "Hồ sơ 1 = Bé An của parent_demo1; seed có 5 phiên xong và 2 phiên chưa xong." }],
+  ["GET /api/v1/ParentReadingFeedback/{childProfileId}/sessions/{sessionId}/quiz", { as: "parent_demo1", url: "GET /api/v1/ParentReadingFeedback/1/sessions/102/quiz", note: "Phiên 102 của Bé An, truyện 1 (phiên bản 1 có 2 câu quiz: 1 và 101)." }],
   ["GET /api/v1/ParentReadingFeedback/{childProfileId}/overview", { as: "parent_demo1", url: "GET /api/v1/ParentReadingFeedback/1/overview", note: "Tổng quan mọi thời điểm của Bé An." }],
   ["PUT /api/v1/child/reading/sessions/{sessionId}/progress", { as: "bé 1 (secret demo-qr-child-01)", url: "PUT /api/v1/child/reading/sessions/103/progress", body: J({ page: 1, readingMode: "ListenFirst", addedSeconds: 10 }), note: "Phiên 103 của Bé An đang Reading, truyện 1 có 1 scene (trang 1)." }]
 ];

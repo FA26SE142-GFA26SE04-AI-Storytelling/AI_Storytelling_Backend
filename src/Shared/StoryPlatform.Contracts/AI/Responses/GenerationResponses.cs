@@ -78,6 +78,7 @@ public sealed record GenerateListeningInteractionResponse
     public IReadOnlyList<FillBlankItemDto> FillBlanks { get; init; } = [];
     public IReadOnlyList<EventOrderingItemDto> EventOrderings { get; init; } = [];
     public IReadOnlyList<PicturePredictionItemDto> PicturePredictions { get; init; } = [];
+    public IReadOnlyList<ReadAloudItemDto> ReadAloudPassages { get; init; } = [];
     public GenerationMetadataDto Metadata { get; init; } = new();
 }
 

@@ -1449,11 +1449,11 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasIndex("ParentStoryPackageId", "AnchorOffset")
                         .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NOT NULL");
+                        .HasFilter("\"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NOT NULL AND \"Type\" <> 'ReadAloud'");
 
                     b.HasIndex("StoryVersionId", "AnchorOffset")
                         .IsUnique()
-                        .HasFilter("\"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NULL");
+                        .HasFilter("\"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NULL AND \"Type\" <> 'ReadAloud'");
 
                     b.HasIndex("StoryVersionId", "Type");
 

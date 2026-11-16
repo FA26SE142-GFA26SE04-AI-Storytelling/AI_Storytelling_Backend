@@ -7,5 +7,6 @@ public enum ListeningInteractionType
     RolePlay = 2,
     FillBlank = 3,
     EventOrdering = 4,
-    PicturePrediction = 5
+    PicturePrediction = 5,
+    ReadAloud = 6
 }

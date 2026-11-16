@@ -7,6 +7,22 @@ namespace StoryPlatform.UnitTests.Features.ListeningInteractions;
 
 public sealed class ListeningMediaRequirementsTests
 {
+    [Fact]
+    public void ReadAloud_RequiresBothPassageAndPraiseAudio()
+    {
+        var interaction = new ListeningInteraction
+        {
+            Id = 5, Type = ListeningInteractionType.ReadAloud,
+            SourceQuote = "Thỏ con ra vườn chơi.", MatchFeedback = "Con cố gắng giỏi quá!"
+        };
+        Assert.Equal(["5:i:text", "5:i:match"], ListeningMediaRequirements.Missing(interaction, [], []));
+        var passage = Audio(null, ListeningAudioParts.Text);
+        var praise = Audio(null, ListeningAudioParts.Match);
+        Assert.Empty(ListeningMediaRequirements.Missing(interaction, [], [passage, praise]));
+        praise.ValidationStatus = ValidationStatus.Failed;
+        Assert.Equal(["5:i:match"], ListeningMediaRequirements.Missing(interaction, [], [passage, praise]));
+    }
+
     private static readonly ListeningInteraction Picture = new()
     {
         Id = 5, Type = ListeningInteractionType.PicturePrediction, Prompt = "Ai đến?", WaitFeedback = "Nghe tiếp nhé!"

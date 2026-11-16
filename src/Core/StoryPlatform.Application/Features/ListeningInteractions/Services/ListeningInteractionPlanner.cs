@@ -7,7 +7,7 @@ namespace StoryPlatform.Application.Features.ListeningInteractions.Services;
 /// <summary>
 /// Kế hoạch tương tác lúc nghe theo số chỗ trống (số đoạn - 1) và nhóm tuổi; không ngẫu nhiên.
 /// Thứ tự lấp chỗ: Checkpoint x2, RolePlay (6-8) hoặc FillBlank (9-10), PicturePrediction, thêm Checkpoint tới trần.
-/// EventOrdering đặt sau đoạn cuối nên không chiếm chỗ trống, có khi truyện từ 3 đoạn.
+/// EventOrdering và ReadAloud đặt sau đoạn cuối nên không chiếm chỗ trống; cần lần lượt từ 3 và 2 đoạn.
 /// Các tương tác giữa truyện được chia vùng (AssignZones) để rải đều, không để khúc dài không có tương tác.
 /// </summary>
 public static class ListeningInteractionPlanner
@@ -18,7 +18,8 @@ public static class ListeningInteractionPlanner
         if (slots == 0) return ListeningInteractionPlan.Empty;
         var dialogue = FindDialogueBlockIds(blocks);
         // Truyện 2 đoạn: chỉ 1 điểm dừng (ngoại lệ đã chốt 31/10/2026).
-        if (slots == 1) return new(slots, AssignZones([new(ListeningInteractionType.Checkpoint, 1)], blocks, dialogue), dialogue);
+        if (slots == 1) return new(slots, AssignZones([new(ListeningInteractionType.Checkpoint, 1),
+            new(ListeningInteractionType.ReadAloud, 1)], blocks, dialogue), dialogue);
 
         var cap = ageBand == AgeBand.Age_6_8 ? 3 : 4; // Checkpoint + PicturePrediction
         var checkpoints = 2;
@@ -52,6 +53,7 @@ public static class ListeningInteractionPlanner
         if (picture > 0) items.Add(new(ListeningInteractionType.PicturePrediction, picture));
         // Đặt sau đoạn cuối, chạy sau cùng; cần 3 đoạn để 3 sự kiện ở 3 đoạn khác nhau.
         if (blocks.Count >= 3) items.Add(new(ListeningInteractionType.EventOrdering, 1));
+        items.Add(new(ListeningInteractionType.ReadAloud, 1));
         return new(slots, AssignZones(items, blocks, dialogue), dialogue);
     }
 
@@ -65,7 +67,7 @@ public static class ListeningInteractionPlanner
         IReadOnlyList<ListeningPlanItem> items, IReadOnlyList<StoryTextBlock> blocks, IReadOnlyList<string> dialogue)
     {
         var slots = blocks.Count - 1;
-        var middle = items.Where(x => x.Type != ListeningInteractionType.EventOrdering).Sum(x => x.Count);
+        var middle = items.Where(x => !ListeningInteractionRules.IsEndOfStory(x.Type)).Sum(x => x.Count);
         var zones = Enumerable.Range(0, middle).Select(k => blocks
             .Skip(k * slots / middle).Take((k + 1) * slots / middle - k * slots / middle).ToArray()).ToArray();
         var free = Enumerable.Range(0, middle).ToList();

@@ -72,7 +72,11 @@ public class ChildMediaUrlSignerTests
                     }
                 }
             ],
-            Vocabulary = [new ReadingVocabularyDto { AudioUrl = "908/word.wav" }]
+            Vocabulary = [new ReadingVocabularyDto { AudioUrl = "908/word.wav" }],
+            ReadAloudPractice = new ReadAloudPracticeDto
+            {
+                AudioUrl = "908/practice.wav", PraiseAudioUrl = "908/praise.wav"
+            }
         };
 
         await ((Application.Features.ReadingSessions.Interfaces.IChildMediaUrlSigner)_sut).SignAsync(content, CancellationToken.None);
@@ -87,5 +91,27 @@ public class ChildMediaUrlSignerTests
         Assert.Equal("https://signed/908/opt.wav", scene.Interaction.Options[0].AudioUrl);
         Assert.Equal("https://signed/908/fb.wav", scene.Interaction.Options[0].FeedbackAudioUrl);
         Assert.Equal("https://signed/908/word.wav", content.Vocabulary[0].AudioUrl);
+        Assert.Equal("https://signed/908/practice.wav", content.ReadAloudPractice.AudioUrl);
+        Assert.Equal("https://signed/908/praise.wav", content.ReadAloudPractice.PraiseAudioUrl);
+    }
+
+    [Theory]
+    [InlineData("908/practice.wav")]
+    [InlineData("908/praise.wav")]
+    public async Task Practice_with_an_unavailable_signed_audio_is_hidden(string brokenPath)
+    {
+        _storage.Setup(s => s.GetSignedUrlAsync(brokenPath, It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("storage down"));
+        var content = new ReadingContentDto
+        {
+            ReadAloudPractice = new ReadAloudPracticeDto
+            {
+                Text = "Thỏ con ra vườn chơi.", AudioUrl = "908/practice.wav", PraiseAudioUrl = "908/praise.wav"
+            }
+        };
+
+        await ((Application.Features.ReadingSessions.Interfaces.IChildMediaUrlSigner)_sut).SignAsync(content, CancellationToken.None);
+
+        Assert.Null(content.ReadAloudPractice);
     }
 }

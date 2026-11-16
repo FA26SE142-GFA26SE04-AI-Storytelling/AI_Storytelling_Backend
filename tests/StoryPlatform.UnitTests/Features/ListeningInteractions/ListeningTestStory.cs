@@ -163,6 +163,17 @@ internal static class ListeningTestStory
                 }
             ]
         },
+        ListeningInteractionType.ReadAloud => new()
+        {
+            ReadAloudPassages =
+            [
+                new()
+                {
+                    BlockId = "P6", PassageQuote = "Từ đó Thỏ luôn nhờ người lớn khi bị lạc.",
+                    PraiseFeedback = "Con đọc to rõ lắm, con cố gắng giỏi quá!"
+                }
+            ]
+        },
         _ => throw new ArgumentOutOfRangeException(nameof(type))
     };
     /// <summary>Truyện AI của phụ huynh đang ContentReview: nội dung = Content, đủ từ vựng/quiz hợp lệ, có ngữ cảnh sinh.</summary>

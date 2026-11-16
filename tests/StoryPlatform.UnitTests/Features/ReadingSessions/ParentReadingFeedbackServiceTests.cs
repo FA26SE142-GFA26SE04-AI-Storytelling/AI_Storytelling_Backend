@@ -52,6 +52,26 @@ public class ParentReadingFeedbackServiceTests
         _sut.ListAsync(Parent, ReadingHarness.Child, query ?? new ParentReadingFeedbackQueryDto());
 
     [Fact]
+    public async Task ListAsync_PracticeResults_AreSeparateAndLimitedToTheirSession()
+    {
+        var practiced = Done(DateTime.UtcNow);
+        var other = Done(DateTime.UtcNow.AddMinutes(-1));
+        _h.Telemetry.Add(new TelemetryLog
+        {
+            Id = 1, ReadingSessionId = practiced.Id, EventType = TelemetryEventType.AsrWordResult,
+            EventPayload = "{\"interactionId\":70,\"total\":8,\"good\":6,\"retry\":2,\"skipped\":0}"
+        });
+
+        var page = await List();
+
+        var result = page.Items.Single(x => x.SessionId == practiced.Id);
+        Assert.Equal(1, result.ReadAloudPractice!.Attempts);
+        Assert.Equal(75m, result.ReadAloudPractice.LatestGoodPercent);
+        Assert.Null(result.ReadAloud);
+        Assert.Null(page.Items.Single(x => x.SessionId == other.Id).ReadAloudPractice);
+    }
+
+    [Fact]
     public async Task ListAsync_ChecksTheViewProgressPermissionForThisParentAndChild()
     {
         await List();

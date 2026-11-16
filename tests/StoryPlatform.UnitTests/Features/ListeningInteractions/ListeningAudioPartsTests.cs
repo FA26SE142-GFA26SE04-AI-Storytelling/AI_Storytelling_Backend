@@ -60,4 +60,10 @@ public sealed class ListeningAudioPartsTests
                 Prompt = "Thỏ thấy sao?", NoMatchFeedback = "  " },
             [Option(10, 1, 1, "Vui"), Option(11, 1, 2, "Buồn", "x", deleted: true),
              Option(99, 9, 1, "Khác", "y")])));
+    [Fact]
+    public void ReadAloud_ReadsPassageTextThenPraise() =>
+        Assert.Equal(["i:text:Mẹ Thỏ ôm Thỏ vào lòng.", "i:match:Con đọc to rõ lắm!"], Keys(ListeningAudioParts.For(
+            new ListeningInteraction { Id = 6, Type = ListeningInteractionType.ReadAloud,
+                SourceQuote = "Mẹ Thỏ ôm Thỏ vào lòng.", MatchFeedback = "Con đọc to rõ lắm!" }, [])));
+
 }

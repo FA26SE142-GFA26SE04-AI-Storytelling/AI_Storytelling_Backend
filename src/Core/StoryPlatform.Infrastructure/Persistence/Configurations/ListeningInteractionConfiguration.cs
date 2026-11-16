@@ -41,12 +41,12 @@ public class ListeningInteractionConfiguration : IEntityTypeConfiguration<Listen
             .HasForeignKey(x => x.StorySceneId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // Mỗi đoạn neo tối đa 1 tương tác, nên mỗi scene tối đa 1 tương tác.
+        // ReadAloud đứng chung neo cuối với EventOrdering và được trả riêng cho bé.
         builder.HasIndex(x => new { x.StoryVersionId, x.AnchorOffset })
             .IsUnique()
-            .HasFilter("\"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NULL");
+            .HasFilter("\"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NULL AND \"Type\" <> 'ReadAloud'");
         builder.HasIndex(x => new { x.ParentStoryPackageId, x.AnchorOffset }).IsUnique()
-            .HasFilter("\"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NOT NULL");
+            .HasFilter("\"IsDeleted\" = false AND \"ParentStoryPackageId\" IS NOT NULL AND \"Type\" <> 'ReadAloud'");
 
         builder.HasIndex(x => new { x.StoryVersionId, x.Type });
 

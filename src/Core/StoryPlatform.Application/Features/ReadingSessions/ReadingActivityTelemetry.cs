@@ -45,6 +45,37 @@ public static class ReadingActivityTelemetry
         };
     }
 
+    /// <summary>Luyện đọc to sau truyện (payload có interactionId); null nếu bé chưa luyện.</summary>
+    public static ParentReadAloudPracticeDto? ReadAloudPractice(IEnumerable<TelemetryLog> logs)
+    {
+        var results = new List<(int Total, int Good)>();
+        foreach (var log in Ordered(logs, TelemetryEventType.AsrWordResult))
+        {
+            if (TryRead(log, out var root)
+                && TryInt(root, "interactionId", out _)
+                && TryInt(root, "total", out var total)
+                && TryInt(root, "good", out var good))
+            {
+                results.Add((total, good));
+            }
+        }
+
+        if (results.Count == 0)
+        {
+            return null;
+        }
+
+        var latest = results[^1];
+        return new ParentReadAloudPracticeDto
+        {
+            Attempts = results.Count,
+            TotalWords = latest.Total,
+            LatestGoodWords = latest.Good,
+            LatestGoodPercent = QuizRunCalculator.Percent(latest.Good, latest.Total),
+            BestGoodPercent = results.Max(result => QuizRunCalculator.Percent(result.Good, result.Total))
+        };
+    }
+
     /// <summary>Tổng EXP đã ghi nhận cho phiên (chỉ các dòng exp &gt; 0).</summary>
     public static int Exp(IEnumerable<TelemetryLog> logs) =>
         Ordered(logs, TelemetryEventType.RewardGranted)

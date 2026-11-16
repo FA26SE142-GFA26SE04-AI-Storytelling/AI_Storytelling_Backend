@@ -157,4 +157,143 @@ public class ChildReadAloudServiceTests
 
         Assert.Equal("Em đọc hay quá!", result.Message);
     }
+    private ListeningInteraction Practice(string text = "Thỏ con ra vườn chơi.")
+    {
+        var interaction = new ListeningInteraction
+        {
+            Id = 70, StoryVersionId = ReadingHarness.Version, Type = ListeningInteractionType.ReadAloud,
+            AnchorOffset = 100, SourceQuote = text, MatchFeedback = "Con đọc to rõ lắm!"
+        };
+        interaction.StorySceneId = _h.AddScene(0, text).Id;
+        _h.ListeningInteractions.Add(interaction);
+        _h.AddListeningMedia(interaction);
+        return interaction;
+    }
+
+    [Fact]
+    public async Task CheckPracticeAsync_ScoresAgainstThePassage_AndLogsInteractionIdOnly()
+    {
+        VoiceOn();
+        var session = _h.AddSession();
+        var practice = Practice();
+        Hears(("thỏ", 0.9), ("con", 0.9), ("ra", 0.9), ("vườn", 0.9), ("chơi", 0.9));
+
+        var result = await _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, practice.Id, Audio());
+
+        Assert.Equal((5, 0, 0, 5), (result.GoodCount, result.RetryCount, result.SkippedCount, result.TotalCount));
+        Assert.Equal(practice.Id, result.InteractionId);
+        Assert.Null(result.SegmentId);
+        Assert.Equal("Em đọc hay quá!", result.Message);
+        var log = Assert.Single(_h.Telemetry, t => t.EventType == TelemetryEventType.AsrWordResult);
+        Assert.Contains($"\"interactionId\":{practice.Id}", log.EventPayload);
+        Assert.DoesNotContain("segmentId", log.EventPayload);
+    }
+
+    [Fact]
+    public async Task CheckPracticeAsync_OtherTypeOrOtherVersion_IsNotFound_WithoutCallingGoogle()
+    {
+        VoiceOn();
+        var session = _h.AddSession();
+        var practice = Practice();
+        practice.Type = ListeningInteractionType.RolePlay;
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, practice.Id, Audio()));
+
+        practice.Type = ListeningInteractionType.ReadAloud;
+        practice.StoryVersionId = ReadingHarness.Version + 1;
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, practice.Id, Audio()));
+        _recognizer.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task CheckPracticeAsync_VoiceNotEnabled_IsForbidden()
+    {
+        VoiceOn(enabled: false);
+        var session = _h.AddSession();
+        var practice = Practice();
+
+        var error = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, practice.Id, Audio()));
+
+        Assert.Equal(ReadAloudPolicy.VoiceOffMessage, error.Message);
+        _recognizer.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("deleted")]
+    [InlineData("other-package")]
+    [InlineData("unbound")]
+    [InlineData("deleted-scene")]
+    [InlineData("other-scene-version")]
+    [InlineData("missing-passage-audio")]
+    [InlineData("missing-praise-audio")]
+    public async Task CheckPracticeAsync_UnavailablePassage_IsHiddenBeforeRecognition(string reason)
+    {
+        VoiceOn();
+        var session = _h.AddSession();
+        var practice = Practice();
+        switch (reason)
+        {
+            case "deleted": practice.IsDeleted = true; break;
+            case "other-package": practice.ParentStoryPackageId = 99; break;
+            case "unbound": practice.StorySceneId = null; break;
+            case "deleted-scene": _h.Scenes.Single().IsDeleted = true; break;
+            case "other-scene-version": _h.Scenes.Single().StoryVersionId++; break;
+            case "missing-passage-audio": _h.Assets.Single(x => x.AudioPartKey == "text").IsCurrent = false; break;
+            case "missing-praise-audio": _h.Assets.Single(x => x.AudioPartKey == "match").Status = MediaStatus.ManualReview; break;
+        }
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, practice.Id, Audio()));
+
+        _recognizer.VerifyNoOtherCalls();
+        Assert.Empty(_h.Telemetry);
+    }
+
+    [Theory]
+    [InlineData(SessionStatus.Completed)]
+    [InlineData(SessionStatus.Abandoned)]
+    public async Task CheckPracticeAsync_EndedSession_IsConflict(SessionStatus status)
+    {
+        VoiceOn();
+        var session = _h.AddSession(status);
+        var practice = Practice();
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, practice.Id, Audio()));
+
+        _recognizer.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task CheckPracticeAsync_InterruptedSession_IsForbidden()
+    {
+        VoiceOn();
+        var session = _h.AddSession();
+        session.ForceExitRequestedAt = DateTime.UtcNow;
+        var practice = Practice();
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, practice.Id, Audio()));
+
+        _recognizer.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData(0, "audio/webm", ReadAloudPolicy.EmptyAudioMessage)]
+    [InlineData(ReadAloudPolicy.MaxAudioBytes + 1, "audio/webm", ReadAloudPolicy.AudioTooLargeMessage)]
+    [InlineData(10, "video/mp4", ReadAloudPolicy.UnsupportedAudioMessage)]
+    public async Task CheckPracticeAsync_InvalidAudio_IsRejectedBeforeRecognition(int bytes, string contentType, string message)
+    {
+        VoiceOn();
+        var session = _h.AddSession();
+        var practice = Practice();
+
+        var error = await Assert.ThrowsAsync<BadRequestException>(() =>
+            _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, practice.Id, Audio(bytes, contentType)));
+
+        Assert.Equal(message, error.Message);
+        _recognizer.VerifyNoOtherCalls();
+    }
 }

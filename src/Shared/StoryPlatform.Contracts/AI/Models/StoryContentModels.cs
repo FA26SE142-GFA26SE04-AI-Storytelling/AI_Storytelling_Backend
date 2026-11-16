@@ -129,6 +129,14 @@ public sealed record ListeningEventDto
     public string? SourceQuote { get; init; }
 }
 
+/// <summary>A verbatim passage selected from one story block for reading aloud.</summary>
+public sealed record ReadAloudItemDto
+{
+    public string? BlockId { get; init; }
+    public string? PassageQuote { get; init; }
+    public string? PraiseFeedback { get; init; }
+}
+
 /// <summary>No afterBlockId: the backend always places event ordering after the last block.</summary>
 public sealed record EventOrderingItemDto
 {

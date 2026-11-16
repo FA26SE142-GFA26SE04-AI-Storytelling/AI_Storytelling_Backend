@@ -76,7 +76,7 @@ public sealed class ListeningInteractionGenerator
         // Neo của các loại khác đã lưu; loại đang sinh không tự chặn mình.
         var occupied = (await LoadSavedAsync(scope.Version.Id, ct, scope.ParentStoryPackageId)).Where(x => x.Type != type).Select(x => x.AnchorOffset).ToArray();
         var context = RuleContext(scope, item, occupied);
-        var vocabulary = type == ListeningInteractionType.FillBlank
+        var vocabulary = type is ListeningInteractionType.FillBlank or ListeningInteractionType.ReadAloud
             ? (await _unitOfWork.Repository<StoryVocabulary>().FindAsync(
                 x => x.StoryVersionId == scope.Version.Id && x.ParentStoryPackageId == scope.ParentStoryPackageId && !x.IsDeleted, cancellationToken: ct)).Select(x => x.Term).ToArray()
             : [];

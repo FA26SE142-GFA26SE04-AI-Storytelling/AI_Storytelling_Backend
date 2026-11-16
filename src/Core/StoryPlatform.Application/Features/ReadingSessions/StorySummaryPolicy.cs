@@ -12,10 +12,19 @@ public static class StorySummaryPolicy
     public const string EmptyAudioMessage = "Em bấm micro rồi kể lại nhé.";
     public const string AudioTooLargeMessage = "Đoạn ghi âm dài quá, em kể ngắn hơn nhé.";
     public const string AlreadyRecordedMessage = "Em đã gửi bản ghi âm cho bố mẹ rồi.";
-    public const string NoFlagsMessage = "Em chọn ít nhất một chỗ nhé.";
-    public const string TooManyFlagsMessage = "Em chọn tối đa 5 chỗ nhé.";
     public const string SceneNotInStoryMessage = "Chỗ em chọn không thuộc truyện này.";
-    public const string AlreadyFlaggedMessage = "Em đã gửi những chỗ thắc mắc cho bố mẹ rồi.";
+
+    public const int MaxQuestionTextLength = 200;
+
+    public const string TooManyQuestionsMessage = "Em hỏi tối đa 5 câu cho mỗi lần đọc nhé.";
+    public const string AlreadyAskedMessage = "Em đã hỏi bố mẹ về chỗ này rồi.";
+    public const string ChoosePictureMessage = "Em chọn bức tranh em thắc mắc nhé.";
+    public const string PictureNotInSceneMessage = "Bức tranh em chọn không có trong cảnh này.";
+    public const string QuestionTooLongMessage = "Câu hỏi dài quá, em viết ngắn hơn nhé.";
+
+    /// <summary>Cắt khoảng trắng hai đầu; chuỗi rỗng → null.</summary>
+    public static string? NormalizeQuestionText(string? text) =>
+        string.IsNullOrWhiteSpace(text) ? null : text.Trim();
 
     public static string Extension(string contentType) => contentType switch
     {

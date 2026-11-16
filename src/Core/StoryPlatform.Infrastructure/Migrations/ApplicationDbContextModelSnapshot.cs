@@ -4347,11 +4347,35 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<DateTime?>("AnsweredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("AudioBytes")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("AudioContentType")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("AudioStoragePath")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int?>("IllustrationBeatId")
+                        .HasColumnType("integer");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
+
+                    b.Property<int?>("MediaAssetId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("QuestionText")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<int>("StorySceneId")
                         .HasColumnType("integer");
@@ -4364,11 +4388,21 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("IllustrationBeatId");
+
+                    b.HasIndex("MediaAssetId");
+
                     b.HasIndex("StorySceneId");
+
+                    b.HasIndex("StorySummaryId", "IllustrationBeatId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_story_summary_flags_summary_beat")
+                        .HasFilter("\"IllustrationBeatId\" IS NOT NULL");
 
                     b.HasIndex("StorySummaryId", "StorySceneId")
                         .IsUnique()
-                        .HasDatabaseName("UX_story_summary_flags_summary_scene");
+                        .HasDatabaseName("UX_story_summary_flags_summary_scene")
+                        .HasFilter("\"IllustrationBeatId\" IS NULL");
 
                     b.ToTable("story_summary_flags", (string)null);
                 });
@@ -6585,6 +6619,16 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.StorySummaryFlag", b =>
                 {
+                    b.HasOne("StoryPlatform.Domain.Entities.IllustrationBeat", "IllustrationBeat")
+                        .WithMany()
+                        .HasForeignKey("IllustrationBeatId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.MediaAsset", "MediaAsset")
+                        .WithMany()
+                        .HasForeignKey("MediaAssetId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("StoryPlatform.Domain.Entities.StoryScene", "StoryScene")
                         .WithMany()
                         .HasForeignKey("StorySceneId")
@@ -6596,6 +6640,10 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasForeignKey("StorySummaryId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("IllustrationBeat");
+
+                    b.Navigation("MediaAsset");
 
                     b.Navigation("StoryScene");
 

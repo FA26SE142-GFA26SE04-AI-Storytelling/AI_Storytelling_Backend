@@ -602,7 +602,7 @@ public class ParentReadingFeedbackServiceTests
             StoryId = ReadingHarness.Story, AudioStoragePath = "summaries/1.webm", CreatedAt = createdAt
         });
         _h.SummaryFlags.Add(new StorySummaryFlag { Id = 1, StorySummaryId = 1, StorySceneId = 5 });
-        _h.SummaryFlags.Add(new StorySummaryFlag { Id = 2, StorySummaryId = 1, StorySceneId = 6 });
+        _h.SummaryFlags.Add(new StorySummaryFlag { Id = 2, StorySummaryId = 1, StorySceneId = 6, AnsweredAt = DateTime.UtcNow });
         _h.SummaryFlags.Add(new StorySummaryFlag { Id = 3, StorySummaryId = 1, StorySceneId = 7, IsDeleted = true });
 
         var page = await List();
@@ -612,6 +612,7 @@ public class ParentReadingFeedbackServiceTests
         Assert.Equal(createdAt, retell.CreatedAt);
         Assert.True(retell.HasRecording);
         Assert.Equal(2, retell.FlagCount);
+        Assert.Equal(1, retell.UnansweredCount);
         Assert.Null(page.Items.Single(i => i.SessionId == other.Id).Retell);
     }
 
@@ -637,6 +638,7 @@ public class ParentReadingFeedbackServiceTests
         var retell = page.Items.Single(i => i.SessionId == flagsOnly.Id).Retell!;
         Assert.False(retell.HasRecording);
         Assert.Equal(0, retell.FlagCount);
+        Assert.Equal(0, retell.UnansweredCount);
     }
 
     [Fact]

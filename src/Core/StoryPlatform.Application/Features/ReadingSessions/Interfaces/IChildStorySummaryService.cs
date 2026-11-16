@@ -5,6 +5,6 @@ public interface IChildStorySummaryService
     Task<StorySummarySentDto> SendRecordingAsync(
         int childProfileId, int sessionId, StorySummaryRecordingRequest request, CancellationToken ct = default);
 
-    Task<StorySummarySentDto> SendFlagsAsync(
-        int childProfileId, int sessionId, StorySummaryFlagsRequestDto request, CancellationToken ct = default);
+    Task<StorySummaryQuestionSentDto> AskAsync(
+        int childProfileId, int sessionId, StorySummaryQuestionRequest request, CancellationToken ct = default);
 }

@@ -55,10 +55,10 @@ public partial class ParentReadingFeedbackService
         }
 
         var summaryIds = summaries.Select(summary => summary.Id).ToList();
-        var flagCounts = (await _unitOfWork.Repository<StorySummaryFlag>().FindAsync(
+        var flags = (await _unitOfWork.Repository<StorySummaryFlag>().FindAsync(
                 flag => summaryIds.Contains(flag.StorySummaryId) && !flag.IsDeleted, cancellationToken: ct))
             .GroupBy(flag => flag.StorySummaryId)
-            .ToDictionary(group => group.Key, group => group.Count());
+            .ToDictionary(group => group.Key, group => (Total: group.Count(), Open: group.Count(flag => flag.AnsweredAt == null)));
 
         return summaries
             .GroupBy(summary => summary.ReadingSessionId)
@@ -71,7 +71,8 @@ public partial class ParentReadingFeedbackService
                     SummaryId = latest.Id,
                     CreatedAt = latest.CreatedAt,
                     HasRecording = latest.AudioStoragePath != null,
-                    FlagCount = flagCounts.GetValueOrDefault(latest.Id)
+                    FlagCount = flags.GetValueOrDefault(latest.Id).Total,
+                    UnansweredCount = flags.GetValueOrDefault(latest.Id).Open
                 };
             });
     }

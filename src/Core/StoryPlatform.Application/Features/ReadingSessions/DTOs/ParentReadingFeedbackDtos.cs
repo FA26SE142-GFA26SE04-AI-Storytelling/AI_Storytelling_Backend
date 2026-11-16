@@ -149,8 +149,10 @@ public class ParentRetellBriefDto
     public int SummaryId { get; set; }
     public DateTime CreatedAt { get; set; }
     public bool HasRecording { get; set; }
-    /// <summary>Số cảnh bé đánh dấu "còn thắc mắc".</summary>
+    /// <summary>Số câu bé hỏi bố mẹ về tranh hoặc cả cảnh.</summary>
     public int FlagCount { get; set; }
+    /// <summary>Số câu bố mẹ chưa đánh dấu đã trả lời.</summary>
+    public int UnansweredCount { get; set; }
 }
 
 public class ParentReadingOverviewQueryDto

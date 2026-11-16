@@ -186,7 +186,7 @@ const row101 = {
   readAloud: { attempts: 3, segmentsPracticed: 2, goodWords: 16, retryWords: 3, totalWords: 20, goodPercent: 80 },
   expEarned: 25,
   wordsCollected: [{ vocabularyId: 2, term: "dũng cảm" }, { vocabularyId: 1, term: "thông minh" }],
-  retell: { summaryId: 101, createdAt: "2026-11-10T10:19:00Z", hasRecording: false, flagCount: 1 }
+  retell: { summaryId: 101, createdAt: "2026-11-10T10:19:00Z", hasRecording: false, flagCount: 1, unansweredCount: 1 }
 };
 const paged = (items, total, idx = 1, size = 20) => ({
   items, pageIndex: idx, pageSize: size, totalCount: total, totalPages: Math.ceil(total / size),
@@ -694,29 +694,29 @@ const STEPS = [
 // =====================================================================
 {
   id: "t7", title: "Task 7 — Gắn bản \"Bé kể lại\" vào dòng truyện đã đọc",
-  desc: "Mỗi dòng danh sách có retell cho biết lần đọc đó có bản kể lại hay không: summaryId (để mở / nghe / xóa ở API ParentStorySummary), createdAt, hasRecording, flagCount (số cảnh bé đánh dấu còn thắc mắc). Null nếu không có hoặc đã xóa. Danh sách không trả link ghi âm (link ký có hạn 15 phút vẫn nằm ở ParentStorySummary).",
+  desc: "Mỗi dòng danh sách có retell cho biết lần đọc đó có bản kể lại hay không: summaryId (để mở / nghe / xóa ở API ParentStorySummary), createdAt, hasRecording, flagCount (số câu bé hỏi về tranh hoặc cả cảnh), unansweredCount (số câu chưa được bố mẹ đánh dấu đã trả lời). Null nếu không có hoặc đã xóa. Danh sách không trả link ghi âm (link ký có hạn 15 phút vẫn nằm ở ParentStorySummary).",
   flow: [
-    "Bản kể lại 1 (seed) gắn phiên 1: không ghi âm, 1 cảnh. Bản 101 (seed) gắn phiên 101: không ghi âm, 1 cảnh.",
+    "Bản kể lại 1 (seed) gắn phiên 1: không ghi âm, 1 câu hỏi cũ về cả cảnh, chưa trả lời. Bản 101 (seed) gắn phiên 101 cũng tương tự: flagCount 1 và unansweredCount 1.",
     "Gọi danh sách để xem retell từng dòng; đối chiếu với GET /ParentStorySummary/1.",
-    "Thử xóa mềm bản kể lại / cảnh đánh dấu bằng SQL, rồi thử có 2 bản cho 1 phiên."
+    "Đối chiếu đánh dấu câu 101 bằng PUT /ParentStorySummary/1/101/questions/101/answered ở story-summary-api-test-guide.html; kiểm unansweredCount 0 rồi bỏ dấu để về 1. Các ca SQL chỉ là hướng dẫn thủ công, không tự chạy."
   ],
   apis: [
   { m: "GET", p: "/api/v1/ParentReadingFeedback/{childProfileId}  (retell)", role: "User (chủ hồ sơ)",
     what: "Danh sách ở Task 1, tập trung vào trường retell.",
     detail: [["Cách tính", [
       "Lấy story_summaries chưa xóa của các phiên trong trang; nếu một phiên có nhiều bản thì lấy bản CreatedAt mới nhất (rồi Id lớn nhất).",
-      "hasRecording = AudioStoragePath khác null; flagCount = số story_summary_flags chưa xóa của bản đó."
+      "hasRecording = AudioStoragePath khác null; flagCount = số story_summary_flags chưa xóa của bản đó; unansweredCount = số dòng trong số đó có AnsweredAt null. Đánh dấu đã trả lời không đổi flagCount."
     ]]],
     resp: J({ success: true, message: "Lấy danh sách truyện con đã đọc thành công.", data: paged([{ sessionId: 101, retell: row101.retell }], 5), errors: null }),
     tests: [
       ["ok", "Phiên 101: bản kể lại không ghi âm, 1 cảnh",
-        "200; item 101: retell = { summaryId 101, createdAt (10 phút sau giờ xong), hasRecording false, flagCount 1 }",
+        "200; item 101: retell = { summaryId 101, createdAt (10 phút sau giờ xong), hasRecording false, flagCount 1, unansweredCount 1 }",
         "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1"],
       ["edge", "(SQL) Bản kể lại có ghi âm thì hasRecording = true",
         "Sau khi chạy SQL: item 101: retell.hasRecording = true, flagCount 1. Đừng gọi GET /api/v1/ParentStorySummary/1 trước khi hoàn tác (file ghi âm không có thật nên ký link sẽ lỗi)",
         "Chạy SQL: UPDATE story_summaries SET \"AudioStoragePath\"='summaries/demo-101.webm',\"AudioContentType\"='audio/webm',\"AudioBytes\"=1024,\"RecordingSentAt\"=NOW() WHERE \"Id\"=101; rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: UPDATE story_summaries SET \"AudioStoragePath\"=NULL,\"AudioContentType\"=NULL,\"AudioBytes\"=NULL,\"RecordingSentAt\"=NULL WHERE \"Id\"=101;"],
       ["ok", "Phiên 1: bản kể lại seed không ghi âm",
-        "200; item 1: retell = { summaryId 1, hasRecording false, flagCount 1 }",
+        "200; item 1: retell = { summaryId 1, hasRecording false, flagCount 1, unansweredCount 1 }",
         "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1"],
       ["ok", "Phiên không có bản kể lại",
         "200; item 102, 11, 13: retell = null",
@@ -724,14 +724,20 @@ const STEPS = [
       ["ok", "Đối chiếu với API ParentStorySummary",
         "200; items có summaryId 101 và 1 (cùng SummaryId với retell.summaryId); phiên của summary: sessionId 101 và 1",
         "Đăng nhập parent_demo1. GET /api/v1/ParentStorySummary/1"],
+      ["ok", "Sau khi bố mẹ đánh dấu câu 101 đã trả lời",
+        "200; item 101: retell.flagCount vẫn 1, unansweredCount 0; GET ParentStorySummary của bản 101 cũng unansweredCount 0",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1. Điều kiện: đã chạy TC-AN01 trong story-summary-api-test-guide.html; hoàn tác bằng TC-AN03 sau khi kiểm."],
+      ["ok", "Sau khi bỏ đánh dấu câu 101",
+        "200; item 101: retell.flagCount 1, unansweredCount 1 trở lại; dữ liệu seed ban đầu được khôi phục",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1. Điều kiện: đã chạy TC-AN03 trong story-summary-api-test-guide.html."],
       ["edge", "(SQL) Bản kể lại đã xóa mềm thì retell = null",
         "Sau khi chạy SQL: item 101: retell = null",
         "Chạy SQL: UPDATE story_summaries SET \"IsDeleted\"=true WHERE \"Id\"=101; rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: UPDATE story_summaries SET \"IsDeleted\"=false WHERE \"Id\"=101;"],
       ["edge", "(SQL) Cảnh đánh dấu đã xóa mềm không được đếm",
-        "Sau khi chạy SQL: item 101: retell.flagCount = 0 (hasRecording vẫn false)",
+        "Sau khi chạy SQL: item 101: retell.flagCount = 0, unansweredCount = 0 (hasRecording vẫn false)",
         "Chạy SQL: UPDATE story_summary_flags SET \"IsDeleted\"=true WHERE \"Id\"=101; rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: UPDATE story_summary_flags SET \"IsDeleted\"=false WHERE \"Id\"=101;"],
       ["edge", "(SQL) Một phiên có 2 bản kể lại: lấy bản mới nhất",
-        "Sau khi chạy SQL: item 101: retell.summaryId = 102, hasRecording false, flagCount 0 (bản 102 tạo sau, không ghi âm, không cảnh)",
+        "Sau khi chạy SQL: item 101: retell.summaryId = 102, hasRecording false, flagCount 0, unansweredCount 0 (bản 102 tạo sau, không ghi âm, không câu hỏi)",
         "Chạy SQL: INSERT INTO story_summaries (\"Id\",\"ReadingSessionId\",\"ChildProfileId\",\"StoryId\",\"StoryVersionId\",\"AudioStoragePath\",\"CreatedAt\",\"IsDeleted\") VALUES (102,101,1,1,1,NULL,NOW(),false); rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: DELETE FROM story_summaries WHERE \"Id\"=102;"],
       ["ok", "Dòng chưa xong cũng có thể có bản kể lại",
         "200; item 103 (Unfinished) có retell = null khi chưa có bản; thêm bản gắn phiên 103 thì retell xuất hiện",

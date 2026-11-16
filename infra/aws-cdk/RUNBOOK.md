@@ -212,6 +212,12 @@ aws secretsmanager put-secret-value --secret-id storyplatform/core/app-secrets \
 rm /tmp/app-secrets.json
 ```
 
+`SePayApiKey` is the API Key chosen when creating the webhook in the SePay dashboard (auth type
+"API Key"); the task receives it as `SePaySettings__WebhookApiKey`. While it is still the placeholder
+the API rejects every webhook. The receiving bank account shown on the payment QR is not a secret:
+pass it as CDK context `sepayBankAccountNumber`, `sepayBankCode`, `sepayAccountName` (persist in
+`cdk.json`). SePay webhook URL: `https://<api-domain>/api/v1/Payment/webhook/sepay`.
+
 `RedisConnectionString` must be in StackExchange.Redis's native connection-string format:
 `<host>:<port>,password=<token>,ssl=True,abortConnect=False` (e.g.
 `cute-cat-12345.upstash.io:6379,password=sometoken,ssl=True,abortConnect=False`), using the

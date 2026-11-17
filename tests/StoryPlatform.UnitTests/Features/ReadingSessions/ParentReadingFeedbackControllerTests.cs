@@ -14,10 +14,37 @@ namespace StoryPlatform.UnitTests.Features.ReadingSessions;
 
 public class ParentReadingFeedbackControllerTests
 {
+    [Fact]
+    public async Task Reflection_ForwardsParentChildAndSession()
+    {
+        using var cts = new CancellationTokenSource();
+        var expected = new ParentStoryReflectionDto { SessionId = 5 };
+        _reflections.Setup(s => s.GetAsync(7, 100, 5, cts.Token)).ReturnsAsync(expected);
+
+        var result = await Controller(new Claim(ClaimTypes.NameIdentifier, "7")).Reflection(100, 5, cts.Token);
+
+        var response = Assert.IsType<ApiResponse<ParentStoryReflectionDto>>(
+            Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Same(expected, response.Data);
+        _reflections.VerifyAll();
+    }
+
+    [Fact]
+    public async Task DeleteReflectionNote_ForwardsIds()
+    {
+        using var cts = new CancellationTokenSource();
+        _reflections.Setup(s => s.DeleteNoteAsync(7, 100, 5, cts.Token)).Returns(Task.CompletedTask);
+
+        var result = await Controller(new Claim(ClaimTypes.NameIdentifier, "7")).DeleteReflectionNote(100, 5, cts.Token);
+
+        Assert.IsType<OkObjectResult>(result.Result);
+        _reflections.VerifyAll();
+    }
     private readonly Mock<IParentReadAloudRecordingService> _readAloud = new(MockBehavior.Strict);
+    private readonly Mock<IParentStoryReflectionService> _reflections = new(MockBehavior.Strict);
     private readonly Mock<IParentReadingFeedbackService> _service = new(MockBehavior.Strict);
 
-    private ParentReadingFeedbackController Controller(params Claim[] claims) => new(_service.Object, _readAloud.Object)
+    private ParentReadingFeedbackController Controller(params Claim[] claims) => new(_service.Object, _readAloud.Object, _reflections.Object)
     {
         ControllerContext = new ControllerContext
         {
@@ -35,7 +62,11 @@ public class ParentReadingFeedbackControllerTests
 
         Assert.NotNull(authorize);
         Assert.Equal("User", authorize!.Roles);
-        Assert.Equal(new[] { "DeleteReadAloudRecording", "List", "Overview", "Quiz", "ReadAloudRecordings" }, methods);
+        Assert.Equal(new[] { "DeleteReadAloudRecording", "DeleteReflectionNote", "List", "Overview", "Quiz", "ReadAloudRecordings", "Reflection" }, methods);
+        Assert.Equal("{childProfileId:int}/sessions/{sessionId:int}/reflection",
+            type.GetMethod("Reflection")!.GetCustomAttribute<HttpGetAttribute>()!.Template);
+        Assert.Equal("{childProfileId:int}/sessions/{sessionId:int}/reflection/note",
+            type.GetMethod("DeleteReflectionNote")!.GetCustomAttribute<HttpDeleteAttribute>()!.Template);
         Assert.Equal("{childProfileId:int}/sessions/{sessionId:int}/read-aloud",
             type.GetMethod("ReadAloudRecordings")!.GetCustomAttribute<HttpGetAttribute>()!.Template);
         Assert.Equal("{childProfileId:int}/sessions/{sessionId:int}/read-aloud/{recordingId:int}",

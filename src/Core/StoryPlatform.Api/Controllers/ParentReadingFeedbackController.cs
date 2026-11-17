@@ -12,11 +12,13 @@ public class ParentReadingFeedbackController : BaseApiController
 {
     private readonly IParentReadingFeedbackService _feedback;
     private readonly IParentReadAloudRecordingService _readAloud;
+    private readonly IParentStoryReflectionService _reflections;
 
-    public ParentReadingFeedbackController(IParentReadingFeedbackService feedback, IParentReadAloudRecordingService readAloud)
+    public ParentReadingFeedbackController(IParentReadingFeedbackService feedback, IParentReadAloudRecordingService readAloud, IParentStoryReflectionService reflections)
     {
         _feedback = feedback;
         _readAloud = readAloud;
+        _reflections = reflections;
     }
 
     [HttpGet("{childProfileId:int}")]
@@ -60,5 +62,22 @@ public class ParentReadingFeedbackController : BaseApiController
     {
         await _readAloud.DeleteAsync(GetCurrentUserId(), childProfileId, sessionId, recordingId, cancellationToken);
         return HandleResult<object?>(null, "Đã xóa bản ghi đọc to.");
+    }
+    /// <summary>Cảm nhận sau khi đọc của con trong một phiên: cảm xúc, cảnh thích nhất (tranh + chữ), lời con (chữ, link nghe 15 phút). Chỉ chủ hồ sơ.</summary>
+    [HttpGet("{childProfileId:int}/sessions/{sessionId:int}/reflection")]
+    public async Task<ActionResult<ApiResponse<ParentStoryReflectionDto>>> Reflection(
+        int childProfileId, int sessionId, CancellationToken cancellationToken)
+    {
+        var result = await _reflections.GetAsync(GetCurrentUserId(), childProfileId, sessionId, cancellationToken);
+        return HandleResult(result, "Lấy cảm nhận của con thành công.");
+    }
+
+    /// <summary>Xóa lời con về cảnh yêu thích (chữ và file ghi âm). Cảm xúc và cảnh vẫn giữ. Chỉ chủ hồ sơ.</summary>
+    [HttpDelete("{childProfileId:int}/sessions/{sessionId:int}/reflection/note")]
+    public async Task<ActionResult<ApiResponse<object?>>> DeleteReflectionNote(
+        int childProfileId, int sessionId, CancellationToken cancellationToken)
+    {
+        await _reflections.DeleteNoteAsync(GetCurrentUserId(), childProfileId, sessionId, cancellationToken);
+        return HandleResult<object?>(null, "Đã xóa lời của con.");
     }
 }

@@ -132,6 +132,7 @@ public static class DependencyInjection
         services.AddScoped<IStoryArchiveHandler, ReadingSessionArchiveHandler>();
         services.AddScoped<IStoryArchiveHandler, ChildRoadmapArchiveHandler>();
         // Cấp Creator đối tác (Luồng 5, 5g): cùng một instance xét cấp và xử lý mất cấp khi truyện bị gỡ vì vi phạm.
+        services.AddScoped<Features.CreatorPayouts.Interfaces.ICreatorPayoutService, Features.CreatorPayouts.Services.CreatorPayoutService>();
         services.AddScoped<Features.CreatorTiers.Services.CreatorTierService>();
         services.AddScoped<Features.CreatorTiers.Interfaces.ICreatorTierService>(
             provider => provider.GetRequiredService<Features.CreatorTiers.Services.CreatorTierService>());

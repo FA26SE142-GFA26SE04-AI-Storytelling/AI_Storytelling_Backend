@@ -113,3 +113,21 @@ public class PartnerCriterionDto
     public decimal Target { get; set; }
     public bool Met { get; set; }
 }
+
+/// <summary>Thu nhập của mọi Creator trong một kỳ chia tiền (Luồng 5, 5h): nguồn để chốt kỳ và cộng vào số dư.</summary>
+public class CreatorPeriodEarningsDto
+{
+    public DateTime PeriodStart { get; set; }
+    public DateTime PeriodEnd { get; set; }
+    public long CreatorFundVnd { get; set; }
+    public int TotalValidReads { get; set; }
+    /// <summary>Chỉ các Creator có ít nhất một lượt đọc hợp lệ trong kỳ.</summary>
+    public List<CreatorPeriodEarningDto> Creators { get; set; } = [];
+}
+
+public class CreatorPeriodEarningDto
+{
+    public int CreatorUserId { get; set; }
+    public int ValidReads { get; set; }
+    public long EarningsVnd { get; set; }
+}

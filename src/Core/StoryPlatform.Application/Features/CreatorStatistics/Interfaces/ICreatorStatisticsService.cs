@@ -27,4 +27,11 @@ public interface ICreatorStatisticsService
     /// </summary>
     Task<IReadOnlyDictionary<int, PartnerProgressDto>> GetPartnerProgressAsync(
         IReadOnlyCollection<int> creatorUserIds, DateTime now, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Thu nhập của mọi Creator trong kỳ, cùng công thức với <see cref="GetRevenueAsync"/> (quỹ × lượt đọc hợp lệ của
+    /// Creator ÷ tổng lượt đọc hợp lệ, làm tròn xuống). Dùng khi chốt kỳ chia tiền (Luồng 5, 5h).
+    /// </summary>
+    Task<CreatorPeriodEarningsDto> GetPeriodEarningsAsync(
+        DateTime periodStart, DateTime periodEnd, CancellationToken cancellationToken = default);
 }

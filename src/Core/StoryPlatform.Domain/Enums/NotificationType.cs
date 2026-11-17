@@ -46,5 +46,9 @@ public enum NotificationType
     /// <summary>Admin đã từ chối đơn đăng ký Content Creator, kèm lý do (Luồng 5, M5).</summary>
     CreatorApplicationRejected = 36,
     /// <summary>Creator lên hoặc mất cấp đối tác (Luồng 5, 5g).</summary>
-    CreatorTierChanged = 37
+    CreatorTierChanged = 37,
+    /// <summary>Admin đã chuyển khoản số dư cho Creator và đánh dấu Đã chi (Luồng 5, 5h).</summary>
+    CreatorPayoutPaid = 38,
+    /// <summary>Admin huỷ một lần chi, số dư được cộng lại (Luồng 5, 5h).</summary>
+    CreatorPayoutCancelled = 39
 }

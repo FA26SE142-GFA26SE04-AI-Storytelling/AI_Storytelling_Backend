@@ -34,4 +34,8 @@ public interface ICreatorStatisticsService
     /// </summary>
     Task<CreatorPeriodEarningsDto> GetPeriodEarningsAsync(
         DateTime periodStart, DateTime periodEnd, CancellationToken cancellationToken = default);
+
+    /// <summary>Thống kê Creator cho Administrator (Luồng 5, 5e): tổng hợp của kỳ và từng Creator.</summary>
+    Task<AdminCreatorStatisticsDto> GetAdminOverviewAsync(
+        DateTime periodStart, DateTime periodEnd, CancellationToken cancellationToken = default);
 }

@@ -795,6 +795,28 @@ public sealed partial class MediaGenerationServiceTests
         await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.ForbiddenException>(() => service.ConfirmAsync(1, 1, new(10, 1)));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CompletedMediaPackage_ConsumesTheHeldStoryCredit_OnlyWhenCreditsAreTracked(bool tracked)
+    {
+        var store = Seed();
+        store.Items<Story>().Single().Source = StorySource.Manual;
+        var usage = new CreditUsage
+        {
+            Id = 700, UserId = 1, LotId = 1, Amount = 1, StoryId = 1, Reason = CreditUsageReason.StoryRequest
+        };
+        store.Seed(usage);
+        var service = Create(store, tokenQuota: tracked
+            ? new Mock<StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService>().Object
+            : null);
+
+        Assert.True((await service.RunPackageAsync()).Success);
+
+        Assert.Equal(StoryStatus.MediaReview, store.Items<Story>().Single().Status);
+        Assert.Equal(tracked, usage.ConsumedAt.HasValue);
+    }
+
     [Fact]
     public async Task RegenerateAudioInvalidatesConfirmationAndKeepsOtherFiles()
     {
@@ -897,7 +919,8 @@ public sealed partial class MediaGenerationServiceTests
         IIllustrationBeatPlanner? planner = null,
         IMediaReadinessService? readiness = null, IChildProfileAccessGuard? supervision = null,
         Microsoft.Extensions.Logging.ILogger<MediaGenerationService>? logger = null, MediaGenerationOptions? options = null,
-        ISceneSegmentationProvider? segmenter = null)
+        ISceneSegmentationProvider? segmenter = null,
+        StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null)
     {
         var evaluatorImpl = evaluator ?? new PassingEvaluator();
         var clock = new MediaTestPump.Clock();
@@ -921,7 +944,8 @@ public sealed partial class MediaGenerationServiceTests
             recorder,
             readiness ?? new MediaReadinessService(uow),
             options ?? new MediaGenerationOptions { AssetMaxAttempts = 3, JobLeaseMinutes = 5 },
-            logger ?? NullLogger<MediaGenerationService>.Instance, supervision ?? new Mock<IChildProfileAccessGuard>().Object, clock, new CreatorMediaUploadValidator());
+            logger ?? NullLogger<MediaGenerationService>.Instance, supervision ?? new Mock<IChildProfileAccessGuard>().Object, clock, new CreatorMediaUploadValidator(),
+            tokenQuota: tokenQuota);
         MediaTestPump.Register(service, uow, clock);
         return service;
     }

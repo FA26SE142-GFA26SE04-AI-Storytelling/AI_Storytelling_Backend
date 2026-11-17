@@ -10,7 +10,8 @@ using StoryPlatform.Domain.Enums;
 namespace StoryPlatform.Application.Features.ParentAuthoring;
 
 public sealed partial class ParentStoryPackageService(IUnitOfWork uow, IChildProfileAccessGuard guard,
-    StoryPlatform.Application.Features.ContentGeneration.LearningBatchOptions? learningOptions = null)
+    StoryPlatform.Application.Features.ContentGeneration.LearningBatchOptions? learningOptions = null,
+    StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null)
 {
     private static readonly JsonSerializerOptions Json = ParentPackageContext.Json;
     public static async Task<bool> IsContentFinalizedAsync(IUnitOfWork uow, int storyId, CancellationToken ct)
@@ -84,6 +85,7 @@ public sealed partial class ParentStoryPackageService(IUnitOfWork uow, IChildPro
             if (!IsPackageCheckEligible(p, Check(p))) throw new ConflictException("PACKAGE_CHECK_NOT_PASSED");
             if (await ActivePackageJob(p.Id, ct)) throw new ConflictException("PACKAGE_JOB_ACTIVE");
             var checkJob = await uow.Repository<StoryGenerationJob>().FirstOrDefaultAsync(x => x.ParentStoryPackageId == p.Id && x.Operation == GenerationJobOperation.CheckParentPackage, cancellationToken: ct);
+            await HoldMediaCreditAsync(p, ct);
             await Queue(p, GenerationJobOperation.BuildParentPackage, ct, JsonSerializer.Deserialize<ParentPackageWorkState>(checkJob?.GenerationMetadataJson ?? "{}", Json));
             p.Status = "Generating"; p.LastErrorCode = null; Rotate(p); uow.Repository<ParentStoryPackage>().Update(p);
             return Dto(p);
@@ -133,6 +135,8 @@ public sealed partial class ParentStoryPackageService(IUnitOfWork uow, IChildPro
                 job.LeaseExpiresAt = null; job.ConcurrencyToken = Guid.NewGuid().ToString("N");
                 uow.Repository<StoryGenerationJob>().Update(job);
             }
+            // Lần lỗi trước đã trả lượt: thử lại phải giữ lại (không tốn thêm nếu truyện vẫn đang giữ hoặc đã trừ).
+            await HoldMediaCreditAsync(p, ct);
             p.Status = targets.Any(x => x.Operation == GenerationJobOperation.CheckParentPackage) ? "PendingCheck" : "Generating";
             p.LastErrorCode = null; Rotate(p); uow.Repository<ParentStoryPackage>().Update(p); return Dto(p);
         }, ct, packageId);
@@ -240,6 +244,14 @@ public sealed partial class ParentStoryPackageService(IUnitOfWork uow, IChildPro
         (x.Status == GenerationJobStatus.Pending || x.Status == GenerationJobStatus.Processing), ct);
     private Task<bool> ActivePackageJob(int id, CancellationToken ct) => uow.Repository<StoryGenerationJob>().ExistsAsync(x => x.ParentStoryPackageId == id &&
         (x.Status == GenerationJobStatus.Pending || x.Status == GenerationJobStatus.Processing), ct);
+    /// <summary>Gói có ảnh, lời đọc hoặc tương tác nghe cần job media: giữ 1 lượt cho cả truyện (Luồng 2).</summary>
+    private async Task HoldMediaCreditAsync(ParentStoryPackage p, CancellationToken ct)
+    {
+        var c = Components(p);
+        if (tokenQuota != null && (c.Images || c.Narration || c.Listening))
+            await tokenQuota.HoldStoryCreditOnceAsync(p.StoryId, ct);
+    }
+
     internal static ParentPackageComponents Components(ParentStoryPackage p) => JsonSerializer.Deserialize<ParentPackageComponents>(p.ComponentsJson, Json)!;
     internal static ParentPackageCheck? Check(ParentStoryPackage p) =>
         string.IsNullOrWhiteSpace(p.CheckResultJson) || p.CheckResultJson == "{}"

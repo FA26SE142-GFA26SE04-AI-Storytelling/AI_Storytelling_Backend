@@ -1,5 +1,9 @@
+using System.Linq.Expressions;
+using Microsoft.EntityFrameworkCore;
+using Moq;
 using StoryPlatform.Application.Features.ParentAuthoring;
 using StoryPlatform.Domain.Entities;
+using StoryPlatform.Infrastructure.Persistence;
 using Xunit;
 
 namespace StoryPlatform.UnitTests;
@@ -107,5 +111,32 @@ public sealed class AuthoringGuideItemStoreTests
         await items.AddAsync(Version, [Template("t", 1, ("person", "Ai?"))], Save, Ct);
 
         Assert.Equal([0, 1], placeholderCountAtSave);
+    }
+
+    [Fact]
+    public async Task LoadAsync_placeholder_predicate_translates_with_actual_npgsql_provider()
+    {
+        var (store, items, save) = Create();
+        await items.AddAsync(Version, [Template("t", 1, ("person", "Ai?"))], save, Ct);
+        using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql("Host=localhost;Database=translation_only;Username=unused;Password=unused").Options);
+
+        string? translatedSql = null;
+        Mock.Get(store.Uow.Object.Repository<AuthoringGuidePlaceholder>())
+            .Setup(x => x.FindAsync(It.IsAny<Expression<Func<AuthoringGuidePlaceholder, bool>>>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns<Expression<Func<AuthoringGuidePlaceholder, bool>>, string?, CancellationToken>((predicate, _, _) =>
+            {
+                // Query translation only: captures the production expression without opening a connection.
+                translatedSql = db.Set<AuthoringGuidePlaceholder>().Where(predicate).ToQueryString();
+                return Task.FromResult<IReadOnlyList<AuthoringGuidePlaceholder>>(
+                    store.Items<AuthoringGuidePlaceholder>().Where(predicate.Compile()).ToList());
+            });
+
+        var loaded = await items.LoadAsync(Version, "Parent", Ct);
+
+        Assert.NotNull(translatedSql);
+        Assert.Contains("authoring_guide_placeholders", translatedSql);
+        Assert.Single(loaded);
+        Assert.Single(loaded[0].PlaceholderDefinitions);
     }
 }

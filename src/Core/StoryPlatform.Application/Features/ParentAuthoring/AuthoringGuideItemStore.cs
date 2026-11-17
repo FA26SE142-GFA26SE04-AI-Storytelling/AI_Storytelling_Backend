@@ -11,7 +11,7 @@ public sealed class AuthoringGuideItemStore(IUnitOfWork uow)
         var rows = await uow.Repository<AuthoringGuideItem>().FindAsync(
             x => x.CatalogVersionId == versionId && !x.IsDeleted, cancellationToken: ct);
         if (rows.Count == 0) return [];
-        var ids = rows.Select(x => x.Id).ToArray();
+        var ids = rows.Select(x => x.Id).ToList();
         var blanks = (await uow.Repository<AuthoringGuidePlaceholder>().FindAsync(
             x => ids.Contains(x.ItemId) && !x.IsDeleted, cancellationToken: ct)).ToLookup(x => x.ItemId);
         return rows.OrderBy(x => x.Order).ThenBy(x => x.GuideKey, StringComparer.Ordinal)

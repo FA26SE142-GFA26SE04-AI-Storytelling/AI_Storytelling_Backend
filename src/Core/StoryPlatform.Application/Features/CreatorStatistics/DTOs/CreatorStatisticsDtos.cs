@@ -113,3 +113,71 @@ public class PartnerCriterionDto
     public decimal Target { get; set; }
     public bool Met { get; set; }
 }
+
+/// <summary>Thu nhập của mọi Creator trong một kỳ chia tiền (Luồng 5, 5h): nguồn để chốt kỳ và cộng vào số dư.</summary>
+public class CreatorPeriodEarningsDto
+{
+    public DateTime PeriodStart { get; set; }
+    public DateTime PeriodEnd { get; set; }
+    public long CreatorFundVnd { get; set; }
+    public int TotalValidReads { get; set; }
+    /// <summary>Chỉ các Creator có ít nhất một lượt đọc hợp lệ trong kỳ.</summary>
+    public List<CreatorPeriodEarningDto> Creators { get; set; } = [];
+}
+
+public class CreatorPeriodEarningDto
+{
+    public int CreatorUserId { get; set; }
+    public int ValidReads { get; set; }
+    public long EarningsVnd { get; set; }
+}
+
+/// <summary>
+/// Thống kê Creator cho Administrator (Luồng 5, 5e): tổng hợp của kỳ và từng Creator. Lượt xem, lượt đọc hợp lệ và thu nhập
+/// dự kiến tính như thống kê cá nhân của Creator (5f); lượt yêu thích là số đang yêu thích tại lúc xem.
+/// </summary>
+public class AdminCreatorStatisticsDto
+{
+    public DateTime PeriodStart { get; set; }
+    public DateTime PeriodEnd { get; set; }
+
+    /// <summary>Số tài khoản Content Creator (mọi trạng thái, trừ đã xoá).</summary>
+    public int TotalCreators { get; set; }
+    public int ActiveCreators { get; set; }
+    public int PartnerCreators { get; set; }
+    /// <summary>Creator có ít nhất một truyện tạo trong kỳ hoặc một lượt xem trong kỳ.</summary>
+    public int CreatorsWithActivity { get; set; }
+
+    public int StoriesCreated { get; set; }
+    public int PublishedStories { get; set; }
+    public int Views { get; set; }
+    public int Favorites { get; set; }
+    public int CompletedReadings { get; set; }
+    public int ValidReads { get; set; }
+
+    public long CreatorFundVnd { get; set; }
+    /// <summary>Tổng thu nhập dự kiến của mọi Creator (≤ quỹ vì làm tròn xuống từng Creator).</summary>
+    public long EstimatedEarningsVnd { get; set; }
+
+    /// <summary>Từng Creator, thu nhập dự kiến cao nhất trước.</summary>
+    public List<AdminCreatorStatisticsRowDto> Creators { get; set; } = [];
+}
+
+public class AdminCreatorStatisticsRowDto
+{
+    public int CreatorUserId { get; set; }
+    public string Username { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    /// <summary>Standard hoặc Partner.</summary>
+    public string Tier { get; set; } = string.Empty;
+    /// <summary>Số truyện Creator tạo trong kỳ.</summary>
+    public int StoriesCreated { get; set; }
+    /// <summary>Số truyện đang Published.</summary>
+    public int PublishedStories { get; set; }
+    public int Views { get; set; }
+    public int Favorites { get; set; }
+    public int CompletedReadings { get; set; }
+    public int ValidReads { get; set; }
+    public long EstimatedEarningsVnd { get; set; }
+}

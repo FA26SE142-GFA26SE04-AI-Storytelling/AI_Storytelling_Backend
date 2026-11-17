@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.BusinessReports.DTOs;
 using StoryPlatform.Application.Features.BusinessReports.Interfaces;
+using StoryPlatform.Application.Features.CreatorStatistics.DTOs;
+using StoryPlatform.Application.Features.CreatorStatistics.Interfaces;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -14,14 +16,16 @@ public class BusinessReportController : BaseApiController
     private readonly IBusinessReportService _businessReportService;
     private readonly IRevenueStatisticsService _revenueStatisticsService;
     private readonly IUserAccountStatisticsService _userAccountStatisticsService;
+    private readonly ICreatorStatisticsService _creatorStatisticsService;
 
     public BusinessReportController(
         IBusinessReportService businessReportService, IRevenueStatisticsService revenueStatisticsService,
-        IUserAccountStatisticsService userAccountStatisticsService)
+        IUserAccountStatisticsService userAccountStatisticsService, ICreatorStatisticsService creatorStatisticsService)
     {
         _businessReportService = businessReportService;
         _revenueStatisticsService = revenueStatisticsService;
         _userAccountStatisticsService = userAccountStatisticsService;
+        _creatorStatisticsService = creatorStatisticsService;
     }
 
     /// <summary>
@@ -84,6 +88,19 @@ public class BusinessReportController : BaseApiController
     {
         var result = await _userAccountStatisticsService.GetAsync(periodStart, periodEnd, cancellationToken);
         return HandleResult(result, "Lấy thống kê tài khoản thành công.");
+    }
+
+    /// <summary>
+    /// Administrator xem thống kê Creator của một kỳ bất kỳ (Luồng 5, 5e): tổng hợp và từng Creator — số truyện tạo trong
+    /// kỳ, truyện đang Published, lượt xem, lượt yêu thích, lượt đọc hợp lệ, cấp Creator và thu nhập dự kiến từ quỹ.
+    /// </summary>
+    [HttpGet("admin/creators")]
+    [Authorize(Roles = "Administrator")]
+    public async Task<ActionResult<ApiResponse<AdminCreatorStatisticsDto>>> GetCreators(
+        [FromQuery] DateTime periodStart, [FromQuery] DateTime periodEnd, CancellationToken cancellationToken)
+    {
+        var result = await _creatorStatisticsService.GetAdminOverviewAsync(periodStart, periodEnd, cancellationToken);
+        return HandleResult(result, "Lấy thống kê Creator thành công.");
     }
 
     /// <summary>

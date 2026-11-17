@@ -265,6 +265,110 @@ public class CreatorStatisticsService : ICreatorStatisticsService
         };
     }
 
+    public async Task<CreatorPeriodEarningsDto> GetPeriodEarningsAsync(
+        DateTime periodStart, DateTime periodEnd, CancellationToken cancellationToken = default)
+    {
+        var (from, toExclusive) = ReportPeriod.Resolve(periodStart, periodEnd);
+        var creatorStories = await GetCreatorStoriesAsync(cancellationToken);
+        var authorByStory = creatorStories.ToDictionary(story => story.Id, story => story.AuthorUserId);
+        var validReads = await GetValidReadsAsync(creatorStories, from, toExclusive, cancellationToken);
+        var revenue = await _revenueStatisticsService.GetAsync(from, toExclusive.AddDays(-1), cancellationToken);
+        var fund = revenue.CreatorFundVnd;
+
+        return new CreatorPeriodEarningsDto
+        {
+            PeriodStart = from,
+            PeriodEnd = toExclusive.AddDays(-1),
+            CreatorFundVnd = fund,
+            TotalValidReads = validReads.Count,
+            Creators = validReads
+                .GroupBy(read => authorByStory[read.StoryId])
+                .OrderBy(group => group.Key)
+                .Select(group => new CreatorPeriodEarningDto
+                {
+                    CreatorUserId = group.Key,
+                    ValidReads = group.Count(),
+                    EarningsVnd = Share(group.Count(), fund, validReads.Count)
+                })
+                .ToList()
+        };
+    }
+
+    public async Task<AdminCreatorStatisticsDto> GetAdminOverviewAsync(
+        DateTime periodStart, DateTime periodEnd, CancellationToken cancellationToken = default)
+    {
+        var (from, toExclusive) = ReportPeriod.Resolve(periodStart, periodEnd);
+        var lastDay = toExclusive.AddDays(-1);
+        var creators = await _unitOfWork.Repository<UserAccount>().FindAsync(
+            user => user.Role == UserRole.ContentCreator && !user.IsDeleted, cancellationToken: cancellationToken);
+        var creatorStories = await GetCreatorStoriesAsync(cancellationToken);
+        var authorByStory = creatorStories.ToDictionary(story => story.Id, story => story.AuthorUserId);
+
+        // Cùng định nghĩa với GetReadingAsync: lượt xem = phiên mở trong kỳ, yêu thích = đang yêu thích.
+        var opened = (await _unitOfWork.Repository<ReadingSession>().FindAsync(
+                session => session.StartedAt >= from && session.StartedAt < toExclusive,
+                cancellationToken: cancellationToken))
+            .Where(session => authorByStory.ContainsKey(session.StoryId))
+            .ToList();
+        var favorites = (await _unitOfWork.Repository<ReadingProgress>().FindAsync(
+                progress => progress.IsFavorited, cancellationToken: cancellationToken))
+            .Where(progress => authorByStory.ContainsKey(progress.StoryId))
+            .ToList();
+        var validReads = await GetValidReadsAsync(creatorStories, from, toExclusive, cancellationToken);
+        var fund = (await _revenueStatisticsService.GetAsync(from, lastDay, cancellationToken)).CreatorFundVnd;
+
+        var viewsBy = opened.ToLookup(session => authorByStory[session.StoryId]);
+        var favoritesBy = favorites.ToLookup(progress => authorByStory[progress.StoryId]);
+        var readsBy = validReads.ToLookup(read => authorByStory[read.StoryId]);
+        var storiesBy = creatorStories.ToLookup(story => story.AuthorUserId);
+
+        var rows = creators
+            .Select(creator =>
+            {
+                var stories = storiesBy[creator.Id].ToList();
+                var views = viewsBy[creator.Id].ToList();
+                var reads = readsBy[creator.Id].Count();
+                return new AdminCreatorStatisticsRowDto
+                {
+                    CreatorUserId = creator.Id,
+                    Username = creator.Username,
+                    FullName = creator.FullName,
+                    Status = creator.Status.ToString(),
+                    Tier = creator.CreatorTier.ToString(),
+                    StoriesCreated = stories.Count(story => story.CreatedAt >= from && story.CreatedAt < toExclusive),
+                    PublishedStories = stories.Count(IsCurrentlyPublished),
+                    Views = views.Count,
+                    Favorites = favoritesBy[creator.Id].Count(),
+                    CompletedReadings = views.Count(session => session.Status == SessionStatus.Completed),
+                    ValidReads = reads,
+                    EstimatedEarningsVnd = Share(reads, fund, validReads.Count)
+                };
+            })
+            .OrderByDescending(row => row.EstimatedEarningsVnd)
+            .ThenByDescending(row => row.Views)
+            .ThenBy(row => row.CreatorUserId)
+            .ToList();
+
+        return new AdminCreatorStatisticsDto
+        {
+            PeriodStart = from,
+            PeriodEnd = lastDay,
+            TotalCreators = rows.Count,
+            ActiveCreators = creators.Count(creator => creator.Status == AccountStatus.Active),
+            PartnerCreators = creators.Count(creator => creator.CreatorTier == CreatorTier.Partner),
+            CreatorsWithActivity = rows.Count(row => row.StoriesCreated > 0 || row.Views > 0),
+            StoriesCreated = rows.Sum(row => row.StoriesCreated),
+            PublishedStories = rows.Sum(row => row.PublishedStories),
+            Views = rows.Sum(row => row.Views),
+            Favorites = rows.Sum(row => row.Favorites),
+            CompletedReadings = rows.Sum(row => row.CompletedReadings),
+            ValidReads = rows.Sum(row => row.ValidReads),
+            CreatorFundVnd = fund,
+            EstimatedEarningsVnd = rows.Sum(row => row.EstimatedEarningsVnd),
+            Creators = rows
+        };
+    }
+
     private async Task<int> MinimumReadSecondsAsync(CancellationToken cancellationToken) =>
         _planSettings == null ? new PlanSettings().MinimumReadSeconds
             : (await _planSettings.GetAsync(cancellationToken)).MinimumReadSeconds;

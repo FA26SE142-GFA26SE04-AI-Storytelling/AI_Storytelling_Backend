@@ -9,6 +9,8 @@ using Microsoft.Extensions.Logging;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
+using StoryPlatform.Application.Features.PlanBenefits.DTOs;
+using StoryPlatform.Application.Features.PlanBenefits.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Application.Features.ListeningInteractions.Services;
@@ -48,6 +50,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
     private readonly MediaGenerationOptions _options;
     private readonly TimeProvider _clock;
 
+    private readonly IPlanSettingsProvider? _planSettings;
+
     public MediaGenerationService(
         IUnitOfWork unitOfWork,
         IMediaContextBuilder contextBuilder,
@@ -67,8 +71,10 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         IMediaReadinessService readinessService,
         MediaGenerationOptions options,
         ILogger<MediaGenerationService> logger, IChildProfileAccessGuard? supervision = null, TimeProvider? clock = null,
-        IMediaUploadValidator? uploadValidator = null, IProviderMediaContextProjector? contextProjector = null)
+        IMediaUploadValidator? uploadValidator = null, IProviderMediaContextProjector? contextProjector = null,
+        IPlanSettingsProvider? planSettings = null)
     {
+        _planSettings = planSettings;
         _unitOfWork = unitOfWork;
         _options = options;
         _clock = clock ?? TimeProvider.System;
@@ -113,6 +119,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         var version = await FreshAsync<StoryVersion>(versionId, cancellationToken)
                       ?? throw new NotFoundException("StoryVersion", versionId);
         var confirmed = MediaPackageConfirmation.IsConfirmed(version);
+        var regeneration = await StoryRegenerationLimits.GetUsageAsync(_unitOfWork, _planSettings, storyId, cancellationToken);
         return new MediaGenerationProgress(
             storyId, versionId, story.Status.ToString(), job.Status.ToString(), readiness.SceneCount,
             readiness.ReadyIllustrations, readiness.ReadyAudio,
@@ -121,6 +128,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             readiness.ManualReviewAssetIds, readiness.ScenesWithoutValidBeats)
         {
             PackageRevision = version.MediaState.MediaPackageRevision,
+            ImageRegeneration = RegenerationCounterDto.From(regeneration.Images),
+            AudioRegeneration = RegenerationCounterDto.From(regeneration.Audio),
             MediaMode = CreatorMediaSelection.Mode(job),
             IsAwaitingSelection = await HasUnselectedCreatorMediaAsync(job, cancellationToken),
             IsGenerated = readiness.IsReady,

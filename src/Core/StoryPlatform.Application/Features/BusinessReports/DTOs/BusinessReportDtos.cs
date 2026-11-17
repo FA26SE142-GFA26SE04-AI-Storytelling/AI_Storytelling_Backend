@@ -24,6 +24,8 @@ public class AdminBusinessReportDto : BusinessReportDto
 {
     public RevenueStatisticsDto? Revenue { get; set; }
     public UserAccountStatisticsDto? Accounts { get; set; }
+    /// <summary>Thống kê Creator của kỳ (Luồng 5, 5e).</summary>
+    public StoryPlatform.Application.Features.CreatorStatistics.DTOs.AdminCreatorStatisticsDto? Creators { get; set; }
 }
 
 /// <summary>

@@ -13,6 +13,7 @@ using StoryPlatform.Contracts.AI.Requests;
 using StoryPlatform.Contracts.AI.Responses;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
+using Moq;
 using Xunit;
 
 namespace StoryPlatform.UnitTests;
@@ -77,6 +78,50 @@ public sealed class OutlineServiceTests
         await Assert.ThrowsAsync<ConflictException>(() => service.RegenerateAsync(1, 1, 1,
             new RegenerateOutlineRequestDto { OperationKey = "regenerate-pinned-1" }));
         Assert.Single(db.Items<StoryVersion>());
+    }
+
+    private static void SeedRegenerations(FakeUnitOfWork store, params GenerationJobStatus[] statuses)
+    {
+        var id = 500;
+        foreach (var status in statuses)
+            store.Seed(new StoryGenerationJob { Id = id++, StoryId = 1, Operation = GenerationJobOperation.RegenerateOutline, Status = status });
+    }
+
+    [Fact]
+    public async Task Regenerate_after_three_counted_regenerations_is_rejected_and_progress_shows_the_limit()
+    {
+        var store = Seed();
+        var service = Service(store);
+        await service.ProcessNextAsync();
+        // Lần bị lỗi kỹ thuật hoặc bị huỷ không tính vào giới hạn.
+        SeedRegenerations(store, GenerationJobStatus.Completed, GenerationJobStatus.Failed, GenerationJobStatus.Cancelled,
+            GenerationJobStatus.Completed, GenerationJobStatus.Completed);
+
+        var progress = await service.GetCurrentAsync(1, 1);
+        Assert.Equal((3, 3, 0), (progress.Regeneration!.Used, progress.Regeneration.Limit, progress.Regeneration.Remaining));
+
+        var error = await Assert.ThrowsAsync<ConflictException>(() => service.RegenerateAsync(1, 1, 1,
+            new RegenerateOutlineRequestDto { OperationKey = "regenerate-over-limit" }));
+        Assert.StartsWith("REGENERATION_LIMIT_REACHED", error.Message);
+        Assert.DoesNotContain(store.Items<StoryGenerationJob>(), job => job.OperationKey == "regenerate-over-limit");
+    }
+
+    [Fact]
+    public async Task Regenerate_uses_the_limit_configured_by_the_administrator()
+    {
+        var store = Seed();
+        var settings = new Moq.Mock<StoryPlatform.Application.Features.PlanBenefits.Interfaces.IPlanSettingsProvider>();
+        settings.Setup(provider => provider.GetAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PlanSettings { OutlineRegenerationLimit = 4 });
+        var service = new OutlineService(store, new FakeAIClient(), new RuleBasedOutlineReviewGuardrail(),
+            new FakeFailureFinalizer(store), planSettings: settings.Object);
+        await service.ProcessNextAsync();
+        SeedRegenerations(store, GenerationJobStatus.Completed, GenerationJobStatus.Completed, GenerationJobStatus.Completed);
+
+        var progress = await service.RegenerateAsync(1, 1, 1, new RegenerateOutlineRequestDto { OperationKey = "regenerate-fourth" });
+
+        Assert.Contains(store.Items<StoryGenerationJob>(), job => job.OperationKey == "regenerate-fourth");
+        Assert.Equal((4, 4, 0), (progress.Regeneration!.Used, progress.Regeneration.Limit, progress.Regeneration.Remaining));
     }
 
     [Fact]

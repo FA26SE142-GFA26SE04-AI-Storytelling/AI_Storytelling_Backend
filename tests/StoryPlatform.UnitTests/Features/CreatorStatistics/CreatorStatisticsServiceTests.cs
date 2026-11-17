@@ -547,4 +547,68 @@ public class CreatorStatisticsServiceTests
         await Assert.ThrowsAsync<BadRequestException>(
             () => ContentSut().GetContentAsync(CreatorId, PeriodEnd, PeriodStart));
     }
+    // ---------- Thu nhập cả kỳ và thống kê Creator cho Admin (Luồng 5, 5e và 5h) ----------
+
+    private void SeedFundAndReads()
+    {
+        // Quỹ 24.600 đ; Creator 50: 3 lượt hợp lệ, Creator 51: 4 lượt. Tổng 7.
+        PaidRevenue(2, 49000, Morning);
+        PaidRevenue(3, 99000, Morning);
+        Completed(StoryId, PaidChildId, Morning);
+        Completed(StoryId, SecondPaidChildId, Morning);
+        Completed(SecondStoryId, PaidChildId, Morning);
+        for (var day = 1; day <= 4; day++) Completed(OtherCreatorStoryId, PaidChildId, Morning.AddDays(day));
+    }
+
+    [Fact]
+    public async Task GetPeriodEarnings_MatchesEachCreatorsEstimatedEarnings()
+    {
+        SeedFundAndReads();
+
+        var result = await _sut.GetPeriodEarningsAsync(PeriodStart, PeriodEnd);
+
+        Assert.Equal((24600L, 7), (result.CreatorFundVnd, result.TotalValidReads));
+        Assert.Equal(["50:3:10542", "51:4:14057"],
+            result.Creators.Select(row => $"{row.CreatorUserId}:{row.ValidReads}:{row.EarningsVnd}"));
+        Assert.Equal((await _sut.GetRevenueAsync(CreatorId, PeriodStart, PeriodEnd, null)).EstimatedEarningsVnd,
+            result.Creators.Single(row => row.CreatorUserId == CreatorId).EarningsVnd);
+    }
+
+    [Fact]
+    public async Task AdminOverview_ReportsTotalsAndEachCreator()
+    {
+        SeedFundAndReads();
+        Opened(StoryId, FreeChildId, Morning);                            // lượt xem không hợp lệ
+        _store.Seed(new ReadingProgress { ChildProfileId = PaidChildId, StoryId = StoryId, IsFavorited = true });
+        _store.Seed(new ReadingProgress { ChildProfileId = PaidChildId, StoryId = OtherCreatorStoryId, IsFavorited = true });
+        // Truyện tạo trong kỳ (chưa xuất bản) và trước kỳ.
+        _store.Seed(new Story { Id = 300, AuthorUserId = CreatorId, Scope = StoryScope.Creator, Status = StoryStatus.Draft, CreatedAt = Morning });
+        _store.Seed(new Story { Id = 301, AuthorUserId = OtherCreatorId, Scope = StoryScope.Creator, Status = StoryStatus.Draft, CreatedAt = BeforePeriod });
+        // Truyện của phụ huynh không tính.
+        _store.Seed(new Story { Id = 302, AuthorUserId = PaidParentId, Scope = StoryScope.Parent, CreatedAt = Morning });
+        var partner = _store.Items<UserAccount>().Single(user => user.Id == OtherCreatorId);
+        partner.CreatorTier = CreatorTier.Partner;
+        _store.Seed(new UserAccount { Id = 52, Role = UserRole.ContentCreator, Status = AccountStatus.Suspended, Username = "idle" });
+        _store.Seed(new UserAccount { Id = 53, Role = UserRole.ContentCreator, Status = AccountStatus.Active, IsDeleted = true });
+
+        var result = await _sut.GetAdminOverviewAsync(PeriodStart, PeriodEnd);
+
+        Assert.Equal((PeriodStart, PeriodEnd), (result.PeriodStart, result.PeriodEnd));
+        Assert.Equal((3, 2, 1, 2), (result.TotalCreators, result.ActiveCreators, result.PartnerCreators, result.CreatorsWithActivity));
+        Assert.Equal((1, 3, 8, 2, 7, 7), (result.StoriesCreated, result.PublishedStories, result.Views, result.Favorites,
+            result.CompletedReadings, result.ValidReads));
+        Assert.Equal((24600L, 24599L), (result.CreatorFundVnd, result.EstimatedEarningsVnd));
+        // Thu nhập dự kiến cao nhất trước: 51 (4 × 24.600 ÷ 7 = 14.057), 50 (10.542), 52 (0).
+        Assert.Equal(
+            ["51:Partner:0:1:4:1:4:4:14057", "50:Standard:1:2:4:1:3:3:10542", "52:Standard:0:0:0:0:0:0:0"],
+            result.Creators.Select(row =>
+                $"{row.CreatorUserId}:{row.Tier}:{row.StoriesCreated}:{row.PublishedStories}:{row.Views}:{row.Favorites}:{row.CompletedReadings}:{row.ValidReads}:{row.EstimatedEarningsVnd}"));
+        Assert.Equal("Suspended", result.Creators.Single(row => row.CreatorUserId == 52).Status);
+    }
+
+    [Fact]
+    public async Task AdminOverview_WithInvalidPeriod_Throws()
+    {
+        await Assert.ThrowsAsync<BadRequestException>(() => _sut.GetAdminOverviewAsync(PeriodEnd, PeriodStart));
+    }
 }

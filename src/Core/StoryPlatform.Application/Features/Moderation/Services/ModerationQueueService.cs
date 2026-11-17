@@ -31,7 +31,7 @@ public class ModerationQueueService : IModerationQueueService
         {
             ItemType = command.ItemType,
             Status = ModerationItemStatus.Pending,
-            Priority = ModerationQueuePolicy.GetPriority(command.ItemType, command.IsSafetyConcern),
+            Priority = ModerationQueuePolicy.GetPriority(command.ItemType, command.IsSafetyConcern, command.IsPartnerCreator),
             StoryId = command.StoryId,
             StoryVersionId = command.StoryVersionId,
             ContentReportId = command.ContentReportId,

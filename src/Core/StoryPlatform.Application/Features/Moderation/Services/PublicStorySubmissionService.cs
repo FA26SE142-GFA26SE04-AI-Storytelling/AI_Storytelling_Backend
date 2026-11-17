@@ -151,7 +151,8 @@ public class PublicStorySubmissionService : IPublicStorySubmissionService
             StoryVersionId = version.Id,
             CreatedByUserId = actor.Id,
             IsResubmission = previous != null,
-            PreviousItemId = previous?.Id
+            PreviousItemId = previous?.Id,
+            IsPartnerCreator = actor.CreatorTier == CreatorTier.Partner
         }, cancellationToken);
         item.ProposedContentCategoryIds = PublicStoryLabels.Serialize(labels);
         _unitOfWork.Repository<ModerationItem>().Update(item);

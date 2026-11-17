@@ -28,11 +28,13 @@ public static class ModerationQueuePolicy
         _ => TimeSpan.FromHours(72)
     };
 
-    public static ModerationPriority GetPriority(ModerationItemType itemType, bool isSafetyConcern) => itemType switch
+    /// <param name="isPartnerCreator">Truyện gửi duyệt của Creator đối tác được ưu tiên Cao (Luồng 5, 5g); checklist không đổi.</param>
+    public static ModerationPriority GetPriority(
+        ModerationItemType itemType, bool isSafetyConcern, bool isPartnerCreator = false) => itemType switch
     {
         ModerationItemType.GrayZoneStory => ModerationPriority.High,
         ModerationItemType.ContentReport => isSafetyConcern ? ModerationPriority.High : ModerationPriority.Medium,
-        ModerationItemType.PublicStoryReview => ModerationPriority.Medium,
+        ModerationItemType.PublicStoryReview => isPartnerCreator ? ModerationPriority.High : ModerationPriority.Medium,
         _ => ModerationPriority.Low
     };
 }

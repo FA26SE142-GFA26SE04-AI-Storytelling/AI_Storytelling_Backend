@@ -497,7 +497,8 @@ public class CreatorStatisticsServiceTests
         Assert.Equal((0m, false), (progress.Criteria[2].Current, progress.Criteria[2].Met));
         Assert.True(progress.Criteria[3].Met);
 
-        // Đủ 10 truyện Published và 200 lượt đọc hợp lệ (1 trẻ × 10 truyện × 20 ngày, tối đa 10 lượt mỗi ngày).
+        // Đủ 10 truyện Published và 600 lượt đọc hợp lệ (1 trẻ × 10 truyện × 60 ngày, tối đa 10 lượt mỗi ngày).
+        // Ngưỡng 600 theo bản cập nhật 15/11/2026; 60 ngày nằm trong cửa sổ 90 ngày và sau ngày truyện / gói bắt đầu.
         var storyIds = new List<int> { StoryId, SecondStoryId };
         for (var id = 400; id < 408; id++)
         {
@@ -505,17 +506,17 @@ public class CreatorStatisticsServiceTests
             storyIds.Add(id);
         }
 
-        for (var day = 0; day < 20; day++)
+        for (var day = 0; day < 60; day++)
         {
             foreach (var storyId in storyIds)
             {
-                Completed(storyId, PaidChildId, Morning.AddDays(day - 14).AddMinutes(storyIds.IndexOf(storyId)));
+                Completed(storyId, PaidChildId, Morning.AddDays(day - 54).AddMinutes(storyIds.IndexOf(storyId)));
             }
         }
 
         var eligible = (await ContentSut().GetContentAsync(CreatorId, PeriodStart, PeriodEnd)).PartnerProgress;
         Assert.True(eligible.IsEligible);
-        Assert.Equal((10m, 1m, 200m, 0m), (
+        Assert.Equal((10m, 1m, 600m, 0m), (
             eligible.Criteria[0].Current, eligible.Criteria[1].Current, eligible.Criteria[2].Current, eligible.Criteria[3].Current));
 
         // Một truyện bị gỡ vì vi phạm trong cửa sổ: mất điều kiện, số truyện Published giảm còn 9.

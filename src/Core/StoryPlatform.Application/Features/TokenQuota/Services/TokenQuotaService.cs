@@ -3,6 +3,7 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
+using StoryPlatform.Application.Features.CreatorTiers.Interfaces;
 using StoryPlatform.Application.Features.TokenQuota.DTOs;
 using StoryPlatform.Application.Features.TokenQuota.Interfaces;
 using StoryPlatform.Domain.Entities;
@@ -24,14 +25,18 @@ public partial class TokenQuotaService : ITokenQuotaService
     private readonly IPlanSettingsProvider? _planSettings;
     private readonly IPlanBenefitService? _planBenefits;
     private readonly IPlanUsageService? _planUsage;
+    private readonly ICreatorTierService? _creatorTiers;
 
     /// <param name="auditLogWriter">Chỉ cần cho thao tác của Admin (<see cref="AdjustAsync"/>).</param>
     /// <param name="planSettings">Lượt dùng thử và hạn mức tháng Creator do Admin cấu hình; null thì dùng mặc định.</param>
     /// <param name="planBenefits">Quyền lợi hiển thị kèm lượt; null thì không trả quyền lợi.</param>
+    /// <param name="creatorTiers">Xét cấp đối tác trước khi cấp hạn mức tháng; null thì dùng cấp đang lưu.</param>
     public TokenQuotaService(
         IUnitOfWork unitOfWork, IAuditLogWriter? auditLogWriter = null, IPlanSettingsProvider? planSettings = null,
-        IPlanBenefitService? planBenefits = null, IPlanUsageService? planUsage = null)
+        IPlanBenefitService? planBenefits = null, IPlanUsageService? planUsage = null,
+        ICreatorTierService? creatorTiers = null)
     {
+        _creatorTiers = creatorTiers;
         _planBenefits = planBenefits;
         _planUsage = planUsage;
         _unitOfWork = unitOfWork;

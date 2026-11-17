@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using StoryPlatform.Application.Features.CreatorTiers.Interfaces;
 using StoryPlatform.Application.Features.Payments.Interfaces;
 
 namespace StoryPlatform.Infrastructure.BackgroundServices;
@@ -54,6 +55,23 @@ public sealed class SubscriptionCycleWorker : BackgroundService
             catch (Exception exception)
             {
                 _logger.LogError(exception, "Subscription cycle sweep iteration failed.");
+            }
+
+            try
+            {
+                // Xét cấp Creator đối tác của tháng (Luồng 5, 5g); mỗi Creator chỉ xét một lần mỗi tháng nên các lượt
+                // chạy sau trong tháng không làm gì. Creator dùng hạn mức trước khi worker tới vẫn được xét ở lần cấp đó.
+                await using var scope = _scopeFactory.CreateAsyncScope();
+                var creatorTiers = scope.ServiceProvider.GetRequiredService<ICreatorTierService>();
+                await creatorTiers.EvaluateDueAsync(DateTime.UtcNow, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception, "Creator partner tier evaluation failed.");
             }
 
             try

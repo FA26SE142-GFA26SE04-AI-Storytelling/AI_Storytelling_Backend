@@ -29,11 +29,11 @@ public class CreatorStatisticsService : ICreatorStatisticsService
     private readonly ITokenQuotaService? _tokenQuota;
     private readonly TimeProvider _clock;
 
-    // Ngưỡng Creator đối tác (tài liệu 6, F-22) và cửa sổ tính.
-    private const int PartnerWindowDays = 90;
-    private const int PartnerMinPublishedStories = 10;
-    private const decimal PartnerMinCompletionRate = 0.6m;
-    private const int PartnerMinValidReads = 200;
+    // Ngưỡng Creator đối tác (Luồng 5, 5g, cập nhật 15/11/2026) và cửa sổ tính.
+    public const int PartnerWindowDays = 90;
+    public const int PartnerMinPublishedStories = 10;
+    public const decimal PartnerMinCompletionRate = 0.6m;
+    public const int PartnerMinValidReads = 600;
 
     /// <param name="planSettings">Thời gian đọc tối thiểu do Admin cấu hình; null thì dùng mặc định 60 giây.</param>
     /// <param name="tokenQuota">Chỉ cần cho <see cref="GetContentAsync"/> (lượt AI / lượt gửi duyệt còn lại).</param>
@@ -93,55 +93,70 @@ public class CreatorStatisticsService : ICreatorStatisticsService
                 item => item.Status == ModerationItemStatus.Withdrawn && item.WithdrawnAt >= from && item.WithdrawnAt < toExclusive),
             RemainingAiCredits = quota.AiCredits.TotalRemaining,
             RemainingSubmitCredits = quota.SubmitCredits.TotalRemaining,
-            Tier = PlanBenefitsDto.CreatorTier,
-            PartnerProgress = await GetPartnerProgressAsync(creatorUserId, creatorStories, mine, now, cancellationToken)
+            Tier = (await _unitOfWork.Repository<UserAccount>().GetByIdAsync(creatorUserId, cancellationToken))?.CreatorTier
+                   == CreatorTier.Partner
+                ? PlanBenefitsDto.PartnerCreatorTier
+                : PlanBenefitsDto.CreatorTier,
+            PartnerProgress = (await GetPartnerProgressAsync(creatorStories, [creatorUserId], now, cancellationToken))[creatorUserId]
         };
     }
+
+    public async Task<IReadOnlyDictionary<int, PartnerProgressDto>> GetPartnerProgressAsync(
+        IReadOnlyCollection<int> creatorUserIds, DateTime now, CancellationToken cancellationToken = default) =>
+        await GetPartnerProgressAsync(await GetCreatorStoriesAsync(cancellationToken), creatorUserIds, now, cancellationToken);
 
     private ITokenQuotaService RequireTokenQuota() =>
         _tokenQuota ?? throw new InvalidOperationException("ITokenQuotaService chưa được cấu hình cho thống kê nội dung.");
 
     /// <summary>
     /// Tiến độ Creator đối tác trên cửa sổ trượt 90 ngày [hôm nay − 90 ngày, hôm nay] theo UTC: số truyện Published,
-    /// tỷ lệ đọc hoàn thành, lượt đọc hợp lệ và số truyện bị gỡ vì vi phạm. Chỉ tính, không nâng hạng.
+    /// tỷ lệ đọc hoàn thành, lượt đọc hợp lệ và số truyện bị gỡ vì vi phạm. Chỉ tính, không nâng hạng (CreatorTierService
+    /// dùng kết quả này để xét cấp). Phiên đọc và lượt đọc hợp lệ được đọc một lần cho mọi Creator cần tính.
     /// </summary>
-    private async Task<PartnerProgressDto> GetPartnerProgressAsync(
-        int creatorUserId, IReadOnlyList<Story> creatorStories, List<Story> mine, DateTime now,
+    private async Task<Dictionary<int, PartnerProgressDto>> GetPartnerProgressAsync(
+        IReadOnlyList<Story> creatorStories, IReadOnlyCollection<int> creatorUserIds, DateTime now,
         CancellationToken cancellationToken)
     {
         var today = DateTime.SpecifyKind(now.Date, DateTimeKind.Utc);
         var windowStart = today.AddDays(-PartnerWindowDays);
         var windowEnd = today.AddDays(1);
-        var ownIds = mine.Select(story => story.Id).ToHashSet();
-        var publishedIds = mine.Where(story => story.ArchivedAt == null && IsCurrentlyPublished(story))
-            .Select(story => story.Id).ToHashSet();
 
-        var opened = (await _unitOfWork.Repository<ReadingSession>().FindAsync(
-                session => session.StartedAt >= windowStart && session.StartedAt < windowEnd,
-                cancellationToken: cancellationToken))
-            .Where(session => publishedIds.Contains(session.StoryId))
-            .ToList();
-        var completionRate = Rate(opened.Count(session => session.Status == SessionStatus.Completed), opened.Count);
-        var validReads = (await GetValidReadsAsync(creatorStories, windowStart, windowEnd, cancellationToken))
-            .Count(read => ownIds.Contains(read.StoryId));
-        var violationRemovals = mine.Count(
-            story => story.ArchivedAt >= windowStart && story.ArchivedAt < windowEnd
-                     && story.ArchivedReason is not null and not ArchivedReason.SupervisorPreference);
+        var opened = await _unitOfWork.Repository<ReadingSession>().FindAsync(
+            session => session.StartedAt >= windowStart && session.StartedAt < windowEnd,
+            cancellationToken: cancellationToken);
+        var validReads = await GetValidReadsAsync(creatorStories, windowStart, windowEnd, cancellationToken);
 
-        var criteria = new List<PartnerCriterionDto>
+        var result = new Dictionary<int, PartnerProgressDto>();
+        foreach (var creatorUserId in creatorUserIds.Distinct())
         {
-            new() { Key = "published_stories", Current = publishedIds.Count, Target = PartnerMinPublishedStories, Met = publishedIds.Count >= PartnerMinPublishedStories },
-            new() { Key = "completion_rate", Current = completionRate, Target = PartnerMinCompletionRate, Met = completionRate >= PartnerMinCompletionRate },
-            new() { Key = "valid_reads", Current = validReads, Target = PartnerMinValidReads, Met = validReads >= PartnerMinValidReads },
-            new() { Key = "no_violation_removals", Current = violationRemovals, Target = 0, Met = violationRemovals == 0 }
-        };
-        return new PartnerProgressDto
-        {
-            WindowStart = windowStart,
-            WindowEnd = today,
-            IsEligible = criteria.All(criterion => criterion.Met),
-            Criteria = criteria
-        };
+            var mine = creatorStories.Where(story => story.AuthorUserId == creatorUserId).ToList();
+            var ownIds = mine.Select(story => story.Id).ToHashSet();
+            var publishedIds = mine.Where(story => story.ArchivedAt == null && IsCurrentlyPublished(story))
+                .Select(story => story.Id).ToHashSet();
+            var myOpened = opened.Where(session => publishedIds.Contains(session.StoryId)).ToList();
+            var completionRate = Rate(myOpened.Count(session => session.Status == SessionStatus.Completed), myOpened.Count);
+            var myValidReads = validReads.Count(read => ownIds.Contains(read.StoryId));
+            var violationRemovals = mine.Count(
+                story => story.ArchivedAt >= windowStart && story.ArchivedAt < windowEnd
+                         && story.ArchivedReason is not null and not ArchivedReason.SupervisorPreference);
+
+            var criteria = new List<PartnerCriterionDto>
+            {
+                new() { Key = "published_stories", Current = publishedIds.Count, Target = PartnerMinPublishedStories, Met = publishedIds.Count >= PartnerMinPublishedStories },
+                new() { Key = "completion_rate", Current = completionRate, Target = PartnerMinCompletionRate, Met = completionRate >= PartnerMinCompletionRate },
+                new() { Key = "valid_reads", Current = myValidReads, Target = PartnerMinValidReads, Met = myValidReads >= PartnerMinValidReads },
+                new() { Key = "no_violation_removals", Current = violationRemovals, Target = 0, Met = violationRemovals == 0 }
+            };
+            result[creatorUserId] = new PartnerProgressDto
+            {
+                WindowStart = windowStart,
+                WindowEnd = today,
+                IsEligible = criteria.All(criterion => criterion.Met),
+                Criteria = criteria
+            };
+        }
+
+        return result;
     }
 
     public async Task<CreatorReadingStatisticsDto> GetReadingAsync(

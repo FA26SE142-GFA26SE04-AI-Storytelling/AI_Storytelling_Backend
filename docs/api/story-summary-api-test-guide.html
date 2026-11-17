@@ -61,7 +61,7 @@
 <div class="wrap">
 
 <h1>Hướng dẫn test API: Tóm tắt cuối truyện gửi bố mẹ</h1>
-<p class="sub">Nhánh <code>feat/interactions</code> · Luồng 3 mục 6 · Trẻ gửi ghi âm hoặc đánh cờ chỗ còn thắc mắc, chủ hồ sơ nghe, xem và xóa.</p>
+<p class="sub">Luồng 3 mục 6 · Trẻ gửi bản kể lại hoặc từng câu hỏi về tranh; chủ hồ sơ xem đúng tranh, nghe câu hỏi, đánh dấu đã trả lời và xóa.</p>
 
 <nav class="card">
   <strong>Mục lục</strong>
@@ -70,9 +70,10 @@
     <li><a href="#order">Sơ đồ thứ tự gọi API</a></li>
     <li><a href="#setup">Bước 0: tạo dữ liệu nền</a></li>
     <li><a href="#child-rec">API 1: Trẻ gửi ghi âm</a></li>
-    <li><a href="#child-flag">API 2: Trẻ gửi cờ thắc mắc</a></li>
+    <li><a href="#child-flag">API 2: Trẻ gửi câu hỏi về tranh</a></li>
     <li><a href="#parent-list">API 3: Phụ huynh xem danh sách</a></li>
-    <li><a href="#parent-del">API 4: Phụ huynh xóa</a></li>
+    <li><a href="#parent-answered">API 4: Đánh dấu đã trả lời</a></li>
+    <li><a href="#parent-del">API 5: Phụ huynh xóa</a></li>
     <li><a href="#extra">Thông báo và xóa tài khoản</a></li>
     <li><a href="#checklist">Checklist tổng hợp</a></li>
   </ol>
@@ -84,9 +85,11 @@
     <li>Chạy API (Swagger hoặc Postman). Đặt biến <code>BASE</code> = địa chỉ API, ví dụ <code>https://localhost:5001</code>.</li>
     <li>Cần <strong>hai loại token khác nhau</strong>: <span class="who parent">PARENT_TOKEN</span> (đăng nhập tài khoản phụ huynh, role User) và <span class="who child">CHILD_TOKEN</span> (token của trẻ, lấy ở bước handover). Token của trẻ <em>không</em> gọi được API phụ huynh và ngược lại.</li>
     <li>Mọi response có dạng <code>{ "success": ..., "data": ..., "message": ... }</code>. Lỗi nghiệp vụ trả mã 400/403/404/409 kèm <code>message</code>.</li>
-    <li>Database cần đã áp migration <code>AddStorySummaries</code> (API tự áp khi khởi động).</li>
+    <li>Database cần đã áp migration <code>AddStorySummaryQuestionDetails</code> theo thao tác được phê duyệt trước khi chạy API mới. Trang này không tự áp migration hay seed.</li>
     <li>Kho lưu trữ (Supabase Storage) phải được cấu hình, vì ghi âm được upload lên đó.</li>
   </ul>
+  <div class="tip"><strong>Dữ liệu seed đã đối chiếu từ SQL, chưa truy vấn database:</strong> <code>parent_demo1</code> (mật khẩu demo <code>Demo@123</code>) sở hữu hồ sơ <code>1</code> = Bé An. Truyện/phiên bản <code>1</code> có <code>sceneId = 1</code>, <code>sceneIndex = 0</code>, <code>beatId = 1</code>, <code>beatOrder = 1</code> bao phủ toàn cảnh; ảnh <code>mediaAssetId = 1</code>, Ready/Passed, object path <code>1/scene-0.png</code>. Nguồn: <code>15_story_scenes.sql</code>, <code>16_illustration_beats.sql</code>, <code>19_media_assets.sql</code>. Phiên <code>103</code> của Bé An đang Reading, chưa có bản tóm tắt nên dùng cho TC-Q01. Phiên <code>2</code> thuộc Bé Bình, dùng kiểm 404 khi gọi bằng token Bé An.</div>
+  <div class="note">Seed có bản tóm tắt <code>1</code> (phiên 1) và <code>101</code> (phiên 101), mỗi bản có một câu hỏi cũ về cả cảnh 1, không ghi âm/chữ và chưa trả lời. Đây là dữ liệu hợp lệ, không chuyển thành câu hỏi theo tranh. Id bản tóm tắt/câu hỏi kế tiếp trên DB vừa seed là <code>102</code>; luôn lấy id thực tế từ response khi chạy. Lấy token Bé An bằng luồng <code>ChildAccessCredential/easylogin/login</code> với secret demo <code>demo-qr-child-01</code> nếu dùng seed. Các ca thành công khác nhau cần phiên mới/fixture riêng; không giả định mọi ca có thể dùng lại cùng tranh.</div>
   <div class="note">Hai tài khoản phụ huynh: <strong>A</strong> (chủ hồ sơ) và <strong>B</strong> (người khác, dùng để test bị chặn quyền). Hai hồ sơ trẻ của A: <strong>CON1</strong> và <strong>CON2</strong>.</div>
   <table>
     <tr><th>Biến</th><th>Lấy ở đâu</th></tr>
@@ -111,7 +114,7 @@
   <rect class="pbox" x="20" y="74" width="330" height="44" rx="8"/><text x="34" y="94">0.2 Tạo hồ sơ trẻ CON1</text><text class="small" x="34" y="110">POST /api/v1/ChildProfile</text>
   <rect class="pbox" x="20" y="138" width="330" height="44" rx="8"/><text x="34" y="158">0.3 Learning Profile · 0.4 Safety Policy (bật giọng nói)</text><text class="small" x="34" y="174">POST /api/v1/LearningProfile/{id} · POST /api/v1/SafetyPolicy/{id}</text>
   <rect class="pbox" x="20" y="202" width="330" height="44" rx="8"/><text x="34" y="222">0.5 Kích hoạt hồ sơ</text><text class="small" x="34" y="238">PATCH /api/v1/ChildProfile/{id}/activate</text>
-  <rect class="box" x="20" y="266" width="330" height="44" rx="8"/><text x="34" y="286">0.6 Có truyện Ready của CON1 (tạo bằng luồng AI hoặc seed)</text><text class="small" x="34" y="302">cần có cảnh (scene) để đánh cờ</text>
+  <rect class="box" x="20" y="266" width="330" height="44" rx="8"/><text x="34" y="286">0.6 Có truyện Ready của CON1 (tạo bằng luồng AI hoặc seed)</text><text class="small" x="34" y="302">cần sceneId và beatOrder để hỏi đúng tranh</text>
   <rect class="pbox" x="20" y="330" width="330" height="44" rx="8"/><text x="34" y="350">0.7 Cho bé đọc truyện → lấy CHILD_TOKEN</text><text class="small" x="34" y="366">POST /api/v1/ChildAccessCredential/{id}/handover-story</text>
   <rect class="cbox" x="20" y="394" width="330" height="44" rx="8"/><text x="34" y="414">0.8 Mở phiên đọc → SESSION_ID</text><text class="small" x="34" y="430">POST /api/v1/child/reading/sessions</text>
   <rect class="cbox" x="20" y="458" width="330" height="44" rx="8"/><text x="34" y="478">0.9 Lấy nội dung → SCENE_IDS · (tùy chọn) hoàn thành phiên</text><text class="small" x="34" y="494">GET .../sessions/{id}/content · POST .../complete</text>
@@ -119,7 +122,7 @@
   <path class="arrow" d="M185 54V74M185 118V138M185 182V202M185 246V266M185 310V330M185 374V394M185 438V458" marker-end="url(#ah)"/>
 
   <rect class="cbox" x="410" y="394" width="330" height="44" rx="8"/><text x="424" y="414">API 1 · Trẻ gửi ghi âm</text><text class="small" x="424" y="430">POST .../sessions/{id}/summary/recording</text>
-  <rect class="cbox" x="410" y="458" width="330" height="44" rx="8"/><text x="424" y="478">API 2 · Trẻ gửi cờ thắc mắc</text><text class="small" x="424" y="494">POST .../sessions/{id}/summary/flags</text>
+  <rect class="cbox" x="410" y="458" width="330" height="44" rx="8"/><text x="424" y="478">API 2 · Trẻ gửi câu hỏi về tranh</text><text class="small" x="424" y="494">POST .../sessions/{id}/summary/questions</text>
   <path class="arrow" d="M350 480H380V416H410" marker-end="url(#ah)"/>
   <path class="arrow" d="M380 480H410" marker-end="url(#ah)"/>
 
@@ -128,12 +131,12 @@
 
   <rect class="pbox" x="410" y="140" width="330" height="44" rx="8"/><text x="424" y="160">API 3 · Phụ huynh xem danh sách</text><text class="small" x="424" y="176">GET /api/v1/ParentStorySummary/{childId}</text>
   <path class="arrow" d="M575 266V184" marker-end="url(#ah)"/>
-  <rect class="pbox" x="410" y="76" width="330" height="44" rx="8"/><text x="424" y="96">API 4 · Phụ huynh xóa bản tóm tắt</text><text class="small" x="424" y="112">DELETE /api/v1/ParentStorySummary/{childId}/{summaryId}</text>
+  <rect class="pbox" x="410" y="76" width="330" height="44" rx="8"/><text x="424" y="96">API 5 · Phụ huynh xóa sau khi xử lý câu hỏi</text><text class="small" x="424" y="112">DELETE /api/v1/ParentStorySummary/{childId}/{summaryId}</text>
   <path class="arrow" d="M575 140V120" marker-end="url(#ah)"/>
   <rect class="box" x="410" y="10" width="330" height="44" rx="8"/><text x="424" y="30">Kiểm tra lại: API 3 không còn bản đó</text><text class="small" x="424" y="46">file ghi âm bị xóa khỏi kho lưu trữ</text>
   <path class="arrow" d="M575 76V54" marker-end="url(#ah)"/>
 
-  <text class="small" x="20" y="540">Test quyền (TC-P03, P04, D05): dùng thêm tài khoản phụ huynh B và đổi token giữa các bước.</text>
+  <text class="small" x="20" y="540">Sau API 3: bố mẹ trả lời ngoài app, rồi dùng API 4 đánh dấu đã trả lời (bỏ dấu được).</text>
   <text class="small" x="20" y="558">Test cuối cùng (TC-A01): xóa tài khoản phụ huynh sau khi đã có bản ghi âm, rồi kiểm tra kho lưu trữ.</text>
 </svg>
 </div>
@@ -180,12 +183,12 @@
 <p>Kết quả mong đợi: <span class="s2">200</span>, <code>status = "Active"</code>. Nếu <span class="s4">400</span> là còn thiếu Learning Profile hoặc consent.</p>
 
 <h3>0.6 Chuẩn bị truyện <code>Ready</code> của CON1</h3>
-<p>Cần một truyện trạng thái <code>Ready</code>, thuộc CON1 (<code>childProfileId</code> = CON1), có ít nhất <strong>6 cảnh</strong> để test giới hạn 5 cảnh. Hai cách:</p>
+<p>Cần một truyện trạng thái <code>Ready</code> bé được phép đọc. Để test câu hỏi thứ 6, cần fixture riêng có ít nhất <strong>6 tranh/cảnh đủ điều kiện</strong> và khác nhau trong cùng phiên. Hai cách chuẩn bị truyện:</p>
 <ul>
   <li>Tạo bằng luồng AI hoặc soạn tay rồi duyệt nội dung và xác nhận media (xem <code>docs/API_FRONTEND_ACTOR_FLOWS.md</code> mục 6, 7).</li>
   <li>Hoặc dùng truyện đã seed (<code>Database/Seed/11_stories.sql</code>) sau khi chạy <code>Seed-Database.ps1</code>; kiểm tra truyện đó thuộc đúng hồ sơ trẻ bạn dùng.</li>
 </ul>
-<div class="note">Nếu truyện chỉ có 1–5 cảnh, vẫn test được mọi case trừ TC-F03 (quá 5 cảnh). Seed mẫu mỗi truyện chỉ có 1 cảnh.</div>
+<div class="note">Seed truyện 1 có 1 cảnh và 1 tranh theo beat, đủ TC-Q01/Q04/Q05 nhưng không đủ TC-Q14 (câu thứ 6). Ca không có tranh và ca nhiều tranh dùng fixture riêng qua các luồng ứng dụng hiện có; không tự sửa seed hay chạy SQL ghi để tạo fixture.</div>
 
 <h3><span class="m GET">GET</span>0.6b Kiểm tra bé được phép đọc truyện (tùy chọn)</h3>
 <pre><code>GET {BASE}/api/v1/ChildAccessCredential/story-handover?storyId={STORY_ID}</code></pre>
@@ -202,7 +205,7 @@
 
 <h3><span class="m GET">GET</span>0.9 Lấy nội dung để biết id các cảnh <span class="who child">CHILD_TOKEN</span></h3>
 <pre><code>GET {BASE}/api/v1/child/reading/sessions/{SESSION_ID}/content</code></pre>
-<p>Lấy các <code>data.scenes[].sceneId</code> → <code>SCENE_IDS</code> (trường <code>sceneId</code> mới được thêm để API đánh cờ dùng). Có thể gọi thêm <code>POST .../sessions/{SESSION_ID}/complete</code> để phiên ở trạng thái <code>Completed</code>; API tóm tắt dùng được cả khi đang đọc lẫn khi đã xong.</p>
+<p>Lấy <code>data.scenes[].sceneId</code> và <code>data.scenes[].illustrations[].beatOrder</code> để gửi đúng câu hỏi. Có thể gọi thêm <code>POST .../sessions/{SESSION_ID}/complete</code> để phiên ở trạng thái <code>Completed</code>; API tóm tắt dùng được cả khi đang đọc lẫn khi đã xong.</p>
 
 <h2 id="child-rec">4. API 1: Trẻ gửi ghi âm <span class="who child">CHILD_TOKEN</span></h2>
 <div class="card">
@@ -232,68 +235,115 @@ curl -X POST "{BASE}/api/v1/child/reading/sessions/{SESSION_ID}/summary/recordin
 <tr><td>TC-R12</td><td>Gửi phần <code>Content-Type</code> kèm tham số, ví dụ <code>audio/webm;codecs=opus</code> (trình duyệt hay gửi vậy)</td><td><span class="s2">200</span>; file lưu có đuôi <code>.webm</code></td></tr>
 </table></div>
 
-<h2 id="child-flag">5. API 2: Trẻ gửi cờ thắc mắc <span class="who child">CHILD_TOKEN</span></h2>
+<h2 id="child-flag">5. API 2: Trẻ gửi từng câu hỏi về tranh <span class="who child">CHILD_TOKEN</span></h2>
 <div class="card">
-<p><span class="m POST">POST</span><code>/api/v1/child/reading/sessions/{sessionId}/summary/flags</code></p>
-<p>Body JSON: 1 đến 5 id cảnh thuộc phiên bản truyện của phiên; id trùng được gộp.</p>
-<pre><code>{ "sceneIds": [ 101, 103 ] }</code></pre>
-<p>Response thành công giống API 1. Không cần bật giọng nói.</p>
+<p><span class="m POST">POST</span><code>/api/v1/child/reading/sessions/{sessionId}/summary/questions</code></p>
+<p><strong>multipart/form-data</strong>: <code>sceneId</code> bắt buộc; <code>beatOrder</code> là thứ tự tranh từ <code>scenes[].illustrations[].beatOrder</code>; <code>text</code> và file <code>audio</code> đều tùy chọn. Khi có tranh theo beat thì phải chọn đúng tranh. Không có tranh theo beat thì để trống <code>beatOrder</code>, hỏi về cả cảnh; nếu có ảnh minh họa cả cảnh, hệ thống nhớ đúng ảnh đó.</p>
+<p>Mỗi tranh một câu hỏi, tối đa 5 câu trong phiên; từng lần gửi thành công đều thông báo bố mẹ. Chữ được trim, rỗng thành null, tối đa 200 ký tự. Audio tối đa 3 000 000 byte, các định dạng như bản kể lại; chỉ cần bật giọng nói khi gửi audio. Không dùng AI để đọc/chấm câu hỏi.</p>
+<pre><code>curl -X POST "{BASE}/api/v1/child/reading/sessions/103/summary/questions" \
+  -H "Authorization: Bearer CHILD_TOKEN" \
+  -F "sceneId=1" -F "beatOrder=1" -F "text=Sao bạn thỏ buồn?"
+
+# Tùy chọn thêm ghi âm vào request trên:
+# -F "audio=@cau-hoi.webm;type=audio/webm"</code></pre>
+<pre><code>{ "success": true, "message": "Đã gửi cho bố mẹ", "data": { "summaryId": 102, "questionId": 102, "message": "Đã gửi cho bố mẹ" } }</code></pre>
+<p>Id 102 chỉ là giá trị dự kiến khi TC-Q01 là lần tạo đầu tiên sau seed. Lưu <code>data.summaryId</code> và <code>data.questionId</code> thực tế để gọi API đánh dấu đã trả lời. Các bản tóm tắt cũ vẫn dùng tên trường <code>flags</code> ở API bố mẹ.</p>
 </div>
 <div class="scroll"><table>
-<tr><th>Mã</th><th>Tình huống và body</th><th>Mong đợi</th></tr>
-<tr><td>TC-F01</td><td><code>{ "sceneIds": [101, 103] }</code> (hai cảnh hợp lệ)</td><td><span class="s2">200</span>. API 3 thấy 2 cảnh trong <code>flags</code>, sắp theo <code>sceneIndex</code></td></tr>
-<tr><td>TC-F02</td><td><code>{ "sceneIds": [101, 101, 101] }</code></td><td><span class="s2">200</span>; chỉ lưu 1 cờ</td></tr>
-<tr><td>TC-F03</td><td>6 id cảnh khác nhau (cần truyện ≥ 6 cảnh)</td><td><span class="s4">400</span> "Em chọn tối đa 5 chỗ nhé."</td></tr>
-<tr><td>TC-F04</td><td><code>{ "sceneIds": [] }</code> hoặc <code>{}</code></td><td><span class="s4">400</span> "Em chọn ít nhất một chỗ nhé."</td></tr>
-<tr><td>TC-F05</td><td>Id cảnh của <em>truyện khác</em> hoặc id không tồn tại, ví dụ <code>[999999]</code></td><td><span class="s4">400</span> "Chỗ em chọn không thuộc truyện này."; không lưu gì</td></tr>
-<tr><td>TC-F06</td><td>Gửi cờ lần 2 cho cùng phiên</td><td><span class="s4">409</span> "Em đã gửi những chỗ thắc mắc cho bố mẹ rồi."</td></tr>
-<tr><td>TC-F07</td><td>Tắt giọng nói rồi gửi cờ</td><td><span class="s2">200</span> (đánh cờ không phụ thuộc micro)</td></tr>
-<tr><td>TC-F08</td><td>Đã gửi ghi âm (TC-R01), sau đó gửi cờ trên cùng phiên</td><td><span class="s2">200</span>; API 3 trả <strong>một</strong> bản tóm tắt có cả <code>recordingUrl</code> và <code>flags</code></td></tr>
-<tr><td>TC-F09</td><td>Gửi cờ cho phiên của CON2 bằng token CON1</td><td><span class="s4">404</span></td></tr>
-<tr><td>TC-F10</td><td>Gọi bằng PARENT_TOKEN, hoặc không có token</td><td><span class="s4">403</span> / <span class="s4">401</span></td></tr>
+<tr><th>Mã</th><th>Tình huống và dữ liệu multipart</th><th>Mong đợi</th></tr>
+<tr><td>TC-Q01</td><td>DB vừa seed, token Bé An; <code>POST /api/v1/child/reading/sessions/103/summary/questions</code>, <code>sceneId=1, beatOrder=1, text="  Sao bạn thỏ buồn?  "</code>; không audio</td><td><span class="s2">200</span> "Đã gửi cho bố mẹ"; lưu text đã trim, beat 1 và media asset 1; nhận summaryId/questionId thực tế; <code>audioStoragePath = null</code></td></tr>
+<tr><td>TC-Q02</td><td>Gửi lại đúng request TC-Q01 cho phiên 103</td><td><span class="s4">409</span> "Em đã hỏi bố mẹ về chỗ này rồi."; không thêm câu hay thông báo</td></tr>
+<tr><td>TC-Q03</td><td>Phiên mới, chọn tranh hợp lệ; bỏ cả <code>text</code> và <code>audio</code>; tắt giọng nói</td><td><span class="s2">200</span>; chỉ cần chọn tranh, không phụ thuộc micro</td></tr>
+<tr><td>TC-Q04</td><td>Token Bé An; phiên 103, <code>sceneId=1</code>, bỏ <code>beatOrder</code></td><td><span class="s4">400</span> "Em chọn bức tranh em thắc mắc nhé."; scene 1 có beat 1 theo seed</td></tr>
+<tr><td>TC-Q05</td><td>Token Bé An; phiên 103, <code>sceneId=1, beatOrder=999</code></td><td><span class="s4">400</span> "Bức tranh em chọn không có trong cảnh này."</td></tr>
+<tr><td>TC-Q06</td><td>Fixture riêng: cảnh thuộc phiên nhưng không có tranh theo beat; gửi <code>sceneId</code>, bỏ <code>beatOrder</code></td><td><span class="s2">200</span>; <code>beatOrder=null</code>. Nếu không có ảnh cảnh thì <code>illustrationUrl=null</code>; nếu có ảnh cả cảnh thì giữ đúng mediaAssetId của ảnh đó</td></tr>
+<tr><td>TC-Q07</td><td>Phiên mới; tranh hợp lệ, <code>text</code> đúng 200 ký tự sau trim, không audio</td><td><span class="s2">200</span>; giữ đủ 200 ký tự</td></tr>
+<tr><td>TC-Q08</td><td>Phiên mới; <code>sceneId=1, beatOrder=1</code>, <code>text</code> gồm 201 ký tự</td><td><span class="s4">400</span> "Câu hỏi dài quá, em viết ngắn hơn nhé."</td></tr>
+<tr><td>TC-Q09</td><td>Phiên mới; tranh hợp lệ; <code>text</code> chỉ toàn dấu cách, không audio</td><td><span class="s2">200</span>; <code>questionText=null</code></td></tr>
+<tr><td>TC-Q10</td><td>Giọng nói bật; phiên mới, tranh hợp lệ; audio webm 20 byte và có hoặc không có text</td><td><span class="s2">200</span>; lưu dưới <code>story-summaries/{childId}/{sessionId}/questions/{guid}.webm</code>, bố mẹ nhận link nghe 15 phút</td></tr>
+<tr><td>TC-Q11</td><td>Tắt giọng nói; phiên mới, chọn tranh hợp lệ kèm audio webm</td><td><span class="s4">403</span> "Bố mẹ chưa bật đọc bằng giọng nói cho em."; không upload</td></tr>
+<tr><td>TC-Q12</td><td>Audio lớn hơn 3 000 000 byte</td><td><span class="s4">400</span> "Đoạn ghi âm dài quá, em kể ngắn hơn nhé."; có thể 413 nếu web server chặn trước controller</td></tr>
+<tr><td>TC-Q13</td><td>Giọng nói bật; audio có <code>Content-Type=video/mp4</code></td><td><span class="s4">400</span> "Định dạng ghi âm chưa được hỗ trợ."</td></tr>
+<tr><td>TC-Q14</td><td>Fixture riêng có 6 tranh/cảnh đủ điều kiện trong cùng phiên; gửi 5 câu cho 5 chỗ khác nhau rồi câu thứ 6</td><td>5 lần đầu <span class="s2">200</span>; lần 6 <span class="s4">400</span> "Em hỏi tối đa 5 câu cho mỗi lần đọc nhé.". Seed truyện 1 chỉ có 1 tranh nên không dùng seed nguyên trạng cho ca này</td></tr>
+<tr><td>TC-Q15</td><td>Token Bé An; <code>POST /api/v1/child/reading/sessions/103/summary/questions</code>, <code>sceneId=999999</code></td><td><span class="s4">400</span> "Chỗ em chọn không thuộc truyện này."</td></tr>
+<tr><td>TC-Q16</td><td>Token Bé An; <code>POST /api/v1/child/reading/sessions/2/summary/questions</code>, <code>sceneId=1, beatOrder=1</code>; phiên 2 thuộc Bé Bình</td><td><span class="s4">404</span>; không lộ hay tạo câu hỏi cho bé khác</td></tr>
+<tr><td>TC-Q17</td><td>Gọi bằng PARENT_TOKEN hoặc không gửi token</td><td><span class="s4">403</span> / <span class="s4">401</span></td></tr>
+<tr><td>TC-Q18</td><td>Phiên đã ForceExited hoặc có ForceExitRequestedAt</td><td><span class="s4">403</span> "Truyện này đang nghỉ một chút, mình đọc truyện khác nhé!"</td></tr>
+<tr><td>TC-Q19</td><td>Gửi câu hỏi sau bản ghi âm kể lại trên cùng phiên</td><td><span class="s2">200</span>; vẫn một bản tóm tắt cho phiên, gồm recordingUrl và danh sách flags câu hỏi</td></tr>
 </table></div>
 
 <h2 id="parent-list">6. API 3: Phụ huynh xem danh sách <span class="who parent">PARENT_TOKEN</span></h2>
 <div class="card">
 <p><span class="m GET">GET</span><code>/api/v1/ParentStorySummary/{childProfileId}?pageIndex=1&amp;pageSize=20</code></p>
-<p>Chỉ chủ hồ sơ. Mới nhất trước. <code>pageSize</code> tối đa 50.</p>
+<p>Chỉ chủ hồ sơ. Mới nhất trước. <code>pageSize</code> tối đa 50. <code>flags</code> giữ tên cũ nhưng mỗi phần tử là một câu hỏi; sắp theo cảnh rồi thứ tự tranh. Mỗi item có <code>unansweredCount</code> là số câu chưa được bố mẹ đánh dấu đã trả lời.</p>
 <pre><code>{
   "success": true,
   "data": {
     "items": [{
-      "summaryId": 1, "sessionId": 7, "storyId": 10, "title": "Thỏ con và chú rùa",
-      "createdAt": "2026-11-02T10:00:00Z",
-      "recordingUrl": "https://.../story-summaries/100/7/abc.webm?token=...",
-      "recordingSentAt": "2026-11-02T10:00:00Z",
-      "flagsSentAt": "2026-11-02T10:01:00Z",
-      "flags": [{ "sceneId": 101, "sceneIndex": 0, "sceneText": "...", "illustrationUrl": "https://..." }]
+      "summaryId": 102, "sessionId": 103, "storyId": 1, "title": "...",
+      "createdAt": "2026-11-16T10:00:00Z",
+      "recordingUrl": null, "recordingSentAt": null,
+      "flagsSentAt": "2026-11-16T10:00:00Z", "unansweredCount": 1,
+      "flags": [{
+        "questionId": 102, "sceneId": 1, "sceneIndex": 0, "sceneText": "...",
+        "beatOrder": 1, "pictureText": "...",
+        "illustrationUrl": "https://...signed-picture...",
+        "questionText": "Sao bạn thỏ buồn?", "questionAudioUrl": null,
+        "askedAt": "2026-11-16T10:00:00Z", "answeredAt": null
+      }]
     }],
-    "totalCount": 1, "pageIndex": 1, "pageSize": 20
+    "totalCount": 3, "pageIndex": 1, "pageSize": 20
   }
 }</code></pre>
 </div>
+<p>Mẫu trên trích item mới sau TC-Q01, khi seed ban đầu có 2 bản và chưa xóa gì; thời gian/title/link là minh họa. Trước TC-Q01, <code>GET /api/v1/ParentStorySummary/1</code> có tổng 2 bản (101 và 1), mỗi bản <code>unansweredCount=1</code>; các dòng cũ có <code>questionId</code> lần lượt 101 và 1, <code>beatOrder=null</code>, <code>pictureText=null</code>, <code>questionText=null</code>, <code>questionAudioUrl=null</code>, <code>answeredAt=null</code>.</p>
 <div class="scroll"><table>
 <tr><th>Mã</th><th>Tình huống</th><th>Mong đợi</th></tr>
-<tr><td>TC-P01</td><td>Sau TC-R01 và TC-F01, gọi danh sách với PARENT_TOKEN của A</td><td><span class="s2">200</span>, 1 item có <code>title</code>, <code>recordingUrl</code>, 2 phần tử <code>flags</code></td></tr>
+<tr><td>TC-P01</td><td>Sau TC-Q01, đăng nhập parent_demo1; <code>GET /api/v1/ParentStorySummary/1</code></td><td><span class="s2">200</span> "Lấy danh sách tóm tắt của con thành công."; tìm summaryId thực tế, <code>flags</code> chứa câu hỏi mới, beatOrder 1, text đã trim, đúng ảnh mediaAssetId 1 và <code>unansweredCount=1</code></td></tr>
 <tr><td>TC-P02</td><td>Mở <code>recordingUrl</code> trên trình duyệt trong vòng 15 phút</td><td>Phát được file âm thanh vừa gửi</td></tr>
 <tr><td>TC-P03</td><td>Mở lại <code>recordingUrl</code> cũ sau hơn 15 phút</td><td>Link hết hạn (lỗi từ kho lưu trữ). Gọi lại API 3 để lấy link mới</td></tr>
-<tr><td>TC-P04</td><td>Bản tóm tắt chỉ có cờ (không ghi âm)</td><td><code>recordingUrl = null</code>, <code>recordingSentAt = null</code></td></tr>
-<tr><td>TC-P05</td><td>Cảnh được đánh cờ chưa có ảnh minh họa</td><td><code>illustrationUrl = null</code>, các trường khác vẫn đủ</td></tr>
+<tr><td>TC-P04</td><td>DB vừa seed, parent_demo1 gọi danh sách; xem flags cũ của summary 1 và 101</td><td>Mỗi bản một câu hỏi cả cảnh, giữ questionId 1/101; <code>beatOrder=null</code>, không text/ghi âm, <code>answeredAt=null</code>, <code>unansweredCount=1</code>. Ảnh cảnh lấy trong đúng phạm vi phiên, không lấy ảnh gói của bé khác</td></tr>
+<tr><td>TC-P05</td><td>Câu hỏi TC-Q06 có cảnh không tranh, hoặc ảnh được lưu đã bị xóa</td><td><code>illustrationUrl = null</code>, câu hỏi/nội dung cảnh vẫn đủ; câu có mediaAssetId không được tự chuyển sang ảnh mới khác tấm bé đã thấy</td></tr>
 <tr><td>TC-P06</td><td>Phụ huynh <strong>B</strong> gọi với <code>childProfileId</code> của CON1</td><td><span class="s4">403</span> "Bạn không có quyền với hồ sơ trẻ này."</td></tr>
 <tr><td>TC-P07</td><td>Gọi bằng CHILD_TOKEN</td><td><span class="s4">403</span> (token trẻ bị chặn ở khu phụ huynh)</td></tr>
 <tr><td>TC-P08</td><td>Hồ sơ chưa có bản tóm tắt nào</td><td><span class="s2">200</span>, <code>items = []</code>, <code>totalCount = 0</code></td></tr>
 <tr><td>TC-P09</td><td>Tạo nhiều bản (nhiều phiên), thử <code>pageSize=1&amp;pageIndex=2</code>; thử <code>pageSize=500</code>, <code>pageIndex=0</code></td><td>Phân trang đúng, bản mới nhất ở trang 1. <code>pageSize</code> bị chặn ở 50, <code>pageIndex</code> tối thiểu 1</td></tr>
 <tr><td>TC-P10</td><td>Không có token</td><td><span class="s4">401</span></td></tr>
+<tr><td>TC-P11</td><td>Sau TC-Q10 có ghi âm câu hỏi, mở <code>questionAudioUrl</code></td><td>Nghe đúng file câu hỏi trong 15 phút; qua 15 phút gọi lại API danh sách để lấy link mới. Đây là file riêng với <code>recordingUrl</code> kể lại</td></tr>
+<tr><td>TC-P12</td><td>Tranh mới được sinh sau lúc hỏi (fixture có ảnh cũ và mới); mở lại danh sách</td><td>Vẫn trả đúng tấm đã lưu ở MediaAssetId của câu hỏi, không thay bằng ảnh mới nhất</td></tr>
 </table></div>
 
-<h2 id="parent-del">7. API 4: Phụ huynh xóa bản tóm tắt <span class="who parent">PARENT_TOKEN</span></h2>
+<h2 id="parent-answered">7. API 4: Phụ huynh đánh dấu đã trả lời <span class="who parent">PARENT_TOKEN</span></h2>
+<div class="card">
+<p><span class="m PUT">PUT</span><code>/api/v1/ParentStorySummary/{childProfileId}/{summaryId}/questions/{questionId}/answered</code></p>
+<p>Bố mẹ giải thích cho bé ngoài app; API chỉ lưu hoặc bỏ dấu đã trả lời. Gửi JSON <code>{ "answered": true }</code> hoặc <code>{ "answered": false }</code>. Chỉ chủ hồ sơ, câu hỏi phải thuộc đúng bản tóm tắt của bé. Không gửi thông báo cho bé.</p>
+<pre><code>PUT {BASE}/api/v1/ParentStorySummary/1/101/questions/101/answered
+Authorization: Bearer PARENT_TOKEN
+Content-Type: application/json
+
+{ "answered": true }</code></pre>
+<pre><code>{ "success": true, "message": "Đã đánh dấu đã trả lời.", "data": { "questionId": 101, "answeredAt": "2026-11-16T10:05:00Z" } }</code></pre>
+</div>
+<div class="scroll"><table>
+<tr><th>Mã</th><th>Tình huống và request</th><th>Mong đợi</th></tr>
+<tr><td>TC-AN01</td><td>DB vừa seed; parent_demo1 gọi request mẫu với <code>answered=true</code></td><td><span class="s2">200</span> "Đã đánh dấu đã trả lời."; questionId 101, answeredAt khác null; GET danh sách và retell phiên 101 cùng <code>unansweredCount=0</code>, flagCount vẫn 1</td></tr>
+<tr><td>TC-AN02</td><td>Gửi lại <code>answered=true</code> cho đúng câu 101</td><td><span class="s2">200</span>; giữ đúng answeredAt của lần đánh dấu đầu, không tạo thời điểm mới</td></tr>
+<tr><td>TC-AN03</td><td>Gửi <code>answered=false</code> để hoàn tác TC-AN01</td><td><span class="s2">200</span> "Đã bỏ đánh dấu đã trả lời."; answeredAt null; unansweredCount của summary101 và retell phiên101 trở lại 1</td></tr>
+<tr><td>TC-AN04</td><td>parent_demo1 gọi <code>PUT /api/v1/ParentStorySummary/1/101/questions/1/answered</code> với <code>{ "answered": true }</code>; câu1 thuộc summary1</td><td><span class="s4">404</span>; không sửa câu khác summary</td></tr>
+<tr><td>TC-AN05</td><td>Đúng chủ hồ sơ nhưng childProfileId/summaryId/questionId thuộc các bé khác nhau (fixture câu hỏi bé2)</td><td><span class="s4">404</span>; không sửa câu của bé khác</td></tr>
+<tr><td>TC-AN06</td><td>parent_demo2 gọi request mẫu của Bé An</td><td><span class="s4">403</span> "Bạn không có quyền với hồ sơ trẻ này."</td></tr>
+<tr><td>TC-AN07</td><td>Không gửi token, hoặc gửi CHILD_TOKEN</td><td><span class="s4">401</span> / <span class="s4">403</span></td></tr>
+<tr><td>TC-AN08</td><td>Câu hỏi hoặc bản tóm tắt đã xóa mềm / id không tồn tại</td><td><span class="s4">404</span></td></tr>
+</table></div>
+
+<h2 id="parent-del">8. API 5: Phụ huynh xóa bản tóm tắt <span class="who parent">PARENT_TOKEN</span></h2>
 <div class="card">
 <p><span class="m DELETE">DELETE</span><code>/api/v1/ParentStorySummary/{childProfileId}/{summaryId}</code></p>
-<p>Không có body. Xóa file ghi âm khỏi kho lưu trữ, ẩn bản tóm tắt và các cờ.</p>
+<p>Không có body. Xóa file kể lại và tất cả file ghi âm câu hỏi khỏi kho lưu trữ, ẩn bản tóm tắt và các câu hỏi. Thử sau các ca đánh dấu đã trả lời.</p>
 </div>
 <div class="scroll"><table>
 <tr><th>Mã</th><th>Tình huống</th><th>Mong đợi</th></tr>
-<tr><td>TC-D01</td><td>Chủ hồ sơ xóa bản có ghi âm và cờ</td><td><span class="s2">200</span> "Đã xóa bản tóm tắt."</td></tr>
+<tr><td>TC-D01</td><td>Chủ hồ sơ xóa bản có ghi âm kể lại và ghi âm câu hỏi</td><td><span class="s2">200</span> "Đã xóa bản tóm tắt."; cả hai loại file đều bị xóa, câu hỏi bị ẩn</td></tr>
 <tr><td>TC-D02</td><td>Gọi lại API 3 sau khi xóa</td><td>Bản đó không còn trong <code>items</code></td></tr>
 <tr><td>TC-D03</td><td>Mở <code>recordingUrl</code> đã lấy trước khi xóa</td><td>Không còn file (404 từ kho lưu trữ)</td></tr>
 <tr><td>TC-D04</td><td>Xóa lại đúng <code>summaryId</code> đó</td><td><span class="s4">404</span> Không tìm thấy bản tóm tắt</td></tr>
@@ -304,29 +354,29 @@ curl -X POST "{BASE}/api/v1/child/reading/sessions/{SESSION_ID}/summary/recordin
 <tr><td>TC-D09</td><td>Gọi bằng CHILD_TOKEN</td><td><span class="s4">403</span></td></tr>
 </table></div>
 
-<h2 id="extra">8. Thông báo và xóa tài khoản</h2>
+<h2 id="extra">9. Thông báo và xóa tài khoản</h2>
 <div class="scroll"><table>
 <tr><th>Mã</th><th>Tình huống</th><th>Mong đợi</th></tr>
 <tr><td>TC-N01</td><td>Sau TC-R01, phụ huynh A gọi <code>GET /api/v1/Notification</code></td><td>Có thông báo loại <code>StorySummarySent</code>, nhóm <code>children</code>, payload có <code>kind = "recording"</code>, <code>summaryId</code>, <code>childProfileId</code>, <code>storyId</code></td></tr>
-<tr><td>TC-N02</td><td>Sau TC-F01</td><td>Thêm một thông báo với <code>kind = "flags"</code></td></tr>
+<tr><td>TC-N02</td><td>Sau mỗi lần gửi câu hỏi thành công; riêng gửi trùng TC-Q02 bị từ chối</td><td>Mỗi lần thành công thêm một thông báo với <code>kind = "question"</code>; không thêm thông báo khi lỗi hay đánh dấu đã trả lời</td></tr>
 <tr><td>TC-N03</td><td>Phụ huynh B xem thông báo</td><td>Không thấy thông báo của hồ sơ CON1</td></tr>
 <tr><td>TC-A01</td><td>Phụ huynh A xóa tài khoản (<code>DELETE /api/v1/Auth/me</code>, body <code>{ "currentPassword": "...", "deleteChildProfiles": true }</code>; xem trước bằng <code>GET /api/v1/Auth/me/delete-preview</code>) khi còn bản ghi âm</td><td>Xóa tài khoản thành công. Kiểm tra trong bucket Supabase: thư mục <code>story-summaries/{childId}/...</code> không còn file</td></tr>
 <tr><td>TC-A02</td><td>Như TC-A01 nhưng tạm làm kho lưu trữ lỗi (sai cấu hình)</td><td>Vẫn xóa tài khoản thành công; log có cảnh báo "Story summary audio purge failed"</td></tr>
 </table></div>
 
-<h2 id="checklist">9. Checklist tổng hợp</h2>
+<h2 id="checklist">10. Checklist tổng hợp</h2>
 <div class="card">
 <table>
 <tr><th>Thứ tự</th><th>Nhóm</th><th>Mã test</th><th>Làm xong</th></tr>
 <tr><td>1</td><td>Bước 0 (dữ liệu nền)</td><td>0.1 → 0.9</td><td><input type="checkbox"></td></tr>
 <tr><td>2</td><td>API 1: ghi âm (đường chính)</td><td>TC-R01, R12</td><td><input type="checkbox"></td></tr>
 <tr><td>3</td><td>API 3: xem danh sách (xác nhận dữ liệu)</td><td>TC-P01, P02, P04</td><td><input type="checkbox"></td></tr>
-<tr><td>4</td><td>API 2: cờ thắc mắc</td><td>TC-F01, F02, F08</td><td><input type="checkbox"></td></tr>
-<tr><td>5</td><td>Lỗi dữ liệu của API 1 và 2</td><td>TC-R02 → R09, TC-F03 → F07</td><td><input type="checkbox"></td></tr>
-<tr><td>6</td><td>Quyền và token</td><td>TC-R07, R10, R11, F09, F10, P06, P07, P10, D05, D09</td><td><input type="checkbox"></td></tr>
+<tr><td>4</td><td>API 2: câu hỏi theo tranh / cả cảnh</td><td>TC-Q01 → Q19</td><td><input type="checkbox"></td></tr>
+<tr><td>5</td><td>Lỗi dữ liệu và giới hạn</td><td>TC-R02 → R09, TC-Q04 → Q18</td><td><input type="checkbox"></td></tr>
+<tr><td>6</td><td>Quyền và token</td><td>TC-R07, R10, R11, Q16, Q17, P06, P07, P10, AN04 → AN08, D05, D09</td><td><input type="checkbox"></td></tr>
 <tr><td>7</td><td>Thông báo</td><td>TC-N01 → N03</td><td><input type="checkbox"></td></tr>
 <tr><td>8</td><td>Phân trang và link hết hạn</td><td>TC-P03, P08, P09</td><td><input type="checkbox"></td></tr>
-<tr><td>9</td><td>API 4: xóa</td><td>TC-D01 → D08</td><td><input type="checkbox"></td></tr>
+<tr><td>9</td><td>API 4: đánh dấu đã trả lời; API 5: xóa</td><td>TC-AN01 → AN08; TC-D01 → D08</td><td><input type="checkbox"></td></tr>
 <tr><td>10</td><td>Xóa tài khoản (làm cuối vì xóa dữ liệu)</td><td>TC-A01, A02</td><td><input type="checkbox"></td></tr>
 </table>
 <p class="sub">Lưu ý: TC-A01 xóa hẳn tài khoản A nên để cuối cùng. Các test về phiên bị ngắt (TC-R08) làm trước khi xóa, vì sau khi tạm dừng hồ sơ cần mở lại hồ sơ (<code>PATCH /api/v1/ChildProfile/{id}/resume</code>) để test tiếp.</p>

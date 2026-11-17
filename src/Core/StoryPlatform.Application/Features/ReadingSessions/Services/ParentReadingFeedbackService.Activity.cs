@@ -55,10 +55,10 @@ public partial class ParentReadingFeedbackService
         }
 
         var summaryIds = summaries.Select(summary => summary.Id).ToList();
-        var flagCounts = (await _unitOfWork.Repository<StorySummaryFlag>().FindAsync(
+        var flags = (await _unitOfWork.Repository<StorySummaryFlag>().FindAsync(
                 flag => summaryIds.Contains(flag.StorySummaryId) && !flag.IsDeleted, cancellationToken: ct))
             .GroupBy(flag => flag.StorySummaryId)
-            .ToDictionary(group => group.Key, group => group.Count());
+            .ToDictionary(group => group.Key, group => (Total: group.Count(), Open: group.Count(flag => flag.AnsweredAt == null)));
 
         return summaries
             .GroupBy(summary => summary.ReadingSessionId)
@@ -71,8 +71,22 @@ public partial class ParentReadingFeedbackService
                     SummaryId = latest.Id,
                     CreatedAt = latest.CreatedAt,
                     HasRecording = latest.AudioStoragePath != null,
-                    FlagCount = flagCounts.GetValueOrDefault(latest.Id)
+                    FlagCount = flags.GetValueOrDefault(latest.Id).Total,
+                    UnansweredCount = flags.GetValueOrDefault(latest.Id).Open
                 };
             });
+    }
+    /// <summary>Số bản ghi đọc to chưa xóa theo phiên.</summary>
+    private async Task<Dictionary<int, int>> LoadReadAloudRecordingCountsAsync(List<int> sessionIds, CancellationToken ct)
+    {
+        if (sessionIds.Count == 0)
+        {
+            return new Dictionary<int, int>();
+        }
+
+        return (await _unitOfWork.Repository<ReadAloudRecording>().FindAsync(
+                row => sessionIds.Contains(row.ReadingSessionId) && !row.IsDeleted, cancellationToken: ct))
+            .GroupBy(row => row.ReadingSessionId)
+            .ToDictionary(group => group.Key, group => group.Count());
     }
 }

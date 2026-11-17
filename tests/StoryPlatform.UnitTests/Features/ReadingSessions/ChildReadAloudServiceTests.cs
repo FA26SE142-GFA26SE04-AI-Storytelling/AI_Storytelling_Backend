@@ -1,4 +1,7 @@
 using Moq;
+using Microsoft.Extensions.Logging.Abstractions;
+using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ReadingSessions;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
@@ -13,11 +16,15 @@ public class ChildReadAloudServiceTests
 {
     private readonly ReadingHarness _h = new();
     private readonly Mock<ISpeechRecognizer> _recognizer = new(MockBehavior.Strict);
+    private readonly Mock<IMediaStorage> _storage = new();
     private readonly ChildReadAloudService _sut;
 
     public ChildReadAloudServiceTests()
     {
-        _sut = new ChildReadAloudService(_h.UnitOfWork.Object, _recognizer.Object);
+        _storage.Setup(s => s.UploadAsync(It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string path, Stream _, string _, CancellationToken _) => path);
+        _sut = new ChildReadAloudService(_h.UnitOfWork.Object, _recognizer.Object, _storage.Object,
+            NullLogger<ChildReadAloudService>.Instance);
     }
 
     private static ReadAloudRequest Audio(int bytes = 10, string? contentType = "audio/webm;codecs=opus") =>
@@ -70,6 +77,7 @@ public class ChildReadAloudServiceTests
 
         Assert.Equal(ReadAloudPolicy.VoiceOffMessage, error.Message);
         _recognizer.VerifyNoOtherCalls();
+        _storage.VerifyNoOtherCalls();
     }
 
     [Fact]
@@ -130,6 +138,7 @@ public class ChildReadAloudServiceTests
 
         Assert.Equal(message, error.Message);
         _recognizer.VerifyNoOtherCalls();
+        _storage.VerifyNoOtherCalls();
     }
 
     [Fact]
@@ -248,6 +257,7 @@ public class ChildReadAloudServiceTests
             _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, practice.Id, Audio()));
 
         _recognizer.VerifyNoOtherCalls();
+        _storage.VerifyNoOtherCalls();
         Assert.Empty(_h.Telemetry);
     }
 
@@ -295,5 +305,178 @@ public class ChildReadAloudServiceTests
 
         Assert.Equal(message, error.Message);
         _recognizer.VerifyNoOtherCalls();
+    }
+    [Fact]
+    public async Task CheckAsync_SaveFails_DeletesNewFile_AndPreservesOldFile()
+    {
+        VoiceOn();
+        var (session, segment) = Reading();
+        Hears(("thỏ", 0.9));
+        await _sut.CheckAsync(ReadingHarness.Child, session.Id, segment.Id, Audio());
+        var oldPath = Assert.Single(_h.ReadAloudRecordings).AudioStoragePath;
+        _h.UnitOfWork.Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("save failed"));
+
+        await Assert.ThrowsAsync<IOException>(() =>
+            _sut.CheckAsync(ReadingHarness.Child, session.Id, segment.Id, Audio()));
+
+        _storage.Verify(s => s.DeleteAsync(It.Is<string>(path => path != oldPath), CancellationToken.None), Times.Once);
+        _storage.Verify(s => s.DeleteAsync(oldPath, It.IsAny<CancellationToken>()), Times.Never);
+        _h.UnitOfWork.Verify(u => u.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _h.UnitOfWork.Verify(u => u.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CheckAsync_LocksTheSession_BeforeLookingUpTheRecording()
+    {
+        VoiceOn();
+        var (session, segment) = Reading();
+        Hears(("thỏ", 0.9));
+
+        await _sut.CheckAsync(ReadingHarness.Child, session.Id, segment.Id, Audio());
+
+        // Bé bấm hai lần cùng lúc: request sau phải chờ khóa của phiên rồi mới tìm bản ghi,
+        // nên không thêm trùng dòng và không để lại file không dòng nào trỏ tới.
+        var calls = _h.UnitOfWork.Invocations.Select(call => call.Method).ToList();
+        var begin = calls.FindIndex(method => method.Name == nameof(IUnitOfWork.BeginTransactionAsync));
+        var locked = calls.FindIndex(method => method.Name == nameof(IUnitOfWork.AcquireTransactionLockAsync));
+        var lookup = calls.FindIndex(method => method.Name == nameof(IUnitOfWork.Repository)
+                                               && method.GetGenericArguments()[0] == typeof(ReadAloudRecording));
+        var commit = calls.FindIndex(method => method.Name == nameof(IUnitOfWork.CommitTransactionAsync));
+        Assert.True(begin >= 0 && begin < locked && locked < lookup && lookup < commit,
+            $"begin={begin}, lock={locked}, lookup={lookup}, commit={commit}");
+        _h.UnitOfWork.Verify(u => u.AcquireTransactionLockAsync(session.Id, It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Single(_h.ReadAloudRecordings);
+    }
+
+    [Fact]
+    public async Task CheckAsync_StagingFails_DeletesUploadedFile()
+    {
+        VoiceOn();
+        var (session, segment) = Reading();
+        Hears(("thỏ", 0.9));
+        _h.UnitOfWork.Setup(u => u.Repository<ReadAloudRecording>()).Throws(new IOException("query failed"));
+
+        await Assert.ThrowsAsync<IOException>(() =>
+            _sut.CheckAsync(ReadingHarness.Child, session.Id, segment.Id, Audio()));
+
+        _storage.Verify(s => s.DeleteAsync(It.IsAny<string>(), CancellationToken.None), Times.Once);
+        _h.UnitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CheckAsync_OldFileDeletionFails_StillReturnsScore()
+    {
+        VoiceOn();
+        var (session, segment) = Reading();
+        Hears(("thỏ", 0.9));
+        await _sut.CheckAsync(ReadingHarness.Child, session.Id, segment.Id, Audio());
+        _storage.Setup(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("storage down"));
+
+        var result = await _sut.CheckAsync(ReadingHarness.Child, session.Id, segment.Id, Audio());
+
+        Assert.Equal(1, result.GoodCount);
+        Assert.Single(_h.ReadAloudRecordings);
+    }
+
+    [Fact]
+    public async Task CheckAsync_UploadFailsOnRetry_PreservesPreviousRecording()
+    {
+        VoiceOn();
+        var (session, segment) = Reading();
+        Hears(("thỏ", 0.9));
+        await _sut.CheckAsync(ReadingHarness.Child, session.Id, segment.Id, Audio());
+        var oldPath = Assert.Single(_h.ReadAloudRecordings).AudioStoragePath;
+        _storage.Setup(s => s.UploadAsync(It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("storage down"));
+
+        await _sut.CheckAsync(ReadingHarness.Child, session.Id, segment.Id, Audio());
+
+        Assert.Equal(oldPath, Assert.Single(_h.ReadAloudRecordings).AudioStoragePath);
+        _storage.Verify(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CheckAsync_KeepsRecording_WithScores()
+    {
+        VoiceOn();
+        var (session, segment) = Reading();
+        Hears(("thỏ", 0.9), ("còn", 0.9), ("ra", 0.9), ("vườn", 0.9));
+
+        await _sut.CheckAsync(ReadingHarness.Child, session.Id, segment.Id, Audio());
+
+        var recording = Assert.Single(_h.ReadAloudRecordings);
+        Assert.Equal((session.Id, ReadingHarness.Child, (int?)segment.Id, (int?)null),
+            (recording.ReadingSessionId, recording.ChildProfileId, recording.StorySegmentId, recording.ListeningInteractionId));
+        Assert.Equal((3, 1, 0, 4), (recording.GoodCount, recording.RetryCount, recording.SkippedCount, recording.TotalCount));
+        Assert.StartsWith($"read-aloud/{ReadingHarness.Child}/{session.Id}/segment-{segment.Id}/", recording.AudioStoragePath);
+        Assert.EndsWith(".webm", recording.AudioStoragePath);
+        Assert.Equal(("audio/webm", 10), (recording.AudioContentType, recording.AudioBytes));
+        _storage.Verify(s => s.UploadAsync(recording.AudioStoragePath, It.IsAny<Stream>(), "audio/webm", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CheckAsync_ReadAgain_ReplacesRecording_AndDeletesOldFile()
+    {
+        VoiceOn();
+        var (session, segment) = Reading("Thỏ con.");
+        Hears(("thỏ", 0.9));
+        await _sut.CheckAsync(ReadingHarness.Child, session.Id, segment.Id, Audio());
+        var oldPath = Assert.Single(_h.ReadAloudRecordings).AudioStoragePath;
+        Hears(("thỏ", 0.9), ("con", 0.9));
+
+        await _sut.CheckAsync(ReadingHarness.Child, session.Id, segment.Id, Audio(20));
+
+        var recording = Assert.Single(_h.ReadAloudRecordings);
+        Assert.NotEqual(oldPath, recording.AudioStoragePath);
+        Assert.Equal((2, 20), (recording.GoodCount, recording.AudioBytes));
+        _storage.Verify(s => s.DeleteAsync(oldPath, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CheckAsync_UploadFails_StillReturnsScore_AndKeepsNoRecording()
+    {
+        VoiceOn();
+        var (session, segment) = Reading("Thỏ con.");
+        Hears(("thỏ", 0.9), ("con", 0.9));
+        _storage.Setup(s => s.UploadAsync(It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("storage down"));
+
+        var result = await _sut.CheckAsync(ReadingHarness.Child, session.Id, segment.Id, Audio());
+
+        Assert.Equal(2, result.GoodCount);
+        Assert.Empty(_h.ReadAloudRecordings);
+        Assert.Single(_h.Telemetry, t => t.EventType == TelemetryEventType.AsrWordResult);
+    }
+
+    [Fact]
+    public async Task CheckAsync_RecognitionFails_UploadsNothing()
+    {
+        VoiceOn();
+        var (session, segment) = Reading();
+        _recognizer.Setup(r => r.RecognizeAsync(It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new SpeechRecognitionUnavailableException());
+
+        await Assert.ThrowsAsync<SpeechRecognitionUnavailableException>(() =>
+            _sut.CheckAsync(ReadingHarness.Child, session.Id, segment.Id, Audio()));
+
+        _storage.VerifyNoOtherCalls();
+        Assert.Empty(_h.ReadAloudRecordings);
+    }
+
+    [Fact]
+    public async Task CheckPracticeAsync_KeepsRecording_ForThePassage()
+    {
+        VoiceOn();
+        var session = _h.AddSession();
+        var practice = Practice();
+        Hears(("thỏ", 0.9), ("con", 0.9), ("ra", 0.9), ("vườn", 0.9), ("chơi", 0.9));
+
+        await _sut.CheckPracticeAsync(ReadingHarness.Child, session.Id, practice.Id, Audio());
+
+        var recording = Assert.Single(_h.ReadAloudRecordings);
+        Assert.Equal(((int?)null, (int?)practice.Id), (recording.StorySegmentId, recording.ListeningInteractionId));
+        Assert.StartsWith($"read-aloud/{ReadingHarness.Child}/{session.Id}/practice-{practice.Id}/", recording.AudioStoragePath);
     }
 }

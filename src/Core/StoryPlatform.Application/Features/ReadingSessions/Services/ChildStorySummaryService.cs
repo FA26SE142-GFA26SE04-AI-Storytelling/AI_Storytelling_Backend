@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Features.ParentAuthoring;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using StoryPlatform.Application.Abstractions.Persistence;
@@ -10,7 +11,7 @@ using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.ReadingSessions.Services;
 
-/// <summary>Trẻ gửi tóm tắt cuối truyện cho chủ hồ sơ: ghi âm và/hoặc đánh cờ cảnh còn thắc mắc. Không dùng AI.</summary>
+/// <summary>Trẻ gửi ghi âm kể lại hoặc câu hỏi về tranh/cảnh cho chủ hồ sơ. Không dùng AI.</summary>
 public class ChildStorySummaryService : IChildStorySummaryService
 {
     private readonly IUnitOfWork _unitOfWork;
@@ -31,16 +32,7 @@ public class ChildStorySummaryService : IChildStorySummaryService
         int childProfileId, int sessionId, StorySummaryRecordingRequest request, CancellationToken ct = default)
     {
         var session = await LoadSessionAsync(childProfileId, sessionId, ct);
-        var policy = await _unitOfWork.Repository<SafetyPolicy>().FirstOrDefaultAsync(
-            existing => existing.ChildProfileId == childProfileId && !existing.IsDeleted, cancellationToken: ct);
-        if (policy is not { VoiceAnswersEnabled: true })
-            throw new ForbiddenException(ReadAloudPolicy.VoiceOffMessage);
-        if (request.Audio.Length == 0)
-            throw new BadRequestException(StorySummaryPolicy.EmptyAudioMessage);
-        if (request.Audio.Length > StorySummaryPolicy.MaxAudioBytes)
-            throw new BadRequestException(StorySummaryPolicy.AudioTooLargeMessage);
-        if (!ReadAloudPolicy.IsSupportedContentType(request.ContentType))
-            throw new BadRequestException(ReadAloudPolicy.UnsupportedAudioMessage);
+        await EnsureAudioAsync(childProfileId, request.Audio, request.ContentType, ct);
 
         var summary = await FindOrNewAsync(session, ct);
         if (summary.AudioStoragePath != null)
@@ -71,44 +63,123 @@ public class ChildStorySummaryService : IChildStorySummaryService
         return Sent(summary);
     }
 
-    public async Task<StorySummarySentDto> SendFlagsAsync(
-        int childProfileId, int sessionId, StorySummaryFlagsRequestDto request, CancellationToken ct = default)
+    public async Task<StorySummaryQuestionSentDto> AskAsync(
+        int childProfileId, int sessionId, StorySummaryQuestionRequest request, CancellationToken ct = default)
     {
         var session = await LoadSessionAsync(childProfileId, sessionId, ct);
-        var sceneIds = (request.SceneIds ?? new List<int>()).Distinct().ToList();
-        if (sceneIds.Count == 0)
-            throw new BadRequestException(StorySummaryPolicy.NoFlagsMessage);
-        if (sceneIds.Count > StorySummaryPolicy.MaxFlags)
-            throw new BadRequestException(StorySummaryPolicy.TooManyFlagsMessage);
-        var versionId = session.StoryVersionId;
-        var scenes = await _unitOfWork.Repository<StoryScene>().FindAsync(
-            scene => sceneIds.Contains(scene.Id) && scene.StoryVersionId == versionId && !scene.IsDeleted,
-            cancellationToken: ct);
-        if (scenes.Count != sceneIds.Count)
+        var text = StorySummaryPolicy.NormalizeQuestionText(request.Text);
+        if (text is { Length: > StorySummaryPolicy.MaxQuestionTextLength })
+            throw new BadRequestException(StorySummaryPolicy.QuestionTooLongMessage);
+        var hasAudio = request.Audio.Length > 0;
+        if (hasAudio)
+            await EnsureAudioAsync(childProfileId, request.Audio, request.ContentType, ct);
+
+        var scene = await _unitOfWork.Repository<StoryScene>().FirstOrDefaultAsync(
+                        value => value.Id == request.SceneId && value.StoryVersionId == session.StoryVersionId && !value.IsDeleted,
+                        cancellationToken: ct)
+                    ?? throw new BadRequestException(StorySummaryPolicy.SceneNotInStoryMessage);
+        var package = await ParentStoryPackageReader.ForSessionAsync(_unitOfWork, session, ct);
+        var manifest = package is null ? null
+            : JsonSerializer.Deserialize<ParentPackageManifest>(package.ManifestJson, ParentPackageContext.Json)!;
+        if (manifest != null && !manifest.SceneIds.Contains(scene.Id))
             throw new BadRequestException(StorySummaryPolicy.SceneNotInStoryMessage);
 
-        var summary = await FindOrNewAsync(session, ct);
-        if (summary.FlagsSentAt != null)
-            throw new ConflictException(StorySummaryPolicy.AlreadyFlaggedMessage);
+        var assets = await StorySummaryIllustrations.LoadAsync(_unitOfWork, session.StoryVersionId,
+            session.ParentStoryPackageId, manifest?.MediaAssetIds, [scene.Id], ct);
+        var beats = await _unitOfWork.Repository<IllustrationBeat>().FindAsync(
+            beat => beat.StorySceneId == scene.Id && !beat.IsDeleted, cancellationToken: ct);
+        int? beatId = null;
+        MediaAsset? picture;
+        if (request.BeatOrder is int order)
+        {
+            var beat = beats.FirstOrDefault(value => value.BeatOrder == order);
+            picture = beat is null ? null : StorySummaryIllustrations.ForBeat(assets, beat.Id, preferCurrent: manifest is null);
+            if (picture is null)
+                throw new BadRequestException(StorySummaryPolicy.PictureNotInSceneMessage);
+            beatId = beat!.Id;
+        }
+        else
+        {
+            if (beats.Any(beat => StorySummaryIllustrations.ForBeat(assets, beat.Id) is not null))
+                throw new BadRequestException(StorySummaryPolicy.ChoosePictureMessage);
+            picture = StorySummaryIllustrations.ForScene(assets, scene.Id);
+        }
 
-        await _unitOfWork.BeginTransactionAsync(ct);
+        var summary = await FindOrNewAsync(session, ct);
+        if (summary.Id != 0)
+        {
+            var asked = await _unitOfWork.Repository<StorySummaryFlag>().FindAsync(
+                flag => flag.StorySummaryId == summary.Id && !flag.IsDeleted, cancellationToken: ct);
+            if (asked.Any(flag => flag.StorySceneId == scene.Id && flag.IllustrationBeatId == beatId))
+                throw new ConflictException(StorySummaryPolicy.AlreadyAskedMessage);
+            if (asked.Count >= StorySummaryPolicy.MaxFlags)
+                throw new BadRequestException(StorySummaryPolicy.TooManyQuestionsMessage);
+        }
+
+        string? path = null;
+        string? contentType = null;
+        if (hasAudio)
+        {
+            contentType = request.ContentType!.Split(';')[0].Trim().ToLowerInvariant();
+            path = $"story-summaries/{childProfileId}/{sessionId}/questions/{Guid.NewGuid():N}{StorySummaryPolicy.Extension(contentType)}";
+            using var content = new MemoryStream(request.Audio);
+            await _storage.UploadAsync(path, content, contentType, ct);
+        }
+
+        var question = new StorySummaryFlag
+        {
+            StorySceneId = scene.Id,
+            IllustrationBeatId = beatId,
+            MediaAssetId = picture?.Id,
+            QuestionText = text,
+            AudioStoragePath = path,
+            AudioContentType = contentType,
+            AudioBytes = hasAudio ? request.Audio.Length : null
+        };
+        var transactionStarted = false;
         try
         {
-            summary.FlagsSentAt = DateTime.UtcNow;
+            await _unitOfWork.BeginTransactionAsync(ct);
+            transactionStarted = true;
+            summary.FlagsSentAt ??= DateTime.UtcNow;
             await SaveSummaryAsync(summary, ct);
-            await _unitOfWork.Repository<StorySummaryFlag>().AddRangeAsync(
-                sceneIds.Select(id => new StorySummaryFlag { StorySummaryId = summary.Id, StorySceneId = id }), ct);
+            question.StorySummaryId = summary.Id;
+            await _unitOfWork.Repository<StorySummaryFlag>().AddAsync(question, ct);
             await _unitOfWork.SaveChangesAsync(ct);
             await _unitOfWork.CommitTransactionAsync(ct);
         }
         catch
         {
-            await _unitOfWork.RollbackTransactionAsync(ct);
+            try
+            {
+                if (transactionStarted) await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+            }
+            finally
+            {
+                if (path != null) await TryDeleteAsync(path);
+            }
             throw;
         }
 
-        await NotifyOwnerAsync(session, summary, "flags", ct);
-        return Sent(summary);
+        await NotifyOwnerAsync(session, summary, "question", ct);
+        return new StorySummaryQuestionSentDto
+        {
+            SummaryId = summary.Id, QuestionId = question.Id, Message = StorySummaryPolicy.SentMessage
+        };
+    }
+
+    private async Task EnsureAudioAsync(int childProfileId, byte[] audio, string? contentType, CancellationToken ct)
+    {
+        var policy = await _unitOfWork.Repository<SafetyPolicy>().FirstOrDefaultAsync(
+            existing => existing.ChildProfileId == childProfileId && !existing.IsDeleted, cancellationToken: ct);
+        if (policy is not { VoiceAnswersEnabled: true })
+            throw new ForbiddenException(ReadAloudPolicy.VoiceOffMessage);
+        if (audio.Length == 0)
+            throw new BadRequestException(StorySummaryPolicy.EmptyAudioMessage);
+        if (audio.Length > StorySummaryPolicy.MaxAudioBytes)
+            throw new BadRequestException(StorySummaryPolicy.AudioTooLargeMessage);
+        if (!ReadAloudPolicy.IsSupportedContentType(contentType))
+            throw new BadRequestException(ReadAloudPolicy.UnsupportedAudioMessage);
     }
 
     private async Task<ReadingSession> LoadSessionAsync(int childProfileId, int sessionId, CancellationToken ct)

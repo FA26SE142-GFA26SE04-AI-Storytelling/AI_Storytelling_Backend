@@ -167,7 +167,7 @@ public sealed class ChildReadingController : ControllerBase
         return Ok(ApiResponse<VocabularyDefinitionDto>.Ok(result));
     }
 
-    /// <summary>Trẻ đọc to một đoạn; trả từng chữ good / retry / skipped kèm lời khen. Không lưu âm thanh.</summary>
+    /// <summary>Trẻ đọc to một đoạn; trả từng chữ good / retry / skipped kèm lời khen. Giữ bản ghi lần gần nhất cho chủ hồ sơ nghe.</summary>
     [HttpPost("sessions/{sessionId:int}/segments/{segmentId:int}/read-aloud")]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(ReadAloudPolicy.MaxAudioBytes + 100_000)]
@@ -193,7 +193,7 @@ public sealed class ChildReadingController : ControllerBase
         return Ok(ApiResponse<ReadAloudResultDto>.Ok(result));
     }
 
-    // Chặn file quá lớn trước khi đọc; âm thanh chỉ nằm trong bộ nhớ.
+    // Chặn file quá lớn trước khi đọc vào bộ nhớ để chấm và lưu bản ghi.
     private static async Task<ReadAloudRequest> ReadAudioAsync(ReadAloudForm form, CancellationToken ct)
     {
         if (form.Audio is { Length: > ReadAloudPolicy.MaxAudioBytes })

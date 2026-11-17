@@ -169,7 +169,8 @@ public sealed class SeedDataAlignmentTests
         string[] seededByCode = ["authoring_guide_catalog_versions", "authoring_guide_catalogs",
             "authoring_guide_items", "authoring_guide_placeholders"];
         // Khóa Data Protection do ứng dụng tự sinh lúc chạy; seed khóa vào SQL sẽ đưa khóa vào mã nguồn.
-        string[] generatedAtRuntime = ["data_protection_keys"];
+        // Read-aloud recordings require an actual child upload; SQL seed cannot create its storage object.
+        string[] generatedAtRuntime = ["data_protection_keys", "read_aloud_recordings"];
         var modelTables = model.Tables.Select(t => t.Name)
             .Where(name => !seededByCode.Contains(name) && !generatedAtRuntime.Contains(name))
             .OrderBy(x => x, StringComparer.Ordinal).ToArray();

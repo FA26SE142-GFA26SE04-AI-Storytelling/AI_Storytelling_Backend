@@ -50,6 +50,9 @@ public class ParentReadingFeedbackItemDto
     public ParentReadAloudSummaryDto? ReadAloud { get; set; }
     /// <summary>Kết quả luyện đọc to sau truyện trong phiên này; null nếu bé chưa luyện.</summary>
     public ParentReadAloudPracticeDto? ReadAloudPractice { get; set; }
+    /// <summary>Số bản ghi đọc to (lần gần nhất mỗi đoạn) phụ huynh nghe được trong phiên này.</summary>
+    public int ReadAloudRecordingCount { get; set; }
+
     /// <summary>Tổng EXP bé nhận trong phiên này (đọc xong, câu đố, lưu từ).</summary>
     public int ExpEarned { get; set; }
     /// <summary>Từ bé lưu vào sổ lần đầu trong phiên này, theo thứ tự lưu.</summary>
@@ -149,8 +152,10 @@ public class ParentRetellBriefDto
     public int SummaryId { get; set; }
     public DateTime CreatedAt { get; set; }
     public bool HasRecording { get; set; }
-    /// <summary>Số cảnh bé đánh dấu "còn thắc mắc".</summary>
+    /// <summary>Số câu bé hỏi bố mẹ về tranh hoặc cả cảnh.</summary>
     public int FlagCount { get; set; }
+    /// <summary>Số câu bố mẹ chưa đánh dấu đã trả lời.</summary>
+    public int UnansweredCount { get; set; }
 }
 
 public class ParentReadingOverviewQueryDto

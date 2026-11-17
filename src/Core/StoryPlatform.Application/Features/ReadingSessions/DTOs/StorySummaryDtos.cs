@@ -6,9 +6,21 @@ public sealed class StorySummaryRecordingRequest
     public string? ContentType { get; init; }
 }
 
-public sealed class StorySummaryFlagsRequestDto
+public sealed class StorySummaryQuestionRequest
 {
-    public List<int>? SceneIds { get; set; }
+    public int SceneId { get; init; }
+    /// <summary>Thứ tự tranh trong cảnh (illustrations[].beatOrder của màn đọc); null = hỏi về cả cảnh.</summary>
+    public int? BeatOrder { get; init; }
+    public string? Text { get; init; }
+    public byte[] Audio { get; init; } = [];
+    public string? ContentType { get; init; }
+}
+
+public sealed class StorySummaryQuestionSentDto
+{
+    public int SummaryId { get; init; }
+    public int QuestionId { get; init; }
+    public string Message { get; init; } = string.Empty;
 }
 
 public sealed class StorySummarySentDto
@@ -34,13 +46,32 @@ public sealed class ParentStorySummaryItemDto
     public string? RecordingUrl { get; init; }
     public DateTime? RecordingSentAt { get; init; }
     public DateTime? FlagsSentAt { get; init; }
+    public int UnansweredCount { get; init; }
     public List<ParentStorySummaryFlagDto> Flags { get; init; } = new();
 }
 
 public sealed class ParentStorySummaryFlagDto
 {
+    public int QuestionId { get; init; }
+    public int? BeatOrder { get; init; }
+    public string? PictureText { get; init; }
+    public string? QuestionText { get; init; }
+    public string? QuestionAudioUrl { get; init; }
+    public DateTime AskedAt { get; init; }
+    public DateTime? AnsweredAt { get; init; }
     public int SceneId { get; init; }
     public int SceneIndex { get; init; }
     public string SceneText { get; init; } = string.Empty;
     public string? IllustrationUrl { get; init; }
+}
+
+public sealed class StorySummaryAnsweredRequestDto
+{
+    public bool Answered { get; set; }
+}
+
+public sealed class StorySummaryAnsweredDto
+{
+    public int QuestionId { get; init; }
+    public DateTime? AnsweredAt { get; init; }
 }

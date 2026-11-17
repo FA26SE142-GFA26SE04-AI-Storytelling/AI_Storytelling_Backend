@@ -11,10 +11,12 @@ namespace StoryPlatform.Api.Controllers;
 public class ParentReadingFeedbackController : BaseApiController
 {
     private readonly IParentReadingFeedbackService _feedback;
+    private readonly IParentReadAloudRecordingService _readAloud;
 
-    public ParentReadingFeedbackController(IParentReadingFeedbackService feedback)
+    public ParentReadingFeedbackController(IParentReadingFeedbackService feedback, IParentReadAloudRecordingService readAloud)
     {
         _feedback = feedback;
+        _readAloud = readAloud;
     }
 
     [HttpGet("{childProfileId:int}")]
@@ -41,5 +43,22 @@ public class ParentReadingFeedbackController : BaseApiController
     {
         var result = await _feedback.GetOverviewAsync(GetCurrentUserId(), childProfileId, query, cancellationToken);
         return HandleResult(result, "Lấy tổng quan việc đọc của con thành công.");
+    }
+    /// <summary>Bản ghi đọc to (lần gần nhất mỗi đoạn) của con trong một phiên, kèm chữ đoạn, điểm và link nghe 15 phút. Chỉ chủ hồ sơ.</summary>
+    [HttpGet("{childProfileId:int}/sessions/{sessionId:int}/read-aloud")]
+    public async Task<ActionResult<ApiResponse<ParentReadAloudRecordingsDto>>> ReadAloudRecordings(
+        int childProfileId, int sessionId, CancellationToken cancellationToken)
+    {
+        var result = await _readAloud.ListAsync(GetCurrentUserId(), childProfileId, sessionId, cancellationToken);
+        return HandleResult(result, "Lấy bản ghi đọc to của con thành công.");
+    }
+
+    /// <summary>Xóa một bản ghi đọc to khỏi kho lưu trữ. Chỉ chủ hồ sơ.</summary>
+    [HttpDelete("{childProfileId:int}/sessions/{sessionId:int}/read-aloud/{recordingId:int}")]
+    public async Task<ActionResult<ApiResponse<object?>>> DeleteReadAloudRecording(
+        int childProfileId, int sessionId, int recordingId, CancellationToken cancellationToken)
+    {
+        await _readAloud.DeleteAsync(GetCurrentUserId(), childProfileId, sessionId, recordingId, cancellationToken);
+        return HandleResult<object?>(null, "Đã xóa bản ghi đọc to.");
     }
 }

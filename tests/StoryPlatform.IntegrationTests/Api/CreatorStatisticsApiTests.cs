@@ -169,10 +169,29 @@ public sealed class CreatorStatisticsApiTests(ApiFactory factory) : IClassFixtur
     [Theory]
     [InlineData("/api/v1/BusinessReport/admin/revenue?periodStart=2026-11-01&periodEnd=2026-11-30")]
     [InlineData("/api/v1/Payment/admin/transactions")]
+    [InlineData("/api/v1/BusinessReport/admin/creators?periodStart=2026-11-01&periodEnd=2026-11-30")]
     public async Task Creator_CannotCallAdminStatistics(string url)
     {
         var client = await factory.ClientForNewUserAsync(UserRole.ContentCreator);
 
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync(url)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Admin_SeesCreatorStatisticsOfThePeriod_IncludingEveryCreator()
+    {
+        var creator = await factory.AddUserAsync(UserRole.ContentCreator);
+        var admin = await factory.ClientForNewUserAsync(UserRole.Administrator);
+
+        var result = await AdminApi.GetDataAsync(admin,
+            "/api/v1/BusinessReport/admin/creators?periodStart=2026-11-01&periodEnd=2026-11-30");
+
+        Assert.Equal("2026-11-30", result.GetProperty("periodEnd").GetDateTime().ToString("yyyy-MM-dd"));
+        var row = result.GetProperty("creators").EnumerateArray()
+            .Single(item => item.GetProperty("creatorUserId").GetInt32() == creator.Id);
+        Assert.Equal(("Active", "Standard"), (row.GetProperty("status").GetString(), row.GetProperty("tier").GetString()));
+        Assert.True(result.GetProperty("totalCreators").GetInt32() >= 1);
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.GetAsync(
+            "/api/v1/BusinessReport/admin/creators?periodStart=2026-11-30&periodEnd=2026-11-01")).StatusCode);
     }
 }

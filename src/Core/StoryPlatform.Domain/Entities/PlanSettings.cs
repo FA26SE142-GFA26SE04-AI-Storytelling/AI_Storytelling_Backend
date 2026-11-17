@@ -30,4 +30,11 @@ public class PlanSettings : BaseEntity
 
     public int CreatorWritingAssistPerDay { get; set; } = 20;
     public int PartnerWritingAssistPerDay { get; set; } = 40;
+
+    // Số lần sinh lại miễn phí trong một truyện (không trừ thêm lượt).
+    public int OutlineRegenerationLimit { get; set; } = 3;
+    /// <summary>Chỉ lưu: chưa có chức năng sinh lại toàn bộ nội dung.</summary>
+    public int ContentRegenerationLimit { get; set; } = 2;
+    public int ImageRegenerationLimit { get; set; } = 3;
+    public int AudioRegenerationLimit { get; set; } = 2;
 }

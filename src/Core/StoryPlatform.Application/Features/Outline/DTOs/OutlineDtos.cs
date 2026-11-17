@@ -10,6 +10,8 @@ public sealed class OutlineProgressDto
     public string? ActiveOperation { get; init; }
     public string? ActiveJobStatus { get; init; }
     public string? LastErrorCode { get; init; }
+    /// <summary>Số lần sinh lại dàn ý đã dùng / giới hạn của truyện; frontend khoá nút khi Remaining = 0.</summary>
+    public StoryPlatform.Application.Features.PlanBenefits.DTOs.RegenerationCounterDto? Regeneration { get; init; }
 }
 
 public sealed class OutlineVersionDto

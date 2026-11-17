@@ -23,7 +23,8 @@ public sealed record ConfirmManualContentResult(int StoryId, int VersionId, int 
 
 /// <summary>Enqueues the existing Phase 5 worker; never generates or rewrites story content.</summary>
 public sealed class CreatorManualMediaService(IUnitOfWork uow, GrayZoneContentCheckService checks,
-    IGrayZoneEvaluator evaluator, IMediaContextBuilder contexts, IAuditLogWriter audit, CreatorAuthoringOptions options)
+    IGrayZoneEvaluator evaluator, IMediaContextBuilder contexts, IAuditLogWriter audit, CreatorAuthoringOptions options,
+    StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null)
 {
     public async Task<ConfirmManualContentResult> ConfirmAsync(int userId, int storyId, ConfirmManualContentRequest input, CancellationToken ct = default)
     {
@@ -69,6 +70,9 @@ public sealed class CreatorManualMediaService(IUnitOfWork uow, GrayZoneContentCh
             if (await uow.Repository<StoryGenerationJob>().ExistsAsync(x => x.StoryId == storyId &&
                 (x.Status == GenerationJobStatus.Pending || x.Status == GenerationJobStatus.Processing), ct))
                 throw new ConflictException("MEDIA_JOB_ACTIVE");
+            // Sinh media cho truyện tự viết tốn 1 lượt AI của Creator (Luồng 2); trừ khi media hoàn tất, lỗi thì trả.
+            if (tokenQuota != null)
+                await tokenQuota.HoldStoryCreditOnceAsync(storyId, ct);
 
             // Pin manual audience/metadata without inventing an outline or a generation request.
             var contextJson = contexts.Build(new MediaContextBuildRequest(version.Id, version.Title, version.Content!, version.Lesson,

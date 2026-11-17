@@ -71,13 +71,48 @@ public partial class TokenQuotaService : ITokenQuotaService
         await HoldOneCreditAsync(child.OwnerUserId, story, OutOfCreditsMessage, cancellationToken);
     }
 
+    public async Task<bool> HoldStoryCreditOnceAsync(int storyId, CancellationToken cancellationToken = default)
+    {
+        var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
+                    ?? throw new NotFoundException("Truyện", storyId);
+        var userId = await PayerOfAsync(story, cancellationToken);
+
+        await _unitOfWork.AcquireTransactionLockAsync(userId, cancellationToken);
+        // Mỗi truyện chỉ tính 1 lượt: đang giữ (thao tác trước chưa xong) hoặc đã trừ thì thao tác này không tốn thêm.
+        if (await _unitOfWork.Repository<CreditUsage>().ExistsAsync(
+                usage => usage.StoryId == storyId && usage.Reason == CreditUsageReason.StoryRequest
+                         && usage.RefundedAt == null,
+                cancellationToken))
+        {
+            return false;
+        }
+
+        if (story.Scope == StoryScope.Creator)
+        {
+            await EnsureCreatorMonthlyGrantedAsync(userId, DateTime.UtcNow, cancellationToken);
+        }
+        else
+        {
+            await EnsureTrialGrantedAsync(userId, cancellationToken);
+        }
+
+        await HoldOneCreditAsync(
+            userId, story, story.Scope == StoryScope.Creator ? CreatorOutOfAiCreditsMessage : OutOfCreditsMessage,
+            cancellationToken);
+        return true;
+    }
+
+    /// <summary>Tài khoản trả lượt cho truyện: phụ huynh sở hữu hồ sơ trẻ của truyện, còn lại là tác giả.</summary>
+    private async Task<int> PayerOfAsync(Story story, CancellationToken cancellationToken) =>
+        story.Scope == StoryScope.Parent && story.ChildProfileId.HasValue
+            ? (await GetChildAsync(story.ChildProfileId.Value, cancellationToken)).OwnerUserId
+            : story.AuthorUserId;
+
     public async Task<bool> HoldStoryCreditForRetryAsync(int storyId, CancellationToken cancellationToken = default)
     {
         var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
                     ?? throw new NotFoundException("Truyện", storyId);
-        var userId = story.Scope == StoryScope.Parent && story.ChildProfileId.HasValue
-            ? (await GetChildAsync(story.ChildProfileId.Value, cancellationToken)).OwnerUserId
-            : story.AuthorUserId;
+        var userId = await PayerOfAsync(story, cancellationToken);
 
         await _unitOfWork.AcquireTransactionLockAsync(userId, cancellationToken);
         // Truyện đang giữ lượt (lỗi chưa trả) hoặc đã được tính lượt: thử lại không tốn thêm.
@@ -163,6 +198,25 @@ public partial class TokenQuotaService : ITokenQuotaService
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Media của truyện viết tay lỗi hẳn: trả lượt đang giữ, trừ khi truyện còn job media hoặc gói khác đang chạy (một lượt
+    /// cho cả truyện nên job còn lại vẫn dùng lượt đó). Nơi gọi phải đang mở transaction.
+    /// </summary>
+    public static async Task ReleaseStoryCreditIfIdleAsync(IUnitOfWork unitOfWork, int storyId, CancellationToken cancellationToken)
+    {
+        var busy = await unitOfWork.Repository<StoryGenerationJob>().ExistsAsync(
+            job => job.StoryId == storyId
+                   && (job.Operation == GenerationJobOperation.GenerateMediaPackage
+                       || job.Operation == GenerationJobOperation.BuildParentPackage
+                       || job.Operation == GenerationJobOperation.CheckParentPackage)
+                   && (job.Status == GenerationJobStatus.Pending || job.Status == GenerationJobStatus.Processing),
+            cancellationToken);
+        if (!busy)
+        {
+            await ReleaseStoryCreditAsync(unitOfWork, storyId, cancellationToken);
+        }
     }
 
     private static async Task<IReadOnlyList<CreditUsage>> FindHeldStoryUsagesAsync(

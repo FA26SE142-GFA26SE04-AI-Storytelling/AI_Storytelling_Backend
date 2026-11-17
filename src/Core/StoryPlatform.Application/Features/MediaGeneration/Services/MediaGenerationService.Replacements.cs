@@ -151,6 +151,10 @@ public sealed partial class MediaGenerationService
             await EnsureNoActiveJobAsync(storyId, ct);
             await EnsureNoPendingReplacementAsync(version.Id, ct);
             await ValidateParentContextAsync(story, version.Id, ct);
+            var regeneration = await StoryRegenerationLimits.GetUsageAsync(_unitOfWork, _planSettings, storyId, ct);
+            StoryRegenerationLimits.EnsureAvailable(
+                type == MediaType.Illustration ? regeneration.Images : regeneration.Audio,
+                type == MediaType.Illustration ? "ảnh" : "audio");
             var parent = await _unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(x => x.StoryId == storyId &&
                 x.StoryVersionId == version.Id && x.Operation == GenerationJobOperation.GenerateMediaPackage, cancellationToken: ct)
                 ?? throw new NotFoundException("Media job", storyId);

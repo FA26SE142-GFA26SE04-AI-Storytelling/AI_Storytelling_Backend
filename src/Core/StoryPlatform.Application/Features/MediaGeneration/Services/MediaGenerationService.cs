@@ -9,6 +9,8 @@ using Microsoft.Extensions.Logging;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
+using StoryPlatform.Application.Features.PlanBenefits.DTOs;
+using StoryPlatform.Application.Features.PlanBenefits.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Application.Features.ListeningInteractions.Services;
@@ -48,6 +50,9 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
     private readonly MediaGenerationOptions _options;
     private readonly TimeProvider _clock;
 
+    private readonly IPlanSettingsProvider? _planSettings;
+    private readonly StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? _tokenQuota;
+
     public MediaGenerationService(
         IUnitOfWork unitOfWork,
         IMediaContextBuilder contextBuilder,
@@ -67,8 +72,12 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         IMediaReadinessService readinessService,
         MediaGenerationOptions options,
         ILogger<MediaGenerationService> logger, IChildProfileAccessGuard? supervision = null, TimeProvider? clock = null,
-        IMediaUploadValidator? uploadValidator = null, IProviderMediaContextProjector? contextProjector = null)
+        IMediaUploadValidator? uploadValidator = null, IProviderMediaContextProjector? contextProjector = null,
+        IPlanSettingsProvider? planSettings = null,
+        StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null)
     {
+        _planSettings = planSettings;
+        _tokenQuota = tokenQuota;
         _unitOfWork = unitOfWork;
         _options = options;
         _clock = clock ?? TimeProvider.System;
@@ -113,6 +122,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         var version = await FreshAsync<StoryVersion>(versionId, cancellationToken)
                       ?? throw new NotFoundException("StoryVersion", versionId);
         var confirmed = MediaPackageConfirmation.IsConfirmed(version);
+        var regeneration = await StoryRegenerationLimits.GetUsageAsync(_unitOfWork, _planSettings, storyId, cancellationToken);
         return new MediaGenerationProgress(
             storyId, versionId, story.Status.ToString(), job.Status.ToString(), readiness.SceneCount,
             readiness.ReadyIllustrations, readiness.ReadyAudio,
@@ -121,6 +131,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             readiness.ManualReviewAssetIds, readiness.ScenesWithoutValidBeats)
         {
             PackageRevision = version.MediaState.MediaPackageRevision,
+            ImageRegeneration = RegenerationCounterDto.From(regeneration.Images),
+            AudioRegeneration = RegenerationCounterDto.From(regeneration.Audio),
             MediaMode = CreatorMediaSelection.Mode(job),
             IsAwaitingSelection = await HasUnselectedCreatorMediaAsync(job, cancellationToken),
             IsGenerated = readiness.IsReady,
@@ -297,6 +309,10 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             var version = await FreshAsync<StoryVersion>(versionId, cancellationToken);
             if (version is null || version.StoryId != storyId || !version.IsCurrent || string.IsNullOrWhiteSpace(version.Content))
                 throw new ConflictException("INVALID_MEDIA_HANDOFF");
+            // Lần lỗi trước đã trả lượt của truyện viết tay: thử lại phải giữ lại 1 lượt (409 nếu hết); không tốn thêm nếu
+            // truyện vẫn đang giữ hoặc đã trừ lượt (Luồng 2).
+            if (story.Source == StorySource.Manual && _tokenQuota != null)
+                await _tokenQuota.HoldStoryCreditOnceAsync(storyId, cancellationToken);
 
             var assets = await _unitOfWork.Repository<MediaAsset>().FindAsync(
                 x => x.ParentStoryPackageId == null && x.StoryVersionId == versionId && (x.IsCurrent || x.ReplacementResolvedAt == null && x.ReplacesMediaAssetId != null) && x.Status != MediaStatus.Ready,
@@ -999,6 +1015,9 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             }
             story.Status = StoryStatus.MediaReview;
             _unitOfWork.Repository<Story>().Update(story);
+            // Media của truyện viết tay hoàn tất → lượt đang giữ thành lượt đã trừ (truyện AI đã trừ lúc sinh nội dung).
+            if (_tokenQuota != null)
+                await StoryPlatform.Application.Features.TokenQuota.Services.TokenQuotaService.ConsumeStoryCreditAsync(_unitOfWork, story.Id, cancellationToken);
             job.Status = GenerationJobStatus.Completed;
             job.Stage = JobStage.MediaCompleted;
             job.CompletedAt = _clock.GetUtcNow().UtcDateTime;

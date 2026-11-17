@@ -43,6 +43,10 @@ public class PlanSettingsService(IUnitOfWork unitOfWork, IPlanSettingsProvider p
         settings.FreeWritingAssistPerDay = request.FreeWritingAssistPerDay;
         settings.CreatorWritingAssistPerDay = request.CreatorWritingAssistPerDay;
         settings.PartnerWritingAssistPerDay = request.PartnerWritingAssistPerDay;
+        settings.OutlineRegenerationLimit = request.OutlineRegenerationLimit;
+        settings.ContentRegenerationLimit = request.ContentRegenerationLimit;
+        settings.ImageRegenerationLimit = request.ImageRegenerationLimit;
+        settings.AudioRegenerationLimit = request.AudioRegenerationLimit;
         settings.UpdatedAt = DateTime.UtcNow;
 
         if (isNew) await repository.AddAsync(settings, cancellationToken);
@@ -54,6 +58,9 @@ public class PlanSettingsService(IUnitOfWork unitOfWork, IPlanSettingsProvider p
             adminUserId, "PlanSettingsUpdated", nameof(PlanSettings), settings.Id, before, after, cancellationToken);
         return after;
     }
+
+    /// <summary>Trần của giới hạn sinh lại: mỗi lần sinh lại tốn chi phí AI mà không trừ lượt.</summary>
+    public const int MaxRegenerationLimit = 20;
 
     private static void Validate(UpdatePlanSettingsRequestDto request)
     {
@@ -83,6 +90,16 @@ public class PlanSettingsService(IUnitOfWork unitOfWork, IPlanSettingsProvider p
         {
             throw new BadRequestException("Số lượt và số lần không được âm.");
         }
+
+        int[] regenerationLimits =
+        [
+            request.OutlineRegenerationLimit, request.ContentRegenerationLimit, request.ImageRegenerationLimit,
+            request.AudioRegenerationLimit
+        ];
+        if (regenerationLimits.Any(value => value is < 0 or > MaxRegenerationLimit))
+        {
+            throw new BadRequestException($"Giới hạn sinh lại phải từ 0 đến {MaxRegenerationLimit} lần.");
+        }
     }
 
     private static PlanSettingsDto Map(PlanSettings settings) => new()
@@ -102,6 +119,10 @@ public class PlanSettingsService(IUnitOfWork unitOfWork, IPlanSettingsProvider p
         FreeWritingAssistPerDay = settings.FreeWritingAssistPerDay,
         CreatorWritingAssistPerDay = settings.CreatorWritingAssistPerDay,
         PartnerWritingAssistPerDay = settings.PartnerWritingAssistPerDay,
+        OutlineRegenerationLimit = settings.OutlineRegenerationLimit,
+        ContentRegenerationLimit = settings.ContentRegenerationLimit,
+        ImageRegenerationLimit = settings.ImageRegenerationLimit,
+        AudioRegenerationLimit = settings.AudioRegenerationLimit,
         UpdatedAt = settings.UpdatedAt
     };
 }

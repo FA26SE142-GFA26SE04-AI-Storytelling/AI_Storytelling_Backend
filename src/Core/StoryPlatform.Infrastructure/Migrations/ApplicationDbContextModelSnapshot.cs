@@ -454,6 +454,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("CreatorSnapshotJson")
+                        .HasColumnType("text");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
@@ -996,6 +999,177 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasFilter("\"Status\" = 'Pending' AND NOT \"IsDeleted\"");
 
                     b.ToTable("creator_applications", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.CreatorBalanceEntry", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AccountHolderName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("AccountNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<long>("AmountVnd")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("BankName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("BankTransactionCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CreatorUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("EarningPeriodId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int?>("RecordedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ReversedEntryId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("TransferredOn")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ValidReads")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatorUserId")
+                        .HasDatabaseName("IX_creator_balance_entries_CreatorUserId");
+
+                    b.HasIndex("EarningPeriodId");
+
+                    b.HasIndex("ReversedEntryId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_creator_balance_entries_reversal")
+                        .HasFilter("\"ReversedEntryId\" IS NOT NULL AND NOT \"IsDeleted\"");
+
+                    b.HasIndex("CreatorUserId", "EarningPeriodId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_creator_balance_entries_period_per_creator")
+                        .HasFilter("\"EarningPeriodId\" IS NOT NULL AND NOT \"IsDeleted\"");
+
+                    b.ToTable("creator_balance_entries", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.CreatorEarningPeriod", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("ClosedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("CreatorFundVnd")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("DistributedVnd")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("PeriodMonth")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("TotalValidReads")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PeriodMonth")
+                        .IsUnique()
+                        .HasFilter("NOT \"IsDeleted\"");
+
+                    b.ToTable("creator_earning_periods", (string)null);
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.CreatorPayoutAccount", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AccountHolderName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("AccountNumber")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("BankName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CreatorUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatorUserId")
+                        .IsUnique()
+                        .HasFilter("NOT \"IsDeleted\"");
+
+                    b.ToTable("creator_payout_accounts", (string)null);
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.CreatorTierEvaluation", b =>
@@ -2755,6 +2929,12 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<int>("AudioRegenerationLimit")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ContentRegenerationLimit")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -2785,10 +2965,16 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("FreeWritingAssistPerDay")
                         .HasColumnType("integer");
 
+                    b.Property<int>("ImageRegenerationLimit")
+                        .HasColumnType("integer");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
                     b.Property<int>("MinimumReadSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("OutlineRegenerationLimit")
                         .HasColumnType("integer");
 
                     b.Property<int>("PartnerMonthlyAiCredits")
@@ -2822,6 +3008,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                         new
                         {
                             Id = 1,
+                            AudioRegenerationLimit = 2,
+                            ContentRegenerationLimit = 2,
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             CreativeFundPercent = 10,
                             CreatorMonthlyAiCredits = 2,
@@ -2832,8 +3020,10 @@ namespace StoryPlatform.Infrastructure.Migrations
                             FreeReadAloudPerMonth = 5,
                             FreeWeeklyNewLibraryStories = 3,
                             FreeWritingAssistPerDay = 5,
+                            ImageRegenerationLimit = 3,
                             IsDeleted = false,
                             MinimumReadSeconds = 60,
+                            OutlineRegenerationLimit = 3,
                             PartnerMonthlyAiCredits = 6,
                             PartnerMonthlySubmitCredits = 10,
                             PartnerWritingAssistPerDay = 40,
@@ -5839,6 +6029,42 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("ReviewedBy");
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.CreatorBalanceEntry", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "Creator")
+                        .WithMany()
+                        .HasForeignKey("CreatorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.CreatorEarningPeriod", "EarningPeriod")
+                        .WithMany("Entries")
+                        .HasForeignKey("EarningPeriodId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.CreatorBalanceEntry", "ReversedEntry")
+                        .WithMany()
+                        .HasForeignKey("ReversedEntryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Creator");
+
+                    b.Navigation("EarningPeriod");
+
+                    b.Navigation("ReversedEntry");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.CreatorPayoutAccount", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "Creator")
+                        .WithMany()
+                        .HasForeignKey("CreatorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Creator");
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.CreatorTierEvaluation", b =>
                 {
                     b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "Creator")
@@ -7431,6 +7657,11 @@ namespace StoryPlatform.Infrastructure.Migrations
             modelBuilder.Entity("StoryPlatform.Domain.Entities.AuthoringGuideCatalog", b =>
                 {
                     b.Navigation("Versions");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.CreatorEarningPeriod", b =>
+                {
+                    b.Navigation("Entries");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadingRoadmap", b =>

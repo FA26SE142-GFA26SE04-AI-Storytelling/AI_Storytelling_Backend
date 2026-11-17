@@ -5,6 +5,8 @@ using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.BusinessReports.DTOs;
 using StoryPlatform.Application.Features.BusinessReports.Interfaces;
+using StoryPlatform.Application.Features.CreatorStatistics.DTOs;
+using StoryPlatform.Application.Features.CreatorStatistics.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -21,11 +23,14 @@ public class BusinessReportService : IBusinessReportService
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly IRevenueStatisticsService _revenueStatisticsService;
     private readonly IUserAccountStatisticsService _userAccountStatisticsService;
+    private readonly ICreatorStatisticsService? _creatorStatisticsService;
 
     public BusinessReportService(
         IUnitOfWork unitOfWork, IAuditLogWriter auditLogWriter, IRevenueStatisticsService revenueStatisticsService,
-        IUserAccountStatisticsService userAccountStatisticsService)
+        IUserAccountStatisticsService userAccountStatisticsService,
+        ICreatorStatisticsService? creatorStatisticsService = null)
     {
+        _creatorStatisticsService = creatorStatisticsService;
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
         _revenueStatisticsService = revenueStatisticsService;
@@ -63,6 +68,9 @@ public class BusinessReportService : IBusinessReportService
         // Chụp số liệu doanh thu và tài khoản tại thời điểm tạo: báo cáo đã có không đổi khi dữ liệu về sau thay đổi.
         var revenue = await _revenueStatisticsService.GetAsync(from, lastDay, cancellationToken);
         var accounts = await _userAccountStatisticsService.GetAsync(from, lastDay, cancellationToken);
+        var creators = _creatorStatisticsService == null
+            ? null
+            : await _creatorStatisticsService.GetAdminOverviewAsync(from, lastDay, cancellationToken);
 
         var report = new BusinessReport
         {
@@ -74,6 +82,7 @@ public class BusinessReportService : IBusinessReportService
             ReadingSessionsCompleted = completedSessions.Count,
             RevenueSnapshotJson = JsonSerializer.Serialize(revenue, SnapshotJsonOptions),
             AccountSnapshotJson = JsonSerializer.Serialize(accounts, SnapshotJsonOptions),
+            CreatorSnapshotJson = creators == null ? null : JsonSerializer.Serialize(creators, SnapshotJsonOptions),
             Status = ReportStatus.Compiling
         };
 
@@ -156,6 +165,9 @@ public class BusinessReportService : IBusinessReportService
         dto.Accounts = string.IsNullOrWhiteSpace(report.AccountSnapshotJson)
             ? null
             : JsonSerializer.Deserialize<UserAccountStatisticsDto>(report.AccountSnapshotJson, SnapshotJsonOptions);
+        dto.Creators = string.IsNullOrWhiteSpace(report.CreatorSnapshotJson)
+            ? null
+            : JsonSerializer.Deserialize<AdminCreatorStatisticsDto>(report.CreatorSnapshotJson, SnapshotJsonOptions);
         return dto;
     }
 

@@ -163,7 +163,17 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ActorUserId");
+                    b.HasIndex("OccurredAt")
+                        .HasDatabaseName("IX_audit_logs_OccurredAt");
+
+                    b.HasIndex("Action", "OccurredAt")
+                        .HasDatabaseName("IX_audit_logs_Action_OccurredAt");
+
+                    b.HasIndex("ActorUserId", "OccurredAt")
+                        .HasDatabaseName("IX_audit_logs_ActorUserId_OccurredAt");
+
+                    b.HasIndex("EntityType", "EntityId")
+                        .HasDatabaseName("IX_audit_logs_EntityType_EntityId");
 
                     b.ToTable("audit_logs", (string)null);
                 });

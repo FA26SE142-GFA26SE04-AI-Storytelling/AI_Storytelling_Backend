@@ -172,6 +172,7 @@ const row102 = {
   timeSpentSeconds: 420, pagesCompleted: 1, totalPages: 1,
   readCount: 3, readOrdinal: 3, laterCompleted: false, readingMode: "ReadFirst",
   feeling: "Like", feelingLabel: "Thích",
+  emotions: [], reflection: null,
   quizTotalQuestions: 2, quizBestPercent: 100, quizRunCount: 3, quizLatestPercent: 100,
   conversationAnswers: [], readAloud: null, readAloudRecordingCount: 0, expEarned: 10, wordsCollected: [], retell: null
 };
@@ -779,7 +780,8 @@ const STEPS = [
       from: null, to: null, completedSessions: 5, distinctStoriesCompleted: 3, unfinishedStories: 1,
       totalTimeSpentSeconds: 2370, quizStoriesTaken: 1, averageQuizBestPercent: 100,
       feelingCounts: { VeryLike: 1, Like: 1, Neutral: 0, Dislike: 0, None: 3 },
-      expEarned: 35, wordsCollected: 2, readAloudGoodPercent: 80, retellCount: 2 }, errors: null }),
+      expEarned: 35, wordsCollected: 2, readAloudGoodPercent: 80, retellCount: 2,
+      emotionCounts: { Happy: 0, Funny: 0, Surprised: 0, Excited: 0, Touched: 0, Sad: 0, Scared: 0 } }, errors: null }),
     tests: [
       ["ok", "Bé An, mọi thời điểm",
         "200; message \"Lấy tổng quan việc đọc của con thành công.\"; from null, to null; completedSessions 5, distinctStoriesCompleted 3, unfinishedStories 1, totalTimeSpentSeconds 2370 (2220 phiên xong + 150 phiên chưa xong), quizStoriesTaken 1, averageQuizBestPercent 100, expEarned 35, wordsCollected 2, readAloudGoodPercent 80, retellCount 2",
@@ -873,11 +875,162 @@ STEPS.push({
   ]
 });
 
+STEPS.push({
+  "id": "reflection",
+  "title": "Task 10 — Cảm nhận sau khi đọc",
+  "desc": "Chủ hồ sơ xem cảm xúc, đúng tranh và chữ cảnh yêu thích, lời con bằng chữ và/hoặc link ghi âm 15 phút; xóa lời giữ nguyên cảm xúc/cảnh. Không AI. Seed chưa có cảm nhận, phải chạy ca bên trẻ trước.",
+  "flow": [
+    "Bé 1 dùng phiên Completed 102, chọn 1–2 cảm xúc và sceneId 1, gửi lời ở trang tương tác của trẻ.",
+    "Đăng nhập parent_demo1; xem chi tiết cảm nhận, danh sách và overview.",
+    "Nghe sau ca bé gửi lời có audio (chủ hồ sơ đã bật giọng nói); xóa lời rồi xem lại để kiểm cảm xúc/cảnh vẫn còn."
+  ],
+  "apis": [
+    {
+      "m": "GET",
+      "p": "/api/v1/ParentReadingFeedback/{childProfileId}/sessions/{sessionId}/reflection",
+      "role": "User (chủ hồ sơ)",
+      "what": "Cảm xúc, cảnh yêu thích (đúng tranh lưu lúc bé chọn), chữ và link nghe lời bé.",
+      "detail": [
+        [
+          "Kiểm tra",
+          [
+            "EnsureOwnerAsync; phiên thuộc đúng hồ sơ và chưa xóa."
+          ]
+        ],
+        [
+          "Kết quả",
+          [
+            "Chưa có cảm nhận trả emotions=[], favoriteScene=null, noteText=null, noteAudioUrl=null. Tranh ký qua IChildMediaUrlSigner; link audio hết hạn 15 phút."
+          ]
+        ]
+      ],
+      "resp": "{\n  \"success\": true,\n  \"message\": \"Lấy cảm nhận của con thành công.\",\n  \"data\": {\n    \"sessionId\": 102,\n    \"emotions\": [\n      {\n        \"code\": \"Happy\",\n        \"label\": \"Vui\"\n      },\n      {\n        \"code\": \"Touched\",\n        \"label\": \"Cảm động\"\n      }\n    ],\n    \"favoriteScene\": {\n      \"sceneId\": 1,\n      \"sceneIndex\": 0,\n      \"sceneText\": \"Chữ của cảnh trong phiên bản truyện\",\n      \"illustrationUrl\": \"https://storage.example/signed-picture\"\n    },\n    \"noteText\": \"Con thích cảnh này\",\n    \"noteAudioUrl\": \"https://storage.example/signed-note\",\n    \"noteSentAt\": \"2026-11-17T00:00:00Z\"\n  },\n  \"errors\": null\n}",
+      "tests": [
+        [
+          "ok",
+          "Xem cảm nhận sau ca bé gửi lời",
+          "200; Lấy cảm nhận của con thành công.; cảm xúc có nhãn, cảnh có chữ/tranh; noteText đúng.",
+          "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/<REFLECTION_SESSION_ID>/reflection"
+        ],
+        [
+          "ok",
+          "Nghe lời con",
+          "200; noteAudioUrl mở nghe được; link hết hạn sau 15 phút.",
+          "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/<REFLECTION_SESSION_ID>/reflection. Chạy sau ca gửi lời có ghi âm ở trang tương tác của trẻ."
+        ],
+        [
+          "edge",
+          "Phiên seed chưa có cảm nhận",
+          "200; emotions=[], favoriteScene=null, noteText=null, noteAudioUrl=null.",
+          "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/101/reflection. Chạy trước khi thử cảm nhận cho phiên 101."
+        ],
+        [
+          "ok",
+          "Danh sách và tổng quan",
+          "200; danh sách có emotions, reflection={favoriteSceneId,favoriteSceneIndex,hasNoteText,hasNoteRecording}; overview.emotionCounts đủ 7 khóa và đếm phiên Completed trong khoảng.",
+          "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1. Sau đó gọi overview theo API có sẵn."
+        ],
+        [
+          "neg",
+          "Không phải chủ hồ sơ",
+          "403; Bạn không có quyền với hồ sơ trẻ này.",
+          "Đăng nhập parent_demo2. GET /api/v1/ParentReadingFeedback/1/sessions/<REFLECTION_SESSION_ID>/reflection"
+        ],
+        [
+          "neg",
+          "Phiên của con khác",
+          "404; Không tìm thấy Phiên đọc với mã định danh [2].",
+          "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/2/reflection"
+        ],
+        [
+          "neg",
+          "Gọi bằng token Moderator",
+          "403 (body rỗng)"
+        ],
+        [
+          "neg",
+          "Gọi bằng token bé",
+          "403 (body rỗng)"
+        ],
+        [
+          "neg",
+          "Không gửi token",
+          "401"
+        ]
+      ]
+    },
+    {
+      "m": "DELETE",
+      "p": "/api/v1/ParentReadingFeedback/{childProfileId}/sessions/{sessionId}/reflection/note",
+      "role": "User (chủ hồ sơ)",
+      "what": "Xóa chữ và file lời bé, giữ cảm xúc và cảnh yêu thích.",
+      "detail": [
+        [
+          "Kiểm tra",
+          [
+            "Chủ hồ sơ; phiên thuộc bé; có chữ hoặc file lời con. Chưa có lời trả 404."
+          ]
+        ],
+        [
+          "Xử lý",
+          [
+            "Xóa file rồi xóa các trường lời con. Lỗi kho thì không đánh dấu đã xóa. Xóa tài khoản purge cả cảm nhận và file."
+          ]
+        ]
+      ],
+      "resp": "{\n  \"success\": true,\n  \"message\": \"Đã xóa lời của con.\",\n  \"data\": null,\n  \"errors\": null\n}",
+      "tests": [
+        [
+          "ok",
+          "Xóa lời con",
+          "200; Đã xóa lời của con.; noteText=null, noteAudioUrl=null; cảm xúc và cảnh giữ nguyên.",
+          "Đăng nhập parent_demo1. DELETE /api/v1/ParentReadingFeedback/1/sessions/<REFLECTION_SESSION_ID>/reflection/note. Chạy sau ca bé gửi lời."
+        ],
+        [
+          "neg",
+          "Không có lời để xóa",
+          "404; Không tìm thấy Lời con với mã định danh [101].",
+          "Đăng nhập parent_demo1. DELETE /api/v1/ParentReadingFeedback/1/sessions/101/reflection/note. Dùng phiên chưa gửi lời."
+        ],
+        [
+          "neg",
+          "Không phải chủ hồ sơ",
+          "403; Bạn không có quyền với hồ sơ trẻ này.",
+          "Đăng nhập parent_demo2. DELETE /api/v1/ParentReadingFeedback/1/sessions/<REFLECTION_SESSION_ID>/reflection/note"
+        ],
+        [
+          "neg",
+          "Phiên của con khác",
+          "404; Không tìm thấy Phiên đọc với mã định danh [2].",
+          "Đăng nhập parent_demo1. DELETE /api/v1/ParentReadingFeedback/1/sessions/2/reflection/note"
+        ],
+        [
+          "neg",
+          "Gọi bằng token Moderator",
+          "403 (body rỗng)"
+        ],
+        [
+          "neg",
+          "Gọi bằng token bé",
+          "403 (body rỗng)"
+        ],
+        [
+          "neg",
+          "Không gửi token",
+          "401"
+        ]
+      ]
+    }
+  ]
+});
+
 // Body thay thế theo [phần đường dẫn, phần tên tình huống, body]; không dùng vì body đã nằm trong dữ liệu test.
 const OVERRIDES = [];
 
 // ---------- DỮ LIỆU THẬT TỪ SEED (Database/Seed) ----------
 const SEEDAPI = [
+  ["GET /api/v1/ParentReadingFeedback/{childProfileId}/sessions/{sessionId}/reflection", { as: "parent_demo1", url: "GET /api/v1/ParentReadingFeedback/1/sessions/<REFLECTION_SESSION_ID>/reflection", note: "Bé 1, phiên Completed 102; chạy ca cảm nhận của bé trước." }],
+  ["DELETE /api/v1/ParentReadingFeedback/{childProfileId}/sessions/{sessionId}/reflection/note", { as: "parent_demo1", url: "DELETE /api/v1/ParentReadingFeedback/1/sessions/<REFLECTION_SESSION_ID>/reflection/note", note: "Chạy sau ca bé gửi lời." }],
   ["GET /api/v1/ParentReadingFeedback/{childProfileId}/sessions/{sessionId}/read-aloud", { as: "parent_demo1", url: "GET /api/v1/ParentReadingFeedback/1/sessions/<RECORDING_SESSION_ID>/read-aloud", note: "Lấy sessionId từ API đọc to của bé 1." }],
   ["DELETE /api/v1/ParentReadingFeedback/{childProfileId}/sessions/{sessionId}/read-aloud/{recordingId}", { as: "parent_demo1", url: "DELETE /api/v1/ParentReadingFeedback/1/sessions/<RECORDING_SESSION_ID>/read-aloud/<RECORDING_ID>", note: "Lấy recordingId từ danh sách bản ghi." }],
   ["=GET /api/v1/ParentReadingFeedback/{childProfileId}", { as: "parent_demo1", url: "GET /api/v1/ParentReadingFeedback/1", note: "Hồ sơ 1 = Bé An của parent_demo1; seed có 5 phiên xong và 2 phiên chưa xong." }],
@@ -895,6 +1048,7 @@ const GENERIC = [
 
 // ---------- GIÁ TRỊ ĐỘNG ----------
 const VAR_DEFS = [
+  ["REFLECTION_SESSION_ID", "102", "Phiên bé 1 đã chọn cảm xúc/cảnh và gửi lời"],
   ["RECORDING_SESSION_ID", "", "Phiên của bé 1 vừa gọi API đọc to thành công ở trang tương tác của trẻ"],
   ["RECORDING_ID", "", "recordingId lấy từ GET danh sách bản ghi đọc to, dùng để xóa"],
   ["FROM_7D", "2026-11-08T00:00:00Z", "Mốc UTC = bây giờ − 7 ngày (SQL: SELECT to_char((NOW()-INTERVAL '7 days') AT TIME ZONE 'utc','YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'))"],

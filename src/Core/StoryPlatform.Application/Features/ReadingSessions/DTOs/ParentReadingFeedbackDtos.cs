@@ -21,6 +21,11 @@ public class ParentReadingFeedbackItemDto
     /// <summary>"VeryLike", "Like", "Neutral", "Dislike"; null nếu con chưa chọn.</summary>
     public string? Feeling { get; set; }
     public string? FeelingLabel { get; set; }
+    /// <summary>Cảm xúc con chọn sau khi đọc (0–2).</summary>
+    public List<StoryEmotionDto> Emotions { get; set; } = new();
+    /// <summary>Tóm tắt cảnh yêu thích + lời con; null nếu con chưa chọn cảnh.</summary>
+    public ParentReflectionBriefDto? Reflection { get; set; }
+
     /// <summary>Số câu quiz của truyện (0 nếu truyện không có quiz).</summary>
     public int QuizTotalQuestions { get; set; }
     /// <summary>Phần trăm của lần làm quiz tốt nhất; null nếu con chưa làm hoặc truyện không có quiz.</summary>
@@ -183,6 +188,9 @@ public class ParentReadingOverviewDto
     public decimal? AverageQuizBestPercent { get; set; }
     /// <summary>Khóa: "VeryLike", "Like", "Neutral", "Dislike", "None" (chưa chọn); tính trên các lần đọc xong.</summary>
     public Dictionary<string, int> FeelingCounts { get; set; } = new();
+    /// <summary>Khóa: tên StoryEmotion; số lần đọc xong trong khoảng có chọn cảm xúc đó.</summary>
+    public Dictionary<string, int> EmotionCounts { get; set; } = new();
+
     public int ExpEarned { get; set; }
     /// <summary>Số từ khác nhau bé lưu lần đầu trong khoảng.</summary>
     public int WordsCollected { get; set; }
@@ -190,4 +198,12 @@ public class ParentReadingOverviewDto
     public decimal? ReadAloudGoodPercent { get; set; }
     /// <summary>Số lần đọc trong khoảng có bản "Bé kể lại" chưa xóa.</summary>
     public int RetellCount { get; set; }
+}
+
+public class ParentReflectionBriefDto
+{
+    public int FavoriteSceneId { get; set; }
+    public int? FavoriteSceneIndex { get; set; }
+    public bool HasNoteText { get; set; }
+    public bool HasNoteRecording { get; set; }
 }

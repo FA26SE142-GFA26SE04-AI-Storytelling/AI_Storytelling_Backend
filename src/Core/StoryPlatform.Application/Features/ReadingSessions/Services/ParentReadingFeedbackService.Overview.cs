@@ -65,6 +65,8 @@ public partial class ParentReadingFeedbackService
         var goodWords = readAloud.Sum(summary => summary.GoodWords);
         var totalWords = readAloud.Sum(summary => summary.TotalWords);
         var retells = await LoadRetellsAsync(inRangeIds, ct);
+        var reflections = await LoadReflectionsAsync(completed.Select(session => session.Id).ToList(), ct);
+
 
         return new ParentReadingOverviewDto
         {
@@ -77,6 +79,7 @@ public partial class ParentReadingFeedbackService
             QuizStoriesTaken = bestPercents.Count,
             AverageQuizBestPercent = bestPercents.Count == 0 ? null : Math.Round(bestPercents.Average(), 1),
             FeelingCounts = CountFeelings(completed),
+            EmotionCounts = CountEmotions(reflections.Values),
             ExpEarned = activity.Values.Sum(logs => ReadingActivityTelemetry.Exp(logs)),
             WordsCollected = activity.Values
                 .SelectMany(logs => ReadingActivityTelemetry.CollectedVocabularyIds(logs))
@@ -94,6 +97,19 @@ public partial class ParentReadingFeedbackService
         foreach (var session in completed)
         {
             counts[session.Feeling?.ToString() ?? NoFeelingKey]++;
+        }
+
+        return counts;
+    }
+    private static Dictionary<string, int> CountEmotions(IEnumerable<StoryReflection> reflections)
+    {
+        var counts = Enum.GetValues<StoryEmotion>().ToDictionary(emotion => emotion.ToString(), _ => 0);
+        foreach (var code in reflections.SelectMany(row => row.Emotions))
+        {
+            if (StoryEmotionLabels.TryParse(code, out var emotion))
+            {
+                counts[emotion.ToString()]++;
+            }
         }
 
         return counts;

@@ -32,8 +32,14 @@ public class CreditUsageConfiguration : IEntityTypeConfiguration<CreditUsage>
             .HasForeignKey(x => x.ModerationItemId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(x => x.Story)
+            .WithMany()
+            .HasForeignKey(x => x.StoryId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.HasIndex(x => x.UserId);
         builder.HasIndex(x => x.ModerationItemId);
+        builder.HasIndex(x => x.StoryId);
         // Thong ke theo ky doc theo thoi diem tru.
         builder.HasIndex(x => x.CreatedAt);
     }

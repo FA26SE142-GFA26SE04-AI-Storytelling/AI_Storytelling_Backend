@@ -388,7 +388,7 @@ public sealed class ParentManualApiFlowTests
             // Strict: chỉ luồng Creator chạy qua host này; Creator dùng lượt của chính mình, không chạm lượt của hồ sơ trẻ.
             var creatorQuota = new Mock<StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService>(MockBehavior.Strict);
             creatorQuota.Setup(q => q.EnsureCreatorWithinQuotaAsync(It.IsAny<int>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
-            creatorQuota.Setup(q => q.IncrementCreatorUsageAsync(It.IsAny<int>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+            creatorQuota.Setup(q => q.IncrementCreatorUsageAsync(It.IsAny<int>(), It.IsAny<Story?>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
             builder.Services.AddSingleton<StoryPlatform.Application.Features.AIStoryInput.Interfaces.IAIStoryInputService>(
                 new StoryPlatform.Application.Features.AIStoryInput.Services.AIStoryInputService(store.Uow.Object,
                     new StoryPlatform.Application.Features.AIStoryInput.Guardrails.RuleBasedInputGuardrail(),

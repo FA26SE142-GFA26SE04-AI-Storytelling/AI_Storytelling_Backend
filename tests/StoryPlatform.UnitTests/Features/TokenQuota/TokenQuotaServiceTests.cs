@@ -126,7 +126,7 @@ public class TokenQuotaServiceTests
         var cycle = SeedLot(CreditSource.Cycle, remaining: 4, expiresAt: DateTime.UtcNow.AddDays(10));
         var addOn = SeedLot(CreditSource.AddOn, remaining: 2, expiresAt: DateTime.UtcNow.AddDays(3));
 
-        await _sut.IncrementUsageAsync(ChildId);
+        await _sut.IncrementUsageAsync(ChildId, null);
 
         Assert.Equal((1, 4, 1), (trial.Remaining, cycle.Remaining, addOn.Remaining));
     }
@@ -138,8 +138,8 @@ public class TokenQuotaServiceTests
         var legacy = SeedLot(CreditSource.Legacy, remaining: 5);
         var cycle = SeedLot(CreditSource.Cycle, remaining: 1, expiresAt: DateTime.UtcNow.AddDays(20));
 
-        await _sut.IncrementUsageAsync(ChildId);
-        await _sut.IncrementUsageAsync(ChildId);
+        await _sut.IncrementUsageAsync(ChildId, null);
+        await _sut.IncrementUsageAsync(ChildId, null);
 
         Assert.Equal((4, 0), (legacy.Remaining, cycle.Remaining));
     }
@@ -151,7 +151,7 @@ public class TokenQuotaServiceTests
         var spent = SeedLot(CreditSource.Trial, remaining: 0);
         var expired = SeedLot(CreditSource.AddOn, remaining: 2, expiresAt: DateTime.UtcNow.AddMinutes(-1));
 
-        await Assert.ThrowsAsync<ConflictException>(() => _sut.IncrementUsageAsync(ChildId));
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.IncrementUsageAsync(ChildId, null));
 
         Assert.Equal((0, 2), (spent.Remaining, expired.Remaining));
     }
@@ -162,7 +162,7 @@ public class TokenQuotaServiceTests
         SeedChild();
         SeedLot(CreditSource.Legacy, remaining: 1);
 
-        await _sut.IncrementUsageAsync(ChildId);
+        await _sut.IncrementUsageAsync(ChildId, null);
 
         Assert.Equal([$"lock:{OwnerId}"], _store.Calls);
     }
@@ -173,9 +173,9 @@ public class TokenQuotaServiceTests
         SeedChild();
         SeedLot(CreditSource.Legacy, remaining: 1);
 
-        await _sut.IncrementUsageAsync(ChildId);
+        await _sut.IncrementUsageAsync(ChildId, null);
 
-        await Assert.ThrowsAsync<ConflictException>(() => _sut.IncrementUsageAsync(ChildId));
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.IncrementUsageAsync(ChildId, null));
     }
 
     [Fact]
@@ -186,7 +186,7 @@ public class TokenQuotaServiceTests
         SeedLot(CreditSource.Trial, remaining: 1);
 
         await _sut.EnsureWithinQuotaAsync(ChildId);
-        await _sut.IncrementUsageAsync(ChildId);
+        await _sut.IncrementUsageAsync(ChildId, null);
 
         await Assert.ThrowsAsync<ConflictException>(() => _sut.EnsureWithinQuotaAsync(11));
     }
@@ -510,7 +510,7 @@ public class TokenQuotaServiceTests
         await _sut.AdjustAsync(AdminId, Adjust(1));
 
         await _sut.EnsureWithinQuotaAsync(ChildId);
-        await _sut.IncrementUsageAsync(ChildId);
+        await _sut.IncrementUsageAsync(ChildId, null);
 
         await Assert.ThrowsAsync<ConflictException>(() => _sut.EnsureWithinQuotaAsync(ChildId));
     }
@@ -561,7 +561,7 @@ public class TokenQuotaServiceTests
         SeedLot(CreditSource.Legacy, remaining: 5);
         var addOn = SeedLot(CreditSource.AddOn, remaining: 2, expiresAt: DateTime.UtcNow.AddDays(3));
 
-        await _sut.IncrementUsageAsync(ChildId);
+        await _sut.IncrementUsageAsync(ChildId, null);
 
         var usage = Assert.Single(_store.Items<CreditUsage>());
         Assert.Equal(
@@ -575,7 +575,7 @@ public class TokenQuotaServiceTests
         SeedChild();
         SeedLot(CreditSource.Trial, remaining: 0);
 
-        await Assert.ThrowsAsync<ConflictException>(() => _sut.IncrementUsageAsync(ChildId));
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.IncrementUsageAsync(ChildId, null));
 
         Assert.Empty(_store.Items<CreditUsage>());
     }
@@ -643,5 +643,132 @@ public class TokenQuotaServiceTests
         Assert.Equal(("Free", 1, (int?)3, 1, 1),
             (quota.Benefits!.Tier, quota.Benefits.MaxChildProfiles, quota.Benefits.WeeklyNewLibraryStories,
                 quota.NewLibraryStoriesThisWeek, quota.WritingAssistsToday));
+    }
+
+    // ---------- Giữ – trừ – trả lượt AI (UC-L2-09) ----------
+
+    private Story SeedStory(int id = 100) =>
+        _store.Seed(new Story { Id = id, AuthorUserId = OwnerId, ChildProfileId = ChildId, Scope = StoryScope.Parent });
+
+    private async Task<int> RemainingAsync() => (await _sut.GetQuotaForUserAsync(OwnerId)).TotalRemaining;
+
+    [Fact]
+    public async Task Hold_TakesOneCreditAndLinksTheStory()
+    {
+        SeedChild();
+        SeedLot(CreditSource.Cycle, remaining: 3, expiresAt: DateTime.UtcNow.AddDays(10));
+        var story = SeedStory();
+
+        await _sut.IncrementUsageAsync(ChildId, story);
+
+        var usage = Assert.Single(_store.Items<CreditUsage>());
+        Assert.Equal((story.Id, (DateTime?)null, (DateTime?)null), (usage.StoryId, usage.ConsumedAt, usage.RefundedAt));
+        Assert.Equal(2, await RemainingAsync());
+    }
+
+    [Fact]
+    public async Task Hold_SecondRequestWhileTheFirstIsRunning_Is409()
+    {
+        // AC1: còn 1 lượt, gửi 2 yêu cầu liên tiếp → yêu cầu thứ 2 bị 409 vì lượt đang được giữ.
+        SeedChild();
+        SeedLot(CreditSource.Trial, remaining: 1);
+
+        await _sut.IncrementUsageAsync(ChildId, SeedStory(100));
+
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.IncrementUsageAsync(ChildId, SeedStory(101)));
+    }
+
+    [Fact]
+    public async Task Consume_KeepsTheCreditSpentAndIsIdempotent()
+    {
+        // AC2: sinh lại dàn ý rồi sinh xong nội dung → chỉ tính 1 lượt.
+        SeedChild();
+        SeedLot(CreditSource.Cycle, remaining: 3, expiresAt: DateTime.UtcNow.AddDays(10));
+        var story = SeedStory();
+        await _sut.IncrementUsageAsync(ChildId, story);
+
+        await TokenQuotaService.ConsumeStoryCreditAsync(_store, story.Id, default);
+        await _store.SaveChangesAsync();
+        await TokenQuotaService.ConsumeStoryCreditAsync(_store, story.Id, default);
+
+        Assert.NotNull(Assert.Single(_store.Items<CreditUsage>()).ConsumedAt);
+        Assert.Equal(2, await RemainingAsync());
+    }
+
+    [Fact]
+    public async Task Release_ReturnsTheCreditToTheSameLotOnlyOnce()
+    {
+        // AC3: job AI lỗi giữa chừng → vẫn còn đủ lượt.
+        SeedChild();
+        var lot = SeedLot(CreditSource.Cycle, remaining: 3, expiresAt: DateTime.UtcNow.AddDays(10));
+        var story = SeedStory();
+        await _sut.IncrementUsageAsync(ChildId, story);
+
+        await TokenQuotaService.ReleaseStoryCreditAsync(_store, story.Id, default);
+        await TokenQuotaService.ReleaseStoryCreditAsync(_store, story.Id, default);
+
+        Assert.Equal(3, lot.Remaining);
+        Assert.NotNull(Assert.Single(_store.Items<CreditUsage>()).RefundedAt);
+        Assert.Contains($"lock:{OwnerId}", _store.Calls);
+    }
+
+    [Fact]
+    public async Task Release_AfterContentWasGenerated_DoesNotRefund()
+    {
+        // AC4: AI sinh xong nội dung, phụ huynh từ chối → không hoàn lượt.
+        SeedChild();
+        var lot = SeedLot(CreditSource.Cycle, remaining: 3, expiresAt: DateTime.UtcNow.AddDays(10));
+        var story = SeedStory();
+        await _sut.IncrementUsageAsync(ChildId, story);
+        await TokenQuotaService.ConsumeStoryCreditAsync(_store, story.Id, default);
+        await _store.SaveChangesAsync();
+
+        await TokenQuotaService.ReleaseStoryCreditAsync(_store, story.Id, default);
+
+        Assert.Equal(2, lot.Remaining);
+        Assert.Null(Assert.Single(_store.Items<CreditUsage>()).RefundedAt);
+    }
+
+    [Fact]
+    public async Task HoldForRetry_AfterRelease_HoldsAgain()
+    {
+        SeedChild();
+        var lot = SeedLot(CreditSource.Cycle, remaining: 3, expiresAt: DateTime.UtcNow.AddDays(10));
+        var story = SeedStory();
+        await _sut.IncrementUsageAsync(ChildId, story);
+        await TokenQuotaService.ReleaseStoryCreditAsync(_store, story.Id, default);
+
+        var held = await _sut.HoldStoryCreditForRetryAsync(story.Id);
+
+        Assert.True(held);
+        Assert.Equal(2, lot.Remaining);
+        Assert.Single(_store.Items<CreditUsage>(), usage => usage.StoryId == story.Id && usage.RefundedAt == null);
+    }
+
+    [Fact]
+    public async Task HoldForRetry_StillHeldOrNeverCharged_DoesNothing()
+    {
+        SeedChild();
+        var lot = SeedLot(CreditSource.Cycle, remaining: 3, expiresAt: DateTime.UtcNow.AddDays(10));
+        var held = SeedStory(100);
+        var legacy = SeedStory(101);
+        await _sut.IncrementUsageAsync(ChildId, held);
+
+        Assert.False(await _sut.HoldStoryCreditForRetryAsync(held.Id));
+        Assert.False(await _sut.HoldStoryCreditForRetryAsync(legacy.Id));
+        Assert.Equal(2, lot.Remaining);
+    }
+
+    [Fact]
+    public async Task HoldForRetry_OutOfCredits_Is409()
+    {
+        SeedChild();
+        SeedLot(CreditSource.Trial, remaining: 1);
+        var story = SeedStory(100);
+        await _sut.IncrementUsageAsync(ChildId, story);
+        await TokenQuotaService.ReleaseStoryCreditAsync(_store, story.Id, default);
+        await _sut.IncrementUsageAsync(ChildId, SeedStory(101));
+
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.HoldStoryCreditForRetryAsync(story.Id));
     }
 }

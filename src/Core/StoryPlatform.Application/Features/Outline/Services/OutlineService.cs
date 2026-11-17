@@ -9,6 +9,8 @@ using StoryPlatform.Application.Features.AIStoryInput.Models;
 using StoryPlatform.Application.Features.Outline.DTOs;
 using StoryPlatform.Application.Features.Outline.Guardrails;
 using StoryPlatform.Application.Features.Outline.Interfaces;
+using StoryPlatform.Application.Features.TokenQuota.Interfaces;
+using StoryPlatform.Application.Features.TokenQuota.Services;
 using StoryPlatform.Contracts.AI.Models;
 using StoryPlatform.Contracts.AI.Requests;
 using StoryPlatform.Contracts.AI.Responses;
@@ -26,13 +28,16 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
     private readonly IOutlineReviewGuardrail _guardrail;
     private readonly IOutlineJobFailureFinalizer _failureFinalizer;
     private readonly IGrayZoneEvaluator? _moderation;
+    private readonly ITokenQuotaService? _tokenQuota;
 
     public OutlineService(
         IUnitOfWork unitOfWork,
         IAIStoryGenerationClient aiClient,
         IOutlineReviewGuardrail guardrail,
-        IOutlineJobFailureFinalizer failureFinalizer, IGrayZoneEvaluator? moderation = null)
+        IOutlineJobFailureFinalizer failureFinalizer, IGrayZoneEvaluator? moderation = null,
+        ITokenQuotaService? tokenQuota = null)
     {
+        _tokenQuota = tokenQuota;
         _unitOfWork = unitOfWork;
         _aiClient = aiClient;
         _guardrail = guardrail;
@@ -190,6 +195,9 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
             }
 
             var request = await LoadAcceptedRequestAsync(storyId, cancellationToken);
+            // Lần sinh dàn ý lỗi trước đã trả lượt: thử lại phải giữ lại 1 lượt (409 nếu hết), cùng transaction với job mới.
+            if (_tokenQuota is not null)
+                await _tokenQuota.HoldStoryCreditForRetryAsync(storyId, cancellationToken);
             await _unitOfWork.Repository<StoryGenerationJob>().AddAsync(new StoryGenerationJob
             {
                 StoryId = storyId,
@@ -308,6 +316,8 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
                          item.Operation == GenerationJobOperation.RegenerateOutline),
                 cancellationToken: cancellationToken);
             story.Status = StoryStatus.Rejected;
+            // Từ chối dàn ý xảy ra trước khi AI sinh nội dung: trả lượt đang giữ (Luồng 2, 2d).
+            await TokenQuotaService.ReleaseStoryCreditAsync(_unitOfWork, storyId, cancellationToken);
             if (job is not null)
             {
                 job.Stage = JobStage.OutlineRejected;

@@ -30,20 +30,12 @@ public partial class TokenQuotaService
         }
     }
 
-    public async Task IncrementCreatorUsageAsync(int creatorUserId, CancellationToken cancellationToken = default)
+    public async Task IncrementCreatorUsageAsync(int creatorUserId, Story? story, CancellationToken cancellationToken = default)
     {
         // Khoá theo tài khoản trước khi đọc lô, như IncrementUsageAsync của phụ huynh.
         await _unitOfWork.AcquireTransactionLockAsync(creatorUserId, cancellationToken);
-        var now = DateTime.UtcNow;
-        await EnsureCreatorMonthlyGrantedAsync(creatorUserId, now, cancellationToken);
-
-        var lot = OrderForUse(await GetUsableLotsAsync(creatorUserId, now, cancellationToken)).FirstOrDefault()
-                  ?? throw new ConflictException(CreatorOutOfAiCreditsMessage);
-        lot.Remaining -= 1;
-        lot.UpdatedAt = now;
-        _unitOfWork.Repository<CreditLot>().Update(lot);
-        await RecordUsageAsync(lot, 1, CreditUsageReason.StoryRequest, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await EnsureCreatorMonthlyGrantedAsync(creatorUserId, DateTime.UtcNow, cancellationToken);
+        await HoldOneCreditAsync(creatorUserId, story, CreatorOutOfAiCreditsMessage, cancellationToken);
     }
 
     public async Task ChargeSubmissionAsync(

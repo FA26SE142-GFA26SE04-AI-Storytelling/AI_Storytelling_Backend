@@ -25,12 +25,12 @@ public sealed partial class AIStoryInputServiceTests
         // Strict: Creator dùng lượt của chính mình, không bao giờ chạm lượt của hồ sơ trẻ.
         var quota = new Moq.Mock<ITokenQuotaService>(Moq.MockBehavior.Strict);
         quota.Setup(q => q.EnsureCreatorWithinQuotaAsync(13, Moq.It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
-        quota.Setup(q => q.IncrementCreatorUsageAsync(13, Moq.It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        quota.Setup(q => q.IncrementCreatorUsageAsync(13, Moq.It.IsAny<Story?>(), Moq.It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), quota.Object);
         var result = await service.SubmitCreatorAsync(13, CreatorRequest());
         var replay = await service.SubmitCreatorAsync(13, CreatorRequest());
         Assert.Equal(result.RequestId, replay.RequestId);
-        quota.Verify(q => q.IncrementCreatorUsageAsync(13, Moq.It.IsAny<CancellationToken>()), Moq.Times.Once);
+        quota.Verify(q => q.IncrementCreatorUsageAsync(13, Moq.It.IsAny<Story?>(), Moq.It.IsAny<CancellationToken>()), Moq.Times.Once);
         Assert.Equal("input_accepted", result.InputStatus);
         var story = Assert.Single(store.Items<Story>());
         Assert.Equal(StoryScope.Creator, story.Scope);
@@ -115,7 +115,7 @@ public sealed partial class AIStoryInputServiceTests
     {
         var quota = new Moq.Mock<ITokenQuotaService>(Moq.MockBehavior.Strict);
         quota.Setup(q => q.EnsureCreatorWithinQuotaAsync(Moq.It.IsAny<int>(), Moq.It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
-        quota.Setup(q => q.IncrementCreatorUsageAsync(Moq.It.IsAny<int>(), Moq.It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        quota.Setup(q => q.IncrementCreatorUsageAsync(Moq.It.IsAny<int>(), Moq.It.IsAny<Story?>(), Moq.It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         return quota.Object;
     }
 

@@ -1043,6 +1043,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("Amount")
                         .HasColumnType("integer");
 
+                    b.Property<DateTime?>("ConsumedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1063,6 +1066,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<DateTime?>("RefundedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int?>("StoryId")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1076,6 +1082,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasIndex("LotId");
 
                     b.HasIndex("ModerationItemId");
+
+                    b.HasIndex("StoryId");
 
                     b.HasIndex("UserId");
 
@@ -5720,6 +5728,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasForeignKey("ModerationItemId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("StoryPlatform.Domain.Entities.Story", "Story")
+                        .WithMany()
+                        .HasForeignKey("StoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
@@ -5729,6 +5742,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("Lot");
 
                     b.Navigation("ModerationItem");
+
+                    b.Navigation("Story");
 
                     b.Navigation("User");
                 });

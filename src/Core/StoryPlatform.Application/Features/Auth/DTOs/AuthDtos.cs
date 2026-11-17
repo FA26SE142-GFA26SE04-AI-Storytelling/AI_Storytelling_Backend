@@ -37,6 +37,18 @@ public class RegisterRequestDto
     public string? PhoneNumber { get; set; }
 }
 
+/// <summary>Content Creator tự đăng ký (Luồng 5, M5): thông tin tài khoản như phụ huynh, kèm đơn để Admin duyệt.</summary>
+public class RegisterCreatorRequestDto : RegisterRequestDto
+{
+    [Required(ErrorMessage = "Giới thiệu bản thân không được để trống.")]
+    [StringLength(1000, MinimumLength = 20, ErrorMessage = "Giới thiệu bản thân từ 20 đến 1000 ký tự.")]
+    public string Introduction { get; set; } = string.Empty;
+
+    [StringLength(500, ErrorMessage = "Link portfolio tối đa 500 ký tự.")]
+    [Url(ErrorMessage = "Link portfolio không đúng định dạng.")]
+    public string? PortfolioUrl { get; set; }
+}
+
 public class UserProfileDto
 {
     public int Id { get; set; }

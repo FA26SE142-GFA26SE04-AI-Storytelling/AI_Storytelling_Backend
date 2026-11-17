@@ -40,5 +40,9 @@ public enum NotificationType
     /// <summary>Truyện của Creator vừa có một đánh giá được hiện công khai.</summary>
     StoryRatingPublished = 33,
     /// <summary>Moderator đã duyệt hoặc ẩn đánh giá của phụ huynh.</summary>
-    StoryRatingModerated = 34
+    StoryRatingModerated = 34,
+    /// <summary>Admin đã duyệt đơn đăng ký Content Creator (Luồng 5, M5).</summary>
+    CreatorApplicationApproved = 35,
+    /// <summary>Admin đã từ chối đơn đăng ký Content Creator, kèm lý do (Luồng 5, M5).</summary>
+    CreatorApplicationRejected = 36
 }

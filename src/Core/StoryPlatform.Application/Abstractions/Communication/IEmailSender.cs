@@ -10,5 +10,7 @@ public interface IEmailSender
     Task SendEmailChangeOtpEmailAsync(string toEmail, string toName, string otp, CancellationToken cancellationToken = default);
     Task SendAccountSecurityChangedEmailAsync(string toEmail, string toName, AccountSecurityChange change, CancellationToken cancellationToken = default);
     Task SendAccountProvisionedEmailAsync(string toEmail, string toName, string creatorName, string roleLabel, string rawSetPasswordToken, CancellationToken cancellationToken = default);
+    /// <summary>Kết quả duyệt đơn Content Creator; <paramref name="rejectionReason"/> null nghĩa là đã được duyệt.</summary>
+    Task SendCreatorApplicationResultEmailAsync(string toEmail, string toName, string? rejectionReason, CancellationToken cancellationToken = default);
     Task SendStaffInviteEmailAsync(string toEmail, string toName, string inviterName, string roleLabel, string rawInviteToken, CancellationToken cancellationToken = default);
 }

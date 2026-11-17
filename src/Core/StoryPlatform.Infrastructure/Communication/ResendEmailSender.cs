@@ -105,6 +105,31 @@ public class ResendEmailSender : IEmailSender
         return SendAsync(toEmail, subject, html, cancellationToken);
     }
 
+    public Task SendCreatorApplicationResultEmailAsync(
+        string toEmail, string toName, string? rejectionReason, CancellationToken cancellationToken = default)
+    {
+        var name = System.Net.WebUtility.HtmlEncode(toName);
+        if (rejectionReason == null)
+        {
+            const string approvedSubject = "Đơn đăng ký Content Creator đã được duyệt";
+            var approvedHtml = $"""
+                <p>Chào {name},</p>
+                <p>Đơn đăng ký Content Creator của bạn trên AI Storytelling Platform đã được duyệt.</p>
+                <p>Bạn có thể đăng nhập để bắt đầu sáng tác và gửi truyện lên thư viện công khai.</p>
+                """;
+            return SendAsync(toEmail, approvedSubject, approvedHtml, cancellationToken);
+        }
+
+        const string subject = "Đơn đăng ký Content Creator chưa được duyệt";
+        var html = $"""
+            <p>Chào {name},</p>
+            <p>Đơn đăng ký Content Creator của bạn trên AI Storytelling Platform chưa được duyệt với lý do:</p>
+            <blockquote>{System.Net.WebUtility.HtmlEncode(rejectionReason)}</blockquote>
+            <p>Bạn có thể đăng nhập, cập nhật thông tin và nộp lại đơn.</p>
+            """;
+        return SendAsync(toEmail, subject, html, cancellationToken);
+    }
+
     public Task SendStaffInviteEmailAsync(
         string toEmail, string toName, string inviterName, string roleLabel, string rawInviteToken,
         CancellationToken cancellationToken = default)

@@ -137,6 +137,35 @@ public class AuthService : IAuthService
 
     public async Task RegisterAsync(RegisterRequestDto request, CancellationToken cancellationToken = default)
     {
+        // Public self-registration creates Parent accounts; Content Creators use RegisterCreatorAsync.
+        // Operational accounts must be provisioned by an Administrator.
+        await RegisterAccountAsync(request, UserRole.User, application: null, cancellationToken);
+    }
+
+    public async Task RegisterCreatorAsync(RegisterCreatorRequestDto request, CancellationToken cancellationToken = default)
+    {
+        // Luồng 5, M5: Creator tự đăng ký, kèm đơn chờ Admin duyệt. Sau khi xác thực email tài khoản ở AwaitingApproval.
+        var application = new CreatorApplication
+        {
+            Introduction = request.Introduction.Trim(),
+            PortfolioUrl = string.IsNullOrWhiteSpace(request.PortfolioUrl) ? null : request.PortfolioUrl.Trim(),
+            Status = CreatorApplicationStatus.Pending
+        };
+        await RegisterAccountAsync(request, UserRole.ContentCreator, application, cancellationToken);
+    }
+
+    /// <summary>
+    /// Trạng thái sau khi người dùng chứng minh sở hữu email (xác thực OTP hoặc đặt lại mật khẩu): Creator chưa được
+    /// duyệt chuyển sang chờ duyệt, không bao giờ tự thành Active.
+    /// </summary>
+    private static AccountStatus StatusAfterEmailProof(UserAccount user) =>
+        user.Role == UserRole.ContentCreator && user.Status is AccountStatus.Registered or AccountStatus.AwaitingApproval
+            ? AccountStatus.AwaitingApproval
+            : AccountStatus.Active;
+
+    private async Task RegisterAccountAsync(
+        RegisterRequestDto request, UserRole role, CreatorApplication? application, CancellationToken cancellationToken)
+    {
         if (request.Password != request.ConfirmPassword)
         {
             throw new BadRequestException("Mật khẩu xác nhận không khớp.");
@@ -172,9 +201,7 @@ public class AuthService : IAuthService
             FullName = request.FullName.Trim(),
             PhoneNumber = request.PhoneNumber,
             PasswordHash = _passwordHasher.HashPassword(request.Password),
-            // Public self-registration only creates Parent accounts. Operational accounts
-            // must be provisioned by an Administrator.
-            Role = UserRole.User,
+            Role = role,
             Status = AccountStatus.Registered,
             EmailVerificationTokenHash = OtpHelper.Hash(OtpHelper.EmailVerifyPurpose, normalizedEmail, otp),
             EmailVerificationTokenExpiresAt = DateTime.UtcNow.Add(OtpHelper.Ttl),
@@ -182,6 +209,14 @@ public class AuthService : IAuthService
         };
 
         await userRepo.AddAsync(newUser, cancellationToken);
+        if (application != null)
+        {
+            // EF gán ApplicantUserId từ navigation khi lưu (tài khoản mới chưa có Id).
+            application.Applicant = newUser;
+            application.ApplicantUserId = newUser.Id;
+            await _unitOfWork.Repository<CreatorApplication>().AddAsync(application, cancellationToken);
+        }
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await _emailSender.SendEmailVerificationEmailAsync(
@@ -360,10 +395,11 @@ public class AuthService : IAuthService
         user.EmailVerificationTokenExpiresAt = null;
         user.EmailVerificationFailedAttempts = 0;
         user.EmailVerifiedAt = DateTime.UtcNow;
-        // Chỉ nâng cấp trạng thái Registered -> Active; không mở khoá Suspended qua đường này.
+        // Chỉ nâng cấp trạng thái Registered -> Active (Creator tự đăng ký -> AwaitingApproval);
+        // không mở khoá Suspended qua đường này.
         if (user.Status == AccountStatus.Registered)
         {
-            user.Status = AccountStatus.Active;
+            user.Status = StatusAfterEmailProof(user);
         }
         userRepo.Update(user);
 
@@ -447,10 +483,11 @@ public class AuthService : IAuthService
         user.TokenVersion += 1;
         await RevokeRefreshTokensAsync(user.Id, cancellationToken);
         await WriteAuthAuditAsync(user.Id, "RESET_PASSWORD", user.Id, cancellationToken);
-        // Không hạ cấp trạng thái Suspended — đặt lại mật khẩu không được dùng để tự mở khoá tài khoản.
+        // Không hạ cấp trạng thái Suspended — đặt lại mật khẩu không được dùng để tự mở khoá tài khoản,
+        // và Creator chưa được Admin duyệt vẫn ở chờ duyệt.
         if (user.Status != AccountStatus.Suspended)
         {
-            user.Status = AccountStatus.Active;
+            user.Status = StatusAfterEmailProof(user);
         }
         userRepo.Update(user);
 

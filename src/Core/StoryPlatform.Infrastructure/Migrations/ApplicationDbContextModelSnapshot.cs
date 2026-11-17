@@ -929,6 +929,65 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("content_reports", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.CreatorApplication", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ApplicantUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Introduction")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("PortfolioUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("ReviewedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReviewedByUserId");
+
+                    b.HasIndex("Status", "CreatedAt");
+
+                    b.HasIndex(new[] { "ApplicantUserId" }, "IX_creator_applications_ApplicantUserId");
+
+                    b.HasIndex(new[] { "ApplicantUserId" }, "UX_creator_applications_pending_per_applicant")
+                        .IsUnique()
+                        .HasFilter("\"Status\" = 'Pending' AND NOT \"IsDeleted\"");
+
+                    b.ToTable("creator_applications", (string)null);
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.CreditAdjustment", b =>
                 {
                     b.Property<int>("Id")
@@ -5676,6 +5735,24 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("Story");
 
                     b.Navigation("StoryVersion");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.CreatorApplication", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "Applicant")
+                        .WithMany()
+                        .HasForeignKey("ApplicantUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "ReviewedBy")
+                        .WithMany()
+                        .HasForeignKey("ReviewedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Applicant");
+
+                    b.Navigation("ReviewedBy");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.CreditAdjustment", b =>

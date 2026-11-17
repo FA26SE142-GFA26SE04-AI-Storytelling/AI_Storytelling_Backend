@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Features.CreatorApplications.Interfaces;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using System.Security.Claims;
@@ -206,7 +207,8 @@ public static class ServiceExtensions
                         .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken: context.HttpContext.RequestAborted);
                     if (user == null || user.IsDeleted || user.TokenVersion != version
                         || user.Status == AccountStatus.Suspended || user.Status == AccountStatus.Registered
-                        || context.Principal?.FindFirst(ClaimTypes.Role)?.Value != user.Role.ToString())
+                        // Role trong token phải khớp trạng thái hiện tại: Creator vừa được duyệt mất token role tạm.
+                        || context.Principal?.FindFirst(ClaimTypes.Role)?.Value != CreatorApplicantAccess.RoleClaimFor(user))
                     {
                         context.Fail("Token đã bị thu hồi hoặc tài khoản không còn quyền truy cập.");
                     }

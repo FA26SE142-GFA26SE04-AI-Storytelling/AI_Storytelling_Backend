@@ -170,6 +170,9 @@ public static class DependencyInjection
         services.AddScoped<IRoadmapTemplateService, RoadmapTemplateService>();
         services.AddScoped<IRoadmapReviewService, RoadmapReviewService>();
         services.AddScoped<IStaffAccountService, StaffAccountService>();
+        services.AddScoped<
+            Features.CreatorApplications.Interfaces.ICreatorApplicationService,
+            Features.CreatorApplications.Services.CreatorApplicationService>();
         services.AddScoped<IBusinessReportService, BusinessReportService>();
         services.AddScoped<IRevenueStatisticsService, RevenueStatisticsService>();
         services.AddScoped<IUserAccountStatisticsService, UserAccountStatisticsService>();

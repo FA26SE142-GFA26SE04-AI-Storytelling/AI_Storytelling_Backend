@@ -45,6 +45,20 @@ public class AuthController : BaseApiController
     }
 
     /// <summary>
+    /// Content Creator tự đăng ký kèm đơn; sau khi xác thực email, tài khoản chờ Administrator duyệt (Luồng 5, M5).
+    /// </summary>
+    [HttpPost("register-creator")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<object?>>> RegisterCreator(
+        [FromBody] RegisterCreatorRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        await _authService.RegisterCreatorAsync(request, cancellationToken);
+        return HandleResult<object?>(null,
+            "Đăng ký Content Creator thành công. Vui lòng xác thực email; đơn của bạn sẽ được quản trị viên xét duyệt.");
+    }
+
+    /// <summary>
     /// Đăng nhập hệ thống (hỗ trợ cả Email hoặc Username)
     /// </summary>
     [HttpPost("login")]

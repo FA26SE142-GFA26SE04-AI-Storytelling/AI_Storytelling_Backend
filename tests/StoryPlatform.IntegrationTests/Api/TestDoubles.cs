@@ -37,6 +37,12 @@ public sealed class RecordingEmailSender : IEmailSender
 
     public Task SendStaffInviteEmailAsync(string toEmail, string toName, string inviterName, string roleLabel, string rawInviteToken, CancellationToken cancellationToken = default) =>
         Task.CompletedTask;
+
+    public Task SendCreatorApplicationResultEmailAsync(string toEmail, string toName, string? rejectionReason, CancellationToken cancellationToken = default)
+    {
+        Sent.Enqueue((toEmail, rejectionReason == null ? "creator-approved" : "creator-rejected", rejectionReason ?? string.Empty));
+        return Task.CompletedTask;
+    }
 }
 
 /// <summary>No endpoint under test may reach the AI service synchronously; fail loudly if one does.</summary>

@@ -8,13 +8,22 @@ namespace StoryPlatform.Application.Features.ParentAuthoring;
 
 public sealed partial class ParentStoryPackageService
 {
-    public Task<ParentPackageDto> ConfirmAsync(int actor, int storyId, int id, ParentPackageCommand request, CancellationToken ct) =>
+    public Task<ParentPackageDto> ConfirmAsync(int actor, int storyId, int id, ParentPackageConfirmRequest request, CancellationToken ct) =>
         Command(actor, storyId, "parent-package-confirm", request, async _ =>
         {
             var p = await Package(actor, storyId, id, ct); Expect(p, request); Writable(p);
-            if (p.Status != "Review" || Check(p)?.Passed != true || await ActivePackageJob(p.Id, ct)) throw new ConflictException("PACKAGE_NOT_READY");
+            var check = Check(p);
+            if (p.Status != "Review" || !IsPackageCheckEligible(p, check) || await ActivePackageJob(p.Id, ct)) throw new ConflictException("PACKAGE_NOT_READY");
+            await EnsureNoPackageModerationHoldAsync(p.Id, ct);
             var (_, version, _) = await ParentPackageContext.ValidateAsync(uow, guard, p, ct);
             GrayZoneGate.EnsureCanContinue(await Owner(actor, storyId, ct), version);
+            if (RequiresAcknowledgement(check))
+            {
+                if (!request.AcknowledgeAssessmentWarnings) throw new ConflictException("PACKAGE_ASSESSMENT_ACKNOWLEDGEMENT_REQUIRED");
+                var acknowledgement = new ParentPackageAssessmentAcknowledgement(
+                    p.Id, p.Revision, actor, DateTime.UtcNow, p.SourceFingerprint, p.ContextFingerprint, check!.Warnings);
+                p.CheckResultJson = JsonSerializer.Serialize(check with { Acknowledgement = acknowledgement }, Json);
+            }
             var manifest = await BuildManifestAsync(p, ct);
             p.ManifestJson = JsonSerializer.Serialize(manifest, Json);
             await ParentStoryPackageReader.ValidateManifestAsync(uow, p, ct);
@@ -39,6 +48,10 @@ public sealed partial class ParentStoryPackageService
                     try
                     {
                         await ParentPackageContext.ValidateAsync(uow, guard, p, ct);
+                        await EnsureNoPackageModerationHoldAsync(p.Id, ct);
+                        var check = Check(p);
+                        if (!IsPackageCheckEligible(p, check)) throw new ConflictException("PACKAGE_NOT_READY");
+                        ValidateDeliveryAcknowledgement(actor, p, check);
                         await ParentStoryPackageReader.ValidateManifestAsync(uow, p, ct);
                         var version = await uow.Repository<StoryVersion>().GetByIdAsync(p.StoryVersionId, ct) ?? throw new ConflictException("PARENT_PACKAGE_SOURCE_CHANGED");
                         GrayZoneGate.EnsureCanContinue(story, version);
@@ -114,5 +127,34 @@ public sealed partial class ParentStoryPackageService
         var media = p.ManifestJson == "{}" ? ParentPackageManifest.Empty : JsonSerializer.Deserialize<ParentPackageManifest>(p.ManifestJson, Json)!;
         return new(c.Vocabulary ? words.Select(x => x.Id).ToArray() : [], c.Quiz ? quiz.Select(x => x.Id).ToArray() : [], c.Listening ? listening.Select(x => x.Id).ToArray() : [],
             sceneIds.ToArray(), segments.Select(x => x.Id).ToArray(), media.MediaAssetIds);
+    }
+
+    private static void ValidateDeliveryAcknowledgement(int actor, ParentStoryPackage p, ParentPackageCheck? check)
+    {
+        if (check is null) throw new ConflictException("PACKAGE_NOT_READY");
+        if (!RequiresAcknowledgement(check)) return;
+        var ack = check.Acknowledgement;
+        if (ack is null || ack.PackageId != p.Id || ack.PackageRevision != p.Revision ||
+            ack.AcknowledgedByUserId != actor || ack.AcknowledgedByUserId != p.ConfirmedByUserId ||
+            ack.AcknowledgedAtUtc == default ||
+            ack.SourceFingerprint != p.SourceFingerprint ||
+            ack.ContextFingerprint != p.ContextFingerprint ||
+            !WarningsMatch(check.Warnings, ack.Warnings))
+            throw new ConflictException("PACKAGE_ASSESSMENT_ACKNOWLEDGEMENT_REQUIRED");
+    }
+
+    private static bool WarningsMatch(ParentPackageAssessmentWarning[] expected, ParentPackageAssessmentWarning[]? actual)
+    {
+        if (actual is null || expected.Length != actual.Length) return false;
+        for (var i = 0; i < expected.Length; i++)
+        {
+            var e = expected[i];
+            var a = actual[i];
+            if (e.Source != a.Source || e.Code != a.Code || e.Reason != a.Reason ||
+                e.OccurredAtUtc != a.OccurredAtUtc ||
+                !(e.Evidence ?? []).SequenceEqual(a.Evidence ?? []))
+                return false;
+        }
+        return true;
     }
 }

@@ -4273,6 +4273,80 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("story_rating_reports", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryReflection", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ChildProfileId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<List<string>>("Emotions")
+                        .IsRequired()
+                        .HasColumnType("text[]");
+
+                    b.Property<int?>("FavoriteMediaAssetId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("FavoriteSceneId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("NoteAudioBytes")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("NoteAudioContentType")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("NoteAudioStoragePath")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("NoteSentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("NoteText")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("ReadingSessionId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("StoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("StoryVersionId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChildProfileId")
+                        .HasDatabaseName("IX_story_reflections_child");
+
+                    b.HasIndex("FavoriteMediaAssetId");
+
+                    b.HasIndex("FavoriteSceneId");
+
+                    b.HasIndex("ReadingSessionId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_story_reflections_one_per_session")
+                        .HasFilter("\"IsDeleted\" = false");
+
+                    b.ToTable("story_reflections", (string)null);
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryScene", b =>
                 {
                     b.Property<int>("Id")
@@ -6688,6 +6762,31 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("ReporterUser");
 
                     b.Navigation("StoryRating");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryReflection", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.MediaAsset", "FavoriteMediaAsset")
+                        .WithMany()
+                        .HasForeignKey("FavoriteMediaAssetId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.StoryScene", "FavoriteScene")
+                        .WithMany()
+                        .HasForeignKey("FavoriteSceneId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.ReadingSession", "ReadingSession")
+                        .WithMany()
+                        .HasForeignKey("ReadingSessionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("FavoriteMediaAsset");
+
+                    b.Navigation("FavoriteScene");
+
+                    b.Navigation("ReadingSession");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.StoryScene", b =>

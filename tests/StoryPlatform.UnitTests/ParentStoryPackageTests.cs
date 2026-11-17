@@ -56,14 +56,14 @@ public sealed partial class ParentStoryPackageTests
             Worker = new(Store.Uow.Object, guard, Ai.Object, Batches.Object,
                 new ListeningInteractionGenerator(Store.Uow.Object, Ai.Object), NullLogger<ParentStoryPackageProcessor>.Instance, Moderation.Object, new StorySegmentService());
         }
-        public async Task Initialize()
+        public async Task Initialize(string? content = null)
         {
             var draft = await Store.Service.CreateParentDraftAsync(1, new() { OperationId = "create", Title = "Tom and the dog", Language = "en" }, default);
             Assert.Null(draft.ChildProfileId);
             Assert.False(draft.CanUseAiAssistance);
             StoryId = draft.Story.StoryId;
             Saved = await Store.Service.SaveContentAsync(1, StoryId, new() { OperationId = "save", RevisionToken = draft.Story.RevisionToken,
-                Title = "Tom and the dog", Content = Body }, default);
+                Title = "Tom and the dog", Content = content ?? Body }, default);
             await Packages.FinalizeAsync(1, StoryId, Finalize("finalize"), default);
         }
         public ParentPackageFinalizeRequest Finalize(string key) => new() { OperationId = key, RevisionToken = Saved.Story.RevisionToken, BaseVersionId = Saved.Version.VersionId };
@@ -169,8 +169,26 @@ public sealed partial class ParentStoryPackageTests
             .ReturnsAsync(new EvaluateContentSafetyResponse { IsAllowed = true });
         var packages = await f.Packages.CreateAsync(1, f.StoryId, f.Create("packages", 3), default);
         await f.Worker.ProcessNextAsync(default);
-        Assert.Equal("Failed", (await f.Packages.GetAsync(1, f.StoryId, packages[0].PackageId, default)).Status);
+        var missingScore = await f.Packages.GetAsync(1, f.StoryId, packages[0].PackageId, default);
+        Assert.Equal("Review", missingScore.Status);
+        Assert.Null(missingScore.Check!.SafetyScore);
+        Assert.Equal(ParentPackageAssessmentStatus.Unavailable, missingScore.Check.SafetyStatus);
+        Assert.True(missingScore.Check.RequiresParentAcknowledgement);
+        var ackError = await Assert.ThrowsAsync<ConflictException>(() => f.Packages.ConfirmAsync(1, f.StoryId, missingScore.PackageId,
+            new() { OperationId = "confirm-missing-score", PackageToken = missingScore.PackageToken, AcknowledgeAssessmentWarnings = false }, default));
+        Assert.Equal("PACKAGE_ASSESSMENT_ACKNOWLEDGEMENT_REQUIRED", ackError.Message);
         Assert.Empty(f.Store.Items<ParentStoryOperation>());
+
+        f.Store.Items<SafetyPolicy>().Single(x => x.ChildProfileId == 4).SafetyScoreThreshold = 95;
+        f.Ai.Setup(x => x.EvaluateContentSafetyAsync(It.IsAny<EvaluateContentSafetyRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EvaluateContentSafetyResponse { IsAllowed = true, RiskLevel = "low", SafetyScore = 90,
+                ScoreRuleVersion = ContentSafetyScoring.Version, Evidence = ["Tom has a red ball."] });
+        var belowThreshold = await f.Packages.CreateAsync(1, f.StoryId, f.Create("packages-below", 4), default);
+        await f.Worker.ProcessNextAsync(default);
+        var blocked = await f.Packages.GetAsync(1, f.StoryId, belowThreshold[0].PackageId, default);
+        Assert.Equal("Blocked", blocked.Status);
+        Assert.False(blocked.Check!.Passed);
+        Assert.Equal(90m, blocked.Check.SafetyScore);
     }
 
     [Fact]
@@ -346,17 +364,26 @@ public sealed partial class ParentStoryPackageTests
     public async Task Gray_zone_clear_is_scoped_to_one_package_and_keeps_safety_failures()
     {
         var f = new Fixture(); await f.Initialize();
-        f.Moderation.Setup(x => x.EvaluateAsync(It.IsAny<GrayZoneScan>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new GrayZoneAssessment(ModerationZone.GrayZone, "fingerprint", "phase3", "1", "test", "test", 60, []));
         var packages = await f.Packages.CreateAsync(1, f.StoryId, f.Create("gray-packages", 3, 4), default);
-        await f.Worker.ProcessNextAsync(default); await f.Worker.ProcessNextAsync(default);
-        var items = f.Store.Items<ModerationItem>(); Assert.Equal(2, items.Count);
+        var legacyAssessment = new GrayZoneAssessment(ModerationZone.GrayZone, "fingerprint", "phase3", "1", "test", "test", 60, []);
+        var pkg0 = f.Store.Items<ParentStoryPackage>().Single(x => x.Id == packages[0].PackageId);
+        var pkg1 = f.Store.Items<ParentStoryPackage>().Single(x => x.Id == packages[1].PackageId);
+        pkg0.Status = "Blocked";
+        pkg0.GrayZoneAssessmentJson = JsonSerializer.Serialize(legacyAssessment, ParentPackageContext.Json);
+        pkg0.CheckResultJson = JsonSerializer.Serialize(new ParentPackageCheck(false, ["GRAY_ZONE_REVIEW_REQUIRED"], 100m, ContentSafetyScoring.Version), ParentPackageContext.Json);
+        pkg1.Status = "Blocked";
+        pkg1.GrayZoneAssessmentJson = JsonSerializer.Serialize(legacyAssessment, ParentPackageContext.Json);
+        pkg1.CheckResultJson = JsonSerializer.Serialize(new ParentPackageCheck(false, ["GRAY_ZONE_REVIEW_REQUIRED", "CONTENT_SAFETY_NOT_PASSED"], 40m, ContentSafetyScoring.Version), ParentPackageContext.Json);
+        var items = f.Store.Items<ModerationItem>();
+        items.Add(new() { Id = 1, StoryId = f.StoryId, StoryVersionId = f.Saved.Version.VersionId, ParentStoryPackageId = pkg0.Id,
+            SourceChildProfileId = 3, CreatedByUserId = 1, ItemType = ModerationItemType.GrayZoneStory, Status = ModerationItemStatus.Pending,
+            Flags = pkg0.GrayZoneAssessmentJson, SlaDueAt = DateTime.UtcNow.AddHours(24) });
+        items.Add(new() { Id = 2, StoryId = f.StoryId, StoryVersionId = f.Saved.Version.VersionId, ParentStoryPackageId = pkg1.Id,
+            SourceChildProfileId = 4, CreatedByUserId = 1, ItemType = ModerationItemType.GrayZoneStory, Status = ModerationItemStatus.Pending,
+            Flags = pkg1.GrayZoneAssessmentJson, SlaDueAt = DateTime.UtcNow.AddHours(24) });
         await ParentPackageModeration.DecideAsync(f.Store.Uow.Object, items[0], true, 9, "Checked evidence", default);
         Assert.Equal("Review", (await f.Packages.GetAsync(1, f.StoryId, packages[0].PackageId, default)).Status);
         Assert.Equal("Blocked", (await f.Packages.GetAsync(1, f.StoryId, packages[1].PackageId, default)).Status);
-        var other = f.Store.Items<ParentStoryPackage>().Single(x => x.Id == packages[1].PackageId);
-        var check = JsonSerializer.Deserialize<ParentPackageCheck>(other.CheckResultJson, ParentPackageContext.Json)!;
-        other.CheckResultJson = JsonSerializer.Serialize(check with { Errors = check.Errors.Append("CONTENT_SAFETY_NOT_PASSED").ToArray() }, ParentPackageContext.Json);
         await ParentPackageModeration.DecideAsync(f.Store.Uow.Object, items[1], true, 9, "Gray flag cleared only", default);
         var result = await f.Packages.GetAsync(1, f.StoryId, packages[1].PackageId, default);
         Assert.Equal("Blocked", result.Status); Assert.Contains("CONTENT_SAFETY_NOT_PASSED", result.Check!.Errors);

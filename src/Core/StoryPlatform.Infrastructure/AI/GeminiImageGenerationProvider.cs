@@ -48,6 +48,7 @@ public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
     public async Task<GeneratedMedia> GenerateAsync(
         SceneSpecification specification, CancellationToken cancellationToken = default)
     {
+        ProviderMediaContextSerializer.Validate(specification.MediaContext);
         if (!_vertex.UseVertex && string.IsNullOrWhiteSpace(_gemini.ApiKey))
             throw new PermanentMediaGenerationException("IMAGE_PROVIDER_NOT_CONFIGURED");
 
@@ -114,7 +115,7 @@ public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
         sb.AppendLine(IllustrationTextPolicy.Instruction);
         sb.AppendLine($"People policy: {options.PersonGeneration}. Do not depict children in unsafe, sexualized, or exploitative situations.");
         sb.AppendLine("--- Story media context: preserve character appearance, style and safety across all beats ---");
-        sb.AppendLine(spec.MediaContextJson);
+        sb.AppendLine(ProviderMediaContextSerializer.Serialize(spec.MediaContext));
         sb.AppendLine("--- Visual description ---");
         if (!string.IsNullOrWhiteSpace(spec.BeatText))
         {

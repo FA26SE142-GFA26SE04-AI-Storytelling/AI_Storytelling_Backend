@@ -157,6 +157,8 @@ public static class DependencyInjection
         services.AddScoped<IParentReadingFeedbackService, ParentReadingFeedbackService>();
         services.AddScoped<IParentStorySummaryService, ParentStorySummaryService>();
         services.AddScoped<IParentReadAloudRecordingService, ParentReadAloudRecordingService>();
+        services.AddScoped<IChildStoryReflectionService, ChildStoryReflectionService>();
+        services.AddScoped<IParentStoryReflectionService, ParentStoryReflectionService>();
         services.AddScoped<IChildQuizService, ChildQuizService>();
         services.AddScoped<IChildListeningService, ChildListeningService>();
         services.AddScoped<IChildNotebookService, ChildNotebookService>();
@@ -195,6 +197,7 @@ public static class DependencyInjection
         services.AddSingleton<IStoryBlockParser, StoryBlockParser>();
         services.AddSingleton<ISceneCoverageValidator, SceneCoverageValidator>();
         services.AddSingleton<IMediaContextBuilder, MediaContextBuilder>();
+        services.AddSingleton<IProviderMediaContextProjector, ProviderMediaContextProjector>();
         services.AddSingleton<IStorySegmentService, StorySegmentService>();
         services.AddSingleton<SemanticSceneSegmentationService>(); // Orchestrator: primary (LLM) + fallback (paragraph)
         services.AddSingleton<ISceneSegmentationProvider>(sp => sp.GetRequiredService<SemanticSceneSegmentationService>());

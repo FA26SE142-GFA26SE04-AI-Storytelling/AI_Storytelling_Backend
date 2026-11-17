@@ -32,6 +32,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<StorySummary> StorySummaries => Set<StorySummary>();
     public DbSet<StorySummaryFlag> StorySummaryFlags => Set<StorySummaryFlag>();
     public DbSet<ReadAloudRecording> ReadAloudRecordings => Set<ReadAloudRecording>();
+    public DbSet<StoryReflection> StoryReflections => Set<StoryReflection>();
 
     public DbSet<SafetyPolicy> SafetyPolicies => Set<SafetyPolicy>();
     public DbSet<SafetyPolicyCategory> SafetyPolicyCategories => Set<SafetyPolicyCategory>();

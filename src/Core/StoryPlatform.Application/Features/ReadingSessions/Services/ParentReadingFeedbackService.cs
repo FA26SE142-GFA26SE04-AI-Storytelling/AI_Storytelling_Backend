@@ -69,6 +69,13 @@ public partial class ParentReadingFeedbackService : IParentReadingFeedbackServic
             .SelectMany(logs => ReadingActivityTelemetry.CollectedVocabularyIds(logs))
             .Distinct().ToList(), ct);
         var retells = await LoadRetellsAsync(sessionIds, ct);
+        var reflections = await LoadReflectionsAsync(sessionIds, ct);
+        var favoriteSceneIds = reflections.Values.Where(row => row.FavoriteSceneId.HasValue)
+            .Select(row => row.FavoriteSceneId!.Value).Distinct().ToList();
+        var favoriteScenes = favoriteSceneIds.Count == 0 ? new Dictionary<int, StoryScene>()
+            : (await _unitOfWork.Repository<StoryScene>().FindAsync(
+                scene => favoriteSceneIds.Contains(scene.Id), cancellationToken: ct)).ToDictionary(scene => scene.Id);
+
         var recordingCounts = await LoadReadAloudRecordingCountsAsync(sessionIds, ct);
         var rows = sessions.Select(session =>
         {
@@ -98,6 +105,17 @@ public partial class ParentReadingFeedbackService : IParentReadingFeedbackServic
                 ReadingMode = session.ReadingMode?.ToString(),
                 Feeling = session.Feeling?.ToString(),
                 FeelingLabel = session.Feeling.HasValue ? StoryFeelingLabels.Label(session.Feeling.Value) : null,
+                Emotions = ChildStoryReflectionService.ToEmotionDtos(reflections.GetValueOrDefault(session.Id)?.Emotions),
+                Reflection = reflections.GetValueOrDefault(session.Id) is { FavoriteSceneId: int favoriteId } reflection
+                    ? new ParentReflectionBriefDto
+                    {
+                        FavoriteSceneId = favoriteId,
+                        FavoriteSceneIndex = favoriteScenes.TryGetValue(favoriteId, out var favorite) ? favorite.SceneIndex : null,
+                        HasNoteText = reflection.NoteText != null,
+                        HasNoteRecording = reflection.NoteAudioStoragePath != null
+                    }
+                    : null,
+
                 QuizTotalQuestions = quizCount,
                 QuizBestPercent = quizCount == 0 ? null : QuizRunCalculator.BestPercent(runs, quizCount),
                 QuizRunCount = quizCount == 0 ? 0 : runs.Count,

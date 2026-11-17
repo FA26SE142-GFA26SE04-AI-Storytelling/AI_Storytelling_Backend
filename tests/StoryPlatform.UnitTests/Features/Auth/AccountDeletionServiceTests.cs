@@ -19,6 +19,19 @@ namespace StoryPlatform.UnitTests.Features.Auth;
 
 public class AccountDeletionServiceTests
 {
+    [Fact]
+    public async Task DeleteAccountAsync_ReflectionPurgeFailure_DoesNotFailDeletion()
+    {
+        SetupUser();
+        SetupOwnedProfiles(new ChildProfile { Id = 5, OwnerUserId = 1, Nickname = "Bin", Status = ChildProfileStatus.Active });
+        _storyReflections.Setup(s => s.PurgeChildAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("storage down"));
+
+        await _sut.DeleteAccountAsync(1, new DeleteAccountRequestDto { CurrentPassword = "Pass@123", DeleteChildProfiles = true });
+
+        _storySummaries.Verify(s => s.PurgeChildAsync(5, It.IsAny<CancellationToken>()), Times.Once);
+        _unitOfWork.Verify(u => u.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
     private readonly Mock<IGenericRepository<UserAccount>> _userRepo = new();
     private readonly Mock<IGenericRepository<ChildProfile>> _profileRepo = new();
     private readonly Mock<IGenericRepository<PaymentTransaction>> _paymentRepo = new();
@@ -35,6 +48,7 @@ public class AccountDeletionServiceTests
     private readonly Mock<IAuditLogWriter> _auditLogWriter = new();
     private readonly Mock<IParentStorySummaryService> _storySummaries = new();
     private readonly Mock<IParentReadAloudRecordingService> _readAloudRecordings = new();
+    private readonly Mock<IParentStoryReflectionService> _storyReflections = new();
     private readonly AccountDeletionService _sut;
 
     public AccountDeletionServiceTests()
@@ -61,7 +75,7 @@ public class AccountDeletionServiceTests
         _passwordHasher.Setup(p => p.VerifyPassword("Pass@123", "stored-hash")).Returns(true);
         _passwordHasher.Setup(p => p.HashPassword(It.IsAny<string>())).Returns("random-hash");
         _sut = new AccountDeletionService(_unitOfWork.Object, _passwordHasher.Object, _eraser.Object,
-            _childSessionRevoker.Object, _emailSender.Object, _auditLogWriter.Object, _storySummaries.Object, _readAloudRecordings.Object,
+            _childSessionRevoker.Object, _emailSender.Object, _auditLogWriter.Object, _storySummaries.Object, _readAloudRecordings.Object, _storyReflections.Object,
             NullLogger<AccountDeletionService>.Instance);
     }
 
@@ -80,6 +94,8 @@ public class AccountDeletionServiceTests
         _storySummaries.Verify(s => s.PurgeChildAsync(6, It.IsAny<CancellationToken>()), Times.Once);
         _readAloudRecordings.Verify(s => s.PurgeChildAsync(5, It.IsAny<CancellationToken>()), Times.Once);
         _readAloudRecordings.Verify(s => s.PurgeChildAsync(6, It.IsAny<CancellationToken>()), Times.Once);
+        _storyReflections.Verify(s => s.PurgeChildAsync(5, It.IsAny<CancellationToken>()), Times.Once);
+        _storyReflections.Verify(s => s.PurgeChildAsync(6, It.IsAny<CancellationToken>()), Times.Once);
 
         _unitOfWork.Verify(u => u.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
     }

@@ -23,7 +23,7 @@ public sealed class SemanticSceneSegmentationServiceTests
         var orchestrator = new SemanticSceneSegmentationService(
             primary, fallback, NullLogger<SemanticSceneSegmentationService>.Instance);
 
-        var request = new SceneSegmentationRequest("A\n\nB", Array.Empty<StoryTextBlock>(), "{}");
+        var request = new SceneSegmentationRequest("A\n\nB", Array.Empty<StoryTextBlock>(), CreateTestContext());
         var result = await orchestrator.SegmentAsync(request);
 
         Assert.Single(result);
@@ -43,7 +43,7 @@ public sealed class SemanticSceneSegmentationServiceTests
         var orchestrator = new SemanticSceneSegmentationService(
             primary, fallback, NullLogger<SemanticSceneSegmentationService>.Instance);
 
-        var request = new SceneSegmentationRequest("A\n\nB", Array.Empty<StoryTextBlock>(), "{}");
+        var request = new SceneSegmentationRequest("A\n\nB", Array.Empty<StoryTextBlock>(), CreateTestContext());
         var result = await orchestrator.SegmentAsync(request);
 
         Assert.Single(result);
@@ -62,13 +62,53 @@ public sealed class SemanticSceneSegmentationServiceTests
         var orchestrator = new SemanticSceneSegmentationService(
             primary, fallback, NullLogger<SemanticSceneSegmentationService>.Instance);
 
-        var request = new SceneSegmentationRequest("A\n\nB", Array.Empty<StoryTextBlock>(), "{}");
+        var request = new SceneSegmentationRequest("A\n\nB", Array.Empty<StoryTextBlock>(), CreateTestContext());
         var result = await orchestrator.SegmentAsync(request);
 
         Assert.Single(result);
         Assert.Equal(1, primary.Calls);
         Assert.Equal(1, fallback.Calls);
     }
+
+    [Fact]
+    public async Task Orchestrator_FallsBackOnPrimaryTimeoutException()
+    {
+        var primary = new ThrowingSemanticProvider(new TimeoutException("provider timed out"));
+        var fallback = new RecordingSemanticProvider(new[]
+        {
+            new SceneSelection(0, new[] { "P1" })
+        });
+        var orchestrator = new SemanticSceneSegmentationService(
+            primary, fallback, NullLogger<SemanticSceneSegmentationService>.Instance);
+
+        var request = new SceneSegmentationRequest("A\n\nB", Array.Empty<StoryTextBlock>(), CreateTestContext());
+        var result = await orchestrator.SegmentAsync(request);
+
+        Assert.Single(result);
+        Assert.Equal("P1", result[0].BlockIds[0]);
+        Assert.Equal(1, fallback.Calls);
+    }
+
+    [Fact]
+    public async Task Orchestrator_PropagatesCancellationWithoutFallback()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var primary = new ThrowingSemanticProvider(new OperationCanceledException(cts.Token));
+        var fallback = new RecordingSemanticProvider(new[]
+        {
+            new SceneSelection(0, new[] { "P1" })
+        });
+        var orchestrator = new SemanticSceneSegmentationService(
+            primary, fallback, NullLogger<SemanticSceneSegmentationService>.Instance);
+
+        var request = new SceneSegmentationRequest("A\n\nB", Array.Empty<StoryTextBlock>(), CreateTestContext());
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => orchestrator.SegmentAsync(request, cts.Token));
+        Assert.Equal(0, fallback.Calls);
+    }
+
+    private static ProviderMediaContext CreateTestContext() =>
+        new(2, new ProviderStoryFacts("Test", null, null, "A\n\nB"), ProviderVisualDesign.CreateDefault());
 
     private sealed class RecordingSemanticProvider : ISemanticSceneSegmentationProvider, IParagraphSceneSegmentationProvider
     {

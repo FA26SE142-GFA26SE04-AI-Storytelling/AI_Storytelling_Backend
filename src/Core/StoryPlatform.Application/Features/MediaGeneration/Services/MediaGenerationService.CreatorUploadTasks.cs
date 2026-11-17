@@ -74,7 +74,7 @@ public sealed partial class MediaGenerationService
             var context = await FreshAsync<MediaContext>(task.MediaContextId, ct) ?? throw new InvalidOperationException("STALE_MEDIA_RESULT");
             var scene = image ? await SceneForBeatAsync(task.StoryVersionId, task.IllustrationBeatId!.Value, ct)
                 : await SceneForSegmentAsync(task.StoryVersionId, asset.StorySegmentId!.Value, ct);
-            var spec = _specificationBuilder.Build(task.StoryVersionId, scene.Id, scene.SceneIndex, scene.SceneText, scene.VisualDescription, context.ContextJson);
+            var spec = _specificationBuilder.Build(task.StoryVersionId, scene.Id, scene.SceneIndex, scene.SceneText, scene.VisualDescription, _contextProjector.Project(context.ContextJson));
             if (image)
             {
                 var beat = await FreshAsync<IllustrationBeat>(task.IllustrationBeatId!.Value, ct) ?? throw new InvalidOperationException("STALE_MEDIA_RESULT");
@@ -181,7 +181,7 @@ public sealed partial class MediaGenerationService
         {
             var scene = await FreshAsync<StoryScene>(interaction.StorySceneId!.Value, ct)
                 ?? throw new InvalidOperationException("STALE_MEDIA_RESULT");
-            var spec = _specificationBuilder.Build(version, scene.Id, scene.SceneIndex, scene.SceneText, scene.VisualDescription, context.ContextJson);
+            var spec = _specificationBuilder.Build(version, scene.Id, scene.SceneIndex, scene.SceneText, scene.VisualDescription, _contextProjector.Project(context.ContextJson));
             foreach (var option in options.Where(x => x.ListeningInteractionId == interaction.Id))
             {
                 var asset = await GetOrCreateClaimedListeningAssetAsync(root.Id, token, version, context.Id,

@@ -82,37 +82,141 @@ public sealed partial class ParentStoryPackageProcessor(IUnitOfWork uow, IChildP
             if (LearningArtifactGrounding.ContainsTerm(source, term)) errors.Add("BLOCKED_CATEGORY");
         if (errors.Count > 0)
         {
-            await Finish(job, token, p, async (fresh, package) =>
-            { package.CheckResultJson = JsonSerializer.Serialize(new ParentPackageCheck(false, errors.Distinct().ToArray()), Json); package.Status = "Blocked"; await Task.CompletedTask; }, ct);
+            var localCheck = new ParentPackageCheck(false, errors.Distinct().ToArray())
+            {
+                BackendPassed = false,
+                SafetyStatus = ParentPackageAssessmentStatus.NotRun,
+                GrayZoneStatus = ParentPackageAssessmentStatus.NotRun,
+                Warnings = [],
+                RequiresParentAcknowledgement = false
+            };
+            await Finish(job, token, p, async (_, package) =>
+            {
+                package.GrayZoneAssessmentJson = "{}";
+                package.CheckResultJson = JsonSerializer.Serialize(localCheck, Json);
+                package.Status = "Blocked";
+                package.LastErrorCode = null;
+                await Task.CompletedTask;
+            }, ct);
             return;
         }
-        var response = await ai.EvaluateContentSafetyAsync(new()
+        var warnings = new List<ParentPackageAssessmentWarning>();
+        StoryPlatform.Contracts.AI.Responses.EvaluateContentSafetyResponse? response = null;
+        var safetyStatus = ParentPackageAssessmentStatus.Passed;
+        try
         {
-            RequestId = $"parent-package-{p.Id}-safety", Story = Content(version), AgeBand = context.AgeBand, Language = context.Language,
-            BlockedTopics = context.BlockedCategoryTerms ?? [], RestrictedTopics = context.RestrictedCategoryTerms ?? [], ExecutionBudgetSeconds = 120
-        }, ct);
-        ContentSafetyScoring.Validate(response, source);
-        if (!response.IsAllowed || context.SafetyScoreThreshold.HasValue && (decimal)response.SafetyScore!.Value < context.SafetyScoreThreshold.Value)
-            errors.Add("CONTENT_SAFETY_NOT_PASSED");
-        if (!moderation.IsConfigured) throw new ConflictException("MODERATION_NOT_CONFIGURED");
-        var scan = new GrayZoneScan("phase3", context.AgeBand, context.Language, GrayZoneEvaluator.TextParts(version.Title, version.Content!),
-            context.BlockedCategoryTerms ?? []) { ReadingLevel = context.ReadingLevel };
-        var assessment = await moderation.EvaluateAsync(scan, ct);
-        if (assessment.Zone == ModerationZone.HardBlock) errors.Add("MODERATION_HARD_BLOCK");
-        if (assessment.Zone == ModerationZone.GrayZone) errors.Add("GRAY_ZONE_REVIEW_REQUIRED");
+            response = await ai.EvaluateContentSafetyAsync(new()
+            {
+                RequestId = $"parent-package-{p.Id}-safety", Story = Content(version), AgeBand = context.AgeBand, Language = context.Language,
+                BlockedTopics = context.BlockedCategoryTerms ?? [], RestrictedTopics = context.RestrictedCategoryTerms ?? [], ExecutionBudgetSeconds = 120
+            }, ct) ?? throw new JsonException("CONTENT_SAFETY_SCORE_INVALID");
+            ContentSafetyScoring.Validate(response, source);
+            if (!response.IsAllowed || context.SafetyScoreThreshold.HasValue && (decimal)response.SafetyScore!.Value < context.SafetyScoreThreshold.Value)
+            {
+                safetyStatus = ParentPackageAssessmentStatus.Blocked;
+                errors.Add("CONTENT_SAFETY_NOT_PASSED");
+            }
+        }
+        catch (Exception ex) when (IsEvaluatorFailure(ex, ct))
+        {
+            response = null;
+            safetyStatus = ParentPackageAssessmentStatus.Unavailable;
+            warnings.Add(BuildUnavailableWarning("ContentSafety", ex, "CONTENT_SAFETY_UNAVAILABLE",
+                "Content safety AI assessment was unavailable; parent review and acknowledgement are required."));
+        }
+        GrayZoneAssessment? assessment = null;
+        var grayZoneStatus = ParentPackageAssessmentStatus.Passed;
+        try
+        {
+            if (!moderation.IsConfigured && moderation is not GrayZoneEvaluator)
+                throw new InvalidOperationException("MODERATION_NOT_CONFIGURED");
+            var scan = new GrayZoneScan("phase3", context.AgeBand, context.Language, GrayZoneEvaluator.TextParts(version.Title, version.Content!),
+                context.BlockedCategoryTerms ?? []) { ReadingLevel = context.ReadingLevel };
+            assessment = await moderation.EvaluateAsync(scan, ct) ?? throw new InvalidOperationException("MODERATION_RESPONSE_INVALID");
+            if (assessment.Zone == ModerationZone.HardBlock)
+            {
+                grayZoneStatus = ParentPackageAssessmentStatus.Blocked;
+                errors.Add("MODERATION_HARD_BLOCK");
+            }
+            else if (assessment.Zone == ModerationZone.GrayZone)
+            {
+                grayZoneStatus = ParentPackageAssessmentStatus.Warning;
+                warnings.Add(BuildGrayZoneWarning(assessment));
+            }
+        }
+        catch (Exception ex) when (IsEvaluatorFailure(ex, ct))
+        {
+            assessment = null;
+            grayZoneStatus = ParentPackageAssessmentStatus.Unavailable;
+            warnings.Add(BuildUnavailableWarning("GrayZone", ex, "MODERATION_UNAVAILABLE",
+                "Gray-zone AI assessment was unavailable; parent review and acknowledgement are required."));
+        }
+        var passed = errors.Count == 0;
+        var check = new ParentPackageCheck(passed, errors.Distinct().ToArray(),
+            response is not null ? (decimal)response.SafetyScore!.Value : null,
+            response?.ScoreRuleVersion,
+            response?.Evidence?.ToArray(),
+            response?.ReasonCode,
+            response?.Violations?.ToArray(),
+            response?.Metadata)
+        {
+            BackendPassed = true,
+            SafetyStatus = safetyStatus,
+            GrayZoneStatus = grayZoneStatus,
+            Warnings = warnings.ToArray(),
+            RequiresParentAcknowledgement = passed && warnings.Count > 0
+        };
         await Finish(job, token, p, async (_, package) =>
         {
-            package.GrayZoneAssessmentJson = JsonSerializer.Serialize(assessment, Json);
-            package.CheckResultJson = JsonSerializer.Serialize(new ParentPackageCheck(errors.Count == 0, errors.ToArray(),
-                (decimal)response.SafetyScore!.Value, response.ScoreRuleVersion, response.Evidence.ToArray(), response.ReasonCode, response.Violations.ToArray(), response.Metadata), Json);
-            package.Status = errors.Count > 0 ? "Blocked" : "Review";
-            if (errors.Count == 0) await ParentStoryPackageLayout.EnsureAsync(uow, version, segments, ct);
-            if (assessment.Zone == ModerationZone.GrayZone)
-                await uow.Repository<ModerationItem>().AddAsync(new() { StoryId = p.StoryId, StoryVersionId = p.StoryVersionId,
-                    ParentStoryPackageId = p.Id, SourceChildProfileId = p.ChildProfileId, CreatedByUserId = p.CreatedByUserId,
-                    ItemType = ModerationItemType.GrayZoneStory, Status = ModerationItemStatus.Pending,
-                    Flags = JsonSerializer.Serialize(assessment, Json), SlaDueAt = DateTime.UtcNow.AddHours(24) }, ct);
+            package.GrayZoneAssessmentJson = assessment is not null ? JsonSerializer.Serialize(assessment, Json) : "{}";
+            package.CheckResultJson = JsonSerializer.Serialize(check, Json);
+            package.Status = passed ? "Review" : "Blocked";
+            package.LastErrorCode = null;
+            if (passed) await ParentStoryPackageLayout.EnsureAsync(uow, version, segments, ct);
         }, ct);
+    }
+
+    private static bool IsEvaluatorFailure(Exception ex, CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested && ex is OperationCanceledException) return false;
+        if (ex is AppException app)
+            return app is ConflictException && (app.Message.StartsWith("MODERATION_", StringComparison.Ordinal) ||
+                app.Message.StartsWith("CONTENT_SAFETY_", StringComparison.Ordinal) ||
+                app.Message.StartsWith("AI_", StringComparison.Ordinal));
+        if (ex is InvalidOperationException)
+            return ex.Message.StartsWith("MODERATION_", StringComparison.Ordinal) ||
+                ex.Message.StartsWith("CONTENT_SAFETY_", StringComparison.Ordinal) ||
+                ex.Message.StartsWith("AI_", StringComparison.Ordinal);
+        return ex is AIServiceRequestException or System.Net.Http.HttpRequestException or TimeoutException or JsonException or FormatException ||
+            ex is OperationCanceledException && !ct.IsCancellationRequested;
+    }
+
+    private static ParentPackageAssessmentWarning BuildUnavailableWarning(string source, Exception ex, string fallbackCode, string reason)
+    {
+        var raw = ex is AIServiceRequestException ai && !string.IsNullOrWhiteSpace(ai.ErrorCode) ? ai.ErrorCode :
+            ex is TimeoutException or OperationCanceledException ? "AI_EVALUATION_TIMEOUT" :
+            ex is System.Net.Http.HttpRequestException ? "AI_PROVIDER_UNAVAILABLE" :
+            System.Text.RegularExpressions.Regex.IsMatch(ex.Message ?? "", "^[A-Z][A-Z0-9_]{2,99}$") ? ex.Message! : fallbackCode;
+        var code = System.Text.RegularExpressions.Regex.IsMatch(raw, "^[A-Z][A-Z0-9_]{2,99}$") ? raw : fallbackCode;
+        return new(source, code, reason, [], DateTime.UtcNow);
+    }
+
+    private static ParentPackageAssessmentWarning BuildGrayZoneWarning(GrayZoneAssessment assessment)
+    {
+        var reasons = assessment.Findings
+            .Select(f => string.IsNullOrWhiteSpace(f.Category) ? f.Reason : $"{f.Category}: {f.Reason}")
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(GrayZoneEvaluator.Redact)
+            .Distinct()
+            .ToArray();
+        var evidence = assessment.Findings
+            .Select(f => f.EvidenceQuote)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => GrayZoneEvaluator.Redact(x!))
+            .Distinct()
+            .ToArray();
+        var reason = reasons.Length > 0 ? string.Join("; ", reasons) : "Gray-zone content requires parent review and acknowledgement.";
+        return new("GrayZone", "GRAY_ZONE_WARNING", reason, evidence, DateTime.UtcNow);
     }
 
     private async Task GenerateAsync(StoryGenerationJob job, string token, ParentStoryPackage p, StoryVersion version, ParentPackageAudience audience, CancellationToken ct)

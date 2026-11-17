@@ -112,9 +112,9 @@ public class TokenQuotaServiceCreatorTests
         var pack = Lot(CreditType.AI, CreditSource.CreatorPack, 6);
 
         await _sut.EnsureCreatorWithinQuotaAsync(CreatorId);
-        await _sut.IncrementCreatorUsageAsync(CreatorId);
-        await _sut.IncrementCreatorUsageAsync(CreatorId);
-        await _sut.IncrementCreatorUsageAsync(CreatorId);
+        await _sut.IncrementCreatorUsageAsync(CreatorId, null);
+        await _sut.IncrementCreatorUsageAsync(CreatorId, null);
+        await _sut.IncrementCreatorUsageAsync(CreatorId, null);
 
         var monthly = Assert.Single(Lots(CreditType.AI, CreditSource.CreatorMonthly));
         Assert.Equal((0, 5), (monthly.Remaining, pack.Remaining));
@@ -125,11 +125,11 @@ public class TokenQuotaServiceCreatorTests
     [Fact]
     public async Task CreatorAiCredits_OutOfCredits_IsRefusedWith409()
     {
-        await _sut.IncrementCreatorUsageAsync(CreatorId);
-        await _sut.IncrementCreatorUsageAsync(CreatorId);
+        await _sut.IncrementCreatorUsageAsync(CreatorId, null);
+        await _sut.IncrementCreatorUsageAsync(CreatorId, null);
 
         var ensure = await Assert.ThrowsAsync<ConflictException>(() => _sut.EnsureCreatorWithinQuotaAsync(CreatorId));
-        await Assert.ThrowsAsync<ConflictException>(() => _sut.IncrementCreatorUsageAsync(CreatorId));
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.IncrementCreatorUsageAsync(CreatorId, null));
 
         Assert.Contains("Gói Creator", ensure.Message);
     }
@@ -137,7 +137,7 @@ public class TokenQuotaServiceCreatorTests
     [Fact]
     public async Task CreatorAiCredits_DoNotSpendSubmissionCredits()
     {
-        await _sut.IncrementCreatorUsageAsync(CreatorId);
+        await _sut.IncrementCreatorUsageAsync(CreatorId, null);
 
         Assert.Equal(5, Assert.Single(Lots(CreditType.Submit, CreditSource.CreatorMonthly)).Remaining);
     }

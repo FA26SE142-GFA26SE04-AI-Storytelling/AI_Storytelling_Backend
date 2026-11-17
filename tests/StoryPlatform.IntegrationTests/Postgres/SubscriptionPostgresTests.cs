@@ -148,7 +148,7 @@ public sealed class SubscriptionPostgresTests(AuthoringGuidePostgresFixture fixt
             await uow.BeginTransactionAsync();
             try
             {
-                await new TokenQuotaService(uow).IncrementUsageAsync(childId);
+                await new TokenQuotaService(uow).IncrementUsageAsync(childId, null);
                 await uow.CommitTransactionAsync();
                 return "consumed";
             }
@@ -163,6 +163,92 @@ public sealed class SubscriptionPostgresTests(AuthoringGuidePostgresFixture fixt
         Assert.Equal(3, outcomes.Count(outcome => outcome == "rejected"));
         await using var db = new ApplicationDbContext(database.Options);
         Assert.Equal(0, (await db.CreditLots.SingleAsync()).Remaining);
+    }
+
+    [PostgresFact]
+    public async Task StoryCredit_HoldReleaseRetryConsume_RoundTripsAgainstPostgres()
+    {
+        await using var database = await fixture.CreateDatabaseAsync();
+        int childId;
+        await using (var seed = new ApplicationDbContext(database.Options))
+        {
+            var child = new ChildProfile
+            {
+                OwnerUserId = database.ParentUserId, Nickname = "Mây", AgeBand = AgeBand.Age_6_8, Language = "vi",
+                Status = ChildProfileStatus.Active
+            };
+            seed.ChildProfiles.Add(child);
+            seed.CreditLots.Add(new CreditLot
+            {
+                UserId = database.ParentUserId, Source = CreditSource.Cycle, Total = 4, Remaining = 4,
+                ExpiresAt = DateTime.UtcNow.AddDays(20)
+            });
+            await seed.SaveChangesAsync();
+            childId = child.Id;
+        }
+
+        // Như AIStoryInputService.SubmitAsync: truyện mới (chưa có Id) và lượt giữ lưu trong cùng một transaction.
+        int storyId;
+        await using (var context = new ApplicationDbContext(database.Options))
+        await using (var uow = new UnitOfWork(context))
+        {
+            await uow.BeginTransactionAsync();
+            var story = new Story
+            {
+                AuthorUserId = database.ParentUserId, ChildProfileId = childId, Scope = StoryScope.Parent,
+                Source = StorySource.Ai, Status = StoryStatus.Draft, Language = "vi", AgeBand = "6-8"
+            };
+            await uow.Repository<Story>().AddAsync(story);
+            await new TokenQuotaService(uow).IncrementUsageAsync(childId, story);
+            await uow.CommitTransactionAsync();
+            storyId = story.Id;
+        }
+
+        async Task InTransactionAsync(Func<UnitOfWork, Task> action)
+        {
+            await using var context = new ApplicationDbContext(database.Options);
+            await using var uow = new UnitOfWork(context);
+            await uow.BeginTransactionAsync();
+            await action(uow);
+            await uow.CommitTransactionAsync();
+        }
+
+        async Task<(int Remaining, CreditUsage[] Usages)> ReadAsync()
+        {
+            await using var db = new ApplicationDbContext(database.Options);
+            return ((await db.CreditLots.SingleAsync()).Remaining,
+                await db.CreditUsages.Where(usage => usage.StoryId == storyId).OrderBy(usage => usage.Id).ToArrayAsync());
+        }
+
+        var held = await ReadAsync();
+        Assert.Equal(3, held.Remaining);
+        Assert.Single(held.Usages);
+
+        // Job lỗi → trả lượt (khoá advisory trong transaction thật).
+        await InTransactionAsync(uow => TokenQuotaService.ReleaseStoryCreditAsync(uow, storyId, default));
+        var released = await ReadAsync();
+        Assert.Equal(4, released.Remaining);
+        Assert.NotNull(released.Usages.Single().RefundedAt);
+
+        // Thử lại → giữ lại 1 lượt; gọi lần hai không giữ thêm.
+        var reheld = false;
+        await InTransactionAsync(async uow => reheld = await new TokenQuotaService(uow).HoldStoryCreditForRetryAsync(storyId));
+        await InTransactionAsync(async uow => Assert.False(await new TokenQuotaService(uow).HoldStoryCreditForRetryAsync(storyId)));
+        Assert.True(reheld);
+
+        // AI sinh xong nội dung → trừ chính thức; trả lượt sau đó không hoàn gì.
+        await InTransactionAsync(async uow =>
+        {
+            await TokenQuotaService.ConsumeStoryCreditAsync(uow, storyId, default);
+            await uow.SaveChangesAsync();
+        });
+        await InTransactionAsync(uow => TokenQuotaService.ReleaseStoryCreditAsync(uow, storyId, default));
+
+        var final = await ReadAsync();
+        Assert.Equal(3, final.Remaining);
+        Assert.Equal(2, final.Usages.Length);
+        Assert.NotNull(final.Usages[1].ConsumedAt);
+        Assert.Null(final.Usages[1].RefundedAt);
     }
 
     [PostgresFact]
@@ -212,7 +298,7 @@ public sealed class SubscriptionPostgresTests(AuthoringGuidePostgresFixture fixt
             await uow.BeginTransactionAsync();
             try
             {
-                await new TokenQuotaService(uow).IncrementUsageAsync(childId);
+                await new TokenQuotaService(uow).IncrementUsageAsync(childId, null);
                 await uow.CommitTransactionAsync();
                 return 1;
             }

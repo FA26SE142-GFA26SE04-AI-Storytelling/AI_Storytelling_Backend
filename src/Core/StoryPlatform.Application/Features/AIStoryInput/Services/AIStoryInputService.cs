@@ -11,6 +11,7 @@ using StoryPlatform.Application.Features.AIStoryInput.Interfaces;
 using StoryPlatform.Application.Features.AIStoryInput.Models;
 using StoryPlatform.Application.Features.ChildProfiles.Safety;
 using StoryPlatform.Application.Features.TokenQuota.Interfaces;
+using StoryPlatform.Application.Features.TokenQuota.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -215,8 +216,9 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
 
             generationRequest.StoryId = story.Id;
             await requestRepository.AddAsync(generationRequest, cancellationToken);
-            if (creator) await _tokenQuotaService.IncrementCreatorUsageAsync(userId, cancellationToken);
-            else await _tokenQuotaService.IncrementUsageAsync(request.ChildProfileId, cancellationToken);
+            // Giữ 1 lượt cho truyện; trừ chính thức khi AI sinh xong nội dung, trả khi lỗi hoặc bị chặn.
+            if (creator) await _tokenQuotaService.IncrementCreatorUsageAsync(userId, story, cancellationToken);
+            else await _tokenQuotaService.IncrementUsageAsync(request.ChildProfileId, story, cancellationToken);
             if (sourceWish is not null)
                 await AcceptWishAsync(userId, sourceWish, story, generationRequest, cancellationToken);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
@@ -535,6 +537,13 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
         {
             _unitOfWork.Repository<StoryGenerationRequest>().Update(request);
             RotateConcurrencyToken(request);
+            // Input bị guardrail chặn hoặc kiểm tra lỗi không còn thử lại được: trả lượt đang giữ (Luồng 2, 2d).
+            if (request.Status == GenerationInputStatus.InputBlocked
+                || (request.Status == GenerationInputStatus.InputCheckFailed && !request.CanRetry))
+            {
+                await TokenQuotaService.ReleaseStoryCreditAsync(_unitOfWork, request.StoryId, cancellationToken);
+            }
+
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
         }
         catch

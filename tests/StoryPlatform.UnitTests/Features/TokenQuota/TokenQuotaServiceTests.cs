@@ -771,4 +771,97 @@ public class TokenQuotaServiceTests
 
         await Assert.ThrowsAsync<ConflictException>(() => _sut.HoldStoryCreditForRetryAsync(story.Id));
     }
+
+    // ---------- Truyện viết tay / truyện có sẵn: 1 lượt cho cả truyện (chuyển thể, media) ----------
+
+    private Story SeedManualStory(int id = 200, StoryScope scope = StoryScope.Parent, int author = OwnerId) =>
+        _store.Seed(new Story
+        {
+            Id = id, AuthorUserId = author, ChildProfileId = scope == StoryScope.Parent ? ChildId : null, Scope = scope,
+            Source = StorySource.Manual
+        });
+
+    private int HeldOrConsumed(int storyId) =>
+        _store.Items<CreditUsage>().Count(usage => usage.StoryId == storyId && usage.RefundedAt == null);
+
+    [Fact]
+    public async Task HoldOnce_FirstAiOperationHoldsOneCredit_LaterOperationsOfTheStoryAreFree()
+    {
+        SeedChild();
+        var lot = SeedLot(CreditSource.Trial, remaining: 2);
+        var story = SeedManualStory();
+
+        Assert.True(await _sut.HoldStoryCreditOnceAsync(story.Id));     // ví dụ: chuyển thể
+        Assert.False(await _sut.HoldStoryCreditOnceAsync(story.Id));    // media khi lượt còn đang giữ
+        await TokenQuotaService.ConsumeStoryCreditAsync(_store, story.Id, default);
+        Assert.False(await _sut.HoldStoryCreditOnceAsync(story.Id));    // media / gói khác sau khi đã trừ
+
+        Assert.Equal(1, lot.Remaining);
+        var usage = Assert.Single(_store.Items<CreditUsage>(), item => item.StoryId == story.Id);
+        Assert.NotNull(usage.ConsumedAt);
+        Assert.Contains($"lock:{OwnerId}", _store.Calls);
+    }
+
+    [Fact]
+    public async Task HoldOnce_AfterTheHoldWasReleased_HoldsAgain()
+    {
+        SeedChild();
+        var lot = SeedLot(CreditSource.Trial, remaining: 2);
+        var story = SeedManualStory();
+        await _sut.HoldStoryCreditOnceAsync(story.Id);
+        await TokenQuotaService.ReleaseStoryCreditAsync(_store, story.Id, default);
+        Assert.Equal(2, lot.Remaining);
+
+        Assert.True(await _sut.HoldStoryCreditOnceAsync(story.Id));
+
+        Assert.Equal(1, lot.Remaining);
+        Assert.Equal(1, HeldOrConsumed(story.Id));
+    }
+
+    [Fact]
+    public async Task HoldOnce_OutOfCredits_Is409AndHoldsNothing()
+    {
+        SeedChild();
+        SeedLot(CreditSource.Trial, remaining: 0);
+        var story = SeedManualStory();
+
+        await Assert.ThrowsAsync<ConflictException>(() => _sut.HoldStoryCreditOnceAsync(story.Id));
+
+        Assert.Equal(0, HeldOrConsumed(story.Id));
+    }
+
+    [Fact]
+    public async Task HoldOnce_CreatorStory_UsesTheCreatorsMonthlyAiCredits()
+    {
+        const int creatorId = 50;
+        _store.Seed(new UserAccount { Id = creatorId, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
+        var story = SeedManualStory(300, StoryScope.Creator, creatorId);
+
+        Assert.True(await _sut.HoldStoryCreditOnceAsync(story.Id));
+
+        var usage = Assert.Single(_store.Items<CreditUsage>(), item => item.StoryId == story.Id);
+        Assert.Equal(creatorId, usage.UserId);
+        var monthly = _store.Items<CreditLot>().Single(lot => lot.Id == usage.LotId);
+        Assert.Equal((CreditSource.CreatorMonthly, 1), (monthly.Source, monthly.Remaining));
+    }
+
+    [Fact]
+    public async Task ReleaseIfIdle_KeepsTheHoldWhileAnotherMediaJobOfTheStoryRuns()
+    {
+        SeedChild();
+        var lot = SeedLot(CreditSource.Trial, remaining: 2);
+        var story = SeedManualStory();
+        await _sut.HoldStoryCreditOnceAsync(story.Id);
+        var other = _store.Seed(new StoryGenerationJob
+        {
+            Id = 900, StoryId = story.Id, Operation = GenerationJobOperation.GenerateMediaPackage, Status = GenerationJobStatus.Processing
+        });
+
+        await TokenQuotaService.ReleaseStoryCreditIfIdleAsync(_store, story.Id, default);
+        Assert.Equal((1, 1), (lot.Remaining, HeldOrConsumed(story.Id)));
+
+        other.Status = GenerationJobStatus.Failed;
+        await TokenQuotaService.ReleaseStoryCreditIfIdleAsync(_store, story.Id, default);
+        Assert.Equal((2, 0), (lot.Remaining, HeldOrConsumed(story.Id)));
+    }
 }

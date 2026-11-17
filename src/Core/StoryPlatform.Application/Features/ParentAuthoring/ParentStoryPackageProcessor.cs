@@ -21,7 +21,8 @@ namespace StoryPlatform.Application.Features.ParentAuthoring;
 /// <summary>Durable package orchestration, executed by the existing content worker.</summary>
 public sealed partial class ParentStoryPackageProcessor(IUnitOfWork uow, IChildProfileAccessGuard guard, IAIStoryGenerationClient ai,
     ILearningBatchService batches, ListeningInteractionGenerator listening, ILogger<ParentStoryPackageProcessor> logger,
-    IGrayZoneEvaluator moderation, StoryPlatform.Application.Features.MediaGeneration.Interfaces.IStorySegmentService segments)
+    IGrayZoneEvaluator moderation, StoryPlatform.Application.Features.MediaGeneration.Interfaces.IStorySegmentService segments,
+    StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null)
 {
     private static readonly JsonSerializerOptions Json = ParentPackageContext.Json;
     public async Task<bool> ProcessNextAsync(CancellationToken ct)
@@ -330,7 +331,10 @@ public sealed partial class ParentStoryPackageProcessor(IUnitOfWork uow, IChildP
             p.Status = retry ? p.Status : code is "CHILD_CONTEXT_CHANGED" or "PARENT_PACKAGE_SOURCE_CHANGED" ? "Stale" : "Failed";
             p.LastErrorCode = job.ErrorCode; ParentStoryPackageService.Rotate(uow, p);
             uow.Repository<StoryGenerationJob>().Update(job); uow.Repository<ParentStoryPackage>().Update(p);
-            await uow.SaveChangesAsync(ct); await uow.CommitTransactionAsync(ct);
+            await uow.SaveChangesAsync(ct);
+            // Lỗi hẳn (không thử lại): trả lượt đang giữ của truyện nếu không còn gói nào đang chạy (Luồng 2).
+            if (!retry && tokenQuota != null) await StoryPlatform.Application.Features.TokenQuota.Services.TokenQuotaService.ReleaseStoryCreditIfIdleAsync(uow, p.StoryId, ct);
+            await uow.CommitTransactionAsync(ct);
         }
         catch (ConflictException) { await uow.RollbackTransactionAsync(CancellationToken.None); uow.DiscardTrackedChanges(); }
         catch { await uow.RollbackTransactionAsync(CancellationToken.None); uow.DiscardTrackedChanges(); throw; }

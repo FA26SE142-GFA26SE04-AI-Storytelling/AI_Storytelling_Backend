@@ -156,6 +156,7 @@ public sealed partial class MediaGenerationService
                 }
                 package.ManifestJson = JsonSerializer.Serialize(ParentPackageManifest.Empty with { MediaAssetIds = selected.Distinct().ToArray() }, ParentPackageContext.Json);
                 package.Status = "Review"; package.LastErrorCode = null;
+                if (_tokenQuota != null) await StoryPlatform.Application.Features.TokenQuota.Services.TokenQuotaService.ConsumeStoryCreditAsync(_unitOfWork, package.StoryId, ct);
                 ParentStoryPackageService.Rotate(_unitOfWork, package); _unitOfWork.Repository<ParentStoryPackage>().Update(package);
                 var job = await RequireClaimedJobAsync(observed.Id, token, ct); job.Status = GenerationJobStatus.Completed; job.CompletedAt = _clock.GetUtcNow().UtcDateTime;
                 job.LeaseExpiresAt = null; job.ErrorCode = null; job.NextAttemptAt = null; _unitOfWork.Repository<StoryGenerationJob>().Update(job);
@@ -173,6 +174,7 @@ public sealed partial class MediaGenerationService
                 await _unitOfWork.AcquireTransactionLockAsync(observed.StoryId, CancellationToken.None);
                 var job = await FreshAsync<StoryGenerationJob>(observed.Id, CancellationToken.None);
                 var p = await FreshAsync<ParentStoryPackage>(observed.ParentStoryPackageId!.Value, CancellationToken.None);
+                var failedForGood = false;
                 if (job?.ConcurrencyToken == token && p?.Status == "Generating")
                 {
                     var retry = (ex is TransientMediaGenerationException || ex is TimeoutException or OperationCanceledException) && job.AttemptNo < job.MaxAttempts;
@@ -180,8 +182,14 @@ public sealed partial class MediaGenerationService
                     job.NextAttemptAt = retry ? _clock.GetUtcNow().UtcDateTime.Add((ex as TransientMediaGenerationException)?.RetryAfter ?? TimeSpan.FromSeconds(60)) : null;
                     p.Status = retry ? "Generating" : "Failed"; p.LastErrorCode = job.ErrorCode; ParentStoryPackageService.Rotate(_unitOfWork, p);
                     _unitOfWork.Repository<StoryGenerationJob>().Update(job); _unitOfWork.Repository<ParentStoryPackage>().Update(p);
+                    failedForGood = !retry;
                 }
-                await _unitOfWork.SaveChangesAsync(CancellationToken.None); await _unitOfWork.CommitTransactionAsync(CancellationToken.None);
+                await _unitOfWork.SaveChangesAsync(CancellationToken.None);
+                // Media của gói lỗi hẳn: trả lượt đang giữ của truyện nếu không còn gói nào đang chạy (Luồng 2).
+                if (failedForGood && _tokenQuota != null)
+                    await StoryPlatform.Application.Features.TokenQuota.Services.TokenQuotaService.ReleaseStoryCreditIfIdleAsync(
+                        _unitOfWork, observed.StoryId, CancellationToken.None);
+                await _unitOfWork.CommitTransactionAsync(CancellationToken.None);
             }
             catch { await RollbackMediaAsync(CancellationToken.None); throw; }
             return MediaJobProcessResult.Failed(IsPermanentFailure(ex), PublicErrorCode(ex));

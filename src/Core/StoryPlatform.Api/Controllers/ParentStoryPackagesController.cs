@@ -39,7 +39,7 @@ public sealed class ParentStoryPackagesController(ParentStoryPackageService serv
     public async Task<ActionResult<ApiResponse<ParentPackagePreviewDto>>> Preview(int storyId, int packageId, CancellationToken ct) =>
         Ok(ApiResponse<ParentPackagePreviewDto>.Ok(await service.PreviewAsync(GetCurrentUserId(), storyId, packageId, ct)));
     [HttpPost("packages/{packageId:int}/confirm")]
-    public async Task<ActionResult<ApiResponse<ParentPackageDto>>> Confirm(int storyId, int packageId, ParentPackageCommand request, CancellationToken ct) =>
+    public async Task<ActionResult<ApiResponse<ParentPackageDto>>> Confirm(int storyId, int packageId, ParentPackageConfirmRequest request, CancellationToken ct) =>
         Ok(ApiResponse<ParentPackageDto>.Ok(await service.ConfirmAsync(GetCurrentUserId(), storyId, packageId, request, ct)));
     [HttpPost("family-confirmations/batch")]
     public async Task<ActionResult<ApiResponse<ParentFamilyConfirmationDto[]>>> Deliver(int storyId, ParentPackageBatchGrantRequest request, CancellationToken ct) =>

@@ -38,7 +38,11 @@ public sealed class GeminiMediaEvaluatorTests
         Assert.Equal("ILLUSTRATION_TEXT_CHECK_MISSING", result.Reason);
     }
     private static readonly SceneSpecification Specification = new(
-        1, 1, 0, "Lan giúp một chú chim nhỏ.", "Lan đứng cạnh chú chim trong khu vườn.", "{}",
+        1, 1, 0, "Lan giúp một chú chim nhỏ.", "Lan đứng cạnh chú chim trong khu vườn.",
+        new ProviderMediaContext(
+            2,
+            new ProviderStoryFacts("Lan và chú chim", null, null, "Lan giúp một chú chim nhỏ."),
+            ProviderVisualDesign.CreateDefault()),
         ["Lan", "chú chim"], ["bạo lực"], null);
     private static readonly GeneratedMedia Illustration = new(
         [0x89, 0x50, 0x4E, 0x47], "image/png");

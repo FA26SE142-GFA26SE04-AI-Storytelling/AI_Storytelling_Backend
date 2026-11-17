@@ -80,7 +80,8 @@ public sealed partial class ParentStoryPackageService(IUnitOfWork uow, IChildPro
         {
             var p = await Package(actor, storyId, packageId, ct); Expect(p, request); Writable(p);
             await ParentPackageContext.ValidateAsync(uow, guard, p, ct, true);
-            if (Check(p)?.Passed != true) throw new ConflictException("PACKAGE_CHECK_NOT_PASSED");
+            await EnsureNoPackageModerationHoldAsync(p.Id, ct);
+            if (!IsPackageCheckEligible(p, Check(p))) throw new ConflictException("PACKAGE_CHECK_NOT_PASSED");
             if (await ActivePackageJob(p.Id, ct)) throw new ConflictException("PACKAGE_JOB_ACTIVE");
             var checkJob = await uow.Repository<StoryGenerationJob>().FirstOrDefaultAsync(x => x.ParentStoryPackageId == p.Id && x.Operation == GenerationJobOperation.CheckParentPackage, cancellationToken: ct);
             await Queue(p, GenerationJobOperation.BuildParentPackage, ct, JsonSerializer.Deserialize<ParentPackageWorkState>(checkJob?.GenerationMetadataJson ?? "{}", Json));
@@ -94,6 +95,7 @@ public sealed partial class ParentStoryPackageService(IUnitOfWork uow, IChildPro
             var p = await Package(actor, storyId, packageId, ct); Expect(p, request); Writable(p);
             if (p.Status != "Failed") throw new ConflictException("PACKAGE_RETRY_NOT_AVAILABLE");
             await ParentPackageContext.ValidateAsync(uow, guard, p, ct, true);
+            await EnsureNoPackageModerationHoldAsync(p.Id, ct);
             var failed = await uow.Repository<StoryGenerationJob>().FindAsync(x => x.ParentStoryPackageId == p.Id && x.Status == GenerationJobStatus.Failed,
                 cancellationToken: ct);
             var targets = failed.Where(x => request.Components.Length == 0 || request.Components.Contains(Component(x.Operation)) || x.Operation == GenerationJobOperation.BuildParentPackage && request.Components.Any(c => c is "vocabulary" or "quiz" or "listening") || x.Operation == GenerationJobOperation.GenerateMediaPackage && request.Components.Any(c => c is "images" or "narration" or "listening")).ToArray();
@@ -239,7 +241,44 @@ public sealed partial class ParentStoryPackageService(IUnitOfWork uow, IChildPro
     private Task<bool> ActivePackageJob(int id, CancellationToken ct) => uow.Repository<StoryGenerationJob>().ExistsAsync(x => x.ParentStoryPackageId == id &&
         (x.Status == GenerationJobStatus.Pending || x.Status == GenerationJobStatus.Processing), ct);
     internal static ParentPackageComponents Components(ParentStoryPackage p) => JsonSerializer.Deserialize<ParentPackageComponents>(p.ComponentsJson, Json)!;
-    internal static ParentPackageCheck? Check(ParentStoryPackage p) => p.CheckResultJson == "{}" ? null : JsonSerializer.Deserialize<ParentPackageCheck>(p.CheckResultJson, Json);
+    internal static ParentPackageCheck? Check(ParentStoryPackage p) =>
+        string.IsNullOrWhiteSpace(p.CheckResultJson) || p.CheckResultJson == "{}"
+            ? null
+            : NormalizeCheck(JsonSerializer.Deserialize<ParentPackageCheck>(p.CheckResultJson, Json));
+    internal static bool IsLegacyCheck(ParentPackageCheck check) =>
+        check.BackendPassed is null && check.SafetyStatus is null && check.GrayZoneStatus is null;
+    internal static ParentPackageCheck? NormalizeCheck(ParentPackageCheck? check)
+    {
+        if (check is null) return null;
+        var errors = check.Errors ?? [];
+        var warnings = check.Warnings ?? [];
+        if (IsLegacyCheck(check))
+            return check with { Errors = errors, Warnings = warnings, RequiresParentAcknowledgement = false };
+        var requiresAck = check.RequiresParentAcknowledgement || warnings.Length > 0;
+        var eligible = check.BackendPassed == true && errors.Length == 0 &&
+            check.SafetyStatus != ParentPackageAssessmentStatus.Blocked &&
+            check.GrayZoneStatus != ParentPackageAssessmentStatus.Blocked;
+        return check with { Passed = eligible, Errors = errors, Warnings = warnings, RequiresParentAcknowledgement = requiresAck };
+    }
+    internal static bool IsPackageCheckEligible(ParentStoryPackage p, ParentPackageCheck? check)
+    {
+        if (check is null || p.Status == "Blocked") return false;
+        if (IsLegacyCheck(check)) return check.Passed;
+        return check.Passed && check.BackendPassed == true &&
+            (check.Errors is null || check.Errors.Length == 0) &&
+            check.SafetyStatus != ParentPackageAssessmentStatus.Blocked &&
+            check.GrayZoneStatus != ParentPackageAssessmentStatus.Blocked &&
+            check.SafetyStatus != ParentPackageAssessmentStatus.NotRun;
+    }
+    internal static bool RequiresAcknowledgement(ParentPackageCheck? check) =>
+        check is not null && !IsLegacyCheck(check) && (check.RequiresParentAcknowledgement || (check.Warnings?.Length ?? 0) > 0);
+    private async Task EnsureNoPackageModerationHoldAsync(int packageId, CancellationToken ct)
+    {
+        if (await uow.Repository<ModerationItem>().ExistsAsync(x => x.ParentStoryPackageId == packageId && !x.IsDeleted &&
+            (x.Status == ModerationItemStatus.Pending || x.Status == ModerationItemStatus.Claimed ||
+             x.Status == ModerationItemStatus.Blocked || x.Status == ModerationItemStatus.Escalated), ct))
+            throw new ConflictException("SAFETY_MODERATION_REQUIRED");
+    }
     internal static ParentPackageDto Dto(ParentStoryPackage p) => new(p.Id, p.StoryId, p.StoryVersionId, p.ChildProfileId, p.Revision, p.ConcurrencyToken,
         p.Status, Components(p), Check(p), p.LastErrorCode, p.ConfirmedAt);
     internal static void Rotate(StoryPlatform.Application.Abstractions.Persistence.IUnitOfWork unitOfWork, ParentStoryPackage p)

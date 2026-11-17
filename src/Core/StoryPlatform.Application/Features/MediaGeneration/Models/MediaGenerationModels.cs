@@ -6,7 +6,7 @@ public sealed record SceneSelection(int SceneIndex, IReadOnlyList<string> BlockI
 
 public sealed record IllustrationBeatSelection(int BeatOrder, int StartOffset, int EndOffset, string VisualFocus);
 
-public sealed record IllustrationBeatPlanRequest(string SceneText, string? SceneVisualDescription, string MediaContextJson);
+public sealed record IllustrationBeatPlanRequest(string SceneText, string? SceneVisualDescription, ProviderMediaContext MediaContext);
 
 public sealed record ValidatedScene(
     int SceneIndex, int TextRangeStart, int TextRangeEnd, string SceneText, string? VisualDescription);
@@ -23,7 +23,7 @@ public sealed record MediaContextBuildRequest(
     string? ContextSnapshotJson);
 
 public sealed record SceneSegmentationRequest(
-    string StoryContent, IReadOnlyList<StoryTextBlock> Blocks, string MediaContextJson);
+    string StoryContent, IReadOnlyList<StoryTextBlock> Blocks, ProviderMediaContext MediaContext);
 
 public sealed record SceneSpecification(
     int StoryVersionId,
@@ -31,7 +31,7 @@ public sealed record SceneSpecification(
     int SceneIndex,
     string SceneText,
     string? VisualDescription,
-    string MediaContextJson,
+    ProviderMediaContext MediaContext,
     IReadOnlyList<string> MustShow,
     IReadOnlyList<string> MustNotContradict,
     string? PromptFeedback = null,
@@ -44,16 +44,16 @@ public sealed record SceneSpecification(
     /// </summary>
     public SceneSpecification WithFeedback(string? feedback) =>
         new(StoryVersionId, StorySceneId, SceneIndex, SceneText, VisualDescription,
-            MediaContextJson, MustShow, MustNotContradict, feedback, BeatText, BeatVisualFocus);
+            MediaContext, MustShow, MustNotContradict, feedback, BeatText, BeatVisualFocus);
 
     public SceneSpecification ForBeat(string beatText, string visualFocus) =>
         new(StoryVersionId, StorySceneId, SceneIndex, SceneText, VisualDescription,
-            MediaContextJson, new[] { visualFocus }, MustNotContradict, null, beatText, visualFocus);
+            MediaContext, new[] { visualFocus }, MustNotContradict, null, beatText, visualFocus);
 
     // Ảnh lựa chọn Đoán tranh dùng bối cảnh scene và mô tả hình của option.
     public SceneSpecification ForListeningOption(string imageDescription) =>
         new(StoryVersionId, StorySceneId, SceneIndex, SceneText, VisualDescription,
-            MediaContextJson, new[] { imageDescription }, MustNotContradict, null, imageDescription, imageDescription);
+            MediaContext, new[] { imageDescription }, MustNotContradict, null, imageDescription, imageDescription);
 }
 
 public enum MediaEvaluationDecision { Pass = 1, Fail = 2, Uncertain = 3 }

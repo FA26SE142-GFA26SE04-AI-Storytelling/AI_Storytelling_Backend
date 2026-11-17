@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using StoryPlatform.Application.Features.MediaGeneration;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Infrastructure.AI;
@@ -42,6 +43,7 @@ public sealed class GeminiSemanticSceneSegmentationProvider : ISemanticSceneSegm
     public async Task<IReadOnlyList<SceneSelection>> SegmentAsync(
         SceneSegmentationRequest request, CancellationToken cancellationToken = default)
     {
+        ProviderMediaContextSerializer.Validate(request.MediaContext);
         if (!_vertex.UseVertex && string.IsNullOrWhiteSpace(_gemini.ApiKey))
         {
             _logger.LogWarning("Gemini API key not configured and Vertex is disabled, returning empty — orchestrator will fallback");
@@ -80,7 +82,7 @@ public sealed class GeminiSemanticSceneSegmentationProvider : ISemanticSceneSegm
         sb.AppendLine("Given the following story paragraphs and context, decide how to group them into coherent scenes for illustration.");
         sb.AppendLine();
         sb.AppendLine("CONTEXT:");
-        sb.AppendLine(request.MediaContextJson);
+        sb.AppendLine(ProviderMediaContextSerializer.Serialize(request.MediaContext));
         sb.AppendLine();
         sb.AppendLine("PARAGRAPHS:");
         for (var i = 0; i < request.Blocks.Count; i++)

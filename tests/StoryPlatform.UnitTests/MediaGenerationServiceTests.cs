@@ -310,7 +310,14 @@ public sealed partial class MediaGenerationServiceTests
     public async Task ProcessNext_ReusesPersistedMediaContextRevision()
     {
         var uow = Seed();
-        uow.Seed(new MediaContext { Id = 90, StoryVersionId = 10, Revision = 2, ContextJson = "{\"revision\":2}" });
+        uow.Seed(new MediaContext
+        {
+            Id = 90,
+            StoryVersionId = 10,
+            Revision = 2,
+            ContextJson = new MediaContextBuilder().Build(new MediaContextBuildRequest(
+                10, "Seed Story", "One\n\nTwo", "Kindness", null, null, null, null, null))
+        });
         var service = Create(uow);
 
         await service.RunPackageAsync();
@@ -962,7 +969,7 @@ public sealed partial class MediaGenerationServiceTests
         }
     }
 
-    private static StoryReviewServiceTests.FakeUnitOfWork Seed()
+    internal static StoryReviewServiceTests.FakeUnitOfWork Seed()
     {
         var uow = new StoryReviewServiceTests.FakeUnitOfWork();
         uow.Seed(new UserAccount { Id = 1, Role = UserRole.User, Status = AccountStatus.Active });

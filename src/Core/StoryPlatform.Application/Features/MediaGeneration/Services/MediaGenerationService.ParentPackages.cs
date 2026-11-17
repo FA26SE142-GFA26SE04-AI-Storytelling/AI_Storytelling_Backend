@@ -54,6 +54,7 @@ public sealed partial class MediaGenerationService
                         ContextJson = _contextBuilder.Build(new(p.StoryVersionId, version.Title, version.Content!, version.Lesson, null, null, null, null,
                             JsonSerializer.Serialize(new { audience = JsonSerializer.Deserialize<JsonElement>(p.ContextSnapshotJson),
                                 ttsConfigurationFingerprint = _ttsProvider.ConfigurationFingerprint }))) };
+                _contextProjector.Project(context.ContextJson);
                 var pinnedTts = JsonSerializer.Deserialize<JsonElement>(context.ContextJson).GetProperty("storyFacts").GetProperty("acceptedContext").GetProperty("ttsConfigurationFingerprint").GetString();
                 if (pinnedTts != _ttsProvider.ConfigurationFingerprint) throw new ConflictException("MEDIA_CONFIGURATION_CHANGED");
                 if (context.Id == 0) { await _unitOfWork.Repository<MediaContext>().AddAsync(context, ct); await _unitOfWork.SaveChangesAsync(ct); }
@@ -73,7 +74,7 @@ public sealed partial class MediaGenerationService
                     if (c.Images)
                         foreach (var beat in beats)
                         {
-                            var spec = _specificationBuilder.Build(version.Id, scene.Id, scene.SceneIndex, scene.SceneText, scene.VisualDescription, context.ContextJson)
+                            var spec = _specificationBuilder.Build(version.Id, scene.Id, scene.SceneIndex, scene.SceneText, scene.VisualDescription, _contextProjector.Project(context.ContextJson))
                                 .ForBeat(scene.SceneText[beat.StartOffset..beat.EndOffset], beat.VisualFocus);
                             var reusable = work.Regenerate.Contains("images") ? null : await ReusableIllustrationAsync(p, beat.Id, spec, ct);
                             if (reusable is null)
@@ -121,7 +122,7 @@ public sealed partial class MediaGenerationService
                 foreach (var interaction in interactions.Where(x => x.Type == ListeningInteractionType.PicturePrediction))
                 {
                     var scene = scenes.Single(x => x.Id == interaction.StorySceneId);
-                    var spec = _specificationBuilder.Build(version.Id, scene.Id, scene.SceneIndex, scene.SceneText, scene.VisualDescription, context.ContextJson);
+                    var spec = _specificationBuilder.Build(version.Id, scene.Id, scene.SceneIndex, scene.SceneText, scene.VisualDescription, _contextProjector.Project(context.ContextJson));
                     foreach (var option in options.Where(x => x.ListeningInteractionId == interaction.Id))
                     {
                         var asset = await GetOrCreateClaimedListeningAssetAsync(observed.Id, token, version.Id, context.Id,
@@ -183,7 +184,7 @@ public sealed partial class MediaGenerationService
                 await _unitOfWork.SaveChangesAsync(CancellationToken.None); await _unitOfWork.CommitTransactionAsync(CancellationToken.None);
             }
             catch { await RollbackMediaAsync(CancellationToken.None); throw; }
-            return MediaJobProcessResult.Failed(false, PublicErrorCode(ex));
+            return MediaJobProcessResult.Failed(IsPermanentFailure(ex), PublicErrorCode(ex));
         }
         finally { _parentMediaScope = null; }
     }

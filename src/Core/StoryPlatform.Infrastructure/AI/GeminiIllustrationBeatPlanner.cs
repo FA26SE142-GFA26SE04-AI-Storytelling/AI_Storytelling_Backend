@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using StoryPlatform.Application.Features.MediaGeneration;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
 
@@ -31,6 +32,7 @@ public sealed class GeminiIllustrationBeatPlanner : IIllustrationBeatPlanner
     public async Task<IReadOnlyList<IllustrationBeatSelection>> PlanAsync(
         IllustrationBeatPlanRequest request, CancellationToken cancellationToken = default)
     {
+        var serializedContext = ProviderMediaContextSerializer.Serialize(request.MediaContext);
         if (!_vertex.UseVertex && string.IsNullOrWhiteSpace(_gemini.ApiKey)) return [];
         var prompt = new StringBuilder()
             .AppendLine("Plan 1 to 3 distinct illustrations for this children's story scene.")
@@ -40,7 +42,7 @@ public sealed class GeminiIllustrationBeatPlanner : IIllustrationBeatPlanner
             .AppendLine("Use contiguous beatOrder starting at 1. Each focus must be specific and different.")
             .AppendLine("Describe visible characters, actions and scenery only; never request captions, dialogue lettering or written story text in visualFocus.")
             .AppendLine("Media context (maintain characters, style, and child safety):")
-            .AppendLine(request.MediaContextJson)
+            .AppendLine(serializedContext)
             .AppendLine("Scene visual description:").AppendLine(request.SceneVisualDescription)
             .AppendLine("SceneText:").Append(request.SceneText).ToString();
         var body = new { contents = new[] { new { role = "user", parts = new[] { new { text = prompt } } } } };
@@ -83,6 +85,7 @@ public sealed class GeminiIllustrationBeatPlanner : IIllustrationBeatPlanner
             return selections;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (MediaProviderContextException) { throw; }
         catch (Exception exception)
         {
             _logger.LogWarning(exception, "Illustration beat planning unavailable; falling back to one beat");

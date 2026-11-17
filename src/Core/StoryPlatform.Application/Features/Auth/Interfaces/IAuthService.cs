@@ -9,6 +9,9 @@ public interface IAuthService
 {
     Task<AuthResponseDto> LoginAsync(LoginRequestDto request, CancellationToken cancellationToken = default);
     Task RegisterAsync(RegisterRequestDto request, CancellationToken cancellationToken = default);
+
+    /// <summary>Content Creator tự đăng ký: tạo tài khoản và đơn Pending, gửi mã xác thực email (Luồng 5, M5).</summary>
+    Task RegisterCreatorAsync(RegisterCreatorRequestDto request, CancellationToken cancellationToken = default);
     Task VerifyEmailAsync(VerifyEmailRequestDto request, CancellationToken cancellationToken = default);
     Task ResendVerificationEmailAsync(ResendVerificationEmailRequestDto request, CancellationToken cancellationToken = default);
     Task<AuthResponseDto> RefreshTokenAsync(RefreshTokenRequestDto request, CancellationToken cancellationToken = default);

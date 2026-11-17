@@ -47,28 +47,31 @@ public class MyRoadmapService : IMyRoadmapService
             byId.TryGetValue(item.StoryId, out var story) && !RoadmapNeedsUpdate.IsRetired(story)).ToList();
 
         var now = DateTime.UtcNow;
-        var open = visible.FirstOrDefault(item => item.Status == ChildRoadmapItemStatus.Open);
+        var open = visible.Where(item => item.Status == ChildRoadmapItemStatus.Open)
+            .OrderBy(item => item.Id).ToList();
         var waiting = visible.Where(item => item.Status == ChildRoadmapItemStatus.Waiting)
             .OrderBy(item => item.Position)
             .ThenBy(item => item.Id)
             .ToList();
+        var stageOrder = waiting.Select(item => item.Position).Distinct().OrderBy(position => position)
+            .Select((position, index) => (position, order: index + 1))
+            .ToDictionary(pair => pair.position, pair => pair.order);
         var completed = visible.Where(item => item.Status == ChildRoadmapItemStatus.Completed).ToList();
 
         return new MyRoadmapDto
         {
-            Open = open == null
-                ? null
-                : new MyRoadmapOpenStoryDto
-                {
-                    StoryId = open.StoryId,
-                    Title = byId[open.StoryId].Title,
-                    CoverImageUrl = CoverOf(open.StoryId),
-                    Note = open.Note,
-                    ExpectedBy = open.ExpectedCompletionAt > now ? open.ExpectedCompletionAt : null
-                },
-            Upcoming = waiting.Select((item, index) => new MyRoadmapUpcomingDto
+            OpenStories = open.Select(item => new MyRoadmapOpenStoryDto
             {
-                Order = index + 1,
+                StoryId = item.StoryId,
+                Title = byId[item.StoryId].Title,
+                CoverImageUrl = CoverOf(item.StoryId),
+                Note = item.Note,
+                ExpectedBy = item.ExpectedCompletionAt > now ? item.ExpectedCompletionAt : null,
+                Stage = item.Position
+            }).ToList(),
+            Upcoming = waiting.Select(item => new MyRoadmapUpcomingDto
+            {
+                Order = stageOrder[item.Position],
                 StoryId = item.StoryId,
                 Title = byId[item.StoryId].Title,
                 CoverImageUrl = CoverOf(item.StoryId),
@@ -83,11 +86,12 @@ public class MyRoadmapService : IMyRoadmapService
                     StoryId = item.StoryId,
                     Title = byId[item.StoryId].Title,
                     CoverImageUrl = CoverOf(item.StoryId),
-                    CompletedAt = item.CompletedAt
+                    CompletedAt = item.CompletedAt,
+                    Stage = item.Position
                 }).ToList(),
             CompletedCount = completed.Count,
-            TotalCount = completed.Count + waiting.Count + (open == null ? 0 : 1),
-            IsFinished = open == null && waiting.Count == 0 && completed.Count > 0
+            TotalCount = completed.Count + waiting.Count + open.Count,
+            IsFinished = open.Count == 0 && waiting.Count == 0 && completed.Count > 0
         };
     }
 }

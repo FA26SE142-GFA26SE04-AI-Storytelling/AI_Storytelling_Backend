@@ -369,6 +369,9 @@ public sealed class PaymentWebhookApiTests(ApiFactory factory) : IClassFixture<A
             new { content = "CK TOPUP123456 nap quota", transferAmount = 50000, referenceCode = "FT-001" });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        // SePay chỉ tính là thành công khi body có {"success": true}.
+        using var body = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.True(body.RootElement.GetProperty("success").GetBoolean());
         var stored = await factory.WithDbAsync(async db => (await db.PaymentTransactions.FindAsync(transaction.Id))!);
         Assert.Equal((PaymentStatus.Paid, "FT-001"), (stored.Status, stored.SepayTransactionId));
     }

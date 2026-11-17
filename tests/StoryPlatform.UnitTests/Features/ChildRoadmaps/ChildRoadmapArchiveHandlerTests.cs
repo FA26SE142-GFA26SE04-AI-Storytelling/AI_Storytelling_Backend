@@ -63,6 +63,18 @@ public class ChildRoadmapArchiveHandlerTests
         _advancer.Verify(a => a.AdvanceAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Fact]
+    public async Task HandleAsync_ArchivingTheOnlyStoryOfAWaitingStage_PullsLaterStagesUp()
+    {
+        _h.AddItem(1, Child, 11, ChildRoadmapItemStatus.Open, position: 1);
+        _h.AddItem(2, Child, ArchivedStory, ChildRoadmapItemStatus.Waiting, position: 2);
+        _h.AddItem(3, Child, 12, ChildRoadmapItemStatus.Waiting, position: 3);
+
+        await _sut.HandleAsync(Context());
+
+        Assert.Equal(2, Item(3).Position);
+    }
+
     [Theory]
     [InlineData(ArchivedReason.SafetyConcern)]
     [InlineData(ArchivedReason.Copyright)]

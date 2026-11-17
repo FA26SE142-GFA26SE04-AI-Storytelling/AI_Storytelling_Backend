@@ -343,6 +343,8 @@ public class ChildReadingService : IChildReadingService
                 Interaction = listening.GetValueOrDefault(scene.Id)?.Interaction,
                 AttemptedInSession = listening.GetValueOrDefault(scene.Id)?.AttemptedInSession ?? false
             }).ToList(),
+            ReadAloudPractice = ChildListeningContent.BuildReadAloud(
+                interactions.Where(interaction => scenes.Any(scene => scene.Id == interaction.StorySceneId)).ToArray(), assets),
             Vocabulary = vocabulary.OrderBy(word => word.Id)
                 .Select(word => new ReadingVocabularyDto
                 {
@@ -395,6 +397,7 @@ public class ChildReadingService : IChildReadingService
                 }
 
                 mode = parsed.ToString();
+                session.ReadingMode = parsed;
             }
 
             var storyId = session.StoryId;

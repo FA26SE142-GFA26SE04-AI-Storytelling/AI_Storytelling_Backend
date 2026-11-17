@@ -71,7 +71,8 @@ public static class ChildMediaUrlSigning
             .Concat(interactions.Select(interaction => interaction.ModelAudioUrl))
             .Concat(interactions.SelectMany(interaction => interaction.AudioUrls.Values))
             .Concat(interactions.SelectMany(interaction => interaction.Options)
-                .SelectMany(option => new[] { option.ImageUrl, option.AudioUrl, option.FeedbackAudioUrl }));
+                .SelectMany(option => new[] { option.ImageUrl, option.AudioUrl, option.FeedbackAudioUrl }))
+            .Concat(new[] { content.ReadAloudPractice?.AudioUrl, content.ReadAloudPractice?.PraiseAudioUrl });
         var url = await signer.SignAsync(paths, ct);
 
         foreach (var scene in content.Scenes)
@@ -94,6 +95,13 @@ public static class ChildMediaUrlSigning
                 option.AudioUrl = url(option.AudioUrl);
                 option.FeedbackAudioUrl = url(option.FeedbackAudioUrl);
             }
+        }
+        if (content.ReadAloudPractice is { } practice)
+        {
+            practice.AudioUrl = url(practice.AudioUrl);
+            practice.PraiseAudioUrl = url(practice.PraiseAudioUrl);
+            if (string.IsNullOrWhiteSpace(practice.AudioUrl) || string.IsNullOrWhiteSpace(practice.PraiseAudioUrl))
+                content.ReadAloudPractice = null;
         }
     }
 

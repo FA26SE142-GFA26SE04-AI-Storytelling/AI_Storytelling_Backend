@@ -16,6 +16,23 @@ namespace StoryPlatform.UnitTests.Features.ReadingSessions;
 
 public class ChildReadingControllerTests
 {
+    [Fact]
+    public void SegmentReadAloudResult_PreservesTheExistingJsonFields()
+    {
+        var result = new ReadAloudResultDto { SessionId = 5, SegmentId = 6 };
+        var json = System.Text.Json.JsonSerializer.SerializeToElement(result,
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        Assert.Equal(6, json.GetProperty("segmentId").GetInt32());
+        Assert.False(json.TryGetProperty("interactionId", out _));
+
+        result.SegmentId = null;
+        result.InteractionId = 70;
+        var practice = System.Text.Json.JsonSerializer.SerializeToElement(result,
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        Assert.Equal(70, practice.GetProperty("interactionId").GetInt32());
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, practice.GetProperty("segmentId").ValueKind);
+    }
+
     private readonly Mock<IChildStoryBrowseService> _browse = new(MockBehavior.Strict);
     private readonly Mock<IChildReadingService> _reading = new(MockBehavior.Strict);
     private readonly Mock<IChildNotebookService> _notebook = new(MockBehavior.Strict);
@@ -48,7 +65,7 @@ public class ChildReadingControllerTests
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Select(method => method.Name).OrderBy(name => name).ToArray();
 
-        Assert.Equal(new[] { "Complete", "GetContent", "GetDefinition", "GetSignal", "LogEvent", "ReadAloud", "SaveProgress", "SearchStories", "SetBookmark", "SetFavorite", "SetFeeling", "SetListenOnly", "Start", "SubmitListeningAttempt" }, methods);
+        Assert.Equal(new[] { "Complete", "GetContent", "GetDefinition", "GetSignal", "LogEvent", "ReadAloud", "ReadAloudPractice", "SaveProgress", "SearchStories", "SetBookmark", "SetFavorite", "SetFeeling", "SetListenOnly", "Start", "SubmitListeningAttempt" }, methods);
     }
 
     [Fact]
@@ -368,5 +385,26 @@ public class ChildReadingControllerTests
 
         await Assert.ThrowsAsync<BadRequestException>(() =>
             Controller(new Claim(ClaimTypes.NameIdentifier, "100")).ReadAloud(5, 6, new ReadAloudForm(), default));
+    }
+    [Fact]
+    public async Task ReadAloudPractice_UsesDocumentedRoute_AndPassesAudioToTheService()
+    {
+        var method = typeof(ChildReadingController).GetMethod(nameof(ChildReadingController.ReadAloudPractice))!;
+        Assert.Equal("sessions/{sessionId:int}/read-aloud-practice/{interactionId:int}",
+            method.GetCustomAttribute<HttpPostAttribute>()!.Template);
+        Assert.True(method.GetCustomAttribute<RequestFormLimitsAttribute>()!.MemoryBufferThreshold >= ReadAloudPolicy.MaxAudioBytes + 100_000);
+
+        ReadAloudRequest? captured = null;
+        _readAloud.Setup(s => s.CheckPracticeAsync(100, 5, 70, It.IsAny<ReadAloudRequest>(), It.IsAny<CancellationToken>()))
+            .Callback((int _, int _, int _, ReadAloudRequest request, CancellationToken _) => captured = request)
+            .ReturnsAsync(new ReadAloudResultDto { SessionId = 5, InteractionId = 70, Message = "Em đọc hay quá!" });
+
+        var result = await Controller(new Claim(ClaimTypes.NameIdentifier, "100"))
+            .ReadAloudPractice(5, 70, new ReadAloudForm { Audio = AudioFile([1, 2, 3], "audio/webm") }, default);
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal(70, Assert.IsType<ApiResponse<ReadAloudResultDto>>(ok.Value).Data!.InteractionId);
+        Assert.Equal(new byte[] { 1, 2, 3 }, captured!.Audio);
+        Assert.Equal("audio/webm", captured.ContentType);
     }
 }

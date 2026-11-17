@@ -41,6 +41,7 @@ public sealed class ListeningInteractionGeneratorTests
         var inspection = await generator.InspectAsync(await ScopeAsync(uow, generator), default);
 
         Assert.Contains(inspection.Issues, i => i.Code == "LISTENING_MISSING" && i.Type == ListeningInteractionType.RolePlay);
+        Assert.Contains(inspection.Issues, i => i.Code == "LISTENING_MISSING" && i.Type == ListeningInteractionType.ReadAloud);
         Assert.DoesNotContain(inspection.Issues, i => i.Type == ListeningInteractionType.Checkpoint);
     }
 
@@ -78,6 +79,25 @@ public sealed class ListeningInteractionGeneratorTests
 
         Assert.Contains(inspection.Issues, i => i.Code == "STALE_ANCHOR");
         Assert.Contains(inspection.Items, i => i.IsStale);
+    }
+
+    [Theory]
+    [InlineData(ListeningInteractionType.EventOrdering)]
+    [InlineData(ListeningInteractionType.ReadAloud)]
+    public async Task End_of_story_type_can_be_regenerated_without_colliding_with_the_other(ListeningInteractionType type)
+    {
+        var (uow, generator) = Setup();
+        await ListeningTestStory.SeedPackageAsync(uow);
+        var scope = await ScopeAsync(uow, generator);
+        var drafts = (await generator.GenerateAsync(scope, type, "regenerate", default)).Drafts;
+        await generator.ReplaceAsync(scope.Version.Id, type, drafts, default);
+
+        var inspection = await generator.InspectAsync(scope, default);
+        Assert.True(inspection.Valid, string.Join(", ", inspection.Issues));
+        var atEnd = inspection.Items.Where(x => x.Interaction.AnchorOffset == scope.Blocks[^1].EndOffset).ToArray();
+        Assert.Equal(2, atEnd.Length);
+        Assert.Contains(atEnd, x => x.Interaction.Type == ListeningInteractionType.ReadAloud);
+        Assert.Contains(atEnd, x => x.Interaction.Type == ListeningInteractionType.EventOrdering);
     }
 
     [Fact]

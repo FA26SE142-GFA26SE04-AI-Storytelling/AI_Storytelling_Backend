@@ -14,9 +14,10 @@ namespace StoryPlatform.UnitTests.Features.ReadingSessions;
 
 public class ParentReadingFeedbackControllerTests
 {
+    private readonly Mock<IParentReadAloudRecordingService> _readAloud = new(MockBehavior.Strict);
     private readonly Mock<IParentReadingFeedbackService> _service = new(MockBehavior.Strict);
 
-    private ParentReadingFeedbackController Controller(params Claim[] claims) => new(_service.Object)
+    private ParentReadingFeedbackController Controller(params Claim[] claims) => new(_service.Object, _readAloud.Object)
     {
         ControllerContext = new ControllerContext
         {
@@ -25,17 +26,41 @@ public class ParentReadingFeedbackControllerTests
     };
 
     [Fact]
-    public void Controller_IsOnlyForParents_AndExposesOneAction()
+    public void Controller_IsOnlyForParents_AndExposesListQuizAndOverview()
     {
         var type = typeof(ParentReadingFeedbackController);
         var authorize = type.GetCustomAttribute<AuthorizeAttribute>();
         var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-            .Select(method => method.Name).ToArray();
+            .Select(method => method.Name).OrderBy(name => name).ToArray();
 
         Assert.NotNull(authorize);
         Assert.Equal("User", authorize!.Roles);
-        Assert.Equal(new[] { "List" }, methods);
+        Assert.Equal(new[] { "DeleteReadAloudRecording", "List", "Overview", "Quiz", "ReadAloudRecordings" }, methods);
+        Assert.Equal("{childProfileId:int}/sessions/{sessionId:int}/read-aloud",
+            type.GetMethod("ReadAloudRecordings")!.GetCustomAttribute<HttpGetAttribute>()!.Template);
+        Assert.Equal("{childProfileId:int}/sessions/{sessionId:int}/read-aloud/{recordingId:int}",
+            type.GetMethod("DeleteReadAloudRecording")!.GetCustomAttribute<HttpDeleteAttribute>()!.Template);
         Assert.Equal("{childProfileId:int}", type.GetMethod("List")!.GetCustomAttribute<HttpGetAttribute>()!.Template);
+        Assert.Equal("{childProfileId:int}/sessions/{sessionId:int}/quiz",
+            type.GetMethod("Quiz")!.GetCustomAttribute<HttpGetAttribute>()!.Template);
+        Assert.Equal("{childProfileId:int}/overview",
+            type.GetMethod("Overview")!.GetCustomAttribute<HttpGetAttribute>()!.Template);
+    }
+
+    [Fact]
+    public async Task Overview_ForwardsParentChildAndQuery()
+    {
+        using var cts = new CancellationTokenSource();
+        var query = new ParentReadingOverviewQueryDto { From = new DateTime(2026, 11, 1, 0, 0, 0, DateTimeKind.Utc) };
+        var expected = new ParentReadingOverviewDto { CompletedSessions = 3 };
+        _service.Setup(s => s.GetOverviewAsync(7, 100, query, cts.Token)).ReturnsAsync(expected);
+
+        var result = await Controller(new Claim(ClaimTypes.NameIdentifier, "7")).Overview(100, query, cts.Token);
+
+        var response = Assert.IsType<ApiResponse<ParentReadingOverviewDto>>(
+            Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Same(expected, response.Data);
+        _service.VerifyAll();
     }
 
     [Fact]
@@ -62,5 +87,46 @@ public class ParentReadingFeedbackControllerTests
             Controller().List(100, new ParentReadingFeedbackQueryDto(), CancellationToken.None));
 
         _service.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Quiz_ForwardsParentChildAndSession()
+    {
+        using var cts = new CancellationTokenSource();
+        var expected = new ParentQuizDetailDto { SessionId = 5 };
+        _service.Setup(s => s.GetQuizAsync(7, 100, 5, cts.Token)).ReturnsAsync(expected);
+
+        var result = await Controller(new Claim(ClaimTypes.NameIdentifier, "7")).Quiz(100, 5, cts.Token);
+
+        var response = Assert.IsType<ApiResponse<ParentQuizDetailDto>>(
+            Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Same(expected, response.Data);
+        _service.VerifyAll();
+    }
+    [Fact]
+    public async Task ReadAloudRecordings_ForwardsParentChildAndSession()
+    {
+        using var cts = new CancellationTokenSource();
+        var expected = new ParentReadAloudRecordingsDto { SessionId = 5 };
+        _readAloud.Setup(s => s.ListAsync(7, 100, 5, cts.Token)).ReturnsAsync(expected);
+
+        var result = await Controller(new Claim(ClaimTypes.NameIdentifier, "7")).ReadAloudRecordings(100, 5, cts.Token);
+
+        var response = Assert.IsType<ApiResponse<ParentReadAloudRecordingsDto>>(
+            Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Same(expected, response.Data);
+        _readAloud.VerifyAll();
+    }
+
+    [Fact]
+    public async Task DeleteReadAloudRecording_ForwardsIds()
+    {
+        using var cts = new CancellationTokenSource();
+        _readAloud.Setup(s => s.DeleteAsync(7, 100, 5, 9, cts.Token)).Returns(Task.CompletedTask);
+
+        var result = await Controller(new Claim(ClaimTypes.NameIdentifier, "7")).DeleteReadAloudRecording(100, 5, 9, cts.Token);
+
+        Assert.IsType<OkObjectResult>(result.Result);
+        _readAloud.VerifyAll();
     }
 }

@@ -22,7 +22,7 @@ public static class ChildListeningContent
         IReadOnlyList<ListeningInteractionAttempt> sessionAttempts)
     {
         var result = new Dictionary<int, SceneInteraction>();
-        foreach (var interaction in interactions.Where(x => !x.IsDeleted && x.StorySceneId.HasValue).OrderBy(x => x.AnchorOffset))
+        foreach (var interaction in interactions.Where(x => !x.IsDeleted && x.StorySceneId.HasValue && x.Type != ListeningInteractionType.ReadAloud).OrderBy(x => x.AnchorOffset))
         {
             if (scenes.All(scene => scene.Id != interaction.StorySceneId)) continue;
             if (ListeningMediaRequirements.Missing(interaction, options, assets).Count > 0) continue;
@@ -40,6 +40,25 @@ public static class ChildListeningContent
         }
 
         return result;
+    }
+
+    /// <summary>Đoạn luyện đọc to đã gắn scene và đủ audio (câu mẫu + lời khen); null nếu chưa có.</summary>
+    public static ReadAloudPracticeDto? BuildReadAloud(IReadOnlyList<ListeningInteraction> interactions, IReadOnlyList<MediaAsset> assets)
+    {
+        var interaction = interactions
+            .Where(x => !x.IsDeleted && x.Type == ListeningInteractionType.ReadAloud && x.StorySceneId.HasValue
+                        && !string.IsNullOrWhiteSpace(x.SourceQuote) && !string.IsNullOrWhiteSpace(x.MatchFeedback))
+            .OrderByDescending(x => x.Id)
+            .FirstOrDefault();
+        if (interaction is null || ListeningMediaRequirements.Missing(interaction, [], assets).Count > 0) return null;
+        return new ReadAloudPracticeDto
+        {
+            InteractionId = interaction.Id,
+            Text = interaction.SourceQuote!,
+            AudioUrl = ListeningMediaRequirements.FindAudio(assets, interaction.Id, null, ListeningAudioParts.Text)?.Url,
+            PraiseFeedback = interaction.MatchFeedback,
+            PraiseAudioUrl = ListeningMediaRequirements.FindAudio(assets, interaction.Id, null, ListeningAudioParts.Match)?.Url
+        };
     }
 
     /// <summary>EventOrdering chỉ coi là đã thử khi đã khớp hoặc đã sai đủ số lần để lộ đáp án.</summary>

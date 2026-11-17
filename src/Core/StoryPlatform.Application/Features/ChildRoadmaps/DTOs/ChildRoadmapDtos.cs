@@ -5,7 +5,8 @@ namespace StoryPlatform.Application.Features.ChildRoadmaps;
 public enum RoadmapInsertPosition
 {
     NextUp = 1,
-    End = 2
+    End = 2,
+    Stage = 3
 }
 
 public static class ChildRoadmapPolicy
@@ -38,6 +39,9 @@ public class AddRoadmapStoryRequestDto
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public RoadmapInsertPosition Position { get; set; } = RoadmapInsertPosition.End;
 
+    /// <summary>Bắt buộc khi Position = Stage: số chặng đang đọc hoặc một chặng đang chờ.</summary>
+    public int? StageNumber { get; set; }
+
     public int? ExpectedDays { get; set; }
     public string? Note { get; set; }
 }
@@ -65,7 +69,8 @@ public class WishRoadmapResultDto
 
 public class ReorderRoadmapRequestDto
 {
-    public List<int> ItemIds { get; set; } = new();
+    /// <summary>Bố cục mới của mọi truyện đang chờ: mỗi phần tử là một chặng (danh sách itemId).</summary>
+    public List<List<int>> Stages { get; set; } = new();
 }
 
 public class ChildRoadmapItemDto
@@ -73,6 +78,7 @@ public class ChildRoadmapItemDto
     public int Id { get; set; }
     public int StoryId { get; set; }
     public string? Title { get; set; }
+    /// <summary>Số chặng của truyện trong lộ trình (các truyện cùng chặng có cùng số).</summary>
     public int Position { get; set; }
     public string Status { get; set; } = string.Empty;
     public string Source { get; set; } = string.Empty;
@@ -89,7 +95,13 @@ public class ChildRoadmapItemDto
 public class ChildRoadmapDto
 {
     public int ChildProfileId { get; set; }
-    public ChildRoadmapItemDto? Open { get; set; }
+
+    /// <summary>Mọi truyện đang mở của chặng hiện tại (rỗng khi không có).</summary>
+    public List<ChildRoadmapItemDto> OpenItems { get; set; } = new();
+
+    /// <summary>Số chặng đang đọc; null khi không có truyện đang mở.</summary>
+    public int? CurrentStage { get; set; }
+
     public List<ChildRoadmapItemDto> Waiting { get; set; } = new();
     public List<ChildRoadmapItemDto> History { get; set; } = new();
     public int CompletedCount { get; set; }

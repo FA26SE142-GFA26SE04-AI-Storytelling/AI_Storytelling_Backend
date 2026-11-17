@@ -24,13 +24,26 @@ public sealed class StorySummaryModelTests
     }
 
     [Fact]
-    public void Story_summary_flag_is_unique_per_summary_and_scene()
+    public void Story_summary_questions_are_unique_per_scene_or_selected_picture()
     {
         using var db = CreateContext();
         var entity = db.Model.FindEntityType(typeof(StorySummaryFlag))!;
 
         Assert.Equal("story_summary_flags", entity.GetTableName());
-        var index = Assert.Single(entity.GetIndexes(), x => x.IsUnique);
-        Assert.Equal(new[] { "StorySummaryId", "StorySceneId" }, index.Properties.Select(p => p.Name));
+        var indexes = entity.GetIndexes().Where(x => x.IsUnique).ToArray();
+        Assert.Equal(2, indexes.Length);
+        var sceneIndex = Assert.Single(indexes, x => x.Properties.Select(p => p.Name)
+            .SequenceEqual(new[] { "StorySummaryId", "StorySceneId" }));
+        Assert.Equal("\"IllustrationBeatId\" IS NULL", sceneIndex.GetFilter());
+        var beatIndex = Assert.Single(indexes, x => x.Properties.Select(p => p.Name)
+            .SequenceEqual(new[] { "StorySummaryId", "IllustrationBeatId" }));
+        Assert.Equal("\"IllustrationBeatId\" IS NOT NULL", beatIndex.GetFilter());
+        Assert.Equal(200, entity.FindProperty(nameof(StorySummaryFlag.QuestionText))!.GetMaxLength());
+        Assert.Equal(500, entity.FindProperty(nameof(StorySummaryFlag.AudioStoragePath))!.GetMaxLength());
+        Assert.Equal(50, entity.FindProperty(nameof(StorySummaryFlag.AudioContentType))!.GetMaxLength());
+        Assert.Equal(DeleteBehavior.Restrict, Assert.Single(entity.GetForeignKeys(),
+            x => x.Properties.Single().Name == nameof(StorySummaryFlag.IllustrationBeatId)).DeleteBehavior);
+        Assert.Equal(DeleteBehavior.SetNull, Assert.Single(entity.GetForeignKeys(),
+            x => x.Properties.Single().Name == nameof(StorySummaryFlag.MediaAssetId)).DeleteBehavior);
     }
 }

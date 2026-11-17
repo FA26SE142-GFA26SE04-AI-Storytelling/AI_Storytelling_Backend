@@ -1,10 +1,12 @@
+using System.Text.Json.Serialization;
+
 namespace StoryPlatform.Application.Features.ReadingSessions;
 
 /// <summary>Kết quả của một chữ trong đoạn truyện: good, retry hoặc skipped.</summary>
 public sealed record ReadAloudWordDto(int Index, string Text, string Status, string? Hint);
 
 
-/// <summary>Đoạn ghi âm trẻ gửi lên; chỉ dùng trong bộ nhớ.</summary>
+/// <summary>Đoạn ghi âm trẻ gửi lên; dùng để chấm và lưu bản ghi lần đọc gần nhất cho chủ hồ sơ.</summary>
 public sealed class ReadAloudRequest
 {
     public byte[] Audio { get; init; } = [];
@@ -14,7 +16,11 @@ public sealed class ReadAloudRequest
 public sealed class ReadAloudResultDto
 {
     public int SessionId { get; set; }
-    public int SegmentId { get; set; }
+    /// <summary>Đoạn truyện được chấm; null khi bé đọc đoạn luyện.</summary>
+    public int? SegmentId { get; set; }
+    /// <summary>Đoạn luyện được chấm; null khi bé đọc theo đoạn truyện.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? InteractionId { get; set; }
     public IReadOnlyList<ReadAloudWordDto> Words { get; set; } = [];
     public int GoodCount { get; set; }
     public int RetryCount { get; set; }

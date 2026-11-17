@@ -13,10 +13,11 @@ application_default_credentials.json
 # Local database backups created before development migrations
 /Database/*.dump
 
-# Local documentation (except Superpowers plans, which need to stay tracked
-# so tools like Codex's @-mention file picker can find them)
-/docs/*
-!/docs/superpowers/
+# Local documentation: track HTML guides, Superpowers plans and selected Markdown guides.
+/docs/**
+!/docs/**/
+!/docs/**/*.html
+!/docs/superpowers/**
 !/docs/HUONG_DAN_SU_DUNG_API_LUONG_2.md
 !/docs/KE_HOACH_CREATOR_CREATIVE_SUGGESTION_ENGINE.md
 !/docs/CREATOR_ASSISTANCE_API_FRONTEND_GUIDE.md

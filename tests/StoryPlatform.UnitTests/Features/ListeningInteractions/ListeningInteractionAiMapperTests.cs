@@ -17,6 +17,8 @@ public sealed class ListeningInteractionAiMapperTests
     [InlineData(T.FillBlank, 1, AgeBand.Age_9_10)]
     [InlineData(T.EventOrdering, 1, AgeBand.Age_6_8)]
     [InlineData(T.PicturePrediction, 1, AgeBand.Age_6_8)]
+    [InlineData(T.ReadAloud, 1, AgeBand.Age_6_8)]
+    [InlineData(T.ReadAloud, 1, AgeBand.Age_9_10)]
     public void ValidAiResponse_PassesMapperAndRules(T type, int count, AgeBand age)
     {
         var mapped = ListeningInteractionMapper.Resolve(ListeningInteractionAiMapper.ToDrafts(S.AiResponse(type), type), S.Content, S.Blocks);
@@ -124,4 +126,20 @@ public sealed class ListeningInteractionAiMapperTests
         Assert.All(new[] { "\"picturePredictions\"", "\"revealBlockId\"", "\"waitFeedback\"", "\"label\"", "\"imageDescription\"" },
             field => Assert.Contains(field, Json(T.PicturePrediction)));
     }
+    [Fact]
+    public void ReadAloud_RequestSendsVocabularyWithoutZones_AndDraftKeepsSourceBlock()
+    {
+        var request = ListeningInteractionAiMapper.BuildRequest("r", T.ReadAloud, 1, AgeBand.Age_6_8, "vi", "Thỏ con", "Nhờ người lớn",
+            S.Blocks, ["P2"], [], [], ["Thỏ", "rừng"], []);
+        Assert.Equal("ReadAloud", request.InteractionType);
+        Assert.Equal(new[] { "Thỏ", "rừng" }, request.VocabularyTerms);
+        Assert.Empty(request.AllowedBlockIds);
+        Assert.Empty(request.DialogueBlockIds);
+
+        var draft = Assert.Single(ListeningInteractionAiMapper.ToDrafts(S.AiResponse(T.ReadAloud), T.ReadAloud));
+        Assert.Equal(("P6", "Từ đó Thỏ luôn nhờ người lớn khi bị lạc."), (draft.SourceBlockId, draft.SourceQuote));
+        Assert.Equal("Con đọc to rõ lắm, con cố gắng giỏi quá!", draft.MatchFeedback);
+        Assert.Equal(string.Empty, draft.AnchorBlockId);
+    }
+
 }

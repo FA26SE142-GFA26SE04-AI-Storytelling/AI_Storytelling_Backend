@@ -176,6 +176,76 @@ public class ChildRoadmapAdvancerTests
         Assert.All(_h.Items, item => Assert.Equal(ChildRoadmapItemStatus.Skipped, item.Status));
     }
 
+    // ---- chặng nhiều truyện ----
+
+    [Fact]
+    public async Task AdvanceAsync_OpensEveryStoryOfTheFirstStage()
+    {
+        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Waiting, position: 1);
+        _h.AddItem(2, Child, 11, ChildRoadmapItemStatus.Waiting, position: 1);
+        _h.AddItem(3, Child, 12, ChildRoadmapItemStatus.Waiting, position: 2);
+
+        var opened = await _sut.AdvanceAsync(Child);
+
+        Assert.Equal(1, opened!.Id);
+        Assert.Equal(ChildRoadmapItemStatus.Open, Item(1).Status);
+        Assert.Equal(ChildRoadmapItemStatus.Open, Item(2).Status);
+        Assert.Equal(ChildRoadmapItemStatus.Waiting, Item(3).Status);
+    }
+
+    [Fact]
+    public async Task AdvanceAsync_OpenedStageTakesTheNumberAfterTheLastFinishedStage()
+    {
+        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Completed, position: 1);
+        _h.AddItem(2, Child, 11, ChildRoadmapItemStatus.Waiting, position: 3);
+        _h.AddItem(3, Child, 12, ChildRoadmapItemStatus.Waiting, position: 5);
+
+        await _sut.AdvanceAsync(Child);
+
+        Assert.Equal(2, Item(2).Position);
+        Assert.Equal(3, Item(3).Position);
+    }
+
+    [Fact]
+    public async Task AdvanceAsync_UnavailableStoryInStage_IsSkippedAloneAndTheRestOpens()
+    {
+        _h.Stories.Single(story => story.Id == 10).Status = StoryStatus.Rejected;
+        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Waiting, position: 1);
+        _h.AddItem(2, Child, 11, ChildRoadmapItemStatus.Waiting, position: 1);
+        _h.AddItem(3, Child, 12, ChildRoadmapItemStatus.Waiting, position: 2);
+
+        var opened = await _sut.AdvanceAsync(Child);
+
+        Assert.Equal(2, opened!.Id);
+        Assert.Equal(ChildRoadmapItemStatus.Skipped, Item(1).Status);
+        Assert.Equal(ChildRoadmapItemStatus.Waiting, Item(3).Status);
+    }
+
+    [Fact]
+    public async Task AdvanceAsync_WholeStageUnavailable_OpensTheNextStage()
+    {
+        _h.Stories.Single(story => story.Id == 10).Status = StoryStatus.Rejected;
+        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Waiting, position: 1);
+        _h.AddItem(2, Child, 11, ChildRoadmapItemStatus.Waiting, position: 2);
+
+        var opened = await _sut.AdvanceAsync(Child);
+
+        Assert.Equal(2, opened!.Id);
+        Assert.Equal(1, Item(2).Position);
+    }
+
+    [Fact]
+    public async Task AdvanceAsync_OneStoryOfTheStageStillOpen_OpensNothingMore()
+    {
+        _h.AddItem(1, Child, 10, ChildRoadmapItemStatus.Completed, position: 1);
+        _h.AddItem(2, Child, 11, ChildRoadmapItemStatus.Open, position: 1);
+        _h.AddItem(3, Child, 12, ChildRoadmapItemStatus.Waiting, position: 2);
+
+        await _sut.AdvanceAsync(Child);
+
+        Assert.Equal(ChildRoadmapItemStatus.Waiting, Item(3).Status);
+    }
+
     // ---- hồ sơ và Hold Mode ----
 
     [Theory]

@@ -2102,15 +2102,16 @@ const STEPS = [
 },
 {
   id: "pl", title: "Phụ lục — Lộ trình đọc của trẻ (WF-L4A)",
-  desc: "Phụ huynh (hoặc người giám sát có quyền giao truyện) sắp xếp danh sách truyện bé sẽ đọc lần lượt. Mỗi lúc chỉ một bước mở (Open), các bước sau chờ (Waiting). Có thể chép cả bộ truyện mẫu về. Bé xem lộ trình của mình ở màn hình \"Bố mẹ chọn cho em\".",
-  flow: ["Phụ huynh thêm truyện (một hoặc nhiều bé), hoặc xem trước rồi chép bộ truyện mẫu.", "Hệ thống bỏ qua truyện không hợp lệ với từng bé (chủ đề bị chặn, sai độ tuổi, quá dài) và báo lý do.", "Bé xem lộ trình, đọc bước đang mở.", "Đọc xong → bước Completed, bước kế mở, phụ huynh nhận thông báo khi hết lộ trình (cần luồng đọc gọi bộ ghi nhận hoàn thành, chưa nối)."],
+  desc: "Phụ huynh (hoặc người giám sát có quyền giao truyện) sắp xếp danh sách truyện bé sẽ đọc lần lượt. Lộ trình chia theo chặng: các truyện của chặng hiện tại cùng mở (Open), các chặng sau chờ (Waiting); mỗi chặng đọc xong thì chặng kế mở. Có thể chép cả bộ truyện mẫu về. Bé xem lộ trình của mình ở màn hình \"Bố mẹ chọn cho em\".",
+  flow: ["Phụ huynh thêm truyện (một hoặc nhiều bé), hoặc xem trước rồi chép bộ truyện mẫu.", "Hệ thống bỏ qua truyện không hợp lệ với từng bé (chủ đề bị chặn, sai độ tuổi, quá dài) và báo lý do.", "Bé xem lộ trình, đọc các truyện đang mở của chặng hôm nay.", "Đọc xong cả chặng → các bước Completed, chặng kế mở, phụ huynh nhận thông báo khi hết lộ trình (cần luồng đọc gọi bộ ghi nhận hoàn thành, chưa nối)."],
   apis: [
   { m: "POST", p: "/api/v1/ChildRoadmap/stories", role: "User",
-    what: "Thêm một truyện vào lộ trình của một hoặc nhiều bé. Vị trí: NextUp (đọc kế tiếp) hoặc End (thêm vào cuối). Cần quyền giao truyện (Owner mặc định); bé nào thiếu quyền thì bị bỏ qua, không làm hỏng cả request.",
+    what: "Thêm một truyện vào lộ trình của một hoặc nhiều bé. Vị trí: NextUp (chặng mới ngay sau chặng đang đọc), End (chặng mới ở cuối) hoặc Stage + stageNumber (gộp vào chặng đang đọc hoặc một chặng chờ; chỉ khi thêm cho 1 bé). Cần quyền giao truyện (Owner mặc định); bé nào thiếu quyền thì bị bỏ qua, không làm hỏng cả request.",
     detail: [
       ["Body", [
         "storyId; childProfileIds: 1 đến 20 bé (trùng tự bỏ) → ngoài khoảng: 400.",
-        "position: chỉ NextUp hoặc End trong code (không có Start) → giá trị khác: 400.",
+        "position: NextUp, End hoặc Stage → giá trị khác: 400 \"Vị trí phải là NextUp (đọc tiếp theo), End (thêm vào cuối) hoặc Stage (chọn chặng).\". Stage: phải đúng 1 bé (400 \"Chỉ chọn được chặng khi thêm truyện cho một bé.\") và có stageNumber (400 \"Phải chọn chặng muốn thêm vào.\"); chặng đã xong / không tồn tại → 400 \"Chặng {n} không còn nhận thêm truyện.\"",
+        "Các test Stage cùng dùng truyện 13 nên chạy từng test sau khi seed lại DB (truyện đã vào lộ trình thì lần sau bị bỏ qua already_in_roadmap).",
         "expectedDays: tùy chọn, 1 đến 90; note: tùy chọn, tối đa 500 ký tự → sai: 400.",
         "Truyện không tồn tại → 404."]],
       ["Xử lý từng bé (bé lỗi không chặn bé khác)", [
@@ -2118,43 +2119,49 @@ const STEPS = [
         "Bé không Active → profile_inactive.",
         "Truyện riêng của bé khác: cần quyền ApproveStory với cả hai bé → nếu không: no_access_to_story.",
         "Truyện không hợp lệ với bé: chưa Ready / đã Archive / truyện Creator chưa công khai → story_unavailable; sai nhóm tuổi → wrong_age; có nhãn bị chặn → blocked_topic; dài hơn giới hạn → too_long.",
-        "Truyện đã có trong lộ trình: NextUp thì dời bước Waiting đó lên kế tiếp (MovedToNext); còn lại bỏ qua already_in_roadmap.",
-        "Hợp lệ: thêm bước nguồn Manual; nếu chưa có bước Open thì mở bước đầu hợp lệ (trừ khi bé đang Hold Mode)."]],
+        "Truyện đã có trong lộ trình: đang Waiting và chọn NextUp hoặc Stage thì chuyển sang chỗ mới (outcome MovedToNext / Moved; chuyển vào chặng đang đọc thì mở ngay); còn lại bỏ qua already_in_roadmap.",
+        "Hợp lệ: thêm bước nguồn Manual; nếu chưa có chặng đang mở thì mở chặng đầu hợp lệ (trừ khi bé đang Hold Mode)."]],
       ["Sau khi thêm", ["Ghi audit ChildRoadmapStoryAdded / ChildRoadmapStoryMoved; báo các người giám sát khác của bé (RoadmapStoryAdded)."]],
-      ["Kết quả", ["results theo từng bé: outcome (Added, MovedToNext, Skipped), itemId, skipCode, message, warnings (reading_level_differs khi dùng truyện riêng của bé khác có mức đọc lệch)."]]
+      ["Kết quả", ["results theo từng bé: outcome (Added, MovedToNext, Moved, Skipped), itemId, skipCode, message, warnings (reading_level_differs khi dùng truyện riêng của bé khác có mức đọc lệch)."]]
     ],
     body: '{ "storyId": 10, "childProfileIds": [1, 2], "position": "End", "expectedDays": 3, "note": "Đọc trước giờ ngủ" }',
     tests: [
-      ["ok","Thêm vào cuối cho 1 bé","200, bước mới Waiting (hoặc Open nếu lộ trình trống)"],
+      ["ok","Thêm vào cuối cho 1 bé","200, bước mới Waiting thành chặng mới ở cuối (hoặc Open nếu lộ trình trống)"],
       ["ok","Thêm cho 2 bé","200, kết quả theo từng bé"],
-      ["ok","Position = NextUp","Bước chèn ngay sau bước đang mở"],
+      ["ok","Position = NextUp","Truyện thành chặng mới ngay sau chặng đang đọc"],
+      ["ok","Stage = chặng đang đọc (bé 1, chặng 2)","200, outcome Added; GET lộ trình: openItems có truyện 3 và truyện mới, currentStage = 2"],
+      ["ok","Stage = chặng chờ (bé 1, chặng 3)","200, outcome Added; truyện mới cùng position 3 với truyện 6"],
+      ["ok","Stage với truyện đang chờ (truyện 10, chặng 2)","200, outcome Moved; truyện 10 thành Open"],
+      ["neg","Stage cho 2 bé","400 \"Chỉ chọn được chặng khi thêm truyện cho một bé.\""],
+      ["neg","Stage thiếu stageNumber","400 \"Phải chọn chặng muốn thêm vào.\""],
+      ["neg","Stage = chặng đã xong (chặng 1)","400 \"Chặng 1 không còn nhận thêm truyện.\""],
       ["neg","Truyện chủ đề đã chặn cho bé","200, bé đó Skipped blocked_topic, bé khác vẫn thêm được"],
       ["neg","Truyện sai độ tuổi hoặc dài hơn giới hạn","200, bé đó Skipped wrong_age / too_long"],
-      ["neg","Truyện đã có trong lộ trình bé (Waiting hoặc Open)","200, bé đó Skipped already_in_roadmap, không tạo trùng (riêng NextUp với bước đang Waiting: bước được dời lên kế tiếp, outcome MovedToNext)"],
+      ["neg","Truyện đã có trong lộ trình bé (Waiting hoặc Open)","200, bé đó Skipped already_in_roadmap, không tạo trùng (riêng NextUp / Stage với bước đang Waiting: bước được chuyển sang chỗ mới, outcome MovedToNext / Moved)"],
       ["neg","Người giám sát không có quyền AssignActivity","200, bé đó Skipped no_permission (không trả 403)"],
       ["neg","Bé không Active","200, bé đó Skipped profile_inactive"],
       ["neg","Gọi bằng token bé","403"]
     ] },
   { m: "GET", p: "/api/v1/ChildRoadmap/{childProfileId}", role: "User",
-    what: "Xem lộ trình của bé: bước đang mở, các bước chờ, lịch sử, các bước \"Cần cập nhật\".",
+    what: "Xem lộ trình của bé: các truyện đang mở của chặng hiện tại, các bước chờ theo chặng, lịch sử, các bước \"Cần cập nhật\".",
     detail: [
       ["Điều kiện gọi", ["Người gọi đang giám sát bé (Owner hoặc người giám sát phụ, quyền nào cũng được) → nếu không: 403."]],
       ["Kết quả", [
-        "open: bước đang mở (hoặc null).",
-        "waiting: các bước chờ theo thứ tự position.",
+        "openItems: mọi truyện đang mở của chặng hiện tại (rỗng khi không có); currentStage: số chặng đang đọc hoặc null.",
+        "waiting: các truyện chờ theo position; position = số chặng (truyện cùng chặng cùng số).",
         "history: tối đa 20 bước Completed / Skipped / Removed, kết thúc gần nhất trước.",
-        "Mỗi bước: id, storyId, title, position, status, source (Manual, TemplateCopy…), skipReason, note, expectedDays, expectedCompletionAt, openedAt, completedAt, addedByUserId, isStoryAvailable (false khi truyện đã xóa / Archive).",
-        "completedCount, totalCount (đã xong + đang mở + đang chờ)."]],
+        "Mỗi bước: id, storyId, title, position (= số chặng), status, source (Manual, TemplateCopy…), skipReason, note, expectedDays, expectedCompletionAt, openedAt, completedAt, addedByUserId, isStoryAvailable (false khi truyện đã xóa / Archive).",
+        "completedCount, totalCount (đã xong + đang mở + đang chờ, đếm theo truyện)."]],
       ["Lưu ý", ["Chỉ đọc; không tự mở bước mới khi xem."]]
     ],
     body: null,
     tests: [
-      ["ok","Owner xem lộ trình bé","200, thứ tự đúng"],
+      ["ok","Owner xem lộ trình bé","200, openItems / currentStage và thứ tự chặng đúng"],
       ["ok","Sau khi Archive truyện trong lộ trình","Bước đó Skipped (StoryUnavailable), lịch sử có ghi nhận"],
       ["neg","Người không giám sát bé","403"]
     ] },
   { m: "DELETE", p: "/api/v1/ChildRoadmap/{childProfileId}/items/{itemId}", role: "User",
-    what: "Gỡ một bước khỏi lộ trình. Nếu là bước đang mở thì bước kế được mở.",
+    what: "Gỡ một bước khỏi lộ trình. Nếu gỡ hết truyện đang mở của chặng thì chặng kế được mở.",
     detail: [
       ["Hệ thống kiểm lần lượt", [
         "Quyền AssignActivity với bé → nếu không: 403.",
@@ -2162,30 +2169,32 @@ const STEPS = [
         "Bước đang Waiting hoặc Open → nếu đã Completed / Skipped / Removed: 409."]],
       ["Xử lý (một transaction)", [
         "Bước → Removed (ghi người và thời điểm gỡ); đánh số lại các bước chờ.",
-        "Nếu bước bị gỡ đang mở: mở bước chờ đầu tiên còn hợp lệ (bỏ qua bước không hợp lệ, không mở khi bé đang Hold Mode).",
+        "Nếu bước bị gỡ đang mở và chặng hiện tại không còn truyện Open nào: mở chặng chờ kế tiếp — mọi truyện của chặng đó còn hợp lệ (bỏ qua truyện không hợp lệ, không mở khi bé đang Hold Mode). Chặng hiện tại còn truyện Open khác thì chưa mở chặng mới.",
         "Ghi audit ChildRoadmapStoryRemoved; báo các người giám sát khác (RoadmapStoryRemoved)."]],
       ["Kết quả", ["Lộ trình mới của bé (như GET)."]]
     ],
     body: null,
     tests: [
       ["ok","Gỡ bước Waiting","200, bước Removed"],
-      ["ok","Gỡ bước Open","Bước Waiting đầu tiên chuyển Open"],
+      ["ok","Gỡ bước Open","Gỡ truyện Open cuối cùng của chặng hiện tại: mọi truyện hợp lệ của chặng chờ kế tiếp chuyển Open; chặng hiện tại còn truyện Open khác thì không mở chặng mới"],
       ["neg","Bước đã Completed","409"],
       ["neg","itemId của bé khác","404 (khi có quyền với bé trên URL); không có quyền với bé trên URL thì 403"]
     ] },
   { m: "PUT", p: "/api/v1/ChildRoadmap/{childProfileId}/order", role: "User",
-    what: "Sắp xếp lại thứ tự các bước đang chờ (gửi danh sách itemId theo thứ tự mới).",
+    what: "Sắp xếp lại các truyện đang chờ theo chặng: gửi stages là danh sách chặng, mỗi chặng là danh sách itemId.",
     detail: [
       ["Hệ thống kiểm", [
         "Quyền AssignActivity với bé → nếu không: 403.",
-        "itemIds phải gồm đúng và đủ các bước đang Waiting của bé, mỗi bước một lần; thiếu, thừa, trùng, có bước Open hoặc bước của bé khác → 400."]],
-      ["Xử lý", ["Đặt position = vị trí trong mảng (bắt đầu từ 1); bước đang mở không đổi. Ghi audit ChildRoadmapReordered."]],
+        "stages gộp lại phải đúng và đủ các truyện Waiting của bé, mỗi truyện một lần, không có chặng rỗng; thiếu, thừa, trùng, chặng rỗng, có truyện Open hoặc của bé khác → 400 \"Danh sách phải gồm đúng các truyện đang chờ, chia theo chặng, mỗi truyện một lần; truyện đang mở không kéo thả được.\""]],
+      ["Xử lý", ["Chặng thứ i nhận position = chặng hiện tại + i. Ghi audit ChildRoadmapReordered."]],
       ["Kết quả", ["Lộ trình mới của bé (như GET)."]]
     ],
-    body: '{ "itemIds": [12, 14, 13] }',
+    body: '{ "stages": [[12, 14], [13]] }',
     tests: [
       ["ok","Đổi thứ tự các bước Waiting","200, thứ tự mới"],
+      ["ok","Gộp 2 truyện chờ vào một chặng","200, hai truyện cùng position"],
       ["neg","Thiếu hoặc thừa itemId so với các bước chờ","400"],
+      ["neg","Có chặng rỗng","400"],
       ["neg","Có itemId của bước Open","400"]
     ] },
   { m: "DELETE", p: "/api/v1/ChildRoadmap/{childProfileId}/items", role: "User",
@@ -2196,7 +2205,7 @@ const STEPS = [
         "Không còn bước Waiting / Open: trả lộ trình hiện tại, không ghi gì.",
         "Có: mọi bước Waiting và Open → Removed trong một transaction; ghi audit ChildRoadmapCleared; báo các người giám sát khác (kèm số bước bị gỡ).",
         "Các bước Completed / Skipped trong lịch sử giữ nguyên."]],
-      ["Kết quả", ["Lộ trình sau khi xóa: open = null, waiting rỗng."]]
+      ["Kết quả", ["Lộ trình sau khi xóa: openItems rỗng, waiting rỗng."]]
     ],
     body: null,
     tests: [
@@ -2237,6 +2246,7 @@ const STEPS = [
     detail: [
       ["Body", [
         "childProfileIds: 1 đến 20 bé; position: NextUp hoặc End; daysPerStory: tùy chọn, 1 đến 90 → sai: 400.",
+        "position = Stage → 400 \"Lộ trình mẫu chỉ thêm được vào Đọc tiếp theo hoặc Cuối lộ trình.\" (copy kiểm giống preview).",
         "Bộ không Published / đã Archive / không tồn tại → 404."]],
       ["Xử lý từng bé", [
         "Không có quyền AssignActivity → Skipped no_permission (không trả 403); bé không Active → profile_inactive.",
@@ -2262,7 +2272,7 @@ const STEPS = [
       ["Xử lý từng bé (mỗi bé một transaction)", [
         "Tính kế hoạch đúng như preview; bé Skipped thì bỏ qua.",
         "Thêm các truyện Copy vào lộ trình theo position, nguồn TemplateCopy, ghi bộ nguồn; truyện đã có không bị dời.",
-        "Mở bước đầu nếu bé chưa có bước Open (trừ khi đang Hold Mode).",
+        "Mở chặng chờ kế tiếp (mọi truyện hợp lệ của chặng đó) nếu bé chưa có truyện Open (trừ khi đang Hold Mode).",
         "Ghi audit ChildRoadmapTemplateCopied (truyện đã chép / bỏ qua); gửi một thông báo RoadmapStoryAdded cho các người giám sát khác của bé cho cả bộ."]],
       ["Kết quả", ["Như preview, nhưng bé đã chép có outcome = Copied."]]
     ],
@@ -2274,16 +2284,16 @@ const STEPS = [
       ["neg","Thiếu quyền AssignActivity với một bé","200, bé đó Skipped no_permission, bé khác vẫn được chép"]
     ] },
   { m: "GET", p: "/api/v1/MyRoadmap", role: "Bé (ChildSession)",
-    what: "Màn hình \"Bố mẹ chọn cho em\": truyện đang mở và các truyện sắp tới của chính bé đăng nhập. Id hồ sơ lấy từ token.",
+    what: "Màn hình \"Bố mẹ chọn cho em\": các truyện đang mở của chặng hôm nay và các truyện sắp tới của chính bé đăng nhập. Id hồ sơ lấy từ token.",
     detail: [
       ["Điều kiện gọi", ["Token phiên bé (ChildSession); token User → 403. Hồ sơ bé phải Active → nếu không: 403."]],
       ["Xử lý", [
-        "Lấy các bước Open, Waiting, Completed của bé; ẩn bước có truyện đã bị gỡ / Archive.",
+        "Lấy các bước Open, Waiting, Completed của bé (gom theo chặng); ẩn bước có truyện đã bị gỡ / Archive.",
         "Kiểm bé có đang Hold Mode (ca can thiệp chưa được mở khóa) không. Chỉ đọc, không tự mở bước mới."]],
       ["Kết quả", [
-        "open: storyId, title, coverImageUrl, note của phụ huynh, expectedBy (chỉ khi chưa quá hạn), isLocked = true khi đang Hold Mode.",
-        "upcoming: các truyện chờ theo thứ tự, luôn isLocked = true (bé chưa đọc được).",
-        "done: các truyện đã đọc xong gần nhất (có giới hạn số lượng).",
+        "openStories: mọi truyện đang mở của chặng hôm nay, mỗi truyện có storyId, title, coverImageUrl, note, expectedBy (chỉ khi chưa quá hạn), stage.",
+        "upcoming: các truyện chặng sau, order = thứ tự chặng (1 = chặng kế; truyện cùng chặng cùng order), luôn isLocked = true.",
+        "done: các truyện đã đọc xong gần nhất (có giới hạn số lượng), kèm stage.",
         "completedCount, totalCount, isFinished (không còn bước mở / chờ và đã đọc xong ít nhất một truyện)."]],
       ["Lưu ý", ["Không trả itemId, người giao hay lịch sử bị gỡ; bé chỉ thấy những gì cần để đọc."]]
     ],
@@ -2462,9 +2472,18 @@ const OVERRIDES = [
   ["wish-cards/{id}/active", "id không tồn tại", J({ isActive: false })],
   ["=/api/v1/moderation/stories/{storyId}/wish-cards", "storyId không tồn tại", J({ wishCardId: 1 })],
   // Phụ lục: lộ trình của trẻ
-  ["ChildRoadmap/{childProfileId}/order", "Thiếu hoặc thừa", J({ itemIds: [12] })],
+  ["ChildRoadmap/{childProfileId}/order", "Thiếu hoặc thừa", J({ stages: [[12]] })],
+  ["ChildRoadmap/{childProfileId}/order", "Có chặng rỗng", J({ stages: [[3, 4], []] })],
+  ["ChildRoadmap/{childProfileId}/order", "Gộp 2 truyện chờ", J({ stages: [[3, 4]] })],
+  ["ChildRoadmap/{childProfileId}/order", "Có itemId của bước Open", J({ stages: [[2], [3, 4]] })],
   ["=/api/v1/ChildRoadmap/stories", "Thêm vào cuối cho 1 bé", J({ storyId: 13, childProfileIds: [1], position: "End", expectedDays: 3, note: "Đọc trước giờ ngủ" })],
   ["=/api/v1/ChildRoadmap/stories", "Position = NextUp", J({ storyId: 13, childProfileIds: [1], position: "NextUp", expectedDays: 3, note: null })],
+  ["=/api/v1/ChildRoadmap/stories", "Stage = chặng đang đọc (bé 1, chặng 2)", J({ storyId: 13, childProfileIds: [1], position: "Stage", stageNumber: 2, expectedDays: null, note: null })],
+  ["=/api/v1/ChildRoadmap/stories", "Stage = chặng chờ (bé 1, chặng 3)", J({ storyId: 13, childProfileIds: [1], position: "Stage", stageNumber: 3, expectedDays: null, note: null })],
+  ["=/api/v1/ChildRoadmap/stories", "Stage với truyện đang chờ (truyện 10, chặng 2)", J({ storyId: 10, childProfileIds: [1], position: "Stage", stageNumber: 2, expectedDays: null, note: null })],
+  ["=/api/v1/ChildRoadmap/stories", "Stage cho 2 bé", J({ storyId: 13, childProfileIds: [1, 2], position: "Stage", stageNumber: 2, expectedDays: null, note: null })],
+  ["=/api/v1/ChildRoadmap/stories", "Stage thiếu stageNumber", J({ storyId: 13, childProfileIds: [1], position: "Stage", expectedDays: null, note: null })],
+  ["=/api/v1/ChildRoadmap/stories", "Stage = chặng đã xong (chặng 1)", J({ storyId: 13, childProfileIds: [1], position: "Stage", stageNumber: 1, expectedDays: null, note: null })],
   ["RoadmapLibrary/{roadmapId}/copy", "Chép bộ cho 2 bé", J({ childProfileIds: [1, 2], position: "End", daysPerStory: null })]
 ];
 function overrideBody(api, t) {
@@ -2626,13 +2645,13 @@ const SEEDAPI = [
   ["=POST /api/v1/ChildRoadmap/stories", { as: "parent_demo1", url: "POST /api/v1/ChildRoadmap/stories", body: '{ "storyId": 13, "childProfileIds": [1], "position": "End", "expectedDays": 3, "note": "Đọc trước giờ ngủ" }', note: "parent_demo1 là Owner bé 1. Lộ trình bé 1 trong seed: 1 Completed, 2 Open (truyện 3), 3 và 4 Waiting (truyện 6, 10)." }],
   ["=GET /api/v1/ChildRoadmap/{childProfileId}", { as: "parent_demo1", url: "GET /api/v1/ChildRoadmap/1", note: "Bé 1: 4 bước. Bé 3 (parent_demo2): 1 bước Open (truyện 6). Bé 6: bước Skipped và Removed." }],
   ["items/{itemId}", { as: "parent_demo1", url: "DELETE /api/v1/ChildRoadmap/1/items/3", note: "Bước 3 của bé 1 (truyện 6) đang Waiting. Bước 2 đang Open, bước 1 đã Completed." }],
-  ["/order", { as: "parent_demo1", url: "PUT /api/v1/ChildRoadmap/1/order", body: '{ "itemIds": [4, 3] }', note: "Các bước Waiting của bé 1 là 3 và 4." }],
+  ["/order", { as: "parent_demo1", url: "PUT /api/v1/ChildRoadmap/1/order", body: '{ "stages": [[4], [3]] }', note: "Các bước Waiting của bé 1 là 3 (chặng 3) và 4 (chặng 4); bước Open 2 ở chặng 2." }],
   ["=DELETE /api/v1/ChildRoadmap/{childProfileId}/items", { as: "parent_demo1", url: "DELETE /api/v1/ChildRoadmap/1/items", note: "Xóa mọi bước chưa hoàn thành của bé 1 (2, 3, 4)." }],
   ["GET /api/v1/RoadmapLibrary?", { as: "parent_demo1", url: "GET /api/v1/RoadmapLibrary?pageIndex=1&pageSize=20", note: "Bộ Published trong seed: 1 (Động vật 6-8) và 5 (Khoa học 9-10)." }],
   ["=GET /api/v1/RoadmapLibrary/{roadmapId}", { as: "parent_demo1", url: "GET /api/v1/RoadmapLibrary/1", note: "Bộ 1. Bộ 2 (Nháp) trả 404." }],
   ["RoadmapLibrary/{roadmapId}/preview", { as: "parent_demo1", url: "POST /api/v1/RoadmapLibrary/1/preview", body: '{ "childProfileIds": [1], "position": "End", "daysPerStory": 2 }', note: "Bộ 1 gồm truyện 1. Bé 1 đã đọc xong truyện 1 nhưng chỉ bước Waiting / Open mới bị coi là trùng, nên truyện 1 vẫn có action = Copy." }],
   ["RoadmapLibrary/{roadmapId}/copy", { as: "parent_demo1", url: "POST /api/v1/RoadmapLibrary/5/copy", body: '{ "childProfileIds": [2], "position": "End", "daysPerStory": null }', note: "Bộ 5 là 9-10 tuổi nên chép cho bé 2 (9-10, parent_demo1 là Owner). Chép bộ 5 cho bé 1 (6-8) sẽ bị bỏ qua truyện sai tuổi." }],
-  ["GET /api/v1/MyRoadmap", { as: "bé 1 (secret demo-qr-child-01)", url: "GET /api/v1/MyRoadmap", note: "Bé 1 có truyện Open là truyện 3." }]
+  ["GET /api/v1/MyRoadmap", { as: "bé 1 (secret demo-qr-child-01)", url: "GET /api/v1/MyRoadmap", note: "Bé 1 có truyện Open là truyện 3 (chặng 2), truyện chờ 6 và 10." }]
 ];
 function seedFor(api) {
   const key = api.m + " " + api.p;

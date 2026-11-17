@@ -1,0 +1,1158 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kết quả đọc của bé (phụ huynh) — test API</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5d6679; --line: #dfe3ea;
+    --accent: #2f5fd0; --ok: #1b8a4b; --warn: #b26a00; --bad: #c0392b;
+    --get: #1b8a4b; --post: #2f5fd0; --put: #b26a00; --delete: #c0392b;
+    --code: #eef1f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171e; --panel: #1c212b; --text: #e6e9ef; --muted: #9aa3b5; --line: #2d3442;
+      --accent: #7aa2ff; --ok: #4cc58a; --warn: #e5a23c; --bad: #ff7b6b;
+      --get: #4cc58a; --post: #7aa2ff; --put: #e5a23c; --delete: #ff7b6b;
+      --code: #232a37;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 system-ui, "Segoe UI", sans-serif; }
+  header { padding: 24px 16px 8px; max-width: 1100px; margin: 0 auto; }
+  h1 { margin: 0 0 6px; font-size: 24px; }
+  .sub { color: var(--muted); margin: 0; }
+  .layout { display: grid; grid-template-columns: 230px 1fr; gap: 24px; max-width: 1100px; margin: 0 auto; padding: 16px; }
+  nav { position: sticky; top: 12px; align-self: start; max-height: calc(100vh - 24px); overflow: auto; }
+  nav a { display: block; padding: 7px 10px; border-radius: 8px; color: var(--text); text-decoration: none; font-size: 14px; }
+  nav a:hover { background: var(--panel); }
+  nav .progress { color: var(--muted); font-size: 12px; margin: 10px 10px 0; }
+  main { min-width: 0; }
+  section.step { margin-bottom: 36px; }
+  section.step > h2 { font-size: 20px; margin: 0 0 4px; }
+  .step-desc { color: var(--muted); margin: 0 0 12px; }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+  .box h3 { margin: 0 0 6px; font-size: 15px; }
+  .box ul { margin: 6px 0 0; padding-left: 20px; }
+  .note { border-left: 3px solid var(--warn); padding: 8px 12px; background: var(--panel); border-radius: 0 8px 8px 0; margin: 10px 0; font-size: 14px; }
+  .detail { border-left: 3px solid var(--accent); padding: 8px 12px; background: var(--panel); border-radius: 0 8px 8px 0; margin: 10px 0; font-size: 14px; }
+  .detail-sec + .detail-sec { margin-top: 8px; }
+  .detail ul { margin: 4px 0 0; padding-left: 20px; }
+  details.api { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; }
+  details.api > summary { cursor: pointer; padding: 11px 14px; list-style: none; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  details.api > summary::-webkit-details-marker { display: none; }
+  .m { font-weight: 700; font-size: 12px; padding: 2px 8px; border-radius: 6px; color: #fff; min-width: 58px; text-align: center; }
+  .m.GET { background: var(--get); } .m.POST { background: var(--post); } .m.PUT { background: var(--put); } .m.DELETE { background: var(--delete); }
+  @media (prefers-color-scheme: dark) { .m { color: #10131a; } }
+  .path { font-family: ui-monospace, Consolas, monospace; font-size: 13.5px; word-break: break-all; }
+  .role { margin-left: auto; font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; }
+  .ctl { font: 600 12px ui-monospace, Consolas, monospace; color: var(--accent); background: var(--code); border-radius: 6px; padding: 1px 7px; }
+  .ctl-line { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+  .ctl-line b { color: var(--text); }
+  nav .search { width: 100%; margin: 0 0 8px; font: 13px system-ui, "Segoe UI", sans-serif; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); }
+  nav .found { color: var(--muted); font-size: 12px; margin: -4px 10px 6px; flex-basis: 100%; }
+  nav .found:empty { display: none; }
+  nav .search { flex-basis: 100%; }
+  .hidden-by-search { display: none !important; }
+  .api-body { padding: 0 16px 14px; border-top: 1px solid var(--line); }
+  .api-body p { margin: 10px 0 6px; }
+  pre { background: var(--code); border-radius: 8px; padding: 10px 12px; overflow: auto; font: 12.5px/1.5 ui-monospace, Consolas, monospace; margin: 6px 0 10px; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 14px; }
+  table.tests { table-layout: fixed; }
+  table.tests th.chk { width: 34px; }
+  table.tests th.exp { width: 28%; }
+  th, td { text-align: left; padding: 7px 8px; border-top: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+  td.chk { width: 34px; }
+  td.exp { white-space: nowrap; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; margin-right: 6px; }
+  .tag.ok { color: var(--ok); border: 1px solid var(--ok); }
+  .tag.neg { color: var(--bad); border: 1px solid var(--bad); }
+  .tag.edge { color: var(--warn); border: 1px solid var(--warn); }
+  .code { font-family: ui-monospace, Consolas, monospace; background: var(--code); border-radius: 5px; padding: 0 5px; font-size: 13px; }
+  .flow li { margin-bottom: 4px; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 14px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.copy { font-size: 12px; padding: 1px 8px; margin-left: 6px; border-radius: 6px; }
+  .data { margin-top: 4px; padding: 6px 8px; background: var(--code); border-radius: 6px; font-size: 12.5px; color: var(--muted); }
+  .data b { color: var(--text); }
+  .data > b { display: block; margin-bottom: 2px; }
+  .data ul { margin: 0; padding-left: 18px; }
+  .data li { margin: 1px 0; }
+  .data .kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 10px; align-items: start; }
+  .data .kv > span:nth-child(odd) { color: var(--muted); white-space: nowrap; }
+  .data .kv > span:nth-child(even), .data .kv > ul { color: var(--text); min-width: 0; word-break: break-word; }
+  @media (max-width: 760px) { .data .kv { grid-template-columns: 1fr; } }
+  .reqbar { margin-top: 6px; font-size: 12px; color: var(--muted); }
+  pre.req { margin: 3px 0 2px; max-height: 260px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .vars-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px 12px; }
+  .vars-grid label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 3px; }
+  .vars-grid input { font: 13px ui-monospace, Consolas, monospace; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--code); color: var(--text); min-width: 0; }
+  @media (max-width: 760px) {
+    .layout { grid-template-columns: 1fr; }
+    nav { position: static; max-height: none; display: flex; flex-wrap: wrap; gap: 4px; }
+    .role { margin-left: 0; }
+  }
+  .m.SQL { background: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>API và test case — Kết quả đọc của bé (phía phụ huynh)</h1>
+  <p class="sub">AI Storytelling Backend · tab "Kết quả đọc" của chủ hồ sơ: lọc ngày / chưa đọc xong, số lần đọc lại, chi tiết câu đố, đọc to, EXP + từ vựng, chế độ đọc, bản "Bé kể lại", tổng quan · mỗi API có giải thích, body mẫu và test case kèm đầu vào / kết quả mong đợi. Tích vào ô để đánh dấu đã chạy (lưu trong trình duyệt).</p>
+</header>
+
+<div class="layout">
+  <nav id="nav"></nav>
+  <main id="main">
+
+    <section class="step" id="chung">
+      <h2>Quy ước chung</h2>
+      <div class="box">
+        <h3>Cách gọi</h3>
+        <ul>
+          <li>Địa chỉ gốc: <span class="code">{host}/api/v1/ParentReadingFeedback</span>. Phản hồi bọc trong <span class="code">ApiResponse</span>: <span class="code">{ "success", "message", "data", "errors" }</span>. Danh sách bọc thêm <span class="code">PagedResult</span>: <span class="code">items, pageIndex, pageSize, totalCount, totalPages, hasPreviousPage, hasNextPage</span>.</li>
+          <li>Đính kèm <span class="code">Authorization: Bearer {accessToken}</span>. Cả 3 API chỉ dành cho <b>role User</b> và chỉ <b>chủ hồ sơ</b> (<span class="code">OwnerUserId</span>) mới xem được hồ sơ của bé.</li>
+          <li>Lỗi nghiệp vụ: <span class="code">{ "success": false, "message": "…", "data": null }</span>. Sai kiểu dữ liệu query (ví dụ <span class="code">From=abc</span>): 400 <span class="code">"Dữ liệu đầu vào không hợp lệ."</span> kèm <span class="code">errors</span>. Sai role: <b>403 body rỗng</b>; không token: <b>401</b>; không phải chủ hồ sơ hoặc hồ sơ không tồn tại: <b>403</b> <span class="code">"Bạn không có quyền với hồ sơ trẻ này."</span>.</li>
+          <li>Thời gian là <b>UTC</b>, định dạng ISO <span class="code">2026-11-10T08:00:00Z</span>. Khoảng lọc là <span class="code">[From, To)</span>: tính cả mốc <span class="code">From</span>, <b>không</b> tính mốc <span class="code">To</span>.</li>
+          <li>Enum trả dạng chuỗi: <span class="code">status</span> ∈ Completed · Started · Reading · Activity · Abandoned · ForceExited; <span class="code">feeling</span> ∈ VeryLike (Rất thích) · Like (Thích) · Neutral (Bình thường) · Dislike (Chưa thích); <span class="code">readingMode</span> ∈ ListenFirst · ReadFirst.</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h3>Dữ liệu thật trong Database/Seed (nạp bằng Seed-Database.ps1)</h3>
+        <ul>
+          <li><b>Trước hết:</b> áp migration <span class="code">AddReadingSessionReadingMode</span> (thêm cột <span class="code">reading_sessions.ReadingMode</span>), rồi chạy <span class="code">Database/Seed-Database.ps1</span>. Không cần nạp SQL thêm: dữ liệu đọc của Bé An đã nằm trong seed, <b>Task 0</b> chỉ kiểm tra lại.</li>
+          <li><b>Mật khẩu mọi tài khoản demo: Demo@123.</b> Đăng nhập bằng <span class="code">POST /api/v1/Auth/login</span> với <span class="code">{ "identifier": "parent_demo1", "password": "Demo@123" }</span>.</li>
+          <li>Tài khoản: <b>parent_demo1</b> (User, Id 2) là chủ hồ sơ <b>1 = Bé An</b> và <b>2 = Bé Bình</b>; <b>parent_demo2</b> (User, Id 3) là chủ hồ sơ 3 và 4 — dùng để thử "không phải chủ hồ sơ"; <b>moderator_demo1</b> (Moderator) dùng thử sai role; token bé 1 lấy bằng <span class="code">POST /api/v1/ChildAccessCredential/easylogin/login</span> với <span class="code">{ "secret": "demo-qr-child-01" }</span>.</li>
+          <li>Seed của Bé An (hồ sơ 1): phiên <b>1</b> (truyện 1 "Chú Thỏ Thông Minh - Bản 1", phiên bản 1, Completed, 10 trang, 600 giây, quiz câu 1 đúng), phiên <b>11</b> (truyện 21 "Cá heo tốt bụng", phiên bản 26, Completed, 360 giây), phiên <b>13</b> (truyện 16 "Chú mèo biết lắng nghe", phiên bản 21, Completed, 300 giây). Bé Bình (hồ sơ 2): phiên <b>2</b> (truyện 1, Reading, 3 trang, 200 giây). Seed có sẵn bản kể lại <b>1</b> gắn phiên 1 (không ghi âm, 1 cảnh đánh dấu: cảnh 1). Phiên bản 1 có 1 scene; phiên bản 21 và 26 <b>không có scene</b> (totalPages = 0). Từ vựng 1 = "thông minh", 2 = "dũng cảm".</li>
+          <li>Seed còn có cho Bé An (các dòng Id từ 101): câu quiz <b>101</b> (phiên bản 1, TrueFalse); phiên <b>101</b> (Completed, 5 ngày trước, 540 giây, VeryLike, ListenFirst), <b>102</b> (Completed, 30 giờ trước, 420 giây, Like, ReadFirst), <b>103</b> (Reading, mở 12 ngày trước, 30 giây), <b>104</b> (Reading, mở 1 ngày trước, truyện 16, 120 giây); các lần trả lời quiz 101–104; telemetry đọc to / EXP / từ vựng của phiên 101 và 102; bản kể lại <b>101</b> (không ghi âm, 1 cảnh). Bản kể lại trong seed đều không ghi âm vì API ParentStorySummary phải ký link cho file ghi âm, file không có thật sẽ làm API đó lỗi.</li>
+          <li>Phần tính theo <b>ngày giờ hiện tại</b> (seed dùng <span class="code">NOW()</span>): các giá trị động <span class="code">&lt;FROM_7D&gt;</span>, <span class="code">&lt;TO_PLUS_1D&gt;</span>, <span class="code">&lt;COMPLETED_AT_101&gt;</span> ở khung dưới phải nhập lại theo ngày bạn chạy test (có câu SQL lấy sẵn ở mục mô tả từng giá trị).</li>
+          <li><b>Lưu ý:</b> test làm đổi dữ liệu (các test "SQL" sửa phiên / telemetry / bản kể lại). Mỗi Task bắt đầu từ DB vừa seed; chạy theo thứ tự trên trang. Test có nhãn "(SQL)" cần hoàn tác bằng câu SQL kèm theo trước khi sang test kế tiếp.</li>
+        </ul>
+      </div>
+      <div class="note">Nguồn: plan <span class="code">docs/superpowers/plans/2026-11-15-parent-reading-results-gaps.md</span> (8 Task). Task 1: lọc ngày / chưa đọc xong · Task 2: đọc lại · Task 3: chi tiết câu đố · Task 4: đọc to · Task 5: EXP + từ vựng · Task 6: chế độ đọc · Task 7: gắn bản kể lại · Task 8: tổng quan. Mục có nhãn SQL là kiểm tra / nạp dữ liệu trực tiếp trên database, không gọi API.</div>
+      <div class="box" id="vars">
+        <h3>Giá trị động (tự thay khi copy)</h3>
+        <p class="sub" style="margin:0 0 8px">Giá trị phụ thuộc ngày chạy test được viết dạng <span class="code">&lt;TÊN&gt;</span>. Nhập giá trị thật vào ô dưới đây; khung JSON, URL và nút Copy tự thay.</p>
+        <div class="vars-grid"></div>
+      </div>
+      <div class="toolbar">
+        <button id="expand">Mở tất cả API</button>
+        <button id="collapse">Đóng tất cả</button>
+        <button id="reset">Xóa các dấu đã tích</button>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+// =====================================================================
+// KẾT QUẢ ĐỌC CỦA BÉ (phía phụ huynh) — dựng từ docs/api/_template-api-test-guide.html
+// Chỉ sửa phần DỮ LIỆU từ đây tới "HẾT PHẦN DỮ LIỆU"; không sửa phần engine bên dưới.
+// =====================================================================
+const COPY = [];
+const J = o => JSON.stringify(o, null, 2);   // object → JSON đẹp (dùng cho body / resp)
+const A = (n, c = "a") => c.repeat(n);        // chuỗi dài n ký tự (test giới hạn độ dài)
+
+const L = "/api/v1/ParentReadingFeedback";
+const OWN = "Bạn không có quyền với hồ sơ trẻ này.";
+const BAD_STATUS = "Trạng thái lọc không hợp lệ. Chỉ nhận Completed hoặc Unfinished.";
+const BAD_RANGE = "Mốc bắt đầu phải nhỏ hơn mốc kết thúc.";
+const BAD_INPUT = "Dữ liệu đầu vào không hợp lệ.";
+const NO_SESSION = id => `Không tìm thấy Phiên đọc với mã định danh [${id}].`;
+
+// ---------- Dòng mẫu dùng lại trong phản hồi ----------
+const row102 = {
+  sessionId: 102, storyId: 1, title: "Chú Thỏ Thông Minh - Bản 1",
+  completedAt: "2026-11-14T10:00:00Z", status: "Completed", startedAt: "2026-11-14T09:00:00Z",
+  timeSpentSeconds: 420, pagesCompleted: 1, totalPages: 1,
+  readCount: 3, readOrdinal: 3, laterCompleted: false, readingMode: "ReadFirst",
+  feeling: "Like", feelingLabel: "Thích",
+  quizTotalQuestions: 2, quizBestPercent: 100, quizRunCount: 3, quizLatestPercent: 100,
+  conversationAnswers: [], readAloud: null, readAloudRecordingCount: 0, expEarned: 10, wordsCollected: [], retell: null
+};
+const row101 = {
+  sessionId: 101, storyId: 1, title: "Chú Thỏ Thông Minh - Bản 1",
+  completedAt: "2026-11-10T10:09:00Z", status: "Completed", startedAt: "2026-11-10T10:00:00Z",
+  timeSpentSeconds: 540, pagesCompleted: 1, totalPages: 1,
+  readCount: 3, readOrdinal: 2, laterCompleted: false, readingMode: "ListenFirst",
+  feeling: "VeryLike", feelingLabel: "Rất thích",
+  quizTotalQuestions: 2, quizBestPercent: 100, quizRunCount: 3, quizLatestPercent: 100,
+  conversationAnswers: [],
+  readAloud: { attempts: 3, segmentsPracticed: 2, goodWords: 16, retryWords: 3, totalWords: 20, goodPercent: 80 },
+  expEarned: 25,
+  wordsCollected: [{ vocabularyId: 2, term: "dũng cảm" }, { vocabularyId: 1, term: "thông minh" }],
+  retell: { summaryId: 101, createdAt: "2026-11-10T10:19:00Z", hasRecording: false, flagCount: 1, unansweredCount: 1 }
+};
+const paged = (items, total, idx = 1, size = 20) => ({
+  items, pageIndex: idx, pageSize: size, totalCount: total, totalPages: Math.ceil(total / size),
+  hasPreviousPage: idx > 1, hasNextPage: idx < Math.ceil(total / size)
+});
+
+// Mỗi bước (Task) = một section. Mỗi API = một khối gập/mở.
+// Test case: [loại, tình huống, kết quả mong đợi, dữ liệu?, body?]
+const STEPS = [
+// =====================================================================
+{
+  id: "t0", title: "Task 0 — Kiểm tra dữ liệu đọc của Bé An trong seed",
+  desc: "Dữ liệu đọc phong phú của Bé An (câu quiz 101, phiên 101–104, các lần trả lời quiz, telemetry đọc to / EXP / từ vựng, bản kể lại 101) đã nằm sẵn trong Database/Seed. Task này chỉ kiểm tra bằng SQL rằng DB vừa seed có đúng dữ liệu đó, rồi lấy giá trị cho các ô giá trị động.",
+  flow: [
+    "Áp migration AddReadingSessionReadingMode (có cột reading_sessions.ReadingMode) rồi chạy Seed-Database.ps1.",
+    "Chạy các câu SQL kiểm tra bên dưới. Thiếu phiên 101–104 nghĩa là DB chưa được seed lại bằng bản seed mới (API sẽ trả \"Không tìm thấy Phiên đọc với mã định danh [102].\").",
+    "Chạy câu SQL cuối Task để lấy giá trị cho các ô giá trị động."
+  ],
+  apis: [
+  { m: "SQL", p: "(SQL) Kiểm tra dữ liệu đọc của Bé An", role: "Người test (DB)",
+    what: "Seed có cho Bé An: 1 câu quiz (101), 4 phiên đọc (101–104), 4 lần trả lời quiz (101–104), 9 dòng telemetry (101–109), 1 bản kể lại (101, không ghi âm) và 1 cảnh đánh dấu (101). Nằm ở các file 18_quiz_items, 24_reading_sessions, 26_quiz_attempts, 27_telemetry_logs, 63_story_summaries, 64_story_summary_flags.",
+    detail: [
+      ["Dữ liệu sau khi seed (Bé An, hồ sơ 1)", [
+        "Phiên xong: 102 (30 giờ trước), 11 (~2 ngày), 13 (~3 ngày), 101 (5 ngày), 1 (10 ngày) → 5 phiên; truyện 1 được đọc xong 3 lần (phiên 1, 101, 102).",
+        "Phiên chưa xong: 104 (mở 1 ngày trước, truyện 16) và 103 (mở 12 ngày trước, truyện 1; truyện 1 sau đó đã đọc xong nên 103 là \"đọc xong sau đó\").",
+        "Phiên bản 1 có 2 câu quiz (1 và 101). Lịch sử trả lời theo Id: 1 (phiên 1) → 101, 102 (phiên 101) → 103, 104 (phiên 102) tách thành 3 lần làm: 50% → 50% → 100%.",
+        "Phiên 101: đọc to 3 lần (đoạn 1 hai lần, đoạn 2 một lần) + 1 dòng hỏng, EXP 20 + 5, lưu 2 từ vựng, có bản kể lại 101 (không ghi âm, 1 cảnh). Phiên 102: EXP 10."
+      ]]
+    ],
+    tests: [
+      ["ok", "Kiểm tra số phiên của Bé An", "5 phiên Completed (1, 11, 13, 101, 102) và 2 phiên Reading (103, 104); 101 = VeryLike / ListenFirst, 102 = Like / ReadFirst",
+        "Chạy: SELECT \"Id\",\"StoryId\",\"Status\",\"TimeSpentSeconds\",\"Feeling\",\"ReadingMode\" FROM reading_sessions WHERE \"ChildProfileId\"=1 AND NOT \"IsDeleted\" ORDER BY \"Id\";"],
+      ["ok", "Kiểm tra câu quiz của phiên bản 1", "2 dòng: Id 1 (MultipleChoice, đáp án \"Chú Thỏ\") và 101 (TrueFalse, đáp án \"Dung\")",
+        "Chạy: SELECT \"Id\",\"Type\",\"CorrectAnswer\" FROM quiz_items WHERE \"StoryVersionId\"=1 AND NOT \"IsDeleted\" ORDER BY \"Id\";"],
+      ["ok", "Kiểm tra lịch sử trả lời quiz của Bé An", "5 dòng theo Id: 1 (phiên 1, câu 1, đúng), 101 (phiên 101, câu 1, sai), 102 (phiên 101, câu 101, đúng), 103 (phiên 102, câu 1, đúng), 104 (phiên 102, câu 101, đúng)",
+        "Chạy: SELECT a.\"Id\",a.\"ReadingSessionId\",a.\"QuizItemId\",a.\"IsCorrect\" FROM quiz_attempts a JOIN reading_sessions s ON s.\"Id\"=a.\"ReadingSessionId\" WHERE s.\"ChildProfileId\"=1 ORDER BY a.\"Id\";"],
+      ["ok", "Kiểm tra telemetry và bản kể lại", "telemetry: 9 dòng Id 101–109 (phiên 101 có 8, phiên 102 có 1); story_summaries của bé 1: Id 1 (phiên 1) và 101 (phiên 101), AudioStoragePath đều NULL; story_summary_flags 101: bản 101, cảnh 1",
+        "Chạy: SELECT \"Id\",\"ReadingSessionId\",\"EventType\" FROM telemetry_logs WHERE \"Id\" BETWEEN 101 AND 109 ORDER BY \"Id\"; SELECT \"Id\",\"ReadingSessionId\",\"AudioStoragePath\" FROM story_summaries WHERE \"ChildProfileId\"=1 ORDER BY \"Id\"; SELECT \"Id\",\"StorySummaryId\",\"StorySceneId\" FROM story_summary_flags WHERE \"Id\"=101;"],
+      ["ok", "Lấy giá trị cho các ô giá trị động", "FROM_7D, TO_PLUS_1D, COMPLETED_AT_101 có dạng 2026-…Z",
+        "Chạy: SELECT to_char((NOW()-INTERVAL '7 days') AT TIME ZONE 'utc','YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS from_7d, to_char((NOW()+INTERVAL '1 day') AT TIME ZONE 'utc','YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS to_plus_1d, to_char(\"CompletedAt\" AT TIME ZONE 'utc','YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') AS completed_at_101 FROM reading_sessions WHERE \"Id\"=101;"]
+    ] }
+  ]
+},
+// =====================================================================
+{
+  id: "t1", title: "Task 1 — Lọc theo ngày / chưa đọc xong, thời gian và số trang",
+  desc: "Danh sách kết quả đọc của một hồ sơ bé. Mặc định chỉ liệt kê các lần đọc xong (mới nhất trước). Thêm query Status = Unfinished để xem các lần mở truyện mà chưa đọc xong; From / To lọc theo khoảng [From, To) — phiên đã xong lọc theo CompletedAt, phiên chưa xong lọc theo StartedAt. Mỗi dòng có thêm status, startedAt, timeSpentSeconds, pagesCompleted, totalPages. Các trường cũ (feeling, quiz, conversationAnswers…) giữ nguyên.",
+  flow: [
+    "Đăng nhập parent_demo1 (Demo@123) để lấy accessToken.",
+    "Gọi GET /ParentReadingFeedback/1 để xem 5 lần đọc xong của Bé An.",
+    "Gọi thêm Status=Unfinished để xem 2 lần chưa xong; thử From / To và phân trang.",
+    "Thử các lỗi: Status lạ, From ≥ To, không phải chủ hồ sơ, sai role."
+  ],
+  apis: [
+  { m: "GET", p: "/api/v1/ParentReadingFeedback/{childProfileId}", role: "User (chủ hồ sơ)",
+    what: "Danh sách phiên đọc của bé: mặc định các lần đọc xong; Status=Unfinished cho các lần chưa xong. Hỗ trợ From, To, PageIndex, PageSize (PageSize tối đa 50).",
+    detail: [
+      ["Hệ thống kiểm lần lượt", [
+        "Role = User, có token → nếu không: 401 / 403 (body rỗng).",
+        "Hồ sơ tồn tại, chưa xóa và OwnerUserId = người gọi → nếu không: 403 \"" + OWN + "\".",
+        "Status rỗng hoặc Completed hoặc Unfinished (không phân biệt hoa thường) → nếu không: 400 \"" + BAD_STATUS + "\".",
+        "Nếu có cả From và To thì From < To → nếu không: 400 \"" + BAD_RANGE + "\"."
+      ]],
+      ["Xử lý", [
+        "Completed: phiên Status = Completed, chưa xóa, lọc CompletedAt trong [From, To), sắp theo CompletedAt giảm dần rồi Id giảm dần.",
+        "Unfinished: phiên Status ∈ Started, Reading, Activity, Abandoned, ForceExited, lọc StartedAt trong [From, To), sắp theo StartedAt giảm dần rồi Id giảm dần.",
+        "PageIndex < 1 → 1. PageSize được kẹp vào [1, 50].",
+        "totalPages = số scene của bản truyện (0 nếu bản truyện không có scene)."
+      ]],
+      ["Kết quả", ["data = PagedResult; mỗi item gồm các trường cũ và trường mới ở Task 1–7 (xem phản hồi mẫu)."]]
+    ],
+    warn: null,
+    resp: J({ success: true, message: "Lấy danh sách truyện con đã đọc thành công.", data: paged([row102], 5), errors: null }),
+    tests: [
+      ["ok", "Mặc định: 5 lần đọc xong của Bé An, mới nhất trước",
+        "200; message \"Lấy danh sách truyện con đã đọc thành công.\"; data.totalCount = 5; items.sessionId theo thứ tự [102, 11, 13, 101, 1]; mọi item status = \"Completed\"",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1"],
+      ["ok", "Trường mới Task 1 của phiên 102",
+        "200; item sessionId 102: status \"Completed\", startedAt = giờ bắt đầu (31 giờ trước), completedAt = 30 giờ trước, timeSpentSeconds 420, pagesCompleted 1, totalPages 1, title \"Chú Thỏ Thông Minh - Bản 1\"",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1"],
+      ["ok", "Trường cũ giữ nguyên (không đổi tên, không đổi ý nghĩa)",
+        "200; item 102: storyId 1, feeling \"Like\", feelingLabel \"Thích\", quizTotalQuestions 2, quizBestPercent 100, conversationAnswers = []; item 11 (Cá heo tốt bụng): feeling null, feelingLabel null, quizTotalQuestions 0, quizBestPercent null",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1"],
+      ["ok", "Bản truyện không có scene thì totalPages = 0",
+        "200; item sessionId 11 (phiên bản 26) và 13 (phiên bản 21): totalPages = 0; pagesCompleted lần lượt 3 và 1; timeSpentSeconds 360 và 300",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1"],
+      ["ok", "Status=Completed viết rõ cho kết quả như mặc định",
+        "200; totalCount 5; thứ tự [102, 11, 13, 101, 1]",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?Status=Completed"],
+      ["edge", "Status viết thường \"completed\" và có khoảng trắng",
+        "200; kết quả như mặc định (totalCount 5)",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?Status=completed"],
+      ["edge", "Status rỗng",
+        "200; kết quả như mặc định (totalCount 5)",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?Status="],
+      ["ok", "Status=Unfinished: các lần chưa đọc xong, mới mở trước",
+        "200; totalCount 2; items.sessionId [104, 103]; cả hai status \"Reading\", completedAt null; 104: timeSpentSeconds 120, pagesCompleted 0, totalPages 0 (phiên bản 21); 103: timeSpentSeconds 30, pagesCompleted 1, totalPages 1",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?Status=Unfinished"],
+      ["edge", "Status=unfinished viết thường",
+        "200; totalCount 2; items.sessionId [104, 103]",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?Status=unfinished"],
+      ["ok", "Lọc ngày phiên đã xong: From = 7 ngày trước",
+        "200; totalCount 4; items.sessionId [102, 11, 13, 101]; phiên 1 (10 ngày trước) bị loại",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?From=<FROM_7D>"],
+      ["ok", "Lọc đủ From và To",
+        "200; totalCount 4; items.sessionId [102, 11, 13, 101]",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?From=<FROM_7D>&To=<TO_PLUS_1D>"],
+      ["edge", "Chỉ có To = 7 ngày trước: chỉ còn phiên cũ",
+        "200; totalCount 1; items.sessionId [1]",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?To=<FROM_7D>"],
+      ["edge", "Biên From tính cả mốc: From = đúng CompletedAt của phiên 101",
+        "200; phiên 101 có trong items (From inclusive); items.sessionId [102, 11, 13, 101]",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?From=<COMPLETED_AT_101>"],
+      ["edge", "Biên To không tính mốc: To = đúng CompletedAt của phiên 101",
+        "200; phiên 101 KHÔNG có trong items (To exclusive); items.sessionId [1]",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?To=<COMPLETED_AT_101>"],
+      ["edge", "Unfinished lọc theo StartedAt: From = 7 ngày trước",
+        "200; totalCount 1; items.sessionId [104]; phiên 103 (mở 12 ngày trước) bị loại",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?Status=Unfinished&From=<FROM_7D>"],
+      ["edge", "Khoảng ngày không có phiên nào",
+        "200; items = []; totalCount 0; totalPages 0; hasNextPage false",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?From=2020-01-01T00:00:00Z&To=2020-01-02T00:00:00Z"],
+      ["ok", "Bé Bình (hồ sơ 2): chưa đọc xong truyện nào",
+        "200; items = []; totalCount 0",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/2"],
+      ["ok", "Bé Bình: phiên đang đọc dở",
+        "200; totalCount 1; item sessionId 2, storyId 1, status \"Reading\", timeSpentSeconds 200, pagesCompleted 3, totalPages 1; không lẫn phiên của Bé An",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/2?Status=Unfinished"],
+      ["edge", "Phân trang: PageIndex=2, PageSize=2",
+        "200; pageIndex 2, pageSize 2, totalCount 5, totalPages 3; items.sessionId [13, 101]; hasPreviousPage true; hasNextPage true",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?PageIndex=2&PageSize=2"],
+      ["edge", "Trang cuối: PageIndex=3, PageSize=2",
+        "200; items.sessionId [1]; hasNextPage false",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?PageIndex=3&PageSize=2"],
+      ["edge", "PageIndex vượt quá số trang",
+        "200; items = []; totalCount vẫn 5",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?PageIndex=99&PageSize=2"],
+      ["edge", "PageSize quá lớn bị kẹp về 50",
+        "200; pageSize 50; items 5 dòng",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?PageSize=999"],
+      ["edge", "PageSize = 0 bị kẹp về 1",
+        "200; pageSize 1; items.sessionId [102]; totalPages 5",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?PageSize=0"],
+      ["edge", "PageIndex = 0 hoặc âm được coi là trang 1",
+        "200; pageIndex 1; items bắt đầu từ phiên 102",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?PageIndex=-5"],
+      ["neg", "Status không hợp lệ", "400 \"" + BAD_STATUS + "\"",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?Status=Deleted"],
+      ["neg", "Status là số", "400 \"" + BAD_STATUS + "\"",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?Status=1"],
+      ["neg", "From bằng To", "400 \"" + BAD_RANGE + "\"",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?From=2026-11-10T00:00:00Z&To=2026-11-10T00:00:00Z"],
+      ["neg", "From sau To", "400 \"" + BAD_RANGE + "\"",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?From=2026-11-12T00:00:00Z&To=2026-11-10T00:00:00Z"],
+      ["neg", "From sai định dạng", "400 \"" + BAD_INPUT + "\" kèm errors",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?From=abc"],
+      ["neg", "Không phải chủ hồ sơ (parent_demo2 xem Bé An)", "403 \"" + OWN + "\"; không lộ dữ liệu",
+        "Đăng nhập parent_demo2. GET /api/v1/ParentReadingFeedback/1"],
+      ["neg", "Hồ sơ không tồn tại", "403 \"" + OWN + "\"",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/99999"],
+      ["neg", "Gọi bằng token Moderator", "403 (body rỗng)"],
+      ["neg", "Gọi bằng token bé", "403 (body rỗng)"],
+      ["neg", "Không gửi token", "401"]
+    ] }
+  ]
+},
+// =====================================================================
+{
+  id: "t2", title: "Task 2 — Số lần đọc lại của mỗi truyện",
+  desc: "Mỗi dòng vẫn là 1 phiên đọc nhưng cho biết truyện đó bé đã đọc xong tổng cộng mấy lần (readCount, mọi thời điểm, không bị bộ lọc ngày cắt), dòng này là lần đọc xong thứ mấy (readOrdinal) và — với dòng chưa xong — sau đó bé đã đọc xong truyện chưa (laterCompleted).",
+  flow: [
+    "Bé An đọc xong truyện 1 ba lần: phiên 1 (10 ngày trước), 101 (5 ngày), 102 (30 giờ).",
+    "Gọi danh sách Completed rồi Unfinished để so readCount / readOrdinal / laterCompleted.",
+    "Thử bộ lọc ngày (readCount không đổi) và phiên đã xóa mềm."
+  ],
+  apis: [
+  { m: "GET", p: "/api/v1/ParentReadingFeedback/{childProfileId}  (readCount · readOrdinal · laterCompleted)", role: "User (chủ hồ sơ)",
+    what: "Cùng API danh sách ở Task 1, tập trung vào 3 trường mới: readCount, readOrdinal, laterCompleted.",
+    detail: [
+      ["Cách tính", [
+        "readCount = số phiên Completed chưa xóa của bé trên cùng StoryId (mọi thời điểm, dù bộ lọc ngày có cắt hay không).",
+        "readOrdinal = vị trí của phiên trong danh sách các lần đọc xong của truyện, sắp theo CompletedAt tăng dần rồi Id tăng dần (1 = lần đầu); null với dòng chưa xong.",
+        "laterCompleted = true khi dòng chưa xong và có một lần đọc xong của cùng truyện với CompletedAt > StartedAt của dòng đó; dòng đã xong luôn false."
+      ]]
+    ],
+    resp: J({ success: true, message: "Lấy danh sách truyện con đã đọc thành công.", data: paged([{ sessionId: 102, storyId: 1, status: "Completed", readCount: 3, readOrdinal: 3, laterCompleted: false }], 5), errors: null }),
+    tests: [
+      ["ok", "Truyện 1 đọc 3 lần: readCount và readOrdinal theo thứ tự thời gian",
+        "200; items 102: readCount 3, readOrdinal 3; items 101: readCount 3, readOrdinal 2; items 1: readCount 3, readOrdinal 1; laterCompleted = false cho cả 3",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1"],
+      ["ok", "Truyện chỉ đọc 1 lần",
+        "200; items 11 (truyện 21) và 13 (truyện 16): readCount 1, readOrdinal 1",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1"],
+      ["edge", "Bộ lọc ngày không làm đổi readCount",
+        "200; chỉ còn items [102, 11, 13, 101]; 102: readCount 3, readOrdinal 3; 101: readCount 3, readOrdinal 2 (lần đọc 1 ở ngoài khoảng vẫn được đếm)",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?From=<FROM_7D>"],
+      ["ok", "Dòng chưa xong mà truyện đó đã đọc xong sau đó",
+        "200; item 103 (truyện 1, mở 12 ngày trước): readCount 3, readOrdinal null, laterCompleted true",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?Status=Unfinished"],
+      ["ok", "Dòng chưa xong và truyện chưa đọc xong lần nào sau đó",
+        "200; item 104 (truyện 16, mở 1 ngày trước, phiên 13 xong 3 ngày trước): readCount 1, readOrdinal null, laterCompleted false",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?Status=Unfinished"],
+      ["edge", "Bé Bình đang đọc dở truyện 1 không bị tính theo lần đọc của Bé An",
+        "200; item 2: readCount 0, readOrdinal null, laterCompleted false",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/2?Status=Unfinished"],
+      ["edge", "(SQL) Phiên đã xóa mềm không được đếm",
+        "Sau khi chạy SQL: items không còn 101; 102: readCount 2, readOrdinal 2; 1: readCount 2, readOrdinal 1; totalCount 4",
+        "Chạy SQL: UPDATE reading_sessions SET \"IsDeleted\"=true WHERE \"Id\"=101; rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: UPDATE reading_sessions SET \"IsDeleted\"=false WHERE \"Id\"=101;"],
+      ["neg", "Không phải chủ hồ sơ", "403 \"" + OWN + "\"",
+        "Đăng nhập parent_demo2. GET /api/v1/ParentReadingFeedback/1"],
+      ["neg", "Không gửi token", "401"]
+    ] }
+  ]
+},
+// =====================================================================
+{
+  id: "t3", title: "Task 3 — Chi tiết câu đố (số lần làm, điểm gần nhất, từng câu)",
+  desc: "Trên mỗi dòng của danh sách có thêm quizRunCount (số lần làm) và quizLatestPercent (điểm lần gần nhất) bên cạnh quizBestPercent. API mới GET .../sessions/{sessionId}/quiz trả chi tiết: từng lần làm và từng câu hỏi (đáp án đúng, câu bé chọn gần nhất, số lần trả lời, số lần đúng). Một \"lần làm\" bắt đầu khi bé trả lời lại một câu đã có trong lần hiện tại; câu bỏ qua tính là chưa đúng.",
+  flow: [
+    "Phiên bản 1 có 2 câu: câu 1 (MultipleChoice) và câu 101 (TrueFalse).",
+    "Lịch sử trả lời theo Id: A1 phiên 1 câu 1 đúng → A101 phiên 101 câu 1 sai → A102 phiên 101 câu 101 đúng → A103 phiên 102 câu 1 đúng → A104 phiên 102 câu 101 đúng.",
+    "Tách thành 3 lần: [A1] = 1 đúng / 2 câu = 50%; [A101, A102] = 1/2 = 50%; [A103, A104] = 2/2 = 100%.",
+    "Gọi danh sách để xem quizRunCount / quizLatestPercent, rồi gọi API chi tiết."
+  ],
+  apis: [
+  { m: "GET", p: "/api/v1/ParentReadingFeedback/{childProfileId}  (quizRunCount · quizLatestPercent)", role: "User (chủ hồ sơ)",
+    what: "Danh sách ở Task 1, tập trung vào hai trường mới của câu đố. Quiz tính trên mọi lần đọc của bé với cùng truyện (không chỉ phiên của dòng đó).",
+    detail: [
+      ["Cách tính", [
+        "quizTotalQuestions = số câu chưa xóa của phiên bản truyện; 0 thì quizBestPercent = null, quizRunCount = 0, quizLatestPercent = null.",
+        "Mỗi lần làm: phần trăm = số câu đúng / quizTotalQuestions × 100, làm tròn 1 chữ số.",
+        "quizBestPercent = lớn nhất trong các lần; quizLatestPercent = của lần làm cuối; quizRunCount = số lần làm."
+      ]]
+    ],
+    resp: J({ success: true, message: "Lấy danh sách truyện con đã đọc thành công.", data: paged([{ sessionId: 102, quizTotalQuestions: 2, quizBestPercent: 100, quizRunCount: 3, quizLatestPercent: 100 }], 5), errors: null }),
+    tests: [
+      ["ok", "Truyện 1 làm quiz 3 lần",
+        "200; các item 102, 101, 1 (cùng truyện 1) đều có quizTotalQuestions 2, quizRunCount 3, quizBestPercent 100, quizLatestPercent 100",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1"],
+      ["ok", "Truyện không có quiz",
+        "200; item 11 và 13: quizTotalQuestions 0, quizBestPercent null, quizRunCount 0, quizLatestPercent null",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1"],
+      ["edge", "Có quiz nhưng bé chưa làm lần nào",
+        "200; item 2 (Bé Bình, truyện 1): quizTotalQuestions 2, quizBestPercent null, quizRunCount 0, quizLatestPercent null (lịch sử của Bé An không lẫn sang)",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/2?Status=Unfinished"],
+      ["edge", "(SQL) Điểm gần nhất thấp hơn điểm tốt nhất",
+        "Sau khi chạy SQL: bé làm thêm lần 4 chỉ trả lời câu 1 sai → quizRunCount 4, quizLatestPercent 0, quizBestPercent vẫn 100 (câu bỏ qua tính chưa đúng)",
+        "Chạy SQL: INSERT INTO quiz_attempts (\"Id\",\"QuizItemId\",\"ReadingSessionId\",\"AnswerGiven\",\"IsCorrect\",\"AnsweredAt\",\"CreatedAt\",\"IsDeleted\") VALUES (105,1,102,'Chú Ruồi',false,NOW(),NOW(),false); rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: DELETE FROM quiz_attempts WHERE \"Id\"=105;"]
+    ] },
+  { m: "GET", p: "/api/v1/ParentReadingFeedback/{childProfileId}/sessions/{sessionId}/quiz", role: "User (chủ hồ sơ)",
+    what: "Chi tiết câu đố của truyện trong phiên đọc: các lần làm và từng câu hỏi với câu trả lời gần nhất. Dùng được với phiên ở bất kỳ trạng thái nào; kết quả tính trên mọi lần đọc của bé với cùng truyện nên mở phiên 1, 101, 102 hay 103 đều ra cùng số liệu (chỉ sessionId khác).",
+    detail: [
+      ["Hệ thống kiểm lần lượt", [
+        "Role User, có token → nếu không: 401 / 403 (body rỗng).",
+        "Hồ sơ thuộc người gọi → nếu không: 403 \"" + OWN + "\".",
+        "Phiên tồn tại, chưa xóa và thuộc đúng hồ sơ → nếu không: 404 \"Không tìm thấy Phiên đọc với mã định danh [id].\"."
+      ]],
+      ["Kết quả", [
+        "sessionId, storyId, title, totalQuestions.",
+        "runs[]: runNo (1 = lần đầu), answered, correct, percent.",
+        "questions[] (sắp theo Id câu): quizItemId, type, question, choices (rỗng với ShortAnswer; TrueFalse không có lựa chọn lưu thì mặc định [\"Đúng\",\"Sai\"]), correctAnswer, explanation, latestAnswer, latestIsCorrect, timesAnswered, timesCorrect."
+      ]]
+    ],
+    resp: J({ success: true, message: "Lấy chi tiết câu đố của con thành công.", data: {
+      sessionId: 102, storyId: 1, title: "Chú Thỏ Thông Minh - Bản 1", totalQuestions: 2,
+      runs: [{ runNo: 1, answered: 1, correct: 1, percent: 50 }, { runNo: 2, answered: 2, correct: 1, percent: 50 }, { runNo: 3, answered: 2, correct: 2, percent: 100 }],
+      questions: [
+        { quizItemId: 1, type: "MultipleChoice", question: "Nhân vật chính trong câu chuyện là ai?", choices: ["Chú Thỏ", "Chú Ruồi", "Chú Rùa"], correctAnswer: "Chú Thỏ", explanation: null, latestAnswer: "Chú Thỏ", latestIsCorrect: true, timesAnswered: 3, timesCorrect: 2 },
+        { quizItemId: 101, type: "TrueFalse", question: "Chú Thỏ sống trong khu rừng.", choices: ["Dung", "Sai"], correctAnswer: "Dung", explanation: null, latestAnswer: "Dung", latestIsCorrect: true, timesAnswered: 2, timesCorrect: 2 }
+      ] }, errors: null }),
+    tests: [
+      ["ok", "Chi tiết quiz của phiên 102",
+        "200; message \"Lấy chi tiết câu đố của con thành công.\"; sessionId 102, storyId 1, title \"Chú Thỏ Thông Minh - Bản 1\", totalQuestions 2; runs = [{1,answered 1,correct 1,50},{2,2,1,50},{3,2,2,100}]",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/102/quiz"],
+      ["ok", "Câu 1 (MultipleChoice) có đủ chi tiết",
+        "200; question quizItemId 1: type \"MultipleChoice\", choices [\"Chú Thỏ\",\"Chú Ruồi\",\"Chú Rùa\"], correctAnswer \"Chú Thỏ\", explanation null, latestAnswer \"Chú Thỏ\", latestIsCorrect true, timesAnswered 3, timesCorrect 2",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/102/quiz"],
+      ["ok", "Câu 101 (TrueFalse)",
+        "200; question quizItemId 101: type \"TrueFalse\", choices [\"Dung\",\"Sai\"], correctAnswer \"Dung\", latestAnswer \"Dung\", latestIsCorrect true, timesAnswered 2, timesCorrect 2; questions sắp theo Id: [1, 101]",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/102/quiz"],
+      ["ok", "Mở bằng phiên cũ (phiên 1) cho cùng số liệu của truyện",
+        "200; sessionId 1; totalQuestions 2; runs và questions giống phiên 102 (tính theo mọi lần đọc truyện 1 của Bé An)",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/1/quiz"],
+      ["ok", "Mở bằng phiên chưa đọc xong (phiên 103)",
+        "200; sessionId 103; cùng runs / questions của truyện 1 (không yêu cầu phiên đã Completed)",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/103/quiz"],
+      ["edge", "Truyện không có quiz (phiên 11)",
+        "200; title \"Cá heo tốt bụng\"; totalQuestions 0; runs = []; questions = []",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/11/quiz"],
+      ["edge", "Bé chưa làm quiz (Bé Bình, phiên 2)",
+        "200; totalQuestions 2; runs = []; questions có 2 câu: timesAnswered 0, timesCorrect 0, latestAnswer null, latestIsCorrect null",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/2/sessions/2/quiz"],
+      ["edge", "(SQL) Thêm câu tự luận ShortAnswer: phần trăm chia lại theo 3 câu",
+        "Sau khi chạy SQL: totalQuestions 3; runs percent [33.3, 33.3, 66.7]; question quizItemId 102: type \"ShortAnswer\", choices = [], correctAnswer \"Rừng xanh\", latestAnswer null, timesAnswered 0",
+        "Chạy SQL: INSERT INTO quiz_items (\"Id\",\"StoryVersionId\",\"Type\",\"Question\",\"Choices\",\"CorrectAnswer\",\"CreatedAt\",\"IsDeleted\") VALUES (102,1,'ShortAnswer','Chú Thỏ sống ở đâu?',NULL,'Rừng xanh',NOW(),false); rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/102/quiz  Hoàn tác: DELETE FROM quiz_items WHERE \"Id\"=102;"],
+      ["edge", "(SQL) Câu quiz đã xóa mềm không còn trong chi tiết",
+        "Sau khi chạy SQL: totalQuestions 1; questions chỉ còn câu 1; runs: lần 1 = 1/1 = 100%",
+        "Chạy SQL: UPDATE quiz_items SET \"IsDeleted\"=true WHERE \"Id\"=101; rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/102/quiz  Hoàn tác: UPDATE quiz_items SET \"IsDeleted\"=false WHERE \"Id\"=101;"],
+      ["neg", "Phiên của bé khác (phiên 2 của Bé Bình, gọi với hồ sơ 1)",
+        "404 \"" + NO_SESSION(2) + "\"",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/2/quiz"],
+      ["neg", "Phiên không tồn tại", "404 \"" + NO_SESSION(99999) + "\"",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/99999/quiz"],
+      ["neg", "Phiên của hồ sơ khác phụ huynh (phiên 3 của Bé Chi, gọi với hồ sơ 1)", "404 \"" + NO_SESSION(3) + "\"",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/3/quiz"],
+      ["neg", "(SQL) Phiên đã xóa mềm", "404 \"" + NO_SESSION(101) + "\"",
+        "Chạy SQL: UPDATE reading_sessions SET \"IsDeleted\"=true WHERE \"Id\"=101; rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/101/quiz  Hoàn tác: UPDATE reading_sessions SET \"IsDeleted\"=false WHERE \"Id\"=101;"],
+      ["neg", "Không phải chủ hồ sơ", "403 \"" + OWN + "\"",
+        "Đăng nhập parent_demo2. GET /api/v1/ParentReadingFeedback/1/sessions/102/quiz"],
+      ["neg", "sessionId không phải số", "404 (route ràng buộc :int, body rỗng)",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/abc/quiz"],
+      ["neg", "Gọi bằng token Moderator", "403 (body rỗng)"],
+      ["neg", "Gọi bằng token bé", "403 (body rỗng)"],
+      ["neg", "Không gửi token", "401"]
+    ] }
+  ]
+},
+// =====================================================================
+{
+  id: "t4", title: "Task 4 — Kết quả đọc to (luyện đọc thành tiếng)",
+  desc: "Khi bé đọc to một đoạn, ChildReadAloudService chấm từng chữ và ghi TelemetryLog loại AsrWordResult với payload {segmentId, total, good, retry, skipped}. Telemetry chỉ có số đếm; file lần đọc gần nhất được lưu cho chủ hồ sơ nghe và xóa. Mỗi dòng danh sách có readAloud (null nếu chưa đọc to) và readAloudRecordingCount (số bản ghi nghe được). Upload lỗi vẫn trả điểm; không tạo bản ghi mới. Seed không có file ghi âm thật.",
+  flow: [
+    "Phiên 101 có 4 dòng AsrWordResult: đoạn 1 lần 1 (good 4), đoạn 1 lần 2 (good 9), đoạn 2 (good 7) và 1 dòng payload hỏng.",
+    "Lấy lần cuối mỗi đoạn: đoạn 1 = 9/10, đoạn 2 = 7/10 → goodWords 16, retryWords 1 + 2 = 3, totalWords 20 → 80%.",
+    "Gọi danh sách để xem readAloud của từng dòng."
+  ],
+  apis: [
+  { m: "GET", p: "/api/v1/ParentReadingFeedback/{childProfileId}  (readAloud)", role: "User (chủ hồ sơ)",
+    what: "Danh sách ở Task 1, tập trung vào trường readAloud.",
+    detail: [
+      ["Cách tính", [
+        "Chỉ đọc TelemetryLog EventType = AsrWordResult của chính phiên đó, chưa xóa, sắp theo OccurredAt rồi Id.",
+        "Dòng payload không phải JSON, không phải object hoặc thiếu một trong segmentId / total / good / retry (không phải số nguyên) thì bỏ qua, không gây lỗi.",
+        "attempts = số dòng hợp lệ; segmentsPracticed = số segmentId khác nhau; goodWords / retryWords / totalWords cộng theo lần cuối của mỗi đoạn; goodPercent = goodWords / totalWords × 100 (1 chữ số, totalWords 0 → 0).",
+        "Không có dòng hợp lệ nào → readAloud = null."
+      ]]
+    ],
+    resp: J({ success: true, message: "Lấy danh sách truyện con đã đọc thành công.", data: paged([{ sessionId: 101, readAloud: row101.readAloud }], 5), errors: null }),
+    tests: [
+      ["ok", "Phiên 101: gộp 3 lần đọc to, mỗi đoạn lấy lần cuối",
+        "200; item 101: readAloud = { attempts 3, segmentsPracticed 2, goodWords 16, retryWords 3, totalWords 20, goodPercent 80 }; dòng payload hỏng không được tính",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1"],
+      ["ok", "Phiên chưa từng đọc to",
+        "200; item 102, 11, 13, 1: readAloud = null (telemetry của phiên 101 không lẫn sang)",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1"],
+      ["edge", "(SQL) Đọc lại đoạn 1 lần thứ 3: dùng lần cuối",
+        "Sau khi chạy SQL: readAloud phiên 101 = { attempts 4, segmentsPracticed 2, goodWords 17, retryWords 2, totalWords 20, goodPercent 85 }",
+        "Chạy SQL: INSERT INTO telemetry_logs (\"Id\",\"ReadingSessionId\",\"EventType\",\"EventPayload\",\"OccurredAt\",\"CreatedAt\",\"IsDeleted\") VALUES (110,101,'AsrWordResult','{\"segmentId\":1,\"total\":10,\"good\":10,\"retry\":0,\"skipped\":0}',NOW()-INTERVAL '5 days'+INTERVAL '9 minutes',NOW(),false); rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: DELETE FROM telemetry_logs WHERE \"Id\"=110;"],
+      ["edge", "(SQL) Lần đọc sau tệ hơn vẫn lấy lần cuối",
+        "Sau khi chạy SQL: đoạn 1 lần cuối good 2 → readAloud phiên 101 = { attempts 4, segmentsPracticed 2, goodWords 9, retryWords 7, totalWords 20, goodPercent 45 }",
+        "Chạy SQL: INSERT INTO telemetry_logs (\"Id\",\"ReadingSessionId\",\"EventType\",\"EventPayload\",\"OccurredAt\",\"CreatedAt\",\"IsDeleted\") VALUES (111,101,'AsrWordResult','{\"segmentId\":1,\"total\":10,\"good\":2,\"retry\":6,\"skipped\":2}',NOW()-INTERVAL '5 days'+INTERVAL '9 minutes',NOW(),false); rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: DELETE FROM telemetry_logs WHERE \"Id\"=111;"],
+      ["edge", "(SQL) Payload thiếu trường thì bỏ qua",
+        "Sau khi chạy SQL: phiên 102 vẫn readAloud = null (payload thiếu good / retry)",
+        "Chạy SQL: INSERT INTO telemetry_logs (\"Id\",\"ReadingSessionId\",\"EventType\",\"EventPayload\",\"OccurredAt\",\"CreatedAt\",\"IsDeleted\") VALUES (112,102,'AsrWordResult','{\"segmentId\":1,\"total\":10}',NOW(),NOW(),false); rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: DELETE FROM telemetry_logs WHERE \"Id\"=112;"],
+      ["edge", "(SQL) Telemetry đã xóa mềm không được tính",
+        "Sau khi chạy SQL: readAloud phiên 101 = { attempts 2, segmentsPracticed 2, goodWords 16, retryWords 3, totalWords 20, goodPercent 80 } (lần 1 của đoạn 1 bị bỏ nhưng kết quả cuối của đoạn không đổi)",
+        "Chạy SQL: UPDATE telemetry_logs SET \"IsDeleted\"=true WHERE \"Id\"=101; rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: UPDATE telemetry_logs SET \"IsDeleted\"=false WHERE \"Id\"=101;"],
+      ["edge", "(SQL) Chỉ chứa số đếm, không có âm thanh hay lời bé nói",
+        "Mọi dòng EventPayload của AsrWordResult chỉ có các khóa segmentId, total, good, retry, skipped (không có khóa nào chứa nội dung nói / đường dẫn file)",
+        "Chạy: SELECT \"Id\",\"EventPayload\" FROM telemetry_logs WHERE \"EventType\"='AsrWordResult' ORDER BY \"Id\";"],
+      ["neg", "Không phải chủ hồ sơ", "403 \"" + OWN + "\"",
+        "Đăng nhập parent_demo2. GET /api/v1/ParentReadingFeedback/1"],
+      ["neg", "Không gửi token", "401"]
+    ] }
+  ]
+},
+// =====================================================================
+{
+  id: "t5", title: "Task 5 — EXP nhận được và từ vựng bé lưu",
+  desc: "Mỗi dòng danh sách có expEarned (tổng EXP bé nhận trong phiên: đọc xong, đúng câu đố, lưu từ — lấy từ TelemetryLog RewardGranted) và wordsCollected (từ bé lưu LẦN ĐẦU vào sổ trong phiên đó — lấy từ TelemetryLog VocabularyCollected, theo thứ tự lưu, kèm chữ lấy từ story_vocabulary).",
+  flow: [
+    "Phiên 101: RewardGranted 20 + 5 → expEarned 25; VocabularyCollected id 2 rồi id 1 → wordsCollected [dũng cảm, thông minh].",
+    "Phiên 102: RewardGranted 10 → expEarned 10, chưa lưu từ nào.",
+    "Gọi danh sách để kiểm tra; thử các telemetry bất thường bằng SQL."
+  ],
+  apis: [
+  { m: "GET", p: "/api/v1/ParentReadingFeedback/{childProfileId}  (expEarned · wordsCollected)", role: "User (chủ hồ sơ)",
+    what: "Danh sách ở Task 1, tập trung vào expEarned và wordsCollected.",
+    detail: [
+      ["Cách tính", [
+        "expEarned = tổng trường \"exp\" (số nguyên > 0) của các dòng RewardGranted chưa xóa của phiên; dòng payload hỏng, exp ≤ 0 hoặc không phải số thì bỏ qua.",
+        "wordsCollected = các vocabularyId từ dòng VocabularyCollected của phiên, sắp theo OccurredAt rồi Id, bỏ trùng; chỉ giữ id còn tìm thấy trong story_vocabulary (mỗi phần tử gồm vocabularyId, term)."
+      ]],
+      ["Lưu ý", ["Từ bé lưu lại sau khi đã gỡ khỏi sổ không ghi telemetry mới (đúng thiết kế: không cộng EXP lần hai) nên không hiện ở phiên sau."]]
+    ],
+    resp: J({ success: true, message: "Lấy danh sách truyện con đã đọc thành công.", data: paged([{ sessionId: 101, expEarned: 25, wordsCollected: row101.wordsCollected }], 5), errors: null }),
+    tests: [
+      ["ok", "Phiên 101: tổng EXP và 2 từ đã lưu theo thứ tự",
+        "200; item 101: expEarned 25; wordsCollected = [{ vocabularyId 2, term \"dũng cảm\" }, { vocabularyId 1, term \"thông minh\" }]",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1"],
+      ["ok", "Phiên 102: có EXP nhưng chưa lưu từ",
+        "200; item 102: expEarned 10; wordsCollected = []",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1"],
+      ["ok", "Phiên không có telemetry thưởng",
+        "200; item 1, 11, 13: expEarned 0; wordsCollected = []",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1"],
+      ["edge", "(SQL) Từ vựng không còn tồn tại thì bỏ qua",
+        "Sau khi chạy SQL: wordsCollected phiên 101 vẫn chỉ có 2 phần tử (vocabularyId 999 bị bỏ)",
+        "Chạy SQL: INSERT INTO telemetry_logs (\"Id\",\"ReadingSessionId\",\"EventType\",\"EventPayload\",\"OccurredAt\",\"CreatedAt\",\"IsDeleted\") VALUES (120,101,'VocabularyCollected','{\"vocabularyId\":999}',NOW(),NOW(),false); rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: DELETE FROM telemetry_logs WHERE \"Id\"=120;"],
+      ["edge", "(SQL) Cùng một từ ghi hai lần thì chỉ hiện một lần",
+        "Sau khi chạy SQL: wordsCollected phiên 101 vẫn [2, 1] (không có phần tử thứ ba)",
+        "Chạy SQL: INSERT INTO telemetry_logs (\"Id\",\"ReadingSessionId\",\"EventType\",\"EventPayload\",\"OccurredAt\",\"CreatedAt\",\"IsDeleted\") VALUES (121,101,'VocabularyCollected','{\"vocabularyId\":2}',NOW(),NOW(),false); rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: DELETE FROM telemetry_logs WHERE \"Id\"=121;"],
+      ["edge", "(SQL) EXP bằng 0 hoặc âm không được cộng",
+        "Sau khi chạy SQL: expEarned phiên 101 vẫn 25",
+        "Chạy SQL: INSERT INTO telemetry_logs (\"Id\",\"ReadingSessionId\",\"EventType\",\"EventPayload\",\"OccurredAt\",\"CreatedAt\",\"IsDeleted\") VALUES (122,101,'RewardGranted','{\"exp\":0,\"reason\":\"RoadmapFinished\"}',NOW(),NOW(),false),(123,101,'RewardGranted','{\"exp\":-5,\"reason\":\"x\"}',NOW(),NOW(),false); rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: DELETE FROM telemetry_logs WHERE \"Id\" IN (122,123);"],
+      ["edge", "(SQL) Payload exp không phải số thì bỏ qua",
+        "Sau khi chạy SQL: expEarned phiên 101 vẫn 25",
+        "Chạy SQL: INSERT INTO telemetry_logs (\"Id\",\"ReadingSessionId\",\"EventType\",\"EventPayload\",\"OccurredAt\",\"CreatedAt\",\"IsDeleted\") VALUES (124,101,'RewardGranted','{\"exp\":\"20\"}',NOW(),NOW(),false),(125,101,'RewardGranted','[]',NOW(),NOW(),false); rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: DELETE FROM telemetry_logs WHERE \"Id\" IN (124,125);"],
+      ["edge", "(SQL) Telemetry đã xóa mềm không được tính",
+        "Sau khi chạy SQL: expEarned phiên 101 = 5 (mất dòng 20)",
+        "Chạy SQL: UPDATE telemetry_logs SET \"IsDeleted\"=true WHERE \"Id\"=105; rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: UPDATE telemetry_logs SET \"IsDeleted\"=false WHERE \"Id\"=105;"],
+      ["ok", "Đối chiếu với luồng thật của bé (tạo telemetry bằng API phía bé)",
+        "Bé lưu từ mới ở phiên đang đọc rồi phụ huynh gọi lại danh sách: wordsCollected của phiên đó có thêm từ vừa lưu; expEarned tăng đúng bằng EXP bé nhận (xem phản hồi API lưu từ của bé: expGained)",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?Status=Unfinished"],
+      ["neg", "Không phải chủ hồ sơ", "403 \"" + OWN + "\"",
+        "Đăng nhập parent_demo2. GET /api/v1/ParentReadingFeedback/1"],
+      ["neg", "Không gửi token", "401"]
+    ] }
+  ]
+},
+// =====================================================================
+{
+  id: "t6", title: "Task 6 — Chế độ đọc của từng lần đọc (nghe là chính / tự đọc)",
+  desc: "Cột mới reading_sessions.ReadingMode (nullable, lưu chuỗi) ghi chế độ bé dùng trong phiên, cập nhật mỗi lần bé lưu tiến độ có gửi readingMode. Danh sách phụ huynh trả readingMode (\"ListenFirst\" / \"ReadFirst\" / null với phiên cũ chưa ghi). Trước đây chế độ chỉ lưu theo truyện (ReadingProgress.LastReadingMode) nên không phân biệt được từng lần đọc.",
+  flow: [
+    "Phiên 101 = ListenFirst, phiên 102 = ReadFirst (theo seed), phiên 1 / 103 chưa có chế độ.",
+    "Gọi danh sách để xem readingMode.",
+    "Lấy token bé 1 rồi PUT /api/v1/child/reading/sessions/103/progress để ghi chế độ; gọi lại danh sách Unfinished.",
+    "Thử các lỗi: chế độ lạ, trang sai, phiên đã xong, phiên của bé khác."
+  ],
+  apis: [
+  { m: "GET", p: "/api/v1/ParentReadingFeedback/{childProfileId}  (readingMode)", role: "User (chủ hồ sơ)",
+    what: "Danh sách ở Task 1, tập trung vào trường readingMode.",
+    detail: [["Cách tính", ["readingMode = ReadingSession.ReadingMode dạng chuỗi; null nếu phiên chưa từng ghi chế độ (kể cả toàn bộ phiên tạo trước migration)."]]],
+    resp: J({ success: true, message: "Lấy danh sách truyện con đã đọc thành công.", data: paged([{ sessionId: 102, readingMode: "ReadFirst" }], 5), errors: null }),
+    tests: [
+      ["ok", "Mỗi phiên trả chế độ riêng của nó",
+        "200; item 102: readingMode \"ReadFirst\"; item 101: \"ListenFirst\"; item 1, 11, 13: null",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1"],
+      ["ok", "Phiên chưa xong chưa ghi chế độ",
+        "200; item 103 và 104: readingMode null",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?Status=Unfinished"],
+      ["ok", "Sau khi bé lưu tiến độ ở phiên 103 với ListenFirst (xem API bên dưới)",
+        "200; item 103: readingMode \"ListenFirst\"; phiên 104 vẫn null",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?Status=Unfinished"],
+      ["neg", "Không phải chủ hồ sơ", "403 \"" + OWN + "\"",
+        "Đăng nhập parent_demo2. GET /api/v1/ParentReadingFeedback/1"],
+      ["neg", "Không gửi token", "401"],
+      ["edge", "(SQL) Cột có đúng kiểu, nullable, các phiên cũ là NULL",
+        "Cột ReadingMode: data_type character varying, character_maximum_length 20, is_nullable YES; phiên 1, 11, 13, 103, 104 có ReadingMode NULL",
+        "Chạy: SELECT column_name,data_type,character_maximum_length,is_nullable FROM information_schema.columns WHERE table_name='reading_sessions' AND column_name='ReadingMode'; rồi SELECT \"Id\",\"ReadingMode\" FROM reading_sessions WHERE \"ChildProfileId\"=1 ORDER BY \"Id\";"]
+    ] },
+  { m: "PUT", p: "/api/v1/child/reading/sessions/{sessionId}/progress", role: "Bé (ChildSession)",
+    what: "API phía bé lưu tiến độ (trang, chế độ đọc, số giây). Task 6 chỉ thêm đúng 1 việc: khi request có readingMode hợp lệ thì ghi thêm vào chính phiên (session.ReadingMode). Các hành vi khác giữ nguyên.",
+    detail: [
+      ["Hệ thống kiểm lần lượt", [
+        "Token bé hợp lệ, phiên thuộc đúng bé → nếu không: 404 \"Không tìm thấy Phiên đọc với mã định danh [id].\".",
+        "Phiên chưa bị ngắt (ForceExited) và còn đang đọc → nếu không: 403 / 409 \"Phiên đọc này đã kết thúc.\".",
+        "page ≥ 1 và có scene tương ứng (page − 1 = SceneIndex) → nếu không: 400 \"Trang này không có trong truyện.\".",
+        "readingMode (nếu có) là tên ListenFirst / ReadFirst đúng chữ, không phân biệt hoa thường; số hoặc chữ lạ → 400 \"Chế độ đọc không hợp lệ.\"."
+      ]],
+      ["Xử lý", [
+        "Ghi ReadingProgress.LastPageRead / LastReadingMode (theo truyện) VÀ ReadingSession.ReadingMode (theo phiên, chỉ khi có gửi readingMode).",
+        "Không gửi readingMode: giữ nguyên chế độ đã lưu của phiên.",
+        "Cộng addedSeconds (kẹp trong giới hạn) vào timeSpentSeconds, đưa phiên sang Reading, ghi telemetry PageViewed."
+      ]]
+    ],
+    body: J({ page: 1, readingMode: "ListenFirst", addedSeconds: 10 }),
+    resp: J({ success: true, message: "Thao tác thành công.", data: { sessionId: 103, page: 1, readingMode: "ListenFirst", timeSpentSeconds: 40 }, errors: null }),
+    tests: [
+      ["ok", "Bé lưu tiến độ với chế độ ListenFirst",
+        "200; data.sessionId 103, page 1, readingMode \"ListenFirst\", timeSpentSeconds 40 (30 + 10); reading_sessions.ReadingMode của phiên 103 = 'ListenFirst'",
+        "Token bé 1 (EasyLogin secret demo-qr-child-01). PUT /api/v1/child/reading/sessions/103/progress với { \"page\": 1, \"readingMode\": \"ListenFirst\", \"addedSeconds\": 10 }"],
+      ["edge", "Không gửi readingMode: chế độ của phiên được giữ nguyên",
+        "200; timeSpentSeconds 45; reading_sessions.ReadingMode của phiên 103 vẫn 'ListenFirst'",
+        "Token bé 1 (EasyLogin secret demo-qr-child-01). PUT /api/v1/child/reading/sessions/103/progress với { \"page\": 1, \"addedSeconds\": 5 }"],
+      ["ok", "Đổi sang ReadFirst: lấy lần lưu gần nhất",
+        "200; data.readingMode \"ReadFirst\"; phiên 103 ReadingMode = 'ReadFirst'",
+        "Token bé 1 (EasyLogin secret demo-qr-child-01). PUT /api/v1/child/reading/sessions/103/progress với { \"page\": 1, \"readingMode\": \"ReadFirst\", \"addedSeconds\": 0 }"],
+      ["edge", "Chế độ viết thường được chấp nhận và chuẩn hóa",
+        "200; data.readingMode \"ListenFirst\"; phiên 103 ReadingMode = 'ListenFirst' (lưu đúng tên enum, không lưu chữ thường)",
+        "Token bé 1 (EasyLogin secret demo-qr-child-01). PUT /api/v1/child/reading/sessions/103/progress với { \"page\": 1, \"readingMode\": \"listenfirst\", \"addedSeconds\": 0 }"],
+      ["edge", "readingMode rỗng / khoảng trắng coi như không gửi",
+        "200; chế độ của phiên không đổi",
+        "Token bé 1 (EasyLogin secret demo-qr-child-01). PUT /api/v1/child/reading/sessions/103/progress với { \"page\": 1, \"readingMode\": \"  \", \"addedSeconds\": 0 }"],
+      ["neg", "Chế độ lạ", "400 \"Chế độ đọc không hợp lệ.\"; ReadingMode của phiên không đổi",
+        "Token bé 1 (EasyLogin secret demo-qr-child-01). PUT /api/v1/child/reading/sessions/103/progress với { \"page\": 1, \"readingMode\": \"Foo\", \"addedSeconds\": 0 }"],
+      ["neg", "Chế độ là số", "400 \"Chế độ đọc không hợp lệ.\"",
+        "Token bé 1 (EasyLogin secret demo-qr-child-01). PUT /api/v1/child/reading/sessions/103/progress với { \"page\": 1, \"readingMode\": \"1\", \"addedSeconds\": 0 }"],
+      ["neg", "Trang không có trong truyện", "400 \"Trang này không có trong truyện.\"",
+        "Token bé 1 (EasyLogin secret demo-qr-child-01). PUT /api/v1/child/reading/sessions/103/progress với { \"page\": 99, \"readingMode\": \"ReadFirst\", \"addedSeconds\": 0 }"],
+      ["neg", "Trang 0", "400 \"Trang này không có trong truyện.\"",
+        "Token bé 1 (EasyLogin secret demo-qr-child-01). PUT /api/v1/child/reading/sessions/103/progress với { \"page\": 0, \"readingMode\": \"ReadFirst\", \"addedSeconds\": 0 }"],
+      ["neg", "Phiên bản truyện không có scene (phiên 104) → trang 1 cũng không có", "400 \"Trang này không có trong truyện.\"",
+        "Token bé 1 (EasyLogin secret demo-qr-child-01). PUT /api/v1/child/reading/sessions/104/progress với { \"page\": 1, \"readingMode\": \"ReadFirst\", \"addedSeconds\": 0 }"],
+      ["neg", "Phiên đã đọc xong (phiên 101)", "409 \"Phiên đọc này đã kết thúc.\"; ReadingMode của phiên 101 vẫn 'ListenFirst'",
+        "Token bé 1 (EasyLogin secret demo-qr-child-01). PUT /api/v1/child/reading/sessions/101/progress với { \"page\": 1, \"readingMode\": \"ReadFirst\", \"addedSeconds\": 0 }"],
+      ["neg", "Phiên của bé khác (phiên 2 của Bé Bình)", "404 \"" + NO_SESSION(2) + "\"",
+        "Token bé 1 (EasyLogin secret demo-qr-child-01). PUT /api/v1/child/reading/sessions/2/progress với { \"page\": 1, \"readingMode\": \"ReadFirst\", \"addedSeconds\": 0 }"],
+      ["neg", "Gọi bằng token User (phụ huynh)", "401 hoặc 403 (body rỗng; API chỉ nhận token ChildSession)"],
+      ["neg", "Không gửi token", "401"]
+    ] }
+  ]
+},
+// =====================================================================
+{
+  id: "t7", title: "Task 7 — Gắn bản \"Bé kể lại\" vào dòng truyện đã đọc",
+  desc: "Mỗi dòng danh sách có retell cho biết lần đọc đó có bản kể lại hay không: summaryId (để mở / nghe / xóa ở API ParentStorySummary), createdAt, hasRecording, flagCount (số câu bé hỏi về tranh hoặc cả cảnh), unansweredCount (số câu chưa được bố mẹ đánh dấu đã trả lời). Null nếu không có hoặc đã xóa. Danh sách không trả link ghi âm (link ký có hạn 15 phút vẫn nằm ở ParentStorySummary).",
+  flow: [
+    "Bản kể lại 1 (seed) gắn phiên 1: không ghi âm, 1 câu hỏi cũ về cả cảnh, chưa trả lời. Bản 101 (seed) gắn phiên 101 cũng tương tự: flagCount 1 và unansweredCount 1.",
+    "Gọi danh sách để xem retell từng dòng; đối chiếu với GET /ParentStorySummary/1.",
+    "Đối chiếu đánh dấu câu 101 bằng PUT /ParentStorySummary/1/101/questions/101/answered ở story-summary-api-test-guide.html; kiểm unansweredCount 0 rồi bỏ dấu để về 1. Các ca SQL chỉ là hướng dẫn thủ công, không tự chạy."
+  ],
+  apis: [
+  { m: "GET", p: "/api/v1/ParentReadingFeedback/{childProfileId}  (retell)", role: "User (chủ hồ sơ)",
+    what: "Danh sách ở Task 1, tập trung vào trường retell.",
+    detail: [["Cách tính", [
+      "Lấy story_summaries chưa xóa của các phiên trong trang; nếu một phiên có nhiều bản thì lấy bản CreatedAt mới nhất (rồi Id lớn nhất).",
+      "hasRecording = AudioStoragePath khác null; flagCount = số story_summary_flags chưa xóa của bản đó; unansweredCount = số dòng trong số đó có AnsweredAt null. Đánh dấu đã trả lời không đổi flagCount."
+    ]]],
+    resp: J({ success: true, message: "Lấy danh sách truyện con đã đọc thành công.", data: paged([{ sessionId: 101, retell: row101.retell }], 5), errors: null }),
+    tests: [
+      ["ok", "Phiên 101: bản kể lại không ghi âm, 1 cảnh",
+        "200; item 101: retell = { summaryId 101, createdAt (10 phút sau giờ xong), hasRecording false, flagCount 1, unansweredCount 1 }",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1"],
+      ["edge", "(SQL) Bản kể lại có ghi âm thì hasRecording = true",
+        "Sau khi chạy SQL: item 101: retell.hasRecording = true, flagCount 1. Đừng gọi GET /api/v1/ParentStorySummary/1 trước khi hoàn tác (file ghi âm không có thật nên ký link sẽ lỗi)",
+        "Chạy SQL: UPDATE story_summaries SET \"AudioStoragePath\"='summaries/demo-101.webm',\"AudioContentType\"='audio/webm',\"AudioBytes\"=1024,\"RecordingSentAt\"=NOW() WHERE \"Id\"=101; rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: UPDATE story_summaries SET \"AudioStoragePath\"=NULL,\"AudioContentType\"=NULL,\"AudioBytes\"=NULL,\"RecordingSentAt\"=NULL WHERE \"Id\"=101;"],
+      ["ok", "Phiên 1: bản kể lại seed không ghi âm",
+        "200; item 1: retell = { summaryId 1, hasRecording false, flagCount 1, unansweredCount 1 }",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1"],
+      ["ok", "Phiên không có bản kể lại",
+        "200; item 102, 11, 13: retell = null",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1"],
+      ["ok", "Đối chiếu với API ParentStorySummary",
+        "200; items có summaryId 101 và 1 (cùng SummaryId với retell.summaryId); phiên của summary: sessionId 101 và 1",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentStorySummary/1"],
+      ["ok", "Sau khi bố mẹ đánh dấu câu 101 đã trả lời",
+        "200; item 101: retell.flagCount vẫn 1, unansweredCount 0; GET ParentStorySummary của bản 101 cũng unansweredCount 0",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1. Điều kiện: đã chạy TC-AN01 trong story-summary-api-test-guide.html; hoàn tác bằng TC-AN03 sau khi kiểm."],
+      ["ok", "Sau khi bỏ đánh dấu câu 101",
+        "200; item 101: retell.flagCount 1, unansweredCount 1 trở lại; dữ liệu seed ban đầu được khôi phục",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1. Điều kiện: đã chạy TC-AN03 trong story-summary-api-test-guide.html."],
+      ["edge", "(SQL) Bản kể lại đã xóa mềm thì retell = null",
+        "Sau khi chạy SQL: item 101: retell = null",
+        "Chạy SQL: UPDATE story_summaries SET \"IsDeleted\"=true WHERE \"Id\"=101; rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: UPDATE story_summaries SET \"IsDeleted\"=false WHERE \"Id\"=101;"],
+      ["edge", "(SQL) Cảnh đánh dấu đã xóa mềm không được đếm",
+        "Sau khi chạy SQL: item 101: retell.flagCount = 0, unansweredCount = 0 (hasRecording vẫn false)",
+        "Chạy SQL: UPDATE story_summary_flags SET \"IsDeleted\"=true WHERE \"Id\"=101; rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: UPDATE story_summary_flags SET \"IsDeleted\"=false WHERE \"Id\"=101;"],
+      ["edge", "(SQL) Một phiên có 2 bản kể lại: lấy bản mới nhất",
+        "Sau khi chạy SQL: item 101: retell.summaryId = 102, hasRecording false, flagCount 0, unansweredCount 0 (bản 102 tạo sau, không ghi âm, không câu hỏi)",
+        "Chạy SQL: INSERT INTO story_summaries (\"Id\",\"ReadingSessionId\",\"ChildProfileId\",\"StoryId\",\"StoryVersionId\",\"AudioStoragePath\",\"CreatedAt\",\"IsDeleted\") VALUES (102,101,1,1,1,NULL,NOW(),false); rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1  Hoàn tác: DELETE FROM story_summaries WHERE \"Id\"=102;"],
+      ["ok", "Dòng chưa xong cũng có thể có bản kể lại",
+        "200; item 103 (Unfinished) có retell = null khi chưa có bản; thêm bản gắn phiên 103 thì retell xuất hiện",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1?Status=Unfinished"],
+      ["neg", "Không phải chủ hồ sơ", "403 \"" + OWN + "\"; không lộ summaryId",
+        "Đăng nhập parent_demo2. GET /api/v1/ParentReadingFeedback/1"],
+      ["neg", "Không gửi token", "401"]
+    ] }
+  ]
+},
+// =====================================================================
+{
+  id: "t8", title: "Task 8 — Tổng quan việc đọc của bé",
+  desc: "API mới GET .../{childProfileId}/overview?From&To trả số liệu tổng hợp trong khoảng [From, To) (mặc định mọi thời điểm): số lần đọc xong, số truyện khác nhau, số truyện đang bỏ dở, tổng thời gian đọc, điểm quiz trung bình, tỉ lệ cảm nhận, tổng EXP, số từ mới, tỉ lệ đọc to tốt, số bản kể lại.",
+  flow: [
+    "Gọi overview không tham số để xem số liệu từ trước tới nay của Bé An.",
+    "Gọi với From = 7 ngày trước để xem số liệu theo khoảng.",
+    "Thử Bé Bình, khoảng rỗng, các tình huống phiên bỏ dở được đọc xong sau đó, và các lỗi."
+  ],
+  apis: [
+  { m: "GET", p: "/api/v1/ParentReadingFeedback/{childProfileId}/overview", role: "User (chủ hồ sơ)",
+    what: "Số liệu tổng quan việc đọc của bé trong khoảng thời gian.",
+    detail: [
+      ["Hệ thống kiểm lần lượt", [
+        "Role User, có token → nếu không: 401 / 403 (body rỗng).",
+        "Hồ sơ thuộc người gọi → nếu không: 403 \"" + OWN + "\".",
+        "Nếu có cả From và To thì From < To → nếu không: 400 \"" + BAD_RANGE + "\"."
+      ]],
+      ["Cách tính", [
+        "completedSessions: phiên Completed, CompletedAt trong [From, To). distinctStoriesCompleted: số truyện khác nhau trong đó.",
+        "unfinishedStories: số truyện khác nhau có phiên chưa xong (Started, Reading, Activity, Abandoned, ForceExited) với StartedAt trong khoảng, mà SAU lần mở đó bé chưa đọc xong truyện (không có phiên Completed của cùng truyện có CompletedAt > StartedAt).",
+        "totalTimeSpentSeconds: cộng timeSpentSeconds của phiên đã xong + phiên chưa xong trong khoảng.",
+        "quizStoriesTaken / averageQuizBestPercent: mỗi truyện đọc xong trong khoảng lấy điểm TỐT NHẤT trên mọi lần làm quiz (theo phiên bản của lần đọc xong gần nhất), chỉ tính truyện có quiz và đã làm; averageQuizBestPercent = trung bình, làm tròn 1 chữ số, null nếu chưa làm.",
+        "feelingCounts (tính trên các lần đọc xong): luôn có đủ 5 khóa VeryLike, Like, Neutral, Dislike, None (None = chưa chọn).",
+        "expEarned / wordsCollected / readAloudGoodPercent / retellCount: từ telemetry và bản kể lại của MỌI phiên trong khoảng (đã xong + chưa xong). wordsCollected = số từ khác nhau; readAloudGoodPercent = tổng chữ tốt / tổng chữ (mỗi đoạn lần cuối), null nếu chưa đọc to."
+      ]]
+    ],
+    resp: J({ success: true, message: "Lấy tổng quan việc đọc của con thành công.", data: {
+      from: null, to: null, completedSessions: 5, distinctStoriesCompleted: 3, unfinishedStories: 1,
+      totalTimeSpentSeconds: 2370, quizStoriesTaken: 1, averageQuizBestPercent: 100,
+      feelingCounts: { VeryLike: 1, Like: 1, Neutral: 0, Dislike: 0, None: 3 },
+      expEarned: 35, wordsCollected: 2, readAloudGoodPercent: 80, retellCount: 2 }, errors: null }),
+    tests: [
+      ["ok", "Bé An, mọi thời điểm",
+        "200; message \"Lấy tổng quan việc đọc của con thành công.\"; from null, to null; completedSessions 5, distinctStoriesCompleted 3, unfinishedStories 1, totalTimeSpentSeconds 2370 (2220 phiên xong + 150 phiên chưa xong), quizStoriesTaken 1, averageQuizBestPercent 100, expEarned 35, wordsCollected 2, readAloudGoodPercent 80, retellCount 2",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/overview"],
+      ["ok", "feelingCounts đủ 5 khóa",
+        "200; feelingCounts = { VeryLike 1, Like 1, Neutral 0, Dislike 0, None 3 } (phiên 1, 11, 13 chưa chọn cảm nhận)",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/overview"],
+      ["ok", "Bé An, 7 ngày gần đây",
+        "200; completedSessions 4 (11, 13, 101, 102), distinctStoriesCompleted 3, unfinishedStories 1 (phiên 104), totalTimeSpentSeconds 1740, quizStoriesTaken 1, averageQuizBestPercent 100, feelingCounts { VeryLike 1, Like 1, Neutral 0, Dislike 0, None 2 }, expEarned 35, wordsCollected 2, readAloudGoodPercent 80, retellCount 1 (bản 101; bản 1 của phiên 1 nằm ngoài khoảng)",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/overview?From=<FROM_7D>&To=<TO_PLUS_1D>"],
+      ["edge", "Chỉ có From",
+        "200; số liệu giống test 7 ngày gần đây; to null",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/overview?From=<FROM_7D>"],
+      ["edge", "Chỉ có To = 7 ngày trước: chỉ còn phiên cũ",
+        "200; completedSessions 1 (phiên 1), distinctStoriesCompleted 1, unfinishedStories 0 (phiên 103 mở 12 ngày trước, truyện 1 sau đó đã đọc xong), totalTimeSpentSeconds 630, quizStoriesTaken 1, averageQuizBestPercent 100, expEarned 0, wordsCollected 0, readAloudGoodPercent null, retellCount 1",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/overview?To=<FROM_7D>"],
+      ["edge", "Khoảng không có phiên nào: số 0 và null, vẫn đủ 5 khóa cảm nhận",
+        "200; completedSessions 0, distinctStoriesCompleted 0, unfinishedStories 0, totalTimeSpentSeconds 0, quizStoriesTaken 0, averageQuizBestPercent null, feelingCounts đủ 5 khóa đều 0, expEarned 0, wordsCollected 0, readAloudGoodPercent null, retellCount 0",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/overview?From=2020-01-01T00:00:00Z&To=2020-01-02T00:00:00Z"],
+      ["ok", "Bé Bình: chỉ có phiên đang đọc dở",
+        "200; completedSessions 0, distinctStoriesCompleted 0, unfinishedStories 1, totalTimeSpentSeconds 200, quizStoriesTaken 0, averageQuizBestPercent null, expEarned 0, wordsCollected 0, readAloudGoodPercent null, retellCount 0",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/2/overview"],
+      ["edge", "(SQL) Phiên chưa xong được đọc xong sau đó thì không còn tính là bỏ dở",
+        "Sau khi chạy SQL: unfinishedStories 0; completedSessions 6; distinctStoriesCompleted 3; totalTimeSpentSeconds vẫn 2370",
+        "Chạy SQL: UPDATE reading_sessions SET \"Status\"='Completed',\"CompletedAt\"=NOW() WHERE \"Id\"=104; rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/overview  Hoàn tác: UPDATE reading_sessions SET \"Status\"='Reading',\"CompletedAt\"=NULL WHERE \"Id\"=104;"],
+      ["edge", "(SQL) Phiên Abandoned / ForceExited vẫn là chưa xong",
+        "Sau khi chạy SQL: unfinishedStories vẫn 1 (phiên 104 là Abandoned)",
+        "Chạy SQL: UPDATE reading_sessions SET \"Status\"='Abandoned' WHERE \"Id\"=104; rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/overview  Hoàn tác: UPDATE reading_sessions SET \"Status\"='Reading' WHERE \"Id\"=104;"],
+      ["edge", "(SQL) Đủ các loại cảm nhận",
+        "Sau khi chạy SQL: feelingCounts = { VeryLike 1, Like 1, Neutral 1, Dislike 1, None 1 }",
+        "Chạy SQL: UPDATE reading_sessions SET \"Feeling\"='Neutral' WHERE \"Id\"=11; UPDATE reading_sessions SET \"Feeling\"='Dislike' WHERE \"Id\"=13; rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/overview  Hoàn tác: UPDATE reading_sessions SET \"Feeling\"=NULL WHERE \"Id\" IN (11,13);"],
+      ["edge", "(SQL) Điểm quiz trung bình lấy điểm TỐT NHẤT từng truyện",
+        "Sau khi chạy SQL (thêm lần làm 100% cho truyện 16 / phiên bản 21 có 1 câu quiz): quizStoriesTaken 2; averageQuizBestPercent 100 (trung bình 100 và 100)",
+        "Chạy SQL: INSERT INTO quiz_items (\"Id\",\"StoryVersionId\",\"Type\",\"Question\",\"Choices\",\"CorrectAnswer\",\"CreatedAt\",\"IsDeleted\") VALUES (103,21,'TrueFalse','Mèo Mun biết lắng nghe.','[\"Dung\",\"Sai\"]','Dung',NOW(),false); INSERT INTO quiz_attempts (\"Id\",\"QuizItemId\",\"ReadingSessionId\",\"AnswerGiven\",\"IsCorrect\",\"AnsweredAt\",\"CreatedAt\",\"IsDeleted\") VALUES (106,103,13,'Dung',true,NOW(),NOW(),false); rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/overview  Hoàn tác: DELETE FROM quiz_attempts WHERE \"Id\"=106; DELETE FROM quiz_items WHERE \"Id\"=103;"],
+      ["edge", "(SQL) Trung bình khi có hai truyện điểm khác nhau",
+        "Sau khi chạy SQL (truyện 16 làm sai câu duy nhất → 0%): quizStoriesTaken 2; averageQuizBestPercent 50",
+        "Chạy SQL: INSERT INTO quiz_items (\"Id\",\"StoryVersionId\",\"Type\",\"Question\",\"Choices\",\"CorrectAnswer\",\"CreatedAt\",\"IsDeleted\") VALUES (103,21,'TrueFalse','Mèo Mun biết lắng nghe.','[\"Dung\",\"Sai\"]','Dung',NOW(),false); INSERT INTO quiz_attempts (\"Id\",\"QuizItemId\",\"ReadingSessionId\",\"AnswerGiven\",\"IsCorrect\",\"AnsweredAt\",\"CreatedAt\",\"IsDeleted\") VALUES (106,103,13,'Sai',false,NOW(),NOW(),false); rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/overview  Hoàn tác: DELETE FROM quiz_attempts WHERE \"Id\"=106; DELETE FROM quiz_items WHERE \"Id\"=103;"],
+      ["edge", "(SQL) Phiên đã xóa mềm không được tính",
+        "Sau khi chạy SQL: completedSessions 4; totalTimeSpentSeconds 1830; expEarned 10; wordsCollected 0; readAloudGoodPercent null; retellCount 1",
+        "Chạy SQL: UPDATE reading_sessions SET \"IsDeleted\"=true WHERE \"Id\"=101; rồi Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/overview  Hoàn tác: UPDATE reading_sessions SET \"IsDeleted\"=false WHERE \"Id\"=101;"],
+      ["neg", "From bằng To", "400 \"" + BAD_RANGE + "\"",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/overview?From=2026-11-10T00:00:00Z&To=2026-11-10T00:00:00Z"],
+      ["neg", "From sau To", "400 \"" + BAD_RANGE + "\"",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/overview?From=2026-11-12T00:00:00Z&To=2026-11-10T00:00:00Z"],
+      ["neg", "To sai định dạng", "400 \"" + BAD_INPUT + "\" kèm errors",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/overview?To=xyz"],
+      ["neg", "Không phải chủ hồ sơ", "403 \"" + OWN + "\"",
+        "Đăng nhập parent_demo2. GET /api/v1/ParentReadingFeedback/1/overview"],
+      ["neg", "Hồ sơ không tồn tại", "403 \"" + OWN + "\"",
+        "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/99999/overview"],
+      ["neg", "Gọi bằng token Moderator", "403 (body rỗng)"],
+      ["neg", "Gọi bằng token bé", "403 (body rỗng)"],
+      ["neg", "Không gửi token", "401"]
+    ] }
+  ]
+}
+];
+
+STEPS.push({
+  id: "recordings", title: "Task 9 — Nghe và xóa bản ghi đọc to",
+  desc: "Chỉ chủ hồ sơ nghe giọng con, kèm chữ đoạn và điểm. Mỗi đoạn truyện/đoạn luyện trong một phiên giữ lần đọc gần nhất. Link nghe hết hạn sau 15 phút; file lưu tới khi chủ hồ sơ xóa hoặc xóa tài khoản.",
+  flow: ["Chạy API đọc to của bé ở trang tương tác của trẻ, dùng phiên đang hoạt động; nhập sessionId vào RECORDING_SESSION_ID.", "Đăng nhập parent_demo1, gọi danh sách bản ghi; lấy recordingId vào RECORDING_ID và mở audioUrl để nghe.", "Bé đọc lại cùng đoạn: kiểm tra chỉ còn một bản ghi và file cũ bị xóa. Xóa bản ghi rồi gọi lại: không còn bản ghi đó, telemetry điểm vẫn giữ."],
+  apis: [
+    { m: "GET", p: "/api/v1/ParentReadingFeedback/{childProfileId}/sessions/{sessionId}/read-aloud", role: "User (chủ hồ sơ)",
+      what: "Danh sách bản ghi lần đọc gần nhất, chữ đoạn, điểm và link nghe 15 phút.",
+      detail: [["Kiểm tra", ["Token User; EnsureOwnerAsync kiểm chủ hồ sơ; phiên phải thuộc đúng bé và chưa xóa."]], ["Kết quả", ["Đoạn truyện theo scene/segment, sau đó đoạn luyện theo thời gian; recordings rỗng nếu chưa có file. AudioUrl là link ký 15 phút."]]],
+      resp: J({ success: true, message: "Lấy bản ghi đọc to của con thành công.", data: { sessionId: "<RECORDING_SESSION_ID>", recordings: [{ recordingId: "<RECORDING_ID>", kind: "Segment", segmentId: 1, interactionId: null, sceneIndex: 0, segmentOrder: 1, text: "Chữ của đoạn bé đọc", goodCount: 3, retryCount: 1, skippedCount: 0, totalCount: 4, goodPercent: 75, audioUrl: "https://storage.example/signed-audio", recordedAt: "2026-11-17T00:00:00Z" }] }, errors: null }),
+      tests: [
+        ["ok", "Nghe sau khi bé đọc to", "200; message \"Lấy bản ghi đọc to của con thành công.\"; recordings có chữ, điểm và audioUrl nghe được; readAloudRecordingCount trong danh sách tăng tương ứng.", "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/<RECORDING_SESSION_ID>/read-aloud. Chạy sau API đọc to của bé ở trang tương tác của trẻ."],
+        ["edge", "Phiên seed chưa có file", "200; data.recordings = [] (seed chỉ có telemetry).", "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/102/read-aloud"],
+        ["neg", "Không phải chủ hồ sơ", "403; Bạn không có quyền với hồ sơ trẻ này.", "Đăng nhập parent_demo2. GET /api/v1/ParentReadingFeedback/1/sessions/102/read-aloud"],
+        ["neg", "Phiên của con khác", "404; Không tìm thấy Phiên đọc với mã định danh [2].", "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/2/read-aloud"],
+        ["neg", "Gọi bằng token Moderator", "403 (body rỗng)"],
+        ["neg", "Gọi bằng token bé", "403 (body rỗng)"],
+        ["neg", "Không gửi token", "401"]
+      ] },
+    { m: "DELETE", p: "/api/v1/ParentReadingFeedback/{childProfileId}/sessions/{sessionId}/read-aloud/{recordingId}", role: "User (chủ hồ sơ)",
+      what: "Xóa file trong kho và ẩn bản ghi. Điểm đọc to trong telemetry vẫn còn.",
+      detail: [["Kiểm tra", ["Chủ hồ sơ, phiên thuộc bé và recordingId thuộc đúng phiên; bản ghi đã xóa trả 404."]], ["Xử lý", ["Xóa file, đánh dấu bản ghi đã xóa rồi lưu; lỗi kho lưu trữ thì không đánh dấu đã xóa."]]],
+      resp: J({ success: true, message: "Đã xóa bản ghi đọc to.", data: null, errors: null }),
+      tests: [
+        ["ok", "Xóa sau khi nghe", "200; message \"Đã xóa bản ghi đọc to.\"; gọi danh sách không còn bản ghi; file bị xóa khỏi kho.", "Đăng nhập parent_demo1. DELETE /api/v1/ParentReadingFeedback/1/sessions/<RECORDING_SESSION_ID>/read-aloud/<RECORDING_ID>. Chạy sau API đọc to và GET danh sách; lấy recordingId thật."],
+        ["neg", "Bản ghi không tồn tại hoặc đã xóa", "404; Không tìm thấy Bản ghi đọc to với mã định danh [99999].", "Đăng nhập parent_demo1. DELETE /api/v1/ParentReadingFeedback/1/sessions/102/read-aloud/99999"],
+        ["neg", "Bản ghi của phiên khác", "404; Không tìm thấy Bản ghi đọc to; không xóa file.", "Đăng nhập parent_demo1. DELETE /api/v1/ParentReadingFeedback/1/sessions/102/read-aloud/<RECORDING_ID>. Dùng recordingId của phiên vừa đọc khác 102."],
+        ["neg", "Phiên của con khác", "404; Không tìm thấy Phiên đọc với mã định danh [2].", "Đăng nhập parent_demo1. DELETE /api/v1/ParentReadingFeedback/1/sessions/2/read-aloud/99999"],
+        ["neg", "Không phải chủ hồ sơ", "403; Bạn không có quyền với hồ sơ trẻ này.", "Đăng nhập parent_demo2. DELETE /api/v1/ParentReadingFeedback/1/sessions/102/read-aloud/99999"],
+        ["neg", "Gọi bằng token Moderator", "403 (body rỗng)"],
+        ["neg", "Gọi bằng token bé", "403 (body rỗng)"],
+        ["neg", "Không gửi token", "401"]
+      ] }
+  ]
+});
+
+// Body thay thế theo [phần đường dẫn, phần tên tình huống, body]; không dùng vì body đã nằm trong dữ liệu test.
+const OVERRIDES = [];
+
+// ---------- DỮ LIỆU THẬT TỪ SEED (Database/Seed) ----------
+const SEEDAPI = [
+  ["GET /api/v1/ParentReadingFeedback/{childProfileId}/sessions/{sessionId}/read-aloud", { as: "parent_demo1", url: "GET /api/v1/ParentReadingFeedback/1/sessions/<RECORDING_SESSION_ID>/read-aloud", note: "Lấy sessionId từ API đọc to của bé 1." }],
+  ["DELETE /api/v1/ParentReadingFeedback/{childProfileId}/sessions/{sessionId}/read-aloud/{recordingId}", { as: "parent_demo1", url: "DELETE /api/v1/ParentReadingFeedback/1/sessions/<RECORDING_SESSION_ID>/read-aloud/<RECORDING_ID>", note: "Lấy recordingId từ danh sách bản ghi." }],
+  ["=GET /api/v1/ParentReadingFeedback/{childProfileId}", { as: "parent_demo1", url: "GET /api/v1/ParentReadingFeedback/1", note: "Hồ sơ 1 = Bé An của parent_demo1; seed có 5 phiên xong và 2 phiên chưa xong." }],
+  ["GET /api/v1/ParentReadingFeedback/{childProfileId}/sessions/{sessionId}/quiz", { as: "parent_demo1", url: "GET /api/v1/ParentReadingFeedback/1/sessions/102/quiz", note: "Phiên 102 của Bé An, truyện 1 (phiên bản 1 có 2 câu quiz: 1 và 101)." }],
+  ["GET /api/v1/ParentReadingFeedback/{childProfileId}/overview", { as: "parent_demo1", url: "GET /api/v1/ParentReadingFeedback/1/overview", note: "Tổng quan mọi thời điểm của Bé An." }],
+  ["PUT /api/v1/child/reading/sessions/{sessionId}/progress", { as: "bé 1 (secret demo-qr-child-01)", url: "PUT /api/v1/child/reading/sessions/103/progress", body: J({ page: 1, readingMode: "ListenFirst", addedSeconds: 10 }), note: "Phiên 103 của Bé An đang Reading, truyện 1 có 1 scene (trang 1)." }]
+];
+const TESTDATA = [];
+const GENERIC = [
+  ["Gọi bằng token Moderator", "Đăng nhập moderator_demo1 (Demo@123), gọi cùng URL."],
+  ["Gọi bằng token User", "Đăng nhập parent_demo1 (Demo@123), gọi cùng URL."],
+  ["Gọi bằng token bé", "Token bé 1: lấy bằng ChildAccessCredential/easylogin/login với { \"secret\": \"demo-qr-child-01\" }, rồi gọi cùng URL."],
+  ["Không gửi token", "Bỏ header Authorization khi gọi."]
+];
+
+// ---------- GIÁ TRỊ ĐỘNG ----------
+const VAR_DEFS = [
+  ["RECORDING_SESSION_ID", "", "Phiên của bé 1 vừa gọi API đọc to thành công ở trang tương tác của trẻ"],
+  ["RECORDING_ID", "", "recordingId lấy từ GET danh sách bản ghi đọc to, dùng để xóa"],
+  ["FROM_7D", "2026-11-08T00:00:00Z", "Mốc UTC = bây giờ − 7 ngày (SQL: SELECT to_char((NOW()-INTERVAL '7 days') AT TIME ZONE 'utc','YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'))"],
+  ["TO_PLUS_1D", "2026-11-16T00:00:00Z", "Mốc UTC = bây giờ + 1 ngày (SQL tương tự, INTERVAL '1 day')"],
+  ["COMPLETED_AT_101", "2026-11-10T10:09:00.000000Z", "CompletedAt chính xác của phiên 101 (SQL ở test cuối Task 0, có phần micro giây)"]
+];
+
+// ---------- CONTROLLER ----------
+const BASE_CONTROLLERS = ["ParentReadingFeedback", "ParentStorySummary"];
+const CONTROLLER_ROUTES = BASE_CONTROLLERS.map(n => ["/api/v1/" + n, n + "Controller"]).concat([
+  ["/api/v1/child/reading", "ChildReadingController"]
+]);
+// ======================= HẾT PHẦN DỮ LIỆU =======================
+
+function overrideBody(api, t) {
+  for (const [pathPart, namePart, body] of OVERRIDES) {
+    const pathOk = pathPart.startsWith("=") ? api.p === pathPart.slice(1) : api.p.includes(pathPart);
+    if (pathOk && t[1].includes(namePart)) return body;
+  }
+  return null;
+}
+function findBody(stepId, api, t) {
+  const ov = overrideBody(api, t);
+  if (ov) return ov;
+  const sa = seedFor(api);
+  return (sa && sa.body) || api.body || null;
+}
+// Tìm đối tượng JSON đầu tiên (cân ngoặc) trong một đoạn chữ.
+function firstJson(text) {
+  if (!text) return null;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== "{") continue;
+    let depth = 0, inStr = false;
+    for (let j = i; j < text.length; j++) {
+      const c = text[j];
+      if (inStr) { if (c === "\\") j++; else if (c === '"') inStr = false; continue; }
+      if (c === '"') inStr = true;
+      else if (c === "{") depth++;
+      else if (c === "}") { depth--; if (depth === 0) { try { const obj = JSON.parse(text.slice(i, j + 1)); return obj; } catch (e) { break; } } }
+    }
+  }
+  return null;
+}
+// Dựng "request" đầy đủ cho một test case: tài khoản, method, url, body (nếu có).
+function buildRequest(api, t, data) {
+  const sa = seedFor(api);
+  let method = api.m, url = null;
+  const mm = data && data.match(/\b(GET|POST|PUT|DELETE) (\/api\/v1\/[^\s"`,;]+)/);
+  if (mm) { method = mm[1]; url = mm[2].replace(/[.)]+$/, ""); }
+  else if (sa && sa.url) { const u = sa.url.match(/^(GET|POST|PUT|DELETE) (.+)$/); if (u) { method = u[1]; url = u[2]; } }
+  if (!url) url = api.p;
+  const am = data && data.match(/[Đđ]ăng nhập ([A-Za-z0-9_]+)/);
+  let login = am ? am[1] : (sa ? sa.as : "");
+  if (/token bé/.test(t[1]) && !t[3]) login = "bé 1 (secret demo-qr-child-01)";
+  else if (/Không gửi token|Không cần token/.test(t[1] + " " + (data || ""))) login = "(không gửi token)";
+  let bodyText = t[4] || overrideBody(api, t);
+  if (!bodyText) {
+    const fromText = data && !mm ? null : null; // body trong chữ chỉ lấy khi test có dữ liệu riêng
+    const obj = firstJson(t[3] ? data : null);
+    if (obj) bodyText = JSON.stringify(obj, null, 2);
+  }
+  if (!bodyText) bodyText = (sa && sa.body) || api.body || null;
+  const noBodyMethod = method === "GET" || method === "DELETE";
+  let body;
+  if (bodyText && !noBodyMethod) { try { body = JSON.parse(bodyText); } catch (e) { body = bodyText; } }
+  const request = { login, method, url };
+  if (body !== undefined) request.body = body;
+  return { request, bodyText: body !== undefined ? (typeof body === "string" ? body : JSON.stringify(body, null, 2)) : null, hasRequest: !t[2].startsWith("CHƯA CÓ") && !api.p.startsWith("(") };
+}
+
+function seedFor(api) {
+  const key = api.m + " " + api.p;
+  let best = null, bestLen = -1;
+  for (const [k, v] of SEEDAPI) {
+    if (k.startsWith("=")) { if (key === k.slice(1)) return v; continue; }
+    if (key.includes(k) && k.length > bestLen) { best = v; bestLen = k.length; }
+  }
+  return best;
+}
+function dataFor(api, t) {
+  const name = t[1];
+  if (t[3]) return t[3];
+  for (const [pathPart, namePart, text] of TESTDATA) {
+    const pathOk = pathPart.startsWith("=") ? api.p === pathPart.slice(1) : (api.m + " " + api.p).includes(pathPart);
+    if (pathOk && name.includes(namePart)) return text;
+  }
+  for (const [namePart, text] of GENERIC) if (name.includes(namePart)) return text + ((seedFor(api) || {}).url ? " URL: " + seedFor(api).url : "");
+  const sa = seedFor(api);
+  if (!sa) return null;
+  return `Đăng nhập ${sa.as} (mật khẩu Demo@123). ${sa.url}. ${sa.note}`;
+}
+
+let VARS = {};
+try { VARS = JSON.parse(localStorage.getItem("ket-qua-doc-guide-vars") || "{}"); } catch (e) { VARS = {}; }
+VAR_DEFS.forEach(([k, d]) => { if (VARS[k] === undefined) VARS[k] = d; });
+function subst(text) {
+  if (text == null) return text;
+  return String(text)
+    .replace(/"<([A-Z_]+)>"/g, (m, k) => { const v = VARS[k]; if (v === undefined || v === "") return m; return /^-?\d+$/.test(v) ? v : JSON.stringify(v); })
+    .replace(/<([A-Z_]+)>/g, (m, k) => { const v = VARS[k]; return v === undefined || v === "" ? m : v; });
+}
+
+function controllerFor(api) {
+  const m = api.p.match(/\/api\/v1\/[^\s?]*/);
+  if (!m) return null;
+  const segs = m[0].toLowerCase().split("/").filter(Boolean);
+  let best = null, bestLen = -1;
+  for (const [tpl, name] of CONTROLLER_ROUTES) {
+    const t = tpl.toLowerCase().split("/").filter(Boolean);
+    if (t.length > segs.length || t.length <= bestLen) continue;
+    if (t.every((x, i) => x === "{}" || x === segs[i])) { best = name; bestLen = t.length; }
+  }
+  return best;
+}
+
+// ---------- DỰNG TRANG ----------
+const main = document.getElementById("main");
+const nav = document.getElementById("nav");
+let store = {};
+try { store = JSON.parse(localStorage.getItem("ket-qua-doc-guide-checks") || "{}"); } catch (e) { store = {}; }
+function save() { try { localStorage.setItem("ket-qua-doc-guide-checks", JSON.stringify(store)); } catch (e) {} }
+function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+// Tách đoạn ghi chú thành từng ý (theo câu, dấu chấm phẩy, dấu ·) để hiển thị hàng dọc.
+function noteList(text) {
+  const parts = String(text).split(/(?<=\.)\s+(?=[\p{Lu}\d(])|;\s+|\s+·\s+/u).map(x => x.trim()).filter(Boolean);
+  return `<ul>${parts.map(x => {
+    const call = x.match(/^(GET|POST|PUT|DELETE) (\/\S+?)\.?$/);
+    return `<li>${call ? `<span class="code">${esc(call[1] + " " + call[2])}</span>` : esc(x)}</li>`;
+  }).join("")}</ul>`;
+}
+const KIND = { ok: ["ok", "Đúng"], neg: ["neg", "Lỗi"], edge: ["edge", "Biên"], todo: ["neg", "Chưa có"] };
+
+let total = 0;
+nav.innerHTML = '<a href="#chung">Quy ước chung</a>';
+STEPS.forEach(step => {
+  nav.insertAdjacentHTML("beforeend", `<a href="#${step.id}">${esc(step.title.split(" — ")[0])}: ${esc(step.title.split(" — ")[1] || "")}</a>`);
+  const sec = document.createElement("section");
+  sec.className = "step"; sec.id = step.id;
+  let html = `<h2>${esc(step.title)}</h2><p class="step-desc">${esc(step.desc)}</p>`;
+  html += `<div class="box"><h3>Luồng chạy</h3><ol class="flow">${step.flow.map(f => `<li>${esc(f)}</li>`).join("")}</ol></div>`;
+  step.apis.forEach((api, ai) => {
+    const rows = api.tests.map((t, ti) => {
+      total++;
+      const key = `${step.id}.${ai}.${ti}`;
+      const k = KIND[t[0]];
+      const data = dataFor(api, t);
+      const req = buildRequest(api, t, data);
+      const reqText = JSON.stringify(req.request, null, 2);
+      const reqBtn = ` <button class="copy" data-copy="${COPY.push(reqText) - 1}">Copy request JSON</button>`;
+      const bodyBtnT = req.bodyText ? ` <button class="copy" data-copy="${COPY.push(req.bodyText) - 1}">Copy body</button>` : "";
+      const dataHtml = data ? `<div class="data"><b>Dữ liệu</b>${noteList(data)}</div>` : "";
+      const preHtml = req.hasRequest ? `<div class="reqbar">Đầu vào (JSON)${reqBtn}${bodyBtnT}</div><pre class="req" data-ci="${COPY.length - (req.bodyText ? 2 : 1)}">${esc(subst(reqText))}</pre>` : "";
+      return `<tr><td class="chk"><input type="checkbox" data-key="${key}" ${store[key] ? "checked" : ""}></td>` +
+             `<td><span class="tag ${k[0]}">${k[1]}</span>${esc(t[1])}${dataHtml}${preHtml}</td><td>${esc(t[2])}</td></tr>`;
+    }).join("");
+    const sa = seedFor(api);
+    const shownBody = (sa && sa.body) || api.body;
+    const bodyIdx = shownBody ? COPY.push(shownBody) - 1 : -1;
+    const bodyBtn = shownBody ? ` <button class="copy" data-copy="${bodyIdx}">Copy body</button>` : "";
+    const seedNote = sa ? `<div class="data"><b>Dữ liệu seed</b><div class="kv">` +
+      `<span>Đăng nhập</span><span><b>${esc(sa.as)}</b> · mật khẩu Demo@123</span>` +
+      `<span>Gọi</span><span><span class="code">${esc(sa.url)}</span></span>` +
+      `<span>Ghi chú</span>${noteList(sa.note)}</div></div>` : "";
+    const pathText = api.p.startsWith("(") ? "" : `${api.m} ${api.p}`;
+    const pathBtn = pathText ? ` <button class="copy" data-copy="${COPY.push(pathText) - 1}">Copy đường dẫn</button>` : "";
+    const ctl = controllerFor(api);
+    const ctlChip = ctl ? `<span class="ctl" title="Controller">${esc(ctl)}</span>` : `<span class="ctl" title="Controller">chưa có Controller</span>`;
+    const ctlLine = ctl ? `<p class="ctl-line">Controller: <b>${esc(ctl)}</b> · nhóm Swagger: <b>${esc(ctl.replace(/Controller$/, ""))}</b> · file <span class="code">src/Core/StoryPlatform.Api/Controllers/${esc(ctl)}.cs</span></p>` : "";
+    html += `<details class="api" data-search="${esc((api.m + " " + api.p + " " + (ctl || "") + " " + api.role).toLowerCase())}"><summary><span class="m ${api.m}">${api.m}</span><span class="path">${esc(api.p)}</span>${ctlChip}<span class="role">${esc(api.role)}</span></summary>` +
+      `<div class="api-body">${ctlLine}<p>${esc(api.what)}${pathBtn}</p>` +
+      (api.detail ? `<div class="detail">` + api.detail.map(([h, items]) =>
+        `<div class="detail-sec"><b>${esc(h)}</b><ul>${items.map(s => `<li>${esc(s)}</li>`).join("")}</ul></div>`).join("") + `</div>` : "") +
+      (api.warn ? `<div class="note"><b>⚠ Lưu ý:</b> ` + (Array.isArray(api.warn)
+        ? `${esc(api.warn[0])}<ol>${api.warn.slice(1).map(s => `<li>${esc(s)}</li>`).join("")}</ol>`
+        : esc(api.warn)) + `</div>` : "") +
+      seedNote +
+      (api.ui ? `<div class="detail"><div class="detail-sec"><b>Nội dung hiển thị trên màn hình (gợi ý cho frontend)</b><ul>${api.ui.map(s => `<li>${esc(s)}</li>`).join("")}</ul></div></div>` : "") +
+      (api.resp ? `<p><b>Phản hồi mẫu</b> <button class="copy" data-copy="${COPY.push(api.resp) - 1}">Copy</button></p><pre data-ci="${COPY.length - 1}">${esc(subst(api.resp))}</pre>` : "") +
+      (shownBody ? `<p><b>Body ví dụ (trường hợp đúng)</b>${bodyBtn}</p><pre data-ci="${bodyIdx}">${esc(subst(shownBody))}</pre>` : "") +
+      `<p><b>Test case</b></p><table class="tests"><thead><tr><th class="chk"></th><th>Tình huống</th><th class="exp">Kết quả mong đợi</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
+  });
+  sec.innerHTML = html;
+  main.appendChild(sec);
+});
+
+const varsGrid = document.querySelector("#vars .vars-grid");
+VAR_DEFS.forEach(([k, d, label]) => {
+  const lab = document.createElement("label");
+  lab.innerHTML = `<span><b>&lt;${k}&gt;</b> · ${esc(label)}</span>`;
+  const input = document.createElement("input");
+  input.value = VARS[k]; input.placeholder = d || "(chưa có)"; input.spellcheck = false;
+  input.addEventListener("input", () => {
+    VARS[k] = input.value.trim();
+    try { localStorage.setItem("ket-qua-doc-guide-vars", JSON.stringify(VARS)); } catch (e) {}
+    document.querySelectorAll("pre[data-ci]").forEach(pre => { pre.textContent = subst(COPY[Number(pre.dataset.ci)]); });
+  });
+  lab.appendChild(input);
+  varsGrid.appendChild(lab);
+});
+
+const progress = document.createElement("div");
+progress.className = "progress";
+nav.appendChild(progress);
+function updateProgress() {
+  const done = Object.values(store).filter(Boolean).length;
+  progress.textContent = `Đã chạy ${done}/${total} test case`;
+}
+updateProgress();
+
+main.addEventListener("click", e => {
+  const btn = e.target.closest && e.target.closest("button.copy");
+  if (!btn) return;
+  e.preventDefault();
+  const text = subst(COPY[Number(btn.dataset.copy)]);
+  const done = () => { const old = btn.textContent; btn.textContent = "Đã copy"; setTimeout(() => { btn.textContent = old; }, 1200); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
+  } else { fallbackCopy(text, done); }
+});
+function fallbackCopy(text, done) {
+  const ta = document.createElement("textarea");
+  ta.value = text; document.body.appendChild(ta); ta.select();
+  try { document.execCommand("copy"); done(); } catch (err) {}
+  document.body.removeChild(ta);
+}
+main.addEventListener("change", e => {
+  const key = e.target.dataset && e.target.dataset.key;
+  if (!key) return;
+  store[key] = e.target.checked; save(); updateProgress();
+});
+// Ô tìm API theo đường dẫn, method, Controller hoặc vai trò (đặt đầu thanh điều hướng, luôn nhìn thấy).
+const search = document.createElement("input");
+search.className = "search"; search.type = "search"; search.placeholder = "Tìm API: đường dẫn, Controller…";
+const found = document.createElement("div");
+found.className = "found";
+nav.prepend(found); nav.prepend(search);
+search.addEventListener("input", () => {
+  const q = search.value.trim().toLowerCase();
+  let shown = 0;
+  document.querySelectorAll("section.step").forEach(sec => {
+    if (sec.id === "chung") return;
+    let any = false;
+    sec.querySelectorAll("details.api").forEach(d => {
+      const hit = !q || d.dataset.search.includes(q);
+      d.classList.toggle("hidden-by-search", !hit);
+      if (hit) { any = true; shown++; if (q) d.open = true; }
+    });
+    sec.classList.toggle("hidden-by-search", !any);
+  });
+  found.textContent = q ? `${shown} API khớp` : "";
+});
+document.getElementById("expand").onclick = () => document.querySelectorAll("details.api").forEach(d => d.open = true);
+document.getElementById("collapse").onclick = () => document.querySelectorAll("details.api").forEach(d => d.open = false);
+document.getElementById("reset").onclick = () => {
+  store = {}; save();
+  document.querySelectorAll("input[data-key]").forEach(c => c.checked = false);
+  updateProgress();
+};
+</script>
+</body>
+</html>

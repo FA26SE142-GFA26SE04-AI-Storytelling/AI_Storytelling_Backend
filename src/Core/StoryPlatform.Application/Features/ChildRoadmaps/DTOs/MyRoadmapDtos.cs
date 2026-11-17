@@ -16,11 +16,13 @@ public class MyRoadmapOpenStoryDto
 
     /// <summary>Chỉ có giá trị khi ngày mong đọc xong vẫn còn ở tương lai.</summary>
     public DateTime? ExpectedBy { get; set; }
+    public int Stage { get; set; }
 }
 
 /// <summary>Truyện chưa tới lượt trong lộ trình của trẻ.</summary>
 public class MyRoadmapUpcomingDto
 {
+    /// <summary>Thứ tự chặng tính từ chặng kế (1 = chặng kế tiếp); truyện cùng chặng có cùng Order.</summary>
     public int Order { get; set; }
     public int StoryId { get; set; }
     public string? Title { get; set; }
@@ -34,11 +36,13 @@ public class MyRoadmapDoneDto
     public string? Title { get; set; }
     public string? CoverImageUrl { get; set; }
     public DateTime? CompletedAt { get; set; }
+    public int Stage { get; set; }
 }
 
 public class MyRoadmapDto
 {
-    public MyRoadmapOpenStoryDto? Open { get; set; }
+    /// <summary>Mọi truyện đang mở của chặng hôm nay.</summary>
+    public List<MyRoadmapOpenStoryDto> OpenStories { get; set; } = new();
     public List<MyRoadmapUpcomingDto> Upcoming { get; set; } = new();
     public List<MyRoadmapDoneDto> Done { get; set; } = new();
     public int CompletedCount { get; set; }

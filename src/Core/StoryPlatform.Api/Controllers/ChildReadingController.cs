@@ -167,7 +167,7 @@ public sealed class ChildReadingController : ControllerBase
         return Ok(ApiResponse<VocabularyDefinitionDto>.Ok(result));
     }
 
-    /// <summary>Trẻ đọc to một đoạn; trả từng chữ good / retry / skipped kèm lời khen. Không lưu âm thanh.</summary>
+    /// <summary>Trẻ đọc to một đoạn; trả từng chữ good / retry / skipped kèm lời khen. Giữ bản ghi lần gần nhất cho chủ hồ sơ nghe.</summary>
     [HttpPost("sessions/{sessionId:int}/segments/{segmentId:int}/read-aloud")]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(ReadAloudPolicy.MaxAudioBytes + 100_000)]
@@ -175,6 +175,26 @@ public sealed class ChildReadingController : ControllerBase
         MultipartBodyLengthLimit = ReadAloudPolicy.MaxAudioBytes + 100_000)]
     public async Task<ActionResult<ApiResponse<ReadAloudResultDto>>> ReadAloud(
         int sessionId, int segmentId, [FromForm] ReadAloudForm form, CancellationToken ct)
+    {
+        var result = await _readAloud.CheckAsync(ChildId, sessionId, segmentId, await ReadAudioAsync(form, ct), ct);
+        return Ok(ApiResponse<ReadAloudResultDto>.Ok(result));
+    }
+
+    /// <summary>Trẻ đọc theo đoạn luyện đọc to (readAloudPractice của nội dung truyện); chấm như đọc to theo đoạn.</summary>
+    [HttpPost("sessions/{sessionId:int}/read-aloud-practice/{interactionId:int}")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(ReadAloudPolicy.MaxAudioBytes + 100_000)]
+    [RequestFormLimits(MemoryBufferThreshold = ReadAloudPolicy.MaxAudioBytes + 100_000,
+        MultipartBodyLengthLimit = ReadAloudPolicy.MaxAudioBytes + 100_000)]
+    public async Task<ActionResult<ApiResponse<ReadAloudResultDto>>> ReadAloudPractice(
+        int sessionId, int interactionId, [FromForm] ReadAloudForm form, CancellationToken ct)
+    {
+        var result = await _readAloud.CheckPracticeAsync(ChildId, sessionId, interactionId, await ReadAudioAsync(form, ct), ct);
+        return Ok(ApiResponse<ReadAloudResultDto>.Ok(result));
+    }
+
+    // Chặn file quá lớn trước khi đọc vào bộ nhớ để chấm và lưu bản ghi.
+    private static async Task<ReadAloudRequest> ReadAudioAsync(ReadAloudForm form, CancellationToken ct)
     {
         if (form.Audio is { Length: > ReadAloudPolicy.MaxAudioBytes })
         {
@@ -189,9 +209,7 @@ public sealed class ChildReadingController : ControllerBase
             audio = buffer.ToArray();
         }
 
-        var result = await _readAloud.CheckAsync(ChildId, sessionId, segmentId,
-            new ReadAloudRequest { Audio = audio, ContentType = form.Audio?.ContentType }, ct);
-        return Ok(ApiResponse<ReadAloudResultDto>.Ok(result));
+        return new ReadAloudRequest { Audio = audio, ContentType = form.Audio?.ContentType };
     }
 }
 

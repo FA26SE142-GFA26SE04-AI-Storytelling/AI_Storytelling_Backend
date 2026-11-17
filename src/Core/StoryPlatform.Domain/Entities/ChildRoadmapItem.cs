@@ -15,7 +15,10 @@ public class ChildRoadmapItem : BaseEntity
     public int StoryId { get; set; }
     public virtual Story? Story { get; set; }
 
-    /// <summary>Thứ tự trong hàng chờ (nhỏ hơn đọc trước).</summary>
+    /// <summary>
+    /// Số chặng của truyện trong lộ trình; các truyện cùng chặng có cùng số và mở cùng lúc. Open = chặng hiện tại S,
+    /// Completed ≤ S, Waiting liên tiếp S+1, S+2… Skipped/Removed giữ số cũ, không tham gia đánh số.
+    /// </summary>
     public int Position { get; set; }
 
     public ChildRoadmapItemStatus Status { get; set; } = ChildRoadmapItemStatus.Waiting;

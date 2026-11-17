@@ -1,4 +1,4 @@
--- 24. reading_sessions (13)
+-- 24. reading_sessions (17)
 -- Moi dong thoa CK_reading_sessions_exactly_one_entry_source:
 -- ChildAccessCredentialId XOR SupervisorSessionId (refresh_tokens.Id).
 INSERT INTO reading_sessions (
@@ -30,4 +30,20 @@ VALUES
     (11, 1, 21, 26, NULL, 2, NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days' + INTERVAL '6 minutes', 'Completed', 3, 360, NULL, NOW() - INTERVAL '2 days', false),
     (12, 3, 21, 26, NULL, 3, NOW() - INTERVAL '1 day', NULL, 'Reading', 1, 90, NULL, NOW() - INTERVAL '1 day', false),
     (13, 1, 16, 21, NULL, 2, NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days' + INTERVAL '5 minutes', 'Completed', 1, 300, NULL, NOW() - INTERVAL '3 days', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- Lịch sử đọc phong phú của bé 1 (parent_demo1) cho màn kết quả đọc phía phụ huynh:
+-- truyện 1 được đọc xong 3 lần (phiên 1, 101, 102), có cảm nhận và chế độ đọc;
+-- 103 mở truyện 1 rồi bỏ dở (sau đó đã đọc xong), 104 đang đọc dở truyện 16.
+INSERT INTO reading_sessions (
+    "Id", "ChildProfileId", "StoryId", "StoryVersionId",
+    "ChildAccessCredentialId", "SupervisorSessionId", "StartedAt", "CompletedAt",
+    "Status", "PagesCompleted", "TimeSpentSeconds", "ForceExitRequestedAt", "CreatedAt", "IsDeleted",
+    "Feeling", "ReadingMode"
+)
+VALUES
+    (101, 1, 1, 1, 1, NULL, NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days' + INTERVAL '9 minutes', 'Completed', 1, 540, NULL, NOW() - INTERVAL '5 days', false, 'VeryLike', 'ListenFirst'),
+    (102, 1, 1, 1, 1, NULL, NOW() - INTERVAL '31 hours', NOW() - INTERVAL '30 hours', 'Completed', 1, 420, NULL, NOW() - INTERVAL '31 hours', false, 'Like', 'ReadFirst'),
+    (103, 1, 1, 1, 1, NULL, NOW() - INTERVAL '12 days', NULL, 'Reading', 1, 30, NULL, NOW() - INTERVAL '12 days', false, NULL, NULL),
+    (104, 1, 16, 21, 1, NULL, NOW() - INTERVAL '1 day', NULL, 'Reading', 0, 120, NULL, NOW() - INTERVAL '1 day', false, NULL, NULL)
 ON CONFLICT ("Id") DO NOTHING;

@@ -340,4 +340,14 @@ public class RoadmapLibraryServiceTests
 
         Assert.Single(plan.Children);
     }
+
+    [Fact]
+    public async Task Copy_StagePosition_IsBadRequest()
+    {
+        Published();
+
+        var error = await Assert.ThrowsAsync<BadRequestException>(() => _sut.CopyAsync(
+            Owner, 1, Copy(new[] { Child }, RoadmapInsertPosition.Stage)));
+        Assert.Equal("Lộ trình mẫu chỉ thêm được vào Đọc tiếp theo hoặc Cuối lộ trình.", error.Message);
+    }
 }

@@ -156,6 +156,7 @@ public sealed class StoryReviewListeningTests
         Assert.Empty(dto.Issues);
         Assert.Equal(dto.Plan.Sum(p => p.Count), dto.Items.Count);
         Assert.Contains(dto.Plan, p => p.Type == "EventOrdering");
+        Assert.Contains(dto.Plan, p => p.Type == "ReadAloud" && p.Count == 1);
     }
 
     [Fact]

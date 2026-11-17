@@ -55,6 +55,8 @@ public class ReadingContentDto
     public bool ListenOnly { get; set; }
     public List<ReadingSceneDto> Scenes { get; set; } = new();
     public List<ReadingVocabularyDto> Vocabulary { get; set; } = new();
+    /// <summary>Đoạn luyện đọc to: hiện sau scene cuối (sau Sắp xếp), trước quiz; null nếu chưa có hoặc thiếu audio.</summary>
+    public ReadAloudPracticeDto? ReadAloudPractice { get; set; }
 }
 
 public class ReadingSceneDto
@@ -143,6 +145,19 @@ public class ReadingSegmentDto
     public string? AudioUrl { get; set; }
     /// <summary>JSON mốc thời gian từng từ, dùng cho karaoke.</summary>
     public string? WordTimingsJson { get; set; }
+}
+
+/// <summary>Đoạn luyện đọc to: bé nghe audio mẫu rồi nói theo, hoặc tự đọc chữ, rồi gửi giọng đọc để chấm.</summary>
+public class ReadAloudPracticeDto
+{
+    /// <summary>Dùng làm interactionId khi gửi giọng đọc (POST read-aloud-practice).</summary>
+    public int InteractionId { get; set; }
+    /// <summary>Câu trích nguyên văn trong truyện.</summary>
+    public string Text { get; set; } = string.Empty;
+    /// <summary>Audio đọc mẫu riêng của câu này.</summary>
+    public string? AudioUrl { get; set; }
+    public string? PraiseFeedback { get; set; }
+    public string? PraiseAudioUrl { get; set; }
 }
 
 public class ReadingVocabularyDto

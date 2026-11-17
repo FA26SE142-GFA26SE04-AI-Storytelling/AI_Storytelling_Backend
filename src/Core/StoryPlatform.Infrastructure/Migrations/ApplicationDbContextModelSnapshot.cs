@@ -2919,6 +2919,12 @@ namespace StoryPlatform.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<int>("AudioRegenerationLimit")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ContentRegenerationLimit")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -2949,10 +2955,16 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<int>("FreeWritingAssistPerDay")
                         .HasColumnType("integer");
 
+                    b.Property<int>("ImageRegenerationLimit")
+                        .HasColumnType("integer");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
                     b.Property<int>("MinimumReadSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("OutlineRegenerationLimit")
                         .HasColumnType("integer");
 
                     b.Property<int>("PartnerMonthlyAiCredits")
@@ -2986,6 +2998,8 @@ namespace StoryPlatform.Infrastructure.Migrations
                         new
                         {
                             Id = 1,
+                            AudioRegenerationLimit = 2,
+                            ContentRegenerationLimit = 2,
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             CreativeFundPercent = 10,
                             CreatorMonthlyAiCredits = 2,
@@ -2996,8 +3010,10 @@ namespace StoryPlatform.Infrastructure.Migrations
                             FreeReadAloudPerMonth = 5,
                             FreeWeeklyNewLibraryStories = 3,
                             FreeWritingAssistPerDay = 5,
+                            ImageRegenerationLimit = 3,
                             IsDeleted = false,
                             MinimumReadSeconds = 60,
+                            OutlineRegenerationLimit = 3,
                             PartnerMonthlyAiCredits = 6,
                             PartnerMonthlySubmitCredits = 10,
                             PartnerWritingAssistPerDay = 40,

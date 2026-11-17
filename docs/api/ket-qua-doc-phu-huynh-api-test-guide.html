@@ -173,7 +173,7 @@ const row102 = {
   readCount: 3, readOrdinal: 3, laterCompleted: false, readingMode: "ReadFirst",
   feeling: "Like", feelingLabel: "Thích",
   quizTotalQuestions: 2, quizBestPercent: 100, quizRunCount: 3, quizLatestPercent: 100,
-  conversationAnswers: [], readAloud: null, expEarned: 10, wordsCollected: [], retell: null
+  conversationAnswers: [], readAloud: null, readAloudRecordingCount: 0, expEarned: 10, wordsCollected: [], retell: null
 };
 const row101 = {
   sessionId: 101, storyId: 1, title: "Chú Thỏ Thông Minh - Bản 1",
@@ -507,7 +507,7 @@ const STEPS = [
 // =====================================================================
 {
   id: "t4", title: "Task 4 — Kết quả đọc to (luyện đọc thành tiếng)",
-  desc: "Khi bé đọc to một đoạn, ChildReadAloudService chấm từng chữ và ghi TelemetryLog loại AsrWordResult với payload {segmentId, total, good, retry, skipped}. Không lưu âm thanh hay lời bé nói. Mỗi dòng danh sách có readAloud (null nếu chưa đọc to): số lần thử, số đoạn đã luyện, số chữ đọc tốt / cần đọc lại / tổng — mỗi đoạn chỉ lấy lần đọc CUỐI để thấy kết quả sau khi luyện.",
+  desc: "Khi bé đọc to một đoạn, ChildReadAloudService chấm từng chữ và ghi TelemetryLog loại AsrWordResult với payload {segmentId, total, good, retry, skipped}. Telemetry chỉ có số đếm; file lần đọc gần nhất được lưu cho chủ hồ sơ nghe và xóa. Mỗi dòng danh sách có readAloud (null nếu chưa đọc to) và readAloudRecordingCount (số bản ghi nghe được). Upload lỗi vẫn trả điểm; không tạo bản ghi mới. Seed không có file ghi âm thật.",
   flow: [
     "Phiên 101 có 4 dòng AsrWordResult: đoạn 1 lần 1 (good 4), đoạn 1 lần 2 (good 9), đoạn 2 (good 7) và 1 dòng payload hỏng.",
     "Lấy lần cuối mỗi đoạn: đoạn 1 = 9/10, đoạn 2 = 7/10 → goodWords 16, retryWords 1 + 2 = 3, totalWords 20 → 80%.",
@@ -838,11 +838,48 @@ const STEPS = [
 }
 ];
 
+STEPS.push({
+  id: "recordings", title: "Task 9 — Nghe và xóa bản ghi đọc to",
+  desc: "Chỉ chủ hồ sơ nghe giọng con, kèm chữ đoạn và điểm. Mỗi đoạn truyện/đoạn luyện trong một phiên giữ lần đọc gần nhất. Link nghe hết hạn sau 15 phút; file lưu tới khi chủ hồ sơ xóa hoặc xóa tài khoản.",
+  flow: ["Chạy API đọc to của bé ở trang tương tác của trẻ, dùng phiên đang hoạt động; nhập sessionId vào RECORDING_SESSION_ID.", "Đăng nhập parent_demo1, gọi danh sách bản ghi; lấy recordingId vào RECORDING_ID và mở audioUrl để nghe.", "Bé đọc lại cùng đoạn: kiểm tra chỉ còn một bản ghi và file cũ bị xóa. Xóa bản ghi rồi gọi lại: không còn bản ghi đó, telemetry điểm vẫn giữ."],
+  apis: [
+    { m: "GET", p: "/api/v1/ParentReadingFeedback/{childProfileId}/sessions/{sessionId}/read-aloud", role: "User (chủ hồ sơ)",
+      what: "Danh sách bản ghi lần đọc gần nhất, chữ đoạn, điểm và link nghe 15 phút.",
+      detail: [["Kiểm tra", ["Token User; EnsureOwnerAsync kiểm chủ hồ sơ; phiên phải thuộc đúng bé và chưa xóa."]], ["Kết quả", ["Đoạn truyện theo scene/segment, sau đó đoạn luyện theo thời gian; recordings rỗng nếu chưa có file. AudioUrl là link ký 15 phút."]]],
+      resp: J({ success: true, message: "Lấy bản ghi đọc to của con thành công.", data: { sessionId: "<RECORDING_SESSION_ID>", recordings: [{ recordingId: "<RECORDING_ID>", kind: "Segment", segmentId: 1, interactionId: null, sceneIndex: 0, segmentOrder: 1, text: "Chữ của đoạn bé đọc", goodCount: 3, retryCount: 1, skippedCount: 0, totalCount: 4, goodPercent: 75, audioUrl: "https://storage.example/signed-audio", recordedAt: "2026-11-17T00:00:00Z" }] }, errors: null }),
+      tests: [
+        ["ok", "Nghe sau khi bé đọc to", "200; message \"Lấy bản ghi đọc to của con thành công.\"; recordings có chữ, điểm và audioUrl nghe được; readAloudRecordingCount trong danh sách tăng tương ứng.", "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/<RECORDING_SESSION_ID>/read-aloud. Chạy sau API đọc to của bé ở trang tương tác của trẻ."],
+        ["edge", "Phiên seed chưa có file", "200; data.recordings = [] (seed chỉ có telemetry).", "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/102/read-aloud"],
+        ["neg", "Không phải chủ hồ sơ", "403; Bạn không có quyền với hồ sơ trẻ này.", "Đăng nhập parent_demo2. GET /api/v1/ParentReadingFeedback/1/sessions/102/read-aloud"],
+        ["neg", "Phiên của con khác", "404; Không tìm thấy Phiên đọc với mã định danh [2].", "Đăng nhập parent_demo1. GET /api/v1/ParentReadingFeedback/1/sessions/2/read-aloud"],
+        ["neg", "Gọi bằng token Moderator", "403 (body rỗng)"],
+        ["neg", "Gọi bằng token bé", "403 (body rỗng)"],
+        ["neg", "Không gửi token", "401"]
+      ] },
+    { m: "DELETE", p: "/api/v1/ParentReadingFeedback/{childProfileId}/sessions/{sessionId}/read-aloud/{recordingId}", role: "User (chủ hồ sơ)",
+      what: "Xóa file trong kho và ẩn bản ghi. Điểm đọc to trong telemetry vẫn còn.",
+      detail: [["Kiểm tra", ["Chủ hồ sơ, phiên thuộc bé và recordingId thuộc đúng phiên; bản ghi đã xóa trả 404."]], ["Xử lý", ["Xóa file, đánh dấu bản ghi đã xóa rồi lưu; lỗi kho lưu trữ thì không đánh dấu đã xóa."]]],
+      resp: J({ success: true, message: "Đã xóa bản ghi đọc to.", data: null, errors: null }),
+      tests: [
+        ["ok", "Xóa sau khi nghe", "200; message \"Đã xóa bản ghi đọc to.\"; gọi danh sách không còn bản ghi; file bị xóa khỏi kho.", "Đăng nhập parent_demo1. DELETE /api/v1/ParentReadingFeedback/1/sessions/<RECORDING_SESSION_ID>/read-aloud/<RECORDING_ID>. Chạy sau API đọc to và GET danh sách; lấy recordingId thật."],
+        ["neg", "Bản ghi không tồn tại hoặc đã xóa", "404; Không tìm thấy Bản ghi đọc to với mã định danh [99999].", "Đăng nhập parent_demo1. DELETE /api/v1/ParentReadingFeedback/1/sessions/102/read-aloud/99999"],
+        ["neg", "Bản ghi của phiên khác", "404; Không tìm thấy Bản ghi đọc to; không xóa file.", "Đăng nhập parent_demo1. DELETE /api/v1/ParentReadingFeedback/1/sessions/102/read-aloud/<RECORDING_ID>. Dùng recordingId của phiên vừa đọc khác 102."],
+        ["neg", "Phiên của con khác", "404; Không tìm thấy Phiên đọc với mã định danh [2].", "Đăng nhập parent_demo1. DELETE /api/v1/ParentReadingFeedback/1/sessions/2/read-aloud/99999"],
+        ["neg", "Không phải chủ hồ sơ", "403; Bạn không có quyền với hồ sơ trẻ này.", "Đăng nhập parent_demo2. DELETE /api/v1/ParentReadingFeedback/1/sessions/102/read-aloud/99999"],
+        ["neg", "Gọi bằng token Moderator", "403 (body rỗng)"],
+        ["neg", "Gọi bằng token bé", "403 (body rỗng)"],
+        ["neg", "Không gửi token", "401"]
+      ] }
+  ]
+});
+
 // Body thay thế theo [phần đường dẫn, phần tên tình huống, body]; không dùng vì body đã nằm trong dữ liệu test.
 const OVERRIDES = [];
 
 // ---------- DỮ LIỆU THẬT TỪ SEED (Database/Seed) ----------
 const SEEDAPI = [
+  ["GET /api/v1/ParentReadingFeedback/{childProfileId}/sessions/{sessionId}/read-aloud", { as: "parent_demo1", url: "GET /api/v1/ParentReadingFeedback/1/sessions/<RECORDING_SESSION_ID>/read-aloud", note: "Lấy sessionId từ API đọc to của bé 1." }],
+  ["DELETE /api/v1/ParentReadingFeedback/{childProfileId}/sessions/{sessionId}/read-aloud/{recordingId}", { as: "parent_demo1", url: "DELETE /api/v1/ParentReadingFeedback/1/sessions/<RECORDING_SESSION_ID>/read-aloud/<RECORDING_ID>", note: "Lấy recordingId từ danh sách bản ghi." }],
   ["=GET /api/v1/ParentReadingFeedback/{childProfileId}", { as: "parent_demo1", url: "GET /api/v1/ParentReadingFeedback/1", note: "Hồ sơ 1 = Bé An của parent_demo1; seed có 5 phiên xong và 2 phiên chưa xong." }],
   ["GET /api/v1/ParentReadingFeedback/{childProfileId}/sessions/{sessionId}/quiz", { as: "parent_demo1", url: "GET /api/v1/ParentReadingFeedback/1/sessions/102/quiz", note: "Phiên 102 của Bé An, truyện 1 (phiên bản 1 có 2 câu quiz: 1 và 101)." }],
   ["GET /api/v1/ParentReadingFeedback/{childProfileId}/overview", { as: "parent_demo1", url: "GET /api/v1/ParentReadingFeedback/1/overview", note: "Tổng quan mọi thời điểm của Bé An." }],
@@ -858,6 +895,8 @@ const GENERIC = [
 
 // ---------- GIÁ TRỊ ĐỘNG ----------
 const VAR_DEFS = [
+  ["RECORDING_SESSION_ID", "", "Phiên của bé 1 vừa gọi API đọc to thành công ở trang tương tác của trẻ"],
+  ["RECORDING_ID", "", "recordingId lấy từ GET danh sách bản ghi đọc to, dùng để xóa"],
   ["FROM_7D", "2026-11-08T00:00:00Z", "Mốc UTC = bây giờ − 7 ngày (SQL: SELECT to_char((NOW()-INTERVAL '7 days') AT TIME ZONE 'utc','YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'))"],
   ["TO_PLUS_1D", "2026-11-16T00:00:00Z", "Mốc UTC = bây giờ + 1 ngày (SQL tương tự, INTERVAL '1 day')"],
   ["COMPLETED_AT_101", "2026-11-10T10:09:00.000000Z", "CompletedAt chính xác của phiên 101 (SQL ở test cuối Task 0, có phần micro giây)"]

@@ -26,6 +26,7 @@ public class AccountDeletionService : IAccountDeletionService
     private readonly IEmailSender _emailSender;
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly IParentStorySummaryService _storySummaries;
+    private readonly IParentReadAloudRecordingService _readAloudRecordings;
     private readonly ILogger<AccountDeletionService> _logger;
 
     public AccountDeletionService(
@@ -36,6 +37,7 @@ public class AccountDeletionService : IAccountDeletionService
         IEmailSender emailSender,
         IAuditLogWriter auditLogWriter,
         IParentStorySummaryService storySummaries,
+        IParentReadAloudRecordingService readAloudRecordings,
         ILogger<AccountDeletionService> logger)
     {
         _unitOfWork = unitOfWork;
@@ -45,6 +47,7 @@ public class AccountDeletionService : IAccountDeletionService
         _emailSender = emailSender;
         _auditLogWriter = auditLogWriter;
         _storySummaries = storySummaries;
+        _readAloudRecordings = readAloudRecordings;
         _logger = logger;
     }
 
@@ -156,6 +159,15 @@ public class AccountDeletionService : IAccountDeletionService
             catch (Exception ex)
             {
                 _logger.LogWarning("Story summary audio purge failed. ChildProfileId={ChildProfileId}, ErrorType={ErrorType}",
+                    profile.Id, ex.GetType().Name);
+            }
+            try
+            {
+                await _readAloudRecordings.PurgeChildAsync(profile.Id, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Read-aloud audio purge failed. ChildProfileId={ChildProfileId}, ErrorType={ErrorType}",
                     profile.Id, ex.GetType().Name);
             }
         }

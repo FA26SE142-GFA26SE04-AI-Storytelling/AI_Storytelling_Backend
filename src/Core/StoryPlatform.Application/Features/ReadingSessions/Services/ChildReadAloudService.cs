@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ReadingSessions.Interfaces;
@@ -10,17 +12,22 @@ namespace StoryPlatform.Application.Features.ReadingSessions.Services;
 
 /// <summary>
 /// Luyện đọc thành tiếng theo đoạn truyện hoặc đoạn luyện; nhận dạng rồi so khớp từng chữ.
-/// Không lưu âm thanh; telemetry chỉ chứa số đếm. Không giới hạn lượt, không thưởng.
+/// Giữ bản ghi lần đọc gần nhất cho chủ hồ sơ; telemetry chỉ chứa số đếm. Không giới hạn lượt, không thưởng.
 /// </summary>
 public class ChildReadAloudService : IChildReadAloudService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly ISpeechRecognizer _recognizer;
+    private readonly IMediaStorage _storage;
+    private readonly ILogger<ChildReadAloudService> _logger;
 
-    public ChildReadAloudService(IUnitOfWork unitOfWork, ISpeechRecognizer recognizer)
+    public ChildReadAloudService(IUnitOfWork unitOfWork, ISpeechRecognizer recognizer, IMediaStorage storage,
+        ILogger<ChildReadAloudService> logger)
     {
         _unitOfWork = unitOfWork;
         _recognizer = recognizer;
+        _storage = storage;
+        _logger = logger;
     }
 
     public async Task<ReadAloudResultDto> CheckAsync(
@@ -36,7 +43,7 @@ public class ChildReadAloudService : IChildReadAloudService
             throw new NotFoundException("Đoạn truyện", segmentId);
         }
 
-        var result = await ScoreAsync(childProfileId, session, segment.TextContent, "segmentId", segmentId, request, ct);
+        var result = await ScoreAsync(childProfileId, session, segment.TextContent, segmentId, null, request, ct);
         result.SegmentId = segmentId;
         return result;
     }
@@ -73,7 +80,7 @@ public class ChildReadAloudService : IChildReadAloudService
         if (ChildListeningContent.BuildReadAloud([interaction], practiceAssets) is null)
             throw new NotFoundException("Đoạn luyện đọc", interactionId);
 
-        var result = await ScoreAsync(childProfileId, session, interaction.SourceQuote, "interactionId", interactionId, request, ct);
+        var result = await ScoreAsync(childProfileId, session, interaction.SourceQuote, null, interactionId, request, ct);
         result.InteractionId = interactionId;
         return result;
     }
@@ -100,9 +107,9 @@ public class ChildReadAloudService : IChildReadAloudService
         return (session, package);
     }
 
-    // Kiểm quyền giọng nói và file, nhận dạng, so khớp, ghi telemetry chỉ gồm số đếm.
+    // Kiểm quyền giọng nói và file, nhận dạng, so khớp; ghi telemetry số đếm và bản ghi lần đọc gần nhất.
     private async Task<ReadAloudResultDto> ScoreAsync(int childProfileId, ReadingSession session, string text,
-        string targetKey, int targetId, ReadAloudRequest request, CancellationToken ct)
+        int? segmentId, int? interactionId, ReadAloudRequest request, CancellationToken ct)
     {
         var policy = await _unitOfWork.Repository<SafetyPolicy>().FirstOrDefaultAsync(
             existing => existing.ChildProfileId == childProfileId && !existing.IsDeleted, cancellationToken: ct);
@@ -132,18 +139,46 @@ public class ChildReadAloudService : IChildReadAloudService
         var retry = words.Count(word => word.Status == ReadAloudWordStatus.Retry);
         var skipped = words.Count - good - retry;
 
-        await _unitOfWork.Repository<TelemetryLog>().AddAsync(new TelemetryLog
+        var targetKey = segmentId.HasValue ? "segmentId" : "interactionId";
+        var targetId = segmentId ?? interactionId!.Value;
+        var newPath = await TryUploadAsync(session, segmentId, interactionId, request, ct);
+        string? oldPath = null;
+        await _unitOfWork.BeginTransactionAsync(ct);
+        try
         {
-            ReadingSessionId = session.Id,
-            EventType = TelemetryEventType.AsrWordResult,
-            // Chỉ số đếm theo chữ; không lưu âm thanh hay lời trẻ nói. targetKey = segmentId hoặc interactionId.
-            EventPayload = JsonSerializer.Serialize(new Dictionary<string, int>
+            // Bé bấm gửi hai lần cùng lúc: xếp hàng theo phiên rồi mới tìm bản ghi, để không thêm trùng dòng
+            // (unique index) và không để file của lần "thua" nằm lại không dòng nào trỏ tới.
+            // Dùng chung khóa advisory với id truyện; trùng số chỉ chờ một transaction ngắn.
+            await _unitOfWork.AcquireTransactionLockAsync(session.Id, ct);
+            await _unitOfWork.Repository<TelemetryLog>().AddAsync(new TelemetryLog
             {
-                [targetKey] = targetId, ["total"] = words.Count, ["good"] = good, ["retry"] = retry, ["skipped"] = skipped
-            }),
-            OccurredAt = DateTime.UtcNow
-        }, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
+                ReadingSessionId = session.Id,
+                EventType = TelemetryEventType.AsrWordResult,
+                // Chỉ số đếm theo chữ; không ghi lời trẻ nói vào telemetry. targetKey = segmentId hoặc interactionId.
+                EventPayload = JsonSerializer.Serialize(new Dictionary<string, int>
+                {
+                    [targetKey] = targetId, ["total"] = words.Count, ["good"] = good, ["retry"] = retry, ["skipped"] = skipped
+                }),
+                OccurredAt = DateTime.UtcNow
+            }, ct);
+
+            if (newPath != null)
+            {
+                oldPath = await StageRecordingAsync(session, segmentId, interactionId, request, newPath,
+                    (good, retry, skipped, words.Count), ct);
+            }
+
+            await _unitOfWork.SaveChangesAsync(ct);
+            await _unitOfWork.CommitTransactionAsync(ct);
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+            if (newPath != null) await TryDeleteAsync(newPath);
+            throw;
+        }
+
+        if (oldPath != null) await TryDeleteAsync(oldPath);
 
         return new ReadAloudResultDto
         {
@@ -155,5 +190,73 @@ public class ChildReadAloudService : IChildReadAloudService
             TotalCount = words.Count,
             Message = ReadAloudPolicy.Message(good, words.Count)
         };
+    }
+
+    /// <summary>Upload file; lỗi kho lưu trữ không làm hỏng việc chấm của bé (trả null, ghi log).</summary>
+    private async Task<string?> TryUploadAsync(ReadingSession session, int? segmentId, int? interactionId,
+        ReadAloudRequest request, CancellationToken ct)
+    {
+        var contentType = request.ContentType!.Split(';')[0].Trim().ToLowerInvariant();
+        var target = segmentId is int id ? $"segment-{id}" : $"practice-{interactionId}";
+        var path = $"{ReadAloudPolicy.StorageFolder}/{session.ChildProfileId}/{session.Id}/{target}/"
+                   + $"{Guid.NewGuid():N}{StorySummaryPolicy.Extension(contentType)}";
+        try
+        {
+            using var content = new MemoryStream(request.Audio);
+            await _storage.UploadAsync(path, content, contentType, ct);
+            return path;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning("Read-aloud recording upload failed. SessionId={SessionId}, ErrorType={ErrorType}",
+                session.Id, ex.GetType().Name);
+            return null;
+        }
+    }
+
+    /// <summary>Thêm hoặc thay bản ghi của đoạn (chưa lưu); trả đường dẫn file cũ cần xóa sau khi lưu.</summary>
+    private async Task<string?> StageRecordingAsync(ReadingSession session, int? segmentId, int? interactionId,
+        ReadAloudRequest request, string path, (int Good, int Retry, int Skipped, int Total) score, CancellationToken ct)
+    {
+        var repo = _unitOfWork.Repository<ReadAloudRecording>();
+        var existing = await repo.FirstOrDefaultAsync(
+            row => row.ReadingSessionId == session.Id && row.StorySegmentId == segmentId
+                   && row.ListeningInteractionId == interactionId && !row.IsDeleted, cancellationToken: ct);
+        var recording = existing ?? new ReadAloudRecording
+        {
+            ReadingSessionId = session.Id,
+            ChildProfileId = session.ChildProfileId,
+            StorySegmentId = segmentId,
+            ListeningInteractionId = interactionId
+        };
+        var oldPath = existing?.AudioStoragePath;
+        recording.AudioStoragePath = path;
+        recording.AudioContentType = request.ContentType!.Split(';')[0].Trim().ToLowerInvariant();
+        recording.AudioBytes = request.Audio.Length;
+        (recording.GoodCount, recording.RetryCount, recording.SkippedCount, recording.TotalCount) = score;
+        recording.RecordedAt = DateTime.UtcNow;
+        if (existing == null)
+        {
+            await repo.AddAsync(recording, ct);
+        }
+        else
+        {
+            recording.UpdatedAt = DateTime.UtcNow;
+            repo.Update(recording);
+        }
+
+        return oldPath;
+    }
+
+    private async Task TryDeleteAsync(string path)
+    {
+        try
+        {
+            await _storage.DeleteAsync(path, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Read-aloud recording file could not be deleted. ErrorType={ErrorType}", ex.GetType().Name);
+        }
     }
 }

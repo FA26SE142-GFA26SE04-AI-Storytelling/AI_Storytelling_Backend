@@ -21,6 +21,11 @@ public static class ReadAloudPolicy
     public const string UnsupportedAudioMessage = "Định dạng ghi âm chưa được hỗ trợ.";
     public const string SessionEndedMessage = "Phiên đọc này đã kết thúc.";
 
+    /// <summary>Thư mục gốc trong kho lưu trữ cho bản ghi đọc to (chỉ chủ hồ sơ nghe).</summary>
+    public const string StorageFolder = "read-aloud";
+    /// <summary>Link nghe bản ghi đọc to cho chủ hồ sơ hết hạn sau 15 phút.</summary>
+    public static readonly TimeSpan ListenUrlLifetime = TimeSpan.FromMinutes(15);
+
     public static string Message(int good, int total) =>
         good == 0 ? "Em đọc to hơn một chút nhé!"
         : good == total ? "Em đọc hay quá!"

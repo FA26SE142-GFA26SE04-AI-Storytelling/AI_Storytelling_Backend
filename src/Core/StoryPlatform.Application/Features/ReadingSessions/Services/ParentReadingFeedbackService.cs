@@ -69,6 +69,7 @@ public partial class ParentReadingFeedbackService : IParentReadingFeedbackServic
             .SelectMany(logs => ReadingActivityTelemetry.CollectedVocabularyIds(logs))
             .Distinct().ToList(), ct);
         var retells = await LoadRetellsAsync(sessionIds, ct);
+        var recordingCounts = await LoadReadAloudRecordingCountsAsync(sessionIds, ct);
         var rows = sessions.Select(session =>
         {
             var versionId = session.StoryVersionId;
@@ -106,6 +107,7 @@ public partial class ParentReadingFeedbackService : IParentReadingFeedbackServic
                 ConversationAnswers = conversation.GetValueOrDefault(session.Id) ?? new(),
                 ReadAloud = ReadingActivityTelemetry.ReadAloud(logs),
                 ReadAloudPractice = ReadingActivityTelemetry.ReadAloudPractice(logs),
+                ReadAloudRecordingCount = recordingCounts.GetValueOrDefault(session.Id),
                 ExpEarned = ReadingActivityTelemetry.Exp(logs),
                 WordsCollected = ReadingActivityTelemetry.CollectedVocabularyIds(logs)
                     .Where(terms.ContainsKey)

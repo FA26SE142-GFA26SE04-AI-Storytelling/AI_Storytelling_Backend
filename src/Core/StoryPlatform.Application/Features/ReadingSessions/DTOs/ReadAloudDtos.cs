@@ -6,7 +6,7 @@ namespace StoryPlatform.Application.Features.ReadingSessions;
 public sealed record ReadAloudWordDto(int Index, string Text, string Status, string? Hint);
 
 
-/// <summary>Đoạn ghi âm trẻ gửi lên; chỉ dùng trong bộ nhớ.</summary>
+/// <summary>Đoạn ghi âm trẻ gửi lên; dùng để chấm và lưu bản ghi lần đọc gần nhất cho chủ hồ sơ.</summary>
 public sealed class ReadAloudRequest
 {
     public byte[] Audio { get; init; } = [];

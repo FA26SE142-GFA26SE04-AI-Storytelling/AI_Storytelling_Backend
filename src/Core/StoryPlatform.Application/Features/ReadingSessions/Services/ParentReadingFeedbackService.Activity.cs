@@ -76,4 +76,17 @@ public partial class ParentReadingFeedbackService
                 };
             });
     }
+    /// <summary>Số bản ghi đọc to chưa xóa theo phiên.</summary>
+    private async Task<Dictionary<int, int>> LoadReadAloudRecordingCountsAsync(List<int> sessionIds, CancellationToken ct)
+    {
+        if (sessionIds.Count == 0)
+        {
+            return new Dictionary<int, int>();
+        }
+
+        return (await _unitOfWork.Repository<ReadAloudRecording>().FindAsync(
+                row => sessionIds.Contains(row.ReadingSessionId) && !row.IsDeleted, cancellationToken: ct))
+            .GroupBy(row => row.ReadingSessionId)
+            .ToDictionary(group => group.Key, group => group.Count());
+    }
 }

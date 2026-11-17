@@ -459,8 +459,37 @@ const STEPS = [
 }
 ];
 
+STEPS.push({
+  id: "read-aloud", title: "Bước 7 — Đọc to và lưu giọng cho chủ hồ sơ nghe",
+  desc: "Chạy với phiên đang hoạt động (mở phiên mới nếu đã complete). Chủ hồ sơ bật VoiceAnswersEnabled trước. File lần gần nhất của mỗi đoạn trong phiên được giữ trên Supabase; đọc lại thay file cũ. Upload lỗi vẫn trả điểm. Không tự hết hạn file; chỉ chủ hồ sơ nghe/xóa qua trang kết quả đọc.",
+  flow: ["Mở phiên đang hoạt động, GET content để lấy segmentId hoặc readAloudPractice.interactionId; nhập các ô bên dưới.", "Trong Swagger/Postman chọn multipart/form-data, trường Audio là file thật tối đa 1.000.000 byte; không gửi JSON thay file.", "Gọi API đọc to, sau đó parent_demo1 gọi GET /api/v1/ParentReadingFeedback/1/sessions/{sessionId}/read-aloud để nghe. Link nghe hết hạn sau 15 phút."],
+  apis: [
+    { m: "POST", p: "/api/v1/child/reading/sessions/{sessionId}/segments/{segmentId}/read-aloud", role: "Trẻ (ChildSession)", ctl: "ChildReadingController",
+      what: "Đọc to một đoạn truyện, nhận điểm từng chữ và lưu bản ghi lần gần nhất cho chủ hồ sơ.",
+      detail: [["Kiểm tra", ["Phiên thuộc bé, đang hoạt động, không bị ngắt; đoạn thuộc phiên bản truyện; VoiceAnswersEnabled; file Audio không rỗng, tối đa 1.000.000 byte, loại âm thanh được hỗ trợ."]], ["Xử lý", ["Google STT nhận dạng, chấm từng chữ good/retry/skipped; telemetry chỉ số đếm. Upload file, lưu bản ghi cùng telemetry; đọc lại thay file cũ. Upload lỗi: vẫn trả kết quả chấm, không có bản ghi mới. Lưu DB lỗi: dọn file vừa upload."]]],
+      tests: [
+        ["ok", "RA01", "Đọc to đoạn truyện", "200; message Thao tác thành công.; data có words, goodCount, retryCount, skippedCount, totalCount; chủ hồ sơ nghe được bản ghi.", { as: CHILD, call: `POST ${R}/<READ_ALOUD_SESSION_ID>/segments/<READ_ALOUD_SEGMENT_ID>/read-aloud`, data: "multipart/form-data, Audio = file ghi âm thật. Không dùng request JSON để upload file." }],
+        ["edge", "RA02", "Đọc lại cùng đoạn", "200; chỉ một bản ghi cho đoạn/phiên, file mới thay file cũ.", { as: CHILD, call: `POST ${R}/<READ_ALOUD_SESSION_ID>/segments/<READ_ALOUD_SEGMENT_ID>/read-aloud`, data: "Gửi file Audio khác sau RA01; kiểm qua API phụ huynh." }],
+        ["neg", "RA03", "Chưa bật giọng nói", "403; Bố mẹ chưa bật đọc bằng giọng nói cho em.", { as: CHILD, call: `POST ${R}/<READ_ALOUD_SESSION_ID>/segments/<READ_ALOUD_SEGMENT_ID>/read-aloud`, data: "VoiceAnswersEnabled = false; Audio là file hợp lệ." }],
+        ["neg", "RA04", "Không gửi token", "401", { as: "(không gửi token)", call: `POST ${R}/<READ_ALOUD_SESSION_ID>/segments/<READ_ALOUD_SEGMENT_ID>/read-aloud` }]
+      ] },
+    { m: "POST", p: "/api/v1/child/reading/sessions/{sessionId}/read-aloud-practice/{interactionId}", role: "Trẻ (ChildSession)", ctl: "ChildReadingController",
+      what: "Đọc theo đoạn luyện từ readAloudPractice của GET content, lưu lần đọc gần nhất.",
+      detail: [["Kiểm tra", ["Phiên thuộc bé và đang hoạt động; tương tác ReadAloud thuộc đúng truyện/gói, có SourceQuote và đủ media. Lấy interactionId từ GET content, không dùng id của RolePlay hay Checkpoint.", "VoiceAnswersEnabled; Audio không rỗng, không quá 1.000.000 byte và đúng content type."]], ["Xử lý", ["Nhận dạng và chấm như đoạn truyện. Upload Supabase, lưu bản ghi practice cùng telemetry; đọc lại xóa file cũ sau khi lưu. Upload lỗi vẫn trả điểm; DB lỗi thì dọn file mới."]]],
+      tests: [
+        ["ok", "RA05", "Đọc đoạn luyện", "200; data.interactionId đúng đoạn luyện; chủ hồ sơ thấy kind Practice, text và điểm.", { as: CHILD, call: `POST ${R}/<READ_ALOUD_SESSION_ID>/read-aloud-practice/<READ_ALOUD_INTERACTION_ID>`, data: "Cần truyện đã duyệt có readAloudPractice trong GET content. Gửi multipart/form-data, Audio = file thật. Seed truyện 900 chưa có đoạn luyện ReadAloud." }],
+        ["neg", "RA06", "Dùng Checkpoint thay đoạn luyện", "404; đoạn luyện không tồn tại; không nhận dạng/upload.", { as: CHILD, call: `POST ${R}/<READ_ALOUD_SESSION_ID>/read-aloud-practice/900`, data: "Tương tác seed 900 là Checkpoint, không phải ReadAloud. Gửi Audio hợp lệ trong phiên truyện 900." }],
+        ["neg", "RA07", "Token phụ huynh", "403 (policy ChildSession)", { as: P1, call: `POST ${R}/<READ_ALOUD_SESSION_ID>/read-aloud-practice/<READ_ALOUD_INTERACTION_ID>` }],
+        ["neg", "RA08", "Không gửi token", "401", { as: "(không gửi token)", call: `POST ${R}/<READ_ALOUD_SESSION_ID>/read-aloud-practice/<READ_ALOUD_INTERACTION_ID>` }]
+      ] }
+  ]
+});
+
 // ---------- GIÁ TRỊ ĐỘNG ----------
 const VAR_DEFS = [
+  ["READ_ALOUD_SESSION_ID", "", "Phiên đang hoạt động của bé 1 để đọc to (mở lại sau complete)"],
+  ["READ_ALOUD_SEGMENT_ID", "", "segmentId từ scenes[].segments[] của GET content"],
+  ["READ_ALOUD_INTERACTION_ID", "", "readAloudPractice.interactionId từ GET content; cần truyện có đoạn luyện thật"],
   ["SESSION_ID", "", "Bước 1 (T03): data.sessionId của phiên đọc truyện 900"],
   ["NEW_SESSION_ID", "", "Bước 5 (T35): data.sessionId của phiên mới"],
   ["FILLBLANK_ID", "", "Id tương tác FillBlank (chỉ khi có truyện 9–10 tuổi)"]

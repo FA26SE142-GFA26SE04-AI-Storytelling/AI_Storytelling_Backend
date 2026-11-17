@@ -2858,6 +2858,88 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("quiz_items", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadAloudRecording", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AudioBytes")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("AudioContentType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("AudioStoragePath")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("ChildProfileId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("GoodCount")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("ListeningInteractionId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ReadingSessionId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("RecordedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("RetryCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("SkippedCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("StorySegmentId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TotalCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChildProfileId")
+                        .HasDatabaseName("IX_read_aloud_recordings_child");
+
+                    b.HasIndex("ListeningInteractionId");
+
+                    b.HasIndex("StorySegmentId");
+
+                    b.HasIndex("ReadingSessionId", "ListeningInteractionId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_read_aloud_recordings_session_practice")
+                        .HasFilter("\"ListeningInteractionId\" IS NOT NULL AND \"IsDeleted\" = false");
+
+                    b.HasIndex("ReadingSessionId", "StorySegmentId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_read_aloud_recordings_session_segment")
+                        .HasFilter("\"StorySegmentId\" IS NOT NULL AND \"IsDeleted\" = false");
+
+                    b.ToTable("read_aloud_recordings", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_read_aloud_recordings_one_target", "(\"StorySegmentId\" IS NOT NULL AND \"ListeningInteractionId\" IS NULL) OR (\"StorySegmentId\" IS NULL AND \"ListeningInteractionId\" IS NOT NULL)");
+                        });
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadingProgress", b =>
                 {
                     b.Property<int>("Id")
@@ -6145,6 +6227,31 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("StoryVersion");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadAloudRecording", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.ListeningInteraction", "ListeningInteraction")
+                        .WithMany()
+                        .HasForeignKey("ListeningInteractionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("StoryPlatform.Domain.Entities.ReadingSession", "ReadingSession")
+                        .WithMany()
+                        .HasForeignKey("ReadingSessionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StoryPlatform.Domain.Entities.StorySegment", "StorySegment")
+                        .WithMany()
+                        .HasForeignKey("StorySegmentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ListeningInteraction");
+
+                    b.Navigation("ReadingSession");
+
+                    b.Navigation("StorySegment");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ReadingProgress", b =>

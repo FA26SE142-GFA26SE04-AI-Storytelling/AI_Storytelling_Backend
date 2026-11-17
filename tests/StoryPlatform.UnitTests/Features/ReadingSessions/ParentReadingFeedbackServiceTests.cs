@@ -805,4 +805,16 @@ public class ParentReadingFeedbackServiceTests
         Assert.Equal(0, detail.Questions.Single().TimesAnswered);
         await Assert.ThrowsAsync<NotFoundException>(() => _sut.GetQuizAsync(Parent, ReadingHarness.Child, deleted.Id));
     }
+    [Fact]
+    public async Task ListAsync_CountsLiveReadAloudRecordingsPerSession()
+    {
+        var session = _h.AddSession(SessionStatus.Completed);
+        session.CompletedAt = DateTime.UtcNow;
+        _h.ReadAloudRecordings.Add(new ReadAloudRecording { Id = 1, ReadingSessionId = session.Id, ChildProfileId = ReadingHarness.Child, StorySegmentId = 1, AudioStoragePath = "a" });
+        _h.ReadAloudRecordings.Add(new ReadAloudRecording { Id = 2, ReadingSessionId = session.Id, ChildProfileId = ReadingHarness.Child, StorySegmentId = 2, AudioStoragePath = "b", IsDeleted = true });
+
+        var page = await _sut.ListAsync(7, ReadingHarness.Child, new ParentReadingFeedbackQueryDto());
+
+        Assert.Equal(1, Assert.Single(page.Items).ReadAloudRecordingCount);
+    }
 }

@@ -9,6 +9,8 @@ using StoryPlatform.Application.Features.AIStoryInput.Models;
 using StoryPlatform.Application.Features.Outline.DTOs;
 using StoryPlatform.Application.Features.Outline.Guardrails;
 using StoryPlatform.Application.Features.Outline.Interfaces;
+using StoryPlatform.Application.Features.PlanBenefits.DTOs;
+using StoryPlatform.Application.Features.PlanBenefits.Interfaces;
 using StoryPlatform.Application.Features.TokenQuota.Interfaces;
 using StoryPlatform.Application.Features.TokenQuota.Services;
 using StoryPlatform.Contracts.AI.Models;
@@ -30,14 +32,17 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
     private readonly IGrayZoneEvaluator? _moderation;
     private readonly ITokenQuotaService? _tokenQuota;
 
+    private readonly IPlanSettingsProvider? _planSettings;
+
     public OutlineService(
         IUnitOfWork unitOfWork,
         IAIStoryGenerationClient aiClient,
         IOutlineReviewGuardrail guardrail,
         IOutlineJobFailureFinalizer failureFinalizer, IGrayZoneEvaluator? moderation = null,
-        ITokenQuotaService? tokenQuota = null)
+        ITokenQuotaService? tokenQuota = null, IPlanSettingsProvider? planSettings = null)
     {
         _tokenQuota = tokenQuota;
+        _planSettings = planSettings;
         _unitOfWork = unitOfWork;
         _aiClient = aiClient;
         _guardrail = guardrail;
@@ -49,7 +54,8 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         var story = await LoadAuthorizedStoryForReviewAsync(userId, storyId, cancellationToken);
         var versions = await VersionsAsync(storyId, cancellationToken);
         var jobs = await JobsAsync(storyId, cancellationToken);
-        return ToProgress(story, versions.FirstOrDefault(item => item.IsCurrent), jobs);
+        var usage = await StoryRegenerationLimits.GetUsageAsync(_unitOfWork, _planSettings, storyId, cancellationToken);
+        return ToProgress(story, versions.FirstOrDefault(item => item.IsCurrent), jobs, usage.Outline);
     }
 
     public async Task<IReadOnlyList<OutlineVersionDto>> GetVersionsAsync(int userId, int storyId, CancellationToken cancellationToken = default)
@@ -124,6 +130,9 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
             if (existing is null)
             {
                 await EnsureNoActiveOutlineJobAsync(storyId, cancellationToken);
+                // Trong transaction có khoá theo truyện nên hai yêu cầu cùng lúc không vượt giới hạn.
+                var usage = await StoryRegenerationLimits.GetUsageAsync(_unitOfWork, _planSettings, storyId, cancellationToken);
+                StoryRegenerationLimits.EnsureAvailable(usage.Outline, "dàn ý");
                 // Lượt của truyện bỏ dở có thể đã được trả (job dọn lượt): làm tiếp phải giữ lại (409 nếu hết).
                 if (_tokenQuota is not null)
                     await _tokenQuota.HoldStoryCreditForRetryAsync(storyId, cancellationToken);
@@ -733,7 +742,8 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
     private static OutlineProgressDto ToProgress(
         Story story,
         StoryVersion? current,
-        IReadOnlyList<StoryGenerationJob> jobs)
+        IReadOnlyList<StoryGenerationJob> jobs,
+        RegenerationCounter? regeneration = null)
     {
         var outlineJobs = jobs.Where(item => !item.IsDeleted && item.Operation is
             GenerationJobOperation.GenerateOutline or GenerationJobOperation.RegenerateOutline).ToArray();
@@ -753,7 +763,8 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
             CurrentVersion = current is null ? null : ToDto(current),
             ActiveOperation = active is null ? null : ToSnake(active.Operation.ToString()),
             ActiveJobStatus = active is null ? null : ToSnake(active.Status.ToString()),
-            LastErrorCode = lastErrorCode
+            LastErrorCode = lastErrorCode,
+            Regeneration = regeneration is null ? null : RegenerationCounterDto.From(regeneration)
         };
     }
 

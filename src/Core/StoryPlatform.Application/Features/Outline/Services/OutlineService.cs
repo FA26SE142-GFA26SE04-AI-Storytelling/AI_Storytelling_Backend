@@ -133,6 +133,9 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
                 // Trong transaction có khoá theo truyện nên hai yêu cầu cùng lúc không vượt giới hạn.
                 var usage = await StoryRegenerationLimits.GetUsageAsync(_unitOfWork, _planSettings, storyId, cancellationToken);
                 StoryRegenerationLimits.EnsureAvailable(usage.Outline, "dàn ý");
+                // Lượt của truyện bỏ dở có thể đã được trả (job dọn lượt): làm tiếp phải giữ lại (409 nếu hết).
+                if (_tokenQuota is not null)
+                    await _tokenQuota.HoldStoryCreditForRetryAsync(storyId, cancellationToken);
                 var generationRequest = await LoadAcceptedRequestAsync(storyId, cancellationToken);
                 var job = new StoryGenerationJob
                 {
@@ -245,6 +248,9 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
             }
 
             await EnsureNoActiveOutlineJobAsync(storyId, cancellationToken);
+            // Lượt của truyện bỏ dở có thể đã được trả (job dọn lượt): duyệt dàn ý để sinh nội dung phải giữ lại lượt.
+            if (_tokenQuota is not null)
+                await _tokenQuota.HoldStoryCreditForRetryAsync(storyId, cancellationToken);
             var key = input.ApprovalKey.Trim();
             var existing = await _unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(
                 item => item.RequestedByUserId == userId &&

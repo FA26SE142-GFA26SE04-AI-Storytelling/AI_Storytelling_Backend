@@ -3,7 +3,9 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
+using System.Text.Json;
 using StoryPlatform.Application.Features.CreatorTiers.Interfaces;
+using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Application.Features.TokenQuota.DTOs;
 using StoryPlatform.Application.Features.TokenQuota.Interfaces;
 using StoryPlatform.Domain.Entities;
@@ -26,6 +28,7 @@ public partial class TokenQuotaService : ITokenQuotaService
     private readonly IPlanBenefitService? _planBenefits;
     private readonly IPlanUsageService? _planUsage;
     private readonly ICreatorTierService? _creatorTiers;
+    private readonly INotificationService? _notifications;
 
     /// <param name="auditLogWriter">Chỉ cần cho thao tác của Admin (<see cref="AdjustAsync"/>).</param>
     /// <param name="planSettings">Lượt dùng thử và hạn mức tháng Creator do Admin cấu hình; null thì dùng mặc định.</param>
@@ -34,8 +37,9 @@ public partial class TokenQuotaService : ITokenQuotaService
     public TokenQuotaService(
         IUnitOfWork unitOfWork, IAuditLogWriter? auditLogWriter = null, IPlanSettingsProvider? planSettings = null,
         IPlanBenefitService? planBenefits = null, IPlanUsageService? planUsage = null,
-        ICreatorTierService? creatorTiers = null)
+        ICreatorTierService? creatorTiers = null, INotificationService? notifications = null)
     {
+        _notifications = notifications;
         _creatorTiers = creatorTiers;
         _planBenefits = planBenefits;
         _planUsage = planUsage;
@@ -199,6 +203,91 @@ public partial class TokenQuotaService : ITokenQuotaService
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task<int> ReleaseStaleHoldsAsync(DateTime now, TimeSpan maxHoldAge, CancellationToken cancellationToken = default)
+    {
+        var cutoff = now - maxHoldAge;
+        var storyIds = (await _unitOfWork.Repository<CreditUsage>().FindAsync(
+                usage => usage.Reason == CreditUsageReason.StoryRequest && usage.StoryId != null
+                         && usage.ConsumedAt == null && usage.RefundedAt == null && usage.CreatedAt <= cutoff,
+                cancellationToken: cancellationToken))
+            .Select(usage => usage.StoryId!.Value)
+            .Distinct()
+            .OrderBy(id => id)
+            .ToList();
+
+        var released = 0;
+        foreach (var storyId in storyIds)
+        {
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                // Cùng khoá truyện với các luồng sinh truyện: không trả lượt khi một thao tác vừa bắt đầu.
+                await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
+                var held = await FindHeldStoryUsagesAsync(_unitOfWork, storyId, cancellationToken);
+                var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken);
+                if (held.Count == 0 || held.Any(usage => usage.CreatedAt > cutoff)
+                    || story is not null && (story.UpdatedAt ?? story.CreatedAt) > cutoff
+                    || await IsStoryBusyAsync(storyId, cancellationToken))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    continue;
+                }
+
+                await ReleaseStoryCreditAsync(_unitOfWork, storyId, cancellationToken);
+                foreach (var usage in held)
+                {
+                    if (_auditLogWriter != null)
+                    {
+                        await _auditLogWriter.LogAsync(
+                            null, "StoryCreditHoldReleased", nameof(CreditUsage), usage.Id,
+                            new { storyId, userId = usage.UserId, lotId = usage.LotId, heldSince = usage.CreatedAt },
+                            new { refundedAt = usage.RefundedAt, reason = "abandoned", maxHoldDays = maxHoldAge.TotalDays },
+                            cancellationToken);
+                    }
+                }
+
+                if (_notifications != null)
+                {
+                    foreach (var userId in held.Select(usage => usage.UserId).Distinct())
+                    {
+                        await _notifications.CreateAsync(
+                            userId, NotificationType.StoryCreditReleased,
+                            JsonSerializer.Serialize(new
+                            {
+                                storyId, title = story?.Title, credits = held.Where(usage => usage.UserId == userId).Sum(usage => usage.Amount),
+                                reason = "abandoned"
+                            }),
+                            cancellationToken);
+                    }
+                }
+
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                released++;
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                _unitOfWork.DiscardTrackedChanges();
+                throw;
+            }
+        }
+
+        return released;
+    }
+
+    /// <summary>Truyện còn việc đang chạy hoặc chờ người khác (kiểm duyệt, kiểm tra đầu vào): chưa phải bỏ dở.</summary>
+    private async Task<bool> IsStoryBusyAsync(int storyId, CancellationToken cancellationToken) =>
+        await _unitOfWork.Repository<StoryGenerationJob>().ExistsAsync(
+            job => job.StoryId == storyId
+                   && (job.Status == GenerationJobStatus.Pending || job.Status == GenerationJobStatus.Processing
+                       || job.Status == GenerationJobStatus.WaitingForModeration),
+            cancellationToken)
+        || await _unitOfWork.Repository<StoryGenerationRequest>().ExistsAsync(
+            request => request.StoryId == storyId
+                       && (request.Status == GenerationInputStatus.PendingInput
+                           || request.Status == GenerationInputStatus.CheckingInput),
+            cancellationToken);
 
     /// <summary>
     /// Media của truyện viết tay lỗi hẳn: trả lượt đang giữ, trừ khi truyện còn job media hoặc gói khác đang chạy (một lượt

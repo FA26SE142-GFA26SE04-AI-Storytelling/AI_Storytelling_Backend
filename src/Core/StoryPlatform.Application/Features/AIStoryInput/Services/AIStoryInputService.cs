@@ -331,6 +331,8 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
+            // Lượt của yêu cầu bỏ dở có thể đã được trả (job dọn lượt): thử lại phải giữ lại (409 nếu hết).
+            await _tokenQuotaService.HoldStoryCreditForRetryAsync(storyId, cancellationToken);
             _unitOfWork.Repository<StoryGenerationRequest>().Update(request);
             RotateConcurrencyToken(request);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);

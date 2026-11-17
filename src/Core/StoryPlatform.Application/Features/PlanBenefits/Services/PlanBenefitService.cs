@@ -23,8 +23,10 @@ public class PlanBenefitService(IUnitOfWork unitOfWork, IPlanSettingsProvider se
         {
             // Creator không mua gói phụ huynh: phần đọc giữ mức Miễn phí, chỉ trợ lý viết theo hạn mức Creator.
             var creator = FreeBenefits(settings);
-            creator.Tier = PlanBenefitsDto.CreatorTier;
-            creator.WritingAssistPerDay = settings.CreatorWritingAssistPerDay;
+            // Creator đối tác (Luồng 5, 5g): trợ lý viết 40 lần mỗi ngày thay vì 20.
+            var partner = user.CreatorTier == CreatorTier.Partner;
+            creator.Tier = partner ? PlanBenefitsDto.PartnerCreatorTier : PlanBenefitsDto.CreatorTier;
+            creator.WritingAssistPerDay = partner ? settings.PartnerWritingAssistPerDay : settings.CreatorWritingAssistPerDay;
             return creator;
         }
 

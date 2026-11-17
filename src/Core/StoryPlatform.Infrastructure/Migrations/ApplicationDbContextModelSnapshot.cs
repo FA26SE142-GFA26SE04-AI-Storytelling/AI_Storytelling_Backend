@@ -988,6 +988,70 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.ToTable("creator_applications", (string)null);
                 });
 
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.CreatorTierEvaluation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("CompletionRate")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("numeric(5,4)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CreatorUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("Eligible")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("PeriodMonth")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("PublishedStories")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("TierAfter")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("TierBefore")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ValidReads")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ViolationRemovals")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("WindowEnd")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("WindowStart")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatorUserId", "PeriodMonth")
+                        .IsUnique()
+                        .HasFilter("NOT \"IsDeleted\"");
+
+                    b.ToTable("creator_tier_evaluations", (string)null);
+                });
+
             modelBuilder.Entity("StoryPlatform.Domain.Entities.CreditAdjustment", b =>
                 {
                     b.Property<int>("Id")
@@ -5232,6 +5296,13 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("CreatorTier")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Standard");
+
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasMaxLength(150)
@@ -5269,6 +5340,9 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("LockedUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("PartnerSince")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("PasswordChangedAt")
@@ -5753,6 +5827,17 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Navigation("Applicant");
 
                     b.Navigation("ReviewedBy");
+                });
+
+            modelBuilder.Entity("StoryPlatform.Domain.Entities.CreatorTierEvaluation", b =>
+                {
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "Creator")
+                        .WithMany()
+                        .HasForeignKey("CreatorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Creator");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.CreditAdjustment", b =>

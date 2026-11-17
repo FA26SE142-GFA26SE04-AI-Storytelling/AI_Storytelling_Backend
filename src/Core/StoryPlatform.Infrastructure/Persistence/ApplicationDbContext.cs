@@ -98,6 +98,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<CreditLot> CreditLots => Set<CreditLot>();
     public DbSet<CreditAdjustment> CreditAdjustments => Set<CreditAdjustment>();
     public DbSet<CreatorApplication> CreatorApplications => Set<CreatorApplication>();
+    public DbSet<CreatorTierEvaluation> CreatorTierEvaluations => Set<CreatorTierEvaluation>();
     public DbSet<PaymentReconciliationException> PaymentReconciliationExceptions => Set<PaymentReconciliationException>();
     public DbSet<CreditUsage> CreditUsages => Set<CreditUsage>();
 

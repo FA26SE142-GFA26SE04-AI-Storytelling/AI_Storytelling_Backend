@@ -131,6 +131,12 @@ public static class DependencyInjection
         services.AddScoped<IStoryArchiveHandler, PendingSubmissionArchiveHandler>();
         services.AddScoped<IStoryArchiveHandler, ReadingSessionArchiveHandler>();
         services.AddScoped<IStoryArchiveHandler, ChildRoadmapArchiveHandler>();
+        // Cấp Creator đối tác (Luồng 5, 5g): cùng một instance xét cấp và xử lý mất cấp khi truyện bị gỡ vì vi phạm.
+        services.AddScoped<Features.CreatorTiers.Services.CreatorTierService>();
+        services.AddScoped<Features.CreatorTiers.Interfaces.ICreatorTierService>(
+            provider => provider.GetRequiredService<Features.CreatorTiers.Services.CreatorTierService>());
+        services.AddScoped<IStoryArchiveHandler>(
+            provider => provider.GetRequiredService<Features.CreatorTiers.Services.CreatorTierService>());
         services.AddScoped<IStoryArchiveConsequences, StoryArchiveConsequences>();
         services.AddScoped<IReadingSessionInterruptService, ReadingSessionInterruptService>();
         services.AddScoped<IChildRoadmapAdvancer, ChildRoadmapAdvancer>();

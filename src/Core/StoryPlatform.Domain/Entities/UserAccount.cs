@@ -43,6 +43,12 @@ public class UserAccount : BaseEntity
     /// <summary>Thời điểm nhân sự được mời tick cam kết bảo mật dữ liệu trẻ em và quy tắc kiểm duyệt.</summary>
     public DateTime? CommitmentAcceptedAt { get; set; }
 
+    /// <summary>Cấp Content Creator (Luồng 5, 5g); tài khoản không phải Creator luôn Standard.</summary>
+    public CreatorTier CreatorTier { get; set; } = CreatorTier.Standard;
+
+    /// <summary>Thời điểm lên Creator đối tác lần gần nhất; null khi đang là Creator thường.</summary>
+    public DateTime? PartnerSince { get; set; }
+
     // Navigation properties
     public virtual ICollection<Story> Stories { get; set; } = new List<Story>();
     public virtual ICollection<ChildProfile> ChildProfiles { get; set; } = new List<ChildProfile>();

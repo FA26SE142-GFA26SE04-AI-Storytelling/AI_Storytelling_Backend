@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StoryPlatform.Application.Features.CreatorTiers.Interfaces;
 using StoryPlatform.Application.Features.Payments.Interfaces;
+using StoryPlatform.Application.Features.TokenQuota.Interfaces;
 
 namespace StoryPlatform.Infrastructure.BackgroundServices;
 
@@ -11,6 +12,9 @@ public sealed class SubscriptionCycleWorkerOptions
 {
     public const string SectionName = "Payments:SubscriptionCycleWorker";
     public int IntervalMinutes { get; set; } = 15;
+
+    /// <summary>Lượt AI giữ cho truyện bỏ dở quá số ngày này thì được trả (Luồng 2, UC-L2-09); tối thiểu 1.</summary>
+    public int StaleCreditHoldDays { get; set; } = 7;
 }
 
 /// <summary>
@@ -72,6 +76,23 @@ public sealed class SubscriptionCycleWorker : BackgroundService
             catch (Exception exception)
             {
                 _logger.LogError(exception, "Creator partner tier evaluation failed.");
+            }
+
+            try
+            {
+                // Trả lượt đang giữ của truyện bỏ dở (Luồng 2, UC-L2-09).
+                await using var scope = _scopeFactory.CreateAsyncScope();
+                var quota = scope.ServiceProvider.GetRequiredService<ITokenQuotaService>();
+                await quota.ReleaseStaleHoldsAsync(
+                    DateTime.UtcNow, TimeSpan.FromDays(Math.Max(1, _options.StaleCreditHoldDays)), stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception, "Stale credit hold sweep failed.");
             }
 
             try

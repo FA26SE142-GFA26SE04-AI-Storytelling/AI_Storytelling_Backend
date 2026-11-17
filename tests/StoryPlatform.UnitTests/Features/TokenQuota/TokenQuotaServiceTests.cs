@@ -771,4 +771,117 @@ public class TokenQuotaServiceTests
 
         await Assert.ThrowsAsync<ConflictException>(() => _sut.HoldStoryCreditForRetryAsync(story.Id));
     }
+
+    // ---------- Job dọn lượt bị giữ của truyện bỏ dở (UC-L2-09) ----------
+
+    private static readonly TimeSpan MaxHoldAge = TimeSpan.FromDays(7);
+    private static DateTime Later => DateTime.UtcNow.AddDays(8);
+
+    private (TokenQuotaService Sut, Mock<IAuditLogWriter> Audit, Mock<StoryPlatform.Application.Features.Notifications.Interfaces.INotificationService> Notifications) SweepSut()
+    {
+        var audit = new Mock<IAuditLogWriter>();
+        var notifications = new Mock<StoryPlatform.Application.Features.Notifications.Interfaces.INotificationService>();
+        return (new TokenQuotaService(_store, audit.Object, notifications: notifications.Object), audit, notifications);
+    }
+
+    [Fact]
+    public async Task Sweep_AbandonedHoldOlderThanTheLimit_IsRefundedNotifiedAndAudited()
+    {
+        SeedChild();
+        var lot = SeedLot(CreditSource.Cycle, remaining: 3, expiresAt: DateTime.UtcNow.AddDays(30));
+        var story = SeedStory();
+        story.Title = "Chú mèo lạc";
+        await _sut.IncrementUsageAsync(ChildId, story);
+        var (sut, audit, notifications) = SweepSut();
+
+        Assert.Equal(1, await sut.ReleaseStaleHoldsAsync(Later, MaxHoldAge));
+
+        Assert.Equal(3, lot.Remaining);
+        var usage = Assert.Single(_store.Items<CreditUsage>());
+        Assert.NotNull(usage.RefundedAt);
+        Assert.Contains($"lock:{story.Id}", _store.Calls);
+        notifications.Verify(n => n.CreateAsync(OwnerId, NotificationType.StoryCreditReleased,
+            It.Is<string>(json => json.Contains("\"storyId\":100") && json.Contains("\"credits\":1") && json.Contains("abandoned")), It.IsAny<CancellationToken>()), Times.Once);
+        audit.Verify(a => a.LogAsync(null, "StoryCreditHoldReleased", nameof(CreditUsage), usage.Id,
+            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
+
+        // Chạy lại không trả lần nữa.
+        Assert.Equal(0, await sut.ReleaseStaleHoldsAsync(Later, MaxHoldAge));
+        Assert.Equal(3, lot.Remaining);
+    }
+
+    [Fact]
+    public async Task Sweep_RecentHoldOrRecentlyTouchedStory_IsKept()
+    {
+        SeedChild();
+        var lot = SeedLot(CreditSource.Cycle, remaining: 3, expiresAt: DateTime.UtcNow.AddDays(30));
+        var recent = SeedStory(100);
+        await _sut.IncrementUsageAsync(ChildId, recent);
+        var touched = SeedStory(101);
+        await _sut.IncrementUsageAsync(ChildId, touched);
+        touched.UpdatedAt = Later.AddDays(-1);                 // phụ huynh vừa sửa dàn ý
+
+        Assert.Equal(0, await _sut.ReleaseStaleHoldsAsync(DateTime.UtcNow.AddDays(6), MaxHoldAge));
+        Assert.Equal(1, await SweepSut().Sut.ReleaseStaleHoldsAsync(Later, MaxHoldAge));   // chỉ truyện 100 được trả
+
+        Assert.Equal(2, lot.Remaining);
+        Assert.Null(_store.Items<CreditUsage>().Single(usage => usage.StoryId == 101).RefundedAt);
+    }
+
+    [Theory]
+    [InlineData(GenerationJobStatus.Pending)]
+    [InlineData(GenerationJobStatus.Processing)]
+    [InlineData(GenerationJobStatus.WaitingForModeration)]
+    public async Task Sweep_StoryWithAJobStillRunningOrAwaitingModeration_IsKept(GenerationJobStatus status)
+    {
+        SeedChild();
+        var lot = SeedLot(CreditSource.Cycle, remaining: 3, expiresAt: DateTime.UtcNow.AddDays(30));
+        var story = SeedStory();
+        await _sut.IncrementUsageAsync(ChildId, story);
+        _store.Seed(new StoryGenerationJob { Id = 900, StoryId = story.Id, Operation = GenerationJobOperation.GenerateContent, Status = status });
+
+        Assert.Equal(0, await SweepSut().Sut.ReleaseStaleHoldsAsync(Later, MaxHoldAge));
+        Assert.Equal(2, lot.Remaining);
+    }
+
+    [Fact]
+    public async Task Sweep_StoryWhoseInputIsStillBeingChecked_IsKept()
+    {
+        SeedChild();
+        SeedLot(CreditSource.Cycle, remaining: 3, expiresAt: DateTime.UtcNow.AddDays(30));
+        var story = SeedStory();
+        await _sut.IncrementUsageAsync(ChildId, story);
+        _store.Seed(new StoryGenerationRequest { Id = 50, StoryId = story.Id, Status = GenerationInputStatus.CheckingInput });
+
+        Assert.Equal(0, await SweepSut().Sut.ReleaseStaleHoldsAsync(Later, MaxHoldAge));
+    }
+
+    [Fact]
+    public async Task Sweep_ConsumedCreditIsNeverRefunded()
+    {
+        SeedChild();
+        var lot = SeedLot(CreditSource.Cycle, remaining: 3, expiresAt: DateTime.UtcNow.AddDays(30));
+        var story = SeedStory();
+        await _sut.IncrementUsageAsync(ChildId, story);
+        await TokenQuotaService.ConsumeStoryCreditAsync(_store, story.Id, default);
+
+        Assert.Equal(0, await SweepSut().Sut.ReleaseStaleHoldsAsync(Later, MaxHoldAge));
+        Assert.Equal(2, lot.Remaining);
+    }
+
+    [Fact]
+    public async Task Sweep_ThenResumingTheStory_HoldsACreditAgain()
+    {
+        SeedChild();
+        var lot = SeedLot(CreditSource.Cycle, remaining: 3, expiresAt: DateTime.UtcNow.AddDays(30));
+        var story = SeedStory();
+        await _sut.IncrementUsageAsync(ChildId, story);
+        await SweepSut().Sut.ReleaseStaleHoldsAsync(Later, MaxHoldAge);
+
+        // Phụ huynh quay lại duyệt dàn ý: giữ lại 1 lượt, nên truyện không được sinh miễn phí.
+        Assert.True(await _sut.HoldStoryCreditForRetryAsync(story.Id));
+
+        Assert.Equal(2, lot.Remaining);
+        Assert.Single(_store.Items<CreditUsage>(), usage => usage.StoryId == story.Id && usage.RefundedAt == null);
+    }
 }

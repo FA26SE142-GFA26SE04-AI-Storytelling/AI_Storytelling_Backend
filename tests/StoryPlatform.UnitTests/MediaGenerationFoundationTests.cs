@@ -94,7 +94,7 @@ public sealed class MediaGenerationFoundationTests
         const string content = "A\n\nB";
         var blocks = _parser.Parse(content);
         var result = await new ParagraphSceneSegmentationProvider().SegmentAsync(
-            new SceneSegmentationRequest(content, blocks, "{}"));
+            new SceneSegmentationRequest(content, blocks, CreateTestProviderContext(content)));
         Assert.Equal(blocks.Select(x => x.BlockId), result.SelectMany(x => x.BlockIds));
     }
 
@@ -119,17 +119,20 @@ public sealed class MediaGenerationFoundationTests
     [Fact]
     public void SceneSpecification_UsesExactSceneText()
     {
-        var result = new SceneSpecificationBuilder().Build(1, 2, 0, "Exact text", "focus", "{}");
+        var result = new SceneSpecificationBuilder().Build(1, 2, 0, "Exact text", "focus", CreateTestProviderContext("Exact text"));
         Assert.Equal("Exact text", result.SceneText);
         Assert.Equal(2, result.StorySceneId);
         Assert.Contains("focus", result.MustShow);
     }
 
+    private static ProviderMediaContext CreateTestProviderContext(string content) =>
+        new(2, new ProviderStoryFacts("Title", null, null, content), ProviderVisualDesign.CreateDefault());
+
     [Fact]
     public async Task UnconfiguredEvaluator_FailsClosedInsteadOfReturningUncertain()
     {
         var evaluator = new FailClosedMediaEvaluator();
-        var specification = new SceneSpecification(1, 2, 0, "text", null, "{}", [], []);
+        var specification = new SceneSpecification(1, 2, 0, "text", null, CreateTestProviderContext("text"), [], []);
 
         var result = await evaluator.EvaluateAsync(
             specification, new GeneratedMedia([1, 2, 3], "image/png"));

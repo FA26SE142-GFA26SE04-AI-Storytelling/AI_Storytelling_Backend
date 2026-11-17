@@ -230,7 +230,7 @@ public sealed partial class MediaGenerationService
                 if (asset.StoryVersionId != task.StoryVersionId || scene.StoryVersionId != task.StoryVersionId)
                     throw new InvalidOperationException("STALE_MEDIA_RESULT");
                 var spec = _specificationBuilder.Build(task.StoryVersionId, scene.Id, scene.SceneIndex,
-                    scene.SceneText, scene.VisualDescription, context.ContextJson);
+                    scene.SceneText, scene.VisualDescription, _contextProjector.Project(context.ContextJson));
                 if (asset.Type == MediaType.ListeningImage)
                     await EnsureListeningImageAsync(branch.Id, token, task.StoryId, context, asset, spec, ct);
                 else

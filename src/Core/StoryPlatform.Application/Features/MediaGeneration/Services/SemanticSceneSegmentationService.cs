@@ -29,6 +29,7 @@ public sealed class SemanticSceneSegmentationService : ISceneSegmentationProvide
     public async Task<IReadOnlyList<SceneSelection>> SegmentAsync(
         SceneSegmentationRequest request, CancellationToken cancellationToken = default)
     {
+        ProviderMediaContextSerializer.Validate(request.MediaContext);
         try
         {
             var result = await _primary.SegmentAsync(request, cancellationToken).ConfigureAwait(false);
@@ -38,6 +39,10 @@ public sealed class SemanticSceneSegmentationService : ISceneSegmentationProvide
                 return await _fallback.SegmentAsync(request, cancellationToken).ConfigureAwait(false);
             }
             return result;
+        }
+        catch (MediaProviderContextException)
+        {
+            throw;
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {

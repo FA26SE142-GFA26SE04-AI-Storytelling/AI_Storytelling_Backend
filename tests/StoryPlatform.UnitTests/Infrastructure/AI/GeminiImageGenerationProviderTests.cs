@@ -47,7 +47,10 @@ public sealed class GeminiImageGenerationProviderTests
         SceneIndex: 0,
         SceneText: "Bé thỏ trắng dạo chơi trong khu rừng xanh.",
         VisualDescription: "Chú thỏ trắng dễ thương đang nhảy nhót dưới ánh nắng xuyên qua tán cây.",
-        MediaContextJson: "{}",
+        MediaContext: new ProviderMediaContext(
+            2,
+            new ProviderStoryFacts("Bé thỏ trắng", null, null, "Bé thỏ trắng dạo chơi trong khu rừng xanh."),
+            ProviderVisualDesign.CreateDefault()),
         MustShow: ["Chú thỏ trắng", "Khu rừng"],
         MustNotContradict: ["Trời không có tuyết"],
         PromptFeedback: null);

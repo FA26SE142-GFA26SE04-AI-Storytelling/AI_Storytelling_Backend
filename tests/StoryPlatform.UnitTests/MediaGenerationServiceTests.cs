@@ -842,6 +842,39 @@ public sealed partial class MediaGenerationServiceTests
     }
 
     [Fact]
+    public async Task RegenerateAudio_AfterTwoCountedRegenerations_IsRejected_AndProgressShowsTheLimits()
+    {
+        var store = Seed();
+        var service = Create(store);
+        Assert.True((await service.RunPackageAsync()).Success);
+        var target = store.Items<MediaAsset>().First(x => x.Type == MediaType.TtsAudio);
+        var versionId = target.StoryVersionId;
+        // Hai lần sinh lại audio đã xong và một lần bị lỗi (không tính); một ảnh đã sinh lại.
+        foreach (var (type, status) in new[]
+                 {
+                     (MediaType.TtsAudio, MediaStatus.Ready), (MediaType.TtsAudio, MediaStatus.Ready),
+                     (MediaType.TtsAudio, MediaStatus.Failed), (MediaType.Illustration, MediaStatus.Ready)
+                 })
+        {
+            store.Seed(new MediaAsset
+            {
+                StoryVersionId = versionId, Type = type, Status = status, IsCurrent = false, ReplacesMediaAssetId = target.Id,
+                ReplacementResolvedAt = DateTime.UtcNow
+            });
+        }
+
+        var progress = await service.GetProgressAsync(1, 1);
+        Assert.Equal((2, 2, 0), (progress.AudioRegeneration!.Used, progress.AudioRegeneration.Limit, progress.AudioRegeneration.Remaining));
+        Assert.Equal((1, 3, 2), (progress.ImageRegeneration!.Used, progress.ImageRegeneration.Limit, progress.ImageRegeneration.Remaining));
+
+        var revision = store.Items<StoryVersion>().Single().MediaState.MediaPackageRevision;
+        var error = await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.ConflictException>(() =>
+            service.RegenerateSegmentAudioAsync(1, 1, target.StorySegmentId!.Value, new(10, revision, false, "regenerate-audio-over-limit")));
+        Assert.StartsWith("REGENERATION_LIMIT_REACHED", error.Message);
+        Assert.Equal(4, store.Items<MediaAsset>().Count(x => x.ReplacesMediaAssetId == target.Id));
+    }
+
+    [Fact]
     public async Task LegacyReadyPackageIsPreservedUntilRegeneration()
     {
         var store = Seed();

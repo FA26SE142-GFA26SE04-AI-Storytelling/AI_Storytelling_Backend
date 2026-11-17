@@ -89,6 +89,9 @@ public sealed record MediaGenerationProgress(
     public DateTime? ConfirmedAt { get; init; }
     public IReadOnlyList<MediaGenerationIssue> Issues { get; init; } = [];
     public string MediaMode { get; init; } = "auto";
+    /// <summary>Số ảnh / số lần audio đã sinh lại và giới hạn của truyện; frontend khoá nút khi Remaining = 0.</summary>
+    public StoryPlatform.Application.Features.PlanBenefits.DTOs.RegenerationCounterDto? ImageRegeneration { get; init; }
+    public StoryPlatform.Application.Features.PlanBenefits.DTOs.RegenerationCounterDto? AudioRegeneration { get; init; }
     public bool IsAwaitingSelection { get; init; }
 }
 

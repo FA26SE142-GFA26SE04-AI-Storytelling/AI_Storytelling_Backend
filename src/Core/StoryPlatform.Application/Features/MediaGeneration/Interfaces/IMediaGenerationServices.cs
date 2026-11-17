@@ -29,7 +29,7 @@ public interface ISceneCoverageValidator
 public interface ISceneSpecificationBuilder
 {
     SceneSpecification Build(int storyVersionId, int storySceneId, int sceneIndex, string sceneText,
-        string? visualDescription, string mediaContextJson);
+        string? visualDescription, ProviderMediaContext mediaContext);
 }
 
 public interface IIllustrationBeatPlanner

@@ -26,6 +26,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IMediaContextBuilder _contextBuilder;
+    private readonly IProviderMediaContextProjector _contextProjector;
     private readonly IStoryBlockParser _blockParser;
     private readonly ISceneSegmentationProvider _segmenter;
     private readonly ISceneCoverageValidator _coverageValidator;
@@ -66,13 +67,14 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         IMediaReadinessService readinessService,
         MediaGenerationOptions options,
         ILogger<MediaGenerationService> logger, IChildProfileAccessGuard? supervision = null, TimeProvider? clock = null,
-        IMediaUploadValidator? uploadValidator = null)
+        IMediaUploadValidator? uploadValidator = null, IProviderMediaContextProjector? contextProjector = null)
     {
         _unitOfWork = unitOfWork;
         _options = options;
         _clock = clock ?? TimeProvider.System;
         _supervision = supervision;
         _contextBuilder = contextBuilder;
+        _contextProjector = contextProjector ?? new ProviderMediaContextProjector();
         _blockParser = blockParser;
         _segmenter = segmenter;
         _coverageValidator = coverageValidator;
@@ -590,7 +592,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         await UpdateStageAsync(state.Job.Id, claimedToken, JobStage.MediaSegmenting, cancellationToken);
         var blocks = _blockParser.Parse(state.Version.Content!);
         var selections = await _segmenter.SegmentAsync(
-            new SceneSegmentationRequest(state.Version.Content!, blocks, mediaContext.ContextJson), cancellationToken);
+            new SceneSegmentationRequest(state.Version.Content!, blocks, _contextProjector.Project(mediaContext.ContextJson)), cancellationToken);
         selections = await EnforceInteractionBoundariesAsync(state.Version.Id, blocks, selections, cancellationToken);
         var validated = _coverageValidator.ValidateAndAssemble(state.Version.Content!, blocks, selections);
         await AssertFreshAsync(state.Job.Id, claimedToken, state.Version.Id, mediaContext.Id, cancellationToken);
@@ -645,12 +647,14 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         if (legacyAsset is null)
         {
             await UpdateStageAsync(jobId, token, JobStage.MediaSegmenting, cancellationToken);
+            var projectedContext = _contextProjector.Project(mediaContext.ContextJson);
             try
             {
                 selections = await _beatPlanner.PlanAsync(new IllustrationBeatPlanRequest(
-                    scene.SceneText, scene.VisualDescription, mediaContext.ContextJson), cancellationToken);
+                    scene.SceneText, scene.VisualDescription, projectedContext), cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (MediaProviderContextException) { throw; }
             catch { /* Planner unavailable: use one whole-scene beat below. */ }
         }
         if (!AreValidBeats(scene, selections))
@@ -1134,6 +1138,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
 
     private static string PublicErrorCode(Exception exception)
     {
+        if (FindBoundaryException(exception) is { } boundary) return boundary.ErrorCode;
         if (exception is TransientMediaGenerationException transient) return transient.ErrorCode;
         var permanent = FindPermanentException(exception);
         if (permanent is not null) return permanent.ErrorCode;
@@ -1161,6 +1166,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
 
     private static bool IsPermanentFailure(Exception exception)
     {
+        if (FindBoundaryException(exception) is not null) return true;
         if (FindPermanentException(exception) is not null) return true;
         for (Exception? current = exception; current is not null; current = current.InnerException)
         {
@@ -1186,6 +1192,13 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             }
         }
         return false;
+    }
+
+    private static MediaProviderContextException? FindBoundaryException(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+            if (current is MediaProviderContextException boundary) return boundary;
+        return null;
     }
 
     private static PermanentMediaGenerationException? FindPermanentException(Exception exception)

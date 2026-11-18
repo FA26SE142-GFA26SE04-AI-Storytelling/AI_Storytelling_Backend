@@ -45,6 +45,9 @@ public sealed class ExistingStoryService : IExistingStoryService
     private readonly IExistingStoryEvaluationCache? _evaluationCache;
     private readonly GrayZoneContentCheckService? _moderation;
 
+    /// <summary>Chuyển thể tốn 1 lượt cho cả truyện (Luồng 2); null thì không trừ lượt.</summary>
+    private readonly StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? _tokenQuota;
+
     public ExistingStoryService(
         IUnitOfWork unitOfWork,
         IChildProfileAccessGuard accessGuard,
@@ -53,8 +56,10 @@ public sealed class ExistingStoryService : IExistingStoryService
         IAuditLogWriter auditLog,
         IInputGuardrail? fullContentGuardrail = null,
         IExistingStoryEvaluationService? evaluationService = null,
-        IExistingStoryEvaluationCache? evaluationCache = null, GrayZoneContentCheckService? moderation = null)
+        IExistingStoryEvaluationCache? evaluationCache = null, GrayZoneContentCheckService? moderation = null,
+        StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null)
     {
+        _tokenQuota = tokenQuota;
         _unitOfWork = unitOfWork;
         _accessGuard = accessGuard;
         _aiClient = aiClient;
@@ -458,6 +463,10 @@ public sealed class ExistingStoryService : IExistingStoryService
             if (string.IsNullOrWhiteSpace(baseVersion.Content))
                 throw new BadRequestException("Base version chưa có nội dung.");
 
+            // Chuyển thể tốn 1 lượt cho cả truyện (Luồng 2): giữ trước khi gọi AI để hết lượt thì không gọi AI;
+            // AI lỗi thì transaction rollback nên không mất lượt.
+            var charged = _tokenQuota != null && await _tokenQuota.HoldStoryCreditOnceAsync(story.Id, cancellationToken);
+
             // Gọi AI để refine.
             var refineRequest = new RefineStoryContentRequest
             {
@@ -504,6 +513,10 @@ public sealed class ExistingStoryService : IExistingStoryService
             story.MoralLesson = created.Lesson;
             story.Description = NormalizeDescription(refined.Story.Description, created.Content);
             _unitOfWork.Repository<Story>().Update(story);
+
+            // Chuyển thể xong → lượt vừa giữ thành lượt đã trừ.
+            if (charged)
+                await StoryPlatform.Application.Features.TokenQuota.Services.TokenQuotaService.ConsumeStoryCreditAsync(_unitOfWork, story.Id, cancellationToken);
 
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
             newVersionId = created.Id;

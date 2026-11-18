@@ -795,6 +795,28 @@ public sealed partial class MediaGenerationServiceTests
         await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.ForbiddenException>(() => service.ConfirmAsync(1, 1, new(10, 1)));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CompletedMediaPackage_ConsumesTheHeldStoryCredit_OnlyWhenCreditsAreTracked(bool tracked)
+    {
+        var store = Seed();
+        store.Items<Story>().Single().Source = StorySource.Manual;
+        var usage = new CreditUsage
+        {
+            Id = 700, UserId = 1, LotId = 1, Amount = 1, StoryId = 1, Reason = CreditUsageReason.StoryRequest
+        };
+        store.Seed(usage);
+        var service = Create(store, tokenQuota: tracked
+            ? new Mock<StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService>().Object
+            : null);
+
+        Assert.True((await service.RunPackageAsync()).Success);
+
+        Assert.Equal(StoryStatus.MediaReview, store.Items<Story>().Single().Status);
+        Assert.Equal(tracked, usage.ConsumedAt.HasValue);
+    }
+
     [Fact]
     public async Task RegenerateAudioInvalidatesConfirmationAndKeepsOtherFiles()
     {
@@ -817,6 +839,39 @@ public sealed partial class MediaGenerationServiceTests
         Assert.False((await service.GetProgressAsync(1, 1)).IsReady);
         await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.ConflictException>(() => service.ConfirmAsync(1, 1, new(10, 1)));
         Assert.True((await service.ConfirmAsync(1, 1, new(10, 2))).IsReady);
+    }
+
+    [Fact]
+    public async Task RegenerateAudio_AfterTwoCountedRegenerations_IsRejected_AndProgressShowsTheLimits()
+    {
+        var store = Seed();
+        var service = Create(store);
+        Assert.True((await service.RunPackageAsync()).Success);
+        var target = store.Items<MediaAsset>().First(x => x.Type == MediaType.TtsAudio);
+        var versionId = target.StoryVersionId;
+        // Hai lần sinh lại audio đã xong và một lần bị lỗi (không tính); một ảnh đã sinh lại.
+        foreach (var (type, status) in new[]
+                 {
+                     (MediaType.TtsAudio, MediaStatus.Ready), (MediaType.TtsAudio, MediaStatus.Ready),
+                     (MediaType.TtsAudio, MediaStatus.Failed), (MediaType.Illustration, MediaStatus.Ready)
+                 })
+        {
+            store.Seed(new MediaAsset
+            {
+                StoryVersionId = versionId, Type = type, Status = status, IsCurrent = false, ReplacesMediaAssetId = target.Id,
+                ReplacementResolvedAt = DateTime.UtcNow
+            });
+        }
+
+        var progress = await service.GetProgressAsync(1, 1);
+        Assert.Equal((2, 2, 0), (progress.AudioRegeneration!.Used, progress.AudioRegeneration.Limit, progress.AudioRegeneration.Remaining));
+        Assert.Equal((1, 3, 2), (progress.ImageRegeneration!.Used, progress.ImageRegeneration.Limit, progress.ImageRegeneration.Remaining));
+
+        var revision = store.Items<StoryVersion>().Single().MediaState.MediaPackageRevision;
+        var error = await Assert.ThrowsAsync<StoryPlatform.Application.Common.Exceptions.ConflictException>(() =>
+            service.RegenerateSegmentAudioAsync(1, 1, target.StorySegmentId!.Value, new(10, revision, false, "regenerate-audio-over-limit")));
+        Assert.StartsWith("REGENERATION_LIMIT_REACHED", error.Message);
+        Assert.Equal(4, store.Items<MediaAsset>().Count(x => x.ReplacesMediaAssetId == target.Id));
     }
 
     [Fact]
@@ -897,7 +952,8 @@ public sealed partial class MediaGenerationServiceTests
         IIllustrationBeatPlanner? planner = null,
         IMediaReadinessService? readiness = null, IChildProfileAccessGuard? supervision = null,
         Microsoft.Extensions.Logging.ILogger<MediaGenerationService>? logger = null, MediaGenerationOptions? options = null,
-        ISceneSegmentationProvider? segmenter = null)
+        ISceneSegmentationProvider? segmenter = null,
+        StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null)
     {
         var evaluatorImpl = evaluator ?? new PassingEvaluator();
         var clock = new MediaTestPump.Clock();
@@ -921,7 +977,8 @@ public sealed partial class MediaGenerationServiceTests
             recorder,
             readiness ?? new MediaReadinessService(uow),
             options ?? new MediaGenerationOptions { AssetMaxAttempts = 3, JobLeaseMinutes = 5 },
-            logger ?? NullLogger<MediaGenerationService>.Instance, supervision ?? new Mock<IChildProfileAccessGuard>().Object, clock, new CreatorMediaUploadValidator());
+            logger ?? NullLogger<MediaGenerationService>.Instance, supervision ?? new Mock<IChildProfileAccessGuard>().Object, clock, new CreatorMediaUploadValidator(),
+            tokenQuota: tokenQuota);
         MediaTestPump.Register(service, uow, clock);
         return service;
     }

@@ -34,14 +34,19 @@ public sealed partial class StoryReviewService : IStoryReviewService
     private readonly IGenericRepository<QuizItem> _quizRepo;
     private readonly ListeningInteractionGenerator _listening;
 
+    /// <summary>Media của truyện có sẵn / viết tay tốn 1 lượt cho cả truyện (Luồng 2); null thì không trừ lượt.</summary>
+    private readonly StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? _tokenQuota;
+
     public StoryReviewService(
         IUnitOfWork unitOfWork,
         IAIStoryGenerationClient aiClient,
         IProposalCache proposalCache,
         IReviewCompletionStore? reviewCompletionStore = null,
         IExistingStoryEvaluationCache? evaluationCache = null, GrayZoneContentCheckService? moderation = null,
-        ListeningInteractionGenerator? listeningGenerator = null)
+        ListeningInteractionGenerator? listeningGenerator = null,
+        StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null)
     {
+        _tokenQuota = tokenQuota;
         _unitOfWork = unitOfWork;
         _aiClient = aiClient;
         _proposalCache = proposalCache;
@@ -1046,6 +1051,10 @@ public sealed partial class StoryReviewService : IStoryReviewService
                     j.Operation == GenerationJobOperation.GenerateMediaPackage,
                     cancellationToken))
                 throw new ConflictException("MEDIA_JOB_ALREADY_EXISTS");
+            // Truyện có sẵn / viết tay (không qua sinh nội dung AI) tốn 1 lượt cho cả truyện khi sinh media (Luồng 2);
+            // truyện AI đã trừ lượt lúc sinh nội dung.
+            if (story.Source == StorySource.Manual && _tokenQuota != null)
+                await _tokenQuota.HoldStoryCreditOnceAsync(storyId, cancellationToken);
 
             var sourceJob = (await jobs.FindAsync(j =>
                     j.StoryId == storyId && j.StoryVersionId == approvedVersion.Id &&

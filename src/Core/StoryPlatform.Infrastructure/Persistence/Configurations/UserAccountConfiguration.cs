@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using StoryPlatform.Domain.Entities;
+using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Infrastructure.Persistence.Configurations;
 
@@ -65,6 +66,14 @@ public class UserAccountConfiguration : IEntityTypeConfiguration<UserAccount>
         builder.Property(u => u.RoleBeforeAdmin)
             .HasConversion<string>()
             .HasMaxLength(30);
+
+        builder.Property(u => u.CreatorTier)
+            .HasConversion<string>()
+            .HasMaxLength(20)
+            // Mặc định cho các tài khoản đã có khi thêm cột; entity mới luôn mang giá trị khác sentinel (0).
+            .HasDefaultValue(CreatorTier.Standard)
+            .HasSentinel((CreatorTier)0)
+            .IsRequired();
 
         builder.HasIndex(u => u.Email)
             .IsUnique();

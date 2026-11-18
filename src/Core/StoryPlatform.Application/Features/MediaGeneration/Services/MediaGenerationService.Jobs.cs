@@ -250,6 +250,13 @@ public sealed partial class MediaGenerationService
                     _unitOfWork.Repository<StoryGenerationJob>().Update(sibling);
                     RotateToken(sibling);
                 }
+
+                // Gói media hỏng: trả lượt đang giữ của truyện viết tay (truyện AI không còn lượt giữ ở bước này).
+                if (_tokenQuota != null)
+                {
+                    await _unitOfWork.SaveChangesAsync(ct);
+                    await StoryPlatform.Application.Features.TokenQuota.Services.TokenQuotaService.ReleaseStoryCreditIfIdleAsync(_unitOfWork, branch.StoryId, ct);
+                }
             }
             await _unitOfWork.CommitTransactionAsync(ct);
         }

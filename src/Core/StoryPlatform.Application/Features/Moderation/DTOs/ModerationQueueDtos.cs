@@ -22,6 +22,9 @@ public class EnqueueModerationItemCommand
     public bool IsSafetyConcern { get; set; }
     public bool IsResubmission { get; set; }
     public int? PreviousItemId { get; set; }
+
+    /// <summary>Người gửi là Creator đối tác: yêu cầu duyệt truyện công khai được ưu tiên Cao (Luồng 5, 5g).</summary>
+    public bool IsPartnerCreator { get; set; }
 }
 
 public class ModerationQueueQueryDto

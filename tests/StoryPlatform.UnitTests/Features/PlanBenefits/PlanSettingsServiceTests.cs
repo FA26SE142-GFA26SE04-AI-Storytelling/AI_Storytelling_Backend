@@ -71,6 +71,26 @@ public sealed class PlanSettingsServiceTests
     }
 
     [Fact]
+    public async Task RegenerationLimits_DefaultTo3_2_3_2_AndAreSavedAndAudited()
+    {
+        var defaults = await _sut.GetAsync();
+        Assert.Equal((3, 2, 3, 2), (defaults.OutlineRegenerationLimit, defaults.ContentRegenerationLimit,
+            defaults.ImageRegenerationLimit, defaults.AudioRegenerationLimit));
+
+        var request = Defaults();
+        (request.OutlineRegenerationLimit, request.ContentRegenerationLimit, request.ImageRegenerationLimit,
+            request.AudioRegenerationLimit) = (5, 0, 20, 1);
+        await _sut.UpdateAsync(AdminId, request);
+
+        var stored = Assert.Single(_uow.Items<PlanSettings>());
+        Assert.Equal((5, 0, 20, 1), (stored.OutlineRegenerationLimit, stored.ContentRegenerationLimit,
+            stored.ImageRegenerationLimit, stored.AudioRegenerationLimit));
+        _audit.Verify(writer => writer.LogAsync(AdminId, "PlanSettingsUpdated", nameof(PlanSettings), PlanSettings.SingletonId,
+            It.Is<object?>(before => ((PlanSettingsDto)before!).OutlineRegenerationLimit == 3),
+            It.Is<object?>(after => ((PlanSettingsDto)after!).OutlineRegenerationLimit == 5), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task Update_NoRowYet_CreatesTheSingletonRow()
     {
         var empty = new InMemoryUnitOfWork();
@@ -95,7 +115,11 @@ public sealed class PlanSettingsServiceTests
         r => r.FreeReadAloudPerMonth = -1,
         r => r.FreeWritingAssistPerDay = -1,
         r => r.CreatorWritingAssistPerDay = -1,
-        r => r.PartnerWritingAssistPerDay = -1
+        r => r.PartnerWritingAssistPerDay = -1,
+        r => r.OutlineRegenerationLimit = -1,
+        r => r.ContentRegenerationLimit = 21,
+        r => r.ImageRegenerationLimit = -1,
+        r => r.AudioRegenerationLimit = 21
     };
 
     [Theory]

@@ -36,6 +36,20 @@ public interface ITokenQuotaService
     /// </summary>
     Task<bool> HoldStoryCreditForRetryAsync(int storyId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Worker: trả lượt đang giữ của truyện bỏ dở — lượt giữ và truyện đều không đổi từ <paramref name="maxHoldAge"/> trở lên,
+    /// truyện không còn job đang chạy / chờ kiểm duyệt và không có yêu cầu đang kiểm tra đầu vào. Báo cho người trả lượt và
+    /// ghi audit log. Quay lại làm tiếp (duyệt / sinh lại dàn ý, thử lại) sẽ giữ lại lượt. Trả số truyện đã trả lượt.
+    /// </summary>
+    Task<int> ReleaseStaleHoldsAsync(DateTime now, TimeSpan maxHoldAge, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Truyện viết tay hoặc truyện có sẵn (Source = Manual) tốn 1 lượt cho cả truyện: chuyển thể và sinh media lần đầu
+    /// giữ 1 lượt (409 nếu hết); truyện đang giữ hoặc đã trừ lượt thì không giữ thêm và trả false. Gọi trong transaction
+    /// của nơi gọi (hàm khoá theo tài khoản trả lượt rồi lưu).
+    /// </summary>
+    Task<bool> HoldStoryCreditOnceAsync(int storyId, CancellationToken cancellationToken = default);
+
     /// <summary>Trả lượt đang giữ của truyện; lượt đã trừ chính thức không bị trả. Gọi lại không trả hai lần.</summary>
     Task ReleaseStoryCreditAsync(int storyId, CancellationToken cancellationToken = default);
 

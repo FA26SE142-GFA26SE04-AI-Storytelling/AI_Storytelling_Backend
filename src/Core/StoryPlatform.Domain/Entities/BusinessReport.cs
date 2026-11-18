@@ -19,4 +19,7 @@ public class BusinessReport : BaseEntity
 
     /// <summary>Số liệu tài khoản người dùng của kỳ, chụp lại lúc tạo báo cáo (JSON của UserAccountStatisticsDto); null với báo cáo cũ.</summary>
     public string? AccountSnapshotJson { get; set; }
+
+    /// <summary>Thống kê Creator của kỳ (Luồng 5, 5e), chụp lại lúc tạo báo cáo (JSON của AdminCreatorStatisticsDto); null với báo cáo cũ.</summary>
+    public string? CreatorSnapshotJson { get; set; }
 }

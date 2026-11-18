@@ -191,6 +191,257 @@ public class StoryWishSuggestionServiceTests
 
         _h.UnitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
+    // ---- Xếp hạng theo cảm xúc ----
+
+    // Hồ sơ cảm xúc của truyện: `times` bé khác nhau đọc xong và chọn các cảm xúc này.
+    private void OthersFelt(int storyId, int times, params string[] emotions)
+    {
+        for (var i = 0; i < times; i++)
+        {
+            Felt(2000 + _h.Reflections.Count, storyId, emotions);
+        }
+    }
+
+    // Một bé (không phải bé đang gửi điều ước) đọc xong truyện một lần và chọn các cảm xúc này.
+    private void Felt(int childId, int storyId, params string[] emotions)
+    {
+        var session = _h.AddSession(SessionStatus.Completed, childId: childId, storyId: storyId);
+        _h.Reflections.Add(new StoryReflection
+        {
+            Id = _h.Reflections.Count + 1, ReadingSessionId = session.Id, ChildProfileId = childId,
+            StoryId = storyId, Emotions = emotions.ToList()
+        });
+    }
+
+    // Lịch sử của bé: đọc xong một truyện khác (không phải ứng viên), chọn mức thích và cảm xúc.
+    private StoryReflection ChildFelt(StoryFeeling feeling, params string[] emotions)
+    {
+        var session = _h.AddSession(SessionStatus.Completed, storyId: 500 + _h.Sessions.Count);
+        session.Feeling = feeling;
+        session.CompletedAt = DateTime.UtcNow.AddMinutes(-_h.Sessions.Count);
+        var reflection = new StoryReflection
+        {
+            Id = _h.Reflections.Count + 1, ReadingSessionId = session.Id, ChildProfileId = ReadingHarness.Child,
+            StoryId = session.StoryId, Emotions = emotions.ToList()
+        };
+        _h.Reflections.Add(reflection);
+        return reflection;
+    }
+
+    private (int[] Stories, int[] Scores) Ranked()
+    {
+        var rows = _h.Suggestions.OrderBy(s => s.Rank).ToList();
+        return (rows.Select(s => s.StoryId).ToArray(), rows.Select(s => s.Score).ToArray());
+    }
+
+    [Fact]
+    public async Task Compute_StoryWithAnEmotionTheChildAvoids_MovesDown_ButStaysListed()
+    {
+        _h.AddLibraryStory(31, "Mới", DateTime.UtcNow); _h.Match(31, _cat.Id, _sea.Id);                            // 3+2+1 = 6
+        _h.AddLibraryStory(32, "Cũ", DateTime.UtcNow.AddDays(-5)); _h.Match(32, _cat.Id, _sea.Id); // 6
+        OthersFelt(31, 3, "Scared");
+        ChildFelt(StoryFeeling.Dislike, "Scared");
+
+        await _sut.ComputeAsync(Wish());
+
+        var (stories, scores) = Ranked();
+        Assert.Equal(new[] { 32, 31 }, stories);
+        Assert.Equal(new[] { 6, 4 }, scores);
+    }
+
+    [Fact]
+    public async Task Compute_StoryWithAnEmotionTheChildLikes_MovesUp()
+    {
+        _h.AddLibraryStory(31, "Mới", DateTime.UtcNow); _h.Match(31, _cat.Id, _sea.Id);
+        _h.AddLibraryStory(32, "Cũ", DateTime.UtcNow.AddDays(-5)); _h.Match(32, _cat.Id, _sea.Id);
+        OthersFelt(32, 3, "Funny");
+        ChildFelt(StoryFeeling.VeryLike, "Funny");
+
+        await _sut.ComputeAsync(Wish());
+
+        var (stories, scores) = Ranked();
+        Assert.Equal(new[] { 32, 31 }, stories);
+        Assert.Equal(new[] { 7, 6 }, scores);
+    }
+
+    [Fact]
+    public async Task Compute_AvoidedStory_GivesItsPlaceToTheFourthCandidate()
+    {
+        for (var id = 50; id < 54; id++)
+        {
+            _h.AddLibraryStory(id, $"T{id}", DateTime.UtcNow.AddDays(-(60 - id)));
+            _h.Match(id, _cat.Id, _sea.Id);
+        }
+        OthersFelt(53, 3, "Sad");
+        ChildFelt(StoryFeeling.Dislike, "Sad");
+
+        await _sut.ComputeAsync(Wish());
+
+        Assert.Equal(new[] { 52, 51, 50 }, Ranked().Stories);
+    }
+
+    [Fact]
+    public async Task Compute_EmotionsNeverLetAStoryBelowMinScoreIn()
+    {
+        _h.AddLibraryStory(41, "Chỉ khớp nơi chốn"); _h.Match(41, _sea.Id);   // 2 + 1 chưa đọc = 3 < 4
+        OthersFelt(41, 3, "Funny");
+        ChildFelt(StoryFeeling.VeryLike, "Funny");
+
+        Assert.Equal(0, await _sut.ComputeAsync(Wish()));
+        Assert.Empty(_h.Suggestions);
+    }
+
+    [Fact]
+    public async Task Compute_StoryWithTooFewReflections_IsNotAffected()
+    {
+        _h.AddLibraryStory(31, "Mới", DateTime.UtcNow); _h.Match(31, _cat.Id, _sea.Id);
+        _h.AddLibraryStory(32, "Cũ", DateTime.UtcNow.AddDays(-5)); _h.Match(32, _cat.Id, _sea.Id);
+        OthersFelt(31, 2, "Scared");
+        ChildFelt(StoryFeeling.Dislike, "Scared");
+
+        await _sut.ComputeAsync(Wish());
+
+        Assert.Equal(new[] { 31, 32 }, Ranked().Stories);
+        Assert.Equal(new[] { 6, 6 }, Ranked().Scores);
+    }
+
+    [Fact]
+    public async Task Compute_DeletedReflections_AreIgnored()
+    {
+        _h.AddLibraryStory(31, "Mới", DateTime.UtcNow); _h.Match(31, _cat.Id, _sea.Id);
+        _h.AddLibraryStory(32, "Cũ", DateTime.UtcNow.AddDays(-5)); _h.Match(32, _cat.Id, _sea.Id);
+        OthersFelt(31, 3, "Scared");
+        ChildFelt(StoryFeeling.Dislike, "Scared").IsDeleted = true;   // ví dụ sau khi purge
+
+        await _sut.ComputeAsync(Wish());
+
+        Assert.Equal(new[] { 31, 32 }, Ranked().Stories);
+    }
+
+    [Fact]
+    public async Task Compute_ReadsWithoutAFeeling_DoNotShapeThePreference()
+    {
+        _h.AddLibraryStory(31, "Mới", DateTime.UtcNow); _h.Match(31, _cat.Id, _sea.Id);
+        _h.AddLibraryStory(32, "Cũ", DateTime.UtcNow.AddDays(-5)); _h.Match(32, _cat.Id, _sea.Id);
+        OthersFelt(31, 3, "Scared");
+        var reflection = ChildFelt(StoryFeeling.Dislike, "Scared");
+        _h.Sessions.Single(s => s.Id == reflection.ReadingSessionId).Feeling = null;   // bé chưa chọn mức thích
+
+        await _sut.ComputeAsync(Wish());
+
+        Assert.Equal(new[] { 31, 32 }, Ranked().Stories);
+    }
+
+    [Fact]
+    public async Task Compute_AvoidedEmotion_DoesNotRemoveAStoryWhoseFinalScoreFallsBelowMinScore()
+    {
+        _h.AddLibraryStory(31, "Khớp nhân vật"); _h.Match(31, _cat.Id);
+        OthersFelt(31, 3, "Scared");
+        ChildFelt(StoryFeeling.Dislike, "Scared");
+
+        Assert.Equal(1, await _sut.ComputeAsync(Wish()));
+        Assert.Equal(2, Assert.Single(_h.Suggestions).Score);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Compute_DeletedOrUnfinishedSessions_DoNotShapeThePreference(bool deleted)
+    {
+        _h.AddLibraryStory(31, "Truyện"); _h.Match(31, _cat.Id, _sea.Id);
+        OthersFelt(31, 3, "Scared");
+        var reflection = ChildFelt(StoryFeeling.Dislike, "Scared");
+        var session = _h.Sessions.Single(s => s.Id == reflection.ReadingSessionId);
+        if (deleted) session.IsDeleted = true;
+        else session.Status = SessionStatus.Reading;
+
+        await _sut.ComputeAsync(Wish());
+
+        Assert.Equal(6, Assert.Single(_h.Suggestions).Score);
+    }
+
+    [Fact]
+    public async Task Compute_DeletedStoryReflections_DoNotBuildAProfile()
+    {
+        _h.AddLibraryStory(31, "Truyện"); _h.Match(31, _cat.Id, _sea.Id);
+        OthersFelt(31, 3, "Scared");
+        _h.Reflections[0].IsDeleted = true;
+        ChildFelt(StoryFeeling.Dislike, "Scared");
+
+        await _sut.ComputeAsync(Wish());
+
+        Assert.Equal(6, Assert.Single(_h.Suggestions).Score);
+    }
+
+    [Fact]
+    public async Task Compute_PreferenceUsesTheTenLatestCompletedSessions_WithIdBreakingTies()
+    {
+        _h.AddLibraryStory(31, "Truyện"); _h.Match(31, _cat.Id, _sea.Id);
+        OthersFelt(31, 3, "Scared");
+        var older = ChildFelt(StoryFeeling.Dislike, "Scared");
+        var completedAt = DateTime.UtcNow.AddDays(-1);
+        _h.Sessions.Single(s => s.Id == older.ReadingSessionId).CompletedAt = completedAt;
+        for (var i = 0; i < 10; i++)
+        {
+            var neutral = ChildFelt(StoryFeeling.Neutral, "Scared");
+            _h.Sessions.Single(s => s.Id == neutral.ReadingSessionId).CompletedAt = completedAt;
+        }
+
+        await _sut.ComputeAsync(Wish());
+
+        Assert.Equal(6, Assert.Single(_h.Suggestions).Score);
+    }
+
+    [Fact]
+    public async Task Compute_OneChildRereadingAStory_DoesNotBuildAProfileAlone()
+    {
+        _h.AddLibraryStory(31, "Mới", DateTime.UtcNow); _h.Match(31, _cat.Id, _sea.Id);
+        _h.AddLibraryStory(32, "Cũ", DateTime.UtcNow.AddDays(-5)); _h.Match(32, _cat.Id, _sea.Id);
+        // Một bé đọc lại 3 lần, lần nào cũng "Hơi sợ": vẫn chỉ là 1 bé, chưa đủ 3 bé.
+        for (var i = 0; i < 3; i++) Felt(ReadingHarness.OtherChild, 31, "Scared");
+        ChildFelt(StoryFeeling.Dislike, "Scared");
+
+        await _sut.ComputeAsync(Wish());
+
+        Assert.Equal(new[] { 31, 32 }, Ranked().Stories);
+        Assert.Equal(new[] { 6, 6 }, Ranked().Scores);
+    }
+
+    [Fact]
+    public async Task Compute_RereadsOfOneChild_CountOnce_AgainstOtherChildren()
+    {
+        _h.AddLibraryStory(31, "Mới", DateTime.UtcNow); _h.Match(31, _cat.Id, _sea.Id);
+        _h.AddLibraryStory(32, "Cũ", DateTime.UtcNow.AddDays(-5)); _h.Match(32, _cat.Id, _sea.Id);
+        // 4 bé: một bé đọc 3 lần chọn "Hơi sợ" → tính 1/4 = 25%, không gắn; 3 bé khác "Buồn cười".
+        for (var i = 0; i < 3; i++) Felt(ReadingHarness.OtherChild, 31, "Scared");
+        OthersFelt(31, 3, "Funny");
+        ChildFelt(StoryFeeling.Dislike, "Scared");
+
+        await _sut.ComputeAsync(Wish());
+
+        Assert.Equal(new[] { 31, 32 }, Ranked().Stories);
+        Assert.Equal(new[] { 6, 6 }, Ranked().Scores);
+    }
+
+    [Fact]
+    public async Task Compute_EachChildCountsWithTheirLatestReflection()
+    {
+        _h.AddLibraryStory(31, "Mới", DateTime.UtcNow); _h.Match(31, _cat.Id, _sea.Id);
+        _h.AddLibraryStory(32, "Cũ", DateTime.UtcNow.AddDays(-5)); _h.Match(32, _cat.Id, _sea.Id);
+        // Bé A: lần trước "Hơi sợ", lần mới nhất "Buồn cười" → tính "Buồn cười".
+        // Thêm 1 bé "Hơi sợ", 1 bé "Buồn cười" → "Hơi sợ" 1/3 ≈ 33%, không gắn.
+        Felt(ReadingHarness.OtherChild, 31, "Scared");
+        Felt(ReadingHarness.OtherChild, 31, "Funny");
+        OthersFelt(31, 1, "Scared");
+        OthersFelt(31, 1, "Funny");
+        ChildFelt(StoryFeeling.Dislike, "Scared");
+
+        await _sut.ComputeAsync(Wish());
+
+        Assert.Equal(new[] { 31, 32 }, Ranked().Stories);
+        Assert.Equal(new[] { 6, 6 }, Ranked().Scores);
+    }
+
     // ---- ForChildAsync ----
 
     private async Task<StoryWish> WithTwoSuggestionsAsync()

@@ -77,6 +77,9 @@ public class StoryWishSuggestionService : IStoryWishSuggestionService
         var learning = await _unitOfWork.Repository<LearningProfile>().FirstOrDefaultAsync(
             profile => profile.ChildProfileId == childId && !profile.IsDeleted, cancellationToken: ct);
 
+        var storyTags = await LoadStoryEmotionTagsAsync(candidateIds, ct);
+        var preference = await LoadChildEmotionPreferenceAsync(childId, ct);
+
         var scored = new List<(Story Story, int Score, List<int> Matched)>();
         foreach (var story in stories)
         {
@@ -106,7 +109,9 @@ public class StoryWishSuggestionService : IStoryWishSuggestionService
 
             if (score >= StoryWishSuggestionPolicy.MinScore)
             {
-                scored.Add((story, score, matched));
+                // Cảm xúc chỉ xếp lại thứ tự: ngưỡng xét bằng điểm theo điều ước, cảm xúc không loại hay thêm truyện.
+                var tags = storyTags.GetValueOrDefault(story.Id) ?? NoEmotionTags;
+                scored.Add((story, score + StoryEmotionAffinity.Points(tags, preference), matched));
             }
         }
 
@@ -129,6 +134,55 @@ public class StoryWishSuggestionService : IStoryWishSuggestionService
         }
 
         return top.Count;
+    }
+
+    private static readonly IReadOnlySet<StoryEmotion> NoEmotionTags = new HashSet<StoryEmotion>();
+
+    /// <summary>
+    /// Hồ sơ cảm xúc của các truyện ứng viên, tổng hợp từ cảm nhận chưa xóa (chỉ số đếm). Mỗi bé chỉ tính một lượt —
+    /// lần cảm nhận có cảm xúc mới nhất — để một bé đọc lại nhiều lần không tự tạo hay lấn át hồ sơ của truyện.
+    /// </summary>
+    private async Task<Dictionary<int, IReadOnlySet<StoryEmotion>>> LoadStoryEmotionTagsAsync(
+        List<int> storyIds, CancellationToken ct)
+    {
+        var rows = await _unitOfWork.Repository<StoryReflection>().FindAsync(
+            row => storyIds.Contains(row.StoryId) && !row.IsDeleted, cancellationToken: ct);
+        return rows.Where(row => row.Emotions.Count > 0)
+            .GroupBy(row => row.StoryId)
+            .ToDictionary(
+                group => group.Key,
+                group => StoryEmotionAffinity.StoryTags(group
+                    .GroupBy(row => row.ChildProfileId)
+                    .Select(perChild => (IReadOnlyCollection<string>)perChild.MaxBy(row => row.Id)!.Emotions)));
+    }
+
+    /// <summary>Sở thích cảm xúc của bé từ các lần đọc xong có mức thích và cảm nhận chưa xóa, mới nhất trước.</summary>
+    private async Task<EmotionPreference> LoadChildEmotionPreferenceAsync(int childId, CancellationToken ct)
+    {
+        var reflections = await _unitOfWork.Repository<StoryReflection>().FindAsync(
+            row => row.ChildProfileId == childId && !row.IsDeleted, cancellationToken: ct);
+        if (reflections.Count == 0)
+        {
+            return EmotionPreference.None;
+        }
+
+        var sessionIds = reflections.Select(row => row.ReadingSessionId).Distinct().ToList();
+        var sessions = (await _unitOfWork.Repository<ReadingSession>().FindAsync(
+                session => sessionIds.Contains(session.Id)
+                           && session.ChildProfileId == childId
+                           && session.Status == SessionStatus.Completed
+                           && session.Feeling != null
+                           && !session.IsDeleted,
+                cancellationToken: ct))
+            .ToDictionary(session => session.Id);
+
+        var reads = reflections
+            .Where(row => sessions.ContainsKey(row.ReadingSessionId))
+            .Select(row => (Session: sessions[row.ReadingSessionId], Row: row))
+            .OrderByDescending(pair => pair.Session.CompletedAt ?? pair.Session.StartedAt)
+            .ThenByDescending(pair => pair.Session.Id)
+            .Select(pair => (pair.Session.Feeling!.Value, (IReadOnlyCollection<string>)pair.Row.Emotions));
+        return StoryEmotionAffinity.ChildPreference(reads);
     }
 
     public async Task<List<WishSuggestionDto>> ForChildAsync(StoryWish wish, CancellationToken ct = default)

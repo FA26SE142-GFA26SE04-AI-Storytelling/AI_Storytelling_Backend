@@ -436,6 +436,75 @@ public sealed class StoryContentGenerationHandlerTests
         Constraints = new GenerationConstraintsDto { MaximumWords = 700 }
     };
 
+    [Theory]
+    [InlineData("Age_6_8")]
+    [InlineData("Age_9_10")]
+    public void Read_aloud_snapshot_is_served_for_both_age_bands(string ageBand)
+    {
+        // Core always plans a ReadAloud item and fetches its snapshot first; an unknown type used to return 400.
+        var handler = new GenerateListeningInteractionHandler(
+            new StoryContentGenerationExecutor(new StubLlmClient(), Options.Create(new StoryContentGenerationOptions())),
+            new StoryPlatform.AI.Infrastructure.PromptCatalog.PromptTemplateProvider());
+
+        var snapshot = handler.Snapshot("ReadAloud", ageBand, "vi");
+
+        Assert.Equal("ListeningReadAloud", snapshot.PromptType);
+        Assert.Equal("story-readaloud-v1", snapshot.Version);
+        Assert.Contains("{{context}}", snapshot.Template);
+        Assert.Contains("passageQuote", snapshot.Template);
+    }
+
+    [Fact]
+    public async Task Read_aloud_without_anchor_zones_returns_passage_from_pinned_snapshot()
+    {
+        const string payload = """{"items":[{"blockId":"b2","passageQuote":"Na repaired the toy with care.","praiseFeedback":"Con đọc rất hay, mình đọc lại nhé!"}]}""";
+        var llm = new StubLlmClient(payload);
+        var handler = new GenerateListeningInteractionHandler(
+            new StoryContentGenerationExecutor(llm, Options.Create(new StoryContentGenerationOptions())), new StubPromptProvider());
+
+        var result = await handler.HandleAsync(ReadAloudRequest());
+
+        var passage = Assert.Single(result.ReadAloudPassages);
+        Assert.Equal("b2", passage.BlockId);
+        Assert.Equal("Na repaired the toy with care.", passage.PassageQuote);
+        Assert.Empty(result.EventOrderings);
+        Assert.Equal("pinned-v1", result.Metadata.PromptVersion);
+        Assert.Contains("PINNED", llm.LastPrompt);
+        var itemSchema = llm.LastSchema.GetProperty("properties").GetProperty("items").GetProperty("items");
+        Assert.Equal(["blockId", "passageQuote", "praiseFeedback"],
+            itemSchema.GetProperty("required").EnumerateArray().Select(x => x.GetString()!).ToArray());
+    }
+
+    [Fact]
+    public async Task Read_aloud_output_with_an_anchor_is_rejected()
+    {
+        const string payload = """{"items":[{"afterBlockId":"b1","blockId":"b2","passageQuote":"Na repaired the toy with care.","praiseFeedback":"Con đọc hay lắm!"}]}""";
+        var handler = new GenerateListeningInteractionHandler(new StoryContentGenerationExecutor(new StubLlmClient(payload),
+            Options.Create(new StoryContentGenerationOptions { MaxTechnicalAttempts = 1 })), new StubPromptProvider());
+
+        await Assert.ThrowsAnyAsync<Exception>(() => handler.HandleAsync(ReadAloudRequest()));
+    }
+
+    private static GenerateListeningInteractionRequest ReadAloudRequest() => new()
+    {
+        RequestId = "read-aloud-1",
+        InteractionType = "ReadAloud",
+        Count = 1,
+        AgeBand = "Age_6_8",
+        Language = "vi",
+        ReadingLevel = 2,
+        Story = new ListeningStoryInfoDto { Title = "A toy", Lesson = "Be kind" },
+        Blocks = [new("b1", "Na found a broken toy."), new("b2", "Na repaired the toy with care.")],
+        LastBlockId = "b2",
+        AllowedBlockIds = [],
+        Snapshot = new AiGenerationSnapshot
+        {
+            PromptVersionNo = "pinned-v1",
+            Config = new AiGenerationConfigSnapshot(),
+            Templates = new Dictionary<string, string> { ["ListeningReadAloud"] = "PINNED read aloud {{context}}" }
+        }
+    };
+
     private sealed class StubLlmClient(params object[] responses) : ILlmClient
     {
         private readonly Queue<object> _responses = new(responses);

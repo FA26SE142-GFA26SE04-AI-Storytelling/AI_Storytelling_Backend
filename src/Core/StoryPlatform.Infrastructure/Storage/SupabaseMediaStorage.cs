@@ -3,18 +3,11 @@ using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using StoryPlatform.Application.Features.MediaStorage.Interfaces;
-using StoryPlatform.Infrastructure.AI;
 
 namespace StoryPlatform.Infrastructure.Storage;
 
 public sealed class SupabaseMediaStorage : IMediaStorage
 {
-    private static readonly HashSet<string> AllowedMimeTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "image/jpeg", "image/png", "image/webp",
-        "audio/mpeg", "audio/wav", "audio/ogg"
-    };
-
     private readonly HttpClient _httpClient;
     private readonly SupabaseStorageOptions _options;
     private readonly ILogger<SupabaseMediaStorage> _logger;
@@ -37,17 +30,17 @@ public sealed class SupabaseMediaStorage : IMediaStorage
     {
         ArgumentNullException.ThrowIfNull(content);
         if (!content.CanRead) throw new ArgumentException("Media content must be readable.", nameof(content));
-        if (!AllowedMimeTypes.Contains(mimeType)) throw new ArgumentException("Unsupported media MIME type.", nameof(mimeType));
+        if (!MediaObjectRules.AllowedMimeTypes.Contains(mimeType)) throw new ArgumentException("Unsupported media MIME type.", nameof(mimeType));
 
-        var normalizedPath = NormalizePath(storagePath);
+        var normalizedPath = MediaObjectRules.NormalizePath(storagePath);
         using var buffer = new MemoryStream();
         await content.CopyToAsync(buffer, cancellationToken);
         var bytes = buffer.ToArray();
-        ValidateContentMatchesMime(bytes, mimeType);
+        MediaObjectRules.ValidateContentMatchesMime(bytes, mimeType);
 
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
-            BuildStorageUri($"object/{EncodePath(_options.Bucket)}/{EncodePath(normalizedPath)}"));
+            BuildStorageUri($"object/{MediaObjectRules.EncodePath(_options.Bucket)}/{MediaObjectRules.EncodePath(normalizedPath)}"));
         request.Headers.TryAddWithoutValidation("x-upsert", "true");
         request.Content = new ByteArrayContent(bytes);
         request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mimeType);
@@ -61,14 +54,14 @@ public sealed class SupabaseMediaStorage : IMediaStorage
 
     public async Task<StoryPlatform.Application.Features.MediaStorage.Models.GeneratedMedia> ReadAsync(string storagePath, CancellationToken cancellationToken = default)
     {
-        var normalized = NormalizePath(storagePath);
-        using var response = await _httpClient.GetAsync(BuildStorageUri($"object/authenticated/{EncodePath(_options.Bucket)}/{EncodePath(normalized)}"),
+        var normalized = MediaObjectRules.NormalizePath(storagePath);
+        using var response = await _httpClient.GetAsync(BuildStorageUri($"object/authenticated/{MediaObjectRules.EncodePath(_options.Bucket)}/{MediaObjectRules.EncodePath(normalized)}"),
             HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
         const int limit = 32 * 1024 * 1024;
         if (response.Content.Headers.ContentLength > limit) throw new InvalidOperationException("MEDIA_TOO_LARGE");
         var mime = response.Content.Headers.ContentType?.MediaType ?? "";
-        if (!AllowedMimeTypes.Contains(mime)) throw new InvalidOperationException("UNSUPPORTED_MEDIA_TYPE");
+        if (!MediaObjectRules.AllowedMimeTypes.Contains(mime)) throw new InvalidOperationException("UNSUPPORTED_MEDIA_TYPE");
         await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var buffer = new MemoryStream();
         var chunk = new byte[81920];
@@ -79,32 +72,8 @@ public sealed class SupabaseMediaStorage : IMediaStorage
             buffer.Write(chunk, 0, read);
         }
         var bytes = buffer.ToArray();
-        ValidateContentMatchesMime(bytes, mime);
+        MediaObjectRules.ValidateContentMatchesMime(bytes, mime);
         return new(bytes, mime);
-    }
-
-    private static void ValidateContentMatchesMime(byte[] bytes, string mimeType)
-    {
-        if (mimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-        {
-            var result = MagicByteValidators.ValidateImage(bytes);
-            if (!result.IsValid || !string.Equals(result.DetectedMime, mimeType, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new ArgumentException(
-                    $"Media binary signature does not match expected image MIME '{mimeType}'. Detected: '{result.DetectedMime}'. Reason: {result.Reason}",
-                    nameof(mimeType));
-            }
-        }
-        else if (mimeType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase))
-        {
-            var result = MagicByteValidators.ValidateAudio(bytes);
-            if (!result.IsValid || !string.Equals(result.DetectedMime, mimeType, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new ArgumentException(
-                    $"Media binary signature does not match expected audio MIME '{mimeType}'. Detected: '{result.DetectedMime}'. Reason: {result.Reason}",
-                    nameof(mimeType));
-            }
-        }
     }
 
     public async Task<string> GetSignedUrlAsync(
@@ -115,9 +84,9 @@ public sealed class SupabaseMediaStorage : IMediaStorage
         if (expiry <= TimeSpan.Zero || expiry > TimeSpan.FromDays(7))
             throw new ArgumentOutOfRangeException(nameof(expiry), "Signed URL expiry must be between 1 second and 7 days.");
 
-        var normalizedPath = NormalizePath(storagePath);
+        var normalizedPath = MediaObjectRules.NormalizePath(storagePath);
         using var response = await _httpClient.PostAsJsonAsync(
-            BuildStorageUri($"object/sign/{EncodePath(_options.Bucket)}/{EncodePath(normalizedPath)}"),
+            BuildStorageUri($"object/sign/{MediaObjectRules.EncodePath(_options.Bucket)}/{MediaObjectRules.EncodePath(normalizedPath)}"),
             new { expiresIn = checked((int)Math.Ceiling(expiry.TotalSeconds)) },
             cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
@@ -132,10 +101,10 @@ public sealed class SupabaseMediaStorage : IMediaStorage
 
     public async Task DeleteAsync(string storagePath, CancellationToken cancellationToken = default)
     {
-        var normalizedPath = NormalizePath(storagePath);
+        var normalizedPath = MediaObjectRules.NormalizePath(storagePath);
         using var request = new HttpRequestMessage(
             HttpMethod.Delete,
-            BuildStorageUri($"object/{EncodePath(_options.Bucket)}"))
+            BuildStorageUri($"object/{MediaObjectRules.EncodePath(_options.Bucket)}"))
         {
             Content = JsonContent.Create(new { prefixes = new[] { normalizedPath } })
         };
@@ -173,21 +142,6 @@ public sealed class SupabaseMediaStorage : IMediaStorage
             throw new InvalidOperationException("SUPABASE_STORAGE_NOT_CONFIGURED");
         return uri;
     }
-
-    private static string NormalizePath(string storagePath)
-    {
-        if (string.IsNullOrWhiteSpace(storagePath)) throw new ArgumentException("Storage path is required.", nameof(storagePath));
-        if (storagePath.Contains(':') || storagePath.StartsWith("//", StringComparison.Ordinal))
-            throw new ArgumentException("Storage path must be a relative object key.", nameof(storagePath));
-        var normalized = storagePath.Replace('\\', '/').Trim('/');
-        var segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (segments.Length == 0 || segments.Any(segment => segment is "." or ".." || segment.Contains('?') || segment.Contains('#')))
-            throw new ArgumentException("Storage path is invalid.", nameof(storagePath));
-        return string.Join('/', segments);
-    }
-
-    private static string EncodePath(string path) =>
-        string.Join('/', path.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(Uri.EscapeDataString));
 
     private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {

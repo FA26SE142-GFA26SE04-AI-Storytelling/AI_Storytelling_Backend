@@ -34,6 +34,68 @@ public sealed class GoogleSpeechToTextRecognizerTests
     private static HttpResponseMessage Json(string json, HttpStatusCode status = HttpStatusCode.OK) =>
         new(status) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
 
+    private sealed class CapturingLogger : Microsoft.Extensions.Logging.ILogger<GoogleSpeechToTextRecognizer>
+    {
+        public List<string> Messages { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId,
+            TState state, Exception? exception, Func<TState, Exception?, string> formatter) => Messages.Add(formatter(state, exception));
+    }
+
+    private const string PermissionDeniedBody = """
+        {"error":{"code":403,"message":"Cloud Speech-to-Text API has not been used in project 123 before or it is disabled.",
+        "status":"PERMISSION_DENIED","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"SERVICE_DISABLED",
+        "domain":"googleapis.com","metadata":{"service":"speech.googleapis.com"}}]}}
+        """;
+
+    [Fact]
+    public void DescribeError_ReadsGoogleStatusReasonAndMessage()
+    {
+        var (status, reason, message) = GoogleSpeechToTextRecognizer.DescribeError(PermissionDeniedBody);
+        Assert.Equal("PERMISSION_DENIED", status);
+        Assert.Equal("SERVICE_DISABLED", reason);
+        Assert.StartsWith("Cloud Speech-to-Text API has not been used", message);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("<html>Forbidden</html>")]
+    [InlineData("{\"unexpected\":true}")]
+    public void DescribeError_UnreadableBody_ReturnsUnknownWithoutThrowing(string body)
+    {
+        var (status, reason, message) = GoogleSpeechToTextRecognizer.DescribeError(body);
+        Assert.Equal("unknown", status);
+        Assert.Equal("unknown", reason);
+        Assert.Equal(string.Empty, message);
+    }
+
+    [Fact]
+    public void DescribeError_TruncatesLongMessageToOneLine()
+    {
+        var body = JsonSerializer.Serialize(new { error = new { status = "INTERNAL", message = "line1\nline2 " + new string('x', 600) } });
+        var (_, _, message) = GoogleSpeechToTextRecognizer.DescribeError(body);
+        Assert.DoesNotContain('\n', message);
+        Assert.True(message.Length <= 300);
+    }
+
+    [Fact]
+    public async Task RecognizeAsync_ProviderError_LogsGoogleReasonAndStillThrowsUnavailable()
+    {
+        var logger = new CapturingLogger();
+        var recognizer = new GoogleSpeechToTextRecognizer(
+            new HttpClient(new Transport(_ => Task.FromResult(Json(PermissionDeniedBody, HttpStatusCode.Forbidden)))),
+            Microsoft.Extensions.Options.Options.Create(Options()), logger);
+
+        await Assert.ThrowsAsync<SpeechRecognitionUnavailableException>(() => recognizer.RecognizeAsync([1, 2, 3]));
+
+        var line = Assert.Single(logger.Messages);
+        Assert.Contains("Status=403", line);
+        Assert.Contains("GoogleStatus=PERMISSION_DENIED", line);
+        Assert.Contains("Reason=SERVICE_DISABLED", line);
+        Assert.Contains("has not been used in project", line);
+    }
+
     [Fact]
     public void RecognizeUri_UsesGlobalOrRegionalHost()
     {

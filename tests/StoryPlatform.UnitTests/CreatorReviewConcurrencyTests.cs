@@ -180,7 +180,7 @@ public sealed class CreatorReviewConcurrencyTests
         var changed = false;
         session.AfterCommit = () =>
         {
-            if (changed) return;
+            if (changed || !db.Read<StoryVersion>().Any(x => x.Moderation.ModerationZone != null)) return;
             changed = true;
             var v1 = db.Data[typeof(StoryVersion)].Cast<StoryVersion>().Single(x => x.IsCurrent);
             var v2 = (StoryVersion)Copy(v1); v2.Id = 2; v2.VersionNo = 2;
@@ -203,7 +203,9 @@ public sealed class CreatorReviewConcurrencyTests
         var service = new StoryReviewService(session, new SafetyGate().Client.Object, new InMemoryProposalCache(), moderation: checker);
         var conflict = await Assert.ThrowsAsync<ConflictException>(() => service.ApproveAsync(1, 1));
         Assert.Equal("STALE_STORY_VERSION", conflict.Message);
-        Assert.Empty(db.Read<StoryGenerationJob>());
+        Assert.DoesNotContain(db.Read<StoryGenerationJob>(), x => x.Operation != GenerationJobOperation.GrayZoneCheck);
+        var checkJob = Assert.Single(db.Read<StoryGenerationJob>(), x => x.Operation == GenerationJobOperation.GrayZoneCheck);
+        Assert.Equal(GenerationJobStatus.Completed, checkJob.Status);
     }
 
     private static TaskCompletionSource<bool> Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);

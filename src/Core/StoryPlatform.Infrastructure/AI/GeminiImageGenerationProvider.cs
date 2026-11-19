@@ -1,7 +1,7 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -11,6 +11,7 @@ using Microsoft.Extensions.Options;
 using StoryPlatform.Application.Features.MediaGeneration;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
+using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Application.Features.MediaStorage.Models;
 
 namespace StoryPlatform.Infrastructure.AI;
@@ -23,24 +24,28 @@ namespace StoryPlatform.Infrastructure.AI;
 /// </summary>
 public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
 {
+    private const string OperationName = "ImageGeneration";
     private readonly HttpClient _httpClient;
     private readonly GeminiOptions _gemini;
     private readonly VertexOptions _vertex;
     private readonly ImageGenerationOptions _image;
     private readonly ILogger<GeminiImageGenerationProvider> _logger;
+    private readonly IMediaOutboundPrivacyGuard _privacyGuard;
 
     public GeminiImageGenerationProvider(
         HttpClient httpClient,
         IOptions<GeminiOptions> geminiOptions,
         IOptions<VertexOptions> vertexOptions,
         IOptions<ImageGenerationOptions> imageOptions,
-        ILogger<GeminiImageGenerationProvider> logger)
+        ILogger<GeminiImageGenerationProvider> logger,
+        IMediaOutboundPrivacyGuard? privacyGuard = null)
     {
         _httpClient = httpClient;
         _gemini = geminiOptions.Value;
         _vertex = vertexOptions.Value;
         _image = imageOptions.Value;
         _logger = logger;
+        _privacyGuard = privacyGuard ?? new DeterministicMediaOutboundPrivacyGuard();
         if (_httpClient.Timeout == Timeout.InfiniteTimeSpan || _httpClient.Timeout > TimeSpan.FromSeconds(_image.TimeoutSeconds))
             _httpClient.Timeout = TimeSpan.FromSeconds(_image.TimeoutSeconds);
     }
@@ -48,54 +53,110 @@ public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
     public async Task<GeneratedMedia> GenerateAsync(
         SceneSpecification specification, CancellationToken cancellationToken = default)
     {
+        var provider = _vertex.UseVertex ? "VertexAI" : "Gemini";
+        var elapsed = Stopwatch.StartNew();
         ProviderMediaContextSerializer.Validate(specification.MediaContext);
+
+        var prompt = BuildPrompt(specification, _image);
+        try
+        {
+            _privacyGuard.EnsureSafeForProvider(OperationName, prompt);
+        }
+        catch (MediaProviderPrivacyException ex)
+        {
+            MediaProviderDiagnostics.LogFailed(
+                _logger, OperationName, provider, _image.Model, elapsed.Elapsed.TotalMilliseconds,
+                null, ex.ErrorCode, null, null, ex.GetType().Name);
+            throw;
+        }
+
         if (!_vertex.UseVertex && string.IsNullOrWhiteSpace(_gemini.ApiKey))
             throw new PermanentMediaGenerationException("IMAGE_PROVIDER_NOT_CONFIGURED");
 
-        var prompt = BuildPrompt(specification, _image);
         var body = BuildRequestBody(prompt, _image);
-        using var request = BuildRequest(body);
-        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        var payloadJson = JsonSerializer.Serialize(body);
+        var requestBytes = Encoding.UTF8.GetByteCount(payloadJson);
+        MediaProviderDiagnostics.LogStarted(_logger, OperationName, provider, _image.Model, prompt.Length, requestBytes);
 
-        if (!response.IsSuccessStatusCode)
+        int? httpStatus = null;
+        string? providerRequestId = null;
+        double? retryAfterSeconds = null;
+
+        try
         {
-            var error = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            var errorCode = $"GEMINI_IMAGE_HTTP_{(int)response.StatusCode}";
-            if (IsTransient(response.StatusCode))
+            using var request = BuildRequest(payloadJson);
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            httpStatus = (int)response.StatusCode;
+            providerRequestId = MediaProviderDiagnostics.ExtractAllowlistedRequestId(response);
+            retryAfterSeconds = MediaProviderDiagnostics.GetRetryAfterSeconds(response);
+
+            if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning(
-                    "Gemini image provider returned transient HTTP {StatusCode}: {Body}",
-                    (int)response.StatusCode,
-                    Truncate(error, 200));
-                throw new TransientMediaGenerationException(
-                    errorCode,
-                    new HttpRequestException(errorCode, null, response.StatusCode),
-                    response.Headers.RetryAfter?.Delta ?? (response.Headers.RetryAfter?.Date - DateTimeOffset.UtcNow));
+                // Drain body without logging or embedding it in exceptions.
+                _ = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+                var errorCode = $"GEMINI_IMAGE_HTTP_{(int)response.StatusCode}";
+                MediaProviderDiagnostics.LogFailed(
+                    _logger, OperationName, provider, _image.Model, elapsed.Elapsed.TotalMilliseconds,
+                    httpStatus, errorCode, retryAfterSeconds, providerRequestId,
+                    IsTransient(response.StatusCode) ? nameof(TransientMediaGenerationException) : nameof(PermanentMediaGenerationException));
+
+                if (IsTransient(response.StatusCode))
+                {
+                    throw new TransientMediaGenerationException(
+                        errorCode,
+                        new HttpRequestException(errorCode, null, response.StatusCode),
+                        MediaProviderDiagnostics.GetRetryAfterDelta(response));
+                }
+
+                throw new PermanentMediaGenerationException(errorCode);
             }
 
-            _logger.LogError(
-                "Gemini image provider returned permanent HTTP {StatusCode}: {Body}",
-                (int)response.StatusCode,
-                Truncate(error, 200));
-            throw new PermanentMediaGenerationException(errorCode, $"{errorCode}: {Truncate(error, 200)}");
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            var (bytes, _, usage) = await ExtractFirstInlineImageAsync(stream, cancellationToken).ConfigureAwait(false);
+
+            var validation = MagicByteValidators.ValidateImage(bytes);
+            if (!validation.IsValid)
+                throw new PermanentMediaGenerationException($"GEMINI_IMAGE_VALIDATION_FAILED: {validation.Reason}");
+
+            MediaProviderDiagnostics.LogCompleted(
+                _logger, OperationName, provider, _image.Model, elapsed.Elapsed.TotalMilliseconds,
+                httpStatus.Value, providerRequestId, bytes.Length, validation.DetectedMime, usage);
+
+            return new GeneratedMedia(bytes, validation.DetectedMime!, new Dictionary<string, string>
+            {
+                ["provider"] = provider,
+                ["model"] = _image.Model,
+                ["aspectRatio"] = _image.AspectRatio
+            });
         }
-
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        var (bytes, detectedMime) = await ExtractFirstInlineImageAsync(stream, cancellationToken).ConfigureAwait(false);
-
-        var validation = MagicByteValidators.ValidateImage(bytes);
-        if (!validation.IsValid)
-            throw new PermanentMediaGenerationException($"GEMINI_IMAGE_VALIDATION_FAILED: {validation.Reason}");
-
-        return new GeneratedMedia(bytes, validation.DetectedMime!, new Dictionary<string, string>
+        catch (OperationCanceledException)
         {
-            ["provider"] = _vertex.UseVertex ? "VertexAI" : "Gemini",
-            ["model"] = _image.Model,
-            ["aspectRatio"] = _image.AspectRatio
-        });
+            MediaProviderDiagnostics.LogCancelled(
+                _logger, OperationName, provider, _image.Model, elapsed.Elapsed.TotalMilliseconds,
+                cancellationToken.IsCancellationRequested);
+            throw;
+        }
+        catch (TransientMediaGenerationException)
+        {
+            throw;
+        }
+        catch (PermanentMediaGenerationException ex)
+        {
+            MediaProviderDiagnostics.LogFailed(
+                _logger, OperationName, provider, _image.Model, elapsed.Elapsed.TotalMilliseconds,
+                httpStatus, ex.ErrorCode, retryAfterSeconds, providerRequestId, ex.GetType().Name);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            MediaProviderDiagnostics.LogFailed(
+                _logger, OperationName, provider, _image.Model, elapsed.Elapsed.TotalMilliseconds,
+                httpStatus, "GEMINI_IMAGE_PROVIDER_FAILED", retryAfterSeconds, providerRequestId, ex.GetType().Name);
+            throw;
+        }
     }
 
-    private HttpRequestMessage BuildRequest(object body)
+    private HttpRequestMessage BuildRequest(string payloadJson)
     {
         var url = VertexUrlResolver.Resolve(_vertex, _gemini, _image.Model);
         var message = new HttpRequestMessage(HttpMethod.Post, url);
@@ -104,7 +165,7 @@ public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
             message.Headers.Add("x-goog-api-key", _gemini.ApiKey);
         }
         // Bearer token is injected by VertexAuthDelegatingHandler in the HttpClient pipeline.
-        message.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        message.Content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
         return message;
     }
 
@@ -181,12 +242,13 @@ public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
         code is System.Net.HttpStatusCode.TooManyRequests or System.Net.HttpStatusCode.RequestTimeout or
         System.Net.HttpStatusCode.ServiceUnavailable || (int)code >= 500;
 
-    private static async Task<(byte[] bytes, string? mimeHint)> ExtractFirstInlineImageAsync(
+    private static async Task<(byte[] bytes, string? mimeHint, ProviderTokenUsage usage)> ExtractFirstInlineImageAsync(
         Stream responseBody, CancellationToken cancellationToken)
     {
         using var ms = new MemoryStream();
         await responseBody.CopyToAsync(ms, cancellationToken).ConfigureAwait(false);
         var json = Encoding.UTF8.GetString(ms.ToArray());
+        var usage = MediaProviderDiagnostics.ExtractUsageMetadata(json);
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
         if (!root.TryGetProperty("candidates", out var candidates) || candidates.ValueKind != JsonValueKind.Array || candidates.GetArrayLength() == 0)
@@ -199,13 +261,9 @@ public sealed class GeminiImageGenerationProvider : IImageGenerationProvider
                 var b64 = inline.GetProperty("data").GetString()
                           ?? throw new PermanentMediaGenerationException("GEMINI_IMAGE_EMPTY_DATA");
                 var mime = inline.TryGetProperty("mimeType", out var m) ? m.GetString() : null;
-                return (Convert.FromBase64String(b64), mime);
+                return (Convert.FromBase64String(b64), mime, usage);
             }
         }
         throw new PermanentMediaGenerationException("GEMINI_IMAGE_NO_INLINE_DATA");
     }
-
-    private static string Truncate(string value, int max) =>
-        string.IsNullOrEmpty(value) ? string.Empty :
-        value.Length <= max ? value : value.Substring(0, max);
 }

@@ -33,6 +33,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
     private readonly IGenericRepository<StoryVocabulary> _vocabRepo;
     private readonly IGenericRepository<QuizItem> _quizRepo;
     private readonly ListeningInteractionGenerator _listening;
+    private readonly IAccountAiActivityService _aiActivity;
 
     public StoryReviewService(
         IUnitOfWork unitOfWork,
@@ -40,9 +41,11 @@ public sealed partial class StoryReviewService : IStoryReviewService
         IProposalCache proposalCache,
         IReviewCompletionStore? reviewCompletionStore = null,
         IExistingStoryEvaluationCache? evaluationCache = null, GrayZoneContentCheckService? moderation = null,
-        ListeningInteractionGenerator? listeningGenerator = null)
+        ListeningInteractionGenerator? listeningGenerator = null,
+        IAccountAiActivityService? aiActivity = null)
     {
         _unitOfWork = unitOfWork;
+        _aiActivity = aiActivity ?? new StoryPlatform.Application.Features.AiActivity.Services.AccountAiActivityService(unitOfWork);
         _aiClient = aiClient;
         _proposalCache = proposalCache;
         _reviewCompletionStore = reviewCompletionStore;
@@ -1009,6 +1012,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
+            await _unitOfWork.AcquireAccountAiActivityLockAsync(storyForAuthorization.AuthorUserId, cancellationToken);
             await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
             var story = await _storyRepo.FirstOrDefaultAsync(s => s.Id == storyId, cancellationToken: cancellationToken)
                 ?? throw new NotFoundException("Story");
@@ -1046,6 +1050,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
                     j.Operation == GenerationJobOperation.GenerateMediaPackage,
                     cancellationToken))
                 throw new ConflictException("MEDIA_JOB_ALREADY_EXISTS");
+            await _aiActivity.AdmitStoryAsync(story.AuthorUserId, story, AiActivityMode.FullCreation, cancellationToken);
 
             var sourceJob = (await jobs.FindAsync(j =>
                     j.StoryId == storyId && j.StoryVersionId == approvedVersion.Id &&
@@ -1136,6 +1141,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
+            await _unitOfWork.AcquireAccountAiActivityLockAsync(userId, cancellationToken);
             await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
             var story = await _storyRepo.FirstOrDefaultAsync(
                 s => s.Id == storyId, cancellationToken: cancellationToken)
@@ -1147,6 +1153,8 @@ public sealed partial class StoryReviewService : IStoryReviewService
                 throw new ConflictException("INVALID_STORY_STATUS");
             story.Status = StoryStatus.Rejected;
             _storyRepo.Update(story);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _aiActivity.ReconcileStoryAiActivityAsync(story.AuthorUserId, storyId, cancellationToken);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
         }
         catch

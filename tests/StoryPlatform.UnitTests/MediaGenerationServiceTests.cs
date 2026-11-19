@@ -245,7 +245,7 @@ public sealed partial class MediaGenerationServiceTests
     {
         var (store, confirm, _) = CreatorManualMediaTests.Setup();
         await confirm.ConfirmAsync(1, 1, new(10, "rev1"));
-        store.Items<StoryGenerationJob>().Single().GenerationRequestId = 123;
+        store.Items<StoryGenerationJob>().Single(x => x.Operation == GenerationJobOperation.GenerateMediaPackage).GenerationRequestId = 123;
         var storage = new RecordingMediaStorage();
         var result = await Create(store, storage: storage).RunPackageAsync();
         Assert.False(result.Success);

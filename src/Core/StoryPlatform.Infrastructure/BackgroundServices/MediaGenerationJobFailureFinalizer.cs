@@ -1,6 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using StoryPlatform.Application.Abstractions.AI;
+using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Features.AiActivity.Services;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
+using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.Infrastructure.Persistence;
 
@@ -15,19 +19,71 @@ public sealed class MediaGenerationJobFailureFinalizer : IMediaGenerationJobFail
         int jobId, string expectedConcurrencyToken, string errorCode, CancellationToken cancellationToken = default)
     {
         await using var scope = _scopeFactory.CreateAsyncScope();
-        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var job = await context.StoryGenerationJobs.FirstOrDefaultAsync(x =>
+        var unitOfWork = scope.ServiceProvider.GetService<IUnitOfWork>();
+        if (unitOfWork is null)
+        {
+            var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var job = await context.StoryGenerationJobs.FirstOrDefaultAsync(x =>
+                x.Id == jobId && x.Status != GenerationJobStatus.Completed &&
+                x.Status != GenerationJobStatus.Cancelled &&
+                x.ConcurrencyToken == expectedConcurrencyToken, cancellationToken);
+            if (job is null) return;
+            job.Status = GenerationJobStatus.Failed;
+            job.Stage = JobStage.MediaFailed;
+            job.ErrorCode = errorCode;
+            job.FallbackMessage = "Không thể hoàn tất media. Nội dung truyện và các asset đã hoàn thành vẫn được giữ nguyên.";
+            job.CompletedAt = DateTime.UtcNow;
+            job.LeaseExpiresAt = null;
+            job.ConcurrencyToken = Guid.NewGuid().ToString("N");
+            await context.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        var jobInfo = await unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(x =>
             x.Id == jobId && x.Status != GenerationJobStatus.Completed &&
             x.Status != GenerationJobStatus.Cancelled &&
-            x.ConcurrencyToken == expectedConcurrencyToken, cancellationToken);
-        if (job is null) return;
-        job.Status = GenerationJobStatus.Failed;
-        job.Stage = JobStage.MediaFailed;
-        job.ErrorCode = errorCode;
-        job.FallbackMessage = "Không thể hoàn tất media. Nội dung truyện và các asset đã hoàn thành vẫn được giữ nguyên.";
-        job.CompletedAt = DateTime.UtcNow;
-        job.LeaseExpiresAt = null;
-        job.ConcurrencyToken = Guid.NewGuid().ToString("N");
-        await context.SaveChangesAsync(cancellationToken);
+            x.ConcurrencyToken == expectedConcurrencyToken, cancellationToken: cancellationToken);
+        if (jobInfo is null) return;
+        var storyInfo = await unitOfWork.Repository<Story>().FirstOrDefaultAsync(
+            s => s.Id == jobInfo.StoryId, cancellationToken: cancellationToken);
+        if (storyInfo is null) return;
+
+        var aiActivity = scope.ServiceProvider.GetService<IAccountAiActivityService>()
+            ?? new AccountAiActivityService(unitOfWork);
+
+        await unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await unitOfWork.AcquireAccountAiActivityLockAsync(storyInfo.AuthorUserId, cancellationToken);
+            await unitOfWork.AcquireTransactionLockAsync(jobInfo.StoryId, cancellationToken);
+
+            var job = await unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(x =>
+                x.Id == jobId && x.Status != GenerationJobStatus.Completed &&
+                x.Status != GenerationJobStatus.Cancelled &&
+                x.ConcurrencyToken == expectedConcurrencyToken, cancellationToken: cancellationToken);
+            if (job is null)
+            {
+                await unitOfWork.CommitTransactionAsync(cancellationToken);
+                return;
+            }
+
+            unitOfWork.Repository<StoryGenerationJob>().Update(job); // Preserve the observed concurrency token.
+            job.Status = GenerationJobStatus.Failed;
+            job.Stage = JobStage.MediaFailed;
+            job.ErrorCode = errorCode;
+            job.FallbackMessage = "Không thể hoàn tất media. Nội dung truyện và các asset đã hoàn thành vẫn được giữ nguyên.";
+            job.CompletedAt = DateTime.UtcNow;
+            job.LeaseExpiresAt = null;
+            job.ConcurrencyToken = Guid.NewGuid().ToString("N");
+            unitOfWork.Repository<StoryGenerationJob>().Update(job);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+            await aiActivity.ReconcileStoryAiActivityAsync(storyInfo.AuthorUserId, jobInfo.StoryId, cancellationToken, failedJobId: job.Id);
+            await unitOfWork.CommitTransactionAsync(cancellationToken);
+        }
+        catch
+        {
+            await unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+            throw;
+        }
     }
 }

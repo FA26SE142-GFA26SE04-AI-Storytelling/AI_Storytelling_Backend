@@ -5,10 +5,12 @@ namespace StoryPlatform.Application.Common.Exceptions;
 public abstract class AppException : Exception
 {
     public int StatusCode { get; }
+    public string? ErrorCode { get; }
 
-    protected AppException(string message, int statusCode = 400) : base(message)
+    protected AppException(string message, int statusCode = 400, string? errorCode = null) : base(message)
     {
         StatusCode = statusCode;
+        ErrorCode = errorCode;
     }
 }
 
@@ -47,7 +49,7 @@ public class ForbiddenException : AppException
 
 public class ConflictException : AppException
 {
-    public ConflictException(string message) : base(message, 409)
+    public ConflictException(string message, string? errorCode = null) : base(message, 409, errorCode)
     {
     }
 }

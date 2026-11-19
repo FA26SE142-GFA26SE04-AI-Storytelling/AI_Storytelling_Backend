@@ -100,6 +100,8 @@ public partial class StoryAssistanceService
         {
             if (task.ActiveOperationId != request.TargetOperationId) throw Fail("OPERATION_NOT_RUNNING");
             await CancelActive(task, ct);
+            await uow.SaveChangesAsync(ct);
+            await _aiActivity.ReconcileStoryAiActivityAsync(userId, storyId, ct);
         }, true, ct);
         _cancellations.Cancel(taskId, request.TargetOperationId);
         return result;
@@ -112,7 +114,12 @@ public partial class StoryAssistanceService
         {
             task.Status = "Closed";
             target = task.ActiveOperationId;
-            if (task.ActiveOperationId is not null) await CancelActive(task, ct);
+            if (task.ActiveOperationId is not null)
+            {
+                await CancelActive(task, ct);
+                await uow.SaveChangesAsync(ct);
+                await _aiActivity.ReconcileStoryAiActivityAsync(userId, storyId, ct);
+            }
         }, true, ct);
         if (target is not null) _cancellations.Cancel(taskId, target);
         return result;
@@ -183,6 +190,7 @@ public partial class StoryAssistanceService
                 Answer = answer, ConfirmedDirection = direction?.ConfirmedDirectionText, MaximumTrialCharacters = options.MaximumTrialCharacters,
                 ChildPolicy = AssistanceContextStorage.ChildPolicy(task.ContextJson)
             };
+            await _aiActivity.AdmitStoryAsync(user, story, StoryPlatform.Domain.Enums.AiActivityMode.TaskOnly, ct);
             step.Status = "Running";
             task.ActiveOperationId = command.OperationId; task.LeaseExpiresAt = Now.AddSeconds(options.LeaseSeconds);
         }, false, ct);
@@ -261,6 +269,8 @@ public partial class StoryAssistanceService
             }
             var result = Result(task, step); step.ResponseJson = Serialize(result);
             uow.Repository<StoryAssistanceStep>().Update(step); uow.Repository<StoryAssistanceTask>().Update(task);
+            await uow.SaveChangesAsync(completion.Token);
+            await _aiActivity.ReconcileStoryAiActivityAsync(user, storyId, completion.Token);
             return result;
         }, completion.Token, completing: true);
         logger?.LogInformation("Story assistance completed. TraceId={TraceId}, EntryPoint={EntryPoint}, Mode={Mode}, TaskId={TaskId}, StepId={StepId}, Status={Status}, ErrorCode={ErrorCode}, LatencyMs={LatencyMs}", System.Diagnostics.Activity.Current?.TraceId.ToString(), input.EntryPoint, kind, taskId, finished.StepId, finished.Step.Status, finished.Step.ErrorCode, elapsed.ElapsedMilliseconds);

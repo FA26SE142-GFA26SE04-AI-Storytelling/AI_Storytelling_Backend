@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -9,6 +10,7 @@ using Microsoft.Extensions.Options;
 using StoryPlatform.Application.Features.MediaGeneration;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
+using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Application.Features.MediaStorage.Models;
 
 namespace StoryPlatform.Infrastructure.AI;
@@ -19,24 +21,28 @@ namespace StoryPlatform.Infrastructure.AI;
 /// </summary>
 public sealed class GeminiMediaAlignmentEvaluator : IMediaAlignmentEvaluator
 {
+    private const string OperationName = "ImageAlignment";
     private readonly HttpClient _httpClient;
     private readonly GeminiOptions _gemini;
     private readonly VertexOptions _vertex;
     private readonly MediaEvaluationOptions _evalOptions;
     private readonly ILogger<GeminiMediaAlignmentEvaluator> _logger;
+    private readonly IMediaOutboundPrivacyGuard _privacyGuard;
 
     public GeminiMediaAlignmentEvaluator(
         HttpClient httpClient,
         IOptions<GeminiOptions> geminiOptions,
         IOptions<VertexOptions> vertexOptions,
         IOptions<MediaEvaluationOptions> evalOptions,
-        ILogger<GeminiMediaAlignmentEvaluator> logger)
+        ILogger<GeminiMediaAlignmentEvaluator> logger,
+        IMediaOutboundPrivacyGuard? privacyGuard = null)
     {
         _httpClient = httpClient;
         _gemini = geminiOptions.Value;
         _vertex = vertexOptions.Value;
         _evalOptions = evalOptions.Value;
         _logger = logger;
+        _privacyGuard = privacyGuard ?? new DeterministicMediaOutboundPrivacyGuard();
         if (_httpClient.Timeout == Timeout.InfiniteTimeSpan || _httpClient.Timeout.TotalSeconds > _evalOptions.TimeoutSeconds)
             _httpClient.Timeout = TimeSpan.FromSeconds(_evalOptions.TimeoutSeconds);
     }
@@ -45,34 +51,91 @@ public sealed class GeminiMediaAlignmentEvaluator : IMediaAlignmentEvaluator
         SceneSpecification specification, GeneratedMedia illustration,
         CancellationToken cancellationToken = default)
     {
+        var provider = _vertex.UseVertex ? "VertexAI" : "Gemini";
+        var elapsed = Stopwatch.StartNew();
+
+        var prompt = BuildPrompt(specification);
+        try
+        {
+            MediaSpecificationPrivacyHelper.EnsureSafe(_privacyGuard, OperationName, specification, prompt);
+        }
+        catch (MediaProviderPrivacyException ex)
+        {
+            MediaProviderDiagnostics.LogFailed(
+                _logger, OperationName, provider, _evalOptions.Model, elapsed.Elapsed.TotalMilliseconds,
+                null, ex.ErrorCode, null, null, ex.GetType().Name);
+            throw;
+        }
+
         if (!_vertex.UseVertex && string.IsNullOrWhiteSpace(_gemini.ApiKey))
             return new MediaEvaluationResult(MediaEvaluationDecision.Fail, "EVALUATOR_NOT_CONFIGURED");
 
-        var prompt = BuildPrompt(specification);
         var body = BuildRequestBody(prompt, illustration);
-        using var request = BuildRequest(body);
-        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        var payloadJson = JsonSerializer.Serialize(body);
+        var requestBytes = Encoding.UTF8.GetByteCount(payloadJson);
+        MediaProviderDiagnostics.LogStarted(_logger, OperationName, provider, _evalOptions.Model, prompt.Length, requestBytes);
 
-        var statusCode = response.StatusCode;
-        var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        int? httpStatus = null;
+        string? providerRequestId = null;
+        double? retryAfterSeconds = null;
 
-        if (!IsSuccess(statusCode))
+        try
         {
-            _logger.LogError("Alignment evaluator HTTP {Status}: {Body}", (int)statusCode, Truncate(content, 200));
-            if (IsTransient(statusCode))
-            {
-                var errorCode = $"ALIGNMENT_EVALUATOR_HTTP_{(int)statusCode}";
-                throw new TransientMediaGenerationException(
-                    errorCode,
-                    new HttpRequestException(errorCode, null, statusCode));
-            }
-            return new MediaEvaluationResult(MediaEvaluationDecision.Fail, "EVALUATOR_HTTP_ERROR");
-        }
+            using var request = BuildRequest(payloadJson);
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
-        return ParseResponse(content);
+            var statusCode = response.StatusCode;
+            httpStatus = (int)statusCode;
+            providerRequestId = MediaProviderDiagnostics.ExtractAllowlistedRequestId(response);
+            retryAfterSeconds = MediaProviderDiagnostics.GetRetryAfterSeconds(response);
+            var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var responseBytes = Encoding.UTF8.GetByteCount(content);
+
+            if (!IsSuccess(statusCode))
+            {
+                var errorCode = $"ALIGNMENT_EVALUATOR_HTTP_{httpStatus}";
+                MediaProviderDiagnostics.LogFailed(
+                    _logger, OperationName, provider, _evalOptions.Model, elapsed.Elapsed.TotalMilliseconds,
+                    httpStatus, errorCode, retryAfterSeconds, providerRequestId,
+                    IsTransient(statusCode) ? nameof(TransientMediaGenerationException) : nameof(HttpRequestException));
+                if (IsTransient(statusCode))
+                {
+                    throw new TransientMediaGenerationException(
+                        errorCode,
+                        new HttpRequestException(errorCode, null, statusCode),
+                        MediaProviderDiagnostics.GetRetryAfterDelta(response));
+                }
+                return new MediaEvaluationResult(MediaEvaluationDecision.Fail, "EVALUATOR_HTTP_ERROR");
+            }
+
+            var usage = MediaProviderDiagnostics.ExtractUsageMetadata(content);
+            var result = ParseResponse(content);
+            MediaProviderDiagnostics.LogCompleted(
+                _logger, OperationName, provider, _evalOptions.Model, elapsed.Elapsed.TotalMilliseconds,
+                httpStatus.Value, providerRequestId, responseBytes, "application/json", usage);
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            MediaProviderDiagnostics.LogCancelled(
+                _logger, OperationName, provider, _evalOptions.Model, elapsed.Elapsed.TotalMilliseconds,
+                cancellationToken.IsCancellationRequested);
+            throw;
+        }
+        catch (TransientMediaGenerationException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            MediaProviderDiagnostics.LogFailed(
+                _logger, OperationName, provider, _evalOptions.Model, elapsed.Elapsed.TotalMilliseconds,
+                httpStatus, "ALIGNMENT_EVALUATOR_FAILED", retryAfterSeconds, providerRequestId, ex.GetType().Name);
+            throw;
+        }
     }
 
-    private HttpRequestMessage BuildRequest(object body)
+    private HttpRequestMessage BuildRequest(string payloadJson)
     {
         var url = VertexUrlResolver.Resolve(_vertex, _gemini, _evalOptions.Model);
         var message = new HttpRequestMessage(HttpMethod.Post, url);
@@ -80,7 +143,7 @@ public sealed class GeminiMediaAlignmentEvaluator : IMediaAlignmentEvaluator
         {
             message.Headers.Add("x-goog-api-key", _gemini.ApiKey);
         }
-        message.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        message.Content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
         return message;
     }
 
@@ -216,13 +279,9 @@ public sealed class GeminiMediaAlignmentEvaluator : IMediaAlignmentEvaluator
                 ? new MediaEvaluationResult(MediaEvaluationDecision.Pass, reason)
                 : new MediaEvaluationResult(MediaEvaluationDecision.Fail, reason ?? "Low alignment score");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return new MediaEvaluationResult(MediaEvaluationDecision.Fail, $"JSON_PARSE_ERROR: {ex.Message}");
+            return new MediaEvaluationResult(MediaEvaluationDecision.Fail, "JSON_PARSE_ERROR");
         }
     }
-
-    private static string Truncate(string value, int max) =>
-        string.IsNullOrEmpty(value) ? string.Empty :
-        value.Length <= max ? value : value[..max];
 }

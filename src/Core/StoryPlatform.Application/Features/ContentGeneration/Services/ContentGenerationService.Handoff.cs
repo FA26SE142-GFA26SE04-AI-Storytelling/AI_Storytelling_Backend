@@ -40,7 +40,7 @@ public sealed partial class ContentGenerationService
     }
 
     private Task<bool> RetryStableHandoffAsync(int userId, int storyId, string key, CancellationToken ct) =>
-        InStoryTransactionAsync(storyId, async () =>
+        InAccountAndStoryTransactionAsync(userId, storyId, async () =>
         {
             var story = await LoadAuthorizedStoryAsync(userId, storyId, ct);
             var receipt = await _unitOfWork.Repository<StoryAuthoringOperation>().FirstOrDefaultAsync(
@@ -67,6 +67,7 @@ public sealed partial class ContentGenerationService
             catch (JsonException) { return false; }
             if (metadata?.Quality?.IsPassed != true) return false;
             if (receipt is not null) throw new ConflictException("HANDOFF_RETRY_KEY_CONFLICT");
+            await _aiActivity.AdmitStoryAsync(story.AuthorUserId, story, AiActivityMode.FullCreation, ct);
             job.Status = GenerationJobStatus.Pending;
             job.Stage = JobStage.ContentStable;
             job.AttemptNo = 0;

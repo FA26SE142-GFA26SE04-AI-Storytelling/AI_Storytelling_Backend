@@ -18,5 +18,6 @@ public enum GenerationJobOperation
     FinalizeMedia = 13,
     GenerateListeningInteraction = 14,
     CheckParentPackage = 15,
-    BuildParentPackage = 16
+    BuildParentPackage = 16,
+    GrayZoneCheck = 17
 }

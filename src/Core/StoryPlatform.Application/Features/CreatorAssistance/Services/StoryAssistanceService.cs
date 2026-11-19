@@ -17,10 +17,13 @@ namespace StoryPlatform.Application.Features.CreatorAssistance.Services;
 public partial class StoryAssistanceService(IUnitOfWork uow, ICreatorAssistanceAiClient ai,
     CreatorAssistanceOptions options, TimeProvider clock, AssistanceCancellationRegistry? cancellations = null,
     ILogger? logger = null, IAssistanceAccessPolicy? accessPolicy = null,
-    IPlanBenefitService? planBenefits = null, IPlanUsageService? planUsage = null)
+    IPlanBenefitService? planBenefits = null, IPlanUsageService? planUsage = null,
+    StoryPlatform.Application.Abstractions.AI.IAccountAiActivityService? aiActivity = null)
 {
     private readonly IAssistanceAccessPolicy _access = accessPolicy ?? new CreatorAssistanceAccessPolicy(uow);
     private readonly AssistanceCancellationRegistry _cancellations = cancellations ?? new();
+    private readonly StoryPlatform.Application.Abstractions.AI.IAccountAiActivityService _aiActivity =
+        aiActivity ?? new StoryPlatform.Application.Features.AiActivity.Services.AccountAiActivityService(uow, clock);
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private DateTime Now => clock.GetUtcNow().UtcDateTime;
     private static string Serialize<T>(T value) => JsonSerializer.Serialize(value, Json);
@@ -42,6 +45,7 @@ public partial class StoryAssistanceService(IUnitOfWork uow, ICreatorAssistanceA
         await uow.BeginTransactionAsync(ct);
         try
         {
+            await uow.AcquireAccountAiActivityLockAsync(user, ct);
             await uow.AcquireTransactionLockAsync(-user, ct);
             await uow.AcquireTransactionLockAsync(storyId, ct);
             var now = Now;
@@ -200,6 +204,7 @@ public partial class StoryAssistanceService(IUnitOfWork uow, ICreatorAssistanceA
         // Callers re-query receipts/steps with AsNoTracking. Flush tracked recovery changes
         // inside the existing transaction so those reads see Interrupted and the new revision.
         await uow.SaveChangesAsync(ct);
+        await _aiActivity.ReconcileStoryAiActivityAsync(task.OwnerUserId, task.StoryId, ct);
     }
 
     private static AssistanceStepDto ToStep(StoryAssistanceStep s) => new(s.Id, s.Sequence, s.OperationId, s.Kind, s.Status,

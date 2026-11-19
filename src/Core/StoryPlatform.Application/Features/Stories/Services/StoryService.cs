@@ -4,9 +4,11 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.Threading;
 using System.Threading.Tasks;
+using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Common.Models;
+using StoryPlatform.Application.Features.AiActivity.Services;
 using StoryPlatform.Application.Features.Stories.DTOs;
 using StoryPlatform.Application.Features.Stories.Interfaces;
 using StoryPlatform.Domain.Entities;
@@ -23,11 +25,13 @@ public class StoryService : IStoryService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IStoryCoverResolver? _covers;
+    private readonly IAccountAiActivityService _aiActivity;
 
-    public StoryService(IUnitOfWork unitOfWork, IStoryCoverResolver? covers = null)
+    public StoryService(IUnitOfWork unitOfWork, IStoryCoverResolver? covers = null, IAccountAiActivityService? aiActivity = null)
     {
         _unitOfWork = unitOfWork;
         _covers = covers;
+        _aiActivity = aiActivity ?? new AccountAiActivityService(unitOfWork);
     }
 
     /// <summary>Đổi tham chiếu ảnh bìa (scene:...) của các truyện thành link đã ký; không có bộ giải mã thì giữ nguyên.</summary>
@@ -262,21 +266,34 @@ public class StoryService : IStoryService
     public async Task<bool> DeleteStoryAsync(int id, int currentUserId, CancellationToken cancellationToken = default)
     {
         var storyRepo = _unitOfWork.Repository<DomainStory>();
-        var story = await storyRepo.GetByIdAsync(id, cancellationToken);
-        if (story == null || story.Scope != StoryScope.Parent || StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story))
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
         {
-            throw new NotFoundException("Câu chuyện", id);
-        }
+            await _unitOfWork.AcquireAccountAiActivityLockAsync(currentUserId, cancellationToken);
+            await _unitOfWork.AcquireTransactionLockAsync(id, cancellationToken);
+            var story = await storyRepo.GetByIdAsync(id, cancellationToken);
+            if (story == null || story.Scope != StoryScope.Parent || StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story))
+            {
+                throw new NotFoundException("Câu chuyện", id);
+            }
 
-        if (story.AuthorUserId != currentUserId)
+            if (story.AuthorUserId != currentUserId)
+            {
+                throw new ForbiddenException("Bạn không có quyền xóa câu chuyện này.");
+            }
+
+            // Soft delete
+            story.IsDeleted = true;
+            story.AiActivityMode = AiActivityMode.None;
+            story.AiActivityStartedAt = null;
+            storyRepo.Update(story);
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+        }
+        catch
         {
-            throw new ForbiddenException("Bạn không có quyền xóa câu chuyện này.");
+            await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+            throw;
         }
-
-        // Soft delete
-        story.IsDeleted = true;
-        storyRepo.Update(story);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return true;
     }

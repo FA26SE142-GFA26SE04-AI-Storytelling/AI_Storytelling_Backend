@@ -5,6 +5,7 @@ using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.ContentReports.DTOs;
 using StoryPlatform.Application.Features.ContentReports.Interfaces;
+using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 using StoryPlatform.Application.Features.Moderation;
 using StoryPlatform.Application.Features.RoadmapTemplates;
 using StoryPlatform.Domain.Entities;
@@ -14,15 +15,19 @@ namespace StoryPlatform.Application.Features.ContentReports.Services;
 
 public class PublishedContentReviewService : IPublishedContentReviewService
 {
+    private static readonly TimeSpan ReviewMediaUrlLifetime = TimeSpan.FromMinutes(30);
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogWriter _auditLogWriter;
+    private readonly IMediaStorage? _mediaStorage;
 
     public PublishedContentReviewService(
         IUnitOfWork unitOfWork,
-        IAuditLogWriter auditLogWriter)
+        IAuditLogWriter auditLogWriter,
+        IMediaStorage? mediaStorage = null)
     {
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
+        _mediaStorage = mediaStorage;
     }
 
     public async Task<PagedResult<PublishedContentItemDto>> ListAsync(
@@ -81,6 +86,7 @@ public class PublishedContentReviewService : IPublishedContentReviewService
             var snapshot = await PublicVersionSnapshot.LoadAsync(_unitOfWork, version, cancellationToken);
             content.Version = ReportedContentBuilder.BuildVersion(version, Mask);
             content.Scenes = ReportedContentBuilder.BuildScenes(snapshot, Mask);
+            await SignSceneMediaUrlsAsync(content.Scenes, cancellationToken);
             content.Vocabulary = ReportedContentBuilder.BuildVocabulary(snapshot, Mask);
             content.Quizzes = ReportedContentBuilder.BuildQuizzes(snapshot, Mask);
             content.Listening = ReportedContentBuilder.BuildListening(snapshot, Mask);
@@ -302,4 +308,45 @@ public class PublishedContentReviewService : IPublishedContentReviewService
     }
 
     private static string AgeText(AgeBand ageBand) => ageBand == AgeBand.Age_6_8 ? "6-8" : "9-10";
+
+    private async Task SignSceneMediaUrlsAsync(List<ReportedSceneDto> scenes, CancellationToken cancellationToken)
+    {
+        if (_mediaStorage is null || scenes.Count == 0) return;
+
+        var tasks = new List<Task>();
+        foreach (var scene in scenes)
+        {
+            for (var i = 0; i < scene.ImageUrls.Count; i++)
+            {
+                var idx = i;
+                tasks.Add(SignIntoAsync(scene.ImageUrls, idx, cancellationToken));
+            }
+            for (var i = 0; i < scene.AudioUrls.Count; i++)
+            {
+                var idx = i;
+                tasks.Add(SignIntoAsync(scene.AudioUrls, idx, cancellationToken));
+            }
+        }
+        await Task.WhenAll(tasks);
+
+        foreach (var scene in scenes)
+        {
+            scene.ImageUrls.RemoveAll(string.IsNullOrWhiteSpace);
+            scene.AudioUrls.RemoveAll(string.IsNullOrWhiteSpace);
+        }
+    }
+
+    private async Task SignIntoAsync(List<string> urls, int index, CancellationToken cancellationToken)
+    {
+        var signed = await SignMediaUrlAsync(urls[index], cancellationToken);
+        urls[index] = signed ?? string.Empty;
+    }
+
+    private async Task<string?> SignMediaUrlAsync(string? path, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return path;
+        if (Uri.TryCreate(path, UriKind.Absolute, out var uri))
+            return uri.Scheme == Uri.UriSchemeHttps ? path : null;
+        return await _mediaStorage!.GetSignedUrlAsync(path, ReviewMediaUrlLifetime, cancellationToken);
+    }
 }

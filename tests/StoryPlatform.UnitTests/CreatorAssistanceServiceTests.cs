@@ -31,7 +31,7 @@ public sealed class CreatorAssistanceServiceTests
         var task = await s.Create();
         var result = await s.Service.SuggestAsync(1, 1, task.TaskId, s.Suggest(task.TaskRevision));
         Assert.Equal("OptionsReady", result.Status); Assert.Equal(1, s.Calls);
-        story.Status = StoryStatus.Ready;
+        s.Items<Story>().Single().Status = StoryStatus.Ready;
         var error = await Assert.ThrowsAsync<AssistanceException>(() => s.Service.TrialAsync(1, 1, task.TaskId,
             new() { OperationId = "after-ready", ExpectedTaskRevision = result.TaskRevision, DirectionStepId = 999 }));
         Assert.Equal("AI_STORY_NOT_EDITABLE", error.Code); Assert.Equal(1, s.Calls);
@@ -528,6 +528,7 @@ internal sealed class AssistanceStore
     {
         Register<UserAccount>(); Register<Story>(); Register<StoryVersion>(); Register<StoryAuthoringOperation>(); Register<AuditLog>(); Register<ModerationItem>(); Register<StoryAssistanceTask>(); Register<StoryAssistanceStep>();
         Register<StoryGenerationJob>(); Register<MediaContext>(); Register<ContentCategory>();
+        Register<StoryGenerationRequest>(); Register<LearningArtifactGenerationBatch>(); Register<ParentStoryPackage>();
         Uow.Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>())).Returns<CancellationToken>(async ct =>
         { await _transaction.WaitAsync(ct); _backup = _data.ToDictionary(x => x.Key, x => JsonSerializer.Serialize(x.Value, x.Value.GetType())); });
         Uow.Setup(x => x.AcquireTransactionLockAsync(It.IsAny<int>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);

@@ -24,6 +24,7 @@ public sealed class CreatorManualMediaPersistenceTests
         protected override void OnModelCreating(ModelBuilder b)
         {
             Type[] types = [typeof(UserAccount), typeof(Story), typeof(StoryVersion), typeof(StoryGenerationJob),
+                typeof(StoryGenerationRequest), typeof(StoryAssistanceTask), typeof(ParentStoryPackage),
                 typeof(MediaContext), typeof(ModerationItem), typeof(ContentCategory), typeof(StoryScene),
                 typeof(StorySegment), typeof(IllustrationBeat), typeof(MediaAsset), typeof(StoryAuthoringOperation), typeof(MediaAssetGenerationTask),
                 typeof(LearningArtifactGenerationBatch), typeof(StoryVocabulary), typeof(ListeningInteraction), typeof(ListeningInteractionOption)];
@@ -85,6 +86,8 @@ public sealed class CreatorManualMediaPersistenceTests
         void Register<T>() where T : class => uow.Setup(x => x.Repository<T>()).Returns(real.Repository<T>());
         Register<UserAccount>(); Register<Story>(); Register<StoryVersion>(); Register<StoryGenerationJob>();
         Register<MediaContext>(); Register<ModerationItem>(); Register<ContentCategory>();
+        Register<StoryGenerationRequest>(); Register<StoryAssistanceTask>();
+        Register<LearningArtifactGenerationBatch>(); Register<ParentStoryPackage>();
         uow.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.SaveChangesAsync(ct));
         uow.Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.BeginTransactionAsync(ct));
         uow.Setup(x => x.CommitTransactionAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.CommitTransactionAsync(ct));
@@ -111,9 +114,12 @@ public sealed class CreatorManualMediaPersistenceTests
             Assert.Equal(result.JobId, (await service.ConfirmAsync(1, 1, new(10, "rev1"))).JobId);
         }
         db.ChangeTracker.Clear();
-        Assert.Equal(failAudit ? 0 : 1, await db.StoryGenerationJobs.CountAsync());
+        Assert.Equal(failAudit ? 0 : 1, await db.StoryGenerationJobs.CountAsync(x => x.Operation == GenerationJobOperation.GenerateMediaPackage));
+        var checkJob = Assert.Single(await db.StoryGenerationJobs.Where(x => x.Operation == GenerationJobOperation.GrayZoneCheck).ToListAsync());
+        Assert.Equal(GenerationJobStatus.Completed, checkJob.Status);
         Assert.Equal(failAudit ? 0 : 1, await db.Set<MediaContext>().CountAsync());
         Assert.Equal(failAudit ? StoryStatus.Draft : StoryStatus.MediaProcessing, (await db.Stories.SingleAsync()).Status);
+        Assert.Equal(failAudit ? AiActivityMode.None : AiActivityMode.FullCreation, (await db.Stories.SingleAsync()).AiActivityMode);
         Assert.Equal("Na cùng bạn sửa đồ chơi.", (await db.StoryVersions.SingleAsync()).Content);
     }
     [Theory]
@@ -164,6 +170,10 @@ public sealed class CreatorManualMediaPersistenceTests
         uow.Setup(x => x.Repository<ModerationItem>()).Returns(real.Repository<ModerationItem>());
         uow.Setup(x => x.Repository<MediaAsset>()).Returns(real.Repository<MediaAsset>());
         uow.Setup(x => x.Repository<MediaAssetGenerationTask>()).Returns(real.Repository<MediaAssetGenerationTask>());
+        uow.Setup(x => x.Repository<StoryGenerationRequest>()).Returns(real.Repository<StoryGenerationRequest>());
+        uow.Setup(x => x.Repository<StoryAssistanceTask>()).Returns(real.Repository<StoryAssistanceTask>());
+        uow.Setup(x => x.Repository<LearningArtifactGenerationBatch>()).Returns(real.Repository<LearningArtifactGenerationBatch>());
+        uow.Setup(x => x.Repository<ParentStoryPackage>()).Returns(real.Repository<ParentStoryPackage>());
         uow.Setup(x => x.DiscardTrackedChanges()).Callback(real.DiscardTrackedChanges);
         uow.Setup(x => x.BeginTransactionAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.BeginTransactionAsync(ct));
         uow.Setup(x => x.RollbackTransactionAsync(It.IsAny<CancellationToken>())).Returns((CancellationToken ct) => real.RollbackTransactionAsync(ct));

@@ -1,5 +1,8 @@
+using Microsoft.Extensions.Logging;
+using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
+using StoryPlatform.Application.Features.AiActivity.Services;
 using StoryPlatform.Application.Features.ChildProfiles.Profiles.Interfaces;
 using StoryPlatform.Application.Features.ChildProfiles.Safety;
 using StoryPlatform.Domain.Entities;
@@ -10,8 +13,11 @@ namespace StoryPlatform.Application.Features.Moderation.Services;
 public sealed record GrayZoneContentCheckDto(int StoryVersionId, string Status, bool WaitingForModeration);
 
 public sealed class GrayZoneContentCheckService(IUnitOfWork uow, IGrayZoneEvaluator evaluator,
-    GrayZoneWorkflowService workflow, IChildProfileAccessGuard supervision)
+    GrayZoneWorkflowService workflow, IChildProfileAccessGuard supervision,
+    IAccountAiActivityService? aiActivity = null,
+    ILogger<GrayZoneContentCheckService>? logger = null)
 {
+    private readonly IAccountAiActivityService _aiActivity = aiActivity ?? new AccountAiActivityService(uow);
     public bool IsConfigured => evaluator.IsConfigured;
 
     public async Task<GrayZoneContentCheckDto> CheckAsync(int userId, int storyId, int versionId, CancellationToken ct)
@@ -65,9 +71,100 @@ public sealed class GrayZoneContentCheckService(IUnitOfWork uow, IGrayZoneEvalua
             : prior.Fingerprint == GrayZoneEvaluator.Fingerprint(scan) && await evaluator.CanReuseAsync(prior, ct));
         if (current && story.Scope == StoryScope.Creator)
             return new(versionId, prior!.Zone.ToString(), false);
-        var assessment = current
-            ? prior : await evaluator.EvaluateAsync(scan, ct);
-        assessment = assessment! with { AudienceRevision = story.AudienceRevision };
+
+        GrayZoneAssessment assessment;
+        if (current)
+        {
+            assessment = prior!;
+        }
+        else
+        {
+            var checkToken = Guid.NewGuid().ToString("N");
+            var checkJob = new StoryGenerationJob
+            {
+                StoryId = storyId,
+                StoryVersionId = versionId,
+                RequestedByUserId = userId,
+                Operation = GenerationJobOperation.GrayZoneCheck,
+                Stage = JobStage.ContentReview,
+                Status = GenerationJobStatus.Processing,
+                ConcurrencyToken = checkToken,
+                LeaseExpiresAt = DateTime.UtcNow.Add(GrayZoneCheckRecoveryService.ExecutionTimeout),
+                StartedAt = DateTime.UtcNow,
+                MaxAttempts = 1
+            };
+
+            await uow.BeginTransactionAsync(ct);
+            try
+            {
+                await uow.AcquireAccountAiActivityLockAsync(story.AuthorUserId, ct);
+                await uow.AcquireTransactionLockAsync(storyId, ct);
+                await _aiActivity.AdmitStoryAsync(story.AuthorUserId, story, AiActivityMode.TaskOnly, ct);
+                checkJob.StartedAt = DateTime.UtcNow;
+                checkJob.LeaseExpiresAt = checkJob.StartedAt.Add(GrayZoneCheckRecoveryService.ExecutionTimeout);
+                await uow.Repository<StoryGenerationJob>().AddAsync(checkJob, ct);
+                await uow.CommitTransactionAsync(ct);
+            }
+            catch
+            {
+                await uow.RollbackTransactionAsync(CancellationToken.None);
+                throw;
+            }
+
+            var succeeded = false;
+            var ownsResult = false;
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var remaining = checkJob.LeaseExpiresAt!.Value - DateTime.UtcNow;
+            deadline.CancelAfter(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero);
+            try
+            {
+                deadline.Token.ThrowIfCancellationRequested();
+                assessment = await evaluator.EvaluateAsync(scan, deadline.Token).WaitAsync(deadline.Token);
+                succeeded = true;
+            }
+            finally
+            {
+                await uow.BeginTransactionAsync(CancellationToken.None);
+                try
+                {
+                    await uow.AcquireAccountAiActivityLockAsync(story.AuthorUserId, CancellationToken.None);
+                    await uow.AcquireTransactionLockAsync(storyId, CancellationToken.None);
+                    var trackedJob = await uow.Repository<StoryGenerationJob>().FirstOrDefaultAsync(
+                        x => x.Id == checkJob.Id &&
+                             x.ConcurrencyToken == checkToken &&
+                             x.Status == GenerationJobStatus.Processing &&
+                             (!succeeded || x.LeaseExpiresAt > DateTime.UtcNow),
+                        cancellationToken: CancellationToken.None);
+                    if (trackedJob is not null)
+                    {
+                        ownsResult = true;
+                        uow.Repository<StoryGenerationJob>().Update(trackedJob);
+                        trackedJob.Status = succeeded ? GenerationJobStatus.Completed : GenerationJobStatus.Failed;
+                        trackedJob.CompletedAt = DateTime.UtcNow;
+                        trackedJob.LeaseExpiresAt = null;
+                        trackedJob.ConcurrencyToken = Guid.NewGuid().ToString("N");
+                        uow.Repository<StoryGenerationJob>().Update(trackedJob);
+                        await uow.SaveChangesAsync(CancellationToken.None);
+                    }
+                    await _aiActivity.ReconcileStoryAiActivityAsync(story.AuthorUserId, storyId, CancellationToken.None);
+                    await uow.CommitTransactionAsync(CancellationToken.None);
+                }
+                catch (Exception cleanupEx)
+                {
+                    await uow.RollbackTransactionAsync(CancellationToken.None);
+                    logger?.LogWarning(
+                        "GrayZone check cleanup failed StoryId={StoryId} JobId={JobId} Succeeded={Succeeded} ErrorType={ErrorType}",
+                        storyId, checkJob.Id, succeeded, cleanupEx.GetType().Name);
+                    if (succeeded)
+                    {
+                        throw;
+                    }
+                }
+            }
+            if (!ownsResult) throw new ConflictException("STALE_JOB_RESULT");
+        }
+
+        assessment = assessment with { AudienceRevision = story.AudienceRevision };
         var waiting = await workflow.RecordAsync(storyId, versionId, null, assessment, true, ct);
         return new(versionId, assessment.Zone.ToString(), waiting);
     }

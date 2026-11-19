@@ -167,21 +167,28 @@ public sealed partial class MediaGenerationService
         catch (Exception ex) when (!ct.IsCancellationRequested)
         {
             await RollbackMediaAsync(CancellationToken.None);
+            var storyInfo = await _unitOfWork.Repository<Story>().FirstOrDefaultAsync(x => x.Id == observed.StoryId, cancellationToken: CancellationToken.None);
             await _unitOfWork.BeginTransactionAsync(CancellationToken.None);
             try
             {
+                if (storyInfo is not null)
+                    await _unitOfWork.AcquireAccountAiActivityLockAsync(storyInfo.AuthorUserId, CancellationToken.None);
                 await _unitOfWork.AcquireTransactionLockAsync(observed.StoryId, CancellationToken.None);
                 var job = await FreshAsync<StoryGenerationJob>(observed.Id, CancellationToken.None);
                 var p = await FreshAsync<ParentStoryPackage>(observed.ParentStoryPackageId!.Value, CancellationToken.None);
+                var retry = false;
                 if (job?.ConcurrencyToken == token && p?.Status == "Generating")
                 {
-                    var retry = (ex is TransientMediaGenerationException || ex is TimeoutException or OperationCanceledException) && job.AttemptNo < job.MaxAttempts;
+                    retry = (ex is TransientMediaGenerationException || ex is TimeoutException or OperationCanceledException) && job.AttemptNo < job.MaxAttempts;
                     job.Status = retry ? GenerationJobStatus.Pending : GenerationJobStatus.Failed; job.ErrorCode = PublicErrorCode(ex); job.LeaseExpiresAt = null;
                     job.NextAttemptAt = retry ? _clock.GetUtcNow().UtcDateTime.Add((ex as TransientMediaGenerationException)?.RetryAfter ?? TimeSpan.FromSeconds(60)) : null;
                     p.Status = retry ? "Generating" : "Failed"; p.LastErrorCode = job.ErrorCode; ParentStoryPackageService.Rotate(_unitOfWork, p);
                     _unitOfWork.Repository<StoryGenerationJob>().Update(job); _unitOfWork.Repository<ParentStoryPackage>().Update(p);
                 }
-                await _unitOfWork.SaveChangesAsync(CancellationToken.None); await _unitOfWork.CommitTransactionAsync(CancellationToken.None);
+                await _unitOfWork.SaveChangesAsync(CancellationToken.None);
+                if (!retry && storyInfo is not null)
+                    await _aiActivity.ReconcileStoryAiActivityAsync(storyInfo.AuthorUserId, observed.StoryId, CancellationToken.None);
+                await _unitOfWork.CommitTransactionAsync(CancellationToken.None);
             }
             catch { await RollbackMediaAsync(CancellationToken.None); throw; }
             return MediaJobProcessResult.Failed(IsPermanentFailure(ex), PublicErrorCode(ex));

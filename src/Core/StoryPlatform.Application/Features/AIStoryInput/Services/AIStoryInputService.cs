@@ -2,7 +2,9 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Persistence;
+using StoryPlatform.Application.Features.AiActivity.Services;
 using StoryPlatform.Application.Common;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AIStoryInput.DTOs;
@@ -31,11 +33,13 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
     private readonly StoryPlatform.Application.Features.CreatorAuthoring.CreatorAuthoringOptions _creatorOptions;
     private readonly StoryPlatform.Application.Features.ContentGeneration.LearningBatchOptions _learningOptions;
     private readonly StoryPlatform.Application.Features.AuditLogs.Interfaces.IAuditLogWriter? _wishAudit;
+    private readonly IAccountAiActivityService _aiActivity;
 
     public AIStoryInputService(IUnitOfWork unitOfWork, IInputGuardrail inputGuardrail, ITokenQuotaService tokenQuotaService,
         StoryPlatform.Application.Features.CreatorAuthoring.CreatorAuthoringOptions? creatorOptions = null,
         StoryPlatform.Application.Features.ContentGeneration.LearningBatchOptions? learningOptions = null,
-        StoryPlatform.Application.Features.AuditLogs.Interfaces.IAuditLogWriter? wishAudit = null)
+        StoryPlatform.Application.Features.AuditLogs.Interfaces.IAuditLogWriter? wishAudit = null,
+        IAccountAiActivityService? aiActivity = null)
     {
         _unitOfWork = unitOfWork;
         _inputGuardrail = inputGuardrail;
@@ -43,6 +47,7 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
         _creatorOptions = creatorOptions ?? new();
         _learningOptions = learningOptions ?? new();
         _wishAudit = wishAudit;
+        _aiActivity = aiActivity ?? new AccountAiActivityService(unitOfWork);
     }
 
     public async Task<AIStoryInputContextDto> GetContextAsync(
@@ -196,6 +201,7 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
+            await _unitOfWork.AcquireAccountAiActivityLockAsync(userId, cancellationToken);
             StoryWish? sourceWish = null;
             if (request.SourceWishId.HasValue)
             {
@@ -206,10 +212,15 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
             }
             if (!request.ExistingStoryId.HasValue)
             {
+                await _aiActivity.EnsureCanAdmitNewStoryAsync(userId, cancellationToken);
+                story.AiActivityMode = AiActivityMode.FullCreation;
+                story.AiActivityStartedAt = DateTime.UtcNow;
                 await _unitOfWork.Repository<Story>().AddAsync(story, cancellationToken);
             }
             else
             {
+                await _unitOfWork.AcquireTransactionLockAsync(story.Id, cancellationToken);
+                await _aiActivity.AdmitStoryAsync(userId, story, AiActivityMode.FullCreation, cancellationToken);
                 _unitOfWork.Repository<Story>().Update(story);
             }
 
@@ -329,6 +340,9 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
+            await _unitOfWork.AcquireAccountAiActivityLockAsync(userId, cancellationToken);
+            await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
+            await _aiActivity.AdmitStoryAsync(userId, story, AiActivityMode.FullCreation, cancellationToken);
             _unitOfWork.Repository<StoryGenerationRequest>().Update(request);
             RotateConcurrencyToken(request);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
@@ -533,8 +547,15 @@ public sealed partial class AIStoryInputService : IAIStoryInputService
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
+            await _unitOfWork.AcquireAccountAiActivityLockAsync(request.SubmittedByUserId, cancellationToken);
+            await _unitOfWork.AcquireTransactionLockAsync(request.StoryId, cancellationToken);
             _unitOfWork.Repository<StoryGenerationRequest>().Update(request);
             RotateConcurrencyToken(request);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            if (request.Status is GenerationInputStatus.InputBlocked or GenerationInputStatus.InputCheckFailed)
+            {
+                await _aiActivity.ReconcileStoryAiActivityAsync(request.SubmittedByUserId, request.StoryId, cancellationToken);
+            }
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
         }
         catch

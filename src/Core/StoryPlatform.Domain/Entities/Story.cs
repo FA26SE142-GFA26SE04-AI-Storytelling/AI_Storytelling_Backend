@@ -38,6 +38,8 @@ public class Story : BaseEntity
     public string? CreateRequestHash { get; set; }
     public string? CreateResponseJson { get; set; }
     public string? WritingPurpose { get; set; }
+    public AiActivityMode AiActivityMode { get; set; } = AiActivityMode.None;
+    public DateTime? AiActivityStartedAt { get; set; }
 
     // Khóa ngoại tác giả / người khởi tạo
     public int AuthorUserId { get; set; }

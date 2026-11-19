@@ -44,6 +44,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
     private readonly int _contentExecutionBudgetSeconds;
     private readonly ILearningBatchService? _learningBatches;
     private readonly ILogger<ContentGenerationService> _logger;
+    private readonly IAccountAiActivityService _aiActivity;
 
     public ContentGenerationService(
         IUnitOfWork unitOfWork,
@@ -55,7 +56,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         IStoryReviewService? reviewService = null,
         IGrayZoneEvaluator? moderation = null, GrayZoneWorkflowService? grayZone = null, ILearningBatchService? learningBatches = null,
         ILogger<ContentGenerationService>? logger = null,
-        ListeningInteractionGenerator? listeningGenerator = null, IContentGenerationJobLease? leaseRenewer = null)
+        ListeningInteractionGenerator? listeningGenerator = null, IContentGenerationJobLease? leaseRenewer = null,
+        IAccountAiActivityService? aiActivity = null)
     {
         _unitOfWork = unitOfWork;
         _aiClient = aiClient;
@@ -72,6 +74,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         _listeningGenerator = listeningGenerator ?? new ListeningInteractionGenerator(unitOfWork, aiClient, options);
         _leaseRenewer = leaseRenewer;
         _contentExecutionBudgetSeconds = Math.Clamp(options.ContentExecutionBudgetSeconds, 6, 180);
+        _aiActivity = aiActivity ?? new StoryPlatform.Application.Features.AiActivity.Services.AccountAiActivityService(unitOfWork);
     }
 
     public async Task<ContentGenerationProgressDto> GetProgressAsync(
@@ -199,7 +202,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             return await GetProgressAsync(userId, storyId, cancellationToken);
         if (_learningBatches is not null && await RetryLearningArtifactsAsync(userId, storyId, input.RetryKey.Trim(), cancellationToken))
             return await GetProgressAsync(userId, storyId, cancellationToken);
-        await InStoryTransactionAsync(storyId, async () =>
+        await InAccountAndStoryTransactionAsync(userId, storyId, async () =>
         {
             var story = await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
             if (story.Source != StorySource.Ai || story.Status != StoryStatus.OutlineReview)
@@ -235,6 +238,8 @@ public sealed partial class ContentGenerationService : IContentGenerationService
 
                 return true;
             }
+
+            await _aiActivity.AdmitStoryAsync(story.AuthorUserId, story, AiActivityMode.FullCreation, cancellationToken);
 
             if (await _unitOfWork.Repository<StoryGenerationJob>().ExistsAsync(
                     item => item.StoryId == storyId &&
@@ -928,6 +933,24 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         if (!await ChildOwnership.IsOwnerAsync(_unitOfWork, story.ChildProfileId, userId, cancellationToken))
             throw new ForbiddenException();
         return story;
+    }
+
+    private async Task<T> InAccountAndStoryTransactionAsync<T>(int accountUserId, int storyId, Func<Task<T>> action, CancellationToken cancellationToken)
+    {
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await _unitOfWork.AcquireAccountAiActivityLockAsync(accountUserId, cancellationToken);
+            await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
+            var result = await action();
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            return result;
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            throw;
+        }
     }
 
     private async Task<T> InStoryTransactionAsync<T>(int storyId, Func<Task<T>> action, CancellationToken cancellationToken)

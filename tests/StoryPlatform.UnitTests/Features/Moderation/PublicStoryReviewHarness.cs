@@ -83,6 +83,10 @@ public sealed class PublicStoryReviewHarness
         Back(ContentCategories);
         Back(CreditLots);
         Back(CreditUsages);
+        Back(new List<StoryGenerationRequest>());
+        Back(new List<StoryAssistanceTask>());
+        Back(new List<LearningArtifactGenerationBatch>());
+        Back(new List<ParentStoryPackage>());
 
         Users.Add(new UserAccount
         {

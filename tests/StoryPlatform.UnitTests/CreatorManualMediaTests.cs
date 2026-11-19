@@ -65,7 +65,8 @@ public sealed class CreatorManualMediaTests
         release.SetResult();
         var results = await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(results[0].JobId, results[1].JobId);
-        Assert.Single(store.Items<StoryGenerationJob>());
+        Assert.Single(store.Items<StoryGenerationJob>(), x => x.Operation == GenerationJobOperation.GenerateMediaPackage);
+        Assert.Equal(2, store.Items<StoryGenerationJob>().Count(x => x.Operation == GenerationJobOperation.GrayZoneCheck && x.Status == GenerationJobStatus.Completed));
         Assert.Single(store.Items<MediaContext>());
     }
 
@@ -92,7 +93,9 @@ public sealed class CreatorManualMediaTests
         release.SetResult();
         await Assert.ThrowsAsync<ConflictException>(() => confirmation.WaitAsync(TimeSpan.FromSeconds(10)));
         Assert.Equal(saved.Version.VersionId, store.Items<StoryVersion>().Single(x => x.IsCurrent).Id);
-        Assert.Empty(store.Items<StoryGenerationJob>());
+        Assert.DoesNotContain(store.Items<StoryGenerationJob>(), x => x.Operation != GenerationJobOperation.GrayZoneCheck);
+        var checkJob = Assert.Single(store.Items<StoryGenerationJob>(), x => x.Operation == GenerationJobOperation.GrayZoneCheck);
+        Assert.Equal(GenerationJobStatus.Completed, checkJob.Status);
     }
 
     internal static (StoryReviewServiceTests.FakeUnitOfWork Store, CreatorManualMediaService Service, Mock<IModelModerationProvider> Provider) Setup(decimal risk = 0)
@@ -143,7 +146,9 @@ public sealed class CreatorManualMediaTests
         var first = await service.ConfirmAsync(1, 1, new(10, "rev1"));
         var again = await service.ConfirmAsync(1, 1, new(10, "rev1"));
         Assert.Equal(first, again);
-        var job = Assert.Single(store.Items<StoryGenerationJob>());
+        var job = Assert.Single(store.Items<StoryGenerationJob>(), x => x.Operation == GenerationJobOperation.GenerateMediaPackage);
+        var checkJob = Assert.Single(store.Items<StoryGenerationJob>(), x => x.Operation == GenerationJobOperation.GrayZoneCheck);
+        Assert.Equal(GenerationJobStatus.Completed, checkJob.Status);
         Assert.Equal(GenerationJobOperation.GenerateMediaPackage, job.Operation);
         Assert.Equal(10, job.StoryVersionId);
         Assert.Equal(10, job.BaseStoryVersionId);
@@ -166,7 +171,9 @@ public sealed class CreatorManualMediaTests
         var (store, service, _) = Setup(risk);
         if (queues) await service.ConfirmAsync(1, 1, new(10, "rev1"));
         else await Assert.ThrowsAsync<ConflictException>(() => service.ConfirmAsync(1, 1, new(10, "rev1")));
-        Assert.Equal(queues ? 1 : 0, store.Items<StoryGenerationJob>().Count);
+        Assert.Equal(queues ? 1 : 0, store.Items<StoryGenerationJob>().Count(x => x.Operation == GenerationJobOperation.GenerateMediaPackage));
+        var checkJob = Assert.Single(store.Items<StoryGenerationJob>(), x => x.Operation == GenerationJobOperation.GrayZoneCheck);
+        Assert.Equal(GenerationJobStatus.Completed, checkJob.Status);
         Assert.Empty(store.Items<ModerationItem>());
         if (queues) Assert.Single(PublicReviewState.ParseVersionFlags(store.Items<StoryVersion>().Single().Moderation.GrayZoneFlags));
     }
@@ -189,7 +196,9 @@ public sealed class CreatorManualMediaTests
         provider.Setup(x => x.EvaluateAsync(It.IsAny<GrayZoneScan>(), It.IsAny<CancellationToken>())).ThrowsAsync(new TimeoutException());
         await Assert.ThrowsAsync<TimeoutException>(() => service.ConfirmAsync(1, 1, new(10, "rev1")));
         Assert.Equal(StoryStatus.Draft, store.Items<Story>().Single().Status);
-        Assert.Empty(store.Items<StoryGenerationJob>());
+        Assert.DoesNotContain(store.Items<StoryGenerationJob>(), x => x.Operation != GenerationJobOperation.GrayZoneCheck);
+        var checkJob = Assert.Single(store.Items<StoryGenerationJob>(), x => x.Operation == GenerationJobOperation.GrayZoneCheck);
+        Assert.Equal(GenerationJobStatus.Failed, checkJob.Status);
         Assert.Empty(store.Items<MediaContext>());
     }
 
@@ -204,7 +213,9 @@ public sealed class CreatorManualMediaTests
                 return new ModelModerationResult(0, "test", []) { RubricVersion = scan.RubricVersion };
             });
         await Assert.ThrowsAsync<ConflictException>(() => service.ConfirmAsync(1, 1, new(10, "rev1")));
-        Assert.Empty(store.Items<StoryGenerationJob>());
+        Assert.DoesNotContain(store.Items<StoryGenerationJob>(), x => x.Operation != GenerationJobOperation.GrayZoneCheck);
+        var checkJob = Assert.Single(store.Items<StoryGenerationJob>(), x => x.Operation == GenerationJobOperation.GrayZoneCheck);
+        Assert.Equal(GenerationJobStatus.Completed, checkJob.Status);
         Assert.Empty(store.Items<MediaContext>());
     }
 

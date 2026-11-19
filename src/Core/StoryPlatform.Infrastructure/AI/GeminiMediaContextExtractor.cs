@@ -6,8 +6,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using StoryPlatform.Application.Features.MediaGeneration;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
+using StoryPlatform.Application.Features.MediaGeneration.Services;
 using StoryPlatform.Infrastructure.AI;
 
 namespace StoryPlatform.Infrastructure.AI;
@@ -23,17 +25,20 @@ public sealed class GeminiMediaContextExtractor : IMediaContextExtractor
     private readonly GeminiOptions _gemini;
     private readonly VertexOptions _vertex;
     private readonly ILogger<GeminiMediaContextExtractor> _logger;
+    private readonly IMediaOutboundPrivacyGuard _privacyGuard;
 
     public GeminiMediaContextExtractor(
         HttpClient httpClient,
         IOptions<GeminiOptions> geminiOptions,
         IOptions<VertexOptions> vertexOptions,
-        ILogger<GeminiMediaContextExtractor> logger)
+        ILogger<GeminiMediaContextExtractor> logger,
+        IMediaOutboundPrivacyGuard? privacyGuard = null)
     {
         _httpClient = httpClient;
         _gemini = geminiOptions.Value;
         _vertex = vertexOptions.Value;
         _logger = logger;
+        _privacyGuard = privacyGuard ?? new DeterministicMediaOutboundPrivacyGuard();
         if (_httpClient.Timeout == Timeout.InfiniteTimeSpan || _httpClient.Timeout.TotalSeconds > _gemini.TimeoutSeconds)
             _httpClient.Timeout = TimeSpan.FromSeconds(_gemini.TimeoutSeconds);
     }
@@ -41,12 +46,14 @@ public sealed class GeminiMediaContextExtractor : IMediaContextExtractor
     public async Task<ExtractedMediaContext> ExtractAsync(
         MediaContextBuildRequest request, CancellationToken cancellationToken = default)
     {
+        var prompt = BuildPrompt(request);
+        _privacyGuard.EnsureSafeForProvider("MediaContextExtraction", prompt);
+
         if (!_vertex.UseVertex && string.IsNullOrWhiteSpace(_gemini.ApiKey))
             return FallbackResult();
 
         try
         {
-            var prompt = BuildPrompt(request);
             var body = BuildRequestBody(prompt);
             using var httpRequest = BuildRequest(body);
             using var response = await _httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
@@ -60,9 +67,13 @@ public sealed class GeminiMediaContextExtractor : IMediaContextExtractor
             }
             return ParseResponse(content);
         }
+        catch (MediaProviderPrivacyException)
+        {
+            throw;
+        }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning(ex, "Context extraction failed, using fallback");
+            _logger.LogWarning("Context extraction failed ErrorType={ErrorType}, using fallback", ex.GetType().Name);
             return FallbackResult();
         }
     }

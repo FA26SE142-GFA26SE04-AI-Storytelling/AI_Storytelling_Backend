@@ -68,7 +68,10 @@ internal sealed class MediaBranchProviderGate(MediaBranchOptions options, ILogge
                 modality, ex.ErrorCode, delay.TotalMilliseconds);
             throw new TransientMediaGenerationException(ex.ErrorCode, ex, delay);
         }
-        catch (Exception ex) when (!ct.IsCancellationRequested && ex is not PermanentMediaGenerationException)
+        catch (Exception ex) when (!ct.IsCancellationRequested &&
+            ex is not PermanentMediaGenerationException &&
+            ex is not MediaProviderPrivacyException &&
+            ex is not MediaProviderContextException)
         {
             lock (_sync)
             {

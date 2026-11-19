@@ -73,7 +73,9 @@ public sealed class ParentManualMediaTests
     {
         var (store, parent, media, _) = Setup();
         var content = await Content(parent);
-        Assert.Empty(store.Items<StoryGenerationJob>());
+        Assert.DoesNotContain(store.Items<StoryGenerationJob>(), x => x.Operation != GenerationJobOperation.GrayZoneCheck);
+        var checkJob = Assert.Single(store.Items<StoryGenerationJob>(), x => x.Operation == GenerationJobOperation.GrayZoneCheck);
+        Assert.Equal(GenerationJobStatus.Completed, checkJob.Status);
         var request = new ParentMediaGenerateRequest
         {
             OperationId = "generate",
@@ -83,7 +85,7 @@ public sealed class ParentManualMediaTests
         };
         var job = await parent.GenerateMediaAsync(1, content.StoryId, request, default);
         Assert.Equal(job, await parent.GenerateMediaAsync(1, content.StoryId, request, default));
-        Assert.Single(store.Items<StoryGenerationJob>());
+        Assert.Single(store.Items<StoryGenerationJob>(), x => x.Operation == GenerationJobOperation.GenerateMediaPackage);
         Assert.Empty(store.Items<StoryGenerationRequest>());
         Assert.Null(store.Items<StoryVersion>().Single().OutlineOpening);
         await Assert.ThrowsAsync<ConflictException>(() => parent.SetupAsync(1, content.StoryId,
@@ -154,7 +156,7 @@ public sealed class ParentManualMediaTests
         var calls = provider.Invocations.Count;
         await Assert.ThrowsAnyAsync<Exception>(() => parent.GenerateMediaAsync(1, content.StoryId, request, default));
         Assert.Equal(calls, provider.Invocations.Count);
-        Assert.Empty(store.Items<StoryGenerationJob>());
+        Assert.DoesNotContain(store.Items<StoryGenerationJob>(), x => x.Operation != GenerationJobOperation.GrayZoneCheck);
         store.Items<SafetyPolicy>().Single().ConsentRecorded = true;
         await parent.GenerateMediaAsync(1, content.StoryId, request, default);
         var processed = await media.RunPackageAsync();

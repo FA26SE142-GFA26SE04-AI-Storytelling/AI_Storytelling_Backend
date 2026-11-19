@@ -18,7 +18,7 @@ public sealed partial class ContentGenerationService
 
     // Repair a legacy stable version without modifying it or reusing its dependent learning artifacts.
     private Task<bool> TryQueueReadabilityRepairAsync(int userId, int storyId, string key, CancellationToken ct) =>
-        InStoryTransactionAsync(storyId, async () =>
+        InAccountAndStoryTransactionAsync(userId, storyId, async () =>
         {
             var story = await LoadAuthorizedStoryAsync(userId, storyId, ct);
             var prior = await _unitOfWork.Repository<StoryAuthoringOperation>().FirstOrDefaultAsync(
@@ -51,9 +51,11 @@ public sealed partial class ContentGenerationService
                 throw new ConflictException("READABILITY_POLICY_CHANGED");
             if (prior is not null) throw new ConflictException("RETRY_KEY_CONFLICT");
             if (await _unitOfWork.Repository<StoryGenerationJob>().ExistsAsync(
-                x => x.StoryId == storyId && (x.Status == GenerationJobStatus.Pending || x.Status == GenerationJobStatus.Processing), ct))
+                x => x.StoryId == storyId && x.Operation != GenerationJobOperation.GrayZoneCheck &&
+                     (x.Status == GenerationJobStatus.Pending || x.Status == GenerationJobStatus.Processing), ct))
                 throw new ConflictException("GENERATION_JOB_ACTIVE");
             if (!version.OutlineApprovedAt.HasValue) throw new ConflictException("APPROVED_OUTLINE_REQUIRED");
+            await _aiActivity.AdmitStoryAsync(story.AuthorUserId, story, AiActivityMode.FullCreation, ct);
             await _unitOfWork.Repository<StoryGenerationJob>().AddAsync(new()
             {
                 StoryId = storyId, GenerationRequestId = request.Id, BaseStoryVersionId = version.Id,

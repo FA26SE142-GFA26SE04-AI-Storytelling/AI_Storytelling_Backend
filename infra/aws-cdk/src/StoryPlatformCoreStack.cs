@@ -1,4 +1,7 @@
 using Amazon.CDK;
+using Amazon.CDK.AWS.CloudFront;
+using Amazon.CDK.AWS.CloudFront.Origins;
+using Distribution = Amazon.CDK.AWS.CloudFront.Distribution;
 using Amazon.CDK.AWS.CloudWatch;
 using Amazon.CDK.AWS.CloudWatch.Actions;
 using Amazon.CDK.AWS.EC2;
@@ -7,6 +10,7 @@ using Amazon.CDK.AWS.ECS;
 using Amazon.CDK.AWS.IAM;
 using Amazon.CDK.AWS.Logs;
 using Amazon.CDK.AWS.RDS;
+using Amazon.CDK.AWS.S3;
 using Amazon.CDK.AWS.SecretsManager;
 using Amazon.CDK.AWS.SNS;
 using Constructs;
@@ -29,6 +33,8 @@ public sealed class StoryPlatformCoreStack : Stack
     public SecurityGroup ApiTaskSecurityGroup { get; }
     public FargateService? ApiService { get; private set; }
     public Role CiRole { get; }
+    public Bucket MediaBucket { get; }
+    public Distribution? MediaDistribution { get; }
 
     public StoryPlatformCoreStack(Construct scope, string id, IStackProps? props = null)
         : base(scope, id, props)
@@ -104,7 +110,7 @@ public sealed class StoryPlatformCoreStack : Stack
             EmptyOnDelete = true,
             LifecycleRules = new[]
             {
-                new LifecycleRule
+                new Amazon.CDK.AWS.ECR.LifecycleRule
                 {
                     MaxImageCount = 10,
                     Description = "Keep only the last 10 images"
@@ -270,10 +276,91 @@ public sealed class StoryPlatformCoreStack : Stack
             apiSecrets["SUPABASE_SECRET_KEY"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "SupabaseSecretKey");
         }
 
+        // Kho media trên S3 (thay Supabase). Bucket private, chỉ API (task role) đọc/ghi; trình duyệt tải qua
+        // CloudFront bằng signed URL (OAC, key group). Bucket luôn được tạo để copy dữ liệu trước khi chuyển;
+        // CloudFront chỉ tạo khi có --context mediaCdnPublicKey (PEM public key, không bí mật). Core chỉ dùng S3
+        // khi --context mediaStorage=s3; private key nằm ở key MediaCdnPrivateKey của app-secrets (RUNBOOK).
+        MediaBucket = new Bucket(this, "MediaBucket", new BucketProps
+        {
+            BlockPublicAccess = BlockPublicAccess.BLOCK_ALL,
+            Encryption = BucketEncryption.S3_MANAGED,
+            EnforceSSL = true,
+            ObjectOwnership = ObjectOwnership.BUCKET_OWNER_ENFORCED,
+            // Dữ liệu thật (ảnh, giọng đọc của trẻ): không xoá theo stack.
+            RemovalPolicy = RemovalPolicy.RETAIN,
+            LifecycleRules = new[]
+            {
+                new Amazon.CDK.AWS.S3.LifecycleRule { AbortIncompleteMultipartUploadAfter = Duration.Days(7) }
+            }
+        });
+        MediaBucket.GrantReadWrite(ApiTaskDefinition.TaskRole);
+        MediaBucket.GrantDelete(ApiTaskDefinition.TaskRole);
+        // Gateway endpoint miễn phí: lưu lượng task <-> S3 đi trong mạng AWS thay vì qua public IP.
+        Vpc.AddGatewayEndpoint("S3GatewayEndpoint", new GatewayVpcEndpointOptions
+        {
+            Service = GatewayVpcEndpointAwsService.S3,
+            Subnets = new[] { new SubnetSelection { SubnetType = SubnetType.PUBLIC } }
+        });
+        new CfnOutput(this, "MediaBucketNameOutput", new CfnOutputProps
+        {
+            Value = MediaBucket.BucketName,
+            Description = "Private S3 bucket holding story media"
+        });
+
+        var mediaCdnPublicKey = (Node.TryGetContext("mediaCdnPublicKey") as string)?.Trim();
+        PublicKey? mediaCdnKey = null;
+        if (!string.IsNullOrEmpty(mediaCdnPublicKey))
+        {
+            mediaCdnKey = new PublicKey(this, "MediaCdnPublicKey", new PublicKeyProps
+            {
+                EncodedKey = mediaCdnPublicKey,
+                Comment = "Verifies CloudFront signed URLs issued by the Core API for story media"
+            });
+            var mediaKeyGroup = new KeyGroup(this, "MediaCdnKeyGroup", new KeyGroupProps { Items = new IPublicKey[] { mediaCdnKey } });
+            MediaDistribution = new Distribution(this, "MediaDistribution", new DistributionProps
+            {
+                Comment = "StoryPlatform story media (signed URLs only)",
+                PriceClass = PriceClass.PRICE_CLASS_200,
+                DefaultBehavior = new BehaviorOptions
+                {
+                    Origin = S3BucketOrigin.WithOriginAccessControl(MediaBucket),
+                    ViewerProtocolPolicy = ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                    AllowedMethods = AllowedMethods.ALLOW_GET_HEAD,
+                    // Không đưa query string (Expires/Signature) vào cache key: mọi link ký của cùng file dùng chung cache.
+                    CachePolicy = CachePolicy.CACHING_OPTIMIZED,
+                    ResponseHeadersPolicy = ResponseHeadersPolicy.CORS_ALLOW_ALL_ORIGINS,
+                    TrustedKeyGroups = new IKeyGroup[] { mediaKeyGroup }
+                }
+            });
+            new CfnOutput(this, "MediaCdnDomainOutput", new CfnOutputProps { Value = MediaDistribution.DistributionDomainName });
+            new CfnOutput(this, "MediaCdnKeyPairIdOutput", new CfnOutputProps { Value = mediaCdnKey.PublicKeyId });
+        }
+
+        var mediaStorage = (Node.TryGetContext("mediaStorage") as string)?.Trim().ToLowerInvariant();
+        var useS3MediaStorage = mediaStorage == "s3";
+        if (useS3MediaStorage)
+        {
+            if (MediaDistribution is null || mediaCdnKey is null)
+            {
+                throw new System.ArgumentException("mediaStorage=s3 requires mediaCdnPublicKey.");
+            }
+
+            apiEnvironment["MediaStorage__Provider"] = "S3";
+            apiEnvironment["S3Storage__BucketName"] = MediaBucket.BucketName;
+            apiEnvironment["S3Storage__Region"] = Region;
+            apiEnvironment["S3Storage__CdnDomain"] = MediaDistribution.DistributionDomainName;
+            apiEnvironment["S3Storage__CdnKeyPairId"] = mediaCdnKey.PublicKeyId;
+            apiSecrets["S3Storage__CdnPrivateKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "MediaCdnPrivateKey");
+        }
+        else if (!string.IsNullOrEmpty(mediaStorage) && mediaStorage != "supabase")
+        {
+            throw new System.ArgumentException("mediaStorage must be 'supabase' or 's3'.");
+        }
+
         // Worker sinh ảnh và âm thanh gọi thẳng Vertex AI (không qua AI API trên Cloud Run). Bật bằng
         // --context mediaWorkerEnabled=true kèm vertexProjectId. Credential là service account trong key
         // AiGoogleCredentialsJson của app-secrets (cùng danh tính Core dùng để gọi AI API), nên service account đó
-        // phải có roles/aiplatform.user. Worker cần kho media để lưu kết quả, nên bắt buộc phải có supabaseUrl.
+        // phải có roles/aiplatform.user. Worker cần kho media để lưu kết quả (supabaseUrl hoặc mediaStorage=s3).
         var mediaWorkerEnabled = Node.TryGetContext("mediaWorkerEnabled") switch
         {
             bool b => b,
@@ -282,9 +369,9 @@ public sealed class StoryPlatformCoreStack : Stack
         };
         if (mediaWorkerEnabled)
         {
-            if (string.IsNullOrEmpty(supabaseUrl))
+            if (string.IsNullOrEmpty(supabaseUrl) && !useS3MediaStorage)
             {
-                throw new System.ArgumentException("mediaWorkerEnabled requires supabaseUrl.");
+                throw new System.ArgumentException("mediaWorkerEnabled requires supabaseUrl or mediaStorage=s3.");
             }
 
             var vertexProjectId = (Node.TryGetContext("vertexProjectId") as string)?.Trim();

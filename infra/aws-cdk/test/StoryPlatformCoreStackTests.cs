@@ -616,6 +616,98 @@ public class StoryPlatformCoreStackTests
         Assert.DoesNotContain("AI__Vertex__", json);
     }
 
+    private static string TestCdnPublicKey()
+    {
+        using var rsa = System.Security.Cryptography.RSA.Create(2048);
+        return rsa.ExportSubjectPublicKeyInfoPem();
+    }
+
+    [Fact]
+    public void Stack_AlwaysCreatesPrivateMediaBucketWithTaskRoleAccessAndS3Endpoint()
+    {
+        var template = SynthTemplate();
+
+        template.HasResource("AWS::S3::Bucket", new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["DeletionPolicy"] = "Retain",
+            ["Properties"] = Match.ObjectLike(new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["PublicAccessBlockConfiguration"] = new System.Collections.Generic.Dictionary<string, object>
+                {
+                    ["BlockPublicAcls"] = true,
+                    ["BlockPublicPolicy"] = true,
+                    ["IgnorePublicAcls"] = true,
+                    ["RestrictPublicBuckets"] = true
+                }
+            })
+        });
+        template.HasResourceProperties("AWS::EC2::VPCEndpoint", new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["VpcEndpointType"] = "Gateway"
+        });
+        var json = System.Text.Json.JsonSerializer.Serialize(template.ToJSON());
+        Assert.Contains("s3:DeleteObject", json);
+        Assert.Contains("s3:PutObject", json);
+        // Không có public key thì chưa có CloudFront và Core vẫn dùng Supabase.
+        template.ResourceCountIs("AWS::CloudFront::Distribution", 0);
+        Assert.DoesNotContain("MediaStorage__Provider", json);
+    }
+
+    [Fact]
+    public void Stack_WithCdnPublicKey_CreatesSignedOnlyDistribution()
+    {
+        var template = SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["mediaCdnPublicKey"] = TestCdnPublicKey()
+        });
+
+        template.ResourceCountIs("AWS::CloudFront::Distribution", 1);
+        template.ResourceCountIs("AWS::CloudFront::KeyGroup", 1);
+        template.ResourceCountIs("AWS::CloudFront::OriginAccessControl", 1);
+        var json = System.Text.Json.JsonSerializer.Serialize(template.ToJSON());
+        Assert.Contains("\"TrustedKeyGroups\"", json);
+        Assert.Contains("\"ViewerProtocolPolicy\":\"redirect-to-https\"", json);
+        Assert.DoesNotContain("MediaStorage__Provider", json);
+    }
+
+    [Fact]
+    public void Stack_WithMediaStorageS3_WiresCoreToBucketAndCdn()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["mediaCdnPublicKey"] = TestCdnPublicKey(),
+            ["mediaStorage"] = "s3",
+            ["mediaWorkerEnabled"] = "true",
+            ["vertexProjectId"] = "example-gcp-project"
+        }).ToJSON());
+
+        Assert.Contains("\"Name\":\"MediaStorage__Provider\",\"Value\":\"S3\"", json);
+        Assert.Contains("\"Name\":\"S3Storage__BucketName\"", json);
+        Assert.Contains("\"Name\":\"S3Storage__CdnDomain\"", json);
+        Assert.Contains("\"Name\":\"S3Storage__CdnKeyPairId\"", json);
+        Assert.Matches("\"Name\":\"S3Storage__CdnPrivateKey\",\"ValueFrom\":(?:(?!\"Name\":).)*:MediaCdnPrivateKey::", json);
+        Assert.Contains("\"Name\":\"AI__MediaGeneration__WorkerEnabled\",\"Value\":\"true\"", json);
+        Assert.DoesNotContain("SUPABASE_", json);
+    }
+
+    [Fact]
+    public void Stack_MediaStorageS3RequiresCdnPublicKey()
+    {
+        Assert.ThrowsAny<System.Exception>(() => SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["mediaStorage"] = "s3"
+        }));
+    }
+
+    [Fact]
+    public void Stack_RejectsUnknownMediaStorage()
+    {
+        Assert.ThrowsAny<System.Exception>(() => SynthTemplate(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["mediaStorage"] = "gcs"
+        }));
+    }
+
     [Fact]
     public void Stack_SupabaseUrlMustBeHttps()
     {

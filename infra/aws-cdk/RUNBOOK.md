@@ -298,3 +298,38 @@ Both are off until the context below is set, and a media call then fails with
 To roll back, remove `supabaseUrl`, `supabaseMediaBucket`, `mediaWorkerEnabled` and the `vertex*` values from
 `cdk.json` if
 they were saved there, then deploy without those `--context` arguments.
+
+## Media storage on S3 + CloudFront (replaces Supabase)
+
+Media lives in a private S3 bucket (`MediaBucketNameOutput`, kept on stack deletion). The API reads and
+writes it with its ECS task role through a free S3 gateway endpoint; browsers only get **CloudFront
+signed URLs** (canned policy, RSA key pair). S3 presigned URLs are not used because, signed with the
+task role's temporary credentials, they can expire before the 2-hour child media lifetime.
+
+Context keys (persist in `cdk.json`):
+- `mediaCdnPublicKey`: PEM public key of the signing key pair (not secret). Creates the CloudFront
+  public key, key group and distribution (`MediaCdnDomainOutput`, `MediaCdnKeyPairIdOutput`).
+- `mediaStorage`: `s3` switches Core to S3 (`MediaStorage__Provider=S3`); omitted or `supabase` keeps
+  Supabase. `s3` requires `mediaCdnPublicKey` and the `MediaCdnPrivateKey` secret key.
+
+Rollout (bucket first, switch last, so nothing is ever missing):
+
+1. **Key pair** (once): `openssl genrsa -out media-cdn-private.pem 2048` and
+   `openssl rsa -in media-cdn-private.pem -pubout -out media-cdn-public.pem`. Put the public PEM in
+   `cdk.json` as `mediaCdnPublicKey`.
+2. **Deploy infra**: `cdk deploy --profile storyplatform`. Core still uses Supabase.
+3. **Secret**: add key `MediaCdnPrivateKey` (the private PEM; `\n`-escaped is fine) to
+   `storyplatform/core/app-secrets` with the read-edit-write procedure above, then delete the local
+   private key file.
+4. **Copy objects** Supabase → S3 keeping the same object keys (the database stores relative keys, so
+   no data change is needed). Copy with `Content-Type` preserved, then compare object count and total
+   size of both sides.
+5. **Switch**: add `"mediaStorage": "s3"` to `cdk.json`, `cdk deploy`. Re-run the copy once more right
+   after the new task is healthy to pick up anything uploaded to Supabase during the switch.
+6. **Verify**: open a story as a child, images/audio load from `*.cloudfront.net`; upload one media
+   asset and check it appears in the bucket.
+
+Roll back: remove `mediaStorage` from `cdk.json` and deploy (Core goes back to Supabase; objects
+written to S3 meanwhile must be copied back). Rotate the signing key by adding the new public key,
+switching `MediaCdnPrivateKey`, then removing the old key.
+Deleted media can stay in CloudFront's edge cache until its TTL, but no new signed URL is issued for it.

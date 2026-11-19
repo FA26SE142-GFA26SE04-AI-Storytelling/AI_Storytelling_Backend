@@ -1197,6 +1197,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
                 "INCOMPLETE_OR_OVERLAPPING_SCENE_COVERAGE" or
                 "INTERACTION_BOUNDARY_UNRESOLVED" or
                 "INTERACTION_SCENE_UNRESOLVED" or
+                "LISTENING_AUDIO_RETRY_EXHAUSTED" or
                 "IMAGE_ALIGNMENT_FAILED" or "IMAGE_SAFETY_FAILED" or
                 "MEDIA_EVALUATOR_NOT_CONFIGURED" or
                 "STALE_MEDIA_HANDOFF" or "DUPLICATE_ACTIVE_JOB" or

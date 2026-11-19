@@ -33,7 +33,7 @@ public sealed class GenerateListeningInteractionHandler(StoryContentGenerationEx
         var blockIds = request.Blocks.Select(b => b.BlockId).ToHashSet(StringComparer.Ordinal);
         if (request.OccupiedBlockIds.Any(id => !blockIds.Contains(id)) ||
             request.AllowedBlockIds.SelectMany(x => x).Any(id => !blockIds.Contains(id) || id == request.LastBlockId) ||
-            (request.InteractionType != "EventOrdering" &&
+            (!ListeningGenerationContract.IsEndOfStory(request.InteractionType) &&
              (request.AllowedBlockIds.Count != request.Count || request.AllowedBlockIds.Any(x => x.Count == 0))))
             throw new ArgumentException("Invalid listening anchor zones.");
 
@@ -67,6 +67,7 @@ public sealed class GenerateListeningInteractionHandler(StoryContentGenerationEx
             "FillBlank" => response with { FillBlanks = items.Deserialize<FillBlankItemDto[]>(JsonDefaults.Options)! },
             "PicturePrediction" => response with { PicturePredictions = items.Deserialize<PicturePredictionItemDto[]>(JsonDefaults.Options)! },
             "EventOrdering" => response with { EventOrderings = items.Deserialize<EventOrderingItemDto[]>(JsonDefaults.Options)! },
+            "ReadAloud" => response with { ReadAloudPassages = items.Deserialize<ReadAloudItemDto[]>(JsonDefaults.Options)! },
             _ => throw new ArgumentException("Unsupported listening interaction type.")
         };
     }
@@ -87,7 +88,7 @@ public static class ListeningGenerationContract
     {
         "Checkpoint" => PromptType.ListeningCheckpoint, "RolePlay" => PromptType.ListeningRolePlay,
         "FillBlank" => PromptType.ListeningFillBlank, "PicturePrediction" => PromptType.ListeningPicturePrediction,
-        "EventOrdering" => PromptType.ListeningEventOrdering,
+        "EventOrdering" => PromptType.ListeningEventOrdering, "ReadAloud" => PromptType.ListeningReadAloud,
         _ => throw new ArgumentException("Unsupported listening interaction type.")
     };
 
@@ -99,6 +100,7 @@ public static class ListeningGenerationContract
             "Checkpoint" => "Use Prediction, Emotion or Opinion kinds; each kind at most twice and include Emotion or Opinion. Emotion has four options, other kinds two or three. Prediction/Emotion have exactly one isMatch, Opinion none. Explanation is reviewer-only and may refer to later events; feedback must not. Emotion/Opinion options must be understandable alone. Include otherFeedback for future voice answers.",
             "RolePlay" => "Choose verbatim dialogue from a supplied dialogueBlockId in its allowed zone. Name the character as in the story. lineQuote excludes quotation marks/narration and is at most 12 whitespace-separated units. Praise only the attempt, never grade speech.",
             "FillBlank" => "Choose a verbatim sentence in its anchor block, at most 15 whitespace-separated units. Hide a meaningful word/phrase, preferring vocabularyTerms; acceptedAnswers includes hiddenWord. Hint must not contain the answer. suggestFeedback gently gives the answer. Only matchFeedback may praise a matching answer as correct.",
+            "ReadAloud" => "This is read-aloud practice after the whole story, not an anchored stop: output blockId (the block the passage comes from), never afterBlockId. Pick ONE passage the child can read aloud proudly: one or two complete consecutive sentences copied verbatim from that single block (passageQuote), clear and positive, preferring vocabularyTerms; avoid frightening, sad-ending or dialogue-tag-only lines. Length: 5 to 15 whitespace-separated units for ageBand 6-8 (Age_6_8), 5 to 25 for 9-10 (Age_9_10). praiseFeedback praises only the attempt and invites reading again; never grade pronunciation or accuracy.",
             "PicturePrediction" => "Use two or three options with exactly one isMatch. Every imageDescription preserves story characters/setting, is child-safe and has no writing in the picture. revealBlockId must be later than the anchor. question/sourceQuote/labels/waitFeedback must not reveal future events. Option feedback is played ONLY after revealBlockId and may reveal its outcome. Labels are short accessible names.",
             _ => "Choose exactly three principal events from three different blocks in increasing story order; order is 1,2,3. Event text at most 10 whitespace-separated units, sourceQuote verbatim in that block. Do not output afterBlockId: Core places this after the final block. retryFeedback invites listening again without identifying a particular misplaced event."
         };
@@ -112,6 +114,9 @@ public static class ListeningGenerationContract
             "Never use sai, chưa đúng or không đúng in child-facing feedback. Only FillBlank and EventOrdering may praise a correct match. " +
             "On previousErrors regenerate ALL count items and correct those codes; do not repeat rejected output. " + rules + " Context JSON: {{context}}");
     }
+
+    /// <summary>Placed by Core after the final block, so the request carries no anchor zones.</summary>
+    public static bool IsEndOfStory(string type) => type is "EventOrdering" or "ReadAloud";
 
     public static JsonElement Schema(string type, int count)
     {
@@ -133,6 +138,7 @@ public static class ListeningGenerationContract
             "RolePlay" => O(("afterBlockId", S()), ("characterName", S()), ("lineQuote", S()), ("praiseFeedback", S())),
             "FillBlank" => O(("afterBlockId", S()), ("sentenceQuote", S()), ("hiddenWord", S()), ("acceptedAnswers", A(S(), 1, 8)),
                 ("hint", S()), ("matchFeedback", S()), ("suggestFeedback", S())),
+            "ReadAloud" => O(("blockId", S()), ("passageQuote", S()), ("praiseFeedback", S())),
             "PicturePrediction" => O(("afterBlockId", S()), ("revealBlockId", S()), ("question", S()), ("sourceQuote", S()), ("waitFeedback", S()),
                 ("options", A(O(("label", S()), ("imageDescription", S()), ("feedback", S()), ("isMatch", B())), 2, 3))),
             _ => O(("events", A(O(("order", new JsonObject { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = 3 }),

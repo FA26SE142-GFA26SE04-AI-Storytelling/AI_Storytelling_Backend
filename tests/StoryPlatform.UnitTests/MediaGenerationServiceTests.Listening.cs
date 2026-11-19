@@ -95,6 +95,40 @@ public sealed partial class MediaGenerationServiceTests
     }
 
     [Fact]
+    public async Task TtsBranch_ListeningAudioAlreadyInManualReview_FailsBranchInsteadOfRequeueing()
+    {
+        // Prod job 30: asset parked in ManualReview with AttemptCount below the budget kept the
+        // branch Pending and the worker re-claimed it every few seconds forever.
+        var uow = Seed();
+        SeedCheckpoint(uow);
+        uow.Seed(new MediaAsset
+        {
+            Id = 500, StoryVersionId = 10, ListeningInteractionId = 70, AudioPartKey = "noMatch",
+            Type = MediaType.ListeningAudio, Status = MediaStatus.ManualReview,
+            ValidationStatus = ValidationStatus.Failed, AttemptCount = 1, IsCurrent = true
+        });
+        var tts = new RecordingTtsProvider();
+        var service = Create(uow, tts: tts);
+
+        Assert.True((await service.ProcessNextAsync()).Success);
+        var result = await service.ProcessBranchNextAsync(MediaType.TtsAudio);
+
+        Assert.False(result.Success);
+        Assert.True(result.IsPermanentFailure);
+        Assert.Equal("LISTENING_AUDIO_RETRY_EXHAUSTED", result.ErrorCode);
+        var branch = uow.Items<StoryGenerationJob>().Single(x => x.Operation == GenerationJobOperation.GenerateTts);
+        Assert.Equal(GenerationJobStatus.Failed, branch.Status);
+        Assert.Equal("LISTENING_AUDIO_RETRY_EXHAUSTED", branch.ErrorCode);
+        Assert.Null(branch.NextAttemptAt);
+        // The asset stays parked for a human; nothing re-generates it behind the reviewer's back.
+        var parked = uow.Items<MediaAsset>().Single(x => x.Id == 500);
+        Assert.Equal(MediaStatus.ManualReview, parked.Status);
+        Assert.Equal(1, parked.AttemptCount);
+        Assert.DoesNotContain("Ý của con cũng hay.", tts.Inputs);
+        Assert.False((await service.ProcessBranchNextAsync(MediaType.TtsAudio)).JobFound);
+    }
+
+    [Fact]
     public async Task ProcessNext_GeneratesCheckedImageForEachPicturePredictionOption()
     {
         var uow = Seed();

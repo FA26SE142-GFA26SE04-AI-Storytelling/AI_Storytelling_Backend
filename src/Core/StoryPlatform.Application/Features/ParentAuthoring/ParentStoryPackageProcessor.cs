@@ -22,8 +22,11 @@ namespace StoryPlatform.Application.Features.ParentAuthoring;
 public sealed partial class ParentStoryPackageProcessor(IUnitOfWork uow, IChildProfileAccessGuard guard, IAIStoryGenerationClient ai,
     ILearningBatchService batches, ListeningInteractionGenerator listening, ILogger<ParentStoryPackageProcessor> logger,
     IGrayZoneEvaluator moderation, StoryPlatform.Application.Features.MediaGeneration.Interfaces.IStorySegmentService segments,
-    StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null)
+    StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null,
+        IAccountAiActivityService? aiActivity = null)
 {
+    private readonly IAccountAiActivityService _aiActivity =
+        aiActivity ?? new StoryPlatform.Application.Features.AiActivity.Services.AccountAiActivityService(uow);
     private static readonly JsonSerializerOptions Json = ParentPackageContext.Json;
     public async Task<bool> ProcessNextAsync(CancellationToken ct)
     {
@@ -303,23 +306,32 @@ public sealed partial class ParentStoryPackageProcessor(IUnitOfWork uow, IChildP
     }
     private async Task Finish(StoryGenerationJob observed, string token, ParentStoryPackage p, Func<StoryGenerationJob, ParentStoryPackage, Task> action, CancellationToken ct)
     {
+        var storyInfo = await uow.Repository<Story>().FirstOrDefaultAsync(x => x.Id == p.StoryId, cancellationToken: ct);
         await uow.BeginTransactionAsync(ct);
         try
         {
+            if (storyInfo is not null)
+                await uow.AcquireAccountAiActivityLockAsync(storyInfo.AuthorUserId, ct);
             await uow.AcquireTransactionLockAsync(p.StoryId, ct);
             var fresh = await RequireJob(observed.Id, token, ct); var package = await Package(fresh, ct);
             await ParentPackageContext.ValidateAsync(uow, guard, package, ct, true);
             await action(fresh, package); ParentStoryPackageService.Rotate(uow, package); uow.Repository<ParentStoryPackage>().Update(package);
             fresh.Status = GenerationJobStatus.Completed; fresh.CompletedAt = DateTime.UtcNow; fresh.LeaseExpiresAt = null;
-            uow.Repository<StoryGenerationJob>().Update(fresh); await uow.SaveChangesAsync(ct); await uow.CommitTransactionAsync(ct);
+            uow.Repository<StoryGenerationJob>().Update(fresh); await uow.SaveChangesAsync(ct);
+            if (storyInfo is not null && package.Status is "Blocked" or "Failed" or "Stale" or "Cancelled" or "Confirmed")
+                await _aiActivity.ReconcileStoryAiActivityAsync(storyInfo.AuthorUserId, p.StoryId, ct);
+            await uow.CommitTransactionAsync(ct);
         }
         catch { await uow.RollbackTransactionAsync(CancellationToken.None); uow.DiscardTrackedChanges(); throw; }
     }
     private async Task FailAsync(StoryGenerationJob observed, string token, Exception error, CancellationToken ct)
     {
+        var storyInfo = await uow.Repository<Story>().FirstOrDefaultAsync(x => x.Id == observed.StoryId, cancellationToken: ct);
         uow.DiscardTrackedChanges(); await uow.BeginTransactionAsync(ct);
         try
         {
+            if (storyInfo is not null)
+                await uow.AcquireAccountAiActivityLockAsync(storyInfo.AuthorUserId, ct);
             await uow.AcquireTransactionLockAsync(observed.StoryId, ct);
             var job = await RequireJob(observed.Id, token, ct); var p = await Package(job, ct);
             var code = ParentPackageContext.ErrorCode(error);
@@ -332,6 +344,8 @@ public sealed partial class ParentStoryPackageProcessor(IUnitOfWork uow, IChildP
             p.LastErrorCode = job.ErrorCode; ParentStoryPackageService.Rotate(uow, p);
             uow.Repository<StoryGenerationJob>().Update(job); uow.Repository<ParentStoryPackage>().Update(p);
             await uow.SaveChangesAsync(ct);
+            if (!retry && storyInfo is not null)
+                await _aiActivity.ReconcileStoryAiActivityAsync(storyInfo.AuthorUserId, observed.StoryId, ct);
             // Lỗi hẳn (không thử lại): trả lượt đang giữ của truyện nếu không còn gói nào đang chạy (Luồng 2).
             if (!retry && tokenQuota != null) await StoryPlatform.Application.Features.TokenQuota.Services.TokenQuotaService.ReleaseStoryCreditIfIdleAsync(uow, p.StoryId, ct);
             await uow.CommitTransactionAsync(ct);

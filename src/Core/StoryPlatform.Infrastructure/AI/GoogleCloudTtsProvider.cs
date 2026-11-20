@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Text;
@@ -30,19 +31,25 @@ namespace StoryPlatform.Infrastructure.AI;
 /// </summary>
 public sealed class GoogleCloudTtsProvider : ITtsProvider
 {
+    private const string OperationName = "TtsGeneration";
+    private const string ProviderName = "GoogleCloudTTS";
+
     public string ConfigurationFingerprint => _options.Fingerprint(nameof(GoogleCloudTtsProvider));
     private readonly TextToSpeechClient _client;
     private readonly TtsServiceOptions _options;
     private readonly ILogger<GoogleCloudTtsProvider> _logger;
+    private readonly IMediaOutboundPrivacyGuard _privacyGuard;
 
     public GoogleCloudTtsProvider(
         TextToSpeechClient client,
         IOptions<TtsServiceOptions> options,
-        ILogger<GoogleCloudTtsProvider> logger)
+        ILogger<GoogleCloudTtsProvider> logger,
+        IMediaOutboundPrivacyGuard? privacyGuard = null)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _options = options.Value;
         _logger = logger;
+        _privacyGuard = privacyGuard ?? new DeterministicMediaOutboundPrivacyGuard();
     }
 
     public async Task<GeneratedMedia> GenerateAsync(string exactSceneText, CancellationToken cancellationToken = default)
@@ -50,41 +57,80 @@ public sealed class GoogleCloudTtsProvider : ITtsProvider
         if (string.IsNullOrWhiteSpace(exactSceneText))
             throw new PermanentMediaGenerationException("TTS_EMPTY_TEXT");
 
-        var tokens = SsmlTokenizer.Tokenize(exactSceneText);
-        var ssmlText = SsmlTokenizer.BuildSsmlWithMarks(tokens);
-        var ssml = WrapSsml(ssmlText);
-
-        var request = new SynthesizeSpeechRequest
+        var elapsed = Stopwatch.StartNew();
+        try
         {
-            Input = new SynthesisInput { Ssml = ssml },
-            Voice = new VoiceSelectionParams
-            {
-                LanguageCode = _options.LanguageCode,
-                Name = _options.VoiceName
-            },
-            AudioConfig = new AudioConfig
-            {
-                AudioEncoding = ParseAudioEncoding(_options.AudioEncoding),
-                SpeakingRate = _options.SpeakingRate
-            }
-        };
-
-        if (_options.EnableWordTimings)
+            _privacyGuard.EnsureSafeForProvider(OperationName, exactSceneText);
+        }
+        catch (MediaProviderPrivacyException ex)
         {
-            request.EnableTimePointing.Add(TimepointType.SsmlMark);
+            MediaProviderDiagnostics.LogFailed(
+                _logger, OperationName, ProviderName, _options.VoiceName, elapsed.Elapsed.TotalMilliseconds,
+                null, ex.ErrorCode, null, null, ex.GetType().Name);
+            throw;
         }
 
-        var response = await _client.SynthesizeSpeechAsync(request, cancellationToken).ConfigureAwait(false);
-        var bytes = response.AudioContent.ToByteArray();
+        MediaProviderDiagnostics.LogStarted(
+            _logger, OperationName, ProviderName, _options.VoiceName, exactSceneText.Length);
 
-        if (MagicByteValidators.ValidateAudio(bytes) is { IsValid: false } av)
-            throw new PermanentMediaGenerationException($"TTS_VALIDATION_FAILED: {av.Reason}");
+        try
+        {
+            var tokens = SsmlTokenizer.Tokenize(exactSceneText);
+            var ssmlText = SsmlTokenizer.BuildSsmlWithMarks(tokens);
+            var ssml = WrapSsml(ssmlText);
 
-        var wordTimingsJson = _options.EnableWordTimings
-            ? BuildWordTimingsJson(tokens, response)
-            : null;
+            var request = new SynthesizeSpeechRequest
+            {
+                Input = new SynthesisInput { Ssml = ssml },
+                Voice = new VoiceSelectionParams
+                {
+                    LanguageCode = _options.LanguageCode,
+                    Name = _options.VoiceName
+                },
+                AudioConfig = new AudioConfig
+                {
+                    AudioEncoding = ParseAudioEncoding(_options.AudioEncoding),
+                    SpeakingRate = _options.SpeakingRate
+                }
+            };
 
-        return new GeneratedMedia(bytes, ResolveMimeType(_options.AudioEncoding), BuildMetadata(wordTimingsJson));
+            if (_options.EnableWordTimings)
+            {
+                request.EnableTimePointing.Add(TimepointType.SsmlMark);
+            }
+
+            var response = await _client.SynthesizeSpeechAsync(request, cancellationToken).ConfigureAwait(false);
+            var bytes = response.AudioContent.ToByteArray();
+
+            if (MagicByteValidators.ValidateAudio(bytes) is { IsValid: false } av)
+                throw new PermanentMediaGenerationException($"TTS_VALIDATION_FAILED: {av.Reason}");
+
+            var wordTimingsJson = _options.EnableWordTimings
+                ? BuildWordTimingsJson(tokens, response)
+                : null;
+
+            var mimeType = ResolveMimeType(_options.AudioEncoding);
+            MediaProviderDiagnostics.LogCompleted(
+                _logger, OperationName, ProviderName, _options.VoiceName, elapsed.Elapsed.TotalMilliseconds,
+                200, null, bytes.Length, mimeType);
+            return new GeneratedMedia(bytes, mimeType, BuildMetadata(wordTimingsJson));
+        }
+        catch (OperationCanceledException)
+        {
+            MediaProviderDiagnostics.LogCancelled(
+                _logger, OperationName, ProviderName, _options.VoiceName, elapsed.Elapsed.TotalMilliseconds,
+                cancellationToken.IsCancellationRequested);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var code = ex is PermanentMediaGenerationException p ? p.ErrorCode :
+                ex is TransientMediaGenerationException t ? t.ErrorCode : "GOOGLE_CLOUD_TTS_FAILED";
+            MediaProviderDiagnostics.LogFailed(
+                _logger, OperationName, ProviderName, _options.VoiceName, elapsed.Elapsed.TotalMilliseconds,
+                null, code, null, null, ex.GetType().Name);
+            throw;
+        }
     }
 
     private string WrapSsml(string inner) => $"<speak>{inner}</speak>";

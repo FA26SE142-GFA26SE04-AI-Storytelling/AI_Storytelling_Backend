@@ -3756,6 +3756,16 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<string>("AiActivityMode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("None");
+
+                    b.Property<DateTime?>("AiActivityStartedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime?>("ArchivedAt")
                         .HasColumnType("timestamp with time zone");
 

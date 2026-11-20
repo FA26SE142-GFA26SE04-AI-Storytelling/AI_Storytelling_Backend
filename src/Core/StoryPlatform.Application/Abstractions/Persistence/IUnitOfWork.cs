@@ -17,8 +17,10 @@ public interface IUnitOfWork : IDisposable, IAsyncDisposable
     IGenericRepository<T> Repository<T>() where T : class;
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+    bool HasActiveTransaction => false;
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);
     Task AcquireTransactionLockAsync(int resourceId, CancellationToken cancellationToken = default);
+    Task AcquireAccountAiActivityLockAsync(int accountUserId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     Task CommitTransactionAsync(CancellationToken cancellationToken = default);
     Task RollbackTransactionAsync(CancellationToken cancellationToken = default);
 }

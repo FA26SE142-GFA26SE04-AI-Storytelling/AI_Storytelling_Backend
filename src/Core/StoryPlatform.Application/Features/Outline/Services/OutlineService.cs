@@ -5,6 +5,7 @@ using System.Text.Json;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
+using StoryPlatform.Application.Features.AiActivity.Services;
 using StoryPlatform.Application.Features.AIStoryInput.Models;
 using StoryPlatform.Application.Features.Outline.DTOs;
 using StoryPlatform.Application.Features.Outline.Guardrails;
@@ -30,6 +31,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
     private readonly IOutlineReviewGuardrail _guardrail;
     private readonly IOutlineJobFailureFinalizer _failureFinalizer;
     private readonly IGrayZoneEvaluator? _moderation;
+    private readonly IAccountAiActivityService _aiActivity;
     private readonly ITokenQuotaService? _tokenQuota;
 
     private readonly IPlanSettingsProvider? _planSettings;
@@ -39,14 +41,17 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         IAIStoryGenerationClient aiClient,
         IOutlineReviewGuardrail guardrail,
         IOutlineJobFailureFinalizer failureFinalizer, IGrayZoneEvaluator? moderation = null,
-        ITokenQuotaService? tokenQuota = null, IPlanSettingsProvider? planSettings = null)
+        ITokenQuotaService? tokenQuota = null, IPlanSettingsProvider? planSettings = null,
+        IAccountAiActivityService? aiActivity = null)
     {
         _tokenQuota = tokenQuota;
         _planSettings = planSettings;
         _unitOfWork = unitOfWork;
         _aiClient = aiClient;
         _guardrail = guardrail;
-        _failureFinalizer = failureFinalizer; _moderation = moderation;
+        _failureFinalizer = failureFinalizer;
+        _moderation = moderation;
+        _aiActivity = aiActivity ?? new AccountAiActivityService(unitOfWork);
     }
 
     public async Task<OutlineProgressDto> GetCurrentAsync(int userId, int storyId, CancellationToken cancellationToken = default)
@@ -115,7 +120,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         CancellationToken cancellationToken = default)
     {
         ValidateObject(input);
-        await InStoryTransactionAsync(storyId, async () =>
+        await InAccountAndStoryTransactionAsync(userId, storyId, async () =>
         {
             var story = await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
             EnsureReviewState(story);
@@ -136,6 +141,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
                 // Lượt của truyện bỏ dở có thể đã được trả (job dọn lượt): làm tiếp phải giữ lại (409 nếu hết).
                 if (_tokenQuota is not null)
                     await _tokenQuota.HoldStoryCreditForRetryAsync(storyId, cancellationToken);
+                await _aiActivity.AdmitStoryAsync(userId, story, AiActivityMode.FullCreation, cancellationToken);
                 var generationRequest = await LoadAcceptedRequestAsync(storyId, cancellationToken);
                 var job = new StoryGenerationJob
                 {
@@ -171,7 +177,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         CancellationToken cancellationToken = default)
     {
         ValidateObject(input);
-        await InStoryTransactionAsync(storyId, async () =>
+        await InAccountAndStoryTransactionAsync(userId, storyId, async () =>
         {
             var story = await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
             if (story.Source != StorySource.Ai || story.Status != StoryStatus.Draft ||
@@ -206,6 +212,8 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
                 throw new ConflictException("Story không có initial outline generation thất bại để retry.");
             }
 
+            await _aiActivity.AdmitStoryAsync(userId, story, AiActivityMode.FullCreation, cancellationToken);
+
             var request = await LoadAcceptedRequestAsync(storyId, cancellationToken);
             // Lần sinh dàn ý lỗi trước đã trả lượt: thử lại phải giữ lại 1 lượt (409 nếu hết), cùng transaction với job mới.
             if (_tokenQuota is not null)
@@ -237,7 +245,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         CancellationToken cancellationToken = default)
     {
         ValidateObject(input);
-        return await InStoryTransactionAsync(storyId, async () =>
+        return await InAccountAndStoryTransactionAsync(userId, storyId, async () =>
         {
             var story = await LoadAuthorizedStoryForApprovalAsync(userId, storyId, cancellationToken);
             EnsureReviewState(story);
@@ -248,6 +256,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
             }
 
             await EnsureNoActiveOutlineJobAsync(storyId, cancellationToken);
+            await _aiActivity.AdmitStoryAsync(story.AuthorUserId, story, AiActivityMode.FullCreation, cancellationToken);
             // Lượt của truyện bỏ dở có thể đã được trả (job dọn lượt): duyệt dàn ý để sinh nội dung phải giữ lại lượt.
             if (_tokenQuota is not null)
                 await _tokenQuota.HoldStoryCreditForRetryAsync(storyId, cancellationToken);
@@ -318,7 +327,7 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
         CancellationToken cancellationToken = default)
     {
         ValidateObject(input);
-        return await InStoryTransactionAsync(storyId, async () =>
+        return await InAccountAndStoryTransactionAsync(userId, storyId, async () =>
         {
             var story = await LoadAuthorizedStoryAsync(userId, storyId, cancellationToken);
             EnsureReviewState(story);
@@ -345,6 +354,8 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
                 _unitOfWork.Repository<StoryGenerationJob>().Update(job);
                 RotateToken(job);
             }
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _aiActivity.ReconcileStoryAiActivityAsync(story.AuthorUserId, storyId, cancellationToken);
             return ToProgress(story, version, await JobsAsync(storyId, cancellationToken));
         }, cancellationToken);
     }
@@ -798,6 +809,28 @@ public sealed class OutlineService : IOutlineService, IOutlineJobProcessor
 
     private static string ToSnake(string value) => string.Concat(value.Select((character, index) =>
         char.IsUpper(character) && index > 0 ? $"_{char.ToLowerInvariant(character)}" : char.ToLowerInvariant(character).ToString()));
+
+    private async Task<T> InAccountAndStoryTransactionAsync<T>(
+        int accountUserId,
+        int storyId,
+        Func<Task<T>> action,
+        CancellationToken cancellationToken)
+    {
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await _unitOfWork.AcquireAccountAiActivityLockAsync(accountUserId, cancellationToken);
+            await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
+            var result = await action();
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            return result;
+        }
+        catch
+        {
+            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            throw;
+        }
+    }
 
     private async Task<T> InStoryTransactionAsync<T>(
         int storyId,

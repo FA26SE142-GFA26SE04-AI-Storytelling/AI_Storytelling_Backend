@@ -22,15 +22,18 @@ public partial class ManualAuthoringService
     private readonly IImportPreviewProtector _previews;
     private readonly IManualAuthoringPolicy _policy;
     private readonly IStoryCoverResolver? _covers;
+    private readonly StoryPlatform.Application.Abstractions.AI.IAccountAiActivityService _aiActivity;
 
     public ManualAuthoringService(IUnitOfWork uow, CreatorAuthoringOptions options,
-        IImportPreviewProtector previews, IManualAuthoringPolicy policy, IStoryCoverResolver? covers = null)
+        IImportPreviewProtector previews, IManualAuthoringPolicy policy, IStoryCoverResolver? covers = null,
+        StoryPlatform.Application.Abstractions.AI.IAccountAiActivityService? aiActivity = null)
     {
         _uow = uow;
         _options = options;
         _previews = previews;
         _policy = policy;
         _covers = covers;
+        _aiActivity = aiActivity ?? new StoryPlatform.Application.Features.AiActivity.Services.AccountAiActivityService(uow);
     }
 
     public Task<CreatorDraftDto> CreateDraftAsync(int userId, CreateCreatorDraftRequest request, CancellationToken ct = default) =>
@@ -198,6 +201,8 @@ public partial class ManualAuthoringService
         story.AuthoringRevisionToken = Guid.NewGuid().ToString("N");
         story.UpdatedAt = DateTime.UtcNow;
         _uow.Repository<Story>().Update(story);
+        await _uow.SaveChangesAsync(ct);
+        await _aiActivity.ReconcileStoryAiActivityAsync(story.AuthorUserId, story.Id, ct);
         await AuditAsync(userId, action, nameof(Story), story.Id,
             new { selectedVersionId = current?.Id }, new { selectedVersionId = version.Id, origin = version.AuthoringMetadata.AuthoringOrigin }, ct);
         return new CreatorContentSavedDto(await ToDraftAsync(story, ct), ToVersion(version));
@@ -214,6 +219,7 @@ public partial class ManualAuthoringService
         await _uow.BeginTransactionAsync(ct);
         try
         {
+            await _uow.AcquireAccountAiActivityLockAsync(userId, ct);
             await _uow.AcquireTransactionLockAsync(-userId, ct);
             if (storyId > 0) await _uow.AcquireTransactionLockAsync(storyId, ct);
             await RequireCreatorAsync(userId, ct);

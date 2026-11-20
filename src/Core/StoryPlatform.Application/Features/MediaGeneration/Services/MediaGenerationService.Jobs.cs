@@ -9,7 +9,7 @@ namespace StoryPlatform.Application.Features.MediaGeneration.Services;
 public sealed partial class MediaGenerationService
 {
     private static bool IsTerminalBranchFailure(Exception ex) =>
-        FindBoundaryException(ex) is not null || FindPermanentException(ex) is not null ||
+        FindBoundaryException(ex) is not null || FindPrivacyException(ex) is not null || FindPermanentException(ex) is not null ||
         ex.Message.StartsWith("AUDIO_QUALITY_GATE_DETERMINISTIC_FAILURE", StringComparison.Ordinal) ||
         ex.Message is "INVALID_MEDIA_HANDOFF" or "INVALID_ILLUSTRATION_BEAT_ASSET" or
             // Raised for a ManualReview asset whose AttemptCount may be below the budget, so the

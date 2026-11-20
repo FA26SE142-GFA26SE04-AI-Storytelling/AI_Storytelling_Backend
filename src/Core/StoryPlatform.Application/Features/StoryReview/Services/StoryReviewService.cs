@@ -33,6 +33,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
     private readonly IGenericRepository<StoryVocabulary> _vocabRepo;
     private readonly IGenericRepository<QuizItem> _quizRepo;
     private readonly ListeningInteractionGenerator _listening;
+    private readonly IAccountAiActivityService _aiActivity;
 
     /// <summary>Media của truyện có sẵn / viết tay tốn 1 lượt cho cả truyện (Luồng 2); null thì không trừ lượt.</summary>
     private readonly StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? _tokenQuota;
@@ -44,10 +45,12 @@ public sealed partial class StoryReviewService : IStoryReviewService
         IReviewCompletionStore? reviewCompletionStore = null,
         IExistingStoryEvaluationCache? evaluationCache = null, GrayZoneContentCheckService? moderation = null,
         ListeningInteractionGenerator? listeningGenerator = null,
-        StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null)
+        StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null,
+        IAccountAiActivityService? aiActivity = null)
     {
         _tokenQuota = tokenQuota;
         _unitOfWork = unitOfWork;
+        _aiActivity = aiActivity ?? new StoryPlatform.Application.Features.AiActivity.Services.AccountAiActivityService(unitOfWork);
         _aiClient = aiClient;
         _proposalCache = proposalCache;
         _reviewCompletionStore = reviewCompletionStore;
@@ -1014,6 +1017,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
+            await _unitOfWork.AcquireAccountAiActivityLockAsync(storyForAuthorization.AuthorUserId, cancellationToken);
             await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
             var story = await _storyRepo.FirstOrDefaultAsync(s => s.Id == storyId, cancellationToken: cancellationToken)
                 ?? throw new NotFoundException("Story");
@@ -1051,6 +1055,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
                     j.Operation == GenerationJobOperation.GenerateMediaPackage,
                     cancellationToken))
                 throw new ConflictException("MEDIA_JOB_ALREADY_EXISTS");
+            await _aiActivity.AdmitStoryAsync(story.AuthorUserId, story, AiActivityMode.FullCreation, cancellationToken);
             // Truyện có sẵn / viết tay (không qua sinh nội dung AI) tốn 1 lượt cho cả truyện khi sinh media (Luồng 2);
             // truyện AI đã trừ lượt lúc sinh nội dung.
             if (story.Source == StorySource.Manual && _tokenQuota != null)
@@ -1145,6 +1150,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
+            await _unitOfWork.AcquireAccountAiActivityLockAsync(userId, cancellationToken);
             await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
             var story = await _storyRepo.FirstOrDefaultAsync(
                 s => s.Id == storyId, cancellationToken: cancellationToken)
@@ -1156,6 +1162,8 @@ public sealed partial class StoryReviewService : IStoryReviewService
                 throw new ConflictException("INVALID_STORY_STATUS");
             story.Status = StoryStatus.Rejected;
             _storyRepo.Update(story);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _aiActivity.ReconcileStoryAiActivityAsync(story.AuthorUserId, storyId, cancellationToken);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
         }
         catch

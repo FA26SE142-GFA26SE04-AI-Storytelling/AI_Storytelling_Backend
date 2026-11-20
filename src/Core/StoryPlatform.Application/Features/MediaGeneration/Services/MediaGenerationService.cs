@@ -49,6 +49,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
     private readonly int _assetMaxAttempts;
     private readonly MediaGenerationOptions _options;
     private readonly TimeProvider _clock;
+    private readonly StoryPlatform.Application.Abstractions.AI.IAccountAiActivityService _aiActivity;
 
     private readonly IPlanSettingsProvider? _planSettings;
     private readonly StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? _tokenQuota;
@@ -74,7 +75,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         ILogger<MediaGenerationService> logger, IChildProfileAccessGuard? supervision = null, TimeProvider? clock = null,
         IMediaUploadValidator? uploadValidator = null, IProviderMediaContextProjector? contextProjector = null,
         IPlanSettingsProvider? planSettings = null,
-        StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null)
+        StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null,
+        StoryPlatform.Application.Abstractions.AI.IAccountAiActivityService? aiActivity = null)
     {
         _planSettings = planSettings;
         _tokenQuota = tokenQuota;
@@ -100,6 +102,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         _readinessService = readinessService;
         _logger = logger;
         _uploadValidator = uploadValidator;
+        _aiActivity = aiActivity ?? new StoryPlatform.Application.Features.AiActivity.Services.AccountAiActivityService(unitOfWork, _clock);
         _jobLease = TimeSpan.FromSeconds(Math.Max(Math.Clamp(options.JobLeaseMinutes, 1, 30) * 60,
             Math.Clamp(Math.Max(options.Images.ProviderTimeoutSeconds, options.Audio.ProviderTimeoutSeconds), 1, 600) + 180));
         _assetMaxAttempts = Math.Clamp(options.AssetMaxAttempts, 1, 5);
@@ -286,6 +289,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
         try
         {
+            await _unitOfWork.AcquireAccountAiActivityLockAsync(userId, cancellationToken);
             await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
             var story = await FreshAsync<Story>(storyId, cancellationToken)
                         ?? throw new NotFoundException("Story", storyId);
@@ -294,6 +298,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, storyId, null, cancellationToken);
             if (story.Status != StoryStatus.MediaProcessing)
                 throw new ConflictException("MEDIA_JOB_RETRY_NOT_ALLOWED");
+            await _aiActivity.AdmitStoryAsync(story.AuthorUserId, story, AiActivityMode.FullCreation, cancellationToken);
             var job = (await _unitOfWork.Repository<StoryGenerationJob>().FindAsync(
                     x => x.StoryId == storyId && x.Operation == GenerationJobOperation.GenerateMediaPackage,
                     cancellationToken: cancellationToken))
@@ -375,6 +380,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         await _unitOfWork.BeginTransactionAsync(ct);
         try
         {
+            await _unitOfWork.AcquireAccountAiActivityLockAsync(userId, ct);
             await _unitOfWork.AcquireTransactionLockAsync(storyId, ct);
             var story = await LoadAuthorizedStoryAsync(userId, storyId, ct);
             await EnsureMutationPermissionAsync(story, userId, ct, allowFinalizedReplay: true);
@@ -406,6 +412,8 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             _unitOfWork.Repository<StoryVersion>().Update(version);
             story.Status = StoryStatus.Ready;
             _unitOfWork.Repository<Story>().Update(story);
+            await _unitOfWork.SaveChangesAsync(ct);
+            await _aiActivity.ReconcileStoryAiActivityAsync(story.AuthorUserId, storyId, ct);
             await _unitOfWork.CommitTransactionAsync(ct);
         }
         catch { await RollbackMediaAsync(CancellationToken.None); throw; }
@@ -415,6 +423,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
     private async Task EnsureNoActiveJobAsync(int storyId, CancellationToken ct)
     {
         if (await _unitOfWork.Repository<StoryGenerationJob>().ExistsAsync(x => x.StoryId == storyId &&
+            x.Operation != GenerationJobOperation.GrayZoneCheck &&
             (x.Status == GenerationJobStatus.Pending || x.Status == GenerationJobStatus.Processing), ct))
             throw new ConflictException("MEDIA_JOB_ACTIVE");
     }
@@ -671,6 +680,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (MediaProviderContextException) { throw; }
+            catch (MediaProviderPrivacyException) { throw; }
             catch { /* Planner unavailable: use one whole-scene beat below. */ }
         }
         if (!AreValidBeats(scene, selections))
@@ -1158,6 +1168,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
     private static string PublicErrorCode(Exception exception)
     {
         if (FindBoundaryException(exception) is { } boundary) return boundary.ErrorCode;
+        if (FindPrivacyException(exception) is { } privacy) return privacy.ErrorCode;
         if (exception is TransientMediaGenerationException transient) return transient.ErrorCode;
         var permanent = FindPermanentException(exception);
         if (permanent is not null) return permanent.ErrorCode;
@@ -1186,6 +1197,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
     private static bool IsPermanentFailure(Exception exception)
     {
         if (FindBoundaryException(exception) is not null) return true;
+        if (FindPrivacyException(exception) is not null) return true;
         if (FindPermanentException(exception) is not null) return true;
         for (Exception? current = exception; current is not null; current = current.InnerException)
         {
@@ -1218,6 +1230,13 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
     {
         for (Exception? current = exception; current is not null; current = current.InnerException)
             if (current is MediaProviderContextException boundary) return boundary;
+        return null;
+    }
+
+    private static MediaProviderPrivacyException? FindPrivacyException(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+            if (current is MediaProviderPrivacyException privacy) return privacy;
         return null;
     }
 

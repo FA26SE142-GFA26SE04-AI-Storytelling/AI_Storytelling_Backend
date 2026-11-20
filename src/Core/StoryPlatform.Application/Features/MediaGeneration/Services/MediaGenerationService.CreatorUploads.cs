@@ -32,7 +32,7 @@ public sealed partial class MediaGenerationService
     public async Task<CreatorMediaCommandResult> SelectCreatorMediaAsync(int userId, int storyId, int targetId, bool image,
         CreatorMediaCommand command, CreatorMediaUploadCommand? upload, GeneratedMedia? file, CancellationToken ct = default)
     {
-        await CreatorManualAsync(userId, storyId, ct);
+        var authorizedStory = await CreatorManualAsync(userId, storyId, ct);
         if (string.IsNullOrWhiteSpace(command.OperationId) || command.OperationId.Length > 100 || command.ExpectedConfirmed is null)
             throw new BadRequestException("MEDIA_OPERATION_ID_REQUIRED");
         if ((upload is null) != (file is null)) throw new BadRequestException("MEDIA_FILE_REQUIRED");
@@ -61,6 +61,7 @@ public sealed partial class MediaGenerationService
             CreatorMediaCommandResult result;
             try
             {
+                await _unitOfWork.AcquireAccountAiActivityLockAsync(authorizedStory.AuthorUserId, ct);
                 await _unitOfWork.AcquireTransactionLockAsync(storyId, ct);
                 var story = await CreatorManualAsync(userId, storyId, ct);
                 replay = await CreatorUploadReplayAsync(userId, storyId, command.OperationId, hash, ct);
@@ -90,11 +91,13 @@ public sealed partial class MediaGenerationService
                     throw new ConflictException("MEDIA_TARGET_ALREADY_SELECTED");
                 if (current?.Status == MediaStatus.Ready && file is null) throw new ConflictException("MEDIA_ALREADY_EXISTS_USE_REGENERATE");
                 await EnsureNoPendingReplacementAsync(version.Id, ct);
+                if (current?.Status == MediaStatus.Ready &&
+                    await _unitOfWork.Repository<MediaAssetGenerationTask>().ExistsAsync(x => x.StoryVersionId == version.Id &&
+                        (x.Status == GenerationJobStatus.Pending || x.Status == GenerationJobStatus.Processing), ct))
+                    throw new ConflictException("MEDIA_JOB_ACTIVE");
+                await _aiActivity.AdmitStoryAsync(story.AuthorUserId, story, AiActivityMode.FullCreation, ct);
                 if (current?.Status == MediaStatus.Ready)
                 {
-                    if (await _unitOfWork.Repository<MediaAssetGenerationTask>().ExistsAsync(x => x.StoryVersionId == version.Id &&
-                        (x.Status == GenerationJobStatus.Pending || x.Status == GenerationJobStatus.Processing), ct))
-                        throw new ConflictException("MEDIA_JOB_ACTIVE");
                     MediaPackageConfirmation.Invalidate(version);
                     _unitOfWork.Repository<StoryVersion>().Update(version);
                 }

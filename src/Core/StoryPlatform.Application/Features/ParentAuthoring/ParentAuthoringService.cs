@@ -32,6 +32,7 @@ public sealed class ParentAuthoringService : ManualAuthoringService
     private readonly IMediaContextBuilder? _mediaContexts;
     private readonly IMediaGenerationService? _media;
     private readonly IGrayZoneEvaluator? _evaluator;
+    private readonly StoryPlatform.Application.Abstractions.AI.IAccountAiActivityService _aiActivity;
 
     /// <summary>Sinh media cho truyện tự viết tốn 1 lượt cho cả truyện (Luồng 2); null thì không trừ lượt.</summary>
     private readonly StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? _tokenQuota;
@@ -40,13 +41,15 @@ public sealed class ParentAuthoringService : ManualAuthoringService
         IChildProfileAccessGuard guard, IStorySegmentService segments, GrayZoneContentCheckService? moderation = null,
         IMediaContextBuilder? mediaContexts = null, IMediaGenerationService? media = null, IGrayZoneEvaluator? evaluator = null,
         StoryPlatform.Application.Features.Stories.Interfaces.IStoryCoverResolver? covers = null,
-        StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null)
+        StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null,
+        StoryPlatform.Application.Abstractions.AI.IAccountAiActivityService? aiActivity = null)
         : base(uow, options, previews, new ParentManualAuthoringPolicy(uow, guard), covers)
     {
         _tokenQuota = tokenQuota;
         _uow = uow; _guard = guard; _segments = segments; _moderation = moderation;
         _mediaContexts = mediaContexts; _media = media; _evaluator = evaluator;
         _policy = new ParentManualAuthoringPolicy(uow, guard);
+        _aiActivity = aiActivity ?? new StoryPlatform.Application.Features.AiActivity.Services.AccountAiActivityService(uow);
     }
 
     public async Task<ParentDraftDto> CreateParentDraftAsync(int user, CreateParentDraftRequest request, CancellationToken ct)
@@ -205,6 +208,7 @@ public sealed class ParentAuthoringService : ManualAuthoringService
             if (await _uow.Repository<StoryGenerationJob>().ExistsAsync(x => x.StoryId == id &&
                 x.StoryVersionId == version.Id && x.Operation == GenerationJobOperation.GenerateMediaPackage, ct))
                 throw new ConflictException("MEDIA_JOB_ALREADY_EXISTS");
+            await _aiActivity.AdmitStoryAsync(locked.AuthorUserId, locked, AiActivityMode.FullCreation, ct);
             // Sinh media cho truyện tự viết tốn 1 lượt cho cả truyện (Luồng 2); trừ khi media hoàn tất, lỗi thì trả.
             if (locked.Source == StorySource.Manual && _tokenQuota != null)
                 await _tokenQuota.HoldStoryCreditOnceAsync(id, ct);
@@ -374,6 +378,7 @@ public sealed class ParentAuthoringService : ManualAuthoringService
         await _uow.BeginTransactionAsync(ct);
         try
         {
+            await _uow.AcquireAccountAiActivityLockAsync(user, ct);
             await _uow.AcquireTransactionLockAsync(-user, ct);
             await _uow.AcquireTransactionLockAsync(id, ct);
             await GetDraftAsync(user, id, ct);

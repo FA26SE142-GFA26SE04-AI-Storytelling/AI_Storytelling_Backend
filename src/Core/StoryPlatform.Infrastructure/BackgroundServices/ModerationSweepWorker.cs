@@ -40,6 +40,7 @@ public sealed class ModerationSweepWorker : BackgroundService
             try
             {
                 await using var scope = _scopeFactory.CreateAsyncScope();
+                await scope.ServiceProvider.GetRequiredService<GrayZoneCheckRecoveryService>().RecoverAsync(stoppingToken);
                 var sweepService = scope.ServiceProvider.GetRequiredService<IModerationSweepService>();
                 await scope.ServiceProvider.GetRequiredService<GrayZoneWorkflowService>().CloseObsoleteAsync(stoppingToken);
                 await sweepService.ReleaseExpiredClaimsAsync(stoppingToken);

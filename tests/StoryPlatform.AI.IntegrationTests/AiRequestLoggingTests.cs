@@ -19,7 +19,7 @@ public sealed class AiRequestLoggingTests
     [InlineData("Development", true, true)]
     [InlineData("Development", false, false)]
     [InlineData("Production", true, false)]
-    public async Task Payload_logging_is_development_only_redacted_and_does_not_change_response(
+    public async Task Payload_logging_is_development_only_allowlisted_omits_freetext_and_does_not_change_response(
         string environment, bool enabled, bool expectPayload)
     {
         var logs = new CaptureLogs();
@@ -39,7 +39,8 @@ public sealed class AiRequestLoggingTests
         client.DefaultRequestHeaders.Add("X-Internal-Api-Key", "header-private-key");
         var response = await client.PostAsJsonAsync("/diagnostic-probe", new
         {
-            requestId = "content-job-42", content = "Synthetic story preview",
+            requestId = "content-job-42",
+            content = "Synthetic story preview with child@example.com",
             nested = new { apiKey = "body-private-key", description = "configured-private-key" },
             jwt = "Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature"
         });
@@ -49,12 +50,18 @@ public sealed class AiRequestLoggingTests
         var text = string.Join('\n', logs.Messages);
         Assert.Contains("AI request received", text);
         Assert.Contains("AI action response", text);
-        Assert.Equal(expectPayload, text.Contains("Synthetic story preview", StringComparison.Ordinal));
-        Assert.DoesNotContain("body-private-key", text);
-        Assert.DoesNotContain("header-private-key", text);
-        Assert.DoesNotContain("configured-private-key", text);
-        Assert.DoesNotContain("eyJhbGciOiJIUzI1NiJ9", text);
-        if (expectPayload) Assert.Contains("[REDACTED]", text);
+        Assert.DoesNotContain("Synthetic story preview", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("child@example.com", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("body-private-key", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("header-private-key", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("configured-private-key", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("eyJhbGciOiJIUzI1NiJ9", text, StringComparison.Ordinal);
+        Assert.Equal(expectPayload, text.Contains("[OMITTED len=", StringComparison.Ordinal));
+        if (expectPayload)
+        {
+            Assert.Contains("content-job-42", text, StringComparison.Ordinal);
+            Assert.Contains("[REDACTED]", text, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
@@ -62,24 +69,73 @@ public sealed class AiRequestLoggingTests
     {
         var text = AiPayloadPreview.Format(new
         {
-            rows = new[] { new { password = "do-not-log", text = "secret-value" } },
+            rows = new[] { new { password = "do-not-log", text = "secret-value", email = "kid@example.com", phone = "0912345678" } },
             content = new string('x', 5000)
         }, 256, ["secret-value"]);
         Assert.Contains("[REDACTED]", text);
         Assert.Contains("[TRUNCATED]", text);
         Assert.DoesNotContain("do-not-log", text);
         Assert.DoesNotContain("secret-value", text);
+        Assert.DoesNotContain("kid@example.com", text);
+        Assert.DoesNotContain("0912345678", text);
         Assert.True(text.Length < 300);
     }
 
     [Fact]
-    public void Scalar_preview_redacts_credentials_and_keeps_Vietnamese_readable()
+    public void Allowlisted_preview_omits_freetext_even_without_regex_match_and_redacts_pii_in_allowlisted_fields()
     {
-        var preview = AiPayloadPreview.Format("Câu chuyện có secret-value\nBearer hidden", 1024, ["secret-value"]);
+        var preview = AiPayloadPreview.FormatAllowlisted(new
+        {
+            requestId = "req-1-kid@example.com",
+            status = "ok",
+            storyText = "Bé An đi học về qua cánh đồng xanh.",
+            nested = new { prompt = "Tell a story", errorCode = "SAFE_CODE", phone = "+84 912 345 678" }
+        }, 2048);
+
+        Assert.Contains("[REDACTED_EMAIL]", preview);
+        Assert.Contains("SAFE_CODE", preview);
+        Assert.Contains("[OMITTED len=", preview);
+        Assert.DoesNotContain("kid@example.com", preview);
+        Assert.DoesNotContain("Bé An đi học", preview);
+        Assert.DoesNotContain("Tell a story", preview);
+        Assert.DoesNotContain("912 345 678", preview);
+    }
+
+    [Fact]
+    public void Scalar_preview_redacts_credentials_emails_phones_and_keeps_Vietnamese_readable()
+    {
+        var preview = AiPayloadPreview.Format(
+            "Câu chuyện có secret-value\nBearer hidden-token-12345\nemail kid@example.com\nphone 0912345678\nhttps://user:pass@example.com/a",
+            1024,
+            ["secret-value"]);
         Assert.Contains("Câu chuyện", preview);
         Assert.DoesNotContain("secret-value", preview);
-        Assert.DoesNotContain("Bearer hidden", preview);
+        Assert.DoesNotContain("hidden-token-12345", preview);
+        Assert.DoesNotContain("kid@example.com", preview);
+        Assert.DoesNotContain("0912345678", preview);
+        Assert.DoesNotContain("user:pass", preview);
         Assert.DoesNotContain('\n', preview); // Embedded line breaks stay escaped, preventing forged log lines.
+    }
+
+    [Fact]
+    public void Preview_bounds_depth_and_arrays_and_falls_back_to_safe_marker_on_error()
+    {
+        object deep = "leaf";
+        for (var i = 0; i < 20; i++) deep = new { child = deep };
+        var deepPreview = AiPayloadPreview.Format(deep, 4096);
+        Assert.Contains("[OMITTED]", deepPreview);
+        Assert.DoesNotContain("leaf", deepPreview);
+
+        var many = AiPayloadPreview.Format(Enumerable.Range(0, 50).ToArray(), 4096);
+        Assert.DoesNotContain("49", many);
+
+        var unserializable = new UnserializablePayload();
+        Assert.Equal("[PAYLOAD_UNAVAILABLE]", AiPayloadPreview.Format(unserializable, 512));
+    }
+
+    private sealed class UnserializablePayload
+    {
+        public string Boom => throw new InvalidOperationException("raw-secret-must-not-leak");
     }
 
     private sealed class CaptureLogs : ILoggerProvider

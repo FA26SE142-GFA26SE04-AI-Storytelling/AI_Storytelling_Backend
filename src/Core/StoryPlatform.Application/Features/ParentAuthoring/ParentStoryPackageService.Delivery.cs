@@ -29,7 +29,10 @@ public sealed partial class ParentStoryPackageService
             await ParentStoryPackageReader.ValidateManifestAsync(uow, p, ct);
             p.Status = "Confirmed";
             p.ConfirmedAt = DateTime.UtcNow; p.ConfirmedByUserId = actor; Rotate(p);
-            uow.Repository<ParentStoryPackage>().Update(p); return Dto(p);
+            uow.Repository<ParentStoryPackage>().Update(p);
+            await uow.SaveChangesAsync(ct);
+            await _aiActivity.ReconcileStoryAiActivityAsync(actor, storyId, ct);
+            return Dto(p);
         }, ct, id);
 
     public Task<ParentFamilyConfirmationDto[]> DeliverAsync(int actor, int storyId, ParentPackageBatchGrantRequest request, CancellationToken ct) =>

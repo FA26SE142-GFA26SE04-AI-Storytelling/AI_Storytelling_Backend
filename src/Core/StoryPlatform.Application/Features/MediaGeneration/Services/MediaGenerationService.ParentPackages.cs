@@ -168,9 +168,12 @@ public sealed partial class MediaGenerationService
         catch (Exception ex) when (!ct.IsCancellationRequested)
         {
             await RollbackMediaAsync(CancellationToken.None);
+            var storyInfo = await _unitOfWork.Repository<Story>().FirstOrDefaultAsync(x => x.Id == observed.StoryId, cancellationToken: CancellationToken.None);
             await _unitOfWork.BeginTransactionAsync(CancellationToken.None);
             try
             {
+                if (storyInfo is not null)
+                    await _unitOfWork.AcquireAccountAiActivityLockAsync(storyInfo.AuthorUserId, CancellationToken.None);
                 await _unitOfWork.AcquireTransactionLockAsync(observed.StoryId, CancellationToken.None);
                 var job = await FreshAsync<StoryGenerationJob>(observed.Id, CancellationToken.None);
                 var p = await FreshAsync<ParentStoryPackage>(observed.ParentStoryPackageId!.Value, CancellationToken.None);
@@ -189,6 +192,8 @@ public sealed partial class MediaGenerationService
                 if (failedForGood && _tokenQuota != null)
                     await StoryPlatform.Application.Features.TokenQuota.Services.TokenQuotaService.ReleaseStoryCreditIfIdleAsync(
                         _unitOfWork, observed.StoryId, CancellationToken.None);
+                if (failedForGood && storyInfo is not null)
+                    await _aiActivity.ReconcileStoryAiActivityAsync(storyInfo.AuthorUserId, observed.StoryId, CancellationToken.None);
                 await _unitOfWork.CommitTransactionAsync(CancellationToken.None);
             }
             catch { await RollbackMediaAsync(CancellationToken.None); throw; }

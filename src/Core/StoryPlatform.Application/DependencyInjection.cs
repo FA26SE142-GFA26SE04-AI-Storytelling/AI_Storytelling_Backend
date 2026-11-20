@@ -95,6 +95,8 @@ public static class DependencyInjection
         services.AddScoped<IAccountDeletionService, AccountDeletionService>();
         services.AddScoped<IStoryService, StoryService>();
         services.AddScoped<IAIStoryInputService, AIStoryInputService>();
+        services.AddScoped<StoryPlatform.Application.Abstractions.AI.IAccountAiActivityService,
+            StoryPlatform.Application.Features.AiActivity.Services.AccountAiActivityService>();
         services.AddScoped<IChildProfileService, ChildProfileService>();
         services.AddScoped<IChildProfileAccessGuard, ChildProfileAccessGuard>();
         services.AddScoped<IChildProfileEraser, ChildProfileEraser>();
@@ -114,6 +116,7 @@ public static class DependencyInjection
         services.AddScoped<Features.Moderation.Rubrics.IModerationRubricSource>(sp => sp.GetRequiredService<Features.Moderation.Rubrics.ModerationRubricService>());
         services.AddScoped<GrayZoneWorkflowService>();
         services.AddScoped<GrayZoneContentCheckService>();
+        services.AddScoped<GrayZoneCheckRecoveryService>();
         services.AddScoped<IModerationQueueService, ModerationQueueService>();
         services.AddScoped<IStoryUsageImpactReader, StoryUsageImpactReader>();
         services.AddScoped<IModerationStatisticsService, ModerationStatisticsService>();
@@ -209,6 +212,7 @@ public static class DependencyInjection
         services.AddSingleton<ISceneCoverageValidator, SceneCoverageValidator>();
         services.AddSingleton<IMediaContextBuilder, MediaContextBuilder>();
         services.AddSingleton<IProviderMediaContextProjector, ProviderMediaContextProjector>();
+        services.AddSingleton<IMediaOutboundPrivacyGuard, DeterministicMediaOutboundPrivacyGuard>();
         services.AddSingleton<IStorySegmentService, StorySegmentService>();
         services.AddSingleton<SemanticSceneSegmentationService>(); // Orchestrator: primary (LLM) + fallback (paragraph)
         services.AddSingleton<ISceneSegmentationProvider>(sp => sp.GetRequiredService<SemanticSceneSegmentationService>());

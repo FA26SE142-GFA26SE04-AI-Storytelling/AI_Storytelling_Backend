@@ -115,6 +115,8 @@ public sealed class GrayZoneContentCheckQueryTests
         Assert.Contains("SELECT", translatedSql);
         Assert.NotNull(captured);
         Assert.Equal(hasBlockedRules ? ["blocked", "Chủ đề bị chặn"] : Array.Empty<string>(), captured.BlockedTerms);
-        h.UnitOfWork.Verify(x => x.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Null(h.Versions.Single().Moderation.ModerationZone);
+        var checkJob = Assert.Single(h.Jobs, x => x.Operation == GenerationJobOperation.GrayZoneCheck);
+        Assert.Equal(GenerationJobStatus.Failed, checkJob.Status);
     }
 }

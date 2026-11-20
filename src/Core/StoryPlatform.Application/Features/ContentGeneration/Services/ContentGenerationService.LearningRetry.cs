@@ -11,7 +11,7 @@ public sealed partial class ContentGenerationService
 {
     private async Task<bool> RetryLearningArtifactsAsync(int userId, int storyId, string operation, CancellationToken ct)
     {
-        return await InStoryTransactionAsync(storyId, async () =>
+        return await InAccountAndStoryTransactionAsync(userId, storyId, async () =>
         {
             var story = await LoadAuthorizedStoryAsync(userId, storyId, ct);
             var version = await _unitOfWork.Repository<StoryVersion>().FirstOrDefaultAsync(x => x.StoryId == storyId && x.IsCurrent && x.Content != null, cancellationToken: ct);
@@ -31,6 +31,7 @@ public sealed partial class ContentGenerationService
             }
             if (await _unitOfWork.Repository<StoryGenerationJob>().ExistsAsync(x => x.StoryId == storyId &&
                 x.Operation != GenerationJobOperation.GenerateDiscussion &&
+                x.Operation != GenerationJobOperation.GrayZoneCheck &&
                 (x.Status == GenerationJobStatus.Processing || x.Status == GenerationJobStatus.Pending), ct))
                 throw new ConflictException("LEARNING_JOB_ACTIVE");
             var failed = (await _unitOfWork.Repository<StoryGenerationJob>().FindAsync(x => x.StoryVersionId == version.Id &&
@@ -39,6 +40,7 @@ public sealed partial class ContentGenerationService
                 x.Status == GenerationJobStatus.Failed, cancellationToken: ct))
                 .OrderByDescending(x => x.CompletedAt ?? x.StartedAt).ThenByDescending(x => x.Id).FirstOrDefault();
             if (failed is null) throw new ConflictException("LEARNING_JOB_NOT_FAILED");
+            await _aiActivity.AdmitStoryAsync(story.AuthorUserId, story, AiActivityMode.FullCreation, ct);
             var batches = await _unitOfWork.Repository<LearningArtifactGenerationBatch>().FindAsync(x => x.RootJobId == root.Id, cancellationToken: ct);
             // Completed means that a batch passed its own checks, not necessarily the merged quiz checks.
             // Rebuild the rejected quiz package through its coordinator; leave validated vocabulary untouched.

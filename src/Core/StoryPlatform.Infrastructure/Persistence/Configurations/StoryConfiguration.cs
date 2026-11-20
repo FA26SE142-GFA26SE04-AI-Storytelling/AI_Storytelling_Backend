@@ -77,6 +77,15 @@ public class StoryConfiguration : IEntityTypeConfiguration<Story>
 
         builder.Property(s => s.EverGrayZone).HasDefaultValue(false);
 
+        builder.Property(s => s.AiActivityMode)
+            .HasConversion<string>()
+            .HasMaxLength(30)
+            .HasDefaultValue(StoryPlatform.Domain.Enums.AiActivityMode.None)
+            .HasSentinel(StoryPlatform.Domain.Enums.AiActivityMode.None)
+            .IsRequired();
+
+        builder.Property(s => s.AiActivityStartedAt);
+
         // Foreign key to UserAccount (Author)
         builder.HasOne(s => s.Author)
             .WithMany(u => u.Stories)

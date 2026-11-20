@@ -11,8 +11,11 @@ namespace StoryPlatform.Application.Features.ParentAuthoring;
 
 public sealed partial class ParentStoryPackageService(IUnitOfWork uow, IChildProfileAccessGuard guard,
     StoryPlatform.Application.Features.ContentGeneration.LearningBatchOptions? learningOptions = null,
-    StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null)
+    StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null,
+        StoryPlatform.Application.Abstractions.AI.IAccountAiActivityService? aiActivity = null)
 {
+    private readonly StoryPlatform.Application.Abstractions.AI.IAccountAiActivityService _aiActivity =
+        aiActivity ?? new StoryPlatform.Application.Features.AiActivity.Services.AccountAiActivityService(uow);
     private static readonly JsonSerializerOptions Json = ParentPackageContext.Json;
     public static async Task<bool> IsContentFinalizedAsync(IUnitOfWork uow, int storyId, CancellationToken ct)
     {
@@ -47,6 +50,8 @@ public sealed partial class ParentStoryPackageService(IUnitOfWork uow, IChildPro
             foreach (var job in jobs) { job.Status = GenerationJobStatus.Cancelled; job.ConcurrencyToken = Guid.NewGuid().ToString("N"); uow.Repository<StoryGenerationJob>().Update(job); }
             uow.Repository<Story>().Update(story); // Attach the observed token before changing it.
             story.AuthoringRevisionToken = Guid.NewGuid().ToString("N"); uow.Repository<Story>().Update(story);
+            await uow.SaveChangesAsync(ct);
+            await _aiActivity.ReconcileStoryAiActivityAsync(actor, storyId, ct);
             return new ParentContentFinalizationDto(storyId, version.Id, ParentPackageContext.Source(story, version), false);
         }, ct);
 
@@ -57,6 +62,7 @@ public sealed partial class ParentStoryPackageService(IUnitOfWork uow, IChildPro
             if (!await IsContentFinalizedAsync(uow, storyId, ct)) throw new ConflictException("PARENT_CONTENT_FINALIZATION_REQUIRED");
             if (request.Recipients.Length is < 1 or > 100 || request.Recipients.Select(x => x.ChildProfileId).Distinct().Count() != request.Recipients.Length)
                 throw new BadRequestException("PACKAGE_RECIPIENTS_INVALID");
+            await _aiActivity.AdmitStoryAsync(actor, story, AiActivityMode.FullCreation, ct);
             var result = new List<ParentPackageDto>();
             foreach (var recipient in request.Recipients.OrderBy(x => x.ChildProfileId))
                 result.Add(Dto(await AddPackage(story, version, actor, recipient.ChildProfileId,
@@ -73,17 +79,19 @@ public sealed partial class ParentStoryPackageService(IUnitOfWork uow, IChildPro
             if (version.Id != previous.StoryVersionId) throw new ConflictException("PARENT_PACKAGE_SOURCE_CHANGED");
             var known = new[] { "vocabulary", "quiz", "listening", "images", "narration" };
             if (request.Regenerate.Any(x => !known.Contains(x))) throw new BadRequestException("PACKAGE_COMPONENT_INVALID");
+            await _aiActivity.AdmitStoryAsync(actor, story, AiActivityMode.FullCreation, ct);
             return Dto(await AddPackage(story, version, actor, previous.ChildProfileId, request.Components, previous, request.Regenerate, ct));
         }, ct, packageId);
 
     public Task<ParentPackageDto> GenerateAsync(int actor, int storyId, int packageId, ParentPackageCommand request, CancellationToken ct) =>
-        Command(actor, storyId, "parent-package-generate", request, async _ =>
+        Command(actor, storyId, "parent-package-generate", request, async story =>
         {
             var p = await Package(actor, storyId, packageId, ct); Expect(p, request); Writable(p);
             await ParentPackageContext.ValidateAsync(uow, guard, p, ct, true);
             await EnsureNoPackageModerationHoldAsync(p.Id, ct);
             if (!IsPackageCheckEligible(p, Check(p))) throw new ConflictException("PACKAGE_CHECK_NOT_PASSED");
             if (await ActivePackageJob(p.Id, ct)) throw new ConflictException("PACKAGE_JOB_ACTIVE");
+            await _aiActivity.AdmitStoryAsync(actor, story, AiActivityMode.FullCreation, ct);
             var checkJob = await uow.Repository<StoryGenerationJob>().FirstOrDefaultAsync(x => x.ParentStoryPackageId == p.Id && x.Operation == GenerationJobOperation.CheckParentPackage, cancellationToken: ct);
             await HoldMediaCreditAsync(p, ct);
             await Queue(p, GenerationJobOperation.BuildParentPackage, ct, JsonSerializer.Deserialize<ParentPackageWorkState>(checkJob?.GenerationMetadataJson ?? "{}", Json));
@@ -92,7 +100,7 @@ public sealed partial class ParentStoryPackageService(IUnitOfWork uow, IChildPro
         }, ct, packageId);
 
     public Task<ParentPackageDto> RetryAsync(int actor, int storyId, int packageId, ParentPackageRetryRequest request, CancellationToken ct) =>
-        Command(actor, storyId, "parent-package-retry", request, async _ =>
+        Command(actor, storyId, "parent-package-retry", request, async story =>
         {
             var p = await Package(actor, storyId, packageId, ct); Expect(p, request); Writable(p);
             if (p.Status != "Failed") throw new ConflictException("PACKAGE_RETRY_NOT_AVAILABLE");
@@ -138,7 +146,9 @@ public sealed partial class ParentStoryPackageService(IUnitOfWork uow, IChildPro
             // Lần lỗi trước đã trả lượt: thử lại phải giữ lại (không tốn thêm nếu truyện vẫn đang giữ hoặc đã trừ).
             await HoldMediaCreditAsync(p, ct);
             p.Status = targets.Any(x => x.Operation == GenerationJobOperation.CheckParentPackage) ? "PendingCheck" : "Generating";
-            p.LastErrorCode = null; Rotate(p); uow.Repository<ParentStoryPackage>().Update(p); return Dto(p);
+            p.LastErrorCode = null; Rotate(p); uow.Repository<ParentStoryPackage>().Update(p);
+            await _aiActivity.AdmitStoryAsync(actor, story, AiActivityMode.FullCreation, ct);
+            return Dto(p);
         }, ct, packageId);
 
     public async Task<ParentPackageDto[]> ListAsync(int actor, int storyId, CancellationToken ct)
@@ -223,6 +233,7 @@ public sealed partial class ParentStoryPackageService(IUnitOfWork uow, IChildPro
         await uow.BeginTransactionAsync(ct);
         try
         {
+            await uow.AcquireAccountAiActivityLockAsync(actor, ct);
             await uow.AcquireTransactionLockAsync(-actor, ct); await uow.AcquireTransactionLockAsync(storyId, ct);
             var story = await Owner(actor, storyId, ct);
             var receipt = await uow.Repository<StoryAuthoringOperation>().FirstOrDefaultAsync(x => x.StoryId == storyId && x.OperationId == request.OperationId, cancellationToken: ct);

@@ -388,7 +388,7 @@ public sealed class CreatorMediaUploadTests
         var originalMetadata=asset.ValidationResultJson;
         var path=asset.Url;
         // Represent a terminal root failure after automatic retries are exhausted.
-        var root=f.Store.Items<StoryGenerationJob>().Single(); root.Status=GenerationJobStatus.Failed;
+        var root=f.Store.Items<StoryGenerationJob>().Single(x=>x.Operation==GenerationJobOperation.GenerateMediaPackage); root.Status=GenerationJobStatus.Failed;
         var task=Assert.Single(f.Store.Items<MediaAssetGenerationTask>()); task.Status=GenerationJobStatus.Failed;
         await f.Media.RetryAsync(1,1);
         Assert.Equal(originalMetadata,asset.ValidationResultJson);
@@ -416,7 +416,7 @@ public sealed class CreatorMediaUploadTests
         var writes=f.Storage.Writes;
         f.Storage.FailReadOnce=true;
         Assert.False((await f.Media.ProcessBranchNextAsync(image?MediaType.Illustration:MediaType.TtsAudio)).Success);
-        var root=f.Store.Items<StoryGenerationJob>().Single(); root.Status=GenerationJobStatus.Failed;
+        var root=f.Store.Items<StoryGenerationJob>().Single(x=>x.Operation==GenerationJobOperation.GenerateMediaPackage); root.Status=GenerationJobStatus.Failed;
         f.Store.Items<MediaAssetGenerationTask>().Single(x=>x.MediaAssetId==candidate.Id).Status=GenerationJobStatus.Failed;
         await f.Media.RetryAsync(1,1);
         Assert.Equal(metadata,candidate.ValidationResultJson);
@@ -451,7 +451,7 @@ public sealed class CreatorMediaUploadTests
         var narrationUrl=narration.Url;
         var writes=f.Storage.Writes;
         await f.Media.ProcessNextAsync();
-        Assert.Equal(GenerationJobStatus.Failed,f.Store.Items<StoryGenerationJob>().Single().Status);
+        Assert.Equal(GenerationJobStatus.Failed,f.Store.Items<StoryGenerationJob>().Single(x=>x.Operation==GenerationJobOperation.GenerateMediaPackage).Status);
         f.Providers.FailAudioText=null;
         await f.Media.RetryAsync(1,1);
         Assert.True((await f.Media.ProcessNextAsync()).Success);

@@ -67,8 +67,13 @@ public class ExceptionHandlingMiddleware
 
         context.Response.StatusCode = statusCode;
 
-        var response = ApiResponse<object>.Fail(message,
-            exception is StoryPlatform.Application.Features.CreatorAssistance.AssistanceException assistance ? [assistance.Code] : null);
+        List<string>? errors = exception switch
+        {
+            StoryPlatform.Application.Features.CreatorAssistance.AssistanceException assistance => [assistance.Code],
+            AppException { ErrorCode: not null } appExWithCode => [appExWithCode.ErrorCode],
+            _ => null
+        };
+        var response = ApiResponse<object>.Fail(message, errors);
         var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
         var json = JsonSerializer.Serialize(response, jsonOptions);
 

@@ -131,6 +131,7 @@ public sealed partial class MediaGenerationService
         await _unitOfWork.BeginTransactionAsync(ct);
         try
         {
+            await _unitOfWork.AcquireAccountAiActivityLockAsync(userId, ct);
             await _unitOfWork.AcquireTransactionLockAsync(storyId, ct);
             var story = await LoadAuthorizedStoryAsync(userId, storyId, ct);
             await EnsureMutationPermissionAsync(story, userId, ct);
@@ -155,6 +156,7 @@ public sealed partial class MediaGenerationService
             StoryRegenerationLimits.EnsureAvailable(
                 type == MediaType.Illustration ? regeneration.Images : regeneration.Audio,
                 type == MediaType.Illustration ? "ảnh" : "audio");
+            await _aiActivity.AdmitStoryAsync(story.AuthorUserId, story, AiActivityMode.FullCreation, ct);
             var parent = await _unitOfWork.Repository<StoryGenerationJob>().FirstOrDefaultAsync(x => x.StoryId == storyId &&
                 x.StoryVersionId == version.Id && x.Operation == GenerationJobOperation.GenerateMediaPackage, cancellationToken: ct)
                 ?? throw new NotFoundException("Media job", storyId);
@@ -196,6 +198,7 @@ public sealed partial class MediaGenerationService
         await _unitOfWork.BeginTransactionAsync(ct);
         try
         {
+            await _unitOfWork.AcquireAccountAiActivityLockAsync(userId, ct);
             await _unitOfWork.AcquireTransactionLockAsync(storyId, ct);
             var story = await LoadAuthorizedStoryAsync(userId, storyId, ct);
             await EnsureMutationPermissionAsync(story, userId, ct);

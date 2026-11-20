@@ -52,6 +52,8 @@ public class UnitOfWork : IUnitOfWork
         }
     }
 
+    public bool HasActiveTransaction => _currentTransaction is not null;
+
     public async Task BeginTransactionAsync(CancellationToken cancellationToken = default)
     {
         if (_currentTransaction != null)
@@ -70,6 +72,20 @@ public class UnitOfWork : IUnitOfWork
 
         const long storyLockNamespace = 0x53544F5200000000L;
         var lockKey = storyLockNamespace | (uint)resourceId;
+        await _context.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock({lockKey})",
+            cancellationToken);
+    }
+
+    public async Task AcquireAccountAiActivityLockAsync(int accountUserId, CancellationToken cancellationToken = default)
+    {
+        if (_currentTransaction is null)
+        {
+            throw new InvalidOperationException("A transaction must be active before acquiring an account AI activity lock.");
+        }
+
+        const long accountAiActivityLockNamespace = 0x4149414300000000L;
+        var lockKey = accountAiActivityLockNamespace | (uint)accountUserId;
         await _context.Database.ExecuteSqlInterpolatedAsync(
             $"SELECT pg_advisory_xact_lock({lockKey})",
             cancellationToken);

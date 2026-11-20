@@ -1,8 +1,8 @@
 using System;
+using System.Diagnostics;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 using StoryPlatform.Application.Features.MediaGeneration;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
-using StoryPlatform.Infrastructure.AI;
+using StoryPlatform.Application.Features.MediaGeneration.Services;
 
 namespace StoryPlatform.Infrastructure.AI;
 
@@ -24,18 +24,22 @@ public sealed class GeminiSemanticSceneSegmentationProvider : ISemanticSceneSegm
     private readonly GeminiOptions _gemini;
     private readonly VertexOptions _vertex;
     private readonly ILogger<GeminiSemanticSceneSegmentationProvider> _logger;
+    private readonly IMediaOutboundPrivacyGuard _privacyGuard;
     private const string SemanticModel = "gemini-3.8-flash";
+    private const string OperationName = "SemanticSceneSegmentation";
 
     public GeminiSemanticSceneSegmentationProvider(
         HttpClient httpClient,
         IOptions<GeminiOptions> geminiOptions,
         IOptions<VertexOptions> vertexOptions,
-        ILogger<GeminiSemanticSceneSegmentationProvider> logger)
+        ILogger<GeminiSemanticSceneSegmentationProvider> logger,
+        IMediaOutboundPrivacyGuard? privacyGuard = null)
     {
         _httpClient = httpClient;
         _gemini = geminiOptions.Value;
         _vertex = vertexOptions.Value;
         _logger = logger;
+        _privacyGuard = privacyGuard ?? new DeterministicMediaOutboundPrivacyGuard();
         if (_httpClient.Timeout == Timeout.InfiniteTimeSpan || _httpClient.Timeout.TotalSeconds > _gemini.TimeoutSeconds)
             _httpClient.Timeout = TimeSpan.FromSeconds(_gemini.TimeoutSeconds);
     }
@@ -43,26 +47,75 @@ public sealed class GeminiSemanticSceneSegmentationProvider : ISemanticSceneSegm
     public async Task<IReadOnlyList<SceneSelection>> SegmentAsync(
         SceneSegmentationRequest request, CancellationToken cancellationToken = default)
     {
+        var provider = _vertex.UseVertex ? "VertexAI" : "Gemini";
+        var elapsed = Stopwatch.StartNew();
         ProviderMediaContextSerializer.Validate(request.MediaContext);
+
+        var prompt = BuildPrompt(request);
+        try
+        {
+            _privacyGuard.EnsureSafeForProvider(OperationName, prompt);
+        }
+        catch (MediaProviderPrivacyException ex)
+        {
+            MediaProviderDiagnostics.LogFailed(
+                _logger, OperationName, provider, SemanticModel, elapsed.Elapsed.TotalMilliseconds,
+                null, ex.ErrorCode, null, null, ex.GetType().Name);
+            throw;
+        }
+
         if (!_vertex.UseVertex && string.IsNullOrWhiteSpace(_gemini.ApiKey))
         {
             _logger.LogWarning("Gemini API key not configured and Vertex is disabled, returning empty — orchestrator will fallback");
             return Array.Empty<SceneSelection>();
         }
 
-        var prompt = BuildPrompt(request);
         var body = new { contents = new[] { new { role = "user", parts = new[] { new { text = prompt } } } } };
-        using var httpRequest = BuildRequest(body);
-        using var response = await _httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
+        var payloadJson = JsonSerializer.Serialize(body);
+        var requestBytes = Encoding.UTF8.GetByteCount(payloadJson);
+        MediaProviderDiagnostics.LogStarted(_logger, OperationName, provider, SemanticModel, prompt.Length, requestBytes);
 
-        var statusCode = response.StatusCode;
-        var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        if (!IsSuccess(statusCode))
+        try
         {
-            _logger.LogWarning("Gemini semantic segmentation HTTP {Status}: {Body}", (int)statusCode, Truncate(content, 300));
-            return Array.Empty<SceneSelection>();
+            using var httpRequest = BuildRequest(payloadJson);
+            using var response = await _httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
+
+            var statusCode = response.StatusCode;
+            var providerRequestId = MediaProviderDiagnostics.ExtractAllowlistedRequestId(response);
+            var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var responseBytes = Encoding.UTF8.GetByteCount(content);
+
+            if (!IsSuccess(statusCode))
+            {
+                var errorCode = $"GEMINI_SEGMENTATION_HTTP_{(int)statusCode}";
+                MediaProviderDiagnostics.LogFailed(
+                    _logger, OperationName, provider, SemanticModel, elapsed.Elapsed.TotalMilliseconds,
+                    (int)statusCode, errorCode, MediaProviderDiagnostics.GetRetryAfterSeconds(response),
+                    providerRequestId, nameof(HttpRequestException));
+                return Array.Empty<SceneSelection>();
+            }
+
+            var usage = MediaProviderDiagnostics.ExtractUsageMetadata(content);
+            var parsed = ParseResponse(content);
+            MediaProviderDiagnostics.LogCompleted(
+                _logger, OperationName, provider, SemanticModel, elapsed.Elapsed.TotalMilliseconds,
+                (int)statusCode, providerRequestId, responseBytes, "application/json", usage);
+            return parsed;
         }
-        return ParseResponse(content);
+        catch (OperationCanceledException)
+        {
+            MediaProviderDiagnostics.LogCancelled(
+                _logger, OperationName, provider, SemanticModel, elapsed.Elapsed.TotalMilliseconds,
+                cancellationToken.IsCancellationRequested);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            MediaProviderDiagnostics.LogFailed(
+                _logger, OperationName, provider, SemanticModel, elapsed.Elapsed.TotalMilliseconds,
+                null, "GEMINI_SEGMENTATION_FAILED", null, null, ex.GetType().Name);
+            throw;
+        }
     }
 
     private static bool IsSuccess(System.Net.HttpStatusCode code)
@@ -70,10 +123,6 @@ public sealed class GeminiSemanticSceneSegmentationProvider : ISemanticSceneSegm
         var n = (int)code;
         return n >= 200 && n < 300;
     }
-
-    private static string Truncate(string value, int max) =>
-        string.IsNullOrEmpty(value) ? string.Empty :
-        value.Length <= max ? value : value[..max];
 
     private static string BuildPrompt(SceneSegmentationRequest request)
     {
@@ -96,7 +145,7 @@ public sealed class GeminiSemanticSceneSegmentationProvider : ISemanticSceneSegm
         return sb.ToString();
     }
 
-    private HttpRequestMessage BuildRequest(object body)
+    private HttpRequestMessage BuildRequest(string payloadJson)
     {
         var url = VertexUrlResolver.Resolve(_vertex, _gemini, SemanticModel);
         var msg = new HttpRequestMessage(HttpMethod.Post, url);
@@ -104,7 +153,7 @@ public sealed class GeminiSemanticSceneSegmentationProvider : ISemanticSceneSegm
         {
             msg.Headers.Add("x-goog-api-key", _gemini.ApiKey);
         }
-        msg.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        msg.Content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
         return msg;
     }
 

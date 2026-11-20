@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -6,6 +7,7 @@ using Microsoft.Extensions.Options;
 using StoryPlatform.Application.Features.MediaGeneration;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
+using StoryPlatform.Application.Features.MediaGeneration.Services;
 
 namespace StoryPlatform.Infrastructure.AI;
 
@@ -13,18 +15,25 @@ namespace StoryPlatform.Infrastructure.AI;
 public sealed class GeminiIllustrationBeatPlanner : IIllustrationBeatPlanner
 {
     private const string Model = "gemini-3.8-flash";
+    private const string OperationName = "IllustrationBeatPlanning";
     private readonly HttpClient _httpClient;
     private readonly GeminiOptions _gemini;
     private readonly VertexOptions _vertex;
     private readonly ILogger<GeminiIllustrationBeatPlanner> _logger;
+    private readonly IMediaOutboundPrivacyGuard _privacyGuard;
 
-    public GeminiIllustrationBeatPlanner(HttpClient httpClient, IOptions<GeminiOptions> gemini,
-        IOptions<VertexOptions> vertex, ILogger<GeminiIllustrationBeatPlanner> logger)
+    public GeminiIllustrationBeatPlanner(
+        HttpClient httpClient,
+        IOptions<GeminiOptions> gemini,
+        IOptions<VertexOptions> vertex,
+        ILogger<GeminiIllustrationBeatPlanner> logger,
+        IMediaOutboundPrivacyGuard? privacyGuard = null)
     {
         _httpClient = httpClient;
         _gemini = gemini.Value;
         _vertex = vertex.Value;
         _logger = logger;
+        _privacyGuard = privacyGuard ?? new DeterministicMediaOutboundPrivacyGuard();
         if (_httpClient.Timeout == Timeout.InfiniteTimeSpan || _httpClient.Timeout.TotalSeconds > _gemini.TimeoutSeconds)
             _httpClient.Timeout = TimeSpan.FromSeconds(_gemini.TimeoutSeconds);
     }
@@ -32,8 +41,9 @@ public sealed class GeminiIllustrationBeatPlanner : IIllustrationBeatPlanner
     public async Task<IReadOnlyList<IllustrationBeatSelection>> PlanAsync(
         IllustrationBeatPlanRequest request, CancellationToken cancellationToken = default)
     {
+        var provider = _vertex.UseVertex ? "VertexAI" : "Gemini";
+        var elapsed = Stopwatch.StartNew();
         var serializedContext = ProviderMediaContextSerializer.Serialize(request.MediaContext);
-        if (!_vertex.UseVertex && string.IsNullOrWhiteSpace(_gemini.ApiKey)) return [];
         var prompt = new StringBuilder()
             .AppendLine("Plan 1 to 3 distinct illustrations for this children's story scene.")
             .AppendLine("Two illustrations may depict distinct moments within the SAME paragraph.")
@@ -45,19 +55,47 @@ public sealed class GeminiIllustrationBeatPlanner : IIllustrationBeatPlanner
             .AppendLine(serializedContext)
             .AppendLine("Scene visual description:").AppendLine(request.SceneVisualDescription)
             .AppendLine("SceneText:").Append(request.SceneText).ToString();
+
+        try
+        {
+            _privacyGuard.EnsureSafeForProvider(OperationName, prompt);
+        }
+        catch (MediaProviderPrivacyException ex)
+        {
+            MediaProviderDiagnostics.LogFailed(
+                _logger, OperationName, provider, Model, elapsed.Elapsed.TotalMilliseconds,
+                null, ex.ErrorCode, null, null, ex.GetType().Name);
+            throw;
+        }
+
+        if (!_vertex.UseVertex && string.IsNullOrWhiteSpace(_gemini.ApiKey)) return [];
+
         var body = new { contents = new[] { new { role = "user", parts = new[] { new { text = prompt } } } } };
+        var payloadJson = JsonSerializer.Serialize(body);
+        var requestBytes = Encoding.UTF8.GetByteCount(payloadJson);
+        MediaProviderDiagnostics.LogStarted(_logger, OperationName, provider, Model, prompt.Length, requestBytes);
+
         using var message = new HttpRequestMessage(HttpMethod.Post, VertexUrlResolver.Resolve(_vertex, _gemini, Model));
         if (!_vertex.UseVertex) message.Headers.Add("x-goog-api-key", _gemini.ApiKey);
-        message.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        message.Content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
         try
         {
             using var response = await _httpClient.SendAsync(message, cancellationToken).ConfigureAwait(false);
+            var providerRequestId = MediaProviderDiagnostics.ExtractAllowlistedRequestId(response);
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("Illustration beat planning HTTP {Status}", (int)response.StatusCode);
+                var errorCode = $"GEMINI_BEAT_PLANNER_HTTP_{(int)response.StatusCode}";
+                MediaProviderDiagnostics.LogFailed(
+                    _logger, OperationName, provider, Model, elapsed.Elapsed.TotalMilliseconds,
+                    (int)response.StatusCode, errorCode, MediaProviderDiagnostics.GetRetryAfterSeconds(response),
+                    providerRequestId, nameof(HttpRequestException));
                 return [];
             }
+
             var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var responseBytes = Encoding.UTF8.GetByteCount(json);
+            var usage = MediaProviderDiagnostics.ExtractUsageMetadata(json);
+
             using var envelope = JsonDocument.Parse(json);
             var parts = envelope.RootElement.GetProperty("candidates")[0].GetProperty("content").GetProperty("parts");
             var answer = parts.EnumerateArray().First(x => x.TryGetProperty("text", out _)).GetProperty("text").GetString() ?? "";
@@ -69,7 +107,13 @@ public sealed class GeminiIllustrationBeatPlanner : IIllustrationBeatPlanner
                 if (answer.EndsWith("```", StringComparison.Ordinal)) answer = answer[..^3].Trim();
             }
             using var result = JsonDocument.Parse(answer);
-            if (result.RootElement.ValueKind != JsonValueKind.Array) return [];
+            if (result.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                MediaProviderDiagnostics.LogCompleted(
+                    _logger, OperationName, provider, Model, elapsed.Elapsed.TotalMilliseconds,
+                    (int)response.StatusCode, providerRequestId, responseBytes, "application/json", usage);
+                return [];
+            }
             var selections = new List<IllustrationBeatSelection>();
             var searchStart = 0;
             foreach (var beat in result.RootElement.EnumerateArray())
@@ -77,18 +121,37 @@ public sealed class GeminiIllustrationBeatPlanner : IIllustrationBeatPlanner
                 var anchor = beat.GetProperty("anchorText").GetString() ?? "";
                 var start = string.IsNullOrWhiteSpace(anchor) ? -1 :
                     request.SceneText.IndexOf(anchor, searchStart, StringComparison.Ordinal);
-                if (start < 0) return [];
+                if (start < 0)
+                {
+                    MediaProviderDiagnostics.LogCompleted(
+                        _logger, OperationName, provider, Model, elapsed.Elapsed.TotalMilliseconds,
+                        (int)response.StatusCode, providerRequestId, responseBytes, "application/json", usage);
+                    return [];
+                }
                 selections.Add(new IllustrationBeatSelection(beat.GetProperty("beatOrder").GetInt32(),
                     start, start + anchor.Length, beat.GetProperty("visualFocus").GetString() ?? ""));
                 searchStart = start;
             }
+            MediaProviderDiagnostics.LogCompleted(
+                _logger, OperationName, provider, Model, elapsed.Elapsed.TotalMilliseconds,
+                (int)response.StatusCode, providerRequestId, responseBytes, "application/json", usage);
             return selections;
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (OperationCanceledException)
+        {
+            MediaProviderDiagnostics.LogCancelled(
+                _logger, OperationName, provider, Model, elapsed.Elapsed.TotalMilliseconds,
+                cancellationToken.IsCancellationRequested);
+            if (cancellationToken.IsCancellationRequested) throw;
+            return [];
+        }
         catch (MediaProviderContextException) { throw; }
+        catch (MediaProviderPrivacyException) { throw; }
         catch (Exception exception)
         {
-            _logger.LogWarning(exception, "Illustration beat planning unavailable; falling back to one beat");
+            MediaProviderDiagnostics.LogFailed(
+                _logger, OperationName, provider, Model, elapsed.Elapsed.TotalMilliseconds,
+                null, "GEMINI_BEAT_PLANNER_UNAVAILABLE", null, null, exception.GetType().Name);
             return [];
         }
     }

@@ -30,6 +30,10 @@ public sealed class ListeningHttpContractTests
     [InlineData("FillBlank", "9-10")]
     [InlineData("PicturePrediction", "6-8")]
     [InlineData("EventOrdering", "9-10")]
+    [InlineData("ReadAloud", "6-8")]
+    [InlineData("ReadAloud", "9-10")]
+    [InlineData("ReadAloud", "Age_6_8")]
+    [InlineData("ReadAloud", "Age_9_10")]
     public async Task Core_http_adapter_calls_real_ai_routes_and_maps_each_type(string type, string age)
     {
         var model = new Model(Output(type));
@@ -44,7 +48,7 @@ public sealed class ListeningHttpContractTests
         Assert.Equal("listening-http", response.RequestId);
         Assert.Equal(snapshot.Version, response.Metadata.PromptVersion);
         Assert.Equal(1, model.Calls);
-        Assert.Equal(1, response.Checkpoints.Count + response.RolePlays.Count + response.FillBlanks.Count + response.PicturePredictions.Count + response.EventOrderings.Count);
+        Assert.Equal(1, response.Checkpoints.Count + response.RolePlays.Count + response.FillBlanks.Count + response.PicturePredictions.Count + response.EventOrderings.Count + response.ReadAloudPassages.Count);
         Assert.Contains("previousErrors", model.Prompt);
         Assert.Contains("AllowedBlockIds".ToLowerInvariant(), model.Prompt.ToLowerInvariant());
         Assert.Contains("{{context}}", snapshot.Template);
@@ -90,6 +94,18 @@ public sealed class ListeningHttpContractTests
         Assert.StartsWith("PINNED FIXTURE", model.Prompt);
     }
 
+    [Theory]
+    [InlineData("{\"items\":[{\"blockId\":\"P1\",\"passageQuote\":\"Thỏ hỏi: Có ai ở đó không?\"}]}")]
+    [InlineData("{\"items\":[{\"blockId\":\"P1\",\"passageQuote\":\"Thỏ hỏi: Có ai ở đó không?\",\"praiseFeedback\":\"Con đã thử rồi!\",\"afterBlockId\":\"P3\"}]}")]
+    public async Task ReadAloud_rejects_missing_feedback_and_extra_anchor_fields(string output)
+    {
+        var model = new Model(output);
+        using var server = Server(model);
+        var error = await Assert.ThrowsAsync<AIServiceRequestException>(() => Client(server).GenerateListeningInteractionAsync(Request("ReadAloud", "6-8")));
+        Assert.Equal("AI_OUTPUT_INVALID", error.ErrorCode);
+        Assert.Equal(1, model.Calls);
+    }
+
     [Fact]
     public async Task Wrong_age_or_missing_internal_key_never_calls_model()
     {
@@ -127,7 +143,7 @@ public sealed class ListeningHttpContractTests
         RequestId = "listening-http", InteractionType = type, Count = 1, AgeBand = age, Language = "vi",
         Story = new() { Title = "Thỏ con", Lesson = "Giúp đỡ" },
         Blocks = [new("P1", "Thỏ hỏi: Có ai ở đó không?"), new("P2", "Bác Gấu giúp Thỏ."), new("P3", "Thỏ trở về.")],
-        LastBlockId = "P3", AllowedBlockIds = type == "EventOrdering" ? [] : [["P1"]], DialogueBlockIds = ["P1"]
+        LastBlockId = "P3", AllowedBlockIds = type is "EventOrdering" or "ReadAloud" ? [] : [["P1"]], DialogueBlockIds = ["P1"]
     };
 
     private static string Output(string type)
@@ -138,6 +154,7 @@ public sealed class ListeningHttpContractTests
             "RolePlay" => """{"afterBlockId":"P1","characterName":"Thỏ","lineQuote":"Có ai ở đó không?","praiseFeedback":"Con đã thử rồi!"}""",
             "FillBlank" => """{"afterBlockId":"P1","sentenceQuote":"Thỏ hỏi: Có ai ở đó không?","hiddenWord":"Thỏ","acceptedAnswers":["Thỏ"],"hint":"Bạn có tai dài","matchFeedback":"Con nhớ giỏi quá!","suggestFeedback":"Bạn trong truyện là Thỏ đó!"}""",
             "PicturePrediction" => """{"afterBlockId":"P1","revealBlockId":"P2","question":"Ai sẽ giúp Thỏ?","sourceQuote":"Thỏ hỏi: Có ai ở đó không?","waitFeedback":"Mình nghe tiếp nhé!","options":[{"label":"Bác Gấu","imageDescription":"Bác Gấu hiền lành","feedback":"Bác Gấu giúp Thỏ!","isMatch":true},{"label":"Bạn Sóc","imageDescription":"Bạn Sóc nhỏ","feedback":"Con có ý hay!","isMatch":false}]}""",
+            "ReadAloud" => """{"blockId":"P1","passageQuote":"Thỏ hỏi: Có ai ở đó không?","praiseFeedback":"Con đã thử rồi!"}""",
             _ => """{"events":[{"order":1,"blockId":"P1","text":"Thỏ hỏi","sourceQuote":"Có ai ở đó không?"},{"order":2,"blockId":"P2","text":"Gấu giúp Thỏ","sourceQuote":"Bác Gấu giúp Thỏ."},{"order":3,"blockId":"P3","text":"Thỏ trở về","sourceQuote":"Thỏ trở về."}],"matchFeedback":"Con nhớ giỏi quá!","retryFeedback":"Mình nghe lại nhé!"}"""
         };
         return "{\"items\":[" + item + "]}";

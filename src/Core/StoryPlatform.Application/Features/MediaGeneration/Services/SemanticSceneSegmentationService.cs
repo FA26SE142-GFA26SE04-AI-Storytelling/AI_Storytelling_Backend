@@ -44,6 +44,10 @@ public sealed class SemanticSceneSegmentationService : ISceneSegmentationProvide
         {
             throw;
         }
+        catch (MediaProviderPrivacyException)
+        {
+            throw;
+        }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             _logger.LogWarning(ex, "Semantic scene segmentation failed, falling back to paragraph-based");

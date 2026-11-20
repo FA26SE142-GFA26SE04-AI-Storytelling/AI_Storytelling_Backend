@@ -17,6 +17,8 @@ using StoryPlatform.Application.Features.ContentGeneration.Quality;
 using StoryPlatform.Application.Features.ExistingStories.Interfaces;
 using StoryPlatform.Application.Features.ListeningInteractions.Services;
 using StoryPlatform.Application.Features.StoryReview.Interfaces;
+using StoryPlatform.Application.Features.TokenQuota.Interfaces;
+using StoryPlatform.Application.Features.TokenQuota.Services;
 using StoryPlatform.Contracts.AI.Models;
 using StoryPlatform.Contracts.AI.Requests;
 using StoryPlatform.Contracts.AI.Responses;
@@ -45,6 +47,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
     private readonly ILearningBatchService? _learningBatches;
     private readonly ILogger<ContentGenerationService> _logger;
     private readonly IAccountAiActivityService _aiActivity;
+    private readonly ITokenQuotaService? _tokenQuota;
 
     public ContentGenerationService(
         IUnitOfWork unitOfWork,
@@ -57,8 +60,10 @@ public sealed partial class ContentGenerationService : IContentGenerationService
         IGrayZoneEvaluator? moderation = null, GrayZoneWorkflowService? grayZone = null, ILearningBatchService? learningBatches = null,
         ILogger<ContentGenerationService>? logger = null,
         ListeningInteractionGenerator? listeningGenerator = null, IContentGenerationJobLease? leaseRenewer = null,
+        ITokenQuotaService? tokenQuota = null,
         IAccountAiActivityService? aiActivity = null)
     {
+        _tokenQuota = tokenQuota;
         _unitOfWork = unitOfWork;
         _aiClient = aiClient;
         _qualityEvaluator = qualityEvaluator;
@@ -268,6 +273,10 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             {
                 throw new ConflictException("Story không có content generation thất bại hợp lệ để retry.");
             }
+
+            // Lần lỗi trước đã trả lượt: thử lại phải giữ lại 1 lượt (409 nếu hết), cùng transaction với job mới.
+            if (_tokenQuota is not null)
+                await _tokenQuota.HoldStoryCreditForRetryAsync(storyId, cancellationToken);
 
             await _unitOfWork.Repository<StoryGenerationJob>().AddAsync(new StoryGenerationJob
             {
@@ -811,6 +820,9 @@ public sealed partial class ContentGenerationService : IContentGenerationService
             job.Stage = JobStage.ContentStable;
             job.CompletedAt = null;
             _unitOfWork.Repository<StoryGenerationJob>().Update(job);
+            // AI đã sinh xong nội dung đạt kiểm tra: lượt đang giữ được trừ chính thức (Luồng 2, 2d). Từ vựng, quiz,
+            // tương tác và các lần sinh lại sau đó không tính thêm; lỗi sau bước này không trả lượt.
+            await TokenQuotaService.ConsumeStoryCreditAsync(_unitOfWork, job.StoryId, cancellationToken);
 
             return true;
         }, cancellationToken);

@@ -127,6 +127,37 @@ public sealed class AiActivityPersistenceRegressionTests
     }
 
     [Fact]
+    public async Task Terminal_content_failure_refunds_held_credit_and_releases_activity_in_the_same_finalization()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        connection.CreateFunction("pg_advisory_xact_lock", (long _) => 0L);
+        await using (var db = Db(connection))
+        {
+            await db.Database.EnsureCreatedAsync();
+            db.Stories.Add(new Story { Id = 1, AuthorUserId = 10, Status = StoryStatus.OutlineReview,
+                AiActivityMode = AiActivityMode.FullCreation, AiActivityStartedAt = DateTime.UtcNow.AddMinutes(-1) });
+            db.StoryVersions.Add(new StoryVersion { Id = 10, StoryId = 1, IsCurrent = true });
+            db.StoryGenerationJobs.Add(new StoryGenerationJob { Id = 1, StoryId = 1, BaseStoryVersionId = 10,
+                Operation = GenerationJobOperation.GenerateContent, Status = GenerationJobStatus.Processing,
+                ConcurrencyToken = "owner", StartedAt = DateTime.UtcNow });
+            db.Set<CreditLot>().Add(new CreditLot { Id = 20, UserId = 10, Total = 1, Remaining = 0 });
+            db.Set<CreditUsage>().Add(new CreditUsage { Id = 30, UserId = 10, LotId = 20, StoryId = 1,
+                Amount = 1, Reason = CreditUsageReason.StoryRequest });
+            await db.SaveChangesAsync();
+        }
+        using var provider = new ServiceCollection().AddScoped<ApplicationDbContext>(_ => Db(connection))
+            .AddScoped<IUnitOfWork, UnitOfWork>().BuildServiceProvider();
+        await new ContentGenerationJobFailureFinalizer(provider.GetRequiredService<IServiceScopeFactory>())
+            .MarkFailedAsync(1, "owner", "TERMINAL");
+        await using var verify = Db(connection);
+        Assert.Equal(AiActivityMode.None, (await verify.Stories.SingleAsync()).AiActivityMode);
+        Assert.Equal(1, (await verify.Set<CreditLot>().SingleAsync()).Remaining);
+        Assert.NotNull((await verify.Set<CreditUsage>().SingleAsync()).RefundedAt);
+        Assert.Equal(GenerationJobStatus.Failed, (await verify.StoryGenerationJobs.SingleAsync()).Status);
+    }
+
+    [Fact]
     public async Task Recovered_check_cannot_record_a_late_provider_result()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

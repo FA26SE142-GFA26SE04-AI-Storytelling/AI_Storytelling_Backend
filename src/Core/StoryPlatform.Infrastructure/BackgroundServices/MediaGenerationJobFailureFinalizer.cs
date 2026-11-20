@@ -5,6 +5,7 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Features.AiActivity.Services;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Domain.Entities;
+using StoryPlatform.Application.Features.TokenQuota.Services;
 using StoryPlatform.Domain.Enums;
 using StoryPlatform.Infrastructure.Persistence;
 
@@ -77,6 +78,7 @@ public sealed class MediaGenerationJobFailureFinalizer : IMediaGenerationJobFail
             job.ConcurrencyToken = Guid.NewGuid().ToString("N");
             unitOfWork.Repository<StoryGenerationJob>().Update(job);
             await unitOfWork.SaveChangesAsync(cancellationToken);
+            await TokenQuotaService.ReleaseStoryCreditIfIdleAsync(unitOfWork, job.StoryId, cancellationToken);
             await aiActivity.ReconcileStoryAiActivityAsync(storyInfo.AuthorUserId, jobInfo.StoryId, cancellationToken, failedJobId: job.Id);
             await unitOfWork.CommitTransactionAsync(cancellationToken);
         }

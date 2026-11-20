@@ -97,7 +97,8 @@ public class RevenueStatisticsService : IRevenueStatisticsService
             lot => lot.CreditType == CreditType.AI && lot.CreatedAt >= from && lot.CreatedAt < toExclusive,
             cancellationToken: cancellationToken);
         var usages = await _unitOfWork.Repository<CreditUsage>().FindAsync(
-            usage => usage.Reason != CreditUsageReason.PublicSubmission
+            // Lượt AI đã trả lại (lỗi, bị chặn, từ chối dàn ý) không tính là đã dùng.
+            usage => usage.Reason != CreditUsageReason.PublicSubmission && usage.RefundedAt == null
                      && usage.CreatedAt >= from && usage.CreatedAt < toExclusive,
             cancellationToken: cancellationToken);
 

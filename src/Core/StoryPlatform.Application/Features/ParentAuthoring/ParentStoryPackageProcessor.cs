@@ -22,7 +22,8 @@ namespace StoryPlatform.Application.Features.ParentAuthoring;
 public sealed partial class ParentStoryPackageProcessor(IUnitOfWork uow, IChildProfileAccessGuard guard, IAIStoryGenerationClient ai,
     ILearningBatchService batches, ListeningInteractionGenerator listening, ILogger<ParentStoryPackageProcessor> logger,
     IGrayZoneEvaluator moderation, StoryPlatform.Application.Features.MediaGeneration.Interfaces.IStorySegmentService segments,
-    IAccountAiActivityService? aiActivity = null)
+    StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService? tokenQuota = null,
+        IAccountAiActivityService? aiActivity = null)
 {
     private readonly IAccountAiActivityService _aiActivity =
         aiActivity ?? new StoryPlatform.Application.Features.AiActivity.Services.AccountAiActivityService(uow);
@@ -345,6 +346,8 @@ public sealed partial class ParentStoryPackageProcessor(IUnitOfWork uow, IChildP
             await uow.SaveChangesAsync(ct);
             if (!retry && storyInfo is not null)
                 await _aiActivity.ReconcileStoryAiActivityAsync(storyInfo.AuthorUserId, observed.StoryId, ct);
+            // Lỗi hẳn (không thử lại): trả lượt đang giữ của truyện nếu không còn gói nào đang chạy (Luồng 2).
+            if (!retry && tokenQuota != null) await StoryPlatform.Application.Features.TokenQuota.Services.TokenQuotaService.ReleaseStoryCreditIfIdleAsync(uow, p.StoryId, ct);
             await uow.CommitTransactionAsync(ct);
         }
         catch (ConflictException) { await uow.RollbackTransactionAsync(CancellationToken.None); uow.DiscardTrackedChanges(); }

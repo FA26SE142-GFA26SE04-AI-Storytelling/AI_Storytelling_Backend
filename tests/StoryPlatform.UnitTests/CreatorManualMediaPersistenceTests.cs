@@ -23,7 +23,7 @@ public sealed class CreatorManualMediaPersistenceTests
     {
         protected override void OnModelCreating(ModelBuilder b)
         {
-            Type[] types = [typeof(UserAccount), typeof(Story), typeof(StoryVersion), typeof(StoryGenerationJob),
+            Type[] types = [typeof(CreditUsage), typeof(CreditLot), typeof(UserAccount), typeof(Story), typeof(StoryVersion), typeof(StoryGenerationJob),
                 typeof(StoryGenerationRequest), typeof(StoryAssistanceTask), typeof(ParentStoryPackage),
                 typeof(MediaContext), typeof(ModerationItem), typeof(ContentCategory), typeof(StoryScene),
                 typeof(StorySegment), typeof(IllustrationBeat), typeof(MediaAsset), typeof(StoryAuthoringOperation), typeof(MediaAssetGenerationTask),

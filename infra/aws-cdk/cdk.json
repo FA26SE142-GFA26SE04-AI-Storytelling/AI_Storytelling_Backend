@@ -8,6 +8,8 @@
     "vertexProjectId": "gen-lang-client-0675088605",
     "sepayBankAccountNumber": "34721112004",
     "sepayBankCode": "TPBank",
-    "sepayAccountName": "DANG LE ANH TUAN"
+    "sepayAccountName": "DANG LE ANH TUAN",
+    "mediaCdnPublicKey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnTuCUQkUZ3hLOpJjCtuk\nIEYhioDGQzoF/zP+FRLl5fuSRbsQFkYQI9Dhq/AYV9zLabYU53U7nLPSP1acpnHR\nnmHevPnV09iJmSOfl6W2Tnf8XNrgmSZQ3XbJ1g4azYxDJwDB6HKchzd5sb0DxXV5\nP7H9+AjbxuHmriGXZhVNpDUZ+Ag9TZRQOYcPEizLz4+IVKEqtiL0rD093oulmKlu\nLJV3EoRKhJOA9R/ObDxzSerw7ZCNqE29DV/njPkSHyEeHaHo0yez+o4X0ETlyDrs\n0aS56tc2I4hJgtcXCo8oq8AAFcN64wsRu9RkixaOnkiluJqeXZFZSBKNzOLl+58B\nRwIDAQAB\n-----END PUBLIC KEY-----\n",
+    "mediaStorage": "s3"
   }
 }

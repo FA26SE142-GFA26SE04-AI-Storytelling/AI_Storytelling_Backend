@@ -5,6 +5,7 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
 using StoryPlatform.Application.Features.Moderation.DTOs;
 using StoryPlatform.Application.Features.Notifications.Interfaces;
+using StoryPlatform.Application.Features.TokenQuota.Services;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -241,6 +242,10 @@ public sealed class GrayZoneWorkflowService(IUnitOfWork uow, IAuditLogWriter aud
                 if (clear) job.AttemptNo = 0;
                 uow.Repository<StoryGenerationJob>().Update(job);
             }
+            // Moderator chặn: truyện không đi tiếp, trả lượt AI đang giữ. Truyện đã được trừ lượt (chặn bản sinh lại)
+            // không bị ảnh hưởng.
+            if (!clear)
+                await TokenQuotaService.ReleaseStoryCreditAsync(uow, story.Id, ct);
             uow.Repository<ModerationItem>().Update(item); uow.Repository<StoryVersion>().Update(version);
             await audit.LogAsync(userId, "GrayZone" + request.Decision, nameof(ModerationItem), id, null,
                 new { versionId = version.Id, reason = request.Reason.Trim() }, ct);

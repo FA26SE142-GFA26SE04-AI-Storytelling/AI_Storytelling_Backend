@@ -30,20 +30,12 @@ public partial class TokenQuotaService
         }
     }
 
-    public async Task IncrementCreatorUsageAsync(int creatorUserId, CancellationToken cancellationToken = default)
+    public async Task IncrementCreatorUsageAsync(int creatorUserId, Story? story, CancellationToken cancellationToken = default)
     {
         // Khoá theo tài khoản trước khi đọc lô, như IncrementUsageAsync của phụ huynh.
         await _unitOfWork.AcquireTransactionLockAsync(creatorUserId, cancellationToken);
-        var now = DateTime.UtcNow;
-        await EnsureCreatorMonthlyGrantedAsync(creatorUserId, now, cancellationToken);
-
-        var lot = OrderForUse(await GetUsableLotsAsync(creatorUserId, now, cancellationToken)).FirstOrDefault()
-                  ?? throw new ConflictException(CreatorOutOfAiCreditsMessage);
-        lot.Remaining -= 1;
-        lot.UpdatedAt = now;
-        _unitOfWork.Repository<CreditLot>().Update(lot);
-        await RecordUsageAsync(lot, 1, CreditUsageReason.StoryRequest, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await EnsureCreatorMonthlyGrantedAsync(creatorUserId, DateTime.UtcNow, cancellationToken);
+        await HoldOneCreditAsync(creatorUserId, story, CreatorOutOfAiCreditsMessage, cancellationToken);
     }
 
     public async Task ChargeSubmissionAsync(
@@ -121,50 +113,65 @@ public partial class TokenQuotaService
     public async Task<CreatorQuotaDto> GetCreatorQuotaAsync(int creatorUserId, CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;
-        await EnsureCreatorMonthlyGrantedAsync(creatorUserId, now, cancellationToken);
+        var tier = await EnsureCreatorMonthlyGrantedAsync(creatorUserId, now, cancellationToken);
         var ai = await GetUsableLotsAsync(creatorUserId, now, cancellationToken);
         var submit = await GetUsableLotsAsync(creatorUserId, now, cancellationToken, CreditType.Submit);
         var settings = await SettingsAsync(cancellationToken);
+        var partner = tier == CreatorTier.Partner;
 
         return new CreatorQuotaDto
         {
-            AiCredits = Balance(ai, settings.CreatorMonthlyAiCredits),
-            SubmitCredits = Balance(submit, settings.CreatorMonthlySubmitCredits),
+            AiCredits = Balance(ai, partner ? settings.PartnerMonthlyAiCredits : settings.CreatorMonthlyAiCredits),
+            SubmitCredits = Balance(submit, partner ? settings.PartnerMonthlySubmitCredits : settings.CreatorMonthlySubmitCredits),
             MonthlyAllowanceResetsAt = CurrentCreatorMonthEnd(now)
         };
     }
 
     /// <summary>
     /// Cấp hạn mức tháng cho Creator đang Active ở lần đầu cần dùng trong tháng (thay cho worker chạy ngày 1;
-    /// kết quả với Creator như nhau). Không cộng dồn: lô tháng trước đã hết hạn cuối tháng.
+    /// kết quả với Creator như nhau). Không cộng dồn: lô tháng trước đã hết hạn cuối tháng. Trước khi cấp, Creator được
+    /// xét cấp đối tác cho tháng này (Luồng 5, 5g) để Creator vừa lên đối tác nhận ngay hạn mức 6 + 10. Trả cấp hiện tại.
     /// </summary>
-    private async Task EnsureCreatorMonthlyGrantedAsync(int creatorUserId, DateTime now, CancellationToken cancellationToken)
+    private async Task<CreatorTier> EnsureCreatorMonthlyGrantedAsync(int creatorUserId, DateTime now, CancellationToken cancellationToken)
     {
         var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(creatorUserId, cancellationToken);
         if (user is not { Role: UserRole.ContentCreator, Status: AccountStatus.Active } || user.IsDeleted)
         {
-            return;
+            return user?.CreatorTier ?? CreatorTier.Standard;
         }
 
         var monthEnd = CurrentCreatorMonthEnd(now);
         var repo = _unitOfWork.Repository<CreditLot>();
-        var granted = false;
+        var missing = new List<CreditType>();
+        foreach (var type in new[] { CreditType.AI, CreditType.Submit })
+        {
+            if (!await repo.ExistsAsync(
+                    lot => lot.UserId == creatorUserId && lot.Source == CreditSource.CreatorMonthly
+                           && lot.CreditType == type && lot.ExpiresAt == monthEnd,
+                    cancellationToken))
+            {
+                missing.Add(type);
+            }
+        }
+
+        if (missing.Count == 0)
+        {
+            return user.CreatorTier;
+        }
+
+        // Xét cấp chạy trước khi cấp hạn mức tháng (UC-L2-11); kết quả đọc từ scope riêng nên không dùng user đang track.
+        var tier = _creatorTiers == null
+            ? user.CreatorTier
+            : await _creatorTiers.EnsureEvaluatedAsync(creatorUserId, now, cancellationToken);
+        var partner = tier == CreatorTier.Partner;
+
         // Lô đã cấp trong tháng giữ số cũ; cấu hình mới áp dụng từ lần cấp sau.
         var settings = await SettingsAsync(cancellationToken);
-        foreach (var (type, amount) in new[]
-                 {
-                     (CreditType.AI, settings.CreatorMonthlyAiCredits), (CreditType.Submit, settings.CreatorMonthlySubmitCredits)
-                 })
+        foreach (var type in missing)
         {
-            var exists = await repo.ExistsAsync(
-                lot => lot.UserId == creatorUserId && lot.Source == CreditSource.CreatorMonthly
-                       && lot.CreditType == type && lot.ExpiresAt == monthEnd,
-                cancellationToken);
-            if (exists)
-            {
-                continue;
-            }
-
+            var amount = type == CreditType.AI
+                ? partner ? settings.PartnerMonthlyAiCredits : settings.CreatorMonthlyAiCredits
+                : partner ? settings.PartnerMonthlySubmitCredits : settings.CreatorMonthlySubmitCredits;
             await repo.AddAsync(
                 new CreditLot
                 {
@@ -172,13 +179,10 @@ public partial class TokenQuotaService
                     Total = amount, Remaining = amount, ExpiresAt = monthEnd
                 },
                 cancellationToken);
-            granted = true;
         }
 
-        if (granted)
-        {
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return tier;
     }
 
     private async Task<CreditUsage?> FindActiveSubmissionUsageAsync(int moderationItemId, CancellationToken cancellationToken) =>

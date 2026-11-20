@@ -11,6 +11,43 @@ namespace StoryPlatform.UnitTests.Features.ReadingSessions;
 
 public class ParentReadingFeedbackServiceTests
 {
+    [Fact]
+    public async Task ListAsync_ShowsEmotionsAndReflectionBrief()
+    {
+        var session = _h.AddSession(SessionStatus.Completed);
+        session.CompletedAt = DateTime.UtcNow;
+        var scene = _h.AddScene(3, "Cảnh ba.");
+        _h.Reflections.Add(new StoryReflection
+        {
+            Id = 1, ReadingSessionId = session.Id, ChildProfileId = ReadingHarness.Child, StoryId = ReadingHarness.Story,
+            StoryVersionId = ReadingHarness.Version, Emotions = new() { "Scared" }, FavoriteSceneId = scene.Id,
+            NoteAudioStoragePath = "n.webm"
+        });
+
+        var item = Assert.Single((await _sut.ListAsync(7, ReadingHarness.Child, new ParentReadingFeedbackQueryDto())).Items);
+
+        Assert.Equal("Hơi sợ", Assert.Single(item.Emotions).Label);
+        Assert.Equal((scene.Id, (int?)3, false, true),
+            (item.Reflection!.FavoriteSceneId, item.Reflection.FavoriteSceneIndex, item.Reflection.HasNoteText, item.Reflection.HasNoteRecording));
+    }
+
+    [Fact]
+    public async Task GetOverviewAsync_CountsEmotionsOfCompletedSessions()
+    {
+        var first = _h.AddSession(SessionStatus.Completed);
+        first.CompletedAt = DateTime.UtcNow;
+        var second = _h.AddSession(SessionStatus.Completed);
+        second.CompletedAt = DateTime.UtcNow;
+        _h.Reflections.Add(new StoryReflection { Id = 1, ReadingSessionId = first.Id, ChildProfileId = ReadingHarness.Child, Emotions = new() { "Happy", "Scared" } });
+        _h.Reflections.Add(new StoryReflection { Id = 2, ReadingSessionId = second.Id, ChildProfileId = ReadingHarness.Child, Emotions = new() { "Scared" } });
+
+        var overview = await _sut.GetOverviewAsync(7, ReadingHarness.Child, new ParentReadingOverviewQueryDto());
+
+        Assert.Equal(2, overview.EmotionCounts["Scared"]);
+        Assert.Equal(1, overview.EmotionCounts["Happy"]);
+        Assert.Equal(0, overview.EmotionCounts["Sad"]);
+        Assert.Equal(7, overview.EmotionCounts.Count);
+    }
     private const int Parent = 7;
 
     private readonly ReadingHarness _h = new();

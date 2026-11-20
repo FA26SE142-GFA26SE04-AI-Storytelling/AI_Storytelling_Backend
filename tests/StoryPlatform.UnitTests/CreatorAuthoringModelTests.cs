@@ -46,7 +46,15 @@ public sealed class CreatorAuthoringModelTests
             x.Properties.Select(p => p.Name).SequenceEqual([nameof(StoryVersion.StoryId), nameof(StoryVersion.VersionNo)]));
         Assert.Contains(context.Model.FindEntityType(typeof(StoryAuthoringOperation))!.GetIndexes(), x => x.IsUnique && x.Properties.Any(p => p.Name == nameof(StoryAuthoringOperation.OperationId)));
         Assert.Contains(context.Model.FindEntityType(typeof(StoryVersionAuthoringMetadata))!.GetIndexes(), x => x.IsUnique && x.Properties.Any(p => p.Name == nameof(StoryVersionAuthoringMetadata.ImportPreviewHash)));
-        Assert.DoesNotContain(context.Model.GetEntityTypes(), x => x.GetTableName()!.StartsWith("creator_"));
+        // Soạn truyện của Creator dùng chung bảng stories; creator_applications (đơn đăng ký, M5) và
+        // creator_tier_evaluations (xét cấp đối tác, 5g) và các bảng chi trả (5h) là bảng tài khoản, không phải bảng soạn truyện.
+        string[] accountTables =
+        [
+            "creator_applications", "creator_tier_evaluations",
+            "creator_payout_accounts", "creator_earning_periods", "creator_balance_entries"
+        ];
+        Assert.DoesNotContain(context.Model.GetEntityTypes(),
+            x => x.GetTableName()!.StartsWith("creator_") && !accountTables.Contains(x.GetTableName()));
     }
     [Fact]
     public void VersionStateIsMappedToSeparateTablesAndNavigationPredicatesRemainServerSide()

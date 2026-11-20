@@ -28,6 +28,12 @@ public class AuditLogConfiguration : IEntityTypeConfiguration<AuditLog>
             .HasForeignKey(x => x.ActorUserId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        // Màn audit log của Administrator lọc theo thời gian, action, đối tượng và người làm; mới nhất trước.
+        builder.HasIndex(x => x.OccurredAt).HasDatabaseName("IX_audit_logs_OccurredAt");
+        builder.HasIndex(x => new { x.Action, x.OccurredAt }).HasDatabaseName("IX_audit_logs_Action_OccurredAt");
+        builder.HasIndex(x => new { x.EntityType, x.EntityId }).HasDatabaseName("IX_audit_logs_EntityType_EntityId");
+        builder.HasIndex(x => new { x.ActorUserId, x.OccurredAt }).HasDatabaseName("IX_audit_logs_ActorUserId_OccurredAt");
+
         builder.HasQueryFilter(x => !x.IsDeleted);
     }
 }

@@ -5,8 +5,10 @@ public class PlanBenefitsDto
 {
     public const string FreeTier = "Free";
     public const string CreatorTier = "Creator";
+    /// <summary>Creator đối tác (Luồng 5, 5g).</summary>
+    public const string PartnerCreatorTier = "PartnerCreator";
 
-    /// <summary>"Free", "Creator" hoặc tên gói đang dùng.</summary>
+    /// <summary>"Free", "Creator", "PartnerCreator" hoặc tên gói đang dùng.</summary>
     public string Tier { get; set; } = FreeTier;
     public int? PlanId { get; set; }
     public int MaxChildProfiles { get; set; }

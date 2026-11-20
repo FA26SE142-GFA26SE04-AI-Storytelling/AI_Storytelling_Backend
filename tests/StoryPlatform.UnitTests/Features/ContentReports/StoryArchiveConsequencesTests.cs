@@ -88,7 +88,9 @@ public class StoryArchiveConsequencesTests
             new[]
             {
                 typeof(PendingSubmissionArchiveHandler),
-                typeof(ReadingSessionArchiveHandler), typeof(ChildRoadmapArchiveHandler)
+                typeof(ReadingSessionArchiveHandler), typeof(ChildRoadmapArchiveHandler),
+                // Truyện của Creator đối tác bị gỡ vì vi phạm: mất cấp đối tác ngay (Luồng 5, 5g).
+                typeof(StoryPlatform.Application.Features.CreatorTiers.Services.CreatorTierService)
             },
             handlers);
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IStoryArchiveConsequences>());

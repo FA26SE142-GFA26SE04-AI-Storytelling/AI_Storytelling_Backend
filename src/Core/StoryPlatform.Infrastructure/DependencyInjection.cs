@@ -259,7 +259,22 @@ public static class DependencyInjection
         services.AddHttpClient<SupabaseMediaStorage>(client =>
                 client.Timeout = TimeSpan.FromMinutes(2))
             .AddHttpMessageHandler<SupabaseStorageHttpClientHandler>();
-        services.AddScoped<IMediaStorage>(provider => provider.GetRequiredService<SupabaseMediaStorage>());
+        // MediaStorage:Provider picks the backend: "S3" in production on AWS, "Supabase" (default) otherwise.
+        var mediaStorageProvider = configuration["MediaStorage:Provider"];
+        if (string.Equals(mediaStorageProvider, "S3", StringComparison.OrdinalIgnoreCase))
+        {
+            var s3Options = new S3StorageOptions();
+            configuration.GetSection(S3StorageOptions.SectionName).Bind(s3Options);
+            services.AddSingleton(s3Options);
+            services.AddSingleton<Amazon.S3.IAmazonS3>(_ =>
+                new Amazon.S3.AmazonS3Client(Amazon.RegionEndpoint.GetBySystemName(s3Options.Region)));
+            services.AddScoped<S3MediaStorage>();
+            services.AddScoped<IMediaStorage>(provider => provider.GetRequiredService<S3MediaStorage>());
+        }
+        else
+        {
+            services.AddScoped<IMediaStorage>(provider => provider.GetRequiredService<SupabaseMediaStorage>());
+        }
 
         services.Configure<SePayOptions>(configuration.GetSection(SePayOptions.SectionName));
         services.AddSingleton<ISePayQrUrlBuilder, SePayQrUrlBuilder>();

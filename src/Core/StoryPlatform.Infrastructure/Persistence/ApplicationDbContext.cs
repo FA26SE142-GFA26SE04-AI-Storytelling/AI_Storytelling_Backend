@@ -32,6 +32,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<StorySummary> StorySummaries => Set<StorySummary>();
     public DbSet<StorySummaryFlag> StorySummaryFlags => Set<StorySummaryFlag>();
     public DbSet<ReadAloudRecording> ReadAloudRecordings => Set<ReadAloudRecording>();
+    public DbSet<StoryReflection> StoryReflections => Set<StoryReflection>();
 
     public DbSet<SafetyPolicy> SafetyPolicies => Set<SafetyPolicy>();
     public DbSet<SafetyPolicyCategory> SafetyPolicyCategories => Set<SafetyPolicyCategory>();
@@ -96,6 +97,11 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<UserSubscription> UserSubscriptions => Set<UserSubscription>();
     public DbSet<CreditLot> CreditLots => Set<CreditLot>();
     public DbSet<CreditAdjustment> CreditAdjustments => Set<CreditAdjustment>();
+    public DbSet<CreatorApplication> CreatorApplications => Set<CreatorApplication>();
+    public DbSet<CreatorTierEvaluation> CreatorTierEvaluations => Set<CreatorTierEvaluation>();
+    public DbSet<CreatorPayoutAccount> CreatorPayoutAccounts => Set<CreatorPayoutAccount>();
+    public DbSet<CreatorEarningPeriod> CreatorEarningPeriods => Set<CreatorEarningPeriod>();
+    public DbSet<CreatorBalanceEntry> CreatorBalanceEntries => Set<CreatorBalanceEntry>();
     public DbSet<PaymentReconciliationException> PaymentReconciliationExceptions => Set<PaymentReconciliationException>();
     public DbSet<CreditUsage> CreditUsages => Set<CreditUsage>();
 

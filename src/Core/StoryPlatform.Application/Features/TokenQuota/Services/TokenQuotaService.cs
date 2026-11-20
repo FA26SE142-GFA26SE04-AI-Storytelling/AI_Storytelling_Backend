@@ -3,6 +3,9 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
+using System.Text.Json;
+using StoryPlatform.Application.Features.CreatorTiers.Interfaces;
+using StoryPlatform.Application.Features.Notifications.Interfaces;
 using StoryPlatform.Application.Features.TokenQuota.DTOs;
 using StoryPlatform.Application.Features.TokenQuota.Interfaces;
 using StoryPlatform.Domain.Entities;
@@ -24,14 +27,20 @@ public partial class TokenQuotaService : ITokenQuotaService
     private readonly IPlanSettingsProvider? _planSettings;
     private readonly IPlanBenefitService? _planBenefits;
     private readonly IPlanUsageService? _planUsage;
+    private readonly ICreatorTierService? _creatorTiers;
+    private readonly INotificationService? _notifications;
 
     /// <param name="auditLogWriter">Chỉ cần cho thao tác của Admin (<see cref="AdjustAsync"/>).</param>
     /// <param name="planSettings">Lượt dùng thử và hạn mức tháng Creator do Admin cấu hình; null thì dùng mặc định.</param>
     /// <param name="planBenefits">Quyền lợi hiển thị kèm lượt; null thì không trả quyền lợi.</param>
+    /// <param name="creatorTiers">Xét cấp đối tác trước khi cấp hạn mức tháng; null thì dùng cấp đang lưu.</param>
     public TokenQuotaService(
         IUnitOfWork unitOfWork, IAuditLogWriter? auditLogWriter = null, IPlanSettingsProvider? planSettings = null,
-        IPlanBenefitService? planBenefits = null, IPlanUsageService? planUsage = null)
+        IPlanBenefitService? planBenefits = null, IPlanUsageService? planUsage = null,
+        ICreatorTierService? creatorTiers = null, INotificationService? notifications = null)
     {
+        _notifications = notifications;
+        _creatorTiers = creatorTiers;
         _planBenefits = planBenefits;
         _planUsage = planUsage;
         _unitOfWork = unitOfWork;
@@ -56,23 +65,277 @@ public partial class TokenQuotaService : ITokenQuotaService
         }
     }
 
-    public async Task IncrementUsageAsync(int childProfileId, CancellationToken cancellationToken = default)
+    public async Task IncrementUsageAsync(int childProfileId, Story? story, CancellationToken cancellationToken = default)
     {
         var child = await GetChildAsync(childProfileId, cancellationToken);
 
         // Khoá theo tài khoản trước khi đọc lô để hai yêu cầu đồng thời không cùng tiêu một lượt.
         // Dùng chung không gian khoá với khoá truyện; trùng số chỉ gây chờ thừa.
         await _unitOfWork.AcquireTransactionLockAsync(child.OwnerUserId, cancellationToken);
+        await HoldOneCreditAsync(child.OwnerUserId, story, OutOfCreditsMessage, cancellationToken);
+    }
 
-        var lots = await GetUsableLotsAsync(child.OwnerUserId, DateTime.UtcNow, cancellationToken);
-        var lot = OrderForUse(lots)
-            .FirstOrDefault()
-            ?? throw new ConflictException(OutOfCreditsMessage);
+    public async Task<bool> HoldStoryCreditOnceAsync(int storyId, CancellationToken cancellationToken = default)
+    {
+        var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
+                    ?? throw new NotFoundException("Truyện", storyId);
+        var userId = await PayerOfAsync(story, cancellationToken);
+
+        await _unitOfWork.AcquireTransactionLockAsync(userId, cancellationToken);
+        // Mỗi truyện chỉ tính 1 lượt: đang giữ (thao tác trước chưa xong) hoặc đã trừ thì thao tác này không tốn thêm.
+        if (await _unitOfWork.Repository<CreditUsage>().ExistsAsync(
+                usage => usage.StoryId == storyId && usage.Reason == CreditUsageReason.StoryRequest
+                         && usage.RefundedAt == null,
+                cancellationToken))
+        {
+            return false;
+        }
+
+        if (story.Scope == StoryScope.Creator)
+        {
+            await EnsureCreatorMonthlyGrantedAsync(userId, DateTime.UtcNow, cancellationToken);
+        }
+        else
+        {
+            await EnsureTrialGrantedAsync(userId, cancellationToken);
+        }
+
+        await HoldOneCreditAsync(
+            userId, story, story.Scope == StoryScope.Creator ? CreatorOutOfAiCreditsMessage : OutOfCreditsMessage,
+            cancellationToken);
+        return true;
+    }
+
+    /// <summary>Tài khoản trả lượt cho truyện: phụ huynh sở hữu hồ sơ trẻ của truyện, còn lại là tác giả.</summary>
+    private async Task<int> PayerOfAsync(Story story, CancellationToken cancellationToken) =>
+        story.Scope == StoryScope.Parent && story.ChildProfileId.HasValue
+            ? (await GetChildAsync(story.ChildProfileId.Value, cancellationToken)).OwnerUserId
+            : story.AuthorUserId;
+
+    public async Task<bool> HoldStoryCreditForRetryAsync(int storyId, CancellationToken cancellationToken = default)
+    {
+        var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken)
+                    ?? throw new NotFoundException("Truyện", storyId);
+        var userId = await PayerOfAsync(story, cancellationToken);
+
+        await _unitOfWork.AcquireTransactionLockAsync(userId, cancellationToken);
+        // Truyện đang giữ lượt (lỗi chưa trả) hoặc đã được tính lượt: thử lại không tốn thêm.
+        var alreadyCharged = await _unitOfWork.Repository<CreditUsage>().ExistsAsync(
+            usage => usage.StoryId == storyId && usage.Reason == CreditUsageReason.StoryRequest
+                     && usage.RefundedAt == null,
+            cancellationToken);
+        if (alreadyCharged)
+        {
+            return false;
+        }
+
+        // Truyện chưa từng giữ lượt (tạo trước khi có giữ – trừ – trả): giữ nguyên hành vi cũ, không trừ.
+        var everCharged = await _unitOfWork.Repository<CreditUsage>().ExistsAsync(
+            usage => usage.StoryId == storyId && usage.Reason == CreditUsageReason.StoryRequest, cancellationToken);
+        if (!everCharged)
+        {
+            return false;
+        }
+
+        if (story.Scope == StoryScope.Creator)
+        {
+            await EnsureCreatorMonthlyGrantedAsync(userId, DateTime.UtcNow, cancellationToken);
+        }
+
+        await HoldOneCreditAsync(
+            userId, story, story.Scope == StoryScope.Creator ? CreatorOutOfAiCreditsMessage : OutOfCreditsMessage,
+            cancellationToken);
+        return true;
+    }
+
+    public Task ReleaseStoryCreditAsync(int storyId, CancellationToken cancellationToken = default) =>
+        ReleaseStoryCreditAsync(_unitOfWork, storyId, cancellationToken);
+
+    /// <summary>
+    /// AI sinh xong nội dung (truyện vào ContentReview): lượt đang giữ của truyện thành lượt đã trừ. Gọi lại không đổi gì;
+    /// sinh lại trong cùng truyện không trừ thêm. Lưu cùng SaveChanges của nơi gọi.
+    /// </summary>
+    public static async Task ConsumeStoryCreditAsync(IUnitOfWork unitOfWork, int storyId, CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        foreach (var usage in await FindHeldStoryUsagesAsync(unitOfWork, storyId, cancellationToken))
+        {
+            usage.ConsumedAt = now;
+            usage.UpdatedAt = now;
+            unitOfWork.Repository<CreditUsage>().Update(usage);
+        }
+    }
+
+    /// <summary>
+    /// Trả lượt đang giữ của truyện về đúng lô đã trừ (lỗi kỹ thuật, bị guardrail chặn, từ chối dàn ý). Lượt đã trừ chính
+    /// thức không bị trả. Nơi gọi phải đang mở transaction: hàm khoá theo tài khoản như lúc giữ lượt rồi lưu.
+    /// </summary>
+    public static async Task ReleaseStoryCreditAsync(IUnitOfWork unitOfWork, int storyId, CancellationToken cancellationToken)
+    {
+        var held = await FindHeldStoryUsagesAsync(unitOfWork, storyId, cancellationToken);
+        if (held.Count == 0)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        var lots = unitOfWork.Repository<CreditLot>();
+        foreach (var userId in held.Select(usage => usage.UserId).Distinct())
+        {
+            await unitOfWork.AcquireTransactionLockAsync(userId, cancellationToken);
+        }
+
+        foreach (var usage in held)
+        {
+            var lot = await lots.GetByIdAsync(usage.LotId, cancellationToken);
+            if (lot != null)
+            {
+                // Lô đã hết hạn thì lượt trả về cũng hết hạn theo, như hoàn lượt gửi duyệt.
+                lot.Remaining += usage.Amount;
+                lot.UpdatedAt = now;
+                lots.Update(lot);
+            }
+
+            usage.RefundedAt = now;
+            usage.UpdatedAt = now;
+            unitOfWork.Repository<CreditUsage>().Update(usage);
+        }
+
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<int> ReleaseStaleHoldsAsync(DateTime now, TimeSpan maxHoldAge, CancellationToken cancellationToken = default)
+    {
+        var cutoff = now - maxHoldAge;
+        var storyIds = (await _unitOfWork.Repository<CreditUsage>().FindAsync(
+                usage => usage.Reason == CreditUsageReason.StoryRequest && usage.StoryId != null
+                         && usage.ConsumedAt == null && usage.RefundedAt == null && usage.CreatedAt <= cutoff,
+                cancellationToken: cancellationToken))
+            .Select(usage => usage.StoryId!.Value)
+            .Distinct()
+            .OrderBy(id => id)
+            .ToList();
+
+        var released = 0;
+        foreach (var storyId in storyIds)
+        {
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                // Cùng khoá truyện với các luồng sinh truyện: không trả lượt khi một thao tác vừa bắt đầu.
+                await _unitOfWork.AcquireTransactionLockAsync(storyId, cancellationToken);
+                var held = await FindHeldStoryUsagesAsync(_unitOfWork, storyId, cancellationToken);
+                var story = await _unitOfWork.Repository<Story>().GetByIdAsync(storyId, cancellationToken);
+                if (held.Count == 0 || held.Any(usage => usage.CreatedAt > cutoff)
+                    || story is not null && (story.UpdatedAt ?? story.CreatedAt) > cutoff
+                    || await IsStoryBusyAsync(storyId, cancellationToken))
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    continue;
+                }
+
+                await ReleaseStoryCreditAsync(_unitOfWork, storyId, cancellationToken);
+                foreach (var usage in held)
+                {
+                    if (_auditLogWriter != null)
+                    {
+                        await _auditLogWriter.LogAsync(
+                            null, "StoryCreditHoldReleased", nameof(CreditUsage), usage.Id,
+                            new { storyId, userId = usage.UserId, lotId = usage.LotId, heldSince = usage.CreatedAt },
+                            new { refundedAt = usage.RefundedAt, reason = "abandoned", maxHoldDays = maxHoldAge.TotalDays },
+                            cancellationToken);
+                    }
+                }
+
+                if (_notifications != null)
+                {
+                    foreach (var userId in held.Select(usage => usage.UserId).Distinct())
+                    {
+                        await _notifications.CreateAsync(
+                            userId, NotificationType.StoryCreditReleased,
+                            JsonSerializer.Serialize(new
+                            {
+                                storyId, title = story?.Title, credits = held.Where(usage => usage.UserId == userId).Sum(usage => usage.Amount),
+                                reason = "abandoned"
+                            }),
+                            cancellationToken);
+                    }
+                }
+
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+                released++;
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync(CancellationToken.None);
+                _unitOfWork.DiscardTrackedChanges();
+                throw;
+            }
+        }
+
+        return released;
+    }
+
+    /// <summary>Truyện còn việc đang chạy hoặc chờ người khác (kiểm duyệt, kiểm tra đầu vào): chưa phải bỏ dở.</summary>
+    private async Task<bool> IsStoryBusyAsync(int storyId, CancellationToken cancellationToken) =>
+        await _unitOfWork.Repository<StoryGenerationJob>().ExistsAsync(
+            job => job.StoryId == storyId
+                   && (job.Status == GenerationJobStatus.Pending || job.Status == GenerationJobStatus.Processing
+                       || job.Status == GenerationJobStatus.WaitingForModeration),
+            cancellationToken)
+        || await _unitOfWork.Repository<StoryGenerationRequest>().ExistsAsync(
+            request => request.StoryId == storyId
+                       && (request.Status == GenerationInputStatus.PendingInput
+                           || request.Status == GenerationInputStatus.CheckingInput),
+            cancellationToken);
+
+    /// <summary>
+    /// Media của truyện viết tay lỗi hẳn: trả lượt đang giữ, trừ khi truyện còn job media hoặc gói khác đang chạy (một lượt
+    /// cho cả truyện nên job còn lại vẫn dùng lượt đó). Nơi gọi phải đang mở transaction.
+    /// </summary>
+    public static async Task ReleaseStoryCreditIfIdleAsync(IUnitOfWork unitOfWork, int storyId, CancellationToken cancellationToken)
+    {
+        var busy = await unitOfWork.Repository<StoryGenerationJob>().ExistsAsync(
+            job => job.StoryId == storyId
+                   && (job.Operation == GenerationJobOperation.GenerateMediaPackage
+                       || job.Operation == GenerationJobOperation.BuildParentPackage
+                       || job.Operation == GenerationJobOperation.CheckParentPackage)
+                   && (job.Status == GenerationJobStatus.Pending || job.Status == GenerationJobStatus.Processing),
+            cancellationToken);
+        if (!busy)
+        {
+            await ReleaseStoryCreditAsync(unitOfWork, storyId, cancellationToken);
+        }
+    }
+
+    private static async Task<IReadOnlyList<CreditUsage>> FindHeldStoryUsagesAsync(
+        IUnitOfWork unitOfWork, int storyId, CancellationToken cancellationToken) =>
+        await unitOfWork.Repository<CreditUsage>().FindAsync(
+            usage => usage.StoryId == storyId && usage.Reason == CreditUsageReason.StoryRequest
+                     && usage.ConsumedAt == null && usage.RefundedAt == null,
+            cancellationToken: cancellationToken);
+
+    /// <summary>Giữ 1 lượt: trừ khỏi lô sắp hết hạn nhất và ghi dòng lịch sử gắn với truyện. Nơi gọi đã khoá tài khoản.</summary>
+    private async Task HoldOneCreditAsync(int userId, Story? story, string outOfCreditsMessage, CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        var lot = OrderForUse(await GetUsableLotsAsync(userId, now, cancellationToken)).FirstOrDefault()
+                  ?? throw new ConflictException(outOfCreditsMessage);
 
         lot.Remaining -= 1;
-        lot.UpdatedAt = DateTime.UtcNow;
+        lot.UpdatedAt = now;
         _unitOfWork.Repository<CreditLot>().Update(lot);
-        await RecordUsageAsync(lot, 1, CreditUsageReason.StoryRequest, cancellationToken);
+        await _unitOfWork.Repository<CreditUsage>().AddAsync(
+            new CreditUsage
+            {
+                UserId = lot.UserId,
+                LotId = lot.Id,
+                Amount = 1,
+                Reason = CreditUsageReason.StoryRequest,
+                StoryId = story is { Id: > 0 } ? story.Id : null,
+                Story = story
+            },
+            cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 

@@ -7,6 +7,7 @@ using System.Text;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using StoryPlatform.Application.Abstractions.Security;
+using StoryPlatform.Application.Features.CreatorApplications.Interfaces;
 using StoryPlatform.Domain.Entities;
 
 namespace StoryPlatform.Infrastructure.Security;
@@ -49,7 +50,8 @@ public class JwtTokenGenerator : IJwtTokenGenerator
             new(JwtRegisteredClaimNames.UniqueName, user.Username),
             new(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new(ClaimTypes.Name, user.FullName),
-            new(ClaimTypes.Role, user.Role.ToString()),
+            // Creator chờ duyệt nhận role tạm, không vào được API Creator (Luồng 5, M5).
+            new(ClaimTypes.Role, CreatorApplicantAccess.RoleClaimFor(user)),
             new("token_version", user.TokenVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };

@@ -1,5 +1,6 @@
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.TokenQuota.DTOs;
+using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
 namespace StoryPlatform.Application.Features.TokenQuota.Interfaces;
@@ -23,7 +24,34 @@ public interface ITokenQuotaService
 
     Task EnsureWithinQuotaAsync(int childProfileId, CancellationToken cancellationToken = default);
 
-    Task IncrementUsageAsync(int childProfileId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Giữ 1 lượt AI của phụ huynh cho <paramref name="story"/> (409 nếu hết): lượt rời lô ngay, được trừ chính thức
+    /// khi AI sinh xong nội dung và được trả khi lỗi, bị chặn hoặc từ chối dàn ý. Chạy trong transaction của nơi gọi.
+    /// </summary>
+    Task IncrementUsageAsync(int childProfileId, Story? story, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Thử lại sau khi job AI lỗi đã trả lượt: giữ lại 1 lượt cho truyện (409 nếu hết). Không làm gì và trả false
+    /// nếu truyện đang giữ lượt hoặc đã được trừ lượt.
+    /// </summary>
+    Task<bool> HoldStoryCreditForRetryAsync(int storyId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Worker: trả lượt đang giữ của truyện bỏ dở — lượt giữ và truyện đều không đổi từ <paramref name="maxHoldAge"/> trở lên,
+    /// truyện không còn job đang chạy / chờ kiểm duyệt và không có yêu cầu đang kiểm tra đầu vào. Báo cho người trả lượt và
+    /// ghi audit log. Quay lại làm tiếp (duyệt / sinh lại dàn ý, thử lại) sẽ giữ lại lượt. Trả số truyện đã trả lượt.
+    /// </summary>
+    Task<int> ReleaseStaleHoldsAsync(DateTime now, TimeSpan maxHoldAge, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Truyện viết tay hoặc truyện có sẵn (Source = Manual) tốn 1 lượt cho cả truyện: chuyển thể và sinh media lần đầu
+    /// giữ 1 lượt (409 nếu hết); truyện đang giữ hoặc đã trừ lượt thì không giữ thêm và trả false. Gọi trong transaction
+    /// của nơi gọi (hàm khoá theo tài khoản trả lượt rồi lưu).
+    /// </summary>
+    Task<bool> HoldStoryCreditOnceAsync(int storyId, CancellationToken cancellationToken = default);
+
+    /// <summary>Trả lượt đang giữ của truyện; lượt đã trừ chính thức không bị trả. Gọi lại không trả hai lần.</summary>
+    Task ReleaseStoryCreditAsync(int storyId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Cấp một lô lượt AI. Trả false và không làm gì nếu amount không dương hoặc đã có lô gắn paymentId này.
@@ -35,8 +63,8 @@ public interface ITokenQuotaService
     /// <summary>Creator gửi yêu cầu tạo truyện AI: 409 nếu hết lượt (hạn mức tháng và lượt Gói Creator).</summary>
     Task EnsureCreatorWithinQuotaAsync(int creatorUserId, CancellationToken cancellationToken = default);
 
-    /// <summary>Trừ 1 lượt AI của Creator, hạn mức tháng trước; chạy trong transaction của nơi gọi.</summary>
-    Task IncrementCreatorUsageAsync(int creatorUserId, CancellationToken cancellationToken = default);
+    /// <summary>Giữ 1 lượt AI của Creator cho <paramref name="story"/>, hạn mức tháng trước; như <see cref="IncrementUsageAsync"/>.</summary>
+    Task IncrementCreatorUsageAsync(int creatorUserId, Story? story, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Trừ 1 lượt gửi duyệt cho mục kiểm duyệt vừa tạo (409 nếu hết). Gửi lại sau khi bị yêu cầu sửa

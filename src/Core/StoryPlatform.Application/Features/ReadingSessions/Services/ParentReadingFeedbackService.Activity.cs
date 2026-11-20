@@ -89,4 +89,13 @@ public partial class ParentReadingFeedbackService
             .GroupBy(row => row.ReadingSessionId)
             .ToDictionary(group => group.Key, group => group.Count());
     }
+    /// <summary>Cảm nhận chưa xóa của các phiên (một dòng mỗi phiên).</summary>
+    private async Task<Dictionary<int, StoryReflection>> LoadReflectionsAsync(List<int> sessionIds, CancellationToken ct)
+    {
+        if (sessionIds.Count == 0) return new Dictionary<int, StoryReflection>();
+        return (await _unitOfWork.Repository<StoryReflection>().FindAsync(
+                row => sessionIds.Contains(row.ReadingSessionId) && !row.IsDeleted, cancellationToken: ct))
+            .GroupBy(row => row.ReadingSessionId)
+            .ToDictionary(group => group.Key, group => group.OrderByDescending(row => row.Id).First());
+    }
 }

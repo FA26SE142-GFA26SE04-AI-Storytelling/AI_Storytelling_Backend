@@ -1,3 +1,4 @@
+using Moq;
 using System.Linq.Expressions;
 using StoryPlatform.Application.Abstractions.AI;
 using StoryPlatform.Application.Abstractions.Persistence;
@@ -323,6 +324,65 @@ public sealed class ExistingStoryServiceTests
         Assert.False(store.Items<StoryVersion>().Single(v => v.Id == 1).IsCurrent);
         Assert.Equal("Initial", store.Items<StoryVersion>().Single(v => v.Id == 1).EditType.ToString());
         Assert.Equal("Một câu chuyện ngắn về tình bạn và sự sẻ chia.", store.Items<Story>().Single().Description);
+    }
+
+    [Fact]
+    public async Task Adapt_HoldsTheStoryCreditBeforeCallingAi_AndConsumesItWhenTheAdaptationIsSaved()
+    {
+        var store = SeedStoryWithV1();
+        var ai = new FakeAIClientForExisting();
+        var order = new List<string>();
+        var quota = new Moq.Mock<StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService>();
+        quota.Setup(q => q.HoldStoryCreditOnceAsync(1, Moq.It.IsAny<CancellationToken>()))
+            .Callback(() =>
+            {
+                order.Add("hold");
+                // Lượt vừa giữ cho truyện, như TokenQuotaService ghi.
+                store.Seed(new CreditUsage { Id = 700, UserId = 1, LotId = 1, Amount = 1, StoryId = 1, Reason = CreditUsageReason.StoryRequest });
+            })
+            .ReturnsAsync(true);
+        var service = new ExistingStoryService(store, new PassThroughAccessGuard(store), ai, new NoopHandoffService(),
+            new RecordingAuditLogWriter(), tokenQuota: quota.Object);
+
+        await service.AdaptAsync(1, new AdaptExistingStoryRequestDto { StoryId = 1, BaseStoryVersionId = 1 }, CancellationToken.None);
+
+        Assert.Equal(["hold"], order);
+        Assert.Contains("refine", ai.Calls);
+        Assert.NotNull(store.Items<CreditUsage>().Single(usage => usage.Id == 700).ConsumedAt);
+    }
+
+    [Fact]
+    public async Task Adapt_OutOfCredits_IsRejectedWithoutCallingAi()
+    {
+        var store = SeedStoryWithV1();
+        var ai = new FakeAIClientForExisting();
+        var quota = new Moq.Mock<StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService>();
+        quota.Setup(q => q.HoldStoryCreditOnceAsync(1, Moq.It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ConflictException("Bạn đã hết lượt tạo truyện AI."));
+        var service = new ExistingStoryService(store, new PassThroughAccessGuard(store), ai, new NoopHandoffService(),
+            new RecordingAuditLogWriter(), tokenQuota: quota.Object);
+
+        await Assert.ThrowsAsync<ConflictException>(() => service.AdaptAsync(1,
+            new AdaptExistingStoryRequestDto { StoryId = 1, BaseStoryVersionId = 1 }, CancellationToken.None));
+
+        Assert.DoesNotContain("refine", ai.Calls);
+        Assert.Single(store.Items<StoryVersion>());
+    }
+
+    [Fact]
+    public async Task Adapt_StoryAlreadyCharged_DoesNotConsumeAnotherCredit()
+    {
+        var store = SeedStoryWithV1();
+        var quota = new Moq.Mock<StoryPlatform.Application.Features.TokenQuota.Interfaces.ITokenQuotaService>();
+        quota.Setup(q => q.HoldStoryCreditOnceAsync(1, Moq.It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        // Lượt đang giữ cho media của truyện (chưa xong): chuyển thể lại không được trừ thay cho media.
+        store.Seed(new CreditUsage { Id = 701, UserId = 1, LotId = 1, Amount = 1, StoryId = 1, Reason = CreditUsageReason.StoryRequest });
+        var service = new ExistingStoryService(store, new PassThroughAccessGuard(store), new FakeAIClientForExisting(),
+            new NoopHandoffService(), new RecordingAuditLogWriter(), tokenQuota: quota.Object);
+
+        await service.AdaptAsync(1, new AdaptExistingStoryRequestDto { StoryId = 1, BaseStoryVersionId = 1 }, CancellationToken.None);
+
+        Assert.Null(store.Items<CreditUsage>().Single(usage => usage.Id == 701).ConsumedAt);
     }
 
     [Fact]

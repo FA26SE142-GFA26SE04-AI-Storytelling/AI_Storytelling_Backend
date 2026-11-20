@@ -29,7 +29,7 @@ public sealed class AccountAiActivityServiceTests
         uow.Seed(new UserAccount { Id = 10, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
         var quota = new Mock<ITokenQuotaService>(MockBehavior.Strict);
         quota.Setup(q => q.EnsureCreatorWithinQuotaAsync(10, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
-        quota.Setup(q => q.IncrementCreatorUsageAsync(10, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        quota.Setup(q => q.IncrementCreatorUsageAsync(10, It.IsAny<Story?>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         var service = new AIStoryInputService(uow, new RuleBasedInputGuardrail(), quota.Object);
 
         var r1 = await service.SubmitCreatorAsync(10, CreatorRequest("idem-key-1", "Chủ đề 1"));
@@ -44,12 +44,12 @@ public sealed class AccountAiActivityServiceTests
 
         Assert.Equal(2, uow.Items<Story>().Count);
         Assert.Equal(2, uow.Items<StoryGenerationJob>().Count);
-        quota.Verify(q => q.IncrementCreatorUsageAsync(10, It.IsAny<CancellationToken>()), Times.Exactly(2));
+        quota.Verify(q => q.IncrementCreatorUsageAsync(10, It.IsAny<Story?>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
 
         // Idempotent replay of an admitted story succeeds even at capacity.
         var replay = await service.SubmitCreatorAsync(10, CreatorRequest("idem-key-1", "Chủ đề 1"));
         Assert.Equal(r1.RequestId, replay.RequestId);
-        quota.Verify(q => q.IncrementCreatorUsageAsync(10, It.IsAny<CancellationToken>()), Times.Exactly(2));
+        quota.Verify(q => q.IncrementCreatorUsageAsync(10, It.IsAny<Story?>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Fact]

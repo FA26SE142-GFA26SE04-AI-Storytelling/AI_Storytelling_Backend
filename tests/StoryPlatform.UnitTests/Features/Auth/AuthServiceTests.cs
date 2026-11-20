@@ -36,7 +36,8 @@ public class AuthServiceTests
     public void AccountStatus_MatchesSpecValuesOnly()
     {
         Assert.Equal(
-            new[] { "Registered", "Active", "PasswordResetPending", "Suspended" },
+            // AwaitingApproval: Content Creator tự đăng ký chờ Admin duyệt (Luồng 5, M5).
+            new[] { "Registered", "Active", "PasswordResetPending", "Suspended", "AwaitingApproval" },
             Enum.GetNames<AccountStatus>());
     }
 

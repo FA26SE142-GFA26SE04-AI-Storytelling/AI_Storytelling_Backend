@@ -485,8 +485,592 @@ STEPS.push({
   ]
 });
 
+STEPS.push({
+  "id": "reflection",
+  "title": "Bước 8 — Cảm nhận sau khi đọc",
+  "desc": "Bé chọn 1–2 cảm xúc, một cảnh thích nhất và viết/kể lời về cảnh đó. Giữ nguyên bốn mức thích. Seed: bé 1 của parent_demo1, phiên 102 đã Completed, phiên bản 1, sceneId=1; VoiceAnswersEnabled=false. Không có seed cảm nhận/ghi âm giả.",
+  "flow": [
+    "Dùng token bé 1; xem lựa chọn, chọn cảm xúc và cảnh.",
+    "Gửi lời bằng Text (form-data). Muốn ghi âm cần chủ hồ sơ bật giọng nói trước.",
+    "Phụ huynh xem/nghe và xóa lời ở trang kết quả đọc."
+  ],
+  "apis": [
+    {
+      "m": "GET",
+      "p": "/api/v1/child/reading/sessions/{sessionId}/reflection",
+      "ctl": "ChildStoryReflectionController",
+      "role": "Trẻ (ChildSession)",
+      "what": "Xem cảm xúc, cảnh đã chọn, lời đã gửi và quyền ghi âm.",
+      "detail": [
+        [
+          "Kiểm tra",
+          [
+            "Token trẻ; phiên thuộc đúng bé và chưa xóa. Đọc dữ liệu không yêu cầu Completed."
+          ]
+        ],
+        [
+          "Kết quả",
+          [
+            "Seed bé 1 chưa bật VoiceAnswersEnabled: canRecord=false, vẫn viết được; chưa chọn thì emotions=[], favoriteSceneId=null."
+          ]
+        ]
+      ],
+      "tests": [
+        [
+          "ok",
+          "RF01",
+          "Xem lựa chọn hiện có",
+          "200; Thao tác thành công.; data.sessionId đúng, canRecord=false trên seed.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "GET /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection"
+          }
+        ],
+        [
+          "neg",
+          "RF02",
+          "Phiên của bé khác",
+          "404; Không tìm thấy Phiên đọc với mã định danh [2].",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "GET /api/v1/child/reading/sessions/2/reflection"
+          }
+        ],
+        [
+          "neg",
+          "RF03",
+          "Không token",
+          "401",
+          {
+            "as": "(không gửi token)",
+            "call": "GET /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection"
+          }
+        ],
+        [
+          "neg",
+          "RF04",
+          "Token phụ huynh",
+          "403 (policy ChildSession)",
+          {
+            "as": "parent_demo1",
+            "call": "GET /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection"
+          }
+        ]
+      ]
+    },
+    {
+      "m": "PUT",
+      "p": "/api/v1/child/reading/sessions/{sessionId}/reflection/emotions",
+      "ctl": "ChildStoryReflectionController",
+      "role": "Trẻ (ChildSession)",
+      "what": "Chọn lại toàn bộ 1–2 cảm xúc; không thay mức StoryFeeling.",
+      "body": "{\n  \"emotions\": [\n    \"Happy\",\n    \"Touched\"\n  ]\n}",
+      "detail": [
+        [
+          "Kiểm tra",
+          [
+            "1–2 mã trong Happy/Funny/Surprised/Excited/Touched/Sad/Scared, không trùng (không phân biệt hoa thường). Từ chối số và tên ghép. Phiên đã Completed, không bị ngắt."
+          ]
+        ]
+      ],
+      "tests": [
+        [
+          "ok",
+          "RF05",
+          "Một cảm xúc",
+          "200; emotions=[{code:Happy,label:Vui}].",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "PUT /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/emotions",
+            "body": {
+              "emotions": [
+                "Happy"
+              ]
+            }
+          }
+        ],
+        [
+          "ok",
+          "RF06",
+          "Hai cảm xúc",
+          "200; Happy/Vui và Touched/Cảm động; lần gọi sau thay toàn bộ.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "PUT /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/emotions",
+            "body": {
+              "emotions": [
+                "Happy",
+                "Touched"
+              ]
+            }
+          }
+        ],
+        [
+          "neg",
+          "RF07",
+          "Ba cảm xúc",
+          "400; Em chọn tối đa hai cảm xúc thôi nhé.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "PUT /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/emotions",
+            "body": {
+              "emotions": [
+                "Happy",
+                "Sad",
+                "Funny"
+              ]
+            }
+          }
+        ],
+        [
+          "neg",
+          "RF08",
+          "Trùng cảm xúc",
+          "400; Em chọn một hoặc hai cảm xúc nhé.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "PUT /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/emotions",
+            "body": {
+              "emotions": [
+                "Happy",
+                "happy"
+              ]
+            }
+          }
+        ],
+        [
+          "neg",
+          "RF09",
+          "Mã lạ",
+          "400; Em chọn một hoặc hai cảm xúc nhé.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "PUT /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/emotions",
+            "body": {
+              "emotions": [
+                "Angry"
+              ]
+            }
+          }
+        ],
+        [
+          "neg",
+          "RF10",
+          "Mã số",
+          "400; Em chọn một hoặc hai cảm xúc nhé.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "PUT /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/emotions",
+            "body": {
+              "emotions": [
+                "1"
+              ]
+            }
+          }
+        ],
+        [
+          "neg",
+          "RF11",
+          "Mã số có dấu",
+          "400; Em chọn một hoặc hai cảm xúc nhé.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "PUT /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/emotions",
+            "body": {
+              "emotions": [
+                "+1"
+              ]
+            }
+          }
+        ],
+        [
+          "neg",
+          "RF12",
+          "Danh sách rỗng",
+          "400; Em chọn một hoặc hai cảm xúc nhé.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "PUT /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/emotions",
+            "body": {
+              "emotions": []
+            }
+          }
+        ],
+        [
+          "neg",
+          "RF13",
+          "Danh sách null",
+          "400; Em chọn một hoặc hai cảm xúc nhé.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "PUT /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/emotions",
+            "body": {
+              "emotions": null
+            }
+          }
+        ],
+        [
+          "neg",
+          "RF14",
+          "Phiên chưa đọc xong",
+          "409; Em đọc xong truyện rồi mình chọn cảm nhận nhé!",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "PUT /api/v1/child/reading/sessions/103/reflection/emotions",
+            "body": {
+              "emotions": [
+                "Happy",
+                "Touched"
+              ]
+            }
+          }
+        ],
+        [
+          "neg",
+          "RF15",
+          "Không token",
+          "401",
+          {
+            "as": "(không gửi token)",
+            "call": "PUT /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/emotions"
+          }
+        ],
+        [
+          "neg",
+          "RF16",
+          "Token phụ huynh",
+          "403 (policy ChildSession)",
+          {
+            "as": "parent_demo1",
+            "call": "PUT /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/emotions"
+          }
+        ]
+      ]
+    },
+    {
+      "m": "PUT",
+      "p": "/api/v1/child/reading/sessions/{sessionId}/reflection/favorite-scene",
+      "ctl": "ChildStoryReflectionController",
+      "role": "Trẻ (ChildSession)",
+      "what": "Chọn một cảnh; lưu tranh lúc chọn. Đổi cảnh xóa lời cũ và file cũ sau khi lưu DB.",
+      "body": "{\n  \"sceneId\": 1\n}",
+      "detail": [
+        [
+          "Kiểm tra",
+          [
+            "Completed; cảnh thuộc phiên bản truyện và manifest của gói gia đình (nếu có). Không cần đã chọn cảm xúc."
+          ]
+        ],
+        [
+          "Đổi cảnh",
+          [
+            "Chọn cùng cảnh giữ lời cũ; chọn cảnh khác xóa chữ/audio cũ. Muốn thử đổi cảnh, dùng phiên đã Completed của truyện nhiều cảnh và nhập sceneId từ GET content. Seed phiên 102 chỉ có cảnh 1."
+          ]
+        ]
+      ],
+      "tests": [
+        [
+          "ok",
+          "RF17",
+          "Chọn cảnh seed",
+          "200; favoriteSceneId=1; lưu đúng tranh của cảnh.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "PUT /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/favorite-scene",
+            "body": {
+              "sceneId": 1
+            }
+          }
+        ],
+        [
+          "edge",
+          "RF18",
+          "Chọn cùng cảnh",
+          "200; giữ nguyên NoteText và bản ghi trước đó.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "PUT /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/favorite-scene",
+            "body": {
+              "sceneId": 1
+            }
+          }
+        ],
+        [
+          "ok",
+          "RF19",
+          "Đổi sang cảnh khác",
+          "200; favoriteSceneId đổi; noteText=null, hasNoteRecording=false; file cũ bị xóa.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "PUT /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/favorite-scene",
+            "body": {
+              "sceneId": "<REFLECTION_OTHER_SCENE_ID>"
+            },
+            "data": "Dùng phiên Completed có nhiều cảnh, chọn cảnh và gửi lời trước; nhập sceneId khác cùng truyện. Không dùng cảnh 3 của truyện khác."
+          }
+        ],
+        [
+          "neg",
+          "RF20",
+          "Cảnh của truyện khác",
+          "400; Cảnh em chọn không thuộc truyện này.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "PUT /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/favorite-scene",
+            "body": {
+              "sceneId": 3
+            }
+          }
+        ],
+        [
+          "neg",
+          "RF21",
+          "Cảnh không tồn tại",
+          "400; Cảnh em chọn không thuộc truyện này.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "PUT /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/favorite-scene",
+            "body": {
+              "sceneId": 99999
+            }
+          }
+        ],
+        [
+          "neg",
+          "RF22",
+          "Không token",
+          "401",
+          {
+            "as": "(không gửi token)",
+            "call": "PUT /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/favorite-scene"
+          }
+        ],
+        [
+          "neg",
+          "RF23",
+          "Token phụ huynh",
+          "403 (policy ChildSession)",
+          {
+            "as": "parent_demo1",
+            "call": "PUT /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/favorite-scene"
+          }
+        ]
+      ]
+    },
+    {
+      "m": "POST",
+      "p": "/api/v1/child/reading/sessions/{sessionId}/reflection/note",
+      "ctl": "ChildStoryReflectionController",
+      "role": "Trẻ (ChildSession)",
+      "what": "Gửi Text và/hoặc Audio bằng multipart/form-data. Copy request mô tả trường; chọn form-data thật trong Swagger/Postman.",
+      "detail": [
+        [
+          "Điều kiện",
+          [
+            "Completed, đã chọn cảnh; Text trim, tối đa 200 ký tự. Audio tối đa 3.000.000 byte, dùng content type âm thanh được hỗ trợ; cần chủ hồ sơ bật giọng nói. Seed mặc định tắt giọng nói."
+          ]
+        ],
+        [
+          "Xử lý",
+          [
+            "Không AI/STT. Lưu Supabase và DB; gửi lại thay lời cũ. DB lỗi dọn file mới; file cũ xóa sau commit. Upload lỗi trả lỗi và giữ lời cũ.",
+            "Đọc–sửa–lưu dưới khóa của phiên (bấm gửi hai lần cùng lúc thì request sau chờ request trước). Nếu cảnh yêu thích bị đổi trong lúc file đang upload: 409, xóa file vừa upload, giữ nguyên lời cũ."
+          ]
+        ]
+      ],
+      "tests": [
+        [
+          "ok",
+          "RF24",
+          "Chỉ chữ khi tắt giọng nói",
+          "200; Đã gửi cho bố mẹ; noteText=Con thích cảnh này, hasNoteRecording=false.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "POST /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/note",
+            "body": {
+              "Text": "  Con thích cảnh này  "
+            }
+          }
+        ],
+        [
+          "ok",
+          "RF25",
+          "Chữ và ghi âm",
+          "200; Đã gửi cho bố mẹ; hasNoteRecording=true; chủ hồ sơ nghe sau ca này.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "POST /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/note",
+            "body": {
+              "Text": "Con thích cảnh này",
+              "Audio": "(file thật audio/webm)"
+            },
+            "data": "Cần chủ hồ sơ bật VoiceAnswersEnabled bằng luồng đồng ý có sẵn; gửi multipart/form-data."
+          }
+        ],
+        [
+          "edge",
+          "RF26",
+          "Chữ đúng 200 ký tự",
+          "200; lưu đủ 200 ký tự.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "POST /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/note",
+            "body": {
+              "Text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          }
+        ],
+        [
+          "neg",
+          "RF27",
+          "Chữ 201 ký tự",
+          "400; Em viết ngắn hơn một chút nhé.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "POST /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/note",
+            "body": {
+              "Text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          }
+        ],
+        [
+          "neg",
+          "RF28",
+          "Chỉ khoảng trắng",
+          "400; Em viết hoặc kể cho bố mẹ nghe nhé.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "POST /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/note",
+            "body": {
+              "Text": "   "
+            }
+          }
+        ],
+        [
+          "neg",
+          "RF29",
+          "Gửi rỗng",
+          "400; Em viết hoặc kể cho bố mẹ nghe nhé.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "POST /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/note",
+            "body": {}
+          }
+        ],
+        [
+          "neg",
+          "RF30",
+          "Chưa chọn cảnh",
+          "400; Em chọn cảnh em thích nhất trước nhé.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "POST /api/v1/child/reading/sessions/<REFLECTION_EMPTY_SESSION_ID>/reflection/note",
+            "body": {
+              "Text": "Con thích cảnh này"
+            },
+            "data": "Phiên Completed khác của bé 1 chưa chọn cảnh."
+          }
+        ],
+        [
+          "neg",
+          "RF31",
+          "Ghi âm khi tắt giọng nói",
+          "403; Bố mẹ chưa bật đọc bằng giọng nói cho em.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "POST /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/note",
+            "body": {
+              "Audio": "(file thật audio/webm)"
+            },
+            "data": "Chạy trên seed khi chưa bật VoiceAnswersEnabled."
+          }
+        ],
+        [
+          "edge",
+          "RF32",
+          "File đúng 3 MB",
+          "200; Đã gửi cho bố mẹ.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "POST /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/note",
+            "body": {
+              "Audio": "(file audio/webm đúng 3.000.000 byte)"
+            },
+            "data": "Giọng nói đã bật; gửi multipart/form-data."
+          }
+        ],
+        [
+          "neg",
+          "RF33",
+          "File lớn hơn 3 MB",
+          "400; Đoạn ghi âm dài quá, em kể ngắn hơn nhé.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "POST /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/note",
+            "body": {
+              "Audio": "(file audio/webm 3.000.001 byte)"
+            }
+          }
+        ],
+        [
+          "neg",
+          "RF34",
+          "Định dạng không hỗ trợ",
+          "400; Định dạng ghi âm chưa được hỗ trợ.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "POST /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/note",
+            "body": {
+              "Audio": "(file video/mp4)"
+            },
+            "data": "Giọng nói đã bật; phiên hợp lệ, đã chọn cảnh."
+          }
+        ],
+        [
+          "neg",
+          "RF35",
+          "Không token",
+          "401",
+          {
+            "as": "(không gửi token)",
+            "call": "POST /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/note"
+          }
+        ],
+        [
+          "neg",
+          "RF36",
+          "Token phụ huynh",
+          "403 (policy ChildSession)",
+          {
+            "as": "parent_demo1",
+            "call": "POST /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/note"
+          }
+        ],
+        [
+          "edge",
+          "RF37",
+          "Đổi cảnh trong lúc lời đang upload",
+          "409; Em vừa đổi cảnh khác, em gửi lại lời cho cảnh mới nhé.; lời cũ giữ nguyên, file vừa upload bị xóa.",
+          {
+            "as": "bé 1 (secret demo-qr-child-01)",
+            "call": "POST /api/v1/child/reading/sessions/<REFLECTION_SESSION_ID>/reflection/note",
+            "body": {
+              "Text": "Con thích cảnh này",
+              "Audio": "(file audio/webm gần 3 MB để upload lâu)"
+            },
+            "data": "Khó tái hiện bằng tay: giọng nói đã bật; trong lúc request này đang upload, gọi PUT .../reflection/favorite-scene với sceneId khác. Đã có unit test SendNoteAsync_SceneChangedWhileUploading_IsConflict_AndDeletesTheNewFile."
+          }
+        ]
+      ]
+    }
+  ]
+});
+
 // ---------- GIÁ TRỊ ĐỘNG ----------
 const VAR_DEFS = [
+  ["REFLECTION_SESSION_ID", "102", "Phiên Completed của bé 1; đổi khi thử truyện nhiều cảnh"],
+  ["REFLECTION_OTHER_SCENE_ID", "", "Cảnh khác cùng truyện của phiên Completed đang thử"],
+  ["REFLECTION_EMPTY_SESSION_ID", "101", "Phiên Completed chưa chọn cảnh, dùng trước khi gửi lời"],
   ["READ_ALOUD_SESSION_ID", "", "Phiên đang hoạt động của bé 1 để đọc to (mở lại sau complete)"],
   ["READ_ALOUD_SEGMENT_ID", "", "segmentId từ scenes[].segments[] của GET content"],
   ["READ_ALOUD_INTERACTION_ID", "", "readAloudPractice.interactionId từ GET content; cần truyện có đoạn luyện thật"],

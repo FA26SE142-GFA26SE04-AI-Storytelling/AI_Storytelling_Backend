@@ -74,6 +74,33 @@ public class BusinessReportRevenueSnapshotTests
         Assert.Equal(198000L, live.TotalRevenueVnd);
     }
 
+    [Fact]
+    public async Task GenerateAsync_WithCreatorStatistics_SnapshotsCreatorFiguresOfThePeriod()
+    {
+        _store.Seed(new UserAccount { Id = 50, Username = "creator_a", Role = UserRole.ContentCreator, Status = AccountStatus.Active });
+        _store.Seed(new Story { Id = 100, AuthorUserId = 50, Scope = StoryScope.Creator, Status = StoryStatus.Draft, CreatedAt = November1.AddDays(3) });
+        SeedPaid(November1.AddDays(9));
+        var revenue = new RevenueStatisticsService(_store);
+        var sut = new BusinessReportService(_store, _auditLogWriter.Object, revenue, new UserAccountStatisticsService(_store),
+            new StoryPlatform.Application.Features.CreatorStatistics.Services.CreatorStatisticsService(_store, revenue));
+
+        var generated = await sut.GenerateAsync(AdminId, Period(November1, November30));
+        _store.Seed(new Story { Id = 101, AuthorUserId = 50, Scope = StoryScope.Creator, Status = StoryStatus.Draft, CreatedAt = November1.AddDays(5) });
+
+        var stored = await sut.GetByIdAsync(generated.Id);
+        var creators = stored.Creators!;
+        Assert.Equal((1, 1, 9900L), (creators.TotalCreators, creators.StoriesCreated, creators.CreatorFundVnd));
+        Assert.Equal("creator_a", Assert.Single(creators.Creators).Username);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_WithoutCreatorStatistics_LeavesCreatorSnapshotEmpty()
+    {
+        var result = await _sut.GenerateAsync(AdminId, Period(November1, November30));
+
+        Assert.Null(result.Creators);
+    }
+
     [Theory]
     [InlineData("2026-11-01", "2026-11-30")]   // trùng khít
     [InlineData("2026-11-15", "2026-12-15")]   // chồng phần cuối

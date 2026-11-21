@@ -576,6 +576,7 @@ public class StoryPlatformCoreStackTests
         Assert.Contains("\"Name\":\"AI__Vertex__UseVertex\",\"Value\":\"true\"", json);
         Assert.Contains("\"Name\":\"AI__Vertex__ProjectId\",\"Value\":\"example-gcp-project\"", json);
         Assert.Contains("\"Name\":\"AI__Vertex__Location\",\"Value\":\"global\"", json);
+        Assert.Contains("\"Name\":\"AI__TTS__EnableWordTimings\",\"Value\":\"true\"", json);
         // Dùng lại service account Core đã có để gọi AI API, không cần thêm khoá mới vào secret.
         Assert.Matches("\"Name\":\"AI__Vertex__CredentialsJson\",\"ValueFrom\":(?:(?!\"Name\":).)*:AiGoogleCredentialsJson::", json);
         Assert.DoesNotContain("AI__Gemini__", json);

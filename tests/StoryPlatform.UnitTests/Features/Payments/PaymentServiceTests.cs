@@ -46,7 +46,7 @@ public class PaymentServiceTests
         _store.Seed(new SubscriptionPlan { Id = ReadingPlanId, Name = "Gói Đọc", PlanType = PlanType.Reading, PriceVnd = 49000, AiCredits = 0 });
         _store.Seed(new SubscriptionPlan { Id = CreativePlanId, Name = "Gói Sáng tạo", PlanType = PlanType.Creative, PriceVnd = 99000, AiCredits = 4 });
         _store.Seed(new SubscriptionPlan { Id = AddOnPlanId, Name = "Add-on", PlanType = PlanType.AddOn, PriceVnd = 29000, AiCredits = 2 });
-        _store.Seed(new SubscriptionPlan { Id = CreatorPackPlanId, Name = "Gói Creator", PlanType = PlanType.CreatorPack, Audience = PlanAudience.Creator, PriceVnd = 99000, AiCredits = 6, SubmitCredits = 20 });
+        _store.Seed(new SubscriptionPlan { Id = CreatorPackPlanId, Name = "Gói nhà sáng tạo", PlanType = PlanType.CreatorPack, Audience = PlanAudience.Creator, PriceVnd = 99000, AiCredits = 6, SubmitCredits = 20 });
 
         _notificationService
             .Setup(service => service.CreateAsync(
@@ -329,7 +329,7 @@ public class PaymentServiceTests
         var stored = Assert.Single(_store.Items<PaymentTransaction>());
         Assert.Equal((CreatorId, 99000, (int?)6, (int?)20, PaymentStatus.Pending),
             (stored.PayerUserId, stored.Amount, stored.AiCredits, stored.SubmitCredits, stored.Status));
-        Assert.Equal(("Gói Creator", "CreatorPack"), (result.PlanName, result.PlanType));
+        Assert.Equal(("Gói nhà sáng tạo", "CreatorPack"), (result.PlanName, result.PlanType));
     }
 
     [Fact]
@@ -380,16 +380,16 @@ public class PaymentServiceTests
     {
         await _sut.UpdatePlanAsync(AdminId, CreatorPackPlanId, new UpdateSubscriptionPlanRequestDto
         {
-            Name = "Gói Creator", PriceVnd = 109000, AiCredits = 8, IsActive = true, SubmitCredits = 25
+            Name = "Gói nhà sáng tạo", PriceVnd = 109000, AiCredits = 8, IsActive = true, SubmitCredits = 25
         });
         var kept = await _sut.UpdatePlanAsync(AdminId, CreatorPackPlanId, new UpdateSubscriptionPlanRequestDto
         {
-            Name = "Gói Creator", PriceVnd = 109000, AiCredits = 8, IsActive = true
+            Name = "Gói nhà sáng tạo", PriceVnd = 109000, AiCredits = 8, IsActive = true
         });
 
         Assert.Equal((25, 25), (Plan(CreatorPackPlanId).SubmitCredits, kept.SubmitCredits));
         await Assert.ThrowsAsync<BadRequestException>(() => _sut.UpdatePlanAsync(AdminId, CreatorPackPlanId,
-            new UpdateSubscriptionPlanRequestDto { Name = "Gói Creator", PriceVnd = 109000, AiCredits = 8, IsActive = true, SubmitCredits = -1 }));
+            new UpdateSubscriptionPlanRequestDto { Name = "Gói nhà sáng tạo", PriceVnd = 109000, AiCredits = 8, IsActive = true, SubmitCredits = -1 }));
     }
 
     // ---------- HandleWebhookAsync ----------

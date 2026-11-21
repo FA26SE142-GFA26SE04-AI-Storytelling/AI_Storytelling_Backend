@@ -436,7 +436,7 @@ public class ContentReportReviewServiceTests
         var sent = new List<(int Recipient, NotificationType Type, string? Payload)>();
         CaptureNotifications(sent);
 
-        await DismissAsync(item.Id, "Lý do riêng tư của Moderator");
+        await DismissAsync(item.Id, "Lý do riêng tư của kiểm duyệt viên");
 
         var notification = Assert.Single(sent);
         Assert.Equal(ContentReportHarness.ReporterId, notification.Recipient);

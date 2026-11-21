@@ -164,7 +164,7 @@ public sealed class ParentAuthoringService : ManualAuthoringService
             if (content.Contains("___") || content.Contains("{{")) warnings.Add("UNFILLED_PLACEHOLDER");
             operation.StoryVersionId = version.Id; operation.ContextFingerprint = context.Fingerprint;
             return new ParentCheckDto(operation.Id, version.Id, context.Fingerprint, errors.Count == 0,
-                errors.Distinct().ToArray(), warnings.ToArray(), "Technical limits, configured keywords in title/body and body readability only; no semantic safety assessment or AI.");
+                errors.Distinct().ToArray(), warnings.ToArray(), "Chỉ kiểm tra giới hạn kỹ thuật, từ khóa cấm đã cấu hình ở tiêu đề và nội dung, và độ dễ đọc của nội dung. Không đánh giá an toàn theo ngữ nghĩa và không dùng AI, nên bạn vẫn cần tự đọc lại.");
         }, ct);
 
     public Task<ParentContentConfirmationDto> ConfirmContentAsync(int user, int id, ParentContentConfirmRequest request, CancellationToken ct) =>

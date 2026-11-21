@@ -77,7 +77,7 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
             || actor.Role is not (UserRole.Moderator or UserRole.Administrator))
         {
             throw new ForbiddenException(
-                "Chỉ Moderator hoặc Administrator đang hoạt động mới duyệt được truyện Public Library.");
+                "Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới duyệt được truyện thư viện công khai.");
         }
 
         var item = await _unitOfWork.Repository<ModerationItem>().GetByIdAsync(itemId, cancellationToken)
@@ -85,7 +85,7 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
 
         if (item.ItemType != ModerationItemType.PublicStoryReview)
         {
-            throw new BadRequestException("Mục này không phải mục duyệt truyện Public Library.");
+            throw new BadRequestException("Mục này không phải mục duyệt truyện thư viện công khai.");
         }
 
         if (item.Status != ModerationItemStatus.Claimed || item.ClaimedByUserId != actor.Id)

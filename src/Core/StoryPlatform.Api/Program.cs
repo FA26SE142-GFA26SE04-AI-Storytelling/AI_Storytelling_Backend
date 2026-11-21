@@ -32,7 +32,10 @@ builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options 
     {
         var errors = context.ModelState.Values
             .SelectMany(value => value.Errors)
-            .Select(error => string.IsNullOrWhiteSpace(error.ErrorMessage) ? "Dữ liệu đầu vào không hợp lệ." : error.ErrorMessage)
+            // Câu mặc định của ASP.NET (tiếng Anh, ví dụ "The X field is required.") đổi sang tiếng Việt dễ hiểu.
+            .Select(error => string.IsNullOrWhiteSpace(error.ErrorMessage) ? "Dữ liệu đầu vào không hợp lệ."
+                : StoryPlatform.Application.Common.Exceptions.UserFacingMessages.TranslateValidation(error.ErrorMessage))
+            .Distinct()
             .ToList();
         return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(
             ApiResponse<object>.Fail("Dữ liệu đầu vào không hợp lệ.", errors));

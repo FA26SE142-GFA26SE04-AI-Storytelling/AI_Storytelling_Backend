@@ -55,7 +55,7 @@ public sealed class ParentAuthoringController(ParentAuthoringService service) : 
     [RequestSizeLimit(5_250_000)]
     public async Task<ActionResult<ApiResponse<CreatorImportPreviewDto>>> PreviewFile(int storyId, [FromForm] CreatorImportFileForm form, CancellationToken ct)
     {
-        if (form.File is null || form.File.Length == 0) return BadRequest(ApiResponse<CreatorImportPreviewDto>.Fail("FILE_REQUIRED"));
+        if (form.File is null || form.File.Length == 0) return BadRequest(ApiResponse<CreatorImportPreviewDto>.Fail("Bạn chưa chọn tệp để tải lên.", ["FILE_REQUIRED"]));
         await using var stream = form.File.OpenReadStream();
         return Ok(ApiResponse<CreatorImportPreviewDto>.Ok(await service.PreviewFileAsync(GetCurrentUserId(), storyId,
             form.RevisionToken, form.OperationId, form.File.FileName, stream, ct)));

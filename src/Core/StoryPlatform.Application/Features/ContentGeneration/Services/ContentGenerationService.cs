@@ -491,7 +491,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                         ? semanticSafety.Violations
                         : [!meetsThreshold
                             ? $"Safety score {safetyScore:F2} thấp hơn ngưỡng {handoff.Context.SafetyScoreThreshold:F2}."
-                            : "Semantic safety evaluation rejected the generated story."];
+                            : "AI đánh giá truyện vừa viết chưa an toàn cho trẻ."];
                     quality = quality with
                     {
                         IsPassed = false,

@@ -261,7 +261,7 @@ public sealed class StoryReviewApproveApiTests(ApiFactory factory) : IClassFixtu
         var response = await factory.ClientFor(parent).PostAsync($"/api/v1/stories/{story.Id}/review/approve", null);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Equal("INVALID_STORY_STATUS", (await ReadJsonAsync(response)).GetProperty("message").GetString());
+        Assert.Equal("Trạng thái hiện tại của truyện không cho phép thao tác này.", (await ReadJsonAsync(response)).GetProperty("message").GetString());
     }
 
     [Fact]
@@ -274,7 +274,7 @@ public sealed class StoryReviewApproveApiTests(ApiFactory factory) : IClassFixtu
         var response = await factory.ClientFor(parent).PostAsync($"/api/v1/stories/{story.Id}/review/approve", null);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("Content is not ready for media", (await ReadJsonAsync(response)).GetProperty("message").GetString());
+        Assert.Contains("Truyện chưa sẵn sàng để tạo hình ảnh và giọng đọc", (await ReadJsonAsync(response)).GetProperty("message").GetString());
     }
 }
 

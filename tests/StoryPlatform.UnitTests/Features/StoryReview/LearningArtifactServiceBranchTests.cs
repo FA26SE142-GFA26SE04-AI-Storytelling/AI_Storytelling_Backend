@@ -77,7 +77,7 @@ public sealed class LearningArtifactServiceBranchTests
         var error = await Assert.ThrowsAsync<BadRequestException>(() =>
             Service(store).GenerateArtifactsAsync(1, 1, new GenerateArtifactsRequestDto { StoryVersionId = 9 }));
 
-        Assert.Equal("StoryVersion không thuộc Story.", error.Message);
+        Assert.Equal("Phiên bản này không thuộc truyện đang mở.", error.Message);
     }
 
     [Fact]
@@ -86,7 +86,7 @@ public sealed class LearningArtifactServiceBranchTests
         var error = await Assert.ThrowsAsync<BadRequestException>(() =>
             Service(Seed()).GenerateArtifactsAsync(1, 1, new GenerateArtifactsRequestDto { StoryVersionId = 404 }));
 
-        Assert.Equal("StoryVersion không thuộc Story.", error.Message);
+        Assert.Equal("Phiên bản này không thuộc truyện đang mở.", error.Message);
     }
 
     [Fact]

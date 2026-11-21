@@ -115,7 +115,7 @@ public class ModerationQueueService : IModerationQueueService
             // Report nội dung và đánh giá truyện chỉ do Moderator xử lý, kể cả khi không còn Moderator.
             if (item.ItemType is ModerationItemType.ContentReport or ModerationItemType.StoryRating)
             {
-                throw new ForbiddenException("Report nội dung và đánh giá truyện chỉ do Moderator xử lý.");
+                throw new ForbiddenException("Report nội dung và đánh giá truyện chỉ do kiểm duyệt viên xử lý.");
             }
 
             await EnsureAdministratorMayClaimAsync(item, cancellationToken);
@@ -182,7 +182,7 @@ public class ModerationQueueService : IModerationQueueService
             || actor.Role is not (UserRole.Moderator or UserRole.Administrator))
         {
             throw new ForbiddenException(
-                "Chỉ Moderator hoặc Administrator đang hoạt động mới dùng được hàng đợi kiểm duyệt.");
+                "Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới dùng được hàng đợi kiểm duyệt.");
         }
 
         return actor;
@@ -201,7 +201,7 @@ public class ModerationQueueService : IModerationQueueService
         if (eligibleModerators > 0)
         {
             throw new ForbiddenException(
-                "Administrator chỉ xử lý hàng đợi khi không còn Moderator hợp lệ để nhận mục này.");
+                "Quản trị viên chỉ xử lý hàng đợi khi không còn kiểm duyệt viên hợp lệ để nhận mục này.");
         }
     }
 

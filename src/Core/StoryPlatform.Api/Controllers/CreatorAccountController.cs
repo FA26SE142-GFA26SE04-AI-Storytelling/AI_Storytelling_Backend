@@ -30,14 +30,14 @@ public class CreatorAccountController : BaseApiController
         [FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
     {
         var result = await _service.ListAsync(status, search, pageIndex, pageSize, cancellationToken);
-        return HandleResult(result, "Lấy danh sách Content Creator thành công.");
+        return HandleResult(result, "Lấy danh sách nhà sáng tạo nội dung thành công.");
     }
 
     [HttpGet("{creatorUserId:int}")]
     public async Task<ActionResult<ApiResponse<CreatorAccountDto>>> Get(int creatorUserId, CancellationToken cancellationToken)
     {
         var result = await _service.GetAsync(creatorUserId, cancellationToken);
-        return HandleResult(result, "Lấy thông tin Content Creator thành công.");
+        return HandleResult(result, "Lấy thông tin nhà sáng tạo nội dung thành công.");
     }
 
     /// <summary>
@@ -49,13 +49,13 @@ public class CreatorAccountController : BaseApiController
         int creatorUserId, [FromBody] DeactivateCreatorRequestDto request, CancellationToken cancellationToken)
     {
         var result = await _service.DeactivateAsync(GetCurrentUserId(), creatorUserId, request, cancellationToken);
-        return HandleResult(result, "Đã vô hiệu hoá tài khoản Content Creator.");
+        return HandleResult(result, "Đã vô hiệu hoá tài khoản nhà sáng tạo nội dung.");
     }
 
     [HttpPost("{creatorUserId:int}/reactivate")]
     public async Task<ActionResult<ApiResponse<CreatorAccountDto>>> Reactivate(int creatorUserId, CancellationToken cancellationToken)
     {
         var result = await _service.ReactivateAsync(GetCurrentUserId(), creatorUserId, cancellationToken);
-        return HandleResult(result, "Đã kích hoạt lại tài khoản Content Creator.");
+        return HandleResult(result, "Đã kích hoạt lại tài khoản nhà sáng tạo nội dung.");
     }
 }

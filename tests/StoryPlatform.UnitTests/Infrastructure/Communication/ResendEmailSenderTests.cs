@@ -78,7 +78,7 @@ public class ResendEmailSenderTests
         var sender = CreateSender(handler);
 
         await sender.SendAccountProvisionedEmailAsync(
-            "admin1@example.com", "Le Thi B", "Hieu Truong", "Quản trị viên (Administrator)", "raw-set-password-token-789");
+            "admin1@example.com", "Le Thi B", "Hieu Truong", "Quản trị viên", "raw-set-password-token-789");
 
         Assert.NotNull(handler.LastRequest);
         Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
@@ -96,7 +96,7 @@ public class ResendEmailSenderTests
 
         await sender.SendStaffInviteEmailAsync(
             "mod@example.com", "Nguyen Thi Lan", "Admin Demo",
-            "Kiểm duyệt viên (Moderator)", "raw-invite-token-xyz");
+            "Kiểm duyệt viên", "raw-invite-token-xyz");
 
         Assert.NotNull(handler.LastRequest);
         Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);

@@ -195,6 +195,14 @@ public class StoryPlatformCoreStackTests
     }
 
     [Fact]
+    public void Stack_ApiContainerHasHttpsStaffActivationUrl()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(SynthTemplate().ToJSON());
+
+        Assert.Contains("\"Name\":\"ResendSettings__StaffActivationUrl\",\"Value\":\"https://taletale.site/?auth=activate\"", json);
+    }
+
+    [Fact]
     public void Stack_ApiContainerReadsAllFiveSecretsFromConsolidatedSecret()
     {
         var template = SynthTemplate();

@@ -83,6 +83,7 @@ public class RoadmapLibraryServiceTests
 
         var row = Assert.Single(result.Items);
         Assert.Equal("friendship", row.MainCategory!.Code);
+        Assert.Equal("LifeValue", row.MainCategory!.Group);
         Assert.Equal(3, row.StoryCount);
         Assert.True(row.NeedsUpdate);
     }

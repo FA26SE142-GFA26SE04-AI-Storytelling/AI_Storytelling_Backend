@@ -120,7 +120,7 @@ public class ContentReportReviewServiceTests
         version.Lesson = "Biết chia sẻ";
         _h.ContentCategories.Add(new ContentCategory
         {
-            Id = 5, Code = "friendship", DisplayName = "Tình bạn"
+            Id = 5, Code = "friendship", DisplayName = "Tình bạn", Group = ContentCategoryGroup.LifeValue
         });
         _h.StoryCategories.Add(new StoryCategory
         {
@@ -147,6 +147,7 @@ public class ContentReportReviewServiceTests
         Assert.Equal("https://example.com/nguon", detail.AttachmentUrl);
         Assert.Equal(PublicStory, detail.Story.StoryId);
         Assert.Equal("friendship", detail.Story.Labels.Single().Code);
+        Assert.Equal("LifeValue", detail.Story.Labels.Single().Group);
         Assert.Equal(50, detail.Version!.VersionId);
         Assert.Equal("Mở đầu. Kết thúc.", detail.Version.Content);
         var scene = Assert.Single(detail.Scenes);

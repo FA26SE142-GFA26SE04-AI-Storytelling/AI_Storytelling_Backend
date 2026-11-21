@@ -79,6 +79,8 @@ public class ReportedLabelDto
 {
     public string Code { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
+    /// <summary>Nhóm nhãn: Genre, LifeValue, Learning hoặc SafetyWarning.</summary>
+    public string Group { get; set; } = string.Empty;
 }
 
 public class ReportedVersionDto

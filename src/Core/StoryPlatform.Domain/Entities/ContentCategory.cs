@@ -1,9 +1,12 @@
+using StoryPlatform.Domain.Enums;
+
 namespace StoryPlatform.Domain.Entities;
 
 public class ContentCategory : BaseEntity
 {
     public string Code { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
+    public ContentCategoryGroup Group { get; set; } = ContentCategoryGroup.Genre;
     public bool IsActive { get; set; } = true;
 
     /// <summary>Các age_band bị chặn mặc định — preset Blocked ở Bước 1.4.</summary>

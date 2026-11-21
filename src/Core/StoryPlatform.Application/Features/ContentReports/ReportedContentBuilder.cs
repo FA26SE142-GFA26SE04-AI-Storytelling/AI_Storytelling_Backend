@@ -100,7 +100,8 @@ internal static class ReportedContentBuilder
             .Select(category => new ReportedLabelDto
             {
                 Code = category.Code,
-                DisplayName = category.DisplayName
+                DisplayName = category.DisplayName,
+                Group = category.Group.ToString()
             })
             .ToList();
     }

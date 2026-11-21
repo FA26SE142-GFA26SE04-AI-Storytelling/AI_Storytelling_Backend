@@ -20,6 +20,11 @@ public class ContentCategoryConfiguration : IEntityTypeConfiguration<ContentCate
             .IsRequired()
             .HasMaxLength(150);
 
+        builder.Property(x => x.Group)
+            .HasConversion<string>()
+            .HasMaxLength(30)
+            .IsRequired();
+
         builder.Property(x => x.DefaultBlockedAgeBands)
             .HasColumnType("text[]")
             .HasDefaultValueSql("'{}'")

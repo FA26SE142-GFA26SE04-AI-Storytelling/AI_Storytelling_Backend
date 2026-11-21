@@ -150,6 +150,7 @@ public class PublicStoryReviewServiceTests
         Assert.Equal("Rùa", package.Quizzes.Single().CorrectAnswer);
         Assert.Equal("kiên nhẫn", package.Vocabulary.Single().Term);
         Assert.Equal("friendship", package.Story.Labels.Single().Code);
+        Assert.Equal("LifeValue", package.Story.Labels.Single().Group);
     }
 
     [Fact]

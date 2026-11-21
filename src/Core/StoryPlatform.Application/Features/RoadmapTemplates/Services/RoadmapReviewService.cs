@@ -64,7 +64,8 @@ public partial class RoadmapReviewService : IRoadmapReviewService
                     {
                         Id = category.Id,
                         Code = category.Code,
-                        DisplayName = category.DisplayName
+                        DisplayName = category.DisplayName,
+                        Group = category.Group.ToString()
                     },
                 ReadingLevelMin = roadmap.ReadingLevelMin,
                 ReadingLevelMax = roadmap.ReadingLevelMax,

@@ -45,7 +45,7 @@ public sealed class RoadmapHarness
 
         Categories.Add(new ContentCategory
         {
-            Id = 5, Code = "friendship", DisplayName = "Tình bạn", IsActive = true
+            Id = 5, Code = "friendship", DisplayName = "Tình bạn", Group = ContentCategoryGroup.LifeValue, IsActive = true
         });
         Categories.Add(new ContentCategory
         {

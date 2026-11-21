@@ -1,4 +1,4 @@
--- 60. listening_interactions (5, đều của truyện 900 / phiên bản 900)
+-- 60. listening_interactions (6: 900-904 của truyện 900 / phiên bản 900, 905 của truyện 901)
 -- Tương tác lúc nghe chỉ neo được vào cuối một đoạn văn không phải đoạn cuối; truyện 900 có 6 đoạn nên đủ chỗ.
 -- Bộ này giống gói Phase 4 sinh ra cho nội dung của 11_stories.sql (Id 900): vị trí neo và câu trích đã được
 -- ListeningInteractionRules kiểm đạt (offset tính theo đúng chuỗi nội dung, không đổi chữ khi sửa seed).
@@ -15,3 +15,23 @@ VALUES
     (903, 900, 'PicturePrediction', 194, NULL, 'Ai đang chờ Thỏ ở cửa hang?', 'Bác Gấu dẫn Thỏ về tới cửa hang.', 160, 192, NULL, NULL, NULL, 219, NULL, NULL, NULL, 'Con chọn rồi! Mình cùng nghe tiếp xem nhé.', NOW() - INTERVAL '1 day', false),
     (904, 900, 'EventOrdering', 259, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Con nhớ giỏi quá, đúng thứ tự rồi!', 'Mình cùng nghe lại mấy đoạn này rồi xếp lại nhé.', NULL, NOW() - INTERVAL '1 day', false)
 ON CONFLICT ("Id") DO NOTHING;
+
+-- Điền từ (FillBlank) của truyện 901 (bé 6 Phúc, 9-10 tuổi): neo cuối đoạn 2 (offset 142), đã gắn scene 902
+-- và có đủ audio hint / match / noMatch nên GET content của bé trả tương tác này.
+-- Đoạn kết thúc tại offset: P1=50, P2=142, P3=270, P4=333. Câu trích [50, 93) nằm trong đoạn 2.
+-- Đáp án chấp nhận ở 61_listening_interaction_options.sql (911 "khủng long", 912 "con khủng long").
+INSERT INTO listening_interactions (
+    "Id", "StoryVersionId", "Type", "AnchorOffset", "StorySceneId", "Kind", "Prompt", "SourceQuote", "SourceStart", "SourceEnd", "CharacterName", "HiddenWord", "Hint", "RevealOffset", "Explanation", "MatchFeedback", "NoMatchFeedback", "WaitFeedback", "CreatedAt", "IsDeleted"
+)
+VALUES
+    (905, 901, 'FillBlank', 142, 902, NULL, NULL, 'Phúc đứng ngắm bộ xương khủng long rất lớn.', 50, 93, NULL, 'khủng long', 'Một loài vật rất to sống từ thời xa xưa.', NULL, NULL, 'Con nghe kỹ quá, đúng là khủng long rồi!', 'Mình cùng nghe lại nhé: Phúc ngắm bộ xương khủng long.', NULL, NOW() - INTERVAL '2 days', false)
+ON CONFLICT ("Id") DO NOTHING;
+
+-- Audio của tương tác 905: 19_media_assets.sql chèn sẵn 909-911 ở dạng giữ chỗ (đã xóa mềm) vì media_assets
+-- nạp trước listening_interactions; khi tương tác đã có thì gắn vào 905 và bật lên (cùng cách 73_story_ratings.sql
+-- gắn moderation_items). Mỗi phần chữ bé nghe một file: hint, match, noMatch.
+UPDATE media_assets AS m
+SET "Type" = 'ListeningAudio', "ListeningInteractionId" = 905, "AudioPartKey" = v.part,
+    "Status" = 'Ready', "ValidationStatus" = 'Passed', "IsDeleted" = false
+FROM (VALUES (909, 'hint'), (910, 'match'), (911, 'noMatch')) AS v(id, part)
+WHERE m."Id" = v.id AND m."StoryVersionId" = 901 AND m."ListeningInteractionId" IS NULL;

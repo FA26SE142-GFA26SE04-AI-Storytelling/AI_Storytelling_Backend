@@ -28,7 +28,8 @@ VALUES
     (22, NULL, NULL, false, NULL, NULL, 'Approved', NOW() - INTERVAL '10 days', 12, NOW() - INTERVAL '9 days', '{"general":"Đạt yêu cầu công khai"}'::jsonb),
     (23, NULL, NULL, false, NULL, NULL, 'Pending', NOW() - INTERVAL '30 minutes', NULL, NULL, NULL),
     (24, NULL, NULL, false, NULL, NULL, 'None', NULL, NULL, NULL, NULL),
-    (900, NULL, NULL, false, NULL, NULL, 'None', NULL, NULL, NULL, NULL)
+    (900, NULL, NULL, false, NULL, NULL, 'None', NULL, NULL, NULL, NULL),
+    (901, NULL, NULL, false, NULL, NULL, 'None', NULL, NULL, NULL, NULL)
 ON CONFLICT ("StoryVersionId") DO NOTHING;
 
 UPDATE story_version_moderation_states

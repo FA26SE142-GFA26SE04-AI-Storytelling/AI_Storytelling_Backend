@@ -138,6 +138,7 @@
               <li>Scene 4 · không có tương tác.</li>
               <li>Scene 5 (cuối) · <b>904</b> EventOrdering · thẻ 908 Thỏ đi lạc vào rừng (câu ở scene 0), 909 Bác Gấu đến giúp Thỏ (scene 2), 910 Thỏ biết nhờ người lớn giúp (scene 5). Thứ tự đúng 908 → 909 → 910.</li>
             </ul></li>
+          <li><b>Điền từ (FillBlank) — truyện 901 "Chuyến đi bảo tàng"</b>: truyện AI 9–10 tuổi của parent_demo3 cho bé 6 Phúc, đã duyệt và có media nên bé đọc được ngay sau khi nạp seed. Bé 6 đăng nhập bằng <span class="code">{ "secret": "demo-qr-child-06" }</span>. Tương tác <b>905</b> ở scene 1: câu che "Phúc đứng ngắm bộ xương ____ rất lớn.", gợi ý "Một loài vật rất to sống từ thời xa xưa.", HiddenWord "khủng long", đáp án chấp nhận 911 "khủng long", 912 "con khủng long" (seed <span class="code">11_stories</span>, <span class="code">15_story_scenes</span>, <span class="code">19_media_assets</span>, <span class="code">60_listening_interactions</span>, <span class="code">61_listening_interaction_options</span>). Mỗi phiên chỉ ghi một lần trả lời: muốn thử đáp án khác thì gọi complete rồi mở phiên mới.</li>
           <li><b>Điều kiện trước:</b> seed để truyện 900 ở trạng thái chờ duyệt. Trẻ chỉ đọc được khi truyện đã duyệt (P4-31) và có media (Phase 5 thật, hoặc media giả ở mục 0b Bước 7) — xem <a href="api-test-tuong-tac-luc-nghe-p1-p4.html">hướng dẫn P1–P6</a>.</li>
           <li><b>Lưu ý:</b> nhiều test đổi trạng thái (lưu attempt, đóng phiên). Chạy theo thứ tự trong trang; muốn chạy lại từ đầu thì mở phiên mới hoặc nạp lại seed.</li>
         </ul>
@@ -167,6 +168,8 @@ const CHILD = "bé 1 (secret demo-qr-child-01)";
 const P1 = "parent_demo1";
 const R = "/api/v1/child/reading/sessions";
 const ATT = id => `POST ${R}/<SESSION_ID>/interactions/${id}/attempts`;
+const CHILD6 = "bé 6 (secret demo-qr-child-06)";
+const ATT_FB = `POST ${R}/<FILLBLANK_SESSION_ID>/interactions/<FILLBLANK_ID>/attempts`;
 const result = o => Object.assign({ interactionId: 0, type: "", matched: null, feedback: null, feedbackAudioUrl: null,
   suggestedAnswer: null, replaySceneIndexes: [], revealed: false, correctOrderOptionIds: null }, o);
 const FAIL = msg => J({ success: false, message: msg, data: null, errors: null });
@@ -379,16 +382,23 @@ const STEPS = [
         { as: CHILD, call: ATT(900), body: { optionId: 900 }, data: "Phụ huynh ngắt phiên (hoặc đặt ForceExitRequestedAt của phiên trong DB) rồi gọi.",
           out: JSON.parse(FAIL("Truyện này đang nghỉ một chút, mình đọc truyện khác nhé!")),
           auto: "InterruptedSession_IsForbidden" }],
-      ["ok", "TA1", "Điền từ (FillBlank) khớp, không phân biệt hoa thường và khoảng trắng thừa", "200, matched = true, feedback là lời khen, suggestedAnswer = null. Chỉ có test tự động (seed chưa có truyện 9–10 tuổi có FillBlank).",
-        { as: CHILD, call: ATT("<FILLBLANK_ID>"), body: { answer: "  BÁC   gấu " }, data: "Truyện 9–10 tuổi có FillBlank với HiddenWord = \"bác Gấu\". GET content trả maskedSentence có ____, options = [], không trả đáp án.",
-          out: result({ interactionId: "<FILLBLANK_ID>", type: "FillBlank", matched: true, feedback: "<MatchFeedback>", feedbackAudioUrl: "…listen-<id>-i-match.mp3" }),
+      ["ok", "TA1", "Điền từ (FillBlank) khớp, không phân biệt hoa thường và khoảng trắng thừa", "200, matched = true, feedback \"Con nghe kỹ quá, đúng là khủng long rồi!\", suggestedAnswer = null. GET content trước đó: scene 1 có interaction 905, maskedSentence \"Phúc đứng ngắm bộ xương ____ rất lớn.\", hint có, options = [], không có hiddenWord / đáp án.",
+        { as: CHILD6, call: ATT_FB, body: { answer: "  KHỦNG   long " }, data: "Bé 6 đăng nhập (demo-qr-child-06), POST /api/v1/child/reading/sessions với { \"storyId\": 901 }, nhập sessionId vào <FILLBLANK_SESSION_ID>. Gửi body bằng UTF-8 (công cụ làm mất dấu sẽ làm câu trả lời không khớp).",
+          out: result({ interactionId: 905, type: "FillBlank", matched: true, feedback: "Con nghe kỹ quá, đúng là khủng long rồi!", feedbackAudioUrl: "…listen-905-i-match.mp3" }),
           auto: "FillBlank_ShowsMaskedSentenceAndHint_WithoutAcceptedAnswers · FillBlank_MatchesAnyAcceptedAnswerIgnoringCaseAndSpaces" }],
-      ["neg", "TA2", "Điền từ chưa khớp", "200, matched = false, feedback là gợi ý (NoMatchFeedback), suggestedAnswer = HiddenWord. Chỉ có test tự động.",
-        { as: CHILD, call: ATT("<FILLBLANK_ID>"), body: { answer: "chú Cáo" },
-          out: result({ interactionId: "<FILLBLANK_ID>", type: "FillBlank", matched: false, feedback: "<NoMatchFeedback>", feedbackAudioUrl: "…listen-<id>-i-noMatch.mp3", suggestedAnswer: "bác Gấu" }),
+      ["edge", "TA2", "Gửi lại trong cùng phiên: trả kết quả cũ, không ghi lần mới", "200, matched = true như TA1 (không chấm \"chú Cáo\"); SQL: listening_interaction_attempts chỉ có 1 dòng cho phiên và tương tác 905. feedbackAudioUrl là link đã ký giống lần đầu (không trả đường dẫn lưu trữ thô).",
+        { as: CHILD6, call: ATT_FB, body: { answer: "chú Cáo" }, data: "Chạy ngay sau TA1, cùng <FILLBLANK_SESSION_ID>.",
+          out: result({ interactionId: 905, type: "FillBlank", matched: true, feedback: "Con nghe kỹ quá, đúng là khủng long rồi!" }) }],
+      ["neg", "TA3", "Điền từ chưa khớp", "200, matched = false, feedback \"Mình cùng nghe lại nhé: Phúc ngắm bộ xương khủng long.\", suggestedAnswer = \"khủng long\".",
+        { as: CHILD6, call: ATT_FB, body: { answer: "chú Cáo" }, data: "Gọi POST /api/v1/child/reading/sessions/<FILLBLANK_SESSION_ID>/complete, mở phiên mới truyện 901 và nhập sessionId mới vào <FILLBLANK_SESSION_ID>.",
+          out: result({ interactionId: 905, type: "FillBlank", matched: false, feedback: "Mình cùng nghe lại nhé: Phúc ngắm bộ xương khủng long.", feedbackAudioUrl: "…listen-905-i-noMatch.mp3", suggestedAnswer: "khủng long" }),
           auto: "FillBlank_NotMatched_GivesHintFeedbackAndSuggestedAnswer" }],
-      ["neg", "TA3", "Điền từ trống hoặc dài quá 100 ký tự", "400 LISTENING_ANSWER_INVALID. Chỉ có test tự động.",
-        { as: CHILD, call: ATT("<FILLBLANK_ID>"), body: { answer: "" }, out: JSON.parse(FAIL("LISTENING_ANSWER_INVALID")),
+      ["edge", "TA4", "Thiếu dấu thì không khớp", "200, matched = false, suggestedAnswer = \"khủng long\" (so khớp có phân biệt dấu). Đáp án khác trong danh sách (\"con khủng long\") ở phiên mới thì matched = true.",
+        { as: CHILD6, call: ATT_FB, body: { answer: "khung long" }, data: "Complete phiên của TA3, mở phiên mới truyện 901, nhập sessionId mới vào <FILLBLANK_SESSION_ID>.",
+          out: result({ interactionId: 905, type: "FillBlank", matched: false, feedback: "Mình cùng nghe lại nhé: Phúc ngắm bộ xương khủng long.", suggestedAnswer: "khủng long" }) }],
+      ["neg", "TA5", "Điền từ trống hoặc dài quá 100 ký tự", "400 \"Thông tin gửi lên chưa hợp lệ. Bạn kiểm tra lại rồi thử lại nhé.\" (mã LISTENING_ANSWER_INVALID); không ghi attempt.",
+        { as: CHILD6, call: ATT_FB, body: { answer: "   " }, data: "Complete phiên của TA4, mở phiên mới truyện 901, nhập sessionId mới vào <FILLBLANK_SESSION_ID> (phiên đã trả lời 905 sẽ trả kết quả cũ thay vì 400). Lỗi 400 không ghi attempt.",
+          out: JSON.parse(FAIL("Thông tin gửi lên chưa hợp lệ. Bạn kiểm tra lại rồi thử lại nhé.")),
           auto: "FillBlank_BlankOrTooLongAnswer_IsBadRequest" }]
     ] }
   ]
@@ -1076,7 +1086,8 @@ const VAR_DEFS = [
   ["READ_ALOUD_INTERACTION_ID", "", "readAloudPractice.interactionId từ GET content; cần truyện có đoạn luyện thật"],
   ["SESSION_ID", "", "Bước 1 (T03): data.sessionId của phiên đọc truyện 900"],
   ["NEW_SESSION_ID", "", "Bước 5 (T35): data.sessionId của phiên mới"],
-  ["FILLBLANK_ID", "", "Id tương tác FillBlank (chỉ khi có truyện 9–10 tuổi)"]
+  ["FILLBLANK_ID", "905", "Id tương tác FillBlank của truyện 901 (seed)"],
+  ["FILLBLANK_SESSION_ID", "", "sessionId phiên đọc truyện 901 của bé 6 (mỗi test điền từ cần phiên chưa trả lời)"]
 ];
 let VARS = {};
 try { VARS = JSON.parse(localStorage.getItem("tuong-tac-tre-vars") || "{}"); } catch (e) { VARS = {}; }

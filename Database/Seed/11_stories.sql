@@ -96,3 +96,13 @@ VALUES
     (20, 'Voi con biết xin lỗi', 'Mẫu Creator đang chờ Moderator duyệt yêu cầu gỡ', 'Voi con lỡ làm đổ lâu đài cát của Thỏ. Voi con xin lỗi và cùng Thỏ xây lại. Hai bạn xây được một lâu đài còn đẹp hơn.', NULL, 'Tình bạn', 'Biết nhận lỗi và sửa sai', 'vi', '6-8', 2, 'level_2', 'Ready', 'Manual', true, NOW() - INTERVAL '4 days', NULL, 13, NULL, NOW() - INTERVAL '6 days', false, 'Creator', 'ReadingMediaOnly', 1, 1, md5('seed-creator-story-20'), 'reading'),
     (21, 'Cá heo tốt bụng', 'Mẫu Creator đang có yêu cầu rà soát của Moderator', 'Cá heo thấy bạn rùa bị mắc vào lưới. Cá heo gọi các bạn cá đến giúp. Mọi người cùng gỡ lưới và rùa được tự do.', NULL, 'Động vật', 'Biết giúp đỡ người gặp khó khăn', 'vi', '6-8', 2, 'level_2', 'Ready', 'Manual', true, NOW() - INTERVAL '3 days', NULL, 13, NULL, NOW() - INTERVAL '5 days', false, 'Creator', 'ReadingMediaOnly', 1, 1, md5('seed-creator-story-21'), 'reading')
 ON CONFLICT ("Id") DO NOTHING;
+
+-- Tương tác điền từ (FillBlank): truyện AI 9-10 tuổi của bé 6 Phúc (parent_demo3), đã duyệt, bé đọc được.
+-- 4 đoạn; FillBlank neo cuối đoạn 2 (60_listening_interactions.sql). Có sẵn scene / segment / media (15, 16, 17, 19).
+-- Gắn nhãn FAMILY (12_story_categories.sql) vì chính sách an toàn của bé 6 chỉ cho FAMILY và SCIENCE.
+INSERT INTO stories (
+    "Id", "Title", "Description", "Content", "CoverImageUrl", "Genre", "MoralLesson", "Language", "AgeBand", "ReadingLevel", "VocabularyLevel", "Status", "Source", "IsPublished", "ChildVisibleAt", "ArchivedReason", "AuthorUserId", "ChildProfileId", "CreatedAt", "IsDeleted", "Scope", "OutputMode", "AudienceRevision", "AuthoringLastVersionNo", "AuthoringRevisionToken", "ExperienceMode"
+)
+VALUES
+    (901, 'Chuyến đi bảo tàng', 'Mẫu tương tác điền từ của bé 6, đã duyệt và có media', E'Cuối tuần, bố đưa Phúc đến bảo tàng thiên nhiên.\n\nPhúc đứng ngắm bộ xương khủng long rất lớn. Bố kể khủng long sống cách đây hàng triệu năm.\n\nỞ phòng bên, Phúc thấy một hóa thạch hình vỏ ốc. Cô hướng dẫn viên nói hóa thạch là dấu vết của sinh vật xưa còn lưu trong đá.\n\nTrên đường về, Phúc hứa sẽ đọc thêm sách về khủng long cùng bố.', NULL, 'Khoa học', 'Ham tìm hiểu thế giới xung quanh', 'vi', '9-10', 4, 'level_4', 'Ready', 'Ai', true, NOW() - INTERVAL '2 days', NULL, 4, 6, NOW() - INTERVAL '3 days', false, 'Parent', 'Learning', 1, 1, md5('seed-parent-story-901'), 'reading')
+ON CONFLICT ("Id") DO NOTHING;

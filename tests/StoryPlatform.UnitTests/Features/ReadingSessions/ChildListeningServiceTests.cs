@@ -252,4 +252,28 @@ public sealed class ChildListeningServiceTests
         Assert.Empty(_h.Badges);
         Assert.Empty(_h.Attempts);
     }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task RepeatedAnswer_ReturnsSignedFeedbackAudio_LikeTheFirstAnswer(int interactionId)
+    {
+        var sut = new ChildListeningService(_h.UnitOfWork.Object, new PrefixSigner());
+        var request = interactionId == 1
+            ? new SubmitListeningAttemptRequestDto { OptionId = 10 }
+            : new SubmitListeningAttemptRequestDto { Answer = "bác Gấu" };
+
+        var first = await sut.SubmitAttemptAsync(ReadingHarness.Child, _session.Id, interactionId, request);
+        var repeat = await sut.SubmitAttemptAsync(ReadingHarness.Child, _session.Id, interactionId, request);
+
+        Assert.StartsWith("signed:", first.FeedbackAudioUrl);
+        Assert.Equal(first.FeedbackAudioUrl, repeat.FeedbackAudioUrl);
+        Assert.Single(_h.ListeningAttempts);
+    }
+
+    private sealed class PrefixSigner : Application.Features.ReadingSessions.Interfaces.IChildMediaUrlSigner
+    {
+        public Task<Func<string?, string?>> SignAsync(IEnumerable<string?> paths, CancellationToken cancellationToken = default) =>
+            Task.FromResult<Func<string?, string?>>(path => path is null ? null : "signed:" + path);
+    }
 }

@@ -254,6 +254,7 @@ ON CONFLICT ("Id") DO NOTHING;
 -- Mục 30: đánh giá 2 sao kèm chữ của parent_demo2 (Id 3) cho truyện 21, bị lọc tự động giữ lại, đang chờ.
 -- Mục 31: đánh giá 5 sao của parent_demo1 (Id 2) cho truyện 21, bị parent_demo2 báo cáo, đang chờ.
 -- Mục 32: đánh giá 1 sao của parent_demo3 (Id 4) cho truyện 16, moderator_demo1 đã ẩn.
+-- Mục 33: đánh giá 4 sao của parent_demo1 (Id 2) cho truyện 16, bị parent_demo3 báo cáo, moderator_demo2 giữ lại (Approved).
 INSERT INTO moderation_items (
     "Id", "ItemType", "Status", "Priority", "StoryId", "CreatedByUserId",
     "ClaimedByUserId", "ClaimedAt", "SlaDueAt", "Flags", "DecisionReason",
@@ -268,5 +269,8 @@ VALUES
      NULL, NULL, 0, false, NOW() - INTERVAL '10 hours', false),
     (32, 'StoryRating', 'Rejected', 'Low', 16, 4,
      11, NOW() - INTERVAL '25 hours', NOW() + INTERVAL '22 hours', '{"source":"Screening","reasonCode":"LOW_RATING_WITH_TEXT"}'::jsonb, 'Nhận xét công kích, không góp ý cụ thể cho truyện',
-     11, NOW() - INTERVAL '1 day', 2, false, NOW() - INTERVAL '2 days', false)
+     11, NOW() - INTERVAL '1 day', 2, false, NOW() - INTERVAL '2 days', false),
+    (33, 'StoryRating', 'Approved', 'Low', 16, 2,
+     12, NOW() - INTERVAL '6 hours', NOW() + INTERVAL '64 hours', '{"source":"Report","reasonCode":null}'::jsonb, 'Đánh giá chỉ chấm sao, không vi phạm quy định',
+     12, NOW() - INTERVAL '5 hours', 2, false, NOW() - INTERVAL '8 hours', false)
 ON CONFLICT ("Id") DO NOTHING;

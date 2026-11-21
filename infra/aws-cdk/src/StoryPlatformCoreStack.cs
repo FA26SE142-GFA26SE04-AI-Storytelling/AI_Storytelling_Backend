@@ -259,6 +259,13 @@ public sealed class StoryPlatformCoreStack : Stack
             apiEnvironment["AIService__IdTokenAudience"] = aiServiceBaseUrl;
             apiSecrets["AIService__InternalApiKey"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "AiInternalApiKey");
             apiSecrets["AIService__GoogleCredentialsJson"] = Amazon.CDK.AWS.ECS.Secret.FromSecretsManager(AppSecrets, "AiGoogleCredentialsJson");
+
+            // Quét vùng xám bằng AI (Vertex qua AI API): thiếu Provider thì bước quét bị bỏ qua và màn kiểm duyệt
+            // luôn báo "Chưa có kết quả quét AI". Điểm >= 30 vào hàng chờ kiểm duyệt vùng xám, >= 70 bị chặn.
+            apiEnvironment["GrayZoneModeration__Provider"] = "Vertex";
+            apiEnvironment["GrayZoneModeration__WarningThreshold"] = "30";
+            apiEnvironment["GrayZoneModeration__BlockThreshold"] = "70";
+            apiEnvironment["GrayZoneModeration__MaximumRiskScore"] = "100";
         }
 
         // Kho media (ảnh, âm thanh) trên Supabase Storage. Chỉ bật khi truyền --context supabaseUrl=https://...;

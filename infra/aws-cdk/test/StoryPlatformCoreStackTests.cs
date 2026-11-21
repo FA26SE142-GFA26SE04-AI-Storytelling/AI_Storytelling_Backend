@@ -531,6 +531,11 @@ public class StoryPlatformCoreStackTests
         // Mỗi biến phải trỏ đúng khoá của nó trong secret: đổi chéo hai khoá thì test phải đỏ.
         Assert.Matches("\"Name\":\"AIService__InternalApiKey\",\"ValueFrom\":(?:(?!\"Name\":).)*:AiInternalApiKey::", json);
         Assert.Matches("\"Name\":\"AIService__GoogleCredentialsJson\",\"ValueFrom\":(?:(?!\"Name\":).)*:AiGoogleCredentialsJson::", json);
+        // Quét vùng xám (Vertex qua AI API) chỉ bật cùng AI API; Vertex bắt buộc thang điểm 100.
+        Assert.Contains("\"Name\":\"GrayZoneModeration__Provider\",\"Value\":\"Vertex\"", json);
+        Assert.Contains("\"Name\":\"GrayZoneModeration__WarningThreshold\",\"Value\":\"30\"", json);
+        Assert.Contains("\"Name\":\"GrayZoneModeration__BlockThreshold\",\"Value\":\"70\"", json);
+        Assert.Contains("\"Name\":\"GrayZoneModeration__MaximumRiskScore\",\"Value\":\"100\"", json);
     }
 
     [Fact]
@@ -540,6 +545,7 @@ public class StoryPlatformCoreStackTests
         var json = System.Text.Json.JsonSerializer.Serialize(SynthTemplate().ToJSON());
 
         Assert.DoesNotContain("AIService__", json);
+        Assert.DoesNotContain("GrayZoneModeration__", json);
     }
 
     [Fact]

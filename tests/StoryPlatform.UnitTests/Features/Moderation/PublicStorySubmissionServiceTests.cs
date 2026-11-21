@@ -335,7 +335,7 @@ public class PublicStorySubmissionServiceTests
 
         var error = await Assert.ThrowsAsync<ConflictException>(() => SubmitAsync());
 
-        Assert.Contains("Gói Creator", error.Message);
+        Assert.Contains("Gói nhà sáng tạo", error.Message);
         Assert.Empty(_h.CreditUsages);
         _h.UnitOfWork.Verify(unit => unit.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
         _h.UnitOfWork.Verify(unit => unit.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);

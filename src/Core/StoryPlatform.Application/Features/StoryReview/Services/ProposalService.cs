@@ -54,7 +54,7 @@ public sealed class ProposalService : IProposalService
 
         if (proposal!.Status != "pending")
         {
-            throw new BadRequestException("Proposal is no longer pending");
+            throw new BadRequestException("Đề xuất này đã được xử lý rồi. Bạn tải lại trang để xem kết quả mới nhất.");
         }
 
         // Cached proposals created before camelCase serialization still need to apply.
@@ -92,7 +92,7 @@ public sealed class ProposalService : IProposalService
                 await _reviewService.ApplyListeningProposalAsync(userId, proposal, cancellationToken);
                 break;
             default:
-                throw new BadRequestException($"Unknown artifact type: {proposal.ArtifactType}");
+                throw new BadRequestException("Loại đề xuất này chưa được hỗ trợ.");
         }
 
         await _cache.UpdateStatusAsync(proposalId, "applied");
@@ -100,7 +100,7 @@ public sealed class ProposalService : IProposalService
         return new ApplyDiscardResponseDto
         {
             Success = true,
-            Message = "Proposal applied successfully"
+            Message = "Đã áp dụng đề xuất."
         };
     }
 
@@ -110,7 +110,7 @@ public sealed class ProposalService : IProposalService
         EnsureProposalAccess(proposal, userId, storyId);
         if (proposal!.Status != "pending")
         {
-            throw new BadRequestException("Proposal is no longer pending");
+            throw new BadRequestException("Đề xuất này đã được xử lý rồi. Bạn tải lại trang để xem kết quả mới nhất.");
         }
 
         await _cache.UpdateStatusAsync(proposalId, "discarded");
@@ -118,7 +118,7 @@ public sealed class ProposalService : IProposalService
         return new ApplyDiscardResponseDto
         {
             Success = true,
-            Message = "Proposal discarded"
+            Message = "Đã bỏ đề xuất."
         };
     }
 
@@ -140,7 +140,7 @@ public sealed class ProposalService : IProposalService
                 var endExclusive = endProperty.GetInt32();
                 if (start < 0 || endExclusive <= start || endExclusive > currentContent.Length)
                 {
-                    throw new BadRequestException("The story changed and the proposal selection is no longer valid.");
+                    throw new BadRequestException("Truyện vừa thay đổi nên đoạn được chọn trong đề xuất không còn khớp. Bạn hãy tạo đề xuất mới.");
                 }
                 nextContent = string.Concat(currentContent.AsSpan(0, start), replacement, currentContent.AsSpan(endExclusive));
             }
@@ -220,7 +220,7 @@ public sealed class ProposalService : IProposalService
                     // AI trả loại dạng snake_case (multiple_choice); bỏ dấu gạch dưới rồi đọc không phân biệt hoa thường.
                     var quizType = Enum.TryParse<QuizType>(type.Replace("_", string.Empty).Replace("-", string.Empty), true, out var parsedType)
                         ? parsedType
-                        : throw new BadRequestException($"Unknown quiz type: {type}");
+                        : throw new BadRequestException($"Dạng câu hỏi \"{type}\" chưa được hỗ trợ.");
                     // Đúng/Sai được lưu là "true"/"false" (xem ContentGenerationService và kiểm tra IsValidQuizItem); AI trả "Đúng"/"Sai".
                     if (quizType == QuizType.TrueFalse)
                     {

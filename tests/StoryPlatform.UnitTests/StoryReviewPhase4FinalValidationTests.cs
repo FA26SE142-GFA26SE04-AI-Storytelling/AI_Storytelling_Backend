@@ -34,8 +34,8 @@ public sealed class StoryReviewPhase4FinalValidationTests
         await service.CompleteStoryReviewAsync(1, 1);
         var afterReview = await service.ValidateAsync(1, 1);
         Assert.True(afterReview.CanApprove, string.Join("; ", afterReview.Issues));
-        Assert.Contains(afterReview.Checks, c => c.Name == "vocabulary_valid" && c.Message == "skipped");
-        Assert.Contains(afterReview.Checks, c => c.Name == "quiz_valid" && c.Message == "skipped");
+        Assert.Contains(afterReview.Checks, c => c.Name == "vocabulary_valid" && c.Message == "Không áp dụng");
+        Assert.Contains(afterReview.Checks, c => c.Name == "quiz_valid" && c.Message == "Không áp dụng");
     }
 
     [Fact]
@@ -134,7 +134,7 @@ public sealed class StoryReviewPhase4FinalValidationTests
         Assert.False(result.CanApprove);
         var safetyCheck = result.Checks.First(c => c.Name == "safety_passed");
         Assert.False(safetyCheck.Passed);
-        Assert.Contains(result.Issues, i => i.Contains("blocked term"));
+        Assert.Contains(result.Issues, i => i.Contains("bị chặn"));
     }
 
     [Fact]
@@ -158,7 +158,7 @@ public sealed class StoryReviewPhase4FinalValidationTests
         Assert.False(result.CanApprove);
         var profileCheck = result.Checks.First(c => c.Name == "profile_decision_resolved");
         Assert.False(profileCheck.Passed);
-        Assert.Contains(result.Issues, i => i.Contains("Existing story evaluation decision is Blocked"));
+        Assert.Contains(result.Issues, i => i.Contains("vấn đề an toàn"));
     }
 
     [Fact]

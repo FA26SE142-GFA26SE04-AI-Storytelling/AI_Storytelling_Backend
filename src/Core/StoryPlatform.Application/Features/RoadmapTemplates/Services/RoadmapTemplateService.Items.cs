@@ -119,7 +119,7 @@ public partial class RoadmapTemplateService
         if (ineligible.Count > 0)
         {
             throw new BadRequestException(
-                $"Truyện không phải Public Library đang công khai: {string.Join(", ", ineligible)}.");
+                $"Truyện không phải thư viện công khai đang công khai: {string.Join(", ", ineligible)}.");
         }
 
         var itemRepository = _unitOfWork.Repository<ReadingRoadmapItem>();

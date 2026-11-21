@@ -134,7 +134,7 @@ public class StaffAccountServiceTests
         Assert.False(result.IsActivated);
         _emailSenderMock.Verify(e => e.SendStaffInviteEmailAsync(
             created.Email, created.FullName, "Admin Demo",
-            It.Is<string>(label => label.Contains(role.ToString())), "raw-invite-token",
+            It.Is<string>(label => label == (role == UserRole.Administrator ? "Quản trị viên" : "Kiểm duyệt viên")), "raw-invite-token",
             It.IsAny<CancellationToken>()), Times.Once);
         _auditLogWriterMock.Verify(a => a.LogAsync(
             _admin.Id, auditAction, nameof(UserAccount), created.Id,
@@ -224,7 +224,7 @@ public class StaffAccountServiceTests
             DateTime.UtcNow.AddHours(72.1));
         _emailSenderMock.Verify(e => e.SendStaffInviteEmailAsync(
             pending.Email, pending.FullName, "Admin Demo",
-            It.Is<string>(label => label.Contains(role.ToString())),
+            It.Is<string>(label => label == (role == UserRole.Administrator ? "Quản trị viên" : "Kiểm duyệt viên")),
             "fresh-invite-token", It.IsAny<CancellationToken>()), Times.Once);
     }
 

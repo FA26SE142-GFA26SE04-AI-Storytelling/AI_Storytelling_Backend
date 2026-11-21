@@ -147,7 +147,7 @@ public class ContentReportService : IContentReportService
         if (story.Scope != StoryScope.Creator || !story.IsPublished
             || story.Status == StoryStatus.Rejected || story.ArchivedAt != null)
         {
-            throw new BadRequestException("Chỉ tạo mục rà soát cho nội dung Public Library đang công khai.");
+            throw new BadRequestException("Chỉ tạo mục rà soát cho nội dung thư viện công khai đang công khai.");
         }
 
         if (request.ReadingRoadmapId.HasValue)
@@ -267,7 +267,7 @@ public class ContentReportService : IContentReportService
         var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken);
         if (user == null || user.IsDeleted || user.Status != AccountStatus.Active || user.Role != UserRole.Moderator)
         {
-            throw new ForbiddenException("Chỉ Moderator đang hoạt động mới tạo được mục rà soát.");
+            throw new ForbiddenException("Chỉ kiểm duyệt viên đang hoạt động mới tạo được mục rà soát.");
         }
 
         return user;

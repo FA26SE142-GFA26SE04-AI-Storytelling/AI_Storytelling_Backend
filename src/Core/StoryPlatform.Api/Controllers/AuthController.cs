@@ -55,7 +55,7 @@ public class AuthController : BaseApiController
     {
         await _authService.RegisterCreatorAsync(request, cancellationToken);
         return HandleResult<object?>(null,
-            "Đăng ký Content Creator thành công. Vui lòng xác thực email; đơn của bạn sẽ được quản trị viên xét duyệt.");
+            "Đăng ký nhà sáng tạo nội dung thành công. Vui lòng xác thực email; đơn của bạn sẽ được quản trị viên xét duyệt.");
     }
 
     /// <summary>

@@ -48,8 +48,9 @@ public class ExceptionHandlingMiddleware
         {
             case AppException appEx:
                 statusCode = appEx.StatusCode;
-                message = appEx.Message;
-                _logger.LogWarning(appEx, "Ngoại lệ nghiệp vụ [{StatusCode}]: {Message}", statusCode, message);
+                // Log giữ mã gốc; người dùng nhận câu tiếng Việt thân thiện.
+                _logger.LogWarning(appEx, "Ngoại lệ nghiệp vụ [{StatusCode}]: {Message}", statusCode, appEx.Message);
+                message = UserFacingMessages.Translate(appEx.Message);
                 break;
 
             case UnauthorizedAccessException:

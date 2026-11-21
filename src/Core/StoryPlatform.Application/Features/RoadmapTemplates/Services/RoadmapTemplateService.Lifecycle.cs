@@ -23,7 +23,7 @@ public partial class RoadmapTemplateService
         if (!isPublishedSource && !isOrphanDraft)
         {
             throw new ConflictException(
-                "Chỉ nhân bản được bộ đang công khai hoặc bản Nháp của Moderator đã bị vô hiệu hóa.");
+                "Chỉ nhân bản được bộ đang công khai hoặc bản Nháp của kiểm duyệt viên đã bị vô hiệu hóa.");
         }
 
         var sourceId = source.Id;

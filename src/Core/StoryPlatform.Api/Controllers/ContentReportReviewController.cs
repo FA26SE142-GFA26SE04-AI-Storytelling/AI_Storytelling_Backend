@@ -27,7 +27,7 @@ public class ContentReportReviewController : BaseApiController
     {
         var result = await _reviewService.GetDetailAsync(
             GetCurrentUserId(), itemId, cancellationToken);
-        return HandleResult(result, "Lấy chi tiết report thành công.");
+        return HandleResult(result, "Lấy chi tiết báo cáo thành công.");
     }
 
     /// <summary>Bỏ qua report vì không vi phạm; lý do là bắt buộc.</summary>
@@ -39,7 +39,7 @@ public class ContentReportReviewController : BaseApiController
     {
         var result = await _reviewService.DismissAsync(
             GetCurrentUserId(), itemId, request, cancellationToken);
-        return HandleResult(result, "Đã bỏ qua report.");
+        return HandleResult(result, "Đã bỏ qua báo cáo.");
     }
 
     /// <summary>Gỡ truyện (Archive), không xóa cứng; lý do gỡ và lý do chi tiết là bắt buộc.</summary>

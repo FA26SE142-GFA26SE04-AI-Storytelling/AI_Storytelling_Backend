@@ -100,7 +100,7 @@ public class PublicStoryReviewController : BaseApiController
     {
         var result = await _reviewService.RequestChangesAsync(
             GetCurrentUserId(), itemId, request, cancellationToken);
-        return HandleResult(result, "Đã gửi yêu cầu sửa cho Content Creator.");
+        return HandleResult(result, "Đã gửi yêu cầu sửa cho nhà sáng tạo nội dung.");
     }
 
     /// <summary>Từ chối phiên bản đang duyệt.</summary>

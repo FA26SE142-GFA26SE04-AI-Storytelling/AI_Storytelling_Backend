@@ -138,7 +138,7 @@ public partial class ContentReportReviewService : IContentReportReviewService
             || actor.Status != AccountStatus.Active
             || actor.Role != UserRole.Moderator)
         {
-            throw new ForbiddenException("Chỉ Moderator đang hoạt động mới xử lý được report.");
+            throw new ForbiddenException("Chỉ kiểm duyệt viên đang hoạt động mới xử lý được báo cáo.");
         }
 
         var item = await _unitOfWork.Repository<ModerationItem>()
@@ -150,7 +150,7 @@ public partial class ContentReportReviewService : IContentReportReviewService
 
         if (item.ItemType != ModerationItemType.ContentReport)
         {
-            throw new BadRequestException("Mục này không phải mục xử lý report.");
+            throw new BadRequestException("Mục này không phải mục xử lý báo cáo.");
         }
 
         if (item.Status != ModerationItemStatus.Claimed || item.ClaimedByUserId != actor.Id)
@@ -174,7 +174,7 @@ public partial class ContentReportReviewService : IContentReportReviewService
     {
         if (item.ContentReportId == null)
         {
-            throw new BadRequestException("Mục chưa gắn report để xử lý.");
+            throw new BadRequestException("Mục chưa gắn báo cáo để xử lý.");
         }
 
         var report = await _unitOfWork.Repository<ContentReport>()

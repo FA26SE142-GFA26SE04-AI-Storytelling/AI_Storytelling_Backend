@@ -37,7 +37,7 @@ public class TokenQuotaController : BaseApiController
     public async Task<ActionResult<ApiResponse<CreatorQuotaDto>>> GetCreatorQuota(CancellationToken cancellationToken)
     {
         var result = await _tokenQuotaService.GetCreatorQuotaAsync(GetCurrentUserId(), cancellationToken);
-        return HandleResult(result, "Lấy thông tin lượt của Creator thành công.");
+        return HandleResult(result, "Lấy thông tin lượt của nhà sáng tạo thành công.");
     }
 
     /// <summary>

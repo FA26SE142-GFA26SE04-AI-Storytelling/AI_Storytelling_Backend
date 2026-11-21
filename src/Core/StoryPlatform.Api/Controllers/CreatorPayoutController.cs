@@ -56,7 +56,7 @@ public class CreatorPayoutController : BaseApiController
         int creatorUserId, CancellationToken cancellationToken)
     {
         var result = await _service.GetOverviewAsync(creatorUserId, cancellationToken);
-        return HandleResult(result, "Lấy số dư và lịch sử chi của Creator thành công.");
+        return HandleResult(result, "Lấy số dư và lịch sử chi của nhà sáng tạo thành công.");
     }
 
     /// <summary>Đánh dấu Đã chi đúng bằng số dư, kèm mã giao dịch ngân hàng và ngày chuyển; số dư về 0.</summary>

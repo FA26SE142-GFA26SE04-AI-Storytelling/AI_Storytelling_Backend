@@ -16,14 +16,40 @@ public abstract class AppException : Exception
 
 public class NotFoundException : AppException
 {
-    public NotFoundException(string message) : base(message, 404)
+    /// <summary>Tên đối tượng (tiếng Anh, dùng trong code) đổi sang tiếng Việt cho câu báo lỗi.</summary>
+    private static readonly Dictionary<string, string> EntityNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Story"] = "truyện", ["Story draft"] = "bản nháp truyện", ["StoryVersion"] = "phiên bản truyện",
+        ["Current story version"] = "phiên bản hiện tại của truyện", ["StoryWish"] = "điều ước",
+        ["StoryGenerationRequest"] = "yêu cầu tạo truyện", ["StorySegment"] = "đoạn truyện",
+        ["IllustrationBeat"] = "khung tranh", ["MediaAsset"] = "hình ảnh hoặc âm thanh", ["Media asset"] = "hình ảnh hoặc âm thanh",
+        ["Media job"] = "lượt tạo hình ảnh và giọng đọc", ["Media generation job"] = "lượt tạo hình ảnh và giọng đọc",
+        ["ChildProfile"] = "hồ sơ của bé", ["Audit log"] = "nhật ký thao tác", ["Business Report"] = "báo cáo kinh doanh",
+        ["Content Category"] = "danh mục nội dung", ["Report"] = "báo cáo nội dung", ["Guide"] = "hướng dẫn viết",
+        ["AssistanceTask"] = "phiên trợ lý", ["AssistanceStep"] = "bước trợ lý", ["Import preview"] = "bản xem trước khi nhập truyện",
+        ["ModerationRubricVersion"] = "phiên bản bộ tiêu chí kiểm duyệt", ["ModerationItem"] = "mục kiểm duyệt",
+        ["Family confirmation"] = "xác nhận của gia đình", ["ParentStoryPackage"] = "gói truyện",
+        ["Interaction"] = "tương tác", ["ListeningInteraction"] = "tương tác khi nghe", ["Vocabulary"] = "từ vựng",
+        ["Proposal"] = "đề xuất",
+        ["Safety Policy của hồ sơ trẻ"] = "chính sách an toàn của bé", ["Learning Profile của hồ sơ trẻ"] = "hồ sơ học tập của bé",
+        ["Gói Subscription"] = "gói đăng ký", ["Đơn đăng ký Content Creator"] = "đơn đăng ký nhà sáng tạo nội dung",
+        ["Tài khoản Content Creator"] = "tài khoản nhà sáng tạo nội dung",
+    };
+
+    public NotFoundException(string message) : base(Describe(message), 404)
     {
     }
 
     public NotFoundException(string entityName, object key)
-        : base($"Không tìm thấy {entityName} với mã định danh [{key}].", 404)
+        : base(EntityNames.TryGetValue(entityName, out var name)
+            ? $"Không tìm thấy {name}. Có thể dữ liệu đã bị xoá hoặc bạn không có quyền truy cập."
+            : $"Không tìm thấy {entityName} với mã định danh [{key}].", 404)
     {
     }
+
+    private static string Describe(string message) => EntityNames.TryGetValue(message.Trim(), out var name)
+        ? $"Không tìm thấy {name}. Có thể dữ liệu đã bị xoá hoặc bạn không có quyền truy cập."
+        : message;
 }
 
 public class BadRequestException : AppException

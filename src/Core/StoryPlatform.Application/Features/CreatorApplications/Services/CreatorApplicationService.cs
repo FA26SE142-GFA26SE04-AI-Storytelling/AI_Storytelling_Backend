@@ -37,7 +37,7 @@ public class CreatorApplicationService : ICreatorApplicationService
     {
         var applicant = await RequireApplicantAsync(applicantUserId, cancellationToken);
         var latest = await LatestOfAsync(applicantUserId, cancellationToken)
-                     ?? throw new NotFoundException("Không tìm thấy đơn đăng ký Content Creator của tài khoản này.");
+                     ?? throw new NotFoundException("Không tìm thấy đơn đăng ký nhà sáng tạo nội dung của tài khoản này.");
         // Creator không thấy Admin nào đã xử lý đơn.
         var dto = MapToDto(latest, applicant, reviewer: null);
         return dto;
@@ -57,7 +57,7 @@ public class CreatorApplicationService : ICreatorApplicationService
         {
             throw new ForbiddenException(applicant.Status == AccountStatus.Active
                 ? "Tài khoản đã được duyệt, không cần nộp lại đơn."
-                : "Tài khoản chưa thể nộp lại đơn đăng ký Content Creator.");
+                : "Tài khoản chưa thể nộp lại đơn đăng ký nhà sáng tạo nội dung.");
         }
 
         var application = new CreatorApplication
@@ -120,7 +120,7 @@ public class CreatorApplicationService : ICreatorApplicationService
     {
         var application = await _unitOfWork.Repository<CreatorApplication>().FirstOrDefaultAsync(
                               item => item.Id == applicationId, "Applicant,ReviewedBy", cancellationToken)
-                          ?? throw new NotFoundException("Đơn đăng ký Content Creator", applicationId);
+                          ?? throw new NotFoundException("Đơn đăng ký nhà sáng tạo nội dung", applicationId);
         return MapToDto(application, application.Applicant, application.ReviewedBy);
     }
 
@@ -152,12 +152,12 @@ public class CreatorApplicationService : ICreatorApplicationService
         var admin = await users.GetByIdAsync(adminUserId, cancellationToken);
         if (admin is not { Role: UserRole.Administrator, Status: AccountStatus.Active } || admin.IsDeleted)
         {
-            throw new ForbiddenException("Chỉ Administrator đang hoạt động mới xử lý được đơn đăng ký Content Creator.");
+            throw new ForbiddenException("Chỉ quản trị viên đang hoạt động mới xử lý được đơn đăng ký nhà sáng tạo nội dung.");
         }
 
         var applications = _unitOfWork.Repository<CreatorApplication>();
         var found = await applications.GetByIdAsync(applicationId, cancellationToken)
-                    ?? throw new NotFoundException("Đơn đăng ký Content Creator", applicationId);
+                    ?? throw new NotFoundException("Đơn đăng ký nhà sáng tạo nội dung", applicationId);
         var approve = rejectionReason == null;
         CreatorApplication application;
         UserAccount applicant;
@@ -170,7 +170,7 @@ public class CreatorApplicationService : ICreatorApplicationService
             // Đọc lại sau khi có khoá: bản đã track trước đó có thể cũ nếu Admin khác vừa xử lý xong.
             _unitOfWork.DiscardTrackedChanges();
             application = await applications.GetByIdAsync(applicationId, cancellationToken)
-                          ?? throw new NotFoundException("Đơn đăng ký Content Creator", applicationId);
+                          ?? throw new NotFoundException("Đơn đăng ký nhà sáng tạo nội dung", applicationId);
             if (application.Status != CreatorApplicationStatus.Pending)
             {
                 throw new ConflictException("Đơn này đã được xử lý.");
@@ -185,7 +185,7 @@ public class CreatorApplicationService : ICreatorApplicationService
 
             if (applicant.Status == AccountStatus.Registered)
             {
-                throw new ConflictException("Creator chưa xác thực email, chưa thể xử lý đơn.");
+                throw new ConflictException("Nhà sáng tạo chưa xác thực email, chưa thể xử lý đơn.");
             }
 
             if (applicant.Status != AccountStatus.AwaitingApproval)
@@ -250,7 +250,7 @@ public class CreatorApplicationService : ICreatorApplicationService
         var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken);
         if (user == null || user.IsDeleted || user.Role != UserRole.ContentCreator)
         {
-            throw new ForbiddenException("Chỉ tài khoản Content Creator mới có đơn đăng ký.");
+            throw new ForbiddenException("Chỉ tài khoản nhà sáng tạo nội dung mới có đơn đăng ký.");
         }
 
         return user;

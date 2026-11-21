@@ -66,7 +66,7 @@ public class PlanSettingsService(IUnitOfWork unitOfWork, IPlanSettingsProvider p
     {
         if (request.ReadingFundPercent is < 0 or > 100 || request.CreativeFundPercent is < 0 or > 100)
         {
-            throw new BadRequestException("Tỷ lệ quỹ Creator phải từ 0 đến 100%.");
+            throw new BadRequestException("Tỷ lệ quỹ nhà sáng tạo phải từ 0 đến 100%.");
         }
 
         if (request.MinimumReadSeconds is < 1 or > 3600)

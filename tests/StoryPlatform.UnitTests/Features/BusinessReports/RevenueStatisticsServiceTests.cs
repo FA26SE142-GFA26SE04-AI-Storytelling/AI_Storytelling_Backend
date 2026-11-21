@@ -230,7 +230,7 @@ public class RevenueStatisticsServiceTests
     [Fact]
     public async Task GetAsync_CreatorPackRevenue_IsReportedButNotCountedAsParentsBuyingOrInTheCreatorFund()
     {
-        _store.Seed(new SubscriptionPlan { Id = 5, Name = "Gói Creator", PlanType = PlanType.CreatorPack, Audience = PlanAudience.Creator, PriceVnd = 99000, AiCredits = 6, SubmitCredits = 20 });
+        _store.Seed(new SubscriptionPlan { Id = 5, Name = "Gói nhà sáng tạo", PlanType = PlanType.CreatorPack, Audience = PlanAudience.Creator, PriceVnd = 99000, AiCredits = 6, SubmitCredits = 20 });
         Paid(ReadingPlanId, 1, MidPeriod);
         Paid(5, 50, MidPeriod);
         Paid(5, 50, MidPeriod.AddDays(1));

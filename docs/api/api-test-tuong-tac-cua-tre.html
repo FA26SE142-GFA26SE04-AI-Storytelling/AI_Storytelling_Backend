@@ -138,7 +138,7 @@
               <li>Scene 4 · không có tương tác.</li>
               <li>Scene 5 (cuối) · <b>904</b> EventOrdering · thẻ 908 Thỏ đi lạc vào rừng (câu ở scene 0), 909 Bác Gấu đến giúp Thỏ (scene 2), 910 Thỏ biết nhờ người lớn giúp (scene 5). Thứ tự đúng 908 → 909 → 910.</li>
             </ul></li>
-          <li><b>Điền từ (FillBlank) — truyện 901 "Chuyến đi bảo tàng"</b>: truyện AI 9–10 tuổi của parent_demo3 cho bé 6 Phúc, đã duyệt và có media nên bé đọc được ngay sau khi nạp seed. Bé 6 đăng nhập bằng <span class="code">{ "secret": "demo-qr-child-06" }</span>. Tương tác <b>905</b> ở scene 1: câu che "Phúc đứng ngắm bộ xương ____ rất lớn.", gợi ý "Một loài vật rất to sống từ thời xa xưa.", HiddenWord "khủng long", đáp án chấp nhận 911 "khủng long", 912 "con khủng long" (seed <span class="code">11_stories</span>, <span class="code">15_story_scenes</span>, <span class="code">19_media_assets</span>, <span class="code">60_listening_interactions</span>, <span class="code">61_listening_interaction_options</span>). Mỗi phiên chỉ ghi một lần trả lời: muốn thử đáp án khác thì gọi complete rồi mở phiên mới.</li>
+          <li><b>Điền từ (FillBlank) — truyện 901 "Chuyến đi bảo tàng"</b>: truyện AI 9–10 tuổi của parent_demo3 cho bé 6 Phúc, đã duyệt và có media nên bé đọc được ngay sau khi nạp seed. Bé 6 đăng nhập bằng <span class="code">{ "secret": "demo-qr-child-06" }</span>. Tương tác <b>905</b> ở scene 1: câu che "Phúc đứng ngắm bộ xương ____ rất lớn.", gợi ý "Một loài vật rất to sống từ thời xa xưa.", audio đọc nguyên câu ngắn (media 912, phần text) để bé nghe lại câu rồi điền, HiddenWord "khủng long", đáp án chấp nhận 911 "khủng long", 912 "con khủng long" (seed <span class="code">11_stories</span>, <span class="code">15_story_scenes</span>, <span class="code">19_media_assets</span>, <span class="code">60_listening_interactions</span>, <span class="code">61_listening_interaction_options</span>). Mỗi phiên chỉ ghi một lần trả lời: muốn thử đáp án khác thì gọi complete rồi mở phiên mới.</li>
           <li><b>Điều kiện trước:</b> seed để truyện 900 ở trạng thái chờ duyệt. Trẻ chỉ đọc được khi truyện đã duyệt (P4-31) và có media (Phase 5 thật, hoặc media giả ở mục 0b Bước 7) — xem <a href="api-test-tuong-tac-luc-nghe-p1-p4.html">hướng dẫn P1–P6</a>.</li>
           <li><b>Lưu ý:</b> nhiều test đổi trạng thái (lưu attempt, đóng phiên). Chạy theo thứ tự trong trang; muốn chạy lại từ đầu thì mở phiên mới hoặc nạp lại seed.</li>
         </ul>
@@ -224,7 +224,7 @@ const STEPS = [
       ["Trường dùng theo loại", [
         "Checkpoint: kind, prompt, options[] (có feedback, feedbackAudioUrl), audioUrls.prompt / noMatch.",
         "RolePlay: characterName, modelSentence, modelAudioUrl (audio của segment chứa câu thoại), audioUrls.match; options rỗng.",
-        "FillBlank: maskedSentence (chỗ trống là ____), hint, audioUrls.hint / match / noMatch; options rỗng.",
+        "FillBlank: maskedSentence (chỗ trống là ____), hint, audioUrls.text (đọc nguyên câu ngắn, có cả từ cần điền, để bé nghe lại rồi điền) / hint / match / noMatch; options rỗng. Thiếu audio text thì tương tác không hiện.",
         "EventOrdering: options[] (3 thẻ đã xáo, có audioUrl, không có feedback), audioUrls.match / noMatch.",
         "PicturePrediction: prompt, waitFeedback, revealSceneIndex, options[] (có imageUrl, feedback), audioUrls.prompt / wait."]],
       ["Không bao giờ trả", ["isMatch, correctOrder, explanation, hiddenWord, sourceQuote, đáp án chấp nhận của FillBlank."]],
@@ -382,7 +382,7 @@ const STEPS = [
         { as: CHILD, call: ATT(900), body: { optionId: 900 }, data: "Phụ huynh ngắt phiên (hoặc đặt ForceExitRequestedAt của phiên trong DB) rồi gọi.",
           out: JSON.parse(FAIL("Truyện này đang nghỉ một chút, mình đọc truyện khác nhé!")),
           auto: "InterruptedSession_IsForbidden" }],
-      ["ok", "TA1", "Điền từ (FillBlank) khớp, không phân biệt hoa thường và khoảng trắng thừa", "200, matched = true, feedback \"Con nghe kỹ quá, đúng là khủng long rồi!\", suggestedAnswer = null. GET content trước đó: scene 1 có interaction 905, maskedSentence \"Phúc đứng ngắm bộ xương ____ rất lớn.\", hint có, options = [], không có hiddenWord / đáp án.",
+      ["ok", "TA1", "Điền từ (FillBlank) khớp, không phân biệt hoa thường và khoảng trắng thừa", "200, matched = true, feedback \"Con nghe kỹ quá, đúng là khủng long rồi!\", suggestedAnswer = null. GET content trước đó: scene 1 có interaction 905, maskedSentence \"Phúc đứng ngắm bộ xương ____ rất lớn.\", hint có, audioUrls có text / hint / match / noMatch (text = audio đọc nguyên câu \"Phúc đứng ngắm bộ xương khủng long rất lớn.\"), options = [], không có hiddenWord / đáp án.",
         { as: CHILD6, call: ATT_FB, body: { answer: "  KHỦNG   long " }, data: "Bé 6 đăng nhập (demo-qr-child-06), POST /api/v1/child/reading/sessions với { \"storyId\": 901 }, nhập sessionId vào <FILLBLANK_SESSION_ID>. Gửi body bằng UTF-8 (công cụ làm mất dấu sẽ làm câu trả lời không khớp).",
           out: result({ interactionId: 905, type: "FillBlank", matched: true, feedback: "Con nghe kỹ quá, đúng là khủng long rồi!", feedbackAudioUrl: "…listen-905-i-match.mp3" }),
           auto: "FillBlank_ShowsMaskedSentenceAndHint_WithoutAcceptedAnswers · FillBlank_MatchesAnyAcceptedAnswerIgnoringCaseAndSpaces" }],

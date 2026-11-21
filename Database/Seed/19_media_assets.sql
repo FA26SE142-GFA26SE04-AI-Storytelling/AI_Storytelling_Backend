@@ -1,5 +1,5 @@
--- 19. media_assets (35: 30 active + 2 soft-deleted historical records + 3 giữ chỗ; 901-911 thuộc truyện 901)
--- 909-911: audio của tương tác điền từ 905, chèn ở dạng giữ chỗ (đã xóa mềm) vì listening_interactions nạp sau;
+-- 19. media_assets (36: 30 active + 2 soft-deleted historical records + 4 giữ chỗ; 901-912 thuộc truyện 901)
+-- 909-912: audio của tương tác điền từ 905, chèn ở dạng giữ chỗ (đã xóa mềm) vì listening_interactions nạp sau;
 -- 60_listening_interactions.sql đổi sang ListeningAudio, gắn vào 905 và bật lên.
 -- Url luu object path trong private Supabase bucket, khong luu public/signed URL.
 -- Selects from a VALUES list (rather than a plain INSERT) so rows whose StorySceneId
@@ -45,7 +45,8 @@ FROM (VALUES
     (908, 901, 904, 904, 'TtsAudio', '901/audio-3.mp3', 'Ready', 'Passed', 3, NULL, NOW() - INTERVAL '2 days', false),
     (909, 901, NULL, NULL, 'Illustration', '901/listen-905-i-hint.mp3', 'Queued', 'Pending', NULL, NULL, NOW() - INTERVAL '2 days', true),
     (910, 901, NULL, NULL, 'Illustration', '901/listen-905-i-match.mp3', 'Queued', 'Pending', NULL, NULL, NOW() - INTERVAL '2 days', true),
-    (911, 901, NULL, NULL, 'Illustration', '901/listen-905-i-noMatch.mp3', 'Queued', 'Pending', NULL, NULL, NOW() - INTERVAL '2 days', true)
+    (911, 901, NULL, NULL, 'Illustration', '901/listen-905-i-noMatch.mp3', 'Queued', 'Pending', NULL, NULL, NOW() - INTERVAL '2 days', true),
+    (912, 901, NULL, NULL, 'Illustration', '901/listen-905-i-text.mp3', 'Queued', 'Pending', NULL, NULL, NOW() - INTERVAL '2 days', true)
 ) AS v("Id", "StoryVersionId", "StorySceneId", "StorySegmentId", "Type", "Url", "Status", "ValidationStatus", "SceneIndex", "WordTimings", "CreatedAt", "IsDeleted")
 WHERE (v."StorySceneId" IS NULL OR EXISTS (SELECT 1 FROM story_scenes s WHERE s."Id" = v."StorySceneId"))
   AND (v."StorySegmentId" IS NULL OR EXISTS (SELECT 1 FROM story_segments sg WHERE sg."Id" = v."StorySegmentId"))

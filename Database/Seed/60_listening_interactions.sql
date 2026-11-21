@@ -17,7 +17,7 @@ VALUES
 ON CONFLICT ("Id") DO NOTHING;
 
 -- Điền từ (FillBlank) của truyện 901 (bé 6 Phúc, 9-10 tuổi): neo cuối đoạn 2 (offset 142), đã gắn scene 902
--- và có đủ audio hint / match / noMatch nên GET content của bé trả tương tác này.
+-- và có đủ audio text / hint / match / noMatch nên GET content của bé trả tương tác này.
 -- Đoạn kết thúc tại offset: P1=50, P2=142, P3=270, P4=333. Câu trích [50, 93) nằm trong đoạn 2.
 -- Đáp án chấp nhận ở 61_listening_interaction_options.sql (911 "khủng long", 912 "con khủng long").
 INSERT INTO listening_interactions (
@@ -27,11 +27,11 @@ VALUES
     (905, 901, 'FillBlank', 142, 902, NULL, NULL, 'Phúc đứng ngắm bộ xương khủng long rất lớn.', 50, 93, NULL, 'khủng long', 'Một loài vật rất to sống từ thời xa xưa.', NULL, NULL, 'Con nghe kỹ quá, đúng là khủng long rồi!', 'Mình cùng nghe lại nhé: Phúc ngắm bộ xương khủng long.', NULL, NOW() - INTERVAL '2 days', false)
 ON CONFLICT ("Id") DO NOTHING;
 
--- Audio của tương tác 905: 19_media_assets.sql chèn sẵn 909-911 ở dạng giữ chỗ (đã xóa mềm) vì media_assets
+-- Audio của tương tác 905: 19_media_assets.sql chèn sẵn 909-912 ở dạng giữ chỗ (đã xóa mềm) vì media_assets
 -- nạp trước listening_interactions; khi tương tác đã có thì gắn vào 905 và bật lên (cùng cách 73_story_ratings.sql
--- gắn moderation_items). Mỗi phần chữ bé nghe một file: hint, match, noMatch.
+-- gắn moderation_items). Mỗi phần chữ bé nghe một file: text (đọc nguyên câu ngắn), hint, match, noMatch.
 UPDATE media_assets AS m
 SET "Type" = 'ListeningAudio', "ListeningInteractionId" = 905, "AudioPartKey" = v.part,
     "Status" = 'Ready', "ValidationStatus" = 'Passed', "IsDeleted" = false
-FROM (VALUES (909, 'hint'), (910, 'match'), (911, 'noMatch')) AS v(id, part)
+FROM (VALUES (909, 'hint'), (910, 'match'), (911, 'noMatch'), (912, 'text')) AS v(id, part)
 WHERE m."Id" = v.id AND m."StoryVersionId" = 901 AND m."ListeningInteractionId" IS NULL;

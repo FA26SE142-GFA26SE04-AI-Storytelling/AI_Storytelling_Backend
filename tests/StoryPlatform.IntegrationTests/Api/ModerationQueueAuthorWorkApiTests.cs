@@ -325,6 +325,19 @@ public sealed class ModerationQueueAuthorWorkApiTests(ApiFactory factory) : ICla
                 SourceQuote = "Đoạn mở đầu trời mưa.",
                 HiddenWord = "mưa"
             });
+            // FillBlank bắt buộc có audio đọc nguyên câu ngắn (phần "text") thì media mới đủ để gửi duyệt.
+            db.MediaAssets.Add(new MediaAsset
+            {
+                Id = 9512,
+                StoryVersionId = version.Id,
+                ListeningInteractionId = 9710,
+                AudioPartKey = "text",
+                Type = MediaType.ListeningAudio,
+                Status = MediaStatus.Ready,
+                ValidationStatus = ValidationStatus.Passed,
+                IsCurrent = true,
+                Url = "https://cdn.test/accept-fillblank-text.mp3"
+            });
 
             foreach (var (id, title) in new[] { (946, "Truyện mẫu 1"), (947, "Truyện mẫu 2") })
             {

@@ -848,6 +848,11 @@ namespace StoryPlatform.Infrastructure.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)");
 
+                    b.Property<string>("Group")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 

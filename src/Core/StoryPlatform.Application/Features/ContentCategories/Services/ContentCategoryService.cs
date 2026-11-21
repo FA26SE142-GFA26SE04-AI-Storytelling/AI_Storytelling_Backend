@@ -30,6 +30,7 @@ public class ContentCategoryService : IContentCategoryService
         {
             Code = code,
             DisplayName = request.DisplayName.Trim(),
+            Group = ParseGroup(request.Group),
             IsActive = request.IsActive,
             CreatedByAdminId = currentUserId,
             DefaultBlockedAgeBands = NormalizeAgeBands(request.DefaultBlockedAgeBands)
@@ -50,7 +51,9 @@ public class ContentCategoryService : IContentCategoryService
             throw new NotFoundException("Content Category", contentCategoryId);
         }
 
+        var group = request.Group == null ? category.Group : ParseGroup(request.Group);
         category.DisplayName = request.DisplayName.Trim();
+        category.Group = group;
         category.IsActive = request.IsActive;
         if (request.DefaultBlockedAgeBands != null)
         {
@@ -100,9 +103,23 @@ public class ContentCategoryService : IContentCategoryService
         Id = category.Id,
         Code = category.Code,
         DisplayName = category.DisplayName,
+        Group = category.Group.ToString(),
         IsActive = category.IsActive,
         DefaultBlockedAgeBands = category.DefaultBlockedAgeBands.ToList()
     };
+
+    private static ContentCategoryGroup ParseGroup(string? value)
+    {
+        var trimmed = value?.Trim();
+        if (string.IsNullOrEmpty(trimmed) || char.IsDigit(trimmed[0])
+            || !Enum.TryParse<ContentCategoryGroup>(trimmed, ignoreCase: true, out var group)
+            || !Enum.IsDefined(group))
+        {
+            throw new BadRequestException("Nhóm nhãn không hợp lệ.");
+        }
+
+        return group;
+    }
 
     private static List<string> NormalizeAgeBands(IEnumerable<string>? values)
     {

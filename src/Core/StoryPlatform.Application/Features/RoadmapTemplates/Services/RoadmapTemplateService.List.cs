@@ -104,7 +104,8 @@ public partial class RoadmapTemplateService
                     {
                         Id = category.Id,
                         Code = category.Code,
-                        DisplayName = category.DisplayName
+                        DisplayName = category.DisplayName,
+                        Group = category.Group.ToString()
                     },
                 StoryCount = roadmapItems.Count(item => item.ReadingRoadmapId == roadmap.Id),
                 Status = roadmap.Status.ToString(),

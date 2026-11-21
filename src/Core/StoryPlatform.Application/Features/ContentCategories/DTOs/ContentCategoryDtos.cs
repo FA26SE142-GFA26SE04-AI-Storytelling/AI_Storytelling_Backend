@@ -7,6 +7,8 @@ public class ContentCategoryDto
     public int Id { get; set; }
     public string Code { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
+    /// <summary>Genre, LifeValue, Learning hoặc SafetyWarning.</summary>
+    public string Group { get; set; } = string.Empty;
     public bool IsActive { get; set; }
     public List<string> DefaultBlockedAgeBands { get; set; } = new();
 }
@@ -21,6 +23,9 @@ public class CreateContentCategoryRequestDto
     [StringLength(150, ErrorMessage = "Tên hiển thị tối đa 150 ký tự.")]
     public string DisplayName { get; set; } = string.Empty;
 
+    /// <summary>Bắt buộc: Genre, LifeValue, Learning hoặc SafetyWarning.</summary>
+    public string? Group { get; set; }
+
     public bool IsActive { get; set; } = true;
     public List<string>? DefaultBlockedAgeBands { get; set; }
 }
@@ -30,6 +35,9 @@ public class UpdateContentCategoryRequestDto
     [Required(ErrorMessage = "Tên hiển thị không được để trống.")]
     [StringLength(150, ErrorMessage = "Tên hiển thị tối đa 150 ký tự.")]
     public string DisplayName { get; set; } = string.Empty;
+
+    /// <summary>Null giữ nhóm hiện tại; có giá trị thì phải là Genre, LifeValue, Learning hoặc SafetyWarning.</summary>
+    public string? Group { get; set; }
 
     public bool IsActive { get; set; } = true;
     public List<string>? DefaultBlockedAgeBands { get; set; }

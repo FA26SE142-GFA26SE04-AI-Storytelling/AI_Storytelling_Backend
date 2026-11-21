@@ -62,7 +62,8 @@ public partial class RoadmapTemplateService
             {
                 Id = category.Id,
                 Code = category.Code,
-                DisplayName = category.DisplayName
+                DisplayName = category.DisplayName,
+                Group = category.Group.ToString()
             });
 
         var items = stories.Select(story => new CandidateStoryDto

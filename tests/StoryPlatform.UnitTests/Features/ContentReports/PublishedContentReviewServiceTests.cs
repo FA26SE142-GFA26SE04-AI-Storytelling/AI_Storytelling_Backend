@@ -51,7 +51,7 @@ public class PublishedContentReviewServiceTests
         var now = DateTime.UtcNow;
         _h.ContentCategories.Add(new ContentCategory
         {
-            Id = 5, Code = "friendship", DisplayName = "Tình bạn"
+            Id = 5, Code = "friendship", DisplayName = "Tình bạn", Group = ContentCategoryGroup.LifeValue
         });
         for (var id = 30; id < 33; id++)
         {
@@ -76,6 +76,7 @@ public class PublishedContentReviewServiceTests
         Assert.Equal(3, result.TotalCount);
         Assert.Equal(31, Assert.Single(result.Items).Id);
         Assert.Equal("friendship", Assert.Single(result.Items).Labels.Single().Code);
+        Assert.Equal("LifeValue", Assert.Single(result.Items).Labels.Single().Group);
     }
 
     [Fact]
@@ -83,7 +84,7 @@ public class PublishedContentReviewServiceTests
     {
         _h.ContentCategories.Add(new ContentCategory
         {
-            Id = 5, Code = "friendship", DisplayName = "Tình bạn"
+            Id = 5, Code = "friendship", DisplayName = "Tình bạn", Group = ContentCategoryGroup.LifeValue
         });
         _h.AddRoadmap(1, AgeBand.Age_6_8, 5, DateTime.UtcNow, PublicStory, 999);
 
@@ -98,6 +99,7 @@ public class PublishedContentReviewServiceTests
         Assert.Equal("RoadmapTemplate", item.Source);
         Assert.Equal(2, item.StoryCount);
         Assert.Equal("friendship", item.Labels.Single().Code);
+        Assert.Equal("LifeValue", item.Labels.Single().Group);
     }
 
     [Fact]
@@ -164,7 +166,7 @@ public class PublishedContentReviewServiceTests
     {
         _h.ContentCategories.Add(new ContentCategory
         {
-            Id = 5, Code = "friendship", DisplayName = "Tình bạn"
+            Id = 5, Code = "friendship", DisplayName = "Tình bạn", Group = ContentCategoryGroup.LifeValue
         });
         var roadmap = _h.AddRoadmap(
             1, AgeBand.Age_6_8, 5, DateTime.UtcNow,
@@ -177,6 +179,7 @@ public class PublishedContentReviewServiceTests
         Assert.Equal(new[] { ContentReportHarness.PrivateStoryId, PublicStory },
             result.Stories.Select(story => story.StoryId));
         Assert.Equal("friendship", result.MainCategory!.Code);
+        Assert.Equal("LifeValue", result.MainCategory!.Group);
         _h.Audit.Verify(audit => audit.LogAsync(
             Moderator, "PublishedRoadmapOpened", nameof(ReadingRoadmap), 1,
             null, It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);

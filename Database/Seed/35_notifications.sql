@@ -33,5 +33,8 @@ ON CONFLICT ("Id") DO NOTHING;
 INSERT INTO notifications ("Id", "RecipientUserId", "Type", "Payload", "Status", "ReadAt", "CreatedAt", "IsDeleted")
 VALUES
     (29, 13, 'StoryRatingPublished', '{"storyId":21,"ratingId":1,"rating":5}', 'Unread', NULL, NOW() - INTERVAL '40 hours', false),
-    (30, 4, 'StoryRatingModerated', '{"storyId":16,"ratingId":4,"decision":"Hidden","reason":"Nhận xét công kích, không góp ý cụ thể cho truyện"}', 'Unread', NULL, NOW() - INTERVAL '1 day', false)
+    (30, 4, 'StoryRatingModerated', '{"storyId":16,"ratingId":4,"decision":"Hidden","reason":"Nhận xét công kích, không góp ý cụ thể cho truyện"}', 'Unread', NULL, NOW() - INTERVAL '1 day', false),
+    (31, 13, 'StoryRatingPublished', '{"storyId":14,"ratingId":5,"rating":5}', 'Unread', NULL, NOW() - INTERVAL '30 hours', false),
+    (32, 13, 'StoryRatingPublished', '{"storyId":14,"ratingId":6,"rating":3}', 'Unread', NULL, NOW() - INTERVAL '6 hours', false),
+    (33, 13, 'StoryRatingPublished', '{"storyId":16,"ratingId":3,"rating":4}', 'Read', NOW() - INTERVAL '1 day', NOW() - INTERVAL '2 days', false)
 ON CONFLICT ("Id") DO NOTHING;

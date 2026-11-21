@@ -21,3 +21,14 @@ ON CONFLICT ("Id") DO UPDATE SET
     "EndOffset" = EXCLUDED."EndOffset",
     "TextContent" = EXCLUDED."TextContent",
     "IsDeleted" = false;
+
+-- Truyện 901: một segment cho mỗi scene (Id segment = Id scene).
+INSERT INTO story_segments (
+    "Id", "StorySceneId", "SegmentOrder", "StartOffset", "EndOffset",
+    "TextContent", "CreatedAt", "IsDeleted")
+VALUES
+    (901, 901, 1, 0, 50, E'Cuối tuần, bố đưa Phúc đến bảo tàng thiên nhiên.\n\n', NOW() - INTERVAL '2 days', false),
+    (902, 902, 1, 0, 92, E'Phúc đứng ngắm bộ xương khủng long rất lớn. Bố kể khủng long sống cách đây hàng triệu năm.\n\n', NOW() - INTERVAL '2 days', false),
+    (903, 903, 1, 0, 128, E'Ở phòng bên, Phúc thấy một hóa thạch hình vỏ ốc. Cô hướng dẫn viên nói hóa thạch là dấu vết của sinh vật xưa còn lưu trong đá.\n\n', NOW() - INTERVAL '2 days', false),
+    (904, 904, 1, 0, 63, E'Trên đường về, Phúc hứa sẽ đọc thêm sách về khủng long cùng bố.', NOW() - INTERVAL '2 days', false)
+ON CONFLICT ("Id") DO NOTHING;

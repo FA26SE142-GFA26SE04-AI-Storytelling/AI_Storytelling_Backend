@@ -37,3 +37,15 @@ ON CONFLICT ("Id") DO UPDATE SET
     "SceneText" = EXCLUDED."SceneText",
     "VisualDescription" = EXCLUDED."VisualDescription",
     "IsDeleted" = false;
+
+-- Truyện 901 (tương tác điền từ): mỗi đoạn một scene, TextRangeEnd = cuối đoạn (gồm dòng trống) như
+-- StoryBlockParser tạo, để tương tác neo cuối đoạn 2 gắn được vào scene 902 (ListeningInteractionSceneBinder).
+INSERT INTO story_scenes (
+    "Id", "StoryVersionId", "SceneIndex", "TextRangeStart", "TextRangeEnd",
+    "SceneText", "VisualDescription", "CreatedAt", "IsDeleted")
+VALUES
+    (901, 901, 0, 0, 50, E'Cuối tuần, bố đưa Phúc đến bảo tàng thiên nhiên.\n\n', 'A child and his father arriving at a bright natural history museum.', NOW() - INTERVAL '2 days', false),
+    (902, 901, 1, 50, 142, E'Phúc đứng ngắm bộ xương khủng long rất lớn. Bố kể khủng long sống cách đây hàng triệu năm.\n\n', 'A child looking up at a large dinosaur skeleton with his father.', NOW() - INTERVAL '2 days', false),
+    (903, 901, 2, 142, 270, E'Ở phòng bên, Phúc thấy một hóa thạch hình vỏ ốc. Cô hướng dẫn viên nói hóa thạch là dấu vết của sinh vật xưa còn lưu trong đá.\n\n', 'A museum guide showing a spiral shell fossil to the child.', NOW() - INTERVAL '2 days', false),
+    (904, 901, 3, 270, 333, E'Trên đường về, Phúc hứa sẽ đọc thêm sách về khủng long cùng bố.', 'A child and his father walking home happily with a dinosaur book.', NOW() - INTERVAL '2 days', false)
+ON CONFLICT ("Id") DO NOTHING;

@@ -174,7 +174,8 @@ public partial class RoadmapTemplateService : IRoadmapTemplateService
                 {
                     Id = category.Id,
                     Code = category.Code,
-                    DisplayName = category.DisplayName
+                    DisplayName = category.DisplayName,
+                    Group = category.Group.ToString()
                 },
             ReadingLevelMin = roadmap.ReadingLevelMin,
             ReadingLevelMax = roadmap.ReadingLevelMax,

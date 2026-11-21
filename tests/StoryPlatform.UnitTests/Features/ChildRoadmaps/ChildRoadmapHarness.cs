@@ -60,7 +60,7 @@ public sealed class ChildRoadmapHarness
         AddUser(SecondSupervisorId, UserRole.User);
         AddUser(StrangerId, UserRole.User);
         Categories.Add(new ContentCategory
-            { Id = 5, Code = "friendship", DisplayName = "Tình bạn", IsActive = true });
+            { Id = 5, Code = "friendship", DisplayName = "Tình bạn", Group = ContentCategoryGroup.LifeValue, IsActive = true });
         Categories.Add(new ContentCategory
             { Id = 6, Code = "animals", DisplayName = "Động vật", IsActive = true });
         foreach (var id in new[] { 10, 11, 12, 13 })

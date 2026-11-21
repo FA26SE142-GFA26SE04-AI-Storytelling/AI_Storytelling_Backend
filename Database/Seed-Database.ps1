@@ -15,6 +15,8 @@
     tao them trong luc test se bi xoa. Bang __EFMigrationsHistory va cac bang do
     AuthoringGuideCatalogSeeder nap khong bi dong toi. Bang data_protection_keys
     chua khoa do ung dung tu sinh luc chay, khong seed va khong truncate.
+    Hai bang read_aloud_recordings va story_reflections duoc tao tu thao tac cua tre,
+    khong co file seed SQL (ghi am can doi tuong luu tru that).
 
     Moi file seed phai co ten "<thu-tu-2-chu-so>_<ten-bang>.sql" va cac so
     phai lien tuc tu 01 den dung tong so bang can seed trong EF Core model snapshot.
@@ -187,8 +189,9 @@ function Assert-EfModelSeedCoverage {
     $seededByCode = @('authoring_guide_catalog_versions', 'authoring_guide_catalogs',
         'authoring_guide_items', 'authoring_guide_placeholders')
     # Khoa Data Protection do ung dung tu sinh; khong dua khoa vao file seed SQL.
+    # Ghi am va cam nhan duoc tao khi tre su dung ung dung; khong seed file am thanh gia.
     # Giu dong bo voi SeedDataAlignmentTests.generatedAtRuntime.
-    $generatedAtRuntime = @('data_protection_keys')
+    $generatedAtRuntime = @('data_protection_keys', 'read_aloud_recordings', 'story_reflections')
 
     $snapshot = [System.IO.File]::ReadAllText($SnapshotPath)
     $mappedTables = @([regex]::Matches($snapshot, '\.ToTable\("(?<table>[a-z][a-z0-9_]*)"') |

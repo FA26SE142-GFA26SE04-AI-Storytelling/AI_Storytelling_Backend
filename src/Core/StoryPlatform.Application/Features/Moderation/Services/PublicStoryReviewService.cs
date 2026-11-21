@@ -179,7 +179,7 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
             ProposedLabels = content.ProposedCategories.OrderBy(x => x.Id).Select(category => new PublicReviewLabelDto
             {
                 ContentCategoryId = category.Id, Code = category.Code,
-                DisplayName = category.DisplayName, Source = TagSource.Creator.ToString()
+                DisplayName = category.DisplayName, Group = category.Group.ToString(), Source = TagSource.Creator.ToString()
             }).ToList(),
             Story = new PublicReviewStoryDto
             {
@@ -514,6 +514,7 @@ public partial class PublicStoryReviewService : IPublicStoryReviewService
                     ContentCategoryId = category.Id,
                     Code = category.Code,
                     DisplayName = category.DisplayName,
+                    Group = category.Group.ToString(),
                     Source = link.Source.ToString()
                 })
             .OrderBy(x => x.ContentCategoryId).ToList();

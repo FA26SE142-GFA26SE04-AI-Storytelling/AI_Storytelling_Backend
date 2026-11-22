@@ -62,8 +62,7 @@ public sealed class RolePermissionAdminServiceTests : IAsyncLifetime
     [Fact]
     public async Task Update_replaces_set_writes_audit_and_invalidates()
     {
-        var target = StaffDefaults(RoleCodes.Moderator).Where(c => c != Permissions.Moderation.CategoryManage)
-            .Append(Permissions.Admin.AuditView).ToArray();
+        var target = StaffDefaults(RoleCodes.Moderator).Where(c => c != Permissions.Moderation.CategoryManage).ToArray();
 
         var result = await Service().UpdateRolePermissionsAsync(AdminUserId, RoleCodes.Moderator, Request(target));
         _db.ChangeTracker.Clear();
@@ -80,6 +79,56 @@ public sealed class RolePermissionAdminServiceTests : IAsyncLifetime
         Assert.Contains(Permissions.Moderation.CategoryManage, log.BeforeState);
         Assert.DoesNotContain(Permissions.Moderation.CategoryManage, log.AfterState);
         Assert.Contains(RoleCodes.Moderator, _permissions.Invalidated);
+    }
+
+    [Fact]
+    public async Task Granting_a_permission_outside_the_role_defaults_is_rejected()
+    {
+        // Service của chi trả vẫn đòi Administrator, nên cấp cho Moderator sẽ không dùng được (chặn đến giai đoạn 3).
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => Service().UpdateRolePermissionsAsync(
+            AdminUserId, RoleCodes.Moderator,
+            Request([.. StaffDefaults(RoleCodes.Moderator), Permissions.Admin.CreatorPayoutManage, Permissions.Admin.AuditView])));
+        Assert.Equal("Chưa hỗ trợ cấp các quyền này cho Moderator: audit.view, creator.payout.manage.", ex.Message);
+        _db.ChangeTracker.Clear();
+        Assert.DoesNotContain(Permissions.Admin.CreatorPayoutManage, await CodesOf(RoleCodes.Moderator));
+    }
+
+    [Fact]
+    public async Task Revoked_default_can_be_restored()
+    {
+        var without = StaffDefaults(RoleCodes.Moderator).Where(c => c != Permissions.Review.GrayZone).ToArray();
+        await Service().UpdateRolePermissionsAsync(AdminUserId, RoleCodes.Moderator, Request(without));
+        _db.ChangeTracker.Clear(); // mỗi request có DbContext riêng
+        await Service().UpdateRolePermissionsAsync(AdminUserId, RoleCodes.Moderator, Request(StaffDefaults(RoleCodes.Moderator)));
+        _db.ChangeTracker.Clear();
+        Assert.Contains(Permissions.Review.GrayZone, await CodesOf(RoleCodes.Moderator));
+    }
+
+    [Fact]
+    public async Task Previously_granted_extra_permission_can_be_kept_or_removed()
+    {
+        var moderator = await _db.Set<Role>().SingleAsync(r => r.Code == RoleCodes.Moderator);
+        var audit = await _db.Set<Permission>().SingleAsync(p => p.Code == Permissions.Admin.AuditView);
+        _db.Add(new RolePermission { RoleId = moderator.Id, PermissionId = audit.Id });
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+
+        await Service().UpdateRolePermissionsAsync(AdminUserId, RoleCodes.Moderator,
+            Request([.. StaffDefaults(RoleCodes.Moderator), Permissions.Admin.AuditView]));
+        _db.ChangeTracker.Clear();
+        Assert.Contains(Permissions.Admin.AuditView, await CodesOf(RoleCodes.Moderator));
+
+        await Service().UpdateRolePermissionsAsync(AdminUserId, RoleCodes.Moderator, Request(StaffDefaults(RoleCodes.Moderator)));
+        _db.ChangeTracker.Clear();
+        Assert.DoesNotContain(Permissions.Admin.AuditView, await CodesOf(RoleCodes.Moderator));
+    }
+
+    [Fact]
+    public async Task Role_permissions_report_assignable_codes()
+    {
+        var result = await Service().GetRolePermissionsAsync(RoleCodes.Moderator);
+        Assert.Equal(StaffDefaults(RoleCodes.Moderator).Order(StringComparer.Ordinal), result.AssignableCodes);
+        Assert.DoesNotContain(Permissions.Admin.CreatorPayoutManage, result.AssignableCodes);
     }
 
     [Fact]

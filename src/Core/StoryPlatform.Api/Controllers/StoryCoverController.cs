@@ -2,11 +2,13 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Features.Stories.DTOs;
 using StoryPlatform.Application.Features.Stories.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Ảnh bìa truyện: chọn một tranh minh họa của chính truyện kèm vùng hiển thị.</summary>
-[Authorize(Roles = "User,ContentCreator")]
+[HasPermission(Permissions.Shared.MediaGenerate)]
 [Route("api/v1/stories/{storyId:int}/cover")]
 public class StoryCoverController : BaseApiController
 {

@@ -16,7 +16,7 @@ public sealed class ReviewControllerAuthorizationTests
         var authorization = method.GetCustomAttributes(typeof(AuthorizeAttribute), true)
             .Cast<AuthorizeAttribute>().Single();
 
-        Assert.Equal("User,Administrator", authorization.Roles);
+        Assert.Equal("User,Administrator", authorization.GrantedRoles());
     }
 
     [Fact]

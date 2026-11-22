@@ -3,10 +3,12 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.RoadmapTemplates.DTOs;
 using StoryPlatform.Application.Features.RoadmapTemplates.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
-[Authorize(Roles = "Moderator,Administrator")]
+[HasPermission(Permissions.Review.RoadmapTemplateView)]
 public class RoadmapTemplateController : BaseApiController
 {
     private readonly IRoadmapTemplateService _roadmapService;
@@ -41,7 +43,7 @@ public class RoadmapTemplateController : BaseApiController
         return HandleResult(result, "Lấy danh sách truyện ứng viên thành công.");
     }
 
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Review.RoadmapTemplateAuthor)]
     [HttpPost]
     public async Task<ActionResult<ApiResponse<RoadmapDetailDto>>> Create(
         [FromBody] SaveRoadmapRequestDto request, CancellationToken cancellationToken)
@@ -50,7 +52,7 @@ public class RoadmapTemplateController : BaseApiController
         return HandleResult(result, "Đã tạo bộ truyện mẫu.");
     }
 
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Review.RoadmapTemplateAuthor)]
     [HttpPut("{id:int}")]
     public async Task<ActionResult<ApiResponse<RoadmapDetailDto>>> Update(
         int id, [FromBody] SaveRoadmapRequestDto request, CancellationToken cancellationToken)
@@ -59,7 +61,7 @@ public class RoadmapTemplateController : BaseApiController
         return HandleResult(result, "Đã cập nhật bộ truyện mẫu.");
     }
 
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Review.RoadmapTemplateAuthor)]
     [HttpPut("{id:int}/items")]
     public async Task<ActionResult<ApiResponse<RoadmapDetailDto>>> SetItems(
         int id, [FromBody] SetRoadmapItemsRequestDto request, CancellationToken cancellationToken)
@@ -68,7 +70,7 @@ public class RoadmapTemplateController : BaseApiController
         return HandleResult(result, "Đã lưu danh sách truyện của bộ.");
     }
 
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Review.RoadmapTemplateAuthor)]
     [HttpPost("{id:int}/submit")]
     public async Task<ActionResult<ApiResponse<RoadmapSubmitResultDto>>> Submit(
         int id, CancellationToken cancellationToken)
@@ -77,7 +79,7 @@ public class RoadmapTemplateController : BaseApiController
         return HandleResult(result, "Đã gửi bộ truyện mẫu đi duyệt.");
     }
 
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Review.RoadmapTemplateAuthor)]
     [HttpPost("{id:int}/withdraw")]
     public async Task<ActionResult<ApiResponse<RoadmapSubmitResultDto>>> Withdraw(
         int id, CancellationToken cancellationToken)
@@ -87,7 +89,7 @@ public class RoadmapTemplateController : BaseApiController
     }
 
     /// <summary>Nhân bản bộ công khai hoặc Nháp của Moderator đã bị vô hiệu hóa.</summary>
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Review.RoadmapTemplateAuthor)]
     [HttpPost("{id:int}/clone")]
     public async Task<ActionResult<ApiResponse<RoadmapCloneResultDto>>> Clone(
         int id, CancellationToken cancellationToken)
@@ -99,7 +101,7 @@ public class RoadmapTemplateController : BaseApiController
     }
 
     /// <summary>Archive bộ đang công khai với lý do bắt buộc từ 3 đến 500 ký tự.</summary>
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Review.RoadmapTemplateAuthor)]
     [HttpPost("{id:int}/archive")]
     public async Task<ActionResult<ApiResponse<RoadmapDetailDto>>> Archive(
         int id, [FromBody] ArchiveRoadmapRequestDto request, CancellationToken cancellationToken)

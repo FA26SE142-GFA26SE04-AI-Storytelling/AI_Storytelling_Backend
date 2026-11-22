@@ -3,11 +3,13 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.StoryWishes;
 using StoryPlatform.Application.Features.StoryWishes.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Phụ huynh xem truyện gợi ý cho một điều ước của con (WF-L2D UC-L2D-04, phần danh sách gợi ý).</summary>
-[Authorize(Roles = "User")]
+[HasPermission(Permissions.Parent.FeedbackManage)]
 [Route("api/v1/parent/wishes")]
 public sealed class ParentWishSuggestionsController(IStoryWishSuggestionService service) : BaseApiController
 {

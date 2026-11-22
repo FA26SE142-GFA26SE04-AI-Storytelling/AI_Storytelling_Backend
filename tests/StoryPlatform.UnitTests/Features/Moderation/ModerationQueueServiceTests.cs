@@ -565,7 +565,7 @@ public class ModerationQueueServiceTests
         var authorize = typeof(ModerationQueueController).GetCustomAttribute<AuthorizeAttribute>();
 
         Assert.NotNull(authorize);
-        Assert.Equal("Moderator,Administrator", authorize!.Roles);
+        Assert.Equal("Moderator,Administrator", authorize!.GrantedRoles());
     }
 
     // ---- storyImpact ----

@@ -6,11 +6,13 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.AIStoryInput.DTOs;
 using StoryPlatform.Application.Features.AIStoryInput.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
 [ApiController]
-[Authorize(Roles = "ContentCreator")]
+[HasPermission(Permissions.Creator.Studio)]
 [Route("api/v1/creator/ai-story-input")]
 public sealed class CreatorAIStoryInputController : ControllerBase
 {

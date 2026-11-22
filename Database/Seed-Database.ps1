@@ -184,10 +184,11 @@ function Assert-EfModelSeedCoverage {
         throw "Khong tim thay EF model snapshot de kiem tra coverage: $SnapshotPath"
     }
 
-    # Cac bang nay duoc AuthoringGuideCatalogSeeder nap luc ung dung khoi dong (JSON nhung),
+    # Cac bang nay duoc AuthoringGuideCatalogSeeder (JSON nhung) va PermissionCatalogSeeder nap luc ung dung khoi dong,
     # khong qua file seed SQL. Giu dong bo voi SeedDataAlignmentTests.seededByCode.
     $seededByCode = @('authoring_guide_catalog_versions', 'authoring_guide_catalogs',
-        'authoring_guide_items', 'authoring_guide_placeholders')
+        'authoring_guide_items', 'authoring_guide_placeholders',
+        'roles', 'permissions', 'role_permissions')
     # Khoa Data Protection do ung dung tu sinh; khong dua khoa vao file seed SQL.
     # Ghi am va cam nhan duoc tao khi tre su dung ung dung; khong seed file am thanh gia.
     # Giu dong bo voi SeedDataAlignmentTests.generatedAtRuntime.

@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.StoryRatings.DTOs;
 using StoryPlatform.Application.Features.StoryRatings.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -21,7 +23,7 @@ public class StoryRatingController : BaseApiController
     }
 
     /// <summary>Đánh giá đang hiện của truyện, điểm tổng hợp, đánh giá của chính mình và quyền đánh giá.</summary>
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.StoryRatingWrite)]
     [HttpGet("story/{storyId:int}")]
     public async Task<ActionResult<ApiResponse<StoryRatingListDto>>> GetForStory(
         int storyId, [FromQuery] StoryRatingQueryDto query, CancellationToken cancellationToken)
@@ -31,7 +33,7 @@ public class StoryRatingController : BaseApiController
     }
 
     /// <summary>Tạo hoặc sửa đánh giá của mình; bé phải đã mở đọc truyện.</summary>
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.StoryRatingWrite)]
     [HttpPut("story/{storyId:int}/me")]
     public async Task<ActionResult<ApiResponse<MyStoryRatingDto>>> UpsertMine(
         int storyId, [FromBody] UpsertStoryRatingRequestDto request, CancellationToken cancellationToken)
@@ -41,7 +43,7 @@ public class StoryRatingController : BaseApiController
     }
 
     /// <summary>Xóa đánh giá của mình (xóa mềm); mục kiểm duyệt đang mở được đóng.</summary>
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.StoryRatingWrite)]
     [HttpDelete("story/{storyId:int}/me")]
     public async Task<ActionResult<ApiResponse<bool>>> DeleteMine(int storyId, CancellationToken cancellationToken)
     {
@@ -50,7 +52,7 @@ public class StoryRatingController : BaseApiController
     }
 
     /// <summary>Báo cáo một đánh giá đang hiện; mỗi người một lần. Creator chỉ báo cáo đánh giá truyện của mình.</summary>
-    [Authorize(Roles = "User,ContentCreator")]
+    [HasPermission(Permissions.Shared.StoryRatingReport)]
     [HttpPost("{ratingId:int}/reports")]
     public async Task<ActionResult<ApiResponse<StoryRatingReportResultDto>>> Report(
         int ratingId, [FromBody] ReportStoryRatingRequestDto request, CancellationToken cancellationToken)
@@ -60,7 +62,7 @@ public class StoryRatingController : BaseApiController
     }
 
     /// <summary>Creator xem đánh giá đang hiện của truyện mình.</summary>
-    [Authorize(Roles = "ContentCreator")]
+    [HasPermission(Permissions.Creator.RatingViewOwn)]
     [HttpGet("/api/v1/creator/stories/{storyId:int}/ratings")]
     public async Task<ActionResult<ApiResponse<StoryRatingListDto>>> GetForMyStory(
         int storyId, [FromQuery] StoryRatingQueryDto query, CancellationToken cancellationToken)

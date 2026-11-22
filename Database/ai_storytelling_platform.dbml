@@ -1331,6 +1331,18 @@ Table payment_transactions {
   }
 }
 
+Table permissions {
+  Code varchar(100) [not null]
+    Code [unique]
+  CreatedAt timestamptz [not null]
+  Description varchar(300) [not null]
+  Group varchar(50) [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  IsStaffGrantable boolean [not null]
+  UpdatedAt timestamptz
+}
+
 Table plan_settings {
   CreatedAt timestamptz [not null]
   CreativeFundPercent int [not null]
@@ -1517,6 +1529,28 @@ Table refresh_tokens {
     TokenHash [unique]
     UserAccountId
   }
+}
+
+Table role_permissions {
+  CreatedAt timestamptz [not null]
+  PermissionId int [not null]
+  RoleId int [not null]
+  Indexes {
+    (RoleId, PermissionId) [pk]
+    PermissionId
+  }
+}
+
+Table roles {
+  Code varchar(50) [not null]
+    Code [unique]
+  CreatedAt timestamptz [not null]
+  Id int [pk, not null, increment]
+  IsDeleted boolean [not null]
+  IsStaff boolean [not null]
+  IsSystem boolean [not null]
+  Name varchar(100) [not null]
+  UpdatedAt timestamptz
 }
 
 Table safety_policies {
@@ -2339,3 +2373,5 @@ Ref: user_subscriptions.UserId > user_accounts.Id
 Ref: vocabulary_notebook_entries.ChildProfileId > child_profiles.Id
 Ref: vocabulary_notebook_entries.StoryVocabularyId > story_vocabulary.Id
 Ref: wish_cards.ContentCategoryId > content_categories.Id
+Ref: role_permissions.PermissionId > permissions.Id
+Ref: role_permissions.RoleId > roles.Id

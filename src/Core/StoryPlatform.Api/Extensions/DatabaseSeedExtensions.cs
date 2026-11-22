@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using StoryPlatform.Application.Features.AccessControl.Services;
 using StoryPlatform.Application.Features.ParentAuthoring;
 
 namespace StoryPlatform.Api.Extensions;
@@ -96,6 +97,25 @@ public static class DatabaseSeedExtensions
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to seed authoring guide catalog.");
+        }
+    }
+
+    /// <summary>
+    /// Đồng bộ danh mục role/permission vào DB (bảng roles, permissions, role_permissions). Idempotent, không ghi đè
+    /// quyền đã chỉnh; lỗi chỉ ghi log vì PermissionService tự dùng bản gán mặc định khi bảng còn trống.
+    /// </summary>
+    public static async Task SeedPermissionsAsync(this IHost host)
+    {
+        using var scope = host.Services.CreateScope();
+        var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("PermissionSeed");
+        try
+        {
+            var changes = await scope.ServiceProvider.GetRequiredService<PermissionCatalogSeeder>().SeedAsync(CancellationToken.None);
+            logger.LogInformation("Permission catalog synchronized ({Changes} change(s)).", changes);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to synchronize permission catalog.");
         }
     }
 

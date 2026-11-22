@@ -5,6 +5,8 @@ using StoryPlatform.Application.Features.Payments.DTOs;
 using StoryPlatform.Application.Features.Payments.Interfaces;
 using StoryPlatform.Application.Features.PlanBenefits.DTOs;
 using StoryPlatform.Application.Features.PlanBenefits.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -80,7 +82,7 @@ public class PaymentController : BaseApiController
     /// Danh sách giao dịch mismatch_amount cần Administrator xử lý thủ công.
     /// </summary>
     [HttpGet("mismatched")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.PaymentManage)]
     public async Task<ActionResult<ApiResponse<List<PaymentTransactionDto>>>> ListMismatched(
         CancellationToken cancellationToken)
     {
@@ -92,7 +94,7 @@ public class PaymentController : BaseApiController
     /// Administrator xác nhận thủ công một giao dịch đã nhận được tiền (có audit log).
     /// </summary>
     [HttpPost("transactions/{transactionId:int}/mark-paid")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.PaymentManage)]
     public async Task<ActionResult<ApiResponse<PaymentTransactionDto>>> MarkPaidManually(
         int transactionId, CancellationToken cancellationToken)
     {
@@ -104,7 +106,7 @@ public class PaymentController : BaseApiController
     /// Administrator xem mọi giao dịch (lọc trạng thái, tìm theo mã hoặc người mua) để xác nhận tay giao dịch đang chờ.
     /// </summary>
     [HttpGet("admin/transactions")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.PaymentManage)]
     public async Task<ActionResult<ApiResponse<PagedResult<AdminPaymentTransactionDto>>>> ListAllTransactions(
         [FromQuery] AdminTransactionQueryDto query, CancellationToken cancellationToken)
     {
@@ -116,7 +118,7 @@ public class PaymentController : BaseApiController
     /// Administrator xem mọi gói, gồm gói đã tắt bán.
     /// </summary>
     [HttpGet("admin/plans")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.PaymentManage)]
     public async Task<ActionResult<ApiResponse<List<AdminSubscriptionPlanDto>>>> ListAllPlans(
         CancellationToken cancellationToken)
     {
@@ -129,7 +131,7 @@ public class PaymentController : BaseApiController
     /// Gói Sáng tạo). Gói không bao giờ bị xoá, chỉ tắt bán. Có audit log.
     /// </summary>
     [HttpPost("admin/plans")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.PaymentManage)]
     public async Task<ActionResult<ApiResponse<AdminSubscriptionPlanDto>>> CreatePlan(
         [FromBody] CreateSubscriptionPlanRequestDto request, CancellationToken cancellationToken)
     {
@@ -143,7 +145,7 @@ public class PaymentController : BaseApiController
     /// Giao dịch đã tạo không đổi; quyền lợi mới áp dụng ngay cho người đang dùng gói.
     /// </summary>
     [HttpPut("admin/plans/{planId:int}")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.PaymentManage)]
     public async Task<ActionResult<ApiResponse<AdminSubscriptionPlanDto>>> UpdatePlan(
         int planId, [FromBody] UpdateSubscriptionPlanRequestDto request, CancellationToken cancellationToken)
     {
@@ -156,7 +158,7 @@ public class PaymentController : BaseApiController
     /// thời gian đọc tối thiểu và quyền lợi mức Miễn phí (Luồng 5, 5a).
     /// </summary>
     [HttpGet("admin/settings")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.PaymentManage)]
     public async Task<ActionResult<ApiResponse<PlanSettingsDto>>> GetSettings(CancellationToken cancellationToken)
     {
         var result = await _planSettingsService.GetAsync(cancellationToken);
@@ -167,7 +169,7 @@ public class PaymentController : BaseApiController
     /// Administrator sửa cấu hình chung (có audit log trước/sau). Báo cáo đã Published và lô hạn mức đã cấp giữ số cũ.
     /// </summary>
     [HttpPut("admin/settings")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.PaymentManage)]
     public async Task<ActionResult<ApiResponse<PlanSettingsDto>>> UpdateSettings(
         [FromBody] UpdatePlanSettingsRequestDto request, CancellationToken cancellationToken)
     {
@@ -179,7 +181,7 @@ public class PaymentController : BaseApiController
     /// Administrator xem giao dịch đã Paid nhưng chưa được áp gói (mặc định các ngoại lệ đang Open).
     /// </summary>
     [HttpGet("admin/reconciliation")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.PaymentManage)]
     public async Task<ActionResult<ApiResponse<PagedResult<ReconciliationExceptionDto>>>> ListReconciliationExceptions(
         [FromQuery] string? status, [FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 20,
         CancellationToken cancellationToken = default)
@@ -192,7 +194,7 @@ public class PaymentController : BaseApiController
     /// Administrator xử lý một ngoại lệ: áp lại gói cho giao dịch (không cộng hai lần) và đóng ngoại lệ.
     /// </summary>
     [HttpPost("admin/reconciliation/{exceptionId:int}/resolve")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.PaymentManage)]
     public async Task<ActionResult<ApiResponse<ReconciliationExceptionDto>>> ResolveReconciliationException(
         int exceptionId, CancellationToken cancellationToken)
     {

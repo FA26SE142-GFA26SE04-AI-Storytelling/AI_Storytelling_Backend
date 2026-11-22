@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Features.Moderation.Rubrics;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
-[Authorize(Roles = "Moderator,Administrator")]
+[HasPermission(Permissions.Review.RubricManage)]
 [Route("api/v1/moderation/rubrics")]
 public sealed class ModerationRubricsController(ModerationRubricService service) : BaseApiController
 {

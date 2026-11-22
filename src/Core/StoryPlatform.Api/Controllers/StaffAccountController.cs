@@ -6,6 +6,8 @@ using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.Administration.DTOs;
 using StoryPlatform.Application.Features.Administration.Interfaces;
 using StoryPlatform.Domain.Enums;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -13,7 +15,7 @@ namespace StoryPlatform.Api.Controllers;
 /// Administrator quản lý tài khoản vận hành (Moderator và Administrator).
 /// Vai trò chọn bằng "role" khi mời và khi lọc danh sách; các thao tác theo userId tự đọc vai trò.
 /// </summary>
-[Authorize(Roles = "Administrator")]
+[HasPermission(Permissions.Admin.StaffAccountManage)]
 public class StaffAccountController : BaseApiController
 {
     private readonly IStaffAccountService _staffAccountService;

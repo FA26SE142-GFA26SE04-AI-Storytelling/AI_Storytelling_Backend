@@ -363,7 +363,7 @@ public class RoadmapTemplateServiceTests
             .OrderBy(method => method.Name).ToArray();
 
         Assert.NotNull(authorize);
-        Assert.Equal("Moderator,Administrator", authorize!.Roles);
+        Assert.Equal("Moderator,Administrator", authorize!.GrantedRoles());
         Assert.Equal(new[]
         {
             "Archive", "Clone", "Create", "Get", "List", "ListCandidates", "SetItems", "Submit", "Update",
@@ -372,6 +372,6 @@ public class RoadmapTemplateServiceTests
         Assert.All(methods.Where(method => method.Name is
                 "Archive" or "Clone" or "Create" or "SetItems" or "Submit" or "Update" or "Withdraw"),
             method => Assert.Equal("Moderator",
-                method.GetCustomAttribute<AuthorizeAttribute>()?.Roles));
+                method.GetCustomAttribute<AuthorizeAttribute>()?.GrantedRoles()));
     }
 }

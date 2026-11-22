@@ -6,6 +6,8 @@ using StoryPlatform.Api.Controllers;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ExistingStories.DTOs;
 using StoryPlatform.Application.Features.ExistingStories.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -22,7 +24,7 @@ namespace StoryPlatform.Api.Controllers;
 /// vào chuỗi Phase 3 (Vocabulary → Quiz → tương tác lúc nghe).
 /// </summary>
 [ApiController]
-[Authorize(Roles = "User")]
+[HasPermission(Permissions.Parent.StoryAuthor)]
 [Route("api/v1/stories")]
 public sealed class ExistingStoriesController : BaseApiController
 {

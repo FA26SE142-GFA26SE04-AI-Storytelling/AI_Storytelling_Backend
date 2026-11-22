@@ -217,7 +217,7 @@ public sealed class ModerationRubricTests
     [Fact]
     public void ControllerProtectsManagementAndActivation()
     {
-        Assert.Equal("Moderator,Administrator", typeof(ModerationRubricsController).GetCustomAttributes(typeof(AuthorizeAttribute), false).Cast<AuthorizeAttribute>().Single().Roles);
+        Assert.Equal("Moderator,Administrator", typeof(ModerationRubricsController).GetCustomAttributes(typeof(AuthorizeAttribute), false).Cast<AuthorizeAttribute>().Single().GrantedRoles());
         Assert.Empty(typeof(ModerationRubricsController).GetMethod("Activate")!.GetCustomAttributes(typeof(AuthorizeAttribute), false));
         Assert.Null(typeof(ModerationRubricsController).GetMethod("Bootstrap"));
     }

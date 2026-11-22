@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.TokenQuota.DTOs;
 using StoryPlatform.Application.Features.TokenQuota.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -22,7 +24,7 @@ public class TokenQuotaController : BaseApiController
     /// Lượt AI còn lại của tài khoản phụ huynh: lượt dùng thử, lượt chu kỳ, lượt Add-on và gói đang hiệu lực.
     /// </summary>
     [HttpGet("me")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.QuotaView)]
     public async Task<ActionResult<ApiResponse<MyQuotaDto>>> GetMyQuota(CancellationToken cancellationToken)
     {
         var result = await _tokenQuotaService.GetMyQuotaAsync(GetCurrentUserId(), cancellationToken);
@@ -33,7 +35,7 @@ public class TokenQuotaController : BaseApiController
     /// Content Creator xem lượt AI và lượt gửi duyệt còn lại: hạn mức tháng (dùng trước) và lượt mua từ Gói Creator.
     /// </summary>
     [HttpGet("creator/me")]
-    [Authorize(Roles = "ContentCreator")]
+    [HasPermission(Permissions.Creator.QuotaView)]
     public async Task<ActionResult<ApiResponse<CreatorQuotaDto>>> GetCreatorQuota(CancellationToken cancellationToken)
     {
         var result = await _tokenQuotaService.GetCreatorQuotaAsync(GetCurrentUserId(), cancellationToken);
@@ -56,7 +58,7 @@ public class TokenQuotaController : BaseApiController
     /// Administrator cấp (amount dương) hoặc trừ (amount âm) lượt AI cho một tài khoản phụ huynh; bắt buộc ghi lý do.
     /// </summary>
     [HttpPost("admin/adjustments")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.QuotaManage)]
     public async Task<ActionResult<ApiResponse<CreditAdjustmentDto>>> Adjust(
         [FromBody] AdjustCreditsRequestDto request, CancellationToken cancellationToken)
     {
@@ -68,7 +70,7 @@ public class TokenQuotaController : BaseApiController
     /// Lịch sử điều chỉnh lượt, mới nhất trước; lọc theo tài khoản nếu có userId.
     /// </summary>
     [HttpGet("admin/adjustments")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.QuotaManage)]
     public async Task<ActionResult<ApiResponse<PagedResult<CreditAdjustmentDto>>>> ListAdjustments(
         [FromQuery] int? userId, [FromQuery] int pageIndex = 1, [FromQuery] int pageSize = 20,
         CancellationToken cancellationToken = default)
@@ -81,7 +83,7 @@ public class TokenQuotaController : BaseApiController
     /// Administrator xem gói đang hiệu lực và lượt AI còn lại của một tài khoản.
     /// </summary>
     [HttpGet("admin/users/{userId:int}")]
-    [Authorize(Roles = "Administrator")]
+    [HasPermission(Permissions.Admin.QuotaManage)]
     public async Task<ActionResult<ApiResponse<MyQuotaDto>>> GetUserQuota(int userId, CancellationToken cancellationToken)
     {
         var result = await _tokenQuotaService.GetQuotaForUserAsync(userId, cancellationToken);

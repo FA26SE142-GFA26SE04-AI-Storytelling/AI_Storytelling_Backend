@@ -16,7 +16,7 @@ public class RoadmapLibraryControllerTests
             .Select(method => method.Name).OrderBy(name => name).ToArray();
 
         Assert.NotNull(authorize);
-        Assert.Equal("User", authorize!.Roles);
+        Assert.Equal("User", authorize!.GrantedRoles());
         Assert.Equal(new[] { "Copy", "Get", "List", "Preview" }, methods);
     }
 }

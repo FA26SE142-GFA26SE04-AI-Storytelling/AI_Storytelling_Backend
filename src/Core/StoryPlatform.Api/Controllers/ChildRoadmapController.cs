@@ -3,11 +3,13 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ChildRoadmaps;
 using StoryPlatform.Application.Features.ChildRoadmaps.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Lộ trình của con, phía phụ huynh (Luồng 4 — WF-L4A).</summary>
-[Authorize(Roles = "User")]
+[HasPermission(Permissions.Parent.ChildProfileManage)]
 public class ChildRoadmapController : BaseApiController
 {
     private readonly IChildRoadmapService _roadmapService;

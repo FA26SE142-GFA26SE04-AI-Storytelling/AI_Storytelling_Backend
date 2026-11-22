@@ -15,9 +15,9 @@ public partial class TokenQuotaService
     // Hạn mức tháng theo bản chốt; Admin cấu hình được ở F-17 (chưa làm). Creator đối tác (6 và 10) để sau Defense 1.1.
 
     private const string CreatorOutOfAiCreditsMessage =
-        "Bạn đã hết lượt tạo truyện AI. Hãy chờ hạn mức tháng sau hoặc mua Gói Creator để tạo thêm.";
+        "Bạn đã hết lượt tạo truyện AI. Hãy chờ hạn mức tháng sau hoặc mua Gói nhà sáng tạo để tạo thêm.";
     private const string CreatorOutOfSubmitCreditsMessage =
-        "Bạn đã hết lượt gửi duyệt. Hãy chờ hạn mức tháng sau hoặc mua Gói Creator để gửi thêm truyện.";
+        "Bạn đã hết lượt gửi duyệt. Hãy chờ hạn mức tháng sau hoặc mua Gói nhà sáng tạo để gửi thêm truyện.";
 
     public async Task EnsureCreatorWithinQuotaAsync(int creatorUserId, CancellationToken cancellationToken = default)
     {

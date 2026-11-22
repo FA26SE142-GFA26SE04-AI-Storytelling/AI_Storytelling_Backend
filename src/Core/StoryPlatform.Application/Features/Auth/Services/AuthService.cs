@@ -466,7 +466,7 @@ public class AuthService : IAuthService
         if (IsUnactivatedModerator(user))
         {
             throw new BadRequestException(
-                "Tài khoản Moderator cần được kích hoạt qua trang kích hoạt tài khoản bằng mã mời.");
+                "Tài khoản kiểm duyệt viên cần được kích hoạt qua trang kích hoạt tài khoản bằng mã mời.");
         }
 
         if (user.ResetTokenExpiresAt == null || user.ResetTokenExpiresAt < DateTime.UtcNow)
@@ -584,7 +584,7 @@ public class AuthService : IAuthService
         if (user.Role != UserRole.User)
         {
             throw new ForbiddenException(
-                "Tài khoản vận hành không tự đổi email — vui lòng liên hệ Administrator.");
+                "Tài khoản vận hành không tự đổi email — vui lòng liên hệ quản trị viên.");
         }
 
         if (user.LockedUntil.HasValue && user.LockedUntil.Value > DateTime.UtcNow)
@@ -657,7 +657,7 @@ public class AuthService : IAuthService
         if (user.Role != UserRole.User)
         {
             throw new ForbiddenException(
-                "Tài khoản vận hành không tự đổi email — vui lòng liên hệ Administrator.");
+                "Tài khoản vận hành không tự đổi email — vui lòng liên hệ quản trị viên.");
         }
 
         if (user.PendingEmail == null || user.PendingEmailOtpHash == null)

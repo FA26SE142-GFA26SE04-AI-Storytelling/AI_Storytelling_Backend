@@ -195,6 +195,14 @@ public class StoryPlatformCoreStackTests
     }
 
     [Fact]
+    public void Stack_ApiContainerHasHttpsStaffActivationUrl()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(SynthTemplate().ToJSON());
+
+        Assert.Contains("\"Name\":\"ResendSettings__StaffActivationUrl\",\"Value\":\"https://taletale.site/?auth=activate\"", json);
+    }
+
+    [Fact]
     public void Stack_ApiContainerReadsAllFiveSecretsFromConsolidatedSecret()
     {
         var template = SynthTemplate();
@@ -523,6 +531,11 @@ public class StoryPlatformCoreStackTests
         // Mỗi biến phải trỏ đúng khoá của nó trong secret: đổi chéo hai khoá thì test phải đỏ.
         Assert.Matches("\"Name\":\"AIService__InternalApiKey\",\"ValueFrom\":(?:(?!\"Name\":).)*:AiInternalApiKey::", json);
         Assert.Matches("\"Name\":\"AIService__GoogleCredentialsJson\",\"ValueFrom\":(?:(?!\"Name\":).)*:AiGoogleCredentialsJson::", json);
+        // Quét vùng xám (Vertex qua AI API) chỉ bật cùng AI API; Vertex bắt buộc thang điểm 100.
+        Assert.Contains("\"Name\":\"GrayZoneModeration__Provider\",\"Value\":\"Vertex\"", json);
+        Assert.Contains("\"Name\":\"GrayZoneModeration__WarningThreshold\",\"Value\":\"30\"", json);
+        Assert.Contains("\"Name\":\"GrayZoneModeration__BlockThreshold\",\"Value\":\"70\"", json);
+        Assert.Contains("\"Name\":\"GrayZoneModeration__MaximumRiskScore\",\"Value\":\"100\"", json);
     }
 
     [Fact]
@@ -532,6 +545,7 @@ public class StoryPlatformCoreStackTests
         var json = System.Text.Json.JsonSerializer.Serialize(SynthTemplate().ToJSON());
 
         Assert.DoesNotContain("AIService__", json);
+        Assert.DoesNotContain("GrayZoneModeration__", json);
     }
 
     [Fact]
@@ -576,6 +590,7 @@ public class StoryPlatformCoreStackTests
         Assert.Contains("\"Name\":\"AI__Vertex__UseVertex\",\"Value\":\"true\"", json);
         Assert.Contains("\"Name\":\"AI__Vertex__ProjectId\",\"Value\":\"example-gcp-project\"", json);
         Assert.Contains("\"Name\":\"AI__Vertex__Location\",\"Value\":\"global\"", json);
+        Assert.Contains("\"Name\":\"AI__TTS__EnableWordTimings\",\"Value\":\"true\"", json);
         // Dùng lại service account Core đã có để gọi AI API, không cần thêm khoá mới vào secret.
         Assert.Matches("\"Name\":\"AI__Vertex__CredentialsJson\",\"ValueFrom\":(?:(?!\"Name\":).)*:AiGoogleCredentialsJson::", json);
         Assert.DoesNotContain("AI__Gemini__", json);

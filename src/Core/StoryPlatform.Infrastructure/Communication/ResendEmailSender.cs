@@ -111,7 +111,7 @@ public class ResendEmailSender : IEmailSender
         var name = System.Net.WebUtility.HtmlEncode(toName);
         if (rejectionReason == null)
         {
-            const string approvedSubject = "Đơn đăng ký Content Creator đã được duyệt";
+            const string approvedSubject = "Đơn đăng ký nhà sáng tạo nội dung đã được duyệt";
             var approvedHtml = $"""
                 <p>Chào {name},</p>
                 <p>Đơn đăng ký Content Creator của bạn trên AI Storytelling Platform đã được duyệt.</p>
@@ -120,7 +120,7 @@ public class ResendEmailSender : IEmailSender
             return SendAsync(toEmail, approvedSubject, approvedHtml, cancellationToken);
         }
 
-        const string subject = "Đơn đăng ký Content Creator chưa được duyệt";
+        const string subject = "Đơn đăng ký nhà sáng tạo nội dung chưa được duyệt";
         var html = $"""
             <p>Chào {name},</p>
             <p>Đơn đăng ký Content Creator của bạn trên AI Storytelling Platform chưa được duyệt với lý do:</p>

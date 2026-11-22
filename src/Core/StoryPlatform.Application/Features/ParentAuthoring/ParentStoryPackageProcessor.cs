@@ -126,7 +126,7 @@ public sealed partial class ParentStoryPackageProcessor(IUnitOfWork uow, IChildP
             response = null;
             safetyStatus = ParentPackageAssessmentStatus.Unavailable;
             warnings.Add(BuildUnavailableWarning("ContentSafety", ex, "CONTENT_SAFETY_UNAVAILABLE",
-                "Content safety AI assessment was unavailable; parent review and acknowledgement are required."));
+                "Chưa đánh giá được mức an toàn bằng AI. Bạn hãy tự đọc lại truyện và xác nhận trước khi tiếp tục."));
         }
         GrayZoneAssessment? assessment = null;
         var grayZoneStatus = ParentPackageAssessmentStatus.Passed;
@@ -153,7 +153,7 @@ public sealed partial class ParentStoryPackageProcessor(IUnitOfWork uow, IChildP
             assessment = null;
             grayZoneStatus = ParentPackageAssessmentStatus.Unavailable;
             warnings.Add(BuildUnavailableWarning("GrayZone", ex, "MODERATION_UNAVAILABLE",
-                "Gray-zone AI assessment was unavailable; parent review and acknowledgement are required."));
+                "Chưa kiểm tra được nội dung nhạy cảm bằng AI. Bạn hãy tự đọc lại truyện và xác nhận trước khi tiếp tục."));
         }
         var passed = errors.Count == 0;
         var check = new ParentPackageCheck(passed, errors.Distinct().ToArray(),

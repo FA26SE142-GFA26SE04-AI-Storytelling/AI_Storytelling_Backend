@@ -234,7 +234,7 @@ public sealed partial class AIStoryInputServiceTests
         var error = await Assert.ThrowsAsync<NotFoundException>(() =>
             ParentService(CreateEligibleUnitOfWork()).SubmitAsync(1, With(ValidRequest(), existingStoryId: 40)));
 
-        Assert.Equal("Không tìm thấy Story draft với mã định danh [40].", error.Message);
+        Assert.Equal("Không tìm thấy bản nháp truyện. Có thể dữ liệu đã bị xoá hoặc bạn không có quyền truy cập.", error.Message);
     }
 
     [Fact]
@@ -367,7 +367,7 @@ public sealed partial class AIStoryInputServiceTests
         var error = await Assert.ThrowsAsync<NotFoundException>(() =>
             CreatorService(CreatorStore()).SubmitCreatorAsync(13, CreatorRequest(existingStoryId: 50)));
 
-        Assert.Equal("Không tìm thấy Story với mã định danh [50].", error.Message);
+        Assert.Equal("Không tìm thấy truyện. Có thể dữ liệu đã bị xoá hoặc bạn không có quyền truy cập.", error.Message);
     }
 
     // ---- Progress ----

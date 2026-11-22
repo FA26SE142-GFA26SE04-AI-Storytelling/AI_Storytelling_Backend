@@ -85,3 +85,11 @@ VALUES
     (25, 20, 1, 'Voi con biết xin lỗi', 'Voi con lỡ làm đổ lâu đài cát của Thỏ. Voi con xin lỗi và cùng Thỏ xây lại. Hai bạn xây được một lâu đài còn đẹp hơn.', 'Voi con làm đổ lâu đài cát', 'Voi con xin lỗi Thỏ', 'Hai bạn cùng xây lại', 'Biết nhận lỗi và sửa sai', 2.700, 83.000, 98.000, 'Initial', 13, NULL, NULL, true, NOW() - INTERVAL '6 days', false, 1, NULL),
     (26, 21, 1, 'Cá heo tốt bụng', 'Cá heo thấy bạn rùa bị mắc vào lưới. Cá heo gọi các bạn cá đến giúp. Mọi người cùng gỡ lưới và rùa được tự do.', 'Rùa bị mắc lưới', 'Cá heo gọi bạn đến giúp', 'Rùa được tự do', 'Biết giúp đỡ người gặp khó khăn', 2.700, 83.000, 98.000, 'Initial', 13, NULL, NULL, true, NOW() - INTERVAL '5 days', false, 1, NULL)
 ON CONFLICT ("Id") DO NOTHING;
+
+-- Tương tác điền từ: bản duy nhất của truyện 901 (xem 11_stories.sql), parent_demo3 đã duyệt dàn ý.
+INSERT INTO story_versions (
+    "Id", "StoryId", "VersionNo", "Title", "Content", "OutlineOpening", "OutlineDevelopment", "OutlineEnding", "Lesson", "ReadabilityFkgl", "ReadabilityFre", "SafetyScore", "EditType", "EditorUserId", "OutlineApprovedByUserId", "OutlineApprovedAt", "IsCurrent", "CreatedAt", "IsDeleted", "AudienceRevision", "BaseVersionId"
+)
+VALUES
+    (901, 901, 1, 'Chuyến đi bảo tàng', E'Cuối tuần, bố đưa Phúc đến bảo tàng thiên nhiên.\n\nPhúc đứng ngắm bộ xương khủng long rất lớn. Bố kể khủng long sống cách đây hàng triệu năm.\n\nỞ phòng bên, Phúc thấy một hóa thạch hình vỏ ốc. Cô hướng dẫn viên nói hóa thạch là dấu vết của sinh vật xưa còn lưu trong đá.\n\nTrên đường về, Phúc hứa sẽ đọc thêm sách về khủng long cùng bố.', 'Phúc đến bảo tàng', 'Phúc xem khủng long và hóa thạch', 'Phúc muốn đọc thêm sách', 'Ham tìm hiểu thế giới xung quanh', 4.100, 74.000, 96.000, 'Initial', NULL, 4, NOW() - INTERVAL '3 days' + INTERVAL '1 hour', true, NOW() - INTERVAL '3 days', false, 1, NULL)
+ON CONFLICT ("Id") DO NOTHING;

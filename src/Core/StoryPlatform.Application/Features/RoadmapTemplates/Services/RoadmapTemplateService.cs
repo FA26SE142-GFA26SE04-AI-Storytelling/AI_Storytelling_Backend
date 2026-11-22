@@ -174,7 +174,8 @@ public partial class RoadmapTemplateService : IRoadmapTemplateService
                 {
                     Id = category.Id,
                     Code = category.Code,
-                    DisplayName = category.DisplayName
+                    DisplayName = category.DisplayName,
+                    Group = category.Group.ToString()
                 },
             ReadingLevelMin = roadmap.ReadingLevelMin,
             ReadingLevelMax = roadmap.ReadingLevelMax,
@@ -300,7 +301,7 @@ public partial class RoadmapTemplateService : IRoadmapTemplateService
         var user = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(userId, cancellationToken);
         if (user == null || user.IsDeleted || user.Status != AccountStatus.Active || user.Role != UserRole.Moderator)
         {
-            throw new ForbiddenException("Chỉ Moderator đang hoạt động mới thao tác được với bộ truyện mẫu.");
+            throw new ForbiddenException("Chỉ kiểm duyệt viên đang hoạt động mới thao tác được với bộ truyện mẫu.");
         }
 
         return user;
@@ -312,7 +313,7 @@ public partial class RoadmapTemplateService : IRoadmapTemplateService
         if (user == null || user.IsDeleted || user.Status != AccountStatus.Active
             || user.Role is not (UserRole.Moderator or UserRole.Administrator))
         {
-            throw new ForbiddenException("Chỉ Moderator hoặc Administrator đang hoạt động mới xem được bộ truyện mẫu.");
+            throw new ForbiddenException("Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới xem được bộ truyện mẫu.");
         }
 
         return user;

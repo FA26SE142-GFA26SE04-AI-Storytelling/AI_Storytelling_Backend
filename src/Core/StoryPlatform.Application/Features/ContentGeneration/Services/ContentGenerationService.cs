@@ -491,7 +491,7 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                         ? semanticSafety.Violations
                         : [!meetsThreshold
                             ? $"Safety score {safetyScore:F2} thấp hơn ngưỡng {handoff.Context.SafetyScoreThreshold:F2}."
-                            : "Semantic safety evaluation rejected the generated story."];
+                            : "AI đánh giá truyện vừa viết chưa an toàn cho trẻ."];
                     quality = quality with
                     {
                         IsPassed = false,
@@ -555,7 +555,15 @@ public sealed partial class ContentGenerationService : IContentGenerationService
                         ? "CONTENT_SAFETY_BLOCKED"
                         : quality.Safety.ReasonCode);
             if (refinement >= _maxRefinementAttempts || quality.RefinementReasons.Count == 0)
+            {
+                var failedGates = new[] { quality.Length, quality.Readability, quality.Safety, quality.OutlineConsistency, quality.VocabularyCompliance }
+                    .Where(x => !x.Passed).ToArray();
+                _logger.LogWarning("Content quality not met JobId={JobId} StoryId={StoryId} Refinement={Refinement} WordCount={WordCount} FailedGates={FailedGates} Violations={Violations}",
+                    jobId, handoff.Job.StoryId, refinement, measuredWords,
+                    string.Join(',', failedGates.Select(x => x.ReasonCode)),
+                    string.Join(" | ", failedGates.SelectMany(x => x.Violations)));
                 throw new InvalidOperationException("CONTENT_QUALITY_NOT_MET");
+            }
 
             refinement++;
             var refined = await RefineContentAsync(handoff, storyContent, quality, refinement, RemainingCallBudget(timer, 90), cancellationToken);

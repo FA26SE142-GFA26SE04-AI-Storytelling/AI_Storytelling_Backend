@@ -145,7 +145,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
         await AuthorizeCreatorOperationAsync(userId, storyId, cancellationToken);
         if (string.IsNullOrWhiteSpace(input.Title) || string.IsNullOrWhiteSpace(input.Content) || string.IsNullOrWhiteSpace(input.Lesson))
         {
-            throw new BadRequestException("Title, content and lesson are required.");
+            throw new BadRequestException("Bạn cần nhập đủ tiêu đề, nội dung và bài học.");
         }
 
         // Phase 4 hardening: KHÔNG ghi đè current version.
@@ -285,7 +285,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
         if (!string.IsNullOrEmpty(input.Selection.Text) &&
             !string.Equals(input.Selection.Text, selectedText, StringComparison.Ordinal))
         {
-            throw new BadRequestException("Selected text does not match the current story content.");
+            throw new BadRequestException("Đoạn bạn chọn không còn khớp với nội dung truyện hiện tại. Bạn tải lại trang rồi chọn lại nhé.");
         }
 
         // Call AI to refine the selected portion
@@ -332,7 +332,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
         };
 
         var proposalId = await _proposalCache.CreateAsync(proposal);
-        return new CreateProposalResponseDto { ProposalId = proposalId, Message = "AI story edit proposal is ready for preview." };
+        return new CreateProposalResponseDto { ProposalId = proposalId, Message = "AI đã đề xuất bản sửa. Bạn xem trước rồi quyết định nhé." };
     }
 
     #endregion
@@ -373,13 +373,13 @@ public sealed partial class StoryReviewService : IStoryReviewService
         if (input.Items.Any(item => string.IsNullOrWhiteSpace(item.Term) || string.IsNullOrWhiteSpace(item.Definition)) ||
             normalizedTerms.Distinct(StringComparer.OrdinalIgnoreCase).Count() != normalizedTerms.Length)
         {
-            throw new BadRequestException("Vocabulary terms and definitions are required, and terms must be unique.");
+            throw new BadRequestException("Mỗi từ vựng cần có từ và giải nghĩa, và các từ không được trùng nhau.");
         }
 
         var storyContent = version.Content ?? string.Empty;
         if (normalizedTerms.Any(term => !storyContent.Contains(term, StringComparison.OrdinalIgnoreCase)))
         {
-            throw new BadRequestException("Every vocabulary term must occur in the story content.");
+            throw new BadRequestException("Mỗi từ vựng phải xuất hiện trong nội dung truyện.");
         }
 
         var existingItems = await _vocabRepo.FindAsync(v => v.StoryVersionId == input.VersionId, cancellationToken: cancellationToken);
@@ -473,7 +473,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
         };
 
         var proposalId = await _proposalCache.CreateAsync(proposal);
-        return new CreateProposalResponseDto { ProposalId = proposalId, Message = "AI vocabulary proposal is ready for preview." };
+        return new CreateProposalResponseDto { ProposalId = proposalId, Message = "AI đã đề xuất từ vựng. Bạn xem trước rồi quyết định nhé." };
     }
 
     #endregion
@@ -523,24 +523,24 @@ public sealed partial class StoryReviewService : IStoryReviewService
         {
             if (!Enum.TryParse<QuizType>(item.Type, true, out var type) || string.IsNullOrWhiteSpace(item.Question))
             {
-                throw new BadRequestException("Every quiz item requires a valid type and question.");
+                throw new BadRequestException("Mỗi câu hỏi cần có dạng câu hỏi và nội dung câu hỏi hợp lệ.");
             }
 
             if (type == QuizType.MultipleChoice &&
                 (item.Choices is null || item.Choices.Count < 2 || string.IsNullOrWhiteSpace(item.CorrectAnswer) ||
                  !item.Choices.Contains(item.CorrectAnswer, StringComparer.OrdinalIgnoreCase)))
             {
-                throw new BadRequestException("Multiple-choice items require at least two choices and a matching correct answer.");
+                throw new BadRequestException("Câu hỏi trắc nghiệm cần ít nhất hai lựa chọn và một đáp án đúng nằm trong các lựa chọn.");
             }
 
             if (type == QuizType.TrueFalse && !bool.TryParse(item.CorrectAnswer, out _))
             {
-                throw new BadRequestException("True/false items require a boolean correct answer.");
+                throw new BadRequestException("Câu hỏi đúng/sai cần chọn đáp án Đúng hoặc Sai.");
             }
 
             if (type == QuizType.ShortAnswer && string.IsNullOrWhiteSpace(item.CorrectAnswer))
             {
-                throw new BadRequestException("Short-answer items require a correct answer.");
+                throw new BadRequestException("Câu hỏi trả lời ngắn cần có đáp án đúng.");
             }
         }
 
@@ -648,7 +648,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
         };
 
         var proposalId = await _proposalCache.CreateAsync(proposal);
-        return new CreateProposalResponseDto { ProposalId = proposalId, Message = "AI quiz proposal is ready for preview." };
+        return new CreateProposalResponseDto { ProposalId = proposalId, Message = "AI đã đề xuất câu hỏi. Bạn xem trước rồi quyết định nhé." };
     }
 
     #endregion
@@ -714,8 +714,8 @@ public sealed partial class StoryReviewService : IStoryReviewService
         var story = await _storyRepo.FirstOrDefaultAsync(s => s.Id == storyId, cancellationToken: cancellationToken);
         if (story == null)
         {
-            checks.Add(new ValidationCheckDto { Name = "story_exists", Passed = false, Message = "Story not found" });
-            return new ValidationResultDto { CanApprove = false, Checks = checks, Issues = ["Story not found"] };
+            checks.Add(new ValidationCheckDto { Name = "story_exists", Passed = false, Message = "Không tìm thấy truyện." });
+            return new ValidationResultDto { CanApprove = false, Checks = checks, Issues = ["Không tìm thấy truyện."] };
         }
 
         if (StoryPlatform.Application.Common.ParentStoryContext.IsEditorStory(story)) throw new ConflictException("PARENT_MANUAL_USE_AUTHORING_API");
@@ -724,8 +724,8 @@ public sealed partial class StoryReviewService : IStoryReviewService
         var version = await _versionRepo.FirstOrDefaultAsync(v => v.StoryId == storyId && v.IsCurrent, cancellationToken: cancellationToken);
         if (version == null)
         {
-            checks.Add(new ValidationCheckDto { Name = "story_complete", Passed = false, Message = "No version found" });
-            issues.Add("Story version not found");
+            checks.Add(new ValidationCheckDto { Name = "story_complete", Passed = false, Message = "Truyện chưa có phiên bản nào." });
+            issues.Add("Truyện chưa có phiên bản nào.");
             return new ValidationResultDto { CanApprove = false, Checks = checks, Issues = issues };
         }
 
@@ -733,8 +733,8 @@ public sealed partial class StoryReviewService : IStoryReviewService
         var storyValid = !string.IsNullOrWhiteSpace(version.Title) &&
                          !string.IsNullOrWhiteSpace(version.Content) &&
                          !string.IsNullOrWhiteSpace(version.Lesson);
-        checks.Add(new ValidationCheckDto { Name = "story_complete", Passed = storyValid, Message = storyValid ? null : "Title, Content, or Lesson is empty" });
-        if (!storyValid) issues.Add("Story content is incomplete");
+        checks.Add(new ValidationCheckDto { Name = "story_complete", Passed = storyValid, Message = storyValid ? null : "Tiêu đề, nội dung hoặc bài học đang trống." });
+        if (!storyValid) issues.Add("Truyện chưa đủ tiêu đề, nội dung và bài học.");
 
         var safetyPolicy = await _unitOfWork.Repository<SafetyPolicy>().FirstOrDefaultAsync(
             policy => policy.ChildProfileId == story.ChildProfileId,
@@ -776,7 +776,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
                     ContentReadabilityLimits.ForLevel(story.ReadingLevel ?? 2, safetyPolicy?.ReadabilityScoreThreshold);
             }
             checks.Add(new ValidationCheckDto { Name = "readability_context_current", Passed = readabilityContextCurrent,
-                Message = readabilityContextCurrent ? "Pinned readability context matches policy" : "READABILITY_POLICY_CHANGED" });
+                Message = readabilityContextCurrent ? "Tiêu chí độ dễ đọc khớp với thiết lập hiện tại." : "READABILITY_POLICY_CHANGED" });
             if (!readabilityContextCurrent) issues.Add("READABILITY_POLICY_CHANGED");
         }
         var readability = ReadabilityCalculator.EvaluateForProfile(
@@ -792,10 +792,9 @@ public sealed partial class StoryReviewService : IStoryReviewService
         });
         if (!readability.Passed)
         {
-            issues.Add($"Readability does not match Reading Level {story.ReadingLevel ?? 2} " +
-                       $"(grade {readability.Metrics.Fkgl:F2}/{readability.MaximumGradeLevel:F2}, " +
-                       $"ease {readability.Metrics.Fre:F2}/{readability.MinimumEaseScore:F2}, " +
-                       $"average words {readability.Metrics.AverageWordsPerSentence:F2}/{readability.MaximumAverageWordsPerSentence:F2})");
+            issues.Add($"Truyện chưa đủ dễ đọc cho trình độ đọc {story.ReadingLevel ?? 2}: câu đang dài trung bình " +
+                       $"{readability.Metrics.AverageWordsPerSentence:F1} từ (tối đa {readability.MaximumAverageWordsPerSentence:F1}). " +
+                       "Bạn hãy rút ngắn câu và dùng từ đơn giản hơn.");
         }
 
         // 3. Check Safety
@@ -804,7 +803,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
         if (version.SafetyScore.HasValue && version.SafetyScore.Value <= 0)
         {
             safetyPassed = false;
-            issues.Add("Story safety score indicates hard safety block.");
+            issues.Add("Truyện có nội dung không an toàn cho trẻ nên bị chặn.");
         }
         else if (safetyPolicy?.SafetyScoreThreshold.HasValue == true)
         {
@@ -834,7 +833,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
                 if (hit != null)
                 {
                     safetyPassed = false;
-                    issues.Add($"Story content contains blocked term: '{hit}'.");
+                    issues.Add($"Truyện chứa từ hoặc chủ đề bị chặn: \"{hit}\".");
                 }
             }
         }
@@ -842,7 +841,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
         {
             Name = "safety_passed",
             Passed = safetyPassed,
-            Message = safetyPassed ? "Safety checks passed" : "Safety requirements not met"
+            Message = safetyPassed ? "Đã qua kiểm tra an toàn." : "Chưa đạt yêu cầu an toàn."
         });
 
         // 4. Check Profile Decision Resolution
@@ -855,12 +854,12 @@ public sealed partial class StoryReviewService : IStoryReviewService
                 if (cachedEval.Decision == ExistingStoryDecision.Blocked || !cachedEval.CanKeepOriginal)
                 {
                     profilePassed = false;
-                    issues.Add("Existing story evaluation decision is Blocked; safety issues must be resolved.");
+                    issues.Add("Truyện có vấn đề an toàn cần xử lý trước khi duyệt.");
                 }
                 else if (cachedEval.Decision == ExistingStoryDecision.AdaptRecommended && version.EditType == VersionEditType.Initial)
                 {
                     profilePassed = false;
-                    issues.Add("Existing story has AdaptRecommended decision; requires adaptation or manual edit before approval.");
+                    issues.Add("Truyện nên được chỉnh cho phù hợp với bé (bằng AI hoặc tự sửa) trước khi duyệt.");
                 }
             }
         }
@@ -868,7 +867,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
         {
             Name = "profile_decision_resolved",
             Passed = profilePassed,
-            Message = profilePassed ? "Profile decision resolved" : "Profile decision unresolved"
+            Message = profilePassed ? "Đã phù hợp với hồ sơ của bé." : "Chưa phù hợp với hồ sơ của bé."
         });
 
         // 5. Check vocabulary
@@ -878,16 +877,16 @@ public sealed partial class StoryReviewService : IStoryReviewService
                          vocabularyItems.All(item => !string.IsNullOrWhiteSpace(item.Term) && !string.IsNullOrWhiteSpace(item.Definition)) &&
                          vocabularyTerms.Distinct(StringComparer.OrdinalIgnoreCase).Count() == vocabularyTerms.Length &&
                          vocabularyTerms.All(term => (version.Content ?? string.Empty).Contains(term, StringComparison.OrdinalIgnoreCase));
-        checks.Add(new ValidationCheckDto { Name = "vocabulary_valid", Passed = readingMediaOnly || vocabValid, Message = readingMediaOnly ? "skipped" : $"{vocabularyItems.Count} items" });
-        if (!readingMediaOnly && !vocabValid) issues.Add($"Vocabulary needs at least 5 unique, non-empty terms that occur in the story (current: {vocabularyItems.Count})");
+        checks.Add(new ValidationCheckDto { Name = "vocabulary_valid", Passed = readingMediaOnly || vocabValid, Message = readingMediaOnly ? "Không áp dụng" : $"{vocabularyItems.Count} từ" });
+        if (!readingMediaOnly && !vocabValid) issues.Add($"Từ vựng cần ít nhất 5 từ không trùng, có giải nghĩa và đều xuất hiện trong truyện (hiện có {vocabularyItems.Count}).");
 
         // 6. Check quiz
         var quizItems = await _quizRepo.FindAsync(q => q.StoryVersionId == version.Id, cancellationToken: cancellationToken);
         var quizValid = quizItems.Count >= 3 && quizItems.All(IsValidQuizItem);
         var hasAllTypes = Enum.GetValues<QuizType>().All(t => quizItems.Any(q => q.Type == t));
         var quizPassed = quizValid && hasAllTypes;
-        checks.Add(new ValidationCheckDto { Name = "quiz_valid", Passed = readingMediaOnly || quizPassed, Message = readingMediaOnly ? "skipped" : quizPassed ? $"{quizItems.Count} questions, all types" : "Missing types" });
-        if (!readingMediaOnly && !quizPassed) issues.Add("Quiz needs at least 3 valid questions with all types and valid answers");
+        checks.Add(new ValidationCheckDto { Name = "quiz_valid", Passed = readingMediaOnly || quizPassed, Message = readingMediaOnly ? "Không áp dụng" : quizPassed ? $"{quizItems.Count} câu, đủ các dạng" : "Còn thiếu dạng câu hỏi" });
+        if (!readingMediaOnly && !quizPassed) issues.Add("Câu hỏi đọc hiểu cần ít nhất 3 câu hợp lệ, có đủ các dạng câu hỏi và đáp án đúng.");
 
         // 7. Check Artifact Bindings
         var bindingsPassed = vocabularyItems.All(v => v.StoryVersionId == version.Id) &&
@@ -896,9 +895,9 @@ public sealed partial class StoryReviewService : IStoryReviewService
         {
             Name = "artifact_bindings_valid",
             Passed = readingMediaOnly || bindingsPassed,
-            Message = readingMediaOnly ? "skipped" : bindingsPassed ? "All artifacts bound to current version" : "Artifacts binding mismatch"
+            Message = readingMediaOnly ? "Không áp dụng" : bindingsPassed ? "Học liệu khớp với bản truyện hiện tại." : "Học liệu chưa khớp với bản truyện hiện tại."
         });
-        if (!readingMediaOnly && !bindingsPassed) issues.Add("Artifacts must be bound to the current story version.");
+        if (!readingMediaOnly && !bindingsPassed) issues.Add("Học liệu chưa gắn với bản truyện hiện tại. Bạn hãy tạo lại học liệu.");
 
         // Tương tác lúc nghe phải khớp kế hoạch và được người duyệt xác nhận.
         var listening = await InspectListeningAsync(story, version, cancellationToken);
@@ -909,18 +908,18 @@ public sealed partial class StoryReviewService : IStoryReviewService
         {
             Name = "listening_valid",
             Passed = listening.Valid,
-            Message = !listening.Required ? "skipped"
-                : listening.Valid ? $"{listening.Inspection!.Items.Count} interactions"
+            Message = !listening.Required ? "Không áp dụng"
+                : listening.Valid ? $"{listening.Inspection!.Items.Count} tương tác"
                 : string.Join(", ", ListeningIssues(listening).Select(i => i.Code).Distinct())
         });
-        if (!listening.Valid) issues.Add("Listening interactions must match the plan and pass the rules; regenerate stale types.");
+        if (!listening.Valid) issues.Add("Các tương tác khi nghe chưa khớp kế hoạch. Bạn hãy tạo lại các loại bị lỗi thời.");
         checks.Add(new ValidationCheckDto
         {
             Name = "listening_reviewed",
             Passed = listeningReviewed,
-            Message = !listening.Required ? "skipped" : listeningReviewed ? "Confirmed" : "Waiting for reviewer confirmation"
+            Message = !listening.Required ? "Không áp dụng" : listeningReviewed ? "Đã xác nhận" : "Chờ người duyệt xác nhận"
         });
-        if (!listeningReviewed) issues.Add("Listening interactions must be confirmed by the reviewer.");
+        if (!listeningReviewed) issues.Add("Bạn cần xác nhận các tương tác khi nghe.");
 
         // 8. Check Review Complete
         var isMarkedComplete = _reviewCompletionStore?.IsReviewCompleted(storyId, version.Id) ?? false;
@@ -933,9 +932,9 @@ public sealed partial class StoryReviewService : IStoryReviewService
         {
             Name = "review_complete",
             Passed = reviewComplete,
-            Message = reviewComplete ? "Review completed" : "Review incomplete"
+            Message = reviewComplete ? "Đã duyệt xong." : "Chưa duyệt xong."
         });
-        if (!reviewComplete) issues.Add("Required review is incomplete");
+        if (!reviewComplete) issues.Add("Bạn chưa hoàn tất các bước duyệt bắt buộc.");
 
         var canApprove = !checks.Any(check => check.Name == "creator_audience_policy" && !check.Passed) && storyValid &&
                          readability.Passed && readabilityContextCurrent &&
@@ -990,7 +989,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
             ?? throw new NotFoundException("Story");
         await EnsureReviewPermissionAsync(storyForAuthorization, userId, cancellationToken);
         if (creatorConfirmation != (storyForAuthorization.Scope == StoryScope.Creator))
-            throw new ForbiddenException("Creator phải xác nhận nội dung qua API confirm-content; duyệt công khai thuộc Moderator.");
+            throw new ForbiddenException("Nhà sáng tạo phải xác nhận nội dung ở bước xác nhận nội dung; duyệt công khai thuộc kiểm duyệt viên.");
         if (package is not null && await FindPackageReceiptAsync(userId, storyId, package, cancellationToken) is { } replay)
             return replay.StoryVersionId;
         if (storyForAuthorization.Status != StoryStatus.ContentReview)
@@ -1010,7 +1009,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
         {
             var validation = await ValidateAsync(userId, storyId, cancellationToken);
             if (!validation.CanApprove)
-                throw new BadRequestException($"Content is not ready for media: {string.Join(", ", validation.Issues)}");
+                throw new BadRequestException($"Truyện chưa sẵn sàng để tạo hình ảnh và giọng đọc: {string.Join("; ", validation.Issues.Select(UserFacingMessages.Translate))}");
         }
 
         int versionId = 0;
@@ -1034,7 +1033,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
             var approvedVersion = await _versionRepo.FirstOrDefaultAsync(
                 v => v.StoryId == storyId && v.IsCurrent && v.Content != null,
                 cancellationToken: cancellationToken)
-                ?? throw new BadRequestException("Cannot prepare media without a current canonical story version.");
+                ?? throw new BadRequestException("Truyện chưa có phiên bản hiện tại nên chưa tạo được hình ảnh và giọng đọc.");
 
             if (expectedVersionId.HasValue && approvedVersion.Id != expectedVersionId.Value
                 || evaluatedVersionId.HasValue && approvedVersion.Id != evaluatedVersionId.Value)
@@ -1047,7 +1046,7 @@ public sealed partial class StoryReviewService : IStoryReviewService
             if (package is not null && lockedValidation.Checks.Any(x => x.Name == "readability_valid" && !x.Passed))
                 throw new ConflictException("CONTENT_READABILITY_REPAIR_REQUIRED");
             if (!(creatorConfirmation ? lockedValidation.CanConfirmContent : lockedValidation.CanApprove))
-                throw new BadRequestException($"Content is not ready for media: {string.Join(", ", lockedValidation.Issues)}");
+                throw new BadRequestException($"Truyện chưa sẵn sàng để tạo hình ảnh và giọng đọc: {string.Join("; ", lockedValidation.Issues.Select(UserFacingMessages.Translate))}");
             versionId = approvedVersion.Id;
             var jobs = _unitOfWork.Repository<StoryGenerationJob>();
             if (await jobs.ExistsAsync(j =>

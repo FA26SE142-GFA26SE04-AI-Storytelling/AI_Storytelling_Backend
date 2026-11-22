@@ -213,11 +213,11 @@ public class CreatorPayoutService : ICreatorPayoutService
             var creator = await RequireCreatorAsync(creatorUserId, cancellationToken);
             if (creator.Status != AccountStatus.Active)
             {
-                throw new ConflictException("Creator đang bị vô hiệu hoá; số dư được giữ đến khi tài khoản được kích hoạt lại.");
+                throw new ConflictException("Nhà sáng tạo đang bị vô hiệu hoá; số dư được giữ đến khi tài khoản được kích hoạt lại.");
             }
 
             var account = await FindAccountAsync(creator.Id, cancellationToken)
-                          ?? throw new ConflictException("Creator chưa nhập thông tin nhận tiền.");
+                          ?? throw new ConflictException("Nhà sáng tạo chưa nhập thông tin nhận tiền.");
             var balance = await GetBalanceAsync(creator.Id, cancellationToken);
             if (balance <= 0)
             {
@@ -441,7 +441,7 @@ public class CreatorPayoutService : ICreatorPayoutService
         var admin = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(adminUserId, cancellationToken);
         if (admin is not { Role: UserRole.Administrator, Status: AccountStatus.Active } || admin.IsDeleted)
         {
-            throw new ForbiddenException("Chỉ Administrator đang hoạt động mới ghi nhận được chi trả cho Creator.");
+            throw new ForbiddenException("Chỉ quản trị viên đang hoạt động mới ghi nhận được chi trả cho nhà sáng tạo.");
         }
     }
 
@@ -450,7 +450,7 @@ public class CreatorPayoutService : ICreatorPayoutService
         var creator = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(creatorUserId, cancellationToken);
         if (creator == null || creator.IsDeleted || creator.Role != UserRole.ContentCreator)
         {
-            throw new NotFoundException("Tài khoản Content Creator", creatorUserId);
+            throw new NotFoundException("Tài khoản nhà sáng tạo nội dung", creatorUserId);
         }
 
         return creator;

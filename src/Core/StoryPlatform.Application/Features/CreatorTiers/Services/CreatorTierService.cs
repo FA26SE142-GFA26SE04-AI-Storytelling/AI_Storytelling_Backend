@@ -143,13 +143,13 @@ public class CreatorTierService : ICreatorTierService, IStoryArchiveHandler
         var admin = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(adminUserId, cancellationToken);
         if (admin is not { Role: UserRole.Administrator, Status: AccountStatus.Active } || admin.IsDeleted)
         {
-            throw new ForbiddenException("Chỉ Administrator đang hoạt động mới thu hồi được cấp Creator đối tác.");
+            throw new ForbiddenException("Chỉ quản trị viên đang hoạt động mới thu hồi được cấp nhà sáng tạo đối tác.");
         }
 
         var creator = await RequireCreatorAsync(creatorUserId, cancellationToken);
         if (creator.CreatorTier != CreatorTier.Partner)
         {
-            throw new ConflictException("Creator này không phải Creator đối tác.");
+            throw new ConflictException("Nhà sáng tạo này không phải nhà sáng tạo đối tác.");
         }
 
         await DemoteAsync(creator, admin.Id, "CreatorPartnerRevoked", reason, cancellationToken);
@@ -333,7 +333,7 @@ public class CreatorTierService : ICreatorTierService, IStoryArchiveHandler
         var creator = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(creatorUserId, cancellationToken);
         if (creator == null || creator.IsDeleted || creator.Role != UserRole.ContentCreator)
         {
-            throw new NotFoundException("Tài khoản Content Creator", creatorUserId);
+            throw new NotFoundException("Tài khoản nhà sáng tạo nội dung", creatorUserId);
         }
 
         return creator;

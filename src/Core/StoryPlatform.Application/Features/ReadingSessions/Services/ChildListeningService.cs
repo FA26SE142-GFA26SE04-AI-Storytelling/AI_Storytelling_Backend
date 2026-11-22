@@ -56,9 +56,13 @@ public class ChildListeningService : IChildListeningService
         SubmitListeningAttemptRequestDto request, CancellationToken ct)
     {
         var interaction = context.Interaction;
-        // Loại khác Sắp xếp: mỗi phiên ghi một lần, gửi lại thì trả kết quả cũ.
+        // Loại khác Sắp xếp: mỗi phiên ghi một lần, gửi lại thì trả kết quả cũ (audio vẫn ký như lần đầu).
         if (interaction.Type != ListeningInteractionType.EventOrdering && context.Attempts.Count > 0)
-            return Result(context, context.Attempts[0]);
+        {
+            var previous = Result(context, context.Attempts[0]);
+            previous.FeedbackAudioUrl = await _mediaUrls.SignAsync(previous.FeedbackAudioUrl, ct);
+            return previous;
+        }
 
         var attempt = new ListeningInteractionAttempt
         {

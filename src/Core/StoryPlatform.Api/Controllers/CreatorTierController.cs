@@ -27,7 +27,7 @@ public class CreatorTierController : BaseApiController
     public async Task<ActionResult<ApiResponse<CreatorTierOverviewDto>>> Get(int creatorUserId, CancellationToken cancellationToken)
     {
         var result = await _service.GetOverviewAsync(creatorUserId, cancellationToken);
-        return HandleResult(result, "Lấy cấp Creator đối tác thành công.");
+        return HandleResult(result, "Lấy cấp nhà sáng tạo đối tác thành công.");
     }
 
     /// <summary>Thu hồi cấp đối tác, lý do bắt buộc; Creator về cấp thường ngay, lần xét tháng sau vẫn xét bình thường.</summary>
@@ -36,6 +36,6 @@ public class CreatorTierController : BaseApiController
         int creatorUserId, [FromBody] RevokePartnerTierRequestDto request, CancellationToken cancellationToken)
     {
         var result = await _service.RevokeAsync(GetCurrentUserId(), creatorUserId, request, cancellationToken);
-        return HandleResult(result, "Đã thu hồi cấp Creator đối tác.");
+        return HandleResult(result, "Đã thu hồi cấp nhà sáng tạo đối tác.");
     }
 }

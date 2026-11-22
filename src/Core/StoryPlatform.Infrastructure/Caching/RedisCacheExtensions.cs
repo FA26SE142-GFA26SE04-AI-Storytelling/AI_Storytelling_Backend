@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
+using StoryPlatform.Application.Abstractions.Caching;
 
 namespace StoryPlatform.Infrastructure.Caching;
 
@@ -16,6 +17,13 @@ public static class RedisCacheExtensions
         {
             options.ConfigurationOptions = BuildRedisConfiguration(redisOptions.ConnectionString);
         });
+
+        // Chưa cấu hình Redis (test, máy dev chưa có chuỗi kết nối) thì không đăng ký IAppCache: service nhận
+        // null và đọc thẳng DB, tránh mỗi request phải chờ timeout kết nối tới một Redis không tồn tại.
+        if (!string.IsNullOrWhiteSpace(redisOptions.ConnectionString))
+        {
+            services.AddSingleton<IAppCache, DistributedAppCache>();
+        }
 
         return services;
     }

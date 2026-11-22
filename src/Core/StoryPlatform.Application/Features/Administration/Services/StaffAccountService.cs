@@ -51,7 +51,7 @@ public class StaffAccountService : IStaffAccountService
     {
         if (role.HasValue && !IsStaffRole(role.Value))
         {
-            throw new BadRequestException("Chỉ lọc được theo vai trò Moderator hoặc Administrator.");
+            throw new BadRequestException("Chỉ lọc được theo vai trò kiểm duyệt viên hoặc quản trị viên.");
         }
 
         Expression<Func<UserAccount, bool>> filter = role is { } onlyRole
@@ -72,12 +72,12 @@ public class StaffAccountService : IStaffAccountService
     {
         if (request.Role is not { } role || !IsStaffRole(role))
         {
-            throw new BadRequestException("Vai trò phải là Moderator hoặc Administrator.");
+            throw new BadRequestException("Vai trò phải là kiểm duyệt viên hoặc quản trị viên.");
         }
 
         if (role == UserRole.Moderator && string.IsNullOrWhiteSpace(request.Expertise))
         {
-            throw new BadRequestException("Chuyên môn không được để trống khi mời Moderator.");
+            throw new BadRequestException("Chuyên môn không được để trống khi mời kiểm duyệt viên.");
         }
 
         var actor = await RequireActorAsync(actorAdminUserId, cancellationToken);
@@ -206,7 +206,7 @@ public class StaffAccountService : IStaffAccountService
                 cancellationToken);
             if (activeAdminCount <= 1)
             {
-                throw new ConflictException("Không thể vô hiệu hóa Administrator cuối cùng đang hoạt động.");
+                throw new ConflictException("Không thể vô hiệu hóa quản trị viên cuối cùng đang hoạt động.");
             }
         }
 
@@ -271,8 +271,8 @@ public class StaffAccountService : IStaffAccountService
         user.Status == AccountStatus.PasswordResetPending && user.CommitmentAcceptedAt == null;
 
     private static string RoleLabel(UserRole role) => role == UserRole.Administrator
-        ? "Quản trị viên (Administrator)"
-        : "Kiểm duyệt viên (Moderator)";
+        ? "Quản trị viên"
+        : "Kiểm duyệt viên";
 
     private async Task RevokeRefreshTokensAsync(
         int userId, CancellationToken cancellationToken)
@@ -298,7 +298,7 @@ public class StaffAccountService : IStaffAccountService
             || actor.Status != AccountStatus.Active)
         {
             throw new ForbiddenException(
-                "Chỉ Administrator đang hoạt động mới được quản lý tài khoản vận hành.");
+                "Chỉ quản trị viên đang hoạt động mới được quản lý tài khoản vận hành.");
         }
 
         return actor;
@@ -311,7 +311,7 @@ public class StaffAccountService : IStaffAccountService
             .GetByIdAsync(targetUserId, cancellationToken);
         if (target == null || !IsStaffRole(target.Role))
         {
-            throw new NotFoundException("Tài khoản Moderator / Administrator", targetUserId);
+            throw new NotFoundException("Tài khoản kiểm duyệt viên / quản trị viên", targetUserId);
         }
 
         return target;

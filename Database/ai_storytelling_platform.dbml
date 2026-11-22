@@ -42,6 +42,13 @@ Enum CatalogStatus {
   RolledBack
 }
 
+Enum ContentCategoryGroup {
+  Genre
+  LifeValue
+  Learning
+  SafetyWarning
+}
+
 Enum CheckpointKind {
   Prediction
   Emotion
@@ -799,6 +806,7 @@ Table content_categories {
   CreatedByAdminId int
   DefaultBlockedAgeBands text[] [not null]
   DisplayName varchar(150) [not null]
+  Group ContentCategoryGroup [not null, note: 'EF PostgreSQL type: character varying(30)']
   Id int [pk, not null, increment]
   IsActive boolean [not null]
   IsDeleted boolean [not null]

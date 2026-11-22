@@ -86,13 +86,13 @@ public class CreatorAccountService : ICreatorAccountService
         var creator = await RequireCreatorAsync(creatorUserId, cancellationToken);
         if (creator.Status == AccountStatus.Suspended)
         {
-            throw new ConflictException("Tài khoản Creator này đã bị vô hiệu hoá.");
+            throw new ConflictException("Tài khoản nhà sáng tạo này đã bị vô hiệu hoá.");
         }
 
         if (creator.Status != AccountStatus.Active)
         {
             // Creator chưa được duyệt: Admin xử lý bằng từ chối đơn đăng ký thay vì vô hiệu hoá.
-            throw new ConflictException("Chỉ vô hiệu hoá được Creator đang hoạt động. Creator chờ duyệt thì từ chối đơn đăng ký.");
+            throw new ConflictException("Chỉ vô hiệu hoá được nhà sáng tạo đang hoạt động. Nhà sáng tạo chờ duyệt thì từ chối đơn đăng ký.");
         }
 
         var now = DateTime.UtcNow;
@@ -169,7 +169,7 @@ public class CreatorAccountService : ICreatorAccountService
         var creator = await RequireCreatorAsync(creatorUserId, cancellationToken);
         if (creator.Status != AccountStatus.Suspended)
         {
-            throw new ConflictException("Chỉ kích hoạt lại được Creator đã bị vô hiệu hoá.");
+            throw new ConflictException("Chỉ kích hoạt lại được nhà sáng tạo đã bị vô hiệu hoá.");
         }
 
         creator.Status = AccountStatus.Active;
@@ -297,7 +297,7 @@ public class CreatorAccountService : ICreatorAccountService
         var admin = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(adminUserId, cancellationToken);
         if (admin is not { Role: UserRole.Administrator, Status: AccountStatus.Active } || admin.IsDeleted)
         {
-            throw new ForbiddenException("Chỉ Administrator đang hoạt động mới quản lý được tài khoản Content Creator.");
+            throw new ForbiddenException("Chỉ quản trị viên đang hoạt động mới quản lý được tài khoản nhà sáng tạo nội dung.");
         }
 
         return admin;
@@ -308,7 +308,7 @@ public class CreatorAccountService : ICreatorAccountService
         var creator = await _unitOfWork.Repository<UserAccount>().GetByIdAsync(creatorUserId, cancellationToken);
         if (creator == null || creator.IsDeleted || creator.Role != UserRole.ContentCreator)
         {
-            throw new NotFoundException("Tài khoản Content Creator", creatorUserId);
+            throw new NotFoundException("Tài khoản nhà sáng tạo nội dung", creatorUserId);
         }
 
         return creator;

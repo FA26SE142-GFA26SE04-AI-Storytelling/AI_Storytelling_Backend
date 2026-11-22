@@ -243,7 +243,7 @@ public sealed partial class StoryReviewService
     {
         if (!proposal.ArtifactType.StartsWith(ListeningArtifactPrefix, StringComparison.Ordinal) ||
             !Enum.TryParse<ListeningInteractionType>(proposal.ArtifactType[ListeningArtifactPrefix.Length..], out var type))
-            throw new BadRequestException($"Unknown artifact type: {proposal.ArtifactType}");
+            throw new BadRequestException("Loại đề xuất này chưa được hỗ trợ.");
         var (story, version) = await LoadListeningTargetAsync(userId, proposal.StoryId, cancellationToken);
         if (version.Id != proposal.StoryVersionId) throw new ConflictException("STALE_PROPOSAL_VERSION");
         var drafts = proposal.SuggestedContent is JsonElement element && element.TryGetProperty("items", out var items)

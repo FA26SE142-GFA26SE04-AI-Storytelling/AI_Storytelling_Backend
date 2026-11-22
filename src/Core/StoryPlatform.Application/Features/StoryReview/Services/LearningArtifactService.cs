@@ -126,7 +126,7 @@ public sealed class LearningArtifactService : ILearningArtifactService
         {
             version = await versionRepo.GetByIdAsync(storyVersionId.Value, cancellationToken);
             if (version is null || version.StoryId != storyId)
-                throw new BadRequestException("StoryVersion không thuộc Story.");
+                throw new BadRequestException("Phiên bản này không thuộc truyện đang mở.");
         }
         else
         {
@@ -137,7 +137,7 @@ public sealed class LearningArtifactService : ILearningArtifactService
         if (version is null)
             throw new NotFoundException("StoryVersion hiện tại không tồn tại.");
         if (string.IsNullOrWhiteSpace(version.Content))
-            throw new BadRequestException("StoryVersion chưa có nội dung để tạo learning artifacts.");
+            throw new BadRequestException("Phiên bản truyện chưa có nội dung để tạo học liệu.");
 
         await CreatorPublicationGuard.EnsureWritableAsync(_unitOfWork, storyId, version.Id, cancellationToken, contentMutation: true);
         return (story, version);

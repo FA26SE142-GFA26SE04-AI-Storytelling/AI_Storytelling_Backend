@@ -63,7 +63,7 @@ public partial class ContentReportReviewService
         var trimmed = reason?.Trim() ?? string.Empty;
         if (trimmed.Length == 0)
         {
-            throw new BadRequestException("Phải ghi lý do khi quyết định xử lý report.");
+            throw new BadRequestException("Phải ghi lý do khi quyết định xử lý báo cáo.");
         }
 
         if (trimmed.Length > MaxReasonLength)

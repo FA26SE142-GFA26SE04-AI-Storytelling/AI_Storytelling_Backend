@@ -1,4 +1,4 @@
--- 24. reading_sessions (17)
+-- 24. reading_sessions (21)
 -- Moi dong thoa CK_reading_sessions_exactly_one_entry_source:
 -- ChildAccessCredentialId XOR SupervisorSessionId (refresh_tokens.Id).
 INSERT INTO reading_sessions (
@@ -20,7 +20,10 @@ VALUES
 ON CONFLICT ("Id") DO NOTHING;
 
 -- Phiên đọc truyện Creator làm căn cứ được đánh giá (73_story_ratings.sql):
--- bé 1 (parent_demo1) đọc truyện 21 và 16; bé 3 (parent_demo2) đọc truyện 21.
+-- bé 1 (parent_demo1) đọc truyện 21 và 16; bé 3 (parent_demo2) đọc truyện 21 và 14;
+-- bé 6 Phúc (parent_demo3) đọc truyện 16 (căn cứ của đánh giá 4);
+-- bé 11 Lâm (parent_demo2) đọc truyện 16: parent_demo2 đủ điều kiện nhưng chưa đánh giá truyện 16;
+-- bé 7 Giang (parent_demo4) chỉ đọc truyện 14 (chưa đọc 16 / 21).
 INSERT INTO reading_sessions (
     "Id", "ChildProfileId", "StoryId", "StoryVersionId",
     "ChildAccessCredentialId", "SupervisorSessionId", "StartedAt", "CompletedAt",
@@ -29,7 +32,11 @@ INSERT INTO reading_sessions (
 VALUES
     (11, 1, 21, 26, NULL, 2, NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days' + INTERVAL '6 minutes', 'Completed', 3, 360, NULL, NOW() - INTERVAL '2 days', false),
     (12, 3, 21, 26, NULL, 3, NOW() - INTERVAL '1 day', NULL, 'Reading', 1, 90, NULL, NOW() - INTERVAL '1 day', false),
-    (13, 1, 16, 21, NULL, 2, NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days' + INTERVAL '5 minutes', 'Completed', 1, 300, NULL, NOW() - INTERVAL '3 days', false)
+    (13, 1, 16, 21, NULL, 2, NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days' + INTERVAL '5 minutes', 'Completed', 1, 300, NULL, NOW() - INTERVAL '3 days', false),
+    (14, 6, 16, 21, 6, NULL, NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days' + INTERVAL '4 minutes', 'Completed', 1, 240, NULL, NOW() - INTERVAL '3 days', false),
+    (15, 11, 16, 21, 11, NULL, NOW() - INTERVAL '20 hours', NOW() - INTERVAL '20 hours' + INTERVAL '5 minutes', 'Completed', 1, 300, NULL, NOW() - INTERVAL '20 hours', false),
+    (16, 7, 14, 17, 7, NULL, NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days' + INTERVAL '6 minutes', 'Completed', 1, 360, NULL, NOW() - INTERVAL '2 days', false),
+    (17, 3, 14, 17, 3, NULL, NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day' + INTERVAL '5 minutes', 'Completed', 1, 300, NULL, NOW() - INTERVAL '1 day', false)
 ON CONFLICT ("Id") DO NOTHING;
 
 -- Lịch sử đọc phong phú của bé 1 (parent_demo1) cho màn kết quả đọc phía phụ huynh:

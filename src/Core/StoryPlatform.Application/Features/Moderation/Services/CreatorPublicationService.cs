@@ -44,10 +44,10 @@ public sealed class CreatorPublicationService(IUnitOfWork uow, IModerationQueueS
                 && PublicStoryLabels.HasOnlyMetadataFeedback(decided.Feedback),
             Labels = links.Join(categories, link => link.ContentCategoryId, category => category.Id,
                 (link, category) => new PublicReviewLabelDto { ContentCategoryId = category.Id, Code = category.Code,
-                    DisplayName = category.DisplayName, Source = link.Source.ToString() }).OrderBy(x => x.ContentCategoryId).ToList(),
+                    DisplayName = category.DisplayName, Group = category.Group.ToString(), Source = link.Source.ToString() }).OrderBy(x => x.ContentCategoryId).ToList(),
             LastProposedLabels = categories.Where(category => proposedIds.Contains(category.Id)).OrderBy(x => x.Id)
                 .Select(category => new PublicReviewLabelDto { ContentCategoryId = category.Id, Code = category.Code,
-                    DisplayName = category.DisplayName, Source = TagSource.Creator.ToString() }).ToList()
+                    DisplayName = category.DisplayName, Group = category.Group.ToString(), Source = TagSource.Creator.ToString() }).ToList()
         };
     }
 

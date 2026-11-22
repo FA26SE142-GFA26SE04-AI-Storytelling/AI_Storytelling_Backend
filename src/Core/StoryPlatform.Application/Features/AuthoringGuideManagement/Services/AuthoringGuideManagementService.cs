@@ -53,7 +53,7 @@ public sealed partial class AuthoringGuideManagementService(IUnitOfWork uow, IAu
         var actor = await uow.Repository<UserAccount>().GetByIdAsync(userId, ct);
         if (actor is null || actor.IsDeleted || actor.Status != AccountStatus.Active
             || actor.Role is not (UserRole.Moderator or UserRole.Administrator))
-            throw new ForbiddenException("Chỉ Moderator hoặc Administrator đang hoạt động mới quản lý được hướng dẫn sáng tác.");
+            throw new ForbiddenException("Chỉ kiểm duyệt viên hoặc quản trị viên đang hoạt động mới quản lý được hướng dẫn sáng tác.");
         return actor;
     }
 

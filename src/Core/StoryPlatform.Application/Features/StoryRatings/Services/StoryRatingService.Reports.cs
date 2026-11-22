@@ -30,7 +30,7 @@ public partial class StoryRatingService
         if (actor == null || actor.IsDeleted || actor.Status != AccountStatus.Active
             || actor.Role is not (UserRole.User or UserRole.ContentCreator))
         {
-            throw new ForbiddenException("Chỉ phụ huynh hoặc Creator đang hoạt động mới báo cáo được đánh giá.");
+            throw new ForbiddenException("Chỉ phụ huynh hoặc nhà sáng tạo đang hoạt động mới báo cáo được đánh giá.");
         }
 
         if (!Enum.IsDefined(request.Reason))
@@ -56,7 +56,7 @@ public partial class StoryRatingService
 
         if (actor.Role == UserRole.ContentCreator && story.AuthorUserId != actor.Id)
         {
-            throw new ForbiddenException("Creator chỉ báo cáo được đánh giá của truyện mình.");
+            throw new ForbiddenException("Nhà sáng tạo chỉ báo cáo được đánh giá của truyện mình.");
         }
 
         if (actor.Role == UserRole.User && !StoryRatingRules.IsPublicCreatorStory(story))

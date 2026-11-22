@@ -249,9 +249,9 @@ public class PublishedContentReviewServiceTests
             .GetMethod("CreateReviewItem")!.GetCustomAttribute<AuthorizeAttribute>();
 
         Assert.NotNull(authorize);
-        Assert.Equal("Moderator,Administrator", authorize!.Roles);
+        Assert.Equal("Moderator,Administrator", authorize!.GrantedRoles());
         Assert.Equal(new[] { "CreateReviewItem", "GetRoadmap", "GetStory", "List" }, methods);
         Assert.NotNull(createAuthorize);
-        Assert.Equal("Moderator", createAuthorize!.Roles);
+        Assert.Equal("Moderator", createAuthorize!.GrantedRoles());
     }
 }

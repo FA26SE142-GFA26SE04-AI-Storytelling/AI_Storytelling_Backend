@@ -121,7 +121,7 @@ public sealed class ParentAuthoringBoundaryTests
     [Fact]
     public void Routes_distinguish_parent_and_child_authentication()
     {
-        Assert.Equal("User", typeof(ParentAuthoringController).GetCustomAttributes(typeof(AuthorizeAttribute), true).Cast<AuthorizeAttribute>().Single().Roles);
+        Assert.Equal("User", typeof(ParentAuthoringController).GetCustomAttributes(typeof(AuthorizeAttribute), true).Cast<AuthorizeAttribute>().Single().GrantedRoles());
         Assert.Equal(ServiceExtensions.ChildSessionPolicy, typeof(ChildManualStoriesController)
             .GetCustomAttributes(typeof(AuthorizeAttribute), true).Cast<AuthorizeAttribute>().Single().Policy);
     }

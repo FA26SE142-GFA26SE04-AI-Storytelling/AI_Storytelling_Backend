@@ -6,7 +6,11 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.Tokens;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl.Interfaces;
+using StoryPlatform.Application.Features.AccessControl.Services;
 using Microsoft.OpenApi.Models;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Features.CreatorApplications.Interfaces;
@@ -234,6 +238,12 @@ public static class ServiceExtensions
                     .RequireAuthenticatedUser()
                     .RequireClaim("token_type", ChildTokenType));
         });
+
+        // [HasPermission]: policy "perm:<mã>" dựng theo yêu cầu, quyền tra qua IPermissionService.
+        // Bản tĩnh chỉ là mặc định; AddApplication đăng ký bản đọc DB sau và thắng khi resolve.
+        services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+        services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
+        services.TryAddScoped<IPermissionService, StaticPermissionService>();
 
         return services;
     }

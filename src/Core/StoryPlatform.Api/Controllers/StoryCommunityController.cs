@@ -5,11 +5,13 @@ using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
 using StoryPlatform.Application.Features.Stories.DTOs;
 using StoryPlatform.Application.Features.Stories.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>Thư viện chung: truyện của Creator đã được duyệt và công khai, cho mọi vai trò đăng nhập.</summary>
-[Authorize(Roles = "User,ContentCreator,Moderator,Administrator")]
+[HasPermission(Permissions.Shared.CommunityView)]
 [Route("api/v1/Story/community")]
 public class StoryCommunityController : BaseApiController
 {
@@ -32,7 +34,7 @@ public class StoryCommunityController : BaseApiController
     }
 
     /// <summary>Truyện đang công khai của chính Creator, kèm lượt xem/yêu thích.</summary>
-    [Authorize(Roles = "ContentCreator")]
+    [HasPermission(Permissions.Creator.CommunityManage)]
     [HttpGet("/api/v1/creator/stories/published")]
     public async Task<ActionResult<ApiResponse<PagedResult<CommunityStoryDto>>>> GetMyPublishedStories(
         [FromQuery] StoryFilterRequestDto filter, CancellationToken cancellationToken)

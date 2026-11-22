@@ -8,11 +8,13 @@ using StoryPlatform.Application.Features.ContentGeneration.DTOs;
 using StoryPlatform.Application.Features.ContentGeneration.Interfaces;
 using StoryPlatform.Application.Features.StoryReview.DTOs;
 using StoryPlatform.Application.Features.StoryReview.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
 [ApiController]
-[Authorize(Roles = "User,ContentCreator,Administrator")]
+[HasPermission(Permissions.Shared.StoryPackageConfirm)]
 [Route("api/v1/stories/{storyId:int}/review/confirm-package")]
 public sealed class StoryPackageConfirmationController(IStoryReviewService review, IContentGenerationService generation) : ControllerBase
 {

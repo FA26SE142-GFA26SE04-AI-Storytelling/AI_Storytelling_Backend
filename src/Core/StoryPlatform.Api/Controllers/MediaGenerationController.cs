@@ -6,11 +6,13 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.MediaGeneration.Interfaces;
 using StoryPlatform.Application.Features.MediaGeneration.Models;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
 [ApiController]
-[Authorize(Roles = "User,ContentCreator")]
+[HasPermission(Permissions.Shared.MediaGenerate)]
 [Route("api/v1/stories/{storyId:int}/media")]
 public sealed class MediaGenerationController : ControllerBase
 {
@@ -53,7 +55,7 @@ public sealed class MediaGenerationController : ControllerBase
     }
 
     [HttpPost("confirm")]
-    [Authorize(Roles = "User,ContentCreator")]
+    [HasPermission(Permissions.Shared.MediaGenerate)]
     [ProducesResponseType(typeof(ApiResponse<MediaGenerationProgress>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<ApiResponse<MediaGenerationProgress>>> Confirm(

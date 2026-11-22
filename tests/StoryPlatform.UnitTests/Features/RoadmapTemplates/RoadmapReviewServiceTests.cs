@@ -442,7 +442,7 @@ public class RoadmapReviewServiceTests
             .Select(method => method.Name).OrderBy(name => name).ToArray();
 
         Assert.NotNull(authorize);
-        Assert.Equal("Moderator,Administrator", authorize!.Roles);
+        Assert.Equal("Moderator,Administrator", authorize!.GrantedRoles());
         Assert.Equal(new[] { "Approve", "GetPackage", "Reject", "RequestChanges", "SaveChecklist" }, methods);
     }
 }

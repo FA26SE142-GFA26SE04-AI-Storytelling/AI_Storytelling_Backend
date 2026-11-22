@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.CreatorStatistics.DTOs;
 using StoryPlatform.Application.Features.CreatorStatistics.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -10,7 +12,7 @@ namespace StoryPlatform.Api.Controllers;
 /// Thống kê của Content Creator trên truyện của chính họ (F-20, F-21). Mã Creator luôn lấy từ token đăng nhập,
 /// không nhận từ request; kết quả chỉ là số tổng hợp, không có dữ liệu của trẻ.
 /// </summary>
-[Authorize(Roles = "ContentCreator")]
+[HasPermission(Permissions.Creator.Studio)]
 public class CreatorStatisticsController : BaseApiController
 {
     private readonly ICreatorStatisticsService _creatorStatisticsService;

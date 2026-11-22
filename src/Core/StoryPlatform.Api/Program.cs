@@ -81,6 +81,7 @@ else
 app.SeedDataIfRequested<StoryPlatform.Infrastructure.Persistence.ApplicationDbContext>(builder.Configuration);
 if (builder.Configuration.GetValue("AuthoringGuides:SeedOnStartup", true))
     await app.SeedAuthoringGuidesAsync();
+await app.SeedPermissionsAsync();
 
 // Pipeline xử lý HTTP Request
 // Phải chạy sớm để mọi middleware phía sau thấy IP client thật (không phải IP của ALB).

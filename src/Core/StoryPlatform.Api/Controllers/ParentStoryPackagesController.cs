@@ -2,10 +2,12 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.ParentAuthoring;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
-[Authorize(Roles = "User")]
+[HasPermission(Permissions.Parent.StoryAuthor)]
 [Route("api/v1/parent/stories/{storyId:int}")]
 public sealed class ParentStoryPackagesController(ParentStoryPackageService service) : BaseApiController
 {

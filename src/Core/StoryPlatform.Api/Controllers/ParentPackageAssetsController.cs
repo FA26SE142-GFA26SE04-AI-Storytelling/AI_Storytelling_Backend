@@ -5,10 +5,12 @@ using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.MediaStorage.Interfaces;
 using StoryPlatform.Application.Features.ParentAuthoring;
 using StoryPlatform.Domain.Entities;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
-[Authorize(Roles = "User")]
+[HasPermission(Permissions.Parent.StoryAuthor)]
 [Route("api/v1/parent/stories/{storyId:int}/packages/{packageId:int}/assets")]
 public sealed class ParentPackageAssetsController(ParentStoryPackageService packages, IUnitOfWork uow, IMediaStorage storage) : BaseApiController
 {

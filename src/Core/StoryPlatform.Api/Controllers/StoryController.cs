@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.Stories.DTOs;
 using StoryPlatform.Application.Features.Stories.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -47,7 +49,7 @@ public class StoryController : BaseApiController
     /// Tạo câu chuyện mới (yêu cầu đăng nhập)
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.StoryAuthor)]
     public async Task<ActionResult<ApiResponse<StoryDto>>> CreateStory(
         [FromBody] CreateStoryRequestDto request, 
         CancellationToken cancellationToken)
@@ -61,7 +63,7 @@ public class StoryController : BaseApiController
     /// Chỉnh sửa câu chuyện (yêu cầu là tác giả)
     /// </summary>
     [HttpPut("{id:int}")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.StoryAuthor)]
     public async Task<ActionResult<ApiResponse<StoryDto>>> UpdateStory(
         int id, 
         [FromBody] UpdateStoryRequestDto request, 
@@ -76,7 +78,7 @@ public class StoryController : BaseApiController
     /// Xóa câu chuyện (Soft Delete - yêu cầu là tác giả)
     /// </summary>
     [HttpDelete("{id:int}")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.StoryAuthor)]
     public async Task<ActionResult<ApiResponse<bool>>> DeleteStory(
         int id, 
         CancellationToken cancellationToken)
@@ -90,7 +92,7 @@ public class StoryController : BaseApiController
     /// Phát hành câu chuyện công khai (Publish)
     /// </summary>
     [HttpPatch("{id:int}/publish")]
-    [Authorize(Roles = "User")]
+    [HasPermission(Permissions.Parent.StoryAuthor)]
     public async Task<ActionResult<ApiResponse<bool>>> PublishStory(
         int id, 
         CancellationToken cancellationToken)

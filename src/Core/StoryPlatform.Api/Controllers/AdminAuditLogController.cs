@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.AuditLogs.DTOs;
 using StoryPlatform.Application.Features.AuditLogs.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
@@ -10,7 +12,7 @@ namespace StoryPlatform.Api.Controllers;
 /// Administrator xem audit log toàn hệ thống (Luồng 5): lọc theo người làm, action, đối tượng và khoảng thời gian.
 /// Chỉ đọc; audit log không sửa, không xoá qua API.
 /// </summary>
-[Authorize(Roles = "Administrator")]
+[HasPermission(Permissions.Admin.AuditView)]
 [Route("api/v1/admin/audit-logs")]
 public class AdminAuditLogController : BaseApiController
 {

@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Features.Moderation.Services;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
-[Authorize(Roles = "Moderator,Administrator")]
+[HasPermission(Permissions.Review.GrayZone)]
 [Route("api/v1/moderation/gray-zone-stories")]
 public sealed class GrayZoneReviewController(GrayZoneWorkflowService workflow) : BaseApiController
 {

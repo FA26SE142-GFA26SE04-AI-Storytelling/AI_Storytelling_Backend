@@ -3,13 +3,15 @@ using Microsoft.AspNetCore.Mvc;
 using StoryPlatform.Application.Common.Models;
 using StoryPlatform.Application.Features.Moderation.DTOs;
 using StoryPlatform.Application.Features.Moderation.Interfaces;
+using StoryPlatform.Api.Authorization;
+using StoryPlatform.Application.Features.AccessControl;
 
 namespace StoryPlatform.Api.Controllers;
 
 /// <summary>
 /// Hàng đợi kiểm duyệt dùng chung (Luồng 5 — Moderation view).
 /// </summary>
-[Authorize(Roles = "Moderator,Administrator")]
+[HasPermission(Permissions.Moderation.QueueProcess)]
 public class ModerationQueueController : BaseApiController
 {
     private readonly IModerationQueueService _queueService;
@@ -32,7 +34,7 @@ public class ModerationQueueController : BaseApiController
     /// Chỉ Moderator; Administrator không dùng được endpoint này.
     /// </summary>
     [HttpGet("statistics")]
-    [Authorize(Roles = "Moderator")]
+    [HasPermission(Permissions.Moderation.StatisticsView)]
     public async Task<ActionResult<ApiResponse<ModerationStatisticsDto>>> GetStatistics(
         [FromQuery] DateTime periodStart, [FromQuery] DateTime periodEnd, CancellationToken cancellationToken)
     {

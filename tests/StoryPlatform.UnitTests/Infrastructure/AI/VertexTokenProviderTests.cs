@@ -21,6 +21,34 @@ public sealed class VertexTokenProviderTests
     }
 
     [Fact]
+    public async Task EveryCall_AsksTheCredential_SoARefreshedTokenIsUsedImmediately()
+    {
+        // Credential của Google tự làm mới token theo hạn thật. Provider không được giữ token cũ
+        // theo một thời hạn đoán trước, nếu không mọi lệnh gọi Vertex sẽ bị 401 sau khi token hết hạn.
+        var credential = new RotatingTokenAccess();
+        using var provider = new VertexTokenProvider(credential, NullLogger<VertexTokenProvider>.Instance);
+
+        var first = await provider.GetAccessTokenAsync();
+        credential.Rotate();
+        var second = await provider.GetAccessTokenAsync();
+
+        Assert.Equal(("token-1", "token-2", 2), (first, second, credential.Calls));
+    }
+
+    private sealed class RotatingTokenAccess : Google.Apis.Auth.OAuth2.ITokenAccess
+    {
+        private int _version = 1;
+        public int Calls { get; private set; }
+        public void Rotate() => _version++;
+
+        public Task<string> GetAccessTokenForRequestAsync(string? authUri = null, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult($"token-{_version}");
+        }
+    }
+
+    [Fact]
     public void CredentialsJson_BindsFromConfiguration()
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using StoryPlatform.Application.Abstractions.Caching;
 using StoryPlatform.Infrastructure.Caching;
 using Xunit;
 
@@ -25,6 +26,27 @@ public class RedisCacheExtensionsTests
         var provider = services.BuildServiceProvider();
 
         Assert.NotNull(provider.GetService<IDistributedCache>());
+    }
+
+    [Fact]
+    public void AddRedisCache_WithConnectionString_RegistersAppCache()
+    {
+        var services = new ServiceCollection();
+
+        services.AddRedisCache(BuildConfiguration("localhost:6379"));
+
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IAppCache)
+                                                && descriptor.ImplementationType == typeof(DistributedAppCache));
+    }
+
+    [Fact]
+    public void AddRedisCache_WithoutConnectionString_DoesNotRegisterAppCache()
+    {
+        var services = new ServiceCollection();
+
+        services.AddRedisCache(BuildConfiguration(""));
+
+        Assert.DoesNotContain(services, descriptor => descriptor.ServiceType == typeof(IAppCache));
     }
 
     [Fact]

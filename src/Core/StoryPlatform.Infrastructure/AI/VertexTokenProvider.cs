@@ -9,22 +9,24 @@ using Microsoft.Extensions.Options;
 namespace StoryPlatform.Infrastructure.AI;
 
 /// <summary>
-/// Caches and refreshes a short-lived OAuth2 access token from a Google service account.
-/// Tokens are refreshed automatically ~5 minutes before expiry so there are no auth gaps.
-/// Thread-safe: multiple threads can call GetAccessTokenAsync concurrently; only one
-/// refresh runs at a time.
+/// Provides OAuth2 access tokens for Vertex AI from a Google service account.
 ///
-/// Uses <c>ITokenAccess.GetAccessTokenForRequestAsync</c> to obtain tokens.
+/// Token caching and refresh are left to the Google credential itself
+/// (<c>ITokenAccess.GetAccessTokenForRequestAsync</c>), which knows each token's real
+/// expiry and refreshes it before it lapses. This class must not cache tokens on top:
+/// a fixed lifetime guess would keep serving a token the credential obtained earlier
+/// after it expires, and every Vertex call (images, TTS, planning) would fail with 401
+/// until the guess ran out.
 /// </summary>
 public sealed class VertexTokenProvider : IDisposable
 {
+    private const string Scope = "https://www.googleapis.com/auth/cloud-platform";
+
     private readonly VertexOptions _options;
     private readonly ILogger<VertexTokenProvider> _logger;
-    private readonly SemaphoreSlim _refreshLock = new(initialCount: 1, maxCount: 1);
+    private readonly object _credentialLock = new();
 
-    private GoogleCredential? _credential;
-    private string? _cachedToken;
-    private DateTimeOffset _expiresAt = DateTimeOffset.MinValue;
+    private ITokenAccess? _credential;
     private bool _disposed;
 
     public VertexTokenProvider(IOptions<VertexOptions> options, ILogger<VertexTokenProvider> logger)
@@ -33,72 +35,50 @@ public sealed class VertexTokenProvider : IDisposable
         _logger = logger;
     }
 
-    /// <summary>
-    /// Returns a valid OAuth2 Bearer token, refreshing it if it is expired or about to expire.
-    /// </summary>
-    public async Task<string> GetAccessTokenAsync(CancellationToken cancellationToken = default)
+    /// <summary>Test seam: uses the given token source instead of loading service account credentials.</summary>
+    internal VertexTokenProvider(ITokenAccess tokenAccess, ILogger<VertexTokenProvider> logger)
+        : this(Options.Create(new VertexOptions()), logger)
+    {
+        _credential = tokenAccess;
+    }
+
+    /// <summary>Returns a currently valid OAuth2 Bearer token.</summary>
+    public Task<string> GetAccessTokenAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        return EnsureCredential().GetAccessTokenForRequestAsync(Scope, cancellationToken: cancellationToken);
+    }
 
-        if (_cachedToken is not null && _expiresAt > DateTimeOffset.UtcNow.AddMinutes(5))
+    private ITokenAccess EnsureCredential()
+    {
+        if (_credential is not null) return _credential;
+        lock (_credentialLock)
         {
-            return _cachedToken;
-        }
-
-        await _refreshLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            // Re-check after acquiring the lock.
-            if (_cachedToken is not null && _expiresAt > DateTimeOffset.UtcNow.AddMinutes(5))
-                return _cachedToken;
-
-            EnsureCredential();
-            var token = await ((ITokenAccess)_credential!).GetAccessTokenForRequestAsync(
-                "https://www.googleapis.com/auth/cloud-platform",
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            // Tokens are valid for ~1 hour; cache until 5 min before expiry.
-            _cachedToken = token;
-            _expiresAt = DateTimeOffset.UtcNow.AddSeconds(3500);
-            _logger.LogDebug("Vertex AI access token refreshed, expires in ~1 hour");
-            return token;
-        }
-        finally
-        {
-            _refreshLock.Release();
+            return _credential ??= LoadCredential();
         }
     }
 
-    private void EnsureCredential()
+    private GoogleCredential LoadCredential()
     {
-        if (_credential is not null) return;
-
-        const string scope = "https://www.googleapis.com/auth/cloud-platform";
+        const string scope = Scope;
 
         if (!string.IsNullOrWhiteSpace(_options.CredentialsJson))
         {
             // Never log the JSON: it contains the private key.
-            _credential = GoogleCredential.FromJson(_options.CredentialsJson).CreateScoped(scope);
+            var credential = GoogleCredential.FromJson(_options.CredentialsJson).CreateScoped(scope);
             _logger.LogInformation("Loaded Vertex service account credentials from configuration");
+            return credential;
         }
-        else if (!string.IsNullOrWhiteSpace(_options.CredentialsPath) &&
-            File.Exists(_options.CredentialsPath))
+        if (!string.IsNullOrWhiteSpace(_options.CredentialsPath) && File.Exists(_options.CredentialsPath))
         {
             using var stream = File.OpenRead(_options.CredentialsPath);
-            _credential = GoogleCredential.FromStream(stream).CreateScoped(scope);
+            var credential = GoogleCredential.FromStream(stream).CreateScoped(scope);
             _logger.LogInformation("Loaded Vertex service account credentials from {Path}", _options.CredentialsPath);
+            return credential;
         }
-        else
-        {
-            _credential = GoogleCredential.GetApplicationDefault().CreateScoped(scope);
-            _logger.LogInformation("Using Application Default Credentials for Vertex AI");
-        }
+        _logger.LogInformation("Using Application Default Credentials for Vertex AI");
+        return GoogleCredential.GetApplicationDefault().CreateScoped(scope);
     }
 
-    public void Dispose()
-    {
-        if (_disposed) return;
-        _disposed = true;
-        _refreshLock.Dispose();
-    }
+    public void Dispose() => _disposed = true;
 }

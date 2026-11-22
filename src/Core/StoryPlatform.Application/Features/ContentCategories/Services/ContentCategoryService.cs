@@ -1,3 +1,4 @@
+using StoryPlatform.Application.Abstractions.Caching;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ContentCategories.DTOs;
@@ -10,11 +11,30 @@ namespace StoryPlatform.Application.Features.ContentCategories.Services;
 
 public class ContentCategoryService : IContentCategoryService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    public const string ListCacheKey = "content-categories:list";
+    public const string ActiveListCacheKey = "content-categories:list:active";
+    public static string ItemCacheKey(int contentCategoryId) => $"content-categories:{contentCategoryId}";
 
-    public ContentCategoryService(IUnitOfWork unitOfWork)
+    // Chỉ Moderator sửa và mọi thay đổi đều xoá cache ngay; TTL chỉ là giới hạn trên nếu lệnh xoá cache bị lỗi.
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(30);
+
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly IAppCache? _cache;
+
+    public ContentCategoryService(IUnitOfWork unitOfWork, IAppCache? cache = null)
     {
         _unitOfWork = unitOfWork;
+        _cache = cache;
+    }
+
+    private async Task InvalidateAsync(int? contentCategoryId, CancellationToken cancellationToken)
+    {
+        await _cache.RemoveIfConfiguredAsync(ListCacheKey, cancellationToken);
+        await _cache.RemoveIfConfiguredAsync(ActiveListCacheKey, cancellationToken);
+        if (contentCategoryId.HasValue)
+        {
+            await _cache.RemoveIfConfiguredAsync(ItemCacheKey(contentCategoryId.Value), cancellationToken);
+        }
     }
 
     public async Task<ContentCategoryDto> CreateAsync(
@@ -39,6 +59,7 @@ public class ContentCategoryService : IContentCategoryService
 
         await repository.AddAsync(category, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await InvalidateAsync(null, cancellationToken);
         return MapCategory(category);
     }
 
@@ -64,6 +85,7 @@ public class ContentCategoryService : IContentCategoryService
         category.UpdatedAt = DateTime.UtcNow;
         repository.Update(category);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await InvalidateAsync(contentCategoryId, cancellationToken);
         return MapCategory(category);
     }
 
@@ -86,30 +108,46 @@ public class ContentCategoryService : IContentCategoryService
 
         repository.Delete(category);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await InvalidateAsync(contentCategoryId, cancellationToken);
     }
 
     public async Task<ContentCategoryDto> GetByIdAsync(
         int contentCategoryId, bool includeInactive, CancellationToken cancellationToken = default)
     {
-        var category = await _unitOfWork.Repository<ContentCategory>()
-            .GetByIdAsync(contentCategoryId, cancellationToken);
-        if (category == null || (!category.IsActive && !includeInactive))
+        // Cache lưu cả danh mục đã tắt; lọc theo includeInactive sau khi lấy ra.
+        var category = await _cache.GetOrSetOrLoadAsync(ItemCacheKey(contentCategoryId), async ct =>
+        {
+            var entity = await _unitOfWork.Repository<ContentCategory>().GetByIdAsync(contentCategoryId, ct);
+            if (entity == null)
+            {
+                throw new NotFoundException("Content Category", contentCategoryId);
+            }
+
+            return MapCategory(entity);
+        }, CacheTtl, cancellationToken);
+
+        if (!category.IsActive && !includeInactive)
         {
             throw new NotFoundException("Content Category", contentCategoryId);
         }
 
-        return MapCategory(category);
+        return category;
     }
 
-    public async Task<List<ContentCategoryDto>> ListAsync(
-        bool includeInactive, CancellationToken cancellationToken = default)
-    {
-        var repository = _unitOfWork.Repository<ContentCategory>();
-        var categories = includeInactive
-            ? await repository.GetAllAsync(cancellationToken)
-            : await repository.FindAsync(category => category.IsActive, cancellationToken: cancellationToken);
-        return categories.Select(MapCategory).ToList();
-    }
+    public Task<List<ContentCategoryDto>> ListAsync(
+        bool includeInactive, CancellationToken cancellationToken = default) =>
+        includeInactive
+            ? _cache.GetOrSetOrLoadAsync(ListCacheKey, async ct =>
+            {
+                var categories = await _unitOfWork.Repository<ContentCategory>().GetAllAsync(ct);
+                return categories.Select(MapCategory).ToList();
+            }, CacheTtl, cancellationToken)
+            : _cache.GetOrSetOrLoadAsync(ActiveListCacheKey, async ct =>
+            {
+                var categories = await _unitOfWork.Repository<ContentCategory>()
+                    .FindAsync(category => category.IsActive, cancellationToken: ct);
+                return categories.Select(MapCategory).ToList();
+            }, CacheTtl, cancellationToken);
 
     /// <summary>
     /// Các nơi còn tham chiếu danh mục: bốn bảng có khoá ngoại (Restrict) và nhãn đề xuất

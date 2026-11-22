@@ -4,7 +4,11 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using StoryPlatform.Application.Abstractions.AI;
+using StoryPlatform.Application.Abstractions.Caching;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Common.Models;
@@ -24,12 +28,15 @@ public class StoryService : IStoryService
     public const string OrderByRating = "rating";
 
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAppCache? _cache;
     private readonly IStoryCoverResolver? _covers;
     private readonly IAccountAiActivityService _aiActivity;
 
-    public StoryService(IUnitOfWork unitOfWork, IStoryCoverResolver? covers = null, IAccountAiActivityService? aiActivity = null)
+    public StoryService(IUnitOfWork unitOfWork, IStoryCoverResolver? covers = null, IAccountAiActivityService? aiActivity = null,
+        IAppCache? cache = null)
     {
         _unitOfWork = unitOfWork;
+        _cache = cache;
         _covers = covers;
         _aiActivity = aiActivity ?? new AccountAiActivityService(unitOfWork);
     }
@@ -68,7 +75,20 @@ public class StoryService : IStoryService
         return new PagedResult<StoryDto>(dtos, totalCount, filter.PageIndex, filter.PageSize);
     }
 
-    public async Task<PagedResult<CommunityStoryDto>> GetPublishedCreatorStoriesAsync(StoryFilterRequestDto filter, CancellationToken cancellationToken = default)
+    public const string CommunityCacheKeyPrefix = "community-stories:";
+
+    // Lượt xem / thích / sao chỉ cần gần đúng. TTL ngắn nên truyện bị gỡ hay archive biến khỏi danh sách trong
+    // tối đa 1 phút; mở truyện (GET .../media) vẫn luôn kiểm trạng thái mới nhất trong DB nên không đọc được bản đã gỡ.
+    private static readonly TimeSpan CommunityCacheTtl = TimeSpan.FromMinutes(1);
+
+    public static string CommunityCacheKey(StoryFilterRequestDto filter) =>
+        CommunityCacheKeyPrefix + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(filter))));
+
+    public Task<PagedResult<CommunityStoryDto>> GetPublishedCreatorStoriesAsync(StoryFilterRequestDto filter, CancellationToken cancellationToken = default) =>
+        _cache.GetOrSetOrLoadAsync(CommunityCacheKey(filter), ct => LoadPublishedCreatorStoriesAsync(filter, ct),
+            CommunityCacheTtl, cancellationToken);
+
+    private async Task<PagedResult<CommunityStoryDto>> LoadPublishedCreatorStoriesAsync(StoryFilterRequestDto filter, CancellationToken cancellationToken)
     {
         // Thư viện cộng đồng: chỉ truyện Creator đã được duyệt và công khai. Không bao giờ trả bản nháp hay truyện đã lưu trữ.
         Expression<Func<DomainStory, bool>> predicate = s =>

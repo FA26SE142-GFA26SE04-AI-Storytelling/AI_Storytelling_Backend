@@ -1,3 +1,5 @@
+using StoryPlatform.UnitTests.Infrastructure.Caching;
+using StoryPlatform.Application.Abstractions.Caching;
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
@@ -94,6 +96,35 @@ public sealed class StoryScopeBoundaryTests
         var result = await Service(repo).GetPublishedCreatorStoriesAsync(new StoryFilterRequestDto());
 
         Assert.Equal(2, Assert.Single(result.Items).Id);
+    }
+
+    [Fact]
+    public async Task CommunityList_WithCache_SameFilterServedFromCache()
+    {
+        var cache = new InMemoryAppCache();
+        var repo = PagedStoryRepo(PublishedCreatorStory(10, 7, new DateTime(2026, 11, 1)));
+        var service = Service(repo, cache: cache);
+
+        await service.GetPublishedCreatorStoriesAsync(new StoryFilterRequestDto { PageSize = 10 });
+        var second = await service.GetPublishedCreatorStoriesAsync(new StoryFilterRequestDto { PageSize = 10 });
+
+        Assert.Equal(10, Assert.Single(second.Items).Id);
+        repo.Verify(x => x.GetPagedAsync(It.IsAny<int>(), It.IsAny<int>(),
+            It.IsAny<Expression<Func<Story, bool>>>(), It.IsAny<Func<IQueryable<Story>, IOrderedQueryable<Story>>>(),
+            It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public void CommunityCacheKey_DiffersPerFilter()
+    {
+        Assert.Equal(StoryService.CommunityCacheKey(new StoryFilterRequestDto { Genre = "a", PageIndex = 2 }),
+            StoryService.CommunityCacheKey(new StoryFilterRequestDto { Genre = "a", PageIndex = 2 }));
+        Assert.NotEqual(StoryService.CommunityCacheKey(new StoryFilterRequestDto { Genre = "a" }),
+            StoryService.CommunityCacheKey(new StoryFilterRequestDto { Genre = "b" }));
+        Assert.NotEqual(StoryService.CommunityCacheKey(new StoryFilterRequestDto { PageIndex = 1 }),
+            StoryService.CommunityCacheKey(new StoryFilterRequestDto { PageIndex = 2 }));
+        Assert.NotEqual(StoryService.CommunityCacheKey(new StoryFilterRequestDto { AuthorUserId = 1 }),
+            StoryService.CommunityCacheKey(new StoryFilterRequestDto { AuthorUserId = 2 }));
     }
 
     [Fact]
@@ -284,14 +315,15 @@ public sealed class StoryScopeBoundaryTests
     }
 
     private static StoryService Service(Mock<IGenericRepository<Story>> repo,
-        ReadingSession[]? sessions = null, ReadingProgress[]? progress = null, StoryRating[]? ratings = null)
+        ReadingSession[]? sessions = null, ReadingProgress[]? progress = null, StoryRating[]? ratings = null,
+        IAppCache? cache = null)
     {
         var uow = new Mock<IUnitOfWork>();
         uow.Setup(x => x.Repository<Story>()).Returns(repo.Object);
         uow.Setup(x => x.Repository<ReadingSession>()).Returns(ReadOnlyRepo(sessions ?? []).Object);
         uow.Setup(x => x.Repository<ReadingProgress>()).Returns(ReadOnlyRepo(progress ?? []).Object);
         uow.Setup(x => x.Repository<StoryRating>()).Returns(ReadOnlyRepo(ratings ?? []).Object);
-        return new StoryService(uow.Object);
+        return new StoryService(uow.Object, cache: cache);
     }
 
     private static Mock<IGenericRepository<T>> ReadOnlyRepo<T>(T[] rows) where T : class

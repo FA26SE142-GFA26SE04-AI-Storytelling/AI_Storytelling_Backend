@@ -122,11 +122,33 @@ public sealed partial class AIStoryInputServiceTests
     }
 
     private static SubmitCreatorAIStoryInputRequestDto CreatorRequest(
-        string ageBand = "6-8", int? existingStoryId = null, int targetLength = 500, string idempotencyKey = "creator-generation-001") => new()
+        string ageBand = "6-8", int? existingStoryId = null, int targetLength = 500, string idempotencyKey = "creator-generation-001",
+        string outputMode = "reading_media_only", string generationMode = "standard", int? quizCount = null) => new()
     {
         AgeBand = ageBand, ReadingLevel = 2, ExistingStoryId = existingStoryId, IdempotencyKey = idempotencyKey,
+        OutputMode = outputMode, GenerationMode = generationMode, QuizQuestionCount = quizCount,
         Topic = "Tình bạn", Lesson = "Biết giúp đỡ bạn bè", VocabularyLevel = "level_2", Language = "vi", TargetLength = targetLength
     };
+
+    [Fact]
+    public async Task Creator_quick_generation_pins_the_default_count_and_rejects_changed_replays()
+    {
+        var store = new FakeUnitOfWork();
+        store.Seed(new UserAccount { Id = 13, Role = UserRole.ContentCreator, Status = AccountStatus.Active });
+        var service = new AIStoryInputService(store, new RuleBasedInputGuardrail(), CreatorOnlyQuota());
+        var accepted = await service.SubmitCreatorAsync(13, CreatorRequest(outputMode: "learning", generationMode: "quick"));
+        var replay = await service.SubmitCreatorAsync(13, CreatorRequest(outputMode: "learning", generationMode: "quick", quizCount: 3));
+        Assert.Equal("input_accepted", accepted.InputStatus);
+        Assert.Equal(accepted.RequestId, replay.RequestId);
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            service.SubmitCreatorAsync(13, CreatorRequest(outputMode: "learning", generationMode: "quick", quizCount: 6)));
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            service.SubmitCreatorAsync(13, CreatorRequest(generationMode: "quick", quizCount: 3)));
+        var snapshot = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(
+            Assert.Single(store.Items<StoryGenerationRequest>()).ContextSnapshotJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        Assert.True(snapshot.QuickGeneration);
+        Assert.Equal(3, snapshot.LearningProfile!.QuizTarget);
+    }
 
     [Theory]
     [InlineData("6-8", 900, 12, 24)]
@@ -393,13 +415,15 @@ public sealed partial class AIStoryInputServiceTests
         Assert.Single(unitOfWork.Items<StoryGenerationRequest>());
     }
 
-    [Fact]
-    public async Task Technical_failure_can_retry_same_request_without_new_story()
+    [Theory]
+    [InlineData("standard", null)]
+    [InlineData("quick", 6)]
+    public async Task Technical_failure_can_retry_same_request_without_new_story(string mode, int? quizCount)
     {
         var unitOfWork = CreateEligibleUnitOfWork();
         var failingService = new AIStoryInputService(unitOfWork, new ThrowingGuardrail(), CreateTokenQuotaService(unitOfWork));
 
-        var failed = await failingService.SubmitAsync(1, ValidRequest());
+        var failed = await failingService.SubmitAsync(1, ValidRequest(generationMode: mode, quizCount: quizCount));
         Assert.Equal("input_check_failed", failed.InputStatus);
         Assert.True(failed.CanRetry);
 
@@ -411,6 +435,10 @@ public sealed partial class AIStoryInputServiceTests
         Assert.Single(unitOfWork.Items<Story>());
         Assert.Single(unitOfWork.Items<StoryGenerationRequest>());
         Assert.Single(unitOfWork.Items<StoryGenerationJob>());
+        var snapshot = JsonSerializer.Deserialize<AIStoryInputContextSnapshot>(
+            unitOfWork.Items<StoryGenerationRequest>().Single().ContextSnapshotJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        Assert.Equal(mode == "quick", snapshot.QuickGeneration);
+        if (quizCount.HasValue) Assert.Equal(quizCount.Value, snapshot.LearningProfile!.QuizTarget);
     }
 
     [Fact]
@@ -441,10 +469,13 @@ public sealed partial class AIStoryInputServiceTests
         Assert.Equal(EligibleCredits - 1, lot.Remaining);
     }
 
-    private static SubmitAIStoryInputRequestDto ValidRequest(string topic = "Tình bạn", int targetLength = 500) => new()
+    private static SubmitAIStoryInputRequestDto ValidRequest(string topic = "Tình bạn", int targetLength = 500,
+        string generationMode = "standard", int? quizCount = null) => new()
     {
         ChildProfileId = 1,
         IdempotencyKey = "operation-0001",
+        GenerationMode = generationMode,
+        QuizQuestionCount = quizCount,
         Topic = topic,
         Lesson = "Biết giúp đỡ bạn bè",
         VocabularyLevel = "level_2",

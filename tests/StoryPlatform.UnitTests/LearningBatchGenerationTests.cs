@@ -25,6 +25,35 @@ namespace StoryPlatform.UnitTests;
 public sealed class LearningBatchGenerationTests
 {
     [Theory]
+    [InlineData(3)]
+    [InlineData(6)]
+    public async Task QuickQuizTargetProducesAllThreeQuestionTypes(int count)
+    {
+        var s = Seed();
+        var context = s.Context with { QuickGeneration = true, LearningProfile = s.Context.LearningProfile! with { QuizTarget = count } };
+        s.Store.Items<StoryGenerationRequest>().Single().ContextSnapshotJson =
+            JsonSerializer.Serialize(context, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var client = Client(transform: (request, response) => response with
+        {
+            Items = response.Items.Select(item => request.Batch!.Kind switch
+            {
+                "quiz_reasoning" => item with { Type = "short_answer", CorrectAnswer = "Na", Options = [], OptionFeedback = [] },
+                "quiz_vocabulary" => item with { Type = "true_false", CorrectAnswer = "true", Options = [], OptionFeedback = [] },
+                _ => item
+            }).ToArray()
+        });
+        using var provider = Provider(s.Store, client.Object);
+        using var scope = provider.CreateScope();
+        var result = await scope.ServiceProvider.GetRequiredService<ILearningBatchService>()
+            .GenerateAsync(s.Root, s.Root.ConcurrencyToken, s.Version, context, default);
+
+        Assert.Equal(count, s.Store.Items<LearningArtifactGenerationBatch>().Where(x => x.Kind.StartsWith("quiz_")).Sum(x => x.TargetCount));
+        Assert.Equal(count, result.Quiz.Items.Count);
+        Assert.Equal(new[] { "multiple_choice", "short_answer", "true_false" },
+            result.Quiz.Items.Select(item => item.Type).Distinct().Order());
+    }
+
+    [Theory]
     [InlineData(true, false, 12, 0, 1)]
     [InlineData(false, true, 0, 24, 2)]
     public async Task Selected_components_do_not_generate_an_unrequested_dependency(bool vocabulary, bool quiz, int words, int questions, int batches)

@@ -12,6 +12,6 @@ public class ContentCategory : BaseEntity
     /// <summary>Các age_band bị chặn mặc định — preset Blocked ở Bước 1.4.</summary>
     public List<string> DefaultBlockedAgeBands { get; set; } = new();
 
-    public int? CreatedByAdminId { get; set; }
-    public virtual UserAccount? CreatedByAdmin { get; set; }
+    public int? CreatedByModeratorId { get; set; }
+    public virtual UserAccount? CreatedByModerator { get; set; }
 }

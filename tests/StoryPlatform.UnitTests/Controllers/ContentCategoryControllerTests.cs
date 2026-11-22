@@ -65,7 +65,7 @@ public class ContentCategoryControllerTests
     public async Task GetContentCategory_ReturnsServiceResult()
     {
         var expected = new ContentCategoryDto { Id = 1, Code = "animals" };
-        _service.Setup(service => service.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+        _service.Setup(service => service.GetByIdAsync(1, false, It.IsAny<CancellationToken>()))
             .ReturnsAsync(expected);
 
         var response = await _sut.GetContentCategory(1, CancellationToken.None);
@@ -74,24 +74,56 @@ public class ContentCategoryControllerTests
         Assert.Same(expected, Assert.IsType<ApiResponse<ContentCategoryDto>>(result.Value).Data);
     }
 
+    [Theory]
+    [InlineData("User", false)]
+    [InlineData("Moderator", true)]
+    [InlineData("Administrator", true)]
+    public async Task GetContentCategory_OnlyStaffCanSeeInactive(string role, bool expected)
+    {
+        _sut.ControllerContext = ControllerContextForUser(9, role);
+
+        await _sut.GetContentCategory(1, CancellationToken.None);
+
+        _service.Verify(service => service.GetByIdAsync(1, expected, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     [Fact]
     public async Task ListContentCategories_ReturnsServiceResult()
     {
         var expected = new List<ContentCategoryDto> { new() { Id = 1, Code = "animals" } };
-        _service.Setup(service => service.ListAsync(It.IsAny<CancellationToken>())).ReturnsAsync(expected);
+        _service.Setup(service => service.ListAsync(false, It.IsAny<CancellationToken>())).ReturnsAsync(expected);
 
-        var response = await _sut.ListContentCategories(CancellationToken.None);
+        var response = await _sut.ListContentCategories(false, CancellationToken.None);
 
         var result = Assert.IsType<OkObjectResult>(response.Result);
         Assert.Same(expected, Assert.IsType<ApiResponse<List<ContentCategoryDto>>>(result.Value).Data);
     }
 
-    private static ControllerContext ControllerContextForUser(int userId) => new()
+    [Theory]
+    [InlineData("User", true, false)]
+    [InlineData("Moderator", true, true)]
+    [InlineData("Administrator", true, true)]
+    [InlineData("Moderator", false, false)]
+    public async Task ListContentCategories_IncludeInactiveOnlyForStaff(
+        string role, bool includeInactive, bool expected)
+    {
+        _sut.ControllerContext = ControllerContextForUser(9, role);
+
+        await _sut.ListContentCategories(includeInactive, CancellationToken.None);
+
+        _service.Verify(service => service.ListAsync(expected, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private static ControllerContext ControllerContextForUser(int userId, string role = "User") => new()
     {
         HttpContext = new DefaultHttpContext
         {
             User = new ClaimsPrincipal(new ClaimsIdentity(
-                new[] { new Claim(ClaimTypes.NameIdentifier, userId.ToString()) }, "TestAuth"))
+                new[]
+                {
+                    new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
+                    new Claim(ClaimTypes.Role, role)
+                }, "TestAuth"))
         }
     };
 }

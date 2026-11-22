@@ -2,6 +2,7 @@ using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Features.ContentCategories.DTOs;
 using StoryPlatform.Application.Features.ContentCategories.Interfaces;
+using StoryPlatform.Application.Features.Moderation;
 using StoryPlatform.Domain.Entities;
 using StoryPlatform.Domain.Enums;
 
@@ -32,7 +33,7 @@ public class ContentCategoryService : IContentCategoryService
             DisplayName = request.DisplayName.Trim(),
             Group = ParseGroup(request.Group),
             IsActive = request.IsActive,
-            CreatedByAdminId = currentUserId,
+            CreatedByModeratorId = currentUserId,
             DefaultBlockedAgeBands = NormalizeAgeBands(request.DefaultBlockedAgeBands)
         };
 
@@ -75,16 +76,24 @@ public class ContentCategoryService : IContentCategoryService
             throw new NotFoundException("Content Category", contentCategoryId);
         }
 
+        var usages = await FindUsagesAsync(contentCategoryId, cancellationToken);
+        if (usages.Count > 0)
+        {
+            throw new ConflictException(
+                $"Không thể xoá Content Category đang được dùng trong: {string.Join(", ", usages)}. "
+                + "Hãy tắt danh mục (IsActive = false) thay vì xoá.");
+        }
+
         repository.Delete(category);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<ContentCategoryDto> GetByIdAsync(
-        int contentCategoryId, CancellationToken cancellationToken = default)
+        int contentCategoryId, bool includeInactive, CancellationToken cancellationToken = default)
     {
         var category = await _unitOfWork.Repository<ContentCategory>()
             .GetByIdAsync(contentCategoryId, cancellationToken);
-        if (category == null)
+        if (category == null || (!category.IsActive && !includeInactive))
         {
             throw new NotFoundException("Content Category", contentCategoryId);
         }
@@ -92,10 +101,42 @@ public class ContentCategoryService : IContentCategoryService
         return MapCategory(category);
     }
 
-    public async Task<List<ContentCategoryDto>> ListAsync(CancellationToken cancellationToken = default)
+    public async Task<List<ContentCategoryDto>> ListAsync(
+        bool includeInactive, CancellationToken cancellationToken = default)
     {
-        var categories = await _unitOfWork.Repository<ContentCategory>().GetAllAsync(cancellationToken);
+        var repository = _unitOfWork.Repository<ContentCategory>();
+        var categories = includeInactive
+            ? await repository.GetAllAsync(cancellationToken)
+            : await repository.FindAsync(category => category.IsActive, cancellationToken: cancellationToken);
         return categories.Select(MapCategory).ToList();
+    }
+
+    /// <summary>
+    /// Các nơi còn tham chiếu danh mục: bốn bảng có khoá ngoại (Restrict) và nhãn đề xuất
+    /// lưu dạng jsonb trong hồ sơ gửi duyệt (không có khoá ngoại nên phải tự kiểm).
+    /// </summary>
+    private async Task<List<string>> FindUsagesAsync(int contentCategoryId, CancellationToken cancellationToken)
+    {
+        var usages = new List<string>();
+        if (await _unitOfWork.Repository<StoryCategory>().ExistsAsync(
+                link => link.ContentCategoryId == contentCategoryId, cancellationToken))
+            usages.Add("truyện");
+        if (await _unitOfWork.Repository<SafetyPolicyCategory>().ExistsAsync(
+                link => link.ContentCategoryId == contentCategoryId, cancellationToken))
+            usages.Add("chính sách an toàn của trẻ");
+        if (await _unitOfWork.Repository<WishCard>().ExistsAsync(
+                card => card.ContentCategoryId == contentCategoryId, cancellationToken))
+            usages.Add("thẻ điều ước");
+        if (await _unitOfWork.Repository<ReadingRoadmap>().ExistsAsync(
+                roadmap => roadmap.MainCategoryId == contentCategoryId, cancellationToken))
+            usages.Add("lộ trình đọc");
+
+        var proposals = await _unitOfWork.Repository<ModerationItem>().FindAsync(
+            item => item.ProposedContentCategoryIds != null, cancellationToken: cancellationToken);
+        if (proposals.Any(item => PublicStoryLabels.Parse(item.ProposedContentCategoryIds).Contains(contentCategoryId)))
+            usages.Add("hồ sơ gửi duyệt truyện");
+
+        return usages;
     }
 
     private static ContentCategoryDto MapCategory(ContentCategory category) => new()

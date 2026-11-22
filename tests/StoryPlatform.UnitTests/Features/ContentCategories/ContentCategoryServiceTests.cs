@@ -14,13 +14,41 @@ public class ContentCategoryServiceTests
 {
     private readonly Mock<IGenericRepository<ContentCategory>> _repository = new();
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
+    private readonly List<StoryCategory> _storyCategories = new();
+    private readonly List<SafetyPolicyCategory> _policyCategories = new();
+    private readonly List<WishCard> _wishCards = new();
+    private readonly List<ReadingRoadmap> _roadmaps = new();
+    private readonly List<ModerationItem> _moderationItems = new();
     private readonly ContentCategoryService _sut;
 
     public ContentCategoryServiceTests()
     {
         _unitOfWork.Setup(work => work.Repository<ContentCategory>()).Returns(_repository.Object);
+        WireInMemory(_storyCategories);
+        WireInMemory(_policyCategories);
+        WireInMemory(_wishCards);
+        WireInMemory(_roadmaps);
+        WireInMemory(_moderationItems);
         _sut = new ContentCategoryService(_unitOfWork.Object);
     }
+
+    private void WireInMemory<T>(List<T> rows) where T : class
+    {
+        var repository = new Mock<IGenericRepository<T>>();
+        repository.Setup(repo => repo.ExistsAsync(It.IsAny<Expression<Func<T, bool>>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Expression<Func<T, bool>> predicate, CancellationToken _) => rows.Any(predicate.Compile()));
+        repository.Setup(repo => repo.FindAsync(
+                It.IsAny<Expression<Func<T, bool>>>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Expression<Func<T, bool>> predicate, string? _, CancellationToken _) =>
+                (IReadOnlyList<T>)rows.Where(predicate.Compile()).ToList());
+        _unitOfWork.Setup(work => work.Repository<T>()).Returns(repository.Object);
+    }
+
+    private void SetupCategoryFind(List<ContentCategory> rows) =>
+        _repository.Setup(repository => repository.FindAsync(
+                It.IsAny<Expression<Func<ContentCategory, bool>>>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Expression<Func<ContentCategory, bool>> predicate, string? _, CancellationToken _) =>
+                (IReadOnlyList<ContentCategory>)rows.Where(predicate.Compile()).ToList());
 
     [Fact]
     public async Task CreateAsync_DuplicateCode_ThrowsConflict()
@@ -55,7 +83,7 @@ public class ContentCategoryServiceTests
         Assert.Equal(ContentCategoryGroup.LifeValue, added.Group);
         Assert.Equal("LifeValue", result.Group);
         Assert.Equal("Động vật", added.DisplayName);
-        Assert.Equal(9, added.CreatedByAdminId);
+        Assert.Equal(9, added.CreatedByModeratorId);
         Assert.Equal("animals", result.Code);
         _unitOfWork.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -100,17 +128,80 @@ public class ContentCategoryServiceTests
         _unitOfWork.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Theory]
+    [InlineData("story", "truyện")]
+    [InlineData("policy", "chính sách an toàn")]
+    [InlineData("wish", "thẻ điều ước")]
+    [InlineData("roadmap", "lộ trình đọc")]
+    [InlineData("proposal", "hồ sơ gửi duyệt")]
+    public async Task DeleteAsync_InUse_ThrowsConflictWithoutDeleting(string source, string expectedUsage)
+    {
+        var category = new ContentCategory { Id = 1, Code = "animals" };
+        _repository.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(category);
+        switch (source)
+        {
+            case "story": _storyCategories.Add(new StoryCategory { StoryId = 3, ContentCategoryId = 1 }); break;
+            case "policy": _policyCategories.Add(new SafetyPolicyCategory { SafetyPolicyId = 2, ContentCategoryId = 1 }); break;
+            case "wish": _wishCards.Add(new WishCard { Id = 4, ContentCategoryId = 1 }); break;
+            case "roadmap": _roadmaps.Add(new ReadingRoadmap { Id = 5, MainCategoryId = 1 }); break;
+            case "proposal": _moderationItems.Add(new ModerationItem { Id = 6, ProposedContentCategoryIds = "[1,7]" }); break;
+        }
+
+        var error = await Assert.ThrowsAsync<ConflictException>(() => _sut.DeleteAsync(1));
+
+        Assert.Contains(expectedUsage, error.Message);
+        Assert.Contains("IsActive = false", error.Message);
+        _repository.Verify(repository => repository.Delete(It.IsAny<ContentCategory>()), Times.Never);
+        _unitOfWork.Verify(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_OnlyOtherCategoriesReferenced_Deletes()
+    {
+        var category = new ContentCategory { Id = 1, Code = "animals" };
+        _repository.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(category);
+        _storyCategories.Add(new StoryCategory { StoryId = 3, ContentCategoryId = 2 });
+        _wishCards.Add(new WishCard { Id = 4, ContentCategoryId = null });
+        _roadmaps.Add(new ReadingRoadmap { Id = 5, MainCategoryId = 2 });
+        _moderationItems.Add(new ModerationItem { Id = 6, ProposedContentCategoryIds = "[11,21]" });
+        _moderationItems.Add(new ModerationItem { Id = 7, ProposedContentCategoryIds = "not-json" });
+
+        await _sut.DeleteAsync(1);
+
+        _repository.Verify(repository => repository.Delete(category), Times.Once);
+    }
+
     [Fact]
     public async Task GetByIdAsync_NotFound_ThrowsNotFound()
     {
         _repository.Setup(repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync((ContentCategory?)null);
 
-        await Assert.ThrowsAsync<NotFoundException>(() => _sut.GetByIdAsync(1));
+        await Assert.ThrowsAsync<NotFoundException>(() => _sut.GetByIdAsync(1, includeInactive: true));
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task GetByIdAsync_Inactive_VisibleOnlyWhenIncluded(bool includeInactive, bool visible)
+    {
+        _repository.Setup(repository => repository.GetByIdAsync(2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ContentCategory { Id = 2, Code = "space", IsActive = false });
+
+        if (visible)
+        {
+            Assert.Equal("space", (await _sut.GetByIdAsync(2, includeInactive)).Code);
+        }
+        else
+        {
+            await Assert.ThrowsAsync<NotFoundException>(() => _sut.GetByIdAsync(2, includeInactive));
+        }
     }
 
     [Fact]
-    public async Task ListAsync_ReturnsAllMappedCategories()
+    public async Task ListAsync_IncludeInactive_ReturnsAllMappedCategories()
     {
         _repository.Setup(repository => repository.GetAllAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<ContentCategory>
@@ -119,10 +210,25 @@ public class ContentCategoryServiceTests
                 new() { Id = 2, Code = "space", DisplayName = "Vũ trụ", IsActive = false }
             });
 
-        var result = await _sut.ListAsync();
+        var result = await _sut.ListAsync(includeInactive: true);
 
         Assert.Equal(2, result.Count);
         Assert.Equal("animals", result[0].Code);
+    }
+
+    [Fact]
+    public async Task ListAsync_Default_ReturnsActiveOnly()
+    {
+        SetupCategoryFind(new List<ContentCategory>
+        {
+            new() { Id = 1, Code = "animals", DisplayName = "Động vật", IsActive = true },
+            new() { Id = 2, Code = "space", DisplayName = "Vũ trụ", IsActive = false }
+        });
+
+        var result = await _sut.ListAsync(includeInactive: false);
+
+        Assert.Equal("animals", Assert.Single(result).Code);
+        _repository.Verify(repository => repository.GetAllAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -239,13 +345,12 @@ public class ContentCategoryServiceTests
     [Fact]
     public async Task ListAsync_MapsGroup()
     {
-        _repository.Setup(repository => repository.GetAllAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<ContentCategory>
-            {
-                new() { Id = 7, Code = "VIOLENCE", DisplayName = "Bạo lực", Group = ContentCategoryGroup.SafetyWarning }
-            });
+        SetupCategoryFind(new List<ContentCategory>
+        {
+            new() { Id = 7, Code = "VIOLENCE", DisplayName = "Bạo lực", Group = ContentCategoryGroup.SafetyWarning }
+        });
 
-        var result = await _sut.ListAsync();
+        var result = await _sut.ListAsync(includeInactive: false);
 
         Assert.Equal("SafetyWarning", Assert.Single(result).Group);
     }

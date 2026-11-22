@@ -30,9 +30,9 @@ public class ContentCategoryConfiguration : IEntityTypeConfiguration<ContentCate
             .HasDefaultValueSql("'{}'")
             .IsRequired();
 
-        builder.HasOne(x => x.CreatedByAdmin)
+        builder.HasOne(x => x.CreatedByModerator)
             .WithMany()
-            .HasForeignKey(x => x.CreatedByAdminId)
+            .HasForeignKey(x => x.CreatedByModeratorId)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(x => x.Code)

@@ -45,7 +45,21 @@ public class RolePermissionAdminService(IUnitOfWork uow, IAuditLogWriter audit, 
     {
         var role = await FindRoleAsync(roleCode, cancellationToken);
         var links = await LinksAsync(role.Id, cancellationToken);
-        return new RolePermissionsDto(role.Code, Codes(links));
+        var codes = Codes(links);
+        var staffCodes = links.Where(x => x.Permission.IsStaffGrantable).Select(x => x.Permission.Code);
+        return new RolePermissionsDto(role.Code, codes, Assignable(role.Code, staffCodes));
+    }
+
+    /// <summary>
+    /// Tạm thời chỉ cho thu hoặc trả lại quyền: các service vẫn kiểm role trực tiếp, nên quyền cấp cho role khác
+    /// qua được endpoint nhưng bị service chặn. Quyền role đang giữ vẫn nằm trong tập để Administrator gỡ được.
+    /// </summary>
+    private static List<string> Assignable(string roleCode, IEnumerable<string> heldStaffCodes)
+    {
+        var defaults = DefaultRolePermissions.Map.TryGetValue(roleCode, out var map) ? map : new HashSet<string>();
+        return defaults.Where(code => PermissionCatalog.Find(code)?.IsStaffGrantable == true)
+            .Concat(heldStaffCodes)
+            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
     }
 
     public async Task<RolePermissionsDto> UpdateRolePermissionsAsync(int actorUserId, string roleCode,
@@ -68,6 +82,12 @@ public class RolePermissionAdminService(IUnitOfWork uow, IAuditLogWriter audit, 
             throw new BadRequestException($"Quyền không hợp lệ hoặc không được gán cho nhân viên: {string.Join(", ", invalid)}.");
 
         var currentLinks = await LinksAsync(role.Id, cancellationToken);
+        var assignable = Assignable(role.Code,
+            currentLinks.Where(x => x.Permission.IsStaffGrantable).Select(x => x.Permission.Code)).ToHashSet(StringComparer.Ordinal);
+        var notAssignable = requested.Where(code => !assignable.Contains(code)).Order(StringComparer.Ordinal).ToList();
+        if (notAssignable.Count > 0)
+            throw new BadRequestException($"Chưa hỗ trợ cấp các quyền này cho {role.Code}: {string.Join(", ", notAssignable)}.");
+
         var before = Codes(currentLinks);
         // Quyền ngoài nhóm nhân viên (ví dụ xem thư viện cộng đồng) không sửa qua API nên giữ nguyên.
         var after = currentLinks.Where(x => !x.Permission.IsStaffGrantable).Select(x => x.Permission.Code)
@@ -86,7 +106,8 @@ public class RolePermissionAdminService(IUnitOfWork uow, IAuditLogWriter audit, 
         await audit.LogAsync(actorUserId, AuditAction, "Role", role.Id, before, after, cancellationToken);
         await permissions.InvalidateAsync(role.Code, cancellationToken);
 
-        return new RolePermissionsDto(role.Code, after);
+        return new RolePermissionsDto(role.Code, after,
+            Assignable(role.Code, after.Where(code => catalog[code].IsStaffGrantable)));
     }
 
     private async Task EnsureReviewersRemainAsync(Role target, IReadOnlyCollection<string> targetAfter, CancellationToken ct)

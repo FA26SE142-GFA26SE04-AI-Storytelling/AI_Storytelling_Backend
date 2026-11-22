@@ -834,7 +834,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int?>("CreatedByAdminId")
+                    b.Property<int?>("CreatedByModeratorId")
                         .HasColumnType("integer");
 
                     b.Property<List<string>>("DefaultBlockedAgeBands")
@@ -867,7 +867,7 @@ namespace StoryPlatform.Infrastructure.Migrations
                     b.HasIndex("Code")
                         .IsUnique();
 
-                    b.HasIndex("CreatedByAdminId");
+                    b.HasIndex("CreatedByModeratorId");
 
                     b.ToTable("content_categories", (string)null);
                 });
@@ -5978,12 +5978,12 @@ namespace StoryPlatform.Infrastructure.Migrations
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ContentCategory", b =>
                 {
-                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "CreatedByAdmin")
+                    b.HasOne("StoryPlatform.Domain.Entities.UserAccount", "CreatedByModerator")
                         .WithMany()
-                        .HasForeignKey("CreatedByAdminId")
+                        .HasForeignKey("CreatedByModeratorId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.Navigation("CreatedByAdmin");
+                    b.Navigation("CreatedByModerator");
                 });
 
             modelBuilder.Entity("StoryPlatform.Domain.Entities.ContentReport", b =>

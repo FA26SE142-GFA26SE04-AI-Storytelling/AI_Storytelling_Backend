@@ -558,14 +558,18 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
     private async Task ProcessClaimedAsync(int jobId, string claimedToken, CancellationToken cancellationToken)
     {
         var state = await LoadStateAsync(jobId, claimedToken, cancellationToken);
-        var mediaContext = await GetOrCreateContextAsync(state, cancellationToken);
+        var request = state.Job.GenerationRequestId is int requestId
+            ? await FreshAsync<StoryGenerationRequest>(requestId, cancellationToken)
+            : null;
+        var quick = state.Story.Source == StorySource.Ai && UsesQuickGeneration(request?.ContextSnapshotJson);
+        var mediaContext = await GetOrCreateContextAsync(state, request, cancellationToken);
         var scenes = await GetOrCreateScenesAsync(state, claimedToken, mediaContext, cancellationToken);
         await BindListeningInteractionsAsync(state, claimedToken, mediaContext, scenes, cancellationToken);
         await UpdateStageAsync(state.Job.Id, claimedToken, JobStage.MediaGenerating, cancellationToken);
 
         foreach (var scene in scenes.OrderBy(x => x.SceneIndex))
         {
-            await GetOrCreateBeatsAsync(jobId, claimedToken, state.Version.Id, mediaContext, scene, cancellationToken);
+            await GetOrCreateBeatsAsync(jobId, claimedToken, state.Version.Id, mediaContext, scene, cancellationToken, quick);
             await PrepareSegmentsAsync(scene, cancellationToken);
         }
         if (CreatorMediaSelection.Mode(state.Job) == "choose")
@@ -573,16 +577,22 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         else await QueueBranchesAsync(state, mediaContext, claimedToken, cancellationToken);
     }
 
-    private async Task<MediaContext> GetOrCreateContextAsync(MediaState state, CancellationToken cancellationToken)
+    private static bool UsesQuickGeneration(string? contextJson)
+    {
+        if (string.IsNullOrWhiteSpace(contextJson)) return false;
+        using var document = JsonDocument.Parse(contextJson);
+        return document.RootElement.ValueKind == JsonValueKind.Object &&
+               document.RootElement.TryGetProperty("quickGeneration", out var value) &&
+               value.ValueKind == JsonValueKind.True;
+    }
+
+    private async Task<MediaContext> GetOrCreateContextAsync(MediaState state, StoryGenerationRequest? request, CancellationToken cancellationToken)
     {
         var existing = (await _unitOfWork.Repository<MediaContext>().FindAsync(
                 x => x.StoryVersionId == state.Version.Id, cancellationToken: cancellationToken))
             .OrderByDescending(x => x.Revision).FirstOrDefault();
         if (existing is not null) return existing;
 
-        StoryGenerationRequest? request = null;
-        if (state.Job.GenerationRequestId.HasValue)
-            request = await FreshAsync<StoryGenerationRequest>(state.Job.GenerationRequestId.Value, cancellationToken);
         var context = new MediaContext
         {
             StoryVersionId = state.Version.Id,
@@ -654,7 +664,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
 
     private async Task<IReadOnlyList<IllustrationBeat>> GetOrCreateBeatsAsync(
         int jobId, string token, int versionId, MediaContext mediaContext, StoryScene scene,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool quick = false)
     {
         var existing = await _unitOfWork.Repository<IllustrationBeat>().FindAsync(
             x => x.StorySceneId == scene.Id, cancellationToken: cancellationToken);
@@ -669,7 +679,7 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
             x => x.ParentStoryPackageId == null && x.IsCurrent && x.StorySceneId == scene.Id && x.Type == MediaType.Illustration,
             cancellationToken: cancellationToken);
         IReadOnlyList<IllustrationBeatSelection> selections = [];
-        if (legacyAsset is null)
+        if (legacyAsset is null && !quick)
         {
             await UpdateStageAsync(jobId, token, JobStage.MediaSegmenting, cancellationToken);
             var projectedContext = _contextProjector.Project(mediaContext.ContextJson);
@@ -685,8 +695,9 @@ public sealed partial class MediaGenerationService : IMediaGenerationService, IM
         }
         if (!AreValidBeats(scene, selections))
         {
-            _logger.LogWarning("Illustration beat plan fallback StoryVersion={VersionId} Scene={SceneId}",
-                versionId, scene.Id);
+            if (!quick)
+                _logger.LogWarning("Illustration beat plan fallback StoryVersion={VersionId} Scene={SceneId}",
+                    versionId, scene.Id);
             selections = [new IllustrationBeatSelection(1, 0, scene.SceneText.Length,
                 scene.VisualDescription ?? "Illustrate the scene's main moment")];
         }

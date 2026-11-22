@@ -48,6 +48,13 @@ class ProductionRolloutTests(unittest.TestCase):
             'tag': 'candidate', 'percent': 0, 'url': 'https://candidate-service.run.app'})
         return service
 
+    def test_private_guard_rejects_disabled_invoker_check_without_public_bindings(self):
+        service = self.old_service()
+        service['metadata'] = {'annotations': {'run.googleapis.com/invoker-iam-disabled': 'true'}}
+        with patch.object(cloudrun, 'gcloud', return_value='{"bindings": []}'), \
+                self.assertRaisesRegex(RuntimeError, 'Invoker IAM check is disabled'):
+            cloudrun.require_private(self.args('unused'), service)
+
     def revision(self, image):
         return {'spec': {'containers': [{'image': image}]},
                 'status': {'conditions': [{'type': 'Ready', 'status': 'True'}]}}

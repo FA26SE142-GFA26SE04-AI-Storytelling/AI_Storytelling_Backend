@@ -4,6 +4,7 @@ metadata:
   name: ${SERVICE}
   annotations:
     run.googleapis.com/ingress: all
+    run.googleapis.com/invoker-iam-disabled: 'false'
 spec:
   template:
     metadata:

@@ -1,3 +1,4 @@
+using StoryPlatform.UnitTests.Infrastructure.Caching;
 using System.Linq.Expressions;
 using Moq;
 using StoryPlatform.Application.Abstractions.Persistence;
@@ -248,5 +249,67 @@ public class ContentCategoryServiceTests
         var result = await _sut.ListAsync();
 
         Assert.Equal("SafetyWarning", Assert.Single(result).Group);
+    }
+
+    // ---------- Cache ----------
+
+    [Fact]
+    public async Task ListAsync_WithCache_SecondCallSkipsDatabase()
+    {
+        var cache = new InMemoryAppCache();
+        var sut = new ContentCategoryService(_unitOfWork.Object, cache);
+        _repository.Setup(repository => repository.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ContentCategory> { new() { Id = 1, Code = "animals", DisplayName = "Động vật" } });
+
+        await sut.ListAsync();
+        var second = await sut.ListAsync();
+
+        Assert.Single(second);
+        _repository.Verify(repository => repository.GetAllAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_InvalidatesListAndItemCache()
+    {
+        var cache = new InMemoryAppCache();
+        var sut = new ContentCategoryService(_unitOfWork.Object, cache);
+        _repository.Setup(repository => repository.GetByIdAsync(5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ContentCategory { Id = 5, Code = "animals", DisplayName = "Cũ" });
+
+        await sut.GetByIdAsync(5);
+        await sut.UpdateAsync(5, new UpdateContentCategoryRequestDto { DisplayName = "Mới", IsActive = true });
+
+        Assert.Contains(ContentCategoryService.ListCacheKey, cache.RemovedKeys);
+        Assert.Contains(ContentCategoryService.ItemCacheKey(5), cache.RemovedKeys);
+        Assert.False(cache.Contains(ContentCategoryService.ItemCacheKey(5)));
+    }
+
+    [Fact]
+    public async Task CreateAndDeleteAsync_InvalidateListCache()
+    {
+        var cache = new InMemoryAppCache();
+        var sut = new ContentCategoryService(_unitOfWork.Object, cache);
+        _repository.Setup(repository => repository.ExistsAsync(
+                It.IsAny<Expression<Func<ContentCategory, bool>>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        _repository.Setup(repository => repository.GetByIdAsync(3, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ContentCategory { Id = 3, Code = "x", DisplayName = "x" });
+
+        await sut.CreateAsync(9, new CreateContentCategoryRequestDto { Code = "sea", DisplayName = "Biển", Group = "Genre" });
+        await sut.DeleteAsync(3);
+
+        Assert.Equal(2, cache.RemovedKeys.Count(key => key == ContentCategoryService.ListCacheKey));
+        Assert.Contains(ContentCategoryService.ItemCacheKey(3), cache.RemovedKeys);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_Missing_ThrowsNotFoundAndCachesNothing()
+    {
+        var cache = new InMemoryAppCache();
+        var sut = new ContentCategoryService(_unitOfWork.Object, cache);
+
+        await Assert.ThrowsAsync<NotFoundException>(() => sut.GetByIdAsync(42));
+
+        Assert.False(cache.Contains(ContentCategoryService.ItemCacheKey(42)));
     }
 }

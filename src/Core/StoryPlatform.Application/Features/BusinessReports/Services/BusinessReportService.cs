@@ -1,4 +1,5 @@
 using System.Text.Json;
+using StoryPlatform.Application.Abstractions.Caching;
 using StoryPlatform.Application.Abstractions.Persistence;
 using StoryPlatform.Application.Common.Exceptions;
 using StoryPlatform.Application.Common.Models;
@@ -24,12 +25,20 @@ public class BusinessReportService : IBusinessReportService
     private readonly IRevenueStatisticsService _revenueStatisticsService;
     private readonly IUserAccountStatisticsService _userAccountStatisticsService;
     private readonly ICreatorStatisticsService? _creatorStatisticsService;
+    private readonly IAppCache? _cache;
+
+    public const string LatestPublishedCacheKey = "business-reports:latest-published";
+
+    // Report chỉ đổi khi Admin publish (lúc đó cache bị xoá ngay); TTL là giới hạn trên nếu xoá cache lỗi.
+    private static readonly TimeSpan LatestPublishedCacheTtl = TimeSpan.FromHours(1);
 
     public BusinessReportService(
         IUnitOfWork unitOfWork, IAuditLogWriter auditLogWriter, IRevenueStatisticsService revenueStatisticsService,
         IUserAccountStatisticsService userAccountStatisticsService,
-        ICreatorStatisticsService? creatorStatisticsService = null)
+        ICreatorStatisticsService? creatorStatisticsService = null,
+        IAppCache? cache = null)
     {
+        _cache = cache;
         _creatorStatisticsService = creatorStatisticsService;
         _unitOfWork = unitOfWork;
         _auditLogWriter = auditLogWriter;
@@ -118,21 +127,23 @@ public class BusinessReportService : IBusinessReportService
         await _auditLogWriter.LogAsync(
             adminUserId, "BusinessReportPublished", nameof(BusinessReport), report.Id,
             beforeState, new { status = report.Status.ToString() }, cancellationToken);
+        await _cache.RemoveIfConfiguredAsync(LatestPublishedCacheKey, cancellationToken);
 
         return MapToAdminDto(report);
     }
 
-    public async Task<BusinessReportDto> GetLatestPublishedAsync(CancellationToken cancellationToken = default)
-    {
-        var published = await _unitOfWork.Repository<BusinessReport>().FindAsync(
-            item => item.Status == ReportStatus.Published, cancellationToken: cancellationToken);
+    public Task<BusinessReportDto> GetLatestPublishedAsync(CancellationToken cancellationToken = default) =>
+        _cache.GetOrSetOrLoadAsync(LatestPublishedCacheKey, async ct =>
+        {
+            var published = await _unitOfWork.Repository<BusinessReport>().FindAsync(
+                item => item.Status == ReportStatus.Published, cancellationToken: ct);
 
-        var latest = published.OrderByDescending(item => item.PublishedAt).FirstOrDefault()
-                     ?? throw new NotFoundException("Chưa có Business Report nào được publish.");
+            var latest = published.OrderByDescending(item => item.PublishedAt).FirstOrDefault()
+                         ?? throw new NotFoundException("Chưa có Business Report nào được publish.");
 
-        // Endpoint này mở cho mọi tài khoản đã đăng nhập: không trả số liệu doanh thu.
-        return MapToDto(latest, new BusinessReportDto());
-    }
+            // Endpoint này mở cho mọi tài khoản đã đăng nhập: không trả số liệu doanh thu.
+            return MapToDto(latest, new BusinessReportDto());
+        }, LatestPublishedCacheTtl, cancellationToken);
 
     public async Task<PagedResult<AdminBusinessReportDto>> ListAsync(
         int pageIndex, int pageSize, CancellationToken cancellationToken = default)
